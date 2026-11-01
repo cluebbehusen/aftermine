@@ -267,7 +267,7 @@ fn draw_record(
         (clock, columns.clock, true),
         (when, columns.when, true),
     ] {
-        let size = crate::typography::fit(text, text_size, column.w, 1.0);
+        let size = crate::typography::fit(text, text_size, column.w, crate::theme::Type::Caption);
         let x = if right {
             column.x + column.w - measure_text(text, None, numeric::font_size(size), 1.0).width
         } else {
@@ -377,20 +377,77 @@ pub struct Activation<R> {
 /// How a menu heads its list.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Heading {
-    /// A display-size title above a list centred in the space beneath.
-    Marquee,
+    /// The game's wordmark above a list centred in the space beneath. Home
+    /// alone uses it.
+    Wordmark,
     /// A screen-title-size title along the top edge, as the setup and
     /// browser pages draw theirs, leaving a long list the room to show
     /// more rows. `band` logical px under the title are reserved for a
     /// strip the screen draws there; the list hangs just below it, so
     /// changing what the strip shows never moves the list.
     Page { band: f32 },
+    /// A question or short menu over a match: a screen-title-size title
+    /// directly above a centred list.
+    Dialog,
 }
 
-/// The baseline of a [`Heading::Page`] title, level with the BACK
-/// button, at UI scale `s`.
+/// The baseline of a [`Heading::Page`] title, level with the Back button,
+/// at UI scale `s`.
 pub(crate) fn page_title_baseline(s: f32) -> f32 {
     56.0 * s
+}
+
+/// The distance from a title's baseline to its subtitle's.
+const SUBTITLE_DROP: f32 = 34.0;
+
+/// Draws a screen title at `baseline`, shrinking only as far as it must to
+/// stay between the Back button and its mirror. Every title in the game
+/// comes through here, so no screen picks its own size.
+pub(crate) fn draw_title(title: &str, baseline: f32, color: Color) {
+    let s = ui();
+    let room = view_w() - 2.0 * (crate::button::corner_slot(0, s).right() + 16.0 * s);
+    let size = crate::typography::fit(
+        title,
+        crate::theme::Type::Title.at(s),
+        room,
+        crate::theme::Type::Heading,
+    );
+    let dims = measure_text(title, None, numeric::font_size(size), 1.0);
+    draw_text(title, (view_w() - dims.width) * 0.5, baseline, size, color);
+}
+
+/// How wide a title draws at full size, for a plate sized around it.
+pub(crate) fn title_width(title: &str) -> f32 {
+    let size = crate::theme::Type::Title.at(ui());
+    measure_text(title, None, numeric::font_size(size), 1.0).width
+}
+
+/// Draws a page's title along the top edge and its subtitle beneath.
+pub(crate) fn draw_page_heading(title: &str, subtitle: &str) {
+    let s = ui();
+    let baseline = page_title_baseline(s);
+    draw_title(title, baseline, TEXT_TITLE);
+    draw_subtitle(subtitle, baseline + SUBTITLE_DROP * s);
+}
+
+/// Draws a subtitle centered at `baseline`, shrinking to fit the window.
+pub(crate) fn draw_subtitle(subtitle: &str, baseline: f32) {
+    let s = ui();
+    let subtitle = crate::typography::sentence_case(subtitle);
+    let size = crate::typography::fit(
+        &subtitle,
+        crate::theme::Type::Label.at(s),
+        view_w() - 2.0 * (crate::button::corner_slot(0, s).right() + 16.0 * s),
+        crate::theme::Type::Caption,
+    );
+    let dims = measure_text(&subtitle, None, numeric::font_size(size), 1.0);
+    draw_text(
+        &subtitle,
+        (view_w() - dims.width) * 0.5,
+        baseline,
+        size,
+        TEXT_SECONDARY,
+    );
 }
 
 /// What automation reads off a menu.
@@ -500,7 +557,7 @@ impl<R: Clone> Menu<R> {
             carry: 0.0,
             shift: 0.0,
             wide: false,
-            heading: Heading::Marquee,
+            heading: Heading::Dialog,
         };
         menu.selected = menu.settle(0, false);
         menu
@@ -645,8 +702,9 @@ impl<R: Clone> Menu<R> {
     fn window(&self) -> ListWindow {
         let s = ui();
         let (top_bound, centring) = match self.heading {
-            Heading::Marquee => ((view_h() * 0.36).max(view_h() * 0.28 + 64.0 * s), 0.5),
+            Heading::Wordmark => ((view_h() * 0.36).max(view_h() * 0.28 + 64.0 * s), 0.5),
             Heading::Page { band } => (page_title_baseline(s) + (64.0 + band) * s, 0.0),
+            Heading::Dialog => (page_title_baseline(s) + 64.0 * s, 0.5),
         };
         let bottom_bound = view_h() - 64.0 * s;
         let avail = (bottom_bound - top_bound).max(ITEM_HEIGHT * s);
@@ -818,54 +876,68 @@ impl<R: Clone> Menu<R> {
         self.draw_face(subtitle, None, true);
     }
 
+    /// Draws the plate a dialog's title and rows sit on, which holds them
+    /// apart from the match behind.
+    fn draw_dialog_plate(&self, title_baseline: f32) {
+        let s = ui();
+        let pad = 24.0 * s;
+        let list = self.window();
+        let last = list.first + list.visible.saturating_sub(1);
+        let (Some(first_row), Some(last_row)) = (self.item_rect(list.first), self.item_rect(last))
+        else {
+            return;
+        };
+        let top = title_baseline - crate::theme::Type::Title.at(s) - pad * 0.5;
+        let rect = Rect::new(
+            first_row.x - pad,
+            top,
+            first_row.w + 2.0 * pad,
+            last_row.bottom() + pad - top,
+        );
+        draw_rectangle(rect.x, rect.y, rect.w, rect.h, crate::theme::SURFACE_PLATE);
+        draw_rectangle_lines(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            crate::theme::Stroke::Hairline.at(s),
+            crate::theme::TEXT_DISABLED,
+        );
+    }
+
     fn draw_face(&self, subtitle: &str, coaching: Option<&str>, busy: bool) {
         let subtitle = binding_hint(subtitle);
         let s = ui();
-        let (title_size, title_y) = match self.heading {
-            Heading::Marquee => (crate::theme::Type::Display.at(s), view_h() * 0.28),
-            Heading::Page { .. } => {
-                // Level with the BACK button, so it shrinks to stay
-                // between that button and its mirror.
-                let room = view_w() - 2.0 * (crate::button::corner_slot(0, s).right() + 16.0 * s);
-                let size = crate::typography::fit(
+        let list = self.window();
+        match self.heading {
+            Heading::Wordmark => {
+                let size = crate::theme::Type::Display.at(s);
+                let baseline = view_h() * 0.28;
+                let dims = measure_text(&self.title, None, numeric::font_size(size), 1.0);
+                draw_text(
                     &self.title,
-                    crate::theme::Type::Title.at(s),
-                    room,
-                    crate::theme::Type::Heading.at(s),
+                    (view_w() - dims.width) * 0.5,
+                    baseline,
+                    size,
+                    TEXT_TITLE,
                 );
-                (size, page_title_baseline(s))
+                draw_subtitle(&subtitle, baseline + SUBTITLE_DROP * s);
             }
-        };
-        let dims = measure_text(&self.title, None, numeric::font_size(title_size), 1.0);
-        draw_text(
-            &self.title,
-            (view_w() - dims.width) * 0.5,
-            title_y,
-            title_size,
-            TEXT_TITLE,
-        );
-        // The subtitle shrinks to fit the window; map blurbs run long.
-        let sub_size = crate::typography::fit(
-            &subtitle,
-            crate::theme::Type::Heading.at(s),
-            view_w() * 0.55,
-            12.0 * s,
-        );
-        let sub_dims = measure_text(&subtitle, None, numeric::font_size(sub_size), 1.0);
-        draw_text(
-            &subtitle,
-            (view_w() - sub_dims.width) * 0.5,
-            title_y + 34.0 * s,
-            sub_size,
-            TEXT_SECONDARY,
-        );
+            Heading::Page { .. } => draw_page_heading(&self.title, &subtitle),
+            Heading::Dialog => {
+                let baseline = list.top - 64.0 * s;
+                self.draw_dialog_plate(baseline);
+                draw_title(&self.title, baseline, TEXT_TITLE);
+                draw_subtitle(&subtitle, baseline + SUBTITLE_DROP * s);
+            }
+        }
 
         let ListWindow {
             pitch: row,
             first,
             visible,
             ..
-        } = self.window();
+        } = list;
         let text_size = (crate::theme::Type::Row.at(s) * (row / (ITEM_HEIGHT * s))).clamp(
             crate::theme::Type::Label.at(s),
             crate::theme::Type::Row.at(s),
@@ -936,13 +1008,23 @@ impl<R: Clone> Menu<R> {
                         (key(0), columns.primary),
                         (key(1), columns.secondary),
                     ] {
-                        let size = crate::typography::fit(&text, text_size, column.w, 1.0);
+                        let size = crate::typography::fit(
+                            &text,
+                            text_size,
+                            column.w,
+                            crate::theme::Type::Caption,
+                        );
                         draw_text(&text, column.x, rect.y + rect.h * 0.68, size, color);
                     }
                 }
                 Label::Setting { name, value } => {
                     let pad = 18.0 * s;
-                    let value_size = crate::typography::fit(value, text_size, rect.w * 0.4, 1.0);
+                    let value_size = crate::typography::fit(
+                        value,
+                        text_size,
+                        rect.w * 0.4,
+                        crate::theme::Type::Caption,
+                    );
                     let value_width =
                         measure_text(value, None, numeric::font_size(value_size), 1.0).width;
                     let value_x = rect.x + rect.w - pad - value_width;
@@ -969,12 +1051,8 @@ impl<R: Clone> Menu<R> {
                 }
                 Label::Text(text) => {
                     let room = rect.w - 36.0 * s;
-                    let size = crate::typography::fit(
-                        text,
-                        text_size,
-                        room,
-                        crate::theme::Type::Label.at(s),
-                    );
+                    let size =
+                        crate::typography::fit(text, text_size, room, crate::theme::Type::Label);
                     let shown = crate::typography::elide_to_width(text, room, &|text: &str| {
                         measure_text(text, None, numeric::font_size(size), 1.0).width
                     });
@@ -1019,11 +1097,12 @@ impl<R: Clone> Menu<R> {
             || menu_footer(crate::platform::hands(), scrolls),
             binding_hint,
         );
+        let hint = crate::typography::sentence_case(&hint);
         let hint_size = crate::typography::fit(
             &hint,
             crate::theme::Type::Label.at(s),
             view_w() - 32.0 * s,
-            12.0 * s,
+            crate::theme::Type::Caption,
         );
         let hint_dims = measure_text(&hint, None, numeric::font_size(hint_size), 1.0);
         draw_text(

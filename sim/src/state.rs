@@ -467,7 +467,7 @@ pub struct Mounts {
 
 impl Mounts {
     /// Every gun dead ahead.
-    fn resting(_: crate::stats::MountedGuns) -> Self {
+    pub(crate) fn resting(_: crate::stats::MountedGuns) -> Self {
         Self {
             bearings: [0; crate::stats::MAX_WEAPONS],
             facing: IdleFacing::Free,
@@ -610,7 +610,8 @@ pub struct Unit {
     /// steer by it. Every `u8` is a valid compass heading.
     #[serde(default, skip_serializing_if = "crate::is_default")]
     pub heading: u8,
-    /// Independent ground gun bearing; absent mounts follow the hull initially.
+    /// Independent ground gun bearing; absent, the gun follows the hull. A gun
+    /// with nothing to aim at and every reload done turns back to the nose.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turret_heading: Option<u8>,
     /// Machines riding aboard this transport.
@@ -1244,7 +1245,8 @@ pub struct Building {
     pub launcher: Option<Launcher>,
     /// The gun's bearing in compass steps, on exactly the kinds that fire.
     /// It turns toward the gun's target at the tier's traverse, and the gun
-    /// fires only once it bears.
+    /// fires only once it bears. With nothing to aim at and its reload done,
+    /// it turns back toward the map centre unless its kind holds its bearing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gun_heading: Option<u8>,
 }
@@ -3541,18 +3543,24 @@ impl State {
         self.insert_building(building)
     }
 
+    /// The bearing from `point` to the map's centre.
+    pub(crate) fn centre_bearing(&self, point: Vec2Fx) -> u8 {
+        chassis::compass::heading_of(
+            Vec2Fx::new(
+                Fx::from_num(self.map.width()) / 2,
+                Fx::from_num(self.map.height()) / 2,
+            ) - point,
+        )
+    }
+
     /// A complete, full-health building with the next id, not yet placed.
     fn mint_building(&mut self, player: PlayerId, kind: BuildingKind, anchor: TilePos) -> Building {
         let id = BuildingId(self.next_building_id);
         self.next_building_id += 1;
         // Decks and guns start toward the map centre, as units face on
         // spawn, so mirrored works come about in mirrored time.
-        let facing_centre = chassis::compass::heading_of(
-            Vec2Fx::new(
-                Fx::from_num(self.map.width()) / 2,
-                Fx::from_num(self.map.height()) / 2,
-            ) - crate::geometry::footprint_center(anchor, kind.size()),
-        );
+        let facing_centre =
+            self.centre_bearing(crate::geometry::footprint_center(anchor, kind.size()));
         Building {
             id,
             player,

@@ -86,6 +86,7 @@ impl HomeScreen {
             )];
             lines.extend_from_slice(self.menu.lines());
             self.menu = Menu::new("AFTERMINE", lines);
+            self.menu.heading = crate::menu::Heading::Wordmark;
             // A host's name and a map's together outgrow the usual row.
             self.menu.wide = true;
         }
@@ -105,16 +106,18 @@ impl HomeScreen {
             .into_iter()
             .chain([
                 ("Play", Out::Play),
-                ("Join Match", Out::Join),
+                ("Join match", Out::Join),
                 ("Tutorial", Out::Tutorial),
-                ("Saves & Replays", Out::Replays),
+                ("Saves & replays", Out::Replays),
                 ("Roster", Out::Roster),
                 ("Settings", Out::Settings),
             ])
             .chain(quit.then_some(("Quit", Out::Quit)))
             .map(|(label, out)| (Label::from(label), out));
+        let mut menu = Menu::rows("AFTERMINE", rows);
+        menu.heading = crate::menu::Heading::Wordmark;
         Self {
-            menu: Menu::rows("AFTERMINE", rows),
+            menu,
             catalog_ready: false,
             rejoin: None,
         }
@@ -126,7 +129,7 @@ impl HomeScreen {
         reason = "other screens answer this from their state"
     )]
     pub fn subtitle(&self) -> &'static str {
-        "machines eating a dead world"
+        "Machines eating a dead world"
     }
 
     /// Applies a frame's events.

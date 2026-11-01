@@ -735,6 +735,12 @@ impl BuildingKind {
         self.base_stats().can_fight()
     }
 
+    /// Whether an idle gun of this kind turns back to its rest. A Bastion's
+    /// traverse is too slow to give up its last bearing.
+    pub const fn gun_rests(self) -> bool {
+        !matches!(self, BuildingKind::Bastion)
+    }
+
     /// The experimental a cradle of this kind assembles, if it is one.
     pub const fn assembles(self) -> Option<UnitKind> {
         match self {

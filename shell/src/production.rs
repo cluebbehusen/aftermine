@@ -75,7 +75,7 @@ impl Production {
             reason: None,
         };
         if !self.selected.accepts {
-            batch.reason = Some("production unavailable".into());
+            batch.reason = Some("you are eliminated".into());
             return Some(batch);
         }
         if candidates
@@ -129,7 +129,7 @@ impl Production {
             reasons.push(if batch.total == 1 {
                 format!("needs {} scrap", kind.stats().cost)
             } else {
-                "insufficient scrap".into()
+                "not enough scrap".into()
             });
         }
         if !reasons.is_empty() {
@@ -154,10 +154,7 @@ impl Production {
                 desc.extend(weapon_lines(kind));
                 desc.extend(point_defense_line(kind));
                 if batch.total > 1 {
-                    desc.push(format!(
-                        "One per factory: {count} of {} can queue now.",
-                        batch.total
-                    ));
+                    desc.push(format!("{count} of {} can queue now.", batch.total));
                     desc.push(format!(
                         "{} scrap each; {} scrap total.",
                         kind.stats().cost,
@@ -252,7 +249,6 @@ impl Production {
                     "{} to cancel one; waiting units first. Full refund.",
                     crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
                 ),
-                "Select one factory to inspect its exact queue.".into(),
             ];
             if let Some(ticks) = next_ticks {
                 desc.push(if ticks == 0 {
@@ -263,21 +259,6 @@ impl Production {
                         crate::panel::tick_time_label(ticks)
                     )
                 });
-            }
-            if let Some((id, index)) = self.cancel_target(kind) {
-                let b = self
-                    .selected
-                    .buildings
-                    .iter()
-                    .find(|b| b.id == id)
-                    .expect("selected cancel target");
-                desc.push(format!(
-                    "Next cancel: {} at {},{} (slot {}).",
-                    entity_name(b.kind.name()),
-                    b.anchor.x,
-                    b.anchor.y,
-                    index + 1
-                ));
             }
             cards.push(Card {
                 icon: CardIcon::Unit(kind),

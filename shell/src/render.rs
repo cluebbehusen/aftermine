@@ -552,6 +552,21 @@ pub(crate) fn draw_with_performance(
         performance,
         &hud::window_measure,
     );
+    draw_world(game, sprites, input);
+    draw_hud(game, sprites, input, bindings, &hud, performance);
+    if game.presentation.overlay {
+        draw_overlay_info(game);
+    }
+    draw_minimap(game);
+    chrome::draw_ghost_controls(game, input);
+    draw_group_press_ring(input);
+    draw_result_overlay(game);
+    draw_panel_tooltip(game, input);
+}
+
+/// The battlefield and the player's marks on it, with no chrome, for a
+/// match seen behind a menu.
+pub(crate) fn draw_world(game: &crate::game::Scene<'_>, sprites: &Sprites, input: &InputState) {
     let ground = ground::Ground::of(game);
     let view = ground::GroundView::live(&game.presentation.camera);
     let mut ground_cache = game.presentation.ground_cache.borrow_mut();
@@ -605,15 +620,6 @@ pub(crate) fn draw_with_performance(
     draw_touch_box(game, input);
     draw_long_press_ring(input);
     draw_salvage_tooltip(game, input);
-    draw_hud(game, sprites, input, bindings, &hud, performance);
-    if game.presentation.overlay {
-        draw_overlay_info(game);
-    }
-    draw_minimap(game);
-    chrome::draw_ghost_controls(game, input);
-    draw_group_press_ring(input);
-    draw_result_overlay(game);
-    draw_panel_tooltip(game, input);
 }
 
 const FOG_UNEXPLORED: Color = color_u8!(13, 13, 17, 255);

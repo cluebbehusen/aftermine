@@ -370,7 +370,10 @@ Buildings count as ground targets, and cooldowns are stored per weapon slot.
 
 A weapon fires only once its bearing is within a small tolerance of the target.
 Turret headings, gun bearings and mounted-gun bearings are serialized, and
-validation refuses one on a kind without that mount.
+validation refuses one on a kind without that mount. A gun with nothing to aim
+at and its reload done turns back to its rest at its usual rate: a defense's
+toward the map centre, a ground turret's to the hull's nose, and a mounted gun's
+to the bearing it starts at. A Bastion's gun holds its bearing instead.
 
 `AttackTarget` resolves through team knowledge to a visible entity, a remembered
 or public building, or a radar contact. Explicit attacks may approach without

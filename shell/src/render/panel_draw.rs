@@ -264,7 +264,7 @@ fn draw_rally_control(card: &crate::panel::Card, rect: Rect, scale: f32) {
         let available = rect.w - 6.0 * scale;
         let mut font_size = size * scale;
         let mut measured = measure_text(text, None, numeric::font_size(font_size), 1.0);
-        while measured.width > available && font_size > 8.0 * scale {
+        while measured.width > available && font_size > crate::theme::Type::Caption.at(scale) {
             font_size -= 0.5 * scale;
             measured = measure_text(text, None, numeric::font_size(font_size), 1.0);
         }
@@ -647,7 +647,12 @@ fn draw_catalog(
                 &label,
                 x,
                 band.y + 20.0 * s,
-                crate::typography::fit(&label, caption, right - x - 2.0 * s, 8.0 * s),
+                crate::typography::fit(
+                    &label,
+                    caption,
+                    right - x - 2.0 * s,
+                    crate::theme::Type::Caption,
+                ),
                 TEXT_SECONDARY,
             );
         }
@@ -760,7 +765,7 @@ fn draw_palette_cell(
         &card.title,
         crate::theme::Type::Body.at(s),
         width,
-        crate::theme::Type::Caption.at(s),
+        crate::theme::Type::Caption,
     );
     let measure = |text: &str| measure_text(text, None, numeric::font_size(size), 1.0);
     let names = card_title_lines(&card.title, |text| measure(text).width, width);

@@ -190,7 +190,7 @@
   }
  ],
  "meta": {
-  "hook": "The middle is a grid of rock blocks with seven lanes across and three aisles between them, so push a lane and cut across an aisle to switch.",
+  "hook": "The middle is a grid of rock blocks with seven lanes across and three aisles between them.",
   "size": "medium",
   "mode": "2v2",
   "wealth": "lean",

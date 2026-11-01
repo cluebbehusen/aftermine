@@ -117,8 +117,7 @@ pub(super) const COMMAND: [Step; 5] = [
     },
 ];
 
-pub(super) const COMMAND_OUTRO: &str =
-    "You can now move the camera, select units, move them, and attack.";
+pub(super) const COMMAND_OUTRO: &str = "";
 
 const HAUL: &str = "The Harvester collects scrap at the pile and brings it back to your \
     Foundry. The SCRAP counter at the top left shows how much you have.";
@@ -222,9 +221,8 @@ pub(super) const SCRAP: [Step; 5] = [
     },
 ];
 
-pub(super) const SCRAP_OUTRO: &str = "You can now collect scrap, train Harvesters, and restore \
-    Extractors. In a match, keep every Harvester busy and restore Extractors early to grow your \
-    income.";
+pub(super) const SCRAP_OUTRO: &str =
+    "In a match, keep every Harvester busy and restore Extractors early.";
 
 const MORE_BUILDERS: &str = "More Harvesters on one site build it faster. To add one, select it \
     and right-click the site.";
@@ -355,8 +353,7 @@ pub(super) const BUILD: [Step; 5] = [
     },
 ];
 
-pub(super) const BUILD_OUTRO: &str = "You can now build, place several structures at once, set \
-    rally points, and use control groups.";
+pub(super) const BUILD_OUTRO: &str = "";
 
 const RAID: &str = "Five enemy Scuttlers are coming for your Harvesters. Scuttlers are fast \
     and cheap and kill Harvesters quickly, but a Sentinel beats a Scuttler one on one.";
@@ -378,8 +375,8 @@ const RAMP: &str = "A ramp at the west end of the cliff joins both levels, and u
     can shoot up and down. Send your army up the ramp to fight.";
 const WARDEN: &str = "An enemy Warden is heading for your base. It has 340 HP, more than \
     five Sentinels together.";
-const BESIDE_TURRETS: &str = "Running units move without stopping to fight, so nothing \
-    holds them up on the way. Then fight the Warden beside your Turrets.";
+const BESIDE_TURRETS: &str = "Running units move without stopping to fight. Then fight the \
+    Warden beside your Turrets.";
 const OUTPOST: &str = "The enemy outpost in the east has a Fabricator and a Turret. Destroy both.";
 
 pub(super) const FIGHT: [Step; 5] = [
@@ -513,8 +510,7 @@ pub(super) const FIGHT_SQUADS: [Squad; 4] = [
     },
 ];
 
-pub(super) const FIGHT_OUTRO: &str = "You can now choose between Hunt, Advance, and Run, use \
-    each unit for what it does best, and fight around rock and high ground.";
+pub(super) const FIGHT_OUTRO: &str = "";
 
 const FOG: &str = "Ground you have never seen is dark. Ground you have seen but can't see \
     right now is dimmed. It shows enemy structures as you last saw them, but not enemy units.";
@@ -750,5 +746,4 @@ pub(super) const SUSTAIN_SQUADS: [Squad; 1] = [Squad {
     }),
 }];
 
-pub(super) const SUSTAIN_OUTRO: &str = "You can now scout, use radar, defend against aircraft, \
-    repair, and collect wrecks. That completes the lessons.";
+pub(super) const SUSTAIN_OUTRO: &str = "That completes the lessons.";

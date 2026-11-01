@@ -190,7 +190,7 @@
   }
  ],
  "meta": {
-  "hook": "A pit band splits north from south with three crossings, so each ally guards a flank crossing or both push the center one.",
+  "hook": "A pit band splits north from south with three crossings.",
   "size": "small",
   "mode": "2v2",
   "wealth": "lean",

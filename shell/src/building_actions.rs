@@ -368,7 +368,7 @@ impl SelectedBuildings {
                 enabled: ready > 0,
                 why: (ready == 0).then(|| "no warhead loaded".into()),
                 desc: vec![
-                    "Pick any tile, seen or not. Each pick fires the salvo size the banner shows; the decks turn to face it, then fire.".into(),
+                    "Pick any spot, seen or not.".into(),
                     "Stop calls off a strike that has not launched.".into(),
                 ],
                 progress: None,
@@ -378,7 +378,7 @@ impl SelectedBuildings {
         }
         let order = self.round_order();
         let mut desc = vec![format!(
-            "One {noun}, paid now; built one at a time in {}.",
+            "Built one at a time in {}.",
             tick_time_label(stats.round_ticks)
         )];
         let fill = self.fill().filter(|fill| fill.wanted > 1);
@@ -501,7 +501,7 @@ impl SelectedBuildings {
             reason: None,
         };
         if !self.accepts {
-            batch.reason = Some("structure orders unavailable".into());
+            batch.reason = Some("you are eliminated".into());
             return Some(batch);
         }
         let mut bank = self.scrap;
@@ -559,11 +559,14 @@ impl SelectedBuildings {
                 action: CardAction::ArmRally,
                 enabled: true,
                 why: None,
-                desc: vec![
-                    format!("Set one destination for {} producers.", producers.len()),
-                    "A scrap rally sends new Harvesters straight to work;".into(),
-                    "a friendly unit has every new unit escort it.".into(),
-                ],
+                desc: (producers.len() > 1)
+                    .then(|| format!("Set one rally point for {}.", producers.len()))
+                    .into_iter()
+                    .chain([
+                        "A scrap rally sends new Harvesters straight to work;".to_string(),
+                        "a friendly unit has every new unit escort it.".to_string(),
+                    ])
+                    .collect(),
                 progress: None,
                 autocast: None,
                 hold: None,
@@ -576,7 +579,7 @@ impl SelectedBuildings {
                 action: CardAction::ClearRally,
                 enabled: any_rally,
                 why: (!any_rally).then(|| "no rally points set".into()),
-                desc: vec!["Return new units to their producer doors.".into()],
+                desc: vec!["New units wait at the structure.".into()],
                 progress: None,
                 autocast: None,
                 hold: None,
@@ -594,7 +597,7 @@ impl SelectedBuildings {
                 action: CardAction::ScrapSites,
                 enabled: true,
                 why: None,
-                desc: vec!["Abandon fresh construction sites; full refund before work starts, partial refund afterward.".into(), "Committed upgrades cannot be cancelled.".into()],
+                desc: vec!["Abandon fresh construction sites; full refund before work starts, partial refund afterward.".into()],
                 progress: None,
                 autocast: None,
                 hold: None,
@@ -614,7 +617,7 @@ impl SelectedBuildings {
                 action: CardAction::None,
                 enabled: false,
                 why: Some("upgrades cannot be cancelled".into()),
-                desc: vec!["The structure returns to service when the upgrade finishes.".into()],
+                desc: Vec::new(),
                 progress: b.stats().construction.map(|c| {
                     (b.construction_progress().unwrap_or(0) as f32 / c.build_ticks.max(1) as f32)
                         .clamp(0.0, 1.0)
@@ -737,16 +740,16 @@ pub(crate) fn fill_rounds(game: &mut Game) {
     for &building in &batch.recipients {
         game.issue(Command::OrderRound { building });
     }
-    let plural = |n: usize| if n == 1 { "" } else { "s" };
-    game.presentation.toast(if batch.wanted == 0 {
-        "Magazines are full".to_string()
+    if batch.wanted == 0 {
+        game.presentation.toast("Magazines are full");
     } else if bought == 0 {
-        format!("Needs {cost} scrap")
+        game.presentation.toast(format!("Needs {cost} scrap"));
     } else if bought < batch.wanted {
-        format!("Ordered {bought} of {} {noun}s: out of scrap", batch.wanted)
-    } else {
-        format!("Ordered {bought} {noun}{}", plural(bought))
-    });
+        game.presentation.toast(format!(
+            "Ordered {bought} of {} {noun}s: out of scrap",
+            batch.wanted
+        ));
+    }
 }
 
 pub(crate) fn scrap_sites(game: &mut Game) {

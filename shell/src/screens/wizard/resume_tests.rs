@@ -359,7 +359,7 @@ fn the_saved_players_keep_their_seats_while_the_lobby_cannot_open() {
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Stay);
     assert_eq!(
         w.notice.as_deref(),
-        Some("Players rejoin through the LAN lobby"),
+        Some("Switch to LAN to resume this match"),
         "nobody is handed to a bot behind the host's back"
     );
 }

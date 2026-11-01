@@ -82,7 +82,7 @@ fn an_unplayed_match_without_incidents_has_nothing_to_export() {
     assert!(
         finished(&mut job)
             .unwrap_err()
-            .contains("no match or incident")
+            .contains("Nothing to export")
     );
     assert!(!root.join("reports").exists());
     std::fs::remove_dir_all(root).unwrap();

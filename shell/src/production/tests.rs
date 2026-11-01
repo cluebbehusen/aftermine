@@ -94,7 +94,7 @@ fn grouped_production_spends_once_per_factory_in_id_order_and_projects_pending_c
         game.presentation
             .toasts
             .iter()
-            .any(|t| t.text == "Queued 1 of 2: insufficient scrap")
+            .any(|t| t.text == "Queued 1 of 2: not enough scrap")
     );
     let (cards, counts) = Production::inspect(&game.view()).collective_queue();
     assert_eq!(cards[0].title, "Harvester x 3");

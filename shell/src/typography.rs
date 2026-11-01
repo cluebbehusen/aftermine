@@ -78,13 +78,16 @@ pub(crate) fn elide_to_width(text: &str, max_width: f32, measure: &impl Fn(&str)
 }
 
 /// The size at which body-face `text` fits `width`: `size` when it
-/// already fits, else shrunk to fit, but never below `floor`.
-pub(crate) fn fit(text: &str, size: f32, width: f32, floor: f32) -> f32 {
+/// already fits, else shrunk to fit, but never below `floor`, which comes from
+/// the type scale so nothing shrinks past what the scale can read.
+pub(crate) fn fit(text: &str, size: f32, width: f32, floor: crate::theme::Type) -> f32 {
     let measured = measure_text(text, None, numeric::font_size(size), 1.0).width;
     if measured <= width {
         size
     } else {
-        (size * width / measured).max(floor)
+        (size * width / measured)
+            .max(floor.at(crate::render::ui_scale()))
+            .min(size)
     }
 }
 
@@ -107,6 +110,9 @@ pub(crate) fn draw(text: &str, x: f32, y: f32, size: f32, color: Color) {
         );
     });
 }
+
+#[cfg(test)]
+mod casing_tests;
 
 #[cfg(test)]
 mod tests;

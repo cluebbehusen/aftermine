@@ -43,8 +43,8 @@ impl Tab {
 
     fn label(self) -> &'static str {
         match self {
-            Tab::Saves => "SAVES",
-            Tab::Replays => "REPLAYS",
+            Tab::Saves => "Saves",
+            Tab::Replays => "Replays",
         }
     }
 
@@ -269,7 +269,7 @@ impl Shelf {
         } else if self.menu.lines().is_empty() {
             self.tab().empty().to_string()
         } else if self.arming.is_some() && self.arming == self.menu.value().copied() {
-            "press {delete} again to delete this record".to_string()
+            "Press {delete} again to delete".to_string()
         } else {
             self.menu
                 .value()

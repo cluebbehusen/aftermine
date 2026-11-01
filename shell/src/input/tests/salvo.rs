@@ -231,7 +231,7 @@ fn shift_turns_order_into_fill_and_a_shift_click_fills_every_empty_spire() {
     apply_events(&mut game, &mut input, &click(at.x, at.y));
     apply_events(&mut game, &mut input, &[key_up(Key::Shift)]);
     assert_eq!(orders(&game), ids[1..].to_vec());
-    assert_eq!(last_toast(&game), Some("Ordered 3 warheads"));
+    assert_eq!(last_toast(&game), None, "a full order needs no toast");
     // Released, the card is a single Order again.
     let panel = crate::panel::build_for_input(&game.view(), &classic(), &input).unwrap();
     assert!(panel.cards.iter().any(|card| card.title == "Order"));

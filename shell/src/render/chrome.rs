@@ -24,7 +24,10 @@ fn paused_status(key: &str, keyless: bool) -> String {
 fn alert_badge_text(kind: crate::game::AlertKind, key: &str, keyless: bool) -> String {
     let what = match kind {
         crate::game::AlertKind::Attack => "under attack".to_string(),
-        crate::game::AlertKind::Assembly(machine) => format!("enemy {} assembling", machine.name()),
+        crate::game::AlertKind::Assembly(machine) => format!(
+            "enemy {} assembling",
+            crate::typography::entity_name(machine.name())
+        ),
     };
     if keyless || key.is_empty() {
         what
@@ -45,10 +48,10 @@ fn idle_badge_text(idle: usize, key: &str, keyless: bool) -> String {
 /// The concede banner's way to the menu.
 fn concede_hint(hands: crate::platform::Hands) -> &'static str {
     match (hands.touch(), hands.keys) {
-        (false, true) => "your team fights on | {back} for options",
-        (false, false) => "your team fights on | click the menu button for options",
-        (true, true) => "your team fights on | {back} or tap the menu button for options",
-        (true, false) => "your team fights on | tap the menu button for options",
+        (false, true) => "your team fights on | {back} menu",
+        (false, false) => "your team fights on | click the menu button",
+        (true, true) => "your team fights on | {back} or tap the menu button",
+        (true, false) => "your team fights on | tap the menu button",
     }
 }
 
@@ -320,7 +323,7 @@ pub(crate) fn draw_overlay(game: &crate::game::Scene<'_>, alpha: f32) {
             format!("u{} {}hp", unit.id.0, unit.hp),
             screen.x + 8.0,
             screen.y - 8.0,
-            16.0,
+            crate::theme::Type::Body.px(),
             BONE,
         );
         if let Some(path) = &unit.path {
@@ -689,7 +692,7 @@ pub(super) fn ribbon_layout(
 /// those ready.
 pub(crate) fn salvo_label(fires: usize, ready: usize) -> String {
     if ready == 0 {
-        "No warhead ready".to_string()
+        "No warhead loaded".to_string()
     } else {
         format!("Fire {fires} of {ready}")
     }
@@ -950,8 +953,8 @@ fn toast_right(viewport_w: f32, scale: f32, top: f32, bottom: f32, obstacles: &[
         - 12.0 * scale
 }
 
-/// A toast's text size and lines within `width`: shrunk from the heading
-/// size down to body size, then wrapped rather than run past `width`.
+/// A toast's text size and lines within `width`: shrunk from the label size
+/// down to body size, then wrapped rather than run past `width`.
 fn toast_lines(
     text: &str,
     width: f32,
@@ -959,7 +962,7 @@ fn toast_lines(
     measure: impl Fn(&str, f32) -> f32,
 ) -> (f32, Vec<String>) {
     let floor = crate::theme::Type::Body.at(scale);
-    let mut size = crate::theme::Type::Heading.at(scale);
+    let mut size = crate::theme::Type::Label.at(scale);
     while measure(text, size) > width && size > floor {
         size = (size - scale).max(floor);
     }
@@ -1022,7 +1025,11 @@ pub(super) fn top_bar_layout(
         .filter(|unit| unit.player == game.presentation.human)
         .count();
     let scrap = scrap.to_string();
-    let passive = format!("+{passive}/min passive");
+    let passive = if passive == 0 {
+        String::new()
+    } else {
+        format!("+{passive}/min income")
+    };
     let units = my_units.to_string();
     let keyless = !crate::platform::hands().keys;
     let idle = crate::input::idle_harvesters(game).len();
@@ -1229,10 +1236,25 @@ pub(crate) fn draw_hud(
             });
         let color = Color {
             a: fade,
-            ..crate::theme::TEXT_ALERT
+            ..match toast.tone {
+                crate::game::ToastTone::Notice => crate::theme::TEXT_PRIMARY,
+                crate::game::ToastTone::Danger => crate::theme::TEXT_ALERT,
+            }
+        };
+        let plate = Color {
+            a: crate::theme::SURFACE_CAPTION.a * fade,
+            ..crate::theme::SURFACE_CAPTION
         };
         for (index, line) in lines.iter().enumerate() {
             let at = origin(lines_below + lines.len() - 1 - index);
+            let width = measure_text(line, None, numeric::font_size(size), 1.0).width;
+            draw_rectangle(
+                at.x - 6.0 * s,
+                at.y - size,
+                width + 12.0 * s,
+                size + 6.0 * s,
+                plate,
+            );
             draw_text(line, at.x, at.y, size, color);
         }
         lines_below += lines.len();
@@ -1288,18 +1310,17 @@ pub(crate) fn draw_result_overlay(game: &crate::game::Scene<'_>) {
     }
     let s = ui_scale();
     let text = "SURRENDERED";
-    let size = crate::theme::Type::Title.at(s);
-    let dims = measure_text(text, None, numeric::font_size(size), 1.0);
-    let x = (screen_width() - dims.width) * 0.5;
+    let width = crate::menu::title_width(text);
+    let x = (screen_width() - width) * 0.5;
     let y = screen_height() * 0.38;
     draw_rectangle(
         x - 24.0 * s,
         y - 48.0 * s,
-        dims.width + 48.0 * s,
+        width + 48.0 * s,
         112.0 * s,
         PANEL,
     );
-    draw_text(text, x, y, size, DANGER);
+    crate::menu::draw_title(text, y, DANGER);
     let sub = crate::menu::binding_hint(concede_hint(crate::platform::hands()));
     let sub_dims = measure_text(
         &sub,

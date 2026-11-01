@@ -4,6 +4,7 @@
 //! attack-move that meets an enemy, or an idle gun with nothing in its arc.
 //! A hull never chases fire from beyond its guns' reach.
 
+use super::super::super::movement::{FIRING_TOLERANCE, traverse_step};
 use super::*;
 use crate::state::{AttackView, IdleFacing};
 use crate::stats::{MountStats, MountedGuns};
@@ -187,29 +188,24 @@ pub(in crate::tick::brain) struct Pick {
     aim: Vec2Fx,
 }
 
-/// The ordered target, as a gun at `pivot` would fire on it: a seen victim,
-/// or a known place to fire on blind.
-enum Ordered {
-    Seen(Target),
-    Blind(AttackView),
-}
-
-fn ordered(state: &State, id: UnitId) -> Option<Ordered> {
+/// The ordered target, as a gun would fire on it.
+fn ordered(state: &State, id: UnitId) -> Option<Mark> {
     let unit = state.unit(id).expect("caller checked");
     let Order::Attack { target, .. } = unit.order else {
         return None;
     };
     let view = state.attack_view(unit.player, target)?;
     Some(match view.entity {
-        Some(entity) => Ordered::Seen(entity),
-        None => Ordered::Blind(view),
+        Some(entity) => Mark::Seen(entity),
+        None => Mark::Blind(view),
     })
 }
 
 /// Every gun turns toward and fires on its own pick: the ordered target if
 /// it bears, else a hostile that can hit the hull, else the nearest machine,
 /// then the nearest building, each in its arc, reach and line. A gun with
-/// nothing to shoot holds its bearing. Returns each slot's pick.
+/// nothing to shoot and its reload done turns back to rest. Returns each
+/// slot's pick.
 pub(in crate::tick::brain) fn fire(
     state: &mut State,
     id: UnitId,
@@ -218,8 +214,8 @@ pub(in crate::tick::brain) fn fire(
 ) -> [Option<Pick>; crate::stats::MAX_WEAPONS] {
     let ShotBuffers { events, hits, .. } = buffers;
     let unit = state.unit(id).expect("caller checked");
-    let (pos, heading, kind, player) = (unit.pos, unit.heading, unit.kind, unit.player);
-    let stats = kind.stats();
+    let (pos, heading) = (unit.pos, unit.heading);
+    let stats = unit.kind.stats();
     let guns = stats.mounts.expect("a mounted hull");
     let ordered = ordered(state, id);
     let mut picks = [None; crate::stats::MAX_WEAPONS];
@@ -233,60 +229,55 @@ pub(in crate::tick::brain) fn fire(
                 && clear(state, pivot, aim))
             .then_some(aim)
         };
-        let order_pick = match &ordered {
-            Some(Ordered::Seen(target)) => {
-                seen(*target, target_excess(state, *target)).map(|aim| (Some(*target), aim, None))
+        let order_pick = match ordered {
+            Some(Mark::Seen(target)) => {
+                seen(target, target_excess(state, target)).map(|aim| (Mark::Seen(target), aim))
             }
-            Some(Ordered::Blind(view)) => {
+            Some(Mark::Blind(view)) => {
                 let aim = view.aim_from(pivot);
                 (weapon.targets.covers(view.domain)
                     && mount.covers(relative(pivot, aim, heading))
-                    && blind::solution(state, pivot, Domain::Air, *view, weapon))
-                .then_some((None, aim, Some(*view)))
+                    && blind::solution(state, pivot, Domain::Air, view, weapon))
+                .then_some((Mark::Blind(view), aim))
             }
             None => None,
         };
         let pick = order_pick.or_else(|| {
             ranked.iter().find_map(|(candidate, _)| {
                 seen(candidate.target, candidate.excess)
-                    .map(|aim| (Some(candidate.target), aim, None))
+                    .map(|aim| (Mark::Seen(candidate.target), aim))
             })
         });
-        let Some((victim, aim, blind_view)) = pick else {
+        let Some((mark, aim)) = pick else {
+            if state.unit(id).expect("caller checked").cooldowns[slot] == 0 {
+                let rest = crate::state::Mounts::resting(guns).bearings[slot];
+                swing(
+                    state,
+                    id,
+                    slot,
+                    mount,
+                    guns.traverse,
+                    mount.arc_offset(rest),
+                );
+            }
             continue;
         };
         picks[slot] = Some(Pick { aim });
         let aligned = traverse(state, id, slot, mount, guns.traverse, pivot, aim);
-        let unit = state.unit_mut(id).expect("caller checked");
-        if !aligned || unit.cooldowns[slot] > 0 {
+        if !aligned || state.unit(id).expect("caller checked").cooldowns[slot] > 0 {
             continue;
         }
-        unit.cooldowns[slot] = weapon.cooldown_ticks;
-        match (victim, blind_view) {
-            (Some(victim), _) => {
-                buffer_shot(state, Target::Unit(id), victim, pivot, aim, weapon, hits);
-            }
-            (None, Some(view)) => {
-                blind::buffer_blind(
-                    state,
-                    (Target::Unit(id), player),
-                    pivot,
-                    aim,
-                    view,
-                    weapon,
-                    hits,
-                );
-            }
-            (None, None) => unreachable!("a pick names a victim or a blind aim"),
-        }
-        events.push(Event::AttackHit {
-            attacker: id,
-            attacker_kind: kind,
-            weapon: slot,
-            target: victim,
-            attacker_pos: pivot,
-            target_pos: aim,
-        });
+        fire_direct(
+            state,
+            Shot {
+                gunner: Gunner::Unit { id, slot },
+                from: pivot,
+                aim,
+                mark,
+            },
+            events,
+            hits,
+        );
     }
     picks
 }
@@ -303,19 +294,31 @@ fn traverse(
     pivot: Vec2Fx,
     aim: Vec2Fx,
 ) -> bool {
+    let heading = state.unit(id).expect("caller checked").heading;
+    let wanted = mount.arc_offset(relative(pivot, aim, heading));
+    swing(state, id, slot, mount, rate, wanted)
+}
+
+/// Turns the gun in `slot` toward the arc offset `wanted`; returns whether it
+/// bears.
+fn swing(
+    state: &mut State,
+    id: UnitId,
+    slot: usize,
+    mount: &MountStats,
+    rate: u8,
+    wanted: i16,
+) -> bool {
     let unit = state.unit_mut(id).expect("caller checked");
-    let heading = unit.heading;
     let mounts = unit.mounts.as_mut().expect("a mounted hull");
     let current = mount.arc_offset(mounts.bearings[slot]);
-    let wanted = mount.arc_offset(relative(pivot, aim, heading));
-    let step = (wanted - current).clamp(-i16::from(rate), i16::from(rate));
-    let next = current + step;
+    let next = current + traverse_step(current, wanted, rate);
     let next_byte = i8::try_from(next).expect("an arc offset stays inside the compass");
     mounts.bearings[slot] = mount
         .arc_centre
         .cast_unsigned()
         .wrapping_add_signed(next_byte);
-    (wanted - next).abs() <= 2
+    (wanted - next).abs() <= i16::from(FIRING_TOLERANCE)
 }
 
 /// An attack: the hull closes until both of its guns would reach the target

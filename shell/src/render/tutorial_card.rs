@@ -34,10 +34,10 @@ impl CardButton {
     fn label(self) -> &'static str {
         match self {
             Self::Fold | Self::Dismiss => "",
-            Self::Retry => "RETRY",
-            Self::Next => "NEXT LESSON",
-            Self::FirstMatch => "FIRST MATCH",
-            Self::Lessons => "LESSONS",
+            Self::Retry => "Retry",
+            Self::Next => "Next lesson",
+            Self::FirstMatch => "First match",
+            Self::Lessons => "Lessons",
         }
     }
 }
@@ -236,10 +236,13 @@ pub(crate) fn layout(
                 Course::Lesson(_) => "Next lesson",
                 Course::FirstMatch => "Next",
             };
-            vec![
+            [
                 lesson.outro().to_string(),
-                format!("{kind}: {}. You will {}.", next.title(), next.summary()),
+                format!("{kind}: {}.", next.title()),
             ]
+            .into_iter()
+            .filter(|paragraph| !paragraph.is_empty())
+            .collect()
         };
         let mut gap = 8.0 * s;
         for paragraph in &paragraphs {
@@ -321,13 +324,6 @@ pub(crate) fn tip_layout(
         cursor: y + pad,
         lines: Vec::new(),
     };
-    column.push(
-        "MATCH TIP".to_string(),
-        Face::Display,
-        Type::Small.at(s),
-        TEXT_ACCENT,
-        0.0,
-    );
     column.push(
         tip.title().to_string(),
         Face::Display,

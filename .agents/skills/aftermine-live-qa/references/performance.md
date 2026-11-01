@@ -120,7 +120,7 @@ driver live ui
    not combine automation startup with `--replay` or use real player save
    directories for benchmark duplication/deletion. Keep the QA profile until its
    reproductions and measurements are no longer needed.
-2. Through Pause → Save Game, produce an early and a representative late save.
+2. Through Pause → Save game, produce an early and a representative late save.
    Record scenario, seed, profiles, tick, entity counts, file bytes, and the
    hardware/build identity. This uses the actual player-save encoder.
 3. Bracket each UI operation with `driver live performance --reset`. Exercise
