@@ -430,6 +430,9 @@ pub struct PathFollow {
     pub waypoints: Vec<TilePos>,
     /// Index of the waypoint currently steered toward.
     pub next: u32,
+    /// A route off occupied ground that friendly footprints do not bound.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub clearing: bool,
 }
 
 /// A point defender's ready charges and its progress toward the next one.
@@ -2328,6 +2331,29 @@ impl State {
         Ok(())
     }
 
+    /// What a unit's route must hold: a work endpoint within reach of its goal,
+    /// and a clearing route only on a ground chassis.
+    fn validate_route(&self, u: &Unit, path: &PathFollow) -> Result<(), StateIntegrityError> {
+        use StateIntegrityError as E;
+        let stats = u.kind.stats();
+        let id = u.id;
+        if let Some(point) = path.final_point
+            && (!point_inside_envelope(point)
+                || (point.x - path.goal.center().x).abs() > const { Fx::lit("1.5") }
+                || (point.y - path.goal.center().y).abs() > const { Fx::lit("1.5") }
+                || self.map.tile(path.goal).is_none()
+                || path.waypoints.last() != Some(&path.goal)
+                || path.next as usize >= path.waypoints.len()
+                || (u.domain() != crate::stats::Domain::Ground && stats.turn_rate > 0))
+        {
+            return Err(E::InvalidWorkEndpoint(id));
+        }
+        if path.clearing && stats.domain != crate::stats::Domain::Ground {
+            return Err(E::InvalidClearingRoute(id));
+        }
+        Ok(())
+    }
+
     fn validate_unit(&self, u: &Unit) -> Result<(), StateIntegrityError> {
         use StateIntegrityError as E;
         let Unit {
@@ -2415,17 +2441,8 @@ impl State {
         {
             return Err(E::InvalidUnloading(id));
         }
-        if let Some(path) = path
-            && let Some(point) = path.final_point
-            && (!point_inside_envelope(point)
-                || (point.x - path.goal.center().x).abs() > const { Fx::lit("1.5") }
-                || (point.y - path.goal.center().y).abs() > const { Fx::lit("1.5") }
-                || self.map.tile(path.goal).is_none()
-                || path.waypoints.last() != Some(&path.goal)
-                || path.next as usize >= path.waypoints.len()
-                || (u.domain() != crate::stats::Domain::Ground && stats.turn_rate > 0))
-        {
-            return Err(E::InvalidWorkEndpoint(id));
+        if let Some(path) = path {
+            self.validate_route(u, path)?;
         }
         if *progress > PROGRESS_ENVELOPE {
             return Err(E::UnitProgressOutOfRange(id));
@@ -3351,6 +3368,16 @@ impl State {
         self.ground_terrain().building_blocks(pos)
     }
 
+    /// Whether a footprint hostile to `player` closes `pos`. A body driving
+    /// off occupied ground may cross any other.
+    pub(crate) fn hostile_footprint_at(&self, player: PlayerId, pos: TilePos) -> bool {
+        self.buildings_at(pos).any(|building| {
+            !building.kind.is_stealthy()
+                && !building.provisional()
+                && self.hostile(player, building.player)
+        })
+    }
+
     /// Ground passability borrowed apart from the unit table, so a movement
     /// pass can move bodies while consulting the same terrain and building
     /// occupancy [`State::passable`] reads.
@@ -3874,6 +3901,9 @@ pub enum StateIntegrityError {
     /// A precise ground-work endpoint does not belong to its final waypoint.
     #[error("unit {0} carries an invalid work endpoint")]
     InvalidWorkEndpoint(UnitId),
+    /// Only a ground chassis drives a route across footprints.
+    #[error("unit {0} follows a clearing route without a ground chassis")]
+    InvalidClearingRoute(UnitId),
     /// A stored aircraft displacement is not physically bounded.
     #[error("unit {0} carries invalid airborne motion")]
     InvalidAirMotion(UnitId),

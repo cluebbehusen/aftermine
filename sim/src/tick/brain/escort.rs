@@ -276,6 +276,7 @@ fn follow(state: &mut State, reach: &mut Reach, party: &Party, id: UnitId) {
             goal: endpoint,
             waypoints,
             next: 0,
+            clearing: false,
         });
     state.unit_mut(id).expect("caller checked").path = path;
 }

@@ -32,7 +32,7 @@ fn pocketed_founder_state() -> State {
 }
 
 #[test]
-fn enclosed_founder_relocation_respects_a_map_half_turn() {
+fn an_enclosed_founder_drives_off_along_a_map_half_turn() {
     use aftermine_sim::stats::BuildingKind;
     let scenario = pocketed_founder_scenario();
     let mut rotated = scenario.clone();
@@ -54,36 +54,39 @@ fn enclosed_founder_relocation_respects_a_map_half_turn() {
         unit.x = 15 - unit.x;
         unit.y = 11 - unit.y;
     }
-    let relocate = |scenario: Scenario, anchor| {
-        let state = scenario.build().unwrap();
+    let drive = |scenario: Scenario, anchor| {
+        let mut state = scenario.build().unwrap();
         let founder = state.units()[0].id;
-        let before = state.unit(founder).unwrap().tile();
-        let after = state.inspect_command_phase(
-            &[cmd(
-                0,
-                Command::Build {
-                    units: vec![founder],
-                    kind: BuildingKind::Fabricator,
-                    anchor,
-                    queue: false,
-                    defer: false,
-                },
-            )],
-            |view| view.unit(founder).unwrap().tile(),
-        );
-        assert_ne!(
-            before, after,
-            "the enclosed founder is relocated on acceptance"
-        );
-        after
+        state.tick(&[cmd(
+            0,
+            Command::Build {
+                units: vec![founder],
+                kind: BuildingKind::Fabricator,
+                anchor,
+                queue: false,
+                defer: false,
+            },
+        )]);
+        (0..40)
+            .map(|_| {
+                state.tick(&[]);
+                state.unit(founder).unwrap().tile()
+            })
+            .collect::<Vec<_>>()
     };
-    let original = relocate(scenario, TilePos::new(5, 3));
-    let mirrored = relocate(rotated, TilePos::new(9, 7));
-    assert_eq!(mirrored, TilePos::new(15 - original.x, 11 - original.y));
+    let original = drive(scenario, TilePos::new(5, 3));
+    let mirrored = drive(rotated, TilePos::new(9, 7));
+    assert!(
+        original.iter().any(|tile| *tile != original[0]),
+        "the founder drove off"
+    );
+    for (left, right) in original.iter().zip(&mirrored) {
+        assert_eq!(*right, TilePos::new(15 - left.x, 11 - left.y));
+    }
 }
 
 #[test]
-fn a_pocketed_canonical_founder_uses_the_existing_make_way_fallback() {
+fn a_pocketed_canonical_founder_drives_off_across_its_site() {
     use aftermine_sim::stats::BuildingKind;
     let mut state = pocketed_founder_state();
     let founder = state.units()[0].id;
@@ -110,7 +113,10 @@ fn a_pocketed_canonical_founder_uses_the_existing_make_way_fallback() {
         .iter()
         .find(|b| b.anchor == anchor)
         .expect("site accepted");
-    assert!(!site.contains(state.unit(founder).unwrap().tile()));
+    assert!(
+        site.contains(state.unit(founder).unwrap().tile()),
+        "the founder does not relocate on acceptance"
+    );
     assert!(
         matches!(state.unit(founder).unwrap().order, Order::Build { site: id } if id == site.id)
     );
@@ -1767,9 +1773,9 @@ fn a_rejected_under_feet_build_leaves_no_trace_on_the_hash() {
     // QueueFull is the one rejection that fires after place_site: fill
     // the builder's program to the cap, then order a queued build
     // under its feet. The whole tick must leave the state exactly
-    // where an empty tick would - the crew draft and the last-resort
-    // perimeter deal run only after the last rejection path, or a
-    // refused command would leave a mark on the hash.
+    // where an empty tick would - the crew draft runs only after the
+    // last rejection path, or a refused command would leave a mark on
+    // the hash.
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 5, 6)])
         .build()
         .unwrap();
@@ -1813,13 +1819,12 @@ fn a_rejected_under_feet_build_leaves_no_trace_on_the_hash() {
 }
 
 #[test]
-fn a_walled_in_machine_takes_the_instant_deal() {
+fn a_walled_in_machine_drives_across_the_site() {
     use aftermine_sim::stats::BuildingKind;
     // A rock pocket seals one footprint tile: the machine standing
-    // there has NO escape route once the site claims the ground, so
-    // it takes the last-resort perimeter deal on the command tick —
-    // nothing may end up inside a finished building. The builder,
-    // whose side is open, walks like anyone else.
+    // there has no open way off once the site claims the ground, so it
+    // drives across the site, never relocating. The builder, whose side
+    // is open, walks like anyone else.
     let scenario = Scenario::from_json(
         &serde_json::json!({
             "name": "Pocket Yard",
@@ -1867,11 +1872,20 @@ fn a_walled_in_machine_takes_the_instant_deal() {
     let (w, h) = BuildingKind::Fabricator.size();
     let inside =
         |t: TilePos| t.x >= anchor.x && t.x < anchor.x + w && t.y >= anchor.y && t.y < anchor.y + h;
+    let step_cap = chassis::fx::Fx::lit("0.5");
+    let mut prev = state.unit(sealed).unwrap().pos;
+    assert!(inside(state.unit(sealed).unwrap().tile()));
+    for tick in 0..120u32 {
+        state.tick(&[]);
+        let now = state.unit(sealed).unwrap().pos;
+        assert!(
+            now.dist(prev) <= step_cap,
+            "the machine jumped at tick {tick}"
+        );
+        prev = now;
+    }
     let t = state.unit(sealed).unwrap().tile();
-    assert!(
-        !inside(t),
-        "the routeless machine was dealt off the footprint immediately (at {t:?})"
-    );
+    assert!(!inside(t), "the machine drove off the footprint (at {t:?})");
     // And the site stands up over the whole affair.
     let events = run_until(&mut state, 600, |_, events| {
         events
@@ -1879,6 +1893,268 @@ fn a_walled_in_machine_takes_the_instant_deal() {
             .any(|e| matches!(e, Event::BuildingCompleted { .. }))
     });
     assert!(!events.is_empty(), "the site completes");
+}
+
+/// A 2x2 site claimed under a parked unit's corner tile, with both of that
+/// tile's exits closed on the same tick: it has no open way off.
+fn sealed_on_a_site(kind: UnitKind) -> (State, UnitId) {
+    use aftermine_sim::stats::BuildingKind;
+    let mut scenario = open_arena(
+        30,
+        24,
+        vec![unit(0, UnitKind::Harvester, 12, 8), unit(0, kind, 19, 14)],
+    );
+    scenario.players[0].scrap = 5_000;
+    let mut state = scenario.build().unwrap();
+    let (builder, sealed) = (state.units()[0].id, state.units()[1].id);
+    let site = |kind, x, y| {
+        cmd(
+            0,
+            Command::Build {
+                units: vec![builder],
+                kind,
+                anchor: TilePos::new(x, y),
+                queue: true,
+                defer: false,
+            },
+        )
+    };
+    let report = state.tick(&[
+        site(BuildingKind::Fabricator, 18, 13),
+        site(BuildingKind::Barricade, 20, 14),
+        site(BuildingKind::Barricade, 19, 15),
+    ]);
+    assert!(
+        !report
+            .events
+            .iter()
+            .any(|e| matches!(e, Event::CommandRejected { .. }))
+    );
+    (state, sealed)
+}
+
+#[test]
+fn a_unit_with_its_exits_closed_drives_off_the_site() {
+    for kind in [
+        UnitKind::Surveyor,
+        UnitKind::Sentinel,
+        UnitKind::Breaker,
+        UnitKind::Piledriver,
+        UnitKind::Avalanche,
+    ] {
+        let (mut state, sealed) = sealed_on_a_site(kind);
+        assert!(!state.passable(state.unit(sealed).unwrap().tile()));
+        let step_cap = chassis::fx::Fx::lit("0.5");
+        let mut prev = state.unit(sealed).unwrap().pos;
+        for tick in 0..200u32 {
+            state.tick(&[]);
+            let now = state.unit(sealed).unwrap().pos;
+            assert!(now.dist(prev) <= step_cap, "{kind:?} jumped at tick {tick}");
+            prev = now;
+            state.validate_invariants().unwrap();
+        }
+        let unit = state.unit(sealed).unwrap();
+        assert!(state.passable(unit.tile()), "{kind:?} left occupied ground");
+        assert!(unit.path.is_none(), "{kind:?} finished its route");
+        assert_eq!(unit.order, Order::Idle);
+    }
+}
+
+#[test]
+fn a_unit_keeps_its_order_while_it_clears_a_site() {
+    let (mut state, sealed) = sealed_on_a_site(UnitKind::Sentinel);
+    let goal = TilePos::new(5, 5);
+    let mut events = state
+        .tick(&[cmd(
+            0,
+            Command::Run {
+                units: vec![sealed],
+                goal,
+                queue: false,
+            },
+        )])
+        .events;
+    for _ in 0..600 {
+        events.extend(state.tick(&[]).events);
+    }
+    assert_eq!(state.unit(sealed).unwrap().tile(), goal);
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, Event::OrderStalled { unit, .. } if *unit == sealed)),
+        "the order waited instead of giving up"
+    );
+}
+
+#[test]
+fn a_unit_walled_in_on_open_ground_stays_where_it_stands() {
+    use aftermine_sim::stats::BuildingKind;
+    let at = TilePos::new(15, 11);
+    let mut scenario = open_arena(
+        30,
+        24,
+        vec![
+            unit(0, UnitKind::Harvester, 12, 8),
+            unit(0, UnitKind::Sentinel, at.x, at.y),
+        ],
+    );
+    scenario.players[0].scrap = 5_000;
+    let mut state = scenario.build().unwrap();
+    let (builder, walled) = (state.units()[0].id, state.units()[1].id);
+    let before = state.unit(walled).unwrap().pos;
+    let wall = |dx, dy| {
+        cmd(
+            0,
+            Command::Build {
+                units: vec![builder],
+                kind: BuildingKind::Barricade,
+                anchor: at.offset(dx, dy),
+                queue: true,
+                defer: false,
+            },
+        )
+    };
+    state.tick(&[wall(-1, 0), wall(1, 0), wall(0, -1), wall(0, 1)]);
+    for _ in 0..200 {
+        state.tick(&[]);
+    }
+    state.tick(&[cmd(
+        0,
+        Command::Run {
+            units: vec![walled],
+            goal: TilePos::new(5, 5),
+            queue: false,
+        },
+    )]);
+    for _ in 0..200 {
+        state.tick(&[]);
+        assert_eq!(state.unit(walled).unwrap().pos, before);
+    }
+}
+
+#[test]
+fn a_founder_on_its_own_site_crosses_friendly_walls_but_not_hostile_ones() {
+    use aftermine_sim::stats::BuildingKind;
+    let at = TilePos::new(10, 10);
+    let drive = |owner: u8| {
+        let mut scenario = open_arena(24, 20, vec![unit(0, UnitKind::Harvester, at.x, at.y)]);
+        scenario.players[0].scrap = 5_000;
+        scenario.buildings = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+            .into_iter()
+            .map(|(dx, dy)| {
+                let wall = at.offset(dx, dy);
+                building(owner, BuildingKind::Barricade, wall.x, wall.y)
+            })
+            .collect();
+        let mut state = scenario.build().unwrap();
+        let founder = state.units()[0].id;
+        state.tick(&[cmd(
+            0,
+            Command::Build {
+                units: vec![founder],
+                kind: BuildingKind::Barricade,
+                anchor: at,
+                queue: false,
+                defer: false,
+            },
+        )]);
+        for _ in 0..100 {
+            state.tick(&[]);
+        }
+        state.unit(founder).unwrap().tile()
+    };
+    assert_ne!(drive(0), at, "own walls do not hold a founder on its site");
+    assert_eq!(drive(1), at, "enemy walls stay solid");
+}
+
+#[test]
+fn a_maw_overhanging_two_sites_drives_clear_of_them() {
+    use aftermine_sim::stats::BuildingKind;
+    let mut scenario = open_arena(
+        30,
+        24,
+        vec![
+            unit(0, UnitKind::Harvester, 12, 8),
+            unit(0, UnitKind::Maw, 15, 13),
+        ],
+    );
+    scenario.players[0].scrap = 5_000;
+    let mut state = scenario.build().unwrap();
+    let (builder, maw) = (state.units()[0].id, state.units()[1].id);
+    let site = |kind, x, y| {
+        cmd(
+            0,
+            Command::Build {
+                units: vec![builder],
+                kind,
+                anchor: TilePos::new(x, y),
+                queue: true,
+                defer: false,
+            },
+        )
+    };
+    state.tick(&[
+        site(BuildingKind::Barricade, 14, 13),
+        site(BuildingKind::Turret, 15, 14),
+    ]);
+    assert!(
+        state
+            .unit(maw)
+            .unwrap()
+            .body_tiles()
+            .any(|t| !state.passable(t))
+    );
+    for _ in 0..300 {
+        state.tick(&[]);
+    }
+    let unit = state.unit(maw).unwrap();
+    assert!(unit.body_tiles().all(|t| state.passable(t)));
+}
+
+#[test]
+fn a_braced_gun_on_a_site_stows_and_drives_off() {
+    use aftermine_sim::stats::BuildingKind;
+    let at = TilePos::new(15, 11);
+    let mut scenario = open_arena(
+        30,
+        24,
+        vec![
+            unit(0, UnitKind::Harvester, 13, 11),
+            unit(0, UnitKind::Piledriver, at.x, at.y),
+            unit(1, UnitKind::Breaker, 18, 11),
+        ],
+    );
+    scenario.players[0].scrap = 5_000;
+    let mut state = scenario.build().unwrap();
+    let (builder, gun, target) = (
+        state.units()[0].id,
+        state.units()[1].id,
+        state.units()[2].id,
+    );
+    state.tick(&[cmd(
+        0,
+        Command::Attack {
+            units: vec![gun],
+            target: Target::Unit(target).into(),
+            queue: false,
+        },
+    )]);
+    run_until(&mut state, 200, |s, _| s.unit(gun).unwrap().braces() > 0);
+    state.tick(&[cmd(
+        0,
+        Command::Build {
+            units: vec![builder],
+            kind: BuildingKind::Barricade,
+            anchor: at,
+            queue: false,
+            defer: false,
+        },
+    )]);
+    let braced = state.unit(gun).unwrap();
+    assert!(braced.braces() > 0 && !state.passable(braced.tile()));
+    run_until(&mut state, 200, |s, _| {
+        s.unit(gun).is_none_or(|unit| s.passable(unit.tile()))
+    });
 }
 
 #[test]

@@ -290,6 +290,7 @@ pub(super) fn fly_run_in(state: &mut State, id: UnitId, goal: TilePos) -> Touchd
         goal,
         waypoints,
         next: 0,
+        clearing: false,
     });
     Touchdown::Flying
 }
@@ -544,6 +545,7 @@ pub(super) fn steer(
                 goal: endpoint,
                 waypoints,
                 next: 0,
+                clearing: false,
             });
             Steer::Walking
         }
@@ -699,6 +701,7 @@ pub(super) fn approach_rect(
                 goal,
                 waypoints,
                 next: 0,
+                clearing: false,
             });
             return true;
         }

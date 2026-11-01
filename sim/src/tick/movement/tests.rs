@@ -48,6 +48,7 @@ fn contact_that_cancels_progress_drops_the_route_after_the_stall_bound() {
             goal: waypoint,
             waypoints: vec![waypoint],
             next: 0,
+            clearing: false,
         });
         state.units[slot].pos = if precise {
             Vec2Fx::new(Fx::lit("20.7"), Fx::lit("12.5"))
@@ -109,6 +110,7 @@ fn refused_steps_drop_the_route_after_the_stall_bound() {
         goal: waypoint,
         waypoints: vec![waypoint],
         next: 0,
+        clearing: false,
     });
     let travel = vec![Vec2Fx::ZERO; state.units.len()];
     let driven: Vec<Vec2Fx> = state.units.iter().map(|unit| unit.pos).collect();
@@ -145,6 +147,7 @@ fn a_route_dropped_after_stalls_were_noted_takes_its_count_with_it() {
         goal: waypoint,
         waypoints: vec![waypoint],
         next: 0,
+        clearing: false,
     });
     let mut travel = vec![Vec2Fx::ZERO; state.units.len()];
     travel[slot] = Vec2Fx::new(Fx::lit("0.1"), Fx::ZERO);
@@ -193,8 +196,8 @@ fn footprint_escape_routes_rotate_with_the_body() {
         assert!(!state.passable(from));
         assert!(!state.passable(mirror(from)));
         for heading in 0..128 {
-            let a = escape_route(&state, UnitKind::Harvester, from, heading).unwrap();
-            let b = escape_route(&state, UnitKind::Harvester, mirror(from), heading + 128).unwrap();
+            let a = open_escape(&state, UnitKind::Harvester, from, heading).unwrap();
+            let b = open_escape(&state, UnitKind::Harvester, mirror(from), heading + 128).unwrap();
             assert_eq!(b.goal, mirror(a.goal));
             assert_eq!(
                 b.waypoints,
@@ -501,12 +504,14 @@ fn corner_shortcut_pair(
             goal: next,
             waypoints: vec![waypoint, next],
             next: 0,
+            clearing: false,
         },
         PathFollow {
             final_point: None,
             goal: mirror_tile(next),
             waypoints: vec![mirror_tile(waypoint), mirror_tile(next)],
             next: 0,
+            clearing: false,
         },
     ];
     for ((unit, position), path) in state.units.iter_mut().zip([pos, mirrored_pos]).zip(paths) {
@@ -605,12 +610,14 @@ fn corner_hugging_pair(offset: Vec2Fx, heading: u8, next: u32) -> State {
             goal: *waypoints.last().unwrap(),
             waypoints: waypoints.clone(),
             next,
+            clearing: false,
         },
         PathFollow {
             final_point: None,
             goal: mirror_tile(*waypoints.last().unwrap()),
             waypoints: waypoints.iter().copied().map(mirror_tile).collect(),
             next,
+            clearing: false,
         },
     ];
     let headings = [heading, heading.wrapping_add(128)];
@@ -800,6 +807,7 @@ fn replay_center_crossing() -> State {
                 TilePos::new(22, 13),
             ],
             next: 1,
+            clearing: false,
         },
         PathFollow {
             final_point: None,
@@ -810,18 +818,21 @@ fn replay_center_crossing() -> State {
                 TilePos::new(25, 16),
             ],
             next: 1,
+            clearing: false,
         },
         PathFollow {
             final_point: None,
             goal: TilePos::new(23, 14),
             waypoints: vec![TilePos::new(23, 15), TilePos::new(23, 14)],
             next: 1,
+            clearing: false,
         },
         PathFollow {
             final_point: None,
             goal: TilePos::new(24, 15),
             waypoints: vec![TilePos::new(24, 14), TilePos::new(24, 15)],
             next: 1,
+            clearing: false,
         },
     ];
     for ((unit, pos), path) in state.units.iter_mut().zip(positions).zip(paths) {
@@ -1230,6 +1241,7 @@ fn passed_waypoint_still_rejects_a_blocked_next_step() {
         goal: TilePos::new(6, 2),
         waypoints: vec![TilePos::new(5, 2), TilePos::new(6, 2)],
         next: 0,
+        clearing: false,
     });
     let before = unit.pos;
 
@@ -1284,6 +1296,7 @@ fn diagonal_head_on_pair_passes_shared_waypoint() {
                 TilePos::new(2, 1),
             ],
             next: 0,
+            clearing: false,
         },
         PathFollow {
             final_point: None,
@@ -1296,6 +1309,7 @@ fn diagonal_head_on_pair_passes_shared_waypoint() {
                 TilePos::new(9, 6),
             ],
             next: 0,
+            clearing: false,
         },
     ];
     let positions = [

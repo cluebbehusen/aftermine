@@ -1268,6 +1268,7 @@ fn route_to_stand(
             goal,
             waypoints,
             next: 0,
+            clearing: false,
         })
     });
     let found = path.is_some();
@@ -2061,6 +2062,7 @@ fn sapper_attack(
             goal,
             waypoints,
             next: 0,
+            clearing: false,
         });
     } else {
         let unit = state.unit_mut(id).expect("caller checked");
@@ -2197,6 +2199,7 @@ fn bomber_attack(
             goal,
             waypoints: vec![goal],
             next: 0,
+            clearing: false,
         });
         return;
     }
@@ -2215,6 +2218,7 @@ fn bomber_attack(
                 goal,
                 waypoints: vec![goal],
                 next: 0,
+                clearing: false,
             });
         }
         return;
@@ -2240,6 +2244,7 @@ fn bomber_attack(
             goal: target_tile,
             waypoints: vec![waypoint],
             next: 0,
+            clearing: false,
         });
         return;
     }
@@ -2267,6 +2272,7 @@ fn bomber_attack(
                 goal: target_tile,
                 waypoints,
                 next: 0,
+                clearing: false,
             });
         } else {
             let unit = state.unit_mut(id).expect("caller checked");
@@ -2688,6 +2694,7 @@ pub(super) fn attack(
                             goal,
                             waypoints,
                             next: 0,
+                            clearing: false,
                         });
                         Ok(())
                     }

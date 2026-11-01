@@ -54,6 +54,7 @@ fn route(unit: &mut Unit, waypoints: Vec<TilePos>) {
         goal: *waypoints.last().expect("a route has a goal"),
         waypoints,
         next: 0,
+        clearing: false,
     });
 }
 

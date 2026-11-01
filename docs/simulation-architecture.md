@@ -41,9 +41,9 @@ id, seat number or row-major scan order.
 
 - Route ties use a query-oriented tile rank that reverses with the start-to-goal
   query under a half-turn.
-- Group goals, escort slots, drop points, doorsteps, production spawns, eviction
-  escapes and make-way relocation scan in the frame of the issuing unit, founder
-  or producer, fixed when the command is issued.
+- Group goals, escort slots, drop points, doorsteps, production spawns and
+  eviction escapes scan in the frame of the issuing unit, founder or producer,
+  fixed when the command is issued.
 - Equivalent workers, Repair Bay patients and perfectly stacked bodies separate
   by owner-local rank, rotated into a map-relative frame where geometry gives no
   direction.
@@ -248,9 +248,13 @@ movement ignores rock, scrap and buildings, but peaks block aircraft too.
 
 A path is advisory, not a reservation. Every ground step rechecks its next
 waypoint, because construction can claim ground after the path was planned; an
-invalid path is dropped and planned again. A site placed under a pathless ground
-body gives it a real escape path while keeping its order and work progress.
-Make-way relocation happens only after a foundation is accepted and paid.
+invalid path is dropped and planned again.
+
+A ground body left on occupied ground drives off it, keeping its order and work
+progress, and never relocates. With no open way out, or too wide to turn beside
+the footprint, it crosses friendly footprints to the nearest ground that holds
+it while its order waits. Hostile footprints stay solid. A body on open ground
+that new footprints seal in stays there: walling in a unit is legal play.
 
 Routes ignore bodies. A ground follower's lookahead never passes through a
 friendly ground body standing still, and a body whose progress is cancelled by

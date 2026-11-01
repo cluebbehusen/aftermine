@@ -205,6 +205,7 @@ fn route_first(
                 goal: candidate,
                 waypoints,
                 next: 0,
+                clearing: false,
             }));
         }
         explored = danger.last_route_exhausted();

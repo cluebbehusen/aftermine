@@ -48,6 +48,7 @@ fn against_ridge(waypoint: TilePos) -> (Unit, Map) {
         goal: waypoint,
         waypoints: vec![waypoint],
         next: 0,
+        clearing: false,
     });
     (unit, state.map.clone())
 }

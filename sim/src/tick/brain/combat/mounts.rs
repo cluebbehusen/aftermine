@@ -394,6 +394,7 @@ pub(super) fn attack(
                 goal,
                 waypoints,
                 next: 0,
+                clearing: false,
             });
         }
         None => stall_attack(state, id, resume, StallReason::NoRoute, events),

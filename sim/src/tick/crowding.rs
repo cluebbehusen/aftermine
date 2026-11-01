@@ -211,6 +211,7 @@ pub(crate) fn choose(
                 final_point: Some(candidate.point),
                 waypoints,
                 next: 0,
+                clearing: false,
             });
         }
         failed.insert(candidate.goal);

@@ -888,6 +888,7 @@ fn mirrored_haulers_replan_together_when_construction_closes_their_routes() {
             goal,
             waypoints,
             next: 0,
+            clearing: false,
         });
     }
 

@@ -4,7 +4,9 @@
 //! construction site claims its footprint when the command lands, so each
 //! step revalidates its next waypoint and drops a blocked path for the brain
 //! to plan again next tick. A pathless ground body left on claimed ground
-//! walks itself off through [`evict_claimed_ground`] rather than teleporting.
+//! drives itself off through [`evict_claimed_ground`], and never teleports:
+//! with no open way out it crosses friendly footprints on a clearing route.
+//! A body on open ground that new footprints seal in is left where it is.
 //! Collision resolution then pushes overlapping bodies apart until they fit:
 //! units are solid to each other, but tiles are only ever blocked by terrain
 //! and buildings, so pathfinding stays deadlock-free while crowds jostle.
@@ -240,23 +242,32 @@ fn passed_intermediate_waypoint(pos: Vec2Fx, waypoint: TilePos, next: TilePos, r
     offset.length_sq() <= reach * reach && offset.x * onward.x + offset.y * onward.y > Fx::ZERO
 }
 
+/// The way off occupied ground for `unit`. A small body takes the open
+/// ground when it has any. With none left, or built too wide to turn beside
+/// the footprint it overhangs, a ground body crosses footprints instead.
+fn escape_route(state: &State, unit: &crate::state::Unit) -> Option<PathFollow> {
+    let stats = unit.kind.stats();
+    let driven = stats.domain == crate::stats::Domain::Ground;
+    if driven && crate::stats::hull_excess(stats.radius) > Fx::ZERO {
+        return clearing_route(state, unit);
+    }
+    open_escape(state, unit.kind, unit.tile(), unit.heading)
+        .or_else(|| driven.then(|| clearing_route(state, unit)).flatten())
+}
+
 /// The nearest walkable escape from a body's own (possibly blocked)
 /// tile: candidates ring-scan outward in a half-turn-equivariant frame, and the
 /// first one that routes wins (A* consults `passable` for every tile except the start,
 /// so a body paths out of ground it could not enter). Bounded: any real
 /// escape begins on an adjacent open tile, so the reach only pads for
 /// corner-cut geometry.
-pub(super) fn escape_route(
+fn open_escape(
     state: &State,
     kind: crate::stats::UnitKind,
     from: TilePos,
     heading: u8,
 ) -> Option<PathFollow> {
-    let direction = if half_turn_reversed(state, from, heading) {
-        -1
-    } else {
-        1
-    };
+    let direction = scan_direction(state, from, heading);
     let radius = kind.stats().radius;
     let reach = crate::stats::hull_excess(radius).ceil().to_num::<i32>();
     for r in 1..=crate::stats::EVICT_SCAN_RADIUS + reach {
@@ -275,12 +286,84 @@ pub(super) fn escape_route(
                         goal,
                         waypoints,
                         next: 0,
+                        clearing: false,
                     });
                 }
             }
         }
     }
     None
+}
+
+/// The shortest route from `unit`'s tile to the nearest ground that holds
+/// it, across any footprint but a hostile one. The search stops at the first
+/// such ground, so it only ever crosses occupied tiles on the way there, and
+/// a pocket the body cannot otherwise leave counts as ground that holds it.
+fn clearing_route(state: &State, unit: &crate::state::Unit) -> Option<PathFollow> {
+    const NEIGHBORS: [(i32, i32); 8] = [
+        (-1, -1),
+        (0, -1),
+        (1, -1),
+        (-1, 0),
+        (1, 0),
+        (-1, 1),
+        (0, 1),
+        (1, 1),
+    ];
+    let radius = unit.kind.stats().radius;
+    let from = unit.tile();
+    let direction = scan_direction(state, from, unit.heading);
+    let width = state.map.width();
+    let crossable = |tile: TilePos| {
+        crate::geometry::hull_open(tile, radius, |t| {
+            state.map.terrain_passable(t) && !state.hostile_footprint_at(unit.player, t)
+        })
+    };
+    let mut came_from = vec![None; chassis::grid::cell_count(width, state.map.height())];
+    came_from[from.row_major(width)] = Some(from);
+    let mut frontier = std::collections::VecDeque::from([from]);
+    while let Some(tile) = frontier.pop_front() {
+        if crate::geometry::hull_open(tile, radius, |t| state.passable(t)) {
+            let mut waypoints = vec![tile];
+            let mut back = tile;
+            while let Some(previous) = came_from[back.row_major(width)].filter(|&p| p != from) {
+                waypoints.push(previous);
+                back = previous;
+            }
+            waypoints.reverse();
+            return Some(PathFollow {
+                final_point: None,
+                goal: tile,
+                waypoints,
+                next: 0,
+                clearing: true,
+            });
+        }
+        for (dx, dy) in NEIGHBORS {
+            let (dx, dy) = (dx * direction, dy * direction);
+            let step = tile.offset(dx, dy);
+            if state.map.tile(step).is_some()
+                && came_from[step.row_major(width)].is_none()
+                && crossable(step)
+                && (dx == 0
+                    || dy == 0
+                    || (crossable(tile.offset(dx, 0)) && crossable(tile.offset(0, dy))))
+            {
+                came_from[step.row_major(width)] = Some(tile);
+                frontier.push_back(step);
+            }
+        }
+    }
+    None
+}
+
+/// The sign that orients a scan around `from` in a half-turn-equivariant frame.
+fn scan_direction(state: &State, from: TilePos, heading: u8) -> i32 {
+    if half_turn_reversed(state, from, heading) {
+        -1
+    } else {
+        1
+    }
 }
 
 /// Whether a ring scan around `from` runs half-turned, so a body and its
@@ -307,21 +390,16 @@ fn unit_on_claimed_ground(state: &State, unit: &crate::state::Unit) -> bool {
     unit.body_tiles().any(|t| terrain.building_blocks(t))
 }
 
-/// Pure preview of the claimed-ground eviction for one unit.
-///
-/// Brains that require a body to remain still can consult the exact same
-/// predicate and route that [`evict_claimed_ground`] will apply later in
-/// the tick, without mutating the state early.
-pub(super) fn claimed_ground_escape(state: &State, id: crate::ids::UnitId) -> Option<PathFollow> {
-    let unit = state.unit(id)?;
+/// Whether a live ground body stands on occupied ground, rather than docked
+/// clear of the surface it works against.
+fn left_on_claimed_ground(state: &State, unit: &crate::state::Unit) -> bool {
     if unit.hp == 0
         || unit.domain() != crate::stats::Domain::Ground
-        || unit.path.is_some()
         || !unit_on_claimed_ground(state, unit)
     {
-        return None;
+        return false;
     }
-    if super::brain::contact::surface_for(state, unit).is_some_and(|s| {
+    !(super::brain::contact::surface_for(state, unit).is_some_and(|s| {
         s.clear(
             unit.pos,
             unit.pos,
@@ -339,22 +417,54 @@ pub(super) fn claimed_ground_escape(state: &State, id: crate::ids::UnitId) -> Op
                 weld: Some(crate::Target::Building(_)),
                 ..
             }
-    ) {
+    ))
+}
+
+/// Pure preview of the claimed-ground eviction for one unit.
+///
+/// Brains that require a body to remain still can consult the exact same
+/// predicate and route that [`evict_claimed_ground`] will apply later in
+/// the tick, without mutating the state early.
+pub(super) fn claimed_ground_escape(state: &State, id: crate::ids::UnitId) -> Option<PathFollow> {
+    let unit = state.unit(id)?;
+    if unit.path.is_some() || !left_on_claimed_ground(state, unit) {
         return None;
     }
-    escape_route(state, unit.kind, unit.tile(), unit.heading)
+    escape_route(state, unit)
+}
+
+/// Brain pre-pass: whether `id` is driving off occupied ground on a clearing
+/// route, which it takes up here when it needs one. Its order waits: it
+/// could not plan from where the body stands, and would give up. The motor
+/// holds a braced gun in place, so it stows first.
+pub(super) fn clear_occupied_ground(state: &mut State, id: crate::ids::UnitId) -> bool {
+    let unit = state.unit(id).expect("caller checked");
+    let route = if unit.path.as_ref().is_some_and(|path| path.clearing) {
+        None
+    } else if left_on_claimed_ground(state, unit) {
+        let Some(route) = escape_route(state, unit).filter(|route| route.clearing) else {
+            return false;
+        };
+        Some(route)
+    } else {
+        return false;
+    };
+    let unit = state.unit_mut(id).expect("caller checked");
+    if route.is_some() {
+        unit.path = route;
+    }
+    unit.retract_braces();
+    true
 }
 
 /// Movement pre-pass: a pathless ground body standing on a building
-/// footprint walks off, since an accepted foundation claims its ground
+/// footprint drives off, since an accepted foundation claims its ground
 /// instantly. Sets `path` only: orders, queue, progress, leash, and settle
 /// all survive, so the body keeps its job while it clears the ground.
 /// Re-arms every tick because working brains null the path while standing
 /// still (extract, attack-in-range): brains run first, eviction re-arms,
 /// movement consumes. Runs in id order. No route means the body stays put,
-/// except at placement time, where the build command places a routeless
-/// body onto the perimeter instantly so nothing can end up inside a
-/// finished building.
+/// and only hostile footprints or the map itself leave it none.
 pub(super) fn evict_claimed_ground(state: &mut State) {
     for i in 0..state.units.len() {
         let id = state.units[i].id;
@@ -520,13 +630,17 @@ pub(super) fn run(state: &mut State) -> (Vec<Vec2Fx>, Vec<bool>) {
             continue;
         }
         if stats.domain == crate::stats::Domain::Ground {
-            refused[slot] = ground::advance(
-                unit,
-                &terrain
+            // A clearing route has already picked its footprints: terrain is
+            // all that bounds it, and no empty occupancy reads as no building.
+            let clearing = unit.path.as_ref().is_some_and(|path| path.clearing);
+            let bounds = if clearing {
+                GroundTerrain::new(map, &[])
+            } else {
+                terrain
                     .with_contact(contacts[slot])
-                    .with_outlines(&outlines[slot]),
-                &parked[unit.player.0 as usize],
-            );
+                    .with_outlines(&outlines[slot])
+            };
+            refused[slot] = ground::advance(unit, &bounds, &parked[unit.player.0 as usize]);
             if unit.drive_speed() == Fx::ZERO
                 && let Some(aim) = work_aims[slot]
             {

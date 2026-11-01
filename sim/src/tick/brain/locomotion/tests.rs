@@ -97,6 +97,7 @@ fn coasting_arrival_does_not_complete_a_neighbor_order() {
             goal,
             waypoints: vec![goal],
             next: 0,
+            clearing: false,
         });
     }
     state.units[0].pos = Vec2Fx::new(Fx::lit("12.01"), Fx::lit("8.5"));

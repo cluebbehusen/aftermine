@@ -540,6 +540,7 @@ pub(in crate::tick::brain) fn attack_known(
             goal,
             waypoints,
             next: 0,
+            clearing: false,
         });
         true
     } else {

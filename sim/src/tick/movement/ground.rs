@@ -122,7 +122,11 @@ fn route_target(
         // A scout's route threads known danger, so it keeps close to its
         // planned tiles: a straight leg over many waypoints would chord a
         // detour back into the reach it bends around.
-        let lookahead = if matches!(unit.order, crate::state::Order::Scout { .. }) {
+        // A clearing route's motor cannot see the hostile footprints it goes
+        // around, so it keeps to its planned tiles as well.
+        let lookahead = if path.clearing {
+            0
+        } else if matches!(unit.order, crate::state::Order::Scout { .. }) {
             1
         } else {
             ROUTE_LOOKAHEAD

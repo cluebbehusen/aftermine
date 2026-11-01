@@ -129,6 +129,7 @@ pub(super) fn board(
             goal,
             waypoints,
             next: 0,
+            clearing: false,
         });
     } else {
         let unit = state.unit_mut(id).expect("caller checked");

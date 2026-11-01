@@ -981,8 +981,7 @@ fn found_site(
     let site = state.place_site(player, kind, anchor);
     let from = state.unit(builder).expect("caller checked").tile();
     let size = kind.size();
-    // An enclosed founder uses the same post-acceptance perimeter relocation
-    // as other friendly bodies trapped by a newly claimed footprint.
+    // A founder standing on the footprint drives off it once the site lands.
     let inside = state.building(site).expect("just placed").contains(from);
     let reachable = super::rect_adjacent_tiles(anchor, size)
         .filter(|&t| state.passable(t))
@@ -996,97 +995,7 @@ fn found_site(
         return Err(RejectReason::QueueFull);
     }
     state.player_mut(player).scrap -= cost;
-    finish_site_claim(state, site, builder);
     Ok(site)
-}
-
-pub(super) fn finish_site_claim(state: &mut State, site: BuildingId, builder: UnitId) {
-    let building = state.building(site).expect("accepted site");
-    let (player, anchor, size) = (building.player, building.anchor, building.kind.size());
-    let from = state.unit(builder).expect("committed builder").tile();
-    // Friendly machines make way as the site claims the ground: nothing may
-    // end up inside a finished building. The builders' own approach and the
-    // eviction pre-pass both route out of the footprint, so only a body with
-    // no escape route is placed instantly onto the passable perimeter ring,
-    // ordered in the founder's approach frame and dealt round-robin in id
-    // order. This runs strictly after the last rejection path and the
-    // payment, because a rejected command must not move the state hash
-    // (`retract_site`'s contract). Hostiles cannot be here: the caller's
-    // placement predicate refused them.
-    let ring: Vec<TilePos> = {
-        let approach = super::rect_approach_origin(state, player, from, anchor, size);
-        let mut ring: Vec<TilePos> = super::rect_adjacent_tiles(anchor, size)
-            .filter(|&t| state.passable(t))
-            .collect();
-        ring.sort_unstable_by_key(|&t| {
-            (
-                super::rect_approach_key_from(from, approach, anchor, size, t),
-                t.y,
-                t.x,
-            )
-        });
-        ring
-    };
-    let inside = |t: TilePos| {
-        t.x >= anchor.x && t.x < anchor.x + size.0 && t.y >= anchor.y && t.y < anchor.y + size.1
-    };
-    let mut dealt = 0usize;
-    for i in 0..state.units.len() {
-        let u = &state.units[i];
-        if u.hp == 0 || u.domain() != crate::stats::Domain::Ground || !u.body_tiles().any(inside) {
-            continue;
-        }
-        let (unit_kind, tile) = (u.kind, u.tile());
-        if super::movement::escape_route(state, unit_kind, tile, u.heading).is_some() {
-            continue; // it can walk; the eviction pre-pass sees to it
-        }
-        let radius = unit_kind.stats().radius;
-        let to = if crate::stats::hull_excess(radius) == chassis::fx::Fx::ZERO {
-            let Some(&to) = ring.get(dealt % ring.len().max(1)) else {
-                continue; // no perimeter at all: leave it; collision resolves
-            };
-            dealt += 1;
-            to
-        } else {
-            // A hull wider than a tile stands clear only on a ring far
-            // enough out that none of its tiles touch the footprint.
-            let Some(to) = hull_ring(state, from, player, anchor, size, radius) else {
-                continue;
-            };
-            to
-        };
-        let unit = &mut state.units[i];
-        unit.pos = to.center();
-        unit.path = None;
-    }
-}
-
-/// The first tile, in the founder's approach frame, of the ring around a
-/// footprint where a hull of `radius` fits without touching it.
-fn hull_ring(
-    state: &State,
-    from: TilePos,
-    player: PlayerId,
-    anchor: TilePos,
-    size: (i32, i32),
-    radius: chassis::fx::Fx,
-) -> Option<TilePos> {
-    let gap = 1 + crate::stats::hull_excess(radius).ceil().to_num::<i32>();
-    let approach = super::rect_approach_origin(state, player, from, anchor, size);
-    (-gap..size.1 + gap)
-        .flat_map(|dy| (-gap..size.0 + gap).map(move |dx| anchor.offset(dx, dy)))
-        .filter(|t| {
-            let (dx, dy) = (t.x - anchor.x, t.y - anchor.y);
-            let out = (-dx).max(dx - size.0 + 1).max((-dy).max(dy - size.1 + 1));
-            out == gap && crate::geometry::hull_open(*t, radius, |c| state.passable(c))
-        })
-        .min_by_key(|&t| {
-            (
-                super::rect_approach_key_from(from, approach, anchor, size, t),
-                t.y,
-                t.x,
-            )
-        })
 }
 
 /// Refund an unstarted site in full; after work starts, scale by current hp.
