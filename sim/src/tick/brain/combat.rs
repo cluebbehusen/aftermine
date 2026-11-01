@@ -323,6 +323,176 @@ fn launch_shell(
     flight
 }
 
+/// The gun a shot leaves: a defense's, or the one in a unit's weapon slot.
+#[derive(Debug, Clone, Copy)]
+enum Gunner {
+    Defense(crate::ids::BuildingId),
+    Unit { id: UnitId, slot: usize },
+}
+
+impl Gunner {
+    fn source(self) -> Target {
+        match self {
+            Self::Defense(id) => Target::Building(id),
+            Self::Unit { id, .. } => Target::Unit(id),
+        }
+    }
+
+    fn owner(self, state: &State) -> PlayerId {
+        match self {
+            Self::Defense(id) => state.building(id).expect("a firing gun is live").player,
+            Self::Unit { id, .. } => state.unit(id).expect("a firing gun is live").player,
+        }
+    }
+
+    fn weapon(self, state: &State) -> &'static WeaponStats {
+        match self {
+            Self::Defense(id) => {
+                &state
+                    .building(id)
+                    .expect("a firing gun is live")
+                    .stats()
+                    .weapons[0]
+            }
+            Self::Unit { id, slot } => {
+                &state
+                    .unit(id)
+                    .expect("a firing gun is live")
+                    .kind
+                    .stats()
+                    .weapons[slot]
+            }
+        }
+    }
+
+    fn start_reload(self, state: &mut State) {
+        let ticks = self.weapon(state).cooldown_ticks;
+        match self {
+            Self::Defense(id) => {
+                state
+                    .building_mut(id)
+                    .expect("a firing gun is live")
+                    .cooldown = ticks;
+            }
+            Self::Unit { id, slot } => {
+                state.unit_mut(id).expect("a firing gun is live").cooldowns[slot] = ticks;
+            }
+        }
+    }
+}
+
+/// What a shot is fired on: a seen victim, or a known place it cannot see into.
+#[derive(Debug, Clone, Copy)]
+enum Mark {
+    Seen(Target),
+    Blind(crate::state::AttackView),
+}
+
+impl Mark {
+    fn target(self) -> Option<Target> {
+        match self {
+            Self::Seen(target) => Some(target),
+            Self::Blind(_) => None,
+        }
+    }
+}
+
+/// One shot from a gun that bears and has reloaded.
+#[derive(Debug, Clone, Copy)]
+struct Shot {
+    gunner: Gunner,
+    from: Vec2Fx,
+    aim: Vec2Fx,
+    mark: Mark,
+}
+
+/// Fires `shot` as its weapon does: a shell if it launches one, else a direct
+/// hit in this tick's volley.
+fn fire_shot(state: &mut State, shot: Shot, buffers: ShotBuffers<'_>) {
+    let ShotBuffers {
+        events,
+        hits,
+        launches,
+    } = buffers;
+    if shot.gunner.weapon(state).projectile.is_some() {
+        fire_shell(state, shot, events, launches);
+    } else {
+        fire_direct(state, shot, events, hits);
+    }
+}
+
+fn fire_shell(
+    state: &mut State,
+    shot: Shot,
+    events: &mut Vec<Event>,
+    launches: &mut Vec<crate::state::Shell>,
+) {
+    let Shot {
+        gunner,
+        from,
+        aim,
+        mark,
+    } = shot;
+    let (shooter, player, weapon) = (gunner.source(), gunner.owner(state), gunner.weapon(state));
+    gunner.start_reload(state);
+    let flight = launch_shell(state, launches, shooter, player, from, aim, weapon);
+    let unit_pose = match gunner {
+        Gunner::Defense(_) => None,
+        Gunner::Unit { id, .. } => Some(UnitLaunchPose::from(
+            state.unit(id).expect("a firing gun is live"),
+        )),
+    };
+    events.push(Event::ShellLaunched {
+        shooter,
+        unit_pose,
+        target: mark.target(),
+        player,
+        from,
+        to: aim,
+        flight,
+    });
+}
+
+/// Buffers `shot` as a direct hit, whatever its weapon: a sidearm, a mounted
+/// gun and a drone never launch.
+fn fire_direct(state: &mut State, shot: Shot, events: &mut Vec<Event>, hits: &mut Vec<PendingHit>) {
+    let Shot {
+        gunner,
+        from,
+        aim,
+        mark,
+    } = shot;
+    let (shooter, player, weapon) = (gunner.source(), gunner.owner(state), gunner.weapon(state));
+    gunner.start_reload(state);
+    match mark {
+        Mark::Seen(victim) => buffer_shot(state, shooter, victim, from, aim, weapon, hits),
+        Mark::Blind(view) => {
+            blind::buffer_blind(state, (shooter, player), from, aim, view, weapon, hits);
+        }
+    }
+    events.push(match gunner {
+        Gunner::Defense(id) => {
+            let b = state.building(id).expect("a firing gun is live");
+            Event::TurretFired {
+                turret: id,
+                kind: b.kind,
+                tier: b.tier,
+                target: mark.target(),
+                turret_pos: from,
+                target_pos: aim,
+            }
+        }
+        Gunner::Unit { id, slot } => Event::AttackHit {
+            attacker: id,
+            attacker_kind: state.unit(id).expect("a firing gun is live").kind,
+            weapon: slot,
+            target: mark.target(),
+            attacker_pos: from,
+            target_pos: aim,
+        },
+    });
+}
+
 /// Arrived shells join this tick's volley, computed against the same
 /// start-of-tick world every buffered shot uses. The direct hit lands on
 /// the hostile building whose footprint touches the impact point; units
@@ -768,7 +938,7 @@ pub(super) fn turret_fire(
             b.cooldown = b.cooldown.saturating_sub(1);
             continue;
         }
-        let (me, center, kind, tier, focus) = (b.player, b.center(), b.kind, b.tier, b.focus);
+        let (me, center, focus) = (b.player, b.center(), b.focus);
         let (heading, traverse) = (
             b.gun_heading.expect("a building that fires carries a gun"),
             b.stats().traverse,
@@ -881,30 +1051,20 @@ pub(super) fn turret_fire(
         if !aim_gun(state, id, aim) || gun.reload > 0 {
             continue;
         }
-        let b = state.building_mut(id).expect("just seen");
-        b.cooldown = atk.cooldown_ticks;
-        if atk.projectile.is_some() {
-            let flight = launch_shell(state, launches, Target::Building(id), me, center, aim, atk);
-            events.push(Event::ShellLaunched {
-                shooter: Target::Building(id),
-                unit_pose: None,
-                target: Some(victim),
-                player: me,
+        fire_shot(
+            state,
+            Shot {
+                gunner: Gunner::Defense(id),
                 from: center,
-                to: aim,
-                flight,
-            });
-        } else {
-            buffer_shot(state, Target::Building(id), victim, center, aim, atk, hits);
-            events.push(Event::TurretFired {
-                turret: id,
-                kind,
-                tier,
-                target: Some(victim),
-                turret_pos: center,
-                target_pos: aim,
-            });
-        }
+                aim,
+                mark: Mark::Seen(victim),
+            },
+            ShotBuffers {
+                events,
+                hits,
+                launches,
+            },
+        );
     }
 }
 
@@ -1711,32 +1871,20 @@ pub(super) fn advance(
     if cooldown > 0 {
         return;
     }
-    state.unit_mut(id).expect("caller checked").cooldowns[0] = weapon.cooldown_ticks;
-    if weapon.projectile.is_some() {
-        let aim = projectile_aim.expect("projectile aim computed");
-        let flight = launch_shell(state, launches, Target::Unit(id), me, pos, aim, &weapon);
-        events.push(Event::ShellLaunched {
-            shooter: Target::Unit(id),
-            unit_pose: Some(UnitLaunchPose::from(
-                state.unit(id).expect("shooter exists during combat"),
-            )),
-            target: Some(target),
-            player: me,
+    fire_shot(
+        state,
+        Shot {
+            gunner: Gunner::Unit { id, slot: 0 },
             from: pos,
-            to: aim,
-            flight,
-        });
-    } else {
-        buffer_shot(state, Target::Unit(id), target, pos, aim, &weapon, hits);
-        events.push(Event::AttackHit {
-            attacker: id,
-            attacker_kind: kind,
-            weapon: 0,
-            target: Some(target),
-            attacker_pos: pos,
-            target_pos: aim,
-        });
-    }
+            aim: projectile_aim.unwrap_or(aim),
+            mark: Mark::Seen(target),
+        },
+        ShotBuffers {
+            events,
+            hits,
+            launches,
+        },
+    );
 }
 
 /// The walking charge: chase the ordered target to contact and detonate.
@@ -2004,25 +2152,23 @@ fn bomber_attack(
             Target::Unit(_) => center,
         };
         let impact = state.map().clamp_to_envelope(center);
-        let flight = launch_shell(state, launches, Target::Unit(id), me, pos, impact, weapon);
-        events.push(Event::ShellLaunched {
-            shooter: Target::Unit(id),
-            unit_pose: Some(UnitLaunchPose::from(
-                state.unit(id).expect("shooter exists during combat"),
-            )),
-            target: Some(target),
-            player: me,
-            from: pos,
-            to: impact,
-            flight,
-        });
+        fire_shell(
+            state,
+            Shot {
+                gunner: Gunner::Unit { id, slot: pi },
+                from: pos,
+                aim: impact,
+                mark: Mark::Seen(target),
+            },
+            events,
+            launches,
+        );
         // Egress: fly through and past the release point. The leg is a
         // plain path goal, so steering, arrival, and repath all reuse
         // the ordinary machinery; when it completes (or goes stale) the
         // chase below lines up the next run.
         let egress = egress_goal(state, pos, heading, stats);
         let unit = state.unit_mut(id).expect("caller checked");
-        unit.cooldowns[pi] = weapon.cooldown_ticks;
         unit.path = egress.map(|goal| PathFollow {
             final_point: None,
             goal,
@@ -2393,50 +2539,22 @@ pub(super) fn attack(
             return;
         }
         if cooldowns[pi] == 0 {
-            unit.cooldowns[pi] = weapon.cooldown_ticks;
-            if weapon.projectile.is_some() {
-                let aim_point = projectile_aim.expect("projectile aim computed");
-                let flight = launch_shell(
-                    state,
-                    launches,
-                    Target::Unit(id),
-                    me,
-                    pos,
-                    aim_point,
-                    weapon,
-                );
-                events.push(Event::ShellLaunched {
-                    shooter: Target::Unit(id),
-                    unit_pose: Some(UnitLaunchPose::from(
-                        state.unit(id).expect("shooter exists during combat"),
-                    )),
-                    target: Some(target),
-                    player: me,
+            fire_shot(
+                state,
+                Shot {
+                    gunner: Gunner::Unit { id, slot: pi },
                     from: pos,
-                    to: aim_point,
-                    flight,
-                });
-            } else {
-                buffer_shot(
-                    state,
-                    Target::Unit(id),
-                    stroke,
-                    pos,
-                    aim_point,
-                    weapon,
+                    aim: projectile_aim.unwrap_or(aim_point),
+                    mark: Mark::Seen(stroke),
+                },
+                ShotBuffers {
+                    events,
                     hits,
-                );
-                events.push(Event::AttackHit {
-                    attacker: id,
-                    attacker_kind: kind,
-                    weapon: pi,
-                    target: Some(stroke),
-                    attacker_pos: pos,
-                    target_pos: aim_point,
-                });
-                if contact::square_cutter(kind) {
-                    cut_alongside(state, id, stroke, pi, hits, events);
-                }
+                    launches,
+                },
+            );
+            if contact::square_cutter(kind) {
+                cut_alongside(state, id, stroke, pi, hits, events);
             }
         }
         fire_sidearms(state, index, id, pi, hits, events);
@@ -2701,7 +2819,7 @@ fn fire_sidearms(
     if stats.weapons.len() < 2 {
         return;
     }
-    let (pos, me, kind, cooldowns) = (unit.pos, unit.player, unit.kind, unit.cooldowns);
+    let (pos, me, cooldowns) = (unit.pos, unit.player, unit.cooldowns);
     let heading = unit.heading;
     for (wi, weapon) in stats.weapons.iter().enumerate() {
         if wi == primary || cooldowns[wi] > 0 {
@@ -2718,24 +2836,17 @@ fn fire_sidearms(
         ) {
             continue;
         }
-        state.unit_mut(id).expect("caller checked").cooldowns[wi] = weapon.cooldown_ticks;
-        buffer_shot(
+        fire_direct(
             state,
-            Target::Unit(id),
-            Target::Unit(uid),
-            pos,
-            upos,
-            weapon,
+            Shot {
+                gunner: Gunner::Unit { id, slot: wi },
+                from: pos,
+                aim: upos,
+                mark: Mark::Seen(Target::Unit(uid)),
+            },
+            events,
             hits,
         );
-        events.push(Event::AttackHit {
-            attacker: id,
-            attacker_kind: kind,
-            weapon: wi,
-            target: Some(Target::Unit(uid)),
-            attacker_pos: pos,
-            target_pos: upos,
-        });
     }
 }
 
