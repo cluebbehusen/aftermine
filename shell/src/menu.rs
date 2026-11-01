@@ -267,7 +267,7 @@ fn draw_record(
         (clock, columns.clock, true),
         (when, columns.when, true),
     ] {
-        let size = crate::typography::fit(text, text_size, column.w, 1.0);
+        let size = crate::typography::fit(text, text_size, column.w, crate::theme::Type::Caption);
         let x = if right {
             column.x + column.w - measure_text(text, None, numeric::font_size(size), 1.0).width
         } else {
@@ -410,7 +410,7 @@ pub(crate) fn draw_title(title: &str, baseline: f32, color: Color) {
         title,
         crate::theme::Type::Title.at(s),
         room,
-        crate::theme::Type::Heading.at(s),
+        crate::theme::Type::Heading,
     );
     let dims = measure_text(title, None, numeric::font_size(size), 1.0);
     draw_text(title, (view_w() - dims.width) * 0.5, baseline, size, color);
@@ -438,7 +438,7 @@ pub(crate) fn draw_subtitle(subtitle: &str, baseline: f32) {
         &subtitle,
         crate::theme::Type::Label.at(s),
         view_w() - 2.0 * (crate::button::corner_slot(0, s).right() + 16.0 * s),
-        crate::theme::Type::Caption.at(s),
+        crate::theme::Type::Caption,
     );
     let dims = measure_text(&subtitle, None, numeric::font_size(size), 1.0);
     draw_text(
@@ -1008,13 +1008,23 @@ impl<R: Clone> Menu<R> {
                         (key(0), columns.primary),
                         (key(1), columns.secondary),
                     ] {
-                        let size = crate::typography::fit(&text, text_size, column.w, 1.0);
+                        let size = crate::typography::fit(
+                            &text,
+                            text_size,
+                            column.w,
+                            crate::theme::Type::Caption,
+                        );
                         draw_text(&text, column.x, rect.y + rect.h * 0.68, size, color);
                     }
                 }
                 Label::Setting { name, value } => {
                     let pad = 18.0 * s;
-                    let value_size = crate::typography::fit(value, text_size, rect.w * 0.4, 1.0);
+                    let value_size = crate::typography::fit(
+                        value,
+                        text_size,
+                        rect.w * 0.4,
+                        crate::theme::Type::Caption,
+                    );
                     let value_width =
                         measure_text(value, None, numeric::font_size(value_size), 1.0).width;
                     let value_x = rect.x + rect.w - pad - value_width;
@@ -1041,12 +1051,8 @@ impl<R: Clone> Menu<R> {
                 }
                 Label::Text(text) => {
                     let room = rect.w - 36.0 * s;
-                    let size = crate::typography::fit(
-                        text,
-                        text_size,
-                        room,
-                        crate::theme::Type::Label.at(s),
-                    );
+                    let size =
+                        crate::typography::fit(text, text_size, room, crate::theme::Type::Label);
                     let shown = crate::typography::elide_to_width(text, room, &|text: &str| {
                         measure_text(text, None, numeric::font_size(size), 1.0).width
                     });
@@ -1096,7 +1102,7 @@ impl<R: Clone> Menu<R> {
             &hint,
             crate::theme::Type::Label.at(s),
             view_w() - 32.0 * s,
-            crate::theme::Type::Caption.at(s),
+            crate::theme::Type::Caption,
         );
         let hint_dims = measure_text(&hint, None, numeric::font_size(hint_size), 1.0);
         draw_text(

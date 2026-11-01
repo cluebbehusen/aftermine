@@ -583,17 +583,14 @@ impl Browser {
         }
         // The selected map's blurb, above the hint line.
         if let Some(entry) = entries.get(self.selected) {
-            let blurb = entry
-                .blurb
-                .clone()
-                .unwrap_or_else(|| "machines eating a dead world".to_string());
-            let mut size = crate::theme::Type::Label.at(ui);
-            let mut dims = measure_text(&blurb, None, numeric::font_size(size), 1.0);
-            let max = view.x * 0.8;
-            if dims.width > max {
-                size = (size * max / dims.width).max(12.0 * ui);
-                dims = measure_text(&blurb, None, numeric::font_size(size), 1.0);
-            }
+            let blurb = entry.blurb.clone().unwrap_or_default();
+            let size = crate::typography::fit(
+                &blurb,
+                crate::theme::Type::Label.at(ui),
+                view.x * 0.8,
+                crate::theme::Type::Caption,
+            );
+            let dims = measure_text(&blurb, None, numeric::font_size(size), 1.0);
             draw_text(
                 &blurb,
                 (view.x - dims.width) * 0.5,

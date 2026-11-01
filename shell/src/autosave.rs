@@ -64,13 +64,9 @@ impl SaveError {
     /// One ASCII sentence for the toast strip and the failure dialog.
     pub fn player_line(&self) -> String {
         match self {
-            SaveError::NoDataDir => {
-                "could not save: no writable data folder is available".to_string()
-            }
-            SaveError::CreateDir { .. } => {
-                "could not save: unable to create the save folder".to_string()
-            }
-            SaveError::Write { .. } => "could not save: unable to write the save file".to_string(),
+            SaveError::NoDataDir => "No writable data folder is available".to_string(),
+            SaveError::CreateDir { .. } => "Unable to create the save folder".to_string(),
+            SaveError::Write { .. } => "Unable to write the save file".to_string(),
         }
     }
 }

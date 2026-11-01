@@ -469,8 +469,12 @@ impl ResultsScreen {
         let stats = game.end_stats.as_ref();
         let duration = stats.map_or(0, |report| report.final_tick);
         let meta = format!("{subtitle}  |  {}", crate::clock_label::ticks(duration));
-        let meta_size =
-            crate::typography::fit(&meta, layout.meta_size, panel.w - 24.0 * s, 10.0 * s);
+        let meta_size = crate::typography::fit(
+            &meta,
+            layout.meta_size,
+            panel.w - 24.0 * s,
+            crate::theme::Type::Caption,
+        );
         let meta_dims = measure_text(&meta, None, numeric::font_size(meta_size), 1.0);
         draw_text(
             &meta,
@@ -643,14 +647,6 @@ impl ResultsScreen {
                     layout.graph_label_size,
                 );
             }
-        } else {
-            draw_text(
-                "Compiling the final record...",
-                left,
-                header_y + 30.0 * s,
-                crate::theme::Type::Body.at(s),
-                theme::TEXT_BODY,
-            );
         }
 
         for (action, rect) in ResultAction::ALL.into_iter().zip(action_rects(viewport, s)) {

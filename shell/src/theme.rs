@@ -103,7 +103,7 @@ pub const BORDER_STRONG: Color = color_u8!(153, 153, 166, 102);
 /// Rules, empty slots and disabled cards.
 pub const BORDER_FAINT: Color = color_u8!(153, 153, 166, 64);
 
-/// Alerts and the stalled-unit toasts: a warmer red than refusals.
+/// Alerts and danger toasts: a warmer red than refusals.
 pub const TEXT_ALERT: Color = color_u8!(235, 128, 115, 255);
 
 /// The smallest target a fingertip can reliably hit, in logical px.

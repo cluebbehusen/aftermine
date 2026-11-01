@@ -2735,7 +2735,88 @@ fn a_scout_that_stops_short_with_its_tile_in_sight_gets_no_stall_feedback() {
         game.presentation
             .toasts
             .iter()
-            .any(|toast| toast.text == "Scout found no safe way to see there")
+            .any(|toast| toast.text == "Surveyor can't see there safely")
     );
     assert!(pinged(&game));
+}
+
+/// An `OrderStalled` for the human's seat, `reason`, from a unit that isn't
+/// a scout.
+fn worker_stall(game: &Game, reason: aftermine_sim::StallReason) -> Event {
+    Event::OrderStalled {
+        unit: UnitId(999),
+        player: game.presentation.human,
+        pos: chassis::grid::TilePos::new(10, 10).center(),
+        reason,
+    }
+}
+
+fn pings(game: &Game) -> usize {
+    game.presentation
+        .fx
+        .iter()
+        .filter(|fx| matches!(fx.kind, EffectKind::Ping { .. }))
+        .count()
+}
+
+#[test]
+fn a_crowd_stalled_on_one_order_reports_once() {
+    let mut game = Game::with_viewport(
+        aftermine_sim::Scenario::skirmish(),
+        Vec2::new(1280.0, 800.0),
+    )
+    .unwrap();
+    let stall = worker_stall(&game, aftermine_sim::StallReason::NoRoute);
+    game.presentation.spawn_fx(
+        &game.state,
+        &[stall.clone(), stall.clone(), stall.clone(), stall.clone()],
+    );
+    assert_eq!(game.presentation.toasts.len(), 1);
+    assert_eq!(pings(&game), 1, "one ring for the whole crowd");
+    game.presentation
+        .spawn_fx(&game.state, std::slice::from_ref(&stall));
+    assert_eq!(pings(&game), 1, "stragglers stay quiet");
+
+    game.issue(aftermine_sim::Command::Stop { units: Vec::new() });
+    game.presentation
+        .spawn_fx(&game.state, std::slice::from_ref(&stall));
+    assert_eq!(pings(&game), 2, "the next order may stall aloud");
+}
+
+#[test]
+fn a_held_worker_warns_once_and_a_new_order_does_not_rearm_it() {
+    let mut game = Game::with_viewport(
+        aftermine_sim::Scenario::skirmish(),
+        Vec2::new(1280.0, 800.0),
+    )
+    .unwrap();
+    let hold = worker_stall(&game, aftermine_sim::StallReason::DangerHold);
+    game.presentation
+        .spawn_fx(&game.state, std::slice::from_ref(&hold));
+    assert_eq!(pings(&game), 1);
+    let toast = &game.presentation.toasts[0];
+    assert_eq!(toast.text, "Worker holding: enemies nearby");
+    assert_eq!(toast.tone, crate::game::ToastTone::Danger);
+
+    game.issue(aftermine_sim::Command::Stop { units: Vec::new() });
+    game.presentation
+        .spawn_fx(&game.state, std::slice::from_ref(&hold));
+    assert_eq!(pings(&game), 1, "a hold outlives orders given elsewhere");
+}
+
+#[test]
+fn a_stall_reason_speaks_again_after_going_unheard() {
+    let mut game = Game::with_viewport(
+        aftermine_sim::Scenario::skirmish(),
+        Vec2::new(1280.0, 800.0),
+    )
+    .unwrap();
+    let hold = aftermine_sim::StallReason::DangerHold;
+    assert!(game.presentation.stall_is_news(hold, 1000));
+    assert!(!game.presentation.stall_is_news(hold, 1399));
+    assert!(
+        !game.presentation.stall_is_news(hold, 1700),
+        "each repeat restarts the quiet"
+    );
+    assert!(game.presentation.stall_is_news(hold, 2100));
 }

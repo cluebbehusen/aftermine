@@ -19,7 +19,7 @@ fn hud_copy_names_keys_only_on_desktop() {
             "Tab",
             false
         ),
-        "enemy maw assembling [Tab]"
+        "enemy Maw assembling [Tab]"
     );
     crate::platform::assert_touch_copy(&alert_badge_text(AlertKind::Attack, "Tab", true));
     crate::platform::assert_touch_copy(&alert_badge_text(
@@ -205,7 +205,7 @@ fn a_long_toast_wraps_short_of_the_minimap_at_the_layout_floor() {
     assert_eq!(
         toast_lines("Queue is full", right - origin.x, 1.0, measure),
         (
-            crate::theme::Type::Heading.at(1.0),
+            crate::theme::Type::Label.at(1.0),
             vec!["Queue is full".to_string()]
         )
     );

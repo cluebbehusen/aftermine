@@ -30,12 +30,12 @@ fn the_host_can_drop_each_absent_seat_and_everyone_can_open_the_menu() {
             "Menu"
         ]
     );
-    assert_eq!(host.subtitle(), "Waiting for Alex and Sam · 0:42");
+    assert_eq!(host.subtitle(), "Alex and Sam · 0:42");
     assert_eq!(host.mode_name(), "waiting");
 
     let client = WaitingScreen::open(vec![absent(1, "Alex", 65)], false);
     assert_eq!(client.view().items, ["Menu"]);
-    assert_eq!(client.subtitle(), "Waiting for Alex · 1:05");
+    assert_eq!(client.subtitle(), "Alex · 1:05");
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn dropping_asks_first_with_cancel_preselected() {
     assert_eq!(host.mode_name(), "confirm_drop");
     assert_eq!(host.view().title, "DROP ALEX?");
     assert_eq!(host.view().items, ["Cancel", "Drop Alex"]);
-    assert_eq!(host.subtitle(), "Alex's seat surrenders");
+    assert_eq!(host.subtitle(), "Alex surrenders");
     assert_eq!(press(&mut host, Key::Enter), Out::Stay, "Cancel");
     assert_eq!(host.mode_name(), "waiting");
 
@@ -86,7 +86,7 @@ fn the_same_seats_keep_the_cursor_as_the_wait_grows() {
     assert_eq!(host.view().selected, 1);
     host.refresh(vec![absent(1, "Alex", 70), absent(2, "Sam", 9)]);
     assert_eq!(host.view().selected, 1);
-    assert_eq!(host.subtitle(), "Waiting for Alex and Sam · 1:10");
+    assert_eq!(host.subtitle(), "Alex and Sam · 1:10");
 }
 
 #[test]

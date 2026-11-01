@@ -145,7 +145,7 @@ impl SelectedBays {
             enabled: order.is_ok(),
             why: order.err(),
             desc: vec![format!(
-                "One drone, paid now; built one at a time in {}.",
+                "Built one at a time in {}.",
                 tick_time_label(first.stats.build_ticks)
             )],
             progress: None,

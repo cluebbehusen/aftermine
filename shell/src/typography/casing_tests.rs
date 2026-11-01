@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 /// Screen and dialog titles.
 const TITLES: &[&str] = &[
     "AFTERMINE",
-    "BASIC TRAINING",
     "CLOSE THE LOBBY?",
     "COULD NOT SAVE",
     "DEFEAT",
@@ -16,7 +15,7 @@ const TITLES: &[&str] = &[
     "JOIN MATCH",
     "LAN MATCH",
     "LEFT-HANDED BINDINGS?",
-    "LOADING GAME",
+    "LOADING MATCH",
     "MAPS",
     "MATCH RESULT",
     "MATCH SETUP",
@@ -27,11 +26,12 @@ const TITLES: &[&str] = &[
     "REPLACE",
     "RESET BINDINGS?",
     "ROSTER",
-    "SAVE GAME",
+    "SAVE MATCH",
     "SAVES & REPLAYS",
-    "SAVING GAME",
+    "SAVING MATCH",
     "SETTINGS",
     "SURRENDERED",
+    "TUTORIAL",
     "THIS PLAYER",
     "VICTORY",
     "WAITING",
@@ -55,13 +55,12 @@ const LABELS: &[&str] = &[
     "DRONE BAYS",
     "ELIMINATED - SPECTATING",
     "FABRICATOR",
-    "FINAL BATTLEFIELD",
     "FOUNDRY",
+    "HEAP",
     "HOST",
     "LAN AUTO",
     "LESSON :   |",
     "LOST",
-    "MATCH TIP",
     "MATCHES ON YOUR NETWORK",
     "PEAK",
     "PAUSED []",
@@ -276,20 +275,25 @@ fn only_the_menu_chooses_a_title_size() {
     );
 }
 
+/// Drawn text takes its size from `theme::Type`, and `typography::fit` will
+/// only shrink it to a `Type`, which the compiler holds. This reads what the
+/// compiler can't: a number in the draw call, or a local it traces back to.
+/// Struct fields and parameters are not traced.
 #[test]
 fn drawn_text_sizes_come_from_the_type_scale() {
     let mut strays = Vec::new();
     for path in production_sources() {
         let source = std::fs::read_to_string(&path).expect("source reads");
-        let mut rest = source.as_str();
-        while let Some(found) = rest.find("draw_text(") {
-            let line = source[..source.len() - rest.len() + found].lines().count();
-            rest = &rest[found + "draw_text(".len()..];
-            if let Some(size) = fourth_argument(rest)
-                && !size.contains("Type::")
-                && size.chars().any(|c| c.is_ascii_digit())
-            {
-                strays.push(format!("{}:{line}: {size}", path.display()));
+        for call in ["draw_text(", "typography::draw("] {
+            for (found, _) in source.match_indices(call) {
+                let line = source[..found].lines().count();
+                let before = &source[..found];
+                let Some(size) = fourth_argument(&source[found + call.len()..]) else {
+                    continue;
+                };
+                if comes_from_a_raw_number(before, &size) {
+                    strays.push(format!("{}:{line}: {size}", path.display()));
+                }
             }
         }
     }
@@ -298,6 +302,28 @@ fn drawn_text_sizes_come_from_the_type_scale() {
         "use a theme::Type size:\n{}",
         strays.join("\n")
     );
+}
+
+/// Whether `size`, as written just after `before`, is a number that never
+/// passes through the type scale, following plain locals within the function.
+fn comes_from_a_raw_number(before: &str, size: &str) -> bool {
+    if size.contains("Type::") || size.contains("fit(") {
+        return false;
+    }
+    if size.chars().any(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    if !size.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return false;
+    }
+    let function = before.rfind(" fn ").map_or(before, |at| &before[at..]);
+    let binding = format!(" {size} = ");
+    let Some(at) = function.rfind(&binding) else {
+        return false;
+    };
+    let rest = &function[at + binding.len()..];
+    let value = rest.split(';').next().unwrap_or_default().trim();
+    comes_from_a_raw_number(&function[..at], value)
 }
 
 /// The fourth comma-separated argument of the call whose text starts `call`.
@@ -348,6 +374,19 @@ fn the_rules_recognize_what_they_guard() {
         string_literals("let a = \"ONE\"; // \"TWO\"\nlet b = b\"THREE\";\nlet c = \"FOUR\";"),
         vec![(1, "ONE".to_string()), (3, "FOUR".to_string())]
     );
+    assert!(comes_from_a_raw_number("", "14.0 * s"));
+    assert!(comes_from_a_raw_number(
+        " fn draw() { let raw = 14.0 * s; let size = raw;",
+        "size"
+    ));
+    assert!(!comes_from_a_raw_number(
+        " fn draw() { let size = Type::Body.at(s);",
+        "size"
+    ));
+    assert!(!comes_from_a_raw_number(
+        " fn other() { let size = 14.0; }\n fn draw(size: f32) {",
+        "size"
+    ));
     assert_eq!(
         fourth_argument("text, x, y, size(1, 2), color);"),
         Some("size(1, 2)".to_string())

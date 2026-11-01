@@ -219,7 +219,7 @@ fn long_names_and_the_longest_bot_profile_stay_inside_the_player_column() {
         let row = format!("{prefix}{name}");
 
         assert!(
-            name.contains("SCRAP"),
+            name.contains("HEAP"),
             "the fitted label keeps the difficulty at {viewport:?}: {name}"
         );
         assert!(
@@ -243,7 +243,7 @@ fn long_names_and_the_longest_bot_profile_stay_inside_the_player_column() {
         &narrow_measure,
     );
     assert!(
-        compact.contains("SCRAP/AGGRO"),
+        compact.contains("HEAP/AGGRO"),
         "a narrow duel uses the semantic compact label: {compact}"
     );
 }

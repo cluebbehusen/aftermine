@@ -322,7 +322,7 @@
   }
  ],
  "meta": {
-  "hook": "Four walled lanes each hold one seat per team, with a gapped wall down the middle of each lane and openings into the next.",
+  "hook": "Four walled lanes each hold one base per team, split by a gapped wall.",
   "size": "large",
   "mode": "4v4",
   "wealth": "standard",

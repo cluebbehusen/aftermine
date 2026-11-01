@@ -263,7 +263,7 @@ pub(super) fn dispatch_action(
                     input.build_menu = true;
                     input.stop_placing();
                 } else {
-                    game.presentation.toast("No harvester to build with");
+                    game.presentation.toast("No worker to build with");
                 }
             }
         }
@@ -278,10 +278,6 @@ pub(super) fn dispatch_action(
                 None if !game.presentation.selection.units.is_empty() => {
                     input.disarm_click_verbs();
                     input.patrol_route = Some(Vec::new());
-                    game.presentation.toast(super::patrol_arm_toast(
-                        &bindings.label(Action::Patrol),
-                        crate::platform::hands(),
-                    ));
                 }
                 Some(waypoints) if !waypoints.is_empty() => {
                     let units = game.presentation.selection.units.clone();
@@ -339,7 +335,8 @@ pub(super) fn dispatch_action(
         Action::SetBookmark(slot) => {
             input.bookmarks[slot as usize] = Some(game.presentation.camera.center);
             game.presentation
-                .toast(format!("Bookmark {} set", slot + 1));
+                .sounds_pending
+                .push((crate::game::SoundKind::Click, None));
         }
         Action::RecallBookmark(slot) => {
             if let Some(center) = input.bookmarks[slot as usize] {
@@ -434,7 +431,7 @@ pub(super) fn dispatch_action(
                 input.disarm_click_verbs();
                 input.click_verb = Some(ClickVerb::Scout);
             } else {
-                game.presentation.toast("No scouts selected");
+                game.presentation.toast("No Surveyor selected");
             }
         }
         Action::Hunt => {
@@ -460,7 +457,9 @@ pub(super) fn dispatch_action(
                 game.presentation.camera.center = world;
                 game.presentation.camera.pan(Vec2::ZERO); // re-clamp
             } else {
-                game.presentation.toast("No recent alerts");
+                game.presentation
+                    .sounds_pending
+                    .push((crate::game::SoundKind::Denied, None));
             }
         }
         Action::HomeCamera => {

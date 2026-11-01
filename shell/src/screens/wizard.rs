@@ -233,9 +233,7 @@ fn setup_hint(
             "every seat is on one team, nobody to fight - click a TEAM chip to regroup"
         }
         (false, false, false) => "click a seat to take it - click a chip to change it",
-        (false, true, true) => {
-            "every seat is on one team, nobody to fight - regroup a TEAM chip - {back} back"
-        }
+        (false, true, true) => "Every seat is on one team - change a TEAM chip - {back} back",
         (false, true, false) if on_start => "{confirm} starts the match - {back} back",
         (false, true, false) => match cell {
             Cell::Difficulty => "{confirm} cycles difficulty - {left}/{right} move - {back} back",
@@ -1156,7 +1154,7 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
         display,
         Type::Body.at(ui).min(rect.h * 0.62),
         name_room,
-        8.0,
+        crate::theme::Type::Caption,
     );
     draw_text(
         display,
@@ -1166,7 +1164,7 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
         TEXT_PRIMARY,
     );
     if is_you || moving {
-        let tag = if moving { "moving" } else { "your seat" };
+        let tag = if moving { "moving" } else { "you" };
         let tag_font = Type::Small.at(ui).min(rect.h * 0.55);
         let tdims = measure_text(tag, None, numeric::font_size(tag_font), 1.0);
         draw_text(
@@ -1219,7 +1217,12 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
             .at(ui),
             if on_cell { TEXT_TITLE } else { accent },
         );
-        let font = crate::typography::fit(label, Type::Small.at(ui), control.w - 6.0, 8.0);
+        let font = crate::typography::fit(
+            label,
+            Type::Small.at(ui),
+            control.w - 6.0,
+            crate::theme::Type::Caption,
+        );
         let dims = measure_text(label, None, numeric::font_size(font), 1.0);
         // An empty open chair reads quieter than a bot or a player.
         draw_text(
@@ -1250,7 +1253,12 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
     );
     // The label fits its chip: squeezed cards shrink the type
     // instead of spilling text across neighbors.
-    let font = crate::typography::fit(label, Type::Small.at(ui), chip.w - 6.0, 8.0);
+    let font = crate::typography::fit(
+        label,
+        Type::Small.at(ui),
+        chip.w - 6.0,
+        crate::theme::Type::Caption,
+    );
     let ldims = measure_text(label, None, numeric::font_size(font), 1.0);
     draw_text(
         label,
@@ -1685,7 +1693,7 @@ impl Wizard {
                 }
                 if resuming && self.lan.is_none() {
                     sounds.push((SoundKind::Denied, None));
-                    self.notice = Some("Players rejoin through the LAN lobby".to_owned());
+                    self.notice = Some("Switch to LAN to resume this match".to_owned());
                     return None;
                 }
                 if let Some(lan) = &self.lan {
@@ -1772,7 +1780,12 @@ impl Wizard {
             let switch = layout.switch[1];
             let x = switch.x + switch.w + 14.0 * ui;
             let room = layout.preview.x - x - 14.0 * ui;
-            let size = crate::typography::fit(hosting, Type::Small.at(ui), room, 8.0);
+            let size = crate::typography::fit(
+                hosting,
+                Type::Small.at(ui),
+                room,
+                crate::theme::Type::Caption,
+            );
             draw_text(
                 hosting,
                 x,
@@ -1882,7 +1895,12 @@ impl Wizard {
                 Stroke::Edge.at(ui),
                 TEXT_SECONDARY,
             );
-            let size = crate::typography::fit(&label, Type::Body.at(ui), rect.w - 8.0, 8.0);
+            let size = crate::typography::fit(
+                &label,
+                Type::Body.at(ui),
+                rect.w - 8.0,
+                crate::theme::Type::Caption,
+            );
             let dims = measure_text(&label, None, numeric::font_size(size), 1.0);
             draw_text(
                 &label,
@@ -1930,7 +1948,12 @@ impl Wizard {
                 );
                 (crate::menu::binding_hint(hint), one_team)
             };
-            let size = crate::typography::fit(&hint, Type::Body.at(ui), view.x - 32.0 * ui, 10.0);
+            let size = crate::typography::fit(
+                &hint,
+                Type::Body.at(ui),
+                view.x - 32.0 * ui,
+                crate::theme::Type::Caption,
+            );
             let hdims = measure_text(&hint, None, numeric::font_size(size), 1.0);
             draw_text(
                 &hint,
@@ -2005,7 +2028,7 @@ impl Wizard {
             .filter(|&seat| open[seat] && lan.members[seat].is_none())
             .count();
         Some(format!(
-            "hosting on {} - {here} of {} players here",
+            "hosting on {} - {here} of {} players",
             shown_address(lan.lobby.address()),
             here + waiting
         ))
@@ -2282,7 +2305,10 @@ impl Wizard {
                 }
                 self.notice = None;
             }
-            Err(error) => self.notice = Some(format!("Cannot host: {error:#}")),
+            Err(error) => {
+                eprintln!("Cannot host: {error:#}");
+                self.notice = Some("Cannot host on this network".to_owned());
+            }
         }
     }
 

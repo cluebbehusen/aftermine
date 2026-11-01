@@ -103,12 +103,24 @@ pub(crate) use fx::{
 };
 pub use fx::{Effect, EffectKind, FlakYokeDelay, PingKind, ShotStyle, SoundKind};
 
-/// A transient HUD message (rejected orders, stalled units).
+/// How a toast reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToastTone {
+    /// A refusal, a stalled order or a notice.
+    Notice,
+    /// Something is coming for the player.
+    Danger,
+}
+
+/// A transient HUD message: what the player can't otherwise see and would
+/// act on. Success the world already shows gets no toast.
 pub struct Toast {
     /// What to say.
     pub text: String,
     /// Seconds since raised.
     pub age: f32,
+    /// How it reads.
+    pub tone: ToastTone,
 }
 
 /// One running session.
@@ -719,6 +731,7 @@ impl Game {
 
     /// Stages a command from the local player for the next tick.
     pub fn issue(&mut self, command: Command) {
+        self.presentation.order_given();
         self.stage(PlayerCommand {
             player: self.presentation.human,
             command,

@@ -69,7 +69,7 @@ fn previews_include_tradeoffs_and_non_weapon_benefits() {
         ("2.5-9.5 tiles".into(), "2.5-12.5 tiles".into())
     );
     assert_eq!(
-        values(BuildingKind::Array, 0, "Mine detection"),
+        values(BuildingKind::Array, 0, "Charge detection"),
         (
             format!("{CHARGE_BASE_ARRAY_DETECT_RADIUS} tiles"),
             format!("{CHARGE_ARRAY_DETECT_RADIUS} tiles")

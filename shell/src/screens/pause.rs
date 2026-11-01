@@ -12,9 +12,9 @@ use macroquad::prelude::Vec2;
 /// name.
 fn naming_hint(keyless: bool) -> &'static str {
     if keyless {
-        "type a name"
+        ""
     } else {
-        "type a name | Enter saves | Esc cancels"
+        "Enter saves | Esc cancels"
     }
 }
 
@@ -67,7 +67,7 @@ impl Row {
     fn label(self) -> &'static str {
         match self {
             Row::Resume => "Resume",
-            Row::SaveGame => "Save game",
+            Row::SaveGame => "Save match",
             Row::WatchReplay => "Watch replay",
             Row::Settings => "Settings",
             Row::Roster => "Roster",
@@ -112,13 +112,14 @@ impl Confirmable {
 
     /// The dialog's subtitle: what confirming costs. A lesson is never
     /// saved, so leaving one only loses its progress.
-    fn consequence(self, lesson: bool) -> &'static str {
+    fn consequence(self, lesson: bool, lan: bool) -> &'static str {
+        if lan && matches!(self, Confirmable::MainMenu | Confirmable::Quit) {
+            return "You leave the match";
+        }
         match (self, lesson) {
-            (Confirmable::Surrender, _) => "this concedes the match",
-            (Confirmable::Restart, false) => "progress is discarded and the match starts over",
-            (Confirmable::Restart, true) => "the lesson starts over",
-            (Confirmable::MainMenu, false) => "the match is saved before returning home",
-            (Confirmable::Quit, false) => "the match is saved before quitting",
+            (Confirmable::Surrender, _) | (Confirmable::Restart, true) => "",
+            (Confirmable::Restart, false) => "Progress is lost",
+            (Confirmable::MainMenu | Confirmable::Quit, false) => "The match is saved first",
             (Confirmable::MainMenu | Confirmable::Quit, true) => {
                 "your progress in this lesson is lost"
             }
@@ -361,12 +362,6 @@ impl PauseScreen {
     }
 
     /// Shows `notice` as the subtitle until the next activation.
-    pub fn with_notice(mut self, notice: impl Into<String>) -> Self {
-        self.show_notice(notice);
-        self
-    }
-
-    /// Shows `notice` as the subtitle until the next activation.
     pub fn show_notice(&mut self, notice: impl Into<String>) {
         self.notice = Some(notice.into());
     }
@@ -384,7 +379,7 @@ impl PauseScreen {
         let name = Field::new(suggested, Self::NAME_MAX, |ch| {
             ch.is_ascii() || ch == '\u{b7}'
         });
-        let form = Form::new("SAVE GAME", "Save", vec![name], 0);
+        let form = Form::new("SAVE MATCH", "Save", vec![name], 0);
         self.menu = form.menu(|_| Choice::Field);
         self.face = Face::Naming(form);
     }
@@ -459,7 +454,7 @@ impl PauseScreen {
         match &self.face {
             Face::SaveFailed(dialog) => &dialog.line,
             Face::Naming(_) => naming_hint(!crate::platform::hands().keys),
-            Face::Confirm(verb) => verb.consequence(self.lesson),
+            Face::Confirm(verb) => verb.consequence(self.lesson, self.lan),
             Face::Rows => self.notice.as_deref().unwrap_or(scenario_name),
         }
     }
