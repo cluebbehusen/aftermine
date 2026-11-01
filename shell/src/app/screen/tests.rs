@@ -120,7 +120,7 @@ fn failed_quit_dialogs_return_to_every_hidden_live_match() {
     assert!(!home().holds_live_match());
     assert!(Screen::Playing.holds_live_match());
     assert!(pause().holds_live_match());
-    assert!(Screen::Results(ResultsScreen::open()).holds_live_match());
+    assert!(Screen::Results(ResultsScreen::open(false)).holds_live_match());
     assert!(Screen::FinalMap(FinalMapScreen::open()).holds_live_match());
 
     let settings_from_home = Screen::Settings {
@@ -138,7 +138,7 @@ fn failed_quit_dialogs_return_to_every_hidden_live_match() {
     let session = || super::super::live_playback(&game).expect("viewer");
     assert!(!viewer(session(), home()).holds_live_match());
     assert!(viewer(session(), pause()).holds_live_match());
-    assert!(viewer(session(), Screen::Results(ResultsScreen::open())).holds_live_match());
+    assert!(viewer(session(), Screen::Results(ResultsScreen::open(false))).holds_live_match());
 }
 
 #[test]

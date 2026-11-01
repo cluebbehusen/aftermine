@@ -254,7 +254,7 @@ fn setup_cells_wrap_past_the_dead_ones() {
     );
     drive(&mut w, &mut draft, Key::Right);
     assert_eq!(w.setup_cell, Cell::Team, "the opponent chips are skipped");
-    // An AI card has every cell.
+    // An bot card has every cell.
     drive(&mut w, &mut draft, Key::Down);
     drive(&mut w, &mut draft, Key::Left);
     assert_eq!(w.setup_cell, Cell::Stance);

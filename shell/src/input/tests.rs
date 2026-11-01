@@ -2476,7 +2476,7 @@ fn an_ally_selection_reads_its_orders_but_takes_none() {
             .info
             .status
             .iter()
-            .any(|status| status.contains("Standard / Balanced AI")),
+            .any(|status| status.contains("Standard / Balanced bot")),
         "the ally's controller stays visible"
     );
     assert!(
@@ -2555,7 +2555,7 @@ fn a_hostile_selection_inspects_and_leaks_nothing() {
             .info
             .status
             .iter()
-            .any(|status| status.contains("Standard / Balanced AI")),
+            .any(|status| status.contains("Standard / Balanced bot")),
         "the enemy's controller stays visible"
     );
     let weapon = panel

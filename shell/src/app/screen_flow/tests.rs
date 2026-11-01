@@ -487,7 +487,7 @@ fn a_notice_lands_where_the_player_is_looking() {
 
     for mut screen in [
         Screen::Home(HomeScreen::open()),
-        Screen::Results(ResultsScreen::open()),
+        Screen::Results(ResultsScreen::open(false)),
         Screen::FinalMap(FinalMapScreen::open()),
     ] {
         let menu = deliver(&mut game, &mut screen);

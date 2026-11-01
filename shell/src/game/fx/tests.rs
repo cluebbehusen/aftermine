@@ -1030,6 +1030,7 @@ fn hidden_demolition_and_building_loss_sound_without_revealing_identity() {
         },
         Event::BuildingDestroyed {
             building: BuildingId(999),
+            kind: aftermine_sim::BuildingKind::Turret,
             player,
             tier: 0,
             pos: at,

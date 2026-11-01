@@ -969,7 +969,9 @@ fn playing_frame(
     let tips = tips_on(&app.config, &app.game);
     crate::tips::Tips::advance_in(&mut app.game, tips, render::reduced_motion());
     if app.game.state.result().is_some() && app.game.end_stats.is_some() {
-        next = Some(Screen::Results(ResultsScreen::open()));
+        next = Some(Screen::Results(ResultsScreen::open(
+            app.game.net_role().is_some(),
+        )));
         // Re-enter immediately so the first decided frame is
         // the report, not a bare frozen battlefield.
         *rerun = true;
@@ -1119,7 +1121,7 @@ fn final_map_frame(
     FinalMapScreen::draw_hud(&app.config.bindings, app.input.mouse);
     if leave {
         *rerun = true;
-        Screen::Results(ResultsScreen::open())
+        Screen::Results(ResultsScreen::open(app.game.net_role().is_some()))
     } else {
         Screen::FinalMap(final_map)
     }
@@ -1134,7 +1136,8 @@ fn results_frame(
     let input_scope = app
         .game
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
-    let out = results.update(
+    let out = results.frame(
+        &app.game,
         events,
         &mut app.input.mouse,
         vec2(screen_width(), screen_height()),
@@ -1143,26 +1146,27 @@ fn results_frame(
     );
     drop(input_scope);
     render::draw_world(&app.game.view(), &app.sprites, &app.input);
-    results.draw(&app.game);
+    results.draw(&app.game, &app.sprites);
     match out {
         screens::results::Out::Stay => Screen::Results(results),
-        screens::results::Out::Rematch if app.game.net_role().is_some() => {
-            app.notify("Host a new match to play again.", true);
-            Screen::Results(results)
-        }
         screens::results::Out::Rematch => {
             app.persistence_screen(persistence::Intent::Rematch, Screen::Results(results))
         }
-        screens::results::Out::Watch => match live_playback(&app.game) {
-            Ok(session) => {
-                *rerun = true;
-                open_playback(session, Screen::Results(results))
+        out @ (screens::results::Out::Watch | screens::results::Out::WatchFrom(_)) => {
+            match live_playback(&app.game) {
+                Ok(mut session) => {
+                    if let screens::results::Out::WatchFrom(tick) = out {
+                        session.seek_to(tick);
+                    }
+                    *rerun = true;
+                    open_playback(session, Screen::Results(results))
+                }
+                Err(err) => {
+                    app.notify_failure("Could not open the replay", err);
+                    Screen::Results(results)
+                }
             }
-            Err(err) => {
-                app.notify_failure("Could not open the replay", err);
-                Screen::Results(results)
-            }
-        },
+        }
         screens::results::Out::ViewFinalMap => {
             *rerun = true;
             Screen::FinalMap(FinalMapScreen::open())

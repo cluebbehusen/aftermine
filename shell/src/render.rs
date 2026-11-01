@@ -94,6 +94,7 @@ pub(crate) mod maw;
 mod minimap;
 mod motion;
 mod panel_draw;
+pub(crate) use panel_draw::{building_portrait, unit_portrait};
 mod panel_layout;
 mod performance;
 mod pits;

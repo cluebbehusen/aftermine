@@ -15,14 +15,22 @@ use aftermine_protocol::{Key, RawEvent};
 use aftermine_sim::{GameResult, PlayerId};
 use macroquad::prelude::*;
 
-const WIDE_STAT_HEADERS: [[&str; 2]; 6] = [
-    ["PEAK ARMY", "VALUE"],
-    ["UNITS", "BUILT"],
-    ["STRUCTURES", "BUILT"],
-    ["UNITS", "LOST"],
-    ["STRUCTURES", "LOST"],
-    ["SCRAP", "COLLECTED"],
+mod built;
+mod chart;
+
+/// The wide table's column headers, under their group's unit.
+const WIDE_STAT_HEADERS: [&str; 6] = [
+    "EARNED",
+    "PEAK WEALTH",
+    "PEAK ARMY",
+    "LOST",
+    "UNITS",
+    "STRUCTURES",
 ];
+
+/// The wide table's groups: what its columns are counted in, and the columns
+/// each covers.
+const WIDE_STAT_GROUPS: [(&str, std::ops::Range<usize>); 2] = [("SCRAP", 0..4), ("BUILT", 4..6)];
 
 /// What a result frame decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +41,8 @@ pub enum Out {
     Rematch,
     /// Watch the completed command record.
     Watch,
+    /// Watch the completed command record from this tick.
+    WatchFrom(u64),
     /// Inspect the already-final battlefield without replaying it.
     ViewFinalMap,
     /// Return to the front door.
@@ -52,6 +62,9 @@ impl ResultAction {
     /// Every action, left to right.
     pub const ALL: [Self; 4] = [Self::Rematch, Self::Watch, Self::ViewFinalMap, Self::Home];
 
+    /// A LAN match's actions: a rematch takes a new lobby, so there is none.
+    pub const LAN: [Self; 3] = [Self::Watch, Self::ViewFinalMap, Self::Home];
+
     fn label(self) -> &'static str {
         match self {
             Self::Rematch => "Rematch",
@@ -69,36 +82,28 @@ impl ResultAction {
             Self::Home => Out::Home,
         }
     }
-
-    /// Where the button sits in the row.
-    fn index(self) -> usize {
-        match self {
-            Self::Rematch => 0,
-            Self::Watch => 1,
-            Self::ViewFinalMap => 2,
-            Self::Home => 3,
-        }
-    }
 }
 
 /// Touchable action geometry, injected for headless tests.
-pub(crate) fn action_rects(viewport: Vec2, scale: f32) -> [Rect; ResultAction::ALL.len()] {
+pub(crate) fn action_rects(count: usize, viewport: Vec2, scale: f32) -> Vec<Rect> {
     let gap = 10.0 * scale;
     let margin = 24.0 * scale;
-    let action_count = ResultAction::ALL.len() as f32;
+    let action_count = count as f32;
     let available = (viewport.x - margin * 2.0 - gap * (action_count - 1.0)).max(action_count);
     let width = (available / action_count).min(210.0 * scale);
     let total = width * action_count + gap * (action_count - 1.0);
     let x = (viewport.x - total) * 0.5;
     let y = viewport.y - 60.0 * scale;
-    std::array::from_fn(|index| {
-        Rect::new(
-            x + (width + gap) * index as f32,
-            y,
-            width,
-            crate::theme::MIN_TOUCH_TARGET * scale,
-        )
-    })
+    (0..count)
+        .map(|index| {
+            Rect::new(
+                x + (width + gap) * index as f32,
+                y,
+                width,
+                crate::theme::MIN_TOUCH_TARGET * scale,
+            )
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -115,11 +120,17 @@ struct ResultsLayout {
     row_size: f32,
     row_baseline: f32,
     marker_radius: f32,
-    graph_title_size: f32,
     graph_label_size: f32,
+    /// The chart's tab strip height: a fingertip, except in a window too
+    /// short for anything but a mouse.
+    chart_strip: f32,
     graph_top: f32,
     graph_bottom: f32,
 }
+
+/// The window height in logical px where the table can take its full spacing.
+/// The smallest iPad is well above this.
+const ROOMY_HEIGHT: f32 = 640.0;
 
 /// The report's vertical rhythm in logical px, before any fitting.
 #[derive(Debug, Clone, Copy)]
@@ -157,8 +168,8 @@ impl ResultsMetrics {
         graph_padding: 3.0,
     };
 
-    /// Every other report; a short window packs its rows tighter.
-    fn standard(short: bool) -> Self {
+    /// A short window, where the table keeps tight to leave room below it.
+    fn short() -> Self {
         Self {
             title_y: 48.0,
             meta_y: 68.0,
@@ -166,12 +177,31 @@ impl ResultsMetrics {
             header_y: 91.0,
             header_size: Type::Body.px(),
             rule_offset: 16.0,
-            row_height: if short { 22.0 } else { 27.0 },
+            row_height: 22.0,
             row_size: Type::Label.px(),
-            row_baseline: 0.85,
+            row_baseline: 0.8,
             marker_radius: 4.0,
             graph_row_padding: 1.15,
             graph_padding: 5.0,
+        }
+    }
+
+    /// Every other report; a crowded roster takes shorter rows to leave the
+    /// chart its room.
+    fn standard(player_count: usize) -> Self {
+        Self {
+            title_y: 48.0,
+            meta_y: 74.0,
+            meta_size: Type::Body.px(),
+            header_y: 112.0,
+            header_size: Type::Body.px(),
+            rule_offset: 22.0,
+            row_height: if player_count >= 6 { 30.0 } else { 38.0 },
+            row_size: Type::Label.px(),
+            row_baseline: 0.68,
+            marker_radius: 4.0,
+            graph_row_padding: 0.6,
+            graph_padding: 6.0,
         }
     }
 }
@@ -196,11 +226,13 @@ fn results_layout(viewport: Vec2, scale: f32, player_count: usize) -> ResultsLay
         graph_padding,
     } = if compact_roster {
         ResultsMetrics::COMPACT
+    } else if logical_height < ROOMY_HEIGHT {
+        ResultsMetrics::short()
     } else {
-        ResultsMetrics::standard(logical_height <= 480.0)
+        ResultsMetrics::standard(player_count)
     };
     let rule_offset = rule_offset + if wide_table { header_size } else { 0.0 };
-    let actions_y = action_rects(viewport, scale)[0].y / scale;
+    let actions_y = action_rects(1, viewport, scale)[0].y / scale;
     let row_height = f32::min(
         row_height,
         (actions_y - header_y - rule_offset - 8.0) / player_count.max(1) as f32,
@@ -224,34 +256,39 @@ fn results_layout(viewport: Vec2, scale: f32, player_count: usize) -> ResultsLay
         row_size: row_size * scale,
         row_baseline,
         marker_radius: marker_radius * scale,
-        graph_title_size: if compact_roster {
-            Type::Small
-        } else {
-            Type::Body
-        }
-        .at(scale),
         graph_label_size: if compact_roster {
             Type::Small
         } else {
             Type::Body
         }
         .at(scale),
+        chart_strip: if logical_height <= 480.0 {
+            24.0
+        } else {
+            crate::theme::MIN_TOUCH_TARGET
+        } * scale,
         graph_top: graph_top * scale,
         graph_bottom: graph_bottom * scale,
     }
 }
 
-fn action_at(point: Vec2, viewport: Vec2, scale: f32) -> Option<ResultAction> {
-    ResultAction::ALL
-        .into_iter()
-        .zip(action_rects(viewport, scale))
+fn action_at(
+    actions: &[ResultAction],
+    point: Vec2,
+    viewport: Vec2,
+    scale: f32,
+) -> Option<ResultAction> {
+    actions
+        .iter()
+        .copied()
+        .zip(action_rects(actions.len(), viewport, scale))
         .find(|(_, rect)| rect.contains(point))
         .map(|(action, _)| action)
 }
 
 /// Where the scoreboard's columns sit: the player name's left edge, then
-/// the six statistics (peak army; units and buildings built; units and
-/// buildings lost; scrap). A wide table centers each statistic on its x.
+/// the six statistics (scrap earned; peak wealth; peak army; value lost; units
+/// and structures built). A wide table centers each statistic on its x.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct TableColumns {
     player: f32,
@@ -303,9 +340,9 @@ fn player_name_with_controller(
         ),
         (Some(config), false) => format!(
             "{name}  {}",
-            bot_label(config.difficulty, config.stance, BotLabelStyle::Result,)
+            bot_label(config.difficulty, config.stance, BotLabelStyle::Controller)
         ),
-        (None, _) => format!("{name}  AI"),
+        (None, _) => format!("{name}  bot"),
     }
 }
 
@@ -342,7 +379,7 @@ fn fitted_player_name_with_controller(
     let spec = game.scenario.players.get(seat);
     let fallback = match spec {
         Some(spec) if spec.bot => spec.bot_config.map_or_else(
-            || "AI".to_string(),
+            || "bot".to_string(),
             |config| bot_label(config.difficulty, config.stance, BotLabelStyle::Compact),
         ),
         _ => game.state.players()[seat].name.clone(),
@@ -352,37 +389,95 @@ fn fitted_player_name_with_controller(
 
 /// Stateful pointer/keyboard ownership for the report.
 pub struct ResultsScreen {
+    actions: &'static [ResultAction],
     selected: ResultAction,
     hover: Option<ResultAction>,
     press: Press<ResultAction>,
+    chart: chart::Chart,
 }
 
 impl ResultsScreen {
-    /// Opens with Rematch selected.
-    pub fn open() -> Self {
+    /// Opens with the first action selected. A LAN match has no rematch.
+    pub fn open(lan: bool) -> Self {
+        let actions: &'static [ResultAction] = if lan {
+            &ResultAction::LAN
+        } else {
+            &ResultAction::ALL
+        };
         Self {
-            selected: ResultAction::Rematch,
+            actions,
+            selected: actions[0],
             hover: None,
             press: Press::default(),
+            chart: chart::Chart::default(),
         }
+    }
+
+    fn index_of(&self, action: ResultAction) -> usize {
+        self.actions
+            .iter()
+            .position(|candidate| *candidate == action)
+            .unwrap_or(0)
     }
 
     /// Keyboard cursor for the debug UI surface.
     pub fn selected(&self) -> usize {
-        self.selected.index()
+        self.index_of(self.selected)
     }
 
     /// Pointer hover for the debug UI surface.
     pub fn hover(&self) -> Option<usize> {
-        self.hover.map(ResultAction::index)
+        self.hover.map(|action| self.index_of(action))
     }
 
     /// Stable labels for automation and accessibility.
-    pub fn items() -> Vec<String> {
-        ResultAction::ALL
+    pub fn items(&self) -> Vec<String> {
+        self.actions
             .iter()
             .map(|action| action.label().to_string())
             .collect()
+    }
+
+    /// The chart panel's rect, when the window has room for one.
+    fn chart_panel(layout: &ResultsLayout, viewport: Vec2, s: f32) -> Option<Rect> {
+        let panel = results_panel(viewport, s);
+        let left = panel.x + 20.0 * s;
+        let right = panel.x + panel.w - 20.0 * s;
+        (layout.graph_bottom - layout.graph_top >= 60.0 * s).then(|| {
+            Rect::new(
+                left,
+                layout.graph_top,
+                right - left,
+                layout.graph_bottom - layout.graph_top,
+            )
+        })
+    }
+
+    /// Applies one frame to the whole report: the chart's share first, then
+    /// the action row with what it leaves.
+    pub fn frame(
+        &mut self,
+        game: &Game,
+        events: &[RawEvent],
+        mouse: &mut Vec2,
+        viewport: Vec2,
+        scale: f32,
+        sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
+    ) -> Out {
+        let layout = results_layout(viewport, scale, game.state.players().len());
+        let panel = Self::chart_panel(&layout, viewport, scale);
+        let (Some(report), Some(panel)) = (game.end_stats.as_ref(), panel) else {
+            return self.update(events, mouse, viewport, scale, sounds);
+        };
+        let chart_layout =
+            chart::chart_layout(panel, layout.chart_strip, layout.graph_label_size, scale);
+        let (watch, rest) = self
+            .chart
+            .route(events, report, &chart_layout, scale, sounds);
+        if let Some(tick) = watch {
+            return Out::WatchFrom(tick);
+        }
+        self.update(&rest, mouse, viewport, scale, sounds)
     }
 
     /// Applies one frame through the same raw-event funnel as every menu.
@@ -395,8 +490,10 @@ impl ResultsScreen {
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Out {
         for event in events {
-            if let Fed::Activated(action) =
-                self.press.feed(event, |p, _| action_at(p, viewport, scale))
+            let actions = self.actions;
+            if let Fed::Activated(action) = self
+                .press
+                .feed(event, |p, _| action_at(actions, p, viewport, scale))
             {
                 if let Some(p) = crate::press::position(event) {
                     *mouse = p;
@@ -408,13 +505,13 @@ impl ResultsScreen {
             match *event {
                 RawEvent::MouseMove { x, y } => {
                     *mouse = vec2(x, y);
-                    self.hover = action_at(*mouse, viewport, scale);
+                    self.hover = action_at(actions, *mouse, viewport, scale);
                 }
                 RawEvent::TouchDown { id, x, y } | RawEvent::TouchMove { id, x, y }
                     if self.press.owns(id) =>
                 {
                     *mouse = vec2(x, y);
-                    self.hover = action_at(*mouse, viewport, scale);
+                    self.hover = action_at(actions, *mouse, viewport, scale);
                 }
                 RawEvent::KeyDown { key: Key::Enter } => {
                     sounds.push((SoundKind::Click, None));
@@ -425,14 +522,13 @@ impl ResultsScreen {
                     return Out::Home;
                 }
                 RawEvent::KeyDown { .. } => {
+                    let selected = self.index_of(self.selected);
                     if let Some(next) = Nav::decode(event).and_then(|nav| {
-                        let count = ResultAction::ALL.len();
-                        step_line(count, self.selected.index(), nav, Axis::Both, count, |_| {
-                            true
-                        })
+                        let count = actions.len();
+                        step_line(count, selected, nav, Axis::Both, count, |_| true)
                     }) {
                         self.hover = None;
-                        self.selected = ResultAction::ALL[next];
+                        self.selected = actions[next];
                     }
                 }
                 _ => {}
@@ -442,16 +538,11 @@ impl ResultsScreen {
     }
 
     /// Draws the report over the rendered battlefield.
-    pub fn draw(&self, game: &Game) {
+    pub fn draw(&self, game: &Game, sprites: &crate::assets::Sprites) {
         let viewport = render::viewport();
         let s = render::ui_scale();
         draw_rectangle(0.0, 0.0, viewport.x, viewport.y, theme::VEIL);
-        let panel = Rect::new(
-            12.0 * s,
-            10.0 * s,
-            viewport.x - 24.0 * s,
-            viewport.y - 20.0 * s,
-        );
+        let panel = results_panel(viewport, s);
         draw_rectangle(panel.x, panel.y, panel.w, panel.h, theme::SURFACE_MENU);
         draw_rectangle_lines(
             panel.x,
@@ -489,59 +580,61 @@ impl ResultsScreen {
         let left = panel.x + 20.0 * s;
         let right = panel.x + panel.w - 20.0 * s;
         let columns = table_columns(left, right, layout.wide_table);
+        // The bottom header line, level with the column names, just above the
+        // table's rule.
+        let column_y = header_y + layout.rule_offset - 12.0 * s;
         draw_text(
             "PLAYER",
             columns.player,
-            header_y,
+            if layout.wide_table {
+                column_y
+            } else {
+                header_y
+            },
             layout.header_size,
             theme::TEXT_SECONDARY,
         );
         if layout.wide_table {
-            for (label, x) in WIDE_STAT_HEADERS.into_iter().zip(columns.stats) {
-                for (line, text) in label.into_iter().enumerate() {
-                    draw_centered_text(
-                        text,
-                        x,
-                        header_y + line as f32 * layout.header_size,
-                        layout.header_size,
-                        theme::TEXT_SECONDARY,
-                    );
-                }
+            for (group, span) in WIDE_STAT_GROUPS {
+                let first = columns.stats[span.start];
+                let last = columns.stats[span.end - 1];
+                let reach = (columns.stats[1] - columns.stats[0]) * 0.46;
+                draw_centered_text(
+                    group,
+                    f32::midpoint(first, last),
+                    header_y,
+                    layout.header_size,
+                    theme::TEXT_BODY,
+                );
+                let line_y = header_y + 6.0 * s;
+                draw_line(
+                    first - reach,
+                    line_y,
+                    last + reach,
+                    line_y,
+                    s,
+                    theme::TEXT_DISABLED,
+                );
+            }
+            for (text, x) in WIDE_STAT_HEADERS.into_iter().zip(columns.stats) {
+                draw_centered_text(text, x, column_y, layout.header_size, theme::TEXT_SECONDARY);
             }
         } else {
-            draw_text(
-                "PEAK",
-                columns.stats[0],
-                header_y,
-                layout.header_size,
-                theme::TEXT_SECONDARY,
-            );
-            draw_text(
-                "BUILT",
-                f32::midpoint(columns.stats[1], columns.stats[2]) - 17.0 * s,
-                header_y,
-                layout.header_size,
-                theme::TEXT_SECONDARY,
-            );
-            draw_text(
-                "LOST",
-                f32::midpoint(columns.stats[3], columns.stats[4]) - 14.0 * s,
-                header_y,
-                layout.header_size,
-                theme::TEXT_SECONDARY,
-            );
-            draw_text(
-                "SCRAP",
-                columns.stats[5],
-                header_y,
-                layout.header_size,
-                theme::TEXT_SECONDARY,
-            );
+            for (text, x) in [
+                ("SCRAP", columns.stats[0]),
+                ("WEALTH", columns.stats[1]),
+                ("ARMY", columns.stats[2]),
+                ("LOST", columns.stats[3]),
+                (
+                    "BUILT",
+                    f32::midpoint(columns.stats[4], columns.stats[5]) - 17.0 * s,
+                ),
+            ] {
+                draw_text(text, x, header_y, layout.header_size, theme::TEXT_SECONDARY);
+            }
             for (x, kind) in [
-                (columns.stats[1], StatIcon::Unit),
-                (columns.stats[2], StatIcon::Building),
-                (columns.stats[3], StatIcon::Unit),
-                (columns.stats[4], StatIcon::Building),
+                (columns.stats[4], StatIcon::Unit),
+                (columns.stats[5], StatIcon::Building),
             ] {
                 draw_stat_icon(
                     vec2(x + 5.0 * s, header_y + 9.0 * s),
@@ -557,6 +650,7 @@ impl ResultsScreen {
         if let Some(report) = stats {
             let mut seats: Vec<usize> = (0..game.state.players().len()).collect();
             seats.sort_by_key(|seat| (game.state.players()[*seat].team, *seat));
+            let teamed = seats_share_a_team(game);
             for (row, seat) in seats.into_iter().enumerate() {
                 let player = &game.state.players()[seat];
                 let numbers = report
@@ -565,6 +659,12 @@ impl ResultsScreen {
                     .find(|entry| usize::from(entry.seat) == seat);
                 let y = rule_y + (row as f32 + layout.row_baseline) * row_h;
                 let color = render::seat_identity_color(&game.view(), PlayerId(seat.fit::<u8>()));
+                let winner = game.state.winners().contains(&PlayerId(seat.fit::<u8>()));
+                if winner {
+                    let band = winner_band(left, right, rule_y, row, row_h, s);
+                    draw_rectangle(band.x, band.y, band.w, band.h, WINNER_TINT);
+                    draw_rectangle(band.x, band.y, 3.0 * s, band.h, theme::TEXT_ACCENT);
+                }
                 draw_marker(
                     columns.player,
                     y - layout.row_size * 0.36,
@@ -572,8 +672,12 @@ impl ResultsScreen {
                     seat,
                     color,
                 );
-                let winner = game.state.winners().contains(&PlayerId(seat.fit::<u8>()));
-                let crown = if winner { " *" } else { "" };
+                let won_size = layout.row_size;
+                let won_width = if winner {
+                    measure_text("WON", None, numeric::font_size(won_size), 1.0).width + 10.0 * s
+                } else {
+                    0.0
+                };
                 let max_name_chars = if viewport.x < 800.0 {
                     if game.scenario.players.get(seat).is_some_and(|spec| spec.bot) {
                         12
@@ -583,16 +687,16 @@ impl ResultsScreen {
                 } else {
                     24
                 };
-                let prefix = format!("T{}  ", player.team + 1);
+                let prefix = if teamed {
+                    format!("T{}  ", player.team + 1)
+                } else {
+                    String::new()
+                };
                 let player_text_x = columns.player + 11.0 * s;
                 let player_text_right = player_column_right(left, right, layout.wide_table);
-                let fixed_width = measure_text(
-                    format!("{prefix}{crown}"),
-                    None,
-                    numeric::font_size(layout.row_size),
-                    1.0,
-                )
-                .width;
+                let fixed_width =
+                    measure_text(&prefix, None, numeric::font_size(layout.row_size), 1.0).width
+                        + won_width;
                 let name_width =
                     (player_text_right - player_text_x - 8.0 * s - fixed_width).max(0.0);
                 let measure_name = |text: &str| {
@@ -606,54 +710,105 @@ impl ResultsScreen {
                     name_width,
                     &measure_name,
                 );
-                draw_text(
-                    format!("{prefix}{name}{crown}"),
-                    player_text_x,
-                    y,
-                    layout.row_size,
-                    color,
-                );
+                let label = format!("{prefix}{name}");
+                draw_text(&label, player_text_x, y, layout.row_size, color);
+                if winner {
+                    draw_text(
+                        "WON",
+                        player_text_x + measure_name(&label) + 10.0 * s,
+                        y,
+                        won_size,
+                        theme::TEXT_ACCENT,
+                    );
+                }
                 if let Some(numbers) = numbers {
-                    let peak = numbers.army_value.iter().copied().max().unwrap_or(0);
-                    for (text, x) in [
-                        (peak.to_string(), columns.stats[0]),
-                        (numbers.units_trained.to_string(), columns.stats[1]),
-                        (numbers.buildings_completed.to_string(), columns.stats[2]),
-                        (numbers.units_lost.to_string(), columns.stats[3]),
-                        (numbers.buildings_lost.to_string(), columns.stats[4]),
-                        (numbers.scrap_collected.to_string(), columns.stats[5]),
+                    let peak = |series: &[u32]| series.iter().copied().max().unwrap_or(0);
+                    let structures: u32 = numbers.structures_built.values().sum();
+                    let number_color = if winner {
+                        theme::TEXT_PRIMARY
+                    } else {
+                        theme::TEXT_BODY
+                    };
+                    for (value, x) in [
+                        (numbers.scrap_earned_total, columns.stats[0]),
+                        (peak(&numbers.wealth), columns.stats[1]),
+                        (peak(&numbers.army_value), columns.stats[2]),
+                        (numbers.value_lost_total, columns.stats[3]),
+                        (numbers.units_trained, columns.stats[4]),
+                        (structures, columns.stats[5]),
                     ] {
+                        let text = numeric::with_commas(value);
                         if layout.wide_table {
-                            draw_centered_text(&text, x, y, layout.row_size, theme::TEXT_BODY);
+                            draw_centered_text(&text, x, y, layout.row_size, number_color);
                         } else {
-                            draw_text(&text, x, y, layout.row_size, theme::TEXT_BODY);
+                            draw_text(&text, x, y, layout.row_size, number_color);
                         }
                     }
                 }
             }
 
-            if layout.graph_bottom - layout.graph_top >= 60.0 * s {
-                draw_army_graph(
-                    game,
-                    report,
-                    Rect::new(
-                        left,
-                        layout.graph_top,
-                        right - left,
-                        layout.graph_bottom - layout.graph_top,
-                    ),
+            if let Some(chart_panel) = Self::chart_panel(&layout, viewport, s) {
+                let chart_layout = chart::chart_layout(
+                    chart_panel,
+                    layout.chart_strip,
+                    layout.graph_label_size,
                     s,
-                    layout.graph_title_size,
+                );
+                self.chart.draw(
+                    game,
+                    sprites,
+                    report,
+                    &chart_layout,
+                    s,
                     layout.graph_label_size,
                 );
             }
         }
 
-        for (action, rect) in ResultAction::ALL.into_iter().zip(action_rects(viewport, s)) {
+        for (action, rect) in
+            self.actions
+                .iter()
+                .copied()
+                .zip(action_rects(self.actions.len(), viewport, s))
+        {
             let active = self.hover == Some(action) || self.selected == action;
             crate::button::draw(rect, action.label(), active, s);
         }
     }
+}
+
+/// The tint behind a winner's row.
+const WINNER_TINT: Color = Color::new(0.88, 0.66, 0.25, 0.16);
+
+/// The band behind a winner's row.
+fn winner_band(left: f32, right: f32, rule_y: f32, row: usize, row_h: f32, s: f32) -> Rect {
+    Rect::new(
+        left - 14.0 * s,
+        rule_y + row as f32 * row_h + 1.0 * s,
+        right - left + 28.0 * s,
+        row_h - 2.0 * s,
+    )
+}
+
+/// The report's plate.
+fn results_panel(viewport: Vec2, s: f32) -> Rect {
+    Rect::new(
+        12.0 * s,
+        10.0 * s,
+        viewport.x - 24.0 * s,
+        viewport.y - 20.0 * s,
+    )
+}
+
+/// Whether any team holds two or more seats, which is when a row names its
+/// team.
+fn seats_share_a_team(game: &Game) -> bool {
+    let players = game.state.players();
+    players.iter().enumerate().any(|(seat, player)| {
+        players[..seat]
+            .iter()
+            .any(|other| other.team == player.team)
+    })
 }
 
 fn verdict(game: &Game) -> (&'static str, Color, String) {
@@ -787,7 +942,7 @@ fn seat_marker(seat: usize) -> SeatMarker {
     }
 }
 
-fn draw_marker(x: f32, y: f32, r: f32, seat: usize, color: Color) {
+pub(super) fn draw_marker(x: f32, y: f32, r: f32, seat: usize, color: Color) {
     match seat_marker(seat) {
         SeatMarker::Circle => draw_circle(x, y, r, color),
         SeatMarker::Square => draw_rectangle(x - r, y - r, r * 2.0, r * 2.0, color),
@@ -826,155 +981,6 @@ fn draw_marker(x: f32, y: f32, r: f32, seat: usize, color: Color) {
             draw_line(x - r, y + r, x + r, y - r, 1.5, color);
         }
     }
-}
-
-fn draw_army_graph(
-    game: &Game,
-    report: &aftermine_kit::stats::MatchStats,
-    rect: Rect,
-    scale: f32,
-    title_size: f32,
-    label_size: f32,
-) {
-    draw_rectangle(rect.x, rect.y, rect.w, rect.h, theme::SURFACE_PANEL);
-    draw_rectangle_lines(
-        rect.x,
-        rect.y,
-        rect.w,
-        rect.h,
-        1.0 * scale,
-        theme::TEXT_DISABLED,
-    );
-    let max_value = report
-        .players
-        .iter()
-        .flat_map(|player| player.army_value.iter().copied())
-        .max()
-        .unwrap_or(1)
-        .max(1);
-    let ceiling = graph_ceiling(max_value);
-    draw_text(
-        "ARMY VALUE",
-        rect.x + 9.0 * scale,
-        rect.y + 17.0 * scale,
-        title_size,
-        theme::TEXT_BODY,
-    );
-    let plot = Rect::new(
-        rect.x + (42.0 * scale).min(rect.w * 0.16),
-        rect.y + (30.0 * scale).min(rect.h * 0.36),
-        (rect.w - (52.0 * scale).min(rect.w * 0.24)).max(1.0),
-        (rect.h - (50.0 * scale).min(rect.h * 0.72)).max(1.0),
-    );
-    for value in [ceiling, ceiling / 2, 0] {
-        let y = plot.y + plot.h - plot.h * value as f32 / ceiling as f32;
-        draw_line(
-            plot.x,
-            y,
-            plot.x + plot.w,
-            y,
-            1.0 * scale,
-            Color::new(0.55, 0.55, 0.62, 0.18),
-        );
-        let label = value.to_string();
-        let dims = measure_text(&label, None, numeric::font_size(label_size), 1.0);
-        draw_text(
-            &label,
-            plot.x - dims.width - 5.0 * scale,
-            y + 4.0 * scale,
-            label_size,
-            theme::TEXT_BODY,
-        );
-    }
-    let final_tick = report.final_tick.max(1);
-    let mut x_ticks = vec![0, report.final_tick / 2, report.final_tick];
-    x_ticks.dedup();
-    for tick in x_ticks {
-        let x = plot.x + plot.w * tick as f32 / final_tick as f32;
-        draw_line(
-            x,
-            plot.y,
-            x,
-            plot.y + plot.h,
-            1.0 * scale,
-            Color::new(0.55, 0.55, 0.62, 0.13),
-        );
-        let label = crate::clock_label::ticks(tick);
-        let dims = measure_text(&label, None, numeric::font_size(label_size), 1.0);
-        let label_x =
-            (x - dims.width * 0.5).clamp(rect.x + 2.0, rect.x + rect.w - dims.width - 2.0);
-        draw_text(
-            &label,
-            label_x,
-            plot.y + plot.h + 15.0 * scale,
-            label_size,
-            theme::TEXT_BODY,
-        );
-    }
-    for player in &report.players {
-        let color = render::seat_identity_color(&game.view(), PlayerId(player.seat));
-        let points = graph_points(
-            &report.sample_ticks,
-            &player.army_value,
-            report.final_tick,
-            ceiling,
-            plot,
-        );
-        for pair in points.windows(2) {
-            draw_line(
-                pair[0].x,
-                pair[0].y,
-                pair[1].x,
-                pair[1].y,
-                1.8 * scale,
-                color,
-            );
-        }
-        let marker_every = (points.len() / 5).max(1);
-        for (sample, point) in points.iter().enumerate() {
-            if sample.is_multiple_of(marker_every) || sample + 1 == points.len() {
-                draw_marker(
-                    point.x,
-                    point.y,
-                    2.7 * scale,
-                    usize::from(player.seat),
-                    color,
-                );
-            }
-        }
-    }
-}
-
-fn graph_ceiling(max_value: u32) -> u32 {
-    let max_value = max_value.max(1);
-    let magnitude = 10u32.pow(max_value.ilog10());
-    [1, 2, 5, 10]
-        .into_iter()
-        .map(|multiple| magnitude.saturating_mul(multiple))
-        .find(|candidate| *candidate >= max_value)
-        .unwrap_or(u32::MAX)
-}
-
-fn graph_points(
-    sample_ticks: &[u64],
-    values: &[u32],
-    final_tick: u64,
-    ceiling: u32,
-    plot: Rect,
-) -> Vec<Vec2> {
-    let final_tick = final_tick.max(1);
-    let ceiling = ceiling.max(1);
-    sample_ticks
-        .iter()
-        .copied()
-        .zip(values.iter().copied())
-        .map(|(tick, value)| {
-            vec2(
-                plot.x + plot.w * tick.min(final_tick) as f32 / final_tick as f32,
-                plot.y + plot.h - plot.h * value.min(ceiling) as f32 / ceiling as f32,
-            )
-        })
-        .collect()
 }
 
 #[cfg(test)]

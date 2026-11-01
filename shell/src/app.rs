@@ -580,7 +580,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                 )
                 .width;
                 let y = if screen.kind() == ScreenKind::Results {
-                    screens::results::action_rects(vec2(screen_width(), screen_height()), s)[0].y
+                    screens::results::action_rects(1, vec2(screen_width(), screen_height()), s)[0].y
                         - 10.0 * s
                 } else {
                     screen_height() - 48.0 * s
@@ -698,7 +698,7 @@ fn report_under_menu(game: &Game, screen: Screen) -> Screen {
         && game.state.result().is_some()
         && game.end_stats.is_some()
     {
-        Screen::Results(ResultsScreen::open())
+        Screen::Results(ResultsScreen::open(true))
     } else {
         screen
     }

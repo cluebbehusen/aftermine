@@ -805,7 +805,7 @@ fn every_machine_sees_who_sits_where_and_a_leaver_frees_the_seat() {
         "1. Host (host)",
         "2. Alex (you)",
         "3. Open",
-        "4. Standard / Balanced AI",
+        "4. Standard / Balanced bot",
     ];
     assert_eq!(client.roster(), expected);
     assert_eq!(client.status(), "Waiting for Host to start the match");

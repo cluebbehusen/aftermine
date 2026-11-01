@@ -345,7 +345,7 @@ fn scripted_opponents_show_their_difficulty_and_stance() {
     ));
     assert_eq!(
         bot_controller_label(&game.view(), aftermine_sim::PlayerId(1)),
-        Some("Prime / Aggressive AI".to_string())
+        Some("Prime / Aggressive bot".to_string())
     );
 }
 

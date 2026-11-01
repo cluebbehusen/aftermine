@@ -135,9 +135,10 @@ fn a_self_upgrade_uses_the_exact_timer_without_workers() {
     let report = state.tick(&[]);
     let building = state.building(turret).unwrap();
     assert!(building.built());
-    assert!(report.events.iter().any(
-        |event| matches!(event, Event::BuildingCompleted { building, .. } if *building == turret)
-    ));
+    assert!(report.events.iter().any(|event| matches!(
+        event,
+        Event::BuildingCompleted { building, tier: 1, .. } if *building == turret
+    )));
 }
 
 #[test]

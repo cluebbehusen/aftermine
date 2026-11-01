@@ -5,10 +5,8 @@ use aftermine_sim::scenario::{BotDifficulty, BotStance};
 /// Where a bot description is being shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BotLabelStyle {
-    /// The descriptive label in the in-game selection panel.
+    /// The descriptive label in the selection panel and the post-match roster.
     Controller,
-    /// The full label in the post-match roster.
-    Result,
     /// The shortened label used by dense cards and post-match rosters.
     Compact,
 }
@@ -21,14 +19,7 @@ pub fn bot_label(difficulty: BotDifficulty, stance: BotStance, style: BotLabelSt
     let difficulty = difficulty_name(difficulty);
     let stance = stance_name(stance);
     match style {
-        BotLabelStyle::Controller => format!("{difficulty} / {stance} AI"),
-        BotLabelStyle::Result => {
-            format!(
-                "{} / {} AI",
-                difficulty.to_uppercase(),
-                stance.to_uppercase()
-            )
-        }
+        BotLabelStyle::Controller => format!("{difficulty} / {stance} bot"),
         BotLabelStyle::Compact => format!(
             "{}/{}",
             compact_difficulty(difficulty),

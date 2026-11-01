@@ -53,6 +53,13 @@ const _: () = {
     );
 };
 
+/// Pays a standing structure's income into `player`'s bank.
+fn credit(state: &mut State, player: PlayerId, amount: u32, events: &mut Vec<Event>) {
+    let bank = &mut state.player_mut(player).scrap;
+    *bank = bank.saturating_add(amount);
+    events.push(Event::ScrapCredited { player, amount });
+}
+
 pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
     // Every built Reclaimer credits one scrap per period. Credits are
     // per-player sums, so order does not matter.
@@ -75,8 +82,7 @@ pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
             .map(|b| b.player)
             .collect();
         for player in credits {
-            let bank = &mut state.player_mut(player).scrap;
-            *bank = bank.saturating_add(1);
+            credit(state, player, 1, events);
         }
     }
 
@@ -98,8 +104,7 @@ pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
             })
             .collect();
         for (player, amount) in credits {
-            let bank = &mut state.player_mut(player).scrap;
-            *bank = bank.saturating_add(amount);
+            credit(state, player, amount, events);
         }
     }
 
@@ -134,8 +139,7 @@ pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
             .filter(|(_, foundries)| *foundries > 0)
             .collect();
         for (player, foundries) in credits {
-            let bank = &mut state.player_mut(player).scrap;
-            *bank = bank.saturating_add(foundries);
+            credit(state, player, foundries, events);
         }
     }
 

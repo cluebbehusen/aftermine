@@ -4,7 +4,6 @@
 use super::{App, Screen, ScreenKind};
 use crate::menu::MenuView;
 use crate::render;
-use crate::screens::results::ResultsScreen;
 use aftermine_protocol::UiView;
 use macroquad::prelude::{Rect, screen_height};
 
@@ -48,8 +47,8 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
                 mode: screen.mode().to_string(),
                 title: Some("MATCH RESULT".to_string()),
                 selected: Some(results.selected()),
-                items: ResultsScreen::items(),
-                visible_range: Some([0, 4]),
+                items: results.items(),
+                visible_range: Some([0, results.items().len()]),
                 hover: results.hover(),
                 chrome: None,
                 panel_regions: None,

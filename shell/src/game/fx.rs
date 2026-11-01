@@ -1355,18 +1355,15 @@ impl Presentation {
                     );
                 }
                 Event::BuildingCompleted {
-                    building,
-                    player,
-                    kind,
+                    player, kind, tier, ..
                 } if *player == self.human => {
                     // A completion at a nonzero tier is an upgrade
                     // finishing: its own cue, its own name.
-                    let tier = state.building(*building).map_or(0, |b| b.tier);
-                    if tier > 0 {
+                    if *tier > 0 {
                         self.sounds_pending.push((SoundKind::UpgradeDone, None));
                         self.toast(format!(
                             "{} online",
-                            crate::typography::entity_name(kind.tier_name(tier))
+                            crate::typography::entity_name(kind.tier_name(*tier))
                         ));
                     } else {
                         self.sounds_pending.push((SoundKind::TrainDone, None));

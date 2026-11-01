@@ -12,6 +12,7 @@
 //! [`aftermine_sim::SIM_VERSION`] is refused because it would not reproduce.
 
 use aftermine_kit::runner::GameReplay;
+use aftermine_kit::stats::{LOUD_BUILDINGS, LOUD_UNITS};
 use aftermine_sim::scenario::BotConfig;
 use aftermine_sim::{
     BuildingId, BuildingKind, Event, GameResult, Order, PlayerId, SIM_VERSION, State,
@@ -44,20 +45,6 @@ pub(crate) const BATTLE_VALUE_FLOOR: u64 = 200;
 
 /// Minimap cell army value at or above which the seat letter capitalizes.
 const MINIMAP_MASS_THRESHOLD: u64 = 300;
-
-/// Kinds loud enough for the timeline: the tech gates that change what a
-/// seat can threaten. Everything else lands in the closing reach table.
-const LOUD_BUILDINGS: &[BuildingKind] = &[BuildingKind::Airworks, BuildingKind::Crucible];
-/// Tier-3 breakthroughs and the transport — see [`LOUD_BUILDINGS`].
-const LOUD_UNITS: &[UnitKind] = &[
-    UnitKind::Breaker,
-    UnitKind::Piledriver,
-    UnitKind::Avalanche,
-    UnitKind::Condor,
-    UnitKind::Skyhook,
-    UnitKind::Maw,
-    UnitKind::Roc,
-];
 
 /// Options controlling one summary pass.
 #[derive(Debug, Clone, Copy)]
@@ -483,6 +470,7 @@ pub(crate) fn loss(
             player,
             tier,
             pos,
+            ..
         } => {
             let known = known(*building);
             Some(Loss {
@@ -935,6 +923,7 @@ pub fn summarize(replay: &GameReplay, opts: &SummaryOptions) -> Result<SummaryRe
                     building,
                     player,
                     kind,
+                    ..
                 } => {
                     ledgers.building.insert(*building, (player.0, *kind));
                     if completed_ids.insert(*building) {

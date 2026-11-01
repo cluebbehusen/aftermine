@@ -8,7 +8,7 @@ fn key(key: Key) -> RawEvent {
 #[test]
 fn actions_fit_small_and_large_viewports() {
     for viewport in [vec2(640.0, 400.0), vec2(1024.0, 768.0)] {
-        let rects = action_rects(viewport, 1.0);
+        let rects = action_rects(4, viewport, 1.0);
         assert!(rects[0].x >= 0.0);
         let last = rects.last().expect("results always has actions");
         assert!(last.x + last.w <= viewport.x);
@@ -37,7 +37,7 @@ fn eight_player_results_reserve_a_readable_small_screen_graph() {
     assert!(layout.meta_y < layout.header_y);
     assert!(last_row + layout.marker_radius < layout.graph_top);
     assert!(layout.graph_bottom - layout.graph_top >= 80.0);
-    assert!(layout.graph_bottom < action_rects(vec2(640.0, 400.0), 1.0)[0].y);
+    assert!(layout.graph_bottom < action_rects(4, vec2(640.0, 400.0), 1.0)[0].y);
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn maximum_roster_stays_readable_above_the_actions() {
                 + layout.rule_offset
                 + (count as f32 - 1.0 + layout.row_baseline) * layout.row_height;
             assert!(layout.row_height >= layout.row_size);
-            assert!(last_baseline + layout.row_size * 0.25 < action_rects(viewport, scale)[0].y);
+            assert!(last_baseline + layout.row_size * 0.25 < action_rects(4, viewport, scale)[0].y);
         }
     }
 }
@@ -83,7 +83,7 @@ fn compact_columns_stay_ordered_inside_the_table() {
 
 #[test]
 fn keyboard_wraps_and_escape_goes_home() {
-    let mut screen = ResultsScreen::open();
+    let mut screen = ResultsScreen::open(false);
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
     assert_eq!(
@@ -111,7 +111,7 @@ fn keyboard_wraps_and_escape_goes_home() {
 
 #[test]
 fn home_and_end_jump_to_the_first_and_last_action() {
-    let mut screen = ResultsScreen::open();
+    let mut screen = ResultsScreen::open(false);
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
     let mut press = |screen: &mut ResultsScreen, k: Key| {
@@ -128,13 +128,13 @@ fn home_and_end_jump_to_the_first_and_last_action() {
 #[test]
 fn final_map_action_is_touchable_and_named_for_automation() {
     let viewport = vec2(640.0, 400.0);
-    let rect = action_rects(viewport, 1.0)[2];
+    let rect = action_rects(4, viewport, 1.0)[2];
     let at = vec2(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5);
-    let mut screen = ResultsScreen::open();
+    let mut screen = ResultsScreen::open(false);
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
 
-    assert_eq!(ResultsScreen::items()[2], "View final map");
+    assert_eq!(ResultsScreen::open(false).items()[2], "View final map");
     assert_eq!(
         screen.update(
             &[
@@ -169,7 +169,7 @@ fn results_name_shows_the_scripted_controller() {
     let game = Game::new(scenario).expect("skirmish builds");
     assert_eq!(
         player_name_with_controller(&game, 1, 24, false),
-        "South East  PRIME / AGGRESSIVE AI"
+        "South East  Prime / Aggressive bot"
     );
     assert_eq!(
         player_name_with_controller(&game, 1, 24, true),
@@ -251,9 +251,9 @@ fn long_names_and_the_longest_bot_profile_stay_inside_the_player_column() {
 #[test]
 fn touch_activation_requires_the_arming_finger_and_same_action() {
     let viewport = vec2(640.0, 400.0);
-    let rematch = action_rects(viewport, 1.0)[0].center();
-    let watch = action_rects(viewport, 1.0)[1].center();
-    let mut screen = ResultsScreen::open();
+    let rematch = action_rects(4, viewport, 1.0)[0].center();
+    let watch = action_rects(4, viewport, 1.0)[1].center();
+    let mut screen = ResultsScreen::open(false);
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
 
@@ -353,9 +353,9 @@ fn touch_activation_requires_the_arming_finger_and_same_action() {
 #[test]
 fn mouse_hover_is_inert_and_clicks_commit_only_on_the_armed_action() {
     let viewport = vec2(640.0, 400.0);
-    let rematch = action_rects(viewport, 1.0)[0].center();
-    let watch = action_rects(viewport, 1.0)[1].center();
-    let mut screen = ResultsScreen::open();
+    let rematch = action_rects(4, viewport, 1.0)[0].center();
+    let watch = action_rects(4, viewport, 1.0)[1].center();
+    let mut screen = ResultsScreen::open(false);
     let mut mouse = Vec2::ZERO;
     let mut sounds = Vec::new();
 
@@ -447,32 +447,6 @@ fn verdict_copy_distinguishes_winning_from_surrendering() {
 }
 
 #[test]
-fn graph_ceiling_uses_readable_steps() {
-    for (value, expected) in [
-        (0, 1),
-        (1, 1),
-        (2, 2),
-        (3, 5),
-        (11, 20),
-        (52, 100),
-        (501, 1_000),
-    ] {
-        assert_eq!(graph_ceiling(value), expected);
-    }
-}
-
-#[test]
-fn graph_uses_sample_time_and_keeps_every_segment() {
-    let plot = Rect::new(10.0, 20.0, 100.0, 50.0);
-    let points = graph_points(&[0, 41, 82, 100], &[0, 10, 40, 100], 100, 100, plot);
-    assert_eq!(points.len(), 4);
-    assert_eq!(points.windows(2).count(), 3);
-    assert!((points[1].x - 51.0).abs() < f32::EPSILON);
-    assert!((points[2].x - 92.0).abs() < f32::EPSILON);
-    assert_eq!(points[3], vec2(110.0, 20.0));
-}
-
-#[test]
 fn every_supported_seat_has_a_distinct_results_marker() {
     let markers = (0..8).map(seat_marker).collect::<Vec<_>>();
     for (index, marker) in markers.iter().enumerate() {
@@ -481,4 +455,50 @@ fn every_supported_seat_has_a_distinct_results_marker() {
             "seat {index} aliases an earlier graph marker"
         );
     }
+}
+
+#[test]
+fn a_lan_report_offers_no_rematch() {
+    let screen = ResultsScreen::open(true);
+    assert_eq!(
+        screen.items(),
+        ["Watch replay", "View final map", "Home"],
+        "a rematch takes a new lobby"
+    );
+    assert_eq!(screen.selected(), 0);
+    let viewport = vec2(1280.0, 800.0);
+    assert_eq!(action_rects(3, viewport, 1.0).len(), 3);
+}
+
+#[test]
+fn keyboard_stays_on_a_lan_reports_own_actions() {
+    let mut screen = ResultsScreen::open(true);
+    let (mut mouse, mut sounds) = (Vec2::ZERO, Vec::new());
+    let viewport = vec2(1280.0, 800.0);
+    for expected in [1, 2, 0] {
+        screen.update(&[key(Key::Right)], &mut mouse, viewport, 1.0, &mut sounds);
+        assert_eq!(screen.selected(), expected);
+    }
+}
+
+#[test]
+fn a_short_window_trades_the_strips_height_for_the_chart() {
+    let tall = results_layout(vec2(1133.0, 744.0), 1.0, 8);
+    assert_eq!(tall.chart_strip, crate::theme::MIN_TOUCH_TARGET);
+    let short = results_layout(vec2(640.0, 400.0), 1.0, 8);
+    assert!(short.chart_strip < crate::theme::MIN_TOUCH_TARGET);
+    let panel = results_panel(vec2(640.0, 400.0), 1.0);
+    let chart = ResultsScreen::chart_panel(&short, vec2(640.0, 400.0), 1.0)
+        .expect("the compact roster keeps a chart");
+    assert!(chart.y + chart.h <= panel.y + panel.h);
+    let parts = chart::chart_layout(chart, short.chart_strip, short.graph_label_size, 1.0);
+    assert!(parts.plot.h > 20.0, "{:?}", parts.plot);
+}
+
+#[test]
+fn a_winners_band_spans_its_own_row_and_the_whole_table() {
+    let band = winner_band(32.0, 1248.0, 120.0, 2, 27.0, 1.0);
+    assert!(band.x < 32.0 && band.x + band.w > 1248.0);
+    assert!(band.y >= 120.0 + 2.0 * 27.0);
+    assert!(band.y + band.h <= 120.0 + 3.0 * 27.0);
 }
