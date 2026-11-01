@@ -595,8 +595,11 @@ fn a_client_loses_a_host_that_leaves_undecided() {
         client: (mut client, mut link),
     } = lan;
     drop(host);
+    // The client rejoins for a whole window before it gives up. Clock steps of
+    // a second, short of the suspend gap, cross that window in few polls, so a
+    // slow runner stays inside the real-time limit of `wait`.
     let end = wait(|| {
-        now += STEP;
+        now += Duration::from_secs(1);
         thread::sleep(Duration::from_millis(1));
         link.pump(&mut client, now)
     });
