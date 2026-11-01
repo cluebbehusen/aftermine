@@ -478,6 +478,7 @@ impl ReactivityDetectors {
                     building,
                     player,
                     kind: BuildingKind::Extractor,
+                    ..
                 } => {
                     if let Some(Some(watch)) = self.seats.get_mut(usize::from(player.0))
                         && let Some(extractor) = state.building(building)

@@ -627,6 +627,7 @@ fn resolve_hits(
                     building: w.building,
                     player,
                     kind,
+                    tier: b.tier,
                 });
             }
         }

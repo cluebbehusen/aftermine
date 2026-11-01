@@ -923,6 +923,7 @@ pub fn summarize(replay: &GameReplay, opts: &SummaryOptions) -> Result<SummaryRe
                     building,
                     player,
                     kind,
+                    ..
                 } => {
                     ledgers.building.insert(*building, (player.0, *kind));
                     if completed_ids.insert(*building) {

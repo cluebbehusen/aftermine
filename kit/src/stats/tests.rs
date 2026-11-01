@@ -366,6 +366,7 @@ fn event_counters_saturate_where_a_restored_record_left_them() {
                 building: aftermine_sim::BuildingId(0),
                 player,
                 kind: aftermine_sim::BuildingKind::Foundry,
+                tier: 0,
             },
         ],
     );
@@ -429,6 +430,7 @@ fn completed(player: PlayerId, kind: BuildingKind) -> Event {
         building: aftermine_sim::BuildingId(9_999),
         player,
         kind,
+        tier: 0,
     }
 }
 
@@ -485,6 +487,76 @@ fn an_army_is_what_fights_and_wealth_is_everything_owned() {
         stats[0].army_value[0] < stats[0].wealth[0],
         "workers and structures are wealth, not army"
     );
+}
+
+#[test]
+fn riders_still_count_toward_wealth_and_army() {
+    let mut scenario = Scenario::skirmish();
+    let opening = scenario
+        .units
+        .iter()
+        .find(|unit| unit.player == 0)
+        .expect("the opening has a unit");
+    let (x, y) = (opening.x, opening.y);
+    for (kind, x) in [(UnitKind::Skyhook, x), (UnitKind::Sentinel, x + 1)] {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
+            player: 0,
+            kind,
+            x,
+            y,
+        });
+    }
+    let mut state = scenario.build().expect("the staged skirmish builds");
+    let owned = |kind| {
+        state
+            .units()
+            .iter()
+            .find(|unit| unit.player == PlayerId(0) && unit.kind == kind)
+            .expect("the kind was staged")
+            .id
+    };
+    let (transport, rider) = (owned(UnitKind::Skyhook), owned(UnitKind::Sentinel));
+    let mut stats = blank_players(state.players().len());
+    let mut ticks = Vec::new();
+    sample(&state, &mut stats, &mut ticks);
+
+    state.tick(&[aftermine_sim::PlayerCommand {
+        player: PlayerId(0),
+        command: aftermine_sim::Command::Load {
+            units: vec![rider],
+            transport,
+            queue: false,
+        },
+    }]);
+    for _ in 0..400 {
+        if state.unit(rider).is_none() {
+            break;
+        }
+        state.tick(&[]);
+    }
+    assert!(state.unit(rider).is_none(), "the rider boarded");
+    sample(&state, &mut stats, &mut ticks);
+
+    let holdings = |sample: usize| stats[0].wealth[sample] - stats[0].scrap[sample];
+    assert_eq!(holdings(1), holdings(0));
+    assert_eq!(stats[0].army_value[1], stats[0].army_value[0]);
+}
+
+#[test]
+fn a_finished_upgrade_is_not_a_new_structure_even_once_it_is_gone() {
+    let mut stats = blank_players(1);
+    let moments = accumulate(
+        &mut stats,
+        &[Event::BuildingCompleted {
+            building: aftermine_sim::BuildingId(9_999),
+            player: PlayerId(0),
+            kind: BuildingKind::Foundry,
+            tier: 1,
+        }],
+    );
+    assert_eq!(stats[0].buildings_completed, 1);
+    assert!(stats[0].structures_built.is_empty());
+    assert!(moments.is_empty());
 }
 
 #[test]

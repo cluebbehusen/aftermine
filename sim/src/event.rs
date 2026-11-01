@@ -303,6 +303,9 @@ pub enum Event {
         player: crate::ids::PlayerId,
         /// What it is.
         kind: crate::stats::BuildingKind,
+        /// Its upgrade tier; above zero, an upgrade finished rather than a
+        /// new structure.
+        tier: u8,
     },
     /// An unfinished site was cancelled and its owner received a refund.
     BuildCancelled {

@@ -309,18 +309,22 @@ fn sample(state: &State, stats: &mut [PlayerStats], ticks: &mut Vec<u64>) {
     let mut wealth: Vec<u32> = state.players().iter().map(|player| player.scrap).collect();
     let mut counts: Vec<BTreeMap<&'static str, u16>> = vec![BTreeMap::new(); stats.len()];
     for unit in state.units() {
-        let kind = unit.kind.stats();
-        // A drone is its host's equipment, counted neither in an army nor
-        // among its losses, launched or docked.
-        if kind.docks() {
-            continue;
-        }
         let seat = usize::from(unit.player.0);
-        wealth[seat] = wealth[seat].saturating_add(kind.cost);
-        if kind.can_fight() || kind.point_defense.is_some() {
-            army[seat] = army[seat].saturating_add(kind.cost);
+        // Riders have left the unit list but still belong to the seat.
+        let aboard = unit.cargo.iter().map(|rider| rider.kind);
+        for owned in std::iter::once(unit.kind).chain(aboard) {
+            let kind = owned.stats();
+            // A drone is its host's equipment, counted neither in an army nor
+            // among its losses, launched or docked.
+            if kind.docks() {
+                continue;
+            }
+            wealth[seat] = wealth[seat].saturating_add(kind.cost);
+            if kind.can_fight() || kind.point_defense.is_some() {
+                army[seat] = army[seat].saturating_add(kind.cost);
+            }
+            *counts[seat].entry(owned.name()).or_default() += 1;
         }
-        *counts[seat].entry(unit.kind.name()).or_default() += 1;
     }
     for building in state.buildings() {
         let seat = usize::from(building.player.0);
@@ -401,14 +405,11 @@ fn accumulate_events(
                 note_unit_built(&mut stats[player.0 as usize], moments, tick, *player, *kind);
             }
             Event::BuildingCompleted {
-                building,
-                player,
-                kind,
+                player, kind, tier, ..
             } => {
                 let seat = &mut stats[player.0 as usize];
                 seat.buildings_completed = seat.buildings_completed.saturating_add(1);
-                // A completion at a nonzero tier is an upgrade finishing.
-                if state.building(*building).is_some_and(|b| b.tier > 0) {
+                if *tier > 0 {
                     continue;
                 }
                 let built = seat.structures_built.entry(*kind).or_default();
