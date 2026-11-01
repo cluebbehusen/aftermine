@@ -447,21 +447,8 @@ pub(in crate::tick) fn surface_for(
             ..
         } => Some(building),
         Order::ReturnCargo { foundry, .. } => Some(foundry),
-        Order::Harvest { .. } if unit.carrying() > 0 => {
-            unit.unloading().map(|u| u.foundry).or_else(|| {
-                state
-                    .buildings()
-                    .iter()
-                    .find(|b| {
-                        b.hp > 0
-                            && b.player == unit.player
-                            && b.kind.is_drop_off()
-                            && unit.path.as_ref().is_some_and(|p| {
-                                crate::tick::tile_adjacent_to_rect(p.goal, b.anchor, b.kind.size())
-                            })
-                    })
-                    .map(|b| b.id)
-            })
+        Order::Harvest { withdrawing, .. } if unit.carrying() > 0 => {
+            delivery_drop_off(state, unit, withdrawing)
         }
         _ => None,
     };
@@ -483,6 +470,39 @@ pub(in crate::tick) fn surface_for(
                 .flatten()
         })?;
     Some(state.contact_surface(b))
+}
+
+/// The drop-off whose surface bounds a loaded Harvest worker, if it is unloading,
+/// routing to one, or stopping beside one.
+fn delivery_drop_off(state: &State, unit: &crate::Unit, withdrawing: bool) -> Option<BuildingId> {
+    if let Some(release) = unit.unloading() {
+        return Some(release.foundry);
+    }
+    if let Some(path) = &unit.path {
+        return state
+            .buildings()
+            .iter()
+            .find(|b| {
+                b.hp > 0
+                    && b.player == unit.player
+                    && b.kind.is_drop_off()
+                    && crate::tick::tile_adjacent_to_rect(path.goal, b.anchor, b.kind.size())
+            })
+            .map(|b| b.id);
+    }
+    // A delivery gives up its route on coming into reach, still rolling. A hull
+    // that then coasts or is shoved onto the outline is out of reach, and can
+    // only back off by turning away from the drop-off.
+    let full = unit
+        .kind
+        .stats()
+        .harvest
+        .is_some_and(|h| unit.carrying() >= h.capacity);
+    if withdrawing || full {
+        economy::drop_off_in_reach(state, unit)
+    } else {
+        None
+    }
 }
 
 /// A worker that already reaches the surface stops where it stands instead
