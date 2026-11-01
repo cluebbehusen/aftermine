@@ -43,8 +43,8 @@ impl Tab {
 
     fn label(self) -> &'static str {
         match self {
-            Tab::Saves => "SAVES",
-            Tab::Replays => "REPLAYS",
+            Tab::Saves => "Saves",
+            Tab::Replays => "Replays",
         }
     }
 

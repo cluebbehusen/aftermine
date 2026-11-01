@@ -109,4 +109,7 @@ pub(crate) fn draw(text: &str, x: f32, y: f32, size: f32, color: Color) {
 }
 
 #[cfg(test)]
+mod casing_tests;
+
+#[cfg(test)]
 mod tests;

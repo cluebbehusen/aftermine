@@ -562,15 +562,7 @@ impl Browser {
             (view.y - bottom).max(0.0),
             crate::render::OUTSIDE,
         );
-        let title_size = crate::theme::Type::Title.at(ui);
-        let dims = measure_text("AFTERMINE", None, numeric::font_size(title_size), 1.0);
-        draw_text(
-            "AFTERMINE",
-            (view.x - dims.width) * 0.5,
-            72.0 * ui,
-            title_size,
-            TEXT_TITLE,
-        );
+        crate::menu::draw_title("MAPS", crate::menu::page_title_baseline(ui), TEXT_TITLE);
         // A draw-only scrollbar thumb showing where the window sits in
         // the shelf.
         if layout.more_above || layout.more_below {

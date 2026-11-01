@@ -228,7 +228,7 @@ fn a_lessons_pause_menu_offers_the_lesson_list() {
     };
     let items = pause.menu.view().items;
     assert!(items.iter().any(|item| item == "Lessons"));
-    assert!(!items.iter().any(|item| item == "Save Game"));
+    assert!(!items.iter().any(|item| item == "Save game"));
 }
 
 #[test]

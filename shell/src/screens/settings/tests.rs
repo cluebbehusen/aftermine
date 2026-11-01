@@ -932,11 +932,11 @@ fn the_page_heading_stacks_title_strip_and_list_and_shows_more_rows() {
                 first.y >= strip[0].bottom(),
                 "the list starts under the strip, {at}"
             );
-            let mut marquee = tab_menu(Tab::Controls, &Config::default(), 0);
-            marquee.heading = Heading::Marquee;
+            let mut wordmark = tab_menu(Tab::Controls, &Config::default(), 0);
+            wordmark.heading = Heading::Wordmark;
             assert!(
-                page.menu.visible_range()[1] > marquee.visible_range()[1],
-                "a page title leaves the list more rows than a marquee, {at}"
+                page.menu.visible_range()[1] > wordmark.visible_range()[1],
+                "a page title leaves the list more rows than the wordmark, {at}"
             );
         }
     }

@@ -33,10 +33,10 @@ impl Tab {
 
     fn label(self) -> &'static str {
         match self {
-            Tab::General => "GENERAL",
-            Tab::Audio => "AUDIO",
-            Tab::Display => "DISPLAY",
-            Tab::Controls => "CONTROLS",
+            Tab::General => "General",
+            Tab::Audio => "Audio",
+            Tab::Display => "Display",
+            Tab::Controls => "Controls",
         }
     }
 
@@ -679,7 +679,7 @@ impl SettingsScreen {
         let current = config.player_name.as_deref().unwrap_or_default();
         let field =
             Field::new(current, PlayerName::MAX_CHARS, PlayerName::accepts).validated(name_check);
-        let form = Form::new("YOUR NAME", "SAVE", vec![field], 0);
+        let form = Form::new("YOUR NAME", "Save", vec![field], 0);
         self.menu = form.menu(|_| Item::Setting(Row::PlayerName));
         self.naming = Some(form);
     }

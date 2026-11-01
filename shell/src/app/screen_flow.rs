@@ -432,13 +432,7 @@ fn lobby_frame(
             .discovering();
         }
     }
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    page_backdrop();
     lobby.draw(app.input.mouse, &mut app.previews);
     Screen::Lobby {
         screen: lobby,
@@ -538,13 +532,7 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
             );
         }
     }
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    page_backdrop();
     home.draw();
     if out == screens::home::Out::Settings {
         Screen::Settings {
@@ -625,13 +613,7 @@ fn settings_frame(
     {
         app.notify(format!("could not save settings: {err}"), true);
     }
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    page_backdrop();
     sc.draw(app.input.mouse);
     crate::button::draw_back(app.input.mouse);
     if up.out == screens::settings::Out::Leave {
@@ -655,13 +637,7 @@ fn codex_frame(
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let out = codex.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    page_backdrop();
     codex.draw(&app.sprites);
     crate::button::draw_back(app.input.mouse);
     if out == screens::codex::Out::Leave {
@@ -690,13 +666,7 @@ fn lessons_frame(
         *rerun = true;
         return start_course(app, row);
     }
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    page_backdrop();
     list.draw(app.input.mouse);
     Ok(if out == screens::lessons::Out::Leave {
         *back
@@ -781,13 +751,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
         WizardOut::Home => {
             w.finish_resume(&mut app.draft);
             let home = HomeScreen::open();
-            render::draw(
-                &app.game.view(),
-                &app.sprites,
-                &app.input,
-                &app.config.bindings,
-            );
-            veil();
+            page_backdrop();
             home.draw();
             *rerun = true;
             next = Some(Screen::Home(home));
@@ -814,13 +778,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     if let Some(next) = next {
         next
     } else {
-        render::draw(
-            &app.game.view(),
-            &app.sprites,
-            &app.input,
-            &app.config.bindings,
-        );
-        veil();
+        page_backdrop();
         match w.step {
             WizardStep::Map => w.browser.draw(&w.entries, &mut app.previews),
             WizardStep::Setup => w.draw_setup(&app.draft, &mut app.previews, app.input.mouse),
@@ -1199,12 +1157,7 @@ fn results_frame(
         &mut app.ui_sounds,
     );
     drop(input_scope);
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
+    render::draw_world(&app.game.view(), &app.sprites, &app.input);
     results.draw(&app.game);
     match out {
         screens::results::Out::Stay => Screen::Results(results),
@@ -1249,13 +1202,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
     match out {
         screens::shelf::Out::Home => {
             let home = HomeScreen::open();
-            render::draw(
-                &app.game.view(),
-                &app.sprites,
-                &app.input,
-                &app.config.bindings,
-            );
-            veil();
+            page_backdrop();
             home.draw();
             *rerun = true;
             leave = Some(Screen::Home(home));
@@ -1289,13 +1236,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
     if let Some(next) = leave {
         next
     } else {
-        render::draw(
-            &app.game.view(),
-            &app.sprites,
-            &app.input,
-            &app.config.bindings,
-        );
-        veil();
+        page_backdrop();
         shelf.draw(app.input.mouse, app.menu_notice.is_some());
         crate::button::draw_back(app.input.mouse);
         Screen::Replays(shelf)
@@ -1344,13 +1285,7 @@ fn waiting_frame(
     }
     waiting.refresh(absent);
     let out = waiting.update(events, &mut app.input.mouse, &mut app.ui_sounds);
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    match_backdrop(app);
     waiting.draw();
     match out {
         screens::waiting::Out::Stay => Screen::Waiting(waiting),
@@ -1378,13 +1313,7 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let out = ps.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
+    match_backdrop(app);
     ps.draw(&app.game.scenario.name, app.input.mouse);
     Ok(match out {
         screens::pause::Out::Stay => Screen::Pause(ps),

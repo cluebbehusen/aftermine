@@ -52,14 +52,18 @@ pub(super) fn write_png(image: &Image, path: &str) -> Result<(u32, u32)> {
         u32::from(image.width),
         u32::from(image.height),
     );
-    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_color(png::ColorType::Rgb);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().context("writing png header")?;
-    // The GL framebuffer is bottom-up; PNG rows are top-down.
+    // The GL framebuffer is bottom-up; PNG rows are top-down. Its alpha is
+    // dropped: the window is opaque, and translucent plates leave values
+    // there that a viewer would composite over its own background.
     let stride = usize::from(image.width) * 4;
-    let mut flipped = Vec::with_capacity(image.bytes.len());
+    let mut flipped = Vec::with_capacity(image.bytes.len() / 4 * 3);
     for row in image.bytes.chunks_exact(stride).rev() {
-        flipped.extend_from_slice(row);
+        for &[red, green, blue, _alpha] in row.as_chunks::<4>().0 {
+            flipped.extend_from_slice(&[red, green, blue]);
+        }
     }
     writer
         .write_image_data(&flipped)
