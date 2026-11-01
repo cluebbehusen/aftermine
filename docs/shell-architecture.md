@@ -37,8 +37,10 @@ for an all-bot scene. A networked session binds an explicit seat instead. This
 choice never changes the configured controllers.
 
 Color means ownership only. The viewer's own seats wear a fixed color, allies a
-cool family and hostiles a warm family, each ranked by seat order, and every
-owner-colored element reads the same per-view table.
+cool family and hostiles their own family, each ranked by seat order, and every
+owner-colored element reads the same per-view table. A viewer with an ally sees
+hostile colors clear of the ally hues; only a viewer with no ally to confuse
+sees hostiles in cool colors.
 
 `App` owns resources that outlive a screen: the live `Game`, configuration,
 input funnel, New Match draft, assets, audio, debug channels and profiling. Each
