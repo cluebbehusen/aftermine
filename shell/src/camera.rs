@@ -12,7 +12,7 @@ use macroquad::prelude::{Vec2, vec2};
 /// Zoom bounds in logical pixels per tile. macroquad's coordinate space
 /// already absorbs the retina multiple in its backing store, so applying
 /// dpi here would double-scale the world on high-dpi displays.
-const ZOOM_MIN: f32 = 8.0;
+pub(crate) const ZOOM_MIN: f32 = 8.0;
 const ZOOM_MAX: f32 = 96.0;
 const ZOOM_DEFAULT: f32 = 32.0;
 
@@ -33,6 +33,10 @@ pub struct Camera {
     /// moves the whole view, so screen and world points stay paired.
     shake: f32,
     shake_time: f32,
+    /// A sub-pixel shift that brings world `(0, 0)` onto a whole pixel as a zoom
+    /// comes to rest. It moves the whole view, so screen and world points stay
+    /// paired, and a view pinned to the map can take it too.
+    landing_nudge: Vec2,
 }
 
 /// How fast a jolt dies away, per second.
@@ -53,6 +57,7 @@ impl Camera {
             map_size: vec2(width as f32, height as f32),
             shake: 0.0,
             shake_time: 0.0,
+            landing_nudge: Vec2::ZERO,
         };
         camera.clamp();
         camera
@@ -74,17 +79,21 @@ impl Camera {
 
     /// Screen pixels for a world point.
     pub fn to_screen(&self, world: Vec2) -> Vec2 {
-        (world - self.center) * self.zoom + self.viewport * 0.5 + self.shake_offset()
+        (world - self.center) * self.zoom + self.viewport * 0.5 + self.view_offset()
     }
 
     /// World point under a screen pixel.
     pub fn to_world(&self, screen: Vec2) -> Vec2 {
-        (screen - self.viewport * 0.5 - self.shake_offset()) / self.zoom + self.center
+        (screen - self.viewport * 0.5 - self.view_offset()) / self.zoom + self.center
     }
 
     /// Jolts the view by up to `pixels`, keeping a stronger jolt underway.
     pub fn kick(&mut self, pixels: f32) {
         self.shake = self.shake.max(pixels);
+    }
+
+    fn view_offset(&self) -> Vec2 {
+        self.shake_offset() + self.landing_nudge
     }
 
     fn shake_offset(&self) -> Vec2 {
@@ -119,6 +128,25 @@ impl Camera {
         self.zoom != self.target_zoom
     }
 
+    /// Where the zoom glide will come to rest, as things stand: its zoom, and
+    /// the whole pixel world `(0, 0)` will land on.
+    pub fn landing(&self) -> (f32, Vec2) {
+        let anchor_px = self.zoom_anchor.unwrap_or(self.viewport * 0.5);
+        let origin = self.landing_origin(anchor_px, self.to_world(anchor_px));
+        (self.target_zoom, origin.round())
+    }
+
+    /// Where world `(0, 0)` lands at the target zoom, with `anchor_world` held
+    /// under `anchor_px`, before any nudge onto a whole pixel.
+    fn landing_origin(&self, anchor_px: Vec2, anchor_world: Vec2) -> Vec2 {
+        let half = self.viewport * 0.5;
+        let center = self.clamped(
+            anchor_world - (anchor_px - half - self.view_offset()) / self.target_zoom,
+            self.target_zoom,
+        );
+        half - center * self.target_zoom
+    }
+
     /// Advances the zoom glide. Call once per frame.
     pub fn update(&mut self, dt: f32) {
         if self.shake > 0.0 {
@@ -137,13 +165,22 @@ impl Camera {
         let anchor_world = self.to_world(anchor_px);
         let t = (12.0 * dt).min(1.0);
         self.zoom += (self.target_zoom - self.zoom) * t;
-        if (self.target_zoom - self.zoom).abs() < 0.01 {
+        // Land only once the last step moves the screen's far edge a tenth of a
+        // pixel at most: any more makes sharp ground art hop together at rest.
+        let landed =
+            (self.target_zoom - self.zoom).abs() * self.viewport.max_element() < 0.1 * self.zoom;
+        if landed {
             self.zoom = self.target_zoom;
             self.zoom_anchor = None;
         }
         let after = self.to_world(anchor_px);
         self.center += anchor_world - after;
         self.clamp();
+        // World (0, 0) should land on a whole pixel, where still ground draws.
+        // Easing there with the glide spares the view a jump at rest.
+        let landing = self.landing_origin(anchor_px, anchor_world);
+        let share = if landed { 1.0 } else { t };
+        self.landing_nudge += (landing.round() - landing - self.landing_nudge) * share;
     }
 
     /// The visible world rectangle `[min, max]`.
@@ -153,12 +190,16 @@ impl Camera {
     }
 
     fn clamp(&mut self) {
-        // Keep the view inside the map, with slack when zoomed far out.
-        let half = self.viewport * 0.5 / self.zoom;
+        self.center = self.clamped(self.center, self.zoom);
+    }
+
+    /// `center` kept inside the map at `zoom`, with slack when zoomed far out.
+    fn clamped(&self, center: Vec2, zoom: f32) -> Vec2 {
+        let half = self.viewport * 0.5 / zoom;
         let slack = vec2(2.0, 2.0);
         let lo = (half - slack).min(self.map_size * 0.5);
         let hi = (self.map_size - half + slack).max(self.map_size * 0.5);
-        self.center = self.center.clamp(lo, hi);
+        center.clamp(lo, hi)
     }
 }
 

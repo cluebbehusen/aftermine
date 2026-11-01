@@ -839,7 +839,9 @@ pub(super) fn draw_salvage(
     view: &GroundView,
     sprites: &Sprites,
 ) {
-    let size = view.zoom().ceil() + 1.0;
+    // Exact and smooth, unlike the baked ground: salvage draws live, so rounding
+    // would make each piece step against the rest as the zoom moves.
+    let size = view.zoom() + 1.0;
     let paint = ground_paint(ground);
     for_each_tile(ground.map, view, |spot| {
         let (pos, tile) = (spot.pos, spot.tile);
@@ -888,8 +890,8 @@ pub(super) fn draw_salvage(
             tint
         };
         sprites.draw(
-            spot.screen.x.floor(),
-            spot.screen.y.floor(),
+            spot.screen.x,
+            spot.screen.y,
             tint,
             DrawTextureParams {
                 dest_size: Some(vec2(size, size)),
@@ -917,8 +919,8 @@ pub(super) fn draw_extractor_frames(
         }
         let screen = view.to_screen(vec2(frame.x as f32, frame.y as f32));
         sprites.draw(
-            screen.x.floor(),
-            screen.y.floor(),
+            screen.x,
+            screen.y,
             WHITE,
             DrawTextureParams {
                 dest_size: Some(vec2(zoom * 2.0 + 1.0, zoom * 2.0 + 1.0)),

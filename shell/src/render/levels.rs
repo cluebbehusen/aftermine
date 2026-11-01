@@ -837,14 +837,9 @@ impl Levels {
             let (xs, ys) = cell_edges(view, pos);
             for op in ops {
                 let (sx, sy) = (usize::from(op.sx), usize::from(op.sy));
-                let (w, h) = (xs[sx + 1] - xs[sx], ys[sy + 1] - ys[sy]);
-                draw_rectangle(
-                    xs[sx] + (w * op.x).round(),
-                    ys[sy] + (h * op.y).round(),
-                    (w * op.w).round().max(1.0),
-                    (h * op.h).round().max(1.0),
-                    op.color,
-                );
+                let (x, w) = span_in_cell(xs[sx + 1] - xs[sx], op.x, op.w);
+                let (y, h) = span_in_cell(ys[sy + 1] - ys[sy], op.y, op.h);
+                draw_rectangle(xs[sx] + x, ys[sy] + y, w, h, op.color);
             }
         }
         if let Ok(found) = self.decals.binary_search_by_key(&tile, |decal| decal.0) {
@@ -860,6 +855,16 @@ impl Levels {
             }
         }
     }
+}
+
+/// Where a span of a cell `size` pixels wide lands, in whole pixels: its offset
+/// and length, from `start` across `span`, both fractions of the cell. It is
+/// always at least a pixel and stays inside the cell: a thin line rounded past
+/// the edge would land in the next cell, which paints over it.
+fn span_in_cell(size: f32, start: f32, span: f32) -> (f32, f32) {
+    let offset = (size * start).round().min((size - 1.0).max(0.0));
+    let end = (size * (start + span)).round();
+    (offset, (end - offset).max(1.0))
 }
 
 #[cfg(test)]

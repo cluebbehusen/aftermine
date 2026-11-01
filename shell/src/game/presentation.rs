@@ -113,7 +113,7 @@ pub struct Presentation {
     ground: std::cell::OnceCell<crate::render::GroundLayout>,
     /// The fixed ground baked into textures, filled by settled frames. A
     /// `RefCell` because drawing borrows presentation.
-    pub(crate) ground_cache: std::cell::RefCell<crate::render::GroundCache>,
+    pub(crate) ground_cache: std::cell::RefCell<Box<crate::render::GroundCache>>,
     pub boundary_fog: crate::boundary_fog::BoundaryFog,
     /// The chrome geometry of the latest HUD layout pass. Hit-testing
     /// reads this same model so drawn and clickable regions cannot
