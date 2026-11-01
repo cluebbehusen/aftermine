@@ -162,6 +162,7 @@ fn paging_keeps_the_keyboard_target_visible_and_off_section_headers() {
 fn fractional_trackpad_motion_accumulates_before_scrolling_a_row() {
     crate::render::set_viewport(1280.0, 400.0);
     let mut menu = sectioned();
+    menu.heading = Heading::Wordmark;
     let mut mouse = vec2(0.0, 0.0);
     let start = menu.visible_range();
     for _ in 0..2 {

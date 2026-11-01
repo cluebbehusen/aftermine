@@ -54,8 +54,15 @@ pub const SURFACE_CAPTION: Color = color_u8!(15, 15, 19, 230);
 /// The command band beneath the panel's cards.
 pub const SURFACE_BAND: Color = color_u8!(20, 24, 26, 255);
 
-/// The darkening plate under full-screen menus and the match report.
+/// The darkening plate under the match report.
 pub const VEIL: Color = color_u8!(10, 10, 15, 245);
+
+/// The ground of a full-screen page.
+pub const PAGE: Color = color_u8!(10, 10, 15, 255);
+
+/// The dimming layer between a match and a menu raised over it: dark enough
+/// for rows to read, light enough to keep the battlefield in view.
+pub const MATCH_VEIL: Color = color_u8!(10, 10, 15, 150);
 
 /// A command card at rest.
 pub const CARD_IDLE: Color = color_u8!(29, 35, 38, 255);

@@ -1752,37 +1752,19 @@ impl Wizard {
         let order = seat_display_order(scenario);
         let hosting = self.hosting_line(draft);
 
-        let title = "MATCH SETUP";
         let compact = layout.page_count > 1;
-        let tsize = if compact {
-            Type::Title.at(ui).min(42.0)
-        } else {
-            Type::Title.at(ui)
-        };
-        let tdims = measure_text(title, None, numeric::font_size(tsize), 1.0);
-        draw_text(
-            title,
-            (view.x - tdims.width) * 0.5,
-            if compact { 58.0 } else { 64.0 * ui },
-            tsize,
-            TEXT_TITLE,
-        );
-        if !compact {
-            let sub = if let Some(hosting) = &hosting {
-                format!("{} - {hosting}", scenario.name)
-            } else if crate::hints::showing() {
-                format!("{} - pick your seat, opponents, and teams", scenario.name)
-            } else {
-                scenario.name.clone()
-            };
-            let sdims = measure_text(&sub, None, numeric::font_size(Type::Label.at(ui)), 1.0);
-            draw_text(
-                &sub,
-                (view.x - sdims.width) * 0.5,
-                92.0 * ui,
-                Type::Label.at(ui),
-                TEXT_SECONDARY,
+        if compact {
+            crate::menu::draw_title(
+                "MATCH SETUP",
+                crate::menu::page_title_baseline(ui),
+                TEXT_TITLE,
             );
+        } else {
+            let subtitle = hosting.as_ref().map_or_else(
+                || scenario.name.clone(),
+                |hosting| format!("{} - {hosting}", scenario.name),
+            );
+            crate::menu::draw_page_heading("MATCH SETUP", &subtitle);
         }
 
         self.draw_switch(&layout, ui);
@@ -1881,11 +1863,11 @@ impl Wizard {
         for (rect, label) in [
             (
                 layout.page_prev,
-                format!("PREV  {}/{}", layout.page + 1, layout.page_count),
+                format!("Prev  {}/{}", layout.page + 1, layout.page_count),
             ),
             (
                 layout.page_next,
-                format!("{}/{}  NEXT", layout.page + 1, layout.page_count),
+                format!("{}/{}  Next", layout.page + 1, layout.page_count),
             ),
         ] {
             let Some(rect) = rect else {
@@ -1970,7 +1952,7 @@ impl Wizard {
     /// when it sits on the switch.
     fn draw_switch(&self, layout: &SetupLayout, ui: f32) {
         let lan = self.lan.is_some();
-        for (index, (half, label)) in layout.switch.iter().zip(["LOCAL", "LAN"]).enumerate() {
+        for (index, (half, label)) in layout.switch.iter().zip(["Local", "LAN"]).enumerate() {
             let active = (index == 1) == lan;
             draw_rectangle(
                 half.x,
@@ -2082,7 +2064,7 @@ impl Wizard {
                 (view.title, view.items, view.selected)
             }
             (None, Step::Map) => (
-                "AFTERMINE".to_string(),
+                "MAPS".to_string(),
                 self.entries.iter().map(|e| e.label.clone()).collect(),
                 self.browser.selected,
             ),

@@ -67,14 +67,14 @@ impl Row {
     fn label(self) -> &'static str {
         match self {
             Row::Resume => "Resume",
-            Row::SaveGame => "Save Game",
-            Row::WatchReplay => "Watch Replay",
+            Row::SaveGame => "Save game",
+            Row::WatchReplay => "Watch replay",
             Row::Settings => "Settings",
             Row::Roster => "Roster",
             Row::Surrender => "Surrender",
             Row::Restart => "Restart",
             Row::Lessons => "Lessons",
-            Row::MainMenu => "Main Menu",
+            Row::MainMenu => "Main menu",
             Row::Quit => "Quit",
         }
     }
@@ -384,7 +384,7 @@ impl PauseScreen {
         let name = Field::new(suggested, Self::NAME_MAX, |ch| {
             ch.is_ascii() || ch == '\u{b7}'
         });
-        let form = Form::new("SAVE GAME", "SAVE", vec![name], 0);
+        let form = Form::new("SAVE GAME", "Save", vec![name], 0);
         self.menu = form.menu(|_| Choice::Field);
         self.face = Face::Naming(form);
     }

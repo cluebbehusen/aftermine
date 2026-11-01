@@ -54,10 +54,10 @@ impl ResultAction {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Rematch => "REMATCH",
-            Self::Watch => "WATCH REPLAY",
-            Self::ViewFinalMap => "VIEW FINAL MAP",
-            Self::Home => "HOME",
+            Self::Rematch => "Rematch",
+            Self::Watch => "Watch replay",
+            Self::ViewFinalMap => "View final map",
+            Self::Home => "Home",
         }
     }
 
@@ -106,7 +106,6 @@ struct ResultsLayout {
     compact_roster: bool,
     wide_table: bool,
     title_y: f32,
-    title_size: f32,
     meta_y: f32,
     meta_size: f32,
     header_y: f32,
@@ -126,7 +125,6 @@ struct ResultsLayout {
 #[derive(Debug, Clone, Copy)]
 struct ResultsMetrics {
     title_y: f32,
-    title_size: f32,
     meta_y: f32,
     meta_size: f32,
     header_y: f32,
@@ -146,7 +144,6 @@ impl ResultsMetrics {
     /// Six or more players in a short window.
     const COMPACT: Self = Self {
         title_y: 43.0,
-        title_size: Type::Title.px(),
         meta_y: 62.0,
         meta_size: Type::Small.px(),
         header_y: 79.0,
@@ -164,7 +161,6 @@ impl ResultsMetrics {
     fn standard(short: bool) -> Self {
         Self {
             title_y: 48.0,
-            title_size: Type::Title.px(),
             meta_y: 68.0,
             meta_size: Type::Body.px(),
             header_y: 91.0,
@@ -187,7 +183,6 @@ fn results_layout(viewport: Vec2, scale: f32, player_count: usize) -> ResultsLay
     let wide_table = !compact_roster && logical_width >= 1_100.0;
     let ResultsMetrics {
         title_y,
-        title_size,
         meta_y,
         meta_size,
         header_y,
@@ -220,7 +215,6 @@ fn results_layout(viewport: Vec2, scale: f32, player_count: usize) -> ResultsLay
         compact_roster,
         wide_table,
         title_y: title_y * scale,
-        title_size: title_size * scale,
         meta_y: meta_y * scale,
         meta_size: meta_size * scale,
         header_y: header_y * scale,
@@ -471,14 +465,7 @@ impl ResultsScreen {
         let player_count = game.state.players().len();
         let layout = results_layout(viewport, s, player_count);
         let (title, title_color, subtitle) = verdict(game);
-        let dims = measure_text(title, None, numeric::font_size(layout.title_size), 1.0);
-        draw_text(
-            title,
-            (viewport.x - dims.width) * 0.5,
-            layout.title_y,
-            layout.title_size,
-            title_color,
-        );
+        crate::menu::draw_title(title, layout.title_y, title_color);
         let stats = game.end_stats.as_ref();
         let duration = stats.map_or(0, |report| report.final_tick);
         let meta = format!("{subtitle}  |  {}", crate::clock_label::ticks(duration));
@@ -708,14 +695,14 @@ fn winner_subtitle(game: &Game, winners: &[PlayerId]) -> String {
             .iter()
             .all(|winner| game.state.player(*winner).team == team)
         {
-            return format!("TEAM {} TAKES THE FIELD", team + 1);
+            return format!("Team {} won", team + 1);
         }
     }
     format!(
-        "{} take the field",
+        "{} won",
         winners
             .iter()
-            .map(|seat| game.state.player(*seat).name.to_uppercase())
+            .map(|seat| game.state.player(*seat).name.clone())
             .collect::<Vec<_>>()
             .join(" & ")
     )

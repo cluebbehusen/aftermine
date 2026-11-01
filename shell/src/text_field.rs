@@ -364,15 +364,20 @@ impl Form {
             let width = measure_text(text, None, numeric::font_size(size), 1.0).width;
             draw_text(text, (view.x - width) * 0.5, y, size, color);
         };
-        centered(self.title, layout.title_y, Type::Title.at(s), TEXT_TITLE);
+        crate::menu::draw_title(self.title, layout.title_y, TEXT_TITLE);
         match self.error {
             Some(reason) => centered(reason, layout.hint_y, Type::Label.at(s), TEXT_DANGER),
-            None => centered(hint, layout.hint_y, Type::Label.at(s), hint_color),
+            None => centered(
+                &crate::typography::sentence_case(hint),
+                layout.hint_y,
+                Type::Label.at(s),
+                hint_color,
+            ),
         }
         for (index, (field, rect)) in self.fields.iter().zip(&layout.fields).enumerate() {
             draw_field(field, *rect, index == self.focus, layout.label_y, s);
         }
-        crate::button::draw(layout.cancel, "CANCEL", layout.cancel.contains(mouse), s);
+        crate::button::draw(layout.cancel, "Cancel", layout.cancel.contains(mouse), s);
         crate::button::draw(
             layout.confirm,
             self.confirm,

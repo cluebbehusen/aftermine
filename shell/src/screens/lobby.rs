@@ -98,7 +98,7 @@ impl LobbyScreen {
             .keyboard(Keyboard::Address)
             .weight(2.0);
         let focus = usize::from(PlayerName::new(name).is_ok());
-        let form = Form::new("JOIN MATCH", "JOIN", vec![name_field, address_field], focus);
+        let form = Form::new("JOIN MATCH", "Join", vec![name_field, address_field], focus);
         Self::face(Face::Join {
             form,
             failure: None,
@@ -148,7 +148,11 @@ impl LobbyScreen {
     fn face(face: Face) -> Self {
         let menu = match &face {
             Face::Join { form, .. } => form.menu(|index| index),
-            Face::Waiting(lobby) => Menu::new("LAN MATCH", waiting_lines(lobby)),
+            Face::Waiting(lobby) => {
+                let mut menu = Menu::new("LAN MATCH", waiting_lines(lobby));
+                menu.heading = crate::menu::Heading::Page { band: 0.0 };
+                menu
+            }
         };
         Self {
             face,
@@ -548,19 +552,7 @@ fn draw_room(
         layout = wizard::setup_layout_page(map, you, &wide, view, ui, page);
     }
 
-    let centered = |text: &str, y: f32, size: f32, color| {
-        let width = measure_text(text, None, numeric::font_size(size), 1.0).width;
-        draw_text(text, (view.x - width) * 0.5, y, size, color);
-    };
-    centered(
-        "MATCH SETUP",
-        64.0 * ui,
-        Type::Title.at(ui),
-        crate::theme::TEXT_TITLE,
-    );
-    let line = format!("{} - {status}", map.name);
-    let size = crate::typography::fit(&line, Type::Label.at(ui), view.x - 32.0 * ui, 10.0);
-    centered(&line, 92.0 * ui, size, crate::theme::TEXT_SECONDARY);
+    crate::menu::draw_page_heading("MATCH SETUP", &format!("{} - {status}", map.name));
 
     wizard::draw_team_headings(&layout, ui);
     let styles = wizard::seat_styles(seats.len(), you, |seat| {

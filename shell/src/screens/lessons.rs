@@ -43,6 +43,7 @@ impl LessonsScreen {
             )
         });
         let mut menu = Menu::rows("BASIC TRAINING", rows);
+        menu.heading = crate::menu::Heading::Page { band: 0.0 };
         menu.select_where(|&row| !finished(row));
         Self {
             menu,

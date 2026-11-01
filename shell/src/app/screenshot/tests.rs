@@ -29,10 +29,9 @@ fn screenshot_encoding_flips_gpu_rows_and_reports_path_errors() {
     assert_eq!(info.height, 2);
     assert_eq!(
         &decoded[..info.buffer_size()],
-        &[
-            0, 0, 255, 255, 255, 255, 255, 255, 255, 0, 0, 255, 0, 255, 0, 255,
-        ],
-        "PNG rows are top-down even though the captured framebuffer is bottom-up"
+        &[0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 0,],
+        "PNG rows are top-down even though the captured framebuffer is bottom-up, \
+         and hold no alpha because the window is opaque"
     );
 
     let blocked = root.join("blocked");

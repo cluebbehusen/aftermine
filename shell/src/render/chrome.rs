@@ -320,7 +320,7 @@ pub(crate) fn draw_overlay(game: &crate::game::Scene<'_>, alpha: f32) {
             format!("u{} {}hp", unit.id.0, unit.hp),
             screen.x + 8.0,
             screen.y - 8.0,
-            16.0,
+            crate::theme::Type::Body.px(),
             BONE,
         );
         if let Some(path) = &unit.path {
@@ -1288,18 +1288,17 @@ pub(crate) fn draw_result_overlay(game: &crate::game::Scene<'_>) {
     }
     let s = ui_scale();
     let text = "SURRENDERED";
-    let size = crate::theme::Type::Title.at(s);
-    let dims = measure_text(text, None, numeric::font_size(size), 1.0);
-    let x = (screen_width() - dims.width) * 0.5;
+    let width = crate::menu::title_width(text);
+    let x = (screen_width() - width) * 0.5;
     let y = screen_height() * 0.38;
     draw_rectangle(
         x - 24.0 * s,
         y - 48.0 * s,
-        dims.width + 48.0 * s,
+        width + 48.0 * s,
         112.0 * s,
         PANEL,
     );
-    draw_text(text, x, y, size, DANGER);
+    crate::menu::draw_title(text, y, DANGER);
     let sub = crate::menu::binding_hint(concede_hint(crate::platform::hands()));
     let sub_dims = measure_text(
         &sub,

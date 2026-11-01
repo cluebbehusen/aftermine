@@ -407,14 +407,12 @@ fn load_candidates(paths: Vec<PathBuf>, cancel: &Cancellation) -> Result<Output>
 }
 
 pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> Result<Screen> {
-    render::draw(
-        &app.game.view(),
-        &app.sprites,
-        &app.input,
-        &app.config.bindings,
-    );
-    veil();
     let loading = busy.intent.loading();
+    if loading {
+        page_backdrop();
+    } else {
+        match_backdrop(app);
+    }
     let dots = match numeric::to_u32(numeric::to_f32(get_time()) * 3.0) % 3 {
         0 => ".",
         1 => "..",

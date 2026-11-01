@@ -56,6 +56,7 @@ fn a_touch_drag_scrolls_a_long_list_without_activating() {
     let mut items: Vec<String> = (0..39).map(|i| format!("row {i}")).collect();
     items.push("Back".to_string());
     let mut menu = Menu::list("LONG", items);
+    menu.heading = Heading::Wordmark;
     assert!(menu.item_rect(39).is_none(), "Back starts below the window");
     let x = menu.item_rect(0).expect("first row").center().x;
     for _ in 0..10 {

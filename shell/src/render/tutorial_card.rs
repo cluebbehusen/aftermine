@@ -34,10 +34,10 @@ impl CardButton {
     fn label(self) -> &'static str {
         match self {
             Self::Fold | Self::Dismiss => "",
-            Self::Retry => "RETRY",
-            Self::Next => "NEXT LESSON",
-            Self::FirstMatch => "FIRST MATCH",
-            Self::Lessons => "LESSONS",
+            Self::Retry => "Retry",
+            Self::Next => "Next lesson",
+            Self::FirstMatch => "First match",
+            Self::Lessons => "Lessons",
         }
     }
 }

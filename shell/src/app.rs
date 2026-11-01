@@ -894,12 +894,16 @@ fn hardware_events(poll_hardware: bool, poll: impl FnOnce() -> Vec<RawEvent>) ->
     if poll_hardware { poll() } else { Vec::new() }
 }
 
-/// Dark translucent layer between the world and a menu.
-fn veil() {
-    // Dark enough that the game behind reads as backdrop texture, not
-    // as competing UI — the HUD's own text lines must not fight the
-    // menu's.
-    draw_rectangle(0.0, 0.0, screen_width(), screen_height(), theme::VEIL);
+/// Clears the frame for a full-screen page.
+fn page_backdrop() {
+    clear_background(theme::PAGE);
+}
+
+/// Draws the running match behind a menu raised over it: the battlefield
+/// dimmed, without its chrome, whose text would fight the menu's.
+fn match_backdrop(app: &App) {
+    render::draw_world(&app.game.view(), &app.sprites, &app.input);
+    draw_rectangle(0.0, 0.0, screen_width(), screen_height(), theme::MATCH_VEIL);
 }
 
 #[cfg(test)]
