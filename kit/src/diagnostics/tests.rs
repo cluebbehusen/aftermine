@@ -193,6 +193,19 @@ fn other_threads_cannot_move_the_main_thread_heartbeat() {
 }
 
 #[test]
+fn a_dropped_monitor_has_stopped_its_watchdog() {
+    // A watchdog still running after the drop could write a stall into a
+    // directory its owner is already removing.
+    let monitor = Monitor::start_with(None, build(), Duration::from_secs(60)).unwrap();
+    let inner = Arc::downgrade(&monitor.inner);
+    drop(monitor);
+    assert!(
+        inner.upgrade().is_none(),
+        "the watchdog still holds the monitor"
+    );
+}
+
+#[test]
 fn panics_record_their_message_location_and_bounded_backtrace() {
     let root = temp();
     let monitor =
