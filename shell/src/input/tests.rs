@@ -1484,7 +1484,7 @@ fn every_targeting_mode_has_persistent_human_copy() {
     assert_eq!(input.armed_mode().unwrap().label(), "Salvage");
     input.disarm_click_verbs();
     input.click_verb = Some(ClickVerb::Weld);
-    assert_eq!(input.armed_mode().unwrap().label(), "Weld");
+    assert_eq!(input.armed_mode().unwrap().label(), "Repair");
     input.disarm_click_verbs();
     input.click_verb = Some(ClickVerb::Accompany);
     assert_eq!(input.armed_mode().unwrap().label(), "Accompany");

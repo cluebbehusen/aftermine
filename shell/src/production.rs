@@ -4,9 +4,7 @@ use crate::action::{Action, BindingMap};
 use crate::building_actions::SelectedBuildings;
 use crate::game::{Game, Scene};
 use crate::numeric::Fit;
-use crate::panel::{
-    Card, CardAction, CardIcon, point_defense_line, unit_flavor, unit_stat_line, weapon_lines,
-};
+use crate::panel::{Card, CardAction, CardIcon, point_defense_line, unit_stat_line, weapon_lines};
 use crate::typography::entity_name;
 use aftermine_sim::{Building, BuildingId, Command, UnitKind};
 
@@ -149,7 +147,10 @@ impl Production {
             .filter_map(|(slot, kind)| {
                 let batch = self.batch(slot)?;
                 let count = batch.recipients.len();
-                let mut desc = vec![unit_flavor(kind).into(), unit_stat_line(kind)];
+                let mut desc = vec![
+                    crate::description::unit_description(kind),
+                    unit_stat_line(kind),
+                ];
                 desc.extend(weapon_lines(kind));
                 desc.extend(point_defense_line(kind));
                 if batch.total > 1 {

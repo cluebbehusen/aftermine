@@ -1469,7 +1469,7 @@ pub(crate) fn draw_panel(
     if !roster.is_empty() {
         let label_y = top + measured.roster_y - 4.0 * s;
         let heading = match panel.roster.first().map(|card| card.action) {
-            Some(CardAction::FilterBuilding(_)) => "SELECTED BUILDINGS",
+            Some(CardAction::FilterBuilding(_)) => "SELECTED STRUCTURES",
             _ => "SELECTED UNITS",
         };
         draw_text(

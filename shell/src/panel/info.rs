@@ -543,7 +543,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
                 info.row("Targets", "Heaviest first".into(), None);
             }
             aftermine_sim::stats::TargetPriority::Buildings => {
-                info.row("Targets", "Buildings first".into(), None);
+                info.row("Targets", "Structures first".into(), None);
             }
             aftermine_sim::stats::TargetPriority::Danger => {}
         }

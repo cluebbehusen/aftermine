@@ -218,7 +218,7 @@ fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
             ],
         ),
         (
-            "Buildings",
+            "Structures",
             vec![ToggleBuildPalette, Upgrade, SetRally, ClearRally],
         ),
         (

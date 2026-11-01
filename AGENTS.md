@@ -52,6 +52,18 @@ When a change makes a documented claim wrong, fix or remove the claim. Do not
 add a paragraph describing a new feature's rules; the code, its tests and the
 in-game Roster carry those.
 
+## Player-facing text
+
+Player-facing text says **unit** for anything a player trains and **structure**
+for anything a player places and builds. "Building" appears only as a verb, and
+"machine" only in lore such as the tagline, where it means the dead world's
+machines. Code identifiers such as `BuildingKind` keep their names.
+
+When a change alters a unit or structure, check that its Roster page still reads
+true. The Roster says what a player needs to choose and use each kind, in plain
+words with numbers taken from the stats table. It is not a place to describe
+your change or how the code works.
+
 ## Architecture and Rust quality
 
 For a substantive change, establish who owns the data and when it expires,

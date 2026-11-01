@@ -1013,14 +1013,14 @@ fn play_sustain(touch: bool) {
         game.do_tick();
         relayout(&game, &input);
     }
-    run_to(&mut game, &input, Some("Weld the damage"));
+    run_to(&mut game, &input, Some("Repair the damage"));
     assert_eq!(
         own(&game, UnitKind::Harvester).len(),
         3,
         "Harvesters sent back to collecting stay out of the fight"
     );
 
-    assert!(copy(&game, pointer, !touch).contains(&format!("{order} a damaged building")));
+    assert!(copy(&game, pointer, !touch).contains(&format!("{order} a damaged structure")));
     let welder = own(&game, UnitKind::Harvester)[0].1;
     select_at(&mut game, &mut input, welder, touch);
     let patient = damaged(&game);

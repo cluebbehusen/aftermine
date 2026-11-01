@@ -396,42 +396,69 @@ pub fn subject_unit(game: &Scene<'_>) -> Option<aftermine_sim::UnitId> {
         .min()
 }
 
-/// The player-facing description per unit kind: the sim's own copy
-/// ([`UnitKind::blurb`]), shared by the tooltip and the codex.
-pub fn unit_flavor(kind: UnitKind) -> &'static str {
-    kind.blurb()
-}
-
-/// The player-facing description per building kind
-/// ([`BuildingKind::blurb`]).
-pub fn building_flavor(kind: BuildingKind) -> &'static str {
-    kind.blurb()
-}
-
-/// The figures a player weighs before buying a machine, on one line:
-/// toughness, pace, build time, sight. Weapons get their own lines.
+/// The figures a player weighs before buying a unit, on one line:
+/// toughness, pace, build time, sight. Weapons get their own lines. A
+/// cradle-built unit has no build time of its own; its cradle's page
+/// gives the crew times.
 pub fn unit_stat_line(kind: UnitKind) -> String {
     let stats = kind.stats();
     let speed = stats.speed.to_num::<f32>() * aftermine_sim::TICKS_PER_SECOND as f32;
-    let build = stats.train_ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32;
+    let assembled = BuildingKind::ALL
+        .into_iter()
+        .any(|cradle| cradle.assembles() == Some(kind));
+    let build = if assembled {
+        String::new()
+    } else {
+        let seconds = stats.train_ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32;
+        format!(" | {seconds:.1} s build")
+    };
     format!(
-        "{} hp | {speed:.1} tiles/s | {build:.1} s build | sight {}",
+        "{} hp | {speed:.1} tiles/s{build} | sight {}",
         stats.max_hp, stats.vision
     )
 }
 
-/// The figures a player weighs before raising a works, on one line:
-/// toughness, build time, footprint, sight.
+/// The figures a player weighs before placing a structure, on one line:
+/// toughness, build time, footprint, sight. A cradle's time depends on
+/// its crew, so [`cradle_crew_line`] gives it instead.
 pub fn building_stat_line(kind: BuildingKind) -> String {
     let stats = kind.base_stats();
-    let build = stats.construction.map_or(0.0, |c| {
-        c.build_ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32
-    });
+    let build = match stats.construction {
+        Some(c) if kind.assembles().is_none() => format!(
+            " | {:.1} s build",
+            c.build_ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32
+        ),
+        _ => String::new(),
+    };
     let (width, height) = kind.size();
     format!(
-        "{} hp | {build:.1} s build | {width}x{height} | sight {}",
+        "{} hp{build} | {width}x{height} | sight {}",
         stats.max_hp, stats.vision
     )
+}
+
+/// How long a full crew of each kind of worker takes to build a cradle.
+pub fn cradle_crew_line(kind: BuildingKind) -> Option<String> {
+    kind.assembles()?;
+    let ticks = kind.base_stats().construction?.build_ticks;
+    let crew = aftermine_sim::stats::ASSEMBLY_CREW_CAP;
+    let mut workers: Vec<UnitKind> = UnitKind::ALL
+        .into_iter()
+        .filter(|worker| worker.stats().harvest.is_some() && worker.stats().build_rate > 0)
+        .collect();
+    workers.sort_by_key(|worker| worker.stats().build_rate);
+    let times: Vec<String> = workers
+        .iter()
+        .map(|worker| {
+            let rate = crew.fit::<u32>() * worker.stats().build_rate;
+            let seconds = ticks as f32 / rate as f32 / aftermine_sim::TICKS_PER_SECOND as f32;
+            format!(
+                "{seconds:.0} s with {crew} {}",
+                plural_name(&entity_name(worker.name()))
+            )
+        })
+        .collect();
+    Some(format!("Takes {}.", times.join(", or ")))
 }
 
 /// Economy details shared by build cards and the codex.
@@ -441,30 +468,36 @@ pub fn building_economy_lines(kind: BuildingKind) -> Vec<String> {
     let rate = |tier, support| ExtractorIncome::new(tier, support).scrap_per_minute();
     let remote = rate(0, ExtractorSupport::Remote);
     let supported = rate(0, ExtractorSupport::Supported);
+    let per_minute = |period: u64| 60 * u64::from(aftermine_sim::TICKS_PER_SECOND) / period;
     match kind {
         BuildingKind::Reclaimer => vec![format!(
-            "Generates {} scrap/min. Upgrading to a Refinery raises output to {} scrap/min.",
-            60 * u64::from(aftermine_sim::TICKS_PER_SECOND)
-                / aftermine_sim::stats::RECLAIMER_PERIOD,
-            60 * u64::from(aftermine_sim::TICKS_PER_SECOND) / aftermine_sim::stats::REFINERY_PERIOD,
+            "Makes {} scrap/min.",
+            per_minute(aftermine_sim::stats::RECLAIMER_PERIOD)
         )],
-        BuildingKind::Extractor => vec![
+        BuildingKind::Extractor => vec![format!(
+            "Makes {remote} scrap/min, or {supported} scrap/min with your Foundry within {radius} tiles."
+        )],
+        BuildingKind::Foundry => vec![
             format!(
-                "Income: {remote} scrap/min remote; {supported} scrap/min with non-stacking support."
+                "Raises the output of your Extractors within {radius} tiles from {remote} to {supported} scrap/min."
             ),
             format!(
-                "Supported by one or more own completed Foundries within {radius} footprint tiles."
-            ),
-            format!(
-                "Upgrading to a Deep Bore raises output to {} scrap/min remote, {} supported; it needs a Foundry within {radius} tiles to start.",
-                rate(1, ExtractorSupport::Remote),
-                rate(1, ExtractorSupport::Supported),
+                "After the first {}, each Foundry makes {} scrap/min.",
+                duration_words(aftermine_sim::stats::FOUNDRY_DRIP_START_TICK),
+                per_minute(aftermine_sim::stats::FOUNDRY_DRIP_PERIOD)
             ),
         ],
-        BuildingKind::Foundry => vec![format!(
-            "Supports own completed Extractors within {radius} footprint tiles: {remote} to {supported} scrap/min; additional Foundries do not stack."
-        )],
         _ => Vec::new(),
+    }
+}
+
+/// A span of ticks in whole minutes, or seconds when it isn't one.
+fn duration_words(ticks: u64) -> String {
+    let seconds = ticks / u64::from(aftermine_sim::TICKS_PER_SECOND);
+    match (seconds / 60, seconds % 60) {
+        (1, 0) => "minute".to_string(),
+        (minutes, 0) => format!("{minutes} minutes"),
+        _ => format!("{seconds} seconds"),
     }
 }
 
@@ -519,8 +552,12 @@ fn weapon_line(weapon: &WeaponStats) -> String {
         (false, true) => "air",
         (false, false) => "nothing",
     };
-    let flavor = if weapon.projectile.is_some() {
-        " | projectile"
+    let flavor = if let Some(projectile) = weapon.projectile {
+        match projectile.payload {
+            aftermine_sim::stats::ProjectileKind::Shell => " | shell",
+            aftermine_sim::stats::ProjectileKind::Missile => " | missile",
+            aftermine_sim::stats::ProjectileKind::Bomb => " | bomb",
+        }
     } else if weapon.indirect {
         " | indirect"
     } else {
@@ -560,29 +597,46 @@ pub(crate) fn weapon_capability_icon(weapon: &WeaponStats) -> CapabilityIcon {
     }
 }
 
-/// Human lines for a kind's weapons, from the stats table.
+/// Human lines for a kind's weapons, from the stats table. Identical
+/// guns share one line that counts them.
 pub fn weapon_lines(kind: UnitKind) -> Vec<String> {
-    kind.stats().weapons.iter().map(weapon_line).collect()
+    counted_weapon_lines(kind.stats().weapons)
+}
+
+fn counted_weapon_lines(weapons: &[WeaponStats]) -> Vec<String> {
+    let mut lines: Vec<(String, usize)> = Vec::new();
+    for line in weapons.iter().map(weapon_line) {
+        match lines.last_mut() {
+            Some((last, count)) if *last == line => *count += 1,
+            _ => lines.push((line, 1)),
+        }
+    }
+    lines
+        .into_iter()
+        .map(|(line, count)| {
+            if count > 1 {
+                format!("{count} guns | {line}")
+            } else {
+                line
+            }
+        })
+        .collect()
 }
 
 /// A kind's point defense on one line, for kinds that carry it.
 pub fn point_defense_line(kind: UnitKind) -> Option<String> {
     let defense = kind.stats().point_defense?;
     Some(format!(
-        "Point defense | {} charges | {:.1} tiles | one back every {}",
+        "Point defense | {} shots | {:.1} tiles | regains 1 every {}",
         defense.charges,
         defense.radius.to_num::<f32>(),
         tick_time_label(u32::from(defense.recharge_ticks))
     ))
 }
 
-/// A building's weapon lines at `tier`, for the codex page.
+/// A structure's weapon lines at `tier`, for the Roster page.
 pub fn building_weapon_lines(kind: BuildingKind, tier: u8) -> Vec<String> {
-    kind.tier_stats(tier)
-        .weapons
-        .iter()
-        .map(weapon_line)
-        .collect()
+    counted_weapon_lines(kind.tier_stats(tier).weapons)
 }
 
 pub(crate) fn tick_time_label(ticks: u32) -> String {
@@ -892,12 +946,12 @@ fn order_card(
         Order::Build { .. } => (
             VerbIcon::Build,
             "Build",
-            "Constructing the selected building.",
+            "Constructing the selected structure.",
         ),
         Order::Repair { .. } => (
             VerbIcon::Repair,
             "Repair",
-            "Repairing a damaged building; consumes scrap.",
+            "Repairing a damaged structure; consumes scrap.",
         ),
         Order::Hunt { .. } => (
             VerbIcon::Hunt,
@@ -917,7 +971,7 @@ fn order_card(
         Order::Unload { .. } => (
             VerbIcon::Move,
             "Unload",
-            "Flying to a drop point to set every carried machine down.",
+            "Flying to a drop point to set every carried unit down.",
         ),
         Order::Land { .. } => (
             VerbIcon::Move,
@@ -927,7 +981,7 @@ fn order_card(
         Order::Salvage { .. } => (
             VerbIcon::Salvage,
             "Salvage",
-            "Stripping a building down for a partial refund.",
+            "Stripping a structure down for a partial refund.",
         ),
         Order::Found { .. } => (
             VerbIcon::Build,
@@ -936,13 +990,13 @@ fn order_card(
         ),
         Order::RepairUnit { .. } => (
             VerbIcon::Repair,
-            "Weld",
+            "Repair",
             "Repairing a damaged unit; consumes scrap.",
         ),
         Order::Accompany { .. } => (
             VerbIcon::Accompany,
             "Accompany",
-            "Escorting a unit: keeping pace, fighting threats near it, and welding its group whenever it stops.",
+            "Escorting a unit: keeping pace, fighting threats near it, and repairing its group whenever it stops.",
         ),
         Order::Retire { .. } => (
             VerbIcon::Retire,
@@ -959,8 +1013,8 @@ fn order_card(
             ..
         } => (
             VerbIcon::Repair,
-            "Weld",
-            "Welding a wounded machine it came across; consumes scrap.",
+            "Repair",
+            "Repairing a damaged unit it came across; consumes scrap.",
         ),
         Order::Tend {
             weld: Some(aftermine_sim::Target::Building(_)),
@@ -968,12 +1022,12 @@ fn order_card(
         } => (
             VerbIcon::Repair,
             "Repair",
-            "Repairing a damaged building it came across; consumes scrap.",
+            "Repairing a damaged structure it came across; consumes scrap.",
         ),
         Order::Tend { weld: None, .. } => (
             VerbIcon::Repair,
             "Tend",
-            "Walking on, welding wounded machines and damaged buildings it passes; consumes scrap.",
+            "Walking on, repairing damaged units and structures it passes; consumes scrap.",
         ),
     };
     let subject = if own {
@@ -1251,7 +1305,7 @@ fn patrol_desc(hands: Hands) -> &'static str {
     }
 }
 
-/// The Weld card's autocast lines: what auto-weld does and how far the
+/// The Repair card's autocast lines: what auto-repair does and how far the
 /// selection runs it, then how to switch it.
 fn auto_weld_desc(hands: Hands, key: &str, state: AutocastState) -> [String; 2] {
     let state = match state {
@@ -1270,8 +1324,8 @@ fn auto_weld_desc(hands: Hands, key: &str, state: AutocastState) -> [String; 2] 
         String::new()
     };
     [
-        format!("Auto-weld {state}: idle workers mend machines and buildings near their post."),
-        format!("{how}{key} to switch it. Patrolling workers always weld."),
+        format!("Auto-repair {state}: idle workers repair units and structures near their post."),
+        format!("{how}{key} to switch it. Patrolling workers always repair."),
     ]
 }
 
@@ -1279,14 +1333,14 @@ fn auto_weld_desc(hands: Hands, key: &str, state: AutocastState) -> [String; 2] 
 /// workers weld the wounded they pass, and other machines only walk it.
 fn patrol_engagement(armed: usize, welders: usize, selected: usize) -> &'static str {
     match (armed, welders) {
-        (armed, _) if armed == selected => "Machines engage whatever they meet along the way.",
+        (armed, _) if armed == selected => "Units engage whatever they meet along the way.",
         (0, welders) if welders == selected => {
-            "Workers weld wounded machines and buildings they pass."
+            "Workers repair damaged units and structures they pass."
         }
-        (0, 0) => "Unarmed machines walk the route without engaging.",
-        (0, _) => "Workers weld wounded machines and buildings they pass; others walk on.",
-        (_, 0) => "Armed machines engage what they meet; the rest walk on.",
-        _ => "Armed machines engage what they meet; workers weld what is damaged.",
+        (0, 0) => "Unarmed units walk the route without engaging.",
+        (0, _) => "Workers repair damaged units and structures they pass; others walk on.",
+        (_, 0) => "Armed units engage what they meet; the rest walk on.",
+        _ => "Armed units engage what they meet; workers repair what is damaged.",
     }
 }
 
@@ -1401,9 +1455,9 @@ fn building_summary(buildings: &[aftermine_sim::Building]) -> String {
 /// How ground machines board a selected transport.
 fn transport_load_desc(touch_only: bool) -> &'static str {
     if touch_only {
-        "Select ground machines, then long-press the transport to load them."
+        "Select ground units, then long-press the transport to load them."
     } else {
-        "Right-click ground machines onto the transport to load them."
+        "Right-click ground units onto the transport to load them."
     }
 }
 
@@ -1456,7 +1510,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     selected_buildings.len()
                 )
             } else {
-                format!("{} BUILDINGS", selected_buildings.len())
+                format!("{} STRUCTURES", selected_buildings.len())
             },
             summary: String::new(),
             portrait: CardIcon::Building(first.kind, first.tier),
@@ -1476,13 +1530,13 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             if !plural && !game.state.hostile(game.presentation.human, owner) {
                 panel.cards.push(Card {
                     icon: CardIcon::Verb(VerbIcon::Idle),
-                    title: "Ally building".into(),
+                    title: "Ally structure".into(),
                     cost: None,
                     hotkey: String::new(),
                     action: CardAction::None,
                     enabled: true,
                     why: None,
-                    desc: vec!["Read-only: allied buildings cannot be controlled.".into()],
+                    desc: vec!["Read-only: allied structures cannot be controlled.".into()],
                     progress: None,
                     autocast: None,
                     hold: None,
@@ -1740,7 +1794,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             why: None,
             desc: vec![
                 "Move to the selected ground while engaging enemies.".into(),
-                "Machines stop and chase targets along the route.".into(),
+                "Units stop and chase targets along the route.".into(),
             ],
             progress: None,
             autocast: None,
@@ -1778,7 +1832,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         why: None,
         desc: vec![
             "Select a friendly unit for the rest to escort. They keep pace,".into(),
-            "fight threats near it, and weld the group whenever it stops.".into(),
+            "fight threats near it, and repair the group whenever it stops.".into(),
         ],
         progress: None,
         autocast: None,
@@ -1794,7 +1848,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             enabled: true,
             why: None,
             desc: vec![
-                "Select a completed friendly building to dismantle".into(),
+                "Select a completed friendly structure to dismantle".into(),
                 "for a partial refund. Foundries cannot be salvaged.".into(),
             ],
             progress: None,
@@ -1817,7 +1871,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         }
         panel.cards.push(Card {
             icon: CardIcon::Verb(VerbIcon::Repair),
-            title: "Weld".into(),
+            title: "Repair".into(),
             cost: None,
             hotkey: chord(bindings, Action::RepairUnit),
             action: CardAction::Dispatch(Action::RepairUnit),
@@ -1875,7 +1929,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             enabled: loaded,
             why: (!loaded).then(|| "nothing is aboard".to_string()),
             desc: vec![
-                "Sets every carried machine down on open ground around its airframe.".into(),
+                "Sets every carried unit down on open ground around its airframe.".into(),
                 unload_queue_desc(hands).into(),
                 transport_load_desc(hands.touch()).into(),
             ],
@@ -1933,8 +1987,12 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             } else {
                 (true, None)
             };
-            let mut desc = vec![building_flavor(kind).to_string(), building_stat_line(kind)];
+            let mut desc = vec![
+                crate::description::building_description(kind),
+                building_stat_line(kind),
+            ];
             desc.extend(building_economy_lines(kind));
+            desc.extend(cradle_crew_line(kind));
             panel.cards.push(Card {
                 icon: CardIcon::Building(kind, 0),
                 title: entity_name(kind.name()),

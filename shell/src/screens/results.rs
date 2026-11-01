@@ -18,9 +18,9 @@ use macroquad::prelude::*;
 const WIDE_STAT_HEADERS: [[&str; 2]; 6] = [
     ["PEAK ARMY", "VALUE"],
     ["UNITS", "BUILT"],
-    ["BUILDINGS", "BUILT"],
+    ["STRUCTURES", "BUILT"],
     ["UNITS", "LOST"],
-    ["BUILDINGS", "LOST"],
+    ["STRUCTURES", "LOST"],
     ["SCRAP", "COLLECTED"],
 ];
 
@@ -685,7 +685,7 @@ fn verdict(game: &Game) -> (&'static str, Color, String) {
             (
                 "SURRENDERED",
                 theme::TEXT_DANGER,
-                "your machines fell silent".to_string(),
+                winner_subtitle(game, &winners),
             )
         }
         Some(GameResult::Victory { .. }) => (
