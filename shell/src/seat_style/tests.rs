@@ -33,9 +33,6 @@ fn scenario(count: usize, team: impl Fn(usize) -> Option<u8>) -> Scenario {
     }
 }
 
-/// A team game's largest side: the shipped maps stop at 4v4.
-const MAX_TEAM_ENEMIES: usize = 4;
-
 fn rgb(color: Color) -> (u8, u8, u8) {
     (
         numeric::to_u8((color.r * 255.0).round()),
@@ -154,14 +151,29 @@ fn chroma(color: Color) -> f32 {
 }
 
 #[test]
-fn enemies_a_team_can_face_stay_clear_of_the_ally_hues() {
-    for enemy in &hostile_palette(false)[..MAX_TEAM_ENEMIES] {
+fn enemies_beside_an_ally_stay_clear_of_the_ally_hues_on_uneven_teams() {
+    let state = scenario(8, |seat| Some(u8::from(seat >= 2)))
+        .build()
+        .unwrap();
+    let styles = SeatStyles::new(&state, PlayerId(0), false);
+    let ally = styles.get(PlayerId(1));
+    for owner in 2..8 {
+        let enemy = styles.get(PlayerId(owner));
+        let apart = (hue(enemy) - hue(ally)).abs();
+        assert!(
+            apart.min(360.0 - apart) >= 30.0,
+            "{:?} sits within 30 degrees of the ally {:?}",
+            rgb(enemy),
+            rgb(ally)
+        );
+    }
+    for enemy in hostile_palette(false, true) {
         for ally in ally_palette(false) {
-            let apart = (hue(*enemy) - hue(ally)).abs();
+            let apart = (hue(enemy) - hue(ally)).abs();
             assert!(
                 apart.min(360.0 - apart) >= 30.0,
                 "{:?} sits within 30 degrees of the ally {:?}",
-                rgb(*enemy),
+                rgb(enemy),
                 rgb(ally)
             );
         }
@@ -169,11 +181,21 @@ fn enemies_a_team_can_face_stay_clear_of_the_ally_hues() {
 }
 
 #[test]
+fn a_viewer_without_allies_sees_later_enemies_in_cool_colors() {
+    let state = scenario(8, |seat| Some(u8::from(seat >= 1)))
+        .build()
+        .unwrap();
+    let styles = SeatStyles::new(&state, PlayerId(0), false);
+    assert_eq!(rgb(styles.get(PlayerId(6))), (70, 110, 245));
+}
+
+#[test]
 fn the_self_color_never_reads_as_a_friend_or_a_foe() {
     let mine = self_color(false);
     for color in ally_palette(false)
         .into_iter()
-        .chain(hostile_palette(false))
+        .chain(hostile_palette(false, true))
+        .chain(hostile_palette(false, false))
     {
         let apart = (hue(mine) - hue(color)).abs();
         assert!(
@@ -188,7 +210,10 @@ fn the_self_color_never_reads_as_a_friend_or_a_foe() {
     let mine = self_color(true);
     assert!(chroma(mine) < 0.05);
     let lum = |c: Color| 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
-    for color in ally_palette(true).into_iter().chain(hostile_palette(true)) {
+    for color in ally_palette(true)
+        .into_iter()
+        .chain(hostile_palette(true, false))
+    {
         assert!(chroma(color) > 0.3, "{:?} is too gray", rgb(color));
         assert!(
             lum(mine) > lum(color),

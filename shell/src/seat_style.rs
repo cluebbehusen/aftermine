@@ -41,6 +41,8 @@ impl SeatStyles {
     /// already known. Allies and hostiles each rank by seat order within
     /// their own family.
     pub fn from_cues(cues: impl IntoIterator<Item = AllegianceCue>, colorblind: bool) -> Self {
+        let cues: Vec<_> = cues.into_iter().collect();
+        let enemies = hostile_palette(colorblind, cues.contains(&AllegianceCue::Ally));
         let mut allies = 0;
         let mut hostiles = 0;
         let mut styles = [WHITE; MAX_PLAYERS];
@@ -53,7 +55,7 @@ impl SeatStyles {
                 }
                 AllegianceCue::Hostile => {
                     hostiles += 1;
-                    family_color(&hostile_palette(colorblind), hostiles - 1)
+                    family_color(&enemies, hostiles - 1)
                 }
             };
         }
@@ -77,8 +79,8 @@ pub(crate) fn self_color(colorblind: bool) -> Color {
     }
 }
 
-/// Cool blues and teals, clear of the self green and of the enemy colors a
-/// team can face.
+/// Cool blues and teals, clear of the self green and of the enemies seen beside
+/// an ally.
 fn ally_palette(colorblind: bool) -> [Color; 8] {
     if colorblind {
         [
@@ -105,11 +107,11 @@ fn ally_palette(colorblind: bool) -> [Color; 8] {
     }
 }
 
-/// Enemies by rank. A team faces at most the first four, which stay clear of
-/// the ally hues; the cool colors after them are for free-for-alls, where no
-/// seat is an ally. Without colorblind accents, the ranks differ in lightness
-/// as well as hue so that they hold apart under red-weak vision.
-fn hostile_palette(colorblind: bool) -> [Color; 8] {
+/// Enemies by rank. A viewer with an ally sees only warm colors and magenta,
+/// clear of the ally hues; with no ally to confuse, later ranks reach into cool
+/// colors. Without colorblind accents, the ranks differ in lightness as well as
+/// hue so that they hold apart under red-weak vision.
+fn hostile_palette(colorblind: bool, has_allies: bool) -> [Color; 8] {
     if colorblind {
         [
             color_u8!(211, 65, 60, 255),
@@ -120,6 +122,17 @@ fn hostile_palette(colorblind: bool) -> [Color; 8] {
             color_u8!(207, 99, 104, 255),
             color_u8!(190, 136, 43, 255),
             color_u8!(139, 49, 82, 255),
+        ]
+    } else if has_allies {
+        [
+            color_u8!(228, 44, 58, 255),
+            color_u8!(255, 215, 90, 255),
+            color_u8!(190, 60, 205, 255),
+            color_u8!(255, 175, 195, 255),
+            color_u8!(250, 235, 190, 255),
+            color_u8!(232, 105, 42, 255),
+            color_u8!(196, 124, 37, 255),
+            color_u8!(210, 85, 111, 255),
         ]
     } else {
         [
