@@ -33,6 +33,9 @@ fn scenario(count: usize, team: impl Fn(usize) -> Option<u8>) -> Scenario {
     }
 }
 
+/// A team game's largest side: the shipped maps stop at 4v4.
+const MAX_TEAM_ENEMIES: usize = 4;
+
 fn rgb(color: Color) -> (u8, u8, u8) {
     (
         numeric::to_u8((color.r * 255.0).round()),
@@ -59,7 +62,9 @@ fn every_supported_ffa_seat_has_a_distinct_hostile_identity_for_every_viewer() {
                     } else {
                         assert_eq!(cue, AllegianceCue::Hostile);
                         let color = rgb(style);
-                        assert!(color.0 > color.2, "hostiles stay warm");
+                        if colorblind {
+                            assert!(color.0 > color.2, "colorblind hostiles stay warm");
+                        }
                         assert!(
                             !colors.contains(&color),
                             "seat {owner} repeats an identity for viewer {viewer}"
@@ -96,7 +101,7 @@ fn large_allied_team_preserves_identity_families_and_refreshes_the_viewer() {
         }
         assert_eq!(enemy.get(PlayerId(15)), self_color(colorblind));
         if !colorblind {
-            assert_eq!(rgb(allied.get(PlayerId(1))), (100, 160, 245));
+            assert_eq!(rgb(allied.get(PlayerId(1))), (110, 190, 250));
             assert_eq!(rgb(enemy.get(PlayerId(0))), (228, 44, 58));
         }
     }
@@ -146,6 +151,21 @@ fn hue(color: Color) -> f32 {
 
 fn chroma(color: Color) -> f32 {
     color.r.max(color.g).max(color.b) - color.r.min(color.g).min(color.b)
+}
+
+#[test]
+fn enemies_a_team_can_face_stay_clear_of_the_ally_hues() {
+    for enemy in &hostile_palette(false)[..MAX_TEAM_ENEMIES] {
+        for ally in ally_palette(false) {
+            let apart = (hue(*enemy) - hue(ally)).abs();
+            assert!(
+                apart.min(360.0 - apart) >= 30.0,
+                "{:?} sits within 30 degrees of the ally {:?}",
+                rgb(*enemy),
+                rgb(ally)
+            );
+        }
+    }
 }
 
 #[test]

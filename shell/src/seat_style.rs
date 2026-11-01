@@ -77,7 +77,8 @@ pub(crate) fn self_color(colorblind: bool) -> Color {
     }
 }
 
-/// Cool blues and violets, clear of the self green.
+/// Cool blues and teals, clear of the self green and of the enemy colors a
+/// team can face.
 fn ally_palette(colorblind: bool) -> [Color; 8] {
     if colorblind {
         [
@@ -92,19 +93,22 @@ fn ally_palette(colorblind: bool) -> [Color; 8] {
         ]
     } else {
         [
+            color_u8!(110, 190, 250, 255),
+            color_u8!(90, 222, 225, 255),
+            color_u8!(60, 110, 230, 255),
+            color_u8!(195, 230, 255, 255),
             color_u8!(100, 160, 245, 255),
-            color_u8!(165, 139, 235, 255),
             color_u8!(113, 203, 239, 255),
-            color_u8!(64, 119, 221, 255),
-            color_u8!(196, 162, 242, 255),
             color_u8!(140, 150, 250, 255),
-            color_u8!(120, 96, 214, 255),
             color_u8!(160, 200, 250, 255),
         ]
     }
 }
 
-/// Warm reds, oranges, and magentas.
+/// Enemies by rank. A team faces at most the first four, which stay clear of
+/// the ally hues; the cool colors after them are for free-for-alls, where no
+/// seat is an ally. Without colorblind accents, the ranks differ in lightness
+/// as well as hue so that they hold apart under red-weak vision.
 fn hostile_palette(colorblind: bool) -> [Color; 8] {
     if colorblind {
         [
@@ -120,13 +124,13 @@ fn hostile_palette(colorblind: bool) -> [Color; 8] {
     } else {
         [
             color_u8!(228, 44, 58, 255),
+            color_u8!(255, 215, 90, 255),
+            color_u8!(190, 60, 205, 255),
+            color_u8!(255, 175, 195, 255),
+            color_u8!(250, 235, 190, 255),
+            color_u8!(70, 110, 245, 255),
+            color_u8!(140, 225, 245, 255),
             color_u8!(232, 105, 42, 255),
-            color_u8!(199, 66, 132, 255),
-            color_u8!(172, 83, 57, 255),
-            color_u8!(246, 73, 24, 255),
-            color_u8!(210, 85, 111, 255),
-            color_u8!(196, 124, 37, 255),
-            color_u8!(154, 50, 85, 255),
         ]
     }
 }
