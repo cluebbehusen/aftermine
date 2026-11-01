@@ -335,6 +335,10 @@ that knowledge boundary.
 
 ## Rendering and audio
 
+A map's theme grades its terrain: floor, walls, pits, levels, rocks and
+blockers. Grading is atmosphere only. Units, chrome and the minimap stay
+ungraded, and no theme may carry information or crowd out seat colors.
+
 The GPU renderer owns camera clipping, fog composition, sprites, effects and
 screen chrome. Interpolation smooths fixed ticks without moving simulation
 entities. A drawn ground body may trail its simulation position or lean off its

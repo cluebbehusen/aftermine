@@ -198,7 +198,12 @@ impl Slabs {
     }
 }
 
-pub(super) fn draw_boulders(view: &GroundView, sprites: &Sprites, slabs: &Slabs) {
+pub(super) fn draw_boulders(
+    view: &GroundView,
+    sprites: &Sprites,
+    slabs: &Slabs,
+    grade: super::grade::Grade,
+) {
     // Unclamped: a slab on the map's edge overhangs past it.
     let (lo, hi) = view.world_rect();
     let min = TilePos::new(tile_of(lo.x), tile_of(lo.y));
@@ -219,7 +224,7 @@ pub(super) fn draw_boulders(view: &GroundView, sprites: &Sprites, slabs: &Slabs)
         sprites.draw(
             (center.x - size.x * 0.5).floor(),
             (center.y - size.y * 0.5).floor(),
-            WHITE,
+            grade.rock(),
             DrawTextureParams {
                 dest_size: Some(size),
                 source: Some(source),

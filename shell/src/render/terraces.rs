@@ -24,8 +24,8 @@
 
 use super::cell_field::{CELLS, CellField, cell_edges};
 use super::environment::{
-    BoundaryInsets, LAYERS, Material, SALT, WAVE_LIFTS, draw_fracture, draw_lip, draw_missing_slab,
-    draw_rebar, draw_strata, hash, mixed, quarry_color, shifted,
+    BoundaryInsets, LAYERS, Layer, Material, SALT, WAVE_LIFTS, draw_fracture, draw_lip,
+    draw_missing_slab, draw_rebar, draw_strata, hash, mixed, quarry_color, shifted,
 };
 use super::ground::GroundView;
 use super::stretches::Shapes;
@@ -192,15 +192,15 @@ fn material(depth: u8, widths: [i32; 3], off_playfield: bool) -> Option<Material
     })
 }
 
-fn color(material: Material, ix: i32, iy: i32) -> Option<Color> {
+fn color(material: Material, ix: i32, iy: i32, layers: &[Layer; LAYERS.len()]) -> Option<Color> {
     match material {
-        Material::Riser(level) => Some(LAYERS[level].riser),
+        Material::Riser(level) => Some(layers[level].riser),
         Material::Bench(level) => {
             let phase = (ix.div_euclid(CELLS) - iy.div_euclid(CELLS)).rem_euclid(6);
-            Some(shifted(LAYERS[level].top, WAVE_LIFTS[as_index(phase)]))
+            Some(shifted(layers[level].top, WAVE_LIFTS[as_index(phase)]))
         }
         Material::Vignette(step) => Some(mixed(
-            LAYERS[LAYERS.len() - 1].top,
+            layers[LAYERS.len() - 1].top,
             super::FOG_UNEXPLORED,
             (0.25 + f32::from(step) / 4.0 * 0.75).min(1.0),
         )),
@@ -408,7 +408,14 @@ fn screen_tiles(map: &Map, view: &GroundView) -> (TilePos, TilePos) {
     )
 }
 
-pub(super) fn draw_terraces(map: &Map, view: &GroundView, terraces: &Terraces, fractured: bool) {
+pub(super) fn draw_terraces(
+    map: &Map,
+    view: &GroundView,
+    terraces: &Terraces,
+    fractured: bool,
+    grade: super::grade::Grade,
+) {
+    let layers = LAYERS.map(|layer| grade.layer(layer));
     let (min, max) = screen_tiles(map, view);
     let frame = &terraces.frame;
     let material_at = |cx: i32, cy: i32| terraces.material(cx, cy);
@@ -430,7 +437,7 @@ pub(super) fn draw_terraces(map: &Map, view: &GroundView, terraces: &Terraces, f
                     continue;
                 };
                 let (ix, iy) = frame.inner(cx, cy);
-                let Some(c) = color(m, ix, iy) else {
+                let Some(c) = color(m, ix, iy, &layers) else {
                     continue;
                 };
                 let (x, y) = (as_index(sx), as_index(sy));
@@ -473,9 +480,9 @@ pub(super) fn draw_terraces(map: &Map, view: &GroundView, terraces: &Terraces, f
             (value.is_multiple_of(41), value % 17 == 3, value % 43 == 13)
         };
         if slab {
-            draw_missing_slab(rect, cell, LAYERS[level].top, value);
+            draw_missing_slab(rect, cell, layers[level].top, value);
         } else if fracture {
-            draw_fracture(rect, cell, zoom, LAYERS[level].top, value);
+            draw_fracture(rect, cell, zoom, layers[level].top, value);
         } else if rebar {
             draw_rebar(rect, cell, zoom);
         }
@@ -497,15 +504,15 @@ pub(super) fn draw_terraces(map: &Map, view: &GroundView, terraces: &Terraces, f
                     // lower bench ends against a face and the higher is lit.
                     if let Some(Material::Bench(other)) = material_at(cx + dx, cy + dy) {
                         if other > level {
-                            draw_lip(rect, (dx, dy), lip * 2.0, LAYERS[other].riser);
+                            draw_lip(rect, (dx, dy), lip * 2.0, layers[other].riser);
                         } else if other < level {
-                            draw_lip(rect, (dx, dy), lip, LAYERS[level].lip);
+                            draw_lip(rect, (dx, dy), lip, layers[level].lip);
                         }
                     }
                     if material_at(cx + dx, cy + dy) != Some(Material::Riser(level)) {
                         continue;
                     }
-                    draw_lip(rect, (dx, dy), lip, LAYERS[level].lip);
+                    draw_lip(rect, (dx, dy), lip, layers[level].lip);
                     if fractured {
                         let face = Rect::new(
                             rect.x + dx as f32 * rect.w,
@@ -514,7 +521,7 @@ pub(super) fn draw_terraces(map: &Map, view: &GroundView, terraces: &Terraces, f
                             rect.h,
                         );
                         let (ix, iy) = frame.inner(cx + dx, cy + dy);
-                        draw_strata(face, (-dx, -dy), LAYERS[level], hash(ix, iy, SALT + 607));
+                        draw_strata(face, (-dx, -dy), layers[level], hash(ix, iy, SALT + 607));
                     }
                 }
             }

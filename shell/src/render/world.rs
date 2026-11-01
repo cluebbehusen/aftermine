@@ -417,7 +417,12 @@ impl Blockers {
 }
 
 /// The blockers in view, over the tiles and under the slabs.
-pub(super) fn draw_blockers(view: &GroundView, sprites: &Sprites, blockers: &Blockers) {
+pub(super) fn draw_blockers(
+    view: &GroundView,
+    sprites: &Sprites,
+    blockers: &Blockers,
+    grade: super::grade::Grade,
+) {
     let zoom = view.zoom();
     let (lo, hi) = view.world_rect();
     let min = numeric::tile_at(lo);
@@ -436,7 +441,7 @@ pub(super) fn draw_blockers(view: &GroundView, sprites: &Sprites, blockers: &Blo
         sprites.draw(
             screen.x.floor(),
             screen.y.floor(),
-            WHITE,
+            grade.rock(),
             DrawTextureParams {
                 dest_size: Some(vec2(width as f32 * zoom + 1.0, height as f32 * zoom + 1.0)),
                 source: Some(source),
@@ -516,6 +521,14 @@ fn symmetric_theme_prop(
         },
     })
 }
+
+/// The theme mark a placement draws, if any. Only a theme's first three marks
+/// are flat, low-contrast ground; the rest would pull the eye from units.
+fn quiet_mark(placement: ThemePropPlacement) -> Option<usize> {
+    (placement.variant < QUIET_MARKS).then_some(placement.variant)
+}
+
+const QUIET_MARKS: usize = 3;
 
 fn authored_tile(rows: &[String], pos: TilePos) -> Option<u8> {
     if pos.x < 0 || pos.y < 0 {
@@ -651,12 +664,7 @@ fn for_each_tile<'a>(
 /// How a tile's ground sprite is tinted, and the white wash that brightens
 /// it past what a tint can: a tiered map shades each tile by its level.
 fn ground_paint<'a>(ground: &Ground<'a>) -> impl Fn(&TileSpot<'_>) -> (Color, f32) + use<'a> {
-    let theme = ground
-        .scenario
-        .meta
-        .as_ref()
-        .map_or("", |m| m.theme.as_str());
-    let base = theme_tint(theme);
+    let base = ground.grade.tint();
     let levels = ground.layout.levels.as_ref();
     move |spot| match levels.and_then(|levels| levels.tile_paint(spot.pos, spot.wave % 6)) {
         Some((f, wash)) => (Color::new(base.r * f, base.g * f, base.b * f, base.a), wash),
@@ -678,7 +686,6 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
         .meta
         .as_ref()
         .map_or("", |m| m.theme.as_str());
-    let themed = theme_code(theme).is_some();
     let map = ground.map;
     let (map_width, map_height) = (map.width(), map.height());
     // Quarry props vary by map, not by anything in play.
@@ -698,6 +705,13 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
             },
         );
     });
+    if let Some(wash) = ground.grade.floor_wash() {
+        let corner = view.to_screen(Vec2::ZERO).floor();
+        let far = view
+            .to_screen(vec2(map_width as f32, map_height as f32))
+            .floor();
+        draw_rectangle(corner.x, corner.y, far.x - corner.x, far.y - corner.y, wash);
+    }
     if levels.is_some() {
         for_each_tile(map, view, |spot| {
             let wash = paint(&spot).1;
@@ -757,21 +771,11 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
                 .map(|source| (source, placement.rotation, tint))
         } else if tile.cosmetic == 1 {
             Some((sprites.decal(3), 0.0, tint))
-        } else if quarry {
-            None
         } else if let Some(placement) = prop_candidate {
-            if symmetric_safe_theme_prop_tile(&ground.scenario.map, pos) {
-                let source = if placement.variant < 3 {
-                    sprites.theme_prop(theme, placement.variant)
-                } else {
-                    Some(sprites.field_debris(placement.variant - 3))
-                };
-                source.map(|source| (source, placement.rotation(), WHITE))
-            } else {
-                None
-            }
-        } else if !themed && dressed && spot.wave.is_multiple_of(23) {
-            Some((sprites.decal(spot.wave / 23 % 3), 0.0, tint))
+            quiet_mark(placement)
+                .filter(|_| symmetric_safe_theme_prop_tile(&ground.scenario.map, pos))
+                .and_then(|variant| sprites.theme_prop(theme, variant))
+                .map(|source| (source, placement.rotation(), WHITE))
         } else {
             None
         };
@@ -826,7 +830,9 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
     // A tiered map's steps and ramps lie over the ground, under salvage and
     // frames.
     if let Some(levels) = levels {
-        for_each_tile(map, view, |spot| levels.draw_tile(view, spot.pos));
+        for_each_tile(map, view, |spot| {
+            levels.draw_tile(view, spot.pos, ground.grade);
+        });
     }
 }
 
