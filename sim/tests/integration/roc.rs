@@ -105,9 +105,9 @@ fn both_guns_fire_ahead_each_from_its_own_pivot() {
 }
 
 #[test]
-fn a_gun_holds_fire_on_its_blind_quarter_while_the_other_bears() {
-    // A Breaker behind the starboard wing sits in the port gun's blind
-    // quarter and the starboard gun's arc.
+fn a_gun_holds_fire_on_a_target_across_the_hull_while_the_other_bears() {
+    // A Breaker behind the starboard wing lies beyond the port gun's arc and
+    // inside the starboard gun's.
     let mut state = staged(vec![
         unit(0, UnitKind::Roc, 10, 10),
         unit(1, UnitKind::Breaker, 8, 12),
@@ -149,7 +149,8 @@ fn an_idle_roc_turns_to_feed_a_starved_gun_and_then_holds_its_facing() {
         both.is_some(),
         "the port gun bore on the Breaker once the hull turned"
     );
-    // Toward the starboard wing, where the port gun's blind quarter lies.
+    // Toward the starboard wing, on the far side of the hull from the port
+    // gun.
     assert!(turned.wrapping_sub(start).cast_signed() > 0);
     assert!(matches!(
         state.unit(id).unwrap().mounts.unwrap().facing,
@@ -231,7 +232,7 @@ fn an_attack_turns_the_roc_nose_on_and_holds_station() {
 }
 
 #[test]
-fn an_attack_closes_until_a_gun_reaches() {
+fn an_attack_closes_until_both_guns_reach() {
     // A Kestrel over the Breaker keeps it in sight.
     let mut state = staged(vec![
         unit(0, UnitKind::Roc, 3, 10),
@@ -251,12 +252,12 @@ fn an_attack_closes_until_a_gun_reaches() {
     let mut fired_at = None;
     for _ in 0..600 {
         let events = state.tick(&[]).events;
-        if !shots(&events, id).is_empty() {
+        if slots(&events, id) == [0, 1] {
             fired_at = Some(state.unit(id).unwrap().pos);
             break;
         }
     }
-    let at = fired_at.expect("it closed and fired");
+    let at = fired_at.expect("it closed and fired both guns");
     let target = state.unit(breaker).unwrap().pos;
     assert!(
         at.dist(target) <= Fx::lit("6.5"),
@@ -269,7 +270,7 @@ fn an_attack_closes_until_a_gun_reaches() {
 }
 
 #[test]
-fn an_attack_on_a_target_under_the_rear_hull_flies_forward_then_fires() {
+fn an_attack_on_a_target_under_the_hull_flies_forward_then_fires() {
     let mut state = staged(vec![
         unit(0, UnitKind::Roc, 10, 10),
         unit(1, UnitKind::Breaker, 10, 10),

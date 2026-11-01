@@ -169,8 +169,8 @@ fn in_reach(weapon: &WeaponStats, pivot: Vec2Fx, aim: Vec2Fx, excess: Fx) -> boo
 }
 
 /// Whether some gun would bear on a target at `aim` if the hull at `pos`
-/// pointed its nose at it. A target under the rear of the hull never is:
-/// no turn brings it into an arc.
+/// pointed its nose at it. A target close under the hull never is: nose-on,
+/// it sits too far inboard of each gun for any turn to bring it into an arc.
 fn feedable(guns: MountedGuns, pos: Vec2Fx, aim: Vec2Fx) -> bool {
     if aim == pos {
         return false;
@@ -284,7 +284,7 @@ pub(in crate::tick::brain) fn fire(
 
 /// Turns the gun in `slot` toward `aim`, within its arc and at its traverse
 /// rate; returns whether it bears. A gun swings through its arc's middle,
-/// never through its blind quarter.
+/// never across the hull.
 fn traverse(
     state: &mut State,
     id: UnitId,
@@ -321,10 +321,10 @@ fn swing(
     (wanted - next).abs() <= i16::from(FIRING_TOLERANCE)
 }
 
-/// An attack: the hull closes until one of its guns reaches the target,
-/// then turns nose-on and holds station so both guns bear, following a
-/// target that moves. A target under the rear of the hull, which no turn
-/// brings into an arc, sends the hull forward a couple of tiles first.
+/// An attack: the hull closes until both of its guns would reach the target
+/// nose-on, then turns nose-on and holds station so both guns bear, following
+/// a target that moves. A target close under the hull, which no turn brings
+/// into an arc, sends the hull forward a couple of tiles first.
 pub(super) fn attack(
     state: &mut State,
     id: UnitId,
@@ -343,16 +343,26 @@ pub(super) fn attack(
     let excess = view
         .entity
         .map_or(Fx::ZERO, |target| target_excess(state, target));
-    let reaches = guns
-        .mounts
-        .iter()
-        .zip(stats.weapons)
-        .any(|(mount, weapon)| {
-            let pivot = mount.pivot(pos, heading);
-            let aim = view.aim_from(pivot);
-            in_reach(weapon, pivot, aim, excess) && clear(state, pivot, aim)
-        });
     let centre_aim = view.aim_from(pos);
+    // Judged nose-on, the facing it is about to take: its guns stand so far
+    // apart that one can reach from a facing where the other never will. A
+    // peak that blocks one gun's line must not keep the hull closing.
+    let nose = if centre_aim == pos {
+        heading
+    } else {
+        chassis::compass::heading_of(centre_aim - pos)
+    };
+    let stations = || {
+        guns.mounts
+            .iter()
+            .zip(stats.weapons)
+            .map(|(mount, weapon)| {
+                let pivot = mount.pivot(pos, nose);
+                (weapon, pivot, view.aim_from(pivot))
+            })
+    };
+    let reaches = stations().all(|(weapon, pivot, aim)| in_reach(weapon, pivot, aim, excess))
+        && stations().any(|(_, pivot, aim)| clear(state, pivot, aim));
     if reaches && feedable(guns, pos, centre_aim) {
         let unit = state.unit_mut(id).expect("caller checked");
         unit.path = None;
@@ -437,8 +447,8 @@ pub(in crate::tick::brain) fn hunt(
 }
 
 /// An idle hull turns only to feed a gun that has nothing to shoot: when an
-/// enemy within that gun's reach and line sits in its blind quarter, the
-/// hull yaws toward the gun's blind side until the gun bears, never turning
+/// enemy within that gun's reach and line sits outside its arc, the hull
+/// yaws toward the gun's blind side until the gun bears, never turning
 /// away from what another gun is firing on. It then keeps the facing it
 /// turned to for a while, so a crowd cannot keep it spinning. Any other
 /// order frees the facing.
@@ -505,8 +515,9 @@ pub(in crate::tick::brain) fn face_idle(
         );
         return;
     };
-    // The blind quarter lies behind the far wing, so a gun's target there is
-    // brought round by turning toward that wing.
+    // A gun is blind on the far side of the hull, so a gun's target there is
+    // brought round by turning toward that side, which keeps the other gun
+    // bearing on it too.
     let rate = stats.cruise_turn_rate.cast_signed();
     let step = if mount.arc_centre < 0 { rate } else { -rate };
     let next = heading.wrapping_add_signed(step);
