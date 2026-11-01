@@ -827,7 +827,7 @@ impl Levels {
 
     /// Draws one tile's steps, ramp, and wear: over its ground, under any
     /// salvage or frame on it.
-    pub(super) fn draw_tile(&self, view: &GroundView, pos: TilePos) {
+    pub(super) fn draw_tile(&self, view: &GroundView, pos: TilePos, grade: super::grade::Grade) {
         if pos.x < 0 || pos.y < 0 || pos.x >= self.width || pos.y >= self.height {
             return;
         }
@@ -839,11 +839,12 @@ impl Levels {
                 let (sx, sy) = (usize::from(op.sx), usize::from(op.sy));
                 let (x, w) = span_in_cell(xs[sx + 1] - xs[sx], op.x, op.w);
                 let (y, h) = span_in_cell(ys[sy + 1] - ys[sy], op.y, op.h);
-                draw_rectangle(xs[sx] + x, ys[sy] + y, w, h, op.color);
+                draw_rectangle(xs[sx] + x, ys[sy] + y, w, h, grade.wall(op.color));
             }
         }
         if let Ok(found) = self.decals.binary_search_by_key(&tile, |decal| decal.0) {
             let (_, top, value) = self.decals[found];
+            let top = grade.wall(top);
             let zoom = view.zoom();
             let cell = zoom / CELLS as f32;
             let a = view.to_screen(vec2(pos.x as f32, pos.y as f32));

@@ -85,6 +85,7 @@ mod chrome;
 mod destruction;
 pub(crate) mod entities;
 mod environment;
+mod grade;
 mod ground;
 pub(crate) use ground::{GroundBlend, GroundCache};
 pub(crate) mod hud;

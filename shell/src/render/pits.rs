@@ -128,15 +128,15 @@ fn material(depth: u8, widths: [i32; DROP.len()]) -> Option<Material> {
     })
 }
 
-fn cell_color(material: Material, cx: i32, cy: i32) -> Color {
+fn cell_color(material: Material, cx: i32, cy: i32, drops: &[Layer; DROP.len()]) -> Color {
     match material {
-        Material::Riser(level) => DROP[level].riser,
+        Material::Riser(level) => drops[level].riser,
         Material::Bench(level) => {
             let phase = (cx.div_euclid(CELLS) - cy.div_euclid(CELLS)).rem_euclid(6) as usize;
-            shifted(DROP[level].top, WAVE_LIFTS[phase])
+            shifted(drops[level].top, WAVE_LIFTS[phase])
         }
         Material::Vignette(step) => mixed(
-            DROP[DROP.len() - 1].top,
+            drops[DROP.len() - 1].top,
             VOID,
             f32::from(step) / (VIGNETTE_CELLS as f32 + 1.0),
         ),
@@ -224,11 +224,18 @@ fn draw_glints(xs: &[f32; 5], ys: &[f32; 5], pos: TilePos, zoom: f32) {
     }
 }
 
-fn draw_fill(view: &GroundView, field: &PitField, pos: TilePos, zoom: f32, fractured: bool) {
+fn draw_fill(
+    view: &GroundView,
+    field: &PitField,
+    pos: TilePos,
+    zoom: f32,
+    fractured: bool,
+    drops: &[Layer; DROP.len()],
+) {
     let (xs, ys) = cell_edges(view, pos);
     let color = |sx: i32, sy: i32| {
         let material = field.material_at(pos, sx, sy).unwrap_or(Material::Void);
-        let color = cell_color(material, pos.x * CELLS + sx, pos.y * CELLS + sy);
+        let color = cell_color(material, pos.x * CELLS + sx, pos.y * CELLS + sy, drops);
         quarry_color(color, material, fractured)
     };
     let all_void = (0..CELLS)
@@ -272,7 +279,14 @@ fn uniform_bench(field: &PitField, pos: TilePos, sx: i32, sy: i32) -> Option<usi
         .then_some(level)
 }
 
-fn draw_relief(view: &GroundView, field: &PitField, pos: TilePos, zoom: f32, fractured: bool) {
+fn draw_relief(
+    view: &GroundView,
+    field: &PitField,
+    pos: TilePos,
+    zoom: f32,
+    fractured: bool,
+    drops: &[Layer; DROP.len()],
+) {
     let (xs, ys) = cell_edges(view, pos);
     let lip = (zoom * 0.055).max(1.0);
     let cell = zoom / CELLS as f32;
@@ -289,12 +303,12 @@ fn draw_relief(view: &GroundView, field: &PitField, pos: TilePos, zoom: f32, fra
                 Some(Material::Riser(level)) => {
                     for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
                         if field.at(pos, sx + dx, sy + dy) < depth {
-                            draw_lip(rect, (dx, dy), lip, DROP[level].lip);
+                            draw_lip(rect, (dx, dy), lip, drops[level].lip);
                             if fractured {
                                 draw_strata(
                                     rect,
                                     (dx, dy),
-                                    DROP[level],
+                                    drops[level],
                                     hash(pos.x * CELLS + sx, pos.y * CELLS + sy, SALT + 607),
                                 );
                             }
@@ -307,9 +321,9 @@ fn draw_relief(view: &GroundView, field: &PitField, pos: TilePos, zoom: f32, fra
                     };
                     let value = hash(pos.x * CELLS + sx, pos.y * CELLS + sy, SALT + 503);
                     if value.is_multiple_of(199) {
-                        draw_missing_slab(rect, cell, DROP[level].top, value);
+                        draw_missing_slab(rect, cell, drops[level].top, value);
                     } else if value % 83 == 3 {
-                        draw_fracture(rect, cell, zoom, DROP[level].top, value);
+                        draw_fracture(rect, cell, zoom, drops[level].top, value);
                     } else if value % 211 == 13 {
                         draw_rebar(rect, cell, zoom);
                     }
@@ -320,7 +334,13 @@ fn draw_relief(view: &GroundView, field: &PitField, pos: TilePos, zoom: f32, fra
     }
 }
 
-pub(super) fn draw_pits(map: &Map, view: &GroundView, field: &PitField, fractured: bool) {
+pub(super) fn draw_pits(
+    map: &Map,
+    view: &GroundView,
+    field: &PitField,
+    fractured: bool,
+    grade: super::grade::Grade,
+) {
     let (min, max) = view.tiles(map);
     if min.x >= max.x || min.y >= max.y {
         return;
@@ -333,13 +353,14 @@ pub(super) fn draw_pits(map: &Map, view: &GroundView, field: &PitField, fracture
                 .is_some_and(|tile| tile.terrain == Terrain::Pit)
         })
         .collect();
+    let drops = DROP.map(|layer| grade.layer(layer));
     // Fills first, then relief: a decal that straddles two tiles must not
     // be buried under the neighbor's fill.
     for pos in &pit_tiles {
-        draw_fill(view, field, *pos, zoom, fractured);
+        draw_fill(view, field, *pos, zoom, fractured, &drops);
     }
     for pos in &pit_tiles {
-        draw_relief(view, field, *pos, zoom, fractured);
+        draw_relief(view, field, *pos, zoom, fractured, &drops);
     }
 }
 

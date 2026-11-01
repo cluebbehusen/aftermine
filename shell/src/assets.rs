@@ -46,7 +46,6 @@ pub struct Sprites {
     /// Six flat ground-dressing variants for each shipped theme.
     theme_props: [Rect; 36],
     /// Passable remnants scattered over safe ground.
-    field_debris: [Rect; 10],
     /// Multi-tile industrial obstacles drawn over Rock terrain.
     ground_blockers: [Rect; 9],
     scrap_full: Rect,
@@ -585,6 +584,9 @@ const ROCK_SLAB_KEYS: [&str; ROCK_SLAB_SIZES * ROCK_SLAB_VARIANTS] = [
     "rock_slab_5_5",
 ];
 
+/// Remnants the floor no longer draws, because they pull the eye from units.
+/// The atlas still holds them.
+#[cfg(test)]
 const FIELD_DEBRIS_KEYS: [&str; 10] = [
     "field_debris_severed_cable",
     "field_debris_bent_service_rail",
@@ -1406,7 +1408,6 @@ impl Sprites {
             rock_skirt,
             decals: pick(&rects, DECAL_KEYS)?,
             theme_props: pick(&rects, THEME_PROP_KEYS)?,
-            field_debris: pick(&rects, FIELD_DEBRIS_KEYS)?,
             ground_blockers: pick(&rects, GROUND_BLOCKER_KEYS)?,
             scrap_full,
             scrap_mid,
@@ -1578,11 +1579,6 @@ impl Sprites {
     pub(crate) fn rock_slab(&self, size: usize, variant: usize) -> Rect {
         self.rock_slabs
             [size.min(ROCK_SLAB_SIZES - 1) * ROCK_SLAB_VARIANTS + variant % ROCK_SLAB_VARIANTS]
-    }
-
-    /// A passable, flat remnant's atlas region.
-    pub fn field_debris(&self, variant: usize) -> Rect {
-        self.field_debris[variant % self.field_debris.len()]
     }
 
     /// A raised industrial obstacle's atlas region.

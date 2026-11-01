@@ -131,6 +131,7 @@ pub(super) struct Ground<'a> {
     pub(super) map: &'a Map,
     pub(super) scenario: &'a Scenario,
     pub(super) layout: &'a GroundLayout,
+    pub(super) grade: super::grade::Grade,
 }
 
 impl<'a> Ground<'a> {
@@ -139,6 +140,9 @@ impl<'a> Ground<'a> {
             map: game.state.map(),
             scenario: game.scenario,
             layout: game.ground(),
+            grade: super::grade::Grade::of(
+                game.scenario.meta.as_ref().map_or("", |m| m.theme.as_str()),
+            ),
         }
     }
 }
@@ -160,10 +164,11 @@ impl Layer {
             Layer::Raised => {
                 let fractured = sprites.quarry_dressing(0).is_some();
                 let layout = ground.layout;
-                world::draw_blockers(view, sprites, &layout.blockers);
-                pits::draw_pits(ground.map, view, &layout.pits, fractured);
-                boulders::draw_boulders(view, sprites, &layout.slabs);
-                terraces::draw_terraces(ground.map, view, &layout.terraces, fractured);
+                let grade = ground.grade;
+                world::draw_blockers(view, sprites, &layout.blockers, grade);
+                pits::draw_pits(ground.map, view, &layout.pits, fractured, grade);
+                boulders::draw_boulders(view, sprites, &layout.slabs, grade);
+                terraces::draw_terraces(ground.map, view, &layout.terraces, fractured, grade);
             }
         }
     }
