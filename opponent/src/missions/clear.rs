@@ -5,6 +5,10 @@
 //! most easily, sweeps it and moves on to the next, then sweeps the
 //! building's surroundings, holding the defenders' attention while the
 //! carriers land, and withdraws when the anti-air around it outweighs it.
+//!
+//! Free empty gunships clear in clearances of their own, since they fly
+//! slower than bombers. One keeps sweeping the building until it falls, then
+//! takes the next, and sends each wounded gunship home.
 
 use super::Scratch;
 use super::air::{self, Hazard, Legs};
@@ -14,6 +18,7 @@ use super::{MISSION_CAP, Mission, Missions, StrikePhase, Task, UNIT_CAP, mine, r
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled};
+use crate::gunship::gunship;
 use crate::map::MapModel;
 use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
@@ -80,19 +85,75 @@ impl Missions {
         ledger: &mut Ledger,
     ) {
         let mut sweep = self.sweep(observation, map, profile, memory, scratch);
+        // Before clearances advance: a gunship one lets go waits a decision,
+        // so a lift has the first look at it.
+        if scratch.severed {
+            sweep.held = self.aims(observation, None, true);
+            self.form_gunship_clear(&sweep, ledger);
+        }
         let clearing: fn(&Task) -> bool = |task| matches!(task, Task::Clear { .. });
         for id in self.ids(clearing) {
             let Some(index) = self.index_of(id) else {
                 continue;
             };
-            sweep.held = self.aims(Some(id));
+            let gunships = self.list[index].flown_by_gunships(observation);
+            sweep.held = self.aims(observation, Some(id), gunships);
             self.advance_sortie(index, Sortie::Clear(&sweep), ledger);
         }
         if !scratch.severed {
             return;
         }
-        sweep.held = self.aims(None);
+        sweep.held = self.aims(observation, None, false);
         self.form_clear(&sweep, ledger);
+    }
+
+    /// Whether the free empty gunships fit to go can clear the known
+    /// anti-air around the next lift's target, and so go at it rather than
+    /// carry the lift: never while none is known or they could not take it.
+    pub(crate) fn gunships_clear(
+        &self,
+        observation: &ObservationData,
+        map: &MapModel,
+        profile: &ResolvedProfile,
+        memory: &Memory,
+        scratch: &Scratch,
+    ) -> bool {
+        let Some(sweep) = self.lift_sweep(observation, map, profile, memory, scratch) else {
+            return false;
+        };
+        let strength: u64 = self
+            .available(observation, None)
+            .into_iter()
+            .filter_map(|id| mine(observation, id))
+            .filter(|unit| clearing_gunship(unit))
+            .map(striking)
+            .sum();
+        strength > 0
+            && sweep.cover().is_some_and(|cover| cover > 0)
+            && strength >= sweep.guard()
+            && sweep.best(strength, None).is_some()
+    }
+
+    /// Own gunships no lift should count on carrying its riders: those out
+    /// clearing, and the free ones while `scratch` says they go clearing.
+    pub(crate) fn gunships_off_lifts(
+        &self,
+        observation: &ObservationData,
+        scratch: &Scratch,
+    ) -> Vec<UnitId> {
+        let clearing = self
+            .list
+            .iter()
+            .filter(|mission| matches!(mission.task, Task::Clear { .. }))
+            .flat_map(|mission| mission.units.iter().copied());
+        let free = self
+            .available(observation, None)
+            .into_iter()
+            .filter(|_| scratch.gunships_clear);
+        clearing
+            .chain(free)
+            .filter(|id| mine(observation, *id).is_some_and(clearing_gunship))
+            .collect()
     }
 
     /// Bomber strength a clearance ahead of the next lift needs: the known
@@ -189,11 +250,18 @@ impl Missions {
             .sum()
     }
 
-    /// Where every clearance but `except` is aimed.
-    fn aims(&self, except: Option<u64>) -> Vec<TilePos> {
+    /// Where every clearance but `except` is aimed, of those flown by
+    /// gunships or of those not: a bomber's aim leaves a gunship's alone.
+    fn aims(
+        &self,
+        observation: &ObservationData,
+        except: Option<u64>,
+        gunships: bool,
+    ) -> Vec<TilePos> {
         self.list
             .iter()
             .filter(|mission| Some(mission.id) != except)
+            .filter(|mission| mission.flown_by_gunships(observation) == gunships)
             .filter_map(|mission| match mission.task {
                 Task::Clear { aim, .. } => Some(aim),
                 _ => None,
@@ -205,9 +273,6 @@ impl Missions {
     /// outweigh most easily. Returns whether a clearance formed.
     fn form_clear(&mut self, sweep: &Sweep<'_>, ledger: &mut Ledger) -> bool {
         let observation = sweep.observation;
-        if self.list.len() >= MISSION_CAP {
-            return false;
-        }
         let fit: Vec<&UnitObs> = self
             .free(observation, ledger)
             .into_iter()
@@ -219,6 +284,31 @@ impl Missions {
             sweep.frame,
             fit,
         );
+        self.launch_clear(sweep, &fit, ledger)
+    }
+
+    /// Sends every free idle empty gunship fit to go at the anti-air it
+    /// outweighs most easily. A seat whose ground reaches no enemy keeps no
+    /// gunship back for the reserve: walkers can reach nothing at home that
+    /// it would have to answer. Returns whether a clearance formed.
+    fn form_gunship_clear(&mut self, sweep: &Sweep<'_>, ledger: &mut Ledger) -> bool {
+        let observation = sweep.observation;
+        let fit: Vec<&UnitObs> = self
+            .free(observation, ledger)
+            .into_iter()
+            .filter_map(|id| mine(observation, id))
+            .filter(|unit| clearing_gunship(unit) && unit.idle)
+            .collect();
+        self.launch_clear(sweep, &fit, ledger)
+    }
+
+    /// Gathers `fit` to go at the anti-air it outweighs most easily, when it
+    /// outweighs all of it around the target. Returns whether it formed.
+    fn launch_clear(&mut self, sweep: &Sweep<'_>, fit: &[&UnitObs], ledger: &mut Ledger) -> bool {
+        let observation = sweep.observation;
+        if self.list.len() >= MISSION_CAP {
+            return false;
+        }
         let strength: u64 = fit.iter().map(|unit| striking(unit)).sum();
         if strength < sweep.minimum || strength < sweep.guard() {
             return false;
@@ -229,7 +319,7 @@ impl Missions {
         let Some(rally) = air::pad(observation, sweep.map, sweep.frame, doubled(aim)) else {
             return false;
         };
-        let recruits = recruit(sweep.frame, &fit, rally, u64::MAX, UNIT_CAP);
+        let recruits = recruit(sweep.frame, fit, rally, u64::MAX, UNIT_CAP);
         if recruits.is_empty() || !ledger.order(run(recruits.clone(), rally)) {
             return false;
         }
@@ -387,6 +477,11 @@ impl Sweep<'_> {
         )
         .then_some(aim)
     }
+}
+
+/// Whether `unit` is a gunship fit to clear: empty and not wounded.
+pub(super) fn clearing_gunship(unit: &UnitObs) -> bool {
+    gunship(unit.kind) && unit.cargo == 0 && healthy(unit, FIT)
 }
 
 /// Whether `unit` is a splash bomber, the ground-attack aircraft a

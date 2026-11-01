@@ -401,6 +401,8 @@ struct Lifting<'a> {
     /// The player offense goes after, if any.
     rival: Option<PlayerId>,
     severed: bool,
+    /// Whether free gunships go at the target's anti-air instead of carrying.
+    gunships_clear: bool,
     /// What offense leaves at home.
     reserve: [u64; 2],
     /// Targets another lift holds or this decision gave up on.
@@ -570,6 +572,7 @@ impl Missions {
             .iter()
             .copied()
             .filter(|unit| carrier(unit.kind) && unit.idle && unit.cargo == 0)
+            .filter(|unit| !(lifting.gunships_clear && gunship(unit.kind)))
             .filter(|unit| {
                 lifting.map.component(unit.tile) != Some(source.ground)
                     || lifting.open(unit.tile, source.ground)
@@ -1178,6 +1181,7 @@ impl<'a> Lifting<'a> {
             objectives: &scratch.objectives,
             rival: scratch.rival,
             severed: scratch.severed,
+            gunships_clear: scratch.gunships_clear,
             reserve: scratch.reserve,
             held: Vec::new(),
         })

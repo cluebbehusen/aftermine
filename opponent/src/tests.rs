@@ -188,6 +188,7 @@ fn calm<'a>(
         economy: crate::economy(BotDifficulty::Standard),
         extractors_first: crate::extractors_first(BotDifficulty::Standard),
         lift_flak: 0,
+        air_share: 0,
     }
 }
 

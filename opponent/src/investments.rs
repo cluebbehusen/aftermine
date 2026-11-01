@@ -141,6 +141,9 @@ pub(crate) struct Situation<'a> {
     pub(crate) extractors_first: bool,
     /// The known anti-air around the next lift's target, at its value.
     pub(crate) lift_flak: u64,
+    /// What of its army the seat's personality would have strike from the
+    /// air, at its value.
+    pub(crate) air_share: u64,
 }
 
 /// Every investment the seat wants at all, most wanted first.
@@ -174,8 +177,10 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         list.push((Investment::Tech(BuildingKind::Airworks), score));
     }
     if owned(BuildingKind::Crucible) == 0 {
-        let score = weighed(traits.greed.max(traits.siege), situation.income)
-            + pull(BuildingKind::Crucible);
+        let score = weighed(
+            traits.greed.max(traits.siege).max(traits.air),
+            situation.income,
+        ) + pull(BuildingKind::Crucible);
         list.push((Investment::Tech(BuildingKind::Crucible), score));
     }
     for kind in [
@@ -214,8 +219,12 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         situation.memory,
         traits,
         situation.income,
-        situation.margin * situation.lift_flak / 1_000,
-        situation.severed,
+        crate::gunship::Wants {
+            flak: situation.margin * situation.lift_flak / 1_000,
+            margin: situation.margin,
+            air_share: situation.air_share,
+            severed: situation.severed,
+        },
     ));
     let growth = expansion::candidates(
         observation,

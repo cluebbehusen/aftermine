@@ -3,6 +3,7 @@
 //! where a cradle may stand so its machine can drive out. Nothing here
 //! persists between decisions.
 
+use crate::gunship::gunship;
 use crate::investments::{Investment, capped, weighed};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::Memory;
@@ -23,15 +24,11 @@ const EXIT_MARGIN: u16 = 30;
 /// evidence that the seat cannot break in competes with its tech.
 const GIVEN_UP: u64 = 3;
 
-/// A cradle for each breaching experimental once a Crucible stands; a
-/// machine that does not break structures is no answer to guns. It is scored by
-/// how far the army, with the machines the seat fields and assembles at
-/// their price, falls short of what an attack on the known fortification its
-/// ground reaches would need, that fortification by the attack `margin` per
-/// mille. While the seat neither fields nor assembles that machine, it is
-/// also wanted at [`GIVEN_UP`] times the base while an attack on that ground
-/// was lately given up: that attack went without one. Siege weighs it and
-/// income scales it, as they do a Spire.
+/// A cradle for each breaching experimental once a Crucible stands. It is
+/// scored by [`guns_shortfall`]. While the seat fields and assembles no such
+/// machine and no gunship, it is also wanted at [`GIVEN_UP`] times the base
+/// while an attack on ground it reaches was lately given up: that attack went
+/// without one. Siege weighs it and income scales it, as they do a Spire.
 pub(crate) fn investments(
     observation: &ObservationData,
     map: &MapModel,
@@ -47,6 +44,27 @@ pub(crate) fn investments(
     if !crucible {
         return Vec::new();
     }
+    let me = observation.me;
+    let shortfall = guns_shortfall(observation, map, margin);
+    let given_up = fielded(observation, gunship) == 0
+        && memory
+            .given_up(observation.tick)
+            .any(|(_, anchor)| map.distance(me, anchor) != UNREACHABLE);
+    let base = u64::from(weighed(traits.siege, income));
+    cradles(
+        observation,
+        crate::missions::breacher,
+        shortfall,
+        given_up,
+        base,
+    )
+}
+
+/// How far the army, with the machines the seat fields and assembles at their
+/// price, falls short of what an attack on the known guns its ground reaches
+/// would need, those guns by the attack `margin` per mille. A breacher cuts
+/// through them and a gunship flies over them, so either answers this need.
+pub(crate) fn guns_shortfall(observation: &ObservationData, map: &MapModel, margin: u64) -> u64 {
     let me = observation.me;
     let fortification: u64 = observation
         .enemy_buildings
@@ -77,19 +95,8 @@ pub(crate) fn investments(
         })
         .map(|unit| worth(unit.kind, unit.hp))
         .sum();
-    let machines = fielded(observation, crate::missions::breacher);
-    let shortfall = (fortification * margin / 1_000).saturating_sub(army + machines);
-    let given_up = memory
-        .given_up(observation.tick)
-        .any(|(_, anchor)| map.distance(me, anchor) != UNREACHABLE);
-    let base = u64::from(weighed(traits.siege, income));
-    cradles(
-        observation,
-        crate::missions::breacher,
-        shortfall,
-        given_up,
-        base,
-    )
+    let machines = fielded(observation, crate::missions::breacher) + fielded(observation, gunship);
+    (fortification * margin / 1_000).saturating_sub(army + machines)
 }
 
 /// What the seat's machines that `fits` are worth: those it fields at their
