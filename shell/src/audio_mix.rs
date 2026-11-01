@@ -10,11 +10,15 @@ const DETAIL_ZOOM: f32 = 32.0;
 const WIDE_POSITIONAL_VOICES: usize = 5;
 const CLOSE_POSITIONAL_VOICES: usize = 12;
 const EXPLOSION_FALLOFF_TILES: f32 = 24.0;
+/// How far a blast the viewer did not witness sits behind one it did.
+const FOGGED_BLAST_GAIN: f32 = 0.5;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct FrameSound {
     pub kind: SoundKind,
     pub gain: f32,
+    /// Whether hearing it raises the score's combat bed.
+    pub combat: bool,
     positioned: bool,
 }
 
@@ -37,13 +41,12 @@ fn distance_gain(kind: SoundKind, world: Vec2, center: Vec2, half_extents: Vec2)
     let delta = (world - center).abs() - half_extents;
     let outside = Vec2::new(delta.x.max(0.0), delta.y.max(0.0));
     let distance = outside.length();
-    if crate::mixer::spec(kind).explosion {
-        (1.0 - distance / EXPLOSION_FALLOFF_TILES).clamp(0.0, 1.0)
-    } else if distance == 0.0 {
-        1.0
+    let reach = if crate::mixer::spec(kind).explosion {
+        EXPLOSION_FALLOFF_TILES
     } else {
-        (1.0 - distance / (2.0 * half_extents.length())).clamp(0.25, 1.0)
-    }
+        half_extents.length()
+    };
+    (1.0 - distance / reach).clamp(0.0, 1.0)
 }
 
 fn positional_voice_limit(zoom: f32) -> usize {
@@ -58,21 +61,30 @@ fn positional_voice_limit(zoom: f32) -> usize {
 ///
 /// Unpositioned UI and alert sounds always survive. Positional duplicates keep
 /// the loudest emitter of their kind, and a wide camera admits fewer minor
-/// voices while reserving room for heavy threats.
+/// voices while reserving room for heavy threats. A fogged blast plays set back
+/// and leaves the score alone, so it cannot announce a fight the viewer cannot
+/// see.
 pub(crate) fn frame_mix(
     queued: impl IntoIterator<Item = (SoundKind, Option<Vec2>)>,
+    fogged_blasts: impl IntoIterator<Item = (SoundKind, Vec2)>,
     center: Vec2,
     half_extents: Vec2,
     zoom: f32,
 ) -> Vec<FrameSound> {
+    let queued = queued.into_iter().map(|(kind, world)| (kind, world, false));
+    let fogged = fogged_blasts
+        .into_iter()
+        .map(|(kind, world)| (kind, Some(world), true));
     let mut mixed: Vec<FrameSound> = Vec::new();
-    for (kind, world) in queued {
-        let protected = crate::mixer::spec(kind).weight == Weight::Protected;
+    for (kind, world, fogged) in queued.chain(fogged) {
+        let spec = crate::mixer::spec(kind);
+        let protected = spec.weight == Weight::Protected;
         let positioned = world.is_some() && !protected;
         let gain = if protected {
             1.0
         } else if let Some(world) = world {
-            distance_gain(kind, world, center, half_extents) * zoom_gain(kind, zoom)
+            let set_back = if fogged { FOGGED_BLAST_GAIN } else { 1.0 };
+            distance_gain(kind, world, center, half_extents) * zoom_gain(kind, zoom) * set_back
         } else {
             1.0
         };
@@ -81,7 +93,9 @@ pub(crate) fn frame_mix(
             continue;
         }
 
+        let combat = spec.combat && !fogged;
         if let Some(existing) = mixed.iter_mut().find(|event| event.kind == kind) {
+            existing.combat |= combat;
             if gain > existing.gain {
                 existing.gain = gain;
                 existing.positioned = positioned;
@@ -90,6 +104,7 @@ pub(crate) fn frame_mix(
             mixed.push(FrameSound {
                 kind,
                 gain,
+                combat,
                 positioned,
             });
         }

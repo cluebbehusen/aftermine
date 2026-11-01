@@ -36,25 +36,17 @@ fn motor_envelope(elapsed: f32, total: f32) -> f32 {
     (powered / 0.4).clamp(0.0, 1.0) * ((total - elapsed) / 0.4).clamp(0.0, 1.0)
 }
 
-/// A loop's gain at `at` for the current camera: the one-shot mix's
-/// weighting, falling away fully outside the viewport instead of leaving
-/// that mix's minimum gain as a permanent offscreen noise floor.
+/// A loop's gain at `at` for the current camera: the one-shot mix's weighting.
 pub(crate) fn camera_gain(game: &Scene<'_>, kind: SoundKind, at: Vec2) -> f32 {
-    let half_extents = game.presentation.camera.viewport() / game.presentation.camera.zoom * 0.5;
-    let mixed = crate::audio_mix::frame_mix(
+    crate::audio_mix::frame_mix(
         [(kind, Some(at))],
+        [],
         game.presentation.camera.center,
-        half_extents,
+        game.presentation.camera.viewport() / game.presentation.camera.zoom * 0.5,
         game.presentation.camera.zoom,
-    );
-    let Some(sound) = mixed.first() else {
-        return 0.0;
-    };
-    let outside = ((at - game.presentation.camera.center).abs() - half_extents)
-        .max(Vec2::ZERO)
-        .length();
-    let falloff = (1.0 - outside / half_extents.length().max(1.0)).clamp(0.0, 1.0);
-    sound.gain * falloff
+    )
+    .first()
+    .map_or(0.0, |sound| sound.gain)
 }
 
 /// The loudest `voices` of `motors`, scaled so loops started together,

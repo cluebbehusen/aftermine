@@ -598,13 +598,17 @@ fn hostile_crash_contact_retains_feedback_when_it_kills_the_only_observer() {
         game.present_ticks(1);
         assert!(!game.my_vision().visible(tile));
         assert_eq!(game.state.unit(UnitId(1)).is_none(), witnessed);
-        assert!(
+        assert_eq!(
             game.presentation
                 .sounds_pending
-                .iter()
-                .any(
-                    |(sound, pos)| *sound == SoundKind::BuildingBoom && *pos == Some(world_vec(at))
-                )
+                .contains(&(SoundKind::BuildingBoom, Some(world_vec(at)))),
+            witnessed
+        );
+        assert_eq!(
+            game.presentation
+                .fogged_blasts
+                .contains(&(SoundKind::BuildingBoom, world_vec(at))),
+            !witnessed
         );
         assert_eq!(game.presentation.fx.iter().any(|effect| matches!(effect.kind,
             EffectKind::Falling { crash: Some(saved), impact_witnessed: true, .. } if saved.unit == crash.unit
@@ -878,10 +882,19 @@ fn projectile_impacts_sound_on_visible_and_hidden_ground_for_either_owner() {
                 } else {
                     SoundKind::Artillery
                 };
-                assert!(
+                let witnessed = visible || player == game.presentation.human;
+                assert_eq!(
                     game.presentation
                         .sounds_pending
                         .contains(&(sound, Some(world_vec(at)))),
+                    witnessed,
+                    "{kind:?}, {player:?}, visible={visible}"
+                );
+                assert_eq!(
+                    game.presentation
+                        .fogged_blasts
+                        .contains(&(sound, world_vec(at))),
+                    !witnessed,
                     "{kind:?}, {player:?}, visible={visible}"
                 );
                 assert_eq!(game.state.hash(), reference.hash());
@@ -975,7 +988,23 @@ fn charge_detonation_plays_one_blast_and_preserves_other_building_losses() {
                 .iter()
                 .copied()
                 .filter(|(kind, _)| crate::mixer::spec(*kind).explosion)
+                .chain(
+                    game.presentation
+                        .fogged_blasts
+                        .iter()
+                        .map(|(kind, at)| (*kind, Some(*at))),
+                )
                 .collect();
+            if viewer == 0 {
+                assert!(
+                    !game
+                        .presentation
+                        .sounds_pending
+                        .iter()
+                        .any(|(kind, _)| crate::mixer::spec(*kind).explosion),
+                    "a seat that sees none of it hears every blast set back"
+                );
+            }
             let mut expected = vec![(SoundKind::DemolitionBoom, Some(world_vec(tile.center())))];
             if collateral_charge {
                 expected.push((
@@ -984,11 +1013,17 @@ fn charge_detonation_plays_one_blast_and_preserves_other_building_losses() {
                 ));
             }
             assert_eq!(
-                explosion_cues, expected,
+                explosion_cues.len(),
+                expected.len(),
+                "viewer={viewer}, collateral={collateral_charge}"
+            );
+            assert!(
+                expected.iter().all(|cue| explosion_cues.contains(cue)),
                 "viewer={viewer}, collateral={collateral_charge}"
             );
             let mixed = crate::audio_mix::frame_mix(
                 explosion_cues,
+                [],
                 world_vec(tile.center()),
                 Vec2::new(20.0, 12.5),
                 32.0,
@@ -1036,11 +1071,12 @@ fn hidden_demolition_and_building_loss_sound_without_revealing_identity() {
             pos: at,
         },
     ] {
-        game.presentation.sounds_pending.clear();
+        game.presentation.fogged_blasts.clear();
         game.presentation.spawn_fx(&game.state, &[event]);
-        assert_eq!(game.presentation.sounds_pending.len(), 1);
-        assert!(crate::mixer::spec(game.presentation.sounds_pending[0].0).explosion);
-        assert_eq!(game.presentation.sounds_pending[0].1, Some(world_vec(at)));
+        assert!(game.presentation.sounds_pending.is_empty());
+        assert_eq!(game.presentation.fogged_blasts.len(), 1);
+        assert!(crate::mixer::spec(game.presentation.fogged_blasts[0].0).explosion);
+        assert_eq!(game.presentation.fogged_blasts[0].1, world_vec(at));
         assert_eq!(game.state.hash(), hash);
         assert!(game.presentation.toasts.is_empty());
         assert!(
@@ -1051,22 +1087,48 @@ fn hidden_demolition_and_building_loss_sound_without_revealing_identity() {
                 .any(|effect| matches!(effect.kind, EffectKind::Collapse { .. }))
         );
     }
-    game.presentation.sounds_pending.clear();
-    game.presentation.spawn_fx(
-        &game.state,
-        &[Event::AttackHit {
-            attacker: UnitId(999),
-            attacker_kind: UnitKind::Sentinel,
-            weapon: 0,
-            target: None,
-            attacker_pos: at,
-            target_pos: at,
-        }],
-    );
+    game.presentation.fogged_blasts.clear();
+    let sentinel_fire = Event::AttackHit {
+        attacker: UnitId(999),
+        attacker_kind: UnitKind::Sentinel,
+        weapon: 0,
+        target: None,
+        attacker_pos: at,
+        target_pos: at,
+    };
+    game.presentation
+        .spawn_fx(&game.state, std::slice::from_ref(&sentinel_fire));
     assert!(
-        game.presentation.sounds_pending.is_empty(),
+        game.presentation.sounds_pending.is_empty() && game.presentation.fogged_blasts.is_empty(),
         "ordinary hidden firing remains silent"
     );
+
+    game.presentation.stance = crate::game::Stance::Out;
+    game.presentation.spawn_fx(
+        &game.state,
+        &[
+            sentinel_fire,
+            Event::BuildingDestroyed {
+                building: BuildingId(999),
+                kind: aftermine_sim::BuildingKind::Turret,
+                player,
+                tier: 0,
+                pos: at,
+            },
+        ],
+    );
+    let heard: Vec<_> = game
+        .presentation
+        .sounds_pending
+        .iter()
+        .map(|(kind, _)| *kind)
+        .collect();
+    assert_eq!(
+        heard,
+        [SoundKind::SentinelFire, SoundKind::BuildingBoom],
+        "lifted fog hears gunfire and blasts in the open"
+    );
+    assert!(game.presentation.fogged_blasts.is_empty());
 }
 
 #[test]
@@ -2418,6 +2480,39 @@ fn an_interception_sounds_when_the_interceptor_reaches_the_warhead() {
 }
 
 #[test]
+fn a_sky_burst_between_enemies_over_fog_plays_set_back() {
+    let mut game = mantle_interception_game();
+    advance(&mut game, 20);
+    let tile = chassis::grid::TilePos::new(38, 22);
+    assert!(!game.my_vision().visible(tile));
+    let at = tile.center();
+    let burst = |battery_player| Event::WarheadIntercepted {
+        warhead: aftermine_sim::WarheadId(0),
+        player: aftermine_sim::PlayerId(1),
+        battery: BuildingId(99),
+        battery_player: aftermine_sim::PlayerId(battery_player),
+        pod: 1,
+        at,
+        impact: at,
+    };
+    game.presentation
+        .spawn_fx(&game.state, &[burst(1), burst(0)]);
+    advance(&mut game, 9);
+    game.presentation.update_fx(&game.state, 0.0);
+    assert_eq!(
+        game.presentation.fogged_blasts,
+        [(SoundKind::Interception, world_vec(at))],
+        "two enemies meeting over fog"
+    );
+    assert!(
+        game.presentation
+            .sounds_pending
+            .contains(&(SoundKind::Interception, Some(world_vec(at)))),
+        "this seat's own battery"
+    );
+}
+
+#[test]
 fn a_hostile_warhead_warns_once_with_its_own_protected_cue() {
     let mut game = mantle_interception_game();
     game.presentation.raise_warhead_alert(Vec2::new(10.0, 10.0));
@@ -2550,7 +2645,7 @@ fn only_the_warheads_owner_is_told_it_was_intercepted() {
 
 #[test]
 fn piledriver_audio_follows_visible_mechanisms_once_per_transition() {
-    for visible in [true, false] {
+    for (visible, fog_lifted) in [(true, false), (false, false), (false, true)] {
         let scenario = serde_json::from_value(serde_json::json!({
             "name": "Piledriver audio", "mode": "sandbox", "map": vec!["........................................"; 28],
             "players": [
@@ -2567,6 +2662,7 @@ fn piledriver_audio_follows_visible_mechanisms_once_per_transition() {
         if !visible {
             game.presentation.human = aftermine_sim::PlayerId(2);
         }
+        game.presentation.overlay = fog_lifted;
         let kinds = [
             SoundKind::PiledriverDeploy,
             SoundKind::PiledriverFire,
@@ -2595,8 +2691,12 @@ fn piledriver_audio_follows_visible_mechanisms_once_per_transition() {
         }
         assert_eq!(
             counts,
-            if visible { [1; 4] } else { [0; 4] },
-            "visible={visible}"
+            if visible || fog_lifted {
+                [1; 4]
+            } else {
+                [0; 4]
+            },
+            "visible={visible}, fog_lifted={fog_lifted}"
         );
     }
 }

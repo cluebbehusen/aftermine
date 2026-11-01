@@ -907,6 +907,7 @@ impl Presentation {
         }
         let completed_ticks = state.current_tick();
         let tick_fraction = self.tick_fraction();
+        let all_seeing = self.all_seeing();
         // The sky burst sounds as the interceptor reaches its warhead, on
         // the same simulation clock the burst draws on.
         for fx in &mut self.fx {
@@ -916,14 +917,26 @@ impl Presentation {
                 contact_tick,
                 completed_tick,
                 burst_heard,
+                warhead_hostile,
+                battery_player,
                 ..
             } = &mut fx.kind
                 && !*burst_heard
                 && completed_tick.saturating_sub(1) as f32 + age / super::TICK_DT >= *contact_tick
             {
                 *burst_heard = true;
-                self.sounds_pending
-                    .push((SoundKind::Interception, Some(*contact)));
+                let witnessed = all_seeing
+                    || !*warhead_hostile
+                    || !state.hostile(self.human, *battery_player)
+                    || state
+                        .vision(self.human)
+                        .visible(crate::numeric::tile_at(*contact));
+                if witnessed {
+                    self.sounds_pending
+                        .push((SoundKind::Interception, Some(*contact)));
+                } else {
+                    self.fogged_blasts.push((SoundKind::Interception, *contact));
+                }
             }
         }
         for fx in &mut self.fx {
@@ -1127,9 +1140,10 @@ impl Presentation {
     }
 
     pub(super) fn queue_brace_sounds(&mut self, state: &State) {
+        let (human, all_seeing) = (self.human, self.all_seeing());
         for unit in state.units().iter().filter(|unit| {
             unit.kind == aftermine_sim::UnitKind::Piledriver
-                && state.vision(self.human).sees_unit(unit)
+                && (all_seeing || state.vision(human).sees_unit(unit))
         }) {
             let sound = match self.animations.brace_change(unit) {
                 Some(crate::presentation_animation::BraceChange::Deploying) => {
@@ -1144,15 +1158,26 @@ impl Presentation {
         }
     }
 
+    /// Queues a blast, which is heard whether or not it was witnessed.
+    fn queue_blast(&mut self, sound: SoundKind, at: Vec2, witnessed: bool) {
+        if witnessed {
+            self.sounds_pending.push((sound, Some(at)));
+        } else {
+            self.fogged_blasts.push((sound, at));
+        }
+    }
+
     /// Turns a tick's events into flashes and queued clips. Explosions can be
-    /// heard through fog; the camera mixer bounds their audible distance.
-    /// Visual effects retain their independent sight rules.
+    /// heard through fog, set back when unwitnessed; the camera mixer bounds
+    /// their audible distance. Visual effects retain their independent sight
+    /// rules.
     #[expect(clippy::too_many_lines, reason = "one arm per simulation event")]
     pub(super) fn spawn_fx(&mut self, state: &State, events: &[Event]) {
         let sees = |game: &Self, pos: chassis::fx::Vec2Fx| {
-            state
-                .vision(game.human)
-                .visible(chassis::grid::TilePos::containing(pos))
+            game.all_seeing()
+                || state
+                    .vision(game.human)
+                    .visible(chassis::grid::TilePos::containing(pos))
         };
         let mut remaining = std::collections::HashMap::<aftermine_sim::UnitId, u8>::new();
         for event in events {
@@ -1222,17 +1247,17 @@ impl Presentation {
                         .get(*weapon)
                         .and_then(|w| w.splash)
                         .map(|s| s.to_num::<f32>());
-                    if let Some(sound) = sound
-                        && (heard || crate::mixer::spec(sound).explosion)
-                    {
-                        let at = if crate::mixer::spec(sound).explosion {
-                            *target_pos
-                        } else if sees(self, *attacker_pos) {
-                            *attacker_pos
-                        } else {
-                            *target_pos
-                        };
-                        self.sounds_pending.push((sound, Some(world_vec(at))));
+                    if let Some(sound) = sound {
+                        if crate::mixer::spec(sound).explosion {
+                            self.queue_blast(sound, world_vec(*target_pos), heard);
+                        } else if heard {
+                            let at = if sees(self, *attacker_pos) {
+                                *attacker_pos
+                            } else {
+                                *target_pos
+                            };
+                            self.sounds_pending.push((sound, Some(world_vec(at))));
+                        }
                     }
                     if attacker_kind.stats().demolition.is_some() {
                         if let Some(player) = sapper_owner {
@@ -1385,10 +1410,7 @@ impl Presentation {
                         .iter()
                         .find(|(id, ..)| id == unit)
                         .map(|(_, body, at, ..)| (*body, *at));
-                    let witnessed = *player == self.human
-                        || sees(self, *pos)
-                        || self.all_seeing()
-                        || prior.is_some();
+                    let witnessed = *player == self.human || sees(self, *pos) || prior.is_some();
                     if !witnessed {
                         continue;
                     }
@@ -1430,7 +1452,6 @@ impl Presentation {
                 Event::AircraftImpacted { crash } => {
                     let witnessed = crash.player == self.human
                         || sees(self, crash.impact)
-                        || self.all_seeing()
                         || self
                             .fx_previous
                             .visible_crash_contacts
@@ -1441,8 +1462,11 @@ impl Presentation {
                         .tile(chassis::grid::TilePos::containing(crash.impact))
                         .is_some_and(|tile| tile.terrain != aftermine_sim::map::Terrain::Pit)
                     {
-                        self.sounds_pending
-                            .push((SoundKind::BuildingBoom, Some(world_vec(crash.impact))));
+                        self.queue_blast(
+                            SoundKind::BuildingBoom,
+                            world_vec(crash.impact),
+                            witnessed,
+                        );
                     }
                 }
                 Event::BuildingDestroyed {
@@ -1458,8 +1482,8 @@ impl Presentation {
                         matches!(event, Event::ChargeDetonated { building: charge, .. } if charge == building)
                     });
                     if !detonated {
-                        self.sounds_pending
-                            .push((SoundKind::BuildingBoom, Some(world_vec(*pos))));
+                        let witnessed = !state.hostile(self.human, *player) || sees(self, *pos);
+                        self.queue_blast(SoundKind::BuildingBoom, world_vec(*pos), witnessed);
                     }
                     let body = self
                         .fx_previous
@@ -1635,20 +1659,17 @@ impl Presentation {
                         .and_then(|unit| unit.point_defense)
                         .map_or(0, |held| held.charges);
                     let slot = charges.saturating_add(*left).min(2);
-                    let from = (self.all_seeing()
-                        || *defender_player == self.human
-                        || sees(self, *defender_pos))
-                    .then(|| {
-                        let rotation = match self
-                            .hit_surface(state, Some(aftermine_sim::Target::Unit(*defender)))
-                        {
-                            Some(HitSurface::Unit(hit)) => hit.body.rotation,
-                            _ => 0.0,
-                        };
-                        mantle_emitter(world_vec(*defender_pos), rotation, slot)
-                    });
-                    let impact_witnessed =
-                        self.all_seeing() || !state.hostile(self.human, *player) || sees(self, *at);
+                    let from =
+                        (*defender_player == self.human || sees(self, *defender_pos)).then(|| {
+                            let rotation = match self
+                                .hit_surface(state, Some(aftermine_sim::Target::Unit(*defender)))
+                            {
+                                Some(HitSurface::Unit(hit)) => hit.body.rotation,
+                                _ => 0.0,
+                            };
+                            mantle_emitter(world_vec(*defender_pos), rotation, slot)
+                        });
+                    let impact_witnessed = !state.hostile(self.human, *player) || sees(self, *at);
                     if from.is_none() && !impact_witnessed {
                         continue;
                     }
@@ -1718,7 +1739,7 @@ impl Presentation {
                         age: 0.0,
                     });
                 }
-                Event::ChargeDetonated { at, .. } => {
+                Event::ChargeDetonated { at, player, .. } => {
                     // A mine going off is loud and unmistakable whoever
                     // owned it.
                     self.fx.push(Effect {
@@ -1728,8 +1749,8 @@ impl Presentation {
                         },
                         age: 0.0,
                     });
-                    self.sounds_pending
-                        .push((SoundKind::DemolitionBoom, Some(world_vec(*at))));
+                    let witnessed = !state.hostile(self.human, *player) || sees(self, *at);
+                    self.queue_blast(SoundKind::DemolitionBoom, world_vec(*at), witnessed);
                 }
                 Event::ShellLanded {
                     player,
@@ -1766,8 +1787,7 @@ impl Presentation {
                     if own_hurt {
                         self.raise_alert(world);
                     }
-                    self.sounds_pending
-                        .push((impact_sound, Some(world_vec(*at))));
+                    self.queue_blast(impact_sound, world, !hostile_shell || sees(self, *at));
                     let arrived = self
                         .fx_previous
                         .shells
@@ -1877,8 +1897,7 @@ impl Presentation {
                     });
                 }
                 Event::WarheadLaunched { player, from, .. } => {
-                    if self.all_seeing() || !state.hostile(self.human, *player) || sees(self, *from)
-                    {
+                    if !state.hostile(self.human, *player) || sees(self, *from) {
                         let from = world_vec(*from);
                         self.sounds_pending
                             .push((SoundKind::SpireLaunch, Some(from)));
@@ -1968,11 +1987,9 @@ impl Presentation {
                     player,
                     at,
                 } => {
-                    let witnessed =
-                        self.all_seeing() || !state.hostile(self.human, *player) || sees(self, *at);
+                    let witnessed = !state.hostile(self.human, *player) || sees(self, *at);
                     let at = world_vec(*at);
-                    self.sounds_pending
-                        .push((SoundKind::WarheadDetonation, Some(at)));
+                    self.queue_blast(SoundKind::WarheadDetonation, at, witnessed);
                     self.fx.push(Effect {
                         kind: EffectKind::WarheadBurst {
                             at,
