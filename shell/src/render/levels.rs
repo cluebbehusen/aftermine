@@ -21,8 +21,8 @@ use macroquad::prelude::*;
 /// Mean brightness of each ground sprite variant, and their median. A tinted
 /// tile is calmed toward the median so the variants' waves stay subtle on
 /// bright levels.
-const SHADE_MEAN: [f32; 6] = [31.7, 34.0, 37.0, 39.0, 41.0, 43.3];
-const SHADE_MEDIAN: f32 = 38.0;
+const SHADE_MEAN: [f32; 6] = [33.5, 35.1, 37.0, 38.9, 40.0, 41.5];
+const SHADE_MEDIAN: f32 = 37.95;
 /// Flat ground's grey, which bench fills scale by their level's tone.
 const FLOOR_SHADE: f32 = 36.0;
 /// Where light comes from, for a ramp's slope shading.

@@ -9,7 +9,7 @@ use macroquad::prelude::*;
 
 /// Salt for the boundary's bench jogs and decals.
 pub(super) const SALT: u32 = 347;
-pub(super) const WAVE_LIFTS: [i16; 6] = [-4, -2, 0, 1, 2, 4];
+pub(super) const WAVE_LIFTS: [i16; 6] = [-3, -1, 0, 1, 1, 3];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[expect(clippy::struct_excessive_bools, reason = "one flag per map edge")]
