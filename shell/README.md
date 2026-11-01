@@ -21,6 +21,7 @@ crate is a binary, and this README is also its crate-level rustdoc.
   Key bindings live only in the settings.
 - `screens` holds the menus, match setup (`screens/wizard`), the lobby, playback
   and results. `tutorial` holds the lessons and `tips` the match tips.
+- `home_backdrop` plays a bundled recording behind Home.
 - `render`, `panel` and `layout` draw the world and HUD and share hit-test
   geometry. `look` declares how each unit and defense is drawn.
 - `theme` names the interface colors, stroke weights and type sizes.

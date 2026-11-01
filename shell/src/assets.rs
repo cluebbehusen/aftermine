@@ -12,6 +12,9 @@ use macroquad::prelude::{
 
 /// Sprite regions share bounded texture pages instead of per-sprite textures.
 pub struct Sprites {
+    /// Home's title art, kept apart from the atlas: it is the one image drawn
+    /// at arbitrary sizes, so it filters smoothly.
+    wordmark: Texture2D,
     textures: Vec<Texture2D>,
     entity_lod: crate::entity_lod::EntityLod,
     ground_blend: crate::render::GroundBlend,
@@ -1371,7 +1374,12 @@ impl Sprites {
         ] = pick(&rects, SINGLE_KEYS)?;
         let entity_lod = crate::entity_lod::EntityLod::load(&rects, page_height)?;
         let ground_blend = crate::render::GroundBlend::load()?;
+        let wordmark = Texture2D::from_image(
+            &load_resource_image("assets/wordmark.png").context("loading assets/wordmark.png")?,
+        );
+        wordmark.set_filter(FilterMode::Linear);
         Ok(Self {
+            wordmark,
             unit_rigs: unit_rigs(&rects)?,
             bombard_spades: bombard_spade_rows(&rects)?,
             piledriver_anchors: piledriver_anchor_rows(&rects)?,
@@ -1418,6 +1426,11 @@ impl Sprites {
             excavator_cargo: excavator_cargo_rows(&rects)?,
             mantle_charge: mantle_charge_rows(&rects)?,
         })
+    }
+
+    /// Home's title art.
+    pub(crate) fn wordmark(&self) -> &Texture2D {
+        &self.wordmark
     }
 
     pub(crate) fn harvester_body(&self, cargo: usize) -> Option<(Rect, Rect)> {

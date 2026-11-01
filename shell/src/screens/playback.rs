@@ -90,6 +90,24 @@ impl PlaybackSession {
         Ok(session)
     }
 
+    /// A viewer that shows `recording` from its first stored world, without
+    /// the background work of a viewer someone can seek around in.
+    pub(crate) fn from_checkpoint(recording: aftermine_kit::Recording) -> Result<(Self, u64)> {
+        let start = recording
+            .keyframes
+            .ticks()
+            .next()
+            .context("the recording has no checkpoint")?;
+        let mut session = Self::from_recording(recording)?;
+        session.seek_to(start);
+        Ok((session, start))
+    }
+
+    /// Ticks left before the record ends.
+    pub(crate) fn ticks_left(&self) -> u64 {
+        self.engine.total().saturating_sub(self.engine.position())
+    }
+
     fn from_recording(recording: aftermine_kit::Recording) -> Result<Self> {
         let record = recording.replay.clone();
         let engine = aftermine_kit::playback::Playback::open(recording)?;

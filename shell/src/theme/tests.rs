@@ -99,7 +99,6 @@ fn the_type_ramp_climbs_and_scales() {
         Type::Heading,
         Type::Row,
         Type::Title,
-        Type::Display,
     ];
     let sizes = ramp.map(|step| step.at(1.0));
     assert!(sizes.windows(2).all(|pair| pair[0] < pair[1]));

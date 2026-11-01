@@ -38,6 +38,9 @@ along `main` but can repeat across branches.
 ## At launch
 
 - Netplay compares `PROTOCOL_VERSION` and `SIM_VERSION` without the commit.
+- The recordings behind Home are refused by a new `SIM_VERSION`, and a change to
+  the simulation's state can stop their checkpoints restoring. A shell test
+  catches both; `aftermine-driver home-replays` records them again.
 - A moved state-hash row requires a new `SIM_VERSION`, and the bless gate's
   refusal says so instead of offering the same-version override.
 - Each format version moves with its file's shape, and the package version moves
