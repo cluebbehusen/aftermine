@@ -13,6 +13,7 @@ fn exact_window_retains_high_rate_frames_between_simulation_ticks() {
                 tick_start: tick,
                 tick_end: tick + u64::from(frame == 63),
                 work_ms: 0.2,
+                submit_ms: 0.0,
                 units: 1,
                 buildings: 1,
             });
@@ -38,6 +39,7 @@ fn snapshot_reports_native_work_and_can_reset_the_window() {
             tick_start: 100 + index as u64,
             tick_end: 101 + index as u64,
             work_ms,
+            submit_ms: 0.0,
             units: 10 + index,
             buildings: 4,
         });
@@ -66,6 +68,7 @@ fn disabled_profiling_has_no_samples() {
         tick_start: 1,
         tick_end: 2,
         work_ms: 99.0,
+        submit_ms: 0.0,
         units: 1,
         buildings: 1,
     });
@@ -97,6 +100,7 @@ fn exact_window_keeps_contiguous_active_playing_frames_including_tick_waits() {
             tick_start: 10,
             tick_end: 10,
             work_ms: 50.0,
+            submit_ms: 0.0,
             units: 1,
             buildings: 1,
         },
@@ -106,6 +110,7 @@ fn exact_window_keeps_contiguous_active_playing_frames_including_tick_waits() {
             tick_start: 10,
             tick_end: 10,
             work_ms: 1.0,
+            submit_ms: 0.0,
             units: 10,
             buildings: 4,
         },
@@ -115,6 +120,7 @@ fn exact_window_keeps_contiguous_active_playing_frames_including_tick_waits() {
             tick_start: 10,
             tick_end: 12,
             work_ms: 2.0,
+            submit_ms: 0.0,
             units: 10,
             buildings: 4,
         },
@@ -124,6 +130,7 @@ fn exact_window_keeps_contiguous_active_playing_frames_including_tick_waits() {
             tick_start: 12,
             tick_end: 14,
             work_ms: 3.0,
+            submit_ms: 0.0,
             units: 11,
             buildings: 4,
         },
@@ -133,6 +140,7 @@ fn exact_window_keeps_contiguous_active_playing_frames_including_tick_waits() {
             tick_start: 14,
             tick_end: 15,
             work_ms: 99.0,
+            submit_ms: 0.0,
             units: 11,
             buildings: 4,
         },
@@ -166,6 +174,7 @@ fn retained_samples_are_bounded() {
             tick_start: tick,
             tick_end: tick + 1,
             work_ms: 1.0,
+            submit_ms: 0.0,
             units: 1,
             buildings: 1,
         });
@@ -191,6 +200,7 @@ fn an_exact_window_ignores_discontinuous_or_overshooting_frames() {
             tick_start: 9,
             tick_end: 10,
             work_ms: 90.0,
+            submit_ms: 0.0,
             units: 99,
             buildings: 99,
         },
@@ -200,6 +210,7 @@ fn an_exact_window_ignores_discontinuous_or_overshooting_frames() {
             tick_start: 10,
             tick_end: 13,
             work_ms: 80.0,
+            submit_ms: 0.0,
             units: 88,
             buildings: 88,
         },
@@ -209,6 +220,7 @@ fn an_exact_window_ignores_discontinuous_or_overshooting_frames() {
             tick_start: 10,
             tick_end: 12,
             work_ms: 2.0,
+            submit_ms: 0.0,
             units: 8,
             buildings: 4,
         },
@@ -221,4 +233,102 @@ fn an_exact_window_ignores_discontinuous_or_overshooting_frames() {
     assert_eq!(view.tick_end, 12);
     assert_eq!(view.slowest.expect("one sample").units, 8);
     assert!(view.window.expect("window").complete);
+}
+
+fn frame(work_ms: f64, submit_ms: f64) -> FrameObservation<'static> {
+    FrameObservation {
+        mode: "playback",
+        active_playing: false,
+        tick_start: 7,
+        tick_end: 7,
+        work_ms,
+        submit_ms,
+        units: 1,
+        buildings: 1,
+    }
+}
+
+fn pass_timing<'a>(view: &'a FrameProfileView, name: &str) -> &'a TimingSummary {
+    &view
+        .passes
+        .iter()
+        .find(|pass| pass.name == name)
+        .expect("named pass")
+        .timing
+}
+
+#[test]
+fn every_pass_has_a_distinct_name_and_a_slot_in_its_own_order() {
+    let names: std::collections::BTreeSet<_> =
+        FramePass::ALL.iter().map(|pass| pass.name()).collect();
+    assert_eq!(names.len(), PASSES);
+    assert!(!names.contains(OTHER_PASS));
+    for (slot, pass) in FramePass::ALL.iter().enumerate() {
+        assert_eq!(*pass as usize, slot);
+    }
+}
+
+#[test]
+fn a_pass_charges_only_the_frame_it_ran_in() {
+    let mut profiler = FrameProfiler::new(true);
+    pass(FramePass::Units, || {
+        std::thread::sleep(Duration::from_millis(2));
+    });
+    let answer = measure(FramePass::Units, || 42);
+    assert_eq!(answer, 42);
+    profiler.record(frame(50.0, 0.0));
+    profiler.record(frame(50.0, 0.0));
+
+    let view = profiler.snapshot(false);
+    let units = pass_timing(&view, "units");
+    assert!(units.max_ms >= 2.0, "the slept frame: {units:?}");
+    assert_eq!(units.p50_ms, 0.0, "the second frame ran no pass");
+    assert_eq!(pass_timing(&view, "fog").max_ms, 0.0);
+}
+
+#[test]
+fn other_is_the_work_no_pass_claimed_and_never_negative() {
+    let mut profiler = FrameProfiler::new(true);
+    pass(FramePass::Hud, || {
+        std::thread::sleep(Duration::from_millis(2));
+    });
+    profiler.record(frame(0.5, 0.0));
+    profiler.record(frame(9.0, 0.0));
+
+    let view = profiler.snapshot(false);
+    let other = pass_timing(&view, OTHER_PASS);
+    assert_eq!(other.p50_ms, 0.0, "a pass longer than work leaves nothing");
+    assert_eq!(other.max_ms, 9.0);
+}
+
+#[test]
+fn the_120_hz_count_and_the_slowest_frame_include_submission() {
+    let mut profiler = FrameProfiler::new(true);
+    profiler.record(frame(8.0, 0.0));
+    profiler.record(frame(6.0, 3.0));
+    profiler.record(frame(1.0, 1.0));
+
+    let view = profiler.snapshot(false);
+    assert_eq!(view.cpu_over_8_3_ms, 1, "only 6 + 3 misses the budget");
+    assert_eq!(view.cpu.max_ms, 9.0);
+    assert_eq!(view.work.max_ms, 8.0);
+    assert_eq!(view.submit.max_ms, 3.0);
+    let slowest = view.slowest.expect("slowest");
+    assert_eq!(slowest.work_ms, 6.0);
+    assert_eq!(slowest.submit_ms, 3.0);
+    assert_eq!(slowest.passes.len(), PASSES + 1);
+    assert_eq!(slowest.passes.last().expect("other").name, OTHER_PASS);
+    assert_eq!(slowest.passes.last().expect("other").ms, 6.0);
+}
+
+#[test]
+fn a_disabled_profiler_collects_no_pass_time() {
+    let mut profiler = FrameProfiler::new(false);
+    assert_eq!(measure(FramePass::Fog, || 7), 7);
+    let mut ran = false;
+    pass(FramePass::Fog, || ran = true);
+    assert!(ran, "off still draws");
+    assert_eq!(PASS_SPENT.get(), [0.0; PASSES]);
+    profiler.record(frame(1.0, 0.0));
+    assert_eq!(profiler.snapshot(false).frames, 0);
 }

@@ -493,6 +493,30 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
                 p99_ms: 6.0,
                 max_ms: 6.0,
             },
+            submit: TimingSummary {
+                mean_ms: 1.0,
+                p50_ms: 1.0,
+                p95_ms: 1.5,
+                p99_ms: 1.5,
+                max_ms: 1.5,
+            },
+            cpu: TimingSummary {
+                mean_ms: 5.0,
+                p50_ms: 4.0,
+                p95_ms: 7.5,
+                p99_ms: 7.5,
+                max_ms: 7.5,
+            },
+            passes: vec![PassTimingView {
+                name: "units".into(),
+                timing: TimingSummary {
+                    mean_ms: 2.0,
+                    p50_ms: 2.0,
+                    p95_ms: 3.0,
+                    p99_ms: 3.0,
+                    max_ms: 3.0,
+                },
+            }],
             interval: TimingSummary {
                 mean_ms: 16.7,
                 p50_ms: 16.7,
@@ -500,6 +524,7 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
                 p99_ms: 17.0,
                 max_ms: 17.0,
             },
+            cpu_over_8_3_ms: 0,
             work_over_16_7_ms: 0,
             work_over_33_3_ms: 0,
             slowest: Some(SlowFrameView {
@@ -507,6 +532,11 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
                 tick_start: 105,
                 tick_end: 108,
                 work_ms: 6.0,
+                submit_ms: 1.5,
+                passes: vec![PassCostView {
+                    name: "units".into(),
+                    ms: 3.0,
+                }],
                 units: 20,
                 buildings: 8,
             }),

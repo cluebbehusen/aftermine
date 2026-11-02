@@ -1,10 +1,103 @@
 //! Opt-in native-frame timing for the live GPU shell.
 
-use aftermine_protocol::{FrameProfileView, FrameProfileWindowView, SlowFrameView, TimingSummary};
+use aftermine_protocol::{
+    FrameProfileView, FrameProfileWindowView, PassCostView, PassTimingView, SlowFrameView,
+    TimingSummary,
+};
+use std::cell::Cell;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 const MAX_SAMPLES: usize = 65_536;
+
+/// The report's name for frame code outside any named pass.
+const OTHER_PASS: &str = "other";
+
+/// One frame's budget on a 120 Hz display.
+const BUDGET_120_HZ_MS: f64 = 1000.0 / 120.0;
+
+/// A named slice of a frame's work, in draw order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FramePass {
+    Sim,
+    TerrainBake,
+    Terrain,
+    Salvage,
+    GroundEffects,
+    Structures,
+    Units,
+    Markers,
+    Effects,
+    Fog,
+    WorldMarks,
+    Hud,
+    Minimap,
+    Menu,
+}
+
+const PASSES: usize = 14;
+
+impl FramePass {
+    const ALL: [Self; PASSES] = [
+        Self::Sim,
+        Self::TerrainBake,
+        Self::Terrain,
+        Self::Salvage,
+        Self::GroundEffects,
+        Self::Structures,
+        Self::Units,
+        Self::Markers,
+        Self::Effects,
+        Self::Fog,
+        Self::WorldMarks,
+        Self::Hud,
+        Self::Minimap,
+        Self::Menu,
+    ];
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Sim => "sim",
+            Self::TerrainBake => "terrain_bake",
+            Self::Terrain => "terrain",
+            Self::Salvage => "salvage",
+            Self::GroundEffects => "ground_effects",
+            Self::Structures => "structures",
+            Self::Units => "units",
+            Self::Markers => "markers",
+            Self::Effects => "effects",
+            Self::Fog => "fog",
+            Self::WorldMarks => "world_marks",
+            Self::Hud => "hud",
+            Self::Minimap => "minimap",
+            Self::Menu => "menu",
+        }
+    }
+}
+
+thread_local! {
+    static PASS_TIMING: Cell<bool> = const { Cell::new(false) };
+    static PASS_SPENT: Cell<[f64; PASSES]> = const { Cell::new([0.0; PASSES]) };
+}
+
+/// Runs `work`, charging its time to `which` when profiling is on. Passes must
+/// not nest, or the inner one counts twice. Off never reads the clock.
+pub(crate) fn measure<R>(which: FramePass, work: impl FnOnce() -> R) -> R {
+    if !PASS_TIMING.get() {
+        return work();
+    }
+    let started = Instant::now();
+    let result = work();
+    let mut spent = PASS_SPENT.get();
+    spent[which as usize] += started.elapsed().as_secs_f64() * 1000.0;
+    PASS_SPENT.set(spent);
+    result
+}
+
+/// [`measure`] for drawing, which returns nothing.
+pub(crate) fn pass(which: FramePass, draw: impl FnOnce()) {
+    measure(which, draw);
+}
 
 #[derive(Debug, Clone)]
 struct FrameSample {
@@ -13,8 +106,21 @@ struct FrameSample {
     tick_end: u64,
     started_at: Instant,
     work_ms: f64,
+    submit_ms: f64,
+    passes: [f64; PASSES],
     units: usize,
     buildings: usize,
+}
+
+impl FrameSample {
+    fn cpu_ms(&self) -> f64 {
+        self.work_ms + self.submit_ms
+    }
+
+    /// Frame code outside any named pass: input, UI logic and bookkeeping.
+    fn other_ms(&self) -> f64 {
+        (self.work_ms - self.passes.iter().sum::<f64>()).max(0.0)
+    }
 }
 
 /// Input captured at the native frame boundary.
@@ -25,6 +131,7 @@ pub(crate) struct FrameObservation<'a> {
     pub(crate) tick_start: u64,
     pub(crate) tick_end: u64,
     pub(crate) work_ms: f64,
+    pub(crate) submit_ms: f64,
     pub(crate) units: usize,
     pub(crate) buildings: usize,
 }
@@ -49,6 +156,8 @@ struct ProfileWindow {
 
 impl FrameProfiler {
     pub(crate) fn new(enabled: bool) -> Self {
+        PASS_TIMING.set(enabled);
+        PASS_SPENT.take();
         Self {
             enabled,
             samples: VecDeque::new(),
@@ -105,10 +214,11 @@ impl FrameProfiler {
         if !self.enabled {
             return;
         }
+        let passes = PASS_SPENT.take();
         let now = Instant::now();
         let frame_started = now
             .checked_sub(Duration::from_secs_f64(
-                observation.work_ms.max(0.0) / 1000.0,
+                (observation.work_ms + observation.submit_ms).max(0.0) / 1000.0,
             ))
             .unwrap_or(now);
         if let Some(window) = &self.window
@@ -133,6 +243,8 @@ impl FrameProfiler {
             tick_end: observation.tick_end,
             started_at: frame_started,
             work_ms: observation.work_ms,
+            submit_ms: observation.submit_ms,
+            passes,
             units: observation.units,
             buildings: observation.buildings,
         });
@@ -156,7 +268,9 @@ impl FrameProfiler {
         let ticks_presented = self.samples.iter().fold(0u64, |total, sample| {
             total.saturating_add(sample.tick_end.saturating_sub(sample.tick_start))
         });
-        let work_values: Vec<f64> = self.samples.iter().map(|sample| sample.work_ms).collect();
+        let series = |value: &dyn Fn(&FrameSample) -> f64| -> TimingSummary {
+            summarize(self.samples.iter().map(value).collect())
+        };
         let interval_values: Vec<f64> = self
             .samples
             .iter()
@@ -172,12 +286,24 @@ impl FrameProfiler {
         let slowest = self
             .samples
             .iter()
-            .max_by(|a, b| a.work_ms.total_cmp(&b.work_ms))
+            .max_by(|a, b| a.cpu_ms().total_cmp(&b.cpu_ms()))
             .map(|sample| SlowFrameView {
                 mode: sample.mode.clone(),
                 tick_start: sample.tick_start,
                 tick_end: sample.tick_end,
                 work_ms: sample.work_ms,
+                submit_ms: sample.submit_ms,
+                passes: FramePass::ALL
+                    .iter()
+                    .map(|&pass| PassCostView {
+                        name: pass.name().to_string(),
+                        ms: sample.passes[pass as usize],
+                    })
+                    .chain([PassCostView {
+                        name: OTHER_PASS.to_string(),
+                        ms: sample.other_ms(),
+                    }])
+                    .collect(),
                 units: sample.units,
                 buildings: sample.buildings,
             });
@@ -187,8 +313,26 @@ impl FrameProfiler {
             tick_start,
             tick_end,
             ticks_presented,
-            work: summarize(work_values),
+            work: series(&|sample| sample.work_ms),
+            submit: series(&|sample| sample.submit_ms),
+            cpu: series(&FrameSample::cpu_ms),
+            passes: FramePass::ALL
+                .iter()
+                .map(|&pass| PassTimingView {
+                    name: pass.name().to_string(),
+                    timing: series(&|sample| sample.passes[pass as usize]),
+                })
+                .chain([PassTimingView {
+                    name: OTHER_PASS.to_string(),
+                    timing: series(&FrameSample::other_ms),
+                }])
+                .collect(),
             interval: summarize(interval_values),
+            cpu_over_8_3_ms: self
+                .samples
+                .iter()
+                .filter(|sample| sample.cpu_ms() > BUDGET_120_HZ_MS)
+                .count(),
             work_over_16_7_ms: self
                 .samples
                 .iter()

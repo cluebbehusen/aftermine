@@ -744,13 +744,20 @@ fn record_profile_frame(
     let Some(started) = started else {
         return;
     };
+    let work_ms = started.elapsed().as_secs_f64() * 1000.0;
+    // Flush here so submission lands in a timed block instead of inside
+    // `next_frame`, where it can't be told apart from waiting for the display.
+    let submit_started = std::time::Instant::now();
+    set_default_camera();
+    let submit_ms = submit_started.elapsed().as_secs_f64() * 1000.0;
     let state = screen.visible(&app.game).state();
     app.frame_profiler.record(FrameObservation {
         mode,
         active_playing,
         tick_start,
         tick_end: state.current_tick(),
-        work_ms: started.elapsed().as_secs_f64() * 1000.0,
+        work_ms,
+        submit_ms,
         units: state.units().len(),
         buildings: state.buildings().len(),
     });

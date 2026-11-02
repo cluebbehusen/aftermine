@@ -9,6 +9,7 @@
 use crate::assets::{
     ExcavatorPose as SpriteExcavatorPose, HarvesterPose as SpriteHarvesterPose, Sprites,
 };
+use crate::frame_profile::{FramePass, measure, pass};
 use crate::numeric;
 use crate::numeric::Fit;
 pub(crate) mod tracks;
@@ -546,24 +547,30 @@ pub(crate) fn draw_with_performance(
     bindings: &crate::action::BindingMap,
     performance: Option<&crate::performance::PerformanceView>,
 ) {
-    let hud = hud::refresh(
-        game,
-        input,
-        bindings,
-        hud::HudEnv::current(),
-        performance,
-        &hud::window_measure,
-    );
+    let hud = measure(FramePass::Hud, || {
+        hud::refresh(
+            game,
+            input,
+            bindings,
+            hud::HudEnv::current(),
+            performance,
+            &hud::window_measure,
+        )
+    });
     draw_world(game, sprites, input);
-    draw_hud(game, sprites, input, bindings, &hud, performance);
-    if game.presentation.overlay {
-        draw_overlay_info(game);
-    }
-    draw_minimap(game);
-    chrome::draw_ghost_controls(game, input);
-    draw_group_press_ring(input);
-    draw_result_overlay(game);
-    draw_panel_tooltip(game, input);
+    pass(FramePass::Hud, || {
+        draw_hud(game, sprites, input, bindings, &hud, performance);
+        if game.presentation.overlay {
+            draw_overlay_info(game);
+        }
+    });
+    pass(FramePass::Minimap, || draw_minimap(game));
+    pass(FramePass::Hud, || {
+        chrome::draw_ghost_controls(game, input);
+        draw_group_press_ring(input);
+        draw_result_overlay(game);
+        draw_panel_tooltip(game, input);
+    });
 }
 
 /// The battlefield and the player's marks on it, with no chrome, for a
@@ -572,56 +579,80 @@ pub(crate) fn draw_world(game: &crate::game::Scene<'_>, sprites: &Sprites, input
     let ground = ground::Ground::of(game);
     let view = ground::GroundView::live(&game.presentation.camera);
     let mut ground_cache = game.presentation.ground_cache.borrow_mut();
-    ground_cache.prepare(&ground, &view, &game.presentation.camera, sprites);
+    pass(FramePass::TerrainBake, || {
+        ground_cache.prepare(&ground, &view, &game.presentation.camera, sprites);
+    });
     clear_background(OUTSIDE);
-    environment::draw_backdrop(game);
     let alpha = game.clock.render_alpha();
-    ground_cache.draw(ground::Layer::Floor, &ground, &view, sprites);
-    world::draw_salvage(game, &ground, &view, sprites);
-    ground_cache.draw(ground::Layer::Raised, &ground, &view, sprites);
+    pass(FramePass::Terrain, || {
+        environment::draw_backdrop(game);
+        ground_cache.draw(ground::Layer::Floor, &ground, &view, sprites);
+    });
+    pass(FramePass::Salvage, || {
+        world::draw_salvage(game, &ground, &view, sprites);
+    });
+    pass(FramePass::Terrain, || {
+        ground_cache.draw(ground::Layer::Raised, &ground, &view, sprites);
+    });
     drop(ground_cache);
-    world::draw_extractor_frames(game, &view, sprites);
-    draw_scorches(game, sprites);
-    destruction::draw_ground_effects(game, sprites);
-    draw_range_ground(game, input);
-    strategic::draw_strike_ground(game, input);
-    crate::strategic_markers::draw_resources(game);
-    crate::strategic_markers::draw_extractor_frames(game);
-    draw_buildings(game, sprites);
-    entities::draw_selected_pile(game);
-    crate::strategic_markers::draw_buildings(game);
-    draw_units(game, sprites, alpha);
-    crate::strategic_markers::draw_markers(game, alpha);
-    draw_fx(game, sprites);
+    pass(FramePass::Salvage, || {
+        world::draw_extractor_frames(game, &view, sprites);
+    });
+    pass(FramePass::GroundEffects, || {
+        draw_scorches(game, sprites);
+        destruction::draw_ground_effects(game, sprites);
+        draw_range_ground(game, input);
+        strategic::draw_strike_ground(game, input);
+    });
+    pass(FramePass::Markers, || {
+        crate::strategic_markers::draw_resources(game);
+        crate::strategic_markers::draw_extractor_frames(game);
+    });
+    pass(FramePass::Structures, || {
+        draw_buildings(game, sprites);
+        entities::draw_selected_pile(game);
+    });
+    pass(FramePass::Markers, || {
+        crate::strategic_markers::draw_buildings(game);
+    });
+    pass(FramePass::Units, || draw_units(game, sprites, alpha));
+    pass(FramePass::Markers, || {
+        crate::strategic_markers::draw_markers(game, alpha);
+    });
+    pass(FramePass::Effects, || draw_fx(game, sprites));
     // The debug overlay is deliberately omniscient; the spectator
     // stance (playback) and a seat out of the match skip the fog too but
     // never the debug chrome.
-    if game.presentation.overlay {
-        draw_overlay(game, alpha);
-    } else if !game.presentation.all_seeing() {
-        draw_fog(game, &view);
-    }
+    pass(FramePass::Fog, || {
+        if game.presentation.overlay {
+            draw_overlay(game, alpha);
+        } else if !game.presentation.all_seeing() {
+            draw_fog(game, &view);
+        }
+    });
     // Own-order acknowledgments, rally flags, and radar blips sit above
     // the fog: they are the player's intent and intel, not world state.
-    draw_pings(game);
-    draw_range_rings(game, input);
-    draw_blips(game);
-    strategic::draw_warheads(game, sprites);
-    entities::draw_public_buildings(game);
-    entities::draw_repair_tethers(game);
-    draw_rally_marker(game, alpha);
-    strategic::draw_strike_preview(game, input);
-    draw_breadcrumbs(game, input);
-    // Deferred claims are the player's own intent, like breadcrumbs; a
-    // spectator has none.
-    if !game.presentation.spectating() {
-        draw_pending_founds(game, sprites);
-    }
-    draw_placement_ghost(game, sprites, input);
-    draw_drag_rect(game, input);
-    draw_touch_box(game, input);
-    draw_long_press_ring(input);
-    draw_salvage_tooltip(game, input);
+    pass(FramePass::WorldMarks, || {
+        draw_pings(game);
+        draw_range_rings(game, input);
+        draw_blips(game);
+        strategic::draw_warheads(game, sprites);
+        entities::draw_public_buildings(game);
+        entities::draw_repair_tethers(game);
+        draw_rally_marker(game, alpha);
+        strategic::draw_strike_preview(game, input);
+        draw_breadcrumbs(game, input);
+        // Deferred claims are the player's own intent, like breadcrumbs; a
+        // spectator has none.
+        if !game.presentation.spectating() {
+            draw_pending_founds(game, sprites);
+        }
+        draw_placement_ghost(game, sprites, input);
+        draw_drag_rect(game, input);
+        draw_touch_box(game, input);
+        draw_long_press_ring(input);
+        draw_salvage_tooltip(game, input);
+    });
 }
 
 const FOG_UNEXPLORED: Color = color_u8!(13, 13, 17, 255);
