@@ -241,31 +241,50 @@ def render_breaker(variant, move=0, action=0):
     for side in (-1, 1):
         poly(
             d,
-            [(64 + side * x, y) for x, y in ((9, 32), (20, 39), (18, 68), (11, 73))],
+            [(64 + side * x, y) for x, y in ((9, 32), (20, 39), (19, 63), (11, 67))],
+            VOID,
+        )
+        poly(
+            d,
+            [(64 + side * x, y) for x, y in ((10, 35), (18, 40), (18, 60), (11, 63))],
             paint,
         )
-        line(d, [(64 + side * 11, 35), (64 + side * 17, 40)], EDGE)
-        line(d, [(64 + side * 10, 58), (64 + side * 18, 92)], IRON, 5)
-        line(d, [(64 + side * 11, 64), (64 + side * 17, 90)], EDGE)
-    box(d, (46, 87, 82, 106), paint, 3)
-    vent(d, 52, 90, 24)
-    box(d, (45, 49, 83, 85), VOID, 4)
-    for x in (48, 74):
-        box(d, (x, 49, x + 6, 80), IRON, 2)
-        line(d, [(x + 2, 53), (x + 2, 74)], STEEL)
+        line(d, [(64 + side * 11, 37), (64 + side * 17, 41)], EDGE)
+        line(d, [(64 + side * 11, 52), (64 + side * 18, 52)], VOID, 1.5)
+        for y in (45, 57):
+            x = 64 + side * 15
+            circle(d, (x - 1, y - 1, x + 1, y + 1), IRON)
+    box(d, (47, 64, 81, 87), DEEP, 2)
+    for x in (47, 77):
+        box(d, (x, 58, x + 4, 87), IRON, 1)
+        line(d, [(x + 1, 59), (x + 1, 85)], EDGE)
+    for side in (-1, 1):
+        line(d, [(64 + side * 17, 66), (64 + side * 18, 90)], VOID, 2)
+    box(d, (46, 87, 82, 106), VOID, 3)
+    box(d, (48, 89, 80, 104), IRON, 2)
+    box(d, (48, 89, 80, 94), paint, 1)
+    vent(d, 53, 93, 22)
     chassis = finish(image)
     image, d = canvas()
     recoil = (0, 0, 10, 6, 2)[action]
-    box(d, (56, 14 + recoil, 72, 69 + recoil), VOID, 2)
-    box(d, (59, 19 + recoil, 69, 60 + recoil), DARK, 1)
-    line(d, [(60, 20 + recoil), (60, 53 + recoil)], STEEL, 2)
-    box(d, (54, 14 + recoil, 74, 23 + recoil), DARK, 2)
-    line(d, [(58, 15 + recoil), (70, 15 + recoil)], LIGHT)
-    box(d, (52, 52 + recoil, 76, 72 + recoil), DEEP, 3)
-    box(d, (56, 56 + recoil, 72, 67 + recoil), IRON, 2)
-    line(d, [(56, 56 + recoil), (71, 56 + recoil)], EDGE)
+    # The cylinders stay on the cradle while the tube and breech recoil.
+    for x in (50, 74):
+        box(d, (x, 40, x + 4, 62), VOID, 1)
+        box(d, (x + 1, 41, x + 3, 61), IRON, 0)
+        line(d, [(x + 1, 42), (x + 1, 60)], EDGE)
+    box(d, (56, 19 + recoil, 72, 66 + recoil), VOID, 2)
+    box(d, (59, 23 + recoil, 69, 64 + recoil), DARK, 1)
+    line(d, [(60, 24 + recoil), (60, 60 + recoil)], STEEL, 2)
+    box(d, (54, 14 + recoil, 74, 24 + recoil), VOID, 2)
+    box(d, (56, 16 + recoil, 72, 22 + recoil), IRON, 1)
+    line(d, [(57, 16 + recoil), (71, 16 + recoil)], LIGHT)
+    box(d, (50, 58 + recoil, 78, 74 + recoil), VOID, 3)
+    box(d, (53, 61 + recoil, 75, 71 + recoil), IRON, 2)
+    line(d, [(54, 61 + recoil), (74, 61 + recoil)], EDGE)
+    for x, y in ((56, 64), (72, 64), (56, 68), (72, 68)):
+        circle(d, (x - 1, y + recoil - 1, x + 1, y + recoil + 1), LIGHT)
     if action == 2:
-        poly(d, [(59, 24), (64, 17), (69, 24), (65, 28), (63, 28)], (193, 170, 122))
-        line(d, [(64, 21), (64, 25)], gen.BONE, 2)
+        poly(d, [(59, 18), (64, 10), (69, 18), (65, 22), (63, 22)], (193, 170, 122))
+        line(d, [(64, 15), (64, 19)], gen.BONE, 2)
     chassis.alpha_composite(finish(image, rim=False))
     return chassis

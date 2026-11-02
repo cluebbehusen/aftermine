@@ -565,7 +565,7 @@ fn building_activity_uses_only_its_authored_row() {
     };
     assert_eq!(
         building_frame(BuildingKind::Foundry, state).body,
-        BuildingBodyFrame::Work(9)
+        BuildingBodyFrame::Work(12)
     );
     assert_eq!(
         building_frame(BuildingKind::Crucible, state).body,

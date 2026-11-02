@@ -284,7 +284,7 @@ pub(crate) fn building_frame(kind: BuildingKind, state: BuildingAnimationState) 
 /// launch.
 pub(crate) fn production_frames(kind: BuildingKind) -> Option<usize> {
     match kind {
-        BuildingKind::Foundry => Some(12),
+        BuildingKind::Foundry => Some(16),
         BuildingKind::Fabricator | BuildingKind::Crucible => Some(4),
         BuildingKind::Airworks => Some(2),
         BuildingKind::Turret

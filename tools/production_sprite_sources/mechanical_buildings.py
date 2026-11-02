@@ -23,6 +23,9 @@ from tools.production_sprite_sources.mechanical_ground import (
 
 BRASS = (130, 105, 66)
 HOT = (187, 109, 53)
+EMBER = (84, 44, 28)
+SPARK = (255, 214, 140)
+BRASS_LIGHT = (170, 142, 94)
 TEAL = (85, 125, 123)
 
 
@@ -82,6 +85,33 @@ def foundation(d, bounds=(8, 8, 120, 120)):
         bolt(d, xx, yy)
 
 
+# The gantry's training program: travel, weld at a station, step across, weld
+# again, travel home. Each pose is (gantry y, carriage offset, tool plunge, spark).
+FOUNDRY_PROGRAM = (
+    (46, -9, 0, 0),
+    (50, -9, 0, 0),
+    (54, -9, 0, 0),
+    (54, -9, 4, 1),
+    (54, -9, 4, 2),
+    (54, -9, 4, 1),
+    (54, -9, 1, 0),
+    (58, 0, 0, 0),
+    (62, 9, 0, 0),
+    (62, 9, 4, 1),
+    (62, 9, 4, 2),
+    (62, 9, 4, 1),
+    (62, 9, 1, 0),
+    (58, 9, 0, 0),
+    (53, 3, 0, 0),
+    (48, 0, 0, 0),
+)
+FOUNDRY_PARKED = (42, 0, 0, 0)
+SPARKS = {
+    1: ((-5, 3), (5, 3), (-3, -3), (4, -2)),
+    2: ((-6, 1), (6, 1), (-2, 4), (3, 5)),
+}
+
+
 def foundry(variant, work=0):
     im, d = canvas()
     paint = gen.PALETTES[variant]["dark"]
@@ -96,6 +126,8 @@ def foundry(variant, work=0):
     # Recessed assembly bed, side rails, feed magazine and travelling gantry.
     box(d, (34, 27, 96, 113), VOID, 4)
     box(d, (42, 34, 88, 106), DEEP, 3)
+    for y in range(40, 104, 9):
+        line(d, [(44, y), (86, y)], DARK, 2)
     for x in (37, 92):
         line(d, [(x, 30), (x, 110)], IRON, 3)
         line(d, [(x - 1, 31), (x - 1, 108)], EDGE)
@@ -108,25 +140,42 @@ def foundry(variant, work=0):
         line(d, [(105, y + 2), (111, y + 2)], IRON, 2)
     plate(d, (42, 11, 83, 35), paint)
     box(d, (49, 15, 75, 27), VOID, 2)
+    # Furnace light behind the feed grate.
     for x in (51, 59, 67):
-        box(d, (x, 18, x + 5, 26), IRON, 1)
+        box(d, (x, 18, x + 5, 26), EMBER, 1)
+        box(d, (x + 1, 21, x + 4, 26), HOT)
+        line(d, [(x + 1, 25), (x + 4, 25)], gen.SCRAP)
     box(d, (57, 28, 70, 42), DARK, 1)
     line(d, [(59, 30), (59, 40)], BRASS)
-    # The workpiece is clamped into a bed, never a pulsing central eye.
-    plate(d, (51, 68, 80, 95), IRON, 4)
-    box(d, (57, 74, 73, 90), DARK, 2)
+    # A machine under assembly, clamped into the bed.
+    plate(d, (51, 68, 80, 95), DARK, 4)
+    for x in (54, 72):
+        box(d, (x, 72, x + 5, 91), VOID, 1)
+        for y in (74, 79, 84):
+            line(d, [(x + 1, y), (x + 4, y)], IRON, 2)
+    box(d, (59, 73, 72, 90), IRON, 2)
+    line(d, [(60, 74), (71, 74)], EDGE)
+    box(d, (62, 77, 69, 85), DEEP, 1)
     for x in (47, 81):
         box(d, (x, 73, x + 3, 90), BRASS, 1)
-    y = (42, 48, 51, 56, 62, 68, 73, 76, 76, 73, 67, 59, 52)[work]
-    box(d, (31, y - 5, 99, y + 7), VOID, 2)
-    box(d, (34, y - 3, 96, y + 4), paint, 1)
-    line(d, [(35, y - 3), (95, y - 3)], EDGE)
-    for x in (34, 91):
-        box(d, (x, y - 7, x + 5, y + 10), IRON, 1)
-    plate(d, (57, y - 7, 74, y + 14), IRON, 3)
-    box(d, (61, y + 8, 70, y + 19), BRASS, 1)
-    if 4 <= work <= 8:
-        line(d, [(65, y + 19), (65, y + 23)], HOT, 2)
+    y, offset, plunge, spark = FOUNDRY_PROGRAM[work - 1] if work else FOUNDRY_PARKED
+    box(d, (31, y - 6, 99, y + 8), VOID, 2)
+    box(d, (34, y - 4, 96, y + 5), paint, 1)
+    line(d, [(35, y - 4), (95, y - 4)], EDGE)
+    line(d, [(35, y + 4), (95, y + 4)], DARK)
+    for x in (32, 90):
+        plate(d, (x, y - 9, x + 8, y + 11), IRON, 2)
+        bolt(d, x + 4, y - 4)
+        bolt(d, x + 4, y + 6)
+    x = 65 + offset
+    plate(d, (x - 9, y - 7, x + 8, y + 14), IRON, 3)
+    box(d, (x - 4, y + 8 + plunge, x + 5, y + 19 + plunge), BRASS, 1)
+    line(d, [(x - 3, y + 9 + plunge), (x + 4, y + 9 + plunge)], BRASS_LIGHT)
+    tip = y + 19 + plunge
+    for dx, dy in SPARKS.get(spark, ()):
+        line(d, [(x, tip), (x + dx, tip + dy)], HOT)
+    if spark:
+        box(d, (x - 1, tip - 1, x + 2, tip + 2), SPARK)
     box(d, (47, 108, 83, 119), VOID, 1)
     for x in (48, 80):
         line(d, [(x, 109), (x, 117)], BRASS, 2)

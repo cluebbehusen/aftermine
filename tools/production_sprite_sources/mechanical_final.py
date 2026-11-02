@@ -151,7 +151,7 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
             )
 
         for kind, count in (
-            ("foundry", 12),
+            ("foundry", 16),
             ("fabricator", 4),
             ("airworks", 4),
             ("crucible", 4),

@@ -8,6 +8,8 @@ from tools.production_sprite_sources.mechanical_ground import (
     DEEP,
     EDGE,
     IRON,
+    LIGHT,
+    SS,
     STEEL,
     VOID,
     box,
@@ -21,6 +23,10 @@ from tools.production_sprite_sources.mechanical_ground import (
 
 HEAT = (169, 104, 52)
 FLASH = (236, 190, 112)
+BRASS = (130, 105, 66)
+SKYHOOK_DOOR_GAP = (0, 3, 7, 7, 3)
+SKYHOOK_ARM_REACH = (0, 5, 10, 6, 2)
+SKYHOOK_GRIP_OPEN = (0, 1, 1, 0, 0)
 
 
 def panel(d, points, paint):
@@ -190,12 +196,130 @@ def talon(variant, move=0, action=0):
     return base
 
 
+def _arc(d, x, y, r, start, end, color, width):
+    d.arc(
+        tuple(round(v * SS) for v in (x - r, y - r, x + r, y + r)),
+        start,
+        end,
+        fill=(*color, 255),
+        width=round(width * SS),
+    )
+
+
+def skyhook_rotor(d, x, y, r, phase, paint, outward):
+    circle(d, (x - r, y - r, x + r, y + r), VOID)
+    circle(d, (x - r + 2, y - r + 2, x + r - 2, y + r - 2), IRON)
+    circle(d, (x - r + 5, y - r + 5, x + r - 5, y + r - 5), DEEP)
+    _arc(d, x, y, r - 2, 195, 300, EDGE, 1)
+    for i in range(8):
+        a = i * math.pi / 4 + math.pi / 8
+        line(
+            d,
+            [
+                (x + (r - 5) * math.cos(a), y + (r - 5) * math.sin(a)),
+                (x + (r - 2) * math.cos(a), y + (r - 2) * math.sin(a)),
+            ],
+            VOID,
+        )
+    center = 0 if outward > 0 else 180
+    _arc(d, x, y, r - 2, center - 32, center + 32, paint, 3)
+    for i in range(4):
+        a = (i * math.pi / 2) + (phase * math.pi / 6)
+
+        def pt(rad, angle):
+            return (x + rad * math.cos(angle), y + rad * math.sin(angle))
+
+        poly(
+            d,
+            [pt(3, a), pt(r - 6, a + 0.2), pt(r - 6, a + 0.48), pt(4, a + 0.65)],
+            IRON,
+        )
+        line(d, [pt(4, a + 0.05), pt(r - 6, a + 0.2)], LIGHT)
+    inner = x - outward * (r - 2)
+    line(d, [(x, y), (inner, y)], VOID, 5)
+    line(d, [(x, y), (inner, y)], DARK, 2)
+    circle(d, (x - 4, y - 4, x + 4, y + 4), VOID)
+    circle(d, (x - 3, y - 3, x + 3, y + 3), IRON)
+    line(d, [(x - 2, y - 2), (x + 1, y - 2)], LIGHT)
+
+
+def skyhook_drive(d):
+    box(d, (41, 30, 87, 38), VOID, 1)
+    box(d, (42, 31, 86, 37), IRON)
+    line(d, [(42, 31), (86, 31)], EDGE)
+    for x in (47, 53, 75, 81):
+        line(d, [(x, 31), (x, 37)], VOID, 1.5)
+    box(d, (54, 22, 74, 44), VOID, 2)
+    box(d, (56, 24, 72, 42), IRON, 1)
+    line(d, [(57, 24), (71, 24)], EDGE)
+    for y in (29, 33, 37):
+        line(d, [(58, y), (70, y)], VOID, 1.5)
+
+
+def skyhook_hold(d, gap):
+    box(d, (55, 48, 73, 104), VOID, 2)
+    for x in (60, 68):
+        line(d, [(x, 51), (x, 101)], DEEP, 2)
+    for y in (62, 76, 90):
+        line(d, [(58, y), (70, y)], DEEP, 1.5)
+    for side, shade in ((-1, IRON), (1, DARK)):
+        inner = 64 + side * (1 + gap)
+        outer = 64 + side * (9 + gap)
+        x0, x1 = sorted((inner, outer))
+        lip = LIGHT if side < 0 else IRON
+        box(d, (x0, 49, x1, 103), shade, 1)
+        line(d, [(x0 + 1, 50), (x1 - 1, 50)], lip)
+        for y in (62, 76, 90):
+            line(d, [(x0 + 1, y), (x1 - 1, y)], DEEP, 1.5)
+            line(d, [(x0 + 1, y + 1.5), (x1 - 1, y + 1.5)], lip)
+
+
+def skyhook_rails(d, paint):
+    # Drawn over the hold so the doors run back underneath them.
+    for x, shade in ((46, IRON), (75, DARK)):
+        box(d, (x - 1, 44, x + 9, 103), VOID, 2)
+        box(d, (x, 45, x + 8, 102), shade, 1)
+        line(d, [(x + 1, 46), (x + 1, 101)], EDGE if x == 46 else IRON)
+        for y0, y1 in ((47, 61), (73, 87)):
+            box(d, (x + 2, y0, x + 7, y1), VOID)
+            box(d, (x + 2, y0 + 1, x + 7, y1 - 1), paint)
+        for y in (65, 91, 98):
+            line(d, [(x + 1, y), (x + 8, y)], VOID, 1.5)
+    box(d, (56, 19, 72, 22), paint)
+
+
+def skyhook_clamp(d, side, y, action):
+    root = (64 + side * 20, y)
+    rest = (64 + side * 32, y + 8)
+    tip = (64 + side * (32 + SKYHOOK_ARM_REACH[action]), y + 8)
+    sleeve = (
+        root[0] + (rest[0] - root[0]) * 0.62,
+        root[1] + (rest[1] - root[1]) * 0.62,
+    )
+    line(d, [root, tip], VOID, 5)
+    line(d, [root, tip], EDGE, 2)
+    line(d, [root, sleeve], VOID, 8)
+    line(d, [root, sleeve], IRON, 5)
+    line(d, [(root[0], root[1] - 1.5), (sleeve[0], sleeve[1] - 1.5)], EDGE)
+    box(d, (root[0] - 4, y - 4, root[0] + 4, y + 4), VOID, 1)
+    box(d, (root[0] - 3, y - 3, root[0] + 3, y + 3), DARK, 1)
+    x, yy = tip
+    spread = 2 * SKYHOOK_GRIP_OPEN[action]
+    hook = [
+        (x + side * spread, yy - 2),
+        (x + side * spread, yy + 5),
+        (x - side * (5 - 2 * spread), yy + 5),
+    ]
+    line(d, hook, VOID, 6)
+    line(d, hook, STEEL, 3)
+    line(d, hook[1:], BRASS, 3)
+
+
 def skyhook(variant, move=0, action=0, part=None):
     im, d = canvas()
     paint = gen.PALETTES[variant]["dark"]
-    for x in (25, 103):
-        strut(d, (64, 43), (x, 34), 9)
-        fan(d, x, 34, 22, move, paint)
+    for x, outward in ((25, -1), (103, 1)):
+        skyhook_rotor(d, x, 34, 22, move, paint, outward)
     if part == "hull":
         return finish(im)
     if part == "mount":
@@ -214,22 +338,13 @@ def skyhook(variant, move=0, action=0, part=None):
         ],
         DARK,
     )
-    for x in (46, 75):
-        box(d, (x, 45, x + 7, 101), paint, 2)
-        line(d, [(x + 1, 49), (x + 1, 92)], EDGE)
-    vent(d, 55, 27, 18)
-    box(d, (55, 48, 73, 104), VOID, 2)
-    gap = (0, 4, 7, 3, 0)[action]
-    box(d, (56 - gap, 49, 63 - gap, 102), IRON, 1)
-    box(d, (65 + gap, 49, 72 + gap, 102), DARK, 1)
-    line(d, [(58 - gap, 52), (58 - gap, 97)], EDGE)
+    skyhook_hold(d, SKYHOOK_DOOR_GAP[action])
+    skyhook_rails(d, paint)
+    skyhook_drive(d)
+    base = finish(im)
+    im, d = canvas()
     for y in (67, 93):
         for side in (-1, 1):
-            reach = (0, 6, 10, 4, 0)[action]
-            a = (64 + side * 19, y)
-            b = (64 + side * (32 + reach), y + 8)
-            strut(d, a, b, 5)
-            x, yy = b
-            line(d, [(x, yy - 2), (x, yy + 5), (x - side * 5, yy + 5)], HEAT, 3)
-            circle(d, (a[0] - 3, a[1] - 3, a[0] + 3, a[1] + 3), STEEL)
-    return finish(im)
+            skyhook_clamp(d, side, y, action)
+    base.alpha_composite(finish(im, False))
+    return base

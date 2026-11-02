@@ -342,6 +342,30 @@ def scout_radar():
     return finish(im, rim=False)
 
 
+def _mirror(points, side):
+    return [(64 + side * x, y) for x, y in points]
+
+
+def kestrel_wing(d, side, paint):
+    panel(d, _mirror(((11, 32), (34, 51), (28, 74), (15, 68)), side), IRON)
+    poly(d, _mirror(((18, 40), (33, 52), (28, 73), (17, 69)), side), VOID)
+    poly(d, _mirror(((20, 43), (31, 52), (26, 71), (19, 67)), side), paint)
+    line(d, _mirror(((20, 43), (31, 52)), side), EDGE)
+    line(d, _mirror(((19, 57), (29, 60)), side), VOID, 1.5)
+    line(d, _mirror(((14, 40), (15, 64)), side), DARK, 1.5)
+
+
+def kestrel_fuselage(d, paint):
+    panel(d, [(54, 32), (64, 23), (74, 32), (76, 101), (64, 110), (52, 101)], IRON)
+    radar_mount(d, 64, 47)
+    box(d, (60, 65, 68, 69), DEEP, 1)
+    box(d, (57, 73, 71, 80), VOID, 1)
+    box(d, (58, 74, 70, 79), paint, 1)
+    box(d, (58, 84, 70, 98), VOID, 2)
+    for y in (87, 91, 95):
+        line(d, [(60, y), (68, y)], IRON)
+
+
 def kestrel(variant, move=0, action=0):
     im, d = canvas()
     paint = gen.PALETTES[variant]["dark"]
@@ -360,21 +384,9 @@ def kestrel(variant, move=0, action=0):
         DARK,
     )
     for side in (-1, 1):
-        panel(
-            d,
-            [
-                (64 + side * 11, 32),
-                (64 + side * 34, 51),
-                (64 + side * 28, 74),
-                (64 + side * 15, 68),
-            ],
-            paint,
-        )
+        kestrel_wing(d, side, paint)
         engine(d, 64 + side * 28 - 9, 68, 18, 30, paint, move)
-    panel(d, [(54, 32), (64, 23), (74, 32), (76, 101), (64, 110), (52, 101)], IRON)
-    box(d, (58, 75, 70, 96), paint, 2)
-    radar_mount(d, 64, 47)
-    box(d, (60, 65, 68, 69), DEEP, 1)
+    kestrel_fuselage(d, paint)
     return finish(im)
 
 

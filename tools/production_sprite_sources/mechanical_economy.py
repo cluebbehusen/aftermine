@@ -164,30 +164,66 @@ def render_avalanche(variant, phase=0, action=0):
     track(draw, 23, phase)
     track(draw, 89, phase)
     polygon(draw, ((40, 39), (88, 39), (96, 56), (91, 102), (37, 102), (32, 56)), VOID)
-    polygon(draw, ((42, 42), (86, 42), (92, 56), (87, 99), (41, 99), (36, 56)), IRON)
-    line(draw, ((42, 43), (85, 43)), LIGHT, 2)
-    for x in (39, 79):
-        plate(draw, (x, 48, x + 10, 79), accent, 2)
-    plate(draw, (40, 85, 57, 97), DEEP, 2)
-    for y in (89, 93):
-        line(draw, ((44, y), (53, y)), LIGHT)
-    plate(draw, (73, 85, 88, 97), accent, 2)
-    # The circular pivot, two lifting struts, and recessed rail are separate parts.
-    draw.ellipse(metal._box((43, 51, 85, 91)), fill=(*DEEP, 255))
-    draw.ellipse(metal._box((49, 57, 79, 85)), fill=(*DARK, 255))
-    for a, b in (((49, 69), (44, 90)), ((79, 69), (84, 90))):
-        line(draw, (a, b), VOID, 6)
-        line(draw, (a, b), LIGHT, 3)
+    polygon(draw, ((42, 42), (86, 42), (92, 56), (87, 99), (41, 99), (36, 56)), DARK)
+    line(draw, ((43, 43), (85, 43)), IRON, 2)
+    # The hull's corner plates end where the slew ring is drawn over them.
+    for side in (-1, 1):
+        polygon(
+            draw,
+            [
+                (64 + side * x, y)
+                for x, y in ((12, 45), (22, 45), (27, 57), (26, 72), (12, 72))
+            ],
+            VOID,
+        )
+        polygon(
+            draw,
+            [
+                (64 + side * x, y)
+                for x, y in ((12, 47), (21, 47), (25, 57), (24, 70), (12, 70))
+            ],
+            accent,
+        )
+        line(draw, ((64 + side * 13, 48), (64 + side * 20, 48)), EDGE)
+    draw.ellipse(metal._box((42, 50, 86, 94)), fill=(*VOID, 255))
+    draw.ellipse(metal._box((44, 52, 84, 92)), fill=(*IRON, 255))
+    draw.ellipse(metal._box((48, 56, 80, 88)), fill=(*DEEP, 255))
+    for x, y in (
+        (46, 72),
+        (82, 72),
+        (49.5, 60.5),
+        (78.5, 60.5),
+        (49.5, 83.5),
+        (78.5, 83.5),
+    ):
+        draw.ellipse(metal._box((x - 1, y - 1, x + 1, y + 1)), fill=(*LIGHT, 255))
+    box(draw, (44, 92, 84, 99), VOID, 1)
+    box(draw, (46, 94, 82, 98), IRON, 1)
+    box(draw, (50, 94, 78, 98), accent)
+    line(draw, ((47, 94), (81, 94)), EDGE)
     chassis = finish(image)
     image, draw = metal._new_sprite(128)
-    extension = 3 if action in (1, 2) else 0
-    plate(draw, (53, 18 - extension, 75, 94), DEEP, 3)
-    box(draw, (59, 21 - extension, 69, 88), VOID, 1)
-    line(draw, ((56, 22 - extension), (56, 84)), LIGHT, 2)
-    line(draw, ((72, 22 - extension), (72, 84)), IRON, 2)
-    for y in (47, 72, 86):
+    for side in (-1, 1):
+        foot = (64 + side * 21, 90)
+        joint = (64 + side * 17, 77)
+        lug = (64 + side * 13, 62)
+        line(draw, (joint, lug), VOID, 6)
+        line(draw, (joint, lug), EDGE, 3)
+        line(draw, (foot, joint), VOID, 9)
+        line(draw, (foot, joint), IRON, 7)
+        line(draw, ((foot[0] - 2, foot[1] - 1), (joint[0] - 2, joint[1] + 1)), LIGHT)
+        box(draw, (lug[0] - 4, 58, lug[0] + 4, 65), VOID, 1)
+        box(draw, (lug[0] - 3, 59, lug[0] + 3, 64), IRON)
+    # A fixed launch track: only the rocket moves.
+    plate(draw, (53, 18, 75, 94), DEEP, 3)
+    box(draw, (59, 21, 69, 88), VOID, 1)
+    for y in range(29, 86, 9):
         line(draw, ((60, y), (68, y)), DARK, 2)
+    line(draw, ((56, 22), (56, 84)), LIGHT, 2)
+    line(draw, ((72, 22), (72, 84)), IRON, 2)
     plate(draw, (51, 77, 77, 85), accent, 1)
+    box(draw, (58, 87, 70, 93), IRON, 1)
+    line(draw, ((59, 87), (69, 87)), EDGE)
     if action in (0, 1):
         rocket(draw, 18, 42)
     elif action == 4:
