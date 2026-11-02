@@ -104,6 +104,7 @@ fn the_capability_split_is_exactly_nine_shared_requests() {
                 settle_frames: 0,
                 motion: crate::CameraMotion::None { frames: 1 },
             },
+            probes: crate::FrameProbes::default(),
         },
         Request::InjectEvent {
             event: crate::RawEvent::KeyDown {

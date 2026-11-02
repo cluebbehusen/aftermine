@@ -3,8 +3,12 @@
 use crate::camera::Camera;
 use crate::frame_script::{FrameScriptRun, Step};
 use aftermine_protocol::{
-    FrameProfileView, FrameProfileWindowView, FrameScript, PassCostView, PassTimingView,
-    SlowFrameView, TimingSummary,
+    FrameProbes, FrameProfileView, FrameProfileWindowView, FrameScript, PassCostView,
+    PassDrawCallsView, PassTimingView, SlowFrameView, TimingSummary,
+};
+use macroquad::prelude::{
+    Camera2D, Rect, RenderTarget, WHITE, draw_rectangle, render_target, set_camera,
+    set_default_camera,
 };
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -57,6 +61,16 @@ impl FramePass {
         Self::Menu,
     ];
 
+    fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|pass| pass.name() == name)
+    }
+
+    /// The passes a frame can't do without: skipping the sim would stop time
+    /// and the viewer's camera, and skipping the bake would redraw terrain live.
+    const fn skippable(self) -> bool {
+        !matches!(self, Self::Sim | Self::TerrainBake)
+    }
+
     const fn name(self) -> &'static str {
         match self {
             Self::Sim => "sim",
@@ -80,6 +94,36 @@ impl FramePass {
 thread_local! {
     static PASS_TIMING: Cell<bool> = const { Cell::new(false) };
     static PASS_SPENT: Cell<[f64; PASSES]> = const { Cell::new([0.0; PASSES]) };
+    /// One bit per [`FramePass`] to leave undrawn.
+    static PASS_SKIP: Cell<u32> = const { Cell::new(0) };
+    /// Set for the frame macroquad is capturing draw calls from.
+    static DRAW_CAPTURE: Cell<bool> = const { Cell::new(false) };
+    /// Captured draw calls already charged to a pass.
+    static DRAW_SEEN: Cell<usize> = const { Cell::new(0) };
+    static DRAW_COUNTS: Cell<[DrawCount; PASSES]> = const {
+        Cell::new([DrawCount { draw_calls: 0, indices: 0 }; PASSES])
+    };
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct DrawCount {
+    draw_calls: usize,
+    indices: usize,
+}
+
+/// Measured frames before the one whose draw calls get captured. Early enough
+/// that it falls inside a script's first zoom glide.
+const FRAMES_BEFORE_CAPTURE: u32 = 30;
+
+/// Captured draw calls that no pass has claimed yet.
+fn unclaimed_draw_calls() -> DrawCount {
+    let captured = macroquad::telemetry::drawcalls();
+    let seen = DRAW_SEEN.replace(captured.len());
+    let fresh = captured.get(seen..).unwrap_or_default();
+    DrawCount {
+        draw_calls: fresh.len(),
+        indices: fresh.iter().map(|call| call.indices_count).sum(),
+    }
 }
 
 /// Runs `work`, charging its time to `which` when profiling is on. Passes must
@@ -93,12 +137,46 @@ pub(crate) fn measure<R>(which: FramePass, work: impl FnOnce() -> R) -> R {
     let mut spent = PASS_SPENT.get();
     spent[which as usize] += started.elapsed().as_secs_f64() * 1000.0;
     PASS_SPENT.set(spent);
+    if DRAW_CAPTURE.get() {
+        // Submitting now is what ties each captured draw call to this pass.
+        set_default_camera();
+        let fresh = unclaimed_draw_calls();
+        let mut counts = DRAW_COUNTS.get();
+        counts[which as usize].draw_calls += fresh.draw_calls;
+        counts[which as usize].indices += fresh.indices;
+        DRAW_COUNTS.set(counts);
+    }
     result
 }
 
-/// [`measure`] for drawing, which returns nothing.
+/// [`measure`] for drawing that a profiling run may leave out.
 pub(crate) fn pass(which: FramePass, draw: impl FnOnce()) {
-    measure(which, draw);
+    if PASS_SKIP.get() & (1 << which as u32) == 0 {
+        measure(which, draw);
+    }
+}
+
+/// Reads back a tiny render target, which can't finish until the GPU has
+/// finished everything submitted before it.
+struct GpuFence(RenderTarget);
+
+impl GpuFence {
+    fn new() -> Self {
+        Self(render_target(1, 1))
+    }
+
+    /// Milliseconds spent waiting for the GPU.
+    fn wait(&self) -> f64 {
+        set_camera(&Camera2D {
+            render_target: Some(self.0.clone()),
+            ..Camera2D::from_display_rect(Rect::new(0.0, 0.0, 1.0, 1.0))
+        });
+        draw_rectangle(0.0, 0.0, 1.0, 1.0, WHITE);
+        set_default_camera();
+        let started = Instant::now();
+        drop(self.0.texture.get_texture_data());
+        started.elapsed().as_secs_f64() * 1000.0
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -109,6 +187,7 @@ struct FrameSample {
     started_at: Instant,
     work_ms: f64,
     submit_ms: f64,
+    gpu_wait_ms: Option<f64>,
     passes: [f64; PASSES],
     units: usize,
     buildings: usize,
@@ -147,6 +226,25 @@ pub(crate) struct FrameProfiler {
     samples: VecDeque<FrameSample>,
     window: Option<ProfileWindow>,
     script: Option<ScriptState>,
+    /// This frame's wait for the GPU, between measuring it and recording it.
+    pending_gpu_wait: Option<f64>,
+    /// The captured frame's draw calls.
+    draw_calls: Vec<PassDrawCallsView>,
+}
+
+/// Where a script stands on capturing a frame's draw calls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DrawCapture {
+    /// Not asked for, or already finished.
+    Off,
+    /// Counting down measured frames.
+    Waiting { left: u32 },
+    /// Macroquad starts capturing when this frame ends.
+    Requested,
+    /// This frame is being captured.
+    Capturing,
+    /// The frame after, which inherits the capture's GPU backlog.
+    Recovering,
 }
 
 /// A script underway or finished. A finished one stays until its samples are
@@ -157,6 +255,9 @@ struct ScriptState {
     measuring: bool,
     /// Unmeasured frames ran since the last sample.
     gap: bool,
+    capture: DrawCapture,
+    gpu_wait: bool,
+    fence: Option<GpuFence>,
 }
 
 struct ProfileWindow {
@@ -179,6 +280,8 @@ impl FrameProfiler {
             samples: VecDeque::new(),
             window: None,
             script: None,
+            pending_gpu_wait: None,
+            draw_calls: Vec::new(),
         }
     }
 
@@ -198,6 +301,7 @@ impl FrameProfiler {
         }
         self.samples.clear();
         self.script = None;
+        PASS_SKIP.set(0);
         self.window = Some(ProfileWindow {
             from_tick,
             to_tick,
@@ -212,19 +316,35 @@ impl FrameProfiler {
     }
 
     /// Starts a frame script, replacing any samples, window or earlier script.
-    pub(crate) fn begin_script(&mut self, script: &FrameScript) -> Result<(), String> {
+    pub(crate) fn begin_script(
+        &mut self,
+        script: &FrameScript,
+        probes: &FrameProbes,
+    ) -> Result<(), String> {
         if !self.enabled {
             return Err(
                 "native frame profiling is disabled; launch the shell with --profile-frames"
                     .to_string(),
             );
         }
+        let skip = skip_mask(&probes.skip_passes)?;
         self.samples.clear();
         self.window = None;
+        self.draw_calls.clear();
+        PASS_SKIP.set(skip);
         self.script = Some(ScriptState {
             run: Some(FrameScriptRun::new(script)),
             measuring: false,
             gap: false,
+            capture: if probes.draw_calls {
+                DrawCapture::Waiting {
+                    left: FRAMES_BEFORE_CAPTURE,
+                }
+            } else {
+                DrawCapture::Off
+            },
+            gpu_wait: probes.gpu_wait,
+            fence: None,
         });
         Ok(())
     }
@@ -246,9 +366,44 @@ impl FrameProfiler {
         };
         let step = run.step(camera);
         script.measuring = step == Step::Measure;
-        script.gap |= step == Step::Settle;
+        if script.measuring {
+            script.capture = match script.capture {
+                DrawCapture::Off => DrawCapture::Off,
+                DrawCapture::Waiting { left: 0 } => {
+                    macroquad::telemetry::capture_frame();
+                    DrawCapture::Requested
+                }
+                DrawCapture::Waiting { left } => DrawCapture::Waiting { left: left - 1 },
+                DrawCapture::Requested => {
+                    DRAW_CAPTURE.set(true);
+                    DRAW_SEEN.take();
+                    DRAW_COUNTS.take();
+                    script.measuring = false;
+                    DrawCapture::Capturing
+                }
+                DrawCapture::Capturing => {
+                    script.measuring = false;
+                    DrawCapture::Recovering
+                }
+                DrawCapture::Recovering => DrawCapture::Off,
+            };
+        }
+        script.gap |= !script.measuring;
         if step == Step::Done {
             script.run = None;
+            PASS_SKIP.set(0);
+        }
+    }
+
+    /// Waits for the GPU to finish a measured frame when the script asked to.
+    /// Call after the frame's draws have been submitted.
+    pub(crate) fn wait_for_gpu(&mut self) {
+        let Some(script) = &mut self.script else {
+            return;
+        };
+        if script.gpu_wait && script.measuring {
+            let fence = script.fence.get_or_insert_with(GpuFence::new);
+            self.pending_gpu_wait = Some(fence.wait());
         }
     }
 
@@ -274,6 +429,10 @@ impl FrameProfiler {
             return;
         }
         let passes = PASS_SPENT.take();
+        if DRAW_CAPTURE.replace(false) {
+            self.draw_calls = captured_draw_calls();
+        }
+        let gpu_wait_ms = self.pending_gpu_wait.take();
         let after_gap = match &mut self.script {
             Some(script) if !script.measuring => return,
             Some(script) => std::mem::take(&mut script.gap),
@@ -282,7 +441,8 @@ impl FrameProfiler {
         let now = Instant::now();
         let frame_started = now
             .checked_sub(Duration::from_secs_f64(
-                (observation.work_ms + observation.submit_ms).max(0.0) / 1000.0,
+                (observation.work_ms + observation.submit_ms + gpu_wait_ms.unwrap_or(0.0)).max(0.0)
+                    / 1000.0,
             ))
             .unwrap_or(now);
         if let Some(window) = &self.window
@@ -308,6 +468,7 @@ impl FrameProfiler {
             started_at: frame_started,
             work_ms: observation.work_ms,
             submit_ms: observation.submit_ms,
+            gpu_wait_ms,
             passes,
             units: observation.units,
             buildings: observation.buildings,
@@ -417,15 +578,57 @@ impl FrameProfiler {
                 elapsed_ms: window.elapsed_ms,
                 truncated: window.truncated,
             }),
+            gpu_wait: self
+                .samples
+                .iter()
+                .any(|sample| sample.gpu_wait_ms.is_some())
+                .then(|| {
+                    summarize(
+                        self.samples
+                            .iter()
+                            .filter_map(|sample| sample.gpu_wait_ms)
+                            .collect(),
+                    )
+                }),
+            draw_calls: self.draw_calls.clone(),
             script_complete: self.script.as_ref().map(|script| script.run.is_none()),
         };
         if reset {
             self.samples.clear();
             self.window = None;
             self.script = None;
+            self.draw_calls.clear();
+            PASS_SKIP.set(0);
         }
         view
     }
+}
+
+fn skip_mask(names: &[String]) -> Result<u32, String> {
+    names.iter().try_fold(0, |mask, name| {
+        let pass = FramePass::named(name).ok_or_else(|| format!("no pass is named {name:?}"))?;
+        if pass.skippable() {
+            Ok(mask | 1 << pass as u32)
+        } else {
+            Err(format!("the {name} pass can't be skipped"))
+        }
+    })
+}
+
+/// The finished capture's counts: each pass's, then whatever no pass claimed.
+fn captured_draw_calls() -> Vec<PassDrawCallsView> {
+    let view = |name: &str, count: DrawCount| PassDrawCallsView {
+        name: name.to_string(),
+        draw_calls: count.draw_calls,
+        indices: count.indices,
+    };
+    let counts = DRAW_COUNTS.take();
+    let other = unclaimed_draw_calls();
+    FramePass::ALL
+        .iter()
+        .map(|&pass| view(pass.name(), counts[pass as usize]))
+        .chain([view(OTHER_PASS, other)])
+        .collect()
 }
 
 fn summarize(mut values: Vec<f64>) -> TimingSummary {

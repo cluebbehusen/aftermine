@@ -205,6 +205,7 @@ fn every_live_verb_works_headless_over_tcp_and_the_record_reproduces() -> Result
                 settle_frames: 0,
                 motion: aftermine_protocol::CameraMotion::None { frames: 1 },
             },
+            probes: aftermine_protocol::FrameProbes::default(),
         },
         Request::ToggleOverlay,
         Request::InjectEvent {

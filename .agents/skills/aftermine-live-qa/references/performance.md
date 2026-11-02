@@ -99,6 +99,12 @@ Check for other builds and shells before trusting a run. The Mac's frame
 `interval` follows its display, so use `cpu` against the 8.33 ms budget, then
 confirm a win on the iPad with the Detailed performance graph.
 
+`--gpu` waits for the GPU after each frame and times the wait. That is
+whole-frame only, because Apple GPUs render a pass tile by tile after it is
+submitted. For one pass's GPU cost, compare two `--gpu` runs, one with
+`--skip <pass>`. Draw calls and indices come from one captured frame per
+workload on plain runs.
+
 ## Save/load and catalog transitions
 
 Use the native shell for these measurements. The live protocol remains usable

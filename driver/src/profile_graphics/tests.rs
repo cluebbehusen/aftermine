@@ -1,5 +1,5 @@
 use super::*;
-use aftermine_protocol::{PassCostView, PassTimingView, SlowFrameView};
+use aftermine_protocol::{PassCostView, PassDrawCallsView, PassTimingView, SlowFrameView};
 
 fn timing(mean_ms: f64) -> TimingSummary {
     TimingSummary {
@@ -59,6 +59,8 @@ fn trial(units_mean: f64, fog_mean: f64, over_budget: usize) -> FrameProfileView
             buildings: 1,
         }),
         window: None,
+        gpu_wait: None,
+        draw_calls: Vec::new(),
         script_complete: Some(true),
     }
 }
@@ -77,6 +79,8 @@ fn report(workloads: Vec<WorkloadResult>) -> GraphicsReport {
     GraphicsReport {
         revision: "abc".to_string(),
         window: WINDOW,
+        gpu: false,
+        skipped: Vec::new(),
         workloads,
     }
 }
@@ -240,7 +244,92 @@ fn trials_of_zero_are_refused_before_any_shell_starts() {
         trials: 0,
         port: 0,
         dev: true,
+        gpu: false,
+        skip: &[],
     })
     .unwrap_err();
     assert!(refusal.to_string().contains("--trials"));
+}
+
+#[test]
+fn draw_calls_come_from_one_plain_trial_only() {
+    let skip = ["units".to_string()];
+    let options = |gpu, skip| GraphicsOptions {
+        only: None,
+        trials: 3,
+        port: 0,
+        dev: true,
+        gpu,
+        skip,
+    };
+    let plain = options(false, &[]);
+    assert!(probes_for_trial(0, &plain).draw_calls);
+    assert!(!probes_for_trial(1, &plain).draw_calls);
+
+    let gpu = probes_for_trial(0, &options(true, &[]));
+    assert!(
+        gpu.gpu_wait && !gpu.draw_calls,
+        "a capture would disturb it"
+    );
+
+    let skipping = probes_for_trial(0, &options(false, &skip));
+    assert_eq!(skipping.skip_passes, skip);
+    assert!(!skipping.draw_calls, "counts would miss the skipped pass");
+}
+
+#[test]
+fn the_report_shows_gpu_wait_and_draw_calls_when_a_run_collected_them() {
+    let mut measured = trial(2.0, 1.0, 0);
+    measured.gpu_wait = Some(timing(4.5));
+    measured.draw_calls = vec![
+        PassDrawCallsView {
+            name: "units".to_string(),
+            draw_calls: 17,
+            indices: 1_200,
+        },
+        PassDrawCallsView {
+            name: "menu".to_string(),
+            draw_calls: 3,
+            indices: 6,
+        },
+    ];
+    let mut run = report(vec![result("near", vec![measured])]);
+    run.gpu = true;
+    run.skipped = vec!["fog".to_string()];
+    let text = render(&run, None);
+    assert!(text.contains("waiting for the GPU each frame, without fog"));
+    assert!(text.contains("gpu wait"));
+    assert!(text.contains("  4.50"), "the wait's mean:\n{text}");
+    let units = text
+        .lines()
+        .find(|line| line.contains("units  "))
+        .expect("row");
+    assert!(units.contains("17") && units.contains("1200"), "{units}");
+    assert!(
+        text.contains("menu"),
+        "a pass that draws stays listed even when it takes no time:\n{text}"
+    );
+}
+
+#[test]
+fn a_digest_keeps_the_gpu_wait_median_and_finds_draw_calls_in_any_trial() {
+    let mut first = trial(2.0, 1.0, 0);
+    first.gpu_wait = Some(timing(1.0));
+    first.draw_calls = vec![PassDrawCallsView {
+        name: "units".to_string(),
+        draw_calls: 5,
+        indices: 60,
+    }];
+    let mut second = trial(2.0, 1.0, 0);
+    second.gpu_wait = Some(timing(9.0));
+    let mut third = trial(2.0, 1.0, 0);
+    third.gpu_wait = Some(timing(4.0));
+    let digest = digest(&result("near", vec![first, second, third]));
+    assert_eq!(digest.gpu_wait.expect("wait").mean_ms, 4.0);
+    let units = digest
+        .passes
+        .iter()
+        .find(|row| row.name == "units")
+        .expect("row");
+    assert_eq!(units.draws, Some((5, 60)));
 }

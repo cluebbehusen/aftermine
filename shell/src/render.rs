@@ -579,7 +579,7 @@ pub(crate) fn draw_world(game: &crate::game::Scene<'_>, sprites: &Sprites, input
     let ground = ground::Ground::of(game);
     let view = ground::GroundView::live(&game.presentation.camera);
     let mut ground_cache = game.presentation.ground_cache.borrow_mut();
-    pass(FramePass::TerrainBake, || {
+    measure(FramePass::TerrainBake, || {
         ground_cache.prepare(&ground, &view, &game.presentation.camera, sprites);
     });
     clear_background(OUTSIDE);

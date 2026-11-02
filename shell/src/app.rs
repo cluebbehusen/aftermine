@@ -758,6 +758,7 @@ fn record_profile_frame(
     let submit_started = std::time::Instant::now();
     set_default_camera();
     let submit_ms = submit_started.elapsed().as_secs_f64() * 1000.0;
+    app.frame_profiler.wait_for_gpu();
     let state = screen.visible(&app.game).state();
     app.frame_profiler.record(FrameObservation {
         mode,

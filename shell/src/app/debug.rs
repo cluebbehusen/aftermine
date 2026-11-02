@@ -217,13 +217,14 @@ pub(super) fn handle_request(
                         .map(|()| Reply::Ok)
                 }
             }
-            Request::RunFrameScript { script } => match &*screen {
+            Request::RunFrameScript { script, probes } => match &*screen {
                 Screen::Playback { session, .. } if session.engine.filling() => {
                     Err("the viewer is still filling in its record; retry shortly".to_string())
                 }
-                Screen::Home(_) | Screen::Playing | Screen::Playback { .. } => {
-                    app.frame_profiler.begin_script(&script).map(|()| Reply::Ok)
-                }
+                Screen::Home(_) | Screen::Playing | Screen::Playback { .. } => app
+                    .frame_profiler
+                    .begin_script(&script, &probes)
+                    .map(|()| Reply::Ok),
                 _ => Err("frame scripts run on Home, the live match or the viewer".to_string()),
             },
             Request::ToggleOverlay => {
