@@ -62,8 +62,9 @@ something worth holding, such as frames one forward Foundry can support, rich
 scrap, or a route that saves time; an empty shelf plays like the empty ground it
 replaced. Keep a level's edge straight where a ramp crosses it or a frame stands
 at its lip, and jog it only in stretches of several tiles, never one. Levels may
-also part along an existing pit, peak, or rock wall, but those edges draw no
-cliff, only a change of shade.
+also part along an existing pit, peak, or rock wall. Rock lies over the drop,
+which runs on beneath it. A pit or peak keeps its steps, with a taller first
+wall on the side with the longer drop.
 
 The map gates add authoring rules the parser leaves open:
 
@@ -72,6 +73,8 @@ The map gates add authoring rules the parser leaves open:
   one end and its lower level along the other, a tile clear of peaks, pits, and
   the edge ring;
 - each peak and pit stands on a single level;
+- a cliff meets a peak or pit that borders one level only at a corner, since a
+  drop needs a stretch of lower ground along its rim to show on;
 - every cliff parts two levels, or it should be rock;
 - Foundries, Extractor frames, and starting structures stand off ramps on a
   single level, and starting units stand off ramps.

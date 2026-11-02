@@ -175,6 +175,72 @@ fn a_cliff_that_parts_nothing_is_refused() {
     );
 }
 
+/// A plateau at level 2 with a pit on it, where a cliff turns the corner from
+/// level 1 and meets the pit's lower left corner.
+const CORNER_ROWS: [&str; 10] = [
+    "############",
+    "#..........#",
+    "#......~~~.#",
+    "#......~~~.#",
+    "#======....#",
+    "#.....=....#",
+    "#.....=....#",
+    "#.1...=..2.#",
+    "#.....=....#",
+    "############",
+];
+const CORNER_LEVELS: [&str; 10] = [
+    "222222222222",
+    "222222222222",
+    "222222222222",
+    "222222222222",
+    "211111122222",
+    "211111122222",
+    "211111122222",
+    "211111122222",
+    "211111122222",
+    "222222222222",
+];
+
+#[test]
+fn a_cliff_may_meet_a_pit_on_one_level_at_a_corner_only() {
+    let refused = |faults: &[String]| faults.iter().any(|f| f.contains("along its side"));
+    let faults = faults_of(&owned(&CORNER_ROWS), &owned(&CORNER_LEVELS));
+    assert!(!refused(&faults), "{faults:?}");
+    let rows = with(owned(&CORNER_ROWS), 7, 4, '~');
+    let faults = faults_of(&rows, &owned(&CORNER_LEVELS));
+    assert!(refused(&faults), "{faults:?}");
+}
+
+#[test]
+fn a_cliff_may_meet_the_side_of_a_pit_bordering_two_levels() {
+    // The pit reaches the map's edge, parting level 2 north of it from level 1
+    // south of it where the cliff stops.
+    let rows = [
+        "############",
+        "#..........#",
+        "#.....~~~~~#",
+        "#=====~~~~~#",
+        "#.....~~~~~#",
+        "#.1....2...#",
+        "############",
+    ];
+    let levels = [
+        "222222222222",
+        "222222222222",
+        "222222222222",
+        "211111222222",
+        "211111222222",
+        "211111111112",
+        "222222222222",
+    ];
+    let faults = faults_of(&owned(&rows), &owned(&levels));
+    assert!(
+        !faults.iter().any(|f| f.contains("along its side")),
+        "{faults:?}"
+    );
+}
+
 #[test]
 fn starts_stay_off_ramps() {
     let mut scenario = scenario(&owned(&ROWS), &owned(&LEVELS));

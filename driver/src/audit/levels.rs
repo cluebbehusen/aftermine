@@ -1,6 +1,7 @@
 //! Authoring rules for tiered maps, beyond what the simulation needs to
 //! load one: ramps that read as ramps, peaks and pits standing on one
-//! level, cliffs that part levels, and starts that sit level.
+//! level and clear of a cliff's side unless they border two levels, cliffs that
+//! part levels, and starts that sit level.
 //!
 //! A ramp is a filled rectangle at least three tiles across, every tile of
 //! it joining the same two levels. Ground at its
@@ -36,6 +37,13 @@ pub fn level_faults(scenario: &Scenario) -> Result<Vec<String>> {
                 faults.push(format!(
                     "the {terrain:?} at {} stands on levels {levels:?}; keep it on one",
                     at(group[0])
+                ));
+            }
+            if let Some(cliff) = cliff_along_side(&map, &group) {
+                faults.push(format!(
+                    "the {terrain:?} at {} borders one level but has a cliff along its side at {}; let them meet only at a corner",
+                    at(group[0]),
+                    at(cliff)
                 ));
             }
         }
@@ -191,6 +199,28 @@ fn ramp_faults(map: &Map, faults: &mut Vec<String>) {
             ));
         }
     }
+}
+
+/// A cliff tile against the side of a peak or pit bordering a single level. Its
+/// art carries a drop along a stretch of lower ground, and this shape has none.
+fn cliff_along_side(map: &Map, group: &[TilePos]) -> Option<TilePos> {
+    let levels = distinct(
+        group
+            .iter()
+            .flat_map(|&pos| around(pos))
+            .filter(|&pos| terrain_at(map, pos) == Some(Terrain::Ground))
+            .filter_map(|pos| match map.elevation(pos) {
+                Some(Elevation::Level(level)) => Some(level),
+                _ => None,
+            }),
+    );
+    if levels.len() > 1 {
+        return None;
+    }
+    group
+        .iter()
+        .flat_map(|pos| [(1, 0), (-1, 0), (0, 1), (0, -1)].map(|(dx, dy)| pos.offset(dx, dy)))
+        .find(|&pos| terrain_at(map, pos) == Some(Terrain::Cliff))
 }
 
 /// A footprint must stand off every ramp and on a single level.
