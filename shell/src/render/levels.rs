@@ -4,14 +4,17 @@
 //! of the ground above, which stays buildable, with its face reaching a cell
 //! into the cliff tile; the rest of the cliff tile reads as the lower ground.
 //! A ramp is a graded cut with ruts, its walls stepping down beside it and
-//! turning along the cliff's foot.
+//! turning along the cliff's foot. Rock lies over the ground it stands on, so
+//! it takes its level's tone, and rock touching another level stands in that
+//! level's drop, which runs on beneath it.
 //!
 //! Everything is laid out once per map in cells, [`CELLS`] to a tile edge, and
 //! drawn per visible tile.
 
 use super::cell_field::{CELLS, cell_edges};
 use super::environment::{
-    LAYERS, UNLIT, WAVE_LIFTS, draw_fracture, draw_missing_slab, faces_light, hash, mixed, rgba,
+    LAYERS, UNLIT, WAVE_LIFTS, boundary_ring, draw_fracture, draw_missing_slab, faces_light, hash,
+    mixed, rgba,
 };
 use super::ground::GroundView;
 use crate::numeric::{self, Fit};
@@ -128,7 +131,7 @@ struct Op {
 const CLIFF_SHADOW: Color = Color::new(0.03, 0.03, 0.04, 0.18);
 
 /// A cliff's riser by the way it faces.
-fn riser_tone(lit: bool) -> Color {
+pub(super) fn riser_tone(lit: bool) -> Color {
     if lit {
         mixed(LAYERS[0].riser, LAYERS[0].top, 0.6)
     } else {
@@ -208,6 +211,15 @@ fn ground_at(map: &Map, pos: TilePos) -> Option<Elevation> {
         .and(map.elevation(pos))
 }
 
+/// A tile that shows the level it stands at: ground, and rock short of the
+/// edge ring the boundary draws over.
+fn standing_at(map: &Map, ring: &dyn Fn(TilePos) -> bool, pos: TilePos) -> Option<Elevation> {
+    let terrain = map.tile(pos)?.terrain;
+    (terrain == Terrain::Ground || (terrain == Terrain::Rock && !ring(pos)))
+        .then(|| map.elevation(pos))
+        .flatten()
+}
+
 /// Connected ramp tiles as rectangles, and each ramp tile's ramp.
 fn find_ramps(map: &Map) -> (Vec<Ramp>, Vec<usize>) {
     let (width, height) = (map.width(), map.height());
@@ -276,20 +288,45 @@ fn find_ramps(map: &Map) -> (Vec<Ramp>, Vec<usize>) {
     (ramps, ramp_of)
 }
 
-/// The level of the highest ground within [`REACH`] of a cliff at `level`:
-/// a cliff at a junction belongs to the tallest drop beside it.
-fn upper_of(map: &Map, pos: TilePos, level: u8) -> u8 {
+/// The level of the highest ground or rock within [`REACH`] of a cliff at
+/// `level`: a cliff at a junction belongs to the tallest drop beside it.
+fn upper_of(map: &Map, ring: &dyn Fn(TilePos) -> bool, pos: TilePos, level: u8) -> u8 {
     (-REACH..=REACH)
         .flat_map(|dy| (-REACH..=REACH).map(move |dx| pos.offset(dx, dy)))
-        .filter_map(|at| ground_at(map, at).map(|e| e.span().1))
+        .filter_map(|at| standing_at(map, ring, at).map(|e| e.span().1))
         .filter(|&high| high > level)
         .max()
         .unwrap_or_else(|| level.saturating_add(1))
 }
 
+/// How a rock tile at `level` is drawn: at its level, or as part of a drop
+/// when it touches ground or rock at another. A ramp beside it is left to its
+/// cliffs.
+fn rock_class(map: &Map, ring: &dyn Fn(TilePos) -> bool, pos: TilePos, level: u8) -> Class {
+    let levels = || {
+        (-1..=1)
+            .flat_map(|dy| (-1..=1).map(move |dx| pos.offset(dx, dy)))
+            .filter_map(|at| match standing_at(map, ring, at) {
+                Some(Elevation::Level(other)) => Some(other),
+                _ => None,
+            })
+    };
+    let lower = levels().min().unwrap_or(level);
+    let upper = levels().max().unwrap_or(level);
+    if lower == upper {
+        Class::Open(level)
+    } else {
+        Class::Band { upper, lower }
+    }
+}
+
 /// Each tile's class as drawn, and which cliff tiles show the ground at their
 /// foot.
-fn classes(map: &Map, ramp_of: &[usize]) -> (Vec<Class>, Vec<bool>) {
+fn classes(
+    map: &Map,
+    ring: &dyn Fn(TilePos) -> bool,
+    ramp_of: &[usize],
+) -> (Vec<Class>, Vec<bool>) {
     let (width, height) = (map.width(), map.height());
     let data: Vec<Class> = (0..height)
         .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
@@ -301,9 +338,12 @@ fn classes(map: &Map, ramp_of: &[usize]) -> (Vec<Class>, Vec<bool>) {
                 }
                 (Some(Terrain::Ground), Some(Elevation::Level(level))) => Class::Open(level),
                 (Some(Terrain::Cliff), Some(Elevation::Level(lower))) => Class::Band {
-                    upper: upper_of(map, pos, lower),
+                    upper: upper_of(map, ring, pos, lower),
                     lower,
                 },
+                (Some(Terrain::Rock), Some(Elevation::Level(level))) if !ring(pos) => {
+                    rock_class(map, ring, pos, level)
+                }
                 _ => Class::Other,
             }
         })
@@ -354,12 +394,12 @@ fn classes(map: &Map, ramp_of: &[usize]) -> (Vec<Class>, Vec<bool>) {
 impl Levels {
     /// The layout of `map`'s levels with `floor` at flat ground's brightness;
     /// `None` on a flat map.
-    pub(crate) fn build(map: &Map, floor: u8) -> Option<Self> {
+    pub(crate) fn build(map: &Map, rows: &[String], floor: u8) -> Option<Self> {
         if !map.tiered() {
             return None;
         }
         let (ramps, ramp_of) = find_ramps(map);
-        let (class, foot) = classes(map, &ramp_of);
+        let (class, foot) = classes(map, &boundary_ring(rows), &ramp_of);
         let mut levels = Self {
             width: map.width(),
             height: map.height(),
@@ -370,7 +410,7 @@ impl Levels {
             starts: Vec::new(),
             decals: Vec::new(),
         };
-        let (ops, decals) = levels.paint(&foot);
+        let (ops, decals) = levels.paint(map, &foot);
         let tiles = as_index(levels.width * levels.height);
         let mut starts = vec![0u32; tiles + 1];
         for &(tile, _) in &ops {
@@ -509,7 +549,7 @@ impl Levels {
         clippy::too_many_lines,
         reason = "one pass per layer of the art, in draw order"
     )]
-    fn paint(&self, foot: &[bool]) -> (Vec<(usize, Op)>, Vec<Decal>) {
+    fn paint(&self, map: &Map, foot: &[bool]) -> (Vec<(usize, Op)>, Vec<Decal>) {
         let (cw, ch) = (self.width * CELLS, self.height * CELLS);
         let cells = self.cell_classes(foot);
         let inside = |cx: i32, cy: i32| cx >= 0 && cy >= 0 && cx < cw && cy < ch;
@@ -812,11 +852,20 @@ impl Levels {
                 }
             }
         }
-        // Wear on steps wide enough to show it.
+        // Wear on steps wide enough to show it, clear of rock, whose stones would
+        // leave it as stray specks, and of the pit or peak a step ends against.
         let mut decals = Vec::new();
         for ty in 0..self.height {
             for tx in 0..self.width {
-                if !matches!(self.class_at(tx, ty), Class::Band { .. }) {
+                let pos = TilePos::new(tx, ty);
+                let rocky = map
+                    .tile(pos)
+                    .is_some_and(|tile| tile.terrain == Terrain::Rock);
+                let beside_shape = (-1..=1)
+                    .flat_map(|dy| (-1..=1).map(move |dx| pos.offset(dx, dy)))
+                    .filter_map(|near| map.tile(near))
+                    .any(|tile| matches!(tile.terrain, Terrain::Pit | Terrain::Peak));
+                if rocky || beside_shape || !matches!(self.class_at(tx, ty), Class::Band { .. }) {
                     continue;
                 }
                 let i = |sx: i32, sy: i32| as_index((ty * CELLS + sy) * cw + tx * CELLS + sx);

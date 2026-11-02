@@ -359,3 +359,87 @@ fn height_rank_climbs_each_level_from_riser_to_bench() {
         height_rank(Some(Material::Void))
     );
 }
+
+#[test]
+fn a_peaks_face_comes_forward_to_line_up_with_a_cliff_running_under_it() {
+    // Level 1 north of the cliff, level 0 south of it, and the peak stands where
+    // the cliff's upper ground would.
+    let lines = [
+        "..........",
+        "^^^^^^....",
+        "^^^^^^....",
+        "==========",
+        "..........",
+    ];
+    let heights = [
+        "1111111111",
+        "1111111111",
+        "1111111111",
+        "0000000000",
+        "0000000000",
+    ];
+    let (map, _) = Map::parse_tiered(&lines, &heights).expect("rows parse");
+    let terraces = Terraces::build(&map, &rows(&lines));
+    let row = 3 * CELLS;
+    for tile in [2, 5] {
+        let x = tile * CELLS + 1;
+        assert!(
+            matches!(terraces.material(x, row), Some(Material::Riser(_))),
+            "the face stands on the cliff tile under tile {tile}"
+        );
+        assert!(
+            !matches!(terraces.material(x, row - 1), Some(Material::Riser(_))),
+            "and not on the peak's last row"
+        );
+        assert_eq!(terraces.material(x, row + 1), None, "the foot stays ground");
+    }
+    assert_eq!(
+        terraces.material(6 * CELLS, row),
+        None,
+        "past the peak the cliff draws its own face"
+    );
+}
+
+#[test]
+fn a_cliff_ending_against_a_peak_leaves_its_face_where_it_is() {
+    let lines = ["..........", "^^^^^^....", "^^^^^^====", ".........."];
+    let heights = ["0000000000", "0000000000", "0000000000", "1111111111"];
+    let (map, _) = Map::parse_tiered(&lines, &heights).expect("rows parse");
+    let terraces = Terraces::build(&map, &rows(&lines));
+    for y in 2 * CELLS..3 * CELLS {
+        assert_eq!(terraces.material(6 * CELLS, y), None, "cell row {y}");
+    }
+}
+
+#[test]
+fn a_cliff_under_a_peak_on_its_lower_side_keeps_the_peak_on_its_own_tiles() {
+    // The cliff runs under the peak, but its upper ground lies south, away from
+    // the peak.
+    let lines = ["..........", "^^^^^^....", "==========", ".........."];
+    let heights = ["0000000000", "0000000000", "0000000000", "1111111111"];
+    let (map, _) = Map::parse_tiered(&lines, &heights).expect("rows parse");
+    let terraces = Terraces::build(&map, &rows(&lines));
+    assert_eq!(terraces.material(CELLS + 1, 2 * CELLS), None);
+}
+
+#[test]
+fn a_tall_face_rises_from_a_peaks_lower_ground_and_shares_the_steps_past_it() {
+    let lines = ["..^^^^^^..", "..^^^^^^..", "..^^^^^^..", "..^^^^^^.."];
+    let heights = ["0000000011", "0000000011", "0000000011", "0000000011"];
+    let (map, _) = Map::parse_tiered(&lines, &heights).expect("rows parse");
+    let terraces = Terraces::build(&map, &rows(&lines));
+    let y = CELLS + 1;
+    let across = |x: i32| terraces.material(x, y);
+    for inward in 0..2 {
+        assert_eq!(across(2 * CELLS + inward), Some(Material::Riser(0)));
+    }
+    assert_eq!(across(2 * CELLS + 2), Some(Material::Bench(0)));
+    assert_eq!(across(8 * CELLS - 1), Some(Material::Riser(0)));
+    assert_eq!(across(8 * CELLS - 2), Some(Material::Bench(0)));
+}
+
+#[test]
+fn a_flat_peak_is_untouched_by_tall_faces() {
+    let lines = rows(&["..^^^^^^..", "..^^^^^^..", "..^^^^^^..", "..^^^^^^.."]);
+    assert_eq!(terraced(&lines).tall.widths(9, 9, [1, 2, 3]), [1, 2, 3]);
+}

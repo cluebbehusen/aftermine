@@ -24,8 +24,12 @@
 //! along their lower and right sides, flush with their corners so they sit on
 //! the floor.
 //!
-//! The field reads the map alone, so a terrace never shifts as the fog lifts;
-//! the fog veil hides peaks the player has not explored.
+//! A peak bordering two levels rises from the lower one up a
+//! [tall face](super::tall_faces), with a longer shadow where the light casts one.
+//! Where a cliff runs under a peak, the peak's face comes a cell forward onto the
+//! cliff tile as the cliff's own face does, so the two run as one line. The field
+//! reads the map alone, so a terrace never shifts as the fog lifts; the fog veil
+//! hides peaks the player has not explored.
 
 use super::cell_field::{CELLS, CellField, cell_edges};
 use super::environment::{
@@ -34,9 +38,10 @@ use super::environment::{
 };
 use super::ground::GroundView;
 use super::stretches::Shapes;
+use super::tall_faces::TallFaces;
 use crate::numeric;
 use crate::numeric::Fit;
-use aftermine_sim::map::{Map, Terrain};
+use aftermine_sim::map::{Elevation, Map, Terrain};
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
 use macroquad::prelude::*;
@@ -225,14 +230,18 @@ fn world_cell(field: &CellField, index: usize) -> (i32, i32) {
 
 /// Rewrites a field's depth so each upper level follows an opened plateau
 /// rather than the outline itself.
-fn terrace(field: &mut CellField, frame: &Frame, peaks: &Peaks) {
+fn terrace(field: &mut CellField, frame: &Frame, peaks: &Peaks, tall: &TallFaces) {
     let thresholds: Vec<(u8, u8)> = (0..field.depth.len())
         .map(|index| {
             let (cx, cy) = world_cell(field, index);
             risers(
-                peaks
-                    .steps(cx, cy)
-                    .map_or_else(|| frame.widths(cx, cy), |steps| steps.widths),
+                tall.widths(
+                    cx,
+                    cy,
+                    peaks
+                        .steps(cx, cy)
+                        .map_or_else(|| frame.widths(cx, cy), |steps| steps.widths),
+                ),
             )
         })
         .collect();
@@ -352,11 +361,63 @@ impl Peaks {
     }
 }
 
+/// The side of a cliff tile a peak stands on in place of the cliff's upper ground:
+/// following the cliff along under the peak reaches ground above the tile's level
+/// on that same side.
+fn peak_sides_above(map: &Map, pos: TilePos) -> Vec<(i32, i32)> {
+    let terrain = |at: TilePos| map.tile(at).map(|tile| tile.terrain);
+    let Some(Elevation::Level(level)) = map.elevation(pos) else {
+        return Vec::new();
+    };
+    if terrain(pos) != Some(Terrain::Cliff) {
+        return Vec::new();
+    }
+    let reaches_higher = |side: (i32, i32), along: (i32, i32)| {
+        let mut cliff = pos.offset(along.0, along.1);
+        while terrain(cliff) == Some(Terrain::Cliff) {
+            let beyond = cliff.offset(side.0, side.1);
+            match terrain(beyond) {
+                Some(Terrain::Peak) => cliff = cliff.offset(along.0, along.1),
+                Some(Terrain::Ground) => {
+                    return map.elevation(beyond).is_some_and(|e| e.span().1 > level);
+                }
+                _ => return false,
+            }
+        }
+        false
+    };
+    [(0, -1), (0, 1), (-1, 0), (1, 0)]
+        .into_iter()
+        .filter(|&(dx, dy)| {
+            terrain(pos.offset(dx, dy)) == Some(Terrain::Peak)
+                && (reaches_higher((dx, dy), (dy, dx)) || reaches_higher((dx, dy), (-dy, -dx)))
+        })
+        .collect()
+}
+
+/// The cliff tiles a peak's face comes forward onto, and the side it comes from.
+fn forward_faces(map: &Map) -> Vec<(TilePos, (i32, i32))> {
+    if !map.tiered() {
+        return Vec::new();
+    }
+    (0..map.height())
+        .flat_map(|y| (0..map.width()).map(move |x| TilePos::new(x, y)))
+        .flat_map(|pos| {
+            peak_sides_above(map, pos)
+                .into_iter()
+                .map(move |side| (pos, side))
+        })
+        .collect()
+}
+
 /// The wall and the peaks as one terraced field over the map and its margin.
 pub(super) struct Terraces {
     frame: Frame,
     field: CellField,
     peaks: Peaks,
+    /// Cliff tiles a peak's face stands on.
+    forward: Vec<TilePos>,
+    tall: TallFaces,
 }
 
 impl Terraces {
@@ -370,24 +431,59 @@ impl Terraces {
             CELLS,
             |pos| wall(frame.contains(pos), map.tile(pos).map(|tile| tile.terrain)),
         );
-        terrace(&mut field, &frame, &peaks);
+        let faces = forward_faces(map);
+        if !faces.is_empty() {
+            let mut inside: Vec<bool> = field.depth.iter().map(|&depth| depth > 0).collect();
+            for &(pos, (dx, dy)) in &faces {
+                for along in 0..CELLS {
+                    let (sx, sy) = match (dx, dy) {
+                        (0, -1) => (along, 0),
+                        (0, _) => (along, CELLS - 1),
+                        (-1, _) => (0, along),
+                        _ => (CELLS - 1, along),
+                    };
+                    inside[field.index(pos, sx, sy)] = true;
+                }
+            }
+            field = field.masked(|index| inside[index]);
+        }
+        let tall = TallFaces::build(map, Terrain::Peak, &field);
+        terrace(&mut field, &frame, &peaks, &tall);
         Self {
             frame,
             field,
             peaks,
+            forward: faces.into_iter().map(|(pos, _)| pos).collect(),
+            tall,
         }
+    }
+
+    fn depth(&self, cx: i32, cy: i32) -> u8 {
+        let pos = TilePos::new(cx.div_euclid(CELLS), cy.div_euclid(CELLS));
+        self.field
+            .at(pos, cx.rem_euclid(CELLS), cy.rem_euclid(CELLS))
     }
 
     /// The material drawn at a cell.
     fn material(&self, cx: i32, cy: i32) -> Option<Material> {
         let pos = TilePos::new(cx.div_euclid(CELLS), cy.div_euclid(CELLS));
         let steps = self.peaks.steps(cx, cy);
+        let depth = self.depth(cx, cy);
         let found = material(
-            self.field
-                .at(pos, cx.rem_euclid(CELLS), cy.rem_euclid(CELLS)),
-            steps.map_or_else(|| self.frame.widths(cx, cy), |steps| steps.widths),
+            depth,
+            self.tall.widths(
+                cx,
+                cy,
+                steps.map_or_else(|| self.frame.widths(cx, cy), |steps| steps.widths),
+            ),
             !self.frame.contains(pos),
         );
+        let found = match found {
+            Some(Material::Bench(0)) if self.tall.in_face(cx, cy, depth) => {
+                Some(Material::Riser(0))
+            }
+            other => other,
+        };
         let lift = steps.map_or(0, |steps| steps.lift);
         let top = LAYERS.len() - 1;
         match found {
@@ -428,6 +524,7 @@ pub(super) fn draw_terraces(
         .flat_map(|y| (min.x..max.x).map(move |x| TilePos::new(x, y)))
         .filter(|&pos| {
             !frame.contains(pos)
+                || terraces.forward.contains(&pos)
                 || map
                     .tile(pos)
                     .is_some_and(|tile| tile.terrain == Terrain::Peak)
@@ -448,7 +545,15 @@ pub(super) fn draw_terraces(
                     let lower = |dx: i32, dy: i32| {
                         height_rank(material_at(cx + dx, cy + dy)) < height_rank(Some(m))
                     };
-                    draw_riser(rect, layers[level], lower, view.zoom());
+                    // Within a tall face, a cell faces the way the cell outside it lies.
+                    let depth = terraces.depth(cx, cy);
+                    let facing = |dx: i32, dy: i32| {
+                        lower(dx, dy)
+                            || (terraces.tall.in_face(cx, cy, depth)
+                                && material_at(cx + dx, cy + dy) == Some(m)
+                                && terraces.depth(cx + dx, cy + dy) < depth)
+                    };
+                    draw_riser(rect, layers[level], facing, lower, view.zoom());
                     continue;
                 }
                 let (ix, iy) = frame.inner(cx, cy);
@@ -573,8 +678,14 @@ fn riser_tone(layer: Layer, lit: bool) -> Color {
     }
 }
 
-fn draw_riser(rect: Rect, layer: Layer, lower: impl Fn(i32, i32) -> bool, zoom: f32) {
-    let lit = faces_light(&lower);
+fn draw_riser(
+    rect: Rect,
+    layer: Layer,
+    facing: impl Fn(i32, i32) -> bool,
+    lower: impl Fn(i32, i32) -> bool,
+    zoom: f32,
+) {
+    let lit = faces_light(&facing);
     draw_rectangle(rect.x, rect.y, rect.w, rect.h, riser_tone(layer, lit));
     if lit {
         let line = (zoom * 0.05).max(1.0);
@@ -614,7 +725,15 @@ fn draw_shadow(map: &Map, view: &GroundView, terraces: &Terraces) {
             for sy in 0..CELLS {
                 for sx in 0..CELLS {
                     let material = |cx: i32, cy: i32| terraces.material(cx, cy);
-                    if in_shadow(material, x * CELLS + sx, y * CELLS + sy) {
+                    let (cx, cy) = (x * CELLS + sx, y * CELLS + sy);
+                    let tall_shadow = material(cx, cy).is_none()
+                        && [(2, 0), (0, 2), (2, 1), (1, 2), (2, 2)]
+                            .iter()
+                            .any(|(dx, dy)| {
+                                material(cx - dx, cy - dy).is_some()
+                                    && terraces.tall.on_tall_side(cx - dx, cy - dy)
+                            });
+                    if in_shadow(material, cx, cy) || tall_shadow {
                         let (i, j) = (as_index(sx), as_index(sy));
                         draw_rectangle(xs[i], ys[j], xs[i + 1] - xs[i], ys[j + 1] - ys[j], SHADOW);
                     }
