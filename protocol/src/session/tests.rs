@@ -102,6 +102,7 @@ fn the_capability_split_is_exactly_nine_shared_requests() {
         Request::RunFrameScript {
             script: crate::FrameScript {
                 settle_frames: 0,
+                plays: false,
                 motion: crate::CameraMotion::None { frames: 1 },
             },
             probes: crate::FrameProbes::default(),

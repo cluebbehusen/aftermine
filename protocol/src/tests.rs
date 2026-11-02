@@ -220,6 +220,7 @@ fn every_request_variant_survives_an_envelope_roundtrip() {
         Request::RunFrameScript {
             script: FrameScript {
                 settle_frames: 30,
+                plays: false,
                 motion: CameraMotion::Zoom {
                     center: [12.0, 8.0],
                     from: 32.0,

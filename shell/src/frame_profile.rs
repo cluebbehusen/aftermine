@@ -256,8 +256,20 @@ struct ScriptState {
     /// Unmeasured frames ran since the last sample.
     gap: bool,
     capture: DrawCapture,
-    gpu_wait: bool,
+    /// Present when the script times waiting for the GPU.
     fence: Option<GpuFence>,
+    clock: ScriptClock,
+}
+
+/// What a script is doing with the live match's clock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScriptClock {
+    /// The script leaves it alone.
+    Untouched,
+    /// Paused until measuring starts.
+    Held,
+    /// Playing while frames are measured.
+    Playing,
 }
 
 struct ProfileWindow {
@@ -343,8 +355,12 @@ impl FrameProfiler {
             } else {
                 DrawCapture::Off
             },
-            gpu_wait: probes.gpu_wait,
-            fence: None,
+            fence: probes.gpu_wait.then(GpuFence::new),
+            clock: if script.plays {
+                ScriptClock::Held
+            } else {
+                ScriptClock::Untouched
+            },
         });
         Ok(())
     }
@@ -356,14 +372,11 @@ impl FrameProfiler {
             .is_some_and(|script| script.run.is_some())
     }
 
-    /// Moves a running script on to the frame about to be drawn.
-    pub(crate) fn step_script(&mut self, camera: &mut Camera) {
-        let Some(script) = &mut self.script else {
-            return;
-        };
-        let Some(run) = &mut script.run else {
-            return;
-        };
+    /// Moves a running script on to the frame about to be drawn. Returns the
+    /// live match's new paused state when the script changes it.
+    pub(crate) fn step_script(&mut self, camera: &mut Camera) -> Option<bool> {
+        let script = self.script.as_mut()?;
+        let run = script.run.as_mut()?;
         let step = run.step(camera);
         script.measuring = step == Step::Measure;
         if script.measuring {
@@ -393,6 +406,19 @@ impl FrameProfiler {
             script.run = None;
             PASS_SKIP.set(0);
         }
+        // Keyed to the step, not to `measuring`: a captured frame still plays,
+        // so a trial with a capture ticks like one without.
+        match (script.clock, step == Step::Measure) {
+            (ScriptClock::Held, true) => {
+                script.clock = ScriptClock::Playing;
+                Some(false)
+            }
+            (ScriptClock::Playing, false) => {
+                script.clock = ScriptClock::Held;
+                Some(true)
+            }
+            _ => None,
+        }
     }
 
     /// Waits for the GPU to finish a measured frame when the script asked to.
@@ -401,8 +427,9 @@ impl FrameProfiler {
         let Some(script) = &mut self.script else {
             return;
         };
-        if script.gpu_wait && script.measuring {
-            let fence = script.fence.get_or_insert_with(GpuFence::new);
+        if script.measuring
+            && let Some(fence) = &script.fence
+        {
             self.pending_gpu_wait = Some(fence.wait());
         }
     }
