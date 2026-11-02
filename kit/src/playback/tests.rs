@@ -272,3 +272,15 @@ fn missing_duration_uses_the_tick_after_the_last_command() {
         "legacy records without duration reproduce the same inferred span"
     );
 }
+
+#[test]
+fn filling_reports_a_running_fill_until_it_finishes() {
+    let mut playback = Playback::load(recorded_match()).unwrap();
+    assert!(!playback.filling(), "no fill has started");
+    playback.start_fill();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while playback.filling() {
+        assert!(std::time::Instant::now() < deadline, "the fill never ended");
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}

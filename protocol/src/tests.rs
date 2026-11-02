@@ -43,23 +43,24 @@ fn request_tag(request: &Request) -> usize {
         Request::QueryUi => 4,
         Request::QueryPerformance { .. } => 5,
         Request::BeginPerformanceWindow { .. } => 6,
-        Request::StateHash => 7,
-        Request::AdvanceTicks { .. } => 8,
-        Request::PresentTicks { .. } => 9,
-        Request::Pause => 10,
-        Request::Resume => 11,
-        Request::SetSpeed { .. } => 12,
-        Request::SendCommand { .. } => 13,
-        Request::InjectEvent { .. } => 14,
-        Request::Screenshot { .. } => 15,
-        Request::ToggleOverlay => 16,
-        Request::LoadScenario { .. } => 17,
-        Request::LoadReplay { .. } => 18,
-        Request::SaveReplay { .. } => 19,
+        Request::RunFrameScript { .. } => 7,
+        Request::StateHash => 8,
+        Request::AdvanceTicks { .. } => 9,
+        Request::PresentTicks { .. } => 10,
+        Request::Pause => 11,
+        Request::Resume => 12,
+        Request::SetSpeed { .. } => 13,
+        Request::SendCommand { .. } => 14,
+        Request::InjectEvent { .. } => 15,
+        Request::Screenshot { .. } => 16,
+        Request::ToggleOverlay => 17,
+        Request::LoadScenario { .. } => 18,
+        Request::LoadReplay { .. } => 19,
+        Request::SaveReplay { .. } => 20,
     }
 }
 
-const REQUEST_VARIANTS: usize = 20;
+const REQUEST_VARIANTS: usize = 21;
 
 /// Contiguous index per [`Reply`] variant, in declaration order.
 fn reply_tag(reply: &Reply) -> usize {
@@ -215,6 +216,18 @@ fn every_request_variant_survives_an_envelope_roundtrip() {
         Request::BeginPerformanceWindow {
             from_tick: 100,
             to_tick: 200,
+        },
+        Request::RunFrameScript {
+            script: FrameScript {
+                settle_frames: 30,
+                motion: CameraMotion::Zoom {
+                    center: [12.0, 8.0],
+                    from: 32.0,
+                    to: 8.0,
+                    repeats: 3,
+                    rest_frames: 60,
+                },
+            },
         },
         Request::StateHash,
         Request::AdvanceTicks { ticks: 12 },
@@ -547,6 +560,7 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
                 elapsed_ms: 51.2,
                 truncated: false,
             }),
+            script_complete: Some(true),
         }),
         Reply::Hash(HashView {
             tick: 5,

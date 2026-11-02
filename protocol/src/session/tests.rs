@@ -99,6 +99,12 @@ fn the_capability_split_is_exactly_nine_shared_requests() {
             from_tick: 10,
             to_tick: 20,
         },
+        Request::RunFrameScript {
+            script: crate::FrameScript {
+                settle_frames: 0,
+                motion: crate::CameraMotion::None { frames: 1 },
+            },
+        },
         Request::InjectEvent {
             event: crate::RawEvent::KeyDown {
                 key: crate::Key::Space,

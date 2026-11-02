@@ -62,14 +62,7 @@ fn scratch_home() -> Result<ScratchHome> {
         serde_json::from_str(include_str!("quiet_config.json")).expect("static json");
     config["reduced_motion"] = true.into();
     let text = serde_json::to_string_pretty(&config).expect("static json");
-    for dir in [
-        home.0.join("Library/Application Support/Aftermine"),
-        home.0.join(".config/aftermine"),
-        home.0.join("AppData/Aftermine"),
-    ] {
-        std::fs::create_dir_all(&dir)?;
-        std::fs::write(dir.join("config.json"), &text)?;
-    }
+    crate::auto::write_home_config(&home.0, &text)?;
     Ok(home)
 }
 

@@ -411,7 +411,11 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             minimized: input::reported_minimized(),
         });
         let input_diagnostic_scope = visible_stage(&screen, &app, Stage::Input);
-        let time = FrameTime::measure(get_frame_time());
+        let time = FrameTime::measure(if app.frame_profiler.scripted() {
+            crate::frame_script::FRAME_SECONDS
+        } else {
+            get_frame_time()
+        });
         let first_pass = !std::mem::take(&mut rerun_pass);
         if first_pass {
             began_playing = screen.kind() == ScreenKind::Playing;
@@ -434,6 +438,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         }
 
         drop(input_diagnostic_scope);
+        if first_pass {
+            app.frame_profiler
+                .step_script(&mut screen.visible_presentation(&mut app.game).camera);
+        }
         let screen_diagnostic_scope = visible_stage(&screen, &app, Stage::Draw);
         // Debug requests are control-plane work between presented frames, not
         // native frame work. Start timing after draining them so Resume and

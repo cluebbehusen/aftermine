@@ -86,6 +86,13 @@ pub enum Request {
         /// Exact live tick at which measurement ends and the shell pauses.
         to_tick: u64,
     },
+    /// Run a scripted window of native frames on whatever the window shows:
+    /// Home, the live match, or the viewer. Samples collected so far are
+    /// cleared. Poll [`Request::QueryPerformance`] for its completion.
+    RunFrameScript {
+        /// What to run.
+        script: FrameScript,
+    },
     /// The canonical state fingerprint at the current tick.
     StateHash,
     /// Run sim ticks now (bots included), regardless of pause state, then
@@ -219,6 +226,63 @@ pub struct PresentedView {
     pub events: Vec<Event>,
 }
 
+/// A frame-exact profiling workload. Each frame advances a fixed slice of
+/// time, so the same frames get drawn on any machine.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FrameScript {
+    /// Unmeasured frames after the camera is framed, so caches catch up. A zoom
+    /// settles before every repeat.
+    pub settle_frames: u32,
+    /// What the camera does while frames are measured.
+    pub motion: CameraMotion,
+}
+
+/// The camera's part in a [`FrameScript`]. Positions are world tiles and zooms
+/// are logical pixels per tile.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CameraMotion {
+    /// Leave the camera alone, for a screen that doesn't use it.
+    None {
+        /// Frames to measure.
+        frames: u32,
+    },
+    /// Hold one view.
+    Hold {
+        /// World point at the view's center.
+        center: [f64; 2],
+        /// Zoom to hold.
+        zoom: f64,
+        /// Frames to measure.
+        frames: u32,
+    },
+    /// Pan steadily along the map's width, turning back at its edges.
+    Pan {
+        /// World point to start from.
+        center: [f64; 2],
+        /// Zoom to hold.
+        zoom: f64,
+        /// Pan speed.
+        tiles_per_second: f64,
+        /// Frames to measure.
+        frames: u32,
+    },
+    /// Zoom from one level to another through the player's zoom glide,
+    /// measuring each glide and the frames after it lands.
+    Zoom {
+        /// World point framed before each glide.
+        center: [f64; 2],
+        /// Zoom each glide starts from.
+        from: f64,
+        /// Zoom each glide lands on.
+        to: f64,
+        /// How many glides to run.
+        repeats: u32,
+        /// Frames measured after each landing, to cover re-baking terrain.
+        rest_frames: u32,
+    },
+}
+
 /// Distribution summary for one frame-time measurement.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TimingSummary {
@@ -315,6 +379,10 @@ pub struct FrameProfileView {
     /// [`Request::BeginPerformanceWindow`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<FrameProfileWindowView>,
+    /// Whether the [`Request::RunFrameScript`] these samples belong to has
+    /// finished; absent when no script ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script_complete: Option<bool>,
 }
 
 /// State of one shell-side exact profile window.

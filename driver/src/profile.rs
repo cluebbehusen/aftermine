@@ -263,13 +263,22 @@ fn validate_resume_tick(total: u64, from: u64) -> Result<()> {
     Ok(())
 }
 
-struct ProfileWorkspace {
-    directory: PathBuf,
+pub(crate) struct ProfileWorkspace {
+    pub(crate) directory: PathBuf,
     replay: PathBuf,
 }
 
 impl ProfileWorkspace {
     fn create(root: &Path, port: u16, replay: &GameReplay) -> Result<Self> {
+        let workspace = Self::scratch(root, port)?;
+        replay
+            .save(&workspace.replay)
+            .context("writing temporary replay prefix")?;
+        Ok(workspace)
+    }
+
+    /// An isolated folder for one shell, removed when this is dropped.
+    pub(crate) fn scratch(root: &Path, port: u16) -> Result<Self> {
         let parent = root.join("target/aftermine-profile");
         std::fs::create_dir_all(&parent).context("creating profile scratch directory")?;
         let directory = parent.join(format!(
@@ -280,14 +289,10 @@ impl ProfileWorkspace {
                 .as_nanos()
         ));
         std::fs::create_dir(&directory).context("creating isolated profile workspace")?;
-        let workspace = Self {
+        Ok(Self {
             replay: directory.join("prefix.json"),
             directory,
-        };
-        replay
-            .save(&workspace.replay)
-            .context("writing temporary replay prefix")?;
-        Ok(workspace)
+        })
     }
 }
 
@@ -298,8 +303,14 @@ impl Drop for ProfileWorkspace {
 }
 
 fn connect(port: u16) -> Result<Client> {
+    connect_within(port, Duration::from_secs(60))
+}
+
+/// Connects to a shell that is still starting up, waiting up to `patience`.
+pub(crate) fn connect_within(port: u16, patience: Duration) -> Result<Client> {
     let address = format!("127.0.0.1:{port}");
-    for _ in 0..240 {
+    let deadline = Instant::now() + patience;
+    while Instant::now() < deadline {
         if let Ok(client) = Client::connect(&address) {
             return Ok(client);
         }
@@ -308,7 +319,7 @@ fn connect(port: u16) -> Result<Client> {
     bail!("profiled shell never came up on {address}")
 }
 
-fn expect_ok(reply: &Reply, operation: &str) -> Result<()> {
+pub(crate) fn expect_ok(reply: &Reply, operation: &str) -> Result<()> {
     if matches!(reply, Reply::Ok) {
         Ok(())
     } else {
@@ -316,7 +327,7 @@ fn expect_ok(reply: &Reply, operation: &str) -> Result<()> {
     }
 }
 
-fn expect_performance(reply: Reply, operation: &str) -> Result<FrameProfileView> {
+pub(crate) fn expect_performance(reply: Reply, operation: &str) -> Result<FrameProfileView> {
     match reply {
         Reply::Performance(profile) => Ok(profile),
         other => bail!("{operation}: expected performance reply, got {other:?}"),

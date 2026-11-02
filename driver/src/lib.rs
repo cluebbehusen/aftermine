@@ -16,6 +16,7 @@ pub mod ledger;
 pub mod pacing;
 pub mod pool;
 pub mod profile;
+pub mod profile_graphics;
 pub mod replay_health;
 pub mod replay_inspect;
 pub mod replay_ledger;

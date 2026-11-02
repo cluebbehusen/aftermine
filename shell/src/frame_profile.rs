@@ -1,8 +1,10 @@
 //! Opt-in native-frame timing for the live GPU shell.
 
+use crate::camera::Camera;
+use crate::frame_script::{FrameScriptRun, Step};
 use aftermine_protocol::{
-    FrameProfileView, FrameProfileWindowView, PassCostView, PassTimingView, SlowFrameView,
-    TimingSummary,
+    FrameProfileView, FrameProfileWindowView, FrameScript, PassCostView, PassTimingView,
+    SlowFrameView, TimingSummary,
 };
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -110,6 +112,9 @@ struct FrameSample {
     passes: [f64; PASSES],
     units: usize,
     buildings: usize,
+    /// Unmeasured frames ran since the previous sample, so the wall time
+    /// between them isn't a frame interval.
+    after_gap: bool,
 }
 
 impl FrameSample {
@@ -141,6 +146,17 @@ pub(crate) struct FrameProfiler {
     enabled: bool,
     samples: VecDeque<FrameSample>,
     window: Option<ProfileWindow>,
+    script: Option<ScriptState>,
+}
+
+/// A script underway or finished. A finished one stays until its samples are
+/// reset, so the report can say it completed.
+struct ScriptState {
+    /// `None` once the script has finished.
+    run: Option<FrameScriptRun>,
+    measuring: bool,
+    /// Unmeasured frames ran since the last sample.
+    gap: bool,
 }
 
 struct ProfileWindow {
@@ -162,6 +178,7 @@ impl FrameProfiler {
             enabled,
             samples: VecDeque::new(),
             window: None,
+            script: None,
         }
     }
 
@@ -180,6 +197,7 @@ impl FrameProfiler {
             return Err("profile window end must be greater than its start".to_string());
         }
         self.samples.clear();
+        self.script = None;
         self.window = Some(ProfileWindow {
             from_tick,
             to_tick,
@@ -191,6 +209,47 @@ impl FrameProfiler {
             start_barrier: true,
         });
         Ok(())
+    }
+
+    /// Starts a frame script, replacing any samples, window or earlier script.
+    pub(crate) fn begin_script(&mut self, script: &FrameScript) -> Result<(), String> {
+        if !self.enabled {
+            return Err(
+                "native frame profiling is disabled; launch the shell with --profile-frames"
+                    .to_string(),
+            );
+        }
+        self.samples.clear();
+        self.window = None;
+        self.script = Some(ScriptState {
+            run: Some(FrameScriptRun::new(script)),
+            measuring: false,
+            gap: false,
+        });
+        Ok(())
+    }
+
+    /// Whether frames currently advance by the script's fixed step.
+    pub(crate) fn scripted(&self) -> bool {
+        self.script
+            .as_ref()
+            .is_some_and(|script| script.run.is_some())
+    }
+
+    /// Moves a running script on to the frame about to be drawn.
+    pub(crate) fn step_script(&mut self, camera: &mut Camera) {
+        let Some(script) = &mut self.script else {
+            return;
+        };
+        let Some(run) = &mut script.run else {
+            return;
+        };
+        let step = run.step(camera);
+        script.measuring = step == Step::Measure;
+        script.gap |= step == Step::Settle;
+        if step == Step::Done {
+            script.run = None;
+        }
     }
 
     /// Consumes the one unmeasured live frame after Resume. Keeping the match
@@ -215,6 +274,11 @@ impl FrameProfiler {
             return;
         }
         let passes = PASS_SPENT.take();
+        let after_gap = match &mut self.script {
+            Some(script) if !script.measuring => return,
+            Some(script) => std::mem::take(&mut script.gap),
+            None => false,
+        };
         let now = Instant::now();
         let frame_started = now
             .checked_sub(Duration::from_secs_f64(
@@ -247,6 +311,7 @@ impl FrameProfiler {
             passes,
             units: observation.units,
             buildings: observation.buildings,
+            after_gap,
         });
         if let Some(window) = &mut self.window {
             window.started_at.get_or_insert(frame_started);
@@ -275,6 +340,7 @@ impl FrameProfiler {
             .samples
             .iter()
             .zip(self.samples.iter().skip(1))
+            .filter(|(_, current)| !current.after_gap)
             .map(|(previous, current)| {
                 current
                     .started_at
@@ -351,10 +417,12 @@ impl FrameProfiler {
                 elapsed_ms: window.elapsed_ms,
                 truncated: window.truncated,
             }),
+            script_complete: self.script.as_ref().map(|script| script.run.is_none()),
         };
         if reset {
             self.samples.clear();
             self.window = None;
+            self.script = None;
         }
         view
     }

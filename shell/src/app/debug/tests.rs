@@ -100,3 +100,21 @@ fn final_map_allows_inspection_but_refuses_time_and_session_mutation() {
         assert!(!frozen_map_refuses(&request), "{request:?}");
     }
 }
+
+#[test]
+fn a_frame_script_runs_in_the_viewer_but_not_over_a_lan_match() {
+    use crate::game::network::NetRole;
+    let run = Request::RunFrameScript {
+        script: aftermine_protocol::FrameScript {
+            settle_frames: 0,
+            motion: aftermine_protocol::CameraMotion::None { frames: 1 },
+        },
+    };
+    let seat = aftermine_sim::PlayerId(0);
+    assert_eq!(route(false, false, None, &run), Route::Local);
+    assert_eq!(route(true, false, None, &run), Route::Local);
+    assert_eq!(
+        route(false, false, Some((NetRole::Host, seat)), &run),
+        Route::RefuseLockstep
+    );
+}

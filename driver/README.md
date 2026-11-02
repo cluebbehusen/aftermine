@@ -43,6 +43,8 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
   wealth badges.
 - `auto`, `smoke`, `shots` and `profile` exercise the real shell where a
   headless run is not enough.
+- `profile_graphics` (`profile-graphics`) runs named frame workloads in the real
+  shell and reports where each frame's time goes.
 - `ios` (`cargo ios`) builds, installs and launches the iPad app.
 
 All evaluation output is omniscient QA evidence and never reaches a controller.
