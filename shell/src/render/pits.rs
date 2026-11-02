@@ -12,8 +12,8 @@
 
 use super::cell_field::{CELLS, CellField, cell_edges};
 use super::environment::{
-    Layer, Material, WAVE_LIFTS, draw_fracture, draw_lip, draw_missing_slab, draw_rebar,
-    draw_strata, hash, mixed, quarry_color, rgba, shifted,
+    Layer, Material, UNLIT, WAVE_LIFTS, draw_fracture, draw_lip, draw_missing_slab, draw_rebar,
+    draw_strata, faces_light, hash, mixed, quarry_color, rgba, shifted,
 };
 use super::ground::GroundView;
 use super::stretches::{Place, Shapes};
@@ -24,6 +24,15 @@ use chassis::grid::as_index;
 use macroquad::prelude::*;
 
 const SALT: u32 = 911;
+
+/// How far a lit face goes toward its bench's tone.
+const LIT_FACE: f32 = 0.6;
+/// How far a face turned from the light goes toward [`UNLIT`].
+const SHADED_FACE: f32 = 0.3;
+/// The shade the rim lays on the steps just inside it.
+const RIM_SHADE: Color = rgba(8, 8, 10);
+const RIM_SHADE_AMOUNT: f32 = 0.26;
+const RIM_SHADE_CELLS: i32 = 2;
 const VIGNETTE_CELLS: i32 = 4;
 /// Bench widths vary per block of this many tiles so lips jog along the rim
 /// the way the boundary's do per side segment.
@@ -224,6 +233,36 @@ fn draw_glints(xs: &[f32; 5], ys: &[f32; 5], pos: TilePos, zoom: f32) {
     }
 }
 
+/// A pit's cell under the light from the upper left, gentler than on the
+/// walls: a riser by the way it faces, and the rim's shade just inside its
+/// upper-left side.
+fn lit(
+    field: &PitField,
+    pos: TilePos,
+    (sx, sy): (i32, i32),
+    material: Material,
+    color: Color,
+    drops: &[Layer; DROP.len()],
+) -> Color {
+    let depth = field.at(pos, sx, sy);
+    let color = match material {
+        Material::Riser(level) => {
+            let deeper = |dx: i32, dy: i32| field.at(pos, sx + dx, sy + dy) > depth;
+            if faces_light(deeper) {
+                mixed(color, drops[level].top, LIT_FACE)
+            } else {
+                mixed(color, UNLIT, SHADED_FACE)
+            }
+        }
+        _ => color,
+    };
+    if depth > 0 && (1..=RIM_SHADE_CELLS).any(|k| field.at(pos, sx - k, sy - k) == 0) {
+        mixed(color, RIM_SHADE, RIM_SHADE_AMOUNT)
+    } else {
+        color
+    }
+}
+
 fn draw_fill(
     view: &GroundView,
     field: &PitField,
@@ -236,7 +275,14 @@ fn draw_fill(
     let color = |sx: i32, sy: i32| {
         let material = field.material_at(pos, sx, sy).unwrap_or(Material::Void);
         let color = cell_color(material, pos.x * CELLS + sx, pos.y * CELLS + sy, drops);
-        quarry_color(color, material, fractured)
+        lit(
+            field,
+            pos,
+            (sx, sy),
+            material,
+            quarry_color(color, material, fractured),
+            drops,
+        )
     };
     let all_void = (0..CELLS)
         .flat_map(|sy| (0..CELLS).map(move |sx| (sx, sy)))

@@ -307,3 +307,55 @@ fn a_long_side_varies_its_steps_and_spurs_keep_the_walls() {
         "a spur took its own steps"
     );
 }
+
+#[test]
+fn a_shadow_lies_one_cell_along_the_lower_and_right_sides() {
+    // A wall over cells (0, 0) to (3, 3).
+    let material = |cx: i32, cy: i32| {
+        ((0..4).contains(&cx) && (0..4).contains(&cy)).then_some(Material::Bench(0))
+    };
+    assert!(
+        in_shadow(material, 4, 0),
+        "flush with the upper right corner"
+    );
+    assert!(
+        in_shadow(material, 0, 4),
+        "flush with the lower left corner"
+    );
+    assert!(in_shadow(material, 4, 4), "around the corner it turns");
+    assert!(!in_shadow(material, 5, 2), "a single cell wide");
+    assert!(!in_shadow(material, -1, 2), "nothing on the lit side");
+    assert!(!in_shadow(material, 2, -1), "nothing on the lit side");
+    assert!(!in_shadow(material, 2, 2), "nothing on the wall itself");
+}
+
+#[test]
+fn a_lit_face_stays_darker_than_its_bench() {
+    for layer in LAYERS {
+        let (lit, shaded) = (riser_tone(layer, true), riser_tone(layer, false));
+        assert!(shaded.r < layer.riser.r && layer.riser.r < lit.r && lit.r < layer.top.r);
+    }
+}
+
+#[test]
+fn height_rank_climbs_each_level_from_riser_to_bench() {
+    let ladder = [
+        None,
+        Some(Material::Riser(0)),
+        Some(Material::Bench(0)),
+        Some(Material::Riser(1)),
+        Some(Material::Bench(1)),
+        Some(Material::Riser(2)),
+        Some(Material::Bench(2)),
+        Some(Material::Void),
+    ];
+    assert!(
+        ladder
+            .windows(2)
+            .all(|pair| height_rank(pair[0]) < height_rank(pair[1]))
+    );
+    assert_eq!(
+        height_rank(Some(Material::Vignette(1))),
+        height_rank(Some(Material::Void))
+    );
+}
