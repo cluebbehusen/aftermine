@@ -368,9 +368,12 @@ match's first draw and kept, so revealed terrain never changes as fog lifts;
 peaks and pits that mirror each other under the map's half-turn step as mirror
 images. `GroundCache` bakes terrain into textures, and the direct path draws the
 same pixels; a zoom never redraws terrain, stretching the textures on hand over
-a low-resolution image of the whole map until fresh ones are ready. Within a
-pass, untextured fills never sit between atlas sprites, because each macroquad
-draw call keeps a vertex buffer for the life of the app.
+a low-resolution image of the whole map until fresh ones are ready.
+
+Entity sprites read every page through one material and draw with macroquad's
+white texture, so neither a page change nor an untextured fill between sprites
+ends a batch. Keep it that way: each macroquad draw call keeps a vertex buffer
+for the life of the app.
 
 Map tiles show authoritative simulation fog. The replay viewer is fog-free, and
 so is a seat out of an undecided match once no LAN teammate plays on whom it

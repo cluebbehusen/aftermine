@@ -9,6 +9,9 @@ const PAGE: usize = 2048;
 const LEVELS: [usize; 4] = [1, 2, 4, 8];
 /// The coarsest level's reduction factor, in source pixels per texel.
 const COARSEST: u32 = 8;
+/// The pages one shader can read: miniquad binds twelve images to a shader and
+/// macroquad keeps two of them.
+const MAX_PAGES: usize = 10;
 type Source = [u32; 4];
 #[derive(Debug, Clone, Copy)]
 struct Region {
@@ -23,8 +26,9 @@ struct Packed {
     area: Rect,
 }
 pub(crate) struct EntityLod {
-    pages: Vec<Texture2D>,
-    materials: Vec<Material>,
+    /// Bound to `material` by id, so they must live as long as it does.
+    _pages: Vec<Texture2D>,
+    material: Material,
     sprites: HashMap<Source, Packed>,
     bounds: HashMap<Source, Rect>,
     contacts: HashMap<Source, crate::sprite_contact::SpriteContact>,
@@ -70,19 +74,6 @@ fn is_entity_source(name: &str) -> bool {
     unit_stems()
         .chain(field_stems())
         .any(|stem| has_stem(name, stem))
-}
-/// A unit's sprite, drawn in the units' own pass. A cradle's stem begins
-/// with its unit's, so the works' stems are checked first.
-fn is_unit_source(name: &str) -> bool {
-    let name = name.strip_prefix("rig_").unwrap_or(name);
-    !field_stems().any(|stem| has_stem(name, stem)) && unit_stems().any(|stem| has_stem(name, stem))
-}
-fn unit_sources(manifest: &HashMap<String, [f32; 4]>) -> BTreeSet<Source> {
-    manifest
-        .iter()
-        .filter(|(name, _)| is_unit_source(name))
-        .map(|(_, row)| row.map(numeric::to_u32))
-        .collect()
 }
 fn entity_sources(manifest: &HashMap<String, [f32; 4]>) -> BTreeSet<Source> {
     manifest
@@ -252,7 +243,7 @@ impl EntityLod {
                 );
             }
         }
-        let (packer, regions) = pack(&areas, &unit_sources(manifest), |key, area, level| {
+        let (packer, regions) = pack(&areas, |key, area, level| {
             let page = key[1] as usize / numeric::to_usize(page_height);
             let local = [
                 key[0] + area[0],
@@ -286,10 +277,10 @@ impl EntityLod {
                 t
             })
             .collect();
-        let materials = pages.iter().map(blend_material).collect::<Result<_>>()?;
+        let material = blend_material(&pages)?;
         Ok(Self {
-            pages,
-            materials,
+            _pages: pages,
+            material,
             sprites,
             bounds,
             contacts,
@@ -330,17 +321,16 @@ impl EntityLod {
         let b = packed.levels[high];
         // Keep the compatible material through intervening ordinary 2D draws.
         // The screen boundary restores the default material; per-sprite resets split batches.
-        gl_use_material(&self.materials[b.page]);
+        gl_use_material(&self.material);
         let mut mesh = self.mesh.borrow_mut();
         mesh.vertices.copy_from_slice(&sprite_vertices(
             position,
             tint,
             params,
             packed.area,
-            [a.rect, b.rect],
+            [a, b],
             blend,
         ));
-        mesh.texture = Some(self.pages[a.page].clone());
         draw_mesh(&mesh);
 
         true
@@ -351,55 +341,32 @@ impl EntityLod {
 /// takes.
 fn pack(
     areas: &BTreeMap<Source, Source>,
-    units: &BTreeSet<Source>,
     mut image: impl FnMut(Source, Source, usize) -> Image,
 ) -> (Packer, Vec<(Source, usize, Region)>) {
-    let order = packing_order(areas, units);
-    let block = |&(key, level): &(Source, usize)| (units.contains(&key), level);
     let mut packer = Packer::new();
-    let mut regions = Vec::with_capacity(order.len());
-    for (index, entry) in order.iter().enumerate() {
-        let (key, level) = *entry;
-        if index == 0 || block(&order[index - 1]) != block(entry) {
-            let texels = order[index..]
-                .iter()
-                .take_while(|next| block(next) == block(entry))
-                .map(|(key, _)| {
-                    let factor = LEVELS[level].fit::<u32>();
-                    let area = areas[key];
-                    ((area[2] / factor) as usize + 4) * ((area[3] / factor) as usize + 4)
-                })
-                .sum();
-            packer.keep_together(texels);
-        }
-        let region = packer.insert(&image(key, areas[&key], level));
-        regions.push((key, level, region));
-    }
+    let regions = packing_order(areas)
+        .into_iter()
+        .map(|(key, level)| {
+            let region = packer.insert(&image(key, areas[&key], level));
+            (key, level, region)
+        })
+        .collect();
     (packer, regions)
 }
 
-// A draw samples two adjacent levels, and a page change between
-// neighbouring sprites in a pass ends the batch, so each coarse level of the
-// works and field, and of the units, keeps to one page: zoomed out, every
-// sprite on screen draws from the same levels. Works and field first,
-// coarsest level first; the full-size level spans pages regardless. Within
-// a level, sort by shelf height so small sprites cannot waste tall rows.
-fn packing_order(
-    areas: &BTreeMap<Source, Source>,
-    units: &BTreeSet<Source>,
-) -> Vec<(Source, usize)> {
+/// Tallest first, so small sprites cannot waste tall rows.
+fn packing_order(areas: &BTreeMap<Source, Source>) -> Vec<(Source, usize)> {
     let mut entries: Vec<_> = areas
         .iter()
-        .flat_map(|(&key, &area)| (0..4).map(move |level| (key, area, level)))
+        .flat_map(|(&key, &area)| (0..LEVELS.len()).map(move |level| (key, area, level)))
         .collect();
     entries.sort_by_key(|&(key, area, level)| {
+        let factor = LEVELS[level].fit::<u32>();
         (
-            level == 0,
-            units.contains(&key),
-            std::cmp::Reverse(level),
-            std::cmp::Reverse(area[3] / LEVELS[level].fit::<u32>()),
-            std::cmp::Reverse(area[2] / LEVELS[level].fit::<u32>()),
+            std::cmp::Reverse(area[3] / factor),
+            std::cmp::Reverse(area[2] / factor),
             key,
+            level,
         )
     });
     entries
@@ -415,9 +382,10 @@ fn sprite_vertices(
     tint: Color,
     params: &DrawTextureParams,
     area: Rect,
-    [a, b]: [Rect; 2],
+    [a, b]: [Region; 2],
     blend: f32,
 ) -> [Vertex; 4] {
+    let pages = sampled_pages(a.page, b.page);
     let mut origin = position;
     let mut size = params.dest_size.unwrap();
     if params.flip_x {
@@ -443,20 +411,28 @@ fn sprite_vertices(
                 offset.x * cos - offset.y * sin,
                 offset.x * sin + offset.y * cos,
             );
-        let uv = (a.point() + corner * a.size()) / PAGE as f32;
-        let reduced = (b.point() + corner * b.size()) / PAGE as f32;
+        let uv = (a.rect.point() + corner * a.rect.size()) / PAGE as f32;
+        let reduced = (b.rect.point() + corner * b.rect.size()) / PAGE as f32;
         let mut vertex = Vertex::new(pos.x, pos.y, 0.0, uv.x, uv.y, tint);
         // Macroquad reserves normal for user data; ordinary 2D draws leave it zero.
-        vertex.normal = vec4(reduced.x, reduced.y, blend, 1.0);
+        vertex.normal = vec4(reduced.x, reduced.y, blend, pages);
         vertex
     })
 }
 
-fn blend_material(texture: &Texture2D) -> Result<Material> {
-    use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation, PipelineParams};
-    let material = load_material(
-        ShaderSource::Glsl {
-            vertex: r"#version 100
+/// The two pages a sprite samples, as one vertex field. Ordinary 2D draws leave
+/// that field zero, which is how the shader tells them from sprites.
+fn sampled_pages(full: usize, reduced: usize) -> f32 {
+    (1 + full + reduced * MAX_PAGES) as f32
+}
+
+fn page_name(page: usize) -> String {
+    format!("Page{page}")
+}
+
+fn sprite_vertex_shader() -> String {
+    format!(
+        r"#version 100
 attribute vec3 position;
 attribute vec2 texcoord;
 attribute vec4 color0;
@@ -466,25 +442,67 @@ uniform mat4 Projection;
 varying highp vec2 uv;
 varying lowp vec4 color;
 varying highp vec4 sampling;
-void main(){ gl_Position=Projection*Model*vec4(position,1.0); uv=texcoord; color=color0/255.0; sampling=normal; }
-",
-            fragment: r"#version 100
+varying highp vec2 pages;
+void main(){{
+    gl_Position=Projection*Model*vec4(position,1.0);
+    uv=texcoord;
+    color=color0/255.0;
+    sampling=normal;
+    pages=vec2(mod(normal.w-1.0,{MAX_PAGES}.0),floor((normal.w-1.0)/{MAX_PAGES}.0));
+}}
+"
+    )
+}
+
+fn sprite_fragment_shader(pages: usize) -> String {
+    let samplers = (0..pages)
+        .map(|page| format!("uniform sampler2D {};\n", page_name(page)))
+        .collect::<Vec<_>>()
+        .concat();
+    let choices = (0..pages)
+        .map(|page| {
+            format!(
+                "    if (index<{page}.5) return texture2D({},at);\n",
+                page_name(page)
+            )
+        })
+        .collect::<Vec<_>>()
+        .concat();
+    format!(
+        r"#version 100
 precision highp float;
 varying highp vec2 uv;
 varying lowp vec4 color;
 varying highp vec4 sampling;
+varying highp vec2 pages;
 uniform sampler2D Texture;
-uniform sampler2D Reduced;
-void main(){
-    vec4 pixel=texture2D(Texture,uv);
-    if (sampling.w > 0.5) {
-        pixel=mix(pixel,texture2D(Reduced,sampling.xy),sampling.z);
-    } else {
+{samplers}vec4 page(float index,vec2 at){{
+{choices}    return vec4(0.0);
+}}
+void main(){{
+    vec4 pixel;
+    if (sampling.w > 0.5) {{
+        pixel=mix(page(pages.x,uv),page(pages.y,sampling.xy),sampling.z);
+    }} else {{
+        pixel=texture2D(Texture,uv);
         pixel.rgb*=pixel.a;
-    }
+    }}
     gl_FragColor=vec4(pixel.rgb*color.rgb*color.a,pixel.a*color.a);
+}}
+"
+    )
 }
-",
+
+/// One material over every page. Sprites pick their pages by vertex and draw
+/// with macroquad's white texture, so neither a page change nor an ordinary 2D
+/// draw between two sprites ends a batch.
+fn blend_material(pages: &[Texture2D]) -> Result<Material> {
+    use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Equation, PipelineParams};
+    anyhow::ensure!(pages.len() <= MAX_PAGES, "too many sprite pages");
+    let material = load_material(
+        ShaderSource::Glsl {
+            vertex: &sprite_vertex_shader(),
+            fragment: &sprite_fragment_shader(pages.len()),
         },
         MaterialParams {
             pipeline_params: PipelineParams {
@@ -496,13 +514,16 @@ void main(){
                 ..Default::default()
             },
             uniforms: vec![],
-            textures: vec!["Reduced".into()],
+            textures: (0..pages.len()).map(page_name).collect(),
         },
     )
     .context("loading sprite reduction shader")?;
-    material.set_texture("Reduced", texture.clone());
+    for (page, texture) in pages.iter().enumerate() {
+        material.set_texture(&page_name(page), texture.clone());
+    }
     Ok(material)
 }
+
 struct Packer {
     images: Vec<Image>,
     x: usize,
@@ -521,18 +542,6 @@ impl Packer {
             x: 2,
             y: 2,
             row_height: 0,
-        }
-    }
-
-    /// Starts a fresh page when `texels`, one pass's sprites at one level
-    /// with their margins, would fit on one page but not in the rows left
-    /// on this one: a level split across pages splits the batches of every
-    /// view drawn at that level.
-    fn keep_together(&mut self, texels: usize) {
-        let used = self.x > 2 || self.y > 2;
-        let left = PAGE.saturating_sub(self.y + self.row_height + 4) * PAGE;
-        if used && texels <= PAGE * PAGE && texels > left {
-            self.new_page();
         }
     }
 
