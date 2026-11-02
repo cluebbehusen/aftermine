@@ -126,5 +126,6 @@
   "player_name": null,
   "install_id": null,
   "lessons_done": [],
-  "first_match_done": false
+  "first_match_done": false,
+  "cold_open_seen": true
 }

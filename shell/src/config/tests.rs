@@ -249,6 +249,8 @@ fn the_driver_quiet_config_has_the_current_shape() {
         serde_json::from_str(include_str!("../../../driver/src/quiet_config.json")).unwrap();
     assert_eq!(config.version, CONFIG_VERSION);
     assert_eq!(config.volumes.master, 0.0);
+    // A capture that launches to Home must not wait out the first-launch report.
+    assert!(config.cold_open_seen);
     // An empty or partial map binds nothing, so every scripted key press
     // would be silently ignored.
     assert!(
@@ -316,4 +318,16 @@ fn finished_lessons_and_the_first_match_persist_once_each() {
     );
     assert!(loaded.first_match_done);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_cold_open_shows_until_a_saved_config_says_it_has() {
+    let dir = std::env::temp_dir().join(format!("aftermine-cold-open-{}", std::process::id()));
+    let path = dir.join("config.json");
+    let mut config = Config::default();
+    assert!(!config.cold_open_seen);
+    config.cold_open_seen = true;
+    config.save_to(&path).unwrap();
+    assert!(Config::load_from(Some(path)).cold_open_seen);
+    std::fs::remove_dir_all(dir).unwrap();
 }

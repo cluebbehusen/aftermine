@@ -5,6 +5,7 @@
 use super::persistence;
 use crate::game::{Game, Presentation};
 use crate::screens::codex::CodexScreen;
+use crate::screens::cold_open::ColdOpenScreen;
 use crate::screens::final_map::FinalMapScreen;
 use crate::screens::home::HomeScreen;
 use crate::screens::lessons::LessonsScreen;
@@ -22,6 +23,8 @@ use crate::text_field::Keyboard;
 /// Match choices live in the [`crate::screens::wizard::NewMatchDraft`] on
 /// [`super::App`], not in a screen.
 pub(super) enum Screen {
+    /// The report shown once, before the first Home.
+    ColdOpen(ColdOpenScreen),
     /// The front door: play, settings, quit.
     Home(HomeScreen),
     /// Settings and the Controls remap screen. `back` is where leaving
@@ -90,6 +93,7 @@ pub(super) enum Screen {
 /// frame and for the facts that depend on the variant alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ScreenKind {
+    ColdOpen,
     Home,
     Settings,
     Codex,
@@ -112,7 +116,8 @@ impl ScreenKind {
     pub(super) const fn gameplay(self) -> bool {
         match self {
             Self::Playing | Self::Playback | Self::FinalMap => true,
-            Self::Home
+            Self::ColdOpen
+            | Self::Home
             | Self::Settings
             | Self::Codex
             | Self::Lessons
@@ -132,7 +137,8 @@ impl ScreenKind {
             Self::Playing => 1,
             Self::Playback => 2,
             Self::FinalMap => 3,
-            Self::Home
+            Self::ColdOpen
+            | Self::Home
             | Self::Settings
             | Self::Codex
             | Self::Lessons
@@ -195,6 +201,7 @@ impl<'a> Visible<'a> {
 impl Screen {
     pub(super) fn kind(&self) -> ScreenKind {
         match self {
+            Self::ColdOpen(_) => ScreenKind::ColdOpen,
             Self::Home(_) => ScreenKind::Home,
             Self::Settings { .. } => ScreenKind::Settings,
             Self::Codex { .. } => ScreenKind::Codex,
@@ -269,7 +276,11 @@ impl Screen {
             | Self::Busy(_) => true,
             Self::Settings { .. } | Self::Codex { .. } | Self::Lessons { .. } => self.over_pause(),
             Self::Playback { back, .. } => back.holds_live_match(),
-            Self::Home(_) | Self::Wizard(_) | Self::Replays(_) | Self::Lobby { .. } => false,
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Wizard(_)
+            | Self::Replays(_)
+            | Self::Lobby { .. } => false,
         }
     }
 
@@ -279,7 +290,8 @@ impl Screen {
     /// stays frozen behind it, as it does behind a save in flight.
     pub(super) fn backdrop_runs(&self) -> bool {
         match self {
-            Self::Home(_)
+            Self::ColdOpen(_)
+            | Self::Home(_)
             | Self::Wizard(_)
             | Self::Replays(_)
             | Self::Results(_)
@@ -302,7 +314,8 @@ impl Screen {
             Self::Lobby { screen, .. } => screen.keyboard(),
             Self::Settings { screen, .. } => screen.keyboard(),
             Self::Wizard(wizard) => wizard.keyboard(),
-            Self::Home(_)
+            Self::ColdOpen(_)
+            | Self::Home(_)
             | Self::Codex { .. }
             | Self::Lessons { .. }
             | Self::Playing
@@ -328,7 +341,8 @@ impl Screen {
             Self::Lobby { screen, .. } => screen.take_keyboard_request(),
             Self::Settings { screen, .. } => screen.take_keyboard_request(),
             Self::Wizard(wizard) => wizard.take_keyboard_request(),
-            Self::Home(_)
+            Self::ColdOpen(_)
+            | Self::Home(_)
             | Self::Codex { .. }
             | Self::Lessons { .. }
             | Self::Playing
@@ -344,6 +358,7 @@ impl Screen {
     /// The diagnostics' coarse name for the screen.
     pub(super) fn profile_mode(&self) -> &'static str {
         match self {
+            Self::ColdOpen(_) => "cold_open",
             Self::Home(_) => "home",
             Self::Settings { .. } => "settings",
             Self::Codex { .. } => "codex",
@@ -365,6 +380,7 @@ impl Screen {
     /// which also keys the coaching clock.
     pub(super) fn mode(&self) -> &'static str {
         match self {
+            Self::ColdOpen(_) => "cold_open",
             Self::Home(_) => "home",
             Self::Settings { screen, .. } => screen.mode_name(),
             Self::Codex { screen, .. } => screen.mode_name(),

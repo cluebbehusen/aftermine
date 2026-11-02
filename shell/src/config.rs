@@ -233,6 +233,8 @@ pub struct Config {
     /// Whether this player has finished Basic Training's first match,
     /// whatever the result.
     pub first_match_done: bool,
+    /// Whether this install has shown the report before its first Home.
+    pub cold_open_seen: bool,
 }
 
 impl Default for Config {
@@ -256,6 +258,7 @@ impl Default for Config {
             install_id: None,
             lessons_done: Vec::new(),
             first_match_done: false,
+            cold_open_seen: false,
         }
     }
 }

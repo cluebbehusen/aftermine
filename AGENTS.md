@@ -61,7 +61,8 @@ machines. Code identifiers such as `BuildingKind` keep their names.
 
 Screen and dialog titles, and small labels over a value, column, section or
 card, are all caps. Everything else a player reads or presses is sentence case;
-names such as Foundry and acronyms such as LAN keep their capitals. Titles draw
+names such as Foundry and acronyms such as LAN keep their capitals. The report
+before the first Home is a machine's printout and is all caps. Titles draw
 through `menu::draw_title` or `menu::draw_page_heading`, so no screen picks a
 title size. Drawn text takes its size from `theme::Type`, and `typography::fit`
 only shrinks to a `Type`. `shell/src/typography/casing_tests.rs` reads the
