@@ -875,9 +875,10 @@ pub(super) fn draw_salvage(
                 | aftermine_sim::map::Terrain::Cliff,
                 _,
             ) => (None, false),
-            (aftermine_sim::map::Terrain::Ground, 0) if wreck > 0 => {
-                (Some(sprites.wreck_pile()), spot.wave % 5 < 2)
-            }
+            (aftermine_sim::map::Terrain::Ground, 0) if wreck > 0 => (
+                Some(sprites.wreck_pile_holding(wreck, spot.wave / 5)),
+                spot.wave % 5 < 2,
+            ),
             (aftermine_sim::map::Terrain::Ground, 0) => (None, false),
             (aftermine_sim::map::Terrain::Ground, s) => {
                 (Some(sprites.scrap(s, SCRAP_NODE_AMOUNT)), false)
@@ -895,12 +896,15 @@ pub(super) fn draw_salvage(
         } else {
             tint
         };
+        // A wreck pile's canvas is wider than its tile, and stays centered on it.
+        let drawn = size * source.w / 64.0;
+        let inset = (size - drawn) * 0.5;
         sprites.draw(
-            spot.screen.x,
-            spot.screen.y,
+            spot.screen.x + inset,
+            spot.screen.y + inset,
             tint,
             DrawTextureParams {
-                dest_size: Some(vec2(size, size)),
+                dest_size: Some(vec2(drawn, drawn)),
                 source: Some(source),
                 flip_x: flip,
                 ..Default::default()

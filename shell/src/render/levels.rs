@@ -10,7 +10,9 @@
 //! drawn per visible tile.
 
 use super::cell_field::{CELLS, cell_edges};
-use super::environment::{LAYERS, WAVE_LIFTS, draw_fracture, draw_missing_slab, hash, rgba};
+use super::environment::{
+    LAYERS, UNLIT, WAVE_LIFTS, draw_fracture, draw_missing_slab, faces_light, hash, mixed, rgba,
+};
 use super::ground::GroundView;
 use crate::numeric::{self, Fit};
 use aftermine_kit::render::Shading;
@@ -120,6 +122,18 @@ struct Op {
     w: f32,
     h: f32,
     color: Color,
+}
+
+/// The shadow a cliff lays on the lower ground.
+const CLIFF_SHADOW: Color = Color::new(0.03, 0.03, 0.04, 0.18);
+
+/// A cliff's riser by the way it faces.
+fn riser_tone(lit: bool) -> Color {
+    if lit {
+        mixed(LAYERS[0].riser, LAYERS[0].top, 0.6)
+    } else {
+        mixed(LAYERS[0].riser, UNLIT, 0.3)
+    }
 }
 
 /// A worn block on a step: the tile's index, the bench's colour, a token.
@@ -818,6 +832,64 @@ impl Levels {
                         as_index(ty * self.width + tx),
                         self.level_flat(bench_level[i(0, 0)]),
                         value,
+                    ));
+                }
+            }
+        }
+        // Light from the upper left, gentler than on the walls. A ramp's side
+        // walls and their ends keep their one tone, and shadows stop short of
+        // them.
+        let height_at = |cx: i32, cy: i32| {
+            if inside(cx, cy) {
+                height[as_index(cy * cw + cx)]
+            } else {
+                f32::NAN
+            }
+        };
+        let near_ramp = |cx: i32, cy: i32, reach: i32| {
+            (-reach..=reach).any(|dy| {
+                (-reach..=reach).any(|dx| {
+                    let (x, y) = (cx + dx, cy + dy);
+                    inside(x, y)
+                        && (matches!(class_c(x, y), Class::Ramp(_)) || ramp_tile(x, y).is_some())
+                })
+            })
+        };
+        for (tile, op) in &mut ops {
+            if op.color != riser_color || (op.x, op.y, op.w, op.h) != whole {
+                continue;
+            }
+            let tile = (*tile).fit::<i32>();
+            let cx = tile % self.width * CELLS + i32::from(op.sx);
+            let cy = tile / self.width * CELLS + i32::from(op.sy);
+            if near_ramp(cx, cy, 1) {
+                continue;
+            }
+            let own = height_at(cx, cy);
+            let lower = |dx: i32, dy: i32| height_at(cx + dx, cy + dy) < own - 0.01;
+            op.color = riser_tone(faces_light(lower));
+        }
+        for cy in 0..ch {
+            for cx in 0..cw {
+                if !matches!(class_c(cx, cy), Class::Open(_)) || near_ramp(cx, cy, 2) {
+                    continue;
+                }
+                let own = height_at(cx, cy) + 0.25;
+                let shaded = [(1, 1), (1, 0), (0, 1)]
+                    .iter()
+                    .any(|(dx, dy)| height_at(cx - dx, cy - dy) > own);
+                if shaded {
+                    ops.push((
+                        as_index(cy.div_euclid(CELLS) * self.width + cx.div_euclid(CELLS)),
+                        Op {
+                            sx: cx.rem_euclid(CELLS).fit(),
+                            sy: cy.rem_euclid(CELLS).fit(),
+                            x: 0.0,
+                            y: 0.0,
+                            w: 1.0,
+                            h: 1.0,
+                            color: CLIFF_SHADOW,
+                        },
                     ));
                 }
             }

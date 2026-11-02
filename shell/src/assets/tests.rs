@@ -834,3 +834,28 @@ fn rock_slab_keys_follow_size_then_variant_order() {
         }
     }
 }
+
+#[test]
+fn a_wreck_pile_steps_down_with_the_salvage_it_holds() {
+    for (salvage, size) in [
+        (1, 0),
+        (14, 0),
+        (15, 1),
+        (34, 1),
+        (35, 2),
+        (69, 2),
+        (70, 3),
+        (500, 3),
+    ] {
+        assert_eq!(wreck_pile_size(salvage), size, "{salvage} salvage");
+    }
+}
+
+#[test]
+fn wreck_piles_share_a_canvas_wider_than_their_tile() {
+    let atlas = manifest();
+    for key in WRECK_PILE_KEYS {
+        let [_, _, width, height] = atlas[key];
+        assert_eq!((width, height), (96.0, 96.0), "{key}");
+    }
+}

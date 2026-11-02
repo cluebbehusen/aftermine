@@ -45,6 +45,13 @@ fn has_riser(ops: &[Op], (sx, sy): (u8, u8)) -> bool {
         .any(|op| (op.sx, op.sy) == (sx, sy) && op.color == LAYERS[0].riser)
 }
 
+fn has_face(ops: &[Op], (sx, sy): (u8, u8)) -> bool {
+    ops.iter().any(|op| {
+        (op.sx, op.sy) == (sx, sy)
+            && (op.color == riser_tone(true) || op.color == riser_tone(false))
+    })
+}
+
 #[test]
 fn a_flat_map_has_no_levels() {
     let (flat, _) = Map::parse(&["...", "..."]).unwrap();
@@ -73,10 +80,12 @@ fn the_step_stands_on_the_upper_ground_and_the_cliff_shows_its_foot() {
 fn the_face_reaches_one_cell_into_the_cliff_tile() {
     let levels = ledge();
     let cliff = ops_at(&levels, TilePos::new(0, 3));
-    assert!(has_riser(cliff, (0, 0)), "the face's first cell is dark");
+    assert!(has_face(cliff, (0, 0)), "the face's first cell is dark");
     assert!(
-        cliff.iter().all(|op| op.sy == 0),
-        "below its first row of cells the cliff tile is bare floor"
+        cliff
+            .iter()
+            .all(|op| op.sy == 0 || op.color == CLIFF_SHADOW),
+        "below its first row of cells the cliff tile is bare floor under a shadow"
     );
     assert!(
         ops_at(&levels, TilePos::new(0, 4)).is_empty(),
@@ -96,6 +105,48 @@ fn the_ramp_mouth_keeps_its_u() {
     assert!(
         !has_riser(ops_at(&levels, TilePos::new(4, 3)), (1, 1)),
         "the middle of the ramp stays open road"
+    );
+}
+
+#[test]
+fn a_cliff_face_takes_the_light_by_the_way_it_turns() {
+    let away = ledge();
+    assert!(
+        ops_at(&away, TilePos::new(0, 3))
+            .iter()
+            .any(|op| op.color == riser_tone(false)),
+        "a drop to the south turns from the light"
+    );
+    let rows = ["..........", "==========", "..........", ".........."];
+    let heights = ["1111111111", "1111111111", "2222222222", "2222222222"];
+    let toward = Levels::build(&map(&rows, &heights), 1).expect("a tiered map has levels");
+    assert!(
+        (0..4).any(|y| ops_at(&toward, TilePos::new(0, y))
+            .iter()
+            .any(|op| op.color == riser_tone(true))),
+        "a drop to the north turns toward it"
+    );
+}
+
+#[test]
+fn the_shadow_lies_below_a_cliff_and_stops_short_of_the_ramp() {
+    let levels = ledge();
+    let shaded = |x: i32| {
+        ops_at(&levels, TilePos::new(x, 3))
+            .iter()
+            .any(|op| op.color == CLIFF_SHADOW)
+    };
+    assert!(shaded(0), "the shadow lies along the open cliff");
+    assert!(
+        !shaded(3) && !shaded(4) && !shaded(5),
+        "the ramp mouth stays clear"
+    );
+    assert!(
+        ops_at(&levels, TilePos::new(2, 3))
+            .iter()
+            .filter(|op| op.color == CLIFF_SHADOW)
+            .all(|op| op.sx < 2),
+        "it stops two cells short of the ramp"
     );
 }
 
