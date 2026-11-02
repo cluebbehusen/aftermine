@@ -157,6 +157,8 @@ struct ScriptState {
     measuring: bool,
     /// Unmeasured frames ran since the last sample.
     gap: bool,
+    /// The script wants the match playing during measured frames.
+    plays: bool,
 }
 
 struct ProfileWindow {
@@ -225,6 +227,7 @@ impl FrameProfiler {
             run: Some(FrameScriptRun::new(script)),
             measuring: false,
             gap: false,
+            plays: script.plays,
         });
         Ok(())
     }
@@ -236,20 +239,20 @@ impl FrameProfiler {
             .is_some_and(|script| script.run.is_some())
     }
 
-    /// Moves a running script on to the frame about to be drawn.
-    pub(crate) fn step_script(&mut self, camera: &mut Camera) {
-        let Some(script) = &mut self.script else {
-            return;
-        };
-        let Some(run) = &mut script.run else {
-            return;
-        };
+    /// Moves a running script on to the frame about to be drawn. Returns the
+    /// live match's new paused state when the script changes it.
+    pub(crate) fn step_script(&mut self, camera: &mut Camera) -> Option<bool> {
+        let script = self.script.as_mut()?;
+        let run = script.run.as_mut()?;
+        let was_playing = script.plays && script.measuring;
         let step = run.step(camera);
         script.measuring = step == Step::Measure;
         script.gap |= step == Step::Settle;
         if step == Step::Done {
             script.run = None;
         }
+        let playing = script.plays && script.measuring;
+        (playing != was_playing).then_some(!playing)
     }
 
     /// Consumes the one unmeasured live frame after Resume. Keeping the match

@@ -221,7 +221,16 @@ pub(super) fn handle_request(
                 Screen::Playback { session, .. } if session.engine.filling() => {
                     Err("the viewer is still filling in its record; retry shortly".to_string())
                 }
-                Screen::Home(_) | Screen::Playing | Screen::Playback { .. } => {
+                _ if script.plays && !matches!(screen, Screen::Playing) => {
+                    Err("only the live match can play during a frame script".to_string())
+                }
+                // Restarting from the scene's checkpoint makes every script on
+                // Home draw the same frames, however long Home has been open.
+                Screen::Home(_) => {
+                    app.home_backdrop.unload();
+                    app.frame_profiler.begin_script(&script).map(|()| Reply::Ok)
+                }
+                Screen::Playing | Screen::Playback { .. } => {
                     app.frame_profiler.begin_script(&script).map(|()| Reply::Ok)
                 }
                 _ => Err("frame scripts run on Home, the live match or the viewer".to_string()),

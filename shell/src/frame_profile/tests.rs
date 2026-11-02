@@ -341,6 +341,7 @@ fn camera() -> Camera {
 fn script(settle_frames: u32, frames: u32) -> FrameScript {
     FrameScript {
         settle_frames,
+        plays: false,
         motion: aftermine_protocol::CameraMotion::None { frames },
     }
 }
@@ -357,7 +358,7 @@ fn a_script_keeps_only_its_measured_frames_and_reports_finishing() {
 
     let mut drawn = 0;
     while profiler.scripted() {
-        profiler.step_script(&mut camera);
+        assert_eq!(profiler.step_script(&mut camera), None);
         drawn += 1;
         profiler.record(frame(f64::from(drawn), 0.0));
     }
@@ -383,6 +384,7 @@ fn time_spent_settling_never_counts_as_a_frame_interval() {
     let mut camera = camera();
     let zoom = FrameScript {
         settle_frames: 1,
+        plays: false,
         motion: aftermine_protocol::CameraMotion::Zoom {
             center: [20.0, 20.0],
             from: 32.0,
@@ -426,4 +428,43 @@ fn arming_a_window_ends_a_script() {
     profiler.arm(0, 10).expect("window");
     assert!(!profiler.scripted());
     assert_eq!(profiler.snapshot(false).script_complete, None);
+}
+
+#[test]
+fn a_playing_script_runs_the_match_only_while_measuring() {
+    let mut profiler = FrameProfiler::new(true);
+    let mut camera = camera();
+    let playing = FrameScript {
+        settle_frames: 2,
+        plays: true,
+        motion: aftermine_protocol::CameraMotion::None { frames: 2 },
+    };
+    profiler.begin_script(&playing).expect("enabled");
+    let changes: Vec<Option<bool>> = std::iter::from_fn(|| {
+        profiler
+            .scripted()
+            .then(|| profiler.step_script(&mut camera))
+    })
+    .collect();
+    assert_eq!(
+        changes,
+        [None, None, Some(false), None, Some(true)],
+        "paused to settle, playing to measure, paused at the finish"
+    );
+    assert_eq!(profiler.step_script(&mut camera), None, "already finished");
+}
+
+#[test]
+fn a_script_that_measures_nothing_never_starts_the_match() {
+    let mut profiler = FrameProfiler::new(true);
+    let mut camera = camera();
+    let playing = FrameScript {
+        settle_frames: 1,
+        plays: true,
+        motion: aftermine_protocol::CameraMotion::None { frames: 0 },
+    };
+    profiler.begin_script(&playing).expect("enabled");
+    while profiler.scripted() {
+        assert_eq!(profiler.step_script(&mut camera), None);
+    }
 }

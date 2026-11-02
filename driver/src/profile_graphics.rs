@@ -134,7 +134,9 @@ struct Workload {
     name: String,
     source: Source,
     shot: Shot,
-    /// Whether the match keeps playing; every other workload holds it paused.
+    /// Whether the match plays while frames are measured; every other workload
+    /// holds it paused. A match that has played can't repeat, so each trial of
+    /// this workload gets a fresh shell.
     running: bool,
 }
 
@@ -184,8 +186,8 @@ fn select(only: Option<&str>) -> Result<Vec<Workload>> {
     Ok(selected)
 }
 
-fn script(shot: Shot, center: [f64; 2]) -> FrameScript {
-    let motion = match shot {
+fn script(workload: &Workload, center: [f64; 2]) -> FrameScript {
+    let motion = match workload.shot {
         Shot::Own => CameraMotion::None {
             frames: HOLD_FRAMES,
         },
@@ -210,6 +212,7 @@ fn script(shot: Shot, center: [f64; 2]) -> FrameScript {
     };
     FrameScript {
         settle_frames: SETTLE_FRAMES,
+        plays: workload.running,
         motion,
     }
 }
@@ -311,90 +314,130 @@ fn run_source(
     group: &[Workload],
     options: &GraphicsOptions<'_>,
 ) -> Result<Vec<WorkloadResult>> {
-    let workspace = ProfileWorkspace::scratch(root, options.port)?;
-    write_home_config(&workspace.directory, include_str!("quiet_config.json"))?;
-    let mut command = std::process::Command::new(executable);
-    command
-        .args([
-            "--debug-server",
-            "--profile-frames",
-            "--window",
-            &format!("{}x{}", WINDOW[0], WINDOW[1]),
-            "--port",
-            &options.port.to_string(),
-        ])
-        .env("AFTERMINE_RESOURCE_ROOT", root)
-        .current_dir(&workspace.directory);
-    match source {
-        Source::Home => {
-            command.arg("--automation");
-        }
-        Source::Match(size, view) => {
-            let replay = input_replay(root, size)?;
-            let flag = match view {
-                View::Fogged => "--replay",
-                View::Open => "--watch",
-            };
-            command.args([flag, &replay.to_string_lossy(), "--paused"]);
-        }
-    }
-    isolate_home(&mut command, &workspace.directory);
-    let child = command.spawn().context("spawning profiled shell")?;
-    let _guard = ShellGuard::new(child);
-    let mut client = connect_within(options.port, LOAD_TIMEOUT)?;
-
-    let mut units = 0;
-    let mut structures = 0;
-    let mut focus = None;
-    if let Source::Match(size, view) = source {
-        if view == View::Open {
-            let advanced = client.advance(size.ticks())?;
-            ensure!(
-                advanced.tick == size.ticks(),
-                "viewer stopped at tick {} on the way to {}",
-                advanced.tick,
-                size.ticks()
-            );
-        }
-        let status = client.status()?;
-        ensure!(
-            status.tick == size.ticks() && status.result.is_none(),
-            "expected an undecided match at tick {}, found tick {} with result {:?}",
-            size.ticks(),
-            status.tick,
-            status.result
-        );
-        let state = client.state(StateFilter {
-            players: false,
-            units: true,
-            buildings: true,
-            map: false,
-        })?;
-        units = state.units.len();
-        structures = state.buildings.len();
-        focus = seat_focus(&state);
-    }
-    let opening = client.camera()?;
-    let center = focus.unwrap_or(opening.center);
-
+    let mut shell = None;
     let mut results = Vec::new();
     for workload in group {
         eprintln!("profiling {}", workload.name);
-        let frame_script = script(workload.shot, center);
         let mut trials = Vec::new();
         for _ in 0..options.trials {
-            trials.push(run_trial(&mut client, &frame_script, workload.running)?);
+            if workload.running {
+                shell = None;
+            }
+            let live = match &mut shell {
+                Some(live) => live,
+                None => shell.insert(ProfiledShell::launch(root, executable, source, options)?),
+            };
+            let frame_script = script(workload, live.center);
+            trials.push(run_trial(&mut live.client, &frame_script)?);
         }
-        let camera = client.camera()?;
+        let live = shell.as_mut().context("no trial ran")?;
+        let camera = live.client.camera()?;
         results.push(WorkloadResult {
             name: workload.name.clone(),
-            units,
-            structures,
+            units: live.units,
+            structures: live.structures,
             final_camera: [camera.center[0], camera.center[1], camera.zoom],
             trials,
         });
+        if workload.running {
+            shell = None;
+        }
     }
     Ok(results)
+}
+
+/// A temporary shell showing one source, ready for scripts.
+struct ProfiledShell {
+    client: Client,
+    units: usize,
+    structures: usize,
+    /// Where scripts frame the camera.
+    center: [f64; 2],
+    // Stops the shell before its folder goes away, so this order matters.
+    _guard: ShellGuard,
+    _workspace: ProfileWorkspace,
+}
+
+impl ProfiledShell {
+    fn launch(
+        root: &Path,
+        executable: &Path,
+        source: Source,
+        options: &GraphicsOptions<'_>,
+    ) -> Result<Self> {
+        let workspace = ProfileWorkspace::scratch(root, options.port)?;
+        write_home_config(&workspace.directory, include_str!("quiet_config.json"))?;
+        let mut command = std::process::Command::new(executable);
+        command
+            .args([
+                "--debug-server",
+                "--profile-frames",
+                "--window",
+                &format!("{}x{}", WINDOW[0], WINDOW[1]),
+                "--port",
+                &options.port.to_string(),
+            ])
+            .env("AFTERMINE_RESOURCE_ROOT", root)
+            .current_dir(&workspace.directory);
+        match source {
+            Source::Home => {
+                command.arg("--automation");
+            }
+            Source::Match(size, view) => {
+                let replay = input_replay(root, size)?;
+                let flag = match view {
+                    View::Fogged => "--replay",
+                    View::Open => "--watch",
+                };
+                command.args([flag, &replay.to_string_lossy(), "--paused"]);
+            }
+        }
+        isolate_home(&mut command, &workspace.directory);
+        let child = command.spawn().context("spawning profiled shell")?;
+        let guard = ShellGuard::new(child);
+        let mut client = connect_within(options.port, LOAD_TIMEOUT)?;
+
+        let mut units = 0;
+        let mut structures = 0;
+        let mut focus = None;
+        if let Source::Match(size, view) = source {
+            if view == View::Open {
+                let advanced = client.advance(size.ticks())?;
+                ensure!(
+                    advanced.tick == size.ticks(),
+                    "viewer stopped at tick {} on the way to {}",
+                    advanced.tick,
+                    size.ticks()
+                );
+            }
+            let status = client.status()?;
+            ensure!(
+                status.tick == size.ticks() && status.result.is_none(),
+                "expected an undecided match at tick {}, found tick {} with result {:?}",
+                size.ticks(),
+                status.tick,
+                status.result
+            );
+            let state = client.state(StateFilter {
+                players: false,
+                units: true,
+                buildings: true,
+                map: false,
+            })?;
+            units = state.units.len();
+            structures = state.buildings.len();
+            focus = seat_focus(&state);
+        }
+        let opening = client.camera()?;
+        Ok(Self {
+            client,
+            units,
+            structures,
+            center: focus.unwrap_or(opening.center),
+            _guard: guard,
+            _workspace: workspace,
+        })
+    }
 }
 
 /// The replay behind a match workload, generated the first time it is needed
@@ -429,10 +472,7 @@ fn input_replay(root: &Path, size: Size) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn run_trial(client: &mut Client, script: &FrameScript, running: bool) -> Result<FrameProfileView> {
-    if running {
-        expect_ok(&client.call(Request::Resume)?, "resume live match")?;
-    }
+fn run_trial(client: &mut Client, script: &FrameScript) -> Result<FrameProfileView> {
     start_script(client, script)?;
     let deadline = Instant::now() + TRIAL_TIMEOUT;
     let profile = loop {
@@ -446,9 +486,6 @@ fn run_trial(client: &mut Client, script: &FrameScript, running: bool) -> Result
         }
         ensure!(Instant::now() < deadline, "the frame script never finished");
     };
-    if running {
-        expect_ok(&client.call(Request::Pause)?, "pause live match")?;
-    }
     ensure!(profile.frames > 0, "the frame script measured no frames");
     Ok(profile)
 }

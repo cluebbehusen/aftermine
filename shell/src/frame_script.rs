@@ -74,41 +74,48 @@ impl FrameScriptRun {
     /// Moves `camera` for the frame about to run and says how to treat it.
     /// Call once per presented frame, before the camera's own update.
     pub(crate) fn step(&mut self, camera: &mut Camera) -> Step {
-        if self.phase == Phase::Start {
-            if self.repeats_left == 0 {
-                self.phase = Phase::Done;
-                return Step::Done;
+        loop {
+            match self.phase {
+                Phase::Start if self.repeats_left == 0 => self.phase = Phase::Done,
+                Phase::Start => {
+                    self.frame_start(camera);
+                    self.phase = Phase::Settling {
+                        left: self.settle_frames,
+                    };
+                }
+                Phase::Settling { left: 0 } => self.begin_measuring(camera),
+                Phase::Settling { left } => {
+                    self.phase = Phase::Settling { left: left - 1 };
+                    return Step::Settle;
+                }
+                Phase::Measuring { left: 0 } | Phase::Resting { left: 0 } => {
+                    self.repeats_left -= 1;
+                    self.phase = Phase::Start;
+                }
+                Phase::Measuring { left } => {
+                    self.phase = Phase::Measuring { left: left - 1 };
+                    self.drive(camera);
+                    return Step::Measure;
+                }
+                Phase::Gliding if camera.zooming() => return Step::Measure,
+                Phase::Gliding => {
+                    self.phase = Phase::Resting {
+                        left: self.rest_frames(),
+                    };
+                }
+                Phase::Resting { left } => {
+                    self.phase = Phase::Resting { left: left - 1 };
+                    return Step::Measure;
+                }
+                Phase::Done => return Step::Done,
             }
-            self.frame_start(camera);
-            self.phase = Phase::Settling {
-                left: self.settle_frames,
-            };
         }
-        if let Phase::Settling { left } = self.phase {
-            if left > 0 {
-                self.phase = Phase::Settling { left: left - 1 };
-                return Step::Settle;
-            }
-            self.begin_measuring(camera);
-        }
-        match self.phase {
-            Phase::Measuring { left: 0 } => self.finish_repeat(camera),
-            Phase::Measuring { left } => {
-                self.phase = Phase::Measuring { left: left - 1 };
-                self.drive(camera);
-                Step::Measure
-            }
-            Phase::Gliding if camera.zooming() => Step::Measure,
-            Phase::Gliding => self.rest(camera),
-            Phase::Resting { left: 0 } => self.finish_repeat(camera),
-            Phase::Resting { left } => {
-                self.phase = Phase::Resting { left: left - 1 };
-                Step::Measure
-            }
-            Phase::Start | Phase::Settling { .. } | Phase::Done => {
-                self.phase = Phase::Done;
-                Step::Done
-            }
+    }
+
+    const fn rest_frames(&self) -> u32 {
+        match self.motion {
+            CameraMotion::Zoom { rest_frames, .. } => rest_frames,
+            CameraMotion::None { .. } | CameraMotion::Hold { .. } | CameraMotion::Pan { .. } => 0,
         }
     }
 
@@ -150,20 +157,6 @@ impl FrameScriptRun {
                 camera.pan(vec2(-step, 0.0));
             }
         }
-    }
-
-    fn rest(&mut self, camera: &mut Camera) -> Step {
-        let CameraMotion::Zoom { rest_frames, .. } = self.motion else {
-            return self.finish_repeat(camera);
-        };
-        self.phase = Phase::Resting { left: rest_frames };
-        self.step(camera)
-    }
-
-    fn finish_repeat(&mut self, camera: &mut Camera) -> Step {
-        self.repeats_left -= 1;
-        self.phase = Phase::Start;
-        self.step(camera)
     }
 }
 

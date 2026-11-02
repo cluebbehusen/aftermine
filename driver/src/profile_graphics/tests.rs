@@ -112,15 +112,24 @@ fn only_keeps_matching_workloads_and_refuses_an_empty_selection() {
 #[test]
 fn shots_become_the_camera_motions_they_name() {
     let center = [5.0, 6.0];
+    let motion = |shot| {
+        let workload = Workload {
+            name: String::new(),
+            source: Source::Home,
+            shot,
+            running: false,
+        };
+        script(&workload, center).motion
+    };
     assert_eq!(
-        script(Shot::Own, center).motion,
+        motion(Shot::Own),
         CameraMotion::None {
             frames: HOLD_FRAMES
         }
     );
     for (shot, zoom) in [(Shot::Near, NEAR_ZOOM), (Shot::Far, FAR_ZOOM)] {
         assert_eq!(
-            script(shot, center).motion,
+            motion(shot),
             CameraMotion::Hold {
                 center,
                 zoom,
@@ -129,7 +138,7 @@ fn shots_become_the_camera_motions_they_name() {
         );
     }
     assert!(matches!(
-        script(Shot::ZoomOut, center).motion,
+        motion(Shot::ZoomOut),
         CameraMotion::Zoom {
             from: NEAR_ZOOM,
             to: FAR_ZOOM,
@@ -137,7 +146,7 @@ fn shots_become_the_camera_motions_they_name() {
         }
     ));
     assert!(matches!(
-        script(Shot::ZoomIn, center).motion,
+        motion(Shot::ZoomIn),
         CameraMotion::Zoom {
             from: FAR_ZOOM,
             to: NEAR_ZOOM,
@@ -145,12 +154,24 @@ fn shots_become_the_camera_motions_they_name() {
         }
     ));
     assert!(matches!(
-        script(Shot::Pan, center).motion,
+        motion(Shot::Pan),
         CameraMotion::Pan {
             frames: PAN_FRAMES,
             ..
         }
     ));
+}
+
+#[test]
+fn only_the_running_workload_plays_the_match() {
+    for workload in workloads() {
+        assert_eq!(
+            script(&workload, [0.0, 0.0]).plays,
+            workload.name.ends_with("-running"),
+            "{}",
+            workload.name
+        );
+    }
 }
 
 #[test]

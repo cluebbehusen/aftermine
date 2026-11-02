@@ -233,6 +233,10 @@ pub struct FrameScript {
     /// Unmeasured frames after the camera is framed, so caches catch up. A zoom
     /// settles before every repeat.
     pub settle_frames: u32,
+    /// Whether the live match plays during measured frames. It pauses again
+    /// for settling and when the script ends, so every run ticks identically.
+    #[serde(default)]
+    pub plays: bool,
     /// What the camera does while frames are measured.
     pub motion: CameraMotion,
 }

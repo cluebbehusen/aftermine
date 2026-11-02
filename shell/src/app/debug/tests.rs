@@ -107,6 +107,7 @@ fn a_frame_script_runs_in_the_viewer_but_not_over_a_lan_match() {
     let run = Request::RunFrameScript {
         script: aftermine_protocol::FrameScript {
             settle_frames: 0,
+            plays: false,
             motion: aftermine_protocol::CameraMotion::None { frames: 1 },
         },
     };

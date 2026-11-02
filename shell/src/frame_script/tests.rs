@@ -33,6 +33,7 @@ fn a_motionless_script_settles_then_measures_its_frames_and_leaves_the_camera_al
     let steps = run(
         &FrameScript {
             settle_frames: 3,
+            plays: false,
             motion: CameraMotion::None { frames: 5 },
         },
         &mut camera,
@@ -48,6 +49,7 @@ fn a_hold_frames_its_view_before_the_first_settling_frame() {
     let mut camera = camera();
     let mut script = FrameScriptRun::new(&FrameScript {
         settle_frames: 1,
+        plays: false,
         motion: CameraMotion::Hold {
             center: [20.0, 30.0],
             zoom: 12.0,
@@ -68,6 +70,7 @@ fn a_pan_keeps_moving_for_all_its_frames_by_turning_back_at_the_map_edge() {
     let mut camera = camera();
     let mut script = FrameScriptRun::new(&FrameScript {
         settle_frames: 0,
+        plays: false,
         motion: CameraMotion::Pan {
             center: [120.0, 56.0],
             zoom: 32.0,
@@ -103,6 +106,7 @@ fn a_zoom_measures_each_glide_and_its_rest_but_never_the_settling_between() {
     let steps = run(
         &FrameScript {
             settle_frames: 4,
+            plays: false,
             motion: CameraMotion::Zoom {
                 center: [64.0, 56.0],
                 from: 32.0,
@@ -132,6 +136,7 @@ fn a_zoom_in_lands_on_its_target_too() {
     run(
         &FrameScript {
             settle_frames: 0,
+            plays: false,
             motion: CameraMotion::Zoom {
                 center: [64.0, 56.0],
                 from: 8.0,
@@ -149,6 +154,7 @@ fn a_zoom_in_lands_on_its_target_too() {
 fn the_same_script_ends_at_the_same_camera_every_time() {
     let script = FrameScript {
         settle_frames: 2,
+        plays: false,
         motion: CameraMotion::Zoom {
             center: [30.0, 40.0],
             from: 32.0,
@@ -171,12 +177,33 @@ fn a_zoom_with_no_repeats_is_done_at_once() {
     let steps = run(
         &FrameScript {
             settle_frames: 10,
+            plays: false,
             motion: CameraMotion::Zoom {
                 center: [64.0, 56.0],
                 from: 32.0,
                 to: 8.0,
                 repeats: 0,
                 rest_frames: 10,
+            },
+        },
+        &mut camera,
+    );
+    assert_eq!(steps, [Step::Done]);
+}
+
+#[test]
+fn zoom_repeats_with_nothing_to_draw_finish_without_recursing() {
+    let mut camera = camera();
+    let steps = run(
+        &FrameScript {
+            settle_frames: 0,
+            plays: false,
+            motion: CameraMotion::Zoom {
+                center: [64.0, 56.0],
+                from: 32.0,
+                to: 32.0,
+                repeats: 1_000_000,
+                rest_frames: 0,
             },
         },
         &mut camera,
