@@ -105,6 +105,7 @@ mod roc;
 pub(crate) mod sky;
 mod strategic;
 mod stretches;
+mod tall_faces;
 pub(crate) use sky::missile_seen_by;
 pub(crate) use strategic::lattice_pod_pivot;
 mod support_brackets;
@@ -684,7 +685,11 @@ impl GroundLayout {
             blockers,
             pits: pits::PitField::build(map),
             terraces: terraces::Terraces::build(map, rows),
-            levels: levels::Levels::build(map, aftermine_kit::render::floor_level(map, starts)),
+            levels: levels::Levels::build(
+                map,
+                rows,
+                aftermine_kit::render::floor_level(map, starts),
+            ),
         }
     }
 }

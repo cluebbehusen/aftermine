@@ -108,6 +108,14 @@ impl CellField {
         }
     }
 
+    /// The index of a cell inside the window, addressed by absolute tile and
+    /// sub-cell.
+    pub(super) fn index(&self, pos: TilePos, sx: i32, sy: i32) -> usize {
+        let x = (pos.x - self.origin.x) * self.cells + sx;
+        let y = (pos.y - self.origin.y) * self.cells + sy;
+        as_index(y * self.width * self.cells + x)
+    }
+
     /// Depth of a cell addressed by absolute tile and sub-cell; the sub-cell
     /// may step outside the tile.
     pub(super) fn at(&self, pos: TilePos, sx: i32, sy: i32) -> u8 {

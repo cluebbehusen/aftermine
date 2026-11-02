@@ -6,9 +6,11 @@
 //! cells, so a wide cut carries several benches across tile boundaries before
 //! it vanishes. A pit clear of the map edge steps its own way, its benches
 //! varying by stretch along each side as a peak's do; a pit that runs off
-//! the map keeps a jog per block of tiles so it joins the boundary. The field
-//! reads the map alone, so a drop never shifts as the fog lifts; the fog veil
-//! hides pits the player has not explored.
+//! the map keeps a jog per block of tiles so it joins the boundary. A pit
+//! bordering two levels drops from the higher one down a
+//! [tall face](super::tall_faces), toned like the cliff it meets. The field reads
+//! the map alone, so a drop never shifts as the fog lifts; the fog veil hides pits
+//! the player has not explored.
 
 use super::cell_field::{CELLS, CellField, cell_edges};
 use super::environment::{
@@ -16,7 +18,9 @@ use super::environment::{
     draw_strata, faces_light, hash, mixed, quarry_color, rgba, shifted,
 };
 use super::ground::GroundView;
+use super::levels::riser_tone;
 use super::stretches::{Place, Shapes};
+use super::tall_faces::TallFaces;
 use crate::numeric::Fit;
 use aftermine_sim::map::{Map, Terrain};
 use chassis::grid::TilePos;
@@ -33,6 +37,8 @@ const SHADED_FACE: f32 = 0.3;
 const RIM_SHADE: Color = rgba(8, 8, 10);
 const RIM_SHADE_AMOUNT: f32 = 0.26;
 const RIM_SHADE_CELLS: i32 = 2;
+/// How far past that a tall face's shadow falls.
+const TALL_SHADE_CELLS: i32 = 2;
 const VIGNETTE_CELLS: i32 = 4;
 /// Bench widths vary per block of this many tiles so lips jog along the rim
 /// the way the boundary's do per side segment.
@@ -159,6 +165,7 @@ fn cell_color(material: Material, cx: i32, cy: i32, drops: &[Layer; DROP.len()])
 pub(super) struct PitField {
     field: CellField,
     pits: Shapes,
+    faces: TallFaces,
 }
 
 impl PitField {
@@ -186,7 +193,8 @@ impl PitField {
             |pos| map.tile(pos).is_some(),
             SALT + 313,
         );
-        Self { field, pits }
+        let faces = TallFaces::build(map, Terrain::Pit, &field);
+        Self { field, pits, faces }
     }
 
     fn at(&self, pos: TilePos, sx: i32, sy: i32) -> u8 {
@@ -196,7 +204,7 @@ impl PitField {
     /// Bench widths at a cell: its pit's own stretches, or the per-block
     /// jog for a pit that runs off the map.
     fn widths(&self, cx: i32, cy: i32) -> [i32; DROP.len()] {
-        self.pits.place(cx, cy).map_or_else(
+        let widths = self.pits.place(cx, cy).map_or_else(
             || {
                 bench_widths(
                     cx.div_euclid(CELLS).div_euclid(BLOCK_TILES),
@@ -204,12 +212,19 @@ impl PitField {
                 )
             },
             stretch_widths,
-        )
+        );
+        self.faces.widths(cx, cy, widths)
     }
 
     fn material_at(&self, pos: TilePos, sx: i32, sy: i32) -> Option<Material> {
         let (cx, cy) = (pos.x * CELLS + sx, pos.y * CELLS + sy);
-        material(self.at(pos, sx, sy), self.widths(cx, cy))
+        let depth = self.at(pos, sx, sy);
+        match material(depth, self.widths(cx, cy)) {
+            Some(Material::Bench(0)) if self.faces.in_face(cx, cy, depth) => {
+                Some(Material::Riser(0))
+            }
+            found => found,
+        }
     }
 }
 
@@ -243,12 +258,17 @@ fn lit(
     material: Material,
     color: Color,
     drops: &[Layer; DROP.len()],
+    tall_tones: [Color; 2],
 ) -> Color {
     let depth = field.at(pos, sx, sy);
+    let (cx, cy) = (pos.x * CELLS + sx, pos.y * CELLS + sy);
     let color = match material {
         Material::Riser(level) => {
             let deeper = |dx: i32, dy: i32| field.at(pos, sx + dx, sy + dy) > depth;
-            if faces_light(deeper) {
+            let toward_light = faces_light(deeper);
+            if level == 0 && field.faces.in_face(cx, cy, depth) {
+                tall_tones[usize::from(!toward_light)]
+            } else if toward_light {
                 mixed(color, drops[level].top, LIT_FACE)
             } else {
                 mixed(color, UNLIT, SHADED_FACE)
@@ -256,7 +276,12 @@ fn lit(
         }
         _ => color,
     };
-    if depth > 0 && (1..=RIM_SHADE_CELLS).any(|k| field.at(pos, sx - k, sy - k) == 0) {
+    let reach = if field.faces.on_tall_side(cx, cy) {
+        RIM_SHADE_CELLS + TALL_SHADE_CELLS
+    } else {
+        RIM_SHADE_CELLS
+    };
+    if depth > 0 && (1..=reach).any(|k| field.at(pos, sx - k, sy - k) == 0) {
         mixed(color, RIM_SHADE, RIM_SHADE_AMOUNT)
     } else {
         color
@@ -270,6 +295,7 @@ fn draw_fill(
     zoom: f32,
     fractured: bool,
     drops: &[Layer; DROP.len()],
+    tall_tones: [Color; 2],
 ) {
     let (xs, ys) = cell_edges(view, pos);
     let color = |sx: i32, sy: i32| {
@@ -282,6 +308,7 @@ fn draw_fill(
             material,
             quarry_color(color, material, fractured),
             drops,
+            tall_tones,
         )
     };
     let all_void = (0..CELLS)
@@ -347,8 +374,26 @@ fn draw_relief(
             );
             match field.material_at(pos, sx, sy) {
                 Some(Material::Riser(level)) => {
+                    let (cx, cy) = (pos.x * CELLS + sx, pos.y * CELLS + sy);
+                    let tall = level == 0 && field.faces.in_face(cx, cy, depth);
                     for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                        if field.at(pos, sx + dx, sy + dy) < depth {
+                        let beside = field.material_at(pos, sx + dx, sy + dy);
+                        let within = tall && beside == Some(Material::Riser(0));
+                        // A tall face's end lines up with the cliff's lit line,
+                        // which lies just outside the face.
+                        if tall
+                            && beside == Some(Material::Bench(0))
+                            && !field.faces.on_tall_side(cx + dx, cy + dy)
+                        {
+                            let outside = Rect::new(
+                                rect.x + dx as f32 * rect.w,
+                                rect.y + dy as f32 * rect.h,
+                                rect.w,
+                                rect.h,
+                            );
+                            draw_lip(outside, (-dx, -dy), lip, drops[level].lip);
+                        }
+                        if field.at(pos, sx + dx, sy + dy) < depth && !within {
                             draw_lip(rect, (dx, dy), lip, drops[level].lip);
                             if fractured {
                                 draw_strata(
@@ -400,10 +445,11 @@ pub(super) fn draw_pits(
         })
         .collect();
     let drops = DROP.map(|layer| grade.layer(layer));
+    let tall_tones = [grade.wall(riser_tone(true)), grade.wall(riser_tone(false))];
     // Fills first, then relief: a decal that straddles two tiles must not
     // be buried under the neighbor's fill.
     for pos in &pit_tiles {
-        draw_fill(view, field, *pos, zoom, fractured, &drops);
+        draw_fill(view, field, *pos, zoom, fractured, &drops, tall_tones);
     }
     for pos in &pit_tiles {
         draw_relief(view, field, *pos, zoom, fractured, &drops);

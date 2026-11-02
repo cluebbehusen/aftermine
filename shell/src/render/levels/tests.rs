@@ -30,8 +30,13 @@ fn map(rows: &[&str], levels: &[&str]) -> Map {
         .0
 }
 
+fn laid(rows: &[&str], levels: &[&str], floor: u8) -> Levels {
+    let owned: Vec<String> = rows.iter().map(ToString::to_string).collect();
+    Levels::build(&map(rows, levels), &owned, floor).expect("a tiered map has levels")
+}
+
 fn ledge() -> Levels {
-    Levels::build(&map(&ROWS, &LEVELS), 1).expect("a tiered map has levels")
+    laid(&ROWS, &LEVELS, 1)
 }
 
 fn ops_at(levels: &Levels, pos: TilePos) -> &[Op] {
@@ -55,7 +60,7 @@ fn has_face(ops: &[Op], (sx, sy): (u8, u8)) -> bool {
 #[test]
 fn a_flat_map_has_no_levels() {
     let (flat, _) = Map::parse(&["...", "..."]).unwrap();
-    assert!(Levels::build(&flat, 0).is_none());
+    assert!(Levels::build(&flat, &[], 0).is_none());
 }
 
 #[test]
@@ -119,7 +124,7 @@ fn a_cliff_face_takes_the_light_by_the_way_it_turns() {
     );
     let rows = ["..........", "==========", "..........", ".........."];
     let heights = ["1111111111", "1111111111", "2222222222", "2222222222"];
-    let toward = Levels::build(&map(&rows, &heights), 1).expect("a tiered map has levels");
+    let toward = laid(&rows, &heights, 1);
     assert!(
         (0..4).any(|y| ops_at(&toward, TilePos::new(0, y))
             .iter()
@@ -154,7 +159,7 @@ fn the_shadow_lies_below_a_cliff_and_stops_short_of_the_ramp() {
 fn a_tall_cliff_takes_the_tallest_drop_beside_it() {
     // Level 3 over level 0 behind a cliff two tiles thick.
     let rows = ["....", "====", "====", "...."];
-    let levels = Levels::build(&map(&rows, &["3333", "0000", "0000", "0000"]), 0).unwrap();
+    let levels = laid(&rows, &["3333", "0000", "0000", "0000"], 0);
     assert_eq!(levels.class_at(1, 1), Class::Band { upper: 3, lower: 0 });
     assert_eq!(levels.class_at(1, 2), Class::Open(0));
 }
@@ -211,25 +216,96 @@ fn every_valid_shape_lays_out() {
         ),
     ];
     for (rows, levels) in shapes {
-        let laid = Levels::build(&map(rows, levels), 0).expect("a tiered map has levels");
-        assert_eq!(laid.starts.len(), as_index(laid.width * laid.height) + 1);
+        let built = laid(rows, levels, 0);
+        assert_eq!(built.starts.len(), as_index(built.width * built.height) + 1);
         assert_eq!(
-            laid.starts.last().copied(),
-            Some(laid.ops.len().fit::<u32>())
+            built.starts.last().copied(),
+            Some(built.ops.len().fit::<u32>())
         );
-        assert!(laid.starts.windows(2).all(|pair| pair[0] <= pair[1]));
+        assert!(built.starts.windows(2).all(|pair| pair[0] <= pair[1]));
     }
 }
 
 #[test]
+fn rock_takes_the_tone_of_the_level_it_stands_on() {
+    let rows = ["......", "======", "......", "..##..", "..##.."];
+    let heights = ["111111", "000000", "000000", "000000", "000000"];
+    let levels = laid(&rows, &heights, 1);
+    assert_eq!(levels.class_at(2, 3), Class::Open(0));
+    assert_eq!(
+        levels.tile_tone(TilePos::new(2, 3)),
+        levels.tile_tone(TilePos::new(0, 3)),
+        "the rock's tile matches the ground around it"
+    );
+    assert!(levels.tile_tone(TilePos::new(2, 3)) < Some(1.0));
+}
+
+#[test]
+fn a_cliff_beside_a_rock_wall_keeps_its_face() {
+    // The low ground beyond the cliff is a rock wall the whole way along.
+    let rows = ["......", "======", "######", "######", "......"];
+    let heights = ["111111", "000000", "000000", "000000", "000000"];
+    let levels = laid(&rows, &heights, 1);
+    assert_eq!(
+        levels.class_at(1, 0),
+        Class::Band { upper: 1, lower: 0 },
+        "the upper ground's last tile carries the step"
+    );
+    assert_eq!(
+        levels.class_at(1, 1),
+        Class::Open(0),
+        "the cliff tile reads as the level the rock stands on"
+    );
+    assert!(has_face(ops_at(&levels, TilePos::new(1, 1)), (0, 0)));
+}
+
+#[test]
+fn a_cliff_runs_on_beneath_rock_in_its_way() {
+    // A cliff broken by a block of rock, whose top row stands on the upper
+    // level.
+    let rows = [
+        "........", "........", "===##===", "...##...", "........", "........",
+    ];
+    let heights = [
+        "11111111", "11111111", "00011000", "00000000", "00000000", "00000000",
+    ];
+    let levels = laid(&rows, &heights, 0);
+    for x in [2, 3, 4, 5] {
+        assert_eq!(
+            levels.class_at(x, 1),
+            Class::Band { upper: 1, lower: 0 },
+            "the upper ground's last tile carries the step at column {x}"
+        );
+        assert_eq!(
+            levels.class_at(x, 2),
+            Class::Open(0),
+            "cliff and rock alike show the drop's foot at column {x}"
+        );
+        assert!(
+            has_face(ops_at(&levels, TilePos::new(x, 2)), (0, 0)),
+            "the face runs straight through at column {x}"
+        );
+    }
+}
+
+#[test]
+fn the_edge_ring_stays_out_of_the_levels() {
+    let rows = ["######", "#....#", "#====#", "#....#", "######"];
+    let heights = ["000000", "011110", "000000", "000000", "000000"];
+    let levels = laid(&rows, &heights, 0);
+    assert_eq!(levels.class_at(0, 2), Class::Other);
+    assert_eq!(levels.tile_tone(TilePos::new(0, 1)), None);
+}
+
+#[test]
 fn bright_levels_wash_their_sprites_and_dark_ones_dim_them() {
-    let levels = Levels::build(&map(&ROWS, &LEVELS), 0).unwrap();
+    let levels = laid(&ROWS, &LEVELS, 0);
     let (f, wash) = levels.tile_paint(TilePos::new(0, 0), 0).unwrap();
     assert!(
         f == 1.0 && wash > 0.0,
         "level 2 over a floor at 0 is lifted"
     );
-    let levels = Levels::build(&map(&ROWS, &LEVELS), 3).unwrap();
+    let levels = laid(&ROWS, &LEVELS, 3);
     let (f, wash) = levels.tile_paint(TilePos::new(0, 6), 5).unwrap();
     assert!(
         f < 1.0 && wash == 0.0,
@@ -261,4 +337,28 @@ fn a_lip_draws_inside_its_cell_on_every_side_at_every_size() {
         // A fill covers its whole cell.
         assert_eq!(span_in_cell(size, 0.0, 1.0), (0.0, size));
     }
+}
+
+#[test]
+fn a_step_ending_against_a_pit_takes_no_wear() {
+    let rows = [
+        "~~~~~~~~~~..............................",
+        "........................................",
+        "========================================",
+        "........................................",
+    ];
+    let levels = [
+        "1111111111111111111111111111111111111111",
+        "1111111111111111111111111111111111111111",
+        "0000000000000000000000000000000000000000",
+        "0000000000000000000000000000000000000000",
+    ];
+    let laid = laid(&rows, &levels, 0);
+    let worn: Vec<i32> = laid
+        .decals
+        .iter()
+        .map(|&(tile, _, _)| tile.fit::<i32>() % laid.width)
+        .collect();
+    assert!(worn.iter().any(|&x| x > 10), "{worn:?}");
+    assert!(worn.iter().all(|&x| x > 10), "{worn:?}");
 }

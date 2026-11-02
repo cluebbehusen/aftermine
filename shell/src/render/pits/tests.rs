@@ -70,6 +70,7 @@ fn flat_field(cells: i32) -> PitField {
             depth: vec![u8::MAX; as_index(cells * cells)],
         },
         pits: Shapes::find(0, 0, |_| false, |_| true, SALT),
+        faces: TallFaces::default(),
     }
 }
 
@@ -184,7 +185,7 @@ fn a_pit_face_takes_the_light_by_the_way_it_turns_and_the_rim_shades_inside() {
             for sy in 0..CELLS {
                 for sx in 0..CELLS {
                     let material = field.material_at(pos, sx, sy).unwrap_or(Material::Void);
-                    let tone = lit(&field, pos, (sx, sy), material, grey, &DROP);
+                    let tone = lit(&field, pos, (sx, sy), material, grey, &DROP, [BLACK, BLACK]);
                     let depth = field.at(pos, sx, sy);
                     let shaded = (1..=RIM_SHADE_CELLS).any(|k| field.at(pos, sx - k, sy - k) == 0);
                     match material {
@@ -211,4 +212,38 @@ fn a_pit_face_takes_the_light_by_the_way_it_turns_and_the_rim_shades_inside() {
         }
     }
     assert!(toward > 0 && away > 0 && rim > 0, "{toward} {away} {rim}");
+}
+
+#[test]
+fn a_tall_face_shares_the_steps_past_its_first_bench() {
+    let rows = ["..~~~~~~..", "..~~~~~~..", "..~~~~~~..", "..~~~~~~.."];
+    let levels = ["0000000011", "0000000011", "0000000011", "0000000011"];
+    let (map, _) = Map::parse_tiered(&rows, &levels).expect("rows parse");
+    let field = PitField::build(&map);
+    let row = 1;
+    let from_west: Vec<_> = (0..8)
+        .map(|inward| field.material_at(TilePos::new(2, row), inward, 1))
+        .collect();
+    let from_east: Vec<_> = (0..8)
+        .map(|inward| field.material_at(TilePos::new(7, row), 3 - inward, 1))
+        .collect();
+    assert_eq!(
+        from_east[..2],
+        [Some(Material::Riser(0)); 2],
+        "the tall face"
+    );
+    assert_eq!(from_west[0], Some(Material::Riser(0)));
+    assert_eq!(from_west[1], Some(Material::Bench(0)), "the short face");
+    assert_eq!(from_east[2], Some(Material::Bench(0)));
+    let riser = |cells: &[Option<Material>]| {
+        cells
+            .iter()
+            .position(|cell| *cell == Some(Material::Riser(1)))
+    };
+    assert!(riser(&from_west).is_some());
+    assert_eq!(
+        riser(&from_west),
+        riser(&from_east),
+        "the next step lines up"
+    );
 }
