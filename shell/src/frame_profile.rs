@@ -6,10 +6,7 @@ use aftermine_protocol::{
     FrameProbes, FrameProfileView, FrameProfileWindowView, FrameScript, PassCostView,
     PassDrawCallsView, PassTimingView, SlowFrameView, TimingSummary,
 };
-use macroquad::prelude::{
-    Camera2D, Rect, RenderTarget, WHITE, draw_rectangle, render_target, set_camera,
-    set_default_camera,
-};
+use macroquad::prelude::{Texture2D, set_default_camera};
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -156,25 +153,21 @@ pub(crate) fn pass(which: FramePass, draw: impl FnOnce()) {
     }
 }
 
-/// Reads back a tiny render target, which can't finish until the GPU has
-/// finished everything submitted before it.
-struct GpuFence(RenderTarget);
+/// Copies one pixel of the frame and reads it back. On a tile-based GPU that
+/// can't finish until the whole frame has rendered. A readback from a separate
+/// render target doesn't work: it returns without waiting for the frame.
+struct GpuFence(Texture2D);
 
 impl GpuFence {
     fn new() -> Self {
-        Self(render_target(1, 1))
+        Self(Texture2D::from_rgba8(1, 1, &[0; 4]))
     }
 
     /// Milliseconds spent waiting for the GPU.
     fn wait(&self) -> f64 {
-        set_camera(&Camera2D {
-            render_target: Some(self.0.clone()),
-            ..Camera2D::from_display_rect(Rect::new(0.0, 0.0, 1.0, 1.0))
-        });
-        draw_rectangle(0.0, 0.0, 1.0, 1.0, WHITE);
-        set_default_camera();
         let started = Instant::now();
-        drop(self.0.texture.get_texture_data());
+        self.0.grab_screen();
+        drop(self.0.get_texture_data());
         started.elapsed().as_secs_f64() * 1000.0
     }
 }

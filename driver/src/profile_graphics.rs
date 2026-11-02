@@ -30,6 +30,9 @@ const REST_FRAMES: u32 = 60;
 const LOAD_TIMEOUT: Duration = Duration::from_secs(600);
 const TRIAL_TIMEOUT: Duration = Duration::from_secs(300);
 const POLL: Duration = Duration::from_millis(500);
+/// No display refreshes faster than this. Frames coming quicker mean nothing is
+/// pacing them, which on a Mac means its displays are asleep.
+const FASTEST_DISPLAY_MS: f64 = 4.0;
 /// One frame's budget on a 120 Hz display.
 const BUDGET_NAME: &str = "over 8.33 ms";
 
@@ -368,6 +371,18 @@ fn probes_for_trial(trial: usize, options: &GraphicsOptions<'_>) -> FrameProbes 
     }
 }
 
+/// A Mac with its displays asleep stops pacing and presenting frames, and the
+/// numbers change with it, so hold them awake for as long as `pid` runs.
+fn keep_display_awake(pid: u32) {
+    if cfg!(target_os = "macos") {
+        drop(
+            std::process::Command::new("caffeinate")
+                .args(["-d", "-u", "-w", &pid.to_string()])
+                .spawn(),
+        );
+    }
+}
+
 /// A temporary shell showing one source, ready for scripts.
 struct ProfiledShell {
     client: Client,
@@ -416,6 +431,7 @@ impl ProfiledShell {
         }
         isolate_home(&mut command, &workspace.directory);
         let child = command.spawn().context("spawning profiled shell")?;
+        keep_display_awake(child.id());
         let guard = ShellGuard::new(child);
         let mut client = connect_within(options.port, LOAD_TIMEOUT)?;
 
@@ -576,6 +592,7 @@ struct Digest {
     cpu: TimingSummary,
     work: TimingSummary,
     submit: TimingSummary,
+    interval: TimingSummary,
     gpu_wait: Option<TimingSummary>,
     /// Costliest first.
     passes: Vec<PassDigest>,
@@ -631,6 +648,7 @@ fn digest(result: &WorkloadResult) -> Digest {
         cpu: overall(|trial| &trial.cpu),
         work: overall(|trial| &trial.work),
         submit: overall(|trial| &trial.submit),
+        interval: overall(|trial| &trial.interval),
         gpu_wait: {
             let waits: Vec<&TimingSummary> = trials
                 .iter()
@@ -687,6 +705,18 @@ pub fn render(report: &GraphicsReport, baseline: Option<&GraphicsReport>) -> Str
         },
     )
     .expect("writing to a string");
+    if report
+        .workloads
+        .iter()
+        .any(|result| digest(result).interval.p50_ms < FASTEST_DISPLAY_MS)
+    {
+        writeln!(
+            out,
+            "WARNING: frames ran faster than any display refreshes, so nothing paced them.\n\
+             The displays are probably asleep. These numbers don't compare with paced runs.\n"
+        )
+        .expect("writing to a string");
+    }
     let earlier_digest = |name: &str| {
         baseline
             .and_then(|baseline| baseline.workloads.iter().find(|result| result.name == name))
@@ -695,8 +725,8 @@ pub fn render(report: &GraphicsReport, baseline: Option<&GraphicsReport>) -> Str
 
     writeln!(
         out,
-        "{:<26} {:>14} {:>6} {:>6} {:>13}  costliest pass",
-        "workload", "cpu mean", "p95", "max", BUDGET_NAME
+        "{:<26} {:>14} {:>6} {:>6} {:>13} {:>9}  costliest pass",
+        "workload", "cpu mean", "p95", "max", BUDGET_NAME, "interval"
     )
     .expect("writing to a string");
     for result in &report.workloads {
@@ -708,7 +738,7 @@ pub fn render(report: &GraphicsReport, baseline: Option<&GraphicsReport>) -> Str
             .map_or("none", |pass| pass.name.as_str());
         writeln!(
             out,
-            "{:<26} {:>14} {:6.2} {:6.2} {:>13}  {top}",
+            "{:<26} {:>14} {:6.2} {:6.2} {:>13} {:9.2}  {top}",
             result.name,
             with_change(
                 current.cpu.mean_ms,
@@ -716,7 +746,8 @@ pub fn render(report: &GraphicsReport, baseline: Option<&GraphicsReport>) -> Str
             ),
             current.cpu.p95_ms,
             current.cpu.max_ms,
-            current.over_budget
+            current.over_budget,
+            current.interval.p50_ms
         )
         .expect("writing to a string");
     }

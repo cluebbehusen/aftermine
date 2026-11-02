@@ -97,13 +97,16 @@ binary twice first: a difference smaller than that repeat's is noise.
 
 Check for other builds and shells before trusting a run. The Mac's frame
 `interval` follows its display, so use `cpu` against the 8.33 ms budget, then
-confirm a win on the iPad with the Detailed performance graph.
+confirm a win on the iPad with the Detailed performance graph. A Mac with its
+displays asleep runs unpaced and gives different numbers. The command holds them
+awake and warns when frames still ran unpaced; a locked screen needs unlocking.
 
 `--gpu` waits for the GPU after each frame and times the wait. That is
 whole-frame only, because Apple GPUs render a pass tile by tile after it is
-submitted. For one pass's GPU cost, compare two `--gpu` runs, one with
-`--skip <pass>`. Draw calls and indices come from one captured frame per
-workload on plain runs.
+submitted. The wait has a floor even with every pass skipped, so measure that
+before reading small differences. For one pass's GPU cost, compare two `--gpu`
+runs, one with `--skip <pass>`. Draw calls and indices come from one captured
+frame per workload on plain runs.
 
 ## Save/load and catalog transitions
 

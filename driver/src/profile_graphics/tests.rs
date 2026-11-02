@@ -354,3 +354,15 @@ fn a_digest_keeps_the_gpu_wait_median_and_finds_draw_calls_in_any_trial() {
         .expect("row");
     assert_eq!(units.draws, Some((5, 60)));
 }
+
+#[test]
+fn a_run_nothing_paced_says_so() {
+    let paced = report(vec![result("near", vec![trial(2.0, 1.0, 0)])]);
+    assert!(!render(&paced, None).contains("WARNING"));
+
+    let mut unpaced = trial(2.0, 1.0, 0);
+    unpaced.interval = timing(1.5);
+    let text = render(&report(vec![result("near", vec![unpaced])]), None);
+    assert!(text.contains("WARNING"), "{text}");
+    assert!(text.contains("asleep"), "{text}");
+}
