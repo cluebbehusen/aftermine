@@ -155,11 +155,11 @@ draws, `submit` as the time that flush takes, and `cpu` as their sum. `passes`
 splits `work` by what the frame was drawing. Pass times are mostly queueing: a
 pass that changes camera or render target also pays to submit what earlier
 passes queued. Use frame `interval` to detect a blocked presentation, driver,
-vsync, or OS gap; it is not a direct GPU timestamp. Since `interval.max` has no attached screen
-label, isolate Results, Final Map, and steady-state windows with resets. Repeat
-cold-process transitions and warm toggles separately, keeping replay, window
-size, DPI, camera, machine, and build profile fixed. Choose acceptance
-thresholds before comparing the candidate.
+vsync, or OS gap; it is not a direct GPU timestamp. Since `interval.max` has no
+attached screen label, isolate Results, Final Map, and steady-state windows with
+resets. Repeat cold-process transitions and warm toggles separately, keeping
+replay, window size, DPI, camera, machine, and build profile fixed. Choose
+acceptance thresholds before comparing the candidate.
 
 For a natural Playing-to-Results stall, preserve a near-end save. Reset frame
 samples, externally time the decisive `driver live step 1`, then inspect the
