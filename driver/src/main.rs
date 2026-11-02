@@ -533,6 +533,11 @@ enum Cmd {
         /// the change in GPU wait is what the pass costs the GPU.
         #[arg(long)]
         skip: Vec<String>,
+        /// Leave clock speeds to the OS. By default two spinning threads hold
+        /// them up, because a quiet Mac runs a light frame several times slower
+        /// and less repeatably.
+        #[arg(long)]
+        natural_clocks: bool,
         /// Debug-server port for the temporary shells.
         #[arg(long, default_value_t = 4199)]
         port: u16,
@@ -1442,6 +1447,7 @@ fn main() -> Result<()> {
             compare,
             gpu,
             skip,
+            natural_clocks,
             port,
             dev,
         } => {
@@ -1462,6 +1468,7 @@ fn main() -> Result<()> {
                 dev,
                 gpu,
                 skip: &skip,
+                natural_clocks,
             })?;
             if let Some(path) = &out {
                 std::fs::write(path, serde_json::to_string_pretty(&report)?)

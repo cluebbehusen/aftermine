@@ -13,6 +13,8 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// The logical size of an 11-inch iPad, the game's main 120 Hz target.
@@ -33,6 +35,9 @@ const POLL: Duration = Duration::from_millis(500);
 /// No display refreshes faster than this. Frames coming quicker mean nothing is
 /// pacing them, which on a Mac means its displays are asleep.
 const FASTEST_DISPLAY_MS: f64 = 4.0;
+/// Enough spinning threads to keep a fast core cluster awake, and few enough to
+/// leave the shell a core of its own.
+const CLOCK_HOLDERS: usize = 2;
 /// One frame's budget on a 120 Hz display.
 const BUDGET_NAME: &str = "over 8.33 ms";
 
@@ -50,6 +55,44 @@ pub struct GraphicsOptions<'a> {
     pub gpu: bool,
     /// Passes to leave undrawn.
     pub skip: &'a [String],
+    /// Leave clock speeds to the OS instead of holding them up.
+    pub natural_clocks: bool,
+}
+
+/// Threads that spin for as long as this lives. On a quiet Mac the OS runs a
+/// light frame several times slower than it can, and how much slower wanders
+/// from run to run, which hides real differences. Busy cores keep frames near
+/// full speed, so runs compare.
+struct HeldClocks {
+    stop: Arc<AtomicBool>,
+    holders: Vec<std::thread::JoinHandle<()>>,
+}
+
+impl HeldClocks {
+    fn start() -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let holders = (0..CLOCK_HOLDERS)
+            .map(|_| {
+                let stop = Arc::clone(&stop);
+                std::thread::spawn(move || {
+                    let mut spins = 0_u64;
+                    while !stop.load(Ordering::Relaxed) {
+                        spins = std::hint::black_box(spins.wrapping_add(1));
+                    }
+                })
+            })
+            .collect();
+        Self { stop, holders }
+    }
+}
+
+impl Drop for HeldClocks {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        for holder in self.holders.drain(..) {
+            holder.join().ok();
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -285,6 +328,9 @@ pub struct GraphicsReport {
     pub gpu: bool,
     /// Passes left undrawn.
     pub skipped: Vec<String>,
+    /// Whether clock speeds were left to the OS. Those numbers run higher and
+    /// vary more.
+    pub natural_clocks: bool,
     /// Results in run order.
     pub workloads: Vec<WorkloadResult>,
 }
@@ -295,6 +341,7 @@ pub fn run(options: &GraphicsOptions<'_>) -> Result<GraphicsReport> {
     let selected = select(options.only)?;
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
     let executable = build_shell_executable_for(!options.dev)?;
+    let _clocks = (!options.natural_clocks).then(HeldClocks::start);
     let mut results = Vec::new();
     let mut start = 0;
     while start < selected.len() {
@@ -317,6 +364,7 @@ pub fn run(options: &GraphicsOptions<'_>) -> Result<GraphicsReport> {
         window: WINDOW,
         gpu: options.gpu,
         skipped: options.skip.to_vec(),
+        natural_clocks: options.natural_clocks,
         workloads: results,
     })
 }
@@ -690,6 +738,11 @@ fn timing_row(out: &mut String, label: &str, timing: &TimingSummary, earlier: Op
     .expect("writing to a string");
 }
 
+/// Whether two runs measured frames under the same conditions.
+const fn comparable(a: &GraphicsReport, b: &GraphicsReport) -> bool {
+    a.natural_clocks == b.natural_clocks && a.gpu == b.gpu
+}
+
 /// A pass that never reaches this adds only noise to the table.
 const SMALLEST_PASS_SHOWN_MS: f64 = 0.01;
 
@@ -699,10 +752,15 @@ pub fn render(report: &GraphicsReport, baseline: Option<&GraphicsReport>) -> Str
     let mut out = String::new();
     writeln!(
         out,
-        "revision {}, window {}x{}, milliseconds{}{}\n",
+        "revision {}, window {}x{}, milliseconds, {} clocks{}{}\n",
         report.revision,
         report.window[0],
         report.window[1],
+        if report.natural_clocks {
+            "natural"
+        } else {
+            "held"
+        },
         if report.gpu {
             ", waiting for the GPU each frame"
         } else {
@@ -724,6 +782,14 @@ pub fn render(report: &GraphicsReport, baseline: Option<&GraphicsReport>) -> Str
             out,
             "WARNING: frames ran faster than any display refreshes, so nothing paced them.\n\
              The displays are probably asleep. These numbers don't compare with paced runs.\n"
+        )
+        .expect("writing to a string");
+    }
+    if baseline.is_some_and(|baseline| !comparable(report, baseline)) {
+        writeln!(
+            out,
+            "WARNING: the compared run used different clocks or GPU waiting, so its changes \
+             mean little.\n"
         )
         .expect("writing to a string");
     }
