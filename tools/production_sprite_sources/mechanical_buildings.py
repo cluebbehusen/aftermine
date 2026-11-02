@@ -10,6 +10,7 @@ from tools.production_sprite_sources.mechanical_ground import (
     DEEP,
     EDGE,
     IRON,
+    LIGHT,
     STEEL,
     VOID,
     box,
@@ -27,6 +28,10 @@ EMBER = (84, 44, 28)
 SPARK = (255, 214, 140)
 BRASS_LIGHT = (170, 142, 94)
 TEAL = (85, 125, 123)
+AIRWORKS_SEAM = {1: EMBER, 2: (140, 82, 44)}
+AIRWORKS_DOOR_GAP = {0: 0, 1: 0, 2: 0, 3: 10, 4: 24}
+AIRWORKS_ARM_FOLD = {0: 0, 1: 0, 2: 0, 3: 8, 4: 15}
+AIRWORKS_LAMPS = {0: (), 1: (29,), 2: (91,), 3: (29, 91), 4: (29, 91)}
 
 
 def plate(d, bounds, fill=DARK, cut=5):
@@ -253,56 +258,116 @@ def fabricator(variant, work=0):
     return finish(im)
 
 
+def airworks_tank(d, x, paint):
+    line(d, [(x + 5, 40), (x + 5, 33)], VOID, 4)
+    line(d, [(x + 5, 40), (x + 5, 33)], EDGE, 1.5)
+    box(d, (x, 38, x + 11, 104), VOID, 3)
+    box(d, (x + 1.5, 39.5, x + 9.5, 102.5), IRON, 2)
+    line(d, [(x + 3, 42), (x + 3, 100)], EDGE)
+    box(d, (x + 1.5, 60, x + 9.5, 82), paint)
+    for y in (46, 53, 59, 83, 89, 96):
+        line(d, [(x + 1.5, y), (x + 9.5, y)], VOID, 1.5)
+
+
+def airworks_pivot(d, x, y):
+    circle(d, (x - 2.5, y - 2.5, x + 2.5, y + 2.5), VOID)
+    circle(d, (x - 1.5, y - 1.5, x + 1.5, y + 1.5), BRASS)
+
+
+def airworks_deck(d, work):
+    box(d, (34, 33, 94, 117), VOID, 3)
+    box(d, (43, 43, 85, 113), DEEP, 2)
+    for x in (47, 81):
+        line(d, [(x, 44), (x, 112)], DARK, 3)
+        line(d, [(x - 1, 44), (x - 1, 112)], LIGHT)
+    for y in (52, 65, 78, 91, 104):
+        line(d, [(62, y), (66, y)], BRASS if work >= 3 else DARK, 2)
+    fold = AIRWORKS_ARM_FOLD[work]
+    for y in (60, 88):
+        for side in (-1, 1):
+            root = (64 + side * 17, y)
+            tip = (64 + side * (5 + fold * 0.6), y - fold)
+            line(d, [root, tip], VOID, 6)
+            line(d, [root, tip], IRON, 3.5)
+            line(d, [(root[0], root[1] - 1), (tip[0], tip[1] - 1)], EDGE)
+            airworks_pivot(d, *root)
+            airworks_pivot(d, *tip)
+
+
+def airworks_gantry(d, work):
+    plate(d, (18, 17, 110, 34), DARK, 4)
+    box(d, (44, 20, 84, 31), VOID, 2)
+    box(d, (46, 22, 82, 29), IRON, 1)
+    line(d, [(47, 22), (81, 22)], EDGE)
+    for x in (52, 58, 64, 70, 76):
+        line(d, [(x, 23), (x, 29)], VOID, 1.5)
+    for x in (29, 91):
+        box(d, (x - 6, 21, x + 6, 29), VOID, 1)
+        line(
+            d,
+            [(x - 4, 24), (x + 4, 24)],
+            BRASS if x in AIRWORKS_LAMPS[work] else IRON,
+            2,
+        )
+
+
+def airworks_door(d, side, gap, paint):
+    inner = 64 + side * (2 + gap)
+    outer = 64 + side * (40 + gap * 0.2)
+    lo, hi = sorted((inner, outer))
+    poly(
+        d,
+        [
+            (lo, 45),
+            (lo + 5, 35),
+            (hi - 4, 35),
+            (hi, 46),
+            (hi, 99),
+            (hi - 9, 109),
+            (lo, 99),
+        ],
+        VOID,
+    )
+    poly(
+        d,
+        [
+            (lo + 2, 46),
+            (lo + 7, 38),
+            (hi - 5, 38),
+            (hi - 2, 47),
+            (hi - 2, 97),
+            (hi - 10, 105),
+            (lo + 2, 97),
+        ],
+        DARK,
+    )
+    line(d, [(lo + 5, 48), (lo + 5, 96)], EDGE)
+    box(d, (lo + 7, 40, hi - 6, 51), VOID, 1)
+    box(d, (lo + 8, 41, hi - 7, 50), paint)
+    line(d, [(lo + 9, 41), (hi - 8, 41)], EDGE)
+    box(d, (lo + 7, 53, hi - 6, 95), VOID, 1)
+    box(d, (lo + 8, 54, hi - 7, 94), IRON)
+    for y in (61, 69, 77, 85):
+        line(d, [(lo + 8, y), (hi - 7, y)], DEEP, 1.5)
+        line(d, [(lo + 8, y + 1.5), (hi - 7, y + 1.5)], LIGHT)
+    x = outer - side * 3
+    for y in (57, 86):
+        box(d, (x - 3, y - 4, x + 3, y + 4), IRON, 1)
+        line(d, [(x - 2, y - 4), (x + 2, y - 4)], EDGE)
+
+
 def airworks(variant, work=0):
     im, d = canvas()
     paint = gen.PALETTES[variant]["dark"]
-    # Split hangar roof retracts sideways above a recessed launch channel.
     foundation(d, (9, 12, 119, 119))
-    box(d, (34, 33, 94, 117), VOID, 3)
-    box(d, (43, 43, 85, 113), DEEP, 2)
-    for y in (79, 92, 105):
-        line(d, [(61, y), (67, y)], IRON, 2)
-    plate(d, (18, 17, 110, 34), DARK, 4)
-    for x in (29, 91):
-        box(d, (x - 6, 21, x + 6, 29), VOID, 1)
-        line(d, [(x - 4, 24), (x + 4, 24)], BRASS if work in (2, 3, 4) else IRON, 2)
-    # Long roof ribs retain broad quiet surfaces; hinges give the doors weight.
-    gap = {0: 0, 1: 0, 2: 0, 3: 10, 4: 24}[work]
+    airworks_tank(d, 12, paint)
+    airworks_tank(d, 105, paint)
+    airworks_deck(d, work)
+    airworks_gantry(d, work)
     for side in (-1, 1):
-        inner = 64 + side * (2 + gap)
-        outer = 64 + side * (40 + gap * 0.2)
-        lo, hi = sorted((inner, outer))
-        poly(
-            d,
-            [
-                (lo, 45),
-                (lo + 5, 35),
-                (hi - 4, 35),
-                (hi, 46),
-                (hi, 99),
-                (hi - 9, 109),
-                (lo, 99),
-            ],
-            VOID,
-        )
-        poly(
-            d,
-            [
-                (lo + 2, 46),
-                (lo + 7, 38),
-                (hi - 5, 38),
-                (hi - 2, 47),
-                (hi - 2, 97),
-                (hi - 10, 105),
-                (lo + 2, 97),
-            ],
-            DARK,
-        )
-        line(d, [(lo + 5, 48), (lo + 5, 96)], EDGE)
-        line(d, [(lo + 8, 41), (hi - 7, 41)], paint, 4)
-        x = outer - side * 3
-        for y in (57, 86):
-            box(d, (x - 3, y - 4, x + 3, y + 4), IRON, 1)
+        airworks_door(d, side, AIRWORKS_DOOR_GAP[work], paint)
+    if work in AIRWORKS_SEAM:
+        line(d, [(64, 47), (64, 99)], AIRWORKS_SEAM[work], 2)
     for x in (28, 100):
         box(d, (x - 4, 108, x + 4, 117), VOID, 1)
         line(d, [(x - 2, 110), (x + 2, 110)], BRASS if work >= 3 else IRON, 2)
@@ -349,10 +414,58 @@ def crucible(variant, work=0):
     return finish(im)
 
 
+def repair_bay_apron(d):
+    box(d, (44, 35, 85, 108), VOID, 2)
+    box(d, (45, 36, 84, 107), DEEP, 1)
+    for y in (58, 72, 86):
+        line(d, [(49, y), (80, y)], DARK, 1.5)
+    for x in (47, 82):
+        line(d, [(x, 37), (x, 106)], DARK, 2.5)
+        line(d, [(x - 1, 37), (x - 1, 106)], IRON)
+    box(d, (53, 96, 76, 106), VOID, 1)
+    for x in (56, 60, 64, 68, 72):
+        line(d, [(x, 97), (x, 105)], IRON)
+
+
+def repair_bay_rail(d, paint, work):
+    plate(d, (32, 17, 96, 32), DARK, 4)
+    box(d, (36, 20, 92, 29), VOID, 1)
+    box(d, (37, 21, 91, 28), IRON)
+    line(d, [(37, 21), (91, 21)], EDGE)
+    line(d, [(37, 26), (91, 26)], DARK, 1.5)
+    box(d, (37, 21, 50, 28), paint)
+    box(d, (78, 21, 91, 28), paint)
+    box(d, (56, 18, 72, 31), VOID, 1)
+    box(d, (57, 19, 71, 30), DARK, 1)
+    line(d, [(58, 19), (70, 19)], EDGE)
+    for x in (61, 64, 67):
+        line(d, [(x, 22), (x, 28)], BRASS if work in (1, 2, 3) else IRON, 1.5)
+
+
+def repair_bay_cabinet(d, bounds, mount, drawers, paint, shade):
+    x0, y0, x1, y1 = bounds
+    plate(d, bounds, DARK, 4)
+    line(d, [(x0 + 3, y0 + 5), (x0 + 3, y1 - 5)], EDGE)
+    px0, py0, px1, py1 = mount
+    box(d, (px0 - 1, py0 - 1, px1 + 1, py1 + 1), VOID, 1)
+    box(d, (px0, py0, px1, py1), paint, 1)
+    line(d, [(px0 + 1, py0), (px1 - 1, py0)], EDGE)
+    dy0, dy1 = drawers
+    box(d, (x0 + 4, dy0, x1 - 4, dy1), VOID, 1)
+    box(d, (x0 + 5, dy0 + 1, x1 - 5, dy1 - 1), shade)
+    rows = max(2, round((dy1 - dy0) / 6))
+    for i in range(1, rows):
+        y = dy0 + (dy1 - dy0) * i / rows
+        line(d, [(x0 + 5, y), (x1 - 5, y)], VOID, 1.2)
+    for i in range(rows):
+        y = dy0 + (dy1 - dy0) * (i + 0.5) / rows
+        line(d, [((x0 + x1) / 2 - 2, y), ((x0 + x1) / 2 + 2, y)], LIGHT, 1)
+    vent(d, x0 + 4, 80, x1 - x0 - 9)
+
+
 def repair_bay(variant, work=0):
     im, d = canvas()
     paint = gen.PALETTES[variant]["dark"]
-    # An open service apron between unequal tool cabinets, not another factory box.
     poly(
         d,
         [
@@ -381,18 +494,10 @@ def repair_bay(variant, work=0):
         ],
         DEEP,
     )
-    plate(d, (19, 26, 41, 103), DARK, 4)
-    plate(d, (87, 35, 109, 103), DARK, 4)
-    plate(d, (32, 17, 96, 32), paint, 4)
-    for bounds in [(22, 33, 37, 52), (91, 43, 105, 64)]:
-        box(d, bounds, paint, 2)
-    vent(d, 23, 79, 13)
-    vent(d, 92, 79, 13)
-    # Fine inset guides frame the empty patient space without painting a huge icon.
-    for x in (47, 81):
-        line(d, [(x, 57), (x, 103)], IRON, 2)
-    for x in (49, 77):
-        line(d, [(x, 104), (x + 3, 108)], BRASS, 2)
+    repair_bay_apron(d)
+    repair_bay_cabinet(d, (19, 26, 41, 103), (22, 33, 38, 54), (58, 76), paint, IRON)
+    repair_bay_cabinet(d, (87, 35, 109, 103), (90, 43, 106, 65), (68, 77), paint, DARK)
+    repair_bay_rail(d, paint, work)
     reach = {0: 0.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 0.35}[work]
     for x, sign, y in [(31, 1, 43), (98, -1, 54)]:
         # Equal-length links keep the elbow articulated instead of stretching.

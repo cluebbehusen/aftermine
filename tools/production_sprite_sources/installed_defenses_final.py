@@ -366,21 +366,75 @@ def flak_mount(variant, tier=0, phase=0):
 def barricade(variant):
     im, d = canvas()
     paint = gen.PALETTES[variant]["dark"]
-    for x in (9, 104):
-        plate(d, (x, 70, x + 16, 111), DEEP, 3)
-        poly(d, [(x + 2, 102), (x + 6, 68), (x + 13, 68), (x + 14, 102)], IRON)
-        bolt(d, x + 8, 103)
-    box(d, (0, 27, 128, 91), VOID, 3)
-    poly(d, [(0, 37), (128, 37), (124, 82), (4, 82)], DARK)
-    box(d, (0, 26, 128, 39), IRON, 2)
-    line(d, [(2, 28), (126, 28)], EDGE, 2)
-    for x in (3, 47, 91):
-        plate(d, (x, 43, x + 34, 75), DEEP, 3)
-        box(d, (x + 5, 51, x + 29, 63), paint, 1)
-    for x in (40, 84):
-        box(d, (x - 3, 38, x + 3, 87), IRON, 1)
-        bolt(d, x, 47)
-        bolt(d, x, 73)
+    poly(
+        d,
+        [
+            (16, 2),
+            (112, 2),
+            (126, 16),
+            (126, 112),
+            (112, 126),
+            (16, 126),
+            (2, 112),
+            (2, 16),
+        ],
+        VOID,
+    )
+    poly(
+        d,
+        [
+            (17, 5),
+            (111, 5),
+            (123, 17),
+            (123, 111),
+            (111, 123),
+            (17, 123),
+            (5, 111),
+            (5, 17),
+        ],
+        DARK,
+    )
+    for bounds, shade in (
+        ((36, 9, 92, 27), IRON),
+        ((36, 101, 92, 119), DARK),
+        ((9, 36, 27, 92), IRON),
+        ((101, 36, 119, 92), DARK),
+    ):
+        x0, y0, x1, y1 = bounds
+        box(d, (x0 - 1, y0 - 1, x1 + 1, y1 + 1), VOID, 1)
+        box(d, bounds, shade, 1)
+    line(d, [(37, 10), (91, 10)], EDGE, 2)
+    line(d, [(10, 37), (10, 91)], EDGE, 2)
+    for x, y in ((18, 18), (110, 18), (18, 110), (110, 110)):
+        sx = 1 if x < 64 else -1
+        sy = 1 if y < 64 else -1
+        poly(
+            d,
+            [
+                (x - sx * 9, y - sy * 3),
+                (x - sx * 3, y - sy * 9),
+                (x + sx * 13, y - sy * 9),
+                (x + sx * 13, y + sy * 13),
+                (x - sx * 9, y + sy * 13),
+            ],
+            VOID,
+        )
+        poly(
+            d,
+            [
+                (x - sx * 7, y - sy * 2),
+                (x - sx * 2, y - sy * 7),
+                (x + sx * 11, y - sy * 7),
+                (x + sx * 11, y + sy * 11),
+                (x - sx * 7, y + sy * 11),
+            ],
+            IRON,
+        )
+        bolt(d, x + sx * 3, y + sy * 3)
+    plate(d, (32, 32, 96, 96), DEEP, 5)
+    box(d, (44, 44, 84, 84), VOID, 1)
+    box(d, (46, 46, 82, 82), paint, 1)
+    line(d, [(47, 46), (81, 46)], EDGE)
     return finish(im)
 
 

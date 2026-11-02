@@ -1070,11 +1070,16 @@ fn repair_bay_moves_only_after_an_accepted_unit_or_building_repair_event() {
         ));
         let done = controller.building_state(
             facts,
-            AnimationClock::new(27, 0.0),
+            AnimationClock::new(33, 0.0),
             AnimationOptions::default(),
         );
         assert_eq!(done.activity, BuildingActivity::Idle);
     }
+}
+
+#[test]
+fn repair_pulse_outlasts_the_repair_period_so_arms_hold_during_continuous_repair() {
+    assert!(REPAIR_PULSE_TICKS > aftermine_sim::stats::REPAIR_BAY_PERIOD as f32);
 }
 
 #[test]
