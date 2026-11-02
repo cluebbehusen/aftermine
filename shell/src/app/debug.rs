@@ -86,6 +86,7 @@ pub(super) fn lockstep_refuses(
             | Request::LoadScenario { .. }
             | Request::LoadReplay { .. }
             | Request::BeginPerformanceWindow { .. }
+            | Request::RunFrameScript { .. }
             | Request::ToggleOverlay
     ) || (role == crate::game::network::NetRole::Client
         && matches!(request, Request::Pause | Request::Resume))
@@ -216,6 +217,24 @@ pub(super) fn handle_request(
                         .map(|()| Reply::Ok)
                 }
             }
+            Request::RunFrameScript { script } => match &*screen {
+                Screen::Playback { session, .. } if session.engine.filling() => {
+                    Err("the viewer is still filling in its record; retry shortly".to_string())
+                }
+                _ if script.plays && !matches!(screen, Screen::Playing) => {
+                    Err("only the live match can play during a frame script".to_string())
+                }
+                // Restarting from the scene's checkpoint makes every script on
+                // Home draw the same frames, however long Home has been open.
+                Screen::Home(_) => {
+                    app.home_backdrop.unload();
+                    app.frame_profiler.begin_script(&script).map(|()| Reply::Ok)
+                }
+                Screen::Playing | Screen::Playback { .. } => {
+                    app.frame_profiler.begin_script(&script).map(|()| Reply::Ok)
+                }
+                _ => Err("frame scripts run on Home, the live match or the viewer".to_string()),
+            },
             Request::ToggleOverlay => {
                 let game = screen.visible_presentation(game);
                 game.overlay = !game.overlay;

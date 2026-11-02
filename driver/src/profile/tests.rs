@@ -40,6 +40,7 @@ fn valid_profile() -> FrameProfileView {
             elapsed_ms: 500.0,
             truncated: false,
         }),
+        script_complete: None,
     }
 }
 

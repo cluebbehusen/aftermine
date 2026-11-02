@@ -128,8 +128,13 @@ impl Camera {
     /// `cursor_px` stationary the whole way — smooth for trackpads and
     /// notchy wheels alike.
     pub fn zoom_at(&mut self, cursor_px: Vec2, notches: f32) {
-        self.target_zoom =
-            (self.target_zoom * 1.15f32.powf(notches)).clamp(self.zoom_min, self.zoom_max);
+        self.glide_to(cursor_px, self.target_zoom * 1.15f32.powf(notches));
+    }
+
+    /// Requests a zoom glide to `zoom`, keeping the world point under
+    /// `cursor_px` stationary the whole way.
+    pub fn glide_to(&mut self, cursor_px: Vec2, zoom: f32) {
+        self.target_zoom = zoom.clamp(self.zoom_min, self.zoom_max);
         self.zoom_anchor = Some(cursor_px);
     }
 

@@ -509,6 +509,29 @@ enum Cmd {
         #[arg(long)]
         dev: bool,
     },
+    /// Run named native frame workloads and report where each frame's time
+    /// goes: Home, then small and large matches, fogged and open, across
+    /// camera motions. Stays on one fixed frame sequence so runs compare.
+    ProfileGraphics {
+        /// Keep only workloads whose name contains this.
+        #[arg(long)]
+        only: Option<String>,
+        /// Repeats per workload; tables report the median.
+        #[arg(long, default_value_t = 1)]
+        trials: usize,
+        /// Write the full report here as JSON.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Show each mean's change from a report written by --out.
+        #[arg(long)]
+        compare: Option<PathBuf>,
+        /// Debug-server port for the temporary shells.
+        #[arg(long, default_value_t = 4199)]
+        port: u16,
+        /// Profile the development shell instead of release.
+        #[arg(long)]
+        dev: bool,
+    },
     /// Serve the debug protocol windowless: a persistent headless match
     /// (no GPU, no wall clock — always driven mode) that every
     /// `driver live` verb can drive. Screenshots are CPU schematic
@@ -1403,6 +1426,36 @@ fn main() -> Result<()> {
                     dev,
                 })?;
             println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        Cmd::ProfileGraphics {
+            only,
+            trials,
+            out,
+            compare,
+            port,
+            dev,
+        } => {
+            use aftermine_driver::profile_graphics::{self, GraphicsOptions, GraphicsReport};
+            let baseline: Option<GraphicsReport> = compare
+                .as_ref()
+                .map(|path| {
+                    let text = std::fs::read_to_string(path)
+                        .with_context(|| format!("reading {}", path.display()))?;
+                    serde_json::from_str(&text)
+                        .with_context(|| format!("parsing {}", path.display()))
+                })
+                .transpose()?;
+            let report = profile_graphics::run(&GraphicsOptions {
+                only: only.as_deref(),
+                trials,
+                port,
+                dev,
+            })?;
+            if let Some(path) = &out {
+                std::fs::write(path, serde_json::to_string_pretty(&report)?)
+                    .with_context(|| format!("writing {}", path.display()))?;
+            }
+            print!("{}", profile_graphics::render(&report, baseline.as_ref()));
         }
         Cmd::Session {
             port,

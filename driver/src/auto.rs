@@ -103,6 +103,20 @@ pub(crate) fn isolate_home(command: &mut std::process::Command, home: &std::path
     command.env("APPDATA", home.join("AppData"));
 }
 
+/// Writes `text` as the settings file under an isolated `home`, wherever each
+/// platform's shell looks for it.
+pub(crate) fn write_home_config(home: &std::path::Path, text: &str) -> Result<()> {
+    for dir in [
+        home.join("Library/Application Support/Aftermine"),
+        home.join(".config/aftermine"),
+        home.join("AppData/Aftermine"),
+    ] {
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(dir.join("config.json"), text)?;
+    }
+    Ok(())
+}
+
 /// Builds and spawns an automation-mode shell, then connects while the
 /// window boots. The window is pinned to 1280x800 because both suites
 /// depend on stable geometry and a persisted config may carry another size.

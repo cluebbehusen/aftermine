@@ -26,6 +26,7 @@ mod dock_motion;
 mod entity_lod;
 mod entropy;
 mod frame_profile;
+mod frame_script;
 mod frame_time;
 mod game;
 mod hints;

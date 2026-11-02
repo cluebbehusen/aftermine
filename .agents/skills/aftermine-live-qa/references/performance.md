@@ -83,6 +83,22 @@ that time. Investigate a repeatable regression above 10% with absolute costs and
 variance. Controller throughput alone cannot establish a native frame
 improvement.
 
+## Where frame time goes
+
+```sh
+cargo run --release --locked -p aftermine-driver -- profile-graphics --trials 3 --out replays/graphics/before.json
+cargo run --release --locked -p aftermine-driver -- profile-graphics --trials 3 --compare replays/graphics/before.json
+```
+
+Each workload draws one fixed sequence of frames, advancing 1/120 s per frame
+whatever the display does, from replays kept in `replays/graphics`. Narrow a run
+with `--only <name part>`. Compare runs on one machine only and run the same
+binary twice first: a difference smaller than that repeat's is noise.
+
+Check for other builds and shells before trusting a run. The Mac's frame
+`interval` follows its display, so use `cpu` against the 8.33 ms budget, then
+confirm a win on the iPad with the Detailed performance graph.
+
 ## Save/load and catalog transitions
 
 Use the native shell for these measurements. The live protocol remains usable

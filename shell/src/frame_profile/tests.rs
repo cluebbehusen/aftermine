@@ -332,3 +332,139 @@ fn a_disabled_profiler_collects_no_pass_time() {
     profiler.record(frame(1.0, 0.0));
     assert_eq!(profiler.snapshot(false).frames, 0);
 }
+
+fn camera() -> Camera {
+    use macroquad::prelude::vec2;
+    Camera::new(vec2(20.0, 20.0), 64, 40, vec2(1210.0, 834.0))
+}
+
+fn script(settle_frames: u32, frames: u32) -> FrameScript {
+    FrameScript {
+        settle_frames,
+        plays: false,
+        motion: aftermine_protocol::CameraMotion::None { frames },
+    }
+}
+
+#[test]
+fn a_script_keeps_only_its_measured_frames_and_reports_finishing() {
+    let mut profiler = FrameProfiler::new(true);
+    let mut camera = camera();
+    profiler.record(frame(50.0, 0.0));
+    assert_eq!(profiler.snapshot(false).script_complete, None);
+    profiler.begin_script(&script(2, 3)).expect("enabled");
+    assert_eq!(profiler.snapshot(false).frames, 0, "old samples are gone");
+    assert_eq!(profiler.snapshot(false).script_complete, Some(false));
+
+    let mut drawn = 0;
+    while profiler.scripted() {
+        assert_eq!(profiler.step_script(&mut camera), None);
+        drawn += 1;
+        profiler.record(frame(f64::from(drawn), 0.0));
+    }
+    assert_eq!(drawn, 6, "two settling, three measured, then the finish");
+    let view = profiler.snapshot(false);
+    assert_eq!(view.frames, 3);
+    assert_eq!(view.work.max_ms, 5.0, "the finishing frame is not a sample");
+    assert_eq!(view.work.p50_ms, 4.0, "settling frames are not samples");
+    assert_eq!(view.script_complete, Some(true));
+
+    profiler.record(frame(99.0, 0.0));
+    assert_eq!(
+        profiler.snapshot(true).frames,
+        3,
+        "nothing after the finish"
+    );
+    assert_eq!(profiler.snapshot(false).script_complete, None);
+}
+
+#[test]
+fn time_spent_settling_never_counts_as_a_frame_interval() {
+    let mut profiler = FrameProfiler::new(true);
+    let mut camera = camera();
+    let zoom = FrameScript {
+        settle_frames: 1,
+        plays: false,
+        motion: aftermine_protocol::CameraMotion::Zoom {
+            center: [20.0, 20.0],
+            from: 32.0,
+            to: 32.0,
+            repeats: 2,
+            rest_frames: 1,
+        },
+    };
+    profiler.begin_script(&zoom).expect("enabled");
+    while profiler.scripted() {
+        profiler.step_script(&mut camera);
+        if profiler
+            .script
+            .as_ref()
+            .is_some_and(|script| !script.measuring)
+        {
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        profiler.record(frame(1.0, 0.0));
+    }
+    let view = profiler.snapshot(false);
+    assert_eq!(view.frames, 2);
+    assert_eq!(
+        view.interval.max_ms, 0.0,
+        "one sample per repeat, no intervals"
+    );
+}
+
+#[test]
+fn a_disabled_profiler_refuses_scripts() {
+    let mut profiler = FrameProfiler::new(false);
+    let refusal = profiler.begin_script(&script(0, 1)).unwrap_err();
+    assert!(refusal.contains("disabled"));
+    assert!(!profiler.scripted());
+}
+
+#[test]
+fn arming_a_window_ends_a_script() {
+    let mut profiler = FrameProfiler::new(true);
+    profiler.begin_script(&script(0, 1)).expect("enabled");
+    profiler.arm(0, 10).expect("window");
+    assert!(!profiler.scripted());
+    assert_eq!(profiler.snapshot(false).script_complete, None);
+}
+
+#[test]
+fn a_playing_script_runs_the_match_only_while_measuring() {
+    let mut profiler = FrameProfiler::new(true);
+    let mut camera = camera();
+    let playing = FrameScript {
+        settle_frames: 2,
+        plays: true,
+        motion: aftermine_protocol::CameraMotion::None { frames: 2 },
+    };
+    profiler.begin_script(&playing).expect("enabled");
+    let changes: Vec<Option<bool>> = std::iter::from_fn(|| {
+        profiler
+            .scripted()
+            .then(|| profiler.step_script(&mut camera))
+    })
+    .collect();
+    assert_eq!(
+        changes,
+        [None, None, Some(false), None, Some(true)],
+        "paused to settle, playing to measure, paused at the finish"
+    );
+    assert_eq!(profiler.step_script(&mut camera), None, "already finished");
+}
+
+#[test]
+fn a_script_that_measures_nothing_never_starts_the_match() {
+    let mut profiler = FrameProfiler::new(true);
+    let mut camera = camera();
+    let playing = FrameScript {
+        settle_frames: 1,
+        plays: true,
+        motion: aftermine_protocol::CameraMotion::None { frames: 0 },
+    };
+    profiler.begin_script(&playing).expect("enabled");
+    while profiler.scripted() {
+        assert_eq!(profiler.step_script(&mut camera), None);
+    }
+}

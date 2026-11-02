@@ -115,6 +115,15 @@ impl Playback {
         self.fill = Some(Fill { shared, worker });
     }
 
+    /// Whether the background fill is still running. It competes with anything
+    /// timed on the frame loop.
+    pub fn filling(&self) -> bool {
+        self.fill
+            .as_ref()
+            .and_then(|fill| fill.worker.as_ref())
+            .is_some_and(|worker| !worker.is_finished())
+    }
+
     /// First absolute tick available in the recording.
     pub fn start(&self) -> u64 {
         self.replay.start_tick()
