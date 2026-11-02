@@ -1,6 +1,7 @@
 //! Cross-screen transitions and drawing for one presented frame.
 
 use super::*;
+use crate::frame_profile::{FramePass, measure, pass};
 use crate::render::tutorial_card::{self, CardButton, CardLayout};
 use crate::screens::lessons::LessonsScreen;
 use crate::tutorial::{Course, Lesson, Tutorial};
@@ -471,7 +472,9 @@ fn offer_rejoin(app: &mut App, home: &mut HomeScreen) {
 /// Draws the match behind Home, or the plain page if none will load.
 fn home_backdrop(app: &mut App, dt: f32) {
     if let Some(backdrop) = app.home_backdrop.playing(app.args.automation) {
-        backdrop.advance(dt, render::reduced_motion());
+        pass(FramePass::Sim, || {
+            backdrop.advance(dt, render::reduced_motion());
+        });
         backdrop.draw(&app.sprites, &app.input);
     } else {
         page_backdrop();
@@ -517,7 +520,7 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         }
     }
     home_backdrop(app, dt);
-    home.draw(&app.sprites);
+    pass(FramePass::Menu, || home.draw(&app.sprites));
     if out == screens::home::Out::Settings {
         Screen::Settings {
             screen: SettingsScreen::open(&app.config),
@@ -941,12 +944,10 @@ fn playing_frame(
     let profile_stopped = if profile_barrier {
         false
     } else {
-        let stopped = advance_live_match(
-            &mut app.game,
-            time.raw,
-            app.frame_profiler.stop_tick(),
-            leaving,
-        );
+        let stop_tick = app.frame_profiler.stop_tick();
+        let stopped = measure(FramePass::Sim, || {
+            advance_live_match(&mut app.game, time.raw, stop_tick, leaving)
+        });
         app.game.update_wall_clock_fx(time.presentation);
         stopped
     };
@@ -982,7 +983,9 @@ fn playing_frame(
         Some(app.performance.view()),
     );
     if let Some(card) = current_card(app) {
-        tutorial_card::draw(&card, app.input.mouse);
+        pass(FramePass::Hud, || {
+            tutorial_card::draw(&card, app.input.mouse);
+        });
     }
     next.unwrap_or(Screen::Playing)
 }
@@ -1017,14 +1020,16 @@ fn relayout_hud(
     bindings: &crate::action::BindingMap,
     performance: Option<&crate::performance::PerformanceView>,
 ) {
-    render::hud::refresh(
-        scene,
-        input,
-        bindings,
-        render::hud::HudEnv::current(),
-        performance,
-        &render::hud::window_measure,
-    );
+    measure(FramePass::Hud, || {
+        render::hud::refresh(
+            scene,
+            input,
+            bindings,
+            render::hud::HudEnv::current(),
+            performance,
+            &render::hud::window_measure,
+        )
+    });
 }
 
 /// The one way into a replay viewer: leaving it restores `back` wholesale.
@@ -1066,7 +1071,9 @@ fn playback_frame(
         *rerun = true;
         *back
     } else {
-        pb.advance_frame(time, vec2(screen_width(), screen_height()));
+        pass(FramePass::Sim, || {
+            pb.advance_frame(time, vec2(screen_width(), screen_height()));
+        });
         render::draw_with_performance(
             &pb.view(),
             &app.sprites,
@@ -1074,12 +1081,14 @@ fn playback_frame(
             &app.config.bindings,
             Some(app.performance.view()),
         );
-        screens::playback::playback_hud(
-            &pb,
-            &app.config.bindings,
-            vec2(screen_width(), screen_height()),
-            app.input.mouse,
-        );
+        pass(FramePass::Hud, || {
+            screens::playback::playback_hud(
+                &pb,
+                &app.config.bindings,
+                vec2(screen_width(), screen_height()),
+                app.input.mouse,
+            );
+        });
         Screen::Playback { session: pb, back }
     }
 }

@@ -243,12 +243,35 @@ pub struct SlowFrameView {
     pub tick_start: u64,
     /// Visible simulation tick after the frame's update.
     pub tick_end: u64,
-    /// CPU work between frame entry and the presentation handoff.
+    /// CPU work from frame entry up to the final flush of queued draws.
     pub work_ms: f64,
+    /// CPU time spent submitting the draws still queued at the end of the
+    /// frame.
+    pub submit_ms: f64,
+    /// Where `work_ms` went, in the shell's pass order, then `other`.
+    pub passes: Vec<PassCostView>,
     /// Units in the visible world after the update.
     pub units: usize,
     /// Buildings in the visible world after the update.
     pub buildings: usize,
+}
+
+/// One named slice of a single frame's work.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PassCostView {
+    /// Stable pass name.
+    pub name: String,
+    /// Milliseconds the pass took in this frame.
+    pub ms: f64,
+}
+
+/// One named slice of frame work across a sample window.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PassTimingView {
+    /// Stable pass name.
+    pub name: String,
+    /// Per-frame distribution, counting frames where the pass took no time.
+    pub timing: TimingSummary,
 }
 
 /// Bounded timing snapshot collected by a real GPU-backed shell window.
@@ -265,15 +288,28 @@ pub struct FrameProfileView {
     pub tick_end: u64,
     /// Simulation ticks presented across the sampled frames.
     pub ticks_presented: u64,
-    /// CPU work performed by the shell per frame.
+    /// CPU work per frame, from frame entry up to the final flush of queued
+    /// draws. Excludes `submit` and everything inside `next_frame`.
     pub work: TimingSummary,
+    /// CPU time per frame submitting the draws still queued at frame end.
+    /// Flushes forced earlier in a frame count toward the pass that forced
+    /// them.
+    pub submit: TimingSummary,
+    /// `work` plus `submit`, the CPU's share of a frame's budget.
+    pub cpu: TimingSummary,
+    /// Where `work` went, in the shell's pass order, then `other`. Pass times
+    /// are mostly queueing: a pass that changes camera or render target also
+    /// pays to submit what earlier passes queued.
+    pub passes: Vec<PassTimingView>,
     /// Wall intervals between consecutive sampled frame starts.
     pub interval: TimingSummary,
+    /// Frames whose `cpu` time exceeded a 120 Hz budget.
+    pub cpu_over_8_3_ms: usize,
     /// Frames whose CPU work exceeded a 60 Hz budget.
     pub work_over_16_7_ms: usize,
     /// Frames whose CPU work exceeded two 60 Hz budgets.
     pub work_over_33_3_ms: usize,
-    /// Largest-work frame, absent when no completed frame was sampled.
+    /// Largest `cpu` frame, absent when no completed frame was sampled.
     pub slowest: Option<SlowFrameView>,
     /// Exact-window metadata when profiling was armed through
     /// [`Request::BeginPerformanceWindow`].

@@ -150,9 +150,12 @@ outside frame timing, so measure their command latency separately from the first
 rendered frame. Capture screenshots only after the timing window because GPU
 readback and PNG encoding contaminate the sampled frame.
 
-Interpret `work` as CPU time from frame entry through presentation handoff. Use
-frame `interval` to detect a blocked presentation, driver, vsync, or OS gap; it
-is not a direct GPU timestamp. Since `interval.max` has no attached screen
+Interpret `work` as CPU time from frame entry up to the final flush of queued
+draws, `submit` as the time that flush takes, and `cpu` as their sum. `passes`
+splits `work` by what the frame was drawing. Pass times are mostly queueing: a
+pass that changes camera or render target also pays to submit what earlier
+passes queued. Use frame `interval` to detect a blocked presentation, driver,
+vsync, or OS gap; it is not a direct GPU timestamp. Since `interval.max` has no attached screen
 label, isolate Results, Final Map, and steady-state windows with resets. Repeat
 cold-process transitions and warm toggles separately, keeping replay, window
 size, DPI, camera, machine, and build profile fixed. Choose acceptance
