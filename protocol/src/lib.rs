@@ -232,6 +232,7 @@ pub struct PresentedView {
 /// A frame-exact profiling workload. Each frame advances a fixed slice of
 /// time, so the same frames get drawn on any machine.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FrameScript {
     /// Unmeasured frames after the camera is framed, so caches catch up. A zoom
     /// settles before every repeat.
@@ -247,9 +248,11 @@ pub struct FrameScript {
 /// Extra measurements for a [`FrameScript`]. Each disturbs the frames it
 /// measures, so they stay off a plain timing run.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FrameProbes {
     /// Count one frame's draw calls per pass. That frame and the next are left
-    /// out of the timings.
+    /// out of the timings. A script needs at least 32 measured frames to reach
+    /// the capture; a shorter one reports none.
     #[serde(default)]
     pub draw_calls: bool,
     /// After submitting each measured frame, wait for the GPU to finish and
@@ -265,7 +268,7 @@ pub struct FrameProbes {
 /// The camera's part in a [`FrameScript`]. Positions are world tiles and zooms
 /// are logical pixels per tile.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CameraMotion {
     /// Leave the camera alone, for a screen that doesn't use it.
     None {

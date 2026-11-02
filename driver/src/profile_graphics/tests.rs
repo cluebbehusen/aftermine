@@ -366,3 +366,26 @@ fn a_run_nothing_paced_says_so() {
     assert!(text.contains("WARNING"), "{text}");
     assert!(text.contains("asleep"), "{text}");
 }
+
+#[test]
+fn a_trial_missing_what_it_asked_for_is_refused() {
+    let wants_draws = FrameProbes {
+        draw_calls: true,
+        ..FrameProbes::default()
+    };
+    let mut profile = trial(2.0, 1.0, 0);
+    assert!(check_trial(&profile, &FrameProbes::default()).is_ok());
+    let refusal = check_trial(&profile, &wants_draws).unwrap_err();
+    assert!(refusal.to_string().contains("draw call capture"));
+
+    profile.draw_calls = vec![PassDrawCallsView {
+        name: "units".to_string(),
+        draw_calls: 1,
+        indices: 6,
+    }];
+    assert!(check_trial(&profile, &wants_draws).is_ok());
+
+    profile.frames = 0;
+    let refusal = check_trial(&profile, &FrameProbes::default()).unwrap_err();
+    assert!(refusal.to_string().contains("no frames"));
+}

@@ -528,8 +528,18 @@ fn run_trial(
         }
         ensure!(Instant::now() < deadline, "the frame script never finished");
     };
-    ensure!(profile.frames > 0, "the frame script measured no frames");
+    check_trial(&profile, probes)?;
     Ok(profile)
+}
+
+/// Refuses a trial that came back without what it was asked to measure.
+fn check_trial(profile: &FrameProfileView, probes: &FrameProbes) -> Result<()> {
+    ensure!(profile.frames > 0, "the frame script measured no frames");
+    ensure!(
+        !probes.draw_calls || !profile.draw_calls.is_empty(),
+        "the frame script ended before its draw call capture"
+    );
+    Ok(())
 }
 
 /// The viewer refuses scripts while its background fill would compete with

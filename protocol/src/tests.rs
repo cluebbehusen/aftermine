@@ -750,3 +750,26 @@ fn a_frame_script_request_may_leave_out_its_probes() {
         Request::RunFrameScript { probes, .. } if probes == FrameProbes::default()
     ));
 }
+
+#[test]
+fn a_misspelled_frame_script_field_is_refused() {
+    let request = |params: serde_json::Value| {
+        serde_json::from_value::<Request>(serde_json::json!({
+            "method": "run_frame_script",
+            "params": params,
+        }))
+    };
+    let motion = serde_json::json!({"none": {"frames": 2}});
+    let script = serde_json::json!({"settle_frames": 1, "motion": motion});
+    assert!(request(serde_json::json!({"script": script})).is_ok());
+    for refused in [
+        serde_json::json!({"script": script, "probes": {"gpu_wiat": true}}),
+        serde_json::json!({"script": {"settle_frames": 1, "motion": motion, "play": true}}),
+        serde_json::json!({"script": {"settle_frames": 1, "motion": {"none": {"frame": 2}}}}),
+        serde_json::json!({
+            "script": {"settle_frames": 1, "motion": {"none": {"frames": 2, "zoom": 8.0}}}
+        }),
+    ] {
+        assert!(request(refused.clone()).is_err(), "{refused}");
+    }
+}
