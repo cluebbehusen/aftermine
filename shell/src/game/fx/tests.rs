@@ -1132,6 +1132,65 @@ fn hidden_demolition_and_building_loss_sound_without_revealing_identity() {
 }
 
 #[test]
+fn a_sapper_blast_is_witnessed_when_its_view_dies_with_an_ally_but_not_an_enemy() {
+    let scenario = serde_json::from_value(serde_json::json!({
+        "name": "Allied Sapper", "mode": "sandbox", "map": vec![".".repeat(60); 30],
+        "players": [
+            {"name": "Local", "scrap": 0, "bot": false, "team": 0},
+            {"name": "Ally", "scrap": 0, "bot": false, "team": 0},
+            {"name": "Enemy", "scrap": 0, "bot": false, "team": 1}
+        ],
+        "units": [{"player": 0, "kind": "harvester", "x": 2, "y": 2}]
+    }))
+    .unwrap();
+    let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
+    let at = chassis::grid::TilePos::new(50, 25).center();
+    assert!(
+        !game
+            .my_vision()
+            .visible(chassis::grid::TilePos::containing(at))
+    );
+    for (owner, witnessed) in [(1, true), (2, false)] {
+        game.presentation.sounds_pending.clear();
+        game.presentation.fogged_blasts.clear();
+        game.presentation.spawn_fx(
+            &game.state,
+            &[
+                Event::AttackHit {
+                    attacker: UnitId(999),
+                    attacker_kind: UnitKind::Sapper,
+                    weapon: 0,
+                    target: None,
+                    attacker_pos: at,
+                    target_pos: at,
+                },
+                Event::UnitDied {
+                    unit: UnitId(999),
+                    pos: at,
+                    player: aftermine_sim::PlayerId(owner),
+                    kind: UnitKind::Sapper,
+                    grounded: true,
+                },
+            ],
+        );
+        assert_eq!(
+            game.presentation
+                .sounds_pending
+                .contains(&(SoundKind::DemolitionBoom, Some(world_vec(at)))),
+            witnessed,
+            "owner={owner}"
+        );
+        assert_eq!(
+            game.presentation
+                .fogged_blasts
+                .contains(&(SoundKind::DemolitionBoom, world_vec(at))),
+            !witnessed,
+            "owner={owner}"
+        );
+    }
+}
+
+#[test]
 fn impact_metadata_is_consumed_in_landing_order() {
     let mut game = crate::game::Game::with_viewport(
         aftermine_sim::Scenario::skirmish(),

@@ -1249,7 +1249,9 @@ impl Presentation {
                         .map(|s| s.to_num::<f32>());
                     if let Some(sound) = sound {
                         if crate::mixer::spec(sound).explosion {
-                            self.queue_blast(sound, world_vec(*target_pos), heard);
+                            let allied_sapper =
+                                sapper_owner.is_some_and(|owner| !state.hostile(self.human, owner));
+                            self.queue_blast(sound, world_vec(*target_pos), heard || allied_sapper);
                         } else if heard {
                             let at = if sees(self, *attacker_pos) {
                                 *attacker_pos
