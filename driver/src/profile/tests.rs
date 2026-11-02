@@ -40,6 +40,8 @@ fn valid_profile() -> FrameProfileView {
             elapsed_ms: 500.0,
             truncated: false,
         }),
+        gpu_wait: None,
+        draw_calls: Vec::new(),
         script_complete: None,
     }
 }

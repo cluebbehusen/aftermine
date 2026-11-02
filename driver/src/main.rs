@@ -525,6 +525,14 @@ enum Cmd {
         /// Show each mean's change from a report written by --out.
         #[arg(long)]
         compare: Option<PathBuf>,
+        /// Wait for the GPU after each frame and time the wait. Changes frame
+        /// pacing, so compare only against other --gpu runs.
+        #[arg(long)]
+        gpu: bool,
+        /// Leave a pass undrawn; repeatable. Against a --gpu run without it,
+        /// the change in GPU wait is what the pass costs the GPU.
+        #[arg(long)]
+        skip: Vec<String>,
         /// Debug-server port for the temporary shells.
         #[arg(long, default_value_t = 4199)]
         port: u16,
@@ -1432,6 +1440,8 @@ fn main() -> Result<()> {
             trials,
             out,
             compare,
+            gpu,
+            skip,
             port,
             dev,
         } => {
@@ -1450,6 +1460,8 @@ fn main() -> Result<()> {
                 trials,
                 port,
                 dev,
+                gpu,
+                skip: &skip,
             })?;
             if let Some(path) = &out {
                 std::fs::write(path, serde_json::to_string_pretty(&report)?)

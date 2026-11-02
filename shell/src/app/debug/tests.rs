@@ -110,6 +110,7 @@ fn a_frame_script_runs_in_the_viewer_but_not_over_a_lan_match() {
             plays: false,
             motion: aftermine_protocol::CameraMotion::None { frames: 1 },
         },
+        probes: aftermine_protocol::FrameProbes::default(),
     };
     let seat = aftermine_sim::PlayerId(0);
     assert_eq!(route(false, false, None, &run), Route::Local);

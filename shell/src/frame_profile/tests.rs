@@ -352,7 +352,9 @@ fn a_script_keeps_only_its_measured_frames_and_reports_finishing() {
     let mut camera = camera();
     profiler.record(frame(50.0, 0.0));
     assert_eq!(profiler.snapshot(false).script_complete, None);
-    profiler.begin_script(&script(2, 3)).expect("enabled");
+    profiler
+        .begin_script(&script(2, 3), &FrameProbes::default())
+        .expect("enabled");
     assert_eq!(profiler.snapshot(false).frames, 0, "old samples are gone");
     assert_eq!(profiler.snapshot(false).script_complete, Some(false));
 
@@ -393,7 +395,9 @@ fn time_spent_settling_never_counts_as_a_frame_interval() {
             rest_frames: 1,
         },
     };
-    profiler.begin_script(&zoom).expect("enabled");
+    profiler
+        .begin_script(&zoom, &FrameProbes::default())
+        .expect("enabled");
     while profiler.scripted() {
         profiler.step_script(&mut camera);
         if profiler
@@ -416,7 +420,9 @@ fn time_spent_settling_never_counts_as_a_frame_interval() {
 #[test]
 fn a_disabled_profiler_refuses_scripts() {
     let mut profiler = FrameProfiler::new(false);
-    let refusal = profiler.begin_script(&script(0, 1)).unwrap_err();
+    let refusal = profiler
+        .begin_script(&script(0, 1), &FrameProbes::default())
+        .unwrap_err();
     assert!(refusal.contains("disabled"));
     assert!(!profiler.scripted());
 }
@@ -424,10 +430,124 @@ fn a_disabled_profiler_refuses_scripts() {
 #[test]
 fn arming_a_window_ends_a_script() {
     let mut profiler = FrameProfiler::new(true);
-    profiler.begin_script(&script(0, 1)).expect("enabled");
+    profiler
+        .begin_script(&script(0, 1), &FrameProbes::default())
+        .expect("enabled");
     profiler.arm(0, 10).expect("window");
     assert!(!profiler.scripted());
     assert_eq!(profiler.snapshot(false).script_complete, None);
+}
+
+#[test]
+fn a_skipped_pass_is_not_drawn_and_only_for_that_script() {
+    let mut profiler = FrameProfiler::new(true);
+    let mut camera = camera();
+    let probes = FrameProbes {
+        skip_passes: vec!["units".to_string(), "fog".to_string()],
+        ..FrameProbes::default()
+    };
+    profiler
+        .begin_script(&script(0, 1), &probes)
+        .expect("valid");
+    let drew = |which| {
+        let mut ran = false;
+        pass(which, || ran = true);
+        ran
+    };
+    assert!(!drew(FramePass::Units));
+    assert!(!drew(FramePass::Fog));
+    assert!(drew(FramePass::Terrain));
+    assert_eq!(measure(FramePass::Hud, || 3), 3, "measuring always runs");
+
+    while profiler.scripted() {
+        profiler.step_script(&mut camera);
+    }
+    assert!(drew(FramePass::Units), "the finished script lets it draw");
+}
+
+#[test]
+fn a_bad_skip_is_refused_and_changes_nothing() {
+    let mut profiler = FrameProfiler::new(true);
+    profiler.record(frame(1.0, 0.0));
+    for (name, reason) in [
+        ("sim", "can't be skipped"),
+        ("terrain_bake", "can't be skipped"),
+        ("nonsense", "no pass is named"),
+    ] {
+        let probes = FrameProbes {
+            skip_passes: vec![name.to_string()],
+            ..FrameProbes::default()
+        };
+        let refusal = profiler.begin_script(&script(0, 1), &probes).unwrap_err();
+        assert!(refusal.contains(reason), "{refusal}");
+    }
+    assert!(!profiler.scripted());
+    assert_eq!(profiler.snapshot(false).frames, 1);
+}
+
+#[test]
+fn every_pass_can_be_looked_up_by_its_name() {
+    for pass in FramePass::ALL {
+        assert_eq!(FramePass::named(pass.name()), Some(pass));
+    }
+    assert_eq!(FramePass::named(OTHER_PASS), None);
+}
+
+#[test]
+fn a_draw_capture_leaves_the_captured_frame_and_the_next_out_of_the_timings() {
+    let mut profiler = FrameProfiler::new(true);
+    let mut camera = camera();
+    let probes = FrameProbes {
+        draw_calls: true,
+        ..FrameProbes::default()
+    };
+    let total = FRAMES_BEFORE_CAPTURE + 10;
+    profiler
+        .begin_script(&script(0, total), &probes)
+        .expect("valid");
+    let mut kept = Vec::new();
+    while profiler.scripted() {
+        profiler.step_script(&mut camera);
+        let measuring = profiler
+            .script
+            .as_ref()
+            .is_some_and(|script| script.measuring);
+        kept.push(measuring);
+        // The capture itself needs a window, so this stands in for the flag
+        // the real frame would have left set.
+        DRAW_CAPTURE.set(false);
+        profiler.record(frame(1.0, 0.0));
+    }
+    let skipped: Vec<usize> = kept
+        .iter()
+        .enumerate()
+        .filter(|(_, measured)| !**measured)
+        .map(|(index, _)| index)
+        .collect();
+    let requested = FRAMES_BEFORE_CAPTURE as usize;
+    assert_eq!(
+        skipped,
+        [requested + 1, requested + 2, total as usize],
+        "the two frames after the request, then the finish"
+    );
+    assert_eq!(profiler.snapshot(false).frames, total as usize - 2);
+}
+
+#[test]
+fn draw_calls_arrive_as_a_row_per_pass_and_other() {
+    DRAW_COUNTS.set(
+        [DrawCount {
+            draw_calls: 2,
+            indices: 12,
+        }; PASSES],
+    );
+    DRAW_SEEN.set(0);
+    let rows = captured_draw_calls();
+    assert_eq!(rows.len(), PASSES + 1);
+    assert_eq!(rows[0].draw_calls, 2);
+    assert_eq!(rows[0].indices, 12);
+    assert_eq!(rows[PASSES].name, OTHER_PASS);
+    assert_eq!(rows[PASSES].draw_calls, 0, "nothing was captured");
 }
 
 #[test]
@@ -439,7 +559,9 @@ fn a_playing_script_runs_the_match_only_while_measuring() {
         plays: true,
         motion: aftermine_protocol::CameraMotion::None { frames: 2 },
     };
-    profiler.begin_script(&playing).expect("enabled");
+    profiler
+        .begin_script(&playing, &FrameProbes::default())
+        .expect("enabled");
     let changes: Vec<Option<bool>> = std::iter::from_fn(|| {
         profiler
             .scripted()
@@ -463,8 +585,34 @@ fn a_script_that_measures_nothing_never_starts_the_match() {
         plays: true,
         motion: aftermine_protocol::CameraMotion::None { frames: 0 },
     };
-    profiler.begin_script(&playing).expect("enabled");
+    profiler
+        .begin_script(&playing, &FrameProbes::default())
+        .expect("enabled");
     while profiler.scripted() {
         assert_eq!(profiler.step_script(&mut camera), None);
     }
+}
+
+#[test]
+fn a_captured_frame_still_plays_the_match() {
+    let mut profiler = FrameProfiler::new(true);
+    let mut camera = camera();
+    let playing = FrameScript {
+        settle_frames: 0,
+        plays: true,
+        motion: aftermine_protocol::CameraMotion::None {
+            frames: FRAMES_BEFORE_CAPTURE + 5,
+        },
+    };
+    let probes = FrameProbes {
+        draw_calls: true,
+        ..FrameProbes::default()
+    };
+    profiler.begin_script(&playing, &probes).expect("valid");
+    let mut changes = Vec::new();
+    while profiler.scripted() {
+        changes.extend(profiler.step_script(&mut camera));
+        DRAW_CAPTURE.set(false);
+    }
+    assert_eq!(changes, [false, true], "one start and one stop");
 }

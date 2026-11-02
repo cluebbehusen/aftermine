@@ -472,7 +472,7 @@ fn offer_rejoin(app: &mut App, home: &mut HomeScreen) {
 /// Draws the match behind Home, or the plain page if none will load.
 fn home_backdrop(app: &mut App, dt: f32) {
     if let Some(backdrop) = app.home_backdrop.playing(app.args.automation) {
-        pass(FramePass::Sim, || {
+        measure(FramePass::Sim, || {
             backdrop.advance(dt, render::reduced_motion());
         });
         backdrop.draw(&app.sprites, &app.input);
@@ -1071,7 +1071,7 @@ fn playback_frame(
         *rerun = true;
         *back
     } else {
-        pass(FramePass::Sim, || {
+        measure(FramePass::Sim, || {
             pb.advance_frame(time, vec2(screen_width(), screen_height()));
         });
         render::draw_with_performance(

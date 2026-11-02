@@ -92,6 +92,9 @@ pub enum Request {
     RunFrameScript {
         /// What to run.
         script: FrameScript,
+        /// Extra measurements, off by default.
+        #[serde(default)]
+        probes: FrameProbes,
     },
     /// The canonical state fingerprint at the current tick.
     StateHash,
@@ -229,6 +232,7 @@ pub struct PresentedView {
 /// A frame-exact profiling workload. Each frame advances a fixed slice of
 /// time, so the same frames get drawn on any machine.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FrameScript {
     /// Unmeasured frames after the camera is framed, so caches catch up. A zoom
     /// settles before every repeat.
@@ -241,10 +245,30 @@ pub struct FrameScript {
     pub motion: CameraMotion,
 }
 
+/// Extra measurements for a [`FrameScript`]. Each disturbs the frames it
+/// measures, so they stay off a plain timing run.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FrameProbes {
+    /// Count one frame's draw calls per pass. That frame and the next are left
+    /// out of the timings. A script needs at least 32 measured frames to reach
+    /// the capture; a shorter one reports none.
+    #[serde(default)]
+    pub draw_calls: bool,
+    /// After submitting each measured frame, wait for the GPU to finish and
+    /// time the wait. The CPU stops queueing ahead, so pacing changes.
+    #[serde(default)]
+    pub gpu_wait: bool,
+    /// Passes to leave undrawn, to see what they cost the GPU. `sim` and
+    /// `terrain_bake` keep the frame working and can't be skipped.
+    #[serde(default)]
+    pub skip_passes: Vec<String>,
+}
+
 /// The camera's part in a [`FrameScript`]. Positions are world tiles and zooms
 /// are logical pixels per tile.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CameraMotion {
     /// Leave the camera alone, for a screen that doesn't use it.
     None {
@@ -333,6 +357,17 @@ pub struct PassCostView {
     pub ms: f64,
 }
 
+/// One pass's draw calls in a captured frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PassDrawCallsView {
+    /// Stable pass name.
+    pub name: String,
+    /// Draw calls the pass produced.
+    pub draw_calls: usize,
+    /// Indices across those draw calls; three make a triangle.
+    pub indices: usize,
+}
+
 /// One named slice of frame work across a sample window.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PassTimingView {
@@ -383,6 +418,14 @@ pub struct FrameProfileView {
     /// [`Request::BeginPerformanceWindow`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<FrameProfileWindowView>,
+    /// Time per measured frame waiting for the GPU, when
+    /// [`FrameProbes::gpu_wait`] asked for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_wait: Option<TimingSummary>,
+    /// One frame's draw calls per pass, then `other`, when
+    /// [`FrameProbes::draw_calls`] asked for them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub draw_calls: Vec<PassDrawCallsView>,
     /// Whether the [`Request::RunFrameScript`] these samples belong to has
     /// finished; absent when no script ran.
     #[serde(default, skip_serializing_if = "Option::is_none")]

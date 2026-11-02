@@ -229,6 +229,11 @@ fn every_request_variant_survives_an_envelope_roundtrip() {
                     rest_frames: 60,
                 },
             },
+            probes: FrameProbes {
+                draw_calls: true,
+                gpu_wait: true,
+                skip_passes: vec!["units".into()],
+            },
         },
         Request::StateHash,
         Request::AdvanceTicks { ticks: 12 },
@@ -561,6 +566,18 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
                 elapsed_ms: 51.2,
                 truncated: false,
             }),
+            gpu_wait: Some(TimingSummary {
+                mean_ms: 2.0,
+                p50_ms: 2.0,
+                p95_ms: 3.0,
+                p99_ms: 3.0,
+                max_ms: 3.0,
+            }),
+            draw_calls: vec![PassDrawCallsView {
+                name: "units".into(),
+                draw_calls: 4,
+                indices: 600,
+            }],
             script_complete: Some(true),
         }),
         Reply::Hash(HashView {
@@ -717,4 +734,42 @@ fn a_response_with_both_ok_and_err_is_rejected() {
 fn a_response_with_neither_ok_nor_err_is_rejected() {
     let err = serde_json::from_str::<ResponseEnvelope>(r#"{"id":1}"#).unwrap_err();
     assert!(err.to_string().contains("neither"), "{err}");
+}
+
+#[test]
+fn a_frame_script_request_may_leave_out_its_probes() {
+    let request: Request = serde_json::from_value(serde_json::json!({
+        "method": "run_frame_script",
+        "params": {
+            "script": {"settle_frames": 1, "motion": {"none": {"frames": 2}}}
+        }
+    }))
+    .expect("parses");
+    assert!(matches!(
+        request,
+        Request::RunFrameScript { probes, .. } if probes == FrameProbes::default()
+    ));
+}
+
+#[test]
+fn a_misspelled_frame_script_field_is_refused() {
+    let request = |params: serde_json::Value| {
+        serde_json::from_value::<Request>(serde_json::json!({
+            "method": "run_frame_script",
+            "params": params,
+        }))
+    };
+    let motion = serde_json::json!({"none": {"frames": 2}});
+    let script = serde_json::json!({"settle_frames": 1, "motion": motion});
+    assert!(request(serde_json::json!({"script": script})).is_ok());
+    for refused in [
+        serde_json::json!({"script": script, "probes": {"gpu_wiat": true}}),
+        serde_json::json!({"script": {"settle_frames": 1, "motion": motion, "play": true}}),
+        serde_json::json!({"script": {"settle_frames": 1, "motion": {"none": {"frame": 2}}}}),
+        serde_json::json!({
+            "script": {"settle_frames": 1, "motion": {"none": {"frames": 2, "zoom": 8.0}}}
+        }),
+    ] {
+        assert!(request(refused.clone()).is_err(), "{refused}");
+    }
 }

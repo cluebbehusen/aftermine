@@ -6,7 +6,8 @@ use crate::client::Client;
 use crate::profile::{ProfileWorkspace, connect_within, expect_ok, expect_performance};
 use aftermine_kit::runner;
 use aftermine_protocol::{
-    CameraMotion, FrameProfileView, FrameScript, Request, StateFilter, StateView, TimingSummary,
+    CameraMotion, FrameProbes, FrameProfileView, FrameScript, Request, StateFilter, StateView,
+    TimingSummary,
 };
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,9 @@ const REST_FRAMES: u32 = 60;
 const LOAD_TIMEOUT: Duration = Duration::from_secs(600);
 const TRIAL_TIMEOUT: Duration = Duration::from_secs(300);
 const POLL: Duration = Duration::from_millis(500);
+/// No display refreshes faster than this. Frames coming quicker mean nothing is
+/// pacing them, which on a Mac means its displays are asleep.
+const FASTEST_DISPLAY_MS: f64 = 4.0;
 /// One frame's budget on a 120 Hz display.
 const BUDGET_NAME: &str = "over 8.33 ms";
 
@@ -42,6 +46,10 @@ pub struct GraphicsOptions<'a> {
     pub port: u16,
     /// Build the development profile instead of release.
     pub dev: bool,
+    /// Wait for the GPU after each frame and time the wait.
+    pub gpu: bool,
+    /// Passes to leave undrawn.
+    pub skip: &'a [String],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -273,6 +281,10 @@ pub struct GraphicsReport {
     pub revision: String,
     /// Logical window size.
     pub window: [u32; 2],
+    /// Whether frames waited for the GPU, which changes their pacing.
+    pub gpu: bool,
+    /// Passes left undrawn.
+    pub skipped: Vec<String>,
     /// Results in run order.
     pub workloads: Vec<WorkloadResult>,
 }
@@ -303,6 +315,8 @@ pub fn run(options: &GraphicsOptions<'_>) -> Result<GraphicsReport> {
     Ok(GraphicsReport {
         revision: crate::build_identity().revision.clone(),
         window: WINDOW,
+        gpu: options.gpu,
+        skipped: options.skip.to_vec(),
         workloads: results,
     })
 }
@@ -319,7 +333,7 @@ fn run_source(
     for workload in group {
         eprintln!("profiling {}", workload.name);
         let mut trials = Vec::new();
-        for _ in 0..options.trials {
+        for trial in 0..options.trials {
             if workload.running {
                 shell = None;
             }
@@ -328,7 +342,8 @@ fn run_source(
                 None => shell.insert(ProfiledShell::launch(root, executable, source, options)?),
             };
             let frame_script = script(workload, live.center);
-            trials.push(run_trial(&mut live.client, &frame_script)?);
+            let probes = probes_for_trial(trial, options);
+            trials.push(run_trial(&mut live.client, &frame_script, &probes)?);
         }
         let live = shell.as_mut().context("no trial ran")?;
         let camera = live.client.camera()?;
@@ -344,6 +359,28 @@ fn run_source(
         }
     }
     Ok(results)
+}
+
+/// Draw calls come from one plain trial per workload: a capture leaves its
+/// frames undrawable for timing and allocates a texture per draw call.
+fn probes_for_trial(trial: usize, options: &GraphicsOptions<'_>) -> FrameProbes {
+    FrameProbes {
+        draw_calls: trial == 0 && !options.gpu && options.skip.is_empty(),
+        gpu_wait: options.gpu,
+        skip_passes: options.skip.to_vec(),
+    }
+}
+
+/// A Mac with its displays asleep stops pacing and presenting frames, and the
+/// numbers change with it, so hold them awake for as long as `pid` runs.
+fn keep_display_awake(pid: u32) {
+    if cfg!(target_os = "macos") {
+        drop(
+            std::process::Command::new("caffeinate")
+                .args(["-d", "-u", "-w", &pid.to_string()])
+                .spawn(),
+        );
+    }
 }
 
 /// A temporary shell showing one source, ready for scripts.
@@ -394,6 +431,7 @@ impl ProfiledShell {
         }
         isolate_home(&mut command, &workspace.directory);
         let child = command.spawn().context("spawning profiled shell")?;
+        keep_display_awake(child.id());
         let guard = ShellGuard::new(child);
         let mut client = connect_within(options.port, LOAD_TIMEOUT)?;
 
@@ -472,8 +510,12 @@ fn input_replay(root: &Path, size: Size) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn run_trial(client: &mut Client, script: &FrameScript) -> Result<FrameProfileView> {
-    start_script(client, script)?;
+fn run_trial(
+    client: &mut Client,
+    script: &FrameScript,
+    probes: &FrameProbes,
+) -> Result<FrameProfileView> {
+    start_script(client, script, probes)?;
     let deadline = Instant::now() + TRIAL_TIMEOUT;
     let profile = loop {
         std::thread::sleep(POLL);
@@ -486,17 +528,28 @@ fn run_trial(client: &mut Client, script: &FrameScript) -> Result<FrameProfileVi
         }
         ensure!(Instant::now() < deadline, "the frame script never finished");
     };
-    ensure!(profile.frames > 0, "the frame script measured no frames");
+    check_trial(&profile, probes)?;
     Ok(profile)
+}
+
+/// Refuses a trial that came back without what it was asked to measure.
+fn check_trial(profile: &FrameProfileView, probes: &FrameProbes) -> Result<()> {
+    ensure!(profile.frames > 0, "the frame script measured no frames");
+    ensure!(
+        !probes.draw_calls || !profile.draw_calls.is_empty(),
+        "the frame script ended before its draw call capture"
+    );
+    Ok(())
 }
 
 /// The viewer refuses scripts while its background fill would compete with
 /// the measured frames.
-fn start_script(client: &mut Client, script: &FrameScript) -> Result<()> {
+fn start_script(client: &mut Client, script: &FrameScript, probes: &FrameProbes) -> Result<()> {
     let deadline = Instant::now() + LOAD_TIMEOUT;
     loop {
         let request = Request::RunFrameScript {
             script: script.clone(),
+            probes: probes.clone(),
         };
         match client.call(request) {
             Ok(reply) => return expect_ok(&reply, "run frame script"),
@@ -537,6 +590,8 @@ struct PassDigest {
     timing: TimingSummary,
     /// What the pass took in the workload's slowest frame.
     worst_frame_ms: f64,
+    /// Draw calls and indices in the captured frame, when one was captured.
+    draws: Option<(usize, usize)>,
 }
 
 /// A workload reduced across trials.
@@ -547,6 +602,8 @@ struct Digest {
     cpu: TimingSummary,
     work: TimingSummary,
     submit: TimingSummary,
+    interval: TimingSummary,
+    gpu_wait: Option<TimingSummary>,
     /// Costliest first.
     passes: Vec<PassDigest>,
 }
@@ -573,10 +630,16 @@ fn digest(result: &WorkloadResult) -> Digest {
             let worst_frame_ms = slowest
                 .and_then(|frame| frame.passes.iter().find(|pass| pass.name == name))
                 .map_or(0.0, |pass| pass.ms);
+            let draws = trials
+                .iter()
+                .flat_map(|trial| trial.draw_calls.iter())
+                .find(|row| row.name == name)
+                .map(|row| (row.draw_calls, row.indices));
             PassDigest {
                 name,
                 timing,
                 worst_frame_ms,
+                draws,
             }
         })
         .collect();
@@ -595,6 +658,14 @@ fn digest(result: &WorkloadResult) -> Digest {
         cpu: overall(|trial| &trial.cpu),
         work: overall(|trial| &trial.work),
         submit: overall(|trial| &trial.submit),
+        interval: overall(|trial| &trial.interval),
+        gpu_wait: {
+            let waits: Vec<&TimingSummary> = trials
+                .iter()
+                .filter_map(|trial| trial.gpu_wait.as_ref())
+                .collect();
+            (!waits.is_empty()).then(|| median_timing(&waits))
+        },
         passes,
     }
 }
@@ -628,10 +699,34 @@ pub fn render(report: &GraphicsReport, baseline: Option<&GraphicsReport>) -> Str
     let mut out = String::new();
     writeln!(
         out,
-        "revision {}, window {}x{}, milliseconds\n",
-        report.revision, report.window[0], report.window[1]
+        "revision {}, window {}x{}, milliseconds{}{}\n",
+        report.revision,
+        report.window[0],
+        report.window[1],
+        if report.gpu {
+            ", waiting for the GPU each frame"
+        } else {
+            ""
+        },
+        if report.skipped.is_empty() {
+            String::new()
+        } else {
+            format!(", without {}", report.skipped.join(", "))
+        },
     )
     .expect("writing to a string");
+    if report
+        .workloads
+        .iter()
+        .any(|result| digest(result).interval.p50_ms < FASTEST_DISPLAY_MS)
+    {
+        writeln!(
+            out,
+            "WARNING: frames ran faster than any display refreshes, so nothing paced them.\n\
+             The displays are probably asleep. These numbers don't compare with paced runs.\n"
+        )
+        .expect("writing to a string");
+    }
     let earlier_digest = |name: &str| {
         baseline
             .and_then(|baseline| baseline.workloads.iter().find(|result| result.name == name))
@@ -640,8 +735,8 @@ pub fn render(report: &GraphicsReport, baseline: Option<&GraphicsReport>) -> Str
 
     writeln!(
         out,
-        "{:<26} {:>14} {:>6} {:>6} {:>13}  costliest pass",
-        "workload", "cpu mean", "p95", "max", BUDGET_NAME
+        "{:<26} {:>14} {:>6} {:>6} {:>13} {:>9}  costliest pass",
+        "workload", "cpu mean", "p95", "max", BUDGET_NAME, "interval"
     )
     .expect("writing to a string");
     for result in &report.workloads {
@@ -653,7 +748,7 @@ pub fn render(report: &GraphicsReport, baseline: Option<&GraphicsReport>) -> Str
             .map_or("none", |pass| pass.name.as_str());
         writeln!(
             out,
-            "{:<26} {:>14} {:6.2} {:6.2} {:>13}  {top}",
+            "{:<26} {:>14} {:6.2} {:6.2} {:>13} {:9.2}  {top}",
             result.name,
             with_change(
                 current.cpu.mean_ms,
@@ -661,7 +756,8 @@ pub fn render(report: &GraphicsReport, baseline: Option<&GraphicsReport>) -> Str
             ),
             current.cpu.p95_ms,
             current.cpu.max_ms,
-            current.over_budget
+            current.over_budget,
+            current.interval.p50_ms
         )
         .expect("writing to a string");
     }
@@ -699,23 +795,35 @@ pub fn render(report: &GraphicsReport, baseline: Option<&GraphicsReport>) -> Str
             &current.submit,
             earlier.as_ref().map(|earlier| earlier.submit.mean_ms),
         );
+        if let Some(gpu_wait) = &current.gpu_wait {
+            let was = earlier
+                .as_ref()
+                .and_then(|earlier| earlier.gpu_wait.as_ref())
+                .map(|was| was.mean_ms);
+            timing_row(&mut out, "gpu wait", gpu_wait, was);
+        }
         writeln!(
             out,
-            "  {:<15} {:>6} {:>6} {:>6} {:>6}  worst frame",
+            "  {:<15} {:>6} {:>6} {:>6} {:>6}  worst frame  draws  indices",
             "pass", "mean", "p95", "p99", "max"
         )
         .expect("writing to a string");
         for pass in &current.passes {
-            if pass.timing.max_ms < SMALLEST_PASS_SHOWN_MS {
+            let draws_nothing = pass.draws.is_none_or(|(draws, _)| draws == 0);
+            if pass.timing.max_ms < SMALLEST_PASS_SHOWN_MS && draws_nothing {
                 continue;
             }
             let was = earlier
                 .as_ref()
                 .and_then(|earlier| earlier.passes.iter().find(|row| row.name == pass.name))
                 .map(|row| row.timing.mean_ms);
+            let (draws, indices) = pass.draws.map_or_else(
+                || ("-".to_string(), "-".to_string()),
+                |(draws, indices)| (draws.to_string(), indices.to_string()),
+            );
             writeln!(
                 out,
-                "  {:<15} {} {:6.2} {:6.2} {:6.2}  {:6.2}",
+                "  {:<15} {} {:6.2} {:6.2} {:6.2}  {:>11.2}  {draws:>5}  {indices:>7}",
                 pass.name,
                 with_change(pass.timing.mean_ms, was),
                 pass.timing.p95_ms,
