@@ -54,6 +54,7 @@ pub struct Sprites {
     scrap_rich: Rect,
     scorch: Rect,
     wreck_pile: Rect,
+    wreck_piles: [Rect; WRECK_PILES],
     air_shadow: Rect,
     burst: Rect,
     harvester_cargo: [[Rect; 2]; 5],
@@ -584,6 +585,30 @@ const ROCK_SLAB_KEYS: [&str; ROCK_SLAB_SIZES * ROCK_SLAB_VARIANTS] = [
     "rock_slab_5_5",
 ];
 
+const WRECK_PILES: usize = 8;
+
+/// Which of the wreck pile sizes shows for the salvage a wreck holds.
+const fn wreck_pile_size(salvage: u32) -> usize {
+    match salvage {
+        0..=14 => 0,
+        15..=34 => 1,
+        35..=69 => 2,
+        _ => 3,
+    }
+}
+
+/// Wreck piles by size and shape: see [`Sprites::wreck_pile_holding`].
+const WRECK_PILE_KEYS: [&str; WRECK_PILES] = [
+    "wreck_pile_0_0",
+    "wreck_pile_0_1",
+    "wreck_pile_1_0",
+    "wreck_pile_1_1",
+    "wreck_pile_2_0",
+    "wreck_pile_2_1",
+    "wreck_pile_3_0",
+    "wreck_pile_3_1",
+];
+
 /// Remnants the floor no longer draws, because they pull the eye from units.
 /// The atlas still holds them.
 #[cfg(test)]
@@ -1027,6 +1052,7 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
         .chain(ROCK_SLAB_KEYS.iter())
         .chain(DECAL_KEYS.iter())
         .chain(THEME_PROP_KEYS.iter())
+        .chain(WRECK_PILE_KEYS.iter())
         .chain(FIELD_DEBRIS_KEYS.iter())
         .chain(GROUND_BLOCKER_KEYS.iter())
         .chain(SCAFFOLD_KEYS.iter())
@@ -1415,6 +1441,7 @@ impl Sprites {
             scrap_rich,
             scorch,
             wreck_pile,
+            wreck_piles: pick(&rects, WRECK_PILE_KEYS)?,
             air_shadow,
             burst,
             harvester_cargo: harvester_cargo_rows(&rects)?,
@@ -1678,6 +1705,12 @@ impl Sprites {
     /// A wreck salvage pile on open ground.
     pub fn wreck_pile(&self) -> Rect {
         self.wreck_pile
+    }
+
+    /// The pile a wreck shows for the salvage it holds, so it steps down as
+    /// it is stripped or decays. `shape` picks among a size's versions.
+    pub fn wreck_pile_holding(&self, salvage: u32, shape: usize) -> Rect {
+        self.wreck_piles[wreck_pile_size(salvage) * 2 + shape % 2]
     }
 
     /// The soft shadow a flyer casts on the ground.

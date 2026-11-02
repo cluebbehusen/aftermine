@@ -34,3 +34,26 @@ fn floor_wave_carries_across_the_terrace_benches() {
     assert!(phases.iter().any(|lift| *lift < 0));
     assert!(phases.iter().any(|lift| *lift > 0));
 }
+
+fn lower_at(cells: &'static [(i32, i32)]) -> impl Fn(i32, i32) -> bool {
+    move |dx, dy| cells.contains(&(dx, dy))
+}
+
+#[test]
+fn a_face_toward_the_upper_left_takes_the_light() {
+    assert!(faces_light(lower_at(&[(-1, 0)])));
+    assert!(faces_light(lower_at(&[(0, -1)])));
+    assert!(faces_light(lower_at(&[(-1, 0), (0, 1)])));
+    assert!(!faces_light(lower_at(&[(1, 0)])));
+    assert!(!faces_light(lower_at(&[(0, 1)])));
+    assert!(!faces_light(lower_at(&[])));
+}
+
+#[test]
+fn an_inner_corner_follows_the_diagonal_below_it() {
+    assert!(faces_light(lower_at(&[(-1, -1)])));
+    assert!(faces_light(lower_at(&[(1, -1)])));
+    assert!(faces_light(lower_at(&[(-1, 1)])));
+    assert!(!faces_light(lower_at(&[(1, 1)])));
+    assert!(!faces_light(lower_at(&[(1, 0), (-1, -1)])));
+}

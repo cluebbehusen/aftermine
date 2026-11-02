@@ -101,6 +101,17 @@ pub(super) const LAYERS: [Layer; 3] = [
     },
 ];
 
+/// What a face turned from the light darkens toward.
+pub(super) const UNLIT: Color = rgba(13, 13, 18);
+
+/// Whether a face turns toward the light at the upper left, given which
+/// neighboring cells lie below it. A cell at an inner corner has only a
+/// diagonal neighbor below it, and follows the run it turns between.
+pub(super) fn faces_light(lower: impl Fn(i32, i32) -> bool) -> bool {
+    let adjacent = lower(-1, 0) || lower(1, 0) || lower(0, -1) || lower(0, 1);
+    lower(-1, 0) || lower(0, -1) || (!adjacent && (lower(-1, -1) || lower(1, -1) || lower(-1, 1)))
+}
+
 pub(super) fn shifted(color: Color, amount: i16) -> Color {
     let amount = f32::from(amount) / 255.0;
     Color::new(

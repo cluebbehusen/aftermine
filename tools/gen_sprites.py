@@ -2150,21 +2150,37 @@ def repair_bay(variant: str, work: int = 0) -> None:
     finish(img, px, f"repair_bay{variant_tag(variant)}{suffix}")
 
 
-def wreck_pile() -> None:
+def wreck_pile(
+    name: str = "wreck_pile",
+    seed: int = 53,
+    px: int = 64,
+    scale: float = 1.0,
+    wide: float = 1.0,
+    pieces: int = 11,
+    piece_scale: float = 1.0,
+    shards: tuple[tuple[float, float], ...] | None = None,
+) -> None:
     """Battlefield salvage on open ground: like a scrap heap but in dead
-    machine tones with only a few amber glints — walkable junk, not a
-    node."""
-    px = 64
+    machine tones with only a little amber — walkable junk, not a node.
+
+    Without `shards`, three overlapping dots make the shipped pile's one
+    sliver of amber. Each of `shards` is a (length, width) sliver instead."""
     img, d = canvas(px)
-    rng = random.Random(53)
-    d.ellipse([s(14), s(28), s(50), s(46)], fill=(24, 20, 16, 110))
-    for _ in range(11):
+    rng = random.Random(seed)
+    mid = px / 2
+    rx, ry = 18 * scale * wide, 9 * scale
+    d.ellipse(
+        [s(mid - rx), s(mid + 5 - ry), s(mid + rx), s(mid + 5 + ry)],
+        fill=(24, 20, 16, 110),
+    )
+    reach = 11 * scale
+    for _ in range(pieces):
         angle = rng.uniform(0, 6.28318)
-        dist = 11 * rng.random() ** 0.6
-        cx = 32 + dist * math.cos(angle)
-        cy = 35 + dist * math.sin(angle) * 0.6 - 2 * (1 - dist / 11)
-        w = rng.uniform(5, 10)
-        h = rng.uniform(4, 7)
+        dist = reach * rng.random() ** 0.6
+        cx = mid + wide * dist * math.cos(angle)
+        cy = mid + 3 + dist * math.sin(angle) * 0.6 - 2 * scale * (1 - dist / reach)
+        w = rng.uniform(5, 10) * piece_scale
+        h = rng.uniform(4, 7) * piece_scale
         tone = rng.choice([(58, 58, 68), (44, 44, 52), (86, 64, 40), (72, 72, 84)])
         dx = rng.uniform(-2, 2)
         d.polygon(
@@ -2176,12 +2192,47 @@ def wreck_pile() -> None:
             ],
             fill=(*tone, 255),
         )
-    for _ in range(3):
-        cx, cy = 32 + rng.uniform(-6, 6), 34 + rng.uniform(-4, 4)
-        d.ellipse(
-            [s(cx - 1.5), s(cy - 1.5), s(cx + 1.5), s(cy + 1.5)], fill=(*SCRAP, 255)
-        )
-    finish(img, px, "wreck_pile")
+    if shards is None:
+        for _ in range(3):
+            cx, cy = mid + rng.uniform(-6, 6), mid + 2 + rng.uniform(-4, 4)
+            d.ellipse(
+                [s(cx - 1.5), s(cy - 1.5), s(cx + 1.5), s(cy + 1.5)], fill=(*SCRAP, 255)
+            )
+    else:
+        # Slivers, never round dots or a matched pair: those read as eyes.
+        for i, (length, width) in enumerate(shards):
+            spread = 1.0 + i * 1.5
+            cx = mid + wide * scale * rng.uniform(-5, 5) * spread
+            cy = mid + 2 + scale * rng.uniform(-3, 3) * spread
+            turn = -math.pi / 3 + rng.uniform(-0.5, 0.5) + i * 1.1
+            hl, hw = length / 2, width / 2
+            shape = [
+                (-hl, -hw * rng.uniform(0.3, 0.7)),
+                (-hl * rng.uniform(0.1, 0.4), -hw),
+                (hl, -hw * rng.uniform(0.2, 0.6)),
+                (hl * rng.uniform(0.5, 0.9), hw * 0.8),
+                (-hl * rng.uniform(0.5, 0.9), hw),
+            ]
+            ca, sa = math.cos(turn), math.sin(turn)
+            d.polygon(
+                [(s(cx + x * ca - y * sa), s(cy + x * sa + y * ca)) for x, y in shape],
+                fill=(*SCRAP, 255),
+            )
+    finish(img, px, name)
+
+
+def wreck_piles() -> None:
+    """A wreck's pile by the salvage it holds, two shapes to a size: the
+    shipped pile's recipe at real size, on a canvas that fits the largest."""
+    px = 96
+    wreck_pile("wreck_pile_0_0", 71, px, 0.72, 1.0, 6, 0.9, ((4.5, 2.2),))
+    wreck_pile("wreck_pile_0_1", 72, px, 0.72, 1.12, 6, 0.9, ((4, 2.2),))
+    wreck_pile("wreck_pile_1_0", 53, px)
+    wreck_pile("wreck_pile_1_1", 54, px, 1.0, 0.92, 11, 1.0, ((6.5, 3),))
+    wreck_pile("wreck_pile_2_0", 81, px, 1.22, 1.0, 15, 1.04, ((7, 3.2),))
+    wreck_pile("wreck_pile_2_1", 82, px, 1.22, 1.1, 15, 1.04, ((7.5, 3),))
+    wreck_pile("wreck_pile_3_0", 91, px, 1.45, 1.04, 20, 1.08, ((8, 3.4), (4, 1.8)))
+    wreck_pile("wreck_pile_3_1", 92, px, 1.45, 0.94, 20, 1.08, ((8.5, 3.2), (4.5, 1.8)))
 
 
 def air_shadow() -> None:
@@ -3206,6 +3257,7 @@ def generate(output: Path) -> None:
     scrap("mid", 0.55)
     scrap("low", 0.25)
     wreck_pile()
+    wreck_piles()
     air_shadow()
     burst()
     scaffold(dense=True)

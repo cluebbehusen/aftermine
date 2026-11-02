@@ -164,3 +164,51 @@ fn mirrored_pits_drop_as_mirror_images() {
         }
     }
 }
+
+#[test]
+fn a_pit_face_takes_the_light_by_the_way_it_turns_and_the_rim_shades_inside() {
+    let field = pits(&[
+        ".........",
+        ".~~~~~~~.",
+        ".~~~~~~~.",
+        ".~~~~~~~.",
+        ".~~~~~~~.",
+        ".~~~~~~~.",
+        ".........",
+    ]);
+    let grey = Color::new(0.3, 0.3, 0.3, 1.0);
+    let (mut toward, mut away, mut rim) = (0, 0, 0);
+    for y in 1..6 {
+        for x in 1..8 {
+            let pos = TilePos::new(x, y);
+            for sy in 0..CELLS {
+                for sx in 0..CELLS {
+                    let material = field.material_at(pos, sx, sy).unwrap_or(Material::Void);
+                    let tone = lit(&field, pos, (sx, sy), material, grey, &DROP);
+                    let depth = field.at(pos, sx, sy);
+                    let shaded = (1..=RIM_SHADE_CELLS).any(|k| field.at(pos, sx - k, sy - k) == 0);
+                    match material {
+                        Material::Riser(level) if !shaded => {
+                            let deeper_above = field.at(pos, sx, sy - 1) > depth;
+                            let deeper_below = field.at(pos, sx, sy + 1) > depth;
+                            if deeper_above {
+                                assert_eq!(tone, mixed(grey, DROP[level].top, LIT_FACE));
+                                toward += 1;
+                            } else if deeper_below {
+                                assert!(tone.r < grey.r, "a face from the light darkens");
+                                away += 1;
+                            }
+                        }
+                        Material::Bench(_) if shaded && depth > 0 => {
+                            assert!(tone.r < grey.r, "the rim shades the step inside it");
+                            rim += 1;
+                        }
+                        Material::Bench(_) if !shaded => assert_eq!(tone, grey),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    assert!(toward > 0 && away > 0 && rim > 0, "{toward} {away} {rim}");
+}

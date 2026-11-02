@@ -19,13 +19,18 @@
 //! per stretch. Peaks that mirror each other under the map's half-turn
 //! step as mirror images; their wear marks fall independently.
 //!
+//! Light falls from the upper left: faces toward it are lit and meet the ground
+//! at a dark line, faces away are darker, and walls and peaks lay a flat shadow
+//! along their lower and right sides, flush with their corners so they sit on
+//! the floor.
+//!
 //! The field reads the map alone, so a terrace never shifts as the fog lifts;
 //! the fog veil hides peaks the player has not explored.
 
 use super::cell_field::{CELLS, CellField, cell_edges};
 use super::environment::{
-    BoundaryInsets, LAYERS, Layer, Material, SALT, WAVE_LIFTS, draw_fracture, draw_lip,
-    draw_missing_slab, draw_rebar, draw_strata, hash, mixed, quarry_color, shifted,
+    BoundaryInsets, LAYERS, Layer, Material, SALT, UNLIT, WAVE_LIFTS, draw_fracture, draw_lip,
+    draw_missing_slab, draw_rebar, draw_strata, faces_light, hash, mixed, quarry_color, shifted,
 };
 use super::ground::GroundView;
 use super::stretches::Shapes;
@@ -428,6 +433,7 @@ pub(super) fn draw_terraces(
                     .is_some_and(|tile| tile.terrain == Terrain::Peak)
         })
         .collect();
+    draw_shadow(map, view, terraces);
     for &pos in &tiles {
         let (xs, ys) = cell_edges(view, pos);
         for sy in 0..CELLS {
@@ -436,6 +442,15 @@ pub(super) fn draw_terraces(
                 let Some(m) = material_at(cx, cy) else {
                     continue;
                 };
+                if let Material::Riser(level) = m {
+                    let (x, y) = (as_index(sx), as_index(sy));
+                    let rect = Rect::new(xs[x], ys[y], xs[x + 1] - xs[x], ys[y + 1] - ys[y]);
+                    let lower = |dx: i32, dy: i32| {
+                        height_rank(material_at(cx + dx, cy + dy)) < height_rank(Some(m))
+                    };
+                    draw_riser(rect, layers[level], lower, view.zoom());
+                    continue;
+                }
                 let (ix, iy) = frame.inner(cx, cy);
                 let Some(c) = color(m, ix, iy, &layers) else {
                     continue;
@@ -522,6 +537,86 @@ pub(super) fn draw_terraces(
                         );
                         let (ix, iy) = frame.inner(cx + dx, cy + dy);
                         draw_strata(face, (-dx, -dy), layers[level], hash(ix, iy, SALT + 607));
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The shadow walls and peaks lay on the floor, flat and hard-edged like the
+/// terraces around it.
+const SHADOW: Color = Color::new(0.03, 0.03, 0.04, 0.26);
+
+/// How far a lit face goes from its riser tone to its bench's.
+const LIT_FACE: f32 = 0.75;
+
+/// How far a face turned from the light goes toward [`UNLIT`].
+const SHADED_FACE: f32 = 0.5;
+
+/// Orders a cell's material by how high it stands, the open floor lowest.
+fn height_rank(material: Option<Material>) -> i32 {
+    match material {
+        None => -1,
+        Some(Material::Riser(level)) => level.fit::<i32>() * 2,
+        Some(Material::Bench(level)) => level.fit::<i32>() * 2 + 1,
+        Some(Material::Vignette(_) | Material::Void) => 6,
+    }
+}
+
+/// The tone of a riser by the way it faces.
+fn riser_tone(layer: Layer, lit: bool) -> Color {
+    if lit {
+        mixed(layer.riser, layer.top, LIT_FACE)
+    } else {
+        mixed(layer.riser, UNLIT, SHADED_FACE)
+    }
+}
+
+fn draw_riser(rect: Rect, layer: Layer, lower: impl Fn(i32, i32) -> bool, zoom: f32) {
+    let lit = faces_light(&lower);
+    draw_rectangle(rect.x, rect.y, rect.w, rect.h, riser_tone(layer, lit));
+    if lit {
+        let line = (zoom * 0.05).max(1.0);
+        for side in [(-1, 0), (0, -1)] {
+            if lower(side.0, side.1) {
+                draw_lip(rect, side, line, layer.riser);
+            }
+        }
+    }
+}
+
+/// Whether a floor cell lies in the shadow of a wall or peak: one cell along
+/// their lower and right sides, including the corner they turn around.
+fn in_shadow(material: impl Fn(i32, i32) -> Option<Material>, cx: i32, cy: i32) -> bool {
+    material(cx, cy).is_none()
+        && [(1, 0), (0, 1), (1, 1)]
+            .iter()
+            .any(|(dx, dy)| material(cx - dx, cy - dy).is_some())
+}
+
+fn draw_shadow(map: &Map, view: &GroundView, terraces: &Terraces) {
+    let frame = &terraces.frame;
+    let is_wall = |x: i32, y: i32| {
+        let pos = TilePos::new(x, y);
+        wall(frame.contains(pos), map.tile(pos).map(|tile| tile.terrain))
+    };
+    let (min, max) = screen_tiles(map, view);
+    for y in min.y..max.y {
+        for x in min.x..max.x {
+            let pos = TilePos::new(x, y);
+            let reachable =
+                is_wall(x, y) || is_wall(x - 1, y) || is_wall(x, y - 1) || is_wall(x - 1, y - 1);
+            if !frame.contains(pos) || !reachable {
+                continue;
+            }
+            let (xs, ys) = cell_edges(view, pos);
+            for sy in 0..CELLS {
+                for sx in 0..CELLS {
+                    let material = |cx: i32, cy: i32| terraces.material(cx, cy);
+                    if in_shadow(material, x * CELLS + sx, y * CELLS + sy) {
+                        let (i, j) = (as_index(sx), as_index(sy));
+                        draw_rectangle(xs[i], ys[j], xs[i + 1] - xs[i], ys[j + 1] - ys[j], SHADOW);
                     }
                 }
             }
