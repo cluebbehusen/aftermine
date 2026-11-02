@@ -391,8 +391,11 @@ Simulation events enqueue audio cues. `mixer::spec` is the one table of what the
 shell decides per sound kind: clip, bus, mix weight, and whether it is a blast
 or raises combat music. Blasts, building destruction and aircraft impacts are
 audible through fog regardless of owner, at full gain inside the viewport and
-fading to silence a fixed distance beyond it. Same-kind events coalesce to the
-loudest emitter, and inaudible events use no voices and raise no combat music.
+fading to silence a fixed distance beyond it. One the viewer did not witness,
+and that neither they nor an ally set off, plays set back and raises no combat
+music. Every other positioned sound follows sight and fades to silence beyond
+the viewport in proportion to its size. Same-kind events coalesce to the loudest
+emitter, and inaudible events use no voices and raise no combat music.
 Continuous sounds are owned and stopped individually and rebuilt when
 presentation resumes. Audio never feeds a simulation decision. Production sprite
 and sound bytes stay owned by their generators and approval workflows.

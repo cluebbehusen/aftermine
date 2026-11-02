@@ -179,6 +179,7 @@ impl HomeBackdrop {
         self.session.advance_frame(time, viewport);
         // Nothing plays these, so they would pile up for as long as Home shows.
         self.session.presentation.sounds_pending.clear();
+        self.session.presentation.fogged_blasts.clear();
         let center = if still {
             self.anchor
         } else {

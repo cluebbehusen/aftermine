@@ -20,6 +20,7 @@ fn explosions_fade_to_silence_beyond_each_camera_edge_at_every_zoom() {
                 for (distance, expected) in [(0.0, 1.0), (12.0, 0.5), (24.0, 0.0), (200.0, 0.0)] {
                     let mixed = frame_mix(
                         [(kind, Some(edge + axis * distance))],
+                        [],
                         center,
                         extents,
                         zoom,
@@ -33,7 +34,9 @@ fn explosions_fade_to_silence_beyond_each_camera_edge_at_every_zoom() {
                 }
             }
             let diagonal = extents + vec2(18.0, 18.0);
-            assert!(frame_mix([(kind, Some(center + diagonal))], center, extents, zoom).is_empty());
+            assert!(
+                frame_mix([(kind, Some(center + diagonal))], [], center, extents, zoom).is_empty()
+            );
         }
     }
 }
@@ -58,7 +61,7 @@ fn overlapping_explosions_keep_nearest_and_distant_blasts_consume_no_voices() {
         queued.push((kind, Some(Vec2::ZERO)));
     }
     queued.push((SoundKind::Alert, None));
-    let mixed = frame_mix(queued, Vec2::ZERO, vec2(10.0, 6.0), WIDE_ZOOM);
+    let mixed = frame_mix(queued, [], Vec2::ZERO, vec2(10.0, 6.0), WIDE_ZOOM);
     assert_eq!(mixed.len(), 6);
     assert_eq!(
         mixed
@@ -93,8 +96,8 @@ fn overlapping_explosions_keep_nearest_and_distant_blasts_consume_no_voices() {
 #[test]
 fn close_camera_exposes_more_minor_detail_than_wide_camera() {
     let event = [(SoundKind::ScuttlerFire, Some(vec2(0.0, 0.0)))];
-    let wide = frame_mix(event, Vec2::ZERO, vec2(40.0, 25.0), WIDE_ZOOM);
-    let close = frame_mix(event, Vec2::ZERO, vec2(10.0, 6.0), DETAIL_ZOOM);
+    let wide = frame_mix(event, [], Vec2::ZERO, vec2(40.0, 25.0), WIDE_ZOOM);
+    let close = frame_mix(event, [], Vec2::ZERO, vec2(10.0, 6.0), DETAIL_ZOOM);
 
     assert!(close[0].gain > wide[0].gain * 3.0);
 }
@@ -106,6 +109,7 @@ fn heavy_reports_remain_more_legible_at_wide_zoom() {
             (SoundKind::Laser, Some(Vec2::ZERO)),
             (SoundKind::BastionFire, Some(Vec2::ZERO)),
         ],
+        [],
         Vec2::ZERO,
         vec2(40.0, 25.0),
         WIDE_ZOOM,
@@ -123,6 +127,7 @@ fn massed_equal_reports_coalesce_to_the_loudest_emitter() {
             (SoundKind::Laser, Some(vec2(8.0, 0.0))),
             (SoundKind::Laser, Some(Vec2::ZERO)),
         ],
+        [],
         Vec2::ZERO,
         vec2(20.0, 12.0),
         DETAIL_ZOOM,
@@ -146,6 +151,7 @@ fn wide_mix_bounds_distinct_minor_voices_but_keeps_heavy_threats() {
             (SoundKind::UnitDeath, Some(Vec2::ZERO)),
             (SoundKind::BastionFire, Some(Vec2::ZERO)),
         ],
+        [],
         Vec2::ZERO,
         vec2(40.0, 25.0),
         WIDE_ZOOM,
@@ -171,7 +177,7 @@ fn protected_alerts_bypass_position_zoom_and_voice_budget() {
             (SoundKind::LancerFire, Some(Vec2::ZERO)),
             (SoundKind::TalonFire, Some(Vec2::ZERO)),
         ]);
-        let mixed = frame_mix(queued, Vec2::ZERO, vec2(40.0, 25.0), WIDE_ZOOM);
+        let mixed = frame_mix(queued, [], Vec2::ZERO, vec2(40.0, 25.0), WIDE_ZOOM);
         let alert = mixed.iter().find(|event| event.kind == protected).unwrap();
 
         assert_eq!(alert.gain, 1.0, "{protected:?}");
@@ -190,7 +196,7 @@ fn unpositioned_ui_survives_the_positional_voice_budget() {
         (SoundKind::LancerFire, Some(Vec2::ZERO)),
         (SoundKind::TalonFire, Some(Vec2::ZERO)),
     ]);
-    let mixed = frame_mix(queued, Vec2::ZERO, vec2(40.0, 25.0), WIDE_ZOOM);
+    let mixed = frame_mix(queued, [], Vec2::ZERO, vec2(40.0, 25.0), WIDE_ZOOM);
     let click = mixed
         .iter()
         .find(|event| event.kind == SoundKind::Click)
@@ -232,6 +238,7 @@ fn nearby_detail_outweighs_a_far_standard_report() {
             (SoundKind::TalonFire, Some(Vec2::ZERO)),
             (SoundKind::WardenFire, Some(Vec2::ZERO)),
         ],
+        [],
         Vec2::ZERO,
         vec2(40.0, 25.0),
         WIDE_ZOOM,
@@ -239,4 +246,76 @@ fn nearby_detail_outweighs_a_far_standard_report() {
 
     assert!(!mixed.iter().any(|event| event.kind == SoundKind::UnitDeath));
     assert!(mixed.iter().any(|event| event.kind == SoundKind::Laser));
+}
+
+#[test]
+fn reports_fade_to_silence_half_a_view_diagonal_past_the_edge() {
+    let extents = vec2(30.0, 40.0);
+    let reach = 50.0;
+    let edge = vec2(30.0, 0.0);
+    let gain = |distance: f32| {
+        distance_gain(
+            SoundKind::Laser,
+            edge + Vec2::X * distance,
+            Vec2::ZERO,
+            extents,
+        )
+    };
+
+    assert_eq!(gain(0.0), 1.0);
+    assert_eq!(gain(reach / 2.0), 0.5);
+    assert_eq!(gain(reach), 0.0);
+    assert!(
+        frame_mix(
+            [(SoundKind::Laser, Some(edge + Vec2::X * reach))],
+            [],
+            Vec2::ZERO,
+            extents,
+            DETAIL_ZOOM,
+        )
+        .is_empty(),
+        "a report past its reach uses no voice and raises no combat music"
+    );
+}
+
+#[test]
+fn a_fogged_blast_plays_set_back_and_leaves_the_score_alone() {
+    let at = Vec2::ZERO;
+    let extents = vec2(20.0, 12.0);
+    let witnessed = frame_mix(
+        [(SoundKind::BuildingBoom, Some(at))],
+        [],
+        at,
+        extents,
+        DETAIL_ZOOM,
+    );
+    let fogged = frame_mix(
+        [],
+        [(SoundKind::BuildingBoom, at)],
+        at,
+        extents,
+        DETAIL_ZOOM,
+    );
+
+    assert_eq!(witnessed[0].gain, 1.0);
+    assert!(witnessed[0].combat);
+    assert_eq!(fogged[0].gain, FOGGED_BLAST_GAIN);
+    assert!(!fogged[0].combat);
+}
+
+#[test]
+fn a_witnessed_blast_raises_the_score_beside_a_louder_fogged_one() {
+    let extents = vec2(20.0, 12.0);
+    let far_past_the_edge = vec2(20.0 + EXPLOSION_FALLOFF_TILES * 0.75, 0.0);
+    let mixed = frame_mix(
+        [(SoundKind::BuildingBoom, Some(far_past_the_edge))],
+        [(SoundKind::BuildingBoom, Vec2::ZERO)],
+        Vec2::ZERO,
+        extents,
+        DETAIL_ZOOM,
+    );
+
+    assert_eq!(mixed.len(), 1);
+    assert_eq!(mixed[0].gain, FOGGED_BLAST_GAIN);
+    assert!(mixed[0].combat);
 }

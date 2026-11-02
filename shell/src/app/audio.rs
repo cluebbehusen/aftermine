@@ -12,6 +12,7 @@ pub(super) fn frame(app: &mut App, screen: &mut Screen, dt: f32) {
     let presentation = screen.visible_presentation(&mut app.game);
     let mut queued: Vec<(SoundKind, Option<Vec2>)> = std::mem::take(&mut app.ui_sounds);
     queued.append(&mut presentation.sounds_pending);
+    let fogged_blasts = std::mem::take(&mut presentation.fogged_blasts);
     let camera = &presentation.camera;
     let (cam_center, cam_half_extents, cam_zoom) = (
         camera.center,
@@ -57,11 +58,14 @@ pub(super) fn frame(app: &mut App, screen: &mut Screen, dt: f32) {
             effects * crate::mixer::Mixer::base_volume(SoundKind::MawKiln),
         ),
     );
-    let mixed = crate::audio_mix::frame_mix(queued, cam_center, cam_half_extents, cam_zoom);
-    let combat_impulse = maw_combat
-        || mixed
-            .iter()
-            .any(|event| crate::mixer::spec(event.kind).combat);
+    let mixed = crate::audio_mix::frame_mix(
+        queued,
+        fogged_blasts,
+        cam_center,
+        cam_half_extents,
+        cam_zoom,
+    );
+    let combat_impulse = maw_combat || mixed.iter().any(|event| event.combat);
     for event in mixed {
         app.mixer
             .play(&app.sounds, event.kind, &app.config.volumes, event.gain);

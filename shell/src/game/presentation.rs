@@ -80,6 +80,8 @@ pub struct Presentation {
     pub(crate) audio_timeline: crate::audio_timeline::AudioTimeline,
     /// Clips queued by this frame's ticks; the main loop drains and plays.
     pub sounds_pending: Vec<(SoundKind, Option<Vec2>)>,
+    /// Blasts this frame's ticks set off where this seat did not witness them.
+    pub fogged_blasts: Vec<(SoundKind, Vec2)>,
     /// Transient HUD messages, newest last.
     pub toasts: Vec<Toast>,
     /// When each stall reason last reported.
@@ -355,6 +357,7 @@ impl Presentation {
             fx: Vec::new(),
             audio_timeline: crate::audio_timeline::AudioTimeline::default(),
             sounds_pending: Vec::new(),
+            fogged_blasts: Vec::new(),
             last_seen: std::cell::RefCell::new(HashMap::new()),
             minimap_layer: std::cell::RefCell::new(None),
             ground: std::cell::OnceCell::new(),
@@ -592,6 +595,7 @@ impl Presentation {
         self.placement_verdict.clear();
         self.restore_pending_crashes(state);
         self.sounds_pending.clear();
+        self.fogged_blasts.clear();
         self.toasts.clear();
         self.stall_reports.clear();
         // Aim holds and recoil stamps are per-timeline: after a seek,
