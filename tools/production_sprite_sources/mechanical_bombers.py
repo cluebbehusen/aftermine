@@ -23,6 +23,7 @@ IRON_DEEP = (24, 25, 31)
 IRON_DARK = gen.IRON_DARK
 IRON = gen.IRON
 IRON_LIGHT = gen.IRON_LIGHT
+EDGE = (115, 114, 123)
 CONDOR_SIZE = 128
 CONDOR_STATES = ("idle", "crack", "open", "release", "recover")
 SS = 4
@@ -59,22 +60,59 @@ def _finish(image):
     return gen.rim_light(image.resize((128, 128), Image.Resampling.LANCZOS))
 
 
-def condor_panels(draw):
-    for side in (-1, 1):
-        draw.line(
-            [(64 + side * 8, 26), (64 + side * 39, 58)],
-            fill=_rgba((115, 114, 123)),
-            width=1,
-        )
-        draw.line(
-            [(64 + side * 31, 65), (64 + side * 20, 68), (64 + side * 13, 56)],
-            fill=_rgba(IRON_DEEP),
-            width=1,
-        )
-    for x in (43, 79):
-        draw.rectangle((x, 49, x + 6, 67), fill=_rgba(BLACK))
-        draw.line((x + 1, 50, x + 5, 50), fill=_rgba(IRON_LIGHT), width=1)
-        draw.rectangle((x + 2, 53, x + 4, 64), fill=_rgba(IRON))
+def _mirror(points, side):
+    return [(64 + side * x, y) for x, y in points]
+
+
+def _column(x, half, y0, y1):
+    return (x - half, y0, x + half, y1)
+
+
+def condor_wing(draw, side, paint):
+    draw.polygon(
+        _mirror(((5, 26), (41, 62), (22, 66), (7, 54)), side), fill=_rgba(IRON)
+    )
+    draw.line(_mirror(((8, 26), (39, 58)), side), fill=_rgba(EDGE), width=1)
+    draw.line(_mirror(((26, 46), (30, 64)), side), fill=_rgba(IRON_DEEP), width=1)
+    draw.polygon(
+        _mirror(((26, 63), (45, 67), (44, 76), (26, 72)), side), fill=_rgba(BLACK)
+    )
+    draw.polygon(
+        _mirror(((28, 65), (43, 69), (42, 74), (28, 70)), side), fill=_rgba(paint)
+    )
+    draw.line(_mirror(((28, 65), (43, 69)), side), fill=_rgba(EDGE), width=1)
+    draw.polygon(
+        _mirror(((9, 72), (24, 73), (14, 85), (9, 80)), side), fill=_rgba(IRON_DARK)
+    )
+    draw.line(_mirror(((9, 72), (24, 73)), side), fill=_rgba(IRON), width=1)
+
+
+def condor_engine(draw, side):
+    x = 64 + side * 20
+    draw.rounded_rectangle(_column(x, 7, 43, 71), radius=3, fill=_rgba(BLACK))
+    draw.rounded_rectangle(_column(x, 5, 45, 69), radius=2, fill=_rgba(IRON_DARK))
+    draw.rectangle(_column(x, 4, 46, 51), fill=_rgba(BLACK))
+    draw.line([(x - 4, 45), (x + 3, 45)], fill=_rgba(IRON_LIGHT), width=1)
+    for y in (55, 58, 61):
+        draw.line([(x - 3, y), (x + 3, y)], fill=_rgba(IRON), width=1)
+    draw.rounded_rectangle(_column(x, 4, 65, 73), radius=1, fill=_rgba(BLACK))
+    draw.rectangle(_column(x, 2, 66, 71), fill=_rgba(IRON_DEEP))
+
+
+def condor_spine(draw, paint):
+    draw.polygon(
+        ((56, 30), (64, 22), (72, 30), (73, 72), (64, 80), (55, 72)),
+        fill=_rgba(IRON_DARK),
+    )
+    draw.line([(56, 31), (55, 71)], fill=_rgba(IRON), width=1)
+    draw.line([(72, 31), (73, 71)], fill=_rgba(BLACK), width=1)
+    draw.rectangle((58, 31, 61, 52), fill=_rgba(paint))
+    draw.rectangle((67, 31, 70, 52), fill=_rgba(paint))
+    for y in (58, 66):
+        draw.line([(57, y), (71, y)], fill=_rgba(IRON_DEEP), width=1)
+        draw.line([(57, y + 1), (71, y + 1)], fill=_rgba(IRON), width=1)
+    # An uninterrupted keel keeps the back closed: the payload leaves through the nose.
+    draw.line((64, 43, 64, 74), fill=_rgba(IRON_DEEP), width=2)
 
 
 def nose_bay(
@@ -83,8 +121,6 @@ def nose_bay(
     state: str,
     paint: tuple[int, int, int],
 ) -> None:
-    # An uninterrupted dorsal keel keeps the back closed.
-    draw.line((64, 43, 64, 70), fill=_rgba(IRON_DEEP), width=2)
     spread = {"idle": 0, "crack": 0, "open": 6, "release": 6, "recover": 3}[state]
     # The aperture reaches the leading edge, allowing the separate payload
     # underneath the airframe to emerge instead of appearing on its roof.
@@ -146,17 +182,9 @@ def render_condor(variant: str, state: str = "idle") -> Image.Image:
     )
     draw.polygon(outer, fill=_rgba(BLACK))
     draw.polygon(inner, fill=_rgba(IRON_DEEP))
-    draw.polygon(((60, 25), (24, 62), (43, 66), (58, 54)), fill=_rgba(IRON))
-    draw.polygon(((68, 25), (104, 62), (85, 66), (70, 54)), fill=_rgba(IRON))
-    draw.polygon(
-        ((56, 30), (64, 22), (72, 30), (73, 72), (64, 80), (55, 72)),
-        fill=_rgba(IRON_DARK),
-    )
-    for x in (43, 79):
-        draw.rectangle((x, 49, x + 6, 67), fill=_rgba(BLACK))
-        draw.rectangle((x + 2, 52, x + 4, 65), fill=_rgba(IRON_LIGHT))
-    draw.rectangle((58, 31, 61, 54), fill=_rgba(palette.dark))
-    draw.rectangle((67, 31, 70, 54), fill=_rgba(palette.dark))
-    condor_panels(draw)
+    for side in (-1, 1):
+        condor_wing(draw, side, palette.dark)
+        condor_engine(draw, side)
+    condor_spine(draw, palette.dark)
     nose_bay(image, draw, state, palette.dark)
     return _finish(image)
