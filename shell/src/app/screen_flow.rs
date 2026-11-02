@@ -166,7 +166,8 @@ fn exit(game: &mut Game, from: ScreenKind) {
     match from {
         // Inspection ends on every way out, not only the Back button.
         ScreenKind::FinalMap => game.presentation.stance = crate::game::Stance::Seat,
-        ScreenKind::Home
+        ScreenKind::ColdOpen
+        | ScreenKind::Home
         | ScreenKind::Settings
         | ScreenKind::Codex
         | ScreenKind::Lessons
@@ -202,7 +203,8 @@ fn enter(game: &mut Game, screen: &Screen) {
             game.presentation.selection.buildings.clear();
             game.presentation.selection.pile = None;
         }
-        ScreenKind::Home
+        ScreenKind::ColdOpen
+        | ScreenKind::Home
         | ScreenKind::Settings
         | ScreenKind::Codex
         | ScreenKind::Lessons
@@ -255,7 +257,8 @@ pub(super) fn deliver_notices(
                 screen.notice = Some(screens::settings::Notice { text, danger });
             }
             Screen::Pause(pause) => pause.show_notice(text),
-            Screen::Home(_)
+            Screen::ColdOpen(_)
+            | Screen::Home(_)
             | Screen::Codex { .. }
             | Screen::Lessons { .. }
             | Screen::Wizard(_)
@@ -327,6 +330,7 @@ pub(super) fn update_and_draw(
     // presenting, so the frame shows the destination.
     let mut rerun = false;
     screen = match screen {
+        Screen::ColdOpen(open) => cold_open_frame(app, open, pressed, time.presentation),
         Screen::Home(home) => home_frame(app, home, &events, time.presentation),
         Screen::Settings { screen: sc, back } => settings_frame(
             app,
@@ -479,6 +483,31 @@ fn home_backdrop(app: &mut App, dt: f32) {
     } else {
         page_backdrop();
     }
+}
+
+/// Runs Home's match unseen behind the report, so the cut lands in the middle
+/// of it.
+fn cold_open_frame(
+    app: &mut App,
+    mut open: screens::cold_open::ColdOpenScreen,
+    pressed: bool,
+    dt: f32,
+) -> Screen {
+    let over = open.update(pressed, dt);
+    if let Some(backdrop) = app.home_backdrop.playing(app.args.automation) {
+        measure(FramePass::Sim, || {
+            backdrop.advance(dt, render::reduced_motion());
+        });
+    }
+    pass(FramePass::Menu, || open.draw());
+    if !over {
+        return Screen::ColdOpen(open);
+    }
+    app.config.cold_open_seen = true;
+    if let Err(err) = app.config.save() {
+        eprintln!("could not save config: {err}");
+    }
+    Screen::Home(HomeScreen::open())
 }
 
 fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32) -> Screen {

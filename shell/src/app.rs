@@ -306,6 +306,8 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         }
     } else if purposeful {
         Screen::Playing
+    } else if !config.cold_open_seen && !args.automation {
+        Screen::ColdOpen(screens::cold_open::ColdOpenScreen::default())
     } else {
         let home = HomeScreen::open();
         mark("home screen open");

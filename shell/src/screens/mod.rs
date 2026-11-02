@@ -6,6 +6,7 @@
 
 pub mod browser;
 pub mod codex;
+pub mod cold_open;
 pub mod final_map;
 pub mod home;
 pub mod lessons;

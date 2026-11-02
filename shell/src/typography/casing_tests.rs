@@ -86,6 +86,19 @@ const LABELS: &[&str] = &[
 /// Acronyms, which keep their capitals anywhere.
 const ACRONYMS: &[&str] = &["-- FPS", "FFA", "FPS", "LAN"];
 
+/// The report before the first Home, written as a machine's printout.
+const REPORT: &[&str] = &[
+    "SITE 14",
+    "ORE",
+    "EXHAUSTED",
+    "HEAD OFFICE",
+    "NO RESPONSE, 61 YEARS",
+    "STANDING ORDER",
+    "RECOVER SCRAP",
+    "NEAREST SCRAP",
+    "SITE 15",
+];
+
 /// Text whose every word is capitalized because each is a name, or that only
 /// tools read.
 const NAMED: &[&str] = &[
@@ -223,6 +236,7 @@ fn all_caps_text_plays_a_declared_role() {
                 && !TITLES.contains(&text)
                 && !LABELS.contains(&text)
                 && !ACRONYMS.contains(&text)
+                && !REPORT.contains(&text)
             {
                 strays.push(format!("{}:{line}: {text}", path.display()));
             }

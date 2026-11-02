@@ -70,7 +70,10 @@ pub(super) fn frame(app: &mut App, screen: &mut Screen, dt: f32) {
         app.mixer
             .play(&app.sounds, event.kind, &app.config.volumes, event.gain);
     }
-    if let Some(soundtrack) = &mut app.soundtrack {
+    // The report before the first Home is silent; the score starts at the cut.
+    if !matches!(screen, Screen::ColdOpen(_))
+        && let Some(soundtrack) = &mut app.soundtrack
+    {
         soundtrack.update(
             soundtrack_scene(screen, &app.game),
             combat_impulse,
@@ -98,7 +101,8 @@ pub(super) fn soundtrack_scene(screen: &Screen, game: &Game) -> crate::soundtrac
             crate::soundtrack::match_scene(&game.view(), true)
         }
         Screen::Results(_) => crate::soundtrack::match_scene(&game.view(), false),
-        Screen::Home(_)
+        Screen::ColdOpen(_)
+        | Screen::Home(_)
         | Screen::Lobby { .. }
         | Screen::Settings { .. }
         | Screen::Codex { .. }
