@@ -101,6 +101,11 @@ confirm a win on the iPad with the Detailed performance graph. A Mac with its
 displays asleep runs unpaced and gives different numbers. The command holds them
 awake and warns when frames still ran unpaced; a locked screen needs unlocking.
 
+A quiet Mac runs a light frame several times slower than it can, and how much
+slower wanders from run to run, so two spinning threads hold clocks up by
+default. These numbers are for comparing changes and for how much work a frame
+does. Use `--natural-clocks` to see what the OS chooses when left alone.
+
 `--gpu` waits for the GPU after each frame and times the wait. That is
 whole-frame only, because Apple GPUs render a pass tile by tile after it is
 submitted. The wait has a floor even with every pass skipped, so measure that

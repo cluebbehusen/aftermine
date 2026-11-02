@@ -81,6 +81,7 @@ fn report(workloads: Vec<WorkloadResult>) -> GraphicsReport {
         window: WINDOW,
         gpu: false,
         skipped: Vec::new(),
+        natural_clocks: false,
         workloads,
     }
 }
@@ -267,6 +268,7 @@ fn trials_of_zero_are_refused_before_any_shell_starts() {
         dev: true,
         gpu: false,
         skip: &[],
+        natural_clocks: false,
     })
     .unwrap_err();
     assert!(refusal.to_string().contains("--trials"));
@@ -282,6 +284,7 @@ fn draw_calls_come_from_one_plain_trial_only() {
         dev: true,
         gpu,
         skip,
+        natural_clocks: false,
     };
     let plain = options(false, &[]);
     assert!(probes_for_trial(0, &plain).draw_calls);
@@ -388,4 +391,29 @@ fn a_trial_missing_what_it_asked_for_is_refused() {
     profile.frames = 0;
     let refusal = check_trial(&profile, &FrameProbes::default()).unwrap_err();
     assert!(refusal.to_string().contains("no frames"));
+}
+
+#[test]
+fn held_clocks_stop_when_dropped() {
+    let clocks = HeldClocks::start();
+    assert_eq!(clocks.holders.len(), CLOCK_HOLDERS);
+    let stop = Arc::clone(&clocks.stop);
+    drop(clocks);
+    assert!(stop.load(Ordering::Relaxed));
+}
+
+#[test]
+fn the_report_names_its_clocks_and_warns_on_a_mismatched_comparison() {
+    let held = report(vec![result("near", vec![trial(2.0, 1.0, 0)])]);
+    assert!(render(&held, None).contains("held clocks"));
+    assert!(!render(&held, Some(&held)).contains("WARNING"));
+
+    let mut natural = held.clone();
+    natural.natural_clocks = true;
+    assert!(render(&natural, None).contains("natural clocks"));
+    assert!(render(&natural, Some(&held)).contains("different clocks"));
+
+    let mut waiting = held.clone();
+    waiting.gpu = true;
+    assert!(render(&waiting, Some(&held)).contains("different clocks or GPU"));
 }
