@@ -105,7 +105,7 @@ fn pack_production() -> (Packer, Vec<(Source, usize, Region)>) {
             (key, packed_area(&pages[(key[1] / height) as usize], local))
         })
         .collect();
-    let (packer, regions) = pack(&areas, &unit_sources(&manifest), |_, area, level| {
+    let (packer, regions) = pack(&areas, |_, area, level| {
         let factor = LEVELS[level].fit::<u32>();
         Image::gen_image_color(
             (area[2] / factor).fit::<u16>(),
@@ -118,51 +118,53 @@ fn pack_production() -> (Packer, Vec<(Source, usize, Region)>) {
 }
 
 #[test]
-fn production_mips_fit_seven_pages_without_discarding_levels() {
+fn production_mips_fit_one_shader_without_discarding_levels() {
     let (packer, regions) = pack_production();
     for (_, _, region) in regions {
         assert!(region.rect.right() < PAGE as f32);
         assert!(region.rect.bottom() < PAGE as f32);
     }
     assert!(
-        packer.images.len() <= 7,
-        "{} mip pages exceed the seven-page budget",
+        packer.images.len() <= MAX_PAGES,
+        "{} mip pages exceed the {MAX_PAGES} one shader can read",
         packer.images.len()
     );
 }
 
 #[test]
-fn each_coarse_level_of_a_pass_keeps_to_one_page() {
-    let manifest: HashMap<String, [f32; 4]> =
-        serde_json::from_str(include_str!("../../../assets/sprites/atlas.json")).unwrap();
-    let units = unit_sources(&manifest);
-    let (_, regions) = pack_production();
-    // A draw samples two adjacent levels; with each coarse level on one
-    // page, every sprite a pass draws at one zoom shares its batch.
-    for unit in [false, true] {
-        for level in 1..LEVELS.len() {
-            let pages: BTreeSet<usize> = regions
-                .iter()
-                .filter(|(key, packed, _)| *packed == level && units.contains(key) == unit)
-                .map(|(_, _, region)| region.page)
-                .collect();
-            assert_eq!(pages.len(), 1, "units {unit} level {level} spans {pages:?}");
+fn a_sprite_names_its_pages_in_a_field_ordinary_draws_leave_zero() {
+    for full in 0..MAX_PAGES {
+        for reduced in 0..MAX_PAGES {
+            let code = sampled_pages(full, reduced);
+            assert!(code > 0.5, "{full} {reduced} reads as an ordinary draw");
+            // As the vertex shader unpacks it.
+            let decoded = [
+                (code - 1.0).rem_euclid(MAX_PAGES as f32),
+                ((code - 1.0) / MAX_PAGES as f32).floor(),
+            ];
+            assert_eq!(decoded, [full as f32, reduced as f32]);
         }
     }
+    let shader = sprite_vertex_shader();
+    assert!(shader.contains(&format!("mod(normal.w-1.0,{MAX_PAGES}.0)")));
+    assert!(shader.contains(&format!("floor((normal.w-1.0)/{MAX_PAGES}.0)")));
 }
 
 #[test]
-fn cradles_pack_with_the_works_and_rigged_hulls_with_the_units() {
-    assert!(!is_unit_source("maw_cradle"));
-    assert!(!is_unit_source("rig_maw_cradle_frame"));
-    assert!(!is_unit_source("roc_cradle_accent"));
-    assert!(is_unit_source("maw"));
-    assert!(is_unit_source("rig_roc_hull"));
-    assert!(
-        is_unit_source("scout_radar"),
-        "a Kestrel draws it between units"
-    );
-    assert!(!is_unit_source("turret"));
+fn the_fragment_shader_reads_every_page_and_no_other() {
+    let shader = sprite_fragment_shader(3);
+    for page in 0..3 {
+        assert!(shader.contains(&format!("uniform sampler2D Page{page};")));
+        assert!(shader.contains(&format!(
+            "if (index<{page}.5) return texture2D(Page{page},at);"
+        )));
+    }
+    assert!(!shader.contains("Page3"));
+}
+
+/// A region on the first page.
+fn region(rect: Rect) -> Region {
+    Region { page: 0, rect }
 }
 
 #[test]
@@ -179,7 +181,14 @@ fn mip_vertex_data_preserves_flip_pivot_rotation_and_tint() {
     let b = Rect::new(64.0, 512.0, 32.0, 16.0);
     let tint = Color::new(0.3, 0.6, 0.9, 0.4);
     let whole = Rect::new(0.0, 0.0, 1.0, 1.0);
-    let vertices = sprite_vertices(vec2(10.0, 20.0), tint, &params, whole, [a, b], 0.6);
+    let vertices = sprite_vertices(
+        vec2(10.0, 20.0),
+        tint,
+        &params,
+        whole,
+        [region(a), Region { page: 3, rect: b }],
+        0.6,
+    );
     for (vertex, expected) in vertices.iter().zip([
         vec2(-10.0, 60.0),
         vec2(-10.0, 20.0),
@@ -189,7 +198,7 @@ fn mip_vertex_data_preserves_flip_pivot_rotation_and_tint() {
         assert!(vertex.position.truncate().distance(expected) < 0.0001);
         assert_eq!(vertex.color, <[u8; 4]>::from(tint));
         assert_eq!(vertex.normal.z, 0.6);
-        assert_eq!(vertex.normal.w, 1.0);
+        assert_eq!(vertex.normal.w, sampled_pages(0, 3));
     }
     assert_eq!(vertices[0].uv, vec2(128.0, 256.0) / PAGE as f32);
     assert_eq!(vertices[2].uv, vec2(192.0, 288.0) / PAGE as f32);
@@ -210,7 +219,7 @@ fn mip_quad_rotates_about_the_destination_center_by_default() {
         rotation: std::f32::consts::PI,
         ..Default::default()
     };
-    let source = Rect::new(0.0, 0.0, 64.0, 64.0);
+    let source = region(Rect::new(0.0, 0.0, 64.0, 64.0));
     let whole = Rect::new(0.0, 0.0, 1.0, 1.0);
     let vertices = sprite_vertices(
         vec2(10.0, 20.0),
@@ -370,7 +379,7 @@ fn a_packed_area_draws_where_it_lies_in_the_whole_flipped_and_turned_sprite() {
         rotation: std::f32::consts::PI,
         ..Default::default()
     };
-    let region = Rect::new(0.0, 0.0, 16.0, 16.0);
+    let packed = region(Rect::new(0.0, 0.0, 16.0, 16.0));
     // The area's left quarter, upper half: flipped, it covers the right
     // quarter; turned a half turn about the whole quad's centre, the left
     // quarter's lower half.
@@ -380,7 +389,7 @@ fn a_packed_area_draws_where_it_lies_in_the_whole_flipped_and_turned_sprite() {
         WHITE,
         &params,
         area,
-        [region, region],
+        [packed, packed],
         0.0,
     );
     for (vertex, expected) in vertices.iter().zip([
