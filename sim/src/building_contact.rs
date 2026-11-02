@@ -333,28 +333,14 @@ const CRUCIBLE_STAGE2: Outline = &[
     (10, 117),
 ];
 const BARRICADE: Outline = &[
-    (128, 26),
-    (128, 91),
-    (121, 92),
-    (121, 108),
-    (106, 112),
-    (102, 92),
-    (26, 92),
-    (22, 112),
-    (7, 108),
-    (7, 92),
-    (0, 91),
-    (0, 26),
-];
-const BARRICADE_STAGE1: Outline = &[
-    (120, 16),
-    (120, 26),
-    (128, 27),
-    (120, 117),
-    (8, 117),
-    (0, 27),
-    (8, 26),
-    (8, 16),
+    (113, 2),
+    (127, 16),
+    (127, 112),
+    (112, 127),
+    (16, 127),
+    (1, 112),
+    (1, 16),
+    (15, 2),
 ];
 const SCUTTLE_CHARGE: Outline = &[
     (92, 36),
@@ -525,7 +511,7 @@ const CRUCIBLE_ART: Outlines = Outlines {
 };
 const BARRICADE_ART: Outlines = Outlines {
     built: &[BARRICADE],
-    site: &[[SCAFFOLD, BARRICADE_STAGE1, BARRICADE_STAGE1]],
+    site: &[[SCAFFOLD, BARRICADE, BARRICADE]],
 };
 const SCUTTLE_CHARGE_ART: Outlines = Outlines {
     built: &[SCUTTLE_CHARGE],

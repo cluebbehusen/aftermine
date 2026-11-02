@@ -183,7 +183,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "1ffaaf94ece90fab842ef259b41d78d2596bf7125da70540cc6bd6a27dd6b466",
+            "2e1004e1421e1eb5d6f9e2132b8f73d883c7bbc0cd60dc642416f0d6be4276af",
         )
 
     def test_extractor_key_poses_keep_the_approved_art(self) -> None:
@@ -323,7 +323,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "8e53ee55b230caaa338de50c5e6d2316a58beb15653ba5b5dacea82bee554f9c",
+            "1c7f391236322c715f7f9ca7bc5cddda10424139c35740c07c93691cd6786e2e",
         )
 
     def test_citadel_preserves_the_approved_redoubt_sequence(self) -> None:
