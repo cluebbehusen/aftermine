@@ -683,7 +683,7 @@ fn lessons_frame(
         return start_course(app, row);
     }
     page_backdrop();
-    list.draw(app.input.mouse);
+    list.draw(&app.sprites, app.input.mouse);
     Ok(if out == screens::lessons::Out::Leave {
         *back
     } else {

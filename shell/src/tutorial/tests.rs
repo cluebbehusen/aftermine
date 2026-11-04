@@ -592,7 +592,7 @@ fn every_lesson_string_is_ascii_and_names_only_what_the_hands_have() {
         crate::platform::assert_copy_fits(hands, recovery);
     }
     for lesson in Lesson::ALL {
-        for line in [lesson.title(), lesson.summary(), lesson.outro()] {
+        for line in [lesson.title(), lesson.outro()] {
             ascii(line);
         }
         for step in lesson.steps() {
@@ -604,6 +604,17 @@ fn every_lesson_string_is_ascii_and_names_only_what_the_hands_have() {
                 }
             }
         }
+    }
+    for line in Course::FirstMatch.objectives() {
+        ascii(line);
+    }
+}
+
+#[test]
+fn a_lessons_objectives_are_its_step_titles_in_order() {
+    for lesson in Lesson::ALL {
+        let titles: Vec<&str> = lesson.steps().iter().map(|step| step.title).collect();
+        assert_eq!(Course::Lesson(lesson).objectives(), titles);
     }
 }
 

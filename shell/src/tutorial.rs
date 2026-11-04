@@ -52,11 +52,11 @@ impl Course {
         }
     }
 
-    /// One line on what the row has the player do.
-    pub fn summary(self) -> &'static str {
+    /// What the row has the player do, in order.
+    pub fn objectives(self) -> Vec<&'static str> {
         match self {
-            Self::Lesson(lesson) => lesson.summary(),
-            Self::FirstMatch => "play a full match against a computer opponent",
+            Self::Lesson(lesson) => lesson.steps().iter().map(|step| step.title).collect(),
+            Self::FirstMatch => vec!["Play a full match against a computer opponent"],
         }
     }
 }
@@ -139,21 +139,6 @@ impl Lesson {
             Self::Build => "Build",
             Self::Fight => "Fight",
             Self::Sustain => "Scout and repair",
-        }
-    }
-
-    /// One line on what the lesson teaches.
-    pub fn summary(self) -> &'static str {
-        match self {
-            Self::Command => "move the camera, select units, move them, and attack",
-            Self::Scrap => "collect scrap, train Harvesters, and restore Extractors",
-            Self::Build => {
-                "build, queue several structures, set rally points, and use control groups"
-            }
-            Self::Fight => "use Hunt, Advance, and Run, and fight around rock and high ground",
-            Self::Sustain => {
-                "scout, use radar, defend against aircraft, repair, and collect wrecks"
-            }
         }
     }
 
