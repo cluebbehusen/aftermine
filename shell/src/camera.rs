@@ -92,6 +92,12 @@ impl Camera {
         self.shake = self.shake.max(pixels);
     }
 
+    /// Ends any jolt underway.
+    pub fn steady(&mut self) {
+        self.shake = 0.0;
+        self.shake_time = 0.0;
+    }
+
     fn view_offset(&self) -> Vec2 {
         self.shake_offset() + self.landing_nudge
     }

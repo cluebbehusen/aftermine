@@ -42,6 +42,11 @@ const DIM: f32 = 0.42;
 const LEFT_DIM: f32 = 0.90;
 /// How far across the window the left dimming reaches.
 const LEFT_REACH: f32 = 0.72;
+/// How far a whole-pixel center sits from the pixel grid. Tile edges floor and
+/// the ground rounds, so on a whole or half pixel, rounding error alone would
+/// flip which pixel they snap to and hop them out and back. Tile edges fall on
+/// multiples of a fifty-sixth of a pixel, which this stays clear of too.
+const OFF_GRID: f32 = 0.1;
 
 /// Which scene to show. Automation always gets the first, so its frames repeat.
 fn choose(automation: bool) -> usize {
@@ -99,12 +104,33 @@ pub(crate) struct HomeBackdrop {
     framed_for: Vec2,
     /// Holding still for reduced motion.
     still: bool,
+    /// The world as drawn this frame, at the whole-pixel camera, for the view
+    /// to slide by [`Self::slip`]. Made on the first frame that needs it.
+    canvas: Option<RenderTarget>,
+    /// The canvas's size in device pixels.
+    canvas_size: (u32, u32),
+    /// The window pixels the canvas slides past the whole-pixel camera.
+    slip: Vec2,
 }
 
 /// The view's offset from its anchor at `age` seconds. It only sways, so the
 /// fight stays in view however long Home is left open.
 fn sway(age: f32) -> Vec2 {
     vec2((age / 23.0).sin(), (age / 31.0).sin()) * SWAY
+}
+
+/// Splits a view's center into the nearest whole-pixel center below it and the
+/// window pixels left over.
+///
+/// The world snaps what it draws to whole pixels, so at the sway's speed, a few
+/// pixels a second, a camera moved directly would jump one pixel at a time with
+/// the units gliding over the jumps. Drawn at a whole-pixel center, the world
+/// only ever moves rigidly, and the remainder can slide it as one image.
+fn whole_pixels(center: Vec2, zoom: f32, viewport: Vec2) -> (Vec2, Vec2) {
+    let half = viewport * 0.5;
+    let pixels = center * zoom - half;
+    let whole = (pixels - Vec2::splat(OFF_GRID)).floor() + Vec2::splat(OFF_GRID);
+    ((whole + half) / zoom, pixels - whole)
 }
 
 const NO_TIME: FrameTime = FrameTime {
@@ -133,6 +159,9 @@ impl HomeBackdrop {
             anchor: Vec2::ZERO,
             framed_for: viewport,
             still: false,
+            canvas: None,
+            canvas_size: (0, 0),
+            slip: Vec2::ZERO,
         };
         backdrop.frame(viewport);
         Ok(backdrop)
@@ -180,17 +209,85 @@ impl HomeBackdrop {
         // Nothing plays these, so they would pile up for as long as Home shows.
         self.session.presentation.sounds_pending.clear();
         self.session.presentation.fogged_blasts.clear();
+        // A blast's jolt goes with its sound, and there is none here.
+        self.session.presentation.camera.steady();
         let center = if still {
             self.anchor
         } else {
             self.anchor + sway(self.age)
         };
-        let zoom = self.session.presentation.camera.zoom;
-        self.session.presentation.camera.show(center, zoom);
+        let camera = &mut self.session.presentation.camera;
+        let zoom = camera.zoom;
+        camera.show(center, zoom);
+        if still {
+            self.slip = Vec2::ZERO;
+            return;
+        }
+        // The camera stops at the map's edge, so split what it settled on.
+        let settled = camera.center;
+        let (mut whole, _) = whole_pixels(settled, zoom, viewport);
+        camera.show(whole, zoom);
+        // The edge can also stop it short of the pixel below, so it takes the
+        // one above rather than leave the grid.
+        if camera.center.x != whole.x {
+            whole.x += 1.0 / zoom;
+        }
+        if camera.center.y != whole.y {
+            whole.y += 1.0 / zoom;
+        }
+        camera.show(whole, zoom);
+        self.slip = (settled - camera.center) * zoom;
     }
 
-    pub(crate) fn draw(&self, sprites: &Sprites, input: &InputState) {
+    /// The canvas for this frame's window, made or remade as it changes size.
+    fn canvas(&mut self) -> RenderTarget {
+        let size = (crate::render::viewport() * screen_dpi_scale()).ceil();
+        let size = (
+            crate::numeric::to_u32(size.x).max(1),
+            crate::numeric::to_u32(size.y).max(1),
+        );
+        match &self.canvas {
+            Some(canvas) if self.canvas_size == size => canvas.clone(),
+            _ => {
+                let canvas = render_target(size.0, size.1);
+                canvas.texture.set_filter(FilterMode::Linear);
+                self.canvas = Some(canvas.clone());
+                self.canvas_size = size;
+                canvas
+            }
+        }
+    }
+
+    /// Draws the world to the canvas, then slides the canvas into the window.
+    fn draw_gliding(&self, canvas: &RenderTarget, sprites: &Sprites, input: &InputState) {
+        let size = crate::render::viewport();
+        push_camera_state();
+        set_camera(&Camera2D {
+            target: size * 0.5,
+            zoom: vec2(2.0 / size.x, 2.0 / size.y),
+            render_target: Some(canvas.clone()),
+            ..Default::default()
+        });
+        clear_background(crate::theme::PAGE);
         crate::render::draw_world(&self.session.view(), sprites, input);
+        pop_camera_state();
+        let params = DrawTextureParams {
+            dest_size: Some(size),
+            ..Default::default()
+        };
+        // Sliding uncovers up to a pixel at the window's edge, so the unmoved
+        // canvas goes underneath.
+        draw_texture_ex(&canvas.texture, 0.0, 0.0, WHITE, params.clone());
+        draw_texture_ex(&canvas.texture, -self.slip.x, -self.slip.y, WHITE, params);
+    }
+
+    pub(crate) fn draw(&mut self, sprites: &Sprites, input: &InputState) {
+        if self.still {
+            crate::render::draw_world(&self.session.view(), sprites, input);
+        } else {
+            let canvas = self.canvas();
+            self.draw_gliding(&canvas, sprites, input);
+        }
         let (w, h) = (screen_width(), screen_height());
         let page = crate::theme::PAGE;
         let veil = |alpha: f32| Color::new(page.r, page.g, page.b, alpha);
