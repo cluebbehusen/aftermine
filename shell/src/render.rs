@@ -23,17 +23,17 @@ pub(crate) fn tread_gauge(kind: aftermine_sim::UnitKind) -> Option<f32> {
         (kind == aftermine_sim::UnitKind::Maw).then_some(maw::GAUGE)
     }
 }
-static COLORBLIND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static TEAM_COLORS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Colorblind palettes: swaps every ownership color (sprite accents, rings,
-/// health bars, minimap marks) for colorblind-safe ones. Base sprite art is
+/// Team colors: gives you, your allies and your enemies one ownership color
+/// each (sprite accents, rings, health bars, minimap marks). Base sprite art is
 /// unchanged.
-pub fn set_colorblind(on: bool) {
-    COLORBLIND.store(on, std::sync::atomic::Ordering::Relaxed);
+pub fn set_team_colors(on: bool) {
+    TEAM_COLORS.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
-pub(crate) fn colorblind() -> bool {
-    COLORBLIND.load(std::sync::atomic::Ordering::Relaxed)
+pub(crate) fn team_colors() -> bool {
+    TEAM_COLORS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 static CONTROL_GROUPS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
@@ -47,9 +47,9 @@ pub(crate) fn control_groups() -> bool {
     CONTROL_GROUPS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// The viewer's own colorblind-aware seat color.
+/// The viewer's own seat color under the current team colors setting.
 pub fn self_color() -> Color {
-    crate::seat_style::self_color(colorblind())
+    crate::seat_style::self_color(team_colors())
 }
 
 /// The seat's ownership color as the viewer sees it: the self color, or its
@@ -57,6 +57,12 @@ pub fn self_color() -> Color {
 /// and minimap marks all wear it.
 pub(crate) fn seat_identity_color(game: &Scene<'_>, owner: aftermine_sim::PlayerId) -> Color {
     game.seat_styles.get(owner)
+}
+
+/// The seat's color where seats must be told apart, as on Results: its own,
+/// even with team colors on.
+pub(crate) fn distinct_seat_color(game: &Scene<'_>, owner: aftermine_sim::PlayerId) -> Color {
+    crate::seat_style::SeatStyles::new(game.state, game.presentation.human, false).get(owner)
 }
 
 /// How faded a memory draws after `age` seconds unseen: 0 when fresh,

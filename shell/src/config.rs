@@ -207,9 +207,9 @@ pub struct Config {
     /// rings, muzzle flashes). Informational motion — unit movement,
     /// shell arcs — always stays.
     pub reduced_motion: bool,
-    /// Accessibility: colorblind-safe ownership colors (base sprite art
-    /// is untouched).
-    pub colorblind: bool,
+    /// Accessibility: one ownership color each for you, your allies and your
+    /// enemies, in place of a color per seat (base sprite art is untouched).
+    pub team_colors: bool,
     /// Show the control-group column above the minimap. Hiding it
     /// leaves keyboard groups working.
     pub control_groups: bool,
@@ -249,7 +249,7 @@ impl Default for Config {
             camera: CameraPrefs::default(),
             window: (1280, 800),
             reduced_motion: false,
-            colorblind: false,
+            team_colors: false,
             control_groups: true,
             match_tips: false,
             touch: TouchPrefs::default(),

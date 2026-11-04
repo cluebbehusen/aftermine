@@ -237,7 +237,7 @@ impl<'a> Scene<'a> {
             seat_styles: crate::seat_style::SeatStyles::new(
                 state,
                 presentation.human,
-                crate::render::colorblind(),
+                crate::render::team_colors(),
             ),
         }
     }

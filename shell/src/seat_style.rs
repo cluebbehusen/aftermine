@@ -29,29 +29,31 @@ impl AllegianceCue {
 pub(crate) struct SeatStyles([Color; MAX_PLAYERS]);
 
 impl SeatStyles {
-    pub fn new(state: &State, viewer: PlayerId, colorblind: bool) -> Self {
+    pub fn new(state: &State, viewer: PlayerId, team_colors: bool) -> Self {
         Self::from_cues(
             (0..state.players().len())
                 .map(|seat| AllegianceCue::of(state, viewer, PlayerId::from_index(seat))),
-            colorblind,
+            team_colors,
         )
     }
 
     /// Styles for seats in seat order whose relationship to the viewer is
     /// already known. Allies and hostiles each rank by seat order within
-    /// their own family.
-    pub fn from_cues(cues: impl IntoIterator<Item = AllegianceCue>, colorblind: bool) -> Self {
+    /// their own family, unless `team_colors` gives each family one color.
+    pub fn from_cues(cues: impl IntoIterator<Item = AllegianceCue>, team_colors: bool) -> Self {
         let cues: Vec<_> = cues.into_iter().collect();
-        let enemies = hostile_palette(colorblind, cues.contains(&AllegianceCue::Ally));
+        let enemies = hostile_palette(cues.contains(&AllegianceCue::Ally));
         let mut allies = 0;
         let mut hostiles = 0;
         let mut styles = [WHITE; MAX_PLAYERS];
         for (style, cue) in styles.iter_mut().zip(cues) {
             *style = match cue {
-                AllegianceCue::Mine => self_color(colorblind),
+                AllegianceCue::Mine => self_color(team_colors),
+                AllegianceCue::Ally if team_colors => TEAM_ALLY,
+                AllegianceCue::Hostile if team_colors => TEAM_ENEMY,
                 AllegianceCue::Ally => {
                     allies += 1;
-                    family_color(&ally_palette(colorblind), allies - 1)
+                    family_color(&ally_palette(), allies - 1)
                 }
                 AllegianceCue::Hostile => {
                     hostiles += 1;
@@ -67,83 +69,66 @@ impl SeatStyles {
     }
 }
 
-/// Your own seat's color: a hue neither the ally nor the hostile family
-/// uses, so "mine" never reads as a friend or a foe.
-pub(crate) fn self_color(colorblind: bool) -> Color {
-    // Near-white holds apart from both families under deutan, protan,
-    // and tritan vision, where every green collapses toward a warm hue.
-    if colorblind {
+/// Team colors' allies, clear of the enemy and self colors under typical,
+/// red-weak, green-weak and blue-weak vision alike.
+const TEAM_ALLY: Color = color_u8!(90, 150, 245, 255);
+/// Team colors' enemies, brighter than the default palette's first enemy so
+/// that they hold apart from the near-white self color and the blue allies.
+const TEAM_ENEMY: Color = color_u8!(228, 44, 58, 255);
+
+/// Your own seat's color: a hue neither the ally nor the hostile family uses,
+/// so "mine" never reads as a friend or a foe.
+pub(crate) fn self_color(team_colors: bool) -> Color {
+    // Near-white holds apart from both families under every color-vision type,
+    // where the default green collapses toward a warm hue.
+    if team_colors {
         color_u8!(245, 245, 240, 255)
     } else {
         color_u8!(40, 190, 110, 255)
     }
 }
 
-/// Cool blues and teals, clear of the self green and of the enemies seen beside
-/// an ally.
-fn ally_palette(colorblind: bool) -> [Color; 8] {
-    if colorblind {
-        [
-            color_u8!(120, 190, 255, 255),
-            color_u8!(150, 160, 255, 255),
-            color_u8!(100, 215, 255, 255),
-            color_u8!(185, 165, 255, 255),
-            color_u8!(90, 160, 245, 255),
-            color_u8!(170, 205, 255, 255),
-            color_u8!(130, 135, 240, 255),
-            color_u8!(150, 225, 255, 255),
-        ]
-    } else {
-        [
-            color_u8!(110, 190, 250, 255),
-            color_u8!(90, 222, 225, 255),
-            color_u8!(60, 110, 230, 255),
-            color_u8!(195, 230, 255, 255),
-            color_u8!(100, 160, 245, 255),
-            color_u8!(113, 203, 239, 255),
-            color_u8!(140, 150, 250, 255),
-            color_u8!(160, 200, 250, 255),
-        ]
-    }
+/// Light blues. Red against green collapses under red-weak and green-weak
+/// vision, so allies part from enemies by being lighter and bluer.
+fn ally_palette() -> [Color; 8] {
+    [
+        color_u8!(110, 190, 250, 255),
+        color_u8!(195, 230, 255, 255),
+        color_u8!(165, 140, 250, 255),
+        color_u8!(40, 150, 240, 255),
+        color_u8!(170, 210, 255, 255),
+        color_u8!(150, 170, 255, 255),
+        color_u8!(70, 190, 245, 255),
+        color_u8!(135, 205, 250, 255),
+    ]
 }
 
-/// Enemies by rank. A viewer with an ally sees only warm colors and magenta,
-/// clear of the ally hues; with no ally to confuse, later ranks reach into cool
-/// colors. Without colorblind accents, the ranks differ in lightness as well as
-/// hue so that they hold apart under red-weak vision.
-fn hostile_palette(colorblind: bool, has_allies: bool) -> [Color; 8] {
-    if colorblind {
+/// Enemies by rank. A viewer with an ally sees only dark colors, below the
+/// lightness of every ally and of the self green; bright oranges and yellows
+/// sit on the green under red-weak vision. With no ally to confuse, later ranks
+/// reach into light and cool colors.
+fn hostile_palette(has_allies: bool) -> [Color; 8] {
+    if has_allies {
         [
-            color_u8!(211, 65, 60, 255),
-            color_u8!(232, 128, 35, 255),
-            color_u8!(173, 72, 125, 255),
-            color_u8!(151, 87, 61, 255),
-            color_u8!(242, 84, 31, 255),
-            color_u8!(207, 99, 104, 255),
-            color_u8!(190, 136, 43, 255),
-            color_u8!(139, 49, 82, 255),
-        ]
-    } else if has_allies {
-        [
-            color_u8!(228, 44, 58, 255),
-            color_u8!(255, 215, 90, 255),
-            color_u8!(190, 60, 205, 255),
-            color_u8!(255, 175, 195, 255),
-            color_u8!(250, 235, 190, 255),
-            color_u8!(232, 105, 42, 255),
-            color_u8!(196, 124, 37, 255),
-            color_u8!(210, 85, 111, 255),
+            color_u8!(190, 30, 50, 255),
+            color_u8!(150, 120, 30, 255),
+            color_u8!(120, 60, 210, 255),
+            color_u8!(130, 40, 110, 255),
+            color_u8!(170, 60, 30, 255),
+            color_u8!(140, 90, 40, 255),
+            color_u8!(160, 40, 90, 255),
+            color_u8!(130, 30, 50, 255),
         ]
     } else {
         [
-            color_u8!(228, 44, 58, 255),
-            color_u8!(255, 215, 90, 255),
-            color_u8!(190, 60, 205, 255),
-            color_u8!(255, 175, 195, 255),
-            color_u8!(250, 235, 190, 255),
-            color_u8!(70, 110, 245, 255),
-            color_u8!(140, 225, 245, 255),
-            color_u8!(232, 105, 42, 255),
+            color_u8!(190, 30, 50, 255),
+            color_u8!(245, 245, 240, 255),
+            color_u8!(60, 90, 245, 255),
+            color_u8!(190, 175, 255, 255),
+            color_u8!(30, 135, 180, 255),
+            color_u8!(50, 70, 175, 255),
+            color_u8!(130, 40, 110, 255),
+            color_u8!(195, 230, 255, 255),
         ]
     }
 }

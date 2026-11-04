@@ -118,7 +118,7 @@
   "camera": {"pan_speed": 1.0, "edge_pan": false, "zoom_inverted": false},
   "window": [1280, 800],
   "reduced_motion": false,
-  "colorblind": false,
+  "team_colors": false,
   "control_groups": true,
   "match_tips": false,
   "touch": {"double_tap_ms": 300, "long_press_ms": 350},
