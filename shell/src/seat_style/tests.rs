@@ -46,28 +46,23 @@ fn every_supported_ffa_seat_has_a_distinct_hostile_identity_for_every_viewer() {
     for count in 2..=MAX_PLAYERS {
         let state = scenario(count, |_| None).build().unwrap();
         for viewer in 0..count {
-            for colorblind in [false, true] {
-                let styles = SeatStyles::new(&state, PlayerId(viewer.fit::<u8>()), colorblind);
-                let mut colors = Vec::new();
-                for owner in 0..count {
-                    let seat = PlayerId(owner.fit::<u8>());
-                    let style = styles.get(seat);
-                    let cue = AllegianceCue::of(&state, PlayerId(viewer.fit::<u8>()), seat);
-                    if owner == viewer {
-                        assert_eq!(cue, AllegianceCue::Mine);
-                        assert_eq!(style, self_color(colorblind));
-                    } else {
-                        assert_eq!(cue, AllegianceCue::Hostile);
-                        let color = rgb(style);
-                        if colorblind {
-                            assert!(color.0 > color.2, "colorblind hostiles stay warm");
-                        }
-                        assert!(
-                            !colors.contains(&color),
-                            "seat {owner} repeats an identity for viewer {viewer}"
-                        );
-                        colors.push(color);
-                    }
+            let styles = SeatStyles::new(&state, PlayerId(viewer.fit::<u8>()), false);
+            let mut colors = Vec::new();
+            for owner in 0..count {
+                let seat = PlayerId(owner.fit::<u8>());
+                let style = styles.get(seat);
+                let cue = AllegianceCue::of(&state, PlayerId(viewer.fit::<u8>()), seat);
+                if owner == viewer {
+                    assert_eq!(cue, AllegianceCue::Mine);
+                    assert_eq!(style, self_color(false));
+                } else {
+                    assert_eq!(cue, AllegianceCue::Hostile);
+                    let color = rgb(style);
+                    assert!(
+                        !colors.contains(&color),
+                        "seat {owner} repeats an identity for viewer {viewer}"
+                    );
+                    colors.push(color);
                 }
             }
         }
@@ -78,30 +73,45 @@ fn every_supported_ffa_seat_has_a_distinct_hostile_identity_for_every_viewer() {
 fn large_allied_team_preserves_identity_families_and_refreshes_the_viewer() {
     let scenario = scenario(MAX_PLAYERS, |seat| Some(u8::from(seat == MAX_PLAYERS - 1)));
     let state = scenario.build().unwrap();
-    for colorblind in [false, true] {
-        let allied = SeatStyles::new(&state, PlayerId(0), colorblind);
-        let enemy = SeatStyles::new(&state, PlayerId(15), colorblind);
-        let mut colors = Vec::new();
-        for owner in 1..15 {
-            let color = allied.get(PlayerId(owner));
-            assert_eq!(
-                AllegianceCue::of(&state, PlayerId(0), PlayerId(owner)),
-                AllegianceCue::Ally
-            );
-            assert!(!colors.contains(&rgb(color)));
-            colors.push(rgb(color));
-            assert!(color.b > color.r, "allies stay cool");
-            assert_eq!(
-                AllegianceCue::of(&state, PlayerId(15), PlayerId(owner)),
-                AllegianceCue::Hostile
-            );
-        }
-        assert_eq!(enemy.get(PlayerId(15)), self_color(colorblind));
-        if !colorblind {
-            assert_eq!(rgb(allied.get(PlayerId(1))), (110, 190, 250));
-            assert_eq!(rgb(enemy.get(PlayerId(0))), (228, 44, 58));
-        }
+    let allied = SeatStyles::new(&state, PlayerId(0), false);
+    let enemy = SeatStyles::new(&state, PlayerId(15), false);
+    let mut colors = Vec::new();
+    for owner in 1..15 {
+        let color = allied.get(PlayerId(owner));
+        assert_eq!(
+            AllegianceCue::of(&state, PlayerId(0), PlayerId(owner)),
+            AllegianceCue::Ally
+        );
+        assert!(!colors.contains(&rgb(color)));
+        colors.push(rgb(color));
+        assert!(color.b > color.r, "allies stay cool");
+        assert_eq!(
+            AllegianceCue::of(&state, PlayerId(15), PlayerId(owner)),
+            AllegianceCue::Hostile
+        );
     }
+    assert_eq!(enemy.get(PlayerId(15)), self_color(false));
+    assert_eq!(rgb(allied.get(PlayerId(1))), (110, 190, 250));
+    assert_eq!(rgb(enemy.get(PlayerId(0))), (190, 30, 50));
+}
+
+#[test]
+fn team_colors_give_each_relationship_one_color() {
+    let state = scenario(8, |seat| Some(u8::from(seat >= 4)))
+        .build()
+        .unwrap();
+    let styles = SeatStyles::new(&state, PlayerId(0), true);
+    assert_eq!(styles.get(PlayerId(0)), self_color(true));
+    for ally in 1..4 {
+        assert_eq!(styles.get(PlayerId(ally)), TEAM_ALLY);
+    }
+    for enemy in 4..8 {
+        assert_eq!(styles.get(PlayerId(enemy)), TEAM_ENEMY);
+    }
+    assert!(
+        chroma(self_color(true)) < 0.05,
+        "the self color stays achromatic"
+    );
 }
 
 #[test]
@@ -150,33 +160,19 @@ fn chroma(color: Color) -> f32 {
     color.r.max(color.g).max(color.b) - color.r.min(color.g).min(color.b)
 }
 
+fn luma(color: Color) -> f32 {
+    0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
+}
+
 #[test]
-fn enemies_beside_an_ally_stay_clear_of_the_ally_hues_on_uneven_teams() {
-    let state = scenario(8, |seat| Some(u8::from(seat >= 2)))
-        .build()
-        .unwrap();
-    let styles = SeatStyles::new(&state, PlayerId(0), false);
-    let ally = styles.get(PlayerId(1));
-    for owner in 2..8 {
-        let enemy = styles.get(PlayerId(owner));
-        let apart = (hue(enemy) - hue(ally)).abs();
+fn enemies_beside_an_ally_stay_darker_than_every_ally() {
+    let dimmest_ally = ally_palette().map(luma).into_iter().fold(1.0, f32::min);
+    for enemy in hostile_palette(true) {
         assert!(
-            apart.min(360.0 - apart) >= 30.0,
-            "{:?} sits within 30 degrees of the ally {:?}",
-            rgb(enemy),
-            rgb(ally)
+            luma(enemy) < dimmest_ally,
+            "{:?} is as light as an ally",
+            rgb(enemy)
         );
-    }
-    for enemy in hostile_palette(false, true) {
-        for ally in ally_palette(false) {
-            let apart = (hue(enemy) - hue(ally)).abs();
-            assert!(
-                apart.min(360.0 - apart) >= 30.0,
-                "{:?} sits within 30 degrees of the ally {:?}",
-                rgb(enemy),
-                rgb(ally)
-            );
-        }
     }
 }
 
@@ -186,16 +182,16 @@ fn a_viewer_without_allies_sees_later_enemies_in_cool_colors() {
         .build()
         .unwrap();
     let styles = SeatStyles::new(&state, PlayerId(0), false);
-    assert_eq!(rgb(styles.get(PlayerId(6))), (70, 110, 245));
+    assert_eq!(rgb(styles.get(PlayerId(3))), (60, 90, 245));
 }
 
 #[test]
 fn the_self_color_never_reads_as_a_friend_or_a_foe() {
     let mine = self_color(false);
-    for color in ally_palette(false)
+    for color in ally_palette()
         .into_iter()
-        .chain(hostile_palette(false, true))
-        .chain(hostile_palette(false, false))
+        .chain(hostile_palette(true))
+        .chain(hostile_palette(false))
     {
         let apart = (hue(mine) - hue(color)).abs();
         assert!(
@@ -204,21 +200,69 @@ fn the_self_color_never_reads_as_a_friend_or_a_foe() {
             rgb(color)
         );
     }
-    // Colorblind play separates by saturation instead of hue: an
-    // achromatic self color stays white under every color-vision type,
-    // while both families keep strong color.
-    let mine = self_color(true);
-    assert!(chroma(mine) < 0.05);
-    let lum = |c: Color| 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
-    for color in ally_palette(true)
-        .into_iter()
-        .chain(hostile_palette(true, false))
-    {
-        assert!(chroma(color) > 0.3, "{:?} is too gray", rgb(color));
-        assert!(
-            lum(mine) > lum(color),
-            "{:?} outshines the self color",
-            rgb(color)
-        );
-    }
+}
+
+/// A seat color as `OKLab` under simulated red-weak vision (Machado 2009), at the
+/// half brightness structure panels draw it.
+fn red_weak_oklab(color: Color) -> [f32; 3] {
+    let linear = |channel: f32| {
+        let drawn = channel * 0.5;
+        if drawn <= 0.040_45 {
+            drawn / 12.92
+        } else {
+            ((drawn + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let (r, g, b) = (linear(color.r), linear(color.g), linear(color.b));
+    let (r, g, b) = (
+        (0.152_286 * r + 1.052_583 * g - 0.204_868 * b).clamp(0.0, 1.0),
+        (0.114_503 * r + 0.786_281 * g + 0.099_216 * b).clamp(0.0, 1.0),
+        (-0.003_882 * r - 0.048_116 * g + 1.051_998 * b).clamp(0.0, 1.0),
+    );
+    let long = (0.412_221 * r + 0.536_333 * g + 0.051_446 * b).cbrt();
+    let medium = (0.211_903 * r + 0.680_700 * g + 0.107_397 * b).cbrt();
+    let short = (0.088_302 * r + 0.281_719 * g + 0.629_979 * b).cbrt();
+    [
+        0.210_454 * long + 0.793_618 * medium - 0.004_072 * short,
+        1.977_998 * long - 2.428_592 * medium + 0.450_594 * short,
+        0.025_904 * long + 0.782_772 * medium - 0.808_676 * short,
+    ]
+}
+
+fn red_weak_distance(a: Color, b: Color) -> f32 {
+    let (a, b) = (red_weak_oklab(a), red_weak_oklab(b));
+    let squares: f32 = a.iter().zip(&b).map(|(a, b)| (a - b).powi(2)).sum();
+    100.0 * squares.sqrt()
+}
+
+fn closest_under_red_weak(ours: &[Color], theirs: &[Color]) -> f32 {
+    ours.iter()
+        .flat_map(|ours| {
+            theirs
+                .iter()
+                .map(|theirs| red_weak_distance(*ours, *theirs))
+        })
+        .fold(f32::INFINITY, f32::min)
+}
+
+/// A 4v4, the largest teams a shipped map has, shows three allies and four
+/// enemies.
+#[test]
+fn seat_colors_hold_apart_under_red_weak_vision() {
+    let allies = ally_palette();
+    let allies = &allies[..3];
+    let enemies = hostile_palette(true);
+    let enemies = &enemies[..4];
+    let mine = [self_color(false)];
+    assert!(closest_under_red_weak(allies, enemies) >= 11.0);
+    assert!(closest_under_red_weak(&mine, enemies) >= 10.0);
+    assert!(closest_under_red_weak(&mine, allies) >= 10.0);
+    assert!(
+        red_weak_distance(mine[0], color_u8!(245, 175, 40, 255)) < 5.0,
+        "a bright warm color collapses onto the self green"
+    );
+    let team_mine = self_color(true);
+    assert!(red_weak_distance(TEAM_ALLY, TEAM_ENEMY) >= 15.0);
+    assert!(red_weak_distance(team_mine, TEAM_ENEMY) >= 15.0);
+    assert!(red_weak_distance(team_mine, TEAM_ALLY) >= 15.0);
 }

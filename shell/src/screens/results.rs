@@ -658,7 +658,7 @@ impl ResultsScreen {
                     .iter()
                     .find(|entry| usize::from(entry.seat) == seat);
                 let y = rule_y + (row as f32 + layout.row_baseline) * row_h;
-                let color = render::seat_identity_color(&game.view(), PlayerId(seat.fit::<u8>()));
+                let color = render::distinct_seat_color(&game.view(), PlayerId(seat.fit::<u8>()));
                 let winner = game.state.winners().contains(&PlayerId(seat.fit::<u8>()));
                 if winner {
                     let band = winner_band(left, right, rule_y, row, row_h, s);

@@ -208,7 +208,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     let mut config = config::Config::load();
     render::set_user_scale(config.ui_scale);
     render::set_reduced_motion(config.reduced_motion);
-    render::set_colorblind(config.colorblind);
+    render::set_team_colors(config.team_colors);
     render::set_control_groups(config.control_groups);
     crate::strategic_markers::set_prefs(config.markers);
     mark("config loaded");

@@ -505,7 +505,7 @@ fn draw_plot(
         );
     }
     for (player, values) in report.players.iter().zip(&series) {
-        let color = render::seat_identity_color(&game.view(), PlayerId(player.seat));
+        let color = render::distinct_seat_color(&game.view(), PlayerId(player.seat));
         let points = graph_points(
             &report.sample_ticks,
             values,
@@ -525,7 +525,7 @@ fn draw_plot(
     }
     let marks = mark_positions(&report.moments, report.final_tick, plot, s);
     for (moment, mark) in report.moments.iter().zip(marks) {
-        let color = render::seat_identity_color(&game.view(), PlayerId(moment.seat));
+        let color = render::distinct_seat_color(&game.view(), PlayerId(moment.seat));
         draw_line(mark.x, plot.y, mark.x, mark.y, s, color);
         draw_marker(mark.x, mark.y, 3.6 * s, usize::from(moment.seat), color);
     }
@@ -615,7 +615,7 @@ fn draw_readout(
     draw_text(&head, x + 6.0 * s, y + line, size, theme::TEXT_PRIMARY);
     for (index, (seat, text)) in rows.iter().enumerate() {
         let baseline = y + line * (index + 2) as f32;
-        let color = render::seat_identity_color(&game.view(), PlayerId(*seat));
+        let color = render::distinct_seat_color(&game.view(), PlayerId(*seat));
         draw_marker(
             x + 11.0 * s,
             baseline - size * 0.36,

@@ -96,7 +96,7 @@ pub(crate) fn seat_styles(
                 AllegianceCue::Hostile
             }
         }),
-        crate::render::colorblind(),
+        crate::render::team_colors(),
     )
 }
 

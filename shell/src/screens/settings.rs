@@ -321,7 +321,7 @@ pub(crate) enum Row {
     MusicVolume,
     UiScale,
     ReducedMotion,
-    Colorblind,
+    TeamColors,
     ControlGroups,
     MarkerTiming,
     MarkerSize,
@@ -352,7 +352,7 @@ impl Row {
         Row::MusicVolume,
         Row::UiScale,
         Row::ReducedMotion,
-        Row::Colorblind,
+        Row::TeamColors,
         Row::ControlGroups,
         Row::MarkerTiming,
         Row::MarkerSize,
@@ -372,7 +372,7 @@ impl Row {
             Row::MasterVolume | Row::EffectsVolume | Row::UiVolume | Row::MusicVolume => Tab::Audio,
             Row::UiScale
             | Row::ReducedMotion
-            | Row::Colorblind
+            | Row::TeamColors
             | Row::ControlGroups
             | Row::MarkerTiming
             | Row::MarkerSize => Tab::Display,
@@ -413,7 +413,7 @@ impl Row {
             Row::MusicVolume => setting("Music volume", pct(config.volumes.music)),
             Row::UiScale => setting("UI scale", pct(config.ui_scale)),
             Row::ReducedMotion => setting("Reduced motion", on(config.reduced_motion)),
-            Row::Colorblind => setting("Colorblind accents", on(config.colorblind)),
+            Row::TeamColors => setting("Colorblind team colors", on(config.team_colors)),
             Row::ControlGroups => setting(
                 "Control group bar",
                 if config.control_groups {
@@ -587,9 +587,9 @@ fn step_setting(config: &mut Config, row: Row, step: Step) -> bool {
             config.reduced_motion = toggle(config.reduced_motion);
             render::set_reduced_motion(config.reduced_motion);
         }
-        Row::Colorblind => {
-            config.colorblind = toggle(config.colorblind);
-            render::set_colorblind(config.colorblind);
+        Row::TeamColors => {
+            config.team_colors = toggle(config.team_colors);
+            render::set_team_colors(config.team_colors);
         }
         Row::PerformanceDisplay => {
             let modes = PerformanceDisplay::ALL;

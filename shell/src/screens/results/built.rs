@@ -101,7 +101,7 @@ pub(super) fn draw(game: &Game, sprites: &Sprites, report: &MatchStats, body: Re
     for (row, player) in report.players.iter().enumerate() {
         let top = body.y + row as f32 * shape.height;
         let first_middle = top + line_h * 0.5;
-        let owner = render::seat_identity_color(&game.view(), PlayerId(player.seat));
+        let owner = render::distinct_seat_color(&game.view(), PlayerId(player.seat));
         draw_marker(
             body.x + 6.0 * s,
             first_middle,
