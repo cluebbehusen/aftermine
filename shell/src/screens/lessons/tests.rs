@@ -1,4 +1,5 @@
 use super::*;
+use aftermine_protocol::MouseButton;
 use macroquad::prelude::vec2;
 
 fn press(list: &mut LessonsScreen, events: &[RawEvent]) -> Out {
@@ -9,6 +10,34 @@ fn press(list: &mut LessonsScreen, events: &[RawEvent]) -> Out {
 
 fn key(key: Key) -> [RawEvent; 2] {
     [RawEvent::KeyDown { key }, RawEvent::KeyUp { key }]
+}
+
+/// A click (or, with `touch`, a tap) at `p`.
+fn at(p: Vec2, touch: bool) -> [RawEvent; 2] {
+    let (x, y) = (p.x, p.y);
+    if touch {
+        [
+            RawEvent::TouchDown { id: 3, x, y },
+            RawEvent::TouchUp { id: 3, x, y },
+        ]
+    } else {
+        let button = MouseButton::Left;
+        [
+            RawEvent::MouseDown { button, x, y },
+            RawEvent::MouseUp { button, x, y },
+        ]
+    }
+}
+
+fn start() -> Vec2 {
+    start_button(crate::render::ui_scale()).center()
+}
+
+fn row(list: &LessonsScreen, index: usize) -> Vec2 {
+    list.menu
+        .item_rect(index)
+        .expect("every row shows")
+        .center()
 }
 
 #[test]
@@ -27,7 +56,10 @@ fn the_list_marks_finished_rows_and_opens_on_the_next_one() {
         ]
     );
     assert_eq!(fresh.menu.value(), Some(&Course::Lesson(Lesson::Command)));
-    assert_eq!(fresh.subtitle(), Lesson::Command.summary());
+    assert_eq!(
+        fresh.objectives(),
+        Course::Lesson(Lesson::Command).objectives()
+    );
 
     let next = LessonsScreen::open(&[Lesson::Command], false);
     assert_eq!(
@@ -42,11 +74,14 @@ fn the_list_marks_finished_rows_and_opens_on_the_next_one() {
         ]
     );
     assert_eq!(next.menu.value(), Some(&Course::Lesson(Lesson::Scrap)));
-    assert_eq!(next.subtitle(), Lesson::Scrap.summary());
+    assert_eq!(
+        next.objectives(),
+        Course::Lesson(Lesson::Scrap).objectives()
+    );
 
     let lessons_done = LessonsScreen::open(&Lesson::ALL, false);
     assert_eq!(lessons_done.menu.value(), Some(&Course::FirstMatch));
-    assert_eq!(lessons_done.subtitle(), Course::FirstMatch.summary());
+    assert_eq!(lessons_done.objectives(), Course::FirstMatch.objectives());
 
     let played = LessonsScreen::open(&[], true);
     assert_eq!(played.menu.view().items[5], "6. First match: DONE");
@@ -60,7 +95,7 @@ fn the_list_marks_finished_rows_and_opens_on_the_next_one() {
 }
 
 #[test]
-fn a_row_starts_its_lesson_or_the_first_match_and_back_or_escape_leaves() {
+fn enter_starts_the_selected_row_and_back_or_escape_leaves() {
     let mut list = LessonsScreen::open(&[], false);
     assert_eq!(press(&mut list, &key(Key::Down)), Out::Stay);
     assert_eq!(
@@ -83,4 +118,123 @@ fn a_row_starts_its_lesson_or_the_first_match_and_back_or_escape_leaves() {
         );
     }
     assert_eq!(LessonsScreen::open(&[], false).mode_name(), "lessons");
+}
+
+#[test]
+fn pressing_a_row_selects_it_without_starting_even_when_already_selected() {
+    for touch in [false, true] {
+        let mut list = LessonsScreen::open(&[], false);
+        let scrap = row(&list, 1);
+        for _ in 0..2 {
+            let mut mouse = vec2(0.0, 0.0);
+            let mut sounds = Vec::new();
+            assert_eq!(
+                list.update(&at(scrap, touch), &mut mouse, &mut sounds),
+                Out::Stay
+            );
+            assert_eq!(sounds.len(), 1, "a press clicks");
+            assert_eq!(list.menu.value(), Some(&Course::Lesson(Lesson::Scrap)));
+        }
+    }
+}
+
+#[test]
+fn start_starts_the_selected_row() {
+    for touch in [false, true] {
+        let mut list = LessonsScreen::open(&[], false);
+        let fight = row(&list, 3);
+        press(&mut list, &at(fight, touch));
+        let mut mouse = vec2(0.0, 0.0);
+        let mut sounds = Vec::new();
+        assert_eq!(
+            list.update(&at(start(), touch), &mut mouse, &mut sounds),
+            Out::Start(Course::Lesson(Lesson::Fight))
+        );
+        assert_eq!(sounds.len(), 1, "a press clicks");
+    }
+}
+
+#[test]
+fn a_press_that_leaves_start_starts_nothing() {
+    let mut list = LessonsScreen::open(&[], false);
+    let on = start();
+    let off = row(&list, 1);
+    assert_eq!(
+        press(
+            &mut list,
+            &[
+                RawEvent::TouchDown {
+                    id: 3,
+                    x: on.x,
+                    y: on.y
+                },
+                RawEvent::TouchUp {
+                    id: 3,
+                    x: off.x,
+                    y: off.y
+                },
+            ]
+        ),
+        Out::Stay
+    );
+    assert_eq!(list.menu.value(), Some(&Course::Lesson(Lesson::Command)));
+}
+
+#[test]
+fn the_panel_seats_its_scene_and_every_objective_on_every_target_window() {
+    for (w, h) in [
+        (1133.0, 744.0),
+        (1210.0, 834.0),
+        (1280.0, 800.0),
+        (1366.0, 1024.0),
+    ] {
+        crate::render::set_viewport(w, h);
+        let s = crate::render::ui_scale();
+        let list = LessonsScreen::open(&[], false);
+        let panel = panel(s);
+        let scene = scene_area(s);
+        let start = start_button(s);
+        for index in 0..Course::ALL.len() {
+            let rect = list.menu.item_rect(index).expect("every row shows");
+            assert!(
+                rect.x >= 0.0 && rect.right() < panel.x,
+                "row {index} at {w}"
+            );
+        }
+        assert!(panel.right() <= w && panel.bottom() <= h, "panel at {w}");
+        assert!(scene.h > 0.0 && scene.bottom() < start.y, "scene at {w}");
+        assert!(
+            start.x > panel.x && start.right() < panel.right() && start.bottom() < panel.bottom(),
+            "Start at {w}"
+        );
+        assert!(start.h >= MIN_TOUCH_TARGET * s, "Start at {w}");
+        for row in Course::ALL {
+            let bottom = scene.bottom() + PAD * s + LINE * row.objectives().len() as f32 * s;
+            assert!(bottom <= panel.bottom(), "{} at {w}", row.title());
+        }
+    }
+}
+
+#[test]
+fn every_rows_opening_scene_frames_the_players_own_forces() {
+    let size = vec2(498.0, 288.0);
+    for row in Course::ALL {
+        let game = opening_session(row, size).expect("every row has a scene");
+        let camera = &game.presentation.camera;
+        assert_eq!(camera.viewport(), size, "{}", row.title());
+        assert!(camera.zoom >= LEAST_ZOOM, "{} draws markers", row.title());
+        let human = game.presentation.human;
+        let shown = |at: Vec2| {
+            let p = camera.to_screen(at);
+            (0.0..=size.x).contains(&p.x) && (0.0..=size.y).contains(&p.y)
+        };
+        assert!(
+            game.state
+                .units()
+                .iter()
+                .any(|unit| unit.player == human && shown(crate::game::world_vec(unit.pos))),
+            "{} shows none of the player's units",
+            row.title()
+        );
+    }
 }

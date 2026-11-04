@@ -26,7 +26,7 @@ const SCENES: [&str; 6] = [
 const TILES_ACROSS: f32 = 56.0;
 /// The widest a window may zoom out: below it, units draw as strategic
 /// markers.
-const LEAST_ZOOM: f32 = 25.0;
+pub(crate) const LEAST_ZOOM: f32 = 25.0;
 /// How far right of center the fight sits, as a share of the window, to clear
 /// the menu.
 const FIGHT_OFFSET: f32 = 0.18;

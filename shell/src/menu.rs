@@ -397,6 +397,22 @@ pub(crate) fn page_title_baseline(s: f32) -> f32 {
     56.0 * s
 }
 
+/// How far a list shifts left to seat a page beside it, as a fraction of
+/// the window's width.
+pub(crate) const BESIDE_PAGE_SHIFT: f32 = -0.24;
+
+/// The column for the page beside a shifted list at UI scale `s`, between
+/// the title zone and the hint line.
+pub(crate) fn page_column(s: f32) -> Rect {
+    let top = page_title_baseline(s) + 64.0 * s;
+    Rect::new(
+        view_w() * 0.53,
+        top,
+        (view_w() * 0.44).min(560.0 * s),
+        view_h() - 64.0 * s - top,
+    )
+}
+
 /// The distance from a title's baseline to its subtitle's.
 const SUBTITLE_DROP: f32 = 34.0;
 
@@ -501,8 +517,8 @@ pub struct Menu<R> {
     /// Drag travel not yet spent on a whole row of scrolling.
     carry: f32,
     /// Horizontal offset of the list as a fraction of the viewport
-    /// width, zero for a centered list: the codex shifts its list left
-    /// to make room for the page beside it.
+    /// width, zero for a centered list; [`BESIDE_PAGE_SHIFT`] makes room
+    /// for a page beside it.
     pub shift: f32,
     /// Multiplies the interface scale for this menu alone: Home grows on
     /// large windows.
