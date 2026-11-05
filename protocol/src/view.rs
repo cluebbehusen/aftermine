@@ -508,6 +508,11 @@ pub struct UiView {
     /// otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_column: Option<[f32; 4]>,
+    /// The army strip's plate [x, y, width, height] on top of the
+    /// minimap. Its buttons select the army and its margin swallows
+    /// presses, so it is chrome, not world. Absent outside live play.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub army_strip: Option<[f32; 4]>,
 }
 
 impl StateView {

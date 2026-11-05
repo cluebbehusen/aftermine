@@ -400,12 +400,13 @@ pub(crate) fn draw_army_tooltip(
         return;
     };
     let count = crate::input::army_units(game, reach == crate::layout::ArmyReach::InView).len();
-    let text = army_tooltip(
-        reach,
-        count,
-        &bindings.label(reach.action()),
-        crate::platform::TOUCH_ONLY,
-    );
+    // As the top bar's hints do, the key shows once a keyboard is in use
+    // and only while one is bound.
+    let key = bindings
+        .chord_for(reach.action())
+        .map(crate::action::BindingMap::chord_label)
+        .unwrap_or_default();
+    let text = army_tooltip(reach, count, &key, !crate::platform::hands().keys);
     let size = crate::theme::Type::Body.at(s);
     let pad = 12.0 * s;
     let width = measure_text(&text, None, numeric::font_size(size), 1.0).width + pad * 2.0;

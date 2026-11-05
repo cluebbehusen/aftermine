@@ -40,6 +40,7 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
                 menu_button: None,
                 pause_status: None,
                 group_column: None,
+                army_strip: None,
             };
         }
         Screen::Playing | Screen::Playback { .. } | Screen::FinalMap(_) => (screen.mode(), None),
@@ -56,6 +57,7 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
                 menu_button: None,
                 pause_status: None,
                 group_column: None,
+                army_strip: None,
             };
         }
         Screen::Replays(shelf) => (screen.mode(), Some(shelf.menu.view())),
@@ -90,6 +92,7 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
         menu_button: live_rect(screen, app.game.presentation.layout.get().menu_button),
         pause_status: live_rect(screen, app.game.presentation.layout.get().pause_status),
         group_column: live_rect(screen, app.game.presentation.layout.get().group_column),
+        army_strip: live_rect(screen, app.game.presentation.layout.get().army_strip),
         panel_regions: (screen.kind() == ScreenKind::Playing).then(|| {
             app.game
                 .presentation
