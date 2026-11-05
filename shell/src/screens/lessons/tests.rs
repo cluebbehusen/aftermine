@@ -2,10 +2,15 @@ use super::*;
 use aftermine_protocol::MouseButton;
 use macroquad::prelude::vec2;
 
+/// Every glyph half as wide as the size: deterministic and headless.
+fn fixed(_: Face, text: &str, size: f32) -> f32 {
+    text.chars().count() as f32 * size * 0.5
+}
+
 fn press(list: &mut LessonsScreen, events: &[RawEvent]) -> Out {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    list.update(events, &mut mouse, &mut sounds)
+    list.update(events, &mut mouse, &mut sounds, &fixed)
 }
 
 fn key(key: Key) -> [RawEvent; 2] {
@@ -30,7 +35,7 @@ fn at(p: Vec2, touch: bool) -> [RawEvent; 2] {
 }
 
 fn start() -> Vec2 {
-    start_button(crate::render::ui_scale()).center()
+    start_button(crate::render::ui_scale(), &fixed).center()
 }
 
 fn row(list: &LessonsScreen, index: usize) -> Vec2 {
@@ -57,8 +62,8 @@ fn the_list_marks_finished_rows_and_opens_on_the_next_one() {
     );
     assert_eq!(fresh.menu.value(), Some(&Course::Lesson(Lesson::Command)));
     assert_eq!(
-        fresh.objectives(),
-        Course::Lesson(Lesson::Command).objectives()
+        fresh.briefing(),
+        Some(Course::Lesson(Lesson::Command).briefing())
     );
 
     let next = LessonsScreen::open(&[Lesson::Command], false);
@@ -75,13 +80,13 @@ fn the_list_marks_finished_rows_and_opens_on_the_next_one() {
     );
     assert_eq!(next.menu.value(), Some(&Course::Lesson(Lesson::Scrap)));
     assert_eq!(
-        next.objectives(),
-        Course::Lesson(Lesson::Scrap).objectives()
+        next.briefing(),
+        Some(Course::Lesson(Lesson::Scrap).briefing())
     );
 
     let lessons_done = LessonsScreen::open(&Lesson::ALL, false);
     assert_eq!(lessons_done.menu.value(), Some(&Course::FirstMatch));
-    assert_eq!(lessons_done.objectives(), Course::FirstMatch.objectives());
+    assert_eq!(lessons_done.briefing(), Some(Course::FirstMatch.briefing()));
 
     let played = LessonsScreen::open(&[], true);
     assert_eq!(played.menu.view().items[5], "6. First match: DONE");
@@ -129,7 +134,7 @@ fn pressing_a_row_selects_it_without_starting_even_when_already_selected() {
             let mut mouse = vec2(0.0, 0.0);
             let mut sounds = Vec::new();
             assert_eq!(
-                list.update(&at(scrap, touch), &mut mouse, &mut sounds),
+                list.update(&at(scrap, touch), &mut mouse, &mut sounds, &fixed),
                 Out::Stay
             );
             assert_eq!(sounds.len(), 1, "a press clicks");
@@ -147,7 +152,7 @@ fn start_starts_the_selected_row() {
         let mut mouse = vec2(0.0, 0.0);
         let mut sounds = Vec::new();
         assert_eq!(
-            list.update(&at(start(), touch), &mut mouse, &mut sounds),
+            list.update(&at(start(), touch), &mut mouse, &mut sounds, &fixed),
             Out::Start(Course::Lesson(Lesson::Fight))
         );
         assert_eq!(sounds.len(), 1, "a press clicks");
@@ -181,7 +186,7 @@ fn a_press_that_leaves_start_starts_nothing() {
 }
 
 #[test]
-fn the_panel_seats_its_scene_and_every_objective_on_every_target_window() {
+fn the_panel_seats_its_scene_and_every_story_on_every_target_window() {
     for (w, h) in [
         (1133.0, 744.0),
         (1210.0, 834.0),
@@ -191,9 +196,9 @@ fn the_panel_seats_its_scene_and_every_objective_on_every_target_window() {
         crate::render::set_viewport(w, h);
         let s = crate::render::ui_scale();
         let list = LessonsScreen::open(&[], false);
-        let panel = panel(s);
-        let scene = scene_area(s);
-        let start = start_button(s);
+        let panel = panel(s, &fixed);
+        let scene = scene_area(s, &fixed);
+        let start = start_button(s, &fixed);
         for index in 0..Course::ALL.len() {
             let rect = list.menu.item_rect(index).expect("every row shows");
             assert!(
@@ -208,9 +213,16 @@ fn the_panel_seats_its_scene_and_every_objective_on_every_target_window() {
             "Start at {w}"
         );
         assert!(start.h >= MIN_TOUCH_TARGET * s, "Start at {w}");
+        let room = panel.w - 2.0 * PAD * s;
         for row in Course::ALL {
-            let bottom = scene.bottom() + PAD * s + LINE * row.objectives().len() as f32 * s;
-            assert!(bottom <= panel.bottom(), "{} at {w}", row.title());
+            let lines = briefing_lines(row.briefing(), s, &fixed);
+            assert!(lines.len() > 1, "{} wraps at {w}", row.title());
+            for line in &lines {
+                let width = fixed(Face::Body, line, Type::Label.at(s));
+                assert!(width <= room, "{} spills sideways at {w}", row.title());
+            }
+            let bottom = scene.bottom() + PAD * s + LINE * lines.len() as f32 * s;
+            assert!(bottom <= start.y, "{} runs under Start at {w}", row.title());
         }
     }
 }

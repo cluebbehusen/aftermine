@@ -13,6 +13,10 @@ const DOUBLE_TAP: &str = "You can also double-tap a Sentinel to select every Sen
 const TOUCH_BOX: &str = "Hold two fingers on the ground until a box appears. Move your fingers \
     to stretch the box around all four Sentinels, then lift one finger.";
 
+pub(super) const COMMAND_BRIEFING: &str = "Your four Sentinels are at the west edge of the map. \
+    An enemy Fabricator is somewhere to the east. Move the camera, select your squad, and send it \
+    east to find the Fabricator. Then destroy it.";
+
 pub(super) const COMMAND: [Step; 5] = [
     Step {
         title: "Move the camera",
@@ -132,6 +136,11 @@ const FAR_FRAME: &[&str] = &[
     "Farther than 8 tiles from a Foundry, an Extractor earns 120 scrap a minute. The top bar shows your total passive income, including a small trickle from your Foundry.",
 ];
 
+pub(super) const SCRAP_BRIEFING: &str = "You start with a Foundry, two Harvesters, and a \
+    Surveyor. Everything you build and train costs scrap, so send a Harvester to collect some. \
+    Train a third Harvester and keep all three busy, then restore two derelict Extractors, which \
+    earn scrap without any hauling.";
+
 pub(super) const SCRAP: [Step; 5] = [
     Step {
         title: "Collect scrap",
@@ -235,6 +244,11 @@ const RALLY_USE: &str = "Armed units hunt their way to the rally point. A Harves
 const FABRICATOR_UNLOCKS: &str = "The Fabricator trains units the Foundry can't, such as \
     Lancers and Flakhounds. It also unlocks more structures, such as the Airworks and the \
     Crucible.";
+
+pub(super) const BUILD_BRIEFING: &str = "You have three Harvesters and scrap to spend. Build a \
+    Fabricator to train units the Foundry can't, then a row of Barricades. Set a rally point for \
+    the Fabricator, train a Lancer, and save it as a control group so you can select it again \
+    quickly.";
 
 pub(super) const BUILD: [Step; 5] = [
     Step {
@@ -378,6 +392,11 @@ const WARDEN: &str = "An enemy Warden is heading for your base. It has 340 HP, m
 const BESIDE_TURRETS: &str = "Running units move without stopping to fight. Then fight the \
     Warden beside your Turrets.";
 const OUTPOST: &str = "The enemy outpost in the east has a Fabricator and a Turret. Destroy both.";
+
+pub(super) const FIGHT_BRIEFING: &str = "Five enemy Scuttlers are coming for your Harvesters. \
+    Stop them with a Hunt order. Next, beat two Lancers behind a rock line and three Sentinels up \
+    a ramp. When a Warden heads for your base, fall back to your Turrets with a Run order and \
+    fight it there. Then destroy the enemy outpost.";
 
 pub(super) const FIGHT: [Step; 5] = [
     Step {
@@ -540,6 +559,11 @@ const REPAIR_BAY: &str = "A Repair Bay repairs your units within 4 tiles of it, 
     slowly, and pays for all repairs with scrap.";
 const WRECKS: &str = "A destroyed unit leaves a wreck that holds some of the scrap the unit cost.";
 const WRECKS_FADE: &str = "Wrecks deteriorate over time, so collect them soon.";
+
+pub(super) const SUSTAIN_BRIEFING: &str = "An enemy base is somewhere to the east. Find it \
+    with your Surveyor, and build an Array to see enemies on radar. The base has Buzzards, which \
+    are aircraft, so build a Flak Turret before they attack. Then repair the damage, build a \
+    Repair Bay, and collect the wrecks from the fight.";
 
 pub(super) const SUSTAIN: [Step; 7] = [
     Step {
