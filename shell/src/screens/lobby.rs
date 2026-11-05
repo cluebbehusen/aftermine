@@ -240,6 +240,7 @@ impl LobbyScreen {
     pub fn update(
         &mut self,
         events: &[RawEvent],
+        mouse: &mut Vec2,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Out {
         // The corner Back sees the pointer first, on every face.
@@ -257,6 +258,10 @@ impl LobbyScreen {
             .iter()
             .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
         if !back && !escaped {
+            // A long roster still scrolls, though it has no row to press.
+            if lobby.room_view().is_none() {
+                self.menu.handle(&events, mouse);
+            }
             return Out::Stay;
         }
         // Leaving drops the connection, which frees the seat on the host.

@@ -406,7 +406,7 @@ fn lobby_frame(
         *rerun = true;
         return Screen::Playing;
     }
-    match lobby.update(events, &mut app.ui_sounds) {
+    match lobby.update(events, &mut app.input.mouse, &mut app.ui_sounds) {
         crate::screens::lobby::Out::Stay => {}
         crate::screens::lobby::Out::Leave => return *back,
         crate::screens::lobby::Out::Join { name, address } => {

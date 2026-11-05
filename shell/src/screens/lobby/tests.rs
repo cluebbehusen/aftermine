@@ -3,7 +3,7 @@ use crate::netplay::{ClientLobby, Returning};
 use macroquad::prelude::vec2;
 
 fn feed(screen: &mut LobbyScreen, events: &[RawEvent]) -> Out {
-    screen.update(events, &mut Vec::new())
+    screen.update(events, &mut vec2(0.0, 0.0), &mut Vec::new())
 }
 
 fn press(screen: &mut LobbyScreen, key: Key) -> Out {
@@ -143,7 +143,11 @@ fn back_leaves_the_form_and_steps_out_of_a_join_onto_the_form() {
     for touch in [false, true] {
         let mut screen = LobbyScreen::join(Some("Alex"), "10.0.0.2");
         let mut sounds = Vec::new();
-        let out = screen.update(&crate::button::press_back(touch), &mut sounds);
+        let out = screen.update(
+            &crate::button::press_back(touch),
+            &mut vec2(0.0, 0.0),
+            &mut sounds,
+        );
         assert_eq!(out, Out::Leave, "touch {touch}");
         assert!(sounds.iter().any(|(kind, _)| *kind == SoundKind::Click));
     }
@@ -183,6 +187,40 @@ fn back_leaves_the_form_and_steps_out_of_a_join_onto_the_form() {
     assert_eq!(
         feed(&mut screen, &crate::button::press_back(true)),
         Out::Leave
+    );
+}
+
+#[test]
+fn a_roster_longer_than_the_window_scrolls() {
+    crate::render::set_viewport(1280.0, 400.0);
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../scenarios/eight-pits.json");
+    let mut scenario = Scenario::load(std::path::Path::new(path)).expect("shipped map");
+    scenario.players[1].bot = false;
+    scenario.players[1].bot_config = None;
+    let host = crate::netplay::ScenarioHost::new(
+        "127.0.0.1:0",
+        scenario,
+        PlayerId(0),
+        "abc",
+        Some(PlayerName::new("Host").unwrap()),
+    )
+    .unwrap();
+    let mut screen = LobbyScreen::waiting(Lobby::Host(Box::new(host)));
+    let rows = screen.menu.view();
+    assert_eq!(rows.items.len(), 8);
+    assert!(
+        rows.visible_range[1] < 8,
+        "the window shows part: {:?}",
+        rows.visible_range
+    );
+    assert_eq!(rows.visible_range[0], 0);
+    assert_eq!(
+        feed(&mut screen, &[RawEvent::Wheel { delta: -1.0 }]),
+        Out::Stay
+    );
+    assert!(
+        screen.menu.view().visible_range[0] > 0,
+        "the wheel scrolls on"
     );
 }
 
@@ -314,7 +352,7 @@ fn joining_a_listed_lobby_still_needs_a_name_and_other_builds_are_inert() {
     };
     let row = match_rows(form, 1)[0].center();
     let mut sounds = Vec::new();
-    let out = screen.update(&tap(row), &mut sounds);
+    let out = screen.update(&tap(row), &mut vec2(0.0, 0.0), &mut sounds);
     assert_eq!(out, Out::Stay);
     assert!(sounds.iter().any(|(kind, _)| *kind == SoundKind::Denied));
     assert_eq!(
