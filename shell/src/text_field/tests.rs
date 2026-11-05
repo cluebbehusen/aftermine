@@ -97,10 +97,31 @@ fn a_blank_field_refuses_to_commit_and_escape_cancels() {
     assert_eq!(feed(&mut form, &key(Key::Escape)).0, Edit::Cancel);
     let mut form = single("x", 10);
     let layout = form.layout(vec2(1280.0, 800.0), crate::render::ui_scale());
+    let cancel = layout.cancel.expect("a form keeps Cancel by default");
+    assert_eq!(feed(&mut form, &tap(cancel.center())).0, Edit::Cancel);
+}
+
+#[test]
+fn a_form_without_cancel_spans_its_confirm_across_the_fields() {
+    crate::render::set_viewport(1280.0, 800.0);
+    let mut form = pair("Al", "12", 1).without_cancel();
+    let layout = form.layout(vec2(1280.0, 800.0), crate::render::ui_scale());
+    assert_eq!(layout.cancel, None);
+    let (first, last) = (layout.fields[0], layout.fields[1]);
+    assert_eq!(layout.confirm.x, first.x);
+    assert!((layout.confirm.right() - last.right()).abs() < 0.01);
+    assert!(layout.confirm.y > first.bottom(), "under the fields");
+
+    let with_cancel = pair("Al", "12", 1).layout(vec2(1280.0, 800.0), crate::render::ui_scale());
+    let old_cancel = with_cancel.cancel.expect("the paired form keeps Cancel");
+    let left_edge = vec2(first.x + 4.0, old_cancel.center().y);
     assert_eq!(
-        feed(&mut form, &tap(layout.cancel.center())).0,
-        Edit::Cancel
+        feed(&mut form, &tap(left_edge)).0,
+        Edit::Commit,
+        "where Cancel sat now confirms"
     );
+    let mut form = pair("Al", "12", 1).without_cancel();
+    assert_eq!(feed(&mut form, &key(Key::Escape)).0, Edit::Cancel);
 }
 
 #[test]
@@ -158,7 +179,11 @@ fn enter_advances_then_commits_and_a_bad_field_takes_focus_with_its_reason() {
 
 #[test]
 fn the_face_stays_above_an_ipad_keyboard() {
-    for (weights, labeled) in [(&[1.0][..], false), (&[1.0, 2.0][..], true)] {
+    let shapes = [(&[1.0][..], false), (&[1.0, 2.0][..], true)];
+    for ((weights, labeled), cancel) in shapes
+        .into_iter()
+        .flat_map(|shape| [true, false].map(|cancel| (shape, cancel)))
+    {
         for view in [
             vec2(1133.0, 744.0),
             vec2(1180.0, 820.0),
@@ -166,11 +191,12 @@ fn the_face_stays_above_an_ipad_keyboard() {
             vec2(1366.0, 1024.0),
         ] {
             for s in [1.0, 1.25, 1.5] {
-                let layout = layout(view, s, weights, labeled);
+                let layout = layout(view, s, weights, labeled, cancel);
                 for rect in layout
                     .fields
                     .iter()
-                    .chain([&layout.cancel, &layout.confirm])
+                    .chain(&layout.cancel)
+                    .chain([&layout.confirm])
                 {
                     assert!(
                         rect.y + rect.h <= view.y * 0.45,
@@ -180,12 +206,13 @@ fn the_face_stays_above_an_ipad_keyboard() {
             }
         }
         let small = vec2(640.0, 400.0);
-        let layout = layout(small, 1.0, weights, labeled);
+        let layout = layout(small, 1.0, weights, labeled, cancel);
         let rects: Vec<Rect> = layout
             .fields
             .iter()
             .copied()
-            .chain([layout.cancel, layout.confirm])
+            .chain(layout.cancel)
+            .chain([layout.confirm])
             .collect();
         for (index, rect) in rects.iter().enumerate() {
             assert!(rect.x >= 0.0 && rect.x + rect.w <= small.x);
@@ -202,7 +229,7 @@ fn the_face_stays_above_an_ipad_keyboard() {
 
 #[test]
 fn a_heavier_field_gets_the_wider_share_of_the_row() {
-    let layout = layout(vec2(1280.0, 800.0), 1.0, &[1.0, 2.0], true);
+    let layout = layout(vec2(1280.0, 800.0), 1.0, &[1.0, 2.0], true, true);
     let (name, code) = (layout.fields[0], layout.fields[1]);
     assert!((code.w - 2.0 * name.w).abs() < 0.01);
     assert!(name.x + name.w < code.x);
