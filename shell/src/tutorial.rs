@@ -52,11 +52,17 @@ impl Course {
         }
     }
 
-    /// What the row has the player do, in order.
-    pub fn objectives(self) -> Vec<&'static str> {
+    /// The row told as a story: what its scene starts with and what the
+    /// player does about it, in order. The lesson list shows it beside the
+    /// row, and the card that ends the lesson before shows it too. It is
+    /// shown to every pair of hands, so it names no key or mouse action.
+    pub fn briefing(self) -> &'static str {
         match self {
-            Self::Lesson(lesson) => lesson.steps().iter().map(|step| step.title).collect(),
-            Self::FirstMatch => vec!["Play a full match against a computer opponent"],
+            Self::Lesson(lesson) => lesson.briefing(),
+            Self::FirstMatch => {
+                "Play a full match against one computer opponent. You win when every enemy \
+                 Foundry is destroyed."
+            }
         }
     }
 }
@@ -166,6 +172,17 @@ impl Lesson {
             Self::Command | Self::Scrap | Self::Build => &[],
             Self::Fight => &lessons::FIGHT_SQUADS,
             Self::Sustain => &lessons::SUSTAIN_SQUADS,
+        }
+    }
+
+    /// The lesson told as a story; see [`Course::briefing`].
+    fn briefing(self) -> &'static str {
+        match self {
+            Self::Command => lessons::COMMAND_BRIEFING,
+            Self::Scrap => lessons::SCRAP_BRIEFING,
+            Self::Build => lessons::BUILD_BRIEFING,
+            Self::Fight => lessons::FIGHT_BRIEFING,
+            Self::Sustain => lessons::SUSTAIN_BRIEFING,
         }
     }
 

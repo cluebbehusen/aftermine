@@ -123,6 +123,11 @@ fn a_stuck_step_offers_a_retry_and_a_finished_lesson_the_next() {
         text.iter()
             .any(|line| line.starts_with("Next lesson: Scrap."))
     );
+    assert!(
+        text.join(" ")
+            .contains(Course::Lesson(Lesson::Scrap).briefing()),
+        "the card tells the next lesson's story"
+    );
     for (rect, _) in &done.buttons {
         assert!(done.rect.contains(rect.center()));
     }
@@ -142,6 +147,12 @@ fn a_stuck_step_offers_a_retry_and_a_finished_lesson_the_next() {
             .text()
             .iter()
             .any(|line| line.starts_with("Next: First match."))
+    );
+    assert!(
+        graduate
+            .text()
+            .join(" ")
+            .contains(Course::FirstMatch.briefing())
     );
 }
 

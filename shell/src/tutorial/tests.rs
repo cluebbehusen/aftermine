@@ -605,16 +605,12 @@ fn every_lesson_string_is_ascii_and_names_only_what_the_hands_have() {
             }
         }
     }
-    for line in Course::FirstMatch.objectives() {
-        ascii(line);
-    }
-}
-
-#[test]
-fn a_lessons_objectives_are_its_step_titles_in_order() {
-    for lesson in Lesson::ALL {
-        let titles: Vec<&str> = lesson.steps().iter().map(|step| step.title).collect();
-        assert_eq!(Course::Lesson(lesson).objectives(), titles);
+    // A row's story shows on the lesson list and the card before it,
+    // whatever the hands.
+    for row in Course::ALL {
+        for hands in crate::platform::ALL_HANDS {
+            crate::platform::assert_copy_fits(hands, row.briefing());
+        }
     }
 }
 
