@@ -123,7 +123,7 @@ pub(super) fn expose(state: &mut State) {
                 let slots = memo
                     .entry((tile, domain == Domain::Air, reverse))
                     .or_insert_with(|| slots(state, tile, domain, reverse));
-                *goal = resolved(tile, slots, usize::from(rank));
+                *goal = resolved(tile, slots, usize::from(rank)).marching(goal.march);
             };
             for order in std::iter::once(&mut order).chain(queue.iter_mut()) {
                 if let Some(goal) = order_goal_mut(order) {

@@ -448,6 +448,11 @@ fn well_formed_additions_are_accepted() {
         .unwrap()["id"]
         .clone();
     base["buildings"][0]["rally"] = json!({"unit": own});
+    base["next_march_id"] = json!(2);
+    base["units"][1]["queue"] = json!([
+        {"order": "run", "goal": {"x": 6, "y": 2, "march": 0}},
+        {"order": "advance", "goal": {"x": 7, "y": 2, "march": 1}},
+    ]);
     serde_json::from_value::<State>(base).expect("legal additions stay legal");
 }
 
@@ -643,10 +648,11 @@ fn row_index(e: &StateIntegrityError) -> usize {
         E::InvalidTend(_) => 99,
         E::GunMismatch(_) => 100,
         E::InvalidClearingRoute(_) => 101,
+        E::InvalidMarch(_) => 102,
     }
 }
 
-const ROWS: usize = 102;
+const ROWS: usize = 103;
 
 /// One rendered message per row, with the entity ids the forgeries
 /// provoke (everything targets seat p0 and entity 0). A fixture's
@@ -761,6 +767,7 @@ fn row_examples() -> Vec<StateIntegrityError> {
         E::InvalidTend(UnitId(0)),
         E::GunMismatch(BuildingId(0)),
         E::InvalidClearingRoute(UnitId(0)),
+        E::InvalidMarch(UnitId(0)),
     ]
 }
 
@@ -1228,6 +1235,54 @@ fn every_checklist_row_refuses_its_forgery() {
             "an id counter past the envelope",
             |d| d["next_unit_id"] = json!(u32::MAX),
             "an id counter is beyond the sanity envelope",
+        ),
+        (
+            "a march counter past the envelope",
+            |d| d["next_march_id"] = json!(u32::MAX),
+            "an id counter is beyond the sanity envelope",
+        ),
+        (
+            "a walk on a march not yet issued",
+            |d| {
+                d["units"][0]["queue"] = json!([{
+                    "order": "advance",
+                    "goal": {"x": 6, "y": 2, "march": 0},
+                }]);
+            },
+            "unit u0 walks with a march that was never issued to that order",
+        ),
+        (
+            "an attack resuming a march not yet issued",
+            |d| {
+                d["next_march_id"] = json!(3);
+                let victim = d["units"][2]["id"].clone();
+                d["units"][0]["order"] = json!({
+                    "order": "attack",
+                    "target": {"kind": "unit", "id": victim},
+                    "resume": {"hunt": {"x": 6, "y": 2, "march": 3}},
+                });
+            },
+            "unit u0 walks with a march that was never issued to that order",
+        ),
+        (
+            "a tending walk on a march",
+            |d| {
+                d["next_march_id"] = json!(1);
+                d["units"][0]["queue"] =
+                    json!([{"order": "tend", "goal": {"x": 6, "y": 2, "march": 0}}]);
+            },
+            "unit u0 walks with a march that was never issued to that order",
+        ),
+        (
+            "an unload on a march",
+            |d| {
+                d["next_march_id"] = json!(1);
+                d["units"][0]["queue"] = json!([{
+                    "order": "unload",
+                    "at": {"x": 6, "y": 2, "march": 0},
+                }]);
+            },
+            "unit u0 walks with a march that was never issued to that order",
         ),
         (
             "a unit owned off the table",

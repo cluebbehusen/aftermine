@@ -17,6 +17,7 @@
 mod cruise;
 mod ground;
 mod hulls;
+pub(in crate::tick) mod march;
 
 pub(in crate::tick) use hulls::{make_way, round_standing_hulls};
 
@@ -607,6 +608,7 @@ pub(super) fn run(state: &mut State) -> (Vec<Vec2Fx>, Vec<bool>) {
         .iter()
         .map(|unit| work_aim(state, unit))
         .collect();
+    let caps = march::caps(state);
     // Friendly bodies at rest, per side: a ground follower will not admit
     // a lookahead leg through one, though it still walks its planned tiles.
     let parked: Vec<ParkedBodies> = (0..state.players.len())
@@ -637,7 +639,7 @@ pub(super) fn run(state: &mut State) -> (Vec<Vec2Fx>, Vec<bool>) {
             continue;
         }
         if unit.kind.stats().cruise_turn_rate > 0 {
-            cruise::advance(unit, map);
+            cruise::advance(unit, map, caps[slot]);
             travel[slot] = unit.pos - before;
             continue;
         }
@@ -652,7 +654,8 @@ pub(super) fn run(state: &mut State) -> (Vec<Vec2Fx>, Vec<bool>) {
                     .with_contact(contacts[slot])
                     .with_outlines(&outlines[slot])
             };
-            refused[slot] = ground::advance(unit, &bounds, &parked[unit.player.0 as usize]);
+            refused[slot] =
+                ground::advance(unit, &bounds, &parked[unit.player.0 as usize], caps[slot]);
             if unit.drive_speed() == Fx::ZERO
                 && let Some(aim) = work_aims[slot]
             {
@@ -661,7 +664,7 @@ pub(super) fn run(state: &mut State) -> (Vec<Vec2Fx>, Vec<bool>) {
             travel[slot] = unit.pos - before;
             continue;
         }
-        let mut budget = stats.speed;
+        let mut budget = capped(stats.speed, caps[slot]);
         let sky_open = |tile| map.tile(tile).is_some_and(|t| !t.terrain.blocks_air());
         while budget > Fx::ZERO {
             let Some(path) = &mut unit.path else { break };
@@ -708,6 +711,11 @@ pub(super) fn run(state: &mut State) -> (Vec<Vec2Fx>, Vec<bool>) {
         travel[slot] = direction;
     }
     (travel, refused)
+}
+
+/// `top` held to a march's `cap`, if it has one.
+fn capped(top: Fx, cap: Option<Fx>) -> Fx {
+    cap.map_or(top, |cap| cap.min(top))
 }
 
 /// Turn-limited flight: the body advances along its heading and only
