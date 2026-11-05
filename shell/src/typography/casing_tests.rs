@@ -57,7 +57,6 @@ const LABELS: &[&str] = &[
     "FABRICATOR",
     "FOUNDRY",
     "HEAP",
-    "HOST",
     "LAN AUTO",
     "LESSON :   |",
     "LOST",

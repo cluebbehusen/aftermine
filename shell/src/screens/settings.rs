@@ -679,7 +679,7 @@ impl SettingsScreen {
         let current = config.player_name.as_deref().unwrap_or_default();
         let field =
             Field::new(current, PlayerName::MAX_CHARS, PlayerName::accepts).validated(name_check);
-        let form = Form::new("YOUR NAME", "Save", vec![field], 0);
+        let form = Form::new("YOUR NAME", "Save", vec![field], 0).without_cancel();
         self.menu = form.menu(|_| Item::Setting(Row::PlayerName));
         self.naming = Some(form);
     }

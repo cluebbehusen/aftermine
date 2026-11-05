@@ -1,9 +1,9 @@
 use super::*;
-use crate::netplay::ClientLobby;
+use crate::netplay::{ClientLobby, Returning};
 use macroquad::prelude::vec2;
 
 fn feed(screen: &mut LobbyScreen, events: &[RawEvent]) -> Out {
-    screen.update(events, &mut vec2(0.0, 0.0), &mut Vec::new())
+    screen.update(events, &mut Vec::new())
 }
 
 fn press(screen: &mut LobbyScreen, key: Key) -> Out {
@@ -43,7 +43,7 @@ fn a_new_player_types_a_name_then_an_address_and_joins_on_the_default_port() {
         press(&mut screen, Key::Enter),
         join("Alex Q. 1/2", "10.0.0.2:4200")
     );
-    assert_eq!(press(&mut screen, Key::Escape), Out::Cancel);
+    assert_eq!(press(&mut screen, Key::Escape), Out::Leave);
 }
 
 #[test]
@@ -92,26 +92,33 @@ fn a_returning_player_starts_on_the_address_and_bad_input_says_why() {
     assert_eq!(press(&mut screen, Key::Enter), join("Connor", &longest));
 }
 
+/// A join to `address` as Alex, still connecting.
+fn connecting(address: &str) -> LobbyScreen {
+    LobbyScreen::waiting(Lobby::Client(ClientLobby::new(
+        address,
+        "abc",
+        PlayerName::new("Alex").unwrap(),
+        aftermine_net::InstallId::new(1),
+    )))
+}
+
 #[test]
 fn a_failed_join_returns_to_the_form_with_the_reason_and_both_values() {
     crate::render::set_viewport(1280.0, 800.0);
     let unreachable = "127.0.0.1:1";
-    let mut screen = LobbyScreen::waiting(Lobby::Client(ClientLobby::new(
-        unreachable,
-        "abc",
-        PlayerName::new("Alex").unwrap(),
-        aftermine_net::InstallId::new(1),
-    )));
+    let mut screen = connecting(unreachable);
     assert_eq!(screen.keyboard(), None);
     assert_eq!(screen.mode_name(), "lobby");
     assert!(screen.subtitle().starts_with("Connecting to"));
-    assert_eq!(
-        screen.menu.view().items,
-        vec!["Cancel"],
+    assert!(
+        screen.menu.view().items.is_empty(),
         "no roster before the room arrives"
     );
-    assert_eq!(press(&mut screen, Key::Escape), Out::Cancel);
-    assert_eq!(press(&mut screen, Key::Enter), Out::Cancel);
+    assert_eq!(
+        press(&mut screen, Key::Enter),
+        Out::Stay,
+        "no rows to press"
+    );
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while screen.keyboard().is_none() {
@@ -128,6 +135,55 @@ fn a_failed_join_returns_to_the_form_with_the_reason_and_both_values() {
     );
     assert!(screen.subtitle().starts_with("Cannot reach 127.0.0.1:1"));
     assert_eq!(press(&mut screen, Key::Enter), join("Alex", unreachable));
+}
+
+#[test]
+fn back_leaves_the_form_and_steps_out_of_a_join_onto_the_form() {
+    crate::render::set_viewport(1280.0, 800.0);
+    for touch in [false, true] {
+        let mut screen = LobbyScreen::join(Some("Alex"), "10.0.0.2");
+        let mut sounds = Vec::new();
+        let out = screen.update(&crate::button::press_back(touch), &mut sounds);
+        assert_eq!(out, Out::Leave, "touch {touch}");
+        assert!(sounds.iter().any(|(kind, _)| *kind == SoundKind::Click));
+    }
+
+    // A join that hangs on connecting steps back to the form, filled in,
+    // by Back or Escape.
+    let leaves: [Vec<RawEvent>; 2] = [
+        crate::button::press_back(false),
+        vec![RawEvent::KeyDown { key: Key::Escape }],
+    ];
+    for events in leaves {
+        let mut screen = connecting("10.255.255.1:4200");
+        assert_eq!(feed(&mut screen, &events), Out::Stay);
+        assert_eq!(screen.mode_name(), "join_match");
+        assert_eq!(
+            screen.menu.view().items,
+            vec!["Your name: Alex", "Host address: 10.255.255.1:4200_"]
+        );
+        assert_eq!(screen.subtitle(), "", "leaving is no failure");
+    }
+
+    // A rejoin started from Home has no form to return to.
+    let ticket = crate::rejoin_ticket::Ticket {
+        address: "127.0.0.1:1".to_owned(),
+        host: "Sam".to_owned(),
+        map: "Broad Front".to_owned(),
+        seat: 1,
+        token: aftermine_net::Token::new(1),
+        build: "abc".to_owned(),
+        contact: 0,
+    };
+    let mut screen = LobbyScreen::waiting(Lobby::Rejoin(Box::new(Returning::new(
+        &ticket,
+        Duration::ZERO,
+    ))));
+    assert_eq!(press(&mut screen, Key::Enter), Out::Stay);
+    assert_eq!(
+        feed(&mut screen, &crate::button::press_back(true)),
+        Out::Leave
+    );
 }
 
 #[test]
@@ -258,7 +314,7 @@ fn joining_a_listed_lobby_still_needs_a_name_and_other_builds_are_inert() {
     };
     let row = match_rows(form, 1)[0].center();
     let mut sounds = Vec::new();
-    let out = screen.update(&tap(row), &mut vec2(0.0, 0.0), &mut sounds);
+    let out = screen.update(&tap(row), &mut sounds);
     assert_eq!(out, Out::Stay);
     assert!(sounds.iter().any(|(kind, _)| *kind == SoundKind::Denied));
     assert_eq!(

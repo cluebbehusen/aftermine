@@ -1,7 +1,7 @@
 //! A LAN match before it starts: the Join form (your name and the host's
-//! address), then the lobby's status and Cancel while machines gather.
-//! The caller starts joins and installs the match once the lobby starts
-//! it.
+//! address), then the lobby's status while machines gather. The corner
+//! Back leaves every face; leaving a join returns to the form. The caller
+//! starts joins and installs the match once the lobby starts it.
 
 use crate::game::{Game, SoundKind};
 use crate::menu::{Label, Line, Menu, PreviewCache};
@@ -33,7 +33,7 @@ pub enum Out {
     /// Join the host at `address`, which names a port, as `name`.
     Join { name: PlayerName, address: String },
     /// Leave for the screen underneath.
-    Cancel,
+    Leave,
 }
 
 enum Face {
@@ -70,9 +70,9 @@ pub struct LobbyScreen {
     face: Face,
     /// Whether forms this screen opens listen for lobbies.
     discover: bool,
-    /// The form's fields, or the roster and Cancel, for the UI report.
+    /// The form's fields, or the roster, for the UI report.
     pub menu: Menu<usize>,
-    /// The corner Back button over a joiner's copy of the setup screen.
+    /// The corner Back button every face leaves through.
     back: crate::button::BackButton,
 }
 
@@ -98,7 +98,8 @@ impl LobbyScreen {
             .keyboard(Keyboard::Address)
             .weight(2.0);
         let focus = usize::from(PlayerName::new(name).is_ok());
-        let form = Form::new("JOIN MATCH", "Join", vec![name_field, address_field], focus);
+        let form = Form::new("JOIN MATCH", "Join", vec![name_field, address_field], focus)
+            .without_cancel();
         Self::face(Face::Join {
             form,
             failure: None,
@@ -145,6 +146,15 @@ impl LobbyScreen {
         Self::face(Face::Waiting(lobby))
     }
 
+    /// Returns to the Join `form`, listening again if this screen did.
+    fn reopen(&mut self, form: Self) {
+        *self = if self.discover {
+            form.discovering()
+        } else {
+            form
+        };
+    }
+
     fn face(face: Face) -> Self {
         let menu = match &face {
             Face::Join { form, .. } => form.menu(|index| index),
@@ -185,11 +195,7 @@ impl LobbyScreen {
         let started = lobby.poll(now, viewport);
         if let Some((name, address, reason)) = lobby.failure() {
             let form = Self::failed(name.as_str(), address, reason.to_owned());
-            *self = if self.discover {
-                form.discovering()
-            } else {
-                form
-            };
+            self.reopen(form);
         } else {
             self.menu.set_lines(waiting_lines(lobby));
         }
@@ -229,136 +235,139 @@ impl LobbyScreen {
         }
     }
 
-    /// Applies a frame's events.
+    /// Applies a frame's events. Back or Escape leaves the form for the
+    /// screen underneath, and leaves a join for the form, filled in.
     pub fn update(
         &mut self,
         events: &[RawEvent],
-        mouse: &mut Vec2,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Out {
-        match &mut self.face {
-            Face::Join {
-                form,
-                sightings,
-                cursor,
-                press,
-                ..
-            } => {
-                let rows = match_rows(form, sightings.len());
-                let shown = &sightings[..rows.len()];
-                let joinable: Vec<SocketAddr> =
-                    shown.iter().filter_map(Sighting::address).collect();
-                if cursor.is_some_and(|at| !joinable.contains(&at)) {
-                    *cursor = None;
-                }
-                let mut picked = None;
-                let mut form_events = Vec::with_capacity(events.len());
-                for event in events {
-                    let fed = press.feed(event, |p, _| {
-                        let row = rows.iter().position(|rect| rect.contains(p))?;
-                        shown[row].address()
-                    });
-                    if let Fed::Activated(address) = fed {
-                        picked = Some(address);
-                        continue;
-                    }
-                    match (*cursor, event) {
-                        (None, RawEvent::KeyDown { key: Key::Down })
-                            if form.on_last_field() && !joinable.is_empty() =>
-                        {
-                            *cursor = joinable.first().copied();
-                        }
-                        (Some(at), RawEvent::KeyDown { key }) => {
-                            let index = joinable.iter().position(|&listed| listed == at);
-                            let index = index.unwrap_or_default();
-                            match key {
-                                Key::Down => {
-                                    *cursor = Some(joinable[(index + 1).min(joinable.len() - 1)]);
-                                }
-                                Key::Up => *cursor = index.checked_sub(1).map(|up| joinable[up]),
-                                Key::Tab => *cursor = None,
-                                Key::Enter => picked = Some(at),
-                                Key::Escape => form_events.push(*event),
-                                _ => {}
-                            }
-                        }
-                        // Typing goes nowhere while the list has the keyboard.
-                        (Some(_), RawEvent::Text { .. }) => {}
-                        (Some(_), RawEvent::MouseDown { .. } | RawEvent::TouchDown { .. }) => {
-                            *cursor = None;
-                            form_events.push(*event);
-                        }
-                        _ => form_events.push(*event),
-                    }
-                }
-                if let Some(address) = picked {
-                    sounds.push((SoundKind::Click, None));
-                    match PlayerName::new(form.value(0)) {
-                        Ok(name) => {
-                            return Out::Join {
-                                name,
-                                address: address.to_string(),
-                            };
-                        }
-                        Err(error) => {
-                            *cursor = None;
-                            form.refuse(0, error.reason(), sounds);
-                        }
-                    }
-                }
-                let edit = form.update(&form_events, sounds);
-                self.menu = join_menu(form, sightings, *cursor);
-                match edit {
-                    Edit::Commit => {
-                        match (
-                            PlayerName::new(form.value(0)),
-                            parse_join_address(form.value(1)),
-                        ) {
-                            (Ok(name), Ok(address)) => Out::Join { name, address },
-                            // The form refuses a commit either check fails.
-                            _ => Out::Stay,
-                        }
-                    }
-                    Edit::Cancel => Out::Cancel,
-                    Edit::Stay => Out::Stay,
-                }
+        // The corner Back sees the pointer first, on every face.
+        let (back, events) = self.back.route(events);
+        if back {
+            sounds.push((SoundKind::Click, None));
+        }
+        let Face::Waiting(lobby) = &self.face else {
+            if back {
+                return Out::Leave;
             }
-            Face::Waiting(lobby) => {
-                let escaped = events
-                    .iter()
-                    .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
-                if lobby.room_view().is_some() {
-                    // The copy of the setup screen draws no rows, so only
-                    // Back and Escape leave.
-                    let (back, _) = self.back.route(events);
-                    if back {
-                        sounds.push((SoundKind::Click, None));
+            return self.update_form(&events, sounds);
+        };
+        let escaped = events
+            .iter()
+            .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
+        if !back && !escaped {
+            return Out::Stay;
+        }
+        // Leaving drops the connection, which frees the seat on the host.
+        match lobby.joining() {
+            Some((name, address)) => {
+                let form = Self::join(Some(name.as_str()), address);
+                self.reopen(form);
+                Out::Stay
+            }
+            None => Out::Leave,
+        }
+    }
+
+    /// Applies a frame's events to the Join form.
+    fn update_form(
+        &mut self,
+        events: &[RawEvent],
+        sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
+    ) -> Out {
+        let Face::Join {
+            form,
+            sightings,
+            cursor,
+            press,
+            ..
+        } = &mut self.face
+        else {
+            return Out::Stay;
+        };
+        let rows = match_rows(form, sightings.len());
+        let shown = &sightings[..rows.len()];
+        let joinable: Vec<SocketAddr> = shown.iter().filter_map(Sighting::address).collect();
+        if cursor.is_some_and(|at| !joinable.contains(&at)) {
+            *cursor = None;
+        }
+        let mut picked = None;
+        let mut form_events = Vec::with_capacity(events.len());
+        for event in events {
+            let fed = press.feed(event, |p, _| {
+                let row = rows.iter().position(|rect| rect.contains(p))?;
+                shown[row].address()
+            });
+            if let Fed::Activated(address) = fed {
+                picked = Some(address);
+                continue;
+            }
+            match (*cursor, event) {
+                (None, RawEvent::KeyDown { key: Key::Down })
+                    if form.on_last_field() && !joinable.is_empty() =>
+                {
+                    *cursor = joinable.first().copied();
+                }
+                (Some(at), RawEvent::KeyDown { key }) => {
+                    let index = joinable.iter().position(|&listed| listed == at);
+                    let index = index.unwrap_or_default();
+                    match key {
+                        Key::Down => {
+                            *cursor = Some(joinable[(index + 1).min(joinable.len() - 1)]);
+                        }
+                        Key::Up => *cursor = index.checked_sub(1).map(|up| joinable[up]),
+                        Key::Tab => *cursor = None,
+                        Key::Enter => picked = Some(at),
+                        Key::Escape => form_events.push(*event),
+                        _ => {}
                     }
-                    return if back || escaped {
-                        Out::Cancel
-                    } else {
-                        Out::Stay
+                }
+                // Typing goes nowhere while the list has the keyboard.
+                (Some(_), RawEvent::Text { .. }) => {}
+                (Some(_), RawEvent::MouseDown { .. } | RawEvent::TouchDown { .. }) => {
+                    *cursor = None;
+                    form_events.push(*event);
+                }
+                _ => form_events.push(*event),
+            }
+        }
+        if let Some(address) = picked {
+            sounds.push((SoundKind::Click, None));
+            match PlayerName::new(form.value(0)) {
+                Ok(name) => {
+                    return Out::Join {
+                        name,
+                        address: address.to_string(),
                     };
                 }
-                if self.menu.handle(events, mouse).is_some() {
-                    sounds.push((SoundKind::Click, None));
-                    return Out::Cancel;
+                Err(error) => {
+                    *cursor = None;
+                    form.refuse(0, error.reason(), sounds);
                 }
-                if escaped { Out::Cancel } else { Out::Stay }
             }
+        }
+        let edit = form.update(&form_events, sounds);
+        self.menu = join_menu(form, sightings, *cursor);
+        match edit {
+            Edit::Commit => {
+                match (
+                    PlayerName::new(form.value(0)),
+                    parse_join_address(form.value(1)),
+                ) {
+                    (Ok(name), Ok(address)) => Out::Join { name, address },
+                    // The form refuses a commit either check fails.
+                    _ => Out::Stay,
+                }
+            }
+            Edit::Cancel => Out::Leave,
+            Edit::Stay => Out::Stay,
         }
     }
 
     /// Draws the form; or, waiting, a joiner's copy of the host's setup
-    /// once it arrives, else the status, roster, and Cancel.
+    /// once it arrives, else the status and roster; then the corner Back.
     pub fn draw(&self, mouse: Vec2, previews: &mut PreviewCache) {
-        if let Face::Waiting(lobby) = &self.face
-            && let Some((map, seats, you)) = lobby.room_view()
-        {
-            draw_room(map, seats, you, &self.subtitle(), previews);
-            crate::button::draw_back(mouse);
-            return;
-        }
         match &self.face {
             Face::Join {
                 form,
@@ -378,8 +387,12 @@ impl LobbyScreen {
                     draw_matches(form, scan, sightings, *cursor, mouse);
                 }
             }
-            Face::Waiting(_) => self.menu.draw(&self.subtitle()),
+            Face::Waiting(lobby) => match lobby.room_view() {
+                Some((map, seats, you)) => draw_room(map, seats, you, &self.subtitle(), previews),
+                None => self.menu.draw(&self.subtitle()),
+            },
         }
+        crate::button::draw_back(mouse);
     }
 }
 
@@ -607,15 +620,9 @@ fn draw_room(
     }
 }
 
-/// The waiting face's lines: the roster, which the cursor skips, then
-/// Cancel.
+/// The waiting face's lines: the roster, which nothing selects.
 fn waiting_lines(lobby: &Lobby) -> Vec<Line<usize>> {
-    lobby
-        .roster()
-        .into_iter()
-        .map(Line::Header)
-        .chain([Line::Row(Label::from("Cancel"), 0)])
-        .collect()
+    lobby.roster().into_iter().map(Line::Header).collect()
 }
 
 #[cfg(test)]

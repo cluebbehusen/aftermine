@@ -1121,7 +1121,9 @@ impl<R: Clone> Menu<R> {
             );
         }
 
-        if self.lines.is_empty() || busy {
+        // A list of headings alone, such as a lobby's roster, has nothing
+        // to select or confirm.
+        if busy || !self.lines.iter().any(|line| matches!(line, Line::Row(..))) {
             return;
         }
 

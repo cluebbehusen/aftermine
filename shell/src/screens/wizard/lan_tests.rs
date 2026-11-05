@@ -381,6 +381,12 @@ fn leaving_or_going_local_with_players_asks_first() {
     assert_eq!(w.ui_surface(&draft).0, "CLOSE THE LOBBY?");
     drive(&mut w, &mut draft, Key::Escape);
     assert_eq!(w.mode_name(), "match_setup", "Escape keeps the lobby");
+    drive(&mut w, &mut draft, Key::Escape);
+    let back = crate::button::press_back(false);
+    w.update(&back, &mut vec2(0.0, 0.0), &mut draft, &mut Vec::new())
+        .unwrap();
+    assert_eq!(w.mode_name(), "match_setup", "and so does Back");
+    assert!(w.lan.is_some());
 
     w.on_switch = true;
     drive(&mut w, &mut draft, Key::Enter);
@@ -420,6 +426,22 @@ fn hosting_without_a_name_asks_for_one_and_saves_it() {
     drive(&mut w, &mut draft, Key::Enter);
     drive(&mut w, &mut draft, Key::Escape);
     assert!(w.lan.is_none(), "cancelling the name stays local");
+
+    // The corner Back closes the name box, as Escape does.
+    w.on_switch = true;
+    drive(&mut w, &mut draft, Key::Enter);
+    assert_eq!(w.mode_name(), "player_name");
+    let out = w
+        .update(
+            &crate::button::press_back(true),
+            &mut vec2(0.0, 0.0),
+            &mut draft,
+            &mut Vec::new(),
+        )
+        .unwrap();
+    assert_eq!(out, Out::Stay);
+    assert_eq!(w.mode_name(), "match_setup", "Back stays on setup");
+    assert!(w.lan.is_none());
 }
 
 #[test]

@@ -1425,7 +1425,14 @@ impl Wizard {
             return Ok(Out::Stay);
         }
         if self.overlay.is_some() {
-            self.update_overlay(events, mouse, draft, sounds);
+            // The corner Back closes the overlay, as Escape does.
+            let (back, events) = self.back.route(events);
+            if back {
+                sounds.push((SoundKind::Click, None));
+                self.overlay = None;
+                return Ok(Out::Stay);
+            }
+            self.update_overlay(&events, mouse, draft, sounds);
             return Ok(if std::mem::take(&mut self.leaving) {
                 Out::Home
             } else {
@@ -2283,12 +2290,9 @@ impl Wizard {
         if draft.player_name.is_none() {
             let field =
                 Field::new("", PlayerName::MAX_CHARS, PlayerName::accepts).validated(name_check);
-            self.overlay = Some(Overlay::Naming(Form::new(
-                "YOUR NAME",
-                "HOST",
-                vec![field],
-                0,
-            )));
+            self.overlay = Some(Overlay::Naming(
+                Form::new("YOUR NAME", "Host", vec![field], 0).without_cancel(),
+            ));
             return;
         }
         match HostLobby::open(&self.lan_bind, &crate::build_identity().revision, scenario) {

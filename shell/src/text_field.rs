@@ -1,5 +1,6 @@
 //! Text entry for the menus: a title, a row of one or more fields, and
-//! Cancel plus a confirm button.
+//! a confirm button, beside Cancel unless the page's corner Back leaves
+//! instead.
 
 use crate::game::SoundKind;
 use crate::menu::Menu;
@@ -115,7 +116,8 @@ pub struct Layout {
     /// The labels' baseline, when the fields have labels.
     pub label_y: f32,
     pub fields: Vec<Rect>,
-    pub cancel: Rect,
+    /// `None` when the page's corner Back stands in for it.
+    pub cancel: Option<Rect>,
     pub confirm: Rect,
 }
 
@@ -124,16 +126,19 @@ impl Layout {
         if let Some(index) = self.fields.iter().position(|rect| rect.contains(p)) {
             return Some(Zone::Field(index));
         }
-        [(self.confirm, Zone::Confirm), (self.cancel, Zone::Cancel)]
-            .into_iter()
-            .find(|(rect, _)| rect.contains(p))
-            .map(|(_, zone)| zone)
+        if self.confirm.contains(p) {
+            return Some(Zone::Confirm);
+        }
+        self.cancel
+            .filter(|rect| rect.contains(p))
+            .map(|_| Zone::Cancel)
     }
 }
 
 /// Lays out fields sharing one row by `weights`, with room above them for
-/// labels when `labeled`, and the buttons beneath.
-pub fn layout(view: Vec2, s: f32, weights: &[f32], labeled: bool) -> Layout {
+/// labels when `labeled`, and the buttons beneath: Cancel and confirm side
+/// by side when `cancel`, else confirm alone across the row.
+pub fn layout(view: Vec2, s: f32, weights: &[f32], labeled: bool, cancel: bool) -> Layout {
     let gap = 12.0 * s;
     let height = MIN_TOUCH_TARGET * s;
     let row_w = if weights.len() > 1 { 640.0 } else { 420.0 } * s;
@@ -143,7 +148,8 @@ pub fn layout(view: Vec2, s: f32, weights: &[f32], labeled: bool) -> Layout {
     let field_y = top + label_h;
     let room = width - gap * weights.len().saturating_sub(1) as f32;
     let total: f32 = weights.iter().sum();
-    let mut x = (view.x - width) * 0.5;
+    let row_x = (view.x - width) * 0.5;
+    let mut x = row_x;
     let fields = weights
         .iter()
         .map(|weight| {
@@ -153,17 +159,25 @@ pub fn layout(view: Vec2, s: f32, weights: &[f32], labeled: bool) -> Layout {
             rect
         })
         .collect();
-    let buttons_w = (420.0 * s).min(width);
-    let button_w = (buttons_w - gap) * 0.5;
-    let buttons_x = (view.x - buttons_w) * 0.5;
     let buttons_y = field_y + height + gap;
+    let (cancel, confirm) = if cancel {
+        let buttons_w = (420.0 * s).min(width);
+        let button_w = (buttons_w - gap) * 0.5;
+        let buttons_x = (view.x - buttons_w) * 0.5;
+        (
+            Some(Rect::new(buttons_x, buttons_y, button_w, height)),
+            Rect::new(buttons_x + button_w + gap, buttons_y, button_w, height),
+        )
+    } else {
+        (None, Rect::new(row_x, buttons_y, width, height))
+    };
     Layout {
         title_y: 56.0 * s,
         hint_y: 80.0 * s,
         label_y: top + label_h * 0.7,
         fields,
-        cancel: Rect::new(buttons_x, buttons_y, button_w, height),
-        confirm: Rect::new(buttons_x + button_w + gap, buttons_y, button_w, height),
+        cancel,
+        confirm,
     }
 }
 
@@ -191,6 +205,8 @@ pub struct Form {
     /// A tap on a field asked for the on-screen keyboard again (the
     /// player may have dismissed it); the frame loop takes this.
     keyboard_request: bool,
+    /// Whether the form draws its own Cancel button.
+    cancel: bool,
 }
 
 impl Form {
@@ -211,7 +227,15 @@ impl Form {
             error: None,
             press: Press::default(),
             keyboard_request: false,
+            cancel: true,
         }
+    }
+
+    /// Leaves out the Cancel button, for a page whose corner Back leaves
+    /// instead. Escape still cancels.
+    pub fn without_cancel(mut self) -> Self {
+        self.cancel = false;
+        self
     }
 
     /// Refuses a commit the caller checked itself: plays Denied, shows
@@ -251,7 +275,7 @@ impl Form {
     pub fn layout(&self, view: Vec2, s: f32) -> Layout {
         let weights: Vec<f32> = self.fields.iter().map(|field| field.weight).collect();
         let labeled = self.fields.iter().any(|field| !field.label.is_empty());
-        layout(view, s, &weights, labeled)
+        layout(view, s, &weights, labeled, self.cancel)
     }
 
     /// The fields as menu rows, for the UI report, the focused one
@@ -377,7 +401,9 @@ impl Form {
         for (index, (field, rect)) in self.fields.iter().zip(&layout.fields).enumerate() {
             draw_field(field, *rect, index == self.focus, layout.label_y, s);
         }
-        crate::button::draw(layout.cancel, "Cancel", layout.cancel.contains(mouse), s);
+        if let Some(cancel) = layout.cancel {
+            crate::button::draw(cancel, "Cancel", cancel.contains(mouse), s);
+        }
         crate::button::draw(
             layout.confirm,
             self.confirm,

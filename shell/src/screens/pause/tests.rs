@@ -286,6 +286,7 @@ fn naming_at_1280(suggested: &str) -> (PauseScreen, crate::text_field::Layout) {
         crate::render::ui_scale(),
         &[1.0],
         false,
+        true,
     );
     (p, layout)
 }
@@ -341,7 +342,8 @@ fn the_save_button_commits_like_enter_and_refuses_a_blank_name() {
 #[test]
 fn the_cancel_button_abandons_like_escape() {
     let (mut p, layout) = naming_at_1280("Skirmish");
-    assert_eq!(pointer(&mut p, &tap(layout.cancel.center())).0, Out::Stay);
+    let cancel = layout.cancel.expect("the save form keeps Cancel");
+    assert_eq!(pointer(&mut p, &tap(cancel.center())).0, Out::Stay);
     assert!(p.keyboard().is_none());
     assert_eq!(p.menu.view().items[p.menu.selected], "Save match");
 }

@@ -1092,6 +1092,15 @@ impl Lobby {
         Some((guest.map()?, seats, seat))
     }
 
+    /// A client's name and the address it joins, so leaving can reopen the
+    /// Join form filled in; `None` for a host or a rejoin.
+    pub(crate) fn joining(&self) -> Option<(&PlayerName, &str)> {
+        match self {
+            Lobby::Client(ClientLobby { address, name, .. }) => Some((name, address)),
+            _ => None,
+        }
+    }
+
     /// A client that gave up: the name it joined as, the address it tried,
     /// and why it failed.
     pub(crate) fn failure(&self) -> Option<(&PlayerName, &str, &str)> {
