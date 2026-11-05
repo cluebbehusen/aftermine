@@ -7,6 +7,7 @@
 
 use crate::numeric;
 use crate::numeric::Fit;
+use crate::render::prim::stroke_rect;
 use aftermine_protocol::{MouseButton, RawEvent};
 use aftermine_sim::Scenario;
 use aftermine_sim::scenario::{MapSize, MapWealth, ScenarioMeta};
@@ -252,7 +253,11 @@ fn draw_record(
         let x = if shown.is_empty() { cell.x } else { end + gap };
         let y = cell.y + (cell.h - height) * 0.5;
         draw_rectangle(x, y, width, height, CHIP);
-        draw_rectangle_lines(x, y, width, height, Stroke::Hairline.at(s), EDGE_CHIP);
+        stroke_rect(
+            Rect::new(x, y, width, height),
+            Stroke::Hairline.at(s),
+            EDGE_CHIP,
+        );
         draw_text(
             tag,
             x + (width - text) * 0.5,
@@ -939,11 +944,8 @@ impl<R: Clone> Menu<R> {
             last_row.bottom() + pad - top,
         );
         draw_rectangle(rect.x, rect.y, rect.w, rect.h, crate::theme::SURFACE_PLATE);
-        draw_rectangle_lines(
-            rect.x,
-            rect.y,
-            rect.w,
-            rect.h,
+        stroke_rect(
+            Rect::new(rect.x, rect.y, rect.w, rect.h),
             crate::theme::Stroke::Hairline.at(s),
             crate::theme::TEXT_DISABLED,
         );
@@ -1003,20 +1005,14 @@ impl<R: Clone> Menu<R> {
             let hovered = self.hover == Some(index) && !busy;
             if selected {
                 draw_rectangle(rect.x, rect.y, rect.w, rect.h, SURFACE_MENU);
-                draw_rectangle_lines(
-                    rect.x,
-                    rect.y,
-                    rect.w,
-                    rect.h,
+                stroke_rect(
+                    Rect::new(rect.x, rect.y, rect.w, rect.h),
                     Stroke::Focus.at(s),
                     TEXT_TITLE,
                 );
             } else if hovered {
-                draw_rectangle_lines(
-                    rect.x,
-                    rect.y,
-                    rect.w,
-                    rect.h,
+                stroke_rect(
+                    Rect::new(rect.x, rect.y, rect.w, rect.h),
                     Stroke::Hairline.at(s),
                     TEXT_SECONDARY,
                 );

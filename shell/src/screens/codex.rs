@@ -15,6 +15,7 @@ use crate::panel::{
     point_defense_line, unit_stat_line, weapon_lines,
 };
 use crate::render;
+use crate::render::prim::stroke_rect;
 use crate::theme::{
     BORDER_STRONG, CHIP, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_PRIMARY, TEXT_SECONDARY,
 };
@@ -255,11 +256,8 @@ impl CodexScreen {
         let text_top = plate_y + plate + pad + line_h;
         let box_bottom = (text_top + lines.len() as f32 * line_h + pad * 0.5).min(bottom);
         draw_rectangle(x, top, w, box_bottom - top, SURFACE_MENU);
-        draw_rectangle_lines(
-            x,
-            top,
-            w,
-            box_bottom - top,
+        stroke_rect(
+            Rect::new(x, top, w, box_bottom - top),
             Stroke::Edge.at(s),
             BORDER_STRONG,
         );

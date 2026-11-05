@@ -10,14 +10,15 @@ use crate::input::InputState;
 use crate::menu::{Label, Menu};
 use crate::nav::Nav;
 use crate::press::{Fed, Press};
+use crate::render::prim::stroke_rect;
 use crate::theme::{BORDER_STRONG, MIN_TOUCH_TARGET, SURFACE_MENU, Stroke, TEXT_BODY, Type};
 use crate::tutorial::{Course, Lesson, Tutorial};
 use aftermine_protocol::{Key, RawEvent};
 use anyhow::Result;
 use macroquad::prelude::{
     Camera2D, DrawTextureParams, FilterMode, Rect, RenderTarget, Vec2, WHITE, draw_rectangle,
-    draw_rectangle_lines, draw_text, draw_texture_ex, pop_camera_state, push_camera_state,
-    render_target, screen_dpi_scale, set_camera, vec2,
+    draw_text, draw_texture_ex, pop_camera_state, push_camera_state, render_target,
+    screen_dpi_scale, set_camera, vec2,
 };
 
 /// The panel's inset, in logical px at 1x.
@@ -150,11 +151,8 @@ impl LessonsScreen {
         let panel = panel(s);
         draw_rectangle(panel.x, panel.y, panel.w, panel.h, SURFACE_MENU);
         self.draw_scene(sprites, scene_area(s));
-        draw_rectangle_lines(
-            panel.x,
-            panel.y,
-            panel.w,
-            panel.h,
+        stroke_rect(
+            Rect::new(panel.x, panel.y, panel.w, panel.h),
             Stroke::Edge.at(s),
             BORDER_STRONG,
         );

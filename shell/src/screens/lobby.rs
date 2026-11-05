@@ -8,6 +8,7 @@ use crate::menu::{Label, Line, Menu, PreviewCache};
 use crate::netplay::{Link, Lobby, address_char, parse_join_address};
 use crate::numeric;
 use crate::press::{Fed, Press};
+use crate::render::prim::stroke_rect;
 use crate::screens::wizard::{self, CardController, CardView};
 use crate::text_field::{Edit, Field, Form, Keyboard};
 use crate::theme::Type;
@@ -18,7 +19,7 @@ use aftermine_net::{RoomSeat, SeatHolder};
 use aftermine_protocol::{Key, RawEvent};
 use aftermine_sim::{PlayerId, Scenario};
 use macroquad::prelude::Vec2;
-use macroquad::prelude::{Rect, draw_rectangle, draw_rectangle_lines, draw_text, measure_text};
+use macroquad::prelude::{Rect, draw_rectangle, draw_text, measure_text};
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -507,11 +508,8 @@ fn draw_matches(
                 crate::theme::SURFACE_PANEL
             },
         );
-        draw_rectangle_lines(
-            rect.x,
-            rect.y,
-            rect.w,
-            rect.h,
+        stroke_rect(
+            Rect::new(rect.x, rect.y, rect.w, rect.h),
             crate::theme::Stroke::Hairline.at(s),
             if hovered {
                 crate::theme::TEXT_ACCENT

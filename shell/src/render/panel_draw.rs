@@ -2045,11 +2045,8 @@ pub(crate) fn draw_panel_tooltip(game: &crate::game::Scene<'_>, input: &InputSta
     );
     let (x, y) = (origin.x, origin.y);
     draw_rectangle(x, y, width, height, crate::theme::SURFACE_CARD);
-    draw_rectangle_lines(
-        x,
-        y,
-        width,
-        height,
+    stroke_rect(
+        Rect::new(x, y, width, height),
         crate::theme::Stroke::Edge.at(s),
         crate::theme::EDGE_CARD,
     );

@@ -6,6 +6,7 @@
 use super::*;
 use crate::numeric::Fit;
 use crate::render::prim::stroke_circle;
+use crate::render::prim::stroke_rect;
 
 const MINIMAP_MAX: Vec2 = vec2(220.0, 150.0);
 const MINI_VOID: Color = color_u8!(10, 10, 13, 255);
@@ -366,11 +367,13 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
         ) {
             let (w, h) = public.kind.size();
             let color = mini_entity_color(game, public.owner);
-            draw_rectangle_lines(
-                rect.x + public.anchor.x as f32 * scale - 1.0,
-                rect.y + public.anchor.y as f32 * scale - 1.0,
-                w as f32 * scale + 2.0,
-                h as f32 * scale + 2.0,
+            stroke_rect(
+                Rect::new(
+                    rect.x + public.anchor.x as f32 * scale - 1.0,
+                    rect.y + public.anchor.y as f32 * scale - 1.0,
+                    w as f32 * scale + 2.0,
+                    h as f32 * scale + 2.0,
+                ),
                 2.0,
                 color,
             );
@@ -434,7 +437,11 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
     let y = rect.y + lo.y.max(0.0) * scale;
     let x2 = rect.x + hi.x.min(game.state.map().width() as f32) * scale;
     let y2 = rect.y + hi.y.min(game.state.map().height() as f32) * scale;
-    draw_rectangle_lines(x, y, (x2 - x).max(4.0), (y2 - y).max(4.0), 1.5, BONE);
+    stroke_rect(
+        Rect::new(x, y, (x2 - x).max(4.0), (y2 - y).max(4.0)),
+        1.5,
+        BONE,
+    );
 
     // Under-attack pulses: an expanding, fading ring at each alert, or
     // under reduced motion a steady marker that fades without expanding.
@@ -455,11 +462,13 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
             crate::game::AlertKind::Attack => {
                 stroke_circle(center, radius, 1.5, Color::new(0.85, 0.32, 0.29, alpha));
             }
-            crate::game::AlertKind::Assembly(_) => draw_rectangle_lines(
-                center.x - radius,
-                center.y - radius,
-                radius * 2.0,
-                radius * 2.0,
+            crate::game::AlertKind::Assembly(_) => stroke_rect(
+                Rect::new(
+                    center.x - radius,
+                    center.y - radius,
+                    radius * 2.0,
+                    radius * 2.0,
+                ),
                 1.5,
                 Color { a: alpha, ..BONE },
             ),
