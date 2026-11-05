@@ -1,5 +1,6 @@
 //! Where a walking order is headed.
 
+use crate::ids::MarchId;
 use chassis::grid::TilePos;
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +21,11 @@ pub struct Goal {
     /// stores `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<TilePos>,
+    /// The group this walk keeps pace with: the units of one Advance or
+    /// Hunt command whose top speeds differ. `None` walks at the unit's
+    /// own top speed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub march: Option<MarchId>,
 }
 
 /// How a goal's clicked tile becomes the tile its unit aims for.
@@ -63,6 +69,7 @@ impl Goal {
             y: tile.y,
             aim: Aim::Tile,
             endpoint: None,
+            march: None,
         }
     }
 
@@ -123,8 +130,13 @@ impl Goal {
         self.endpoint = (endpoint != self.target()).then_some(endpoint);
     }
 
-    /// Takes `new`'s clicked tile and aim, keeping the resolved endpoint
-    /// only while the target it was resolved for is unchanged.
+    /// This goal walking with `march`.
+    pub(crate) const fn marching(self, march: Option<MarchId>) -> Self {
+        Self { march, ..self }
+    }
+
+    /// Takes `new`'s clicked tile, aim and march, keeping the resolved
+    /// endpoint only while the target it was resolved for is unchanged.
     pub(crate) fn adopt(&mut self, new: Goal) {
         let endpoint = self.endpoint.filter(|_| new.target() == self.target());
         *self = Goal { endpoint, ..new };

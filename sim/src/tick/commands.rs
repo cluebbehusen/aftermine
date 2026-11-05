@@ -482,6 +482,29 @@ fn split_domains(state: &State, ids: Vec<UnitId>) -> [(Vec<UnitId>, Domain); 2] 
     [(ground, Domain::Ground), (air, Domain::Air)]
 }
 
+/// How a group command's walkers set their speed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pace {
+    /// Each at its own top speed.
+    Own,
+    /// Each movement domain's half keeps together (see
+    /// [`super::movement::march`]).
+    Together,
+}
+
+/// Whether `ids`, one movement domain's half of a group, would march: the
+/// members that can slow down differ in top speed, so pacing changes how
+/// some of them move.
+fn mixed_pace(state: &State, ids: &[UnitId]) -> bool {
+    let mut speeds = ids.iter().filter_map(|id| {
+        let stats = state.unit(*id).expect("caller filtered").kind.stats();
+        super::movement::march::paces(stats).then_some(stats.speed)
+    });
+    speeds
+        .next()
+        .is_some_and(|first| speeds.any(|speed| speed != first))
+}
+
 /// Sends a group toward one clicked tile: each movement domain's half takes
 /// its spread slots around it (see [`goals`]), and `order_for` picks the
 /// order each unit takes there.
@@ -490,6 +513,7 @@ fn apply_group_goal(
     player: PlayerId,
     units: &[UnitId],
     goal: TilePos,
+    pace: Pace,
     queue: bool,
     order_for: impl Fn(&Unit, Goal) -> Order,
 ) -> Result<(), RejectReason> {
@@ -500,20 +524,29 @@ fn apply_group_goal(
     if accepted.is_empty() {
         return Err(RejectReason::NoValidUnits);
     }
-    let mut landed = 0;
+    let (mut landed, mut marched) = (0, false);
+    // The id is taken only once a walk carrying it lands, so a refused
+    // command leaves the counter where it was.
+    let march = (pace == Pace::Together).then(|| state.next_march_id());
     for (ids, domain) in split_domains(state, accepted) {
         if ids.is_empty() {
             continue;
         }
         let reverse = spread_scan_reversed(state, goal, &ids);
         let issue = goals::issue(state, player, goal, domain, reverse);
+        let march = march.filter(|_| mixed_pace(state, &ids));
         for (rank, id) in ids.into_iter().enumerate() {
             let unit = state.unit_mut(id).expect("filtered above");
-            let order = order_for(unit, issue.goal(rank));
+            let march = march.filter(|_| super::movement::march::paces(unit.kind.stats()));
+            let order = order_for(unit, issue.goal(rank).marching(march));
             if assign(unit, order, queue) {
                 landed += 1;
+                marched |= march.is_some();
             }
         }
+    }
+    if marched {
+        state.take_march_id();
     }
     (landed > 0).then_some(()).ok_or(RejectReason::QueueFull)
 }
@@ -525,8 +558,8 @@ fn apply_run(
     goal: TilePos,
     queue: bool,
 ) -> Result<(), RejectReason> {
-    apply_group_goal(state, player, units, goal, queue, |_, goal| Order::Run {
-        goal,
+    apply_group_goal(state, player, units, goal, Pace::Own, queue, |_, goal| {
+        Order::Run { goal }
     })
 }
 
@@ -629,13 +662,21 @@ fn apply_hunt(
     goal: TilePos,
     queue: bool,
 ) -> Result<(), RejectReason> {
-    apply_group_goal(state, player, units, goal, queue, |unit, goal| {
-        if unit.kind.stats().can_fight() {
-            Order::Hunt { goal }
-        } else {
-            Order::Run { goal }
-        }
-    })
+    apply_group_goal(
+        state,
+        player,
+        units,
+        goal,
+        Pace::Together,
+        queue,
+        |unit, goal| {
+            if unit.kind.stats().can_fight() {
+                Order::Hunt { goal }
+            } else {
+                Order::Run { goal }
+            }
+        },
+    )
 }
 
 fn apply_advance(
@@ -645,13 +686,21 @@ fn apply_advance(
     goal: TilePos,
     queue: bool,
 ) -> Result<(), RejectReason> {
-    apply_group_goal(state, player, units, goal, queue, |unit, goal| {
-        if unit.kind.stats().can_fight() {
-            Order::Advance { goal }
-        } else {
-            Order::Run { goal }
-        }
-    })
+    apply_group_goal(
+        state,
+        player,
+        units,
+        goal,
+        Pace::Together,
+        queue,
+        |unit, goal| {
+            if unit.kind.stats().can_fight() {
+                Order::Advance { goal }
+            } else {
+                Order::Run { goal }
+            }
+        },
+    )
 }
 
 fn apply_harvest(

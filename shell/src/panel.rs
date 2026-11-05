@@ -1726,7 +1726,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             action: CardAction::Dispatch(Action::Run),
             enabled: true,
             why: None,
-            desc: vec!["Move without stopping to fight.".into()],
+            desc: vec!["Move at full speed without stopping to fight.".into()],
             progress: None,
             autocast: None,
             hold: None,

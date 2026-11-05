@@ -1454,12 +1454,14 @@ fn a_point_defender_that_drifts_is_sent_back_over_the_army() {
     let mut state = scenario.build().unwrap();
     let mantle = at(&state, 10, 11);
     let mut opponent = seat(&scenario, 0);
+    let mut strayed = false;
     for _ in 0..3_000 {
-        let (commands, _) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let (mut commands, _) = opponent.act_traced(&state, &mut OwnEvents::default());
         if let Some((_, goal)) = runs(&commands)
             .into_iter()
             .find(|(units, _)| units == &vec![mantle])
         {
+            assert!(strayed, "the Mantle marches with the army it was sent with");
             assert!(
                 state
                     .units()
@@ -1468,6 +1470,23 @@ fn a_point_defender_that_drifts_is_sent_back_over_the_army() {
                 "sent to a fighting member's tile, not {goal:?}"
             );
             return;
+        }
+        // The Mantle keeps the army's pace, so its drift is staged: once
+        // the attack takes it, it is sent off to the south on its own.
+        if !strayed
+            && hunts(&commands)
+                .iter()
+                .any(|(units, _)| units.contains(&mantle))
+        {
+            commands.push(PlayerCommand {
+                player: PlayerId(0),
+                command: Command::Run {
+                    units: vec![mantle],
+                    goal: TilePos::new(10, 21),
+                    queue: false,
+                },
+            });
+            strayed = true;
         }
         state.tick(&commands);
     }

@@ -218,9 +218,17 @@ fn hull_step(from: Vec2Fx, proposed: Vec2Fx, radius: Fx, terrain: &GroundTerrain
 /// bearing before it rolls. Off the exact bearing the body travels along
 /// its heading, so a bend is a real arc; within `GROUND_ALIGNED_STEPS` of
 /// the bearing it tracks the target point directly and lands on it exactly.
-pub(super) fn advance(unit: &mut Unit, terrain: &GroundTerrain, parked: &ParkedBodies) -> bool {
+/// A march's `cap` lowers the speed it asks for, never how hard the chassis
+/// accelerates or brakes.
+pub(super) fn advance(
+    unit: &mut Unit,
+    terrain: &GroundTerrain,
+    parked: &ParkedBodies,
+    cap: Option<Fx>,
+) -> bool {
     let target = route_target(unit, terrain, parked);
     let max_speed = unit.kind.stats().speed;
+    let pace = super::capped(max_speed, cap);
     let turn_rate = unit.kind.ground_turn_rate();
     let brake = increment(max_speed, i64::from(GROUND_BRAKE_TICKS));
     let offset = target.map(|(point, _, _)| point - unit.pos);
@@ -257,7 +265,7 @@ pub(super) fn advance(unit: &mut Unit, terrain: &GroundTerrain, parked: &ParkedB
     } else if target.is_some() && steering && error <= u16::from(GROUND_PIVOT_THRESHOLD) {
         // Ease off through a bend: full speed on the bearing, a quarter at
         // the pivot threshold.
-        demand = max_speed * Fx::from_num(128 - i32::from(error)) / Fx::from_num(128);
+        demand = pace * Fx::from_num(128 - i32::from(error)) / Fx::from_num(128);
         if !aligned {
             // Off the bearing the arc must be able to close on the target:
             // cap speed so the turn radius stays inside the remaining

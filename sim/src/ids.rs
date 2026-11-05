@@ -18,6 +18,11 @@ pub struct BuildingId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct WarheadId(pub u32);
 
+/// Names the walkers one Advance or Hunt command sent off together, so the
+/// group keeps pace on the way. Never reused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct MarchId(pub u32);
+
 /// Index into [`crate::State::players`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PlayerId(pub u8);

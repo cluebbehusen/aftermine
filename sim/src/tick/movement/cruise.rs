@@ -17,8 +17,11 @@ fn clear_segment(map: &Map, from: Vec2Fx, to: Vec2Fx) -> bool {
         && !chassis::path::line_blocked(from, to, open)
 }
 
-pub(super) fn advance(unit: &mut Unit, map: &Map) {
+/// One tick of cruise flight, at most `cap` fast when keeping a march's
+/// pace.
+pub(super) fn advance(unit: &mut Unit, map: &Map, cap: Option<Fx>) {
     let stats = unit.kind.stats();
+    let top = super::capped(stats.speed, cap);
     let rate = unit.kind.stats().cruise_turn_rate;
     let radius = stats.speed * const { Fx::lit("40.75") } / Fx::from_num(rate);
     loop {
@@ -50,8 +53,8 @@ pub(super) fn advance(unit: &mut Unit, map: &Map) {
         let aligned = super::steer_bearing(&mut unit.heading, offset, rate);
         // Below cruise radius, slowing tightens the arc enough to converge
         // on a nearby waypoint instead of orbiting it indefinitely.
-        let speed = stats.speed.min(distance * Fx::from_num(rate) / 64);
-        let next = if aligned && distance <= stats.speed {
+        let speed = top.min(distance * Fx::from_num(rate) / 64);
+        let next = if aligned && distance <= top {
             center
         } else {
             unit.pos + dir(unit.heading) * speed

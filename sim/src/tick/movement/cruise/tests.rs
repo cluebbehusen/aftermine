@@ -57,12 +57,12 @@ fn against_ridge(waypoint: TilePos) -> (Unit, Map) {
 fn a_turning_nose_keeps_its_route_and_a_blocked_bearing_drops_it() {
     let (mut turning, map) = against_ridge(TilePos::new(1, 3));
     let start = turning.pos;
-    advance(&mut turning, &map);
+    advance(&mut turning, &map, None);
     assert_eq!(turning.pos, start, "the nose is still turning");
     assert!(turning.path.is_some(), "a turn in place keeps the route");
 
     let (mut facing, map) = against_ridge(TilePos::new(9, 3));
-    advance(&mut facing, &map);
+    advance(&mut facing, &map, None);
     assert_eq!(facing.pos, start);
     assert!(
         facing.path.is_none(),
