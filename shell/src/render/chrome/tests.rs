@@ -233,3 +233,30 @@ fn toasts_stack_above_the_ribbon_row() {
         assert!(origin.y < ribbon.y, "toast {index} clears the row");
     }
 }
+
+#[test]
+fn army_tooltips_say_what_a_press_selects() {
+    use crate::layout::ArmyReach;
+    assert_eq!(
+        army_tooltip(ArmyReach::All, 18, "Ctrl+A", false),
+        "Select all 18 army units   [Ctrl+A]"
+    );
+    assert_eq!(
+        army_tooltip(ArmyReach::InView, 14, "Ctrl+S", false),
+        "Select the 14 army units in view   [Ctrl+S]"
+    );
+    assert_eq!(
+        army_tooltip(ArmyReach::All, 1, "", false),
+        "Select your 1 army unit"
+    );
+    assert_eq!(
+        army_tooltip(ArmyReach::InView, 1, "Ctrl+S", true),
+        "Select the 1 army unit in view"
+    );
+    crate::platform::assert_touch_copy(&army_tooltip(ArmyReach::InView, 3, "Ctrl+S", true));
+    assert_eq!(army_tooltip(ArmyReach::All, 0, "", true), "No army units");
+    assert_eq!(
+        army_tooltip(ArmyReach::InView, 0, "", true),
+        "No army units in view"
+    );
+}

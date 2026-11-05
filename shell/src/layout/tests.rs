@@ -459,3 +459,100 @@ fn ghost_controls_hang_below_the_ghost_inside_the_window() {
         assert_eq!(controls.handle.center(), footprint.center());
     }
 }
+
+#[test]
+fn the_army_strip_sits_on_the_minimap_with_its_square_under_the_group_column() {
+    for (viewport, touch_only) in [
+        (vec2(1280.0, 800.0), false),
+        (vec2(1194.0, 834.0), true),
+        (vec2(1133.0, 744.0), true),
+    ] {
+        let minimap = crate::render::minimap_rect_scaled(64, 40, viewport, 1.0);
+        let strip = army_strip(1.0, touch_only, minimap).expect("room above the minimap");
+        assert_eq!(strip.plate.x, minimap.x);
+        assert_eq!(strip.plate.w, minimap.w);
+        assert!(
+            strip.plate.y + strip.plate.h < minimap.y,
+            "above the minimap"
+        );
+        for button in [strip.all, strip.in_view] {
+            assert!(strip.plate.contains(button.center()));
+            if touch_only {
+                assert!(button.h >= MIN_TOUCH_TARGET);
+            }
+        }
+        assert!(strip.all.x + strip.all.w < strip.in_view.x, "side by side");
+        assert!(
+            strip.all.w > 2.0 * strip.in_view.w,
+            "the army button is wide"
+        );
+        // The column stands on the strip, its right-hand slots over the
+        // square.
+        let dock = Rect::new(
+            minimap.x,
+            strip.plate.y,
+            minimap.w,
+            minimap.y + minimap.h - strip.plate.y,
+        );
+        let column = group_column(1.0, touch_only, dock).expect("room above the strip");
+        assert!(column.plate.y + column.plate.h < strip.plate.y);
+        let slot = column.slots[0];
+        assert_eq!(
+            (slot.x, slot.w, slot.h),
+            (strip.in_view.x, strip.in_view.w, strip.in_view.h)
+        );
+    }
+}
+
+#[test]
+fn a_narrow_minimap_widens_the_strip_leftward_and_none_hides_it() {
+    let minimap = Rect::new(1100.0, 600.0, 90.0, 150.0);
+    let strip = army_strip(1.0, false, minimap).expect("a strip");
+    assert_eq!(strip.plate.x + strip.plate.w, minimap.x + minimap.w);
+    assert!(strip.plate.w > minimap.w);
+    assert!(strip.all.w >= 2.0 * strip.in_view.w);
+    assert!(army_strip(1.0, false, Rect::new(0.0, 0.0, 0.0, 0.0)).is_none());
+    assert!(
+        army_strip(1.0, true, Rect::new(1100.0, 90.0, 150.0, 100.0)).is_none(),
+        "no room under the top bar"
+    );
+}
+
+#[test]
+fn army_buttons_hit_exactly_for_a_cursor_and_padded_for_a_finger() {
+    let strip = army_strip(1.0, false, Rect::new(1000.0, 600.0, 220.0, 150.0)).unwrap();
+    let model = LayoutModel {
+        army_strip: strip.plate,
+        army_buttons: [
+            Some((strip.all, ArmyReach::All)),
+            Some((strip.in_view, ArmyReach::InView)),
+        ],
+        ..LayoutModel::default()
+    };
+    assert_eq!(
+        army_button_under(&model, strip.all.center(), None),
+        Some(ArmyReach::All)
+    );
+    assert_eq!(
+        army_button_under(&model, strip.in_view.center(), None),
+        Some(ArmyReach::InView)
+    );
+    let below = vec2(
+        strip.in_view.center().x,
+        strip.in_view.y + strip.in_view.h + 1.0,
+    );
+    assert_eq!(army_button_under(&model, below, None), None);
+    assert_eq!(
+        army_button_under(&model, below, Some(1.0)),
+        Some(ArmyReach::InView),
+        "a 40 px square pads out to a fingertip"
+    );
+    assert!(model.chrome_owns(vec2(strip.plate.x + 2.0, strip.plate.y + 2.0)));
+    assert!(!model.chrome_owns(vec2(strip.plate.x - 2.0, strip.plate.y + 2.0)));
+    assert!(!LayoutModel::default().chrome_owns(strip.all.center()));
+    assert_eq!(ArmyReach::All.action(), crate::action::Action::SelectArmy);
+    assert_eq!(
+        ArmyReach::InView.action(),
+        crate::action::Action::SelectArmyInView
+    );
+}

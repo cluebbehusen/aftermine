@@ -26,6 +26,53 @@ pub fn idle_harvesters(game: &crate::game::Scene<'_>) -> Vec<UnitId> {
         .collect()
 }
 
+/// Whether a unit belongs to its owner's army: every unit but the workers
+/// and the unarmed transport. A drone flies for its host alone.
+pub(super) fn in_army(unit: &aftermine_sim::Unit) -> bool {
+    let stats = unit.kind.stats();
+    let worker = stats.harvest.is_some();
+    let unarmed_transport = stats.transport_capacity > 0 && !stats.can_fight();
+    unit.host.is_none() && !worker && !unarmed_transport
+}
+
+/// The viewer's army units in id order: all of them, or with `in_view`
+/// only those inside the camera's view, the same bounds a double-click
+/// sweeps.
+pub(crate) fn army_units(game: &crate::game::Scene<'_>, in_view: bool) -> Vec<UnitId> {
+    let (lo, hi) = game.presentation.camera.world_rect();
+    let mut ids: Vec<UnitId> = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == game.presentation.human && in_army(u))
+        .filter(|u| {
+            let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
+            !in_view || (p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y)
+        })
+        .map(|u| u.id)
+        .collect();
+    ids.sort_unstable();
+    ids
+}
+
+/// Replaces the selection with the viewer's army, or with the part of it
+/// in view. With no such unit the selection stays and the press is
+/// refused.
+pub(super) fn select_army(game: &mut Game, input: &mut super::InputState, in_view: bool) {
+    let ids = army_units(&game.view(), in_view);
+    if ids.is_empty() {
+        game.presentation
+            .sounds_pending
+            .push((crate::game::SoundKind::Denied, None));
+        return;
+    }
+    input.close_construction();
+    let selection = &mut game.presentation.selection;
+    selection.units = ids;
+    selection.buildings.clear();
+    selection.pile = None;
+}
+
 /// Selects the next idle harvester after the current selection (id
 /// order, wrapping) and centers the camera on it. Stateless: the
 /// selection itself is the cursor.

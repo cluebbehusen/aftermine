@@ -41,6 +41,11 @@ pub struct LayoutModel {
     pub group_column: Rect,
     /// The column's slots, by group; `None` while it is hidden.
     pub group_slots: [Option<(Rect, GroupSlot)>; crate::action::CONTROL_GROUPS],
+    /// The army strip's plate on top of the minimap; zero-sized while it
+    /// is hidden.
+    pub army_strip: Rect,
+    /// The strip's buttons, the whole army first; `None` while hidden.
+    pub army_buttons: [Option<(Rect, ArmyReach)>; 2],
     /// The menu button at the top bar's right edge; it opens the pause
     /// menu. Zero-sized while spectating.
     pub menu_button: Rect,
@@ -98,6 +103,8 @@ impl Default for LayoutModel {
             alert_badge: Rect::new(0.0, 0.0, 0.0, 0.0),
             group_column: Rect::new(0.0, 0.0, 0.0, 0.0),
             group_slots: [None; crate::action::CONTROL_GROUPS],
+            army_strip: Rect::new(0.0, 0.0, 0.0, 0.0),
+            army_buttons: [None; 2],
             menu_button: Rect::new(0.0, 0.0, 0.0, 0.0),
             pause_status: Rect::new(0.0, 0.0, 0.0, 0.0),
             mode_ribbon: Rect::new(0.0, 0.0, 0.0, 0.0),
@@ -293,6 +300,85 @@ pub(crate) fn top_bar(viewport_w: f32, ui: f32, touch_only: bool, text: TopBarTe
     }
 }
 
+/// Which part of the viewer's army an army strip button selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArmyReach {
+    /// Every army unit, wherever it stands.
+    All,
+    /// The army units inside the camera's view.
+    InView,
+}
+
+impl ArmyReach {
+    /// The action the button shares with its key.
+    pub fn action(self) -> crate::action::Action {
+        match self {
+            Self::All => crate::action::Action::SelectArmy,
+            Self::InView => crate::action::Action::SelectArmyInView,
+        }
+    }
+}
+
+/// Where the army strip sits: a plate along the top of the minimap with a
+/// wide button for the whole army and a square one for the army in view.
+/// The square takes a group slot's size and the column's right-hand slot
+/// position, so it lines up under the column. A minimap too narrow for the
+/// wide button's label lets the plate reach further left.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ArmyStrip {
+    pub plate: Rect,
+    pub all: Rect,
+    pub in_view: Rect,
+}
+
+/// Lays out the army strip over `minimap`. None when the minimap is hidden
+/// or the strip would reach under the top bar.
+pub(crate) fn army_strip(ui: f32, touch_only: bool, minimap: Rect) -> Option<ArmyStrip> {
+    if minimap.w <= 0.0 {
+        return None;
+    }
+    let side = if touch_only { MIN_TOUCH_TARGET } else { 40.0 } * ui;
+    let (gap, pad) = (4.0 * ui, 8.0 * ui);
+    let (w, h) = (
+        minimap.w.max(3.0 * side + gap + 2.0 * pad),
+        side + 2.0 * pad,
+    );
+    let plate = Rect::new(minimap.x + minimap.w - w, minimap.y - 8.0 * ui - h, w, h);
+    if plate.y < (TOP_BAR_H + 8.0) * ui {
+        return None;
+    }
+    let in_view = Rect::new(plate.x + plate.w - pad - side, plate.y + pad, side, side);
+    let all = Rect::new(
+        plate.x + pad,
+        in_view.y,
+        in_view.x - gap - plate.x - pad,
+        side,
+    );
+    Some(ArmyStrip {
+        plate,
+        all,
+        in_view,
+    })
+}
+
+/// The army strip button under `p`: the drawn rect for a cursor, the
+/// padded fingertip target when `touch_ui` carries the ui scale.
+pub fn army_button_under(
+    layout: &LayoutModel,
+    p: Vec2,
+    touch_ui: Option<f32>,
+) -> Option<ArmyReach> {
+    layout
+        .army_buttons
+        .iter()
+        .flatten()
+        .find(|(rect, _)| match touch_ui {
+            Some(ui) => touch_pad(*rect, ui).contains(p),
+            None => rect.contains(p),
+        })
+        .map(|(_, reach)| *reach)
+}
+
 /// Where the control-group column sits: a plate above the minimap's
 /// right edge, mirroring the orders dock on the left, with one square
 /// slot per group and group 1 on top. A window too short for one column
@@ -429,6 +515,7 @@ impl LayoutModel {
                 .iter()
                 .any(|rect| rect.w > 0.0 && rect.contains(p))
             || (self.group_column.w > 0.0 && self.group_column.contains(p))
+            || (self.army_strip.w > 0.0 && self.army_strip.contains(p))
     }
 }
 

@@ -1792,6 +1792,7 @@ mod touch;
 
 use dispatch::dispatch_action;
 use orders::{context_order, rally_at, rally_producers, rally_selected_producers};
+pub(crate) use select::army_units;
 pub use select::idle_harvesters;
 use select::{
     box_select, click_on_hud, click_select, cycle_idle_worker, select_all_of_kind_on_screen,
@@ -1961,6 +1962,10 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             let alert = layout.alert_badge;
             if alert.w > 0.0 && alert.contains(vec2(x, y)) {
                 dispatch_action(game, input, bindings, Action::JumpToLastAlert);
+                return;
+            }
+            if let Some(reach) = crate::layout::army_button_under(&layout, vec2(x, y), None) {
+                dispatch_action(game, input, bindings, reach.action());
                 return;
             }
             if let Some(slot) = crate::layout::group_slot_under(&layout, vec2(x, y), None) {

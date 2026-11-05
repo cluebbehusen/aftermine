@@ -235,6 +235,205 @@ fn draw_group_column(sprites: &Sprites, column: &GroupColumnLayout, s: f32) {
     }
 }
 
+/// The army strip as laid out this frame, with how many units each button
+/// would select.
+pub(crate) struct ArmyStripLayout {
+    pub(super) strip: crate::layout::ArmyStrip,
+    all: usize,
+    in_view: usize,
+}
+
+/// The army strip on the minimap. It shows from the first frame, empty
+/// buttons dimmed, so it never shifts the group column mid-match.
+pub(super) fn army_strip_layout(
+    game: &crate::game::Scene<'_>,
+    minimap: Rect,
+    s: f32,
+) -> Option<ArmyStripLayout> {
+    let strip = crate::layout::army_strip(s, crate::platform::TOUCH_ONLY, minimap)?;
+    Some(ArmyStripLayout {
+        strip,
+        all: crate::input::army_units(game, false).len(),
+        in_view: crate::input::army_units(game, true).len(),
+    })
+}
+
+/// What pressing an army button would do, for its tooltip, naming its key
+/// where one exists.
+fn army_tooltip(reach: crate::layout::ArmyReach, count: usize, key: &str, keyless: bool) -> String {
+    use crate::layout::ArmyReach;
+    let what = match (reach, count) {
+        (ArmyReach::All, 0) => "No army units".to_string(),
+        (ArmyReach::All, 1) => "Select your 1 army unit".to_string(),
+        (ArmyReach::All, n) => format!("Select all {n} army units"),
+        (ArmyReach::InView, 0) => "No army units in view".to_string(),
+        (ArmyReach::InView, 1) => "Select the 1 army unit in view".to_string(),
+        (ArmyReach::InView, n) => format!("Select the {n} army units in view"),
+    };
+    if keyless || key.is_empty() {
+        what
+    } else {
+        format!("{what}   [{key}]")
+    }
+}
+
+/// The strip's buttons in the command cards' look: a quiet fill and thin
+/// edge, lit under the cursor, dimmed while they would select nothing.
+fn draw_army_strip(layout: &ArmyStripLayout, input: &InputState, s: f32) {
+    let strip = layout.strip;
+    fill_rect(strip.plate, crate::theme::SURFACE_PLATE);
+    stroke_rect(
+        strip.plate,
+        crate::theme::Stroke::Edge.at(s),
+        crate::theme::BORDER_STRONG,
+    );
+    let hover = hover_point(input);
+    for (rect, count) in [(strip.all, layout.all), (strip.in_view, layout.in_view)] {
+        let live = count > 0;
+        let hovered = live && hover.is_some_and(|p| rect.contains(p));
+        let (fill, edge) = match (live, hovered) {
+            (false, _) => (crate::theme::SURFACE_PLATE, crate::theme::BORDER_FAINT),
+            (true, true) => (crate::theme::CARD_HOVER, crate::theme::EDGE_FOCUS),
+            (true, false) => (crate::theme::CARD_IDLE, crate::theme::EDGE_CARD),
+        };
+        fill_rect(rect, fill);
+        stroke_rect(rect, crate::theme::Stroke::Edge.at(s), edge);
+    }
+    draw_army_count(strip.all, layout.all, s);
+    draw_viewfinder(
+        strip.in_view,
+        if layout.in_view > 0 {
+            TEXT_PRIMARY
+        } else {
+            TEXT_DISABLED
+        },
+        s,
+    );
+}
+
+/// The wide button's face: the ARMY label and the count side by side,
+/// centered, or the count alone where the pair does not fit.
+fn draw_army_count(rect: Rect, count: usize, s: f32) {
+    let live = count > 0;
+    let small = crate::theme::Type::Small.at(s);
+    let big = crate::theme::Type::Label.at(s);
+    let number = count.to_string();
+    let label_w = crate::typography::measure("ARMY", small).width;
+    let number_w = crate::typography::measure(&number, big).width;
+    let gap = 10.0 * s;
+    let labelled = label_w + gap + number_w <= rect.w - 16.0 * s;
+    let face_w = if labelled {
+        label_w + gap + number_w
+    } else {
+        number_w
+    };
+    let x = rect.x + (rect.w - face_w) * 0.5;
+    let middle = rect.y + rect.h * 0.5;
+    if labelled {
+        crate::typography::draw(
+            "ARMY",
+            x,
+            middle + 4.5 * s,
+            small,
+            if live { TEXT_SECONDARY } else { TEXT_DISABLED },
+        );
+    }
+    crate::typography::draw(
+        &number,
+        x + face_w - number_w,
+        middle + 6.5 * s,
+        big,
+        if live { SCRAP_COLOR } else { TEXT_DISABLED },
+    );
+}
+
+/// The in-view button's glyph: a viewfinder's four corner brackets around
+/// a dot, drawn as whole-rect fills so it stays crisp at any scale.
+fn draw_viewfinder(rect: Rect, color: Color, s: f32) {
+    let c = rect.center();
+    let (half, arm, t) = (9.0 * s, 6.0 * s, (2.0 * s).max(1.0));
+    for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+        // Each bracket runs inward from its corner of the frame.
+        let x = if sx < 0.0 {
+            c.x - half
+        } else {
+            c.x + half - arm
+        };
+        let y = if sy < 0.0 {
+            c.y - half
+        } else {
+            c.y + half - arm
+        };
+        let edge_x = if sx < 0.0 { c.x - half } else { c.x + half - t };
+        let edge_y = if sy < 0.0 { c.y - half } else { c.y + half - t };
+        fill_rect(Rect::new(x, edge_y, arm, t), color);
+        fill_rect(Rect::new(edge_x, y, t, arm), color);
+    }
+    let dot = 3.0 * s;
+    fill_rect(Rect::new(c.x - dot * 0.5, c.y - dot * 0.5, dot, dot), color);
+}
+
+/// The army button under the cursor, or under a resting finger, says what
+/// a press selects and names its key where one exists.
+pub(crate) fn draw_army_tooltip(
+    game: &crate::game::Scene<'_>,
+    input: &InputState,
+    bindings: &crate::action::BindingMap,
+) {
+    let s = ui_scale();
+    let layout = game.presentation.layout.get();
+    let pointer = match input.touch_preview() {
+        Some(p) => Some((p, Some(s))),
+        None => hover_point(input).map(|p| (p, None)),
+    };
+    let Some(reach) =
+        pointer.and_then(|(p, touch_ui)| crate::layout::army_button_under(&layout, p, touch_ui))
+    else {
+        return;
+    };
+    let Some((anchor, _)) = layout
+        .army_buttons
+        .iter()
+        .flatten()
+        .find(|(_, button)| *button == reach)
+    else {
+        return;
+    };
+    let count = crate::input::army_units(game, reach == crate::layout::ArmyReach::InView).len();
+    let text = army_tooltip(
+        reach,
+        count,
+        &bindings.label(reach.action()),
+        crate::platform::TOUCH_ONLY,
+    );
+    let size = crate::theme::Type::Body.at(s);
+    let pad = 12.0 * s;
+    let width = measure_text(&text, None, numeric::font_size(size), 1.0).width + pad * 2.0;
+    let height = 22.0 * s + pad * 1.5;
+    let origin = crate::layout::tooltip_origin(
+        *anchor,
+        vec2(width, height),
+        crate::layout::TooltipSide::Above,
+        vec2(screen_width(), anchor.y),
+        layout.top_bar_h,
+        6.0 * s,
+    );
+    let rect = Rect::new(origin.x, origin.y, width, height);
+    fill_rect(rect, crate::theme::SURFACE_CARD);
+    stroke_rect(
+        rect,
+        crate::theme::Stroke::Edge.at(s),
+        crate::theme::EDGE_CARD,
+    );
+    draw_text(
+        &text,
+        rect.x + pad,
+        rect.y + pad + 0.6 * 22.0 * s,
+        size,
+        TEXT_PRIMARY,
+    );
+}
+
 /// Three bars on the badge fill: the glyph needs no font coverage or
 /// atlas entry, and whole-rect fills stay crisp at any scale.
 fn draw_menu_button(rect: Rect, s: f32) {
@@ -1181,6 +1380,9 @@ pub(crate) fn draw_hud(
     if let Some(column) = &hud.group_column {
         draw_group_column(sprites, column, s);
     }
+    if let Some(strip) = &hud.army_strip {
+        draw_army_strip(strip, input, s);
+    }
     if let Some(ribbon) = &hud.ribbon {
         draw_mode_ribbon(sprites, ribbon, input, s);
     }
@@ -1225,7 +1427,7 @@ pub(crate) fn draw_hud(
         s,
         newest.y - (3.0 * TOAST_LINE + 22.0) * s,
         newest.y + 6.0 * s,
-        &[layout.minimap, layout.group_column],
+        &[layout.minimap, layout.army_strip, layout.group_column],
     );
     let mut lines_below = 0;
     for toast in game.presentation.toasts.iter().rev().take(3) {

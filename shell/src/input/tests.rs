@@ -39,6 +39,7 @@ fn activate_card(game: &mut Game, input: &mut InputState, action: crate::panel::
     super::activate_card(game, input, &classic(), action);
 }
 
+mod army;
 mod double_click;
 mod lessons;
 

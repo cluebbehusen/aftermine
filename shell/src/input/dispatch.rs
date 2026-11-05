@@ -3,7 +3,7 @@
 //! or an injected event.
 
 use super::orders::digit_action;
-use super::select::{cycle_idle_worker, idle_harvesters};
+use super::select::{cycle_idle_worker, idle_harvesters, select_army};
 use super::{ClickVerb, InputState, Pointer};
 use crate::action::Action;
 use crate::game::Game;
@@ -452,6 +452,8 @@ pub(super) fn dispatch_action(
             }
         }
         Action::CycleIdleWorker => cycle_idle_worker(game),
+        Action::SelectArmy => select_army(game, input, false),
+        Action::SelectArmyInView => select_army(game, input, true),
         Action::JumpToLastAlert => {
             if let Some(world) = game.presentation.last_alert {
                 game.presentation.camera.center = world;

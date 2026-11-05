@@ -115,6 +115,10 @@ pub enum Action {
     AssignGroup(u8),
     Confirm,
     CycleIdleWorker,
+    /// Select every army unit: all but workers and the unarmed transport.
+    SelectArmy,
+    /// Select the army units inside the camera's view.
+    SelectArmyInView,
     JumpToLastAlert,
     Salvage,
     Run,
@@ -181,6 +185,8 @@ impl Action {
             Self::AssignGroup(n) => format!("Assign group {n}"),
             Self::Confirm => "Confirm".into(),
             Self::CycleIdleWorker => "Next idle Harvester".into(),
+            Self::SelectArmy => "Select army".into(),
+            Self::SelectArmyInView => "Select army in view".into(),
             Self::JumpToLastAlert => "Jump to last alert".into(),
             Self::Salvage => "Salvage structure".into(),
             Self::Run => "Run".into(),
@@ -334,9 +340,10 @@ impl BindingMap {
             MenuEnd, MenuHome, MenuLeft, MenuPageDown, MenuPageUp, MenuRight, MenuUp, NextTab,
             OrderRound, PanDown, PanLeft, PanRight, PanUp, Patrol, PrevTab, RecallBookmark,
             RepairUnit, ReplayBack, ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed,
-            ReplayStart, ReplayStats, ReturnCargo, Run, Salvage, Scout, SetBookmark, SetRally,
-            Slot, StopOrScrap, ToggleAutofill, ToggleBuildPalette, ToggleIdleWeld, ToggleOverlay,
-            TogglePause, TrainSlot, Unload, Upgrade,
+            ReplayStart, ReplayStats, ReturnCargo, Run, Salvage, Scout, SelectArmy,
+            SelectArmyInView, SetBookmark, SetRally, Slot, StopOrScrap, ToggleAutofill,
+            ToggleBuildPalette, ToggleIdleWeld, ToggleOverlay, TogglePause, TrainSlot, Unload,
+            Upgrade,
         };
         let mut map = Self {
             bindings: Vec::new(),
@@ -448,6 +455,8 @@ impl BindingMap {
                 assert!(map.rebind(AssignGroup(n.fit::<u8>() + 1), Chord::ctrl(key)));
             }
         }
+        assert!(map.rebind(SelectArmy, Chord::ctrl(Key::A)));
+        assert!(map.rebind(SelectArmyInView, Chord::ctrl(Key::S)));
         for (n, key) in [Key::F5, Key::F6, Key::F7, Key::F8].into_iter().enumerate() {
             assert!(map.rebind(SetBookmark(n.fit::<u8>()), Chord::ctrl(key)));
             assert!(map.rebind(RecallBookmark(n.fit::<u8>()), Chord::bare(key)));
