@@ -199,15 +199,6 @@ Idle acquisition and retaliation may leash a unit back to its station. Work
 orders (`Harvest`, `Build`, `Found`, `Repair`, `RepairUnit` and `Salvage`)
 persist and are carried out by unit behavior over later ticks.
 
-The units one `Advance` or `Hunt` command sends off march together when their
-top speeds differ. While they walk under that order, none drives faster than the
-slowest of them, and one behind the rest drives faster, up to its own top speed,
-to arrive with them; nobody waits. Members that are fighting, braced or without
-a route drop out of the pace. Ground units pace with ground units and aircraft
-with aircraft, and turn-limited aircraft never march. Each queued leg marches
-with the units of its own command. A `Run` command and every other order move
-each unit at its own top speed.
-
 `Accompany` puts units on escort duty around one own unit. Slots stay fixed as
 the party moves, and escorts fight only within set radii of the unit they guard
 before returning to duty. Escort chains are loop-free: dispatch refuses an
