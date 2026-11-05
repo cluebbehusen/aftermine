@@ -228,6 +228,26 @@ fn the_panel_seats_its_scene_and_every_story_on_every_target_window() {
 }
 
 #[test]
+fn a_story_that_would_squeeze_the_scene_out_gets_the_panel_to_itself() {
+    // 150% UI scale on the smallest target window wraps the longest story
+    // past the room a readable scene needs.
+    crate::render::set_viewport(1133.0, 744.0);
+    crate::render::set_user_scale(crate::render::MAX_USER_SCALE);
+    let s = crate::render::ui_scale();
+    let scene = scene_area(s, &fixed);
+    let start = start_button(s, &fixed);
+    let panel = panel(s, &fixed);
+    crate::render::set_user_scale(1.0);
+    assert_eq!(scene.h, 0.0, "no sliver of scene");
+    assert!(start.bottom() < panel.bottom() && panel.bottom() <= 744.0);
+    for row in Course::ALL {
+        let lines = briefing_lines(row.briefing(), s, &fixed);
+        let bottom = scene.bottom() + PAD * s + LINE * lines.len() as f32 * s;
+        assert!(bottom <= start.y, "{} runs under Start", row.title());
+    }
+}
+
+#[test]
 fn every_rows_opening_scene_frames_the_players_own_forces() {
     let size = vec2(498.0, 288.0);
     for row in Course::ALL {

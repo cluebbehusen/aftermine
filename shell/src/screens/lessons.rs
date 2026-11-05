@@ -31,6 +31,9 @@ const LINE: f32 = 28.0;
 const START_WIDTH: f32 = 104.0;
 /// The scene's tallest height as a share of its width.
 const SCENE_ASPECT: f32 = 0.6;
+/// The least share of its tallest height a scene keeps. Below it the scene
+/// shows too little to read, so the story has the panel to itself.
+const SCENE_LEAST_SHARE: f32 = 1.0 / 3.0;
 /// Tiles across the scene at the wide end of its zoom.
 const SCENE_TILES_ACROSS: f32 = 20.0;
 
@@ -179,6 +182,9 @@ impl LessonsScreen {
         let Some(&row) = self.menu.value() else {
             return;
         };
+        if area.h <= 0.0 {
+            return;
+        }
         let dpi = screen_dpi_scale();
         // On whole device pixels the canvas lands texel for pixel.
         let at = (vec2(area.x, area.y) * dpi).round() / dpi;
@@ -285,7 +291,13 @@ fn text_height(s: f32, measure: Measure) -> f32 {
 fn panel(s: f32, measure: Measure) -> Rect {
     let column = crate::menu::page_column(s);
     let text = text_height(s, measure);
-    let scene = (column.w * SCENE_ASPECT).min(column.h - text).max(0.0);
+    let tallest = column.w * SCENE_ASPECT;
+    let room = column.h - text;
+    let scene = if room >= tallest * SCENE_LEAST_SHARE {
+        tallest.min(room)
+    } else {
+        0.0
+    };
     Rect::new(column.x, column.y, column.w, scene + text)
 }
 
