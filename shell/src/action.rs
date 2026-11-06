@@ -115,7 +115,7 @@ pub enum Action {
     AssignGroup(u8),
     Confirm,
     CycleIdleWorker,
-    /// Select every army unit: all but workers and the unarmed transport.
+    /// Select every army unit: each unit that fights or shields the army.
     SelectArmy,
     /// Select the army units inside the camera's view.
     SelectArmyInView,

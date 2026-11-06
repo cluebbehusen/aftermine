@@ -58,11 +58,9 @@ fn own(game: &Game, kinds: &[UnitKind]) -> Vec<UnitId> {
     ids
 }
 
-const ARMY: [UnitKind; 6] = [
+const ARMY: [UnitKind; 4] = [
     UnitKind::Sentinel,
     UnitKind::Mantle,
-    UnitKind::Kestrel,
-    UnitKind::Surveyor,
     UnitKind::Sapper,
     UnitKind::Roc,
 ];
@@ -83,7 +81,7 @@ fn denied(game: &Game) -> bool {
 }
 
 #[test]
-fn the_army_is_every_unit_but_workers_the_unarmed_transport_and_drones() {
+fn the_army_is_every_unit_that_fights_or_shields_but_no_drone() {
     let game = army_game();
     let all = crate::input::army_units(&game.view(), false);
     assert_eq!(all, own(&game, &ARMY));
