@@ -121,6 +121,8 @@ struct App {
     catalog_delete: Option<std::path::PathBuf>,
     /// When to scan again for records still downloading from iCloud.
     catalog_rescan: Option<std::time::Duration>,
+    /// The iCloud folder changes the last catalog scan began after.
+    catalog_cloud: u64,
     /// Autosave slots of abandoned matches, deleted once no save can still
     /// be writing them.
     discarded: Vec<crate::autosave::SaveSlot>,
@@ -367,6 +369,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         catalog_id: None,
         catalog_delete: None,
         catalog_rescan: None,
+        catalog_cloud: 0,
         discarded: Vec::new(),
         performance: crate::performance::Performance::default(),
         live_streak: 0,

@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef void (*aftermine_icloud_accessor)(void *context);
+typedef void (*aftermine_icloud_accessor)(void *context, const char *path);
 
 static char *copy_path(NSURL *url) {
     return strdup(url.fileSystemRepresentation);
@@ -29,8 +29,10 @@ char *aftermine_icloud_documents(void) {
     }
 }
 
-// access: 0 reads, 1 replaces, 2 deletes. Returns whether the accessor ran;
-// when it did not, *error_out holds a message the caller frees.
+// access: 0 reads, 1 replaces, 2 deletes. The accessor receives the path the
+// coordinator grants, which differs from `path` when the file moved meanwhile.
+// Returns whether the accessor ran; when it did not, *error_out holds a
+// message the caller frees.
 bool aftermine_icloud_coordinate(const char *path, int access, void *context,
                                  aftermine_icloud_accessor accessor,
                                  char **error_out) {
@@ -42,9 +44,8 @@ bool aftermine_icloud_coordinate(const char *path, int access, void *context,
             [[NSFileCoordinator alloc] initWithFilePresenter:nil];
         __block bool ran = false;
         void (^body)(NSURL *) = ^(NSURL *granted) {
-            (void)granted;
             ran = true;
-            accessor(context);
+            accessor(context, granted.fileSystemRepresentation);
         };
         NSError *error = nil;
         if (access == 0) {

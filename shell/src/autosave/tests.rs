@@ -181,12 +181,12 @@ fn an_unwritable_dir_reports_instead_of_lying() {
 fn a_failed_publication_removes_only_its_uncommitted_reservation() {
     let dir = scratch("failed-reservation");
     std::fs::create_dir_all(&dir).unwrap();
-    let held = free_path(&dir, "save", 1).unwrap();
-    let path = held.path.clone();
+    let path = dir.join("save-0000000001.amsave");
+    let held = reserve(&path).unwrap().expect("a free path");
+    assert!(reserve(&path).unwrap().is_none(), "a held path is taken");
     assert!(held.publish(|_| Err::<(), _>("write refused")).is_err());
     assert!(!path.exists());
-    let held = free_path(&dir, "save", 1).unwrap();
-    let path = held.path.clone();
+    let held = reserve(&path).unwrap().expect("a released path");
     assert!(
         held.publish(|path| {
             chassis::fsx::write_atomic(path, |writer| {

@@ -392,9 +392,11 @@ impl App {
         let delete = self.catalog_delete.take();
         let task: Task = Box::new(move |cancel| {
             if let Some(path) = delete {
-                aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Delete, || {
-                    std::fs::remove_file(&path)
-                })??;
+                aftermine_icloud::coordinate(
+                    &path,
+                    aftermine_icloud::Access::Delete,
+                    |granted| std::fs::remove_file(granted),
+                )??;
             }
             let catalog = crate::saves::discover(|| cancel.cancelled());
             anyhow::ensure!(!cancel.cancelled(), "catalog cancelled");
@@ -404,16 +406,19 @@ impl App {
             Ok(id) => {
                 self.catalog_id = Some(id);
                 self.catalog_rescan = None;
+                self.catalog_cloud = crate::paths::cloud_changes();
             }
             Err(error) => self.notify(error.to_string(), true),
         }
     }
 
-    /// Whether records were still downloading from iCloud at the last scan,
-    /// long enough ago to look again.
-    pub(super) fn catalog_rescan_due(&self) -> bool {
+    /// Whether the last catalog may be out of date: records were still
+    /// downloading from iCloud long enough ago to look again, or the iCloud
+    /// folder changed since its scan began.
+    pub(super) fn catalog_stale(&self) -> bool {
         self.catalog_rescan
             .is_some_and(|at| self.clock.elapsed() >= at)
+            || crate::paths::cloud_changes() != self.catalog_cloud
     }
 }
 
@@ -423,9 +428,11 @@ fn load_candidates(paths: Vec<PathBuf>, cancel: &Cancellation) -> Result<Output>
         anyhow::ensure!(!cancel.cancelled(), "load cancelled");
         // A coordinated read waits for a file still downloading, or for a
         // newer copy another device is replacing it with.
-        let prepared = aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Read, || {
-            crate::saved_game::prepare(&path)
-        })
+        let prepared = aftermine_icloud::coordinate(
+            &path,
+            aftermine_icloud::Access::Read,
+            crate::saved_game::prepare,
+        )
         .map_err(anyhow::Error::from)
         .and_then(|prepared| prepared);
         match prepared {

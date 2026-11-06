@@ -215,12 +215,20 @@ pub fn look_up_cloud() {
     }
 }
 
+/// How many times a later lookup found a different iCloud Drive folder, or
+/// none where there was one. A catalog scanned before a change lists
+/// records the player can no longer reach, or misses new ones.
+pub fn cloud_changes() -> u64 {
+    CLOUD.changes.load(std::sync::atomic::Ordering::Acquire)
+}
+
 static CLOUD: Lookup = Lookup::new();
 
 /// The iCloud Drive folder as last looked up.
 struct Lookup {
     state: std::sync::Mutex<LookupState>,
     answered: std::sync::Condvar,
+    changes: std::sync::atomic::AtomicU64,
 }
 
 struct LookupState {
@@ -240,6 +248,7 @@ impl Lookup {
                 looking: false,
             }),
             answered: std::sync::Condvar::new(),
+            changes: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -273,6 +282,10 @@ impl Lookup {
     /// Ends a lookup with the folder it `found`.
     fn finish(&self, found: Option<PathBuf>) {
         let mut state = self.lock();
+        if state.answered && state.folder != found {
+            self.changes
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+        }
         state.folder = found;
         state.answered = true;
         state.looking = false;

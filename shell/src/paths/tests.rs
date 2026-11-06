@@ -109,15 +109,26 @@ const CLOUD: &str = "/cloud/Documents";
 #[test]
 fn an_icloud_lookup_answers_whoever_waited_for_it() {
     static LOOKUP: Lookup = Lookup::new();
+    let settle = || {
+        drop(
+            LOOKUP
+                .answered
+                .wait_while(LOOKUP.lock(), |state| state.looking)
+                .unwrap(),
+        );
+    };
+    let changes = || LOOKUP.changes.load(std::sync::atomic::Ordering::Acquire);
     assert_eq!(LOOKUP.answer(), None, "no lookup, no folder");
     LOOKUP.start(|| Some(PathBuf::from(CLOUD)));
     assert_eq!(LOOKUP.answer(), Some(PathBuf::from(CLOUD)));
+    assert_eq!(changes(), 0, "a first answer changes nothing seen yet");
+    LOOKUP.start(|| Some(PathBuf::from(CLOUD)));
+    settle();
+    assert_eq!(changes(), 0, "the same folder again is no change");
     LOOKUP.start(|| None);
-    let state = LOOKUP
-        .answered
-        .wait_while(LOOKUP.lock(), |state| state.looking)
-        .unwrap();
-    assert_eq!(state.folder, None, "a sign-out takes the folder away");
+    settle();
+    assert_eq!(LOOKUP.answer(), None, "a sign-out takes the folder away");
+    assert_eq!(changes(), 1);
 }
 
 #[test]

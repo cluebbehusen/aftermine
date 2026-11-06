@@ -109,12 +109,51 @@ impl Drop for PathReservation {
     }
 }
 
-/// A collision-free `{prefix}-{tick}` path in `dir` for a named save, reserved by
-/// `create_new` (`O_EXCL`). Every successful return owns its candidate;
-/// collision suffixes have no arbitrary cutoff that can bypass the
-/// exclusive create.
-fn free_path(dir: &Path, prefix: &str, tick: u64) -> Result<PathReservation, SaveError> {
+/// Claims `path` for a new record with `create_new` (`O_EXCL`), or answers
+/// `None` when another record already holds it.
+fn reserve(path: &Path) -> std::io::Result<Option<PathReservation>> {
     static RESERVATION_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mut file = match std::fs::File::create_new(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let nonce = RESERVATION_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let marker = format!(
+        "{RESERVATION_MARKER_PREFIX}{}:{nonce}\n",
+        std::process::id()
+    )
+    .into_bytes();
+    if let Err(source) = file.write_all(&marker) {
+        drop(file);
+        std::fs::remove_file(path).ok();
+        return Err(source);
+    }
+    Ok(Some(PathReservation {
+        path: path.to_owned(),
+        marker,
+        armed: true,
+    }))
+}
+
+/// What one candidate path came to.
+enum Claim {
+    Taken,
+    Refused(std::io::Error),
+    Published(Result<PathBuf, (PathBuf, anyhow::Error)>),
+}
+
+/// Writes a named save to the first free `{prefix}-{tick}` path in `dir`.
+/// Each candidate is claimed, written and, on failure, released within one
+/// coordinated access, so iCloud never syncs the claim's marker. Collision
+/// suffixes have no arbitrary cutoff that can bypass the exclusive create.
+fn publish_named(
+    dir: &Path,
+    prefix: &str,
+    tick: u64,
+    write: impl FnOnce(&Path) -> anyhow::Result<()>,
+) -> Result<PathBuf, SaveError> {
+    let mut write = Some(write);
     let mut n = 0u64;
     loop {
         let path = if n == 0 {
@@ -122,34 +161,31 @@ fn free_path(dir: &Path, prefix: &str, tick: u64) -> Result<PathReservation, Sav
         } else {
             dir.join(format!("{prefix}-{tick:010}-{n}.amsave"))
         };
-        match std::fs::File::create_new(&path) {
-            Ok(mut file) => {
-                let nonce = RESERVATION_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let marker = format!(
-                    "{RESERVATION_MARKER_PREFIX}{}:{nonce}\n",
-                    std::process::id()
-                )
-                .into_bytes();
-                if let Err(source) = file.write_all(&marker) {
-                    drop(file);
-                    std::fs::remove_file(&path).ok();
-                    return Err(SaveError::Write {
-                        path,
-                        source: source.into(),
-                    });
+        let claim =
+            aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Replace, |granted| {
+                match reserve(granted) {
+                    Ok(None) => Claim::Taken,
+                    Err(source) => Claim::Refused(source),
+                    Ok(Some(reservation)) => {
+                        let write = write.take().expect("only a claimed path is written");
+                        Claim::Published(reservation.publish(write))
+                    }
                 }
-                return Ok(PathReservation {
-                    path,
-                    marker,
-                    armed: true,
-                });
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(source) => {
+            })
+            .map_err(|source| SaveError::Write {
+                path: path.clone(),
+                source: source.into(),
+            })?;
+        match claim {
+            Claim::Taken => {}
+            Claim::Refused(source) => {
                 return Err(SaveError::Write {
                     path,
                     source: source.into(),
                 });
+            }
+            Claim::Published(published) => {
+                return published.map_err(|(path, source)| SaveError::Write { path, source });
             }
         }
         n = n.checked_add(1).ok_or_else(|| SaveError::Write {
@@ -250,8 +286,8 @@ fn discard_in(slots: &[SaveSlot], folders: &[PathBuf]) {
 /// Removes a record while iCloud holds off syncing it; a missing file is
 /// already gone.
 pub(crate) fn remove(path: &Path) {
-    aftermine_icloud::coordinate(path, aftermine_icloud::Access::Delete, || {
-        std::fs::remove_file(path)
+    aftermine_icloud::coordinate(path, aftermine_icloud::Access::Delete, |granted| {
+        std::fs::remove_file(granted)
     })
     .ok();
 }
@@ -352,7 +388,7 @@ enum Folder {
 
 /// Writes `path` whole while iCloud holds off syncing it.
 fn replace(path: &Path, write: impl FnOnce(&Path) -> anyhow::Result<()>) -> anyhow::Result<()> {
-    aftermine_icloud::coordinate(path, aftermine_icloud::Access::Replace, || write(path))?
+    aftermine_icloud::coordinate(path, aftermine_icloud::Access::Replace, write)?
 }
 
 pub(crate) struct SaveJob {
@@ -517,9 +553,7 @@ impl SaveJob {
                 rotate(&dir);
                 path
             } else {
-                free_path(&dir, kind, self.meta.ticks.unwrap())?
-                    .publish(|path| replace(path, write))
-                    .map_err(|(path, source)| SaveError::Write { path, source })?
+                publish_named(&dir, kind, self.meta.ticks.unwrap(), write)?
             };
             SaveOutcome::Wrote(path)
         } else if self.already_saved {

@@ -31,18 +31,23 @@ pub fn documents() -> Option<PathBuf> {
 
 /// Runs `access` on `path` while iCloud holds off syncing it, so iCloud
 /// never uploads a half-written file or replaces one mid-read. A read waits
-/// for a file that is not on this device yet. `access` works on `path`
-/// itself. Without iCloud Drive it simply runs. Errs only when iCloud
+/// for a file that is not on this device yet. `access` receives the path to
+/// work on, which is where the file now lives if it moved meanwhile.
+/// Without iCloud Drive it simply runs on `path`. Errs only when iCloud
 /// refused the access, in which case `access` never ran.
-pub fn coordinate<R>(path: &Path, kind: Access, access: impl FnOnce() -> R) -> std::io::Result<R> {
+pub fn coordinate<R>(
+    path: &Path,
+    kind: Access,
+    access: impl FnOnce(&Path) -> R,
+) -> std::io::Result<R> {
     #[cfg(any(target_os = "ios", target_os = "macos"))]
     {
         apple::coordinate(path, kind, access)
     }
     #[cfg(not(any(target_os = "ios", target_os = "macos")))]
     {
-        let _ = (path, kind);
-        Ok(access())
+        let _ = kind;
+        Ok(access(path))
     }
 }
 
@@ -75,7 +80,7 @@ mod apple {
             path: *const c_char,
             access: c_int,
             context: *mut c_void,
-            accessor: extern "C" fn(*mut c_void),
+            accessor: extern "C" fn(*mut c_void, *const c_char),
             error_out: *mut *mut c_char,
         ) -> bool;
         fn aftermine_icloud_download(dir: *const c_char) -> c_long;
@@ -112,20 +117,24 @@ mod apple {
         outcome: Option<std::thread::Result<R>>,
     }
 
-    extern "C" fn run<F: FnOnce() -> R, R>(context: *mut c_void) {
+    extern "C" fn run<F: FnOnce(&Path) -> R, R>(context: *mut c_void, granted: *const c_char) {
         // SAFETY: `coordinate` passes its own `Slot<F, R>`, which outlives
         // the synchronous call that invokes this.
         let slot = unsafe { &mut *context.cast::<Slot<F, R>>() };
+        // SAFETY: the coordinator passes a NUL-terminated path that lives
+        // for the duration of this call.
+        let granted = unsafe { CStr::from_ptr(granted) };
+        let granted = Path::new(std::ffi::OsStr::from_bytes(granted.to_bytes()));
         if let Some(access) = slot.access.take() {
             // A panic must not unwind through Objective-C frames, so it
             // crosses as a value and resumes on the Rust side.
             slot.outcome = Some(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-                access,
+                || access(granted),
             )));
         }
     }
 
-    pub(super) fn coordinate<F: FnOnce() -> R, R>(
+    pub(super) fn coordinate<F: FnOnce(&Path) -> R, R>(
         path: &Path,
         kind: Access,
         access: F,
