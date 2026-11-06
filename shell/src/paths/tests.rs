@@ -70,37 +70,25 @@ fn icloud_takes_new_records_and_the_shelf_keeps_the_old_ones() {
     assert_eq!(records.autosaves(), Some(cloud.join("autosaves")));
     assert_eq!(records.saves(), Some(cloud.join("saves")));
     assert_eq!(records.matches(), Some(cloud.join("matches")));
-    let names = |folders: Vec<PathBuf>| {
-        folders
+    let under = |root: &str, names: &[&str]| {
+        names
             .iter()
-            .map(|folder| folder.display().to_string())
+            .map(|name| Path::new(root).join(name))
             .collect::<Vec<_>>()
     };
+    let kinds = ["autosaves", "matches", "saves", "replays"];
+    assert_eq!(records.cloud_folders(), under("/cloud/Documents", &kinds));
+    assert_eq!(records.listed()[4..], under("/device", &kinds));
     assert_eq!(
-        names(records.cloud_folders()),
+        records.match_folders(),
+        [cloud.join("matches"), Path::new("/device").join("matches")]
+    );
+    assert_eq!(
+        records.autosave_folders(),
         [
-            "/cloud/Documents/autosaves",
-            "/cloud/Documents/matches",
-            "/cloud/Documents/saves",
-            "/cloud/Documents/replays",
+            cloud.join("autosaves"),
+            Path::new("/device").join("autosaves")
         ]
-    );
-    assert_eq!(
-        names(records.listed())[4..],
-        [
-            "/device/autosaves",
-            "/device/matches",
-            "/device/saves",
-            "/device/replays",
-        ]
-    );
-    assert_eq!(
-        names(records.match_folders()),
-        ["/cloud/Documents/matches", "/device/matches"]
-    );
-    assert_eq!(
-        names(records.autosave_folders()),
-        ["/cloud/Documents/autosaves", "/device/autosaves"]
     );
 }
 
