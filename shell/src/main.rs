@@ -259,6 +259,13 @@ fn window_conf() -> Conf {
                 big: *include_bytes!("../../assets/icon/aftermine_64.rgba"),
             })
         },
+        // The top bar's buttons sit against the top edge, where iPadOS
+        // would otherwise take a touch that drifts as the pull for
+        // Notification Center or Control Center and cancel the tap.
+        platform: macroquad::miniquad::conf::Platform {
+            ios_defer_top_edge_gestures: true,
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
