@@ -402,7 +402,7 @@ pub(crate) enum LiveCmd {
     /// Inject a controller button press and release.
     InjectPad {
         /// A button by position: south, east, west, north, dpad-up,
-        /// dpad-down, dpad-left, dpad-right, left-bumper, right-bumper,
+        /// dpad-down, dpad-left, dpad-right, left-shoulder, right-shoulder,
         /// left-trigger, right-trigger, left-stick, right-stick, select, or
         /// start.
         button: String,

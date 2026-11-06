@@ -124,6 +124,13 @@ fn pad_events_speak_the_documented_wire_names() {
             },
         ),
         (
+            r#"{"type":"pad_down","pad":1,"button":"left_shoulder"}"#,
+            RawEvent::PadDown {
+                pad: 1,
+                button: PadButton::LeftShoulder,
+            },
+        ),
+        (
             r#"{"type":"pad_up","pad":1,"button":"right_trigger"}"#,
             RawEvent::PadUp {
                 pad: 1,

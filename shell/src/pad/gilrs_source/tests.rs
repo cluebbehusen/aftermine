@@ -15,7 +15,10 @@ fn gilrs_buttons_keep_their_positions() {
     use gilrs::Button;
     assert_eq!(pad_button(Button::South), Some(PadButton::South));
     assert_eq!(pad_button(Button::East), Some(PadButton::East));
-    assert_eq!(pad_button(Button::LeftTrigger), Some(PadButton::LeftBumper));
+    assert_eq!(
+        pad_button(Button::LeftTrigger),
+        Some(PadButton::LeftShoulder)
+    );
     assert_eq!(
         pad_button(Button::RightTrigger2),
         Some(PadButton::RightTrigger)

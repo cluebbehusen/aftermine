@@ -185,9 +185,9 @@ pub enum PadButton {
     /// D-pad right.
     DpadRight,
     /// Left shoulder button.
-    LeftBumper,
+    LeftShoulder,
     /// Right shoulder button.
-    RightBumper,
+    RightShoulder,
     /// Left trigger, pressed past the platform's threshold.
     LeftTrigger,
     /// Right trigger, pressed past the platform's threshold.
