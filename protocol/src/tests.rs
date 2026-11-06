@@ -182,7 +182,7 @@ fn an_empty_visible_window_is_zero_zero_not_absent() {
         chrome: None,
         panel_regions: None,
         menu_button: None,
-        pause_status: None,
+        pause_button: None,
         group_column: None,
         army_strip: None,
     };
@@ -488,7 +488,7 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
         Reply::Ui(UiView {
             panel_regions: Some([[0.0, 500.0, 228.0, 300.0], [228.0, 724.0, 500.0, 76.0]]),
             menu_button: Some([1238.0, 3.0, 34.0, 34.0]),
-            pause_status: Some([1180.0, 3.0, 46.0, 34.0]),
+            pause_button: Some([1194.0, 3.0, 34.0, 34.0]),
             group_column: Some([1196.0, 380.0, 60.0, 236.0]),
             army_strip: Some([1048.0, 552.0, 220.0, 56.0]),
             mode: "main_menu".into(),

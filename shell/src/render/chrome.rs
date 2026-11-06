@@ -451,6 +451,37 @@ fn draw_menu_button(rect: Rect, s: f32) {
     }
 }
 
+/// The pause button shows what a press does: the pause sign while the
+/// match runs, and a lit play sign while it is paused, so a paused match
+/// shows its way back at a glance.
+fn draw_pause_button(rect: Rect, paused: bool, s: f32) {
+    let middle = vec2(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5);
+    let sign_h = 14.0 * s;
+    if paused {
+        fill_rect(rect, SCRAP_COLOR);
+        let sign_w = 12.0 * s;
+        // The triangle's centroid sits a third of its width from the
+        // flat side; centering that reads as centered.
+        let left = middle.x - sign_w / 3.0;
+        draw_triangle(
+            vec2(left, middle.y - sign_h * 0.5),
+            vec2(left, middle.y + sign_h * 0.5),
+            vec2(left + sign_w, middle.y),
+            crate::theme::SURFACE_PLATE,
+        );
+    } else {
+        fill_rect(rect, crate::theme::BADGE);
+        let bar_w = 4.0 * s;
+        let gap = 4.0 * s;
+        for x in [middle.x - gap * 0.5 - bar_w, middle.x + gap * 0.5] {
+            fill_rect(
+                Rect::new(x, middle.y - sign_h * 0.5, bar_w, sign_h),
+                SCRAP_COLOR,
+            );
+        }
+    }
+}
+
 /// Where the cursor hovers: only while the mouse is the pointer in use,
 /// never at a stale point on a touch device.
 pub(super) fn hover_point(input: &InputState) -> Option<Vec2> {
@@ -1185,6 +1216,7 @@ pub(crate) struct TopBarLayout {
     idle: Option<String>,
     alert: Option<String>,
     status: String,
+    paused: bool,
 }
 
 impl TopBarLayout {
@@ -1200,7 +1232,7 @@ impl TopBarLayout {
 }
 
 /// Lays out the top bar: the bank, income, unit count, idle and alert
-/// badges, and the clock with the menu button.
+/// badges, and the clock with the pause and menu buttons.
 pub(super) fn top_bar_layout(
     game: &crate::game::Scene<'_>,
     bindings: &crate::action::BindingMap,
@@ -1272,6 +1304,7 @@ pub(super) fn top_bar_layout(
         idle,
         alert,
         status,
+        paused: game.clock.paused,
     }
 }
 
@@ -1285,6 +1318,7 @@ fn draw_top_bar(top: &TopBarLayout, s: f32) {
         idle,
         alert,
         status,
+        paused,
     } = top;
     draw_rectangle(0.0, 0.0, *width, crate::layout::TOP_BAR_H * s, PANEL);
     crate::typography::draw(
@@ -1343,6 +1377,7 @@ fn draw_top_bar(top: &TopBarLayout, s: f32) {
         );
     }
     draw_menu_button(bar.menu_button, s);
+    draw_pause_button(bar.pause_button, *paused, s);
     crate::typography::draw(
         status,
         bar.status_x,

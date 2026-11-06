@@ -68,7 +68,7 @@ fn a_selected_foundry_lays_its_cards_inside_the_action_region() {
                 1.0
             )
         );
-        assert!(model.menu_button.w > 0.0 && model.pause_status.w > 0.0);
+        assert!(model.menu_button.w > 0.0 && model.pause_button.w > 0.0);
     }
 }
 
@@ -85,7 +85,7 @@ fn a_spectator_has_no_top_bar_controls_but_keeps_the_minimap() {
         &fixed,
     );
     assert_eq!(hud.layout.menu_button.w, 0.0);
-    assert_eq!(hud.layout.pause_status.w, 0.0);
+    assert_eq!(hud.layout.pause_button.w, 0.0);
     assert!(hud.geometry.top_bar.is_none());
     assert!(hud.layout.minimap.w > 0.0);
 }

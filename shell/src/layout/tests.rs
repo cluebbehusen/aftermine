@@ -213,11 +213,8 @@ fn the_desktop_top_bar_keeps_its_legacy_positions() {
         Rect::new(bar.count_x + 45.0, 3.0, 88.0, 34.0)
     );
     assert_eq!(bar.menu_button, Rect::new(1238.0, 3.0, 34.0, 34.0));
-    assert_eq!(bar.status_x, 1238.0 - 12.0 - 76.0);
-    assert_eq!(
-        bar.pause_status,
-        Rect::new(bar.status_x - 6.0, 3.0, 88.0, 34.0)
-    );
+    assert_eq!(bar.pause_button, Rect::new(1194.0, 3.0, 34.0, 34.0));
+    assert_eq!(bar.status_x, 1194.0 - 12.0 - 76.0);
     assert_eq!(
         bar.status_space,
         (bar.idle_badge.x + bar.idle_badge.w, bar.status_x)
@@ -314,8 +311,15 @@ fn the_top_bar_keeps_its_groups_in_order_and_on_screen() {
                 assert!(bar.scrap_label_x < bar.scrap_x);
                 assert!(bar.scrap_x < bar.passive_x && bar.passive_x < bar.units_x);
                 assert!(bar.units_x < bar.count_x && bar.count_x < bar.idle_badge.x);
-                assert!(bar.pause_status.x + bar.pause_status.w <= bar.menu_button.x);
+                assert!(bar.status_x + sample_text(ui).status < bar.pause_button.x);
                 let pad = touch_pad(bar.menu_button, ui);
+                let pause_pad = touch_pad(bar.pause_button, ui);
+                assert!(
+                    pause_pad.x + pause_pad.w <= pad.x + 0.001,
+                    "the fingertip targets meet without overlapping at {width}px @{ui}"
+                );
+                assert_eq!(bar.pause_button.size(), bar.menu_button.size());
+                assert_eq!(bar.pause_button.y, bar.menu_button.y);
                 assert!(pad.x + pad.w <= width, "{width}px @{ui} touch {touch_only}");
             }
         }

@@ -84,6 +84,7 @@ On iPad:
 - Rest two fingers to draw a selection box. Double-tap a unit to select every
   unit of its kind on screen.
 - The QUEUE toggle stands in for Shift.
+- The button beside the menu button pauses and resumes the match.
 - Rest a finger on a card to read it, then lift to use it or slide off to
   cancel.
 

@@ -498,10 +498,10 @@ pub struct UiView {
     /// there opens the pause menu. Absent outside live play.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub menu_button: Option<[f32; 4]>,
-    /// The top bar's clock or PAUSED status [x, y, width, height]; a
-    /// click or tap there toggles pause. Absent outside live play.
+    /// The top bar's pause button [x, y, width, height]; a click or tap
+    /// there toggles pause. Absent outside live play.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pause_status: Option<[f32; 4]>,
+    pub pause_button: Option<[f32; 4]>,
     /// The control-group column's plate [x, y, width, height] while it
     /// shows above the minimap. Its slots recall and assign groups and
     /// its gaps swallow presses, so it is chrome, not world. Absent

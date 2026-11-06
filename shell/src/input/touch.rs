@@ -485,12 +485,12 @@ pub(super) fn up(
                 } else if layout.menu_button.w > 0.0
                     && crate::layout::touch_pad(layout.menu_button, input.ui).contains(p)
                 {
-                    // Checked before the status so the
-                    // menu wins where the padded targets
-                    // overlap.
+                    // Checked before the pause button so
+                    // the menu wins where the padded
+                    // targets overlap.
                     input.menu_requested = true;
-                } else if layout.pause_status.w > 0.0
-                    && crate::layout::touch_pad(layout.pause_status, input.ui).contains(p)
+                } else if layout.pause_button.w > 0.0
+                    && crate::layout::touch_pad(layout.pause_button, input.ui).contains(p)
                 {
                     dispatch_action(game, input, bindings, Action::TogglePause);
                 } else if click_on_hud(game, p) {

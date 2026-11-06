@@ -38,7 +38,7 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
                 chrome: None,
                 panel_regions: None,
                 menu_button: None,
-                pause_status: None,
+                pause_button: None,
                 group_column: None,
                 army_strip: None,
             };
@@ -55,7 +55,7 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
                 chrome: None,
                 panel_regions: None,
                 menu_button: None,
-                pause_status: None,
+                pause_button: None,
                 group_column: None,
                 army_strip: None,
             };
@@ -90,7 +90,7 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
         visible_range,
         hover,
         menu_button: live_rect(screen, app.game.presentation.layout.get().menu_button),
-        pause_status: live_rect(screen, app.game.presentation.layout.get().pause_status),
+        pause_button: live_rect(screen, app.game.presentation.layout.get().pause_button),
         group_column: live_rect(screen, app.game.presentation.layout.get().group_column),
         army_strip: live_rect(screen, app.game.presentation.layout.get().army_strip),
         panel_regions: (screen.kind() == ScreenKind::Playing).then(|| {
