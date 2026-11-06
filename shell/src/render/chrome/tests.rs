@@ -165,6 +165,28 @@ fn the_paused_status_names_a_key_only_where_one_exists() {
 }
 
 #[test]
+fn the_top_bar_shows_income_before_anything_earns() {
+    let game =
+        crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0))
+            .unwrap();
+    let view = game.view();
+    assert_eq!(crate::panel::passive_income(&view), 0);
+    let measure = |_: super::super::hud::Face, text: &str, size: f32| {
+        text.chars().count() as f32 * size * 0.5
+    };
+    let top = top_bar_layout(
+        &view,
+        &crate::action::BindingMap::classic(),
+        super::super::hud::HudEnv {
+            viewport: vec2(1280.0, 800.0),
+            ui: 1.0,
+        },
+        &measure,
+    );
+    assert_eq!(top.passive, "+0/min income");
+}
+
+#[test]
 fn toasts_clear_the_panel_and_its_orders_dock() {
     let viewport = vec2(640.0, 400.0);
     let panel_top = 128.0;
