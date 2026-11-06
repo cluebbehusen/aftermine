@@ -394,9 +394,10 @@ impl Presentation {
     }
 
     /// Whether `player` is the seat whose private feedback this picture
-    /// gives: the toasts and cues that answer its orders and production. A
-    /// spectator keeps a nominal seat for the view but plays as no one, so a
-    /// replay never answers one seat's orders as if they were the viewer's.
+    /// gives: the toasts, cues and pings that answer its orders and
+    /// production. A spectator keeps a nominal seat for the view but plays as
+    /// no one, so a replay never answers one seat's orders as if they were
+    /// the viewer's.
     pub(crate) fn plays_as(&self, player: PlayerId) -> bool {
         player == self.human && !self.spectating()
     }
@@ -482,8 +483,12 @@ impl Presentation {
     }
 
     /// Raises an under-attack alert, rate-limited per 8-tile region so a
-    /// running battle alerts once, not once per hit.
+    /// running battle alerts once, not once per hit. A spectator defends no
+    /// seat, so a replay raises none for its nominal one.
     pub(super) fn raise_alert(&mut self, world: Vec2) {
+        if self.spectating() {
+            return;
+        }
         let cell = (
             numeric::to_i32(world.x / 8.0),
             numeric::to_i32(world.y / 8.0),

@@ -1543,10 +1543,8 @@ impl Presentation {
                         self.sounds_pending.push((sound, Some(world_vec(host.pos))));
                     }
                 }
-                Event::UnitTrained { unit, player, .. } if *player == self.human => {
-                    if self.plays_as(*player) {
-                        self.sounds_pending.push((SoundKind::TrainDone, None));
-                    }
+                Event::UnitTrained { unit, player, .. } if self.plays_as(*player) => {
+                    self.sounds_pending.push((SoundKind::TrainDone, None));
                     if let Some(u) = state.unit(*unit) {
                         self.fx.push(Effect {
                             kind: EffectKind::Ping {

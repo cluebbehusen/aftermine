@@ -2982,7 +2982,7 @@ fn a_stall_reason_speaks_again_after_going_unheard() {
 }
 
 #[test]
-fn a_replay_answers_none_of_its_seats_orders_or_production() {
+fn a_replay_gives_none_of_its_seats_private_feedback() {
     let feedback = |stance| {
         let mut game = Game::with_viewport(
             aftermine_sim::Scenario::skirmish(),
@@ -2991,6 +2991,12 @@ fn a_replay_answers_none_of_its_seats_orders_or_production() {
         .unwrap();
         game.presentation.stance = stance;
         let player = game.presentation.human;
+        let trained = game
+            .state
+            .units()
+            .iter()
+            .find(|unit| unit.player == player)
+            .expect("the seat starts with a unit");
         let events = [
             Event::CommandRejected {
                 player,
@@ -3010,8 +3016,8 @@ fn a_replay_answers_none_of_its_seats_orders_or_production() {
             },
             Event::UnitTrained {
                 building: BuildingId(997),
-                unit: UnitId(999),
-                kind: UnitKind::Harvester,
+                unit: trained.id,
+                kind: trained.kind,
                 player,
             },
             Event::ScrapDeposited {
@@ -3019,6 +3025,10 @@ fn a_replay_answers_none_of_its_seats_orders_or_production() {
                 foundry: BuildingId(996),
                 player,
                 amount: 5,
+            },
+            Event::DamageTaken {
+                player,
+                pos: trained.pos,
             },
             worker_stall(&game, aftermine_sim::StallReason::NoRoute),
         ];
@@ -3035,10 +3045,10 @@ fn a_replay_answers_none_of_its_seats_orders_or_production() {
             .iter()
             .map(|(sound, _)| *sound)
             .collect();
-        (toasts, sounds)
+        (toasts, sounds, game.presentation.alerts.len(), pings(&game))
     };
 
-    let (toasts, sounds) = feedback(crate::game::Stance::Seat);
+    let (toasts, sounds, alerts, pings) = feedback(crate::game::Stance::Seat);
     assert_eq!(
         toasts,
         [
@@ -3055,10 +3065,14 @@ fn a_replay_answers_none_of_its_seats_orders_or_production() {
             SoundKind::TrainDone,
             SoundKind::TrainDone,
             SoundKind::Deposit,
+            SoundKind::Alert,
         ]
     );
+    assert_eq!(alerts, 1, "the under-attack marker");
+    assert_eq!(pings, 2, "the new unit and the stalled order");
 
-    let (toasts, sounds) = feedback(crate::game::Stance::Spectator);
+    let (toasts, sounds, alerts, pings) = feedback(crate::game::Stance::Spectator);
     assert!(toasts.is_empty(), "{toasts:?}");
     assert!(sounds.is_empty(), "{sounds:?}");
+    assert_eq!((alerts, pings), (0, 0));
 }
