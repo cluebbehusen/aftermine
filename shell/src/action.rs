@@ -544,10 +544,9 @@ impl BindingMap {
             .or_else(|| rows().find(|b| !b.chord.ctrl && !b.chord.shift))
             .map(|b| b.action)
     }
-    /// Translates key events through the menu-context bindings, and
-    /// controller buttons through their fixed menu layout, into the
+    /// Translates key events through the menu-context bindings into the
     /// canonical navigation keys menus read. Modifier edges are consumed;
-    /// other events pass through.
+    /// non-key events pass through.
     pub fn menu_events(
         &self,
         events: &[aftermine_protocol::RawEvent],
@@ -558,7 +557,7 @@ impl BindingMap {
         events
             .iter()
             .filter_map(|event| {
-                let down = matches!(event, RawEvent::KeyDown { .. } | RawEvent::PadDown { .. });
+                let down = matches!(event, RawEvent::KeyDown { .. });
                 let action = match event {
                     RawEvent::KeyDown { key: Key::Ctrl } => {
                         ctrl = true;
@@ -578,9 +577,6 @@ impl BindingMap {
                     }
                     RawEvent::KeyDown { key } | RawEvent::KeyUp { key } => {
                         self.menu_action(*key, ctrl, shift)?
-                    }
-                    RawEvent::PadDown { button, .. } | RawEvent::PadUp { button, .. } => {
-                        crate::pad::menu_action(*button)?
                     }
                     _ => return Some(*event),
                 };

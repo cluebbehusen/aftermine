@@ -151,7 +151,7 @@ impl Pointer {
 /// is in use. A key pressed while a text field has focus doesn't count,
 /// since iOS's on-screen keyboard sends Enter, Space, and Backspace as key
 /// events. A controller stays in use until a key or pointer is used, or
-/// until no controller is left connected.
+/// until it disconnects.
 pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
     if let Some(pointer) = Pointer::of(event) {
         input.last_pointer = pointer;
@@ -167,13 +167,13 @@ pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
         }
         RawEvent::PadDisconnected { pad } => {
             input.pads.remove(&pad);
-            if input.pads.is_empty() {
+            if input.pad_in_use.is_some_and(|(used, _)| used == pad) {
                 input.pad_in_use = None;
             }
         }
-        RawEvent::PadDown { pad, .. } => input.pad_in_use = Some(input.pad_family(pad)),
+        RawEvent::PadDown { pad, .. } => input.pad_in_use = Some((pad, input.pad_family(pad))),
         RawEvent::PadStick { pad, x, y, .. } if (x, y) != (0.0, 0.0) => {
-            input.pad_in_use = Some(input.pad_family(pad));
+            input.pad_in_use = Some((pad, input.pad_family(pad)));
         }
         _ => {}
     }
@@ -379,9 +379,9 @@ pub struct InputState {
     pub(crate) keys_seen: bool,
     /// Connected controllers and whose layout each follows.
     pads: std::collections::BTreeMap<u64, aftermine_protocol::PadFamily>,
-    /// The family of the controller pressed last, while a controller is
+    /// The controller pressed last and its family, while a controller is
     /// the hands in use, so copy names its buttons.
-    pub(crate) pad_in_use: Option<aftermine_protocol::PadFamily>,
+    pad_in_use: Option<(u64, aftermine_protocol::PadFamily)>,
     /// The verb the next world click issues, if one is armed.
     pub(crate) click_verb: Option<ClickVerb>,
     /// Producers whose rally point the next world/minimap click sets.
@@ -1087,7 +1087,7 @@ impl InputState {
             last_pointer: crate::platform::Hands::BUILD.pointer,
             keys_seen: crate::platform::Hands::BUILD.keys,
             pads: std::collections::BTreeMap::new(),
-            pad_in_use: crate::platform::Hands::BUILD.pad,
+            pad_in_use: None,
             click_verb: None,
             rallying: Vec::new(),
             striking: None,
@@ -1107,6 +1107,11 @@ impl InputState {
             bookmarks: [None; 4],
             resolver: ActionResolver::default(),
         }
+    }
+
+    /// The family of the controller in use, if one is.
+    pub(crate) fn pad_family_in_use(&self) -> Option<aftermine_protocol::PadFamily> {
+        self.pad_in_use.map(|(_, family)| family)
     }
 
     /// Whose layout a pad follows. A pad that never announced itself, as an

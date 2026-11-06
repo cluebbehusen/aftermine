@@ -678,6 +678,12 @@ impl SettingsScreen {
         self.naming.is_none() && self.face.tab() == Tab::Controls
     }
 
+    /// Whether the Controls tab is listening for a chord to bind, which
+    /// only the keyboard can answer.
+    pub fn capturing(&self) -> bool {
+        matches!(self.face, Face::Capturing(_))
+    }
+
     /// Opens the name form, prefilled with the current name.
     fn begin_naming(&mut self, config: &Config) {
         let current = config.player_name.as_deref().unwrap_or_default();
@@ -1098,17 +1104,25 @@ impl SettingsScreen {
         let mut walk_ctrl = ctrl0;
         let mut walk_shift = shift0;
         let mut pressed: Option<(Key, bool, bool)> = None;
+        let mut pad = false;
         for e in events {
             match e {
                 RawEvent::KeyDown { key: Key::Ctrl } => walk_ctrl = true,
                 RawEvent::KeyUp { key: Key::Ctrl } => walk_ctrl = false,
                 RawEvent::KeyDown { key: Key::Shift } => walk_shift = true,
                 RawEvent::KeyUp { key: Key::Shift } => walk_shift = false,
-                RawEvent::KeyDown { key } if pressed.is_none() => {
+                RawEvent::KeyDown { key } if pressed.is_none() && !pad => {
                     pressed = Some((*key, walk_ctrl, walk_shift));
                 }
+                RawEvent::PadDown { .. } if pressed.is_none() => pad = true,
                 _ => {}
             }
+        }
+        // A controller binds no keys, so its press cancels like Escape.
+        if pad {
+            self.face = Face::Tab(Tab::Controls);
+            self.relabel(config);
+            return;
         }
         match pressed {
             Some((Key::Escape, false, false)) if target != Action::Back => {

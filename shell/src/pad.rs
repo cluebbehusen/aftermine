@@ -13,8 +13,7 @@
 //! platform API gets one source module here, and a platform without one
 //! reads no pads.
 
-use crate::action::Action;
-use aftermine_protocol::{PadButton, PadFamily, RawEvent, Stick};
+use aftermine_protocol::{Key, PadButton, PadFamily, RawEvent, Stick};
 use macroquad::prelude::Vec2;
 use std::collections::BTreeMap;
 
@@ -42,22 +41,40 @@ pub(crate) const CONFIRM: PadButton = PadButton::South;
 /// The button that goes back in menus.
 pub(crate) const BACK: PadButton = PadButton::East;
 
-/// What controller buttons do in menus: the D-pad moves the cursor.
-const MENU_BUTTONS: [(PadButton, Action); 6] = [
-    (PadButton::DpadUp, Action::MenuUp),
-    (PadButton::DpadDown, Action::MenuDown),
-    (PadButton::DpadLeft, Action::MenuLeft),
-    (PadButton::DpadRight, Action::MenuRight),
-    (CONFIRM, Action::Confirm),
-    (BACK, Action::Back),
+/// The canonical menu keys controller buttons press: the D-pad moves the
+/// cursor. Key bindings never move this layout.
+const MENU_KEYS: [(PadButton, Key); 6] = [
+    (PadButton::DpadUp, Key::Up),
+    (PadButton::DpadDown, Key::Down),
+    (PadButton::DpadLeft, Key::Left),
+    (PadButton::DpadRight, Key::Right),
+    (CONFIRM, Key::Enter),
+    (BACK, Key::Escape),
 ];
 
-/// The menu action a controller button performs, if any.
-pub(crate) fn menu_action(button: PadButton) -> Option<Action> {
-    MENU_BUTTONS
+/// The canonical menu key a controller button presses, if any.
+fn menu_key(button: PadButton) -> Option<Key> {
+    MENU_KEYS
         .iter()
         .find(|(pad, _)| *pad == button)
-        .map(|(_, action)| *action)
+        .map(|(_, key)| *key)
+}
+
+/// Turns controller presses into the canonical menu keys of their fixed
+/// layout, which every menu screen reads, and drops buttons with no menu
+/// role. Other events pass through. Run it after the key bindings, so the
+/// keys it makes are never bound again.
+pub(crate) fn menu_keys(events: &[RawEvent]) -> Vec<RawEvent> {
+    events
+        .iter()
+        .filter_map(|event| match *event {
+            RawEvent::PadDown { button, .. } => {
+                menu_key(button).map(|key| RawEvent::KeyDown { key })
+            }
+            RawEvent::PadUp { button, .. } => menu_key(button).map(|key| RawEvent::KeyUp { key }),
+            other => Some(other),
+        })
+        .collect()
 }
 
 /// What a family calls a button. Copy stays ASCII, so PlayStation's shapes

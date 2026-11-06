@@ -363,6 +363,29 @@ fn escape_leaves_from_any_tab_but_first_cancels_a_capture() {
 }
 
 #[test]
+fn a_controller_press_cancels_a_capture_and_binds_nothing() {
+    use aftermine_protocol::PadButton;
+    let mut config = Config::default();
+    let mut screen = on(Tab::Controls, &config);
+    focus(&mut screen, Item::Binding(Action::Patrol));
+    drive(&mut screen, &mut config, &press(Key::Enter), false);
+    assert!(screen.capturing());
+    let update = drive(
+        &mut screen,
+        &mut config,
+        &[RawEvent::PadDown {
+            pad: 0,
+            button: PadButton::South,
+        }],
+        false,
+    );
+    assert_eq!(update.out, Out::Stay);
+    assert_eq!(screen.face, Face::Tab(Tab::Controls));
+    assert!(!screen.capturing());
+    assert_eq!(config.bindings, BindingMap::classic(), "nothing was bound");
+}
+
+#[test]
 fn cycling_a_row_edits_the_config_and_reports_dirty() {
     let mut config = Config::default();
     let mut s = on(Tab::Display, &config);

@@ -290,7 +290,7 @@ pub(super) fn update_and_draw(
     crate::platform::set_hands(crate::platform::Hands {
         pointer: app.input.last_pointer,
         keys: app.input.keys_seen,
-        pad: app.input.pad_in_use,
+        pad: app.input.pad_family_in_use(),
     });
     // Controls capture and text editing keep their conventional recovery keys.
     let fixed_editor = matches!(&screen, Screen::Settings { screen, .. } if screen.edits_bindings())
@@ -305,6 +305,13 @@ pub(super) fn update_and_draw(
             app.config
                 .bindings
                 .menu_events(&events, ctrl_at_frame_start, shift_at_frame_start);
+    }
+    // Controller buttons keep one layout in every menu, editors included,
+    // so a pad can always leave a text field. A chord being captured for a
+    // binding sees them raw: only the keyboard binds, and a pad cancels.
+    let capturing = matches!(&screen, Screen::Settings { screen, .. } if screen.capturing());
+    if !screen.kind().gameplay() && !capturing {
+        events = crate::pad::menu_keys(&events);
     }
     let mut profile_frame_active = false;
     // Menu backdrops are presentation worlds too. Home, setup, and

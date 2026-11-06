@@ -313,42 +313,35 @@ fn ctrl_a_and_ctrl_s_select_the_army_while_bare_a_and_s_still_pan() {
 
 #[test]
 fn controller_buttons_reach_menus_as_the_canonical_keys_whatever_the_bindings() {
-    use aftermine_protocol::{PadButton, PadFamily, RawEvent};
-    let pad = |button, down| {
-        if down {
-            RawEvent::PadDown { pad: 0, button }
-        } else {
-            RawEvent::PadUp { pad: 0, button }
-        }
-    };
-    let connect = RawEvent::PadConnected {
-        pad: 0,
-        family: PadFamily::Xbox,
+    use aftermine_protocol::{PadButton, RawEvent};
+    // The frame runs key bindings first, then the pads' fixed layout, so
+    // a remapped key never moves a button and a button's key is never
+    // bound again.
+    let menu = |map: &BindingMap, events: &[RawEvent]| {
+        crate::pad::menu_keys(&map.menu_events(events, false, false))
     };
     let events = [
-        connect,
-        pad(PadButton::DpadDown, true),
-        pad(PadButton::DpadDown, false),
-        pad(PadButton::South, true),
-        pad(PadButton::East, true),
-        pad(PadButton::DpadLeft, true),
-        pad(PadButton::North, true),
+        RawEvent::PadDown {
+            pad: 0,
+            button: PadButton::South,
+        },
+        RawEvent::PadDown {
+            pad: 0,
+            button: PadButton::DpadDown,
+        },
     ];
     let canonical = vec![
-        connect,
-        RawEvent::KeyDown { key: Key::Down },
-        RawEvent::KeyUp { key: Key::Down },
         RawEvent::KeyDown { key: Key::Enter },
-        RawEvent::KeyDown { key: Key::Escape },
-        RawEvent::KeyDown { key: Key::Left },
+        RawEvent::KeyDown { key: Key::Down },
     ];
-    assert_eq!(
-        BindingMap::classic().menu_events(&events, false, false),
-        canonical
-    );
-    // Remapping keys moves the keyboard, never the pad's fixed layout.
+    assert_eq!(menu(&BindingMap::classic(), &events), canonical);
     let mut map = BindingMap::classic();
     assert!(map.rebind(Action::Confirm, Chord::bare(Key::Z)));
     assert!(map.rebind(Action::MenuDown, Chord::bare(Key::S)));
-    assert_eq!(map.menu_events(&events, false, false), canonical);
+    assert_eq!(menu(&map, &events), canonical);
+    assert_eq!(
+        map.menu_events(&events, false, false),
+        events,
+        "key bindings pass controller buttons through untouched"
+    );
 }

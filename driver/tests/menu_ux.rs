@@ -338,6 +338,13 @@ fn a_controller_walks_the_menus_through_the_same_funnel() -> Result<()> {
     assert_mode(&mut client, "main_menu", "setup > Circle")?;
     press_pad(&mut client, PadButton::East)?;
     assert_mode(&mut client, "home", "map list > Circle")?;
+
+    // Join Match opens with its name field taking text, where keys keep
+    // their conventional meaning; the pad must still find the way out.
+    activate_labeled_by_pad(&mut client, "join match")?;
+    assert_mode(&mut client, "join_match", "Home > Join Match by pad")?;
+    press_pad(&mut client, PadButton::East)?;
+    assert_mode(&mut client, "home", "Join Match > Circle")?;
     Ok(())
 }
 

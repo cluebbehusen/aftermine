@@ -290,10 +290,39 @@ fn buttons_are_named_by_family_at_each_position() {
 
 #[test]
 fn the_dpad_moves_menus_and_two_face_buttons_confirm_and_go_back() {
-    assert_eq!(menu_action(PadButton::DpadUp), Some(Action::MenuUp));
-    assert_eq!(menu_action(PadButton::DpadRight), Some(Action::MenuRight));
-    assert_eq!(menu_action(CONFIRM), Some(Action::Confirm));
-    assert_eq!(menu_action(BACK), Some(Action::Back));
-    assert_eq!(menu_action(PadButton::West), None);
-    assert_eq!(menu_action(PadButton::Start), None);
+    let pad = |button, down| {
+        if down {
+            RawEvent::PadDown { pad: 0, button }
+        } else {
+            RawEvent::PadUp { pad: 0, button }
+        }
+    };
+    let connect = RawEvent::PadConnected {
+        pad: 0,
+        family: PadFamily::Xbox,
+    };
+    let text = RawEvent::Text { ch: 'k' };
+    let events = [
+        connect,
+        pad(PadButton::DpadDown, true),
+        pad(PadButton::DpadDown, false),
+        pad(PadButton::DpadRight, true),
+        pad(CONFIRM, true),
+        pad(BACK, true),
+        pad(PadButton::North, true),
+        pad(PadButton::Start, true),
+        text,
+    ];
+    assert_eq!(
+        menu_keys(&events),
+        [
+            connect,
+            RawEvent::KeyDown { key: Key::Down },
+            RawEvent::KeyUp { key: Key::Down },
+            RawEvent::KeyDown { key: Key::Right },
+            RawEvent::KeyDown { key: Key::Enter },
+            RawEvent::KeyDown { key: Key::Escape },
+            text,
+        ]
+    );
 }
