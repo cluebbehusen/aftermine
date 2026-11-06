@@ -2025,6 +2025,7 @@ limitations under the License.
 Apache License 2.0
 
 Used by:
+- quad-snd 0.2.8
 - allocator-api2 0.2.21
 - anyhow 1.0.104
 - audrey 0.3.0
@@ -2039,7 +2040,6 @@ Used by:
 - libc 0.2.186
 - miniz_oxide 0.8.9
 - proc-macro2 1.0.107
-- quad-snd 0.2.8
 - quote 1.0.47
 - serde 1.0.229
 - serde_core 1.0.229
