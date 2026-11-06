@@ -188,7 +188,7 @@ pub(crate) fn layout(
             ]
         }),
         menu_button: top_bar.as_ref().map_or(zero, |bar| bar.bar.menu_button),
-        pause_status: top_bar.as_ref().map_or(zero, |bar| bar.bar.pause_status),
+        pause_button: top_bar.as_ref().map_or(zero, |bar| bar.bar.pause_button),
         mode_ribbon: ribbon.as_ref().map_or(zero, |ribbon| ribbon.rect),
         salvo_less: ribbon
             .as_ref()

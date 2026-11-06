@@ -4736,12 +4736,12 @@ fn a_tap_on_the_idle_badge_cycles_workers() {
     );
 }
 
-/// Live-play chrome with the menu button and a status target where the
-/// top bar draws them at 1280 px wide.
+/// Live-play chrome with the menu and pause buttons where the top bar
+/// draws them at 1280 px wide.
 fn top_bar_layout() -> crate::layout::LayoutModel {
     let mut layout = bare_layout(f32::INFINITY, 0.0);
     layout.menu_button = crate::layout::menu_button_rect(1280.0, 1.0, false);
-    layout.pause_status = macroquad::math::Rect::new(1180.0, 3.0, 46.0, 34.0);
+    layout.pause_button = macroquad::math::Rect::new(1194.0, 3.0, 34.0, 34.0);
     layout
 }
 
@@ -4838,18 +4838,18 @@ fn a_drag_born_on_the_menu_button_neither_pans_nor_requests() {
 }
 
 #[test]
-fn the_status_toggles_pause_by_click_and_by_tap() {
+fn the_pause_button_toggles_pause_by_click_and_by_tap() {
     let mut game = headless_game();
     let mut input = InputState::new();
     game.presentation.layout.set(top_bar_layout());
-    let status = game.presentation.layout.get().pause_status.center();
-    apply_events(&mut game, &mut input, &click(status.x, status.y));
+    let button = game.presentation.layout.get().pause_button.center();
+    apply_events(&mut game, &mut input, &click(button.x, button.y));
     assert!(game.clock.paused);
-    apply_events(&mut game, &mut input, &click(status.x, status.y));
+    apply_events(&mut game, &mut input, &click(button.x, button.y));
     assert!(!game.clock.paused);
-    tap(&mut game, &mut input, status);
+    tap(&mut game, &mut input, button);
     assert!(game.clock.paused, "a fingertip pauses like the key");
-    tap(&mut game, &mut input, status);
+    tap(&mut game, &mut input, button);
     assert!(!game.clock.paused);
     assert!(!input.take_menu_request());
 }
@@ -4859,11 +4859,12 @@ fn where_padded_targets_overlap_the_menu_wins() {
     let mut game = headless_game();
     let mut input = InputState::new();
     let mut layout = top_bar_layout();
-    // A short clock whose widened fingertip target reaches the menu's.
-    layout.pause_status = macroquad::math::Rect::new(1206.0, 3.0, 20.0, 34.0);
+    // A pause button close enough that its fingertip target reaches the
+    // menu's.
+    layout.pause_button = macroquad::math::Rect::new(1200.0, 3.0, 34.0, 34.0);
     game.presentation.layout.set(layout);
     let p = vec2(1236.0, 20.0);
-    assert!(crate::layout::touch_pad(layout.pause_status, 1.0).contains(p));
+    assert!(crate::layout::touch_pad(layout.pause_button, 1.0).contains(p));
     tap(&mut game, &mut input, p);
     assert!(input.take_menu_request());
     assert!(!game.clock.paused);

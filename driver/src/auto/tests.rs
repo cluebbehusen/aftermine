@@ -12,7 +12,7 @@ fn menu(items: &[&str], selected: Option<usize>) -> UiView {
         chrome: None,
         panel_regions: None,
         menu_button: None,
-        pause_status: None,
+        pause_button: None,
         group_column: None,
         army_strip: None,
     }

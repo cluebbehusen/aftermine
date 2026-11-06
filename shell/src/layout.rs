@@ -49,9 +49,9 @@ pub struct LayoutModel {
     /// The menu button at the top bar's right edge; it opens the pause
     /// menu. Zero-sized while spectating.
     pub menu_button: Rect,
-    /// The clock or PAUSED status beside the menu button; it toggles
-    /// pause like the pause key. Zero-sized while spectating.
-    pub pause_status: Rect,
+    /// The pause button left of the menu button; it toggles pause like
+    /// the pause key. Zero-sized while spectating.
+    pub pause_button: Rect,
     /// Persistent armed-command ribbon. It is chrome even away from
     /// the command band, and a press anywhere on it cancels the mode.
     pub mode_ribbon: Rect,
@@ -106,7 +106,7 @@ impl Default for LayoutModel {
             army_strip: Rect::new(0.0, 0.0, 0.0, 0.0),
             army_buttons: [None; 2],
             menu_button: Rect::new(0.0, 0.0, 0.0, 0.0),
-            pause_status: Rect::new(0.0, 0.0, 0.0, 0.0),
+            pause_button: Rect::new(0.0, 0.0, 0.0, 0.0),
             mode_ribbon: Rect::new(0.0, 0.0, 0.0, 0.0),
             salvo_less: Rect::new(0.0, 0.0, 0.0, 0.0),
             salvo_more: Rect::new(0.0, 0.0, 0.0, 0.0),
@@ -245,8 +245,9 @@ pub(crate) struct TopBar {
     pub idle_badge: Rect,
     pub alert_badge: Rect,
     pub menu_button: Rect,
+    /// The menu button's twin to its left, which pauses and plays.
+    pub pause_button: Rect,
     pub status_x: f32,
-    pub pause_status: Rect,
     /// The span the FPS readout may use: from the left group's end to
     /// the status's start.
     pub status_space: (f32, f32),
@@ -254,7 +255,8 @@ pub(crate) struct TopBar {
 
 /// Lays out the top bar from measured text: the bank, income, and unit
 /// count run left to right from fixed minimums, the idle and alert badges
-/// follow them, and the status hangs off the menu button at the right.
+/// follow them, and the status hangs off the pause button, which sits
+/// beside the menu button at the right.
 pub(crate) fn top_bar(viewport_w: f32, ui: f32, touch_only: bool, text: TopBarText) -> TopBar {
     let inset = if touch_only { TOUCH_LEFT_INSET } else { 0.0 } * ui;
     let scrap_label_x = 12.0 * ui + inset;
@@ -276,7 +278,16 @@ pub(crate) fn top_bar(viewport_w: f32, ui: f32, touch_only: bool, text: TopBarTe
         .alert
         .map_or(Rect::new(0.0, 0.0, 0.0, 0.0), |width| badge(alert_x, width));
     let menu_button = menu_button_rect(viewport_w, ui, touch_only);
-    let status_x = menu_button.x - 12.0 * ui - text.status;
+    // Far enough apart that the two fingertip targets meet without
+    // overlapping.
+    let gap = (MIN_TOUCH_TARGET * ui - menu_button.w).max(8.0 * ui);
+    let pause_button = Rect::new(
+        menu_button.x - gap - menu_button.w,
+        menu_button.y,
+        menu_button.w,
+        menu_button.h,
+    );
+    let status_x = pause_button.x - 12.0 * ui - text.status;
     let occupied_right = (count_x + text.units)
         .max(idle_badge.x + idle_badge.w)
         .max(alert_badge.x + alert_badge.w);
@@ -289,13 +300,8 @@ pub(crate) fn top_bar(viewport_w: f32, ui: f32, touch_only: bool, text: TopBarTe
         idle_badge,
         alert_badge,
         menu_button,
+        pause_button,
         status_x,
-        pause_status: Rect::new(
-            status_x - 6.0 * ui,
-            3.0 * ui,
-            text.status + 12.0 * ui,
-            34.0 * ui,
-        ),
         status_space: (occupied_right, status_x),
     }
 }

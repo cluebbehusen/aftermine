@@ -1977,7 +1977,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                 input.menu_requested = true;
                 return;
             }
-            if layout.pause_status.w > 0.0 && layout.pause_status.contains(vec2(x, y)) {
+            if layout.pause_button.w > 0.0 && layout.pause_button.contains(vec2(x, y)) {
                 dispatch_action(game, input, bindings, Action::TogglePause);
                 return;
             }
