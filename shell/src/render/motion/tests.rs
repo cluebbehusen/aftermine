@@ -710,6 +710,23 @@ fn avalanche_stays_empty_through_most_of_reload_even_while_moving() {
 }
 
 #[test]
+fn a_driving_maw_keeps_the_body_frame_its_outline_is_loaded_for() {
+    for cycle in 0..12 {
+        let state = UnitAnimationState {
+            locomotion: LocomotionState::Moving {
+                cycle: cycle as f32 / 12.0,
+            },
+            ..unit_state()
+        };
+        assert_eq!(
+            super::super::UnitSpriteFrame::capture(UnitKind::Maw, state).frame,
+            UnitFrame::Idle,
+            "cycle {cycle}"
+        );
+    }
+}
+
+#[test]
 fn mantle_charge_rows_do_not_show_a_ready_charge_before_the_sim_restores_it() {
     let mut state = unit_state();
     for charges in 0..=3 {

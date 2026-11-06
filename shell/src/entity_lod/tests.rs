@@ -18,6 +18,7 @@ fn live_body_frames_have_cached_production_contact_sources() {
         "rig_scuttler_body_move2",
         "rig_buzzard_hull_move2",
         "bombard_action2",
+        "maw",
         "rig_spire_foundation",
         "rig_lattice_base",
     ]
