@@ -37,10 +37,10 @@ for an all-bot scene. A networked session binds an explicit seat instead. This
 choice never changes the configured controllers.
 
 Color means ownership only. The viewer's own seats wear a fixed color, allies a
-cool family and hostiles their own family, each ranked by seat order, and every
-owner-colored element reads the same per-view table. A viewer with an ally sees
-hostile colors clear of the ally hues; only a viewer with no ally to confuse
-sees hostiles in cool colors.
+blue family and each hostile team a family of its own, with seats ranked in seat
+order, and every owner-colored element reads the same per-view table. No two
+seats share a color. A viewer with an ally sees hostile families clear of the
+ally blues; only a viewer with no ally to confuse sees a hostile team in blue.
 
 Home plays a bundled recording behind its menu. That playback is presentation
 only: it shares nothing with the player's match, makes no sound, holds still

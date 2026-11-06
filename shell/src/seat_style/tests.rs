@@ -203,9 +203,17 @@ fn the_self_color_never_reads_as_a_friend_or_a_foe() {
     }
 }
 
-/// A seat color as `OKLab` under simulated red-weak vision (Machado 2009), at the
-/// half brightness structure panels draw it.
-fn red_weak_oklab(color: Color) -> [f32; 3] {
+/// Red-weak vision as Machado 2009 simulates it.
+const RED_WEAK: [[f32; 3]; 3] = [
+    [0.152_286, 1.052_583, -0.204_868],
+    [0.114_503, 0.786_281, 0.099_216],
+    [-0.003_882, -0.048_116, 1.051_998],
+];
+const TYPICAL: [[f32; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+/// A seat color as `OKLab` under `vision`, at the half brightness structure
+/// panels draw it.
+fn seen_oklab(color: Color, vision: &[[f32; 3]; 3]) -> [f32; 3] {
     let linear = |channel: f32| {
         let drawn = channel * 0.5;
         if drawn <= 0.040_45 {
@@ -215,11 +223,8 @@ fn red_weak_oklab(color: Color) -> [f32; 3] {
         }
     };
     let (r, g, b) = (linear(color.r), linear(color.g), linear(color.b));
-    let (r, g, b) = (
-        (0.152_286 * r + 1.052_583 * g - 0.204_868 * b).clamp(0.0, 1.0),
-        (0.114_503 * r + 0.786_281 * g + 0.099_216 * b).clamp(0.0, 1.0),
-        (-0.003_882 * r - 0.048_116 * g + 1.051_998 * b).clamp(0.0, 1.0),
-    );
+    let seen = |row: [f32; 3]| (row[0] * r + row[1] * g + row[2] * b).clamp(0.0, 1.0);
+    let (r, g, b) = (seen(vision[0]), seen(vision[1]), seen(vision[2]));
     let long = (0.412_221 * r + 0.536_333 * g + 0.051_446 * b).cbrt();
     let medium = (0.211_903 * r + 0.680_700 * g + 0.107_397 * b).cbrt();
     let short = (0.088_302 * r + 0.281_719 * g + 0.629_979 * b).cbrt();
@@ -230,10 +235,14 @@ fn red_weak_oklab(color: Color) -> [f32; 3] {
     ]
 }
 
-fn red_weak_distance(a: Color, b: Color) -> f32 {
-    let (a, b) = (red_weak_oklab(a), red_weak_oklab(b));
+fn distance(a: Color, b: Color, vision: &[[f32; 3]; 3]) -> f32 {
+    let (a, b) = (seen_oklab(a, vision), seen_oklab(b, vision));
     let squares: f32 = a.iter().zip(&b).map(|(a, b)| (a - b).powi(2)).sum();
     100.0 * squares.sqrt()
+}
+
+fn red_weak_distance(a: Color, b: Color) -> f32 {
+    distance(a, b, &RED_WEAK)
 }
 
 fn closest_under_red_weak(ours: &[Color], theirs: &[Color]) -> f32 {
@@ -256,6 +265,7 @@ fn seat_colors_hold_apart_under_red_weak_vision() {
     assert!(closest_under_red_weak(allies, enemies) >= 11.0);
     assert!(closest_under_red_weak(&mine, enemies) >= 10.0);
     assert!(closest_under_red_weak(&mine, allies) >= 10.0);
+    assert!(closest_under_red_weak(allies, &PURPLES) >= 9.0);
     assert!(
         red_weak_distance(mine[0], color_u8!(245, 175, 40, 255)) < 5.0,
         "a bright warm color collapses onto the self green"
@@ -264,4 +274,51 @@ fn seat_colors_hold_apart_under_red_weak_vision() {
     assert!(red_weak_distance(TEAM_ALLY, TEAM_ENEMY) >= 15.0);
     assert!(red_weak_distance(team_mine, TEAM_ENEMY) >= 15.0);
     assert!(red_weak_distance(team_mine, TEAM_ALLY) >= 15.0);
+}
+
+fn hostile_colors(teams: &[u16]) -> Vec<Color> {
+    let styles = SeatStyles::from_teams(teams, 0, false);
+    (1..teams.len())
+        .filter(|&seat| teams[seat] != teams[0])
+        .map(|seat| styles.get(PlayerId(seat.fit::<u8>())))
+        .collect()
+}
+
+#[test]
+fn no_two_enemies_share_a_color_when_families_come_round_again() {
+    let mut one_against_fifteen = vec![1; 16];
+    one_against_fifteen[0] = 0;
+    for teams in [
+        vec![0, 0, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8],
+        vec![0, 0, 1, 2, 3, 3, 3, 3],
+        one_against_fifteen,
+    ] {
+        let colors = hostile_colors(&teams);
+        for (rank, color) in colors.iter().enumerate() {
+            assert!(
+                !colors[rank + 1..].contains(color),
+                "{:?} repeats in {teams:?}",
+                rgb(*color)
+            );
+        }
+    }
+}
+
+#[test]
+fn a_big_enemy_team_still_tells_its_seats_apart() {
+    let closest = |teams: &[u16]| {
+        let colors = hostile_colors(teams);
+        let mut closest = f32::INFINITY;
+        for (rank, color) in colors.iter().enumerate() {
+            for other in &colors[rank + 1..] {
+                closest = closest.min(distance(*color, *other, &TYPICAL));
+            }
+        }
+        closest
+    };
+    // The largest team a shipped map allows: everyone else against you.
+    assert!(closest(&[0, 1, 1, 1, 1, 1, 1, 1]) >= 3.0);
+    let mut one_against_fifteen = vec![1; 16];
+    one_against_fifteen[0] = 0;
+    assert!(closest(&one_against_fifteen) >= 1.5);
 }
