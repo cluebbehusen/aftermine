@@ -119,14 +119,19 @@ driver live inject-key escape
 driver live inject-text "my save"
 driver live inject-tap 1255 20
 driver live inject-touch-drag --from 640,600 --to 640,200
+driver live inject-pad-connect --family playstation
+driver live inject-pad dpad-down
+driver live inject-pad-stick left 0.5 -1
 driver live capture-sequence --present --out screenshots/motion
 driver live performance
 ```
 
 Touch verbs reach the same funnel as a fingertip, so they prove the touch paths
-the iPad build depends on. To check the suspension pause, stop a live shell
-started without `--debug-server` for a few seconds (`kill -STOP <pid>`, then
-`kill -CONT <pid>`); the debug server exempts its sessions from that rule.
+the iPad build depends on. Pad verbs reach it as a connected controller does, so
+controller input needs no pad plugged in; connect first, as hardware does, so
+hints name that family's buttons. To check the suspension pause, stop a live
+shell started without `--debug-server` for a few seconds (`kill -STOP <pid>`,
+then `kill -CONT <pid>`); the debug server exempts its sessions from that rule.
 
 For timing a replay-derived gameplay interval:
 

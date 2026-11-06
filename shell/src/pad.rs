@@ -13,6 +13,7 @@
 //! platform API gets one source module here, and a platform without one
 //! reads no pads.
 
+use crate::action::Action;
 use aftermine_protocol::{PadButton, PadFamily, RawEvent, Stick};
 use macroquad::prelude::Vec2;
 use std::collections::BTreeMap;
@@ -34,6 +35,78 @@ const OUTER_DEAD_ZONE: f32 = 0.95;
 const STICK_STEP: f32 = 1.0 / 32.0;
 /// A sent position this long counts as full deflection.
 const FULL_TRAVEL: f32 = 0.999;
+
+/// The button that confirms in menus. Position decides, so it is the same
+/// button on every family whatever its label.
+pub(crate) const CONFIRM: PadButton = PadButton::South;
+/// The button that goes back in menus.
+pub(crate) const BACK: PadButton = PadButton::East;
+
+/// What controller buttons do in menus: the D-pad moves the cursor.
+const MENU_BUTTONS: [(PadButton, Action); 6] = [
+    (PadButton::DpadUp, Action::MenuUp),
+    (PadButton::DpadDown, Action::MenuDown),
+    (PadButton::DpadLeft, Action::MenuLeft),
+    (PadButton::DpadRight, Action::MenuRight),
+    (CONFIRM, Action::Confirm),
+    (BACK, Action::Back),
+];
+
+/// The menu action a controller button performs, if any.
+pub(crate) fn menu_action(button: PadButton) -> Option<Action> {
+    MENU_BUTTONS
+        .iter()
+        .find(|(pad, _)| *pad == button)
+        .map(|(_, action)| *action)
+}
+
+/// What a family calls a button. Copy stays ASCII, so PlayStation's shapes
+/// are spelled out, and Switch pads swap the face labels Xbox pads print
+/// at the same positions.
+pub(crate) fn button_name(family: PadFamily, button: PadButton) -> &'static str {
+    use PadButton as B;
+    use PadFamily as F;
+    match (family, button) {
+        (_, B::DpadUp) => "D-pad up",
+        (_, B::DpadDown) => "D-pad down",
+        (_, B::DpadLeft) => "D-pad left",
+        (_, B::DpadRight) => "D-pad right",
+        (F::PlayStation, B::South) => "Cross",
+        (F::PlayStation, B::East) => "Circle",
+        (F::PlayStation, B::West) => "Square",
+        (F::PlayStation, B::North) => "Triangle",
+        (F::PlayStation, B::LeftBumper) => "L1",
+        (F::PlayStation, B::RightBumper) => "R1",
+        (F::PlayStation, B::LeftTrigger) => "L2",
+        (F::PlayStation, B::RightTrigger) => "R2",
+        (F::PlayStation, B::LeftStick) => "L3",
+        (F::PlayStation, B::RightStick) => "R3",
+        (F::PlayStation, B::Select) => "Create",
+        (F::PlayStation, B::Start) => "Options",
+        (F::Switch, B::South) => "B",
+        (F::Switch, B::East) => "A",
+        (F::Switch, B::West) => "Y",
+        (F::Switch, B::North) => "X",
+        (F::Switch, B::LeftBumper) => "L",
+        (F::Switch, B::RightBumper) => "R",
+        (F::Switch, B::LeftTrigger) => "ZL",
+        (F::Switch, B::RightTrigger) => "ZR",
+        (F::Switch, B::Select) => "Minus",
+        (F::Switch, B::Start) => "Plus",
+        (_, B::South) => "A",
+        (_, B::East) => "B",
+        (_, B::West) => "X",
+        (_, B::North) => "Y",
+        (_, B::LeftBumper) => "LB",
+        (_, B::RightBumper) => "RB",
+        (_, B::LeftTrigger) => "LT",
+        (_, B::RightTrigger) => "RT",
+        (_, B::LeftStick) => "LS",
+        (_, B::RightStick) => "RS",
+        (_, B::Select) => "View",
+        (_, B::Start) => "Menu",
+    }
+}
 
 /// One thing a platform's pad API reported.
 #[derive(Debug, Clone, Copy, PartialEq)]

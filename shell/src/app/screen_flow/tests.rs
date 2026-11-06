@@ -14,6 +14,7 @@ fn finished_card() -> CardLayout {
         crate::platform::Hands {
             pointer: crate::input::Pointer::Mouse,
             keys: true,
+            pad: None,
         },
         render::hud::HudEnv {
             viewport: vec2(1280.0, 800.0),
@@ -143,6 +144,7 @@ fn the_tip_card_closes_by_mouse_and_by_finger_and_keeps_its_other_presses() {
         crate::platform::Hands {
             pointer: crate::input::Pointer::Mouse,
             keys: true,
+            pad: None,
         },
         render::hud::HudEnv {
             viewport: vec2(1280.0, 800.0),

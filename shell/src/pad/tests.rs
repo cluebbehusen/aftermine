@@ -248,3 +248,52 @@ fn restating_every_control_each_frame_sends_what_reporting_changes_does() {
     assert_eq!(from_polled, from_changes);
     assert_eq!(stick_events(&from_polled).len(), 2, "{from_polled:?}");
 }
+
+#[test]
+fn buttons_are_named_by_family_at_each_position() {
+    use PadFamily as F;
+    let families = [F::Xbox, F::PlayStation, F::Switch, F::Other];
+    let buttons = [
+        PadButton::South,
+        PadButton::East,
+        PadButton::West,
+        PadButton::North,
+        PadButton::DpadUp,
+        PadButton::DpadDown,
+        PadButton::DpadLeft,
+        PadButton::DpadRight,
+        PadButton::LeftBumper,
+        PadButton::RightBumper,
+        PadButton::LeftTrigger,
+        PadButton::RightTrigger,
+        PadButton::LeftStick,
+        PadButton::RightStick,
+        PadButton::Select,
+        PadButton::Start,
+    ];
+    for family in families {
+        let names: Vec<_> = buttons.iter().map(|b| button_name(family, *b)).collect();
+        for name in &names {
+            assert!(!name.is_empty() && name.is_ascii(), "{family:?} {name:?}");
+        }
+        let mut distinct = names.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(distinct.len(), names.len(), "{family:?} names collide");
+    }
+    // The bottom face button confirms on every pad; a Switch prints B there.
+    assert_eq!(button_name(F::Xbox, CONFIRM), "A");
+    assert_eq!(button_name(F::Switch, CONFIRM), "B");
+    assert_eq!(button_name(F::Switch, BACK), "A");
+    assert_eq!(button_name(F::Other, CONFIRM), "A");
+}
+
+#[test]
+fn the_dpad_moves_menus_and_two_face_buttons_confirm_and_go_back() {
+    assert_eq!(menu_action(PadButton::DpadUp), Some(Action::MenuUp));
+    assert_eq!(menu_action(PadButton::DpadRight), Some(Action::MenuRight));
+    assert_eq!(menu_action(CONFIRM), Some(Action::Confirm));
+    assert_eq!(menu_action(BACK), Some(Action::Back));
+    assert_eq!(menu_action(PadButton::West), None);
+    assert_eq!(menu_action(PadButton::Start), None);
+}

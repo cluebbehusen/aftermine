@@ -4,6 +4,7 @@
 use std::cell::Cell;
 
 use crate::input::Pointer;
+use aftermine_protocol::PadFamily;
 
 /// Whether this build runs on a touch device, where a finger is always
 /// at hand even if a keyboard or trackpad is attached. Platform facts
@@ -13,14 +14,18 @@ use crate::input::Pointer;
 /// every target; pure helpers take it as a parameter.
 pub(crate) const TOUCH_ONLY: bool = cfg!(target_os = "ios");
 
-/// The pointer and keys the player is using, which decide how copy
-/// speaks: tap or click, and whether it names keys.
+/// The pointer, keys, and controller the player is using, which decide how
+/// copy speaks: tap or click, whether it names keys, and whether it names
+/// a controller's buttons instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Hands {
     /// The pointer used last.
     pub pointer: Pointer,
     /// Whether a hardware key has been pressed.
     pub keys: bool,
+    /// The controller in use, by the family that names its buttons: one
+    /// was pressed after the last key or pointer.
+    pub pad: Option<PadFamily>,
 }
 
 impl Hands {
@@ -30,11 +35,13 @@ impl Hands {
         Self {
             pointer: Pointer::Touch,
             keys: false,
+            pad: None,
         }
     } else {
         Self {
             pointer: Pointer::Mouse,
             keys: true,
+            pad: None,
         }
     };
 
@@ -101,24 +108,28 @@ pub(crate) fn assert_touch_copy(text: &str) {
     assert_mouseless_copy(text);
 }
 
-/// Every pairing of pointer and keyboard.
+/// Every pairing of pointer and keyboard, without a controller.
 #[cfg(test)]
 pub(crate) const ALL_HANDS: [Hands; 4] = [
     Hands {
         pointer: Pointer::Mouse,
         keys: true,
+        pad: None,
     },
     Hands {
         pointer: Pointer::Mouse,
         keys: false,
+        pad: None,
     },
     Hands {
         pointer: Pointer::Touch,
         keys: true,
+        pad: None,
     },
     Hands {
         pointer: Pointer::Touch,
         keys: false,
+        pad: None,
     },
 ];
 

@@ -35,3 +35,37 @@ fn a_keyless_footer_offers_a_scroll_only_when_the_list_scrolls() {
     assert_eq!(menu_footer(mouse, false), "click to choose");
     assert!(menu_footer(mouse, true).ends_with("scroll for more"));
 }
+
+#[test]
+fn a_controller_in_use_names_its_own_buttons() {
+    use aftermine_protocol::PadFamily;
+    let pad = |family| crate::platform::Hands {
+        pad: Some(family),
+        ..crate::platform::ALL_HANDS[0]
+    };
+    assert_eq!(
+        menu_footer(pad(PadFamily::Xbox), true),
+        "D-pad select - A confirm"
+    );
+    assert_eq!(
+        menu_footer(pad(PadFamily::PlayStation), false),
+        "D-pad select - Cross confirm"
+    );
+    for family in [
+        PadFamily::Xbox,
+        PadFamily::PlayStation,
+        PadFamily::Switch,
+        PadFamily::Other,
+    ] {
+        for hands in crate::platform::ALL_HANDS {
+            let footer = menu_footer(
+                crate::platform::Hands {
+                    pad: Some(family),
+                    ..hands
+                },
+                true,
+            );
+            crate::platform::assert_touch_copy(&footer);
+        }
+    }
+}

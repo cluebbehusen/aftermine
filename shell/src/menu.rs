@@ -1159,11 +1159,17 @@ fn row_pitch(avail: f32, rows: usize, s: f32, touch_only: bool) -> f32 {
     (avail / rows.max(1) as f32).clamp(min * s, max * s)
 }
 
-/// The line under every menu: its keys once the player has a keyboard,
-/// the pointer's verb, and without keys the drag or scroll only when the
-/// list actually scrolls. ASCII on purpose: the default font has no
-/// glyphs for arrows.
+/// The line under every menu: a controller's buttons while one is in use,
+/// its keys once the player has a keyboard, the pointer's verb, and without
+/// keys the drag or scroll only when the list actually scrolls. ASCII on
+/// purpose: the default font has no glyphs for arrows.
 fn menu_footer(hands: crate::platform::Hands, scrolls: bool) -> String {
+    if let Some(family) = hands.pad {
+        return format!(
+            "D-pad select - {} confirm",
+            crate::pad::button_name(family, crate::pad::CONFIRM)
+        );
+    }
     let verb = if hands.touch() { "tap" } else { "click" };
     if !hands.keys {
         let scroll = match (scrolls, hands.touch()) {

@@ -290,6 +290,7 @@ pub(super) fn update_and_draw(
     crate::platform::set_hands(crate::platform::Hands {
         pointer: app.input.last_pointer,
         keys: app.input.keys_seen,
+        pad: app.input.pad_in_use,
     });
     // Controls capture and text editing keep their conventional recovery keys.
     let fixed_editor = matches!(&screen, Screen::Settings { screen, .. } if screen.edits_bindings())

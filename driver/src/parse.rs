@@ -27,6 +27,15 @@ pub(crate) fn parse_point(s: &str) -> Result<(f32, f32)> {
     }
 }
 
+/// Parses a protocol enum by its wire name, so the CLI accepts exactly what
+/// the debug socket does. Case and hyphens are forgiven: `dpad-up` and
+/// `DPAD_UP` both name `dpad_up`.
+pub(crate) fn parse_wire_name<T: serde::de::DeserializeOwned>(s: &str, what: &str) -> Result<T> {
+    let wire = s.trim().to_ascii_lowercase().replace('-', "_");
+    serde_json::from_value(serde_json::Value::String(wire))
+        .map_err(|error| anyhow::anyhow!("unknown {what} {s:?}: {error}"))
+}
+
 pub(crate) fn parse_mouse_button(s: &str) -> Result<MouseButton> {
     Ok(match s.to_ascii_lowercase().as_str() {
         "left" => MouseButton::Left,

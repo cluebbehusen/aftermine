@@ -4,6 +4,7 @@
 
 use crate::parse::{
     parse_building_kind, parse_key, parse_mouse_button, parse_point, parse_tile, parse_unit_kind,
+    parse_wire_name,
 };
 use aftermine_driver::client::Client;
 use aftermine_protocol::{Key, RawEvent, Request, RequestEnvelope, StateFilter};
@@ -397,6 +398,63 @@ pub(crate) enum LiveCmd {
         /// Touch-move events between touch down and up (1-120).
         #[arg(long, default_value_t = 6)]
         steps: u32,
+    },
+    /// Inject a controller button press and release.
+    InjectPad {
+        /// A button by position: south, east, west, north, dpad-up,
+        /// dpad-down, dpad-left, dpad-right, left-bumper, right-bumper,
+        /// left-trigger, right-trigger, left-stick, right-stick, select, or
+        /// start.
+        button: String,
+        /// The pad's id.
+        #[arg(long, default_value_t = 0)]
+        pad: u64,
+    },
+    /// Inject a controller button press without the release.
+    InjectPadDown {
+        /// A button, as inject-pad accepts.
+        button: String,
+        /// The pad's id.
+        #[arg(long, default_value_t = 0)]
+        pad: u64,
+    },
+    /// Inject a controller button release without the press.
+    InjectPadUp {
+        /// A button, as inject-pad accepts.
+        button: String,
+        /// The pad's id.
+        #[arg(long, default_value_t = 0)]
+        pad: u64,
+    },
+    /// Inject a stick position; 0 0 centers it.
+    InjectPadStick {
+        /// "left" or "right".
+        stick: String,
+        /// Rightward deflection, -1 to 1.
+        #[arg(allow_negative_numbers = true)]
+        x: f32,
+        /// Downward deflection, -1 to 1.
+        #[arg(allow_negative_numbers = true)]
+        y: f32,
+        /// The pad's id.
+        #[arg(long, default_value_t = 0)]
+        pad: u64,
+    },
+    /// Inject a controller connecting.
+    InjectPadConnect {
+        /// Whose layout names its buttons: xbox, playstation, switch, or
+        /// other.
+        #[arg(long, default_value = "xbox")]
+        family: String,
+        /// The pad's id.
+        #[arg(long, default_value_t = 0)]
+        pad: u64,
+    },
+    /// Inject a controller disconnecting.
+    InjectPadDisconnect {
+        /// The pad's id.
+        #[arg(long, default_value_t = 0)]
+        pad: u64,
     },
     /// Capture the current frame to a PNG.
     Screenshot {
@@ -820,6 +878,52 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
             });
             return Ok(requests);
         }
+        LiveCmd::InjectPad { button, pad } => {
+            // A press is a pair, like a key tap, so nothing stays held.
+            let button = parse_wire_name(&button, "pad button")?;
+            return Ok(vec![
+                Request::InjectEvent {
+                    event: RawEvent::PadDown { pad, button },
+                },
+                Request::InjectEvent {
+                    event: RawEvent::PadUp { pad, button },
+                },
+            ]);
+        }
+        LiveCmd::InjectPadDown { button, pad } => Request::InjectEvent {
+            event: RawEvent::PadDown {
+                pad,
+                button: parse_wire_name(&button, "pad button")?,
+            },
+        },
+        LiveCmd::InjectPadUp { button, pad } => Request::InjectEvent {
+            event: RawEvent::PadUp {
+                pad,
+                button: parse_wire_name(&button, "pad button")?,
+            },
+        },
+        LiveCmd::InjectPadStick { stick, x, y, pad } => {
+            if !((-1.0..=1.0).contains(&x) && (-1.0..=1.0).contains(&y)) {
+                bail!("stick deflection runs from -1 to 1 (got {x}, {y})");
+            }
+            Request::InjectEvent {
+                event: RawEvent::PadStick {
+                    pad,
+                    stick: parse_wire_name(&stick, "stick")?,
+                    x,
+                    y,
+                },
+            }
+        }
+        LiveCmd::InjectPadConnect { family, pad } => Request::InjectEvent {
+            event: RawEvent::PadConnected {
+                pad,
+                family: parse_wire_name(&family, "pad family")?,
+            },
+        },
+        LiveCmd::InjectPadDisconnect { pad } => Request::InjectEvent {
+            event: RawEvent::PadDisconnected { pad },
+        },
         LiveCmd::InjectDrag {
             from,
             to,

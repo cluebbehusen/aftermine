@@ -55,11 +55,15 @@ fn copy(game: &Game, pointer: Pointer, keys: bool) -> String {
         .as_ref()
         .and_then(Tutorial::current)
         .expect("a step is up");
-    step.body(crate::platform::Hands { pointer, keys })
-        .iter()
-        .map(|text| crate::render::tutorial_card::expand(text, &classic()))
-        .collect::<Vec<_>>()
-        .join(" ")
+    step.body(crate::platform::Hands {
+        pointer,
+        keys,
+        pad: None,
+    })
+    .iter()
+    .map(|text| crate::render::tutorial_card::expand(text, &classic()))
+    .collect::<Vec<_>>()
+    .join(" ")
 }
 
 /// Plays on until `done`, keeping the lesson's books as a frame does.

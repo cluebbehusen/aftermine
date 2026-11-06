@@ -310,3 +310,45 @@ fn ctrl_a_and_ctrl_s_select_the_army_while_bare_a_and_s_still_pan() {
         Some(Chord::ctrl(Key::K))
     );
 }
+
+#[test]
+fn controller_buttons_reach_menus_as_the_canonical_keys_whatever_the_bindings() {
+    use aftermine_protocol::{PadButton, PadFamily, RawEvent};
+    let pad = |button, down| {
+        if down {
+            RawEvent::PadDown { pad: 0, button }
+        } else {
+            RawEvent::PadUp { pad: 0, button }
+        }
+    };
+    let connect = RawEvent::PadConnected {
+        pad: 0,
+        family: PadFamily::Xbox,
+    };
+    let events = [
+        connect,
+        pad(PadButton::DpadDown, true),
+        pad(PadButton::DpadDown, false),
+        pad(PadButton::South, true),
+        pad(PadButton::East, true),
+        pad(PadButton::DpadLeft, true),
+        pad(PadButton::North, true),
+    ];
+    let canonical = vec![
+        connect,
+        RawEvent::KeyDown { key: Key::Down },
+        RawEvent::KeyUp { key: Key::Down },
+        RawEvent::KeyDown { key: Key::Enter },
+        RawEvent::KeyDown { key: Key::Escape },
+        RawEvent::KeyDown { key: Key::Left },
+    ];
+    assert_eq!(
+        BindingMap::classic().menu_events(&events, false, false),
+        canonical
+    );
+    // Remapping keys moves the keyboard, never the pad's fixed layout.
+    let mut map = BindingMap::classic();
+    assert!(map.rebind(Action::Confirm, Chord::bare(Key::Z)));
+    assert!(map.rebind(Action::MenuDown, Chord::bare(Key::S)));
+    assert_eq!(map.menu_events(&events, false, false), canonical);
+}
