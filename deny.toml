@@ -32,5 +32,9 @@ multiple-versions = "warn"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# The workspace patch pins a miniquad fork for iOS scene support.
-allow-git = ["https://github.com/cluebbehusen/miniquad"]
+# The workspace patch pins a miniquad fork for iOS scene support and a
+# quad-snd fork for tvOS audio and mixing with other apps on iOS.
+allow-git = [
+    "https://github.com/cluebbehusen/miniquad",
+    "https://github.com/cluebbehusen/quad-snd",
+]
