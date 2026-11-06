@@ -26,13 +26,12 @@ pub fn idle_harvesters(game: &crate::game::Scene<'_>) -> Vec<UnitId> {
         .collect()
 }
 
-/// Whether a unit belongs to its owner's army: every unit but the workers
-/// and the unarmed transport. A drone flies for its host alone.
+/// Whether a unit belongs to its owner's army: it fights, or it shields
+/// the army from fire. Workers, the unarmed scouts and the unarmed
+/// transport stay out, and a drone flies for its host alone.
 pub(super) fn in_army(unit: &aftermine_sim::Unit) -> bool {
     let stats = unit.kind.stats();
-    let worker = stats.harvest.is_some();
-    let unarmed_transport = stats.transport_capacity > 0 && !stats.can_fight();
-    unit.host.is_none() && !worker && !unarmed_transport
+    unit.host.is_none() && (stats.can_fight() || stats.point_defense.is_some())
 }
 
 /// The viewer's army units in id order: all of them, or with `in_view`
