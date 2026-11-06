@@ -122,7 +122,8 @@ fn an_opponent_seat_continues_through_save_and_replay_resume() {
 
     let saved: Game = serde_json::from_slice(&serde_json::to_vec(&original).unwrap()).unwrap();
     let resumed = Game::from_replay(replay).unwrap();
-    let mut continuations = [saved, resumed];
+    // Two whole sessions are too large for the stack.
+    let mut continuations = vec![saved, resumed];
     for game in &continuations {
         assert_eq!(controllers(game), pending);
     }
