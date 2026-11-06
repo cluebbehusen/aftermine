@@ -18,6 +18,7 @@ use crate::netplay::{HostLobby, Link, StartPoll, shown_host_name, start_failed_n
 use crate::numeric;
 use crate::numeric::Fit;
 use crate::press::{Fed, Press};
+use crate::render::prim::stroke_rect;
 use crate::screens::browser::{Browser, Out as BrowserOut};
 use crate::seating::{Occupant, Seating};
 use crate::text_field::{Edit, Field, Form, Keyboard};
@@ -27,8 +28,7 @@ use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use aftermine_sim::{PlayerId, Scenario};
 use anyhow::{Context, Result};
 use macroquad::prelude::{
-    Rect, Vec2, draw_circle, draw_circle_lines, draw_rectangle, draw_rectangle_lines, draw_text,
-    measure_text, vec2,
+    Rect, Vec2, draw_circle, draw_circle_lines, draw_rectangle, draw_text, measure_text, vec2,
 };
 use std::path::PathBuf;
 use std::time::Duration;
@@ -1105,11 +1105,8 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
     let is_you = matches!(view.controller, CardController::Own);
     let moving = view.moving;
     draw_rectangle(rect.x, rect.y, rect.w, rect.h, SURFACE_MENU);
-    draw_rectangle_lines(
-        rect.x,
-        rect.y,
-        rect.w,
-        rect.h,
+    stroke_rect(
+        Rect::new(rect.x, rect.y, rect.w, rect.h),
         if moving {
             Stroke::Heavy
         } else if selected {
@@ -1204,11 +1201,8 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
         };
         let on_cell = view.focus == Some(cell);
         draw_rectangle(control.x, control.y, control.w, control.h, CARD_IDLE);
-        draw_rectangle_lines(
-            control.x,
-            control.y,
-            control.w,
-            control.h,
+        stroke_rect(
+            Rect::new(control.x, control.y, control.w, control.h),
             if on_cell {
                 Stroke::Focus
             } else {
@@ -1238,11 +1232,8 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
     let chip = card.team;
     let on_cell = view.focus == Some(Cell::Team);
     draw_rectangle(chip.x, chip.y, chip.w, chip.h, CHIP);
-    draw_rectangle_lines(
-        chip.x,
-        chip.y,
-        chip.w,
-        chip.h,
+    stroke_rect(
+        Rect::new(chip.x, chip.y, chip.w, chip.h),
         if on_cell {
             Stroke::Focus
         } else {
@@ -1846,11 +1837,8 @@ impl Wizard {
         let start_selected = self.setup_sel == layout.cards.len();
         if let Some(start) = layout.start {
             draw_rectangle(start.x, start.y, start.w, start.h, SURFACE_MENU);
-            draw_rectangle_lines(
-                start.x,
-                start.y,
-                start.w,
-                start.h,
+            stroke_rect(
+                Rect::new(start.x, start.y, start.w, start.h),
                 if start_selected {
                     Stroke::Heavy
                 } else {
@@ -1894,11 +1882,8 @@ impl Wizard {
                 continue;
             };
             draw_rectangle(rect.x, rect.y, rect.w, rect.h, SURFACE_MENU);
-            draw_rectangle_lines(
-                rect.x,
-                rect.y,
-                rect.w,
-                rect.h,
+            stroke_rect(
+                Rect::new(rect.x, rect.y, rect.w, rect.h),
                 Stroke::Edge.at(ui),
                 TEXT_SECONDARY,
             );
@@ -1991,11 +1976,8 @@ impl Wizard {
                 half.h,
                 if active { CARD_IDLE } else { SURFACE_MENU },
             );
-            draw_rectangle_lines(
-                half.x,
-                half.y,
-                half.w,
-                half.h,
+            stroke_rect(
+                Rect::new(half.x, half.y, half.w, half.h),
                 Stroke::Hairline.at(ui),
                 if active { TEXT_ACCENT } else { BORDER_STRONG },
             );
@@ -2011,11 +1993,8 @@ impl Wizard {
         }
         if self.on_switch {
             let [left, right] = layout.switch;
-            draw_rectangle_lines(
-                left.x,
-                left.y,
-                right.x + right.w - left.x,
-                left.h,
+            stroke_rect(
+                Rect::new(left.x, left.y, right.x + right.w - left.x, left.h),
                 Stroke::Focus.at(ui),
                 TEXT_TITLE,
             );

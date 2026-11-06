@@ -6,14 +6,13 @@ use crate::game::SoundKind;
 use crate::menu::Menu;
 use crate::numeric;
 use crate::press::{Fed, Press};
+use crate::render::prim::stroke_rect;
 use crate::theme::{
     BORDER_STRONG, MIN_TOUCH_TARGET, SURFACE_CARD, SURFACE_PANEL, Stroke, TEXT_ACCENT, TEXT_DANGER,
     TEXT_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE, Type,
 };
 use aftermine_protocol::{Key, RawEvent};
-use macroquad::prelude::{
-    Color, Rect, Vec2, draw_rectangle, draw_rectangle_lines, draw_text, measure_text,
-};
+use macroquad::prelude::{Color, Rect, Vec2, draw_rectangle, draw_text, measure_text};
 
 /// The on-screen keyboard a field asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -431,7 +430,11 @@ fn draw_field(field: &Field, rect: Rect, focused: bool, label_y: f32, s: f32) {
         (SURFACE_PANEL, Stroke::Hairline, BORDER_STRONG)
     };
     draw_rectangle(rect.x, rect.y, rect.w, rect.h, fill);
-    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, stroke.at(s), edge);
+    stroke_rect(
+        Rect::new(rect.x, rect.y, rect.w, rect.h),
+        stroke.at(s),
+        edge,
+    );
     // The focus outline marks where typing goes, so an empty field shows
     // its placeholder alone rather than a caret glued to it.
     let (text, color) = if field.value.is_empty() && !field.placeholder.is_empty() {

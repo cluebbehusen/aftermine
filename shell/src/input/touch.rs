@@ -45,6 +45,8 @@ pub(crate) struct TouchPoint {
     pub card: Option<PressedCard>,
     /// The control-group slot it landed on, as it stood then.
     pub group: Option<crate::layout::GroupSlot>,
+    /// The army strip button it landed on.
+    pub army: Option<crate::layout::ArmyReach>,
     /// The ghost button it landed on, which alone its lift may press.
     pub control: Option<super::GhostControl>,
 }
@@ -185,8 +187,8 @@ fn born_at(game: &Game, input: &InputState, p: Vec2) -> TouchBorn {
     } else if crate::render::minimap_world_at(&game.view(), p).is_some() {
         TouchBorn::Minimap
     } else if click_on_hud(game, p)
-        || crate::layout::group_slot_under(&game.presentation.layout.get(), p, Some(input.ui))
-            .is_some()
+        || crate::layout::group_slot_under(&layout, p, Some(input.ui)).is_some()
+        || crate::layout::army_button_under(&layout, p, Some(input.ui)).is_some()
     {
         TouchBorn::Chrome
     } else if super::ghost_touch_rect(&game.view(), input).is_some_and(|rect| rect.contains(p)) {
@@ -256,6 +258,11 @@ pub(super) fn down(game: &mut Game, input: &mut InputState, id: u64, p: Vec2) {
             spent: false,
             card: pressed_card(game, p, input.ui),
             group: crate::layout::group_slot_under(
+                &game.presentation.layout.get(),
+                p,
+                Some(input.ui),
+            ),
+            army: crate::layout::army_button_under(
                 &game.presentation.layout.get(),
                 p,
                 Some(input.ui),
@@ -459,6 +466,12 @@ pub(super) fn up(
                     // bar, which the bare-chrome swallow
                     // below would otherwise eat.
                     cycle_idle_worker(game);
+                } else if let Some(reach) = lifted.army.filter(|reach| {
+                    crate::layout::army_button_under(&layout, p, Some(input.ui)) == Some(*reach)
+                }) {
+                    // Like a group slot, a button acts only for a finger
+                    // that lifts on the one it landed on.
+                    dispatch_action(game, input, bindings, reach.action());
                 } else if let Some(slot) = lifted.group.filter(|slot| {
                     crate::layout::group_slot_under(&layout, p, Some(input.ui)) == Some(*slot)
                 }) {

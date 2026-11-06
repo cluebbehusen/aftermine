@@ -97,6 +97,8 @@
       {"chord": {"key": "num6", "ctrl": false, "shift": false}, "action": {"ReplaySpeed": 5}},
       {"chord": {"key": "num7", "ctrl": false, "shift": false}, "action": {"ReplaySpeed": 6}},
       {"chord": {"key": "num8", "ctrl": false, "shift": false}, "action": {"ReplaySpeed": 7}},
+      {"chord": {"key": "a", "ctrl": true, "shift": false}, "action": "SelectArmy"},
+      {"chord": {"key": "s", "ctrl": true, "shift": false}, "action": "SelectArmyInView"},
       {"chord": {"key": "f5", "ctrl": true, "shift": false}, "action": {"SetBookmark": 0}},
       {"chord": {"key": "f5", "ctrl": false, "shift": false}, "action": {"RecallBookmark": 0}},
       {"chord": {"key": "f6", "ctrl": true, "shift": false}, "action": {"SetBookmark": 1}},

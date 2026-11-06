@@ -3,11 +3,10 @@
 
 use crate::numeric;
 use crate::press::{Fed, Press};
+use crate::render::prim::stroke_rect;
 use crate::theme;
 use aftermine_protocol::RawEvent;
-use macroquad::prelude::{
-    Rect, Vec2, draw_rectangle, draw_rectangle_lines, draw_text, measure_text,
-};
+use macroquad::prelude::{Rect, Vec2, draw_rectangle, draw_text, measure_text};
 
 /// The `index`th button slot along the top-left corner: a fingertip
 /// tall, wide enough for a short verb, and clear of the window edge.
@@ -34,11 +33,8 @@ pub(crate) fn draw(rect: Rect, label: &str, active: bool, s: f32) {
             theme::SURFACE_PANEL
         },
     );
-    draw_rectangle_lines(
-        rect.x,
-        rect.y,
-        rect.w,
-        rect.h,
+    stroke_rect(
+        Rect::new(rect.x, rect.y, rect.w, rect.h),
         if active {
             theme::Stroke::Focus
         } else {

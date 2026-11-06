@@ -5,6 +5,7 @@
 //! tests lay the cards out headless.
 
 use super::hud::{Face, HudEnv, Measure};
+use crate::render::prim::stroke_rect;
 use crate::theme::{
     EDGE_WARM, SURFACE_CARD, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_DANGER, TEXT_PRIMARY,
     TEXT_SECONDARY, Type,
@@ -404,7 +405,11 @@ pub(crate) fn draw(card: &CardLayout, mouse: Vec2) {
         ..color
     };
     draw_rectangle(r.x, r.y, r.w, r.h, fade(SURFACE_CARD));
-    draw_rectangle_lines(r.x, r.y, r.w, r.h, Stroke::Edge.at(s), fade(EDGE_WARM));
+    stroke_rect(
+        Rect::new(r.x, r.y, r.w, r.h),
+        Stroke::Edge.at(s),
+        fade(EDGE_WARM),
+    );
     for line in &card.lines {
         let color = fade(line.color);
         match line.face {
@@ -424,7 +429,7 @@ pub(crate) fn draw(card: &CardLayout, mouse: Vec2) {
             let stroke = Stroke::Edge.at(s);
             // A hairline box at whole-pixel corners loses edges to
             // rasterization; an icon this small needs every edge.
-            draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, stroke, color);
+            stroke_rect(Rect::new(rect.x, rect.y, rect.w, rect.h), stroke, color);
             let (cx, cy, arm) = (rect.center().x, rect.center().y, rect.w * 0.28);
             if *button == CardButton::Dismiss {
                 let arm = arm * std::f32::consts::FRAC_1_SQRT_2;

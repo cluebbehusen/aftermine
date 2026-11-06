@@ -8,6 +8,7 @@ use crate::nav::{Axis, Nav, step_line};
 use crate::numeric;
 use crate::numeric::Fit;
 use crate::press::{Fed, Press};
+use crate::render::prim::stroke_rect;
 use crate::theme::Type;
 use crate::typography::{clip_chars, elide_to_width};
 use crate::{render, theme};
@@ -544,11 +545,8 @@ impl ResultsScreen {
         draw_rectangle(0.0, 0.0, viewport.x, viewport.y, theme::VEIL);
         let panel = results_panel(viewport, s);
         draw_rectangle(panel.x, panel.y, panel.w, panel.h, theme::SURFACE_MENU);
-        draw_rectangle_lines(
-            panel.x,
-            panel.y,
-            panel.w,
-            panel.h,
+        stroke_rect(
+            Rect::new(panel.x, panel.y, panel.w, panel.h),
             theme::Stroke::Edge.at(s),
             theme::EDGE_WARM,
         );
@@ -889,11 +887,13 @@ fn draw_stat_icon(center: Vec2, size: f32, kind: StatIcon, color: Color) {
             );
         }
         StatIcon::Building => {
-            draw_rectangle_lines(
-                center.x - size,
-                center.y - size * 0.65,
-                size * 2.0,
-                size * 1.65,
+            stroke_rect(
+                Rect::new(
+                    center.x - size,
+                    center.y - size * 0.65,
+                    size * 2.0,
+                    size * 1.65,
+                ),
                 1.5,
                 color,
             );
@@ -965,7 +965,7 @@ pub(super) fn draw_marker(x: f32, y: f32, r: f32, seat: usize, color: Color) {
             draw_circle(x, y, r * 0.32, color);
         }
         SeatMarker::BoxDot => {
-            draw_rectangle_lines(x - r, y - r, r * 2.0, r * 2.0, 1.5, color);
+            stroke_rect(Rect::new(x - r, y - r, r * 2.0, r * 2.0), 1.5, color);
             draw_circle(x, y, r * 0.32, color);
         }
         SeatMarker::Triangle => {

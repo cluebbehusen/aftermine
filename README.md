@@ -70,6 +70,7 @@ Most actions are also cards in the selection panel. The core keys:
 | `X`                             | Stop the selection.                                                     |
 | `1`–`5` / Ctrl + `1`–`5`        | Recall / assign a control group.                                        |
 | `N`                             | Select the next idle Harvester.                                         |
+| Ctrl + `A` / Ctrl + `S`         | Select your whole army / the part of it in view.                        |
 | `Space`                         | Center the camera on your Foundry.                                      |
 | `P`                             | Pause.                                                                  |
 | `Esc`                           | Cancel the current action, clear the selection, or open the pause menu. |

@@ -5,6 +5,7 @@ use super::draw_marker;
 use crate::game::{Game, SoundKind};
 use crate::numeric;
 use crate::press::{Fed, Press};
+use crate::render::prim::stroke_rect;
 use crate::tabs::TabStrip;
 use crate::typography::entity_name;
 use crate::{render, theme};
@@ -403,7 +404,11 @@ impl Chart {
     ) {
         let panel = layout.panel;
         draw_rectangle(panel.x, panel.y, panel.w, panel.h, theme::SURFACE_PANEL);
-        draw_rectangle_lines(panel.x, panel.y, panel.w, panel.h, s, theme::TEXT_DISABLED);
+        stroke_rect(
+            Rect::new(panel.x, panel.y, panel.w, panel.h),
+            s,
+            theme::TEXT_DISABLED,
+        );
         let labels = ChartView::ALL.map(ChartView::label);
         let keys = crate::tabs::keys();
         let mouse: Vec2 = mouse_position().into();

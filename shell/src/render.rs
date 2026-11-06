@@ -577,6 +577,7 @@ pub(crate) fn draw_with_performance(
         draw_group_press_ring(input);
         draw_result_overlay(game);
         draw_panel_tooltip(game, input);
+        chrome::draw_army_tooltip(game, input, bindings);
     });
 }
 

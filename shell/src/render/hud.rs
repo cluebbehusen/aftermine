@@ -59,6 +59,7 @@ pub(crate) struct HudGeometry {
     pub(super) top_bar: Option<chrome::TopBarLayout>,
     pub(super) panel: Option<panel_draw::PanelLayout>,
     pub(super) group_column: Option<chrome::GroupColumnLayout>,
+    pub(super) army_strip: Option<chrome::ArmyStripLayout>,
     pub(super) ribbon: Option<chrome::RibbonLayout>,
     pub(super) queue_toggle: Option<Rect>,
     pub(super) performance: Option<performance::PerformanceLayout>,
@@ -106,12 +107,27 @@ pub(crate) fn layout(
         .map(|r| r.y)
         .fold(f32::INFINITY, f32::min);
     let panel_right = panel_regions.iter().map(|r| r.x + r.w).fold(0.0, f32::max);
+    // A spectator commands no army. The strip sits on the minimap and the
+    // group column on the strip.
+    let army_strip = (!game.presentation.spectating())
+        .then(|| chrome::army_strip_layout(game, minimap, env.ui))
+        .flatten();
+    let strip_plate = army_strip.as_ref().map(|strip| strip.strip.plate);
+    let right_dock = strip_plate.map_or(minimap, |plate| {
+        let x = minimap.x.min(plate.x);
+        Rect::new(
+            x,
+            plate.y,
+            minimap.x + minimap.w - x,
+            minimap.y + minimap.h - plate.y,
+        )
+    });
     let group_column = if game.presentation.spectating() {
         None
     } else {
-        chrome::group_column_layout(game, input, minimap, env.ui)
+        chrome::group_column_layout(game, input, right_dock, env.ui)
     };
-    let ribbon = chrome::ribbon_layout(game, input, &panel_regions, minimap, env, measure);
+    let ribbon = chrome::ribbon_layout(game, input, &panel_regions, right_dock, env, measure);
     let queue_toggle = chrome::queue_toggle_shown(game, input, crate::platform::TOUCH_ONLY)
         .then(|| chrome::queue_toggle_rect(env.viewport, env.ui, &panel_regions));
     let ghost_controls = crate::input::ghost_footprint(game, input).map(|footprint| {
@@ -120,6 +136,7 @@ pub(crate) fn layout(
             panel_regions[1],
             ribbon.as_ref().map_or(zero, |ribbon| ribbon.rect),
             minimap,
+            strip_plate.unwrap_or(zero),
             queue_toggle.unwrap_or(zero),
         ];
         crate::layout::ghost_controls(
@@ -163,6 +180,13 @@ pub(crate) fn layout(
             .map_or(zero, chrome::TopBarLayout::alert_badge),
         group_column: group_column.as_ref().map_or(zero, |column| column.plate),
         group_slots,
+        army_strip: strip_plate.unwrap_or(zero),
+        army_buttons: army_strip.as_ref().map_or([None; 2], |strip| {
+            [
+                Some((strip.strip.all, crate::layout::ArmyReach::All)),
+                Some((strip.strip.in_view, crate::layout::ArmyReach::InView)),
+            ]
+        }),
         menu_button: top_bar.as_ref().map_or(zero, |bar| bar.bar.menu_button),
         pause_status: top_bar.as_ref().map_or(zero, |bar| bar.bar.pause_status),
         mode_ribbon: ribbon.as_ref().map_or(zero, |ribbon| ribbon.rect),
@@ -194,6 +218,7 @@ pub(crate) fn layout(
             top_bar,
             panel: panel_layout,
             group_column,
+            army_strip,
             ribbon,
             queue_toggle,
             performance,

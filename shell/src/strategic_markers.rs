@@ -2,6 +2,7 @@
 
 use crate::game::Scene;
 use crate::numeric;
+use crate::render::prim::stroke_rect;
 use crate::render::prim::{fill_circle, stroke_circle};
 use aftermine_sim::Unit;
 use macroquad::prelude::*;
@@ -57,11 +58,8 @@ impl Pen {
 
     fn rect_lines(self, corner: (f32, f32), size: (f32, f32), thickness: f32, color: Color) {
         let corner = self.at(corner);
-        draw_rectangle_lines(
-            corner.x,
-            corner.y,
-            size.0 * self.scale,
-            size.1 * self.scale,
+        stroke_rect(
+            Rect::new(corner.x, corner.y, size.0 * self.scale, size.1 * self.scale),
             thickness * self.scale,
             color,
         );

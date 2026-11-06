@@ -276,3 +276,37 @@ fn a_packaged_copy_leaves_the_overlay_key_free() {
     assert!(!Action::ToggleOverlay.offered_in(true));
     assert!(Action::ToggleOverlay.offered_in(false));
 }
+
+#[test]
+fn ctrl_a_and_ctrl_s_select_the_army_while_bare_a_and_s_still_pan() {
+    let map = BindingMap::classic();
+    for context in [
+        Context::Empty,
+        Context::Units,
+        Context::Production,
+        Context::Construction,
+    ] {
+        assert_eq!(
+            map.resolve_in(Key::A, true, false, context),
+            Some(Action::SelectArmy)
+        );
+        assert_eq!(
+            map.resolve_in(Key::S, true, false, context),
+            Some(Action::SelectArmyInView)
+        );
+        assert_eq!(
+            map.resolve_in(Key::A, false, false, context),
+            Some(Action::PanLeft)
+        );
+    }
+    let left = BindingMap::left_handed();
+    assert!(left.valid());
+    assert_eq!(
+        left.chord_for(Action::SelectArmy),
+        Some(Chord::ctrl(Key::J))
+    );
+    assert_eq!(
+        left.chord_for(Action::SelectArmyInView),
+        Some(Chord::ctrl(Key::K))
+    );
+}

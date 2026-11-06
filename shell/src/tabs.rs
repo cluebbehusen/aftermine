@@ -5,14 +5,13 @@
 
 use crate::numeric;
 use crate::press::{Fed, Press};
+use crate::render::prim::stroke_rect;
 use crate::theme::{
     BORDER_STRONG, CARD_IDLE, MIN_TOUCH_TARGET, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY,
     TEXT_PRIMARY, TEXT_SECONDARY, Type,
 };
 use aftermine_protocol::RawEvent;
-use macroquad::prelude::{
-    Rect, Vec2, draw_rectangle, draw_rectangle_lines, draw_text, measure_text,
-};
+use macroquad::prelude::{Rect, Vec2, draw_rectangle, draw_text, measure_text};
 
 /// The keys that step tabs in menus now, while both have one.
 pub(crate) fn keys() -> Option<(String, String)> {
@@ -117,11 +116,8 @@ pub(crate) fn draw_in(
             rect.h,
             if current { CARD_IDLE } else { SURFACE_MENU },
         );
-        draw_rectangle_lines(
-            rect.x,
-            rect.y,
-            rect.w,
-            rect.h,
+        stroke_rect(
+            Rect::new(rect.x, rect.y, rect.w, rect.h),
             Stroke::Hairline.at(s),
             if current { TEXT_ACCENT } else { BORDER_STRONG },
         );

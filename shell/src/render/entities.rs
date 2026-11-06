@@ -106,11 +106,8 @@ pub(crate) fn draw_selected_pile(game: &crate::game::Scene<'_>) {
         .presentation
         .camera
         .to_screen(vec2(tile.x as f32, tile.y as f32));
-    draw_rectangle_lines(
-        screen.x - 2.0,
-        screen.y - 2.0,
-        zoom + 4.0,
-        zoom + 4.0,
+    stroke_rect(
+        Rect::new(screen.x - 2.0, screen.y - 2.0, zoom + 4.0, zoom + 4.0),
         3.0,
         BONE,
     );
@@ -1063,11 +1060,8 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             );
         }
         if game.presentation.selection.buildings.contains(&building.id) {
-            draw_rectangle_lines(
-                screen.x - 2.0,
-                screen.y - 2.0,
-                dest.x + 4.0,
-                dest.y + 4.0,
+            stroke_rect(
+                Rect::new(screen.x - 2.0, screen.y - 2.0, dest.x + 4.0, dest.y + 4.0),
                 3.0,
                 accent_tint,
             );
@@ -3474,7 +3468,7 @@ pub(crate) fn draw_touch_box(game: &crate::game::Scene<'_>, input: &InputState) 
 fn draw_selection_rect(game: &crate::game::Scene<'_>, corner: Vec2, other: Vec2, preview: bool) {
     let lo = corner.min(other);
     let size = (corner - other).abs();
-    draw_rectangle_lines(lo.x, lo.y, size.x, size.y, 1.5, BONE);
+    stroke_rect(Rect::new(lo.x, lo.y, size.x, size.y), 1.5, BONE);
     draw_rectangle(
         lo.x,
         lo.y,
