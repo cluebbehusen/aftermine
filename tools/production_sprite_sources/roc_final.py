@@ -71,6 +71,7 @@ PARK = (0.0, 0.0)
 
 GUN = 128
 DRONE = 32
+DRONE_DETAIL = 4
 FAN = 40
 CLAMP = 32
 FAN_FRAMES = 6
@@ -112,26 +113,32 @@ def point(a, b, u):
 
 
 class Draw:
-    def __init__(self, size: int = SIZE):
-        self.im = Image.new("RGBA", (size * SS, size * SS))
+    """A supersampled canvas `size` pixels square, finished at `detail`
+    output pixels per canvas pixel."""
+
+    def __init__(self, size: int = SIZE, detail: int = 1):
+        self.ss = SS * detail
+        self.im = Image.new("RGBA", (size * self.ss, size * self.ss))
         self.d = ImageDraw.Draw(self.im)
 
     def poly(self, pts, c):
-        self.d.polygon([(round(x * SS), round(y * SS)) for x, y in pts], fill=c)
+        self.d.polygon([(round(x * self.ss), round(y * self.ss)) for x, y in pts], fill=c)
 
     def line(self, pts, c, w=1):
         self.d.line(
-            [(round(x * SS), round(y * SS)) for x, y in pts],
+            [(round(x * self.ss), round(y * self.ss)) for x, y in pts],
             fill=c,
-            width=max(1, round(w * SS)),
+            width=max(1, round(w * self.ss)),
             joint="curve",
         )
 
     def box(self, b, c, r=0):
-        self.d.rounded_rectangle(tuple(round(v * SS) for v in b), radius=round(r * SS), fill=c)
+        self.d.rounded_rectangle(
+            tuple(round(v * self.ss) for v in b), radius=round(r * self.ss), fill=c
+        )
 
     def disk(self, x, y, r, c):
-        self.d.ellipse(tuple(round(v * SS) for v in (x - r, y - r, x + r, y + r)), fill=c)
+        self.d.ellipse(tuple(round(v * self.ss) for v in (x - r, y - r, x + r, y + r)), fill=c)
 
     def plate(self, b, c=DARK, cut=4):
         x, y, xx, yy = b
@@ -948,20 +955,23 @@ def render_gun_shadow() -> Image.Image:
 
 
 def render_drone(variant: str, rotor: int = 0) -> Image.Image:
-    d = Draw(DRONE)
+    """The whole drone, which only portraits and its break-up draw. A
+    portrait fills a unit's box, so the drone is drawn at a unit's 128px
+    rather than its flight layers' 32px."""
+    d = Draw(DRONE, DRONE_DETAIL)
     drone_frame(d, DRONE // 2, DRONE // 2, rotor, PAINT[variant])
     drone_body(d, DRONE // 2, DRONE // 2, PAINT[variant])
     return d.finish()
 
 
-def render_drone_frame(variant: str, rotor: int) -> Image.Image:
-    d = Draw(DRONE)
+def render_drone_frame(variant: str, rotor: int, detail: int = 1) -> Image.Image:
+    d = Draw(DRONE, detail)
     drone_frame(d, DRONE // 2, DRONE // 2, rotor, PAINT[variant])
     return d.finish()
 
 
-def render_drone_body(variant: str, firing: bool = False) -> Image.Image:
-    d = Draw(DRONE)
+def render_drone_body(variant: str, firing: bool = False, detail: int = 1) -> Image.Image:
+    d = Draw(DRONE, detail)
     drone_body(d, DRONE // 2, DRONE // 2, PAINT[variant], firing)
     return d.finish()
 
