@@ -1383,7 +1383,7 @@ impl Presentation {
                 }
                 Event::BuildingCompleted {
                     player, kind, tier, ..
-                } if *player == self.human => {
+                } if self.plays_as(*player) => {
                     // A completion at a nonzero tier is an upgrade
                     // finishing: its own cue, its own name.
                     if *tier > 0 {
@@ -1544,7 +1544,9 @@ impl Presentation {
                     }
                 }
                 Event::UnitTrained { unit, player, .. } if *player == self.human => {
-                    self.sounds_pending.push((SoundKind::TrainDone, None));
+                    if self.plays_as(*player) {
+                        self.sounds_pending.push((SoundKind::TrainDone, None));
+                    }
                     if let Some(u) = state.unit(*unit) {
                         self.fx.push(Effect {
                             kind: EffectKind::Ping {
@@ -1556,10 +1558,10 @@ impl Presentation {
                         });
                     }
                 }
-                Event::ScrapDeposited { player, .. } if *player == self.human => {
+                Event::ScrapDeposited { player, .. } if self.plays_as(*player) => {
                     self.sounds_pending.push((SoundKind::Deposit, None));
                 }
-                Event::CommandRejected { player, reason } if *player == self.human => {
+                Event::CommandRejected { player, reason } if self.plays_as(*player) => {
                     let why: std::borrow::Cow<'static, str> = match reason {
                         aftermine_sim::command::RejectReason::MissingFoundrySupport => {
                             crate::building_actions::foundry_reach_reason().into()
@@ -1836,15 +1838,12 @@ impl Presentation {
                         age: 0.0,
                     });
                 }
-                // A spectator inherits a nominal seat but owns no
-                // orders; a bot's private stall feedback must not read
-                // as "your order failed" in the replay viewer.
                 Event::OrderStalled {
                     unit,
                     player,
                     pos,
                     reason,
-                } if *player == self.human && !self.spectating() => {
+                } if self.plays_as(*player) => {
                     let scout = state
                         .unit(*unit)
                         .is_some_and(|unit| unit.kind.stats().scouts);

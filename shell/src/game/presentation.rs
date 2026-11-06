@@ -393,6 +393,14 @@ impl Presentation {
         self.stance == Stance::Spectator
     }
 
+    /// Whether `player` is the seat whose private feedback this picture
+    /// gives: the toasts and cues that answer its orders and production. A
+    /// spectator keeps a nominal seat for the view but plays as no one, so a
+    /// replay never answers one seat's orders as if they were the viewer's.
+    pub(crate) fn plays_as(&self, player: PlayerId) -> bool {
+        player == self.human && !self.spectating()
+    }
+
     /// The effect clock that aim holds and recoil age against.
     pub fn fx_time(&self) -> f32 {
         self.fx_clock
