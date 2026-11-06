@@ -64,15 +64,16 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      # The iPad build compiles the shell's touch-only branches for
-      # real; linting it keeps iOS-only code from rotting between device
-      # builds. The macOS runner's Xcode supplies the iOS SDK that the C
+      # The iPad build compiles the shell's touch-only branches and the
+      # iCloud crate's Foundation calls for real; linting them keeps
+      # iOS-only code from rotting between device builds. The macOS
+      # runner's Xcode supplies the iOS SDK that the C and Objective-C
       # dependencies compile against.
       - name: Clippy (iOS shell)
         if: runner.os == 'macOS'
         run: |
           rustup target add aarch64-apple-ios
-          cargo clippy -p aftermine-shell --target aarch64-apple-ios --locked -- -D warnings
+          cargo clippy -p aftermine-shell -p aftermine-icloud --target aarch64-apple-ios --locked -- -D warnings
 
       - name: Test
         run: cargo test --workspace --locked

@@ -119,6 +119,8 @@ struct App {
     persistence_result: Option<Result<persistence::Output>>,
     catalog_id: Option<u64>,
     catalog_delete: Option<std::path::PathBuf>,
+    /// When to scan again for records still downloading from iCloud.
+    catalog_rescan: Option<std::time::Duration>,
     /// Autosave slots of abandoned matches, deleted once no save can still
     /// be writing them.
     discarded: Vec<crate::autosave::SaveSlot>,
@@ -172,6 +174,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     // miniquad paces iOS at 60 fps unless asked for the display's full
     // rate, 120 Hz on ProMotion iPads. Other platforms ignore the request.
     macroquad::miniquad::window::set_preferred_frame_rate(None);
+    crate::paths::look_up_cloud();
     let review_font = std::env::var_os("AFTERMINE_REVIEW_FONT")
         .map(std::fs::read)
         .transpose()
@@ -363,6 +366,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         persistence_result: None,
         catalog_id: None,
         catalog_delete: None,
+        catalog_rescan: None,
         discarded: Vec::new(),
         performance: crate::performance::Performance::default(),
         live_streak: 0,

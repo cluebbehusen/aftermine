@@ -1,0 +1,30 @@
+[package]
+name = "aftermine-icloud"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "iCloud Drive folder lookup, file coordination and downloads for Apple builds"
+
+[build-dependencies]
+cc = "1"
+
+# The workspace table forbids unsafe code, which no crate can then allow, and
+# Cargo refuses a member's additions to an inherited table. This crate calls
+# into Foundation, so it repeats the table with unsafe code denied instead and
+# allows it in the one module that holds the calls.
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+cast_precision_loss = "allow"
+assert_is_empty = "allow"
+match_same_arms = "allow"
+float_cmp = "allow"
+many_single_char_names = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+similar_names = "allow"

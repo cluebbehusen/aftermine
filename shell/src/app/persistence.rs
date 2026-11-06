@@ -32,14 +32,19 @@ struct Work {
     cancel: Cancellation,
     task: Task,
 }
+/// How long the shelf waits before looking again for records still
+/// downloading from iCloud.
+const RESCAN: std::time::Duration = std::time::Duration::from_secs(2);
+
 pub(super) enum Output {
-    Catalog(Vec<crate::saves::ReplayEntry>),
+    Catalog(crate::saves::Catalog),
     Loaded(Box<crate::game::checkpoint::RestoredGame>),
     /// A saved LAN match, for Match Setup to resume with its players.
     LanSave(Box<crate::game::checkpoint::LanSave>),
     /// A save finished; an unnamed one names the slot and content it wrote.
     Saved(Option<autosave::SaveMark>),
     Retired,
+    Discarded,
 }
 
 pub(super) struct Worker {
@@ -203,11 +208,15 @@ impl App {
     }
 
     pub(super) fn poll_persistence(&mut self, screen: &mut Screen) {
-        autosave::discard_when_idle(
-            &mut self.discarded,
-            self.persistence.busy(),
-            crate::paths::autosave_dir().as_deref(),
-        );
+        if !self.discarded.is_empty() && !self.persistence.busy() {
+            let slots = std::mem::take(&mut self.discarded);
+            if let Err(error) = self.persistence.start(Box::new(move |_| {
+                autosave::discard(&slots);
+                Ok(Output::Discarded)
+            })) {
+                eprintln!("Discarding abandoned autosaves failed: {error:#}");
+            }
+        }
         if self.catalog_delete.is_some() && !self.persistence.busy() {
             self.request_catalog();
         }
@@ -243,12 +252,21 @@ impl App {
             if let Err(error) = &result {
                 self.notify_failure("Could not read saves", format_args!("{error:#}"));
             }
-            if let Ok(Output::Catalog(entries)) = result {
+            if let Ok(Output::Catalog(catalog)) = result {
+                self.catalog_rescan =
+                    (catalog.downloading > 0).then(|| self.clock.elapsed() + RESCAN);
                 match screen {
                     Screen::Home(home) => {
-                        home.set_catalog(crate::saves::continuable(&entries).next().is_some());
+                        // A rescan that changes nothing leaves the menu,
+                        // and any press on it, alone.
+                        let resumable = catalog.continuable().next().is_some();
+                        if !home.catalog_ready || home.resumable() != resumable {
+                            home.set_catalog(resumable);
+                        }
                     }
-                    Screen::Replays(shelf) => shelf.set_catalog(entries),
+                    Screen::Replays(shelf) => {
+                        shelf.set_catalog(catalog.entries, catalog.downloading);
+                    }
                     _ => {}
                 }
             }
@@ -374,16 +392,28 @@ impl App {
         let delete = self.catalog_delete.take();
         let task: Task = Box::new(move |cancel| {
             if let Some(path) = delete {
-                std::fs::remove_file(path)?;
+                aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Delete, || {
+                    std::fs::remove_file(&path)
+                })??;
             }
-            let entries = crate::saves::discover(|| cancel.cancelled());
+            let catalog = crate::saves::discover(|| cancel.cancelled());
             anyhow::ensure!(!cancel.cancelled(), "catalog cancelled");
-            Ok(Output::Catalog(entries))
+            Ok(Output::Catalog(catalog))
         });
         match self.persistence.start(task) {
-            Ok(id) => self.catalog_id = Some(id),
+            Ok(id) => {
+                self.catalog_id = Some(id);
+                self.catalog_rescan = None;
+            }
             Err(error) => self.notify(error.to_string(), true),
         }
+    }
+
+    /// Whether records were still downloading from iCloud at the last scan,
+    /// long enough ago to look again.
+    pub(super) fn catalog_rescan_due(&self) -> bool {
+        self.catalog_rescan
+            .is_some_and(|at| self.clock.elapsed() >= at)
     }
 }
 
@@ -391,7 +421,14 @@ fn load_candidates(paths: Vec<PathBuf>, cancel: &Cancellation) -> Result<Output>
     let mut last_error = anyhow::anyhow!("no loadable save is available");
     for path in paths {
         anyhow::ensure!(!cancel.cancelled(), "load cancelled");
-        match crate::saved_game::prepare(&path) {
+        // A coordinated read waits for a file still downloading, or for a
+        // newer copy another device is replacing it with.
+        let prepared = aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Read, || {
+            crate::saved_game::prepare(&path)
+        })
+        .map_err(anyhow::Error::from)
+        .and_then(|prepared| prepared);
+        match prepared {
             Ok(crate::saved_game::Loaded::Local(loaded)) => {
                 cancel.commit()?;
                 return Ok(Output::Loaded(loaded));
@@ -550,7 +587,7 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                 }
                 return Ok(*busy.back);
             }
-            Ok(Output::Catalog(_) | Output::Retired) => unreachable!(),
+            Ok(Output::Catalog(_) | Output::Retired | Output::Discarded) => unreachable!(),
         }
     }
     if !busy.presented {

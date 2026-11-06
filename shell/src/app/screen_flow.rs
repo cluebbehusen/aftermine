@@ -511,7 +511,7 @@ fn cold_open_frame(
 }
 
 fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32) -> Screen {
-    if !home.catalog_ready {
+    if !home.catalog_ready || app.catalog_rescan_due() {
         app.request_catalog();
     }
     offer_rejoin(app, &mut home);
@@ -1220,7 +1220,7 @@ fn results_frame(
 }
 
 fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &mut bool) -> Screen {
-    if !shelf.catalog_ready {
+    if !shelf.catalog_ready || app.catalog_rescan_due() {
         app.request_catalog();
     }
     let mut leave: Option<Screen> = None;

@@ -193,10 +193,12 @@ impl SaveSlot {
         Self(last.to_string())
     }
 
-    /// The slot of the autosave at `path` when it lies in `autosaves`, so a
-    /// continued match keeps overwriting the file it came from.
-    pub(crate) fn adopt(path: &Path, autosaves: &Path) -> Option<Self> {
-        if path.parent() != Some(autosaves) {
+    /// The slot of the autosave at `path` when it lies in one of the
+    /// `autosaves` folders, so a continued match keeps its slot and replaces
+    /// the file it came from.
+    pub(crate) fn adopt(path: &Path, autosaves: &[PathBuf]) -> Option<Self> {
+        let folder = path.parent()?;
+        if !autosaves.iter().any(|autosaves| autosaves == folder) {
             return None;
         }
         let name = path.file_name()?.to_str()?;
@@ -220,28 +222,38 @@ impl SaveSlot {
     /// Removes this slot's autosaves in `dir` other than `kept`.
     fn clear_autosaves(&self, dir: &Path, kept: &str) {
         for kind in AUTOSAVE_KINDS.into_iter().filter(|kind| *kind != kept) {
-            std::fs::remove_file(dir.join(self.file(kind))).ok();
+            remove(&dir.join(self.file(kind)));
         }
     }
 
     /// Removes this slot's autosaves from `dir`, for a match its player
-    /// abandoned.
+    /// abandoned or one whose autosave moved to another folder.
     fn discard(&self, dir: &Path) {
         self.clear_autosaves(dir, "");
     }
 }
 
-/// Deletes the autosaves of abandoned matches once the save worker is idle,
-/// so a save still in flight cannot write a slot back after its deletion.
-pub(crate) fn discard_when_idle(slots: &mut Vec<SaveSlot>, busy: bool, dir: Option<&Path>) {
-    if busy || slots.is_empty() {
-        return;
-    }
-    for slot in slots.drain(..) {
-        if let Some(dir) = dir {
-            slot.discard(dir);
+/// Deletes the autosaves of abandoned matches. The save worker runs it, so
+/// a save still in flight cannot write a slot back after its deletion.
+pub(crate) fn discard(slots: &[SaveSlot]) {
+    discard_in(slots, &crate::paths::records().autosave_folders());
+}
+
+fn discard_in(slots: &[SaveSlot], folders: &[PathBuf]) {
+    for folder in folders {
+        for slot in slots {
+            slot.discard(folder);
         }
     }
+}
+
+/// Removes a record while iCloud holds off syncing it; a missing file is
+/// already gone.
+pub(crate) fn remove(path: &Path) {
+    aftermine_icloud::coordinate(path, aftermine_icloud::Access::Delete, || {
+        std::fs::remove_file(path)
+    })
+    .ok();
 }
 
 /// What a save of a session holds: ticks only advance, and staged orders
@@ -305,16 +317,15 @@ fn rotate_prefix(dir: &Path, prefix: &str, keep: usize) {
         )
     });
     while files.len() > keep {
-        let oldest = files.remove(0);
-        std::fs::remove_file(oldest).ok();
+        remove(&files.remove(0));
     }
 }
 
 /// Header-eligible autosaves Continue may resume, newest first. Loading
 /// must still validate the payload.
 pub(crate) fn candidates() -> Vec<PathBuf> {
-    let entries = crate::saves::discover(|| false);
-    crate::saves::continuable(&entries)
+    crate::saves::discover(|| false)
+        .continuable()
         .map(|entry| entry.path.clone())
         .collect()
 }
@@ -331,12 +342,23 @@ pub(crate) enum SaveData {
     ),
 }
 
+/// The folder a save lands in, resolved when it runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Folder {
+    Saves,
+    Matches,
+    Autosaves,
+}
+
+/// Writes `path` whole while iCloud holds off syncing it.
+fn replace(path: &Path, write: impl FnOnce(&Path) -> anyhow::Result<()>) -> anyhow::Result<()> {
+    aftermine_icloud::coordinate(path, aftermine_icloud::Access::Replace, || write(path))?
+}
+
 pub(crate) struct SaveJob {
     data: Option<SaveData>,
     meta: chassis::replay::ReplayMeta,
-    dir: Option<PathBuf>,
-    /// Where the match's autosaves live, which an unnamed save replaces.
-    autosaves: Option<PathBuf>,
+    folder: Folder,
     /// Where an unnamed save lands and what it holds; a named save gets a
     /// fresh file in the saves folder instead.
     mark: Option<SaveMark>,
@@ -395,14 +417,13 @@ impl SaveJob {
         Self {
             data,
             meta,
-            dir: if named {
-                crate::paths::saves_dir()
+            folder: if named {
+                Folder::Saves
             } else if recording {
-                crate::paths::matches_dir()
+                Folder::Matches
             } else {
-                crate::paths::autosave_dir()
+                Folder::Autosaves
             },
-            autosaves: crate::paths::autosave_dir(),
             mark: (!named).then(|| SaveMark {
                 slot: game.slot.clone(),
                 key: game.save_key(),
@@ -427,12 +448,11 @@ impl SaveJob {
         Self {
             data: Some(SaveData::Checkpoint(capture)),
             meta,
-            dir: if named {
-                crate::paths::saves_dir()
+            folder: if named {
+                Folder::Saves
             } else {
-                crate::paths::autosave_dir()
+                Folder::Autosaves
             },
-            autosaves: crate::paths::autosave_dir(),
             mark: (!named).then(|| SaveMark {
                 slot: game.slot.clone(),
                 key: game.save_key(),
@@ -446,9 +466,23 @@ impl SaveJob {
         self.mark.clone()
     }
 
+    /// Writes the record. Where it lands may wait on the first iCloud
+    /// lookup, so the save worker runs this.
     pub(crate) fn run(self) -> Result<SaveOutcome, SaveError> {
+        let records = crate::paths::records();
+        let dir = match self.folder {
+            Folder::Saves => records.saves(),
+            Folder::Matches => records.matches(),
+            Folder::Autosaves => records.autosaves(),
+        };
+        self.run_in(dir, &records.autosave_folders())
+    }
+
+    /// Writes the record into `dir`, replacing the match's autosaves in
+    /// every `autosaves` folder.
+    fn run_in(self, dir: Option<PathBuf>, autosaves: &[PathBuf]) -> Result<SaveOutcome, SaveError> {
         let outcome = if let Some(data) = self.data {
-            let dir = self.dir.ok_or(SaveError::NoDataDir)?;
+            let dir = dir.ok_or(SaveError::NoDataDir)?;
             std::fs::create_dir_all(&dir).map_err(|source| SaveError::CreateDir {
                 path: dir.clone(),
                 source,
@@ -469,18 +503,22 @@ impl SaveJob {
             };
             let path = if let Some(mark) = &self.mark {
                 let path = dir.join(mark.slot.file(kind));
-                write(&path).map_err(|source| SaveError::Write {
+                replace(&path, write).map_err(|source| SaveError::Write {
                     path: path.clone(),
                     source,
                 })?;
-                if let Some(autosaves) = &self.autosaves {
-                    mark.slot.clear_autosaves(autosaves, kind);
+                for folder in autosaves {
+                    if *folder == dir {
+                        mark.slot.clear_autosaves(folder, kind);
+                    } else {
+                        mark.slot.discard(folder);
+                    }
                 }
                 rotate(&dir);
                 path
             } else {
                 free_path(&dir, kind, self.meta.ticks.unwrap())?
-                    .publish(write)
+                    .publish(|path| replace(path, write))
                     .map_err(|(path, source)| SaveError::Write { path, source })?
             };
             SaveOutcome::Wrote(path)

@@ -87,6 +87,10 @@ cp ios/Local.xcconfig.example ios/Local.xcconfig   # set DEVELOPMENT_TEAM
 cargo ios
 ```
 
+The app keeps saves in iCloud Drive, so the app ID needs the iCloud capability
+with the container `iCloud.<bundle ID>`. Signing with your own team means
+registering that container for your bundle ID in the developer portal.
+
 `cargo ios` builds the Release app, installs it and launches it on a paired iPad
 or a simulator. With several devices it asks which one; `--device <name or id>`
 skips the question and `--list` prints the devices. A locked iPad still gets the
@@ -112,8 +116,12 @@ sandbox-matches skill shows how to build a scene.
 A match autosaves every minute, when the window goes inactive, and when the
 player leaves or quits. Each match keeps one autosave, which its replay replaces
 once the match is decided. Continue resumes the newest autosave since the last
-finished match; older ones stay on the Replays shelf. On iPad, saves, replays
-and diagnostics appear in the Files app under On My iPad > Aftermine.
+finished match; older ones stay on the Replays shelf. With iCloud Drive on, an
+iPad keeps saves, autosaves and replays in the Aftermine folder in iCloud Drive,
+which the Files app shows; otherwise they appear under On My iPad > Aftermine.
+Diagnostics always stay under On My iPad. A Mac uses iCloud Drive only from a
+signed build, so `cargo run` and today's packaged app keep everything on the
+Mac.
 
 Crash and freeze diagnostics are always on and write only when a panic, stall or
 fatal error happens. A panic during a tick also leaves a crash dump with the

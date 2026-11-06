@@ -1,7 +1,7 @@
 //! One owner for every directory Aftermine writes: the per-OS config and
-//! data roots plus the derived subdirectories the persistence sites
-//! share. Path policy lives here so no feature needs its own `#[cfg]`
-//! block.
+//! data roots, the iCloud Drive folder, and the derived subdirectories the
+//! persistence sites share. Path policy lives here so no feature needs its
+//! own `#[cfg]` block.
 
 use std::path::{Path, PathBuf};
 
@@ -47,10 +47,10 @@ pub fn data_dir() -> Option<PathBuf> {
     }
 }
 
-/// Root of the files a player keeps, sends or adds: named saves,
-/// finished-match records, replays and diagnostics. On iOS that is the
-/// app's Documents folder, the one the Files app shows; elsewhere it is
-/// the data root.
+/// Root of the files a player keeps on this device: diagnostics, and the
+/// records iCloud does not keep. On iOS that is the app's Documents
+/// folder, which the Files app shows under On My iPad; elsewhere it is the
+/// data root.
 fn player_files_dir() -> Option<PathBuf> {
     #[cfg(target_os = "ios")]
     {
@@ -67,40 +67,239 @@ pub fn rejoin_ticket() -> Option<PathBuf> {
     data_dir().map(|d| d.join("rejoin.json"))
 }
 
-/// Where autosave rotation lives; Continue resumes from here.
-pub fn autosave_dir() -> Option<PathBuf> {
-    data_dir().map(|d| d.join("autosaves"))
-}
-
-/// Crash and freeze incident logs and exported diagnostic reports.
+/// Crash and freeze incident logs and exported diagnostic reports, which
+/// stay on the device that wrote them.
 pub fn diagnostics_dir() -> Option<PathBuf> {
     player_files_dir().map(|directory| directory.join("diagnostics"))
 }
 
-/// Explicit, player-initiated saves. Autosave rotation never touches
-/// this directory — a save the player asked for is deleted only by
-/// the player.
-pub fn saves_dir() -> Option<PathBuf> {
-    player_files_dir().map(|d| d.join("saves"))
+/// Where each kind of record lives under one root.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Folders {
+    autosaves: Option<PathBuf>,
+    matches: Option<PathBuf>,
+    saves: Option<PathBuf>,
+    replays: PathBuf,
 }
 
-/// Finished-match recordings, kept apart from the autosaves they
-/// replace so a player can find and share them.
-pub fn matches_dir() -> Option<PathBuf> {
-    player_files_dir().map(|d| d.join("matches"))
-}
-
-/// Where local replays are browsed. A packaged bundle's cwd is not a
-/// usable root (typically `/`), so a bundled shell resolves against
-/// the player files root; a workspace run keeps the documented
-/// cwd-relative `replays/`.
-pub fn replays_dir() -> PathBuf {
-    if bundled()
-        && let Some(dir) = player_files_dir()
-    {
-        return dir.join("replays");
+impl Folders {
+    /// Every record folder under `root`, as iCloud keeps them.
+    fn under(root: &Path) -> Self {
+        Self {
+            autosaves: Some(root.join("autosaves")),
+            matches: Some(root.join("matches")),
+            saves: Some(root.join("saves")),
+            replays: root.join("replays"),
+        }
     }
-    PathBuf::from("replays")
+
+    /// This device's folders. Autosaves stay out of the player's sight;
+    /// a packaged bundle's cwd is not a usable root (typically `/`), so it
+    /// keeps replays with the player's files, while a workspace run keeps
+    /// the documented cwd-relative `replays/`.
+    fn local() -> Self {
+        let player = player_files_dir();
+        Self {
+            autosaves: data_dir().map(|d| d.join("autosaves")),
+            matches: player.as_ref().map(|d| d.join("matches")),
+            saves: player.as_ref().map(|d| d.join("saves")),
+            replays: player
+                .filter(|_| bundled())
+                .map_or_else(|| PathBuf::from("replays"), |d| d.join("replays")),
+        }
+    }
+
+    fn all(&self) -> impl Iterator<Item = PathBuf> {
+        [
+            self.autosaves.clone(),
+            self.matches.clone(),
+            self.saves.clone(),
+            Some(self.replays.clone()),
+        ]
+        .into_iter()
+        .flatten()
+    }
+}
+
+/// Where records go and where the shelf finds them: the iCloud Drive
+/// folder when iCloud keeps them, this device's folders otherwise.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Records {
+    cloud: Option<Folders>,
+    local: Folders,
+}
+
+impl Records {
+    /// Records in iCloud Drive under `documents`, if it is available.
+    fn with_cloud(documents: Option<&Path>, local: Folders) -> Self {
+        Self {
+            cloud: documents.map(Folders::under),
+            local,
+        }
+    }
+
+    fn writing(&self) -> &Folders {
+        self.cloud.as_ref().unwrap_or(&self.local)
+    }
+
+    /// Where the autosave rotation lives; Continue resumes from here.
+    pub fn autosaves(&self) -> Option<PathBuf> {
+        self.writing().autosaves.clone()
+    }
+
+    /// Every folder that may hold a match's autosave: the rotation's, then,
+    /// with iCloud on, this device's, where a session left before iCloud
+    /// was on still waits.
+    pub fn autosave_folders(&self) -> Vec<PathBuf> {
+        self.cloud
+            .iter()
+            .chain([&self.local])
+            .filter_map(|folders| folders.autosaves.clone())
+            .collect()
+    }
+
+    /// Finished-match recordings, kept apart from the autosaves they
+    /// replace so a player can find and share them.
+    pub fn matches(&self) -> Option<PathBuf> {
+        self.writing().matches.clone()
+    }
+
+    /// Explicit, player-initiated saves. Autosave rotation never touches
+    /// this folder: a save the player asked for is deleted only by the
+    /// player.
+    pub fn saves(&self) -> Option<PathBuf> {
+        self.writing().saves.clone()
+    }
+
+    /// Every folder the shelf lists. With iCloud on, this device's folders
+    /// follow iCloud's, so records kept before iCloud was on stay in reach.
+    pub fn listed(&self) -> Vec<PathBuf> {
+        self.cloud
+            .iter()
+            .chain([&self.local])
+            .flat_map(Folders::all)
+            .collect()
+    }
+
+    /// The folders whose finished matches withdraw older sessions from
+    /// Continue.
+    pub fn match_folders(&self) -> Vec<PathBuf> {
+        self.cloud
+            .iter()
+            .chain([&self.local])
+            .filter_map(|folders| folders.matches.clone())
+            .collect()
+    }
+
+    /// The folders iCloud keeps, which may hold files not on this device
+    /// yet.
+    pub fn cloud_folders(&self) -> Vec<PathBuf> {
+        self.cloud.iter().flat_map(Folders::all).collect()
+    }
+}
+
+/// Where records live now. The first iCloud lookup may still be running,
+/// and this waits for it, so only worker threads call it.
+pub fn records() -> Records {
+    Records::with_cloud(CLOUD.answer().as_deref(), Folders::local())
+}
+
+/// Looks up the iCloud Drive folder on a background thread, since iCloud
+/// can take seconds to answer. The app calls this at launch and whenever
+/// it returns to the foreground, where the player may have signed out or
+/// switched iCloud Drive off meanwhile. Only a packaged copy looks, so a
+/// workspace run never touches iCloud.
+pub fn look_up_cloud() {
+    if bundled() {
+        CLOUD.start(aftermine_icloud::documents);
+    }
+}
+
+static CLOUD: Lookup = Lookup::new();
+
+/// The iCloud Drive folder as last looked up.
+struct Lookup {
+    state: std::sync::Mutex<LookupState>,
+    answered: std::sync::Condvar,
+}
+
+struct LookupState {
+    /// Whether a lookup has finished yet.
+    answered: bool,
+    /// The newest answer.
+    folder: Option<PathBuf>,
+    looking: bool,
+}
+
+impl Lookup {
+    const fn new() -> Self {
+        Self {
+            state: std::sync::Mutex::new(LookupState {
+                answered: false,
+                folder: None,
+                looking: false,
+            }),
+            answered: std::sync::Condvar::new(),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, LookupState> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Starts `find` on its own thread unless a lookup is already running.
+    /// Earlier answers stand until it finishes.
+    fn start(&'static self, find: fn() -> Option<PathBuf>) {
+        {
+            let mut state = self.lock();
+            if state.looking {
+                return;
+            }
+            state.looking = true;
+        }
+        let spawned = std::thread::Builder::new()
+            .name("icloud-lookup".into())
+            .spawn(move || match std::panic::catch_unwind(find) {
+                Ok(found) => self.finish(found),
+                Err(_) => self.give_up(),
+            });
+        if spawned.is_err() {
+            self.give_up();
+        }
+    }
+
+    /// Ends a lookup with the folder it `found`.
+    fn finish(&self, found: Option<PathBuf>) {
+        let mut state = self.lock();
+        state.folder = found;
+        state.answered = true;
+        state.looking = false;
+        self.answered.notify_all();
+    }
+
+    /// Ends a lookup that could not answer, leaving the earlier answer
+    /// standing, or no folder at all.
+    fn give_up(&self) {
+        let mut state = self.lock();
+        state.answered = true;
+        state.looking = false;
+        self.answered.notify_all();
+    }
+
+    /// The iCloud Drive folder, waiting out a first lookup still running.
+    /// Without a lookup, there is none.
+    fn answer(&self) -> Option<PathBuf> {
+        let mut state = self.lock();
+        while !state.answered && state.looking {
+            state = self
+                .answered
+                .wait(state)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+        state.folder.clone()
+    }
 }
 
 /// Whether this executable runs from a packaged bundle: the copy
