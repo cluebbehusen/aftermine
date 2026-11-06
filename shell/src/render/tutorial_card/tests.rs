@@ -19,6 +19,7 @@ fn env(w: f32) -> HudEnv {
 const MOUSE: Hands = Hands {
     pointer: Pointer::Mouse,
     keys: true,
+    pad: None,
 };
 
 fn lesson(lesson: Lesson, at: usize) -> Tutorial {

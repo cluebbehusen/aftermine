@@ -5,7 +5,7 @@
 //! resumable state on the host machine.
 
 use crate::client::Client;
-use aftermine_protocol::{Key, RawEvent, Request, UiView};
+use aftermine_protocol::{Key, PadButton, PadFamily, RawEvent, Request, UiView};
 use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -179,6 +179,38 @@ pub fn press_key(client: &mut Client, key: Key) -> Result<()> {
     inject(client, RawEvent::KeyUp { key })
 }
 
+/// The pad id scripted controller input uses.
+pub const INJECTED_PAD: u64 = 0;
+
+/// Announces the scripted controller, as hardware does before any press.
+pub fn connect_pad(client: &mut Client, family: PadFamily) -> Result<()> {
+    inject(
+        client,
+        RawEvent::PadConnected {
+            pad: INJECTED_PAD,
+            family,
+        },
+    )
+}
+
+/// A full controller button press: down then up.
+pub fn press_pad(client: &mut Client, button: PadButton) -> Result<()> {
+    inject(
+        client,
+        RawEvent::PadDown {
+            pad: INJECTED_PAD,
+            button,
+        },
+    )?;
+    inject(
+        client,
+        RawEvent::PadUp {
+            pad: INJECTED_PAD,
+            button,
+        },
+    )
+}
+
 /// A walk of the cursor to a labeled row, steered by where each key
 /// press lands rather than by index arithmetic: menus wrap, skip section
 /// headings, and grids move by rows, so only the shell knows where a press
@@ -250,19 +282,7 @@ impl Walk {
 /// Moves the cursor with keyboard navigation to the row whose label
 /// contains `needle` (case-insensitive), without activating it.
 pub fn select_labeled(client: &mut Client, needle: &str) -> Result<()> {
-    let view = ui(client)?;
-    let mut walk = Walk::to_label(&view, needle)?;
-    let mut selected = view.selected.unwrap_or(0);
-    loop {
-        match walk.next(selected) {
-            Stride::Press(key) => {
-                press_key(client, key)?;
-                selected = ui(client)?.selected.unwrap_or(0);
-            }
-            Stride::Arrived => return Ok(()),
-            Stride::Stuck => bail!("the cursor never reached '{needle}' in {:?}", view.items),
-        }
-    }
+    walk_to_label(client, needle, press_key)
 }
 
 /// Selects the row whose label contains `needle` (case-insensitive)
@@ -270,6 +290,40 @@ pub fn select_labeled(client: &mut Client, needle: &str) -> Result<()> {
 pub fn activate_labeled(client: &mut Client, needle: &str) -> Result<()> {
     select_labeled(client, needle)?;
     press_key(client, Key::Enter)
+}
+
+/// Like [`activate_labeled`], but on the scripted controller: the D-pad
+/// walks and the bottom face button confirms.
+pub fn activate_labeled_by_pad(client: &mut Client, needle: &str) -> Result<()> {
+    walk_to_label(client, needle, |client, key| {
+        let button = match key {
+            Key::Down => PadButton::DpadDown,
+            Key::Right => PadButton::DpadRight,
+            other => bail!("a walk never presses {other:?}"),
+        };
+        press_pad(client, button)
+    })?;
+    press_pad(client, PadButton::South)
+}
+
+fn walk_to_label(
+    client: &mut Client,
+    needle: &str,
+    mut press: impl FnMut(&mut Client, Key) -> Result<()>,
+) -> Result<()> {
+    let view = ui(client)?;
+    let mut walk = Walk::to_label(&view, needle)?;
+    let mut selected = view.selected.unwrap_or(0);
+    loop {
+        match walk.next(selected) {
+            Stride::Press(key) => {
+                press(client, key)?;
+                selected = ui(client)?.selected.unwrap_or(0);
+            }
+            Stride::Arrived => return Ok(()),
+            Stride::Stuck => bail!("the cursor never reached '{needle}' in {:?}", view.items),
+        }
+    }
 }
 
 /// Steps a tabbed screen (Settings, the saves and replays shelf) with

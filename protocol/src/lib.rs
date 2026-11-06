@@ -8,7 +8,7 @@ pub mod view;
 use aftermine_sim::{Command, Event, PlayerId};
 use serde::{Deserialize, Serialize};
 
-pub use input::{Key, MouseButton, RawEvent};
+pub use input::{Key, MouseButton, PadButton, PadFamily, RawEvent, Stick};
 pub use session::{DebugSession, check_speed, dispatch_shared};
 pub use view::{
     BuildingView, CameraView, FogView, GhostView, PlayerView, RememberedTileView, StateFilter,

@@ -53,3 +53,29 @@ fn kinds_parse_by_sim_name_across_separator_styles() {
     let error = parse_unit_kind("sentinal").unwrap_err().to_string();
     assert!(error.contains("sentinel"), "{error}");
 }
+
+#[test]
+fn pad_names_parse_as_the_wire_spells_them_forgiving_case_and_hyphens() {
+    use aftermine_protocol::{PadButton, PadFamily, Stick};
+    assert_eq!(
+        parse_wire_name::<PadButton>("dpad-up", "pad button").unwrap(),
+        PadButton::DpadUp
+    );
+    assert_eq!(
+        parse_wire_name::<PadButton>("RIGHT_TRIGGER", "pad button").unwrap(),
+        PadButton::RightTrigger
+    );
+    assert_eq!(
+        parse_wire_name::<PadFamily>("PlayStation", "pad family").unwrap(),
+        PadFamily::PlayStation
+    );
+    assert_eq!(
+        parse_wire_name::<Stick>(" left ", "stick").unwrap(),
+        Stick::Left
+    );
+    let label = parse_wire_name::<PadButton>("a", "pad button").unwrap_err();
+    assert!(
+        label.to_string().contains("south"),
+        "a label, not a position, fails and lists the positions: {label}"
+    );
+}

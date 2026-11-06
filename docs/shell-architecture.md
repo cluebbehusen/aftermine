@@ -150,15 +150,24 @@ injected input, so both take the same path. `input::apply_events` turns gameplay
 events into camera and selection changes and staged commands. Cross-frame
 gestures, held keys, touch state and control groups belong to the input layer.
 Key bindings belong to the configuration alone; everything else borrows
-`Config::bindings`. `ActionResolver` pairs each release with its original press,
-so modifier changes cannot strand a held action. Keyboard card actions use the
-same availability checks as clicks. The debug protocol's `SendCommand` stages an
-already-semantic command and does not exercise UI mapping.
+`Config::bindings`. Controller buttons reach menus as the same canonical menu
+keys through a fixed layout by position that no binding changes, text fields
+included. Only a chord capture for a binding takes them raw: keys alone bind,
+and a controller press cancels. `ActionResolver` pairs each release with its
+original press, so modifier changes cannot strand a held action. Keyboard card
+actions use the same availability checks as clicks. The debug protocol's
+`SendCommand` stages an already-semantic command and does not exercise UI
+mapping.
 
 Coordinates are logical throughout input and layout; the hardware adapter
 applies DPI conversion once. Touches arrive in the same ordered stream as mouse
 events. A finger iOS takes away arrives as `TouchCancel` and completes no tap,
 long-press, box or card press.
+
+Game controllers have one adapter too. Each platform's pad API reports to `pad`,
+which applies stick dead zones, sends a stick only when it moves, and releases a
+pad's held buttons before it disconnects. Pad buttons are named by position, and
+injected pad events skip the adapter.
 
 The HUD lays out in a pure pass (`render::hud`) that measures text through a
 supplied function, so it runs headless. Each frame lays it out before input,
@@ -208,9 +217,10 @@ ribbon already names.
 `platform::TOUCH_ONLY` is true on iOS. Platform facts branch on the constant and
 pure helpers take it as a parameter, so both variants compile and test on every
 platform. Copy follows the hands in use instead: each frame publishes the last
-pointer and whether a hardware key has been pressed as `platform::Hands`, and
-hints name keys only once one has. Every screen offers a pointer path for what
-Escape does.
+pointer, whether a hardware key has been pressed, and the controller pressed
+since the last key or pointer as `platform::Hands`. Hints name keys only once
+one has been pressed, and name a controller's buttons while it is in use. Every
+screen offers a pointer path for what Escape does.
 
 Each finger records where it landed, and that decides what it may drive for its
 whole life. `InputState::queue_held` merges Shift with the QUEUE toggle. Touch

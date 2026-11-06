@@ -12,11 +12,11 @@
 //! has exited, so even autosave-producing walks cannot touch real data.
 
 use aftermine_driver::auto::{
-    ShellGuard, SpawnOptions, activate_labeled, assert_mode, inject, press_key, select_labeled,
-    select_tab, spawn_shell, ui, wait_for_mode,
+    ShellGuard, SpawnOptions, activate_labeled, activate_labeled_by_pad, assert_mode, connect_pad,
+    inject, press_key, press_pad, select_labeled, select_tab, spawn_shell, ui, wait_for_mode,
 };
 use aftermine_driver::client::Client;
-use aftermine_protocol::{Key, MouseButton, RawEvent, Request};
+use aftermine_protocol::{Key, MouseButton, PadButton, PadFamily, RawEvent, Request};
 use anyhow::{Result, bail};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -308,6 +308,43 @@ fn every_screen_transition_answers_the_walk() -> Result<()> {
         &["saving"],
         "pause > Main Menu confirmed",
     )?;
+    Ok(())
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_controller_walks_the_menus_through_the_same_funnel() -> Result<()> {
+    // Injected pad events take the path hardware pads take: the D-pad
+    // moves the cursor, the bottom face button confirms, and the right one
+    // goes back, on screens that read only canonical menu keys.
+    let (_guard, mut client) = spawn(4145)?;
+    assert_mode(&mut client, "home", "boot")?;
+    connect_pad(&mut client, PadFamily::PlayStation)?;
+    let before = ui(&mut client)?.selected;
+    press_pad(&mut client, PadButton::DpadDown)?;
+    assert_ne!(
+        ui(&mut client)?.selected,
+        before,
+        "the D-pad moves the cursor"
+    );
+    press_pad(&mut client, PadButton::North)?;
+    assert_mode(&mut client, "home", "a button with no menu role")?;
+
+    activate_labeled_by_pad(&mut client, "play")?;
+    assert_mode(&mut client, "main_menu", "Home > Play by pad")?;
+    activate_labeled_by_pad(&mut client, "smelter yard")?;
+    assert_mode(&mut client, "match_setup", "map picked by pad")?;
+    press_pad(&mut client, PadButton::East)?;
+    assert_mode(&mut client, "main_menu", "setup > Circle")?;
+    press_pad(&mut client, PadButton::East)?;
+    assert_mode(&mut client, "home", "map list > Circle")?;
+
+    // Join Match opens with its name field taking text, where keys keep
+    // their conventional meaning; the pad must still find the way out.
+    activate_labeled_by_pad(&mut client, "join match")?;
+    assert_mode(&mut client, "join_match", "Home > Join Match by pad")?;
+    press_pad(&mut client, PadButton::East)?;
+    assert_mode(&mut client, "home", "Join Match > Circle")?;
     Ok(())
 }
 

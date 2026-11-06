@@ -1,7 +1,8 @@
 //! The input funnel.
 //!
-//! macroquad's polled state becomes [`RawEvent`]s, injected events from the
-//! debug socket are appended to the same list, and [`apply_events`] is the
+//! macroquad's polled state and the `pad` adapter's controllers become
+//! [`RawEvent`]s, injected events from the debug socket are appended to the
+//! same list, and [`apply_events`] is the
 //! only code that turns events into camera motion, selection, or sim
 //! commands. Input that bypasses this module escapes every injected-event
 //! test.
@@ -146,15 +147,35 @@ impl Pointer {
 }
 
 /// Notes the hands behind one event, whatever the screen: the pointer in
-/// use and whether a hardware key has been pressed. A key pressed while
-/// a text field has focus doesn't count, since iOS's on-screen keyboard
-/// sends Enter, Space, and Backspace as key events.
+/// use, whether a hardware key has been pressed, and whether a controller
+/// is in use. A key pressed while a text field has focus doesn't count,
+/// since iOS's on-screen keyboard sends Enter, Space, and Backspace as key
+/// events. A controller stays in use until a key or pointer is used, or
+/// until it disconnects.
 pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
     if let Some(pointer) = Pointer::of(event) {
         input.last_pointer = pointer;
+        input.pad_in_use = None;
     }
     if !text_entry && matches!(event, RawEvent::KeyDown { .. }) {
         input.keys_seen = true;
+        input.pad_in_use = None;
+    }
+    match *event {
+        RawEvent::PadConnected { pad, family } => {
+            input.pads.insert(pad, family);
+        }
+        RawEvent::PadDisconnected { pad } => {
+            input.pads.remove(&pad);
+            if input.pad_in_use.is_some_and(|(used, _)| used == pad) {
+                input.pad_in_use = None;
+            }
+        }
+        RawEvent::PadDown { pad, .. } => input.pad_in_use = Some((pad, input.pad_family(pad))),
+        RawEvent::PadStick { pad, x, y, .. } if (x, y) != (0.0, 0.0) => {
+            input.pad_in_use = Some((pad, input.pad_family(pad)));
+        }
+        _ => {}
     }
 }
 
@@ -356,6 +377,11 @@ pub struct InputState {
     pub(crate) last_pointer: Pointer,
     /// Whether a hardware key has been pressed, so copy may name keys.
     pub(crate) keys_seen: bool,
+    /// Connected controllers and whose layout each follows.
+    pads: std::collections::BTreeMap<u64, aftermine_protocol::PadFamily>,
+    /// The controller pressed last and its family, while a controller is
+    /// the hands in use, so copy names its buttons.
+    pad_in_use: Option<(u64, aftermine_protocol::PadFamily)>,
     /// The verb the next world click issues, if one is armed.
     pub(crate) click_verb: Option<ClickVerb>,
     /// Producers whose rally point the next world/minimap click sets.
@@ -1060,6 +1086,8 @@ impl InputState {
             placing: None,
             last_pointer: crate::platform::Hands::BUILD.pointer,
             keys_seen: crate::platform::Hands::BUILD.keys,
+            pads: std::collections::BTreeMap::new(),
+            pad_in_use: None,
             click_verb: None,
             rallying: Vec::new(),
             striking: None,
@@ -1079,6 +1107,20 @@ impl InputState {
             bookmarks: [None; 4],
             resolver: ActionResolver::default(),
         }
+    }
+
+    /// The family of the controller in use, if one is.
+    pub(crate) fn pad_family_in_use(&self) -> Option<aftermine_protocol::PadFamily> {
+        self.pad_in_use.map(|(_, family)| family)
+    }
+
+    /// Whose layout a pad follows. A pad that never announced itself, as an
+    /// injected one may not, is named like any pad of unknown make.
+    fn pad_family(&self, pad: u64) -> aftermine_protocol::PadFamily {
+        self.pads
+            .get(&pad)
+            .copied()
+            .unwrap_or(aftermine_protocol::PadFamily::Other)
     }
 
     /// Feeds a key edge through the binding map.
@@ -2134,6 +2176,13 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         }
         RawEvent::TouchUp { id, x, y } => touch::up(game, input, bindings, id, vec2(x, y)),
         RawEvent::TouchCancel { id } => touch::cancel(input, id),
+        RawEvent::PadConnected { .. }
+        | RawEvent::PadDisconnected { .. }
+        | RawEvent::PadDown { .. }
+        | RawEvent::PadUp { .. }
+        | RawEvent::PadStick { .. } => {
+            // A match maps no controller controls; pads drive menus.
+        }
     }
     if input.construction_open()
         && !matches!(

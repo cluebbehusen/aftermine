@@ -310,3 +310,38 @@ fn ctrl_a_and_ctrl_s_select_the_army_while_bare_a_and_s_still_pan() {
         Some(Chord::ctrl(Key::K))
     );
 }
+
+#[test]
+fn controller_buttons_reach_menus_as_the_canonical_keys_whatever_the_bindings() {
+    use aftermine_protocol::{PadButton, RawEvent};
+    // The frame runs key bindings first, then the pads' fixed layout, so
+    // a remapped key never moves a button and a button's key is never
+    // bound again.
+    let menu = |map: &BindingMap, events: &[RawEvent]| {
+        crate::pad::menu_keys(&map.menu_events(events, false, false))
+    };
+    let events = [
+        RawEvent::PadDown {
+            pad: 0,
+            button: PadButton::South,
+        },
+        RawEvent::PadDown {
+            pad: 0,
+            button: PadButton::DpadDown,
+        },
+    ];
+    let canonical = vec![
+        RawEvent::KeyDown { key: Key::Enter },
+        RawEvent::KeyDown { key: Key::Down },
+    ];
+    assert_eq!(menu(&BindingMap::classic(), &events), canonical);
+    let mut map = BindingMap::classic();
+    assert!(map.rebind(Action::Confirm, Chord::bare(Key::Z)));
+    assert!(map.rebind(Action::MenuDown, Chord::bare(Key::S)));
+    assert_eq!(menu(&map, &events), canonical);
+    assert_eq!(
+        map.menu_events(&events, false, false),
+        events,
+        "key bindings pass controller buttons through untouched"
+    );
+}

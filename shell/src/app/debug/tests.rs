@@ -120,3 +120,20 @@ fn a_frame_script_runs_in_the_viewer_but_not_over_a_lan_match() {
         Route::RefuseLockstep
     );
 }
+
+#[test]
+fn injected_events_hardware_could_never_send_are_refused() {
+    use aftermine_protocol::{RawEvent, Stick};
+    let stick = |x, y| RawEvent::PadStick {
+        pad: 0,
+        stick: Stick::Left,
+        x,
+        y,
+    };
+    assert!(injected_refusal(&RawEvent::Text { ch: 'k' }).is_none());
+    assert!(injected_refusal(&RawEvent::Text { ch: '\u{7}' }).is_some());
+    assert!(injected_refusal(&stick(1.0, -1.0)).is_none());
+    assert!(injected_refusal(&stick(0.0, 0.0)).is_none());
+    assert!(injected_refusal(&stick(1.5, 0.0)).is_some());
+    assert!(injected_refusal(&stick(0.0, -1.01)).is_some());
+}

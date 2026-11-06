@@ -4420,6 +4420,99 @@ fn every_screen_tracks_the_pointer_and_keys_in_use() {
 }
 
 #[test]
+fn a_controller_is_the_hands_in_use_from_its_press_until_a_key_or_pointer() {
+    use aftermine_protocol::{PadButton, PadFamily, Stick};
+    let mut input = InputState::new();
+    let press = |pad| RawEvent::PadDown {
+        pad,
+        button: PadButton::DpadDown,
+    };
+    let stick = |x, y| RawEvent::PadStick {
+        pad: 1,
+        stick: Stick::Left,
+        x,
+        y,
+    };
+    let connect = |pad, family| RawEvent::PadConnected { pad, family };
+    track_hands(&mut input, &connect(1, PadFamily::PlayStation), false);
+    assert_eq!(
+        input.pad_family_in_use(),
+        None,
+        "plugging a pad in is not using it"
+    );
+    track_hands(&mut input, &stick(0.0, 0.0), false);
+    assert_eq!(
+        input.pad_family_in_use(),
+        None,
+        "a centered stick is at rest"
+    );
+    track_hands(&mut input, &press(1), false);
+    assert_eq!(input.pad_family_in_use(), Some(PadFamily::PlayStation));
+
+    for event in [
+        key_down(Key::H),
+        mouse_move(vec2(2.0, 2.0)),
+        left_down(vec2(3.0, 3.0)),
+        touch_down(1, vec2(1.0, 1.0)),
+    ] {
+        track_hands(&mut input, &press(1), false);
+        track_hands(&mut input, &event, false);
+        assert_eq!(input.pad_family_in_use(), None, "{event:?} takes over");
+    }
+    track_hands(&mut input, &stick(0.4, 0.0), false);
+    assert_eq!(input.pad_family_in_use(), Some(PadFamily::PlayStation));
+    track_hands(&mut input, &key_down(Key::Enter), true);
+    assert_eq!(
+        input.pad_family_in_use(),
+        Some(PadFamily::PlayStation),
+        "keys typed into a text field don't count"
+    );
+
+    track_hands(&mut input, &press(7), false);
+    assert_eq!(
+        input.pad_family_in_use(),
+        Some(PadFamily::Other),
+        "a pad that never announced itself has no known layout"
+    );
+}
+
+#[test]
+fn unplugging_the_controller_in_use_stops_naming_its_buttons() {
+    use aftermine_protocol::{PadButton, PadFamily};
+    let mut input = InputState::new();
+    for (pad, family) in [(1, PadFamily::PlayStation), (2, PadFamily::Xbox)] {
+        track_hands(&mut input, &RawEvent::PadConnected { pad, family }, false);
+    }
+    let press = |pad| RawEvent::PadDown {
+        pad,
+        button: PadButton::South,
+    };
+    track_hands(&mut input, &press(1), false);
+    track_hands(&mut input, &RawEvent::PadDisconnected { pad: 2 }, false);
+    assert_eq!(
+        input.pad_family_in_use(),
+        Some(PadFamily::PlayStation),
+        "another pad leaving changes nothing"
+    );
+    track_hands(
+        &mut input,
+        &RawEvent::PadConnected {
+            pad: 2,
+            family: PadFamily::Xbox,
+        },
+        false,
+    );
+    track_hands(&mut input, &RawEvent::PadDisconnected { pad: 1 }, false);
+    assert_eq!(
+        input.pad_family_in_use(),
+        None,
+        "the pad in use left, though another is still connected"
+    );
+    track_hands(&mut input, &press(2), false);
+    assert_eq!(input.pad_family_in_use(), Some(PadFamily::Xbox));
+}
+
+#[test]
 fn only_the_mouse_edge_pans() {
     let mut game = headless_game();
     let mut input = InputState::new();

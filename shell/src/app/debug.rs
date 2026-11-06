@@ -254,17 +254,8 @@ pub(super) fn handle_request(
                 }
             }
             Request::InjectEvent { event } => {
-                // The hardware funnel admits only printable ASCII into Text
-                // (`input::PointerStream::char_event`); injected events honor
-                // the same contract, so a control byte or non-ASCII char is
-                // refused rather than persisted into a save name the font
-                // cannot draw.
-                if let aftermine_protocol::RawEvent::Text { ch } = event
-                    && !('\u{20}'..='\u{7e}').contains(&ch)
-                {
-                    Err(format!(
-                        "text event {ch:?} is outside printable ASCII; the funnel refuses it"
-                    ))
+                if let Some(refusal) = injected_refusal(&event) {
+                    Err(refusal)
                 } else {
                     app.injected.push(event);
                     Ok(Reply::Ok)
@@ -337,6 +328,27 @@ pub(super) fn handle_request(
         Err(err) => ResponseEnvelope::err(id, err),
     };
     reply.send(response).ok();
+}
+
+/// Why the funnel refuses an injected event that hardware could never send.
+/// It admits only printable ASCII into Text
+/// (`input::PointerStream::char_event`), so a control byte or non-ASCII
+/// char is refused rather than persisted into a save name the font cannot
+/// draw; and the pad adapter never sends a stick past full deflection.
+fn injected_refusal(event: &aftermine_protocol::RawEvent) -> Option<String> {
+    match *event {
+        aftermine_protocol::RawEvent::Text { ch } if !('\u{20}'..='\u{7e}').contains(&ch) => Some(
+            format!("text event {ch:?} is outside printable ASCII; the funnel refuses it"),
+        ),
+        aftermine_protocol::RawEvent::PadStick { x, y, .. }
+            if !((-1.0..=1.0).contains(&x) && (-1.0..=1.0).contains(&y)) =>
+        {
+            Some(format!(
+                "stick position ({x}, {y}) is outside -1 to 1; the funnel refuses it"
+            ))
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]

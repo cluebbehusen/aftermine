@@ -42,14 +42,15 @@ pub(crate) fn fade(color: Color) -> Color {
 }
 
 /// Whether an event is the player acting: a press, a scroll, or typing.
-/// Pointer motion alone doesn't count, so resting a hand on the mouse
-/// never keeps the help away.
+/// Pointer and stick motion alone don't count, so resting a hand on the
+/// mouse or a drifting stick never keeps the help away.
 pub(crate) fn is_press(event: &RawEvent) -> bool {
     matches!(
         event,
         RawEvent::KeyDown { .. }
             | RawEvent::MouseDown { .. }
             | RawEvent::TouchDown { .. }
+            | RawEvent::PadDown { .. }
             | RawEvent::Wheel { .. }
             | RawEvent::Text { .. }
     )

@@ -33,5 +33,10 @@ macroquad = { version = "0.4.16", features = ["audio"] }
 # whole session.
 png = "0.17"
 
+# Windows and Linux (Steam Deck included) read game controllers through
+# gilrs; Apple platforms read them through the miniquad fork instead.
+[target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
+gilrs = "0.11.2"
+
 [lints]
 workspace = true

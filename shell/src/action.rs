@@ -557,7 +557,8 @@ impl BindingMap {
         events
             .iter()
             .filter_map(|event| {
-                let key = match event {
+                let down = matches!(event, RawEvent::KeyDown { .. });
+                let action = match event {
                     RawEvent::KeyDown { key: Key::Ctrl } => {
                         ctrl = true;
                         return None;
@@ -574,17 +575,11 @@ impl BindingMap {
                         shift = false;
                         return None;
                     }
-                    RawEvent::KeyDown { key } | RawEvent::KeyUp { key } => *key,
+                    RawEvent::KeyDown { key } | RawEvent::KeyUp { key } => {
+                        self.menu_action(*key, ctrl, shift)?
+                    }
                     _ => return Some(*event),
                 };
-                let action = self
-                    .resolve_in(key, ctrl, shift, Context::Menu)
-                    .or_else(|| {
-                        [Action::PrevTab, Action::NextTab].into_iter().find(|tab| {
-                            self.chord_for(*tab).is_none()
-                                && self.tab_chord(*tab).is_some_and(|chord| chord.key == key)
-                        })
-                    })?;
                 let key = match action {
                     Action::Back => Key::Escape,
                     Action::Confirm => Key::Enter,
@@ -601,13 +596,24 @@ impl BindingMap {
                     Action::NextTab => Key::E,
                     _ => return None,
                 };
-                Some(if matches!(event, RawEvent::KeyDown { .. }) {
+                Some(if down {
                     RawEvent::KeyDown { key }
                 } else {
                     RawEvent::KeyUp { key }
                 })
             })
             .collect()
+    }
+    /// The menu action a key performs with these modifiers, falling back
+    /// to the classic tab keys while the tab actions are unbound.
+    fn menu_action(&self, key: Key, ctrl: bool, shift: bool) -> Option<Action> {
+        self.resolve_in(key, ctrl, shift, Context::Menu)
+            .or_else(|| {
+                [Action::PrevTab, Action::NextTab].into_iter().find(|tab| {
+                    self.chord_for(*tab).is_none()
+                        && self.tab_chord(*tab).is_some_and(|chord| chord.key == key)
+                })
+            })
     }
     /// The chord that steps tabs as `action` in menus: its own binding,
     /// or while it has none, its classic key if that key means nothing

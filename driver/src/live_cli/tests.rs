@@ -333,3 +333,96 @@ fn every_protocol_key_is_cli_addressable() {
         );
     }
 }
+
+#[test]
+fn pad_commands_script_the_controller_events_hardware_sends() {
+    use aftermine_protocol::{PadButton, PadFamily, Stick};
+    let inject = |event| Request::InjectEvent { event };
+    assert_eq!(
+        live_requests(LiveCmd::InjectPadConnect {
+            family: "switch".to_string(),
+            pad: 2,
+        })
+        .unwrap(),
+        vec![inject(RawEvent::PadConnected {
+            pad: 2,
+            family: PadFamily::Switch,
+        })]
+    );
+    assert_eq!(
+        live_requests(LiveCmd::InjectPad {
+            button: "dpad-down".to_string(),
+            pad: 0,
+        })
+        .unwrap(),
+        vec![
+            inject(RawEvent::PadDown {
+                pad: 0,
+                button: PadButton::DpadDown,
+            }),
+            inject(RawEvent::PadUp {
+                pad: 0,
+                button: PadButton::DpadDown,
+            }),
+        ],
+        "a press releases, so nothing stays held"
+    );
+    assert_eq!(
+        live_requests(LiveCmd::InjectPadDown {
+            button: "left_trigger".to_string(),
+            pad: 0,
+        })
+        .unwrap(),
+        vec![inject(RawEvent::PadDown {
+            pad: 0,
+            button: PadButton::LeftTrigger,
+        })]
+    );
+    assert_eq!(
+        live_requests(LiveCmd::InjectPadStick {
+            stick: "right".to_string(),
+            x: -0.5,
+            y: 1.0,
+            pad: 0,
+        })
+        .unwrap(),
+        vec![inject(RawEvent::PadStick {
+            pad: 0,
+            stick: Stick::Right,
+            x: -0.5,
+            y: 1.0,
+        })]
+    );
+    assert_eq!(
+        live_requests(LiveCmd::InjectPadDisconnect { pad: 2 }).unwrap(),
+        vec![inject(RawEvent::PadDisconnected { pad: 2 })]
+    );
+}
+
+#[test]
+fn pad_commands_refuse_labels_and_overdriven_sticks_before_the_socket() {
+    assert!(
+        live_requests(LiveCmd::InjectPad {
+            button: "a".to_string(),
+            pad: 0,
+        })
+        .is_err(),
+        "buttons are named by position"
+    );
+    assert!(
+        live_requests(LiveCmd::InjectPadStick {
+            stick: "left".to_string(),
+            x: 1.5,
+            y: 0.0,
+            pad: 0,
+        })
+        .is_err()
+    );
+    assert!(
+        live_requests(LiveCmd::InjectPadConnect {
+            family: "sega".to_string(),
+            pad: 0,
+        })
+        .is_err()
+    );
+}
