@@ -240,6 +240,7 @@ pub(crate) fn layout(
             [
                 lesson.outro().to_string(),
                 format!("{kind}: {}.", next.title()),
+                next.briefing().to_string(),
             ]
             .into_iter()
             .filter(|paragraph| !paragraph.is_empty())

@@ -19,7 +19,8 @@ pub mod vision;
 pub use command::{Command, PlayerCommand};
 pub use event::{Event, GroundMotion, StallReason, TickReport, UnitRepairSource};
 pub use ids::{
-    AttackTarget, BuildingId, ContactId, PlayerId, RememberedBuilding, Target, UnitId, WarheadId,
+    AttackTarget, BuildingId, ContactId, MarchId, PlayerId, RememberedBuilding, Target, UnitId,
+    WarheadId,
 };
 pub use scenario::Scenario;
 pub use state::{

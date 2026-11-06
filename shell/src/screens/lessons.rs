@@ -1,7 +1,9 @@
 //! Basic Training's lesson list: a row per lesson and one for the first
 //! match, each marked once finished, beside the selected row's opening scene,
-//! what it has the player do and the button that starts it. Windowless update;
-//! the coordinator starts what the screen picks.
+//! its story and the button that starts it. Windowless update; the
+//! coordinator starts what the screen picks. The panel measures text through
+//! a supplied function, so input hit-tests the Start button the frame draws
+//! and tests lay the panel out headless.
 
 use crate::assets::Sprites;
 use crate::game::{Game, SoundKind};
@@ -10,6 +12,7 @@ use crate::input::InputState;
 use crate::menu::{Label, Menu};
 use crate::nav::Nav;
 use crate::press::{Fed, Press};
+use crate::render::hud::{Face, Measure, window_measure};
 use crate::render::prim::stroke_rect;
 use crate::theme::{BORDER_STRONG, MIN_TOUCH_TARGET, SURFACE_MENU, Stroke, TEXT_BODY, Type};
 use crate::tutorial::{Course, Lesson, Tutorial};
@@ -23,12 +26,15 @@ use macroquad::prelude::{
 
 /// The panel's inset, in logical px at 1x.
 const PAD: f32 = 16.0;
-/// The distance between objective baselines, in logical px at 1x.
+/// The distance between story baselines, in logical px at 1x.
 const LINE: f32 = 28.0;
 /// The Start button's width, in logical px at 1x.
 const START_WIDTH: f32 = 104.0;
 /// The scene's tallest height as a share of its width.
 const SCENE_ASPECT: f32 = 0.6;
+/// The least share of its tallest height a scene keeps. Below it the scene
+/// shows too little to read, so the story has the panel to itself.
+const SCENE_LEAST_SHARE: f32 = 1.0 / 3.0;
 /// Tiles across the scene at the wide end of its zoom.
 const SCENE_TILES_ACROSS: f32 = 20.0;
 
@@ -90,20 +96,19 @@ impl LessonsScreen {
         "lessons"
     }
 
-    /// What the row under the cursor has the player do.
-    pub fn objectives(&self) -> Vec<&'static str> {
-        self.menu
-            .value()
-            .map_or_else(Vec::new, |row| row.objectives())
+    /// The story of the row under the cursor.
+    pub fn briefing(&self) -> Option<&'static str> {
+        self.menu.value().map(|row| row.briefing())
     }
 
     /// Applies a frame's events. Pressing a row only selects it, so mouse
-    /// and touch can read its objectives first; Start and Enter start it.
+    /// and touch can read its story first; Start and Enter start it.
     pub fn update(
         &mut self,
         events: &[RawEvent],
         mouse: &mut Vec2,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
+        measure: Measure,
     ) -> Out {
         let (back, events) = self.back.route(events);
         if back {
@@ -116,7 +121,7 @@ impl LessonsScreen {
         {
             return Out::Leave;
         }
-        let start = start_button(crate::render::ui_scale());
+        let start = start_button(crate::render::ui_scale(), measure);
         for event in &events {
             match self
                 .start
@@ -142,38 +147,32 @@ impl LessonsScreen {
         Out::Stay
     }
 
-    /// Draws the list, the selected row's scene and objectives, and the
+    /// Draws the list, the selected row's scene and story, and the
     /// buttons.
     pub fn draw(&mut self, sprites: &Sprites, mouse: Vec2) {
         self.menu.draw("");
         crate::button::draw_back(mouse);
         let s = crate::render::ui_scale();
-        let panel = panel(s);
+        let measure: Measure = &window_measure;
+        let panel = panel(s, measure);
         draw_rectangle(panel.x, panel.y, panel.w, panel.h, SURFACE_MENU);
-        self.draw_scene(sprites, scene_area(s));
+        let scene = scene_area(s, measure);
+        self.draw_scene(sprites, scene);
         stroke_rect(
             Rect::new(panel.x, panel.y, panel.w, panel.h),
             Stroke::Edge.at(s),
             BORDER_STRONG,
         );
-        let start = start_button(s);
         // Enter presses it from anywhere on the screen, so it always reads
         // as focused.
-        crate::button::draw(start, "Start", true, s);
-        let size = Type::Label.at(s);
-        let measure = |text: &str| {
-            macroquad::prelude::measure_text(text, None, crate::numeric::font_size(size), 1.0).width
+        crate::button::draw(start_button(s, measure), "Start", true, s);
+        let Some(briefing) = self.briefing() else {
+            return;
         };
-        let room = panel.w - 2.0 * PAD * s;
-        let mut y = scene_area(s).bottom() + (PAD + LINE * 0.75) * s;
-        for objective in self.objectives() {
-            for line in crate::render::wrap_words(objective, measure, room) {
-                if y > panel.bottom() {
-                    return;
-                }
-                draw_text(&line, panel.x + PAD * s, y, size, TEXT_BODY);
-                y += LINE * s;
-            }
+        let mut y = scene.bottom() + (PAD + LINE * 0.75) * s;
+        for line in briefing_lines(briefing, s, measure) {
+            draw_text(&line, panel.x + PAD * s, y, Type::Label.at(s), TEXT_BODY);
+            y += LINE * s;
         }
     }
 
@@ -181,6 +180,9 @@ impl LessonsScreen {
         let Some(&row) = self.menu.value() else {
             return;
         };
+        if area.h <= 0.0 {
+            return;
+        }
         let dpi = screen_dpi_scale();
         // On whole device pixels the canvas lands texel for pixel.
         let at = (vec2(area.x, area.y) * dpi).round() / dpi;
@@ -264,35 +266,48 @@ fn opening_session(row: Course, size: Vec2) -> Result<Game> {
     Ok(game)
 }
 
-/// The height under the scene: the longest row's objectives, inset. Start sits
-/// beside their last lines.
-fn text_height(s: f32) -> f32 {
+/// `briefing` wrapped to the panel's inset width.
+fn briefing_lines(briefing: &str, s: f32, measure: Measure) -> Vec<String> {
+    let size = Type::Label.at(s);
+    let room = crate::menu::page_column(s).w - 2.0 * PAD * s;
+    crate::render::wrap_words(briefing, |text| measure(Face::Body, text, size), room)
+}
+
+/// The height under the scene: the longest row's story, inset, with Start
+/// on its own row below it so no line runs under the button.
+fn text_height(s: f32, measure: Measure) -> f32 {
     let longest = Course::ALL
         .iter()
-        .map(|row| row.objectives().len())
+        .map(|row| briefing_lines(row.briefing(), s, measure).len())
         .max()
         .unwrap_or(0);
-    (2.0 * PAD + LINE * longest as f32) * s
+    (2.0 * PAD + LINE * longest as f32 + MIN_TOUCH_TARGET) * s
 }
 
 /// The panel beside the list, one size for every row so Start holds still as
 /// the cursor moves.
-fn panel(s: f32) -> Rect {
+fn panel(s: f32, measure: Measure) -> Rect {
     let column = crate::menu::page_column(s);
-    let text = text_height(s);
-    let scene = (column.w * SCENE_ASPECT).min(column.h - text).max(0.0);
+    let text = text_height(s, measure);
+    let tallest = column.w * SCENE_ASPECT;
+    let room = column.h - text;
+    let scene = if room >= tallest * SCENE_LEAST_SHARE {
+        tallest.min(room)
+    } else {
+        0.0
+    };
     Rect::new(column.x, column.y, column.w, scene + text)
 }
 
 /// The scene, flush with the top of the panel.
-fn scene_area(s: f32) -> Rect {
-    let panel = panel(s);
-    Rect::new(panel.x, panel.y, panel.w, panel.h - text_height(s))
+fn scene_area(s: f32, measure: Measure) -> Rect {
+    let panel = panel(s, measure);
+    Rect::new(panel.x, panel.y, panel.w, panel.h - text_height(s, measure))
 }
 
 /// The Start button, in the panel's bottom right corner.
-fn start_button(s: f32) -> Rect {
-    let panel = panel(s);
+fn start_button(s: f32, measure: Measure) -> Rect {
+    let panel = panel(s, measure);
     Rect::new(
         panel.right() - (PAD + START_WIDTH) * s,
         panel.bottom() - (PAD + MIN_TOUCH_TARGET) * s,

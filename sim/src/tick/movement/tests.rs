@@ -440,11 +440,11 @@ fn coasting_worker_is_not_anchored_until_its_motor_stops() {
     unit.set_drive_speed(unit.kind.stats().speed);
     let before = unit.pos;
     assert!(!is_anchored(unit));
-    ground::advance(unit, &terrain, &parked);
+    ground::advance(unit, &terrain, &parked, None);
     assert!(unit.pos.x > before.x);
     assert!(!is_anchored(unit));
     for _ in 0..2 {
-        ground::advance(unit, &terrain, &parked);
+        ground::advance(unit, &terrain, &parked, None);
     }
     assert_eq!(unit.drive_speed(), Fx::ZERO);
     assert!(is_anchored(unit));

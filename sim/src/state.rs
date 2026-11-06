@@ -1572,6 +1572,8 @@ pub struct State {
     next_building_id: u32,
     #[serde(default, skip_serializing_if = "crate::is_default")]
     next_warhead_id: u32,
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    next_march_id: u32,
     /// Derived: one flag per tile, set while a non-stealthy building
     /// covers it. Never serialized or hashed; rebuilt on assembly and load,
     /// and maintained at the placement and removal funnels. Route searches
@@ -1783,6 +1785,7 @@ impl State {
             next_unit_id: 0,
             next_building_id: 0,
             next_warhead_id: 0,
+            next_march_id: 0,
             building_occupancy: vec![0; cell_count(map_width, map_height)],
         }
     }
@@ -2136,6 +2139,7 @@ impl State {
             next_unit_id,
             next_building_id,
             next_warhead_id,
+            next_march_id,
             building_occupancy: _,
         } = self;
 
@@ -2195,6 +2199,7 @@ impl State {
         if *next_unit_id > ID_COUNTER_ENVELOPE
             || *next_building_id > ID_COUNTER_ENVELOPE
             || *next_warhead_id > ID_COUNTER_ENVELOPE
+            || *next_march_id > ID_COUNTER_ENVELOPE
         {
             return Err(E::IdCounterBeyondEnvelope);
         }
@@ -2503,6 +2508,9 @@ impl State {
         let orders = || std::iter::once(order).chain(queue);
         if !orders().all(order_goals_canonical) {
             return Err(E::NonCanonicalGoal(id));
+        }
+        if !orders().all(|order| order_march_valid(order, self.next_march_id)) {
+            return Err(E::InvalidMarch(id));
         }
         if *motor == Motor::Landed {
             let touchdown = crate::stats::LANDING_TOUCHDOWN;
@@ -3147,6 +3155,17 @@ impl State {
         id
     }
 
+    /// The march id the next group command takes, never reused once
+    /// [`State::take_march_id`] has taken it.
+    pub(crate) fn next_march_id(&self) -> crate::ids::MarchId {
+        crate::ids::MarchId(self.next_march_id)
+    }
+
+    /// Takes [`State::next_march_id`] for a march now walking.
+    pub(crate) fn take_march_id(&mut self) {
+        self.next_march_id += 1;
+    }
+
     /// The seats on the winning team, in id order — empty until a
     /// victory is declared.
     pub fn winners(&self) -> Vec<PlayerId> {
@@ -3746,6 +3765,22 @@ fn order_goals_canonical(order: &Order) -> bool {
     }
 }
 
+/// Whether an order's march, if any, was minted before `next` and rides a
+/// walk an Advance or Hunt command hands out: one of its walks, or the march
+/// a fight resumes. Tending and unloading never march.
+fn order_march_valid(order: &Order, next: u32) -> bool {
+    let issued = |goal: &Goal| goal.march.is_none_or(|march| march.0 < next);
+    match order {
+        Order::Run { goal } | Order::Hunt { goal } | Order::Advance { goal } => issued(goal),
+        Order::Attack { resume, .. } => resume
+            .and_then(|resume| resume.goal())
+            .is_none_or(|goal| issued(&goal)),
+        Order::Tend { goal, .. } => goal.march.is_none(),
+        Order::Unload { at, .. } => at.march.is_none(),
+        _ => true,
+    }
+}
+
 /// Whether every coordinate an order names sits inside the envelope. The
 /// match is exhaustive on purpose: a new [`Order`] variant carrying a tile
 /// must decide its row here rather than slip through a catch-all.
@@ -4019,6 +4054,10 @@ pub enum StateIntegrityError {
     /// endpoint equal to its own target; neither is ever stored.
     #[error("unit {0} stores a slot or endpoint equal to its own goal")]
     NonCanonicalGoal(UnitId),
+    /// A walk names a march no command has issued yet, or a tending or
+    /// unloading walk names a march at all.
+    #[error("unit {0} walks with a march that was never issued to that order")]
+    InvalidMarch(UnitId),
     /// An anchored Harvest order names a source outside its bounded work zone.
     #[error("unit {0} names a harvest source outside its work zone")]
     HarvestSourceOutsideZone(UnitId),
@@ -4462,6 +4501,8 @@ struct StateWire {
     next_building_id: u32,
     #[serde(default)]
     next_warhead_id: u32,
+    #[serde(default)]
+    next_march_id: u32,
 }
 
 impl From<StateWire> for State {
@@ -4482,6 +4523,7 @@ impl From<StateWire> for State {
             next_unit_id,
             next_building_id,
             next_warhead_id,
+            next_march_id,
         } = w;
         State {
             mode,
@@ -4499,6 +4541,7 @@ impl From<StateWire> for State {
             next_unit_id,
             next_building_id,
             next_warhead_id,
+            next_march_id,
         }
     }
 }

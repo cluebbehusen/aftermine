@@ -676,7 +676,12 @@ fn lessons_frame(
     let input_scope = app
         .game
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
-    let out = list.update(events, &mut app.input.mouse, &mut app.ui_sounds);
+    let out = list.update(
+        events,
+        &mut app.input.mouse,
+        &mut app.ui_sounds,
+        &render::hud::window_measure,
+    );
     drop(input_scope);
     if let screens::lessons::Out::Start(row) = out {
         *rerun = true;
