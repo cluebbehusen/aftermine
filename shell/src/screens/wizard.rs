@@ -84,20 +84,10 @@ pub(crate) fn seat_styles(
     mine: usize,
     team: impl Fn(usize) -> Option<u8>,
 ) -> crate::seat_style::SeatStyles {
-    use crate::seat_style::AllegianceCue;
-    let my_team = team(mine);
-    crate::seat_style::SeatStyles::from_cues(
-        (0..seats).map(|seat| {
-            if seat == mine {
-                AllegianceCue::Mine
-            } else if my_team.is_some() && team(seat) == my_team {
-                AllegianceCue::Ally
-            } else {
-                AllegianceCue::Hostile
-            }
-        }),
-        crate::render::team_colors(),
-    )
+    let teams: Vec<u16> = (0..seats)
+        .map(|seat| team(seat).map_or_else(|| 256 + seat.fit::<u16>(), u16::from))
+        .collect();
+    crate::seat_style::SeatStyles::from_teams(&teams, mine, crate::render::team_colors())
 }
 
 /// The team chip's display label, aligned with [`team_override`].

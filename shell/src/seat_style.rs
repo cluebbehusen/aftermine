@@ -30,35 +30,66 @@ pub(crate) struct SeatStyles([Color; MAX_PLAYERS]);
 
 impl SeatStyles {
     pub fn new(state: &State, viewer: PlayerId, team_colors: bool) -> Self {
-        Self::from_cues(
-            (0..state.players().len())
-                .map(|seat| AllegianceCue::of(state, viewer, PlayerId::from_index(seat))),
-            team_colors,
-        )
+        let teams: Vec<u16> = state
+            .players()
+            .iter()
+            .map(|player| u16::from(player.team))
+            .collect();
+        Self::from_teams(&teams, usize::from(viewer.0), team_colors)
     }
 
-    /// Styles for seats in seat order whose relationship to the viewer is
-    /// already known. Allies and hostiles each rank by seat order within
-    /// their own family, unless `team_colors` gives each family one color.
-    pub fn from_cues(cues: impl IntoIterator<Item = AllegianceCue>, team_colors: bool) -> Self {
-        let cues: Vec<_> = cues.into_iter().collect();
-        let enemies = hostile_palette(cues.contains(&AllegianceCue::Ally));
+    /// Styles for seats in seat order, where seats with equal `teams` entries
+    /// play on one team and `mine` is the viewer's seat. Each enemy team takes
+    /// the next family in order of its first seat, and its seats take that
+    /// family's shades in seat order, unless `team_colors` gives allies one
+    /// color and enemies another.
+    pub fn from_teams(teams: &[u16], mine: usize, team_colors: bool) -> Self {
+        let my_team = teams.get(mine).copied();
+        let has_allies = teams
+            .iter()
+            .enumerate()
+            .any(|(seat, team)| seat != mine && Some(*team) == my_team);
+        let families: &[Family] = if has_allies {
+            &WITH_ALLIES
+        } else {
+            &WITHOUT_ALLIES
+        };
         let mut allies = 0;
-        let mut hostiles = 0;
+        let mut enemy_teams: Vec<(u16, usize)> = Vec::new();
+        let mut handed_out: Vec<Color> = Vec::new();
         let mut styles = [WHITE; MAX_PLAYERS];
-        for (style, cue) in styles.iter_mut().zip(cues) {
-            *style = match cue {
-                AllegianceCue::Mine => self_color(team_colors),
-                AllegianceCue::Ally if team_colors => TEAM_ALLY,
-                AllegianceCue::Hostile if team_colors => TEAM_ENEMY,
-                AllegianceCue::Ally => {
+        for (seat, (style, team)) in styles.iter_mut().zip(teams).enumerate() {
+            *style = if seat == mine {
+                self_color(team_colors)
+            } else if Some(*team) == my_team {
+                if team_colors {
+                    TEAM_ALLY
+                } else {
                     allies += 1;
-                    family_color(&ally_palette(), allies - 1)
+                    family_color(&ALLY_FAMILY, allies - 1)
                 }
-                AllegianceCue::Hostile => {
-                    hostiles += 1;
-                    family_color(&enemies, hostiles - 1)
-                }
+            } else if team_colors {
+                TEAM_ENEMY
+            } else {
+                let index = enemy_teams
+                    .iter()
+                    .position(|(known, _)| known == team)
+                    .unwrap_or_else(|| {
+                        enemy_teams.push((*team, 0));
+                        enemy_teams.len() - 1
+                    });
+                let members = &mut enemy_teams[index].1;
+                let family = &families[index % families.len()];
+                // A family can come round to a second team, and a big team
+                // overflows into a family another team may wear, so a seat takes
+                // its family's next shade that no other enemy wears yet.
+                let color = (*members..*members + 2 * FAMILY)
+                    .map(|rank| family_color(family, rank))
+                    .find(|color| !handed_out.contains(color))
+                    .unwrap_or_else(|| family_color(family, *members));
+                *members += 1;
+                handed_out.push(color);
+                color
             };
         }
         Self(styles)
@@ -88,65 +119,124 @@ pub(crate) fn self_color(team_colors: bool) -> Color {
     }
 }
 
-/// Light blues. Red against green collapses under red-weak and green-weak
-/// vision, so allies part from enemies by being lighter and bluer.
-fn ally_palette() -> [Color; 8] {
-    [
-        color_u8!(110, 190, 250, 255),
-        color_u8!(195, 230, 255, 255),
-        color_u8!(165, 140, 250, 255),
-        color_u8!(40, 150, 240, 255),
-        color_u8!(170, 210, 255, 255),
-        color_u8!(150, 170, 255, 255),
-        color_u8!(70, 190, 245, 255),
-        color_u8!(135, 205, 250, 255),
-    ]
-}
+/// Hand-picked shades in a family: a lead color, then lighter, darker and
+/// further shades of the same hue, so a team reads as one and its seats still
+/// tell apart. A team of two wears the lead and the lighter shade.
+type Shades = [Color; 4];
 
-/// Enemies by rank. A viewer with an ally sees only dark colors, below the
-/// lightness of every ally and of the self green; bright oranges and yellows
-/// sit on the green under red-weak vision. With no ally to confuse, each enemy
-/// takes its own hue, and Colorblind team colors covers the pairs that only
-/// color blindness confuses.
-fn hostile_palette(has_allies: bool) -> [Color; 8] {
-    if has_allies {
-        [
-            color_u8!(190, 30, 50, 255),
-            color_u8!(150, 120, 30, 255),
-            color_u8!(120, 60, 210, 255),
-            color_u8!(130, 40, 110, 255),
-            color_u8!(170, 60, 30, 255),
-            color_u8!(140, 90, 40, 255),
-            color_u8!(160, 40, 90, 255),
-            color_u8!(130, 30, 50, 255),
-        ]
-    } else {
-        [
-            color_u8!(228, 44, 58, 255),
-            color_u8!(60, 100, 245, 255),
-            color_u8!(250, 210, 60, 255),
-            color_u8!(150, 70, 220, 255),
-            color_u8!(245, 130, 40, 255),
-            color_u8!(40, 180, 190, 255),
-            color_u8!(245, 120, 190, 255),
-            color_u8!(245, 245, 240, 255),
-        ]
+/// Colors in a family: its own shades, then a neighboring family's for a team
+/// too big for four.
+const FAMILY: usize = 8;
+type Family = [Color; FAMILY];
+
+const fn family(own: Shades, overflow: Shades) -> Family {
+    let mut family = [own[0]; FAMILY];
+    let mut shade = 0;
+    while shade < own.len() {
+        family[shade] = own[shade];
+        family[shade + own.len()] = overflow[shade];
+        shade += 1;
     }
+    family
 }
 
-/// The `rank`th seat's color within a family; a family larger than its
-/// palette reuses it lightened.
-fn family_color(palette: &[Color; 8], rank: usize) -> Color {
-    let base = palette[rank % palette.len()];
-    if rank < palette.len() {
+/// The viewer's allies: blues, which no enemy team wears beside an ally.
+const ALLIES: Shades = [
+    color_u8!(110, 190, 250, 255),
+    color_u8!(195, 230, 255, 255),
+    color_u8!(40, 150, 240, 255),
+    color_u8!(60, 100, 245, 255),
+];
+
+// Light reds read as the self green under red-weak vision, so the reds stay
+// mid to dark.
+const REDS: Shades = [
+    color_u8!(228, 44, 58, 255),
+    color_u8!(235, 80, 110, 255),
+    color_u8!(165, 25, 40, 255),
+    color_u8!(140, 25, 65, 255),
+];
+const BLUES: Shades = [
+    color_u8!(60, 100, 245, 255),
+    color_u8!(110, 150, 255, 255),
+    color_u8!(40, 70, 190, 255),
+    color_u8!(170, 195, 255, 255),
+];
+const YELLOWS: Shades = [
+    color_u8!(250, 210, 60, 255),
+    color_u8!(255, 232, 120, 255),
+    color_u8!(200, 150, 25, 255),
+    color_u8!(255, 245, 175, 255),
+];
+// Purples read as blue under red-weak vision, so they stay mid to dark, below
+// the ally blues.
+const PURPLES: Shades = [
+    color_u8!(150, 70, 220, 255),
+    color_u8!(175, 60, 195, 255),
+    color_u8!(105, 40, 170, 255),
+    color_u8!(125, 45, 135, 255),
+];
+const ORANGES: Shades = [
+    color_u8!(245, 130, 40, 255),
+    color_u8!(255, 170, 90, 255),
+    color_u8!(190, 90, 25, 255),
+    color_u8!(255, 205, 150, 255),
+];
+const TEALS: Shades = [
+    color_u8!(40, 180, 190, 255),
+    color_u8!(110, 215, 220, 255),
+    color_u8!(25, 130, 140, 255),
+    color_u8!(170, 235, 235, 255),
+];
+const PINKS: Shades = [
+    color_u8!(245, 120, 190, 255),
+    color_u8!(255, 160, 210, 255),
+    color_u8!(195, 70, 145, 255),
+    color_u8!(255, 200, 230, 255),
+];
+const WHITES: Shades = [
+    color_u8!(245, 245, 240, 255),
+    color_u8!(215, 215, 205, 255),
+    color_u8!(175, 175, 170, 255),
+    color_u8!(140, 140, 135, 255),
+];
+
+const ALLY_FAMILY: Family = family(
+    ALLIES,
+    [BLUES[1], BLUES[2], BLUES[3], color_u8!(100, 170, 235, 255)],
+);
+
+/// Enemy teams' families in order, for a viewer with allies. Blue stays the
+/// allies', and teal, between the ally blues and the self green, sits out.
+const WITH_ALLIES: [Family; 6] = [
+    family(REDS, PINKS),
+    family(YELLOWS, ORANGES),
+    family(PURPLES, PINKS),
+    family(ORANGES, YELLOWS),
+    family(PINKS, PURPLES),
+    family(WHITES, YELLOWS),
+];
+/// Enemy teams' families in order, for a viewer alone on a team, as in a
+/// free-for-all, where each player is a team and wears its family's lead.
+const WITHOUT_ALLIES: [Family; 8] = [
+    family(REDS, PINKS),
+    family(BLUES, PURPLES),
+    family(YELLOWS, ORANGES),
+    family(PURPLES, PINKS),
+    family(ORANGES, YELLOWS),
+    family(TEALS, BLUES),
+    family(PINKS, PURPLES),
+    family(WHITES, YELLOWS),
+];
+
+/// The `rank`th seat's color within a family. Past its colors, a family
+/// repeats them darkened, which only a team of more than eight reaches.
+fn family_color(family: &Family, rank: usize) -> Color {
+    let base = family[rank % FAMILY];
+    if rank < FAMILY {
         base
     } else {
-        Color::new(
-            base.r * 0.7 + 0.3,
-            base.g * 0.7 + 0.3,
-            base.b * 0.7 + 0.3,
-            1.0,
-        )
+        Color::new(base.r * 0.65, base.g * 0.65, base.b * 0.65, 1.0)
     }
 }
 
