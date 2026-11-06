@@ -160,25 +160,20 @@ fn chroma(color: Color) -> f32 {
     color.r.max(color.g).max(color.b) - color.r.min(color.g).min(color.b)
 }
 
-fn luma(color: Color) -> f32 {
-    0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
-}
-
 #[test]
-fn enemies_beside_an_ally_stay_darker_than_every_ally() {
-    let dimmest_ally = ally_palette().map(luma).into_iter().fold(1.0, f32::min);
-    for enemy in hostile_palette(true) {
-        assert!(
-            luma(enemy) < dimmest_ally,
-            "{:?} is as light as an ally",
-            rgb(enemy)
-        );
-    }
+fn each_enemy_team_wears_one_family_in_order_of_its_first_seat() {
+    let teams = [0, 1, 2, 0, 1, 2];
+    let styles = SeatStyles::from_teams(&teams, 0, false);
+    assert_eq!(styles.get(PlayerId(3)), ALLIES[0]);
+    assert_eq!(styles.get(PlayerId(1)), REDS[0]);
+    assert_eq!(styles.get(PlayerId(4)), REDS[1]);
+    assert_eq!(styles.get(PlayerId(2)), YELLOWS[0]);
+    assert_eq!(styles.get(PlayerId(5)), YELLOWS[1]);
 }
 
 #[test]
 fn every_enemy_of_an_eight_seat_free_for_all_has_its_own_hue() {
-    let enemies = hostile_palette(false);
+    let enemies = WITHOUT_ALLIES.map(|family| family[0]);
     for (rank, enemy) in enemies[..7].iter().enumerate() {
         for other in &enemies[rank + 1..7] {
             let apart = (hue(*enemy) - hue(*other)).abs();
@@ -195,10 +190,9 @@ fn every_enemy_of_an_eight_seat_free_for_all_has_its_own_hue() {
 #[test]
 fn the_self_color_never_reads_as_a_friend_or_a_foe() {
     let mine = self_color(false);
-    for color in ally_palette()
+    for color in ALLIES
         .into_iter()
-        .chain(hostile_palette(true))
-        .chain(hostile_palette(false))
+        .chain(WITHOUT_ALLIES.into_iter().flatten())
     {
         let apart = (hue(mine) - hue(color)).abs();
         assert!(
@@ -252,14 +246,12 @@ fn closest_under_red_weak(ours: &[Color], theirs: &[Color]) -> f32 {
         .fold(f32::INFINITY, f32::min)
 }
 
-/// A 4v4, the largest teams a shipped map has, shows three allies and four
-/// enemies.
+/// A 4v4, the largest teams a shipped map has, shows three allies and the four
+/// reds of one enemy team.
 #[test]
 fn seat_colors_hold_apart_under_red_weak_vision() {
-    let allies = ally_palette();
-    let allies = &allies[..3];
-    let enemies = hostile_palette(true);
-    let enemies = &enemies[..4];
+    let allies = &ALLIES[..3];
+    let enemies = &REDS;
     let mine = [self_color(false)];
     assert!(closest_under_red_weak(allies, enemies) >= 11.0);
     assert!(closest_under_red_weak(&mine, enemies) >= 10.0);
