@@ -2980,3 +2980,99 @@ fn a_stall_reason_speaks_again_after_going_unheard() {
     );
     assert!(game.presentation.stall_is_news(hold, 2100));
 }
+
+#[test]
+fn a_replay_gives_none_of_its_seats_private_feedback() {
+    let feedback = |stance| {
+        let mut game = Game::with_viewport(
+            aftermine_sim::Scenario::skirmish(),
+            Vec2::new(1280.0, 800.0),
+        )
+        .unwrap();
+        game.presentation.stance = stance;
+        let player = game.presentation.human;
+        let trained = game
+            .state
+            .units()
+            .iter()
+            .find(|unit| unit.player == player)
+            .expect("the seat starts with a unit");
+        let events = [
+            Event::CommandRejected {
+                player,
+                reason: aftermine_sim::command::RejectReason::NotEnoughScrap,
+            },
+            Event::BuildingCompleted {
+                building: BuildingId(999),
+                player,
+                kind: BuildingKind::Turret,
+                tier: 1,
+            },
+            Event::BuildingCompleted {
+                building: BuildingId(998),
+                player,
+                kind: BuildingKind::Turret,
+                tier: 0,
+            },
+            Event::UnitTrained {
+                building: BuildingId(997),
+                unit: trained.id,
+                kind: trained.kind,
+                player,
+            },
+            Event::ScrapDeposited {
+                unit: UnitId(998),
+                foundry: BuildingId(996),
+                player,
+                amount: 5,
+            },
+            Event::DamageTaken {
+                player,
+                pos: trained.pos,
+            },
+            worker_stall(&game, aftermine_sim::StallReason::NoRoute),
+        ];
+        game.presentation.spawn_fx(&game.state, &events);
+        let toasts: Vec<_> = game
+            .presentation
+            .toasts
+            .iter()
+            .map(|toast| toast.text.clone())
+            .collect();
+        let sounds: Vec<_> = game
+            .presentation
+            .sounds_pending
+            .iter()
+            .map(|(sound, _)| *sound)
+            .collect();
+        (toasts, sounds, game.presentation.alerts.len(), pings(&game))
+    };
+
+    let (toasts, sounds, alerts, pings) = feedback(crate::game::Stance::Seat);
+    assert_eq!(
+        toasts,
+        [
+            "Not enough scrap",
+            "Heavy Turret online",
+            "Can't reach that"
+        ]
+    );
+    assert_eq!(
+        sounds,
+        [
+            SoundKind::Denied,
+            SoundKind::UpgradeDone,
+            SoundKind::TrainDone,
+            SoundKind::TrainDone,
+            SoundKind::Deposit,
+            SoundKind::Alert,
+        ]
+    );
+    assert_eq!(alerts, 1, "the under-attack marker");
+    assert_eq!(pings, 2, "the new unit and the stalled order");
+
+    let (toasts, sounds, alerts, pings) = feedback(crate::game::Stance::Spectator);
+    assert!(toasts.is_empty(), "{toasts:?}");
+    assert!(sounds.is_empty(), "{sounds:?}");
+    assert_eq!((alerts, pings), (0, 0));
+}
