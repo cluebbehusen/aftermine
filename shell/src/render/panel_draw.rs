@@ -920,6 +920,7 @@ pub(crate) struct SelectionLayout {
     select_all: Option<Rect>,
     roster: Vec<Rect>,
     dock: Option<DockLayout>,
+    drones: Option<DroneColumnLayout>,
     hides_minimap: bool,
 }
 
@@ -931,6 +932,12 @@ pub(crate) struct DockLayout {
     stop: Option<(Rect, Rect)>,
     chips: Vec<Rect>,
     hidden: usize,
+}
+
+/// The drone column: its plate and the chips it shows.
+pub(crate) struct DroneColumnLayout {
+    plate: Rect,
+    chips: Vec<Rect>,
 }
 
 /// Whether the panel is the construction palette rather than a selection.
@@ -1027,6 +1034,10 @@ pub(crate) fn layout_panel(
         .collect();
     let dock = (!panel.queue.is_empty() || panel.stop.is_some())
         .then(|| layout_dock(game, input, panel, viewport, s, top, measure));
+    let drones = panel
+        .drones
+        .as_ref()
+        .map(|column| layout_drone_column(game, input, column, dock.as_ref(), s, top, measure));
     PanelLayout::Selection(Box::new(SelectionLayout {
         small,
         cards_x,
@@ -1038,8 +1049,48 @@ pub(crate) fn layout_panel(
         select_all,
         roster,
         dock,
+        drones,
         hides_minimap: packing.hides_minimap,
     }))
+}
+
+/// The drone column stands on the band just right of the orders column,
+/// which the orders dock fills or, on touch, the QUEUE toggle keeps, so a
+/// host's drones never cover its program.
+fn layout_drone_column(
+    game: &crate::game::Scene<'_>,
+    input: &InputState,
+    column: &crate::panel::DroneColumn,
+    dock: Option<&DockLayout>,
+    s: f32,
+    top: f32,
+    measure: super::hud::Measure<'_>,
+) -> DroneColumnLayout {
+    let toggle = super::chrome::queue_toggle_shown(game, input, crate::platform::TOUCH_ONLY);
+    let orders_right = dock.map_or(0.0, |dock| dock.dock.right()).max(if toggle {
+        (16.0 + crate::theme::MIN_TOUCH_TARGET) * s
+    } else {
+        0.0
+    });
+    let x = if orders_right > 0.0 {
+        orders_right + 4.0 * s
+    } else {
+        0.0
+    };
+    let (mut plate, slots, n) = queue_grid(column.chips.len(), top, s, 0.0);
+    let label_width = measure(
+        super::hud::Face::Body,
+        &column.label,
+        crate::theme::Type::Small.at(s),
+    ) + 16.0 * s;
+    plate.x = x;
+    plate.w = plate.w.max(label_width);
+    let chips = slots
+        .iter()
+        .take(n)
+        .map(|slot| Rect::new(slot.x + x, slot.y, slot.w, slot.h))
+        .collect();
+    DroneColumnLayout { plate, chips }
 }
 
 /// Production ghosts or order chips, stacked above the band's left
@@ -1169,6 +1220,13 @@ impl PanelLayout {
                 }
                 if let Some(dock) = &selection.dock {
                     dock.publish(panel, &mut geometry);
+                }
+                if let (Some(column), Some(layout)) = (&panel.drones, &selection.drones) {
+                    geometry.drones = layout.plate;
+                    for (card, rect) in column.chips.iter().zip(&layout.chips) {
+                        geometry.drone_slots[geometry.drone_count] = (*rect, card.action);
+                        geometry.drone_count += 1;
+                    }
                 }
             }
         }
@@ -1354,6 +1412,7 @@ pub(crate) fn draw_panel(
         select_all,
         roster,
         dock,
+        drones,
         hides_minimap: _,
     } = &**selection;
     let (small, cards_x, info_rect, action_rect) = (*small, *cards_x, *info_rect, *action_rect);
@@ -1716,6 +1775,84 @@ pub(crate) fn draw_panel(
     if let Some(dock) = dock {
         draw_dock(panel, input, dock, s, &draw_icon);
     }
+    if let (Some(column), Some(layout)) = (&panel.drones, drones) {
+        draw_drone_column(column, layout, input, s, &draw_icon);
+    }
+}
+
+/// The drone column: its plate, the time left over it, and a chip per
+/// drone on order, the one building bright and wearing its meter.
+fn draw_drone_column(
+    column: &crate::panel::DroneColumn,
+    layout: &DroneColumnLayout,
+    input: &InputState,
+    s: f32,
+    draw_icon: &impl Fn(Rect, &crate::panel::CardIcon, Color),
+) {
+    draw_dock_plate(layout.plate, false, s);
+    draw_text(
+        &column.label,
+        layout.plate.x + 8.0 * s,
+        layout.plate.y + 17.0 * s,
+        crate::theme::Type::Small.at(s),
+        TEXT_PRIMARY,
+    );
+    for (i, (card, &rect)) in column.chips.iter().zip(&layout.chips).enumerate() {
+        draw_chip_plate(rect, i == 0, hovers(input, rect), s);
+        let isz = 34.0 * s;
+        draw_icon(
+            Rect::new(rect.x + (rect.w - isz) * 0.5, rect.y + 5.0 * s, isz, isz),
+            &card.icon,
+            WHITE,
+        );
+        draw_chip_meter(rect, card.progress, s);
+    }
+}
+
+/// A dock plate borders its open sides; the screen edge or the band
+/// closes the rest.
+fn draw_dock_plate(rect: Rect, bottom: bool, s: f32) {
+    let edge = crate::theme::BORDER_STRONG;
+    fill_rect(rect, crate::theme::SURFACE_PLATE);
+    draw_rectangle(rect.x, rect.y, rect.w, 1.5 * s, edge);
+    draw_rectangle(rect.right() - 1.5 * s, rect.y, 1.5 * s, rect.h, edge);
+    if bottom {
+        draw_rectangle(rect.x, rect.bottom() - 1.5 * s, rect.w, 1.5 * s, edge);
+    }
+}
+
+/// A dock chip's face. The active order or job wears the bright border.
+fn draw_chip_plate(rect: Rect, active: bool, hovered: bool, s: f32) {
+    fill_rect(rect, crate::theme::CHIP);
+    stroke_rect(
+        rect,
+        if active {
+            crate::theme::Stroke::Focus
+        } else {
+            crate::theme::Stroke::Edge
+        }
+        .at(s),
+        if hovered || active {
+            crate::theme::EDGE_FOCUS
+        } else {
+            crate::theme::EDGE_CHIP
+        },
+    );
+}
+
+/// A chip with a measurable job wears its meter: the production head's
+/// build, a site's rise, a patient's hp. Read from the model, never
+/// peeked back out of the state.
+fn draw_chip_meter(rect: Rect, progress: Option<f32>, s: f32) {
+    if let Some(frac) = progress {
+        draw_rectangle(
+            rect.x,
+            rect.y + rect.h - 3.0 * s,
+            rect.w * frac.clamp(0.0, 1.0),
+            3.0 * s,
+            SCRAP_COLOR,
+        );
+    }
 }
 
 fn draw_dock(
@@ -1733,18 +1870,8 @@ fn draw_dock(
         chips,
         hidden,
     } = layout;
-    // Plates border their open sides; the screen edge closes the left.
-    let plate = |rect: Rect, bottom: bool| {
-        let edge = crate::theme::BORDER_STRONG;
-        fill_rect(rect, crate::theme::SURFACE_PLATE);
-        draw_rectangle(rect.x, rect.y, rect.w, 1.5 * s, edge);
-        draw_rectangle(rect.right() - 1.5 * s, rect.y, 1.5 * s, rect.h, edge);
-        if bottom {
-            draw_rectangle(rect.x, rect.bottom() - 1.5 * s, rect.w, 1.5 * s, edge);
-        }
-    };
     if list.h > 0.0 {
-        plate(*list, false);
+        draw_dock_plate(*list, false, s);
     }
     if !panel.queue.is_empty() {
         draw_text(
@@ -1757,7 +1884,7 @@ fn draw_dock(
     }
     if let (Some(card), Some((stop_plate, rect))) = (&panel.stop, *stop) {
         // Named where the chips beneath it are.
-        plate(stop_plate, true);
+        draw_dock_plate(stop_plate, true, s);
         let named = rect.w >= 150.0 * s;
         fill_rect(rect, crate::theme::CHIP);
         stroke_rect(
@@ -1792,27 +1919,12 @@ fn draw_dock(
     }
     let orders_dock = panel.queue_label == "Orders";
     for (i, (card, &rect)) in panel.queue.iter().zip(chips).enumerate() {
-        let hovered = hovers(input, rect);
-        fill_rect(rect, crate::theme::CHIP);
         // The active order or production head wears the bright border;
         // a ready-but-blocked head remains the queue's current job.
         let group = panel.queue_groups.get(i);
         let active = group.map_or(i == 0, |g| g.active > 0);
         let wide_group = group.is_some() && rect.w >= 150.0 * s;
-        stroke_rect(
-            rect,
-            if active {
-                crate::theme::Stroke::Focus
-            } else {
-                crate::theme::Stroke::Edge
-            }
-            .at(s),
-            if hovered || active {
-                crate::theme::EDGE_FOCUS
-            } else {
-                crate::theme::EDGE_CHIP
-            },
-        );
+        draw_chip_plate(rect, active, hovers(input, rect), s);
         // Order chips carry the same numbers as the world
         // breadcrumbs: chip 2 is waypoint 2.
         if orders_dock && panel.queue.len() > 1 {
@@ -1895,18 +2007,7 @@ fn draw_dock(
                 TEXT_SECONDARY,
             );
         }
-        // A chip with a measurable job wears its meter: the
-        // production head's build, a site's rise, a patient's hp.
-        // Read from the model, never peeked back out of the state.
-        if let Some(frac) = card.progress {
-            draw_rectangle(
-                rect.x,
-                rect.y + rect.h - 3.0 * s,
-                rect.w * frac.clamp(0.0, 1.0),
-                3.0 * s,
-                SCRAP_COLOR,
-            );
-        }
+        draw_chip_meter(rect, card.progress, s);
     }
     if *hidden > 0 {
         draw_text(
@@ -1956,18 +2057,19 @@ pub(crate) fn draw_panel_tooltip(game: &crate::game::Scene<'_>, input: &InputSta
         return;
     };
     let r = hit.rect;
-    let (anchor, side) = if matches!(
-        hit.row,
-        crate::layout::CardRow::Queue | crate::layout::CardRow::Stop
-    ) {
-        // Anchored across the dock's full width so the box clears the
-        // strip cleanly at any chip inset.
-        (
-            Rect::new(layout.orders.x, r.y, layout.orders.w.max(r.w), r.h),
+    let column = match hit.row {
+        crate::layout::CardRow::Queue | crate::layout::CardRow::Stop => Some(layout.orders),
+        crate::layout::CardRow::Drones => Some(layout.drones),
+        _ => None,
+    };
+    let (anchor, side) = match column {
+        // Anchored across the column's full width so the box clears it
+        // cleanly at any chip inset.
+        Some(column) => (
+            Rect::new(column.x, r.y, column.w.max(r.w), r.h),
             TooltipSide::RightOf,
-        )
-    } else {
-        (r, TooltipSide::Above)
+        ),
+        None => (r, TooltipSide::Above),
     };
     let mut lines: Vec<(String, Color)> = Vec::new();
     let header = if card.hotkey.is_empty() {

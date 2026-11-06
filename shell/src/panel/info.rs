@@ -15,7 +15,7 @@ pub(crate) enum StatIcon {
     Verb(VerbIcon),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct StatRow {
     pub label: String,
     pub value: String,
@@ -213,48 +213,22 @@ impl SelectionInfo {
         );
     }
 
-    /// A weapon's rows: what it deals, to structures too where that
-    /// differs, and how far it reaches, which for a `contact` weapon is the
-    /// hulls touching.
+    /// Each weapon's rows. Neighbouring weapons whose rows match share one
+    /// block whose heading counts them.
     pub(super) fn weapons(&mut self, weapons: &[WeaponStats], contact: bool) {
+        let mut blocks: Vec<(Vec<StatRow>, usize)> = Vec::new();
         for weapon in weapons {
-            let label = match (
-                weapon.targets.covers(Domain::Ground),
-                weapon.targets.covers(Domain::Air),
-            ) {
-                (true, true) => "Ground + air",
-                (false, true) => "Air",
-                _ => "Ground",
-            };
-            self.row(
-                label,
-                format!("{} dmg/hit", weapon.damage),
-                Some(StatIcon::Capability(weapon_capability_icon(weapon))),
-            );
-            self.rows.last_mut().unwrap().section = true;
-            if let Some(structure) = weapon.building_damage {
-                self.row("Structures", format!("{structure} dmg/hit"), None);
+            let rows = weapon_rows(weapon, contact);
+            match blocks.last_mut() {
+                Some((last, count)) if *last == rows => *count += 1,
+                _ => blocks.push((rows, 1)),
             }
-            let range = if contact {
-                "Contact".to_string()
-            } else if weapon.minimum_range > chassis::fx::Fx::ZERO {
-                format!(
-                    "{:.1}-{:.1} tiles",
-                    weapon.minimum_range.to_num::<f32>(),
-                    weapon.range.to_num::<f32>()
-                )
-            } else {
-                format!("{:.1} tiles", weapon.range.to_num::<f32>())
-            };
-            self.row("Range", range, None);
-            self.row("Reload", tick_time_label(weapon.cooldown_ticks), None);
-            if let Some(radius) = weapon.splash {
-                self.row(
-                    "Splash",
-                    format!("{:.1} tiles", radius.to_num::<f32>()),
-                    None,
-                );
+        }
+        for (mut rows, count) in blocks {
+            if count > 1 {
+                rows[0].label = format!("{} \u{d7}{count}", rows[0].label);
             }
+            self.rows.extend(rows);
         }
     }
 
@@ -272,6 +246,67 @@ impl SelectionInfo {
             }
         }
     }
+}
+
+/// A weapon's rows: what it deals, to structures too where that differs,
+/// and how far it reaches, which for a `contact` weapon is the hulls
+/// touching.
+fn weapon_rows(weapon: &WeaponStats, contact: bool) -> Vec<StatRow> {
+    let row = |label: &str, value: String, icon: Option<StatIcon>, section: bool| StatRow {
+        label: label.into(),
+        value,
+        icon,
+        section,
+    };
+    let label = match (
+        weapon.targets.covers(Domain::Ground),
+        weapon.targets.covers(Domain::Air),
+    ) {
+        (true, true) => "Ground + air",
+        (false, true) => "Air",
+        _ => "Ground",
+    };
+    let mut rows = vec![row(
+        label,
+        format!("{} dmg/hit", weapon.damage),
+        Some(StatIcon::Capability(weapon_capability_icon(weapon))),
+        true,
+    )];
+    if let Some(structure) = weapon.building_damage {
+        rows.push(row(
+            "Structures",
+            format!("{structure} dmg/hit"),
+            None,
+            false,
+        ));
+    }
+    let range = if contact {
+        "Contact".to_string()
+    } else if weapon.minimum_range > chassis::fx::Fx::ZERO {
+        format!(
+            "{:.1}-{:.1} tiles",
+            weapon.minimum_range.to_num::<f32>(),
+            weapon.range.to_num::<f32>()
+        )
+    } else {
+        format!("{:.1} tiles", weapon.range.to_num::<f32>())
+    };
+    rows.push(row("Range", range, None, false));
+    rows.push(row(
+        "Reload",
+        tick_time_label(weapon.cooldown_ticks),
+        None,
+        false,
+    ));
+    if let Some(radius) = weapon.splash {
+        rows.push(row(
+            "Splash",
+            format!("{:.1} tiles", radius.to_num::<f32>()),
+            None,
+            false,
+        ));
+    }
+    rows
 }
 
 /// A machine's radar ring and, for one that unfolds it only at rest, how far
@@ -298,7 +333,8 @@ fn radar_facts(info: &mut SelectionInfo, unit: &aftermine_sim::Unit) {
 }
 
 /// A carrier's sling and a host's drone bay: what each holds to its owner
-/// and team, and only how much it holds to anyone else.
+/// and team, and only how much it holds to anyone else. A host's drones
+/// count docked or flying; the ones on order stand in their own column.
 fn hold_rows(info: &mut SelectionInfo, game: &Scene<'_>, u: &aftermine_sim::Unit) {
     let stats = u.kind.stats();
     let hostile = game.state.hostile(game.presentation.human, u.player);
@@ -313,11 +349,16 @@ fn hold_rows(info: &mut SelectionInfo, game: &Scene<'_>, u: &aftermine_sim::Unit
     }
     if let Some(bay) = stats.bay {
         let value = if hostile {
-            format!("{} drones", bay.capacity)
+            format!("up to {}", bay.capacity)
         } else {
-            crate::unit_bays::readout(game, u.id).unwrap_or_default()
+            let held = crate::unit_bays::held(game, u.id).unwrap_or(0);
+            format!("{held}/{}", bay.capacity)
         };
-        info.row("Drones", value, Some(StatIcon::Verb(VerbIcon::Build)));
+        info.row(
+            "Drones",
+            value,
+            Some(StatIcon::Capability(CapabilityIcon::Drones)),
+        );
     }
 }
 

@@ -1445,7 +1445,8 @@ pub(crate) fn draw_hud(
                 orders_dock
                     .w
                     .max(panel_regions[0].w)
-                    .max(queue_toggle.x + queue_toggle.w),
+                    .max(queue_toggle.x + queue_toggle.w)
+                    .max(layout.drones.right()),
                 0.0,
             ),
             mode_ribbon,

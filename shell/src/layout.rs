@@ -87,6 +87,13 @@ pub struct LayoutModel {
     pub queue_count: usize,
     /// The Stop button above the dock; zero-sized while there is none.
     pub queue_stop: (Rect, CardAction),
+    /// The drone column beside the orders dock; zero-sized while there
+    /// is none.
+    pub drones: Rect,
+    /// Its chips, same contract as the queue's.
+    pub drone_slots: [(Rect, CardAction); 8],
+    /// How many drone chips are live this frame.
+    pub drone_count: usize,
 }
 
 impl Default for LayoutModel {
@@ -122,6 +129,9 @@ impl Default for LayoutModel {
             queue_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 8],
             queue_count: 0,
             queue_stop: (Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None),
+            drones: Rect::new(0.0, 0.0, 0.0, 0.0),
+            drone_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 8],
+            drone_count: 0,
         }
     }
 }
@@ -515,6 +525,7 @@ impl LayoutModel {
                 .iter()
                 .any(|rect| rect.w > 0.0 && rect.contains(p))
             || (self.orders.w > 0.0 && self.orders.contains(p))
+            || (self.drones.w > 0.0 && self.drones.contains(p))
             || (self.mode_ribbon.w > 0.0 && self.mode_ribbon.contains(p))
             || (self.queue_toggle.w > 0.0 && self.queue_toggle.contains(p))
             || [self.ghost_confirm, self.ghost_cancel, self.ghost_handle]
@@ -535,6 +546,8 @@ pub(crate) enum CardRow {
     Queue,
     /// The Stop button above the dock.
     Stop,
+    /// The drone column beside the dock.
+    Drones,
 }
 
 /// A published panel card under a pointer.
@@ -547,16 +560,18 @@ pub(crate) struct CardHit {
 }
 
 /// The card under `p`, searching the select-all button and the roster,
-/// then command cards, then the queue and its Stop button. A fingertip
+/// then command cards, then the queue, its Stop button and the drone
+/// column. A fingertip
 /// (`touch_ui`) hits through each card's padded touch target; a mouse
 /// hits the drawn rect.
 pub(crate) fn card_under(layout: &LayoutModel, p: Vec2, touch_ui: Option<f32>) -> Option<CardHit> {
-    let rows: [(CardRow, &[(Rect, CardAction)]); 5] = [
+    let rows: [(CardRow, &[(Rect, CardAction)]); 6] = [
         (CardRow::SelectAll, std::slice::from_ref(&layout.select_all)),
         (CardRow::Roster, &layout.roster_slots[..layout.roster_count]),
         (CardRow::Cards, &layout.cards[..layout.card_count]),
         (CardRow::Queue, &layout.queue_slots[..layout.queue_count]),
         (CardRow::Stop, std::slice::from_ref(&layout.queue_stop)),
+        (CardRow::Drones, &layout.drone_slots[..layout.drone_count]),
     ];
     rows.into_iter().find_map(|(row, slots)| {
         slots

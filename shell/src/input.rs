@@ -3277,6 +3277,9 @@ fn activate_card(
         crate::panel::CardAction::CancelRound(building, index) => {
             game.issue(Command::CancelRound { building, index });
         }
+        crate::panel::CardAction::CancelDrone(unit, index) => {
+            game.issue(Command::CancelDrone { unit, index });
+        }
         crate::panel::CardAction::CancelSite(building) => {
             game.issue(Command::Cancel { building });
         }

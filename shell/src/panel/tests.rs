@@ -15,6 +15,7 @@ fn every_dock_chip_that_cancels_work_discards_it_and_nothing_else_does() {
         CardAction::CancelFound(BuildingKind::Turret, tile),
         CardAction::CancelQueue(site, 0),
         CardAction::CancelRound(site, 0),
+        CardAction::CancelDrone(aftermine_sim::UnitId(2), 0),
         CardAction::CancelProduction(UnitKind::Harvester),
     ] {
         assert!(action.discards_work(), "{action:?}");
@@ -1854,5 +1855,89 @@ fn a_single_unit_kind_offers_every_one_you_own_until_all_are_selected() {
     assert!(
         panel.select_all.is_none(),
         "every Sentinel is already selected"
+    );
+}
+
+/// A skirmish with a Roc for each seat, every bay refilling.
+fn rival_rocs() -> (Game, aftermine_sim::UnitId, aftermine_sim::UnitId) {
+    let mut scenario = Scenario::skirmish();
+    for seat in &mut scenario.players {
+        seat.scrap = seat.scrap.max(1000);
+    }
+    for (player, x) in [(0, 12), (1, 20)] {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
+            player,
+            kind: UnitKind::Roc,
+            x,
+            y: 10,
+        });
+    }
+    let game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let roc = |player: u8| {
+        game.state
+            .units()
+            .iter()
+            .find(|unit| unit.kind == UnitKind::Roc && unit.player.0 == player)
+            .unwrap()
+            .id
+    };
+    let (own, enemy) = (roc(0), roc(1));
+    (game, own, enemy)
+}
+
+#[test]
+fn a_roc_docks_its_drones_on_order_beside_its_program() {
+    let (mut game, roc, enemy) = rival_rocs();
+    let bay = UnitKind::Roc.stats().bay.unwrap();
+    // The bay autofills its first drone; a second is bought.
+    game.do_tick();
+    game.issue(Command::OrderDrone { unit: roc });
+    game.do_tick();
+    game.presentation.selection.units = vec![roc];
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    let column = panel.drones.as_ref().expect("drones on order get a column");
+    let chips: Vec<_> = column
+        .chips
+        .iter()
+        .map(|card| (card.action, card.progress.is_some()))
+        .collect();
+    assert_eq!(
+        chips,
+        [
+            (CardAction::CancelDrone(roc, 0), true),
+            (CardAction::CancelDrone(roc, 1), false),
+        ],
+        "one chip per paid drone, the one building wearing its meter"
+    );
+    assert_eq!(column.chips[0].title, "Drone");
+    assert_eq!(column.chips[0].icon, CardIcon::Unit(bay.drone));
+    assert_eq!(column.chips[0].desc, refund_chip_desc());
+    assert_eq!(
+        column.label,
+        tick_time_label(2 * bay.build_ticks - 2),
+        "the heading counts down both drones"
+    );
+    assert!(
+        panel
+            .queue
+            .iter()
+            .all(|card| !matches!(card.action, CardAction::CancelDrone(..))),
+        "the orders dock keeps the program alone"
+    );
+    assert_eq!(stat(&panel, "Drones").value, format!("0/{}", bay.capacity));
+
+    game.presentation.selection.units = vec![enemy];
+    assert!(
+        game.state.unit(enemy).unwrap().bay.unwrap().ordered > 0,
+        "premise: the enemy bay is building too"
+    );
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert!(
+        panel.drones.is_none(),
+        "an enemy's drones on order are intent"
+    );
+    assert_eq!(
+        stat(&panel, "Drones").value,
+        format!("up to {}", bay.capacity)
     );
 }
