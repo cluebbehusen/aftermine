@@ -892,7 +892,11 @@ impl UnitSpriteFrame {
         animation: crate::presentation_animation::UnitAnimationState,
     ) -> Self {
         let mut frame = motion::unit_frame(kind, animation);
-        if tracks::supported(kind) {
+        // Treads drawn apart from the body roll while its frame holds still:
+        // the shared belts, and the Maw's own layers (`render::maw`). The
+        // Maw's whole-body move frames are never loaded, so its idle body is
+        // the outline every shot, blast and tool meets.
+        if tracks::supported(kind) || kind == aftermine_sim::UnitKind::Maw {
             match &mut frame {
                 motion::UnitFrame::Moving(_) => frame = motion::UnitFrame::Idle,
                 motion::UnitFrame::Harvester { pose, .. }
