@@ -1217,7 +1217,7 @@ pub(super) fn top_bar_layout(
             .unwrap_or_default()
     };
     let scrap = game.state.player(game.presentation.human).scrap;
-    let passive = crate::panel::passive_income(game);
+    let passive = format!("+{}/min income", crate::panel::passive_income(game));
     let my_units = game
         .state
         .units()
@@ -1225,11 +1225,6 @@ pub(super) fn top_bar_layout(
         .filter(|unit| unit.player == game.presentation.human)
         .count();
     let scrap = scrap.to_string();
-    let passive = if passive == 0 {
-        String::new()
-    } else {
-        format!("+{passive}/min income")
-    };
     let units = my_units.to_string();
     let keyless = !crate::platform::hands().keys;
     let idle = crate::input::idle_harvesters(game).len();
