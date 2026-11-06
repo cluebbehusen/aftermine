@@ -72,8 +72,8 @@ impl SeatStyles {
 /// Team colors' allies, clear of the enemy and self colors under typical,
 /// red-weak, green-weak and blue-weak vision alike.
 const TEAM_ALLY: Color = color_u8!(90, 150, 245, 255);
-/// Team colors' enemies, brighter than the default palette's first enemy so
-/// that they hold apart from the near-white self color and the blue allies.
+/// Team colors' enemies: a bright red, which holds apart from the near-white
+/// self color and the blue allies where the team-game crimson would not.
 const TEAM_ENEMY: Color = color_u8!(228, 44, 58, 255);
 
 /// Your own seat's color: a hue neither the ally nor the hostile family uses,
@@ -105,8 +105,9 @@ fn ally_palette() -> [Color; 8] {
 
 /// Enemies by rank. A viewer with an ally sees only dark colors, below the
 /// lightness of every ally and of the self green; bright oranges and yellows
-/// sit on the green under red-weak vision. With no ally to confuse, later ranks
-/// reach into light and cool colors.
+/// sit on the green under red-weak vision. With no ally to confuse, each enemy
+/// takes its own hue, and Colorblind team colors covers the pairs that only
+/// color blindness confuses.
 fn hostile_palette(has_allies: bool) -> [Color; 8] {
     if has_allies {
         [
@@ -121,14 +122,14 @@ fn hostile_palette(has_allies: bool) -> [Color; 8] {
         ]
     } else {
         [
-            color_u8!(190, 30, 50, 255),
+            color_u8!(228, 44, 58, 255),
+            color_u8!(60, 100, 245, 255),
+            color_u8!(250, 210, 60, 255),
+            color_u8!(150, 70, 220, 255),
+            color_u8!(245, 130, 40, 255),
+            color_u8!(40, 180, 190, 255),
+            color_u8!(245, 120, 190, 255),
             color_u8!(245, 245, 240, 255),
-            color_u8!(60, 90, 245, 255),
-            color_u8!(190, 175, 255, 255),
-            color_u8!(30, 135, 180, 255),
-            color_u8!(50, 70, 175, 255),
-            color_u8!(130, 40, 110, 255),
-            color_u8!(195, 230, 255, 255),
         ]
     }
 }

@@ -92,7 +92,7 @@ fn large_allied_team_preserves_identity_families_and_refreshes_the_viewer() {
     }
     assert_eq!(enemy.get(PlayerId(15)), self_color(false));
     assert_eq!(rgb(allied.get(PlayerId(1))), (110, 190, 250));
-    assert_eq!(rgb(enemy.get(PlayerId(0))), (190, 30, 50));
+    assert_eq!(rgb(enemy.get(PlayerId(0))), (228, 44, 58));
 }
 
 #[test]
@@ -177,12 +177,19 @@ fn enemies_beside_an_ally_stay_darker_than_every_ally() {
 }
 
 #[test]
-fn a_viewer_without_allies_sees_later_enemies_in_cool_colors() {
-    let state = scenario(8, |seat| Some(u8::from(seat >= 1)))
-        .build()
-        .unwrap();
-    let styles = SeatStyles::new(&state, PlayerId(0), false);
-    assert_eq!(rgb(styles.get(PlayerId(3))), (60, 90, 245));
+fn every_enemy_of_an_eight_seat_free_for_all_has_its_own_hue() {
+    let enemies = hostile_palette(false);
+    for (rank, enemy) in enemies[..7].iter().enumerate() {
+        for other in &enemies[rank + 1..7] {
+            let apart = (hue(*enemy) - hue(*other)).abs();
+            assert!(
+                apart.min(360.0 - apart) >= 20.0,
+                "{:?} and {:?} share a hue",
+                rgb(*enemy),
+                rgb(*other)
+            );
+        }
+    }
 }
 
 #[test]
