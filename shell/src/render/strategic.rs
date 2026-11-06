@@ -3,14 +3,17 @@
 //! pods and reload arm, and each warhead's climb, cruise and dive over the
 //! line it flies.
 
+mod assembly;
+
 use super::*;
 use crate::assets::{LatticeRig, SpireRig};
 use crate::numeric::Fit;
-use crate::render::prim::{fill_circle, line_between, stroke_circle};
+use crate::render::prim::{fill_circle, fill_rect, line_between, stroke_circle};
 use crate::render::sky::{
     Flight, INTERCEPTOR_TAIL, InterceptorPath, SCALE_PER_TILE, SHADOW_PER_TILE, WARHEAD_TAIL,
 };
 use aftermine_sim::Building;
+use assembly::{LATTICE_ARM, Mouth, SPIRE_GANTRY, draw_box_sparks};
 
 /// Where a Lattice pod turns, as a share of the footprint.
 const POD_PIVOTS: [Vec2; 2] = [vec2(0.25, 62.0 / 128.0), vec2(0.75, 62.0 / 128.0)];
@@ -42,9 +45,40 @@ fn smoothstep(x: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
 }
 
-/// A closing lock or clamp's step over `from..to` of a round's progress.
-fn closing_step(progress: f32, from: f32, to: f32) -> usize {
-    numeric::to_usize((4.0 * smoothstep((progress - from) / (to - from))).round()).min(4)
+/// Where the Spire's service bay welds the next section, under its cover.
+const SPIRE_BAY: [Mouth; 2] = [
+    (vec2(91.0, 68.0), vec2(110.0, 68.0)),
+    (vec2(95.0, 77.0), vec2(105.0, 77.0)),
+];
+
+/// Where the Lattice's housing welds the next part, under its cover.
+const LATTICE_HOUSING: [Mouth; 2] = [
+    (vec2(51.0, 93.0), vec2(77.0, 93.0)),
+    (vec2(57.0, 99.0), vec2(71.0, 99.0)),
+];
+
+/// Sparks at a box that is making a part, unless the player asked for
+/// reduced motion; they fade out with the building art at strategic zoom.
+fn box_sparks(
+    game: &crate::game::Scene<'_>,
+    b: &Building,
+    art: impl Fn(Vec2) -> Vec2,
+    dest: Vec2,
+    mouths: &[Mouth],
+) {
+    if reduced_motion() {
+        return;
+    }
+    let zoom = game.presentation.camera.zoom;
+    let now = game.state.current_tick() as f32 + game.presentation.tick_fraction();
+    draw_box_sparks(
+        art,
+        dest.x / 128.0,
+        mouths,
+        b.id.0,
+        now,
+        1.0 - crate::strategic_markers::marker_alpha(zoom),
+    );
 }
 
 /// One layer of a building's art: its source and tint, drawn over the
@@ -113,18 +147,22 @@ pub(super) fn draw_spire(
     push(rig.foundation[1], accent, 0.0);
     push(rig.deck[0], WHITE, rotation);
     push(rig.deck[1], accent, rotation);
-    let assembling = (magazine.ordered > 0 && magazine.loaded == 0)
-        .then(|| magazine.progress as f32 / stats.round_ticks.max(1) as f32);
+    let round_ticks = stats.round_ticks as usize;
+    let progress = magazine.progress as usize;
+    let assembly = (magazine.ordered > 0 && magazine.loaded == 0)
+        .then(|| SPIRE_GANTRY.at(progress, round_ticks));
     let (lower, upper) = if magazine.loaded > 0 {
         // Once the deck stands aligned on its strike, the upper lock
         // releases, then the lower, and the round is free to fly.
         let ready = usize::from(launcher.ready);
         let release = |from: usize| 4 - ready.saturating_sub(from).min(4);
         (release(LOWER_RELEASE), release(UPPER_RELEASE))
-    } else if let Some(p) = assembling {
+    } else if assembly.is_some() {
+        // The lower lock shuts on the second section, the upper on the
+        // fourth.
         (
-            closing_step(p, 1.0 / 3.0, 0.4),
-            closing_step(p, 0.689, 0.756),
+            SPIRE_GANTRY.closing(1, progress, round_ticks),
+            SPIRE_GANTRY.closing(3, progress, round_ticks),
         )
     } else {
         (0, 0)
@@ -133,31 +171,31 @@ pub(super) fn draw_spire(
         push(rig.round[0], WHITE, rotation);
         push(rig.round[1], accent, rotation);
         push(rig.gantry_parked, WHITE, rotation);
-    } else if let Some(p) = assembling {
-        let carry = rig.gantry.len().saturating_sub(4).max(1);
-        let frame = if p < 8.0 / 9.0 {
-            (1 + numeric::to_usize((p * 9.0 / 8.0 * carry as f32).floor())).min(carry)
-        } else {
-            (carry + 1 + numeric::to_usize(((p - 8.0 / 9.0) * 36.0).floor())).min(rig.gantry.len())
-        };
-        let seated = if frame <= carry {
-            (frame - 1) / 8
-        } else {
-            rig.stacks.len() + 1
-        };
-        if seated > rig.stacks.len() {
+    } else if let Some(assembly) = assembly {
+        if assembly.seated > rig.stacks.len() {
             push(rig.round[0], WHITE, rotation);
             push(rig.round[1], accent, rotation);
-        } else if seated > 0 {
-            push(rig.stacks[seated - 1], WHITE, rotation);
+        } else if assembly.seated > 0 {
+            push(rig.stacks[assembly.seated - 1], WHITE, rotation);
         }
-        let nose_from = carry + 1 - rig.noses.len();
-        if (nose_from..=carry).contains(&frame) {
-            let nose = rig.noses[frame - nose_from];
-            push(nose[0], WHITE, rotation);
-            push(nose[1], accent, rotation);
+        match assembly.frame {
+            Some(frame) => {
+                let frame = frame.clamp(1, rig.gantry.len());
+                // The nose rides the hook through the last section's carry.
+                let carry = SPIRE_GANTRY.last_carry();
+                let nose_from = (carry + 1).saturating_sub(rig.noses.len());
+                if let Some(nose) = (nose_from..=carry)
+                    .contains(&frame)
+                    .then(|| rig.noses.get(frame - nose_from))
+                    .flatten()
+                {
+                    push(nose[0], WHITE, rotation);
+                    push(nose[1], accent, rotation);
+                }
+                push(rig.gantry[frame - 1], WHITE, rotation);
+            }
+            None => push(rig.gantry_parked, WHITE, rotation),
         }
-        push(rig.gantry[frame - 1], WHITE, rotation);
     } else {
         push(rig.gantry_parked, WHITE, rotation);
     }
@@ -166,6 +204,11 @@ pub(super) fn draw_spire(
     push(rig.lock_lower[lower], WHITE, rotation);
     push(rig.lock_upper[upper], WHITE, rotation);
     draw_layers(sprites, zoom, &layers);
+    if assembly.is_some_and(|assembly| assembly.making) {
+        let turn = Vec2::from_angle(rotation);
+        let art = |p: Vec2| pivot + turn.rotate((p / 128.0 - vec2(0.5, 0.5)) * dest);
+        box_sparks(game, b, art, dest, &SPIRE_BAY);
+    }
     true
 }
 
@@ -197,20 +240,16 @@ pub(super) fn draw_lattice(
         pivot: screen + dest * 0.5,
     };
     layers.push(footprint(rig.base, WHITE));
-    // The pod being refilled, and how far along its round is.
+    // The pod being refilled, and where its round's assembly stands; its
+    // clamp shuts on the nose.
+    let round_ticks = stats.round_ticks as usize;
+    let progress = magazine.progress as usize;
     let rebuilding = (magazine.ordered > 0 && magazine.loaded < stats.capacity).then(|| {
         (
             magazine.loaded,
-            magazine.progress as f32 / stats.round_ticks.max(1) as f32,
+            LATTICE_ARM.at(progress, round_ticks),
+            LATTICE_ARM.closing(LATTICE_ARM.parts - 1, progress, round_ticks),
         )
-    });
-    let arm_carry = rig.arms[0].len().saturating_sub(2).max(1);
-    let arm_frame = rebuilding.map(|(_, p)| {
-        if p < 0.9 {
-            (1 + numeric::to_usize((p / 0.9 * arm_carry as f32).floor())).min(arm_carry)
-        } else {
-            (arm_carry + 1 + numeric::to_usize(((p - 0.9) * 20.0).floor())).min(rig.arms[0].len())
-        }
     });
     let aim = pod_aims(game, b, magazine.loaded);
     let tick = sky_tick(game);
@@ -248,34 +287,53 @@ pub(super) fn draw_lattice(
             layers.push(layer(rig.interceptor[0], WHITE));
             layers.push(layer(rig.interceptor[1], accent));
             4
-        } else if let (Some((filling, p)), Some(frame)) = (rebuilding, arm_frame)
+        } else if let Some((filling, assembly, clamp)) = rebuilding
             && filling == pod
         {
-            if frame > arm_carry {
+            if assembly.seated > rig.stacks.len() {
                 layers.push(layer(rig.interceptor[0], WHITE));
                 layers.push(layer(rig.interceptor[1], accent));
-            } else if let Some(&parts) = rig.stacks.get(((frame - 1) / 4).wrapping_sub(1)) {
-                layers.push(layer(parts, WHITE));
+            } else if assembly.seated > 0 {
+                layers.push(layer(rig.stacks[assembly.seated - 1], WHITE));
             }
-            closing_step(p, 0.9, 1.0)
+            clamp
         } else {
             0
         };
         layers.push(layer(rig.clamp[clamp], WHITE));
     }
-    if let (Some((pod, _)), Some(frame)) = (rebuilding, arm_frame) {
+    // Between parts the arm waits under the cover, out of sight.
+    if let Some((pod, assembly, _)) = rebuilding
+        && let Some(frame) = assembly.frame
+    {
         let side = usize::from(pod.min(1));
+        let arm = &rig.arms[side];
+        let frame = frame.clamp(1, arm.len());
+        // The nose rides the hand through the last part's carry.
+        let carry = LATTICE_ARM.last_carry();
         let noses = &rig.noses[side];
-        let nose_from = arm_carry + 1 - noses.len();
-        if (nose_from..=arm_carry).contains(&frame) {
-            let nose = noses[frame - nose_from];
+        let nose_from = (carry + 1).saturating_sub(noses.len());
+        if let Some(nose) = (nose_from..=carry)
+            .contains(&frame)
+            .then(|| noses.get(frame - nose_from))
+            .flatten()
+        {
             layers.push(footprint(nose[0], WHITE));
             layers.push(footprint(nose[1], accent));
         }
-        layers.push(footprint(rig.arms[side][frame - 1], WHITE));
+        layers.push(footprint(arm[frame - 1], WHITE));
     }
     layers.push(footprint(rig.cover, WHITE));
     draw_layers(sprites, zoom, &layers);
+    if rebuilding.is_some_and(|(_, assembly, _)| assembly.making) {
+        box_sparks(
+            game,
+            b,
+            |p| screen + p / 128.0 * dest,
+            dest,
+            &LATTICE_HOUSING,
+        );
+    }
     true
 }
 
