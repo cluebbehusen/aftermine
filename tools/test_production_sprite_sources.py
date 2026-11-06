@@ -1467,8 +1467,10 @@ class RocSourceTests(unittest.TestCase):
     def test_drone_layers_split_the_study_drone(self):
         for rotor in range(0, roc_final.ROTOR_FRAMES * roc_final.ROTOR_STEP, roc_final.ROTOR_STEP):
             whole = roc_final.render_drone("base", rotor)
-            layered = roc_final.render_drone_frame("base", rotor)
-            layered.alpha_composite(roc_final.render_drone_body("base"))
+            self.assertEqual(whole.size, (128, 128), "the whole drone fills a unit's canvas")
+            detail = roc_final.DRONE_DETAIL
+            layered = roc_final.render_drone_frame("base", rotor, detail)
+            layered.alpha_composite(roc_final.render_drone_body("base", detail=detail))
             self.assertLessEqual(_strongly_changed_pixels(layered, whole), 8, rotor)
         self.assertGreater(
             _changed_pixels(roc_final.render_drone_body("base"), roc_final.render_drone_body("base", True)),
