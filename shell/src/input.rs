@@ -1,7 +1,8 @@
 //! The input funnel.
 //!
-//! macroquad's polled state becomes [`RawEvent`]s, injected events from the
-//! debug socket are appended to the same list, and [`apply_events`] is the
+//! macroquad's polled state and the `pad` adapter's controllers become
+//! [`RawEvent`]s, injected events from the debug socket are appended to the
+//! same list, and [`apply_events`] is the
 //! only code that turns events into camera motion, selection, or sim
 //! commands. Input that bypasses this module escapes every injected-event
 //! test.
@@ -2134,6 +2135,13 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         }
         RawEvent::TouchUp { id, x, y } => touch::up(game, input, bindings, id, vec2(x, y)),
         RawEvent::TouchCancel { id } => touch::cancel(input, id),
+        RawEvent::PadConnected { .. }
+        | RawEvent::PadDisconnected { .. }
+        | RawEvent::PadDown { .. }
+        | RawEvent::PadUp { .. }
+        | RawEvent::PadStick { .. } => {
+            // A match maps no controller controls.
+        }
     }
     if input.construction_open()
         && !matches!(

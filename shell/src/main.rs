@@ -42,6 +42,7 @@ mod mixer;
 mod nav;
 mod netplay;
 mod numeric;
+mod pad;
 mod panel;
 mod paths;
 mod performance;

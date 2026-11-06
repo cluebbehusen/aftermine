@@ -12,3 +12,6 @@ too-many-lines-threshold = 250
 # Modules split into child files share their parent's imports through
 # `use super::*`; every other glob import still warns.
 allowed-wildcard-imports = ["super"]
+
+# Brand names that read as code to the doc lint; ".." keeps the defaults.
+doc-valid-idents = ["PlayStation", ".."]

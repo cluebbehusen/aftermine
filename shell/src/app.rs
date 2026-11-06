@@ -96,6 +96,9 @@ struct App {
     capture_shift: bool,
     /// Events injected over the debug socket, consumed next frame.
     injected: Vec<RawEvent>,
+    /// The platform's game controllers. Automation shells, which never
+    /// read hardware, have none.
+    pads: Option<crate::pad::Pads>,
     /// Screenshot requests parked until after this frame renders.
     pending_shots: Vec<screenshot::PendingScreenshot>,
     /// The one texture atlas and its source rects.
@@ -351,6 +354,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         capture_ctrl: false,
         capture_shift: false,
         injected: Vec::new(),
+        pads: None,
         pending_shots: Vec::new(),
         sprites,
         sounds,
@@ -480,7 +484,11 @@ pub(crate) async fn run(args: Args) -> Result<()> {
 
         let input_diagnostic_scope = visible_stage(&screen, &app, Stage::Input);
         let mut events = hardware_events(first_pass && !app.args.automation, || {
-            input::poll_events(screen.text_entry())
+            let mut events = input::poll_events(screen.text_entry());
+            app.pads
+                .get_or_insert_with(crate::pad::Pads::open)
+                .poll(&mut events);
+            events
         });
         if let Some((frame, last_top)) = trace_frames.as_mut() {
             *frame += 1;

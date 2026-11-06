@@ -47,12 +47,13 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # macroquad links against the platform's windowing/audio stacks even
-      # in headless test builds.
+      # in headless test builds, and gilrs reads pads through libudev, which
+      # it finds with pkg-config.
       - name: Install Linux system libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev
+          sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev pkg-config libudev-dev
 
       - name: Format
         if: runner.os == 'Linux'
@@ -133,7 +134,7 @@ jobs:
       - name: Install Linux system libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev jq
+          sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev pkg-config libudev-dev jq
       - name: Coverage
         shell: bash
         run: .github/coverage.sh
@@ -176,7 +177,7 @@ jobs:
       - name: Install Linux system libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev
+          sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev pkg-config libudev-dev
       - name: Check all targets on MSRV
         run: cargo check --workspace --all-targets --locked
 

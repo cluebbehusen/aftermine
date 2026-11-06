@@ -1,13 +1,20 @@
 //! Raw input events: the shell's single input funnel.
 //!
-//! Every frame the shell turns whatever macroquad reports (and whatever
-//! arrived via [`crate::Request::InjectEvent`]) into a list of these, then
+//! Every frame the shell turns whatever macroquad and the platform's
+//! controller API report (and whatever arrived via
+//! [`crate::Request::InjectEvent`]) into a list of these, then
 //! maps them to camera operations, selection changes, and sim commands.
 //! Injected and hardware events take the same path, so presentation-layer
 //! tests need no OS-level input faking.
 //!
 //! Touch variants flow through the shell's touch handling (tap select, drag
 //! pan, pinch zoom).
+//!
+//! Pad variants carry game controllers. Buttons are named by where they
+//! sit, so one event means one physical button on every family of pad. The
+//! shell's hardware adapter applies stick dead zones and sends a stick only
+//! when it moves, so hardware and injected sticks carry the same clean
+//! values.
 
 use serde::{Deserialize, Serialize};
 
@@ -96,6 +103,47 @@ pub enum RawEvent {
         /// The character as typed (layout- and shift-resolved).
         ch: char,
     },
+    /// A game controller connected. One already connected when the shell
+    /// starts arrives this way too, before any of its presses.
+    PadConnected {
+        /// Stable pad id while it stays connected.
+        pad: u64,
+        /// Whose layout it follows, which names its buttons.
+        family: PadFamily,
+    },
+    /// A game controller disconnected. The hardware adapter releases its
+    /// held buttons and centers its sticks first.
+    PadDisconnected {
+        /// The pad's id.
+        pad: u64,
+    },
+    /// A controller button pressed.
+    PadDown {
+        /// The pad's id.
+        pad: u64,
+        /// Which button.
+        button: PadButton,
+    },
+    /// A controller button released.
+    PadUp {
+        /// The pad's id.
+        pad: u64,
+        /// Which button.
+        button: PadButton,
+    },
+    /// A stick's new position. Each axis runs from -1 to 1, x to the right
+    /// and y down like window coordinates; (0, 0) is centered, which is
+    /// also where the dead zone puts a resting stick.
+    PadStick {
+        /// The pad's id.
+        pad: u64,
+        /// Which stick.
+        stick: Stick,
+        /// Rightward deflection.
+        x: f32,
+        /// Downward deflection.
+        y: f32,
+    },
 }
 
 #[cfg(test)]
@@ -111,6 +159,72 @@ pub enum MouseButton {
     Right,
     /// Camera drag-pan.
     Middle,
+}
+
+/// A controller button, named by position: the bottom face button is
+/// [`PadButton::South`] whether the pad prints A, Cross, or B on it. A
+/// platform API that names buttons by label maps them to positions in its
+/// adapter. The guide button belongs to the system and never arrives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PadButton {
+    /// Bottom face button.
+    South,
+    /// Right face button.
+    East,
+    /// Left face button.
+    West,
+    /// Top face button.
+    North,
+    /// D-pad up.
+    DpadUp,
+    /// D-pad down.
+    DpadDown,
+    /// D-pad left.
+    DpadLeft,
+    /// D-pad right.
+    DpadRight,
+    /// Left shoulder button.
+    LeftBumper,
+    /// Right shoulder button.
+    RightBumper,
+    /// Left trigger, pressed past the platform's threshold.
+    LeftTrigger,
+    /// Right trigger, pressed past the platform's threshold.
+    RightTrigger,
+    /// Left stick pressed in.
+    LeftStick,
+    /// Right stick pressed in.
+    RightStick,
+    /// Left center button (View, Create, Minus).
+    Select,
+    /// Right center button (Menu, Options, Plus).
+    Start,
+}
+
+/// A controller's analog stick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Stick {
+    /// Left stick.
+    Left,
+    /// Right stick.
+    Right,
+}
+
+/// Whose button layout a pad follows. It decides what a button is called,
+/// never what it does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PadFamily {
+    /// Xbox pads, and the Steam Deck's controls as Steam presents them.
+    Xbox,
+    /// PlayStation pads.
+    PlayStation,
+    /// Nintendo Switch pads.
+    Switch,
+    /// A pad of unknown make; it is named like an Xbox pad.
+    Other,
 }
 
 /// The keys the shell maps; extend alongside the input mapper. The shell's

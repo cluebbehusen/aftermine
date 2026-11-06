@@ -20,10 +20,15 @@ fn event_tag(event: &RawEvent) -> usize {
         RawEvent::TouchUp { .. } => 8,
         RawEvent::TouchCancel { .. } => 9,
         RawEvent::Text { .. } => 10,
+        RawEvent::PadConnected { .. } => 11,
+        RawEvent::PadDisconnected { .. } => 12,
+        RawEvent::PadDown { .. } => 13,
+        RawEvent::PadUp { .. } => 14,
+        RawEvent::PadStick { .. } => 15,
     }
 }
 
-const EVENT_VARIANTS: usize = 11;
+const EVENT_VARIANTS: usize = 16;
 
 #[test]
 fn every_raw_event_variant_including_touch_survives_a_roundtrip() {
@@ -60,6 +65,25 @@ fn every_raw_event_variant_including_touch_survives_a_roundtrip() {
         },
         RawEvent::TouchCancel { id: 7 },
         RawEvent::Text { ch: 'k' },
+        RawEvent::PadConnected {
+            pad: 3,
+            family: PadFamily::PlayStation,
+        },
+        RawEvent::PadDisconnected { pad: 3 },
+        RawEvent::PadDown {
+            pad: 3,
+            button: PadButton::South,
+        },
+        RawEvent::PadUp {
+            pad: 3,
+            button: PadButton::DpadLeft,
+        },
+        RawEvent::PadStick {
+            pad: 3,
+            stick: Stick::Right,
+            x: 0.25,
+            y: -1.0,
+        },
     ];
     assert_every_tag_sampled(events.iter().map(event_tag), EVENT_VARIANTS, "raw event");
     for event in events {
@@ -79,4 +103,60 @@ fn the_middle_mouse_button_survives_a_roundtrip() {
         y: 0.0,
     };
     assert_eq!(roundtrip(event), event);
+}
+
+#[test]
+fn pad_events_speak_the_documented_wire_names() {
+    // Scripts and the driver write these by hand; renaming one breaks them.
+    let cases = [
+        (
+            r#"{"type":"pad_connected","pad":0,"family":"playstation"}"#,
+            RawEvent::PadConnected {
+                pad: 0,
+                family: PadFamily::PlayStation,
+            },
+        ),
+        (
+            r#"{"type":"pad_down","pad":1,"button":"dpad_up"}"#,
+            RawEvent::PadDown {
+                pad: 1,
+                button: PadButton::DpadUp,
+            },
+        ),
+        (
+            r#"{"type":"pad_up","pad":1,"button":"right_trigger"}"#,
+            RawEvent::PadUp {
+                pad: 1,
+                button: PadButton::RightTrigger,
+            },
+        ),
+        (
+            r#"{"type":"pad_stick","pad":2,"stick":"left","x":0.5,"y":-0.5}"#,
+            RawEvent::PadStick {
+                pad: 2,
+                stick: Stick::Left,
+                x: 0.5,
+                y: -0.5,
+            },
+        ),
+        (
+            r#"{"type":"pad_disconnected","pad":2}"#,
+            RawEvent::PadDisconnected { pad: 2 },
+        ),
+    ];
+    for (json, event) in cases {
+        assert_eq!(serde_json::from_str::<RawEvent>(json).unwrap(), event);
+        assert_eq!(serde_json::to_string(&event).unwrap(), json);
+    }
+    assert!(
+        serde_json::from_str::<RawEvent>(r#"{"type":"pad_down","pad":1,"button":"a"}"#).is_err(),
+        "buttons are named by position, never by label"
+    );
+    assert!(
+        serde_json::from_str::<RawEvent>(
+            r#"{"type":"pad_down","pad":1,"button":"south","player":0}"#
+        )
+        .is_err(),
+        "an unknown field is refused"
+    );
 }

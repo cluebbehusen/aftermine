@@ -160,6 +160,11 @@ applies DPI conversion once. Touches arrive in the same ordered stream as mouse
 events. A finger iOS takes away arrives as `TouchCancel` and completes no tap,
 long-press, box or card press.
 
+Game controllers have one adapter too. Each platform's pad API reports to `pad`,
+which applies stick dead zones, sends a stick only when it moves, and releases a
+pad's held buttons before it disconnects. Pad buttons are named by position, and
+injected pad events skip the adapter.
+
 The HUD lays out in a pure pass (`render::hud`) that measures text through a
 supplied function, so it runs headless. Each frame lays it out before input,
 again before each press or release that follows another event in the batch, and
