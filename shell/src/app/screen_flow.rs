@@ -435,7 +435,7 @@ fn lobby_frame(
         }
     }
     page_backdrop();
-    lobby.draw(app.input.mouse, &mut app.previews);
+    lobby.draw(&app.sprites, app.input.mouse, &mut app.previews);
     Screen::Lobby {
         screen: lobby,
         back,
@@ -641,7 +641,7 @@ fn settings_frame(
         app.notify_failure("Could not save settings", err);
     }
     page_backdrop();
-    sc.draw(app.input.mouse);
+    sc.draw(&app.sprites, app.input.mouse);
     crate::button::draw_back(app.input.mouse);
     if up.out == screens::settings::Out::Leave {
         // Back to wherever this screen displaced: Home, or
@@ -812,8 +812,10 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     } else {
         page_backdrop();
         match w.step {
-            WizardStep::Map => w.browser.draw(&w.entries, &mut app.previews),
-            WizardStep::Setup => w.draw_setup(&app.draft, &mut app.previews, app.input.mouse),
+            WizardStep::Map => w.browser.draw(&app.sprites, &w.entries, &mut app.previews),
+            WizardStep::Setup => {
+                w.draw_setup(&app.sprites, &app.draft, &mut app.previews, app.input.mouse);
+            }
         }
         crate::button::draw_back(app.input.mouse);
         Screen::Wizard(w)
@@ -1128,6 +1130,7 @@ fn playback_frame(
         );
         pass(FramePass::Hud, || {
             screens::playback::playback_hud(
+                &app.sprites,
                 &pb,
                 &app.config.bindings,
                 vec2(screen_width(), screen_height()),
@@ -1170,7 +1173,7 @@ fn final_map_frame(
         &app.config.bindings,
         Some(app.performance.view()),
     );
-    FinalMapScreen::draw_hud(&app.config.bindings, app.input.mouse);
+    FinalMapScreen::draw_hud(&app.sprites, &app.config.bindings, app.input.mouse);
     if leave {
         *rerun = true;
         Screen::Results(ResultsScreen::open(app.game.net_role().is_some()))
@@ -1278,7 +1281,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
         next
     } else {
         page_backdrop();
-        shelf.draw(app.input.mouse, app.menu_notice.is_some());
+        shelf.draw(&app.sprites, app.input.mouse, app.menu_notice.is_some());
         crate::button::draw_back(app.input.mouse);
         Screen::Replays(shelf)
     }
@@ -1327,7 +1330,7 @@ fn waiting_frame(
     waiting.refresh(absent);
     let out = waiting.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     match_backdrop(app);
-    waiting.draw();
+    waiting.draw(&app.sprites);
     match out {
         screens::waiting::Out::Stay => Screen::Waiting(waiting),
         screens::waiting::Out::Drop(seat) => {
@@ -1355,7 +1358,7 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
     let out = ps.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
     match_backdrop(app);
-    ps.draw(&app.game.scenario.name, app.input.mouse);
+    ps.draw(&app.sprites, &app.game.scenario.name, app.input.mouse);
     Ok(match out {
         screens::pause::Out::Stay => Screen::Pause(ps),
         screens::pause::Out::Resume => {

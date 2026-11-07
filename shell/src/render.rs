@@ -594,7 +594,7 @@ pub(crate) fn draw_with_performance(
     pass(FramePass::Hud, || {
         chrome::draw_ghost_controls(game, input);
         draw_group_press_ring(input);
-        draw_result_overlay(game);
+        draw_result_overlay(game, sprites);
         draw_panel_tooltip(game, input);
         chrome::draw_army_tooltip(game, input, bindings);
     });

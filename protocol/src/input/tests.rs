@@ -117,6 +117,13 @@ fn pad_events_speak_the_documented_wire_names() {
             },
         ),
         (
+            r#"{"type":"pad_connected","pad":3,"family":"steamdeck"}"#,
+            RawEvent::PadConnected {
+                pad: 3,
+                family: PadFamily::SteamDeck,
+            },
+        ),
+        (
             r#"{"type":"pad_down","pad":1,"button":"dpad_up"}"#,
             RawEvent::PadDown {
                 pad: 1,

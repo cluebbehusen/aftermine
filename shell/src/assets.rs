@@ -34,6 +34,8 @@ pub struct Sprites {
     /// Verb pictograms for cards and order chips, indexed by
     /// [`crate::panel::VerbIcon`].
     verb_icons: [Rect; 16],
+    /// Controller button icons, indexed by [`crate::pad::PadIcon`].
+    pad_icons: [Rect; 35],
     ground: [Rect; 6],
     ground_detail: [Rect; 12],
     quarry_dressing: Option<[Rect; 12]>,
@@ -519,6 +521,45 @@ const VERB_ICON_KEYS: [&str; 16] = [
     "icon_hunt",
     "icon_accompany",
     "icon_retire",
+];
+
+/// Controller button icons, ordered to match [`crate::pad::PadIcon`].
+const PAD_ICON_KEYS: [&str; 35] = [
+    "pad_a",
+    "pad_b",
+    "pad_x",
+    "pad_y",
+    "pad_cross",
+    "pad_circle",
+    "pad_square",
+    "pad_triangle",
+    "pad_lb",
+    "pad_rb",
+    "pad_l1",
+    "pad_r1",
+    "pad_l",
+    "pad_r",
+    "pad_lt",
+    "pad_rt",
+    "pad_l2",
+    "pad_r2",
+    "pad_zl",
+    "pad_zr",
+    "pad_ls",
+    "pad_rs",
+    "pad_l3",
+    "pad_r3",
+    "pad_view",
+    "pad_menu",
+    "pad_create",
+    "pad_options",
+    "pad_minus",
+    "pad_plus",
+    "pad_dpad_up",
+    "pad_dpad_down",
+    "pad_dpad_left",
+    "pad_dpad_right",
+    "pad_dpad_up_down",
 ];
 
 const GROUND_KEYS: [&str; 6] = [
@@ -1047,6 +1088,7 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
     let mut keys: Vec<String> = SINGLE_KEYS
         .iter()
         .chain(VERB_ICON_KEYS.iter())
+        .chain(PAD_ICON_KEYS.iter())
         .chain(GROUND_KEYS.iter())
         .chain(GROUND_DETAIL_KEYS.iter())
         .chain(ROCK_SLAB_KEYS.iter())
@@ -1426,6 +1468,7 @@ impl Sprites {
             scuttler_body: worker_body_rows(&rects, "rig_scuttler_body")?,
             page_height,
             verb_icons: pick(&rects, VERB_ICON_KEYS)?,
+            pad_icons: pick(&rects, PAD_ICON_KEYS)?,
             ground: pick(&rects, GROUND_KEYS)?,
             ground_detail: pick(&rects, GROUND_DETAIL_KEYS)?,
             quarry_dressing: quarry_dressing_rows(&rects)?,
@@ -1581,6 +1624,11 @@ impl Sprites {
     /// A verb pictogram's atlas region.
     pub fn verb_icon(&self, icon: crate::panel::VerbIcon) -> Rect {
         self.verb_icons[icon as usize]
+    }
+
+    /// A controller button icon's atlas region.
+    pub(crate) fn pad_icon(&self, icon: crate::pad::PadIcon) -> Rect {
+        self.pad_icons[icon as usize]
     }
 
     /// A ground variant's atlas region.

@@ -3221,6 +3221,319 @@ def icon_idle() -> None:
     finish(img, ICON, "icon_idle")
 
 
+# Controller button icons. Hints draw them inline beside text 11 to 18 px
+# tall, so each is a solid bone token with a dark label, flat like the verb
+# icons, whose outline says what kind of control it is: round face buttons,
+# pill shoulders, tab triggers, notched stick clicks and the D-pad's cross
+# with its named arms lit. Icons are named by what they show, so families
+# that print the same label share one sprite.
+
+# Stroke letters on a unit cap height, as (width, polylines) with y down.
+# Corners are cut like the game's typeface rather than rounded.
+_PAD_LETTERS: dict[str, tuple[float, tuple[tuple[tuple[float, float], ...], ...]]] = {
+    "A": (
+        0.78,
+        (((0, 1), (0.28, 0), (0.5, 0), (0.78, 1)), ((0.12, 0.64), (0.66, 0.64))),
+    ),
+    "B": (
+        0.7,
+        (
+            ((0, 0), (0, 1), (0.55, 1), (0.7, 0.85), (0.7, 0.64), (0.56, 0.5), (0, 0.5)),
+            ((0, 0), (0.5, 0), (0.64, 0.14), (0.64, 0.36), (0.5, 0.5)),
+        ),
+    ),
+    "X": (0.74, (((0, 0), (0.74, 1)), ((0.74, 0), (0, 1)))),
+    "Y": (0.74, (((0, 0), (0.37, 0.5), (0.74, 0)), ((0.37, 0.5), (0.37, 1)))),
+    "L": (0.56, (((0, 0), (0, 1), (0.56, 1)),)),
+    "R": (
+        0.7,
+        (
+            ((0, 1), (0, 0), (0.55, 0), (0.7, 0.15), (0.7, 0.4), (0.55, 0.55), (0, 0.55)),
+            ((0.36, 0.55), (0.7, 1)),
+        ),
+    ),
+    "S": (
+        0.68,
+        (
+            (
+                (0.68, 0),
+                (0.14, 0),
+                (0, 0.14),
+                (0, 0.36),
+                (0.14, 0.5),
+                (0.54, 0.5),
+                (0.68, 0.64),
+                (0.68, 0.86),
+                (0.54, 1),
+                (0, 1),
+            ),
+        ),
+    ),
+    "T": (0.7, (((0, 0), (0.7, 0)), ((0.35, 0), (0.35, 1)))),
+    "Z": (0.66, (((0, 0), (0.66, 0), (0, 1), (0.66, 1)),)),
+    "1": (0.36, (((0, 0.22), (0.3, 0), (0.3, 1)),)),
+    "2": (
+        0.66,
+        (
+            (
+                (0, 0.14),
+                (0.14, 0),
+                (0.52, 0),
+                (0.66, 0.14),
+                (0.66, 0.36),
+                (0, 1),
+                (0.66, 1),
+            ),
+        ),
+    ),
+    "3": (
+        0.66,
+        (
+            ((0, 0), (0.52, 0), (0.66, 0.14), (0.66, 0.36), (0.52, 0.5), (0.18, 0.5)),
+            ((0.52, 0.5), (0.66, 0.64), (0.66, 0.86), (0.52, 1), (0, 1)),
+        ),
+    ),
+}
+
+# The token, its label and a lit D-pad arm.
+_PAD_TOKEN = BONE
+_PAD_INK = IRON_DARK
+_PAD_LIT = SCRAP
+
+
+def _pad_stroke(d, points, w: float, color) -> None:
+    """A polyline with square ends and filled joints, in icon units."""
+    fill = (*color, 255)
+    last = len(points) - 1
+    for i in range(last):
+        (x0, y0), (x1, y1) = points[i], points[i + 1]
+        ln = math.hypot(x1 - x0, y1 - y0) or 1.0
+        ux, uy = (x1 - x0) / ln, (y1 - y0) / ln
+        if i == 0:
+            x0, y0 = x0 - ux * w / 2, y0 - uy * w / 2
+        if i + 1 == last:
+            x1, y1 = x1 + ux * w / 2, y1 + uy * w / 2
+        _icon_bar(d, (x0, y0), (x1, y1), w, fill)
+    for x, y in points[1:-1]:
+        d.ellipse([s(x - w / 2), s(y - w / 2), s(x + w / 2), s(y + w / 2)], fill=fill)
+
+
+def _pad_text(d, text: str, cx: float, cy: float, h: float, w: float) -> None:
+    """Stroke letters centered on (cx, cy), `h` tall between stroke centers."""
+    gap = 0.2 * h + w
+    widths = [_PAD_LETTERS[ch][0] * h for ch in text]
+    x = cx - (sum(widths) + gap * (len(text) - 1)) / 2
+    top = cy - h / 2
+    for ch, width in zip(text, widths):
+        for line in _PAD_LETTERS[ch][1]:
+            _pad_stroke(d, [(x + px * h, top + py * h) for px, py in line], w, _PAD_INK)
+        x += width + gap
+
+
+def _unit(ax: float, ay: float, bx: float, by: float) -> tuple[float, float]:
+    ln = math.hypot(bx - ax, by - ay)
+    return (bx - ax) / ln, (by - ay) / ln
+
+
+def _pad_polygon(d, corners, radii, color) -> None:
+    """Fills a right-angled outline, listed clockwise on screen, with each
+    convex corner rounded by its radius."""
+    out = []
+    for i, (vx, vy) in enumerate(corners):
+        ein = _unit(*corners[i - 1], vx, vy)
+        eout = _unit(vx, vy, *corners[(i + 1) % len(corners)])
+        convex = ein[0] * eout[1] - ein[1] * eout[0] > 0
+        r = radii[i] if convex else 0.0
+        if r <= 0:
+            out.append((vx, vy))
+            continue
+        ox, oy = vx - ein[0] * r + eout[0] * r, vy - ein[1] * r + eout[1] * r
+        start = math.atan2(vy - ein[1] * r - oy, vx - ein[0] * r - ox)
+        for k in range(9):
+            ang = start + math.pi / 2 * k / 8
+            out.append((ox + math.cos(ang) * r, oy + math.sin(ang) * r))
+    d.polygon([(s(x), s(y)) for x, y in out], fill=(*color, 255))
+
+
+def _pad_token(d, kind: str) -> None:
+    """The token's outline for each kind of control."""
+    if kind in ("face", "stick"):
+        d.ellipse([s(3), s(3), s(45), s(45)], fill=(*_PAD_TOKEN, 255))
+    elif kind == "shoulder":
+        _pad_polygon(d, [(2, 10), (46, 10), (46, 38), (2, 38)], (14, 14, 14, 14), _PAD_TOKEN)
+    elif kind == "trigger":
+        _pad_polygon(d, [(4, 3), (44, 3), (44, 45), (4, 45)], (16, 16, 4, 4), _PAD_TOKEN)
+    else:
+        a, lo, hi, c = 8.5, 3.0, 45.0, 24.0
+        cross = [
+            (c - a, lo),
+            (c + a, lo),
+            (c + a, c - a),
+            (hi, c - a),
+            (hi, c + a),
+            (c + a, c + a),
+            (c + a, hi),
+            (c - a, hi),
+            (c - a, c + a),
+            (lo, c + a),
+            (lo, c - a),
+            (c - a, c - a),
+        ]
+        _pad_polygon(d, cross, tuple(5.0 for _ in cross), _PAD_TOKEN)
+
+
+def _pad_lit_arm(d, arm: str) -> None:
+    """Fills one D-pad arm inside the token's edge, short of the hub."""
+    lo, hi = 19.0, 29.0
+    near, far, r = 17.0, 6.5, 3.0
+    corners, radii = {
+        "U": ([(lo, far), (hi, far), (hi, near), (lo, near)], (r, r, 0, 0)),
+        "D": ([(lo, 48 - near), (hi, 48 - near), (hi, 48 - far), (lo, 48 - far)], (0, 0, r, r)),
+        "L": ([(far, lo), (near, lo), (near, hi), (far, hi)], (r, 0, 0, r)),
+        "R": ([(48 - near, lo), (48 - far, lo), (48 - far, hi), (48 - near, hi)], (0, r, r, 0)),
+    }[arm]
+    _pad_polygon(d, corners, radii, _PAD_LIT)
+
+
+def _pad_knurl(d) -> None:
+    """Notches a stick's edge like a thumbstick's grip."""
+    for k in range(16):
+        ang = math.radians(45 * (k // 2) + (11.25 if k % 2 else -11.25))
+        ux, uy = math.cos(ang), math.sin(ang)
+        _icon_bar(d, (24 + ux * 19, 24 + uy * 19), (24 + ux * 22, 24 + uy * 22), 2.0, (0, 0, 0, 0))
+
+
+def _pad_triangle(d, inset: float, color) -> None:
+    """PlayStation's triangle, shrunk about its incenter by `inset`."""
+    pts = [(24.0, 12.5), (35.5, 32.5), (12.5, 32.5)]
+    sides = [math.dist(pts[(i + 1) % 3], pts[(i + 2) % 3]) for i in range(3)]
+    perimeter = sum(sides)
+    ix = sum(side * x for side, (x, _) in zip(sides, pts)) / perimeter
+    iy = sum(side * y for side, (_, y) in zip(sides, pts)) / perimeter
+    (x0, y0), (x1, y1), (x2, y2) = pts
+    inradius = abs((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)) / perimeter
+    k = (inradius - inset) / inradius
+    d.polygon(
+        [(s(ix + (x - ix) * k), s(iy + (y - iy) * k)) for x, y in pts],
+        fill=(*color, 255),
+    )
+
+
+def _pad_mark(d, mark: str) -> None:
+    """A symbol in place of a label: PlayStation's shapes and the small
+    system buttons."""
+    ink, under = _PAD_INK, _PAD_TOKEN
+    w = 4.5
+    if mark == "cross":
+        _pad_stroke(d, [(16, 16), (32, 32)], w, ink)
+        _pad_stroke(d, [(32, 16), (16, 32)], w, ink)
+    elif mark == "circle":
+        d.ellipse([s(13.5), s(13.5), s(34.5), s(34.5)], fill=(*ink, 255))
+        d.ellipse(
+            [s(13.5 + w), s(13.5 + w), s(34.5 - w), s(34.5 - w)], fill=(*under, 255)
+        )
+    elif mark == "square":
+        _icon_box(d, 14.5, 14.5, 33.5, 33.5, (*ink, 255))
+        _icon_box(d, 14.5 + w, 14.5 + w, 33.5 - w, 33.5 - w, (*under, 255))
+    elif mark == "triangle":
+        _pad_triangle(d, 0.0, ink)
+        _pad_triangle(d, w, under)
+    elif mark == "view":
+        for x0, y0 in ((12, 13), (20, 21)):
+            _icon_box(d, x0, y0, x0 + 16, y0 + 13, (*ink, 255))
+            _icon_box(d, x0 + 3.5, y0 + 3.5, x0 + 12.5, y0 + 9.5, (*under, 255))
+    elif mark in ("menu", "options"):
+        for y in (15.5, 24, 32.5):
+            _pad_stroke(d, [(15.5, y), (32.5, y)], 4.0, ink)
+    elif mark == "create":
+        _pad_stroke(d, [(14.5, 25), (14.5, 33.5), (33.5, 33.5), (33.5, 25)], 4.0, ink)
+        _pad_stroke(d, [(24, 28), (24, 14)], 4.0, ink)
+        _pad_stroke(d, [(18, 19.5), (24, 13.5), (30, 19.5)], 4.0, ink)
+    elif mark == "minus":
+        _pad_stroke(d, [(15, 24), (33, 24)], 5.0, ink)
+    elif mark == "plus":
+        _pad_stroke(d, [(15, 24), (33, 24)], 5.0, ink)
+        _pad_stroke(d, [(24, 15), (24, 33)], 5.0, ink)
+
+
+_PAD_MARKS = {
+    "cross",
+    "circle",
+    "square",
+    "triangle",
+    "view",
+    "menu",
+    "options",
+    "create",
+    "minus",
+    "plus",
+}
+
+# (sprite suffix, token, label or mark); D-pad entries list their lit arms.
+PAD_ICONS: tuple[tuple[str, str, str], ...] = (
+    ("a", "face", "A"),
+    ("b", "face", "B"),
+    ("x", "face", "X"),
+    ("y", "face", "Y"),
+    ("cross", "face", "cross"),
+    ("circle", "face", "circle"),
+    ("square", "face", "square"),
+    ("triangle", "face", "triangle"),
+    ("lb", "shoulder", "LB"),
+    ("rb", "shoulder", "RB"),
+    ("l1", "shoulder", "L1"),
+    ("r1", "shoulder", "R1"),
+    ("l", "shoulder", "L"),
+    ("r", "shoulder", "R"),
+    ("lt", "trigger", "LT"),
+    ("rt", "trigger", "RT"),
+    ("l2", "trigger", "L2"),
+    ("r2", "trigger", "R2"),
+    ("zl", "trigger", "ZL"),
+    ("zr", "trigger", "ZR"),
+    ("ls", "stick", "LS"),
+    ("rs", "stick", "RS"),
+    ("l3", "stick", "L3"),
+    ("r3", "stick", "R3"),
+    ("view", "face", "view"),
+    ("menu", "face", "menu"),
+    ("create", "face", "create"),
+    ("options", "face", "options"),
+    ("minus", "face", "minus"),
+    ("plus", "face", "plus"),
+    ("dpad_up", "dpad", "U"),
+    ("dpad_down", "dpad", "D"),
+    ("dpad_left", "dpad", "L"),
+    ("dpad_right", "dpad", "R"),
+    ("dpad_up_down", "dpad", "UD"),
+)
+
+
+def pad_icon(suffix: str, kind: str, label: str) -> None:
+    img, d = canvas(ICON)
+    _pad_token(d, kind)
+    if kind == "dpad":
+        for arm in label:
+            _pad_lit_arm(d, arm)
+    elif label in _PAD_MARKS:
+        _pad_mark(d, label)
+    elif kind == "face":
+        _pad_text(d, label, 24, 24, 17.0, 4.6)
+    elif kind == "stick":
+        _pad_knurl(d)
+        _pad_text(d, label, 24, 24, 12.5, 3.8)
+    elif kind == "shoulder":
+        _pad_text(d, label, 24, 24, 13.5, 4.0)
+    else:
+        _pad_text(d, label, 24, 26.5, 13.0, 3.8)
+    finish(img, ICON, f"pad_{suffix}")
+
+
+def pad_icons() -> None:
+    for suffix, kind, label in PAD_ICONS:
+        pad_icon(suffix, kind, label)
+
+
 THEMES = (
     "rusted_yard",
     "cold_circuitry",
@@ -3361,6 +3674,7 @@ def generate(output: Path) -> None:
     icon_idle()
     icon_accompany()
     icon_retire()
+    pad_icons()
     pack_atlas()
     print("done")
 

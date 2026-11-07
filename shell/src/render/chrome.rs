@@ -1538,7 +1538,7 @@ pub(crate) fn draw_hud(
 /// A team-game concession can leave the match undecided while the ally
 /// keeps fighting. This compact exit offer is the only result layer
 /// gameplay draws; a decided match moves to the Results screen.
-pub(crate) fn draw_result_overlay(game: &crate::game::Scene<'_>) {
+pub(crate) fn draw_result_overlay(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     if !game.presentation.conceded_banner || game.state.result().is_some() {
         return;
     }
@@ -1555,19 +1555,14 @@ pub(crate) fn draw_result_overlay(game: &crate::game::Scene<'_>) {
         PANEL,
     );
     crate::menu::draw_title(text, y, DANGER);
-    let sub = crate::menu::binding_hint(concede_hint(crate::platform::hands()));
-    let sub_dims = measure_text(
-        &sub,
-        None,
-        numeric::font_size(crate::theme::Type::Label.at(s)),
-        1.0,
-    );
-    draw_text(
-        &sub,
-        (screen_width() - sub_dims.width) * 0.5,
+    crate::menu::hint_line(concede_hint(crate::platform::hands())).draw(
+        sprites,
+        screen_width() * 0.5,
         y + 28.0 * s,
-        crate::theme::Type::Label.at(s),
+        screen_width(),
+        (crate::theme::Type::Label, crate::theme::Type::Label),
         TEXT_BODY,
+        WHITE,
     );
 }
 

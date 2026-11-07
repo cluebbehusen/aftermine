@@ -479,7 +479,12 @@ impl Browser {
 
     /// Draws the whole screen: title, sections, cards, the selected
     /// map's blurb, and the key hints.
-    pub fn draw(&self, entries: &[ScenarioEntry], previews: &mut PreviewCache) {
+    pub fn draw(
+        &self,
+        sprites: &crate::assets::Sprites,
+        entries: &[ScenarioEntry],
+        previews: &mut PreviewCache,
+    ) {
         let view = crate::render::viewport();
         let ui = crate::render::ui_scale();
         let layout = self.layout(entries, view, ui);
@@ -602,19 +607,14 @@ impl Browser {
                 TEXT_PRIMARY,
             );
         }
-        let hint = crate::menu::binding_hint(browser_hint(crate::platform::hands()));
-        let dims = measure_text(
-            &hint,
-            None,
-            numeric::font_size(crate::theme::Type::Body.at(ui)),
-            1.0,
-        );
-        draw_text(
-            &hint,
-            (view.x - dims.width) * 0.5,
+        crate::menu::hint_line(browser_hint(crate::platform::hands())).draw(
+            sprites,
+            view.x * 0.5,
             view.y - 20.0 * ui,
-            crate::theme::Type::Body.at(ui),
+            view.x,
+            (crate::theme::Type::Body, crate::theme::Type::Body),
             crate::hints::fade(TEXT_SECONDARY),
+            crate::hints::fade(macroquad::prelude::WHITE),
         );
     }
 }

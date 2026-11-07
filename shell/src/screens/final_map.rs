@@ -3,7 +3,7 @@
 use crate::action::{Action, ActionEvent, ActionResolver, BindingMap, Context};
 use crate::camera::controls::{MinimapPoint, ViewerHands, event_point, held_pan, pan_toward};
 use crate::game::Game;
-use crate::numeric;
+use crate::hint_line::HintLine;
 use crate::{render, theme};
 #[cfg(test)]
 use aftermine_protocol::Key;
@@ -88,14 +88,13 @@ impl FinalMapScreen {
     }
 
     /// The camera line, for the hands the player is using.
-    fn coaching(bindings: &BindingMap, hands: crate::platform::Hands) -> String {
+    fn coaching(bindings: &BindingMap, hands: crate::platform::Hands) -> HintLine {
         if let Some(family) = hands.pad {
-            return format!(
-                "{} back to the report",
-                crate::pad::button_name(family, crate::pad::BACK)
-            );
+            return HintLine::default()
+                .pad(crate::pad::button_icon(family, crate::pad::BACK))
+                .text(" back to the report");
         }
-        match (hands.touch(), hands.keys) {
+        HintLine::from(match (hands.touch(), hands.keys) {
             (false, true) => format!(
                 "Pan with the keys, minimap or middle drag | wheel to zoom | {} back",
                 bindings.label(Action::Back)
@@ -106,12 +105,12 @@ impl FinalMapScreen {
                 bindings.label(Action::Back)
             ),
             (true, false) => "Drag to pan | pinch to zoom".to_string(),
-        }
+        })
     }
 
     /// Draws the Back button and the compact camera-help strip over the
     /// battlefield.
-    pub fn draw_hud(bindings: &BindingMap, mouse: Vec2) {
+    pub fn draw_hud(sprites: &crate::assets::Sprites, bindings: &BindingMap, mouse: Vec2) {
         let scale = render::ui_scale();
         crate::button::draw_back(mouse);
         let size = crate::theme::Type::Body.at(scale);
@@ -119,7 +118,7 @@ impl FinalMapScreen {
             return;
         }
         let line = Self::coaching(bindings, crate::platform::hands());
-        let width = measure_text(&line, None, numeric::font_size(size), 1.0).width;
+        let width = line.width(size);
         let x = (screen_width() - width) * 0.5;
         let y = screen_height() - 14.0 * scale;
         draw_rectangle(
@@ -129,7 +128,7 @@ impl FinalMapScreen {
             size + 10.0 * scale,
             theme::SURFACE_CAPTION,
         );
-        draw_text(&line, x, y, size, theme::TEXT_PRIMARY);
+        line.draw_at(sprites, x, y, size, theme::TEXT_PRIMARY, WHITE);
     }
 }
 

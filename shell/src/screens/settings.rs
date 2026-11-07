@@ -837,30 +837,29 @@ impl SettingsScreen {
 
     /// Draws the tab's menu, the strip, and the status line — the caller
     /// draws the veil first, so all land above it.
-    pub fn draw(&self, mouse: Vec2) {
+    pub fn draw(&self, sprites: &crate::assets::Sprites, mouse: Vec2) {
         if let Some(form) = &self.naming {
-            form.draw("", crate::theme::TEXT_SECONDARY, mouse);
+            form.draw(
+                sprites,
+                &crate::hint_line::HintLine::default(),
+                (crate::theme::TEXT_SECONDARY, macroquad::prelude::WHITE),
+                mouse,
+            );
             return;
         }
         if let Face::Confirming(profile) = self.face {
             // A dialog: no tabs to wander off to while it asks.
-            self.menu.draw(profile.consequence());
+            self.menu.draw(sprites, profile.consequence());
             return;
         }
-        self.menu.draw_with_coaching("", self.coaching());
+        self.menu.draw_with_coaching(sprites, "", self.coaching());
         let keys = crate::tabs::shown_keys();
         let labels = Tab::ALL.map(Tab::label);
         let active = Tab::ALL
             .iter()
             .position(|tab| *tab == self.face.tab())
             .unwrap_or_default();
-        crate::tabs::draw(
-            &labels,
-            active,
-            mouse,
-            keys.as_ref()
-                .map(|(prev, next)| (prev.as_str(), next.as_str())),
-        );
+        crate::tabs::draw(sprites, &labels, active, mouse, keys.as_ref());
         if let Some((text, danger)) = self.status() {
             let s = render::ui_scale();
             let size = crate::theme::Type::Body.at(s);

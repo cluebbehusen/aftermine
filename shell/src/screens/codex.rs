@@ -179,7 +179,7 @@ impl CodexScreen {
     /// Draws the list and the selected page — the caller draws the
     /// veil first, so both land above it.
     pub fn draw(&self, sprites: &Sprites) {
-        self.menu.draw("");
+        self.menu.draw(sprites, "");
         let Some(entry) = self.selected_entry() else {
             return;
         };

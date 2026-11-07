@@ -285,10 +285,12 @@ fn building_layers_and_resources_enter_the_bank_but_terrain_does_not() {
         "scrap_full",
         "wreck_pile",
         "harvester_cargo0",
+        "pad_a",
+        "pad_dpad_up_down",
     ] {
         assert!(is_entity_source(key), "{key}");
     }
-    for key in ["ground_0", "rock_slab_0_0", "scorch"] {
+    for key in ["ground_0", "rock_slab_0_0", "scorch", "icon_build"] {
         assert!(!is_entity_source(key));
     }
 }

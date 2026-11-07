@@ -93,52 +93,184 @@ pub(crate) fn menu_keys(events: &[RawEvent]) -> Vec<RawEvent> {
         .collect()
 }
 
-/// What a family calls a button. Copy stays ASCII, so PlayStation's shapes
-/// are spelled out, and Switch pads swap the face labels Xbox pads print
-/// at the same positions.
-pub(crate) fn button_name(family: PadFamily, button: PadButton) -> &'static str {
+/// A controller button's icon, named by what it shows: families that print
+/// the same label share one. The order matches the shell's atlas key table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PadIcon {
+    A,
+    B,
+    X,
+    Y,
+    Cross,
+    Circle,
+    Square,
+    Triangle,
+    Lb,
+    Rb,
+    L1,
+    R1,
+    L,
+    R,
+    Lt,
+    Rt,
+    L2,
+    R2,
+    Zl,
+    Zr,
+    Ls,
+    Rs,
+    L3,
+    R3,
+    View,
+    Menu,
+    Create,
+    Options,
+    Minus,
+    Plus,
+    DpadUp,
+    DpadDown,
+    DpadLeft,
+    DpadRight,
+    /// The D-pad's up and down arms: moving through a list.
+    DpadUpDown,
+}
+
+impl PadIcon {
+    /// Every icon, in declaration order.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 35] = [
+        Self::A,
+        Self::B,
+        Self::X,
+        Self::Y,
+        Self::Cross,
+        Self::Circle,
+        Self::Square,
+        Self::Triangle,
+        Self::Lb,
+        Self::Rb,
+        Self::L1,
+        Self::R1,
+        Self::L,
+        Self::R,
+        Self::Lt,
+        Self::Rt,
+        Self::L2,
+        Self::R2,
+        Self::Zl,
+        Self::Zr,
+        Self::Ls,
+        Self::Rs,
+        Self::L3,
+        Self::R3,
+        Self::View,
+        Self::Menu,
+        Self::Create,
+        Self::Options,
+        Self::Minus,
+        Self::Plus,
+        Self::DpadUp,
+        Self::DpadDown,
+        Self::DpadLeft,
+        Self::DpadRight,
+        Self::DpadUpDown,
+    ];
+
+    /// What the icon shows, as copy. It stays ASCII, so PlayStation's
+    /// shapes are spelled out.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::A => "A",
+            Self::B => "B",
+            Self::X => "X",
+            Self::Y => "Y",
+            Self::Cross => "Cross",
+            Self::Circle => "Circle",
+            Self::Square => "Square",
+            Self::Triangle => "Triangle",
+            Self::Lb => "LB",
+            Self::Rb => "RB",
+            Self::L1 => "L1",
+            Self::R1 => "R1",
+            Self::L => "L",
+            Self::R => "R",
+            Self::Lt => "LT",
+            Self::Rt => "RT",
+            Self::L2 => "L2",
+            Self::R2 => "R2",
+            Self::Zl => "ZL",
+            Self::Zr => "ZR",
+            Self::Ls => "LS",
+            Self::Rs => "RS",
+            Self::L3 => "L3",
+            Self::R3 => "R3",
+            Self::View => "View",
+            Self::Menu => "Menu",
+            Self::Create => "Create",
+            Self::Options => "Options",
+            Self::Minus => "Minus",
+            Self::Plus => "Plus",
+            Self::DpadUp => "D-pad up",
+            Self::DpadDown => "D-pad down",
+            Self::DpadLeft => "D-pad left",
+            Self::DpadRight => "D-pad right",
+            Self::DpadUpDown => "D-pad",
+        }
+    }
+}
+
+/// The icon a family prints on a button. Switch pads swap the face labels
+/// Xbox pads print at the same positions, and the Deck labels its
+/// shoulders, triggers and stick clicks as PlayStation does.
+pub(crate) fn button_icon(family: PadFamily, button: PadButton) -> PadIcon {
     use PadButton as B;
     use PadFamily as F;
+    use PadIcon as I;
     match (family, button) {
-        (_, B::DpadUp) => "D-pad up",
-        (_, B::DpadDown) => "D-pad down",
-        (_, B::DpadLeft) => "D-pad left",
-        (_, B::DpadRight) => "D-pad right",
-        (F::PlayStation, B::South) => "Cross",
-        (F::PlayStation, B::East) => "Circle",
-        (F::PlayStation, B::West) => "Square",
-        (F::PlayStation, B::North) => "Triangle",
-        (F::PlayStation, B::LeftShoulder) => "L1",
-        (F::PlayStation, B::RightShoulder) => "R1",
-        (F::PlayStation, B::LeftTrigger) => "L2",
-        (F::PlayStation, B::RightTrigger) => "R2",
-        (F::PlayStation, B::LeftStick) => "L3",
-        (F::PlayStation, B::RightStick) => "R3",
-        (F::PlayStation, B::Select) => "Create",
-        (F::PlayStation, B::Start) => "Options",
-        (F::Switch, B::South) => "B",
-        (F::Switch, B::East) => "A",
-        (F::Switch, B::West) => "Y",
-        (F::Switch, B::North) => "X",
-        (F::Switch, B::LeftShoulder) => "L",
-        (F::Switch, B::RightShoulder) => "R",
-        (F::Switch, B::LeftTrigger) => "ZL",
-        (F::Switch, B::RightTrigger) => "ZR",
-        (F::Switch, B::Select) => "Minus",
-        (F::Switch, B::Start) => "Plus",
-        (_, B::South) => "A",
-        (_, B::East) => "B",
-        (_, B::West) => "X",
-        (_, B::North) => "Y",
-        (_, B::LeftShoulder) => "LB",
-        (_, B::RightShoulder) => "RB",
-        (_, B::LeftTrigger) => "LT",
-        (_, B::RightTrigger) => "RT",
-        (_, B::LeftStick) => "LS",
-        (_, B::RightStick) => "RS",
-        (_, B::Select) => "View",
-        (_, B::Start) => "Menu",
+        (_, B::DpadUp) => I::DpadUp,
+        (_, B::DpadDown) => I::DpadDown,
+        (_, B::DpadLeft) => I::DpadLeft,
+        (_, B::DpadRight) => I::DpadRight,
+        (F::PlayStation, B::South) => I::Cross,
+        (F::PlayStation, B::East) => I::Circle,
+        (F::PlayStation, B::West) => I::Square,
+        (F::PlayStation, B::North) => I::Triangle,
+        (F::PlayStation | F::SteamDeck, B::LeftShoulder) => I::L1,
+        (F::PlayStation | F::SteamDeck, B::RightShoulder) => I::R1,
+        (F::PlayStation | F::SteamDeck, B::LeftTrigger) => I::L2,
+        (F::PlayStation | F::SteamDeck, B::RightTrigger) => I::R2,
+        (F::PlayStation | F::SteamDeck, B::LeftStick) => I::L3,
+        (F::PlayStation | F::SteamDeck, B::RightStick) => I::R3,
+        (F::PlayStation, B::Select) => I::Create,
+        (F::PlayStation, B::Start) => I::Options,
+        (F::Switch, B::South) => I::B,
+        (F::Switch, B::East) => I::A,
+        (F::Switch, B::West) => I::Y,
+        (F::Switch, B::North) => I::X,
+        (F::Switch, B::LeftShoulder) => I::L,
+        (F::Switch, B::RightShoulder) => I::R,
+        (F::Switch, B::LeftTrigger) => I::Zl,
+        (F::Switch, B::RightTrigger) => I::Zr,
+        (F::Switch, B::Select) => I::Minus,
+        (F::Switch, B::Start) => I::Plus,
+        (_, B::South) => I::A,
+        (_, B::East) => I::B,
+        (_, B::West) => I::X,
+        (_, B::North) => I::Y,
+        (_, B::LeftShoulder) => I::Lb,
+        (_, B::RightShoulder) => I::Rb,
+        (_, B::LeftTrigger) => I::Lt,
+        (_, B::RightTrigger) => I::Rt,
+        (_, B::LeftStick) => I::Ls,
+        (_, B::RightStick) => I::Rs,
+        (_, B::Select) => I::View,
+        (_, B::Start) => I::Menu,
     }
+}
+
+/// What a family calls a button: the name of the icon it prints there.
+pub(crate) fn button_name(family: PadFamily, button: PadButton) -> &'static str {
+    button_icon(family, button).name()
 }
 
 /// One thing a platform's pad API reported.

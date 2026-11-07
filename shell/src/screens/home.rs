@@ -160,7 +160,7 @@ impl HomeScreen {
     /// below the footer's key help.
     pub fn draw(&mut self, sprites: &crate::assets::Sprites) {
         self.fit();
-        self.menu.draw(self.subtitle());
+        self.menu.draw(sprites, self.subtitle());
         let ui = crate::render::ui_scale();
         let s = ui * self.menu.growth;
         let view = crate::render::viewport();
