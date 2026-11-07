@@ -188,10 +188,10 @@ pub(super) fn disconnected(input: &mut InputState, pad: u64) {
 }
 
 /// Y on a closed ring: opens it, unless the selection offers nothing or a
-/// held A is still selecting. Over an open palette it opens on the build
-/// ring the palette shows.
+/// held A is still selecting or laying a row. Over an open palette it
+/// opens on the build ring the palette shows.
 fn open(game: &mut Game, input: &mut InputState) {
-    if input.pad_press.is_some() {
+    if input.pad_press.is_some() || input.stroke_by().is_some() {
         deny(game);
         return;
     }

@@ -491,8 +491,9 @@ pub(super) fn hover_point(input: &InputState) -> Option<Vec2> {
 /// The controller's reticle, while a controller is the pointer: a ring with
 /// four ticks, which closes into brackets around the unit or structure it
 /// has snapped onto. While A paints, the brush around it is the reticle
-/// grown, so only its center dot remains. A dark under-stroke keeps it
-/// legible on pale ground.
+/// grown, and while a structure is armed its ghost is, tinted with what a
+/// press would do, so only its center dot remains. A dark under-stroke
+/// keeps it legible on pale ground.
 /// Only the live match draws it, over everything as a cursor is: the same
 /// input state reaches the backdrops behind menus and the replay viewer.
 pub(crate) fn draw_reticle(game: &crate::game::Scene<'_>, input: &InputState) {
@@ -504,7 +505,7 @@ pub(crate) fn draw_reticle(game: &crate::game::Scene<'_>, input: &InputState) {
     let s = ui_scale();
     let camera = &game.presentation.camera;
     let shade = Color::new(0.05, 0.05, 0.07, 0.6);
-    if crate::input::painting(input) {
+    if crate::input::painting(input) || input.placing.is_some() {
         for (thickness, color) in [(3.5 * s, shade), (1.5 * s, BONE)] {
             fill_circle(input.reticle.point(), thickness, color);
         }

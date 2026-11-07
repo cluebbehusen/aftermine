@@ -70,13 +70,13 @@ impl OrderReach {
     }
 
     /// How far from its center a unit of `kind` is named.
-    fn unit(self, kind: aftermine_sim::UnitKind) -> f32 {
+    pub(super) fn unit(self, kind: aftermine_sim::UnitKind) -> f32 {
         unit_pick_radius(kind).max(self.units)
     }
 
     /// The building `pred` accepts that `world` names: the one under it,
     /// else the nearest whose footprint lies within reach.
-    fn building(
+    pub(super) fn building(
         self,
         game: &Game,
         world: Vec2,

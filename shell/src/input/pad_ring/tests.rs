@@ -587,3 +587,20 @@ fn grouped_magazines_count_staged_rounds_and_x_cancels_one() {
     frame(&mut game, &mut input);
     assert_eq!(count(&game, &input, "Order"), 1);
 }
+
+#[test]
+fn y_waits_while_a_held_a_lays_a_row() {
+    let (mut game, mut input) = harvester();
+    pick(&mut game, &mut input, "Build");
+    pick(&mut game, &mut input, "Defense");
+    pick(&mut game, &mut input, "Barricade");
+    assert_eq!(
+        input.armed_mode(),
+        Some(ArmedMode::Build(BuildingKind::Barricade))
+    );
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    assert!(input.stroke_by().is_some(), "a held A lays a row");
+    tap(&mut game, &mut input, PadButton::North);
+    assert!(input.ring.is_none());
+    assert!(denied(&game));
+}

@@ -1,12 +1,14 @@
 //! A controller's presses in a match, all at the reticle: A selects, or
 //! paints while held ([`super::paint`]), X gives the contextual order, the
 //! bumpers select the army, a held LT queues, RT narrows the selection by
-//! kind, and B backs out. Each takes the path its mouse counterpart takes.
+//! kind, and B backs out. While a placement or targeted order is armed, A
+//! and X confirm it at the reticle as a click there would, and a held A
+//! drags a placement row. Each takes the path its mouse counterpart takes.
 //! The D-pad and the stick clicks belong to [`super::reticle`].
 
 use super::paint::{self, Release};
 use super::select::{self, Picked};
-use super::{DOUBLE_CLICK_SECS, DOUBLE_CLICK_SLOP, InputState};
+use super::{DOUBLE_CLICK_SECS, DOUBLE_CLICK_SLOP, InputState, Presser};
 use crate::action::{Action, BindingMap};
 use crate::game::Game;
 use aftermine_protocol::PadButton;
@@ -30,8 +32,8 @@ pub(super) fn press(
     button: PadButton,
 ) {
     match button {
-        PadButton::South => press_select(game, input, pad),
-        PadButton::West => order(game, input, bindings),
+        PadButton::South => press_select(game, input, bindings, pad),
+        PadButton::West => order(game, input, bindings, pad),
         PadButton::East => back(game, input, bindings),
         PadButton::LeftShoulder => {
             super::dispatch_action(game, input, bindings, Action::SelectArmy);
@@ -51,6 +53,9 @@ pub(super) fn press(
 pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button: PadButton) {
     match button {
         PadButton::South => {
+            if super::finish_stroke(game, input, Presser::Pad(pad)) {
+                return;
+            }
             if let Release::Tap(ground, picked) = paint::release(game, input, pad) {
                 tap(game, input, ground, picked);
             }
@@ -62,15 +67,21 @@ pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button:
     }
 }
 
-/// A goes down. An armed placement or targeted order waits for its own
-/// target, and chrome under the reticle is the HUD's, so neither takes a
-/// press; a second controller's A while one is held does nothing.
-fn press_select(game: &mut Game, input: &mut InputState, pad: u64) {
-    if input.pad_press.is_some() {
+/// A goes down. Chrome under the reticle is the HUD's, so it takes no
+/// press. An armed placement opens a stroke at the reticle, which a held A
+/// drags into a row, and an armed targeted order takes the reticle as its
+/// target. A second A while one is held, a press or a row, does nothing.
+fn press_select(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u64) {
+    if input.pad_press.is_some() || input.stroke_by().is_some() {
         return;
     }
-    if input.armed_mode().is_some() || select::under_hud_for_pad(game, input.reticle.point()) {
+    let point = input.reticle.point();
+    if select::under_hud_for_pad(game, point) {
         super::deny(game);
+        return;
+    }
+    if input.armed_mode().is_some() {
+        super::armed_click(game, input, bindings, point, Presser::Pad(pad));
         return;
     }
     let ground = input.reticle.ground(&game.presentation.camera);
@@ -114,11 +125,18 @@ fn tap(game: &mut Game, input: &mut InputState, ground: Vec2, pressed: Option<Pi
 }
 
 /// X: the contextual order a right-click at the reticle gives, reaching as
-/// far around it as the reticle snaps.
-fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
+/// far around it as the reticle snaps. While a mode is armed, X confirms it
+/// at the reticle as A does, and in placement it is a tap of A, placing one
+/// structure; while a held A lays a row, the row has the placement.
+fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u64) {
     let point = input.reticle.point();
-    if select::under_hud_for_pad(game, point) {
+    if select::under_hud_for_pad(game, point) || input.stroke_by().is_some() {
         super::deny(game);
+        return;
+    }
+    if input.armed_mode().is_some() {
+        super::armed_click(game, input, bindings, point, Presser::Pad(pad));
+        super::finish_stroke(game, input, Presser::Pad(pad));
         return;
     }
     if super::stand_down_for_order(input) {
@@ -195,5 +213,7 @@ fn narrow(game: &mut Game, input: &mut InputState) {
     };
 }
 
+#[cfg(test)]
+mod aim_tests;
 #[cfg(test)]
 mod tests;

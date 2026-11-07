@@ -176,8 +176,9 @@ injected pad events skip the adapter. In a match, a reticle at the screen's
 center is the controller's pointer. Every screen records the sticks, so a stick
 let go under a menu cannot keep the camera moving, and hover and hit tests read
 the reticle through the same `LayoutModel` as the mouse. A pad's presses act at
-the reticle through the same selection and order paths as clicks, and the
-buttons a pad holds drop with the rest of held input on every transition.
+the reticle through the same selection, order, placement and targeting paths as
+clicks, and the buttons a pad holds drop with the rest of held input on every
+transition.
 
 The controller's command ring (`radial`) is built from the panel model the
 layout pass published, so a ring never offers what the panel would refuse, and a
@@ -247,7 +248,9 @@ it is in use. Every screen offers a pointer path for what Escape does.
 Each finger records where it landed, and that decides what it may drive for its
 whole life. `InputState::queue_held` merges Shift, the QUEUE toggle and a held
 left trigger. Touch placement shows a ghost that builds only on its check mark;
-the tap point is never the anchor.
+the tap point is never the anchor. A finger's ghost and the reticle center a
+footprint on the point they name, where the mouse names its corner, and the
+preview and the press read the same anchor.
 
 ## Persistence and replay
 
