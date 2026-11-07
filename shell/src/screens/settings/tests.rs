@@ -670,7 +670,7 @@ fn the_strip_names_the_classic_tab_keys_while_the_tab_actions_are_unbound() {
     bindings.unbind_slot(Action::NextTab, 0);
     crate::menu::set_bindings(&bindings);
     assert_eq!(
-        crate::tabs::keys(),
+        crate::tabs::keys().map(|(prev, next)| (prev.copy(), next.copy())),
         Some(("Q".to_string(), "E".to_string()))
     );
     assert!(
@@ -1200,7 +1200,7 @@ fn the_settings_hints_name_a_controllers_buttons_while_one_is_in_use() {
         "a controller cannot remap keys, so Controls says so"
     );
     assert_eq!(
-        crate::tabs::shown_keys(),
+        crate::tabs::shown_keys().map(|(prev, next)| (prev.copy(), next.copy())),
         Some(("LB".to_string(), "RB".to_string()))
     );
     crate::platform::set_hands(crate::platform::Hands::BUILD);

@@ -413,12 +413,12 @@ impl Chart {
         let keys = crate::tabs::keys();
         let mouse: Vec2 = mouse_position().into();
         crate::tabs::draw_in(
+            sprites,
             &layout.strip,
             &labels,
             self.view,
             mouse,
-            keys.as_ref()
-                .map(|(prev, next)| (prev.as_str(), next.as_str())),
+            keys.as_ref(),
         );
         if self.view() == ChartView::Built {
             super::built::draw(game, sprites, report, layout.body, s);

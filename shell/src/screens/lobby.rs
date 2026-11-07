@@ -4,6 +4,7 @@
 //! starts joins and installs the match once the lobby starts it.
 
 use crate::game::{Game, SoundKind};
+use crate::hint_line::HintLine;
 use crate::menu::{Label, Line, Menu, PreviewCache};
 use crate::netplay::{Link, Lobby, address_char, parse_join_address};
 use crate::numeric;
@@ -19,7 +20,7 @@ use aftermine_net::{RoomSeat, SeatHolder};
 use aftermine_protocol::{Key, RawEvent};
 use aftermine_sim::{PlayerId, Scenario};
 use macroquad::prelude::Vec2;
-use macroquad::prelude::{Rect, draw_rectangle, draw_text, measure_text};
+use macroquad::prelude::{Rect, WHITE, draw_rectangle, draw_text, measure_text};
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -388,7 +389,12 @@ impl LobbyScreen {
                 } else {
                     crate::theme::TEXT_SECONDARY
                 };
-                form.draw(&self.subtitle(), color, mouse);
+                form.draw(
+                    sprites,
+                    &HintLine::from(self.subtitle()),
+                    (color, WHITE),
+                    mouse,
+                );
                 if !matches!(scan, Scan::Off) {
                     draw_matches(form, scan, sightings, *cursor, mouse);
                 }

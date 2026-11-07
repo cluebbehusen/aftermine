@@ -1941,9 +1941,9 @@ impl Wizard {
         if !compact || self.notice.is_some() {
             let hands = crate::platform::hands();
             let (hint, warning) = if let Some(notice) = &self.notice {
-                (notice.clone(), true)
+                (crate::hint_line::HintLine::from(notice.clone()), true)
             } else if self.moving.is_some() {
-                (crate::menu::binding_hint(moving_hint(hands)), false)
+                (crate::menu::hint_line(moving_hint(hands)), false)
             } else {
                 let hint = setup_hint(
                     one_team,
@@ -1951,26 +1951,25 @@ impl Wizard {
                     self.setup_cell,
                     hands,
                 );
-                (crate::menu::binding_hint(hint), one_team)
+                (crate::menu::hint_line(hint), one_team)
             };
-            let size = crate::typography::fit(
-                &hint,
-                Type::Body.at(ui),
-                view.x - 32.0 * ui,
-                crate::theme::Type::Caption,
-            );
-            let hdims = measure_text(&hint, None, numeric::font_size(size), 1.0);
-            draw_text(
-                &hint,
-                (view.x - hdims.width) * 0.5,
+            // Warnings are information, not coaching.
+            let (text, icons) = if warning {
+                (TEXT_DANGER, macroquad::prelude::WHITE)
+            } else {
+                (
+                    crate::hints::fade(TEXT_SECONDARY),
+                    crate::hints::fade(macroquad::prelude::WHITE),
+                )
+            };
+            hint.draw(
+                sprites,
+                view.x * 0.5,
                 view.y - 20.0 * ui,
-                size,
-                // Warnings are information, not coaching.
-                if warning {
-                    TEXT_DANGER
-                } else {
-                    crate::hints::fade(TEXT_SECONDARY)
-                },
+                view.x - 32.0 * ui,
+                (Type::Body, Type::Caption),
+                text,
+                icons,
             );
         }
         self.draw_overlay(sprites, mouse);
@@ -2041,7 +2040,12 @@ impl Wizard {
         let view = crate::render::viewport();
         draw_rectangle(0.0, 0.0, view.x, view.y, crate::theme::VEIL);
         match overlay {
-            Overlay::Naming(form) => form.draw("", TEXT_SECONDARY, mouse),
+            Overlay::Naming(form) => form.draw(
+                sprites,
+                &crate::hint_line::HintLine::default(),
+                (TEXT_SECONDARY, macroquad::prelude::WHITE),
+                mouse,
+            ),
             Overlay::Confirm { ask, menu } => {
                 let line = match ask {
                     Confirm::Kick { .. } => String::new(),

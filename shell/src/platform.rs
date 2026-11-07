@@ -217,6 +217,7 @@ pub(crate) fn pad_hands() -> impl Iterator<Item = Hands> {
         PadFamily::Xbox,
         PadFamily::PlayStation,
         PadFamily::Switch,
+        PadFamily::SteamDeck,
         PadFamily::Other,
     ]
     .into_iter()

@@ -970,11 +970,11 @@ fn a_controller_pauses_seeks_steps_the_speed_and_leaves() {
 fn the_caption_names_the_controllers_transport_while_one_is_in_use() {
     use aftermine_protocol::PadFamily;
     assert_eq!(
-        pad_caption("0:00 / 1:00", PadFamily::Xbox),
+        pad_caption("0:00 / 1:00", PadFamily::Xbox).copy(),
         "0:00 / 1:00 | A pause | LB/RB seek | LT/RT speed | B leave"
     );
     for hands in crate::platform::pad_hands() {
         let family = hands.pad.expect("pad hands");
-        crate::platform::assert_pad_copy(hands, &pad_caption("0:00", family));
+        crate::platform::assert_pad_copy(hands, &pad_caption("0:00", family).copy());
     }
 }

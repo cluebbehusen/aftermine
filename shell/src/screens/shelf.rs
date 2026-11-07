@@ -312,11 +312,11 @@ impl Shelf {
             .position(|tab| *tab == self.tab())
             .unwrap_or_default();
         crate::tabs::draw(
+            sprites,
             &Tab::ALL.map(Tab::label),
             active,
             mouse,
-            keys.as_ref()
-                .map(|(prev, next)| (prev.as_str(), next.as_str())),
+            keys.as_ref(),
         );
         let status = crate::menu::binding_hint(&self.status());
         if notice_shown || status.is_empty() {

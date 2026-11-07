@@ -812,7 +812,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     } else {
         page_backdrop();
         match w.step {
-            WizardStep::Map => w.browser.draw(&w.entries, &mut app.previews),
+            WizardStep::Map => w.browser.draw(&app.sprites, &w.entries, &mut app.previews),
             WizardStep::Setup => {
                 w.draw_setup(&app.sprites, &app.draft, &mut app.previews, app.input.mouse);
             }
@@ -1130,6 +1130,7 @@ fn playback_frame(
         );
         pass(FramePass::Hud, || {
             screens::playback::playback_hud(
+                &app.sprites,
                 &pb,
                 &app.config.bindings,
                 vec2(screen_width(), screen_height()),
@@ -1172,7 +1173,7 @@ fn final_map_frame(
         &app.config.bindings,
         Some(app.performance.view()),
     );
-    FinalMapScreen::draw_hud(&app.config.bindings, app.input.mouse);
+    FinalMapScreen::draw_hud(&app.sprites, &app.config.bindings, app.input.mouse);
     if leave {
         *rerun = true;
         Screen::Results(ResultsScreen::open(app.game.net_role().is_some()))

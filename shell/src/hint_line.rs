@@ -95,33 +95,35 @@ impl HintLine {
         }
     }
 
-    /// Draws the line centered on `center_x` with its baseline at
-    /// `baseline`, at `largest` shrunk as far as `smallest` to fit
-    /// `width`. Copy takes `text`; icons take `icons`, which tints the
-    /// bone art and carries its opacity.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one call places, sizes, and colors the whole line"
-    )]
-    pub(crate) fn draw(
+    /// The line's width at text `size`.
+    pub(crate) fn width(&self, size: f32) -> f32 {
+        self.width_with(size, measure)
+    }
+
+    /// The text size at which the line fits `width`: `largest` when it
+    /// already fits, else shrunk to fit, but never below `smallest`.
+    pub(crate) fn fit(&self, largest: Type, width: f32, smallest: Type) -> f32 {
+        let ui = crate::render::ui_scale();
+        self.fit_with(largest.at(ui), width, smallest.at(ui), measure)
+    }
+
+    /// Draws the line from `x` at text `size`, its baseline at `baseline`.
+    /// Copy takes `text`; icons take `icons`, which tints the bone art and
+    /// carries its opacity.
+    pub(crate) fn draw_at(
         &self,
         sprites: &Sprites,
-        center_x: f32,
+        x: f32,
         baseline: f32,
-        width: f32,
-        (largest, smallest): (Type, Type),
+        size: f32,
         text: Color,
         icons: Color,
     ) {
-        let measure =
-            |copy: &str, size: f32| measure_text(copy, None, numeric::font_size(size), 1.0).width;
-        let ui = crate::render::ui_scale();
-        let size = self.fit_with(largest.at(ui), width, smallest.at(ui), measure);
         let icon = size * ICON_SCALE;
         let cap = measure_text("H", None, numeric::font_size(size), 1.0).offset_y;
         let dpi = screen_dpi_scale();
         let snap = |v: f32| (v * dpi).round() / dpi;
-        let mut x = center_x - self.width_with(size, measure) * 0.5;
+        let mut x = x;
         for segment in &self.segments {
             match segment {
                 Segment::Text(copy) => {
@@ -142,6 +144,33 @@ impl HintLine {
             }
         }
     }
+
+    /// Draws the line centered on `center_x` with its baseline at
+    /// `baseline`, at `largest` shrunk as far as `smallest` to fit
+    /// `width`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one call places, sizes, and colors the whole line"
+    )]
+    pub(crate) fn draw(
+        &self,
+        sprites: &Sprites,
+        center_x: f32,
+        baseline: f32,
+        width: f32,
+        (largest, smallest): (Type, Type),
+        text: Color,
+        icons: Color,
+    ) {
+        let size = self.fit(largest, width, smallest);
+        let x = center_x - self.width(size) * 0.5;
+        self.draw_at(sprites, x, baseline, size, text, icons);
+    }
+}
+
+/// How wide a run of copy is at text `size`.
+fn measure(copy: &str, size: f32) -> f32 {
+    measure_text(copy, None, numeric::font_size(size), 1.0).width
 }
 
 #[cfg(test)]

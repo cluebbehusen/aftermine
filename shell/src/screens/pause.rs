@@ -324,8 +324,12 @@ impl PauseScreen {
     pub fn draw(&self, sprites: &crate::assets::Sprites, scenario_name: &str, mouse: Vec2) {
         match &self.face {
             Face::Naming(field) => field.draw(
-                &crate::menu::binding_hint(naming_hint(crate::platform::hands())),
-                crate::hints::fade(crate::theme::TEXT_SECONDARY),
+                sprites,
+                &crate::menu::hint_line(naming_hint(crate::platform::hands())),
+                (
+                    crate::hints::fade(crate::theme::TEXT_SECONDARY),
+                    crate::hints::fade(macroquad::prelude::WHITE),
+                ),
                 mouse,
             ),
             Face::Rows | Face::Confirm(_) | Face::SaveFailed(_) => {

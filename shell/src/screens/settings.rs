@@ -839,7 +839,12 @@ impl SettingsScreen {
     /// draws the veil first, so all land above it.
     pub fn draw(&self, sprites: &crate::assets::Sprites, mouse: Vec2) {
         if let Some(form) = &self.naming {
-            form.draw("", crate::theme::TEXT_SECONDARY, mouse);
+            form.draw(
+                sprites,
+                &crate::hint_line::HintLine::default(),
+                (crate::theme::TEXT_SECONDARY, macroquad::prelude::WHITE),
+                mouse,
+            );
             return;
         }
         if let Face::Confirming(profile) = self.face {
@@ -854,13 +859,7 @@ impl SettingsScreen {
             .iter()
             .position(|tab| *tab == self.face.tab())
             .unwrap_or_default();
-        crate::tabs::draw(
-            &labels,
-            active,
-            mouse,
-            keys.as_ref()
-                .map(|(prev, next)| (prev.as_str(), next.as_str())),
-        );
+        crate::tabs::draw(sprites, &labels, active, mouse, keys.as_ref());
         if let Some((text, danger)) = self.status() {
             let s = render::ui_scale();
             let size = crate::theme::Type::Body.at(s);

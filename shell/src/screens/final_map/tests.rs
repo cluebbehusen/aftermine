@@ -270,7 +270,7 @@ fn the_camera_line_names_only_what_the_hands_in_use_have() {
     let bindings = BindingMap::classic();
     let back = bindings.label(Action::Back);
     for hands in crate::platform::ALL_HANDS {
-        let line = FinalMapScreen::coaching(&bindings, hands);
+        let line = FinalMapScreen::coaching(&bindings, hands).copy();
         crate::platform::assert_copy_fits(hands, &line.replace(&back, ""));
         assert_eq!(
             line.ends_with(&format!("{back} back")),
@@ -305,7 +305,7 @@ fn the_controller_back_button_returns_to_the_report_and_others_do_nothing() {
 fn the_camera_line_names_a_controllers_back_button_while_one_is_in_use() {
     let bindings = BindingMap::classic();
     for hands in crate::platform::pad_hands() {
-        let line = FinalMapScreen::coaching(&bindings, hands);
+        let line = FinalMapScreen::coaching(&bindings, hands).copy();
         crate::platform::assert_pad_copy(hands, &line);
     }
 }

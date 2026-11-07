@@ -84,3 +84,54 @@ fn a_controller_in_use_shows_its_own_buttons_and_no_keys() {
         "D-pad select - Cross confirm"
     );
 }
+
+#[test]
+fn a_coaching_line_reads_as_its_filled_template_for_every_hand() {
+    let templates = [
+        "{confirm} saves | {back} cancels",
+        "D-pad or {confirm} change a value | {prev_tab}/{next_tab} switch tabs",
+        "D-pad select - {page_up}/{page_down} page - {confirm} plays - {back} back",
+        "{confirm} watches | {delete} twice deletes | {prev_tab}/{next_tab} switch tabs",
+        "{up}/{down} or click select",
+        "no tokens at all",
+    ];
+    let hands = crate::platform::ALL_HANDS
+        .into_iter()
+        .chain(crate::platform::pad_hands());
+    for hands in hands {
+        crate::platform::set_hands(hands);
+        for template in templates {
+            assert_eq!(
+                hint_line(template).copy(),
+                binding_hint(template),
+                "{hands:?} {template:?}"
+            );
+        }
+    }
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}
+
+#[test]
+fn a_controller_in_use_sees_its_own_icons_and_keys_only_where_it_has_no_button() {
+    use crate::hint_line::HintLine;
+    use crate::pad::PadIcon;
+    use aftermine_protocol::PadFamily;
+    crate::platform::set_hands(crate::platform::Hands {
+        pad: Some(PadFamily::PlayStation),
+        ..crate::platform::ALL_HANDS[0]
+    });
+    let line = hint_line("{confirm} watches | {delete} twice deletes | {prev_tab}/{next_tab} tabs");
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+    let delete =
+        MENU_BINDINGS.with(|bindings| bindings.borrow().label(crate::action::Action::DeleteSave));
+    assert_eq!(
+        line,
+        HintLine::default()
+            .pad(PadIcon::Cross)
+            .text(format!(" watches | {delete} twice deletes | "))
+            .pad(PadIcon::L1)
+            .text("/")
+            .pad(PadIcon::R1)
+            .text(" tabs")
+    );
+}

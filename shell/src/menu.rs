@@ -80,23 +80,52 @@ pub(crate) fn binding_hint(template: &str) -> String {
     })
 }
 
+/// The coaching tokens a controller's fixed menu layout has buttons for.
+/// Pad copy names the D-pad itself rather than one token per arrow.
+const PAD_TOKENS: [(&str, aftermine_protocol::PadButton); 6] = [
+    ("{confirm}", crate::pad::CONFIRM),
+    ("{back}", crate::pad::BACK),
+    ("{prev_tab}", crate::pad::TABS.0),
+    ("{next_tab}", crate::pad::TABS.1),
+    ("{page_up}", crate::pad::PAGES.0),
+    ("{page_down}", crate::pad::PAGES.1),
+];
+
 /// Fills the tokens of a coaching template that `family` has buttons
-/// for. Pad copy names the D-pad itself rather than one token per arrow,
-/// and leaves the rest to the keys.
+/// for, and leaves the rest to the keys.
 fn pad_hint(template: &str, family: aftermine_protocol::PadFamily) -> String {
-    use crate::pad::{BACK, CONFIRM, PAGES, TABS, button_name};
     let mut text = template.to_string();
-    for (token, button) in [
-        ("{confirm}", CONFIRM),
-        ("{back}", BACK),
-        ("{prev_tab}", TABS.0),
-        ("{next_tab}", TABS.1),
-        ("{page_up}", PAGES.0),
-        ("{page_down}", PAGES.1),
-    ] {
-        text = text.replace(token, button_name(family, button));
+    for (token, button) in PAD_TOKENS {
+        text = text.replace(token, crate::pad::button_name(family, button));
     }
     text
+}
+
+/// A coaching template as a hint line. While a controller is in use, the
+/// tokens its layout has buttons for show that pad's own icons and the
+/// rest name keys; otherwise it is [`binding_hint`]'s copy. Either way it
+/// reads as the same words.
+pub(crate) fn hint_line(template: &str) -> HintLine {
+    let Some(family) = crate::platform::hands().pad else {
+        return HintLine::from(binding_hint(template));
+    };
+    let mut line = HintLine::default();
+    let mut rest = template;
+    while let Some((at, token, button)) = PAD_TOKENS
+        .iter()
+        .filter_map(|(token, button)| Some((rest.find(token)?, *token, *button)))
+        .min_by_key(|(at, ..)| *at)
+    {
+        if at > 0 {
+            line = line.text(binding_hint(&rest[..at]));
+        }
+        line = line.pad(crate::pad::button_icon(family, button));
+        rest = &rest[at + token.len()..];
+    }
+    if !rest.is_empty() {
+        line = line.text(binding_hint(rest));
+    }
+    line
 }
 
 /// The key that steps tabs as `action` in menus right now, if any.
@@ -1156,10 +1185,8 @@ impl<R: Clone> Menu<R> {
         }
 
         let scrolls = first > 0 || first + visible < self.lines.len();
-        let hint = coaching.map_or_else(
-            || menu_footer(crate::platform::hands(), scrolls),
-            |coaching| HintLine::from(binding_hint(coaching)),
-        );
+        let hint =
+            coaching.map_or_else(|| menu_footer(crate::platform::hands(), scrolls), hint_line);
         hint.sentence_cased().draw(
             sprites,
             view_w() * 0.5,
