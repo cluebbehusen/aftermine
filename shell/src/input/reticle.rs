@@ -65,6 +65,9 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32) {
     let reticle = &mut input.reticle;
     reticle.center = camera.viewport() * 0.5;
     let bound = drift_bound(camera, ui);
+    // Where the map's edge held back this frame's zoom, the reticle moves
+    // instead, so it stays on the ground it was zooming about.
+    reticle.drift += camera.take_glide_held() * camera.zoom;
     if left != Vec2::ZERO {
         let friction = if reticle.snap.is_some() {
             SNAP_FRICTION

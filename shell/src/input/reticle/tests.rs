@@ -398,3 +398,29 @@ fn the_last_pad_leaving_hands_the_pointer_back() {
     track_hands(&mut input, &RawEvent::PadDisconnected { pad: 1 }, false);
     assert_eq!(input.last_pointer, crate::platform::Hands::BUILD.pointer);
 }
+
+#[test]
+fn zooming_out_at_the_map_edge_keeps_the_reticle_on_its_ground() {
+    let mut game = game();
+    let mut input = InputState::new();
+    drift_at_edge(&mut game, &mut input);
+    update_held(&mut game, &mut input, 0.0);
+    let aim = under_reticle(&game, &input);
+    let start = game.presentation.camera.center;
+    feed(&mut game, &mut input, &[stick(Stick::Right, 0.0, 1.0)]);
+    // The frame loop advances the glide before it reads input.
+    for _ in 0..10 {
+        game.presentation.camera.update(0.05);
+        update_held(&mut game, &mut input, 0.05);
+    }
+    assert!(game.presentation.camera.zoom < ZOOM, "the stick zoomed out");
+    assert!(
+        game.presentation.camera.center.x < start.x,
+        "the edge pushed the camera in"
+    );
+    assert!(
+        (under_reticle(&game, &input) - aim).length() < 1e-2,
+        "{aim} moved to {}",
+        under_reticle(&game, &input)
+    );
+}

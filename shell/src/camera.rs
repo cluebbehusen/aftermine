@@ -37,6 +37,9 @@ pub struct Camera {
     /// comes to rest. It moves the whole view, so screen and world points stay
     /// paired, and a view pinned to the map can take it too.
     landing_nudge: Vec2,
+    /// World travel the map's edge refused this frame's zoom glide: the
+    /// screen moved by this much against the point the glide held still.
+    glide_held: Vec2,
 }
 
 /// How fast a jolt dies away, per second.
@@ -58,6 +61,7 @@ impl Camera {
             shake: 0.0,
             shake_time: 0.0,
             landing_nudge: Vec2::ZERO,
+            glide_held: Vec2::ZERO,
         };
         camera.clamp();
         camera
@@ -144,6 +148,12 @@ impl Camera {
         self.zoom_anchor = Some(cursor_px);
     }
 
+    /// Takes the world travel the map's edge refused this frame's zoom
+    /// glide, so a pointer that should stay on its ground can follow it.
+    pub(crate) fn take_glide_held(&mut self) -> Vec2 {
+        std::mem::take(&mut self.glide_held)
+    }
+
     /// Whether a zoom glide is underway.
     pub fn zooming(&self) -> bool {
         self.zoom != self.target_zoom
@@ -170,6 +180,7 @@ impl Camera {
 
     /// Advances the zoom glide. Call once per frame.
     pub fn update(&mut self, dt: f32) {
+        self.glide_held = Vec2::ZERO;
         if self.shake > 0.0 {
             self.shake_time += dt;
             self.shake *= (-SHAKE_DECAY * dt).exp();
@@ -195,8 +206,10 @@ impl Camera {
             self.zoom_anchor = None;
         }
         let after = self.to_world(anchor_px);
-        self.center += anchor_world - after;
+        let wanted = self.center + anchor_world - after;
+        self.center = wanted;
         self.clamp();
+        self.glide_held = wanted - self.center;
         // World (0, 0) should land on a whole pixel, where still ground draws.
         // Easing there with the glide spares the view a jump at rest.
         let landing = self.landing_origin(anchor_px, anchor_world);
