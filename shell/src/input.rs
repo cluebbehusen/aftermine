@@ -2010,9 +2010,15 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                 pull_row(&game.view(), input, vec2(x, y));
             }
         }
+        // While the pad points, the wheel zooms about the reticle as the
+        // right stick does.
         RawEvent::Wheel { delta } => crate::camera::controls::wheel_zoom(
             &mut game.presentation.camera,
-            input.mouse,
+            if input.last_pointer == Pointer::Pad {
+                input.reticle.point()
+            } else {
+                input.mouse
+            },
             delta,
             input.camera_prefs,
         ),
@@ -3517,8 +3523,9 @@ pub fn update_held(game: &mut Game, input: &mut InputState, dt: f32) {
             dir.y += 1.0;
         }
     }
-    crate::camera::controls::pan_toward(&mut game.presentation.camera, dir, input.camera_prefs, dt);
-    reticle::update(game, input, dt);
+    let keys =
+        crate::camera::controls::pan_travel(&game.presentation.camera, dir, input.camera_prefs, dt);
+    reticle::update(game, input, dt, keys);
 }
 
 /// How the native layer scales a wheel reading.

@@ -469,7 +469,7 @@ pub(super) fn dispatch_action(
             // map's edge can hold the camera to one spot for two Foundries.
             let foundries = own_foundries(&game.view());
             let camera = &game.presentation.camera;
-            let looking = camera.to_world(input.reticle.point());
+            let looking = input.reticle.ground(camera);
             let next = foundries
                 .iter()
                 .position(|at| at.distance(looking) <= 0.5)

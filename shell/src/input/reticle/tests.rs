@@ -469,3 +469,108 @@ fn a_stick_held_since_a_menu_makes_the_pad_the_pointer() {
     assert_eq!(input.last_pointer, Pointer::Pad, "so the reticle shows");
     assert_eq!(input.hover_point(), Some(input.reticle.point()));
 }
+
+#[test]
+fn a_jump_while_an_edge_zoom_settles_lands_on_its_target() {
+    let mut game = game();
+    let mut input = InputState::new();
+    drift_at_edge(&mut game, &mut input);
+    feed(&mut game, &mut input, &[stick(Stick::Right, 0.0, 1.0)]);
+    update_held(&mut game, &mut input, 0.05);
+    feed(&mut game, &mut input, &[stick(Stick::Right, 0.0, 0.0)]);
+    // The glide the edge holds back moves the camera at the frame's start,
+    // then the same frame's jump lands.
+    game.presentation.camera.update(0.05);
+    feed(&mut game, &mut input, &[press(PadButton::DpadUp)]);
+    update_held(&mut game, &mut input, 0.05);
+    let foundry = super::super::dispatch::own_foundries(&game.view())[0];
+    assert!((under_reticle(&game, &input) - foundry).length() < 1e-2);
+}
+
+#[test]
+fn a_growing_window_keeps_the_reticle_on_its_ground() {
+    let mut game = game();
+    let mut input = InputState::new();
+    drift_at_edge(&mut game, &mut input);
+    update_held(&mut game, &mut input, 0.0);
+    let aim = under_reticle(&game, &input);
+    let edge = game.presentation.camera.center;
+    game.presentation.camera.set_viewport(vec2(1600.0, 900.0));
+    assert_ne!(
+        game.presentation.camera.center, edge,
+        "the edge pulled it in"
+    );
+    update_held(&mut game, &mut input, 0.0);
+    assert!((under_reticle(&game, &input) - aim).length() < 1e-3);
+}
+
+#[test]
+fn pan_keys_move_the_reticle_while_the_pad_points() {
+    let mut game = game();
+    let mut input = InputState::new();
+    let speed = crate::input::PAN_PX_PER_SEC * input.camera_prefs.pan_speed;
+    // In the open, the keys pan the camera as they always do.
+    feed(&mut game, &mut input, &[press(PadButton::South)]);
+    let before = game.presentation.camera.center;
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::KeyDown { key: Key::Left }],
+    );
+    update_held(&mut game, &mut input, 0.1);
+    let moved = (before.x - game.presentation.camera.center.x) * ZOOM;
+    assert!((moved - speed * 0.1).abs() < 1e-2, "{moved}");
+    feed(&mut game, &mut input, &[RawEvent::KeyUp { key: Key::Left }]);
+
+    // At the edge they bring an off-center reticle home before the camera.
+    drift_at_edge(&mut game, &mut input);
+    update_held(&mut game, &mut input, 0.0);
+    let edge = game.presentation.camera.center;
+    let center = game.presentation.camera.viewport() * 0.5;
+    let drift = input.reticle.point().x - center.x;
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::KeyDown { key: Key::Left }],
+    );
+    update_held(&mut game, &mut input, 0.1);
+    assert_eq!(game.presentation.camera.center, edge);
+    assert!((input.reticle.point().x - center.x - (drift - speed * 0.1)).abs() < 1e-2);
+}
+
+#[test]
+fn center_on_foundry_cycles_under_the_mouse_too() {
+    let mut game = game();
+    let mut input = InputState::new();
+    input.last_pointer = Pointer::Mouse;
+    let foundries = super::super::dispatch::own_foundries(&game.view());
+    let space = [
+        RawEvent::KeyDown { key: Key::Space },
+        RawEvent::KeyUp { key: Key::Space },
+    ];
+    let mut framed = Vec::new();
+    for _ in 0..3 {
+        feed(&mut game, &mut input, &space);
+        // A quiet frame between presses: the camera stays, so the ground
+        // the reticle marks does too, even where the edge held it back.
+        update_held(&mut game, &mut input, 0.1);
+        let looking = input.reticle.ground(&game.presentation.camera);
+        framed.push(
+            foundries
+                .iter()
+                .position(|at| (*at - looking).length() < 1e-3),
+        );
+    }
+    assert_eq!(framed, [Some(0), Some(1), Some(0)]);
+    // Once the mouse's own hands move the camera, the reticle follows it.
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::KeyDown { key: Key::Right }],
+    );
+    update_held(&mut game, &mut input, 0.1);
+    assert_eq!(
+        input.reticle.ground(&game.presentation.camera),
+        game.presentation.camera.center
+    );
+}
