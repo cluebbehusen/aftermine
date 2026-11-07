@@ -307,7 +307,9 @@ pub(super) fn update_and_draw(
     // binding sees them raw: only the keyboard binds, and a pad cancels.
     let capturing = matches!(&screen, Screen::Settings { screen, .. } if screen.capturing());
     if !screen.kind().gameplay() && !capturing {
-        events = crate::pad::menu_keys(&events);
+        let binding_editor =
+            matches!(&screen, Screen::Settings { screen, .. } if screen.edits_bindings());
+        events = crate::pad::menu_keys(&events, !binding_editor);
         events = app.menu_stick.arrows(&events, time.presentation);
     } else {
         app.menu_stick.reset();

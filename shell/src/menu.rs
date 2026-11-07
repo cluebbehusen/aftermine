@@ -20,14 +20,20 @@ use std::path::PathBuf;
 
 use crate::press::{ScrollPress, Swipe};
 use crate::theme::{
-    CHIP, EDGE_CHIP, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_DISABLED, TEXT_PRIMARY,
-    TEXT_SECONDARY, TEXT_TITLE,
+    CHIP, EDGE_CHIP, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_DANGER, TEXT_DISABLED,
+    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE,
 };
 
 const ITEM_HEIGHT: f32 = 44.0;
 const ITEM_WIDTH: f32 = 420.0;
 /// The space between rows, left out of each row's target.
 const ROW_GAP: f32 = 6.0;
+/// The width a record row's action button takes at the row's right end,
+/// in logical px at 1x: the whole of it is the button's target.
+const ROW_ACTION_ROOM: f32 = 92.0;
+/// The column a record row's action button reports in
+/// [`Activation::column`].
+pub const ROW_ACTION: usize = 0;
 /// The tightest a desktop list packs its rows before it scrolls.
 const MIN_ROW: f32 = 30.0;
 
@@ -44,10 +50,16 @@ pub(crate) fn set_bindings(bindings: &crate::action::BindingMap) {
     });
 }
 
+/// A game-written subtitle as it reads: its key tokens filled in and its
+/// first letter capitalized.
+fn subtitle_line(subtitle: &str) -> String {
+    crate::typography::sentence_case(&binding_hint(subtitle))
+}
+
 /// Fills a coaching template's tokens with the keys that do each thing in
 /// menus now or, while a controller is in use, the buttons of its fixed
-/// layout. A token with no button, such as `{delete}`, still names its
-/// key, which keeps working while the controller is in use.
+/// layout. A token with no button, such as `{up}`, still names its key,
+/// which keeps working while the controller is in use.
 pub(crate) fn binding_hint(template: &str) -> String {
     use crate::action::Action;
     let template = match crate::platform::hands().pad {
@@ -82,9 +94,10 @@ pub(crate) fn binding_hint(template: &str) -> String {
 
 /// The coaching tokens a controller's fixed menu layout has buttons for.
 /// Pad copy names the D-pad itself rather than one token per arrow.
-const PAD_TOKENS: [(&str, aftermine_protocol::PadButton); 6] = [
+const PAD_TOKENS: [(&str, aftermine_protocol::PadButton); 7] = [
     ("{confirm}", crate::pad::CONFIRM),
     ("{back}", crate::pad::BACK),
+    ("{delete}", crate::pad::DELETE),
     ("{prev_tab}", crate::pad::TABS.0),
     ("{next_tab}", crate::pad::TABS.1),
     ("{page_up}", crate::pad::PAGES.0),
@@ -242,6 +255,41 @@ fn widest_record_values<R>(lines: &[Line<R>], measure: impl Fn(&str) -> f32) -> 
         ],
         _ => widest,
     })
+}
+
+/// Draws a record row's action button inside its target `area` at UI
+/// scale `s`: a chip smaller than the row, in the danger color while `lit`
+/// under the pointer.
+fn draw_row_action(label: &str, area: Rect, s: f32, lit: bool, busy: bool) {
+    let size = crate::theme::Type::Body.at(s);
+    let text = measure_text(label, None, numeric::font_size(size), 1.0).width;
+    let inset = 14.0 * s;
+    let width = (text + 22.0 * s).min(area.w - inset);
+    let height = (area.h - 12.0 * s).min(30.0 * s);
+    let chip = Rect::new(
+        area.x + area.w - inset - width,
+        area.y + (area.h - height) * 0.5,
+        width,
+        height,
+    );
+    draw_rectangle(chip.x, chip.y, chip.w, chip.h, CHIP);
+    stroke_rect(
+        chip,
+        Stroke::Hairline.at(s),
+        if lit { TEXT_DANGER } else { EDGE_CHIP },
+    );
+    let color = match (busy, lit) {
+        (true, _) => TEXT_DISABLED,
+        (false, true) => TEXT_DANGER,
+        (false, false) => TEXT_SECONDARY,
+    };
+    draw_text(
+        label,
+        chip.x + (chip.w - text) * 0.5,
+        chip.y + chip.h * 0.66,
+        size,
+        color,
+    );
 }
 
 /// Draws a shelf record in `columns` at UI scale `s`: the title in
@@ -430,8 +478,9 @@ pub enum Line<R> {
     Row(Label, R),
 }
 
-/// A row the player activated: what it stands for and, for a Controls
-/// row clicked or tapped on a chord, which chord.
+/// A row the player activated: what it stands for and, for a click or tap,
+/// which part of the row: a Controls row's chord, or [`ROW_ACTION`] for a
+/// record row's action button.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Activation<R> {
     pub value: R,
@@ -504,25 +553,30 @@ pub(crate) fn title_width(title: &str) -> f32 {
 
 /// Draws a page's title along the top edge and its subtitle beneath.
 pub(crate) fn draw_page_heading(title: &str, subtitle: &str) {
+    draw_page_heading_as_is(title, &crate::typography::sentence_case(subtitle));
+}
+
+/// [`draw_page_heading`] with the subtitle drawn exactly as given.
+fn draw_page_heading_as_is(title: &str, subtitle: &str) {
     let s = ui();
     let baseline = page_title_baseline(s);
     draw_title(title, baseline, TEXT_TITLE);
     draw_subtitle(subtitle, baseline + SUBTITLE_DROP * s);
 }
 
-/// Draws a subtitle centered at `baseline`, shrinking to fit the window.
-pub(crate) fn draw_subtitle(subtitle: &str, baseline: f32) {
+/// Draws a subtitle centered at `baseline` exactly as given, shrinking to
+/// fit the window.
+fn draw_subtitle(subtitle: &str, baseline: f32) {
     let s = ui();
-    let subtitle = crate::typography::sentence_case(subtitle);
     let size = crate::typography::fit(
-        &subtitle,
+        subtitle,
         crate::theme::Type::Label.at(s),
         view_w() - 2.0 * (crate::button::corner_slot(0, s).right() + 16.0 * s),
         crate::theme::Type::Caption,
     );
-    let dims = measure_text(&subtitle, None, numeric::font_size(size), 1.0);
+    let dims = measure_text(subtitle, None, numeric::font_size(size), 1.0);
     draw_text(
-        &subtitle,
+        subtitle,
         (view_w() - dims.width) * 0.5,
         baseline,
         size,
@@ -573,11 +627,12 @@ pub struct Menu<R> {
     /// Fractional wheel accumulation: trackpads deliver hundredths per
     /// frame, so only whole accumulated rows scroll.
     wheel_accum: f32,
-    /// Row armed by a mouse press or the owning finger. The first finger
-    /// down scrolls the list once it drags: a touch-only player has no
-    /// wheel or paging keys, so this is the only way to reach rows below
-    /// the window.
-    press: ScrollPress<usize>,
+    /// Row armed by a mouse press or the owning finger, and whether the
+    /// press landed on the row's action button: a release across that
+    /// edge does neither. The first finger down scrolls the list once it
+    /// drags: a touch-only player has no wheel or paging keys, so this is
+    /// the only way to reach rows below the window.
+    press: ScrollPress<(usize, bool)>,
     /// Drag travel not yet spent on a whole row of scrolling.
     carry: f32,
     /// Horizontal offset of the list as a fraction of the viewport
@@ -592,6 +647,12 @@ pub struct Menu<R> {
     pub wide: bool,
     /// How the title heads the list.
     pub heading: Heading,
+    /// The label of a button at the right end of every record row. The
+    /// rows widen by its room, so their columns keep theirs.
+    pub row_action: Option<&'static str>,
+    /// Where the pointer behind `hover` was, so a row's action button
+    /// lights only while the pointer is over it.
+    pointer: Vec2,
 }
 
 fn view_w() -> f32 {
@@ -642,6 +703,8 @@ impl<R: Clone> Menu<R> {
             growth: 1.0,
             wide: false,
             heading: Heading::Dialog,
+            row_action: None,
+            pointer: Vec2::ZERO,
         };
         menu.selected = menu.settle(0, false);
         menu
@@ -778,6 +841,43 @@ impl<R: Clone> Menu<R> {
         (0..self.lines.len()).find(|i| self.item_rect(*i).is_some_and(|r| r.contains(point)))
     }
 
+    /// Lights the row under `point`, remembering the point for the row's
+    /// action button.
+    fn hover_at(&mut self, point: Vec2) {
+        self.pointer = point;
+        self.hover = self.row_at(point).filter(|r| !self.is_header(*r));
+    }
+
+    /// Which part of `row` a press at `point` lands on: a record row's
+    /// action button, or a Controls row's chord.
+    fn column_at(&self, row: usize, point: Vec2) -> Option<usize> {
+        if self
+            .action_rect(row)
+            .is_some_and(|rect| rect.contains(point))
+        {
+            return Some(ROW_ACTION);
+        }
+        let rect = self.item_rect(row)?;
+        matches!(self.lines[row], Line::Row(Label::Binding { .. }, _))
+            .then(|| BindingColumns::of(rect, self.scale()).slot_at(point.x))
+            .flatten()
+    }
+
+    /// A visible record row's action button, when the menu gives record
+    /// rows one: the full height of the row's right end.
+    pub(crate) fn action_rect(&self, row: usize) -> Option<Rect> {
+        self.row_action?;
+        if !matches!(
+            self.lines.get(row),
+            Some(Line::Row(Label::Record { .. }, _))
+        ) {
+            return None;
+        }
+        let rect = self.item_rect(row)?;
+        let room = ROW_ACTION_ROOM * self.scale();
+        Some(Rect::new(rect.x + rect.w - room, rect.y, room, rect.h))
+    }
+
     /// The interface scale this menu draws at.
     fn scale(&self) -> f32 {
         ui() * self.growth
@@ -790,10 +890,15 @@ impl<R: Clone> Menu<R> {
 
     fn row_width(&self) -> f32 {
         let s = self.scale();
-        if self.wide() {
-            (760.0 * s).min(view_w() - 32.0 * s)
+        let action = if self.row_action.is_some() {
+            ROW_ACTION_ROOM
         } else {
-            ITEM_WIDTH * s
+            0.0
+        };
+        if self.wide() {
+            ((760.0 + action) * s).min(view_w() - 32.0 * s)
+        } else {
+            (ITEM_WIDTH + action) * s
         }
     }
 
@@ -872,7 +977,9 @@ impl<R: Clone> Menu<R> {
         for event in events {
             let mut press = self.press;
             let swipe = press.feed(event, scale, |p, _| {
-                self.row_at(p).filter(|row| !self.is_header(*row))
+                let row = self.row_at(p).filter(|row| !self.is_header(*row))?;
+                let on_action = self.action_rect(row).is_some_and(|rect| rect.contains(p));
+                Some((row, on_action))
             });
             self.press = press;
             match swipe {
@@ -880,17 +987,13 @@ impl<R: Clone> Menu<R> {
                     self.drag_by(dy, began);
                     continue;
                 }
-                Swipe::Activated(row) => {
+                Swipe::Activated((row, _)) => {
                     let point = crate::press::position(event);
                     if let Some(p) = point {
                         *mouse = p;
                     }
                     self.selected = row;
-                    let column = point.zip(self.item_rect(row)).and_then(|(p, rect)| {
-                        matches!(self.lines[row], Line::Row(Label::Binding { .. }, _))
-                            .then(|| BindingColumns::of(rect, self.scale()).slot_at(p.x))
-                            .flatten()
-                    });
+                    let column = point.and_then(|p| self.column_at(row, p));
                     return self.activation(row, column);
                 }
                 Swipe::Held | Swipe::Ignored => {}
@@ -898,7 +1001,7 @@ impl<R: Clone> Menu<R> {
             match *event {
                 RawEvent::MouseMove { x, y } => {
                     *mouse = vec2(x, y);
-                    self.hover = self.row_at(*mouse).filter(|r| !self.is_header(*r));
+                    self.hover_at(*mouse);
                 }
                 RawEvent::MouseDown {
                     button: MouseButton::Left,
@@ -914,7 +1017,7 @@ impl<R: Clone> Menu<R> {
                     if self.press.owns(id) =>
                 {
                     *mouse = vec2(x, y);
-                    self.hover = self.row_at(*mouse).filter(|r| !self.is_header(*r));
+                    self.hover_at(*mouse);
                 }
                 RawEvent::Wheel { delta } => {
                     // Wheel up shows earlier rows; the pointer stays put
@@ -927,7 +1030,7 @@ impl<R: Clone> Menu<R> {
                     }
                     self.wheel_accum -= steps;
                     self.scroll_by(if steps > 0.0 { -1 } else { 1 });
-                    self.hover = self.row_at(*mouse).filter(|r| !self.is_header(*r));
+                    self.hover_at(*mouse);
                 }
                 RawEvent::KeyDown { .. } => match crate::nav::Nav::decode(event) {
                     Some(crate::nav::Nav::Confirm) if !self.is_header(self.selected) => {
@@ -976,13 +1079,20 @@ impl<R: Clone> Menu<R> {
     /// standard key help. The footer is coaching either way: it fades in
     /// only when the player seems stuck.
     pub fn draw_with_coaching(&self, sprites: &Sprites, subtitle: &str, coaching: Option<&str>) {
-        self.draw_face(sprites, subtitle, coaching, false);
+        self.draw_face(sprites, &subtitle_line(subtitle), coaching, false);
+    }
+
+    /// Draws the menu under `name`, a name the player typed, exactly as
+    /// typed: braces in it name no keys, and its first letter keeps its
+    /// case.
+    pub fn draw_named(&self, sprites: &Sprites, name: &str) {
+        self.draw_face(sprites, name, None, false);
     }
 
     /// Draws the menu while work it started runs: every row dimmed and
     /// inert-looking, `subtitle` saying what is happening, no footer.
     pub fn draw_busy(&self, sprites: &Sprites, subtitle: &str) {
-        self.draw_face(sprites, subtitle, None, true);
+        self.draw_face(sprites, &subtitle_line(subtitle), None, true);
     }
 
     /// Draws the plate a dialog's title and rows sit on, which holds them
@@ -1011,19 +1121,19 @@ impl<R: Clone> Menu<R> {
         );
     }
 
+    /// Draws the menu under `subtitle`, which reads exactly as given.
     fn draw_face(&self, sprites: &Sprites, subtitle: &str, coaching: Option<&str>, busy: bool) {
-        let subtitle = binding_hint(subtitle);
         let s = self.scale();
         let list = self.window();
         match self.heading {
             // Home draws its own art above the list.
             Heading::Wordmark => {}
-            Heading::Page { .. } => draw_page_heading(&self.title, &subtitle),
+            Heading::Page { .. } => draw_page_heading_as_is(&self.title, subtitle),
             Heading::Dialog => {
                 let baseline = list.top - 64.0 * s;
                 self.draw_dialog_plate(baseline);
                 draw_title(&self.title, baseline, TEXT_TITLE);
-                draw_subtitle(&subtitle, baseline + SUBTITLE_DROP * s);
+                draw_subtitle(subtitle, baseline + SUBTITLE_DROP * s);
             }
         }
 
@@ -1136,8 +1246,19 @@ impl<R: Clone> Menu<R> {
                     );
                 }
                 Label::Record { .. } => {
-                    let columns = RecordColumns::fit(rect, s, record_widest);
+                    let action = self.action_rect(index);
+                    let cells = Rect::new(
+                        rect.x,
+                        rect.y,
+                        rect.w - action.map_or(0.0, |action| action.w),
+                        rect.h,
+                    );
+                    let columns = RecordColumns::fit(cells, s, record_widest);
                     draw_record(label, columns, s, text_size, color, busy);
+                    if let (Some(text), Some(action)) = (self.row_action, action) {
+                        let lit = hovered && action.contains(self.pointer);
+                        draw_row_action(text, action, s, lit, busy);
+                    }
                 }
                 Label::Text(text) => {
                     let room = rect.w - 36.0 * s;

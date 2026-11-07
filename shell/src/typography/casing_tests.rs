@@ -11,6 +11,8 @@ const TITLES: &[&str] = &[
     "CLOSE THE LOBBY?",
     "COULD NOT SAVE",
     "DEFEAT",
+    "DELETE THIS REPLAY?",
+    "DELETE THIS SAVE?",
     "DROP ?",
     "JOIN MATCH",
     "LAN MATCH",

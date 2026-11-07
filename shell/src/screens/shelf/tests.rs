@@ -122,18 +122,12 @@ fn the_back_button_leaves_even_after_every_record_is_deleted() {
 #[test]
 fn a_record_says_how_to_act_only_as_coaching() {
     let record = entry("done", true, RecordKind::Match, "/nowhere/m.json".into());
-    let mut shelf = Shelf::from_entries(vec![record]);
+    let shelf = Shelf::from_entries(vec![record]);
     assert_eq!(shelf.status(), "", "an openable record's row says it all");
     assert_eq!(
         shelf.coaching().as_deref(),
-        Some("{confirm} watches | {delete} twice deletes | {prev_tab}/{next_tab} switch tabs")
+        Some("{confirm} watches | {delete} deletes | {prev_tab}/{next_tab} switch tabs")
     );
-    shelf.arming = shelf.menu.value().copied();
-    assert!(
-        shelf.status().contains("again to delete"),
-        "an armed delete says so"
-    );
-    assert_eq!(shelf.coaching(), None);
 }
 
 #[test]
@@ -214,20 +208,12 @@ fn tabs_step_by_key_both_ways_and_answer_clicks_and_taps() {
 }
 
 #[test]
-fn a_tab_opens_on_its_first_row_and_drops_an_armed_delete() {
+fn a_tab_opens_on_its_first_row() {
     let mut shelf = Shelf::from_entries(mixed());
     drive(&mut shelf, Key::Down);
-    assert_eq!(drive(&mut shelf, Key::X), Out::Stay);
-    assert!(shelf.arming.is_some());
     drive(&mut shelf, Key::E);
     drive(&mut shelf, Key::Q);
     assert_eq!(shelf.menu.selected, 0, "a tab opens on its first row");
-    assert_eq!(shelf.arming, None, "a switch disarms the delete");
-    assert_eq!(
-        drive(&mut shelf, Key::X),
-        Out::Stay,
-        "an X after the switch only arms again"
-    );
 }
 
 #[test]
@@ -342,18 +328,229 @@ fn enter_loads_a_save_and_watches_a_match() {
 }
 
 #[test]
-fn deletion_requires_two_presses_and_is_dispatched_to_the_owner() {
+fn a_delete_asks_first_and_is_dispatched_to_the_owner() {
     let dir = std::env::temp_dir().join(format!("aftermine-shelf-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("doomed.json");
     std::fs::write(&path, "{}").unwrap();
-    let mut shelf =
-        Shelf::from_entries(vec![entry("doomed", true, RecordKind::Match, path.clone())]);
-    assert_eq!(drive(&mut shelf, Key::X), Out::Stay, "first X only arms");
-    assert!(path.exists(), "arming deletes nothing");
-    assert_eq!(drive(&mut shelf, Key::X), Out::Delete(path.clone()));
+    let mut doomed = entry("doomed", true, RecordKind::Match, path.clone());
+    doomed.map = Some("Crossroads".to_string());
+    let mut shelf = Shelf::from_entries(vec![doomed]);
+    assert_eq!(drive(&mut shelf, Key::X), Out::Stay, "X only asks");
+    assert_eq!(shelf.mode_name(), "confirm_delete");
+    let question = shelf.view();
+    assert_eq!(question.title, "DELETE THIS REPLAY?");
+    assert_eq!(question.items, ["Cancel", "Delete"]);
+    assert_eq!(question.selected, 0, "Cancel waits under the cursor");
+    assert_eq!(
+        shelf.asking.as_ref().map(|ask| ask.subtitle.as_str()),
+        Some("doomed \u{b7} Crossroads")
+    );
+    assert_eq!(
+        drive(&mut shelf, Key::X),
+        Out::Stay,
+        "a second X never deletes"
+    );
+    assert_eq!(drive(&mut shelf, Key::Enter), Out::Stay, "Cancel keeps it");
+    assert_eq!(shelf.mode_name(), "replays");
+    assert!(path.exists());
+
+    drive(&mut shelf, Key::X);
+    drive(&mut shelf, Key::Down);
+    assert_eq!(drive(&mut shelf, Key::Enter), Out::Delete(path.clone()));
+    assert_eq!(
+        shelf.mode_name(),
+        "replays",
+        "the answer closes the question"
+    );
     assert!(path.exists(), "the worker owns disk operations");
     std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn escape_and_back_keep_the_record_and_the_shelf() {
+    let mut shelf = Shelf::from_entries(mixed());
+    assert_eq!(shelf.view().title, "SAVES & REPLAYS");
+    drive(&mut shelf, Key::X);
+    assert_eq!(shelf.view().title, "DELETE THIS SAVE?");
+    assert_eq!(drive(&mut shelf, Key::Escape), Out::Stay);
+    assert_eq!(shelf.mode_name(), "saves");
+    for touch in [false, true] {
+        drive(&mut shelf, Key::X);
+        let mut mouse = vec2(0.0, 0.0);
+        let out = shelf.update(
+            &crate::button::press_back(touch),
+            &mut mouse,
+            &mut Vec::new(),
+        );
+        assert_eq!(out, Out::Stay, "BACK leaves the question, not the shelf");
+        assert_eq!(shelf.mode_name(), "saves");
+    }
+}
+
+#[test]
+fn a_rows_delete_button_asks_by_click_or_tap_and_the_rest_of_the_row_opens_it() {
+    crate::render::set_viewport(1180.0, 820.0);
+    crate::render::set_user_scale(1.0);
+    for touch in [false, true] {
+        let press = |at: Vec2| if touch { tap(at) } else { click(at) };
+        let mut shelf = Shelf::from_entries(mixed());
+        let button = shelf.menu.action_rect(1).expect("every record row has one");
+        let row = shelf.menu.item_rect(1).unwrap();
+        assert!(row.contains(button.center()) && button.right() <= row.right());
+        assert_eq!(drive_events(&mut shelf, &press(button.center())), Out::Stay);
+        assert_eq!(
+            shelf.asking.as_ref().map(|ask| ask.path.clone()),
+            Some("/nowhere/s.json".into()),
+            "the button asks about its own row"
+        );
+        let delete = shelf
+            .asking
+            .as_ref()
+            .and_then(|ask| ask.menu.item_rect(1))
+            .unwrap();
+        assert_eq!(
+            drive_events(&mut shelf, &press(delete.center())),
+            Out::Delete("/nowhere/s.json".into())
+        );
+        let title = vec2(row.x + 40.0, row.center().y);
+        assert_eq!(
+            drive_events(&mut shelf, &press(title)),
+            Out::Load("/nowhere/s.json".into())
+        );
+    }
+}
+
+#[test]
+fn a_press_that_crosses_a_rows_delete_edge_does_nothing() {
+    use aftermine_protocol::MouseButton;
+    crate::render::set_viewport(1180.0, 820.0);
+    crate::render::set_user_scale(1.0);
+    let mut shelf = Shelf::from_entries(mixed());
+    let button = shelf.menu.action_rect(1).unwrap().center();
+    let row = shelf.menu.item_rect(1).unwrap();
+    let title = vec2(row.x + 40.0, row.center().y);
+    for (from, to) in [(button, title), (title, button)] {
+        let mouse = [
+            RawEvent::MouseDown {
+                button: MouseButton::Left,
+                x: from.x,
+                y: from.y,
+            },
+            RawEvent::MouseUp {
+                button: MouseButton::Left,
+                x: to.x,
+                y: to.y,
+            },
+        ];
+        let finger = [
+            RawEvent::TouchDown {
+                id: 1,
+                x: from.x,
+                y: from.y,
+            },
+            RawEvent::TouchUp {
+                id: 1,
+                x: to.x,
+                y: to.y,
+            },
+        ];
+        for events in [&mouse, &finger] {
+            assert_eq!(drive_events(&mut shelf, events), Out::Stay);
+            assert!(shelf.asking.is_none(), "{from} to {to} asked");
+        }
+    }
+}
+
+#[test]
+fn a_finger_dragging_from_a_delete_button_scrolls_instead() {
+    crate::render::set_viewport(1180.0, 400.0);
+    crate::render::set_user_scale(1.0);
+    let records = (0..20).map(|n| {
+        entry(
+            &format!("save {n}"),
+            true,
+            RecordKind::Save,
+            format!("/nowhere/{n}.json").into(),
+        )
+    });
+    let mut shelf = Shelf::from_entries(records.collect());
+    let start = shelf.menu.action_rect(1).unwrap().center();
+    let mut events = vec![RawEvent::TouchDown {
+        id: 1,
+        x: start.x,
+        y: start.y,
+    }];
+    for step in 1..=8 {
+        events.push(RawEvent::TouchMove {
+            id: 1,
+            x: start.x,
+            y: start.y - 12.0 * step as f32,
+        });
+    }
+    events.push(RawEvent::TouchUp {
+        id: 1,
+        x: start.x,
+        y: start.y - 96.0,
+    });
+    assert_eq!(drive_events(&mut shelf, &events), Out::Stay);
+    assert!(shelf.asking.is_none(), "a drag never asks");
+    assert!(shelf.menu.visible_range()[0] > 0, "the drag scrolled");
+}
+
+#[test]
+fn the_controllers_delete_button_asks_too() {
+    let mut shelf = Shelf::from_entries(mixed());
+    let events = crate::pad::menu_keys(
+        &[RawEvent::PadDown {
+            pad: 0,
+            button: crate::pad::DELETE,
+        }],
+        true,
+    );
+    assert_eq!(drive_events(&mut shelf, &events), Out::Stay);
+    assert_eq!(shelf.mode_name(), "confirm_delete");
+}
+
+#[test]
+fn after_a_delete_the_cursor_stays_on_the_row_that_moved_up() {
+    let saves = || {
+        ["first", "doomed", "next"].map(|name| {
+            entry(
+                name,
+                true,
+                RecordKind::Save,
+                format!("/nowhere/{name}.json").into(),
+            )
+        })
+    };
+    let mut shelf = Shelf::from_entries(saves().into());
+    drive(&mut shelf, Key::Down);
+    let mut rest: Vec<_> = saves().into();
+    rest.remove(1);
+    shelf.set_catalog(rest, 0);
+    assert_eq!(titles(&shelf)[shelf.menu.selected], "next");
+}
+
+#[test]
+fn a_refresh_keeps_a_question_only_while_its_record_is_listed() {
+    let mut shelf = Shelf::from_entries(mixed());
+    drive(&mut shelf, Key::X);
+    let mut fresh = mixed();
+    fresh.insert(
+        0,
+        entry("fresh", true, RecordKind::Save, "/nowhere/f.json".into()),
+    );
+    shelf.set_catalog(fresh, 0);
+    assert_eq!(shelf.mode_name(), "confirm_delete");
+    let mut gone = mixed();
+    gone.remove(0);
+    shelf.set_catalog(gone, 0);
+    assert_eq!(
+        shelf.mode_name(),
+        "saves",
+        "a record deleted elsewhere has nothing left to ask about"
+    );
 }
 
 #[test]
@@ -384,7 +581,7 @@ fn an_incompatible_record_refuses_its_verb_on_both_tabs() {
     );
     assert_eq!(
         shelf.coaching().as_deref(),
-        Some("{delete} twice deletes | {prev_tab}/{next_tab} switch tabs")
+        Some("{delete} deletes | {prev_tab}/{next_tab} switch tabs")
     );
     drive(&mut shelf, Key::E);
     assert_eq!(
@@ -432,7 +629,7 @@ fn the_page_heading_stacks_title_strip_and_list() {
 }
 
 #[test]
-fn a_controller_in_use_hears_its_confirm_and_bumpers_and_no_delete() {
+fn a_controller_in_use_hears_its_confirm_delete_and_bumpers() {
     let record = entry("done", true, RecordKind::Match, "/nowhere/m.json".into());
     let shelf = Shelf::from_entries(vec![record]);
     crate::platform::set_hands(crate::platform::Hands {
@@ -445,34 +642,8 @@ fn a_controller_in_use_hears_its_confirm_and_bumpers_and_no_delete() {
     crate::platform::set_hands(crate::platform::Hands::BUILD);
     assert_eq!(
         coaching.as_deref(),
-        Some("Cross watches | L1/R1 switch tabs")
+        Some("Cross watches | Square deletes | L1/R1 switch tabs")
     );
-}
-
-#[test]
-fn a_delete_armed_by_key_still_names_its_key_once_a_controller_takes_over() {
-    let records = ["a", "b"].map(|name| {
-        entry(
-            name,
-            true,
-            RecordKind::Match,
-            format!("/nowhere/{name}.json").into(),
-        )
-    });
-    let mut shelf = Shelf::from_entries(records.into());
-    shelf.catalog_ready = true;
-    drive(&mut shelf, Key::X);
-    // The controller walks away and back; the arm stays on its row.
-    drive(&mut shelf, Key::Down);
-    drive(&mut shelf, Key::Up);
-    crate::menu::set_bindings(&crate::action::BindingMap::classic());
-    crate::platform::set_hands(crate::platform::Hands {
-        pad: Some(aftermine_protocol::PadFamily::Xbox),
-        ..crate::platform::ALL_HANDS[0]
-    });
-    let status = crate::menu::binding_hint(&shelf.status());
-    crate::platform::set_hands(crate::platform::Hands::BUILD);
-    assert_eq!(status, "Press X again to delete");
 }
 
 #[test]

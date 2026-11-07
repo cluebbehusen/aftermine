@@ -355,6 +355,7 @@ fn the_dpad_moves_menus_two_face_buttons_confirm_and_go_back_and_the_shoulders_t
         pad(PadButton::DpadRight, true),
         pad(CONFIRM, true),
         pad(BACK, true),
+        pad(DELETE, true),
         pad(TABS.0, true),
         pad(TABS.1, true),
         pad(PAGES.0, true),
@@ -364,7 +365,7 @@ fn the_dpad_moves_menus_two_face_buttons_confirm_and_go_back_and_the_shoulders_t
         text,
     ];
     assert_eq!(
-        menu_keys(&events),
+        menu_keys(&events, true),
         [
             connect,
             RawEvent::KeyDown { key: Key::Down },
@@ -372,6 +373,7 @@ fn the_dpad_moves_menus_two_face_buttons_confirm_and_go_back_and_the_shoulders_t
             RawEvent::KeyDown { key: Key::Right },
             RawEvent::KeyDown { key: Key::Enter },
             RawEvent::KeyDown { key: Key::Escape },
+            RawEvent::KeyDown { key: Key::X },
             RawEvent::KeyDown { key: Key::Q },
             RawEvent::KeyDown { key: Key::E },
             RawEvent::KeyDown { key: Key::PageUp },
@@ -383,5 +385,33 @@ fn the_dpad_moves_menus_two_face_buttons_confirm_and_go_back_and_the_shoulders_t
         [TABS.0, TABS.1, PAGES.0, PAGES.1].map(|button| button_name(PadFamily::Xbox, button)),
         ["LB", "RB", "LT", "RT"],
         "the bumpers step tabs and the triggers page"
+    );
+    assert_eq!(
+        [PadFamily::Xbox, PadFamily::PlayStation, PadFamily::Switch]
+            .map(|family| button_name(family, DELETE)),
+        ["X", "Square", "Y"],
+        "the left face button deletes"
+    );
+}
+
+#[test]
+fn a_screen_without_deletes_drops_only_the_delete_button() {
+    let events = [
+        RawEvent::PadDown {
+            pad: 0,
+            button: DELETE,
+        },
+        RawEvent::PadUp {
+            pad: 0,
+            button: DELETE,
+        },
+        RawEvent::PadDown {
+            pad: 0,
+            button: CONFIRM,
+        },
+    ];
+    assert_eq!(
+        menu_keys(&events, false),
+        [RawEvent::KeyDown { key: Key::Enter }]
     );
 }

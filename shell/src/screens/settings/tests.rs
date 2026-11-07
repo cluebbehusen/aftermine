@@ -766,6 +766,31 @@ fn the_left_handed_preset_moves_the_verbs_and_reset_walks_home() {
 }
 
 #[test]
+fn a_controllers_delete_button_never_unbinds_a_key() {
+    // The controller's delete button presses X in other menus, but
+    // remapping takes a keyboard, even when the mouse moves in the same
+    // frame and the hands no longer read as a controller's.
+    let mut config = Config::default();
+    let mut s = on(Tab::Controls, &config);
+    focus(&mut s, Item::Binding(Action::Patrol));
+    assert!(s.edits_bindings());
+    let frame = [
+        RawEvent::PadDown {
+            pad: 0,
+            button: crate::pad::DELETE,
+        },
+        RawEvent::MouseMove { x: 0.0, y: 0.0 },
+    ];
+    let events = crate::pad::menu_keys(&frame, !s.edits_bindings());
+    let up = drive(&mut s, &mut config, &events, false);
+    assert!(!up.dirty);
+    assert_eq!(
+        config.bindings.chord_for(Action::Patrol),
+        BindingMap::classic().chord_for(Action::Patrol)
+    );
+}
+
+#[test]
 fn x_unbinds_and_reset_restores_the_classic_map() {
     let mut config = Config::default();
     let mut s = on(Tab::Controls, &config);

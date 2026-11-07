@@ -318,7 +318,7 @@ fn controller_buttons_reach_menus_as_the_canonical_keys_whatever_the_bindings() 
     // a remapped key never moves a button and a button's key is never
     // bound again.
     let menu = |map: &BindingMap, events: &[RawEvent]| {
-        crate::pad::menu_keys(&map.menu_events(events, false, false))
+        crate::pad::menu_keys(&map.menu_events(events, false, false), true)
     };
     let events = [
         RawEvent::PadDown {
