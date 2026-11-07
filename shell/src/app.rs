@@ -222,7 +222,16 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     // saves; workspace and automation runs keep theirs to themselves.
     let (settings_sync, synced) =
         config::sync::SettingsSync::open(crate::paths::bundled() && !args.automation, &mut config);
-    if synced && let Err(error) = config.save() {
+    // The install ID picks the default name, which must stay the same from
+    // launch to launch. Automation runs keep the first name, so their walks
+    // read the same every run.
+    let made_id = !args.automation && config.install_id.is_none();
+    if made_id {
+        config.install_id();
+    }
+    if (synced || made_id)
+        && let Err(error) = config.save()
+    {
         eprintln!("could not save settings: {error}");
     }
     apply_presentation(&config);
@@ -267,10 +276,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             game.scenario.clone(),
             game.presentation.human,
             &commit,
-            config
-                .player_name
-                .as_deref()
-                .and_then(|name| aftermine_net::PlayerName::new(name).ok()),
+            Some(config.name()),
         )?;
         Screen::Lobby {
             screen: Box::new(LobbyScreen::waiting(crate::netplay::Lobby::Host(Box::new(
@@ -279,30 +285,14 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             back: Box::new(Screen::Home(HomeScreen::open())),
         }
     } else if let Some(typed) = &args.join {
-        let name = config
-            .player_name
-            .as_deref()
-            .and_then(|name| aftermine_net::PlayerName::new(name).ok());
-        // Without a saved name the Join form asks for one first.
-        let screen = match (crate::netplay::parse_join_address(typed), name) {
-            (Ok(address), Some(name)) => {
-                let made = config.install_id.is_none();
-                let install = config.install_id();
-                // A new install ID must outlive this run, or the next launch
-                // returns as a stranger.
-                if made && let Err(error) = config.save() {
-                    eprintln!("could not save settings: {error}");
-                }
-                LobbyScreen::waiting(crate::netplay::Lobby::Client(
-                    crate::netplay::ClientLobby::new(&address, &commit, name, install),
-                ))
-            }
-            (Ok(_), None) => LobbyScreen::join(None, typed),
-            (Err(reason), name) => LobbyScreen::failed(
-                name.as_ref().map_or("", aftermine_net::PlayerName::as_str),
-                typed,
-                reason.to_owned(),
-            ),
+        let name = config.name();
+        let screen = match crate::netplay::parse_join_address(typed) {
+            // The launch already made and saved the install ID: a join
+            // never runs under automation.
+            Ok(address) => LobbyScreen::waiting(crate::netplay::Lobby::Client(
+                crate::netplay::ClientLobby::new(&address, &commit, name, config.install_id()),
+            )),
+            Err(reason) => LobbyScreen::failed(name.as_str(), typed, reason.to_owned()),
         }
         .discovering();
         Screen::Lobby {

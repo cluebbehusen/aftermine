@@ -72,13 +72,13 @@ fn the_keyboard_follows_the_text_field_on_screen() {
         screen: Box::new(LobbyScreen::join(name, "10.0.0.2")),
         back: Box::new(Screen::Home(HomeScreen::open())),
     };
-    assert_eq!(lobby(None).keyboard(), Some(Keyboard::Text), "a name first");
+    assert_eq!(lobby("").keyboard(), Some(Keyboard::Text), "a name first");
     assert_eq!(
-        lobby(Some("Connor")).keyboard(),
+        lobby("Connor").keyboard(),
         Some(Keyboard::Address),
         "then the address"
     );
-    assert!(lobby(None).text_entry());
+    assert!(lobby("").text_entry());
 }
 
 #[test]

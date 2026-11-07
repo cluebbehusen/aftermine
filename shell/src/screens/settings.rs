@@ -405,13 +405,7 @@ impl Row {
             value,
         };
         match self {
-            Row::PlayerName => setting(
-                "Name",
-                config
-                    .player_name
-                    .clone()
-                    .unwrap_or_else(|| "not set".to_string()),
-            ),
+            Row::PlayerName => setting("Name", config.name().to_string()),
             Row::MatchTips => setting("Match tips", on(config.match_tips)),
             Row::PerformanceDisplay => setting(
                 "Performance readout",
@@ -695,9 +689,9 @@ impl SettingsScreen {
 
     /// Opens the name form, prefilled with the current name.
     fn begin_naming(&mut self, config: &Config) {
-        let current = config.player_name.as_deref().unwrap_or_default();
-        let field =
-            Field::new(current, PlayerName::MAX_CHARS, PlayerName::accepts).validated(name_check);
+        let current = config.name();
+        let field = Field::new(current.as_str(), PlayerName::MAX_CHARS, PlayerName::accepts)
+            .validated(name_check);
         let form = Form::new("YOUR NAME", "Save", vec![field], 0).without_cancel();
         self.menu = form.menu(|_| Item::Setting(Row::PlayerName));
         self.naming = Some(form);
@@ -728,11 +722,7 @@ impl SettingsScreen {
         }
         match form.update(events, sounds) {
             Edit::Commit => {
-                let name = PlayerName::new(form.value(0)).ok().map(String::from);
-                let dirty = name.is_some();
-                if dirty {
-                    config.player_name = name;
-                }
+                let dirty = PlayerName::new(form.value(0)).is_ok_and(|name| config.set_name(&name));
                 self.end_naming(config);
                 dirty
             }

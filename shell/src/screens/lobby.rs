@@ -87,10 +87,9 @@ fn address_check(address: &str) -> Result<(), &'static str> {
 }
 
 impl LobbyScreen {
-    /// The Join form, prefilled with the saved `name` and `address`;
-    /// focus starts on whichever the player still has to type.
-    pub fn join(name: Option<&str>, address: &str) -> Self {
-        let name = name.unwrap_or_default();
+    /// The Join form, prefilled with the player's `name` and the last
+    /// `address`; focus starts on whichever the player still has to type.
+    pub fn join(name: &str, address: &str) -> Self {
         let name_field = Field::new(name, PlayerName::MAX_CHARS, PlayerName::accepts)
             .labeled("Your name", "")
             .validated(name_check);
@@ -136,7 +135,7 @@ impl LobbyScreen {
 
     /// The Join form showing why the last join failed.
     pub fn failed(name: &str, address: &str, reason: String) -> Self {
-        let mut screen = Self::join(Some(name), address);
+        let mut screen = Self::join(name, address);
         if let Face::Join { failure, .. } = &mut screen.face {
             *failure = Some(reason);
         }
@@ -269,7 +268,7 @@ impl LobbyScreen {
         // Leaving drops the connection, which frees the seat on the host.
         match lobby.joining() {
             Some((name, address)) => {
-                let form = Self::join(Some(name.as_str()), address);
+                let form = Self::join(name.as_str(), address);
                 self.reopen(form);
                 Out::Stay
             }
