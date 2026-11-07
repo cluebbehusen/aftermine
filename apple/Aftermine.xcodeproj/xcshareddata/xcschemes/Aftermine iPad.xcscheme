@@ -16,7 +16,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "0A1B00000000000000000040"
                BuildableName = "Aftermine.app"
-               BlueprintName = "Aftermine"
+               BlueprintName = "Aftermine iPad"
                ReferencedContainer = "container:Aftermine.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -38,7 +38,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "0A1B00000000000000000040"
             BuildableName = "Aftermine.app"
-            BlueprintName = "Aftermine"
+            BlueprintName = "Aftermine iPad"
             ReferencedContainer = "container:Aftermine.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

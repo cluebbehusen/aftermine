@@ -1,2 +1,3 @@
 [alias]
 ios = "run -q -p aftermine-driver -- ios"
+mac = "run -q -p aftermine-driver -- mac"

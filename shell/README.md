@@ -75,32 +75,42 @@ cargo run -p aftermine-shell --release -- --host 0.0.0.0:4200 --scenario duel.js
 cargo run -p aftermine-shell --release -- --join 192.168.1.20:4200
 ```
 
-## iPad build
+## iPad and Mac apps
 
-`ios/` holds the Xcode project. Its build phases run Cargo for the device or
-simulator and copy `assets/` and `scenarios/` into the app. You need full Xcode,
-the `aarch64-apple-ios` Rust target (plus `aarch64-apple-ios-sim` for the
-simulator) and an iPad with Developer Mode on. Set your signing team in the
-ignored `ios/Local.xcconfig`, not in Xcode's Signing pane, which would write it
-into the shared project. If you sign with your own team, set a bundle ID you
-control there too; the example file shows how.
+`apple/` holds the Xcode project, with an Aftermine iPad and an Aftermine Mac
+target. Their build phases run Cargo for the platform and copy `assets/` and
+`scenarios/` into the app. You need full Xcode signed in to your Apple developer
+account. The iPad app also needs the `aarch64-apple-ios` Rust target (plus
+`aarch64-apple-ios-sim` for the simulator) and an iPad with Developer Mode on.
+Set your signing team in the ignored `apple/Local.xcconfig`, not in Xcode's
+Signing pane, which would write it into the shared project. If you sign with
+your own team, set a bundle ID you control there too; the example file shows
+how.
 
 ```sh
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-cp ios/Local.xcconfig.example ios/Local.xcconfig   # set DEVELOPMENT_TEAM
+cp apple/Local.xcconfig.example apple/Local.xcconfig   # set DEVELOPMENT_TEAM
 cargo ios
+cargo mac
 ```
 
-The app keeps saves in iCloud Drive and syncs settings through iCloud's
+Both apps keep saves in iCloud Drive and sync settings through iCloud's
 key-value store, so the app ID needs the iCloud capability with the container
 `iCloud.<bundle ID>`; key-value storage needs no container. Signing with your
 own team means registering that container for your bundle ID in the developer
-portal.
+portal. A workspace `cargo run` never looks for iCloud and keeps saves and
+settings on the Mac.
 
 `cargo ios` builds the Release app, installs it and launches it on a paired iPad
 or a simulator. With several devices it asks which one; `--device <name or id>`
 skips the question and `--list` prints the devices. A locked iPad still gets the
 install, and you open the app once it is unlocked.
+
+`cargo mac` builds the Release Mac app, signed to run on this Mac, and opens it,
+quitting a copy that is still running. The first run registers the Mac with your
+developer account. For a copy other Macs can open, pick the Aftermine Mac scheme
+in Xcode, choose Product > Archive, then Distribute App > Direct Distribution,
+which signs it with Developer ID and has Apple notarize it.
 
 iPadOS 27 requires the `UIScene` lifecycle, so the workspace pins a miniquad
 fork with unreleased upstream work. The workspace `Cargo.toml` explains why.

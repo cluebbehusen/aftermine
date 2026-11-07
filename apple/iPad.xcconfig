@@ -1,0 +1,17 @@
+// Build settings for the iPad app.
+
+#include "Shared.xcconfig"
+
+INFOPLIST_FILE = iPad/Info.plist
+CODE_SIGN_ENTITLEMENTS = iPad/Aftermine.entitlements
+
+SDKROOT = iphoneos
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+SUPPORTS_MACCATALYST = NO
+TARGETED_DEVICE_FAMILY = 2
+
+// build_rust.sh passes this to Cargo: rustc and the C dependencies must
+// link for the same minimum OS.
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+
+#include? "Local.xcconfig"

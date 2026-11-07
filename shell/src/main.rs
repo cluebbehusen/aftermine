@@ -249,10 +249,11 @@ fn window_conf() -> Conf {
         window_height: height.fit::<i32>(),
         high_dpi: !args.no_high_dpi,
         // Miniquad replaces the macOS Dock icon with its 64px image. Leave
-        // the packaged app's full-resolution icns in place when available;
-        // sharpening the dev-run icon would take an unsafe AppKit call.
+        // the Mac app's full-resolution icon, which Xcode compiles from the
+        // asset catalog's AppIcon, in place when available; sharpening the
+        // dev-run icon would take an unsafe AppKit call.
         icon: if cfg!(target_os = "macos")
-            && paths::bundle_resources().is_some_and(|root| root.join("aftermine.icns").is_file())
+            && paths::bundle_resources().is_some_and(|root| root.join("AppIcon.icns").is_file())
         {
             None
         } else {

@@ -13,6 +13,7 @@ pub mod evaluation;
 pub mod home_replays;
 pub mod ios;
 pub mod ledger;
+pub mod mac;
 pub mod pacing;
 pub mod pool;
 pub mod profile;

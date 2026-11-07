@@ -24,7 +24,7 @@ dist/
 origin-0.15.0.md
 todo-0.15.0.md
 
-# Local iPad signing team and Xcode per-user state.
-/ios/Local.xcconfig
-/ios/Aftermine.xcodeproj/project.xcworkspace/
+# Local Apple signing team and Xcode per-user state.
+/apple/Local.xcconfig
+/apple/Aftermine.xcodeproj/project.xcworkspace/
 xcuserdata/
