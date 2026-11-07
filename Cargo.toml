@@ -56,10 +56,11 @@ similar_names = "allow"
 # `aftermine` branch is that master plus iOS fixes the shell needs and upstream
 # has not taken yet, starting with OpenGL drawing: master's switch to
 # CADisplayLink-driven draws (39fdef68) redraws only Metal views and leaves
-# the OpenGL view the shell renders with blank on iOS. Drop the patch once
-# releases carry these changes.
+# the OpenGL view the shell renders with blank on iOS. It also reads game
+# controllers on Apple platforms through GameController, which no miniquad
+# release does. Drop the patch once releases carry these changes.
 [patch.crates-io]
-miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "6abc6f584912649141c7244d4112abc7002e9b7d" }
+miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "aeaa6956c9303b9ea456ab64f81ba6ade78061ca" }
 
 # quad-snd, macroquad's audio library, has no backend for tvOS, and on iOS and
 # tvOS it leaves the audio session in its default category, which stops other

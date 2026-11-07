@@ -9,7 +9,8 @@
 //! before it disconnects. A source may report each change as it happens or
 //! restate every control each frame; both produce the same events.
 //!
-//! gilrs is the source on Windows and Linux, Steam Deck included. Each
+//! gilrs is the source on Windows and Linux, Steam Deck included, and
+//! Apple's GameController, through the miniquad fork, on Mac and iPad. Each
 //! platform API gets one source module here, and a platform without one
 //! reads no pads.
 
@@ -21,6 +22,11 @@ use std::collections::BTreeMap;
 mod gilrs_source;
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 use gilrs_source::Source;
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod apple_source;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+use apple_source::Source;
 
 /// Stick travel, as a share of full deflection, that still reads as
 /// centered: worn sticks rest this far off center.
@@ -128,7 +134,15 @@ pub(crate) fn button_name(family: PadFamily, button: PadButton) -> &'static str 
 /// One thing a platform's pad API reported.
 #[derive(Debug, Clone, Copy, PartialEq)]
 // Only platforms with a pad source construct readings.
-#[cfg_attr(not(any(target_os = "windows", target_os = "linux")), allow(dead_code))]
+#[cfg_attr(
+    not(any(
+        target_os = "windows",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "ios"
+    )),
+    allow(dead_code)
+)]
 pub(crate) enum Reading {
     /// A pad is connected. Sources announce a pad before anything else
     /// about it; readings from a pad never announced are dropped.
@@ -152,7 +166,15 @@ pub(crate) enum Reading {
 
 /// A stick's two axes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(any(target_os = "windows", target_os = "linux")), allow(dead_code))]
+#[cfg_attr(
+    not(any(
+        target_os = "windows",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "ios"
+    )),
+    allow(dead_code)
+)]
 pub(crate) enum Axis {
     X,
     Y,
@@ -189,10 +211,20 @@ impl Pads {
 }
 
 /// A platform without a pad API the shell reads never has a source.
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "ios"
+)))]
 enum Source {}
 
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "ios"
+)))]
 impl Source {
     fn open() -> Option<Self> {
         None
