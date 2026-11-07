@@ -1,8 +1,9 @@
 #!/bin/sh
-# Both app targets' Run Script phase: builds the Rust shell for the
+# Every app target's Run Script phase: builds the Rust shell for the
 # platform Xcode is building and puts the executable where Xcode signs and
 # packages it. Xcode runs this with its build settings in the environment;
-# see the shell README's iPad and Mac section for the commands that drive it.
+# see the shell README's iPad, Apple TV and Mac section for the commands
+# that drive it.
 set -eu
 
 # Xcode's script environment does not include the user's shell setup.
@@ -10,17 +11,25 @@ PATH="$HOME/.cargo/bin:$PATH"
 cd "$SRCROOT/.."
 
 # Xcode exports the target platform's SDK for its own compiles. For an
-# iPad build, Cargo build scripts run on the Mac and must not inherit the
-# iOS SDK; the iOS compiles find theirs themselves. A Mac build keeps it:
-# Xcode's compiler finds no system headers without it. The deployment
-# target stays exported so rustc and the C dependencies link for the same
-# minimum OS.
+# iPad or Apple TV build, Cargo build scripts run on the Mac and must not
+# inherit that SDK; the device compiles find theirs themselves. A Mac build
+# keeps it: Xcode's compiler finds no system headers without it. The
+# deployment target stays exported so rustc and the C dependencies link for
+# the same minimum OS.
 case "$PLATFORM_NAME" in
     macosx)
         TARGET=aarch64-apple-darwin
         ;;
     iphonesimulator)
         TARGET=aarch64-apple-ios-sim
+        unset SDKROOT
+        ;;
+    appletvos)
+        TARGET=aarch64-apple-tvos
+        unset SDKROOT
+        ;;
+    appletvsimulator)
+        TARGET=aarch64-apple-tvos-sim
         unset SDKROOT
         ;;
     *)
@@ -53,16 +62,22 @@ BUILD="$(git rev-list --count HEAD)"
 
 # The app's iCloud Drive folder, named Aftermine in Files and Finder. The
 # entry is keyed by the container ID, and Xcode expands build settings only
-# in Info.plist values, never in keys, so it is written here.
-CONTAINER=":NSUbiquitousContainers:iCloud.$PRODUCT_BUNDLE_IDENTIFIER"
-/usr/libexec/PlistBuddy -c "Delete :NSUbiquitousContainers" \
-    "$TARGET_BUILD_DIR/$INFOPLIST_PATH" 2> /dev/null || true
-/usr/libexec/PlistBuddy \
-    -c "Add :NSUbiquitousContainers dict" \
-    -c "Add $CONTAINER dict" \
-    -c "Add $CONTAINER:NSUbiquitousContainerIsDocumentScopePublic bool true" \
-    -c "Add $CONTAINER:NSUbiquitousContainerName string Aftermine" \
-    -c "Add $CONTAINER:NSUbiquitousContainerSupportedFolderLevels string Any" \
-    "$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+# in Info.plist values, never in keys, so it is written here. Apple TV has
+# no iCloud Drive.
+case "$PLATFORM_NAME" in
+    appletvos | appletvsimulator) ;;
+    *)
+        CONTAINER=":NSUbiquitousContainers:iCloud.$PRODUCT_BUNDLE_IDENTIFIER"
+        /usr/libexec/PlistBuddy -c "Delete :NSUbiquitousContainers" \
+            "$TARGET_BUILD_DIR/$INFOPLIST_PATH" 2> /dev/null || true
+        /usr/libexec/PlistBuddy \
+            -c "Add :NSUbiquitousContainers dict" \
+            -c "Add $CONTAINER dict" \
+            -c "Add $CONTAINER:NSUbiquitousContainerIsDocumentScopePublic bool true" \
+            -c "Add $CONTAINER:NSUbiquitousContainerName string Aftermine" \
+            -c "Add $CONTAINER:NSUbiquitousContainerSupportedFolderLevels string Any" \
+            "$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+        ;;
+esac
 
 test -x "$TARGET_BUILD_DIR/$EXECUTABLE_PATH"

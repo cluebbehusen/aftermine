@@ -75,36 +75,41 @@ cargo run -p aftermine-shell --release -- --host 0.0.0.0:4200 --scenario duel.js
 cargo run -p aftermine-shell --release -- --join 192.168.1.20:4200
 ```
 
-## iPad and Mac apps
+## iPad, Apple TV and Mac apps
 
-`apple/` holds the Xcode project, with an Aftermine iPad and an Aftermine Mac
-target. Their build phases run Cargo for the platform and copy `assets/` and
-`scenarios/` into the app. You need full Xcode signed in to your Apple developer
-account. The iPad app also needs the `aarch64-apple-ios` Rust target (plus
-`aarch64-apple-ios-sim` for the simulator) and an iPad with Developer Mode on.
-Set your signing team in the ignored `apple/Local.xcconfig`, not in Xcode's
-Signing pane, which would write it into the shared project. If you sign with
-your own team, set a bundle ID you control there too; the example file shows
-how.
+`apple/` holds the Xcode project, with Aftermine iPad, Aftermine Apple TV and
+Aftermine Mac targets. Their build phases run Cargo for the platform and copy
+`assets/` and `scenarios/` into the app. You need full Xcode signed in to your
+Apple developer account. The iPad app also needs the `aarch64-apple-ios` Rust
+target (plus `aarch64-apple-ios-sim` for the simulator) and an iPad with
+Developer Mode on. The Apple TV app needs `aarch64-apple-tvos` (plus
+`aarch64-apple-tvos-sim`) and an Apple TV paired with Xcode over Wi-Fi: open
+Settings > Remotes and Devices > Remote App and Devices on the TV, then pair it
+from Xcode's Devices and Simulators window. Set your signing team in the ignored
+`apple/Local.xcconfig`, not in Xcode's Signing pane, which would write it into
+the shared project. If you sign with your own team, set a bundle ID you control
+there too; the example file shows how.
 
 ```sh
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+rustup target add aarch64-apple-tvos aarch64-apple-tvos-sim
 cp apple/Local.xcconfig.example apple/Local.xcconfig   # set DEVELOPMENT_TEAM
-cargo ios
+cargo ipad
+cargo tv
 cargo mac
 ```
 
-Both apps keep saves in iCloud Drive and sync settings through iCloud's
-key-value store, so the app ID needs the iCloud capability with the container
-`iCloud.<bundle ID>`; key-value storage needs no container. Signing with your
-own team means registering that container for your bundle ID in the developer
-portal. A workspace `cargo run` never looks for iCloud and keeps saves and
-settings on the Mac.
+All three apps sync settings through iCloud's key-value store, which needs no
+container. The iPad and Mac apps also keep saves in iCloud Drive, so the app ID
+needs the iCloud capability with the container `iCloud.<bundle ID>`; signing
+with your own team means registering that container for your bundle ID in the
+developer portal. Apple TV has no iCloud Drive. A workspace `cargo run` never
+looks for iCloud and keeps saves and settings on the Mac.
 
-`cargo ios` builds the Release app, installs it and launches it on a paired iPad
-or a simulator. With several devices it asks which one; `--device <name or id>`
-skips the question and `--list` prints the devices. A locked iPad still gets the
-install, and you open the app once it is unlocked.
+`cargo ipad` and `cargo tv` build the Release app, install it and launch it on a
+paired device or a simulator. With several devices they ask which one;
+`--device <name or id>` skips the question and `--list` prints the devices. A
+locked iPad still gets the install, and you open the app once it is unlocked.
 
 `cargo mac` builds the Release Mac app, signed to run on this Mac, and opens it,
 quitting a copy that is still running. The first run registers the Mac with your
@@ -112,8 +117,9 @@ developer account. For a copy other Macs can open, pick the Aftermine Mac scheme
 in Xcode, choose Product > Archive, then Distribute App > Direct Distribution,
 which signs it with Developer ID and has Apple notarize it.
 
-iPadOS 27 requires the `UIScene` lifecycle, so the workspace pins a miniquad
-fork with unreleased upstream work. The workspace `Cargo.toml` explains why.
+iPadOS 27 requires the `UIScene` lifecycle, and tvOS needs an Objective-C
+binding no miniquad release uses, so the workspace pins a miniquad fork. The
+workspace `Cargo.toml` explains why.
 
 `uv run tools/gen_icon.py` exports the app icon for iOS, macOS and the desktop
 window from `tools/production_icon_sources/`. Commit the sources and the

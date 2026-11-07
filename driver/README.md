@@ -45,7 +45,8 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
   headless run is not enough.
 - `profile_graphics` (`profile-graphics`) runs named frame workloads in the real
   shell and reports where each frame's time goes.
-- `ios` (`cargo ios`) builds, installs and launches the iPad app.
+- `ipad` (`cargo ipad`) and `tv` (`cargo tv`) build, install and launch the iPad
+  and Apple TV apps.
 - `mac` (`cargo mac`) builds and opens the Mac app.
 
 All evaluation output is omniscient QA evidence and never reaches a controller.

@@ -15,13 +15,13 @@ pub fn run() -> Result<()> {
     if !cfg!(target_os = "macos") {
         bail!("cargo mac needs macOS with Xcode");
     }
-    let root = crate::ios::workspace_root();
+    let root = crate::device::workspace_root();
     let app = root.join("target/mac-xcode/Build/Products/Release/Aftermine.app");
     let info_plist = app.join("Contents/Info.plist");
     // The build rewrites the last build's executable in place, and macOS
     // kills a running copy whose signed code changes, before it can save.
     if info_plist.is_file() {
-        quit_running(&crate::ios::bundle_id(&info_plist)?)?;
+        quit_running(&crate::device::bundle_id(&info_plist)?)?;
     }
     let status = Command::new("xcodebuild")
         .current_dir(&root)
@@ -48,7 +48,7 @@ pub fn run() -> Result<()> {
     }
     // A first build, or one with a new bundle ID, still has to quit a copy
     // opened from elsewhere.
-    quit_running(&crate::ios::bundle_id(&info_plist)?)?;
+    quit_running(&crate::device::bundle_id(&info_plist)?)?;
     let app = app.canonicalize().context("finding the built app")?;
     let status = Command::new("open")
         .arg(&app)
@@ -84,7 +84,7 @@ fn quit_running(bundle: &str) -> Result<()> {
         if started.elapsed() > QUIT_WAIT {
             bail!(
                 "Aftermine is still running; quit it, then run cargo mac again\n{}",
-                crate::ios::tool_output(&quit)
+                crate::device::tool_output(&quit)
             );
         }
         std::thread::sleep(Duration::from_millis(100));
