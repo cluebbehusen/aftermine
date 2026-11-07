@@ -314,6 +314,25 @@ impl SelectedBuildings {
         Ok(building)
     }
 
+    /// The rounds on order across the selected magazines, staged orders
+    /// included, and the progress of the one a lone magazine is building.
+    pub fn rounds_on_order(&self) -> (usize, Option<f32>) {
+        let magazines = self.magazines();
+        let count = magazines
+            .iter()
+            .filter_map(|b| b.magazine)
+            .map(|magazine| usize::from(magazine.ordered))
+            .sum();
+        let head = match magazines.as_slice() {
+            [b] => b.magazine.filter(|m| m.ordered > 0).and_then(|magazine| {
+                let ticks = b.kind.magazine()?.round_ticks.max(1);
+                Some((magazine.progress as f32 / ticks as f32).clamp(0.0, 1.0))
+            }),
+            _ => None,
+        };
+        (count, head)
+    }
+
     /// The cancel refunding the latest paid round of the selected magazine
     /// with the most on order.
     pub fn round_cancel(&self) -> Option<Command> {

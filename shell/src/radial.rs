@@ -65,9 +65,11 @@ pub(crate) struct Slice {
 }
 
 impl Slice {
-    /// A panel card as a slice: the Build card opens the build rings, and
-    /// a unit slot or a round order counts what the dock holds of it.
-    fn of(panel: &Panel, card: &Card) -> Self {
+    /// A panel card as a slice: the Build card opens the build rings, a
+    /// unit slot counts what the dock holds of it, and a round or drone
+    /// order counts what the selection has on order once staged commands
+    /// run, as the panel's own spending does.
+    fn of(game: &Scene<'_>, panel: &Panel, card: &Card) -> Self {
         let pick = match card.action {
             CardAction::Dispatch(Action::ToggleBuildPalette) => Pick::Open(Branch::Build),
             action => Pick::Card(action),
@@ -80,25 +82,36 @@ impl Slice {
             within: Vec::new(),
         };
         let queued = match (card.action, card.icon) {
-            (CardAction::Dispatch(Action::TrainSlot(_)), CardIcon::Unit(kind)) => Some((
-                queued_units(panel, kind),
-                Some(CardAction::CancelProduction(kind)),
-            )),
+            (CardAction::Dispatch(Action::TrainSlot(_)), CardIcon::Unit(kind)) => {
+                let (count, head) = queued_units(panel, kind);
+                Some((
+                    count,
+                    head,
+                    (count > 0).then_some(CardAction::CancelProduction(kind)),
+                ))
+            }
             (CardAction::Dispatch(Action::OrderRound), _) => {
+                // X does what the ring's own Cancel card does, whenever it can.
                 let cancel = panel
                     .cards
                     .iter()
                     .find(|card| card.action == CardAction::Dispatch(Action::CancelRound))
                     .filter(|card| card.enabled)
                     .map(|card| card.action);
-                Some((queued_rounds(panel), cancel))
+                let bays = crate::unit_bays::SelectedBays::inspect(game);
+                let (count, head) = if bays.is_empty() {
+                    crate::building_actions::SelectedBuildings::inspect(game).rounds_on_order()
+                } else {
+                    (bays.on_order(), drone_progress(panel))
+                };
+                Some((count, head, cancel))
             }
             _ => None,
         };
-        if let Some(((count, head), cancel)) = queued {
+        if let Some((count, head, cancel)) = queued {
             slice.count = count;
             slice.card.progress = head;
-            slice.cancel = cancel.filter(|_| count > 0);
+            slice.cancel = cancel;
         }
         slice
     }
@@ -155,10 +168,10 @@ pub(crate) fn ring(game: &Scene<'_>, panel: &Panel, path: &[Branch]) -> Option<R
                 (
                     BUILD_CATEGORIES[usize::from(category)].0.to_uppercase(),
                     shown,
-                    structures(panel, category),
+                    structures(game, panel, category),
                 )
             }
-            None => ("BUILD".to_string(), shown, categories(panel)),
+            None => ("BUILD".to_string(), shown, categories(game, panel)),
         }
     } else {
         let mut slices = first_ring(game, panel);
@@ -228,7 +241,7 @@ fn first_ring(game: &Scene<'_>, panel: &Panel) -> Vec<Slice> {
                 .chain(panel.absent.iter().filter(|card| card.action == stop))
                 .take(1),
         )
-        .map(|card| Slice::of(panel, card))
+        .map(|card| Slice::of(game, panel, card))
         .collect();
     let kinds: Vec<UnitKind> = game
         .presentation
@@ -342,11 +355,11 @@ fn overflow(mut slices: Vec<Slice>) -> Vec<Slice> {
 }
 
 /// The build categories, each opening its structures.
-fn categories(panel: &Panel) -> Vec<Slice> {
+fn categories(game: &Scene<'_>, panel: &Panel) -> Vec<Slice> {
     (0..BUILD_CATEGORIES.len())
         .filter_map(|index| {
             let category = u8::try_from(index).ok()?;
-            let within = structures(panel, category);
+            let within = structures(game, panel, category);
             let first = within.first()?;
             let card = gathering(first.card.icon, BUILD_CATEGORIES[index].0, &within);
             Some(Slice::opening(Branch::Category(category), card, Vec::new()))
@@ -355,14 +368,14 @@ fn categories(panel: &Panel) -> Vec<Slice> {
 }
 
 /// A category's structures, as the palette offers them.
-fn structures(panel: &Panel, category: u8) -> Vec<Slice> {
+fn structures(game: &Scene<'_>, panel: &Panel, category: u8) -> Vec<Slice> {
     panel
         .cards
         .iter()
         .filter(|card| {
             matches!(card.action, CardAction::ArmBuild(kind) if building_category(kind) == category)
         })
-        .map(|card| Slice::of(panel, card))
+        .map(|card| Slice::of(game, panel, card))
         .collect()
 }
 
@@ -386,22 +399,13 @@ fn queued_units(panel: &Panel, kind: UnitKind) -> (usize, Option<f32>) {
     (count, head)
 }
 
-/// How many rounds or drones are on order, and the first one's progress.
-fn queued_rounds(panel: &Panel) -> (usize, Option<f32>) {
-    let chips = panel
-        .queue
+/// The progress of the drone a lone host's bay is building.
+fn drone_progress(panel: &Panel) -> Option<f32> {
+    panel
+        .drones
         .iter()
-        .chain(panel.drones.iter().flat_map(|column| column.chips.iter()));
-    chips
-        .filter(|card| {
-            matches!(
-                card.action,
-                CardAction::CancelRound(..) | CardAction::CancelDrone(..)
-            )
-        })
-        .fold((0, None), |(count, head), card| {
-            (count + 1, head.or(card.progress))
-        })
+        .flat_map(|column| column.chips.iter())
+        .find_map(|chip| chip.progress)
 }
 
 /// A slice's direction, in radians clockwise from straight up: a ring's

@@ -143,8 +143,16 @@ pub(super) fn update(game: &Game, input: &mut InputState) {
         dismiss(input);
         return;
     };
-    let toward =
-        radial::slice_toward(stick, ring.slices.len()).map(|index| ring.slices[index].pick);
+    aim(&ring, input);
+}
+
+/// Points the open ring at the slice the stick pushes toward, and follows
+/// the ring back when its branch has gone. It runs each frame and again as
+/// A or X is handled: a frame records its stick moves before its buttons,
+/// so a flick and a press in one frame pick where the flick points.
+fn aim(ring: &Ring, input: &mut InputState) {
+    let toward = radial::slice_toward(input.sticks().0, ring.slices.len())
+        .map(|index| ring.slices[index].pick);
     let Some(open) = input.ring.as_mut() else {
         return;
     };
@@ -206,9 +214,11 @@ fn open(game: &mut Game, input: &mut InputState) {
     }
 }
 
-/// The slice the stick points at in the open ring, if any.
-fn pointed(game: &Game, input: &InputState) -> Option<radial::Slice> {
+/// The slice the stick points at in the open ring as it stands now, if
+/// any.
+fn pointed(game: &Game, input: &mut InputState) -> Option<radial::Slice> {
     let ring = current(&game.view(), input)?;
+    aim(&ring, input);
     let index = input.ring.as_ref()?.pointed(&ring)?;
     ring.slices.into_iter().nth(index)
 }

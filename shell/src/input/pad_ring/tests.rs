@@ -532,3 +532,58 @@ fn a_ring_over_four_kinds_with_their_own_cards_gives_the_rest_to_more() {
     frame(&mut game, &mut input);
     assert_eq!(heading(&game, &input).as_deref(), Some("COMMANDS"));
 }
+
+#[test]
+fn a_flick_and_a_press_in_one_frame_pick_where_the_flick_points() {
+    let (mut game, mut input) = sentinels();
+    aim(&mut game, &mut input, "Patrol");
+    // The frame records its stick move before its buttons: A must still
+    // pick Hunt, where the stick now points, not the Patrol it left.
+    let hunt = crate::radial::slice_direction(1, 6);
+    feed(
+        &mut game,
+        &mut input,
+        &[
+            left_stick(hunt.x, hunt.y),
+            down(PadButton::South),
+            up(PadButton::South),
+        ],
+    );
+    assert!(input.ring.is_none());
+    assert_eq!(input.armed_mode(), Some(ArmedMode::Hunt));
+}
+
+#[test]
+fn grouped_magazines_count_staged_rounds_and_x_cancels_one() {
+    let mut game = scene(
+        &[],
+        &[
+            (0, BuildingKind::Lattice, 26, 18),
+            (0, BuildingKind::Lattice, 32, 18),
+        ],
+    );
+    let mut input = pad_input(&mut game);
+    game.presentation.selection.buildings = game
+        .state
+        .buildings()
+        .iter()
+        .filter(|b| b.kind == BuildingKind::Lattice)
+        .map(|b| b.id)
+        .collect();
+    frame(&mut game, &mut input);
+    tap(&mut game, &mut input, PadButton::North);
+    frame(&mut game, &mut input);
+    // Two selected magazines have no dock to count from, and no tick has
+    // run: the count still climbs with every order staged.
+    pick(&mut game, &mut input, "Order");
+    tap(&mut game, &mut input, PadButton::South);
+    frame(&mut game, &mut input);
+    assert!(
+        input.ring.is_some(),
+        "ordering leaves the ring open for more"
+    );
+    assert_eq!(count(&game, &input, "Order"), 2);
+    tap(&mut game, &mut input, PadButton::West);
+    frame(&mut game, &mut input);
+    assert_eq!(count(&game, &input, "Order"), 1);
+}
