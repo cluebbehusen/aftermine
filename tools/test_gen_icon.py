@@ -31,10 +31,25 @@ class IconGenerationTests(unittest.TestCase):
             with (
                 patch.object(gen_icon, "OUT", output / "desktop"),
                 patch.object(gen_icon, "APP_ICON_OUT", output / "apple"),
+                patch.object(gen_icon, "TV_CATALOG_OUT", output / "tv"),
                 redirect_stdout(StringIO()),
             ):
                 gen_icon.main()
 
+            tv_files = {
+                path.relative_to(output / "tv")
+                for path in (output / "tv").rglob("*")
+                if path.is_file()
+            }
+            self.assertEqual(
+                tv_files,
+                {
+                    path.relative_to(gen_icon.TV_CATALOG_OUT)
+                    for path in gen_icon.TV_CATALOG_OUT.rglob("*")
+                    if path.is_file()
+                },
+                "the generator must neither omit nor invent Apple TV catalog files",
+            )
             self.assertEqual(
                 {path.name for path in (output / "desktop").iterdir()},
                 expected_names,
@@ -51,6 +66,8 @@ class IconGenerationTests(unittest.TestCase):
             }
             for name in app_icon_names:
                 expected_files[Path("apple") / name] = gen_icon.APP_ICON_OUT / name
+            for name in tv_files:
+                expected_files[Path("tv") / name] = gen_icon.TV_CATALOG_OUT / name
             for name, expected in expected_files.items():
                 with self.subTest(name=str(name)):
                     actual = output / name
@@ -101,6 +118,59 @@ class IconGenerationTests(unittest.TestCase):
                 "the approved icon artwork must remain unchanged across exports",
             )
 
+    def test_tv_sources_are_the_approved_art(self) -> None:
+        approved = {
+            gen_icon.TV_FRONT: "c27f759d3b066802627b8583bbc3fe89f16c2388c3a035a8aac3b0cca987982e",
+            gen_icon.TV_BACK: "5b1c5cf2229954911a91b9512b17f6dadcfb3a8b2f638fbefafd538f179f4959",
+            gen_icon.TOP_SHELF_SCENE: "59112737e902e2409df76adad8277c209193344e90ff5719800e5357a3c9ac33",
+        }
+        for path, digest in approved.items():
+            with self.subTest(source=path.name):
+                self.assertEqual(
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                    digest,
+                    "approved Apple TV art must be preserved byte-for-byte",
+                )
+
+    def test_tv_catalog_fills_every_tvos_slot(self) -> None:
+        brand = gen_icon.TV_CATALOG_OUT / f"{gen_icon.TV_BRAND}.brandassets"
+        assets = json.loads((brand / "Contents.json").read_text())["assets"]
+        self.assertEqual(
+            sorted((asset["role"], asset["size"]) for asset in assets),
+            [
+                ("primary-app-icon", "1280x768"),
+                ("primary-app-icon", "400x240"),
+                ("top-shelf-image", "1920x720"),
+                ("top-shelf-image-wide", "2320x720"),
+            ],
+        )
+        for asset in assets:
+            width, height = (int(v) for v in asset["size"].split("x"))
+            folder = brand / asset["filename"]
+            if asset["role"] == "primary-app-icon":
+                layers = json.loads((folder / "Contents.json").read_text())["layers"]
+                with self.subTest(stack=asset["filename"]):
+                    self.assertTrue(
+                        2 <= len(layers) <= 5, "tvOS icons take 2 to 5 layers"
+                    )
+                imagesets = [
+                    folder / layer["filename"] / "Content.imageset" for layer in layers
+                ]
+            else:
+                imagesets = [folder]
+            for depth, imageset in enumerate(imagesets):
+                images = json.loads((imageset / "Contents.json").read_text())["images"]
+                for entry in images:
+                    scale = int(entry["scale"].removesuffix("x"))
+                    with (
+                        self.subTest(image=f"{imageset.name}/{entry['filename']}"),
+                        Image.open(imageset / entry["filename"]) as image,
+                    ):
+                        self.assertEqual(image.size, (width * scale, height * scale))
+                        if depth == len(imagesets) - 1:
+                            # The back layer, and every Top Shelf image, is opaque.
+                            self.assertEqual(image.mode, "RGB")
+
     def test_mac_icon_fills_every_slot_with_the_desktop_silhouette(self) -> None:
         catalog = json.loads((gen_icon.APP_ICON_OUT / "Contents.json").read_text())
         mac = [entry for entry in catalog["images"] if entry["idiom"] == "mac"]
@@ -143,6 +213,7 @@ class IconGenerationTests(unittest.TestCase):
             with (
                 patch.object(gen_icon, "OUT", output / "desktop"),
                 patch.object(gen_icon, "APP_ICON_OUT", output / "apple"),
+                patch.object(gen_icon, "TV_CATALOG_OUT", output / "tv"),
                 redirect_stdout(StringIO()),
             ):
                 gen_icon.main()
