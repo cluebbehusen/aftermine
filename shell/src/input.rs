@@ -2278,6 +2278,11 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             {
                 input.pad_press = None;
             }
+            // A press earlier in the batch made the pad the pointer again
+            // after the batch's notes saw the last one go.
+            if input.pads.is_empty() && input.last_pointer == Pointer::Pad {
+                input.last_pointer = crate::platform::Hands::BUILD.pointer;
+            }
         }
         RawEvent::PadConnected { .. } | RawEvent::PadStick { .. } => {
             // `track_hands` keeps the sticks; `update_held` pans by them.

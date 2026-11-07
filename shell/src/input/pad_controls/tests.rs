@@ -525,3 +525,54 @@ fn x_from_workers_names_their_own_structure_before_an_enemy_beside_it() {
         }
     );
 }
+
+#[test]
+fn x_from_riders_boards_the_transport_bracketed_before_an_enemy_beside_it() {
+    let mut game = scene(
+        &[
+            (0, LANCER, 26, 20),
+            (0, UnitKind::Skyhook, 30, 20),
+            (1, SENTINEL, 32, 20),
+        ],
+        &[],
+    );
+    // Zoomed out, the reticle reaches both from between them, while the
+    // enemy stands beyond what a click on it would count as the Skyhook.
+    game.presentation.camera.show(CENTER, 16.0);
+    let mut input = pad_input(&mut game);
+    let (lancer, skyhook) = (unit_at(&game, 26, 20), unit_at(&game, 30, 20));
+    rest_on(&mut game, &mut input, vec2(31.5, 20.5));
+    assert_eq!(
+        input.reticle.snap(),
+        Some(Picked::Unit(skyhook, aftermine_sim::PlayerId(0)))
+    );
+    game.presentation.selection.units = vec![lancer];
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Load {
+            units: vec![lancer],
+            transport: skyhook,
+            queue: false,
+        }
+    );
+}
+
+#[test]
+fn a_press_and_the_last_disconnect_in_one_batch_hand_the_pointer_back() {
+    let mut game = scene(&[(0, SENTINEL, 36, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    feed(
+        &mut game,
+        &mut input,
+        &[
+            down(PadButton::South),
+            RawEvent::PadDisconnected { pad: PAD },
+        ],
+    );
+    assert_eq!(
+        input.last_pointer,
+        crate::platform::Hands::BUILD.pointer,
+        "no reticle is left without a controller"
+    );
+}

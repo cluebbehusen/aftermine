@@ -116,25 +116,42 @@ fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
     super::world_order(game, input, bindings, aim);
 }
 
-/// Where an order at the reticle's `point` lands: for a selection with
-/// workers, on an own structure in its reach, as a right-click names its
-/// own footprint first; else on the nearest enemy in its reach; else on
-/// what it brackets; else on the ground under it. A building is aimed at
-/// its footprint's nearest point, so the order names it as a click on it
-/// does.
+/// Where an order at the reticle's `point` lands. What a right-click names
+/// before any enemy comes first: an own structure in reach for a selection
+/// with workers, an own transport the reticle brackets for one with units
+/// that board. Then the nearest enemy in reach, then what the reticle
+/// brackets, then the ground under it. A building is aimed at its
+/// footprint's nearest point, so the order names it as a click on it does.
 fn aim(game: &Game, point: Vec2, ui: f32, reach: select::Reach) -> Vec2 {
     let camera = &game.presentation.camera;
-    let workers = game.presentation.selection.units.iter().any(|id| {
-        game.state
-            .unit(*id)
-            .is_some_and(|unit| unit.kind.stats().harvest.is_some())
+    let human = game.presentation.human;
+    let selected = &game.presentation.selection.units;
+    let selection_has = |test: &dyn Fn(&aftermine_sim::Unit) -> bool| {
+        selected
+            .iter()
+            .any(|id| game.state.unit(*id).is_some_and(test))
+    };
+    let workers = selection_has(&|unit| unit.kind.stats().harvest.is_some());
+    let riders = selection_has(&|unit| unit.kind.stats().transport_size > 0);
+    let bracketed = select::pick(game, point, ui, reach);
+    let transport = bracketed.filter(|picked| match *picked {
+        Picked::Unit(id, owner) => {
+            owner == human
+                && !selected.contains(&id)
+                && game
+                    .state
+                    .unit(id)
+                    .is_some_and(|unit| unit.kind.stats().transport_capacity > 0)
+        }
+        Picked::Building(..) => false,
     });
     let target = workers
         .then(|| select::own_structure_in_reach(game, point, ui, reach))
         .flatten()
-        .map(|id| Picked::Building(id, game.presentation.human))
+        .map(|id| Picked::Building(id, human))
+        .or_else(|| transport.filter(|_| riders))
         .or_else(|| select::hostile_in_reach(game, point, ui, reach))
-        .or_else(|| select::pick(game, point, ui, reach));
+        .or(bracketed);
     match target {
         Some(Picked::Unit(id, _)) => game.state.unit(id).map_or(point, |unit| {
             camera.to_screen(vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>()))
