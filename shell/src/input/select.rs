@@ -251,7 +251,7 @@ fn sees_unit(game: &crate::game::Scene<'_>, unit: &aftermine_sim::Unit) -> bool 
 /// Whether the human may select this building without learning through
 /// fog — or through stealth: an undetected buried charge must not be
 /// clickable on ground the player merely sees.
-fn selectable_building(game: &Game, building: &aftermine_sim::Building) -> bool {
+pub(super) fn selectable_building(game: &Game, building: &aftermine_sim::Building) -> bool {
     sees_building(&game.view(), building)
 }
 

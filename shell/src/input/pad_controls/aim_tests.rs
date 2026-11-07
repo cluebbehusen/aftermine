@@ -514,3 +514,36 @@ fn a_controller_taking_over_from_a_finger_drops_its_ghost_and_aim() {
         }]
     );
 }
+
+#[test]
+fn salvage_refuses_the_foundry_the_reticle_rests_on_rather_than_strip_its_neighbor() {
+    let mut game = scene(
+        &[(0, UnitKind::Harvester, 26, 20)],
+        &[
+            (0, BuildingKind::Foundry, 30, 24),
+            (0, BuildingKind::Barricade, 32, 24),
+        ],
+    );
+    let mut input = pad_input(&mut game);
+    let harvester = unit_at(&game, 26, 20);
+    let barricade = building_at(&game, 32, 24);
+    game.presentation.selection.units = vec![harvester];
+    dispatch(&mut game, &mut input, Action::Salvage);
+    // On the Foundry, with the Barricade inside the reticle's reach.
+    rest_on(&mut game, &mut input, vec2(31.6, 24.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert!(denied(&game));
+    assert!(game.pending.is_empty(), "{:?}", commands(&game));
+    assert!(input.armed(ClickVerb::Salvage), "the mode stands");
+
+    rest_on(&mut game, &mut input, vec2(32.5, 24.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(
+        commands(&game),
+        [Command::Salvage {
+            units: vec![harvester],
+            building: barricade,
+            queue: false,
+        }]
+    );
+}

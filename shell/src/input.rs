@@ -3231,11 +3231,16 @@ fn armed_verb_click(
             reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
-            let target = reach.building(game, world, |b| {
-                b.player == game.presentation.human
-                    && b.built()
-                    && b.kind != aftermine_sim::BuildingKind::Foundry
-            });
+            // The press names the structure it reaches, then that one must
+            // qualify: a controller aimed at the Foundry never strips the
+            // wall beside it.
+            let target = reach
+                .building(game, world, |b| select::selectable_building(game, b))
+                .filter(|b| {
+                    b.player == game.presentation.human
+                        && b.built()
+                        && b.kind != aftermine_sim::BuildingKind::Foundry
+                });
             let Some(building) = target.map(|b| b.id) else {
                 game.presentation.toast("Can't salvage that");
                 game.presentation
