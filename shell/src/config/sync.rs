@@ -11,8 +11,10 @@
 //!   device, and is adopted if it passes the same checks as a loaded
 //!   `config.json`; one that does not is ignored;
 //! - with no base yet, at launch, the store's value wins, and a key the
-//!   store lacks is uploaded only if the player changed it from the default,
-//!   so a fresh install can never wipe the cloud with defaults.
+//!   store lacks keeps the local value without uploading it. A launch can
+//!   look before iCloud has delivered what another device stored, so
+//!   nothing goes up until the player changes a setting here; a fresh
+//!   install can never write its defaults over the player's settings.
 //!
 //! The local config file stays the device's own copy, so a build that may
 //! not use the store, or a device signed out of iCloud, behaves as before.
@@ -136,7 +138,6 @@ fn merge(
     bases: &mut Bases,
     stored: impl Fn(SyncedField) -> Option<String>,
 ) -> Merge {
-    let defaults = Config::default().sanitized();
     let mut merge = Merge::default();
     for field in SyncedField::ALL {
         let local = field.json(config);
@@ -157,21 +158,16 @@ fn merge(
                     bases.insert(field, text);
                 }
             }
-            // The launch merge: the store's value wins, and only a value
-            // the player chose goes up in its place.
+            // The launch merge: the store's value wins, and where it has
+            // none the local value stands without going up.
             None => {
-                let agreed = if let Some(text) = stored(field) {
-                    if let Some(next) = adopted(config, field, &text) {
-                        merge.adopted |= field.json(&next) != local;
-                        *config = next;
-                        text
-                    } else {
-                        local
-                    }
+                let taken = stored(field)
+                    .and_then(|text| adopted(config, field, &text).map(|next| (text, next)));
+                let agreed = if let Some((text, next)) = taken {
+                    merge.adopted |= field.json(&next) != local;
+                    *config = next;
+                    text
                 } else {
-                    if local != field.json(&defaults) {
-                        merge.uploads.push((field, local.clone()));
-                    }
                     local
                 };
                 bases.insert(field, agreed);

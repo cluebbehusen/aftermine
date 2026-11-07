@@ -82,15 +82,18 @@ fn every_config_field_either_syncs_or_stays_on_the_device() {
 #[test]
 fn a_fresh_device_takes_the_players_settings_and_writes_nothing() {
     let mut cloud = Cloud::new();
-    let mut ipad = Config {
-        ui_scale: 1.25,
-        reduced_motion: true,
-        player_name: Some("Connor".to_owned()),
-        ..Config::default()
-    };
-    ipad.volumes.music = 0.25;
-    ipad.install_id();
-    let ipad = Device::launch(ipad, &mut cloud);
+    let mut ipad = Device::launch(
+        Config {
+            ui_scale: 1.25,
+            ..Config::default()
+        },
+        &mut cloud,
+    );
+    ipad.config.install_id();
+    ipad.config.volumes.music = 0.25;
+    ipad.config.reduced_motion = true;
+    ipad.config.player_name = Some("Connor".to_owned());
+    ipad.save(&mut cloud);
     let uploaded = cloud.clone();
 
     let mut fresh = Device::launch(Config::default(), &mut cloud);
@@ -113,29 +116,47 @@ fn a_fresh_device_takes_the_players_settings_and_writes_nothing() {
 }
 
 #[test]
-fn a_device_uploads_only_the_settings_its_player_chose() {
+fn only_a_change_the_player_makes_goes_up() {
+    // A launch may look before iCloud has delivered what another device
+    // stored, so it must not send this device's own settings up in their
+    // place: launching writes nothing, whatever the device holds.
     let mut cloud = Cloud::new();
-    let config = Config {
+    let mut mac = Config {
         team_colors: true,
+        match_tips: true,
         ui_scale: 1.5,
-        lessons_done: vec![crate::tutorial::Lesson::Scrap],
         ..Config::default()
     };
-    Device::launch(config, &mut cloud);
+    mac.volumes.effects = 0.75;
+    let mut mac = Device::launch(mac, &mut cloud);
+    assert!(cloud.is_empty(), "launching writes nothing");
+
+    let mut ipad = Config::default();
+    ipad.volumes.effects = 0.5;
+    cloud.insert(key(SyncedField::Volumes), SyncedField::Volumes.json(&ipad));
+    assert!(mac.catch_up(&mut cloud), "the iPad's value arrives late");
+    assert_eq!(mac.config.volumes.effects, 0.5, "and still wins");
+    assert!(
+        mac.config.match_tips,
+        "a setting iCloud lacks stays as it is"
+    );
+
+    mac.config.team_colors = false;
+    mac.save(&mut cloud);
     assert_eq!(
         cloud.keys().collect::<Vec<_>>(),
-        [&key(SyncedField::TeamColors)],
-        "defaults and device settings stay home"
+        [&key(SyncedField::TeamColors), &key(SyncedField::Volumes)],
+        "the player's change goes up, and nothing else of this device's"
     );
-    assert_eq!(cloud[&key(SyncedField::TeamColors)], "true");
+    assert_eq!(cloud[&key(SyncedField::TeamColors)], "false");
 }
 
 #[test]
 fn the_cloud_wins_where_a_device_with_its_own_settings_meets_it() {
     let mut cloud = Cloud::new();
-    let mut first = Config::default();
-    first.volumes.effects = 0.5;
-    Device::launch(first, &mut cloud);
+    let mut first = Device::launch(Config::default(), &mut cloud);
+    first.config.volumes.effects = 0.5;
+    first.save(&mut cloud);
 
     let mut second = Config {
         match_tips: true,
@@ -145,10 +166,9 @@ fn the_cloud_wins_where_a_device_with_its_own_settings_meets_it() {
     let second = Device::launch(second, &mut cloud);
     assert_eq!(second.config.volumes.effects, 0.5, "iCloud's value wins");
     assert!(second.config.match_tips, "a setting iCloud lacks stays");
-    assert_eq!(
-        cloud[&key(SyncedField::MatchTips)],
-        "true",
-        "and goes up for the other devices"
+    assert!(
+        !cloud.contains_key(&key(SyncedField::MatchTips)),
+        "until the player changes it there"
     );
 }
 
