@@ -15,6 +15,13 @@ fn an_unentitled_process_has_no_icloud_folder() {
 }
 
 #[test]
+fn an_unentitled_process_has_no_key_value_store() {
+    // Without the key-value store entitlement the store refuses the app,
+    // so a test binary, like an unsigned build, keeps its settings local.
+    assert!(KeyValueStore::open().is_none());
+}
+
+#[test]
 fn coordinated_accesses_run_on_ordinary_files() {
     let dir = scratch("coordinate");
     let file = dir.join("record.amsave");

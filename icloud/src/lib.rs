@@ -2,6 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
+mod key_value;
+
+pub use key_value::KeyValueStore;
+
 /// How a coordinated access touches its file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Access {
@@ -66,10 +70,35 @@ pub fn download(dir: &Path) -> usize {
     }
 }
 
+/// Strings crossing from the Objective-C side, shared by both bridges.
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos"))]
+#[allow(unsafe_code)]
+mod objc {
+    use std::ffi::{CStr, c_char, c_void};
+
+    unsafe extern "C" {
+        fn free(pointer: *mut c_void);
+    }
+
+    /// Takes ownership of a `strdup`ed string from the Objective-C side.
+    pub(crate) fn take(text: *mut c_char) -> Option<Vec<u8>> {
+        if text.is_null() {
+            return None;
+        }
+        // SAFETY: a non-null result is a NUL-terminated `strdup` copy that
+        // nothing else holds; it is read once and freed here.
+        let bytes = unsafe { CStr::from_ptr(text) }.to_bytes().to_vec();
+        // SAFETY: `strdup` allocated it with `malloc`.
+        unsafe { free(text.cast()) };
+        Some(bytes)
+    }
+}
+
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 #[allow(unsafe_code)]
 mod apple {
     use super::Access;
+    use super::objc::take;
     use std::ffi::{CStr, CString, c_char, c_int, c_long, c_void};
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
     use std::path::{Path, PathBuf};
@@ -84,20 +113,6 @@ mod apple {
             error_out: *mut *mut c_char,
         ) -> bool;
         fn aftermine_icloud_download(dir: *const c_char) -> c_long;
-        fn free(pointer: *mut c_void);
-    }
-
-    /// Takes ownership of a `strdup`ed string from the Objective-C side.
-    fn take(text: *mut c_char) -> Option<Vec<u8>> {
-        if text.is_null() {
-            return None;
-        }
-        // SAFETY: a non-null result is a NUL-terminated `strdup` copy that
-        // nothing else holds; it is read once and freed here.
-        let bytes = unsafe { CStr::from_ptr(text) }.to_bytes().to_vec();
-        // SAFETY: `strdup` allocated it with `malloc`.
-        unsafe { free(text.cast()) };
-        Some(bytes)
     }
 
     fn c_path(path: &Path) -> std::io::Result<CString> {
