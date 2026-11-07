@@ -41,8 +41,14 @@ pub(crate) fn set_bindings(bindings: &crate::action::BindingMap) {
     });
 }
 
+/// Fills a coaching template's tokens with the keys that do each thing in
+/// menus now or, while a controller is in use, the buttons of its fixed
+/// layout.
 pub(crate) fn binding_hint(template: &str) -> String {
     use crate::action::Action;
+    if let Some(family) = crate::platform::hands().pad {
+        return pad_hint(template, family);
+    }
     MENU_BINDINGS.with(|bindings| {
         let bindings = bindings.borrow();
         let mut text = template.to_string();
@@ -67,6 +73,26 @@ pub(crate) fn binding_hint(template: &str) -> String {
         }
         text
     })
+}
+
+/// Fills a coaching template's tokens with `family`'s buttons. Pad
+/// copy names the D-pad itself rather than one token per arrow; a token
+/// with no button, such as `{delete}`, stays a key, since pad copy never
+/// offers it.
+fn pad_hint(template: &str, family: aftermine_protocol::PadFamily) -> String {
+    use crate::pad::{BACK, CONFIRM, PAGES, TABS, button_name};
+    let mut text = template.to_string();
+    for (token, button) in [
+        ("{confirm}", CONFIRM),
+        ("{back}", BACK),
+        ("{prev_tab}", TABS.0),
+        ("{next_tab}", TABS.1),
+        ("{page_up}", PAGES.0),
+        ("{page_down}", PAGES.1),
+    ] {
+        text = text.replace(token, button_name(family, button));
+    }
+    text
 }
 
 /// The key that steps tabs as `action` in menus right now, if any.
@@ -1002,12 +1028,13 @@ impl<R: Clone> Menu<R> {
                 Line::Row(label, _) => label,
             };
             let selected = index == self.selected && !busy;
-            let hovered = self.hover == Some(index) && !busy;
+            let hovered =
+                self.hover == Some(index) && !busy && crate::platform::hands().hover_shown();
             if selected {
                 draw_rectangle(rect.x, rect.y, rect.w, rect.h, SURFACE_MENU);
                 stroke_rect(
                     Rect::new(rect.x, rect.y, rect.w, rect.h),
-                    Stroke::Focus.at(s),
+                    crate::platform::cursor_stroke().at(s),
                     TEXT_TITLE,
                 );
             } else if hovered {

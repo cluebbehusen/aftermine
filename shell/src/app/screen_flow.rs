@@ -312,6 +312,9 @@ pub(super) fn update_and_draw(
     let capturing = matches!(&screen, Screen::Settings { screen, .. } if screen.capturing());
     if !screen.kind().gameplay() && !capturing {
         events = crate::pad::menu_keys(&events);
+        events = app.menu_stick.arrows(&events, time.presentation);
+    } else {
+        app.menu_stick.reset();
     }
     let mut profile_frame_active = false;
     // Menu backdrops are presentation worlds too. Home, setup, and

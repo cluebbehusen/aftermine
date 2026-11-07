@@ -22,3 +22,21 @@ fn every_row_appears_in_order_before_the_cut() {
     }
     assert!(last < END);
 }
+
+#[test]
+fn a_controller_button_skips_the_report_and_a_stick_nudge_does_not() {
+    // The frame loop skips on any press `hints::is_press` counts.
+    use aftermine_protocol::{PadButton, RawEvent, Stick};
+    for button in [PadButton::South, PadButton::East, PadButton::Start] {
+        assert!(crate::hints::is_press(&RawEvent::PadDown {
+            pad: 0,
+            button
+        }));
+    }
+    assert!(!crate::hints::is_press(&RawEvent::PadStick {
+        pad: 0,
+        stick: Stick::Left,
+        x: 0.0,
+        y: 1.0,
+    }));
+}

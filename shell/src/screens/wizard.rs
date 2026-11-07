@@ -210,6 +210,20 @@ fn setup_hint(
     cell: Cell,
     hands: crate::platform::Hands,
 ) -> &'static str {
+    if hands.pad.is_some() {
+        return match (one_team, on_start, cell) {
+            (true, _, _) => "Every seat is on one team - change a TEAM chip - {back} back",
+            (false, true, _) => "{confirm} starts the match - {back} back",
+            (false, false, Cell::Difficulty) => {
+                "{confirm} cycles difficulty - D-pad moves - {back} back"
+            }
+            (false, false, Cell::Stance) => "{confirm} cycles stance - D-pad moves - {back} back",
+            (false, false, Cell::Team) => "{confirm} cycles the chip - D-pad moves - {back} back",
+            (false, false, Cell::Seat) => {
+                "{confirm} takes this seat - D-pad reaches difficulty, stance, and team - {back} back"
+            }
+        };
+    }
     match (hands.touch(), hands.keys, one_team) {
         (true, false, true) => {
             "every seat is on one team, nobody to fight - tap a TEAM chip to regroup"
@@ -238,6 +252,9 @@ fn setup_hint(
 
 /// The coaching line while an occupant is picked up.
 fn moving_hint(hands: crate::platform::Hands) -> &'static str {
+    if hands.pad.is_some() {
+        return "{confirm} on a seat swaps them there - {back} cancels";
+    }
     match (hands.touch(), hands.keys) {
         (true, false) => "tap the seat to swap with - tap the same seat to cancel",
         (false, false) => "click the seat to swap with - click the same seat to cancel",
@@ -1100,7 +1117,7 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
         if moving {
             Stroke::Heavy
         } else if selected {
-            Stroke::Focus
+            crate::platform::cursor_stroke()
         } else {
             Stroke::Hairline
         }
@@ -1194,7 +1211,7 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
         stroke_rect(
             Rect::new(control.x, control.y, control.w, control.h),
             if on_cell {
-                Stroke::Focus
+                crate::platform::cursor_stroke()
             } else {
                 Stroke::Hairline
             }
@@ -1225,7 +1242,7 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
     stroke_rect(
         Rect::new(chip.x, chip.y, chip.w, chip.h),
         if on_cell {
-            Stroke::Focus
+            crate::platform::cursor_stroke()
         } else {
             Stroke::Hairline
         }
@@ -1985,7 +2002,7 @@ impl Wizard {
             let [left, right] = layout.switch;
             stroke_rect(
                 Rect::new(left.x, left.y, right.x + right.w - left.x, left.h),
-                Stroke::Focus.at(ui),
+                crate::platform::cursor_stroke().at(ui),
                 TEXT_TITLE,
             );
         }

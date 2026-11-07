@@ -33,3 +33,22 @@ fn only_a_desktop_starts_with_a_cursor_and_keys() {
         assert_eq!(hands.pad, None);
     }
 }
+
+#[test]
+fn a_controller_in_use_leaves_its_cursor_the_only_highlight() {
+    use macroquad::prelude::{Rect, vec2};
+    let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+    let inside = vec2(5.0, 5.0);
+    for hands in ALL_HANDS {
+        assert!(hands.hover_shown());
+        set_hands(hands);
+        assert!(hovers(rect, inside));
+        assert!(!hovers(rect, vec2(20.0, 5.0)));
+    }
+    for hands in pad_hands() {
+        assert!(!hands.hover_shown());
+        set_hands(hands);
+        assert!(!hovers(rect, inside), "a parked mouse lights nothing");
+    }
+    set_hands(Hands::BUILD);
+}

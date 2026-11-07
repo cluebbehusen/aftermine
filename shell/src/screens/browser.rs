@@ -191,6 +191,9 @@ fn on_shelf(card: Rect, grid: GridMetrics) -> bool {
 
 /// The map grid's coaching line.
 fn browser_hint(hands: crate::platform::Hands) -> &'static str {
+    if hands.pad.is_some() {
+        return "D-pad select - {page_up}/{page_down} page - {confirm} plays - {back} back";
+    }
     match (hands.touch(), hands.keys) {
         (false, true) => {
             "{up}/{down} or click select - {confirm} or click again plays - {back} back"
@@ -505,7 +508,7 @@ impl Browser {
         for (entry_idx, rect) in &layout.cards {
             let entry = &entries[*entry_idx];
             let selected = *entry_idx == self.selected;
-            let hovered = self.hover == Some(*entry_idx);
+            let hovered = self.hover == Some(*entry_idx) && crate::platform::hands().hover_shown();
             fill_rect(*rect, SURFACE_MENU);
             let label_h = 30.0 * ui;
             let thumb = Rect::new(

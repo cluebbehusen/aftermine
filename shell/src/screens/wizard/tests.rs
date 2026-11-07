@@ -1445,3 +1445,18 @@ fn compact_setup_reports_only_the_page_actually_on_screen() {
     drive(&mut w, &mut draft, Key::Home);
     assert_eq!(w.ui_visible_range(&draft, view, ui), [0, 5]);
 }
+
+#[test]
+fn the_setup_hints_name_a_controllers_buttons_while_one_is_in_use() {
+    for hands in crate::platform::pad_hands() {
+        crate::platform::assert_pad_copy(hands, moving_hint(hands));
+        for one_team in [false, true] {
+            for on_start in [false, true] {
+                for cell in Cell::ALL {
+                    let template = setup_hint(one_team, on_start, cell, hands);
+                    crate::platform::assert_pad_copy(hands, template);
+                }
+            }
+        }
+    }
+}

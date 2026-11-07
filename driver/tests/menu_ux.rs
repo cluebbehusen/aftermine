@@ -12,14 +12,16 @@
 //! has exited, so even autosave-producing walks cannot touch real data.
 
 use aftermine_driver::auto::{
-    ShellGuard, SpawnOptions, activate_labeled, activate_labeled_by_pad, assert_mode, connect_pad,
-    inject, press_key, press_pad, select_labeled, select_tab, spawn_shell, ui, wait_for_mode,
+    INJECTED_PAD, ShellGuard, SpawnOptions, activate_labeled, activate_labeled_by_pad, assert_mode,
+    connect_pad, inject, press_key, press_pad, select_labeled, select_tab, spawn_shell, ui,
+    wait_for_mode,
 };
 use aftermine_driver::client::Client;
-use aftermine_protocol::{Key, MouseButton, PadButton, PadFamily, RawEvent, Request};
+use aftermine_protocol::{Key, MouseButton, PadButton, PadFamily, RawEvent, Request, Stick};
 use anyhow::{Result, bail};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 static NEXT_HOME: AtomicU64 = AtomicU64::new(0);
 
@@ -72,7 +74,20 @@ fn spawn_at_map_list(port: u16) -> Result<(MenuShellGuard, Client)> {
 }
 
 fn spawn(port: u16) -> Result<(MenuShellGuard, Client)> {
+    spawn_prepared(port, |_| Ok(()))
+}
+
+/// Like [`spawn`], after `prepare` has filled the scratch HOME, which is
+/// also the shell's working directory.
+fn spawn_prepared(
+    port: u16,
+    prepare: impl FnOnce(&std::path::Path) -> Result<()>,
+) -> Result<(MenuShellGuard, Client)> {
     let home = scratch_home(port)?;
+    if let Err(error) = prepare(&home) {
+        std::fs::remove_dir_all(home).ok();
+        return Err(error);
+    }
     let spawned = spawn_shell(&SpawnOptions {
         port,
         paused: false,
@@ -345,6 +360,178 @@ fn a_controller_walks_the_menus_through_the_same_funnel() -> Result<()> {
     assert_mode(&mut client, "join_match", "Home > Join Match by pad")?;
     press_pad(&mut client, PadButton::East)?;
     assert_mode(&mut client, "home", "Join Match > Circle")?;
+    Ok(())
+}
+
+fn tilt_left_stick(client: &mut Client, x: f32, y: f32) -> Result<()> {
+    inject(
+        client,
+        RawEvent::PadStick {
+            pad: INJECTED_PAD,
+            stick: Stick::Left,
+            x,
+            y,
+        },
+    )
+}
+
+/// Every distinct selection the menu shows over `span`, sampled as fast
+/// as the shell answers.
+fn selections_over(client: &mut Client, span: Duration) -> Result<Vec<usize>> {
+    let until = Instant::now() + span;
+    let mut seen = Vec::new();
+    while Instant::now() < until {
+        if let Some(selected) = ui(client)?.selected
+            && !seen.contains(&selected)
+        {
+            seen.push(selected);
+        }
+    }
+    Ok(seen)
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_controller_stick_bumpers_and_triggers_drive_menus() -> Result<()> {
+    let (_guard, mut client) = spawn(4146)?;
+    assert_mode(&mut client, "home", "boot")?;
+    connect_pad(&mut client, PadFamily::Xbox)?;
+
+    // The left stick presses Down once as it crosses the threshold...
+    let before = ui(&mut client)?.selected;
+    tilt_left_stick(&mut client, 0.0, 1.0)?;
+    let first = ui(&mut client)?.selected;
+    assert_ne!(first, before, "a push presses the arrow at once");
+    // ...and held there keeps pressing it.
+    let held = selections_over(&mut client, Duration::from_millis(1500))?;
+    assert!(
+        held.len() >= 3,
+        "a held stick repeats the arrow: saw only {held:?}"
+    );
+    tilt_left_stick(&mut client, 0.0, 0.0)?;
+    ui(&mut client)?;
+    let resting = selections_over(&mut client, Duration::from_millis(800))?;
+    assert_eq!(resting.len(), 1, "a centered stick is quiet: {resting:?}");
+
+    // The bumpers step the tabs.
+    activate_labeled_by_pad(&mut client, "settings")?;
+    assert_mode(&mut client, "settings", "Home > Settings by pad")?;
+    press_pad(&mut client, PadButton::RightShoulder)?;
+    assert_mode(&mut client, "settings_audio", "RB steps right")?;
+    press_pad(&mut client, PadButton::LeftShoulder)?;
+    press_pad(&mut client, PadButton::LeftShoulder)?;
+    assert_mode(&mut client, "controls", "LB steps left and wraps")?;
+    press_pad(&mut client, PadButton::East)?;
+    assert_mode(&mut client, "home", "Settings > B")?;
+
+    // The triggers page the map grid, stopping at its ends.
+    activate_labeled_by_pad(&mut client, "play")?;
+    assert_mode(&mut client, "main_menu", "Home > Play by pad")?;
+    assert_eq!(ui(&mut client)?.selected, Some(0));
+    press_pad(&mut client, PadButton::RightTrigger)?;
+    let paged = ui(&mut client)?.selected.unwrap_or(0);
+    assert!(paged > 1, "RT moves a page, not one card: {paged}");
+    press_pad(&mut client, PadButton::LeftTrigger)?;
+    assert_eq!(ui(&mut client)?.selected, Some(0), "LT pages back");
+    Ok(())
+}
+
+/// Polls the shell's status until `done` holds or a bounded wait passes.
+fn wait_for_status(
+    client: &mut Client,
+    what: &str,
+    done: impl Fn(&aftermine_protocol::StatusView) -> bool,
+) -> Result<aftermine_protocol::StatusView> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let status = client.status()?;
+        if done(&status) {
+            return Ok(status);
+        }
+        if Instant::now() >= deadline {
+            bail!("{what}: status never arrived, last {status:?}");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_controller_watches_a_replay() -> Result<()> {
+    let recording =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets/home/crossroads.amreplay");
+    let (_guard, mut client) = spawn_prepared(4147, |home| {
+        let replays = home.join("replays");
+        std::fs::create_dir_all(&replays)?;
+        std::fs::copy(&recording, replays.join("crossroads.amreplay"))?;
+        Ok(())
+    })?;
+    assert_mode(&mut client, "home", "boot")?;
+    connect_pad(&mut client, PadFamily::PlayStation)?;
+    activate_labeled_by_pad(&mut client, "saves & replays")?;
+    // The shelf opens on the tab that holds records once it has looked.
+    wait_for_listed(&mut client)?;
+    assert_mode(
+        &mut client,
+        "replays",
+        "the shelf opens where the replay is",
+    )?;
+    press_pad(&mut client, PadButton::RightShoulder)?;
+    assert_mode(&mut client, "saves", "R1 steps the tab")?;
+    press_pad(&mut client, PadButton::LeftShoulder)?;
+    assert_mode(&mut client, "replays", "L1 steps it back")?;
+    // The only record, so the cursor is already on it.
+    press_pad(&mut client, PadButton::South)?;
+    wait_for_mode(
+        &mut client,
+        "playback",
+        &["replays", "loading"],
+        "Cross watches",
+    )?;
+
+    let playing = client.status()?;
+    assert!(!playing.paused, "a replay opens playing");
+    press_pad(&mut client, PadButton::South)?;
+    let paused = wait_for_status(&mut client, "Cross pauses", |s| s.paused)?;
+    press_pad(&mut client, PadButton::RightShoulder)?;
+    wait_for_status(&mut client, "R1 seeks forward 25 seconds", |s| {
+        s.tick == paused.tick + 500
+    })?;
+    press_pad(&mut client, PadButton::LeftShoulder)?;
+    wait_for_status(&mut client, "L1 seeks back 25 seconds", |s| {
+        s.tick == paused.tick
+    })?;
+    press_pad(&mut client, PadButton::RightTrigger)?;
+    wait_for_status(&mut client, "R2 speeds up", |s| {
+        (s.speed - 2.0).abs() < f64::EPSILON
+    })?;
+    press_pad(&mut client, PadButton::LeftTrigger)?;
+    press_pad(&mut client, PadButton::LeftTrigger)?;
+    wait_for_status(&mut client, "L2 slows down", |s| {
+        (s.speed - 0.5).abs() < f64::EPSILON
+    })?;
+    press_pad(&mut client, PadButton::South)?;
+    wait_for_status(&mut client, "Cross plays again", |s| !s.paused)?;
+    // The shelf is a front door: leaving a replay lands on Home.
+    press_pad(&mut client, PadButton::East)?;
+    wait_for_mode(
+        &mut client,
+        "home",
+        &["playback"],
+        "Circle leaves the replay",
+    )?;
+    Ok(())
+}
+
+/// Waits for the shelf's catalog to list the recording.
+fn wait_for_listed(client: &mut Client) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while ui(client)?.mode != "replays" || ui(client)?.items.is_empty() {
+        if Instant::now() >= deadline {
+            bail!("the replays tab never listed the recording");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
     Ok(())
 }
 

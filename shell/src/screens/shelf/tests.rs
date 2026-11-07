@@ -430,3 +430,21 @@ fn the_page_heading_stacks_title_strip_and_list() {
     }
     crate::render::set_user_scale(1.0);
 }
+
+#[test]
+fn a_controller_in_use_hears_its_confirm_and_bumpers_and_no_delete() {
+    let record = entry("done", true, RecordKind::Match, "/nowhere/m.json".into());
+    let shelf = Shelf::from_entries(vec![record]);
+    crate::platform::set_hands(crate::platform::Hands {
+        pad: Some(aftermine_protocol::PadFamily::PlayStation),
+        ..crate::platform::ALL_HANDS[0]
+    });
+    let coaching = shelf
+        .coaching()
+        .map(|line| crate::menu::binding_hint(&line));
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+    assert_eq!(
+        coaching.as_deref(),
+        Some("Cross watches | L1/R1 switch tabs")
+    );
+}

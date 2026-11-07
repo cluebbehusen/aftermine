@@ -401,12 +401,13 @@ impl Form {
             draw_field(field, *rect, index == self.focus, layout.label_y, s);
         }
         if let Some(cancel) = layout.cancel {
-            crate::button::draw(cancel, "Cancel", cancel.contains(mouse), s);
+            let lit = crate::platform::hovers(cancel, mouse);
+            crate::button::draw(cancel, "Cancel", lit, s);
         }
         crate::button::draw(
             layout.confirm,
             self.confirm,
-            layout.confirm.contains(mouse),
+            crate::platform::hovers(layout.confirm, mouse),
             s,
         );
     }
@@ -425,7 +426,7 @@ fn draw_field(field: &Field, rect: Rect, focused: bool, label_y: f32, s: f32) {
         );
     }
     let (fill, stroke, edge) = if focused {
-        (SURFACE_CARD, Stroke::Focus, TEXT_ACCENT)
+        (SURFACE_CARD, crate::platform::cursor_stroke(), TEXT_ACCENT)
     } else {
         (SURFACE_PANEL, Stroke::Hairline, BORDER_STRONG)
     };

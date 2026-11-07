@@ -546,3 +546,15 @@ fn every_confirmable_verb_asks_then_acts_or_returns_to_its_row() {
         assert_eq!(row.confirmable(), None, "{row:?} acts without asking");
     }
 }
+
+#[test]
+fn the_name_field_names_the_keys_or_controller_buttons_in_use() {
+    use crate::platform::{ALL_HANDS, pad_hands};
+    for hands in ALL_HANDS {
+        assert_eq!(naming_hint(hands).is_empty(), !hands.keys);
+    }
+    assert_eq!(naming_hint(ALL_HANDS[0]), "Enter saves | Esc cancels");
+    for hands in pad_hands() {
+        crate::platform::assert_pad_copy(hands, naming_hint(hands));
+    }
+}

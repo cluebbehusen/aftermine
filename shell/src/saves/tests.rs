@@ -402,3 +402,14 @@ fn a_chip_names_only_the_kinds_its_tab_does_not_imply() {
         "a plain save and a finished match are what their tabs already say"
     );
 }
+
+#[test]
+fn shelf_hints_name_only_the_controllers_confirm_while_one_is_in_use() {
+    for hands in crate::platform::pad_hands() {
+        for action in [("watches", "watch"), ("loads paused", "load paused")] {
+            let hint = crate::platform::assert_pad_copy(hands, &entry_hint(Some(action), hands));
+            assert!(!hint.contains("delete"), "{hint}");
+        }
+        assert_eq!(entry_hint(None, hands), "");
+    }
+}

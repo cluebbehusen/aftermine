@@ -271,7 +271,7 @@ impl Shelf {
             .get(i)
             .map(|entry| entry.hint(hands))
             .filter(|hint| !hint.is_empty())?;
-        Some(if hands.keys && crate::tabs::keys().is_some() {
+        Some(if crate::tabs::shown_keys().is_some() {
             format!("{hint} | {{prev_tab}}/{{next_tab}} switch tabs")
         } else {
             hint
@@ -305,7 +305,7 @@ impl Shelf {
     /// holds the status line's place this frame.
     pub fn draw(&self, mouse: Vec2, notice_shown: bool) {
         self.menu.draw_with_coaching("", self.coaching().as_deref());
-        let keys = crate::tabs::keys().filter(|_| crate::platform::hands().keys);
+        let keys = crate::tabs::shown_keys();
         let active = Tab::ALL
             .iter()
             .position(|tab| *tab == self.tab())

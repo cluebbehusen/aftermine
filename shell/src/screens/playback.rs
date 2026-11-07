@@ -12,7 +12,7 @@ use crate::render::prim::{fill_rect, stroke_rect};
 use crate::{clock_label, render, theme};
 #[cfg(test)]
 use aftermine_protocol::Key;
-use aftermine_protocol::{MouseButton, RawEvent};
+use aftermine_protocol::{MouseButton, PadButton, RawEvent};
 use aftermine_sim::SIM_VERSION;
 use anyhow::{Context, Result};
 use macroquad::prelude::*;
@@ -185,6 +185,31 @@ enum Transport {
     Faster,
 }
 
+/// What a controller button does in the viewer. Like the menus' layout it
+/// goes by position and no binding moves it: confirm plays and pauses,
+/// back leaves, the bumpers seek and the triggers step the speed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PadPress {
+    Transport(Transport),
+    SeekBack,
+    SeekForward,
+}
+
+fn pad_press(button: PadButton) -> Option<PadPress> {
+    Some(match button {
+        crate::pad::CONFIRM => PadPress::Transport(Transport::PlayPause),
+        crate::pad::BACK => PadPress::Transport(Transport::Back),
+        b if b == crate::pad::TABS.0 => PadPress::SeekBack,
+        b if b == crate::pad::TABS.1 => PadPress::SeekForward,
+        b if b == crate::pad::PAGES.0 => PadPress::Transport(Transport::Slower),
+        b if b == crate::pad::PAGES.1 => PadPress::Transport(Transport::Faster),
+        _ => return None,
+    })
+}
+
+/// Ticks one seek key or bumper press moves: 25 seconds.
+const SEEK_STEP: u64 = 500;
+
 /// What a press on the viewer's chrome lands on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Zone {
@@ -330,7 +355,7 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
             Transport::Slower => "-",
             Transport::Faster => "+",
         };
-        crate::button::draw(rect, label, rect.contains(mouse), s);
+        crate::button::draw(rect, label, crate::platform::hovers(rect, mouse), s);
     }
     let readout = transport_row(viewport, s, crate::platform::PLATFORM.touch_only()).readout;
     fill_rect(readout, theme::SURFACE_CAPTION);
@@ -395,7 +420,12 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
         clock_label::ticks(pb.engine.total()),
     );
     let mut lines = Vec::with_capacity(2);
-    if crate::platform::hands().keys && crate::hints::showing() {
+    let hands = crate::platform::hands();
+    if let Some(family) = hands.pad
+        && crate::hints::showing()
+    {
+        lines.push(pad_caption(&clock, family));
+    } else if hands.keys && crate::hints::showing() {
         lines.push(format!(
             "{clock} | {} pause | {}/{} seek | {} stats | {} leave",
             bindings.label(Action::ReplayPause),
@@ -411,6 +441,22 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
         .find(|line| caption_fits(line, bar, size, s))
         .unwrap_or(clock);
     draw_caption(&line, bar, size, s);
+}
+
+/// The caption's longest form while a controller is in use: the clock and
+/// the viewer's fixed pad layout.
+fn pad_caption(clock: &str, family: aftermine_protocol::PadFamily) -> String {
+    use crate::pad::{BACK, CONFIRM, PAGES, TABS, button_name};
+    let name = |button| button_name(family, button);
+    format!(
+        "{clock} | {} pause | {}/{} seek | {}/{} speed | {} leave",
+        name(CONFIRM),
+        name(TABS.0),
+        name(TABS.1),
+        name(PAGES.0),
+        name(PAGES.1),
+        name(BACK),
+    )
 }
 
 /// Distinct band colors; the ninth is the gray "other" fold.
@@ -560,9 +606,11 @@ impl PlaybackSession {
                             Action::Back => leave = true,
                             Action::ReplayPause => self.clock.paused = !self.clock.paused,
                             Action::ReplayBack => {
-                                seek_to = Some(self.engine.position().saturating_sub(500));
+                                seek_to = Some(self.engine.position().saturating_sub(SEEK_STEP));
                             }
-                            Action::ReplayForward => seek_to = Some(self.engine.position() + 500),
+                            Action::ReplayForward => {
+                                seek_to = Some(self.engine.position() + SEEK_STEP);
+                            }
                             Action::ReplayStart => seek_to = Some(self.engine.start()),
                             Action::ReplayEnd => seek_to = Some(self.engine.total()),
                             Action::ReplaySpeed(n) => self.clock.speed = speed_step(n),
@@ -575,6 +623,16 @@ impl PlaybackSession {
                     self.resolver
                         .key_edge_in(bindings, *key, false, InputContext::Playback);
                 }
+                RawEvent::PadDown { button, .. } => match pad_press(*button) {
+                    Some(PadPress::Transport(button)) => leave |= self.press(button),
+                    Some(PadPress::SeekBack) => {
+                        seek_to = Some(self.engine.position().saturating_sub(SEEK_STEP));
+                    }
+                    Some(PadPress::SeekForward) => {
+                        seek_to = Some(self.engine.position() + SEEK_STEP);
+                    }
+                    None => {}
+                },
                 _ => {
                     // The transport buttons, then the rest of their row,
                     // see the pointer first; the timeline, minimap, and
@@ -587,20 +645,7 @@ impl PlaybackSession {
                             .or_else(|| row.contains(p).then_some(Zone::Row))
                     };
                     match self.buttons.feed(e, zone_at) {
-                        Fed::Activated(Zone::Button(Transport::Back)) => leave = true,
-                        Fed::Activated(Zone::Button(Transport::PlayPause)) => {
-                            self.clock.paused = !self.clock.paused;
-                        }
-                        Fed::Activated(Zone::Button(Transport::Slower)) => {
-                            if let Some(speed) = slower(self.clock.speed) {
-                                self.clock.speed = speed;
-                            }
-                        }
-                        Fed::Activated(Zone::Button(Transport::Faster)) => {
-                            if let Some(speed) = faster(self.clock.speed) {
-                                self.clock.speed = speed;
-                            }
-                        }
+                        Fed::Activated(Zone::Button(button)) => leave |= self.press(button),
                         Fed::Activated(Zone::Row) | Fed::Held => {}
                         Fed::Ignored => {
                             self.apply_pointer(e, viewport, ui, prefs, mouse, &mut seek_to);
@@ -621,6 +666,26 @@ impl PlaybackSession {
         if let Some(target) = seek_to {
             // A fresh transport command replaces any seek in flight.
             self.seek_to(target);
+        }
+        false
+    }
+
+    /// Presses a transport button, by pointer or controller. Returns
+    /// whether the viewer should close.
+    fn press(&mut self, button: Transport) -> bool {
+        match button {
+            Transport::Back => return true,
+            Transport::PlayPause => self.clock.paused = !self.clock.paused,
+            Transport::Slower => {
+                if let Some(speed) = slower(self.clock.speed) {
+                    self.clock.speed = speed;
+                }
+            }
+            Transport::Faster => {
+                if let Some(speed) = faster(self.clock.speed) {
+                    self.clock.speed = speed;
+                }
+            }
         }
         false
     }

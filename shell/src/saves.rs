@@ -99,6 +99,11 @@ impl ReplayEntry {
 /// and delete it. Deleting takes a key, so without a keyboard the delete
 /// clause is left out.
 fn entry_hint(action: Option<(&str, &str)>, hands: crate::platform::Hands) -> String {
+    if hands.pad.is_some() {
+        return action.map_or_else(String::new, |(key_action, _)| {
+            format!("{{confirm}} {key_action}")
+        });
+    }
     let verb = if hands.touch() { "tap" } else { "click" };
     match (action, hands.keys) {
         (Some((key_action, _)), true) if !hands.touch() => {

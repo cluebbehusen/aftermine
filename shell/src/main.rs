@@ -38,6 +38,7 @@ mod look;
 mod maw_audio;
 mod maw_motion;
 mod menu;
+mod menu_stick;
 mod mixer;
 mod nav;
 mod netplay;

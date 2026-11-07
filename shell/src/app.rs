@@ -99,6 +99,8 @@ struct App {
     /// The platform's game controllers. Automation shells, which never
     /// read hardware, have none.
     pads: Option<crate::pad::Pads>,
+    /// The left stick as menu arrows, between frames.
+    menu_stick: crate::menu_stick::MenuStick,
     /// Screenshot requests parked until after this frame renders.
     pending_shots: Vec<screenshot::PendingScreenshot>,
     /// The one texture atlas and its source rects.
@@ -360,6 +362,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         capture_shift: false,
         injected: Vec::new(),
         pads: None,
+        menu_stick: crate::menu_stick::MenuStick::default(),
         pending_shots: Vec::new(),
         sprites,
         sounds,

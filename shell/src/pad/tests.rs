@@ -289,7 +289,7 @@ fn buttons_are_named_by_family_at_each_position() {
 }
 
 #[test]
-fn the_dpad_moves_menus_and_two_face_buttons_confirm_and_go_back() {
+fn the_dpad_moves_menus_two_face_buttons_confirm_and_go_back_and_the_shoulders_tab_and_page() {
     let pad = |button, down| {
         if down {
             RawEvent::PadDown { pad: 0, button }
@@ -309,6 +309,10 @@ fn the_dpad_moves_menus_and_two_face_buttons_confirm_and_go_back() {
         pad(PadButton::DpadRight, true),
         pad(CONFIRM, true),
         pad(BACK, true),
+        pad(TABS.0, true),
+        pad(TABS.1, true),
+        pad(PAGES.0, true),
+        pad(PAGES.1, false),
         pad(PadButton::North, true),
         pad(PadButton::Start, true),
         text,
@@ -322,7 +326,16 @@ fn the_dpad_moves_menus_and_two_face_buttons_confirm_and_go_back() {
             RawEvent::KeyDown { key: Key::Right },
             RawEvent::KeyDown { key: Key::Enter },
             RawEvent::KeyDown { key: Key::Escape },
+            RawEvent::KeyDown { key: Key::Q },
+            RawEvent::KeyDown { key: Key::E },
+            RawEvent::KeyDown { key: Key::PageUp },
+            RawEvent::KeyUp { key: Key::PageDown },
             text,
         ]
+    );
+    assert_eq!(
+        [TABS.0, TABS.1, PAGES.0, PAGES.1].map(|button| button_name(PadFamily::Xbox, button)),
+        ["LB", "RB", "LT", "RT"],
+        "the bumpers step tabs and the triggers page"
     );
 }

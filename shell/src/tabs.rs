@@ -13,10 +13,22 @@ use crate::theme::{
 use aftermine_protocol::RawEvent;
 use macroquad::prelude::{Rect, Vec2, draw_rectangle, draw_text, measure_text};
 
-/// The keys that step tabs in menus now, while both have one.
+/// The keys that step tabs in menus now, while both have one, or the
+/// bumpers while a controller is in use.
 pub(crate) fn keys() -> Option<(String, String)> {
+    if let Some(family) = crate::platform::hands().pad {
+        let name = |button| crate::pad::button_name(family, button).to_string();
+        return Some((name(crate::pad::TABS.0), name(crate::pad::TABS.1)));
+    }
     crate::menu::tab_key(crate::action::Action::PrevTab)
         .zip(crate::menu::tab_key(crate::action::Action::NextTab))
+}
+
+/// The tab keys to draw beside a strip: none for a player without keys
+/// or a controller, who has no way to press them.
+pub(crate) fn shown_keys() -> Option<(String, String)> {
+    let hands = crate::platform::hands();
+    keys().filter(|_| hands.keys || hands.pad.is_some())
 }
 
 /// The logical height a strip takes from the list beneath it, for
@@ -108,7 +120,7 @@ pub(crate) fn draw_in(
     let size = Type::Body.at(s);
     for (tab, (rect, label)) in rects.iter().zip(labels).enumerate() {
         let current = tab == active;
-        let hovered = rect.contains(mouse);
+        let hovered = crate::platform::hovers(*rect, mouse);
         draw_rectangle(
             rect.x,
             rect.y,

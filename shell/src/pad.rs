@@ -47,15 +47,25 @@ pub(crate) const CONFIRM: PadButton = PadButton::South;
 /// The button that goes back in menus.
 pub(crate) const BACK: PadButton = PadButton::East;
 
+/// The buttons that step tabs in menus, back and forward.
+pub(crate) const TABS: (PadButton, PadButton) = (PadButton::LeftShoulder, PadButton::RightShoulder);
+/// The buttons that page menus, up and down.
+pub(crate) const PAGES: (PadButton, PadButton) = (PadButton::LeftTrigger, PadButton::RightTrigger);
+
 /// The canonical menu keys controller buttons press: the D-pad moves the
-/// cursor. Key bindings never move this layout.
-const MENU_KEYS: [(PadButton, Key); 6] = [
+/// cursor, the bumpers press the tab keys and the triggers page. Key
+/// bindings never move this layout.
+const MENU_KEYS: [(PadButton, Key); 10] = [
     (PadButton::DpadUp, Key::Up),
     (PadButton::DpadDown, Key::Down),
     (PadButton::DpadLeft, Key::Left),
     (PadButton::DpadRight, Key::Right),
     (CONFIRM, Key::Enter),
     (BACK, Key::Escape),
+    (TABS.0, Key::Q),
+    (TABS.1, Key::E),
+    (PAGES.0, Key::PageUp),
+    (PAGES.1, Key::PageDown),
 ];
 
 /// The canonical menu key a controller button presses, if any.
