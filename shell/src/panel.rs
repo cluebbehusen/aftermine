@@ -112,6 +112,8 @@ pub enum CardAction {
     CancelQueue(BuildingId, u8),
     /// Cancel one ordered magazine round (full refund).
     CancelRound(BuildingId, u8),
+    /// Cancel one drone a host's bay has on order (full refund).
+    CancelDrone(aftermine_sim::UnitId, u8),
     /// Cancel one selected factory product, preferring waiting work.
     CancelProduction(UnitKind),
     /// Cancel an unfinished site shown by a Harvester's Build order.
@@ -182,6 +184,7 @@ impl CardAction {
                 | Self::CancelFound(..)
                 | Self::CancelQueue(..)
                 | Self::CancelRound(..)
+                | Self::CancelDrone(..)
                 | Self::CancelProduction(_)
         )
     }
@@ -267,6 +270,8 @@ pub enum CapabilityIcon {
     EconomySupport,
     /// Rounds a magazine holds and the ring a battery defends.
     Intercept,
+    /// The drones a host carries.
+    Drones,
 }
 
 /// The most command cards a panel shows: the construction palette's every
@@ -306,6 +311,16 @@ pub struct Panel {
     /// a defense's target preference, or empties production. Absent
     /// while nothing selected has anything to stop.
     pub stop: Option<Card>,
+    /// A lone host's drones on order, in their own column beside the
+    /// orders dock; absent while it has none.
+    pub drones: Option<DroneColumn>,
+}
+
+/// The drones a host has on order: one chip each, the one building
+/// wearing its meter, under the time left on all of them.
+pub struct DroneColumn {
+    pub label: String,
+    pub chips: Vec<Card>,
 }
 
 impl Panel {
@@ -321,6 +336,10 @@ impl Panel {
             crate::layout::CardRow::Cards => self.cards.get(index),
             crate::layout::CardRow::Queue => self.queue.get(index),
             crate::layout::CardRow::Stop => self.stop.as_ref().filter(|_| index == 0),
+            crate::layout::CardRow::Drones => self
+                .drones
+                .as_ref()
+                .and_then(|column| column.chips.get(index)),
         }
     }
 }
@@ -681,6 +700,18 @@ fn production_queue_label(
     Some(tick_time_label(head_ticks - progress + later_ticks))
 }
 
+/// What pressing a paid round or drone's chip does: it is refunded, and
+/// autofill stops so it is not bought straight back.
+pub(crate) fn refund_chip_desc() -> Vec<String> {
+    vec![
+        format!(
+            "{} to cancel; full refund.",
+            crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
+        ),
+        "Also turns autofill off, so it is not bought again.".into(),
+    ]
+}
+
 /// A magazine's ordered rounds as dock chips, the head wearing its
 /// assembly meter, and the dock's heading: the time left on all of them.
 /// The team shares its magazines' orders; only the owner's chips cancel.
@@ -714,17 +745,7 @@ fn magazine_queue(
             },
             enabled: true,
             why: None,
-            desc: if own {
-                vec![
-                    format!(
-                        "{} to cancel; full refund.",
-                        crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
-                    ),
-                    "Also turns autofill off, so it is not bought again.".into(),
-                ]
-            } else {
-                Vec::new()
-            },
+            desc: if own { refund_chip_desc() } else { Vec::new() },
             progress: (index == 0)
                 .then(|| (magazine.progress as f32 / round_ticks as f32).clamp(0.0, 1.0)),
             autocast: None,
@@ -1433,6 +1454,7 @@ fn pile_panel(game: &Scene<'_>, tile: chassis::grid::TilePos) -> Option<Panel> {
         queue_groups: Vec::new(),
         queue_label: String::new(),
         stop: None,
+        drones: None,
     })
 }
 
@@ -1477,6 +1499,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             queue_groups: Vec::new(),
             queue_label: "Queue".into(),
             stop: None,
+            drones: None,
         };
         if selected_buildings
             .iter()
@@ -1629,11 +1652,15 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         queue_groups: Vec::new(),
         queue_label: "Orders".to_string(),
         stop: None,
+        drones: None,
     };
+    if units.len() == 1 && !game.state.hostile(game.presentation.human, owner) {
+        panel.drones = crate::unit_bays::column(game, first.id);
+    }
     if owner != game.presentation.human {
         // Foreign units inspect read-only. Static weapon facts are safe
-        // for any visible unit. An ally also shows its orders, while a
-        // hostile's order state remains hidden because it reveals intent.
+        // for any visible unit. An ally also shows its orders and drones,
+        // while a hostile's remain hidden because they reveal intent.
         let hostile = game.state.hostile(game.presentation.human, owner);
         if !hostile && units.len() == 1 {
             panel

@@ -26,18 +26,109 @@ fn bundle_probe_finds_mac_and_flat_ios_layouts() {
 }
 
 #[test]
-fn derived_dirs_hang_off_the_one_data_root() {
+fn local_records_hang_off_the_device_roots() {
+    let local = Folders::local();
     if let Some(data) = data_dir() {
-        assert_eq!(autosave_dir(), Some(data.join("autosaves")));
-        assert_eq!(saves_dir(), Some(data.join("saves")));
-        assert_eq!(matches_dir(), Some(data.join("matches")));
+        assert_eq!(local.autosaves, Some(data.join("autosaves")));
+        assert_eq!(local.saves, Some(data.join("saves")));
+        assert_eq!(local.matches, Some(data.join("matches")));
         assert_eq!(diagnostics_dir(), Some(data.join("diagnostics")));
     }
+    // Test binaries never sit inside a bundle, so every documented
+    // `driver` invocation keeps reading the local replays/ dir.
+    assert_eq!(local.replays, PathBuf::from("replays"));
 }
 
 #[test]
-fn a_workspace_run_keeps_the_cwd_relative_replays_dir() {
-    // Test binaries never sit inside a bundle, so every documented
-    // `driver` invocation keeps reading the local replays/ dir.
-    assert_eq!(replays_dir(), PathBuf::from("replays"));
+fn without_icloud_records_stay_on_the_device() {
+    let local = Folders::under(Path::new("/device"));
+    let records = Records::with_cloud(None, local.clone());
+    assert_eq!(records.autosaves(), local.autosaves);
+    assert_eq!(records.saves(), local.saves);
+    assert_eq!(records.matches(), local.matches);
+    assert_eq!(records.listed(), local.all().collect::<Vec<_>>());
+    assert_eq!(
+        records.match_folders(),
+        vec![PathBuf::from("/device/matches")]
+    );
+    assert_eq!(
+        records.autosave_folders(),
+        vec![PathBuf::from("/device/autosaves")]
+    );
+    assert!(records.cloud_folders().is_empty());
+    // No lookup runs outside a packaged copy, so nothing waits on one.
+    assert_eq!(
+        super::records(),
+        Records::with_cloud(None, Folders::local())
+    );
+}
+
+#[test]
+fn icloud_takes_new_records_and_the_shelf_keeps_the_old_ones() {
+    let cloud = Path::new("/cloud/Documents");
+    let records = Records::with_cloud(Some(cloud), Folders::under(Path::new("/device")));
+    assert_eq!(records.autosaves(), Some(cloud.join("autosaves")));
+    assert_eq!(records.saves(), Some(cloud.join("saves")));
+    assert_eq!(records.matches(), Some(cloud.join("matches")));
+    let under = |root: &str, names: &[&str]| {
+        names
+            .iter()
+            .map(|name| Path::new(root).join(name))
+            .collect::<Vec<_>>()
+    };
+    let kinds = ["autosaves", "matches", "saves", "replays"];
+    assert_eq!(records.cloud_folders(), under("/cloud/Documents", &kinds));
+    assert_eq!(records.listed()[4..], under("/device", &kinds));
+    assert_eq!(
+        records.match_folders(),
+        [cloud.join("matches"), Path::new("/device").join("matches")]
+    );
+    assert_eq!(
+        records.autosave_folders(),
+        [
+            cloud.join("autosaves"),
+            Path::new("/device").join("autosaves")
+        ]
+    );
+}
+
+const CLOUD: &str = "/cloud/Documents";
+
+#[test]
+fn an_icloud_lookup_answers_whoever_waited_for_it() {
+    static LOOKUP: Lookup = Lookup::new();
+    let settle = || {
+        drop(
+            LOOKUP
+                .answered
+                .wait_while(LOOKUP.lock(), |state| state.looking)
+                .unwrap(),
+        );
+    };
+    let changes = || LOOKUP.changes.load(std::sync::atomic::Ordering::Acquire);
+    assert_eq!(LOOKUP.answer(), None, "no lookup, no folder");
+    LOOKUP.start(|| Some(PathBuf::from(CLOUD)));
+    assert_eq!(LOOKUP.answer(), Some(PathBuf::from(CLOUD)));
+    assert_eq!(changes(), 0, "a first answer changes nothing seen yet");
+    LOOKUP.start(|| Some(PathBuf::from(CLOUD)));
+    settle();
+    assert_eq!(changes(), 0, "the same folder again is no change");
+    LOOKUP.start(|| None);
+    settle();
+    assert_eq!(LOOKUP.answer(), None, "a sign-out takes the folder away");
+    assert_eq!(changes(), 1);
+}
+
+#[test]
+fn a_lookup_that_cannot_answer_keeps_the_last_word() {
+    static FAILED: Lookup = Lookup::new();
+    static KEPT: Lookup = Lookup::new();
+    FAILED.start(|| panic!("iCloud setup failed"));
+    assert_eq!(FAILED.answer(), None);
+
+    KEPT.start(|| Some(PathBuf::from(CLOUD)));
+    assert_eq!(KEPT.answer(), Some(PathBuf::from(CLOUD)));
+    KEPT.lock().looking = true;
+    KEPT.give_up();
+    assert_eq!(KEPT.answer(), Some(PathBuf::from(CLOUD)));
 }

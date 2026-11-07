@@ -163,6 +163,8 @@ fn capability_icon_color(icon: crate::panel::CapabilityIcon) -> Color {
         CapabilityIcon::Repair => Color::new(0.38, 0.82, 0.45, 0.90),
         CapabilityIcon::EconomySupport => Color::new(0.95, 0.72, 0.24, 0.92),
         CapabilityIcon::Intercept => Color::new(0.64, 0.62, 1.0, 0.92),
+        // A hold, like the Cargo row's crane beside it, not a reach.
+        CapabilityIcon::Drones => crate::theme::TEXT_SECONDARY,
     }
 }
 
@@ -353,6 +355,23 @@ fn draw_capability_icon(
                 tip.x + radius * 0.3,
                 tip.y + radius * 0.32,
                 stroke,
+                color,
+            );
+        }
+        CapabilityIcon::Drones => {
+            // Four rotors on short arms around a body.
+            let arm = radius * 0.7;
+            for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+                let rotor = center + vec2(dx, dy) * arm;
+                draw_line(center.x, center.y, rotor.x, rotor.y, stroke, color);
+                draw_circle_lines(rotor.x, rotor.y, radius * 0.38, stroke, color);
+            }
+            let body = radius * 0.27;
+            draw_rectangle(
+                center.x - body,
+                center.y - body,
+                body * 2.0,
+                body * 2.0,
                 color,
             );
         }

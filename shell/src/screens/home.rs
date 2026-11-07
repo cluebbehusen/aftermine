@@ -71,7 +71,7 @@ impl HomeScreen {
         self.catalog_ready = ready;
     }
 
-    fn resumable(&self) -> bool {
+    pub(crate) fn resumable(&self) -> bool {
         self.menu
             .lines()
             .iter()

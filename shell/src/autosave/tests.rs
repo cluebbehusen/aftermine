@@ -1,16 +1,14 @@
 use super::*;
 
-/// Points `job` at `dir` for both its record and the match's autosaves.
-fn redirect(job: &mut SaveJob, dir: &Path) {
-    job.dir = Some(dir.to_owned());
-    job.autosaves = Some(dir.to_owned());
+/// Runs `job` with `dir` holding both its record and the match's autosaves.
+fn run_at(job: SaveJob, dir: &Path) -> Result<SaveOutcome, SaveError> {
+    job.run_in(Some(dir.to_owned()), &[dir.to_owned()])
 }
 
 fn write_record(game: &mut Game, dir: &Path) -> Result<SaveOutcome, SaveError> {
-    let mut job = SaveJob::capture(game, None);
-    redirect(&mut job, dir);
+    let job = SaveJob::capture(game, None);
     let mark = job.mark();
-    let result = job.run()?;
+    let result = run_at(job, dir)?;
     if let Some(mark) = mark {
         game.mark_saved(&mark);
     }
@@ -29,9 +27,8 @@ fn files(dir: &Path) -> Vec<String> {
 
 fn write_named(game: &Game, name: &str, dir: &Path, saved_at: u64) -> Result<PathBuf, SaveError> {
     let mut job = SaveJob::capture(game, Some(name));
-    redirect(&mut job, dir);
     job.meta.saved_at = Some(saved_at);
-    match job.run()? {
+    match run_at(job, dir)? {
         SaveOutcome::Wrote(path) => Ok(path),
         _ => unreachable!(),
     }
@@ -184,12 +181,12 @@ fn an_unwritable_dir_reports_instead_of_lying() {
 fn a_failed_publication_removes_only_its_uncommitted_reservation() {
     let dir = scratch("failed-reservation");
     std::fs::create_dir_all(&dir).unwrap();
-    let held = free_path(&dir, "save", 1).unwrap();
-    let path = held.path.clone();
+    let path = dir.join("save-0000000001.amsave");
+    let held = reserve(&path).unwrap().expect("a free path");
+    assert!(reserve(&path).unwrap().is_none(), "a held path is taken");
     assert!(held.publish(|_| Err::<(), _>("write refused")).is_err());
     assert!(!path.exists());
-    let held = free_path(&dir, "save", 1).unwrap();
-    let path = held.path.clone();
+    let held = reserve(&path).unwrap().expect("a released path");
     assert!(
         held.publish(|path| {
             chassis::fsx::write_atomic(path, |writer| {
@@ -345,9 +342,8 @@ fn a_lan_host_save_is_a_resumable_checkpoint() {
         game.capture_save().for_lan(Vec::new(), manifest)
     };
     for (name, kind) in [(None, "lan-autosave"), (Some("raid"), "lan")] {
-        let mut job = SaveJob::lan(&game, capture(), name);
-        redirect(&mut job, &dir);
-        let SaveOutcome::Wrote(path) = job.run().unwrap() else {
+        let job = SaveJob::lan(&game, capture(), name);
+        let SaveOutcome::Wrote(path) = run_at(job, &dir).unwrap() else {
             panic!("a LAN save lands");
         };
         assert!(
@@ -389,7 +385,7 @@ fn continuing_a_slot_overwrites_it() {
     let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
         panic!("the autosave lands");
     };
-    let slot = SaveSlot::adopt(&path, &dir).unwrap();
+    let slot = SaveSlot::adopt(&path, std::slice::from_ref(&dir)).unwrap();
     let crate::saved_game::Loaded::Local(restored) = crate::saved_game::prepare(&path).unwrap()
     else {
         panic!("a local autosave restores locally");
@@ -412,11 +408,18 @@ fn continuing_a_slot_overwrites_it() {
 }
 
 #[test]
-fn only_an_autosave_in_the_autosave_folder_lends_its_slot() {
-    let dir = Path::new("/data/autosaves");
-    let adopt = |path: &str| SaveSlot::adopt(Path::new(path), dir);
+fn only_an_autosave_in_an_autosave_folder_lends_its_slot() {
+    let folders = [
+        PathBuf::from("/cloud/autosaves"),
+        PathBuf::from("/data/autosaves"),
+    ];
+    let adopt = |path: &str| SaveSlot::adopt(Path::new(path), &folders);
     assert_eq!(
         adopt("/data/autosaves/autosave-12.amsave"),
+        Some(SaveSlot("12".into()))
+    );
+    assert_eq!(
+        adopt("/cloud/autosaves/autosave-12.amsave"),
         Some(SaveSlot("12".into()))
     );
     assert_eq!(
@@ -482,12 +485,12 @@ fn a_decided_match_writes_its_record_and_drops_its_slot() {
     game.issue(aftermine_sim::Command::Surrender);
     game.do_tick();
     assert!(game.state.result().is_some());
-    let mut job = SaveJob::capture(&game, None);
-    assert_eq!(job.dir, crate::paths::matches_dir());
-    job.dir = Some(matches.clone());
-    job.autosaves = Some(autosaves.clone());
+    let job = SaveJob::capture(&game, None);
+    assert_eq!(job.folder, Folder::Matches);
     let mark = job.mark().unwrap();
-    let Ok(SaveOutcome::Wrote(record)) = job.run() else {
+    let Ok(SaveOutcome::Wrote(record)) =
+        job.run_in(Some(matches.clone()), std::slice::from_ref(&autosaves))
+    else {
         panic!("the finished record lands");
     };
     game.mark_saved(&mark);
@@ -548,11 +551,10 @@ fn a_save_that_finished_after_more_ticks_does_not_cover_them() {
     let dir = scratch("late-mark");
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(1);
-    let mut job = SaveJob::capture(&game, None);
-    redirect(&mut job, &dir);
+    let job = SaveJob::capture(&game, None);
     let mark = job.mark().unwrap();
     game.advance_ticks(2);
-    assert!(matches!(job.run(), Ok(SaveOutcome::Wrote(_))));
+    assert!(matches!(run_at(job, &dir), Ok(SaveOutcome::Wrote(_))));
     game.mark_saved(&mark);
     assert!(!game.is_saved());
     let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
@@ -600,13 +602,12 @@ fn a_slot_holds_one_autosave_kind() {
     game.advance_ticks(3);
     let manifest =
         crate::game::checkpoint::LanManifest::new(&game.scenario, game.presentation.human, &[]);
-    let mut job = SaveJob::lan(
+    let job = SaveJob::lan(
         &game,
         game.capture_save().for_lan(Vec::new(), manifest),
         None,
     );
-    redirect(&mut job, &dir);
-    assert!(matches!(job.run(), Ok(SaveOutcome::Wrote(_))));
+    assert!(matches!(run_at(job, &dir), Ok(SaveOutcome::Wrote(_))));
     assert_eq!(files(&dir), vec![game.slot.file("lan-autosave")]);
     game.advance_ticks(1);
     assert!(matches!(
@@ -622,23 +623,38 @@ fn a_slot_holds_one_autosave_kind() {
 }
 
 #[test]
-fn restarting_drops_the_slot_once_the_worker_is_idle() {
+fn a_session_left_on_the_device_moves_into_icloud_when_resumed() {
+    let root = scratch("moves-to-icloud");
+    let (cloud, device) = (root.join("cloud"), root.join("device"));
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(3);
+    assert!(matches!(
+        write_record(&mut game, &device),
+        Ok(SaveOutcome::Wrote(_))
+    ));
+    game.advance_ticks(3);
+    let both = [cloud.clone(), device.clone()];
+    let job = SaveJob::capture(&game, None);
+    assert!(matches!(
+        job.run_in(Some(cloud.clone()), &both),
+        Ok(SaveOutcome::Wrote(_))
+    ));
+    assert_eq!(files(&cloud), vec![game.slot.file("autosave")]);
+    assert!(files(&device).is_empty(), "one match keeps one autosave");
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn restarting_drops_the_abandoned_slot() {
     let dir = scratch("discard");
     std::fs::create_dir_all(&dir).unwrap();
     let slot = SaveSlot("9".into());
     for kind in AUTOSAVE_KINDS {
         std::fs::write(dir.join(slot.file(kind)), b"{}").unwrap();
     }
-    let mut discarded = vec![slot.clone()];
-    discard_when_idle(&mut discarded, true, Some(&dir));
-    assert_eq!(
-        discarded,
-        vec![slot.clone()],
-        "a running save may still write it"
-    );
-    assert_eq!(files(&dir).len(), 2);
-    discard_when_idle(&mut discarded, false, Some(&dir));
-    assert!(discarded.is_empty());
+    discard_in(std::slice::from_ref(&slot), &[]);
+    assert_eq!(files(&dir).len(), 2, "no folder, nothing to drop");
+    discard_in(&[slot], std::slice::from_ref(&dir));
     assert!(files(&dir).is_empty());
     std::fs::remove_dir_all(&dir).ok();
 }

@@ -446,3 +446,78 @@ fn the_select_all_button_sits_in_the_info_box_beside_the_title() {
         "nothing left to gather"
     );
 }
+
+#[test]
+fn a_roc_s_drone_column_stands_beside_its_orders_dock() {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
+        player: 0,
+        kind: aftermine_sim::UnitKind::Roc,
+        x: 12,
+        y: 10,
+    });
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let roc = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.kind == aftermine_sim::UnitKind::Roc)
+        .unwrap();
+    let (id, home) = (roc.id, chassis::grid::TilePos::containing(roc.pos));
+    // The bay autofills its first drone.
+    game.do_tick();
+    game.presentation.selection.units = vec![id];
+    let model = |game: &Game| {
+        layout(
+            &game.view(),
+            &InputState::new(),
+            &BindingMap::classic(),
+            env(1210.0, 834.0),
+            None,
+            &fixed,
+        )
+        .layout
+    };
+    let idle = model(&game);
+    let band = idle.panel_regions[0].y;
+    assert_eq!(
+        idle.orders.w, 0.0,
+        "premise: an idle Roc has no orders dock"
+    );
+    assert_eq!(idle.drone_count, 1);
+    assert_eq!(idle.drones.x, 0.0, "alone, the column takes the corner");
+    assert_eq!(idle.drones.bottom(), band, "it stands on the band");
+
+    game.state.tick(&[aftermine_sim::PlayerCommand {
+        player: game.presentation.human,
+        command: aftermine_sim::Command::Run {
+            units: vec![id],
+            goal: chassis::grid::TilePos {
+                x: home.x + 6,
+                y: home.y,
+            },
+            queue: false,
+        },
+    }]);
+    let busy = model(&game);
+    assert!(
+        busy.orders.w > 0.0,
+        "premise: the run fills the orders dock"
+    );
+    assert!(
+        busy.drones.x >= busy.orders.right(),
+        "{:?} overlaps {:?}",
+        busy.drones,
+        busy.orders
+    );
+    assert_eq!(busy.drones.bottom(), band);
+    let (chip, _) = busy.drone_slots[0];
+    assert!(busy.drones.contains(chip.center()));
+    assert_eq!(
+        crate::layout::card_under(&busy, chip.center(), None).map(|hit| (hit.row, hit.action)),
+        Some((
+            crate::layout::CardRow::Drones,
+            crate::panel::CardAction::CancelDrone(id, 0)
+        ))
+    );
+}

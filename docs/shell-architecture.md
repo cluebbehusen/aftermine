@@ -274,6 +274,16 @@ speed so slow frames still count and an OS suspension does not, and when the
 window goes inactive. A failed background save is retried, and the player hears
 of a run of failures once. Saves use the chassis atomic-write path.
 
+On iPad and Mac, saves, finished matches, autosaves and replays live in the
+app's iCloud Drive folder when iCloud Drive is available, and on the device
+otherwise; diagnostics and the LAN rejoin ticket always stay on the device. The
+folder is looked up off the frame thread at launch and whenever the app returns
+to the foreground, and only the worker resolves where a record goes, so the
+frame thread never waits on iCloud. Writes, deletes and loads in that folder run
+under file coordination. A catalog scan first starts downloading files iCloud
+holds but the device does not, and the shelf scans again while any are on their
+way. With iCloud on, the shelf still lists records kept on the device.
+
 One app-owned worker performs save encoding, save and checkpoint disk I/O,
 restoration and catalog scans, one operation at a time. Jobs carry unique ids,
 so a stale result cannot replace a newer session. Restoration produces CPU data,

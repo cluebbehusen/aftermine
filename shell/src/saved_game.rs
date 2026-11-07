@@ -179,8 +179,7 @@ pub(crate) fn prepare(path: &Path) -> Result<Loaded> {
         checkpoint.is_lan() == lan_kind(header.meta.kind.as_deref()),
         "save kind does not match the match"
     );
-    let slot = crate::paths::autosave_dir()
-        .and_then(|autosaves| crate::autosave::SaveSlot::adopt(path, &autosaves));
+    let slot = crate::autosave::SaveSlot::adopt(path, &crate::paths::records().autosave_folders());
     let (loaded, scenario, tick) = if checkpoint.is_lan() {
         let save = checkpoint.into_lan_save()?.with_slot(slot);
         let (scenario, tick) = (save.scenario().clone(), save.tick());

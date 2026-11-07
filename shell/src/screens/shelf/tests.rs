@@ -105,7 +105,7 @@ fn the_back_button_leaves_even_after_every_record_is_deleted() {
         RecordKind::Match,
         "/nowhere/m.json".into(),
     )]);
-    shelf.set_catalog(Vec::new());
+    shelf.set_catalog(Vec::new(), 0);
     assert!(shelf.menu.view().items.is_empty());
     assert_eq!(drive(&mut shelf, Key::Enter), Out::Stay);
     for touch in [false, true] {
@@ -173,7 +173,7 @@ fn the_shelf_opens_on_saves_unless_only_replays_wait() {
     assert_eq!(Shelf::from_entries(only_replays()).tab(), Tab::Replays);
 
     let mut opened = Shelf::open();
-    opened.set_catalog(only_replays());
+    opened.set_catalog(only_replays(), 0);
     assert_eq!(
         opened.tab(),
         Tab::Replays,
@@ -182,7 +182,7 @@ fn the_shelf_opens_on_saves_unless_only_replays_wait() {
     let mut picked = Shelf::open();
     drive(&mut picked, Key::Q);
     drive(&mut picked, Key::Q);
-    picked.set_catalog(only_replays());
+    picked.set_catalog(only_replays(), 0);
     assert_eq!(
         picked.tab(),
         Tab::Saves,
@@ -243,11 +243,11 @@ fn a_catalog_refresh_keeps_the_tab_and_the_focused_record() {
         );
         entries
     };
-    shelf.set_catalog(refreshed());
+    shelf.set_catalog(refreshed(), 0);
     assert_eq!(titles(&shelf)[shelf.menu.selected], "named");
 
     drive(&mut shelf, Key::E);
-    shelf.set_catalog(refreshed());
+    shelf.set_catalog(refreshed(), 0);
     assert_eq!(shelf.tab(), Tab::Replays, "a refresh keeps the tab on show");
 }
 
@@ -298,7 +298,7 @@ fn the_shelf_says_it_is_looking_until_the_catalog_lands() {
         "an unscanned shelf is not an empty one: {}",
         shelf.status()
     );
-    shelf.set_catalog(Vec::new());
+    shelf.set_catalog(Vec::new(), 0);
     assert_eq!(shelf.status(), Tab::Saves.empty());
     drive(&mut shelf, Key::E);
     assert_eq!(
@@ -306,6 +306,24 @@ fn the_shelf_says_it_is_looking_until_the_catalog_lands() {
         Tab::Replays.empty(),
         "each empty tab says how to fill it"
     );
+}
+
+#[test]
+fn the_shelf_counts_records_still_coming_from_icloud() {
+    let mut shelf = Shelf::open();
+    shelf.set_catalog(Vec::new(), 3);
+    assert_eq!(
+        shelf.status(),
+        "Downloading 3 files from iCloud",
+        "an empty tab is waiting, not empty"
+    );
+    shelf.set_catalog(Vec::new(), 2);
+    assert_eq!(shelf.status(), "Downloading 2 files from iCloud");
+    let record = entry("done", true, RecordKind::Match, "/nowhere/m.json".into());
+    shelf.set_catalog(vec![record], 1);
+    assert_eq!(shelf.status(), "Downloading 1 file from iCloud");
+    shelf.set_catalog(Vec::new(), 0);
+    assert_eq!(shelf.status(), Tab::Saves.empty());
 }
 
 #[test]

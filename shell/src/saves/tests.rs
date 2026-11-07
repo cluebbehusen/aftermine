@@ -238,7 +238,7 @@ fn continue_offers_only_sessions_left_since_the_last_finished_match() {
             scan(dir, &mut found);
         }
         let entries = newest_first(found);
-        continuable_since(&entries, Some(matches.clone()))
+        continuable_since(&entries, std::slice::from_ref(&matches))
             .map(|entry| {
                 entry
                     .path

@@ -1579,6 +1579,7 @@ impl macroquad::miniquad::EventHandler for PointerStream {
     fn window_restored_event(&mut self) {
         WINDOW_ACTIVITY.store(1, std::sync::atomic::Ordering::Relaxed);
         aftermine_kit::diagnostics::minimized(false);
+        crate::paths::look_up_cloud();
     }
     // The collector never runs a frame; it only replays input.
     fn update(&mut self) {}
@@ -3325,6 +3326,9 @@ fn activate_card(
         }
         crate::panel::CardAction::CancelRound(building, index) => {
             game.issue(Command::CancelRound { building, index });
+        }
+        crate::panel::CardAction::CancelDrone(unit, index) => {
+            game.issue(Command::CancelDrone { unit, index });
         }
         crate::panel::CardAction::CancelSite(building) => {
             game.issue(Command::Cancel { building });

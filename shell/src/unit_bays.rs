@@ -3,7 +3,7 @@
 
 use crate::action::{Action, BindingMap};
 use crate::game::Scene;
-use crate::panel::{Card, CardAction, CardIcon, VerbIcon, tick_time_label};
+use crate::panel::{Card, CardAction, CardIcon, DroneColumn, VerbIcon, tick_time_label};
 use aftermine_sim::stats::BayStats;
 use aftermine_sim::{Command, Unit, UnitId};
 
@@ -186,18 +186,55 @@ impl SelectedBays {
     }
 }
 
-/// The bay readout for a selected machine: docked, flying and building
-/// out of what it holds, counting orders staged for the next tick.
-pub fn readout(game: &Scene<'_>, host: UnitId) -> Option<String> {
+/// The drones `host` has, docked or flying, counting commands staged for
+/// the next tick.
+pub fn held(game: &Scene<'_>, host: UnitId) -> Option<u8> {
+    with_pending(game, |units, _, _| {
+        let bay = units.iter().find(|u| u.id == host)?.bay?;
+        Some(bay.docked.saturating_add(flying(units, host)))
+    })
+}
+
+/// The drones `host` has on order as a dock column, counting commands
+/// staged for the next tick. A teammate sees an ally's; only the owner's
+/// chips cancel.
+pub fn column(game: &Scene<'_>, host: UnitId) -> Option<DroneColumn> {
+    let human = game.presentation.human;
     with_pending(game, |units, _, _| {
         let unit = units.iter().find(|u| u.id == host)?;
         let (stats, bay) = (unit.kind.stats().bay?, unit.bay?);
-        Some(format!(
-            "{} docked, {} out, {} building of {}",
-            bay.docked,
-            flying(units, host),
-            bay.ordered,
-            stats.capacity
-        ))
+        if bay.ordered == 0 {
+            return None;
+        }
+        let own = unit.player == human;
+        let build = stats.build_ticks.max(1);
+        let chips = (0..bay.ordered)
+            .map(|index| Card {
+                icon: CardIcon::Unit(stats.drone),
+                title: crate::typography::entity_name(stats.drone.name()),
+                cost: None,
+                hotkey: String::new(),
+                action: if own {
+                    CardAction::CancelDrone(host, index)
+                } else {
+                    CardAction::None
+                },
+                enabled: true,
+                why: None,
+                desc: if own {
+                    crate::panel::refund_chip_desc()
+                } else {
+                    Vec::new()
+                },
+                progress: (index == 0)
+                    .then(|| (bay.progress as f32 / build as f32).clamp(0.0, 1.0)),
+                autocast: None,
+                hold: None,
+            })
+            .collect();
+        Some(DroneColumn {
+            label: tick_time_label(u32::from(bay.ordered) * build - bay.progress.min(build)),
+            chips,
+        })
     })
 }
