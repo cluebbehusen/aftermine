@@ -24,6 +24,12 @@ fn click_slop(ui: f32) -> f32 {
     CLICK_SLOP * ui
 }
 
+/// Seconds within which a second click, or a controller's second A tap,
+/// reads as a double.
+const DOUBLE_CLICK_SECS: f64 = 0.35;
+/// Logical pixels within which a second click lands on the same spot.
+const DOUBLE_CLICK_SLOP: f32 = 12.0;
+
 /// Shared with the drag-rectangle renderer, so what draws as a drag is
 /// exactly what selects as one.
 pub fn drag_threshold(ui: f32) -> f32 {
@@ -407,6 +413,18 @@ pub struct InputState {
     sticks: std::collections::BTreeMap<u64, (Vec2, Vec2)>,
     /// The match's reticle: where it sits and what it has snapped onto.
     pub(crate) reticle: reticle::Reticle,
+    /// A held A on a controller, and its paint sweep once the reticle
+    /// moves.
+    pad_press: Option<paint::Press>,
+    /// The last A tap: when, and the ground under the reticle, for
+    /// double-taps.
+    last_pad_tap: Option<(f64, Vec2)>,
+    /// Controllers holding the left trigger, which queues as a held Shift
+    /// does.
+    queue_pads: std::collections::BTreeSet<u64>,
+    /// The group RT narrowed last, while the selection is still the kind
+    /// it left.
+    narrowed: Option<pad_controls::Narrowed>,
     /// The verb the next world click issues, if one is armed.
     pub(crate) click_verb: Option<ClickVerb>,
     /// Producers whose rally point the next world/minimap click sets.
@@ -1117,6 +1135,10 @@ impl InputState {
             pad_in_use: None,
             sticks: std::collections::BTreeMap::new(),
             reticle: reticle::Reticle::default(),
+            pad_press: None,
+            last_pad_tap: None,
+            queue_pads: std::collections::BTreeSet::new(),
+            narrowed: None,
             click_verb: None,
             rallying: Vec::new(),
             striking: None,
@@ -1372,6 +1394,8 @@ impl InputState {
         self.handle_drag = false;
         self.pair = None;
         self.menu_requested = false;
+        self.pad_press = None;
+        self.queue_pads.clear();
     }
 
     /// Where a lone finger has rested on chrome long enough to preview
@@ -1387,9 +1411,12 @@ impl InputState {
 
     /// Whether a press should queue its order, add to the selection, or
     /// keep an armed mode for another target: a held Shift on a
-    /// keyboard, the sticky QUEUE toggle on touch.
+    /// keyboard, the sticky QUEUE toggle on touch, a held left trigger on
+    /// a controller.
     pub(crate) fn queue_held(&self) -> bool {
-        self.queue_toggle != QueueToggle::Off || self.resolver.shift_held()
+        self.queue_toggle != QueueToggle::Off
+            || self.resolver.shift_held()
+            || !self.queue_pads.is_empty()
     }
 
     /// Each control group's live own member count. Dead ids linger in a
@@ -1502,6 +1529,8 @@ impl InputState {
         self.salvo = 1;
         self.last_click = None;
         self.last_recall = None;
+        self.last_pad_tap = None;
+        self.narrowed = None;
     }
 }
 
@@ -1881,6 +1910,10 @@ mod dispatch;
 mod groups;
 pub(crate) use groups::Group;
 mod orders;
+mod pad_controls;
+mod paint;
+pub(crate) use paint::{painting, preview as paint_preview};
+pub(crate) use select::Kept;
 pub(crate) mod reticle;
 mod select;
 #[cfg(test)]
@@ -1888,7 +1921,7 @@ mod tests;
 mod touch;
 
 use dispatch::dispatch_action;
-use orders::{context_order, rally_at, rally_producers, rally_selected_producers};
+use orders::{OrderReach, context_order, rally_at, rally_producers, rally_selected_producers};
 pub(crate) use select::army_units;
 pub use select::idle_harvesters;
 use select::{
@@ -1954,6 +1987,8 @@ pub fn apply_events(
                 | RawEvent::MouseUp { .. }
                 | RawEvent::TouchDown { .. }
                 | RawEvent::TouchUp { .. }
+                | RawEvent::PadDown { .. }
+                | RawEvent::PadUp { .. }
         );
         if press && index > 0 {
             relayout(game, input);
@@ -1980,6 +2015,8 @@ pub fn apply_events(
 fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, event: &RawEvent) {
     if let Some(pointer) = Pointer::of(event) {
         input.last_pointer = pointer;
+        // Another pointer took over: a held A's sweep ends unfinished.
+        input.pad_press = None;
     }
     match *event {
         RawEvent::MouseMove { x, y } => {
@@ -2124,7 +2161,8 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                     let now = input.now;
                     let double = !additive
                         && input.last_click.take().is_some_and(|(t, p)| {
-                            now - t < 0.35 && p.distance(release) <= 12.0 * input.ui
+                            now - t < DOUBLE_CLICK_SECS
+                                && p.distance(release) <= DOUBLE_CLICK_SLOP * input.ui
                         });
                     if double {
                         select_all_of_kind_on_screen(game, release, input.ui, Reach::MOUSE);
@@ -2150,19 +2188,8 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                 activate_card(game, input, bindings, act);
                 return;
             }
-            // A right-click mid-stroke throws the planned row away and
-            // keeps placing; nothing was spent.
-            if input.drop_stroke() {
+            if stand_down_for_order(input) {
                 return;
-            }
-            // A contextual order is a new intent, so it also exits
-            // any one-shot mode left armed by a prior build/salvage/
-            // weld/run/hunt gesture. In particular, a move
-            // away from a deferred Found order must not leave a
-            // placement ghost stuck to the cursor. Patrol is the
-            // exception: its right-clicks are collecting the route.
-            if input.patrol_route.is_none() {
-                input.close_construction();
             }
             // A right-click on the minimap orders to that world tile
             // (ground semantics — entities can't be picked at that
@@ -2191,12 +2218,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                     }
                 }
             } else if !click_on_hud(game, vec2(x, y)) {
-                let world = game.presentation.camera.to_world(vec2(x, y));
-                if input.patrol_route.is_some() {
-                    add_patrol_waypoint(game, input, bindings, world);
-                } else {
-                    context_order(game, vec2(x, y), queue);
-                }
+                world_order(game, input, bindings, vec2(x, y), OrderReach::EXACT);
             }
         }
         RawEvent::MouseUp {
@@ -2235,17 +2257,34 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         }
         RawEvent::TouchUp { id, x, y } => touch::up(game, input, bindings, id, vec2(x, y)),
         RawEvent::TouchCancel { id } => touch::cancel(input, id),
-        RawEvent::PadDown { button, .. } => {
+        RawEvent::PadDown { pad, button } => {
             input.last_pointer = Pointer::Pad;
+            pad_controls::press(game, input, bindings, pad, button);
             reticle::press(game, input, bindings, button);
         }
+        RawEvent::PadUp { pad, button } => pad_controls::release(game, input, pad, button),
         RawEvent::PadStick { x, y, .. } if (x, y) != (0.0, 0.0) => {
             input.last_pointer = Pointer::Pad;
         }
-        RawEvent::PadConnected { .. }
-        | RawEvent::PadDisconnected { .. }
-        | RawEvent::PadUp { .. }
-        | RawEvent::PadStick { .. } => {
+        RawEvent::PadDisconnected { pad } => {
+            // Hardware releases a pad's buttons before it goes; injected
+            // input may not, so nothing it held outlives it. This runs in
+            // event order, so a press earlier in the batch is dropped too.
+            input.queue_pads.remove(&pad);
+            if input
+                .pad_press
+                .as_ref()
+                .is_some_and(|press| press.pad == pad)
+            {
+                input.pad_press = None;
+            }
+            // A press earlier in the batch made the pad the pointer again
+            // after the batch's notes saw the last one go.
+            if input.pads.is_empty() && input.last_pointer == Pointer::Pad {
+                input.last_pointer = crate::platform::Hands::BUILD.pointer;
+            }
+        }
+        RawEvent::PadConnected { .. } | RawEvent::PadStick { .. } => {
             // `track_hands` keeps the sticks; `update_held` pans by them.
         }
     }
@@ -2256,6 +2295,41 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         )
     {
         input.close_construction();
+    }
+}
+
+/// What a contextual order does before it aims, from a right-click or a
+/// controller's X. A planned row goes first and spends the press, keeping
+/// placement armed: nothing was spent. Otherwise the order is a new
+/// intent, so it stands down any one-shot mode left armed by a prior
+/// build, salvage, weld, run or hunt; a move away from a deferred found
+/// must not leave a ghost on the pointer. Patrol is the exception: its
+/// orders collect the route. Returns whether the press is spent.
+pub(super) fn stand_down_for_order(input: &mut InputState) -> bool {
+    if input.drop_stroke() {
+        return true;
+    }
+    if input.patrol_route.is_none() {
+        input.close_construction();
+    }
+    false
+}
+
+/// A contextual order at battlefield point `p`: a patrol waypoint on the
+/// ground there while a route is being collected, else the order for what
+/// lies within `reach`.
+pub(super) fn world_order(
+    game: &mut Game,
+    input: &mut InputState,
+    bindings: &BindingMap,
+    p: Vec2,
+    reach: OrderReach,
+) {
+    if input.patrol_route.is_some() {
+        let world = game.presentation.camera.to_world(p);
+        add_patrol_waypoint(game, input, bindings, world);
+    } else {
+        context_order(game, p, input.queue_held(), reach);
     }
 }
 
@@ -2361,7 +2435,13 @@ fn armed_click(
         let rally = if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
             Some(aftermine_sim::Rally::Tile(ground_tile(&game.state, world)))
         } else {
-            (!click_on_hud(game, p)).then(|| rally_at(game, game.presentation.camera.to_world(p)))
+            (!click_on_hud(game, p)).then(|| {
+                rally_at(
+                    game,
+                    game.presentation.camera.to_world(p),
+                    OrderReach::EXACT,
+                )
+            })
         };
         if let Some(rally) = rally {
             let producers = crate::building_actions::SelectedBuildings::inspect_ids(
@@ -3528,7 +3608,10 @@ pub fn update_held(game: &mut Game, input: &mut InputState, dt: f32) {
     }
     let keys =
         crate::camera::controls::pan_travel(&game.presentation.camera, dir, input.camera_prefs, dt);
+    // A held A paints the ground the reticle crosses this frame.
+    let before = input.reticle.ground(&game.presentation.camera);
     reticle::update(game, input, dt, keys);
+    paint::sweep(game, input, before);
 }
 
 /// How the native layer scales a wheel reading.

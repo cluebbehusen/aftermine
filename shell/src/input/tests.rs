@@ -42,6 +42,7 @@ fn activate_card(game: &mut Game, input: &mut InputState, action: crate::panel::
 mod army;
 mod double_click;
 mod lessons;
+pub(super) mod pad_scene;
 
 /// The waypoints `unit` draws in `game`'s current frame.
 fn crumbs(game: &Game, unit: &aftermine_sim::Unit) -> Vec<(usize, Vec2, macroquad::color::Color)> {
@@ -560,7 +561,7 @@ fn selected_producers_receive_the_same_context_rally_in_id_order() {
         .camera
         .to_screen(vec2(rally.x as f32 + 0.5, rally.y as f32 + 0.5));
 
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
 
     let staged: Vec<_> = game
         .pending
@@ -694,7 +695,7 @@ fn a_selected_defense_right_clicks_a_visible_enemy_into_focus() {
     ));
     game.presentation.selection.buildings = vec![turret];
 
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
 
     assert!(matches!(
         game.pending.as_slice(),
@@ -1109,7 +1110,7 @@ fn a_rally_click_on_an_own_unit_rallies_onto_it() {
     // Right-click with only buildings selected.
     game.presentation.selection.buildings = producers.clone();
     let screen = game.presentation.camera.to_screen(at);
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(onto_unit(&game), "{:?}", game.pending);
 
     // The armed rally click.
@@ -1145,7 +1146,7 @@ fn context_and_armed_rallies_ping_at_the_tile_centre() {
         .collect();
     game.presentation.selection.buildings = producers.clone();
     let screen = game.presentation.camera.to_screen(off_centre(rally));
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(
         !game.pending.is_empty()
             && game.pending.iter().all(
@@ -7418,7 +7419,7 @@ fn right_click_uses_building_memory_and_anonymous_contacts_and_stop_clears_focus
     assert!(!game.my_vision().visible(TilePos::new(17, 17)));
     game.presentation.selection.units = vec![gun];
     let screen = game.presentation.camera.to_screen(vec2(17.5, 17.5));
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(matches!(
         game.pending.last().unwrap().command,
         Command::Attack {
@@ -7438,7 +7439,7 @@ fn right_click_uses_building_memory_and_anonymous_contacts_and_stop_clears_focus
         .presentation
         .camera
         .to_screen(vec2(track.tile.x as f32 + 0.5, track.tile.y as f32 + 0.5));
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(
         matches!(game.pending.last().unwrap().command, Command::Attack {
         target: aftermine_sim::AttackTarget::Contact(id), ..
@@ -7454,7 +7455,7 @@ fn right_click_uses_building_memory_and_anonymous_contacts_and_stop_clears_focus
         .unwrap()
         .id;
     game.presentation.selection.buildings = vec![defense];
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(
         matches!(game.pending.last().unwrap().command, Command::FocusFire {
         target: aftermine_sim::AttackTarget::Contact(id), ..
@@ -7521,7 +7522,7 @@ fn radar_contact_above_a_building_ghost_wins_for_units_and_defenses() {
         .camera
         .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5));
     game.presentation.selection.units = vec![gun];
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(matches!(game.pending.last().unwrap().command,
         Command::Attack { target: aftermine_sim::AttackTarget::Contact(id), .. } if id == contact));
     game.pending.clear();
@@ -7534,7 +7535,7 @@ fn radar_contact_above_a_building_ghost_wins_for_units_and_defenses() {
             .unwrap()
             .id,
     ];
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(matches!(game.pending.last().unwrap().command,
         Command::FocusFire { target: aftermine_sim::AttackTarget::Contact(id), .. } if id == contact));
 }
@@ -8026,7 +8027,7 @@ fn grouped_focus_and_stop_skip_an_upgrade_staged_before_the_target_click() {
         .camera
         .to_screen(vec2(at.x.to_num(), at.y.to_num()));
     game.issue(Command::UpgradeBuilding { building: ids[0] });
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(
         matches!(&game.pending.last().unwrap().command, Command::FocusFire { buildings, .. } if buildings == &ids[1..])
     );
@@ -8365,7 +8366,7 @@ fn right_click_targets_a_deep_bore_nobody_on_the_team_has_seen() {
     assert!(game.my_vision().ghosts().is_empty());
     game.presentation.selection.units = vec![game.state.units()[0].id];
     let screen = game.presentation.camera.to_screen(vec2(31.0, 25.0));
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(matches!(
         game.pending.last().unwrap().command,
         Command::Attack {
@@ -8526,7 +8527,7 @@ fn a_right_click_scouts_only_when_every_selected_machine_scouts() {
     let (mut game, scout, sentinel) = scout_game();
     let screen = game.presentation.camera.to_screen(off_centre(goal));
     game.presentation.selection.units = vec![scout];
-    context_order(&mut game, screen, true);
+    context_order(&mut game, screen, true, OrderReach::EXACT);
     assert!(
         matches!(
             game.pending.as_slice(),
@@ -8539,7 +8540,7 @@ fn a_right_click_scouts_only_when_every_selected_machine_scouts() {
     let (mut game, scout, sentinel_too) = scout_game();
     assert_eq!(sentinel, sentinel_too);
     game.presentation.selection.units = vec![scout, sentinel];
-    context_order(&mut game, screen, false);
+    context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(
         matches!(
             game.pending.as_slice(),

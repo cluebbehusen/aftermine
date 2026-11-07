@@ -393,6 +393,20 @@ impl SelectAll {
     }
 }
 
+/// Each unit kind among `kinds` with its count, in the order the roster
+/// lays its tiles: by name. A controller's narrowing walks the same order.
+pub(crate) fn kind_counts(kinds: impl IntoIterator<Item = UnitKind>) -> Vec<(UnitKind, usize)> {
+    let mut counts: Vec<(UnitKind, usize)> = Vec::new();
+    for kind in kinds {
+        match counts.iter_mut().find(|(k, _)| *k == kind) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((kind, 1)),
+        }
+    }
+    counts.sort_by_key(|(k, _)| k.name());
+    counts
+}
+
 /// The selection's subject: the unit whose program the dock, the
 /// portrait, and the full-opacity breadcrumbs all describe, so those
 /// surfaces agree. Majority kind first (a mixed army reads as its bulk,
@@ -1685,19 +1699,12 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
     // It sits apart from the command cards, so every selected kind stays
     // reachable without consuming command verbs.
     if units.len() > 1 {
-        let mut counts: Vec<(UnitKind, usize)> = Vec::new();
-        for u in &units {
-            match counts.iter_mut().find(|(k, _)| *k == u.kind) {
-                Some((_, n)) => *n += 1,
-                None => counts.push((u.kind, 1)),
-            }
-        }
+        let counts = kind_counts(units.iter().map(|u| u.kind));
         if counts.len() > 1 {
             // The counted portrait tiles below already name every kind.
             // Repeating the same list here makes long mixed selections run
             // into those tiles and gives the eye two competing summaries.
             panel.summary.clear();
-            counts.sort_by_key(|(k, _)| k.name());
             for (kind, n) in counts {
                 panel.roster.push(Card {
                     icon: CardIcon::Unit(kind),

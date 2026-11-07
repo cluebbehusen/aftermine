@@ -175,7 +175,9 @@ pad's held buttons before it disconnects. Pad buttons are named by position, and
 injected pad events skip the adapter. In a match, a reticle at the screen's
 center is the controller's pointer. Every screen records the sticks, so a stick
 let go under a menu cannot keep the camera moving, and hover and hit tests read
-the reticle through the same `LayoutModel` as the mouse.
+the reticle through the same `LayoutModel` as the mouse. A pad's presses act at
+the reticle through the same selection and order paths as clicks, and the
+buttons a pad holds drop with the rest of held input on every transition.
 
 The HUD lays out in a pure pass (`render::hud`) that measures text through a
 supplied function, so it runs headless. Each frame lays it out before input,
@@ -186,14 +188,15 @@ mini in landscape, 1133×744 logical points at the default UI scale; smaller
 windows are overflow stress cases.
 
 A selection holds units of one allegiance or buildings of one owner, ordered by
-id. Foreign entities can be inspected while visible, but commands stay gated to
-the controlled seat, and the simulation makes the final ownership, fog, cost,
-placement and target checks. Dead entities and hostiles that leave sight drop
-out of the selection. Panels and tooltips read simulation accessors. Static
-capabilities may show for foreign selections, but current enemy orders, loads
-and income stay private. Placement and support previews use authoritative
-queries rather than copying game rules, and an unknown concealed mine cannot
-change any player-visible feedback.
+id. A box, a two-finger box and a controller's paint sweep choose what they
+select by one priority. Foreign entities can be inspected while visible, but
+commands stay gated to the controlled seat, and the simulation makes the final
+ownership, fog, cost, placement and target checks. Dead entities and hostiles
+that leave sight drop out of the selection. Panels and tooltips read simulation
+accessors. Static capabilities may show for foreign selections, but current
+enemy orders, loads and income stay private. Placement and support previews use
+authoritative queries rather than copying game rules, and an unknown concealed
+mine cannot change any player-visible feedback.
 
 Anything that spends or cancels resolves against the commands already staged:
 grouped upgrades, grouped training, magazine orders, strike picks and queue
@@ -234,9 +237,9 @@ name keys only once one has been pressed, and name a controller's buttons while
 it is in use. Every screen offers a pointer path for what Escape does.
 
 Each finger records where it landed, and that decides what it may drive for its
-whole life. `InputState::queue_held` merges Shift with the QUEUE toggle. Touch
-placement shows a ghost that builds only on its check mark; the tap point is
-never the anchor.
+whole life. `InputState::queue_held` merges Shift, the QUEUE toggle and a held
+left trigger. Touch placement shows a ghost that builds only on its check mark;
+the tap point is never the anchor.
 
 ## Persistence and replay
 
@@ -456,7 +459,7 @@ shell.
 | ----------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`       | Screen tests, `driver/tests/menu_ux.rs`                                             |
 | Live tick and recording       | `shell/src/game.rs`                                                            | Game tests, `driver/src/smoke.rs`                                                   |
-| Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests                                                              |
+| Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests, `driver/tests/pad_match.rs`                                 |
 | Saves                         | `shell/src/autosave.rs`, `shell/src/saves.rs`                                  | Module tests                                                                        |
 | Diagnostic persistence        | `kit/src/diagnostics.rs`, `shell/src/diagnostic_report.rs`                     | Module tests                                                                        |
 | Playback and seeking          | `kit/src/playback.rs`, `shell/src/screens/playback.rs`                         | Playback tests                                                                      |

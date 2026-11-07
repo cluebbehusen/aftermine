@@ -611,6 +611,6 @@ fn held_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action:
     if on_entity && game.presentation.selection.units.is_empty() {
         select::click_select(game, tp.at, false, input.ui, select::Reach::TOUCH);
     } else {
-        orders::context_order(game, tp.at, input.queue_held());
+        orders::context_order(game, tp.at, input.queue_held(), orders::OrderReach::EXACT);
     }
 }

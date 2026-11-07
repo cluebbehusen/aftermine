@@ -125,8 +125,8 @@ use chrome::{
 };
 use entities::{
     draw_blips, draw_breadcrumbs, draw_buildings, draw_drag_rect, draw_fx, draw_group_press_ring,
-    draw_long_press_ring, draw_pending_founds, draw_pings, draw_placement_ghost, draw_rally_marker,
-    draw_range_ground, draw_range_rings, draw_touch_box, draw_units,
+    draw_long_press_ring, draw_paint_sweep, draw_pending_founds, draw_pings, draw_placement_ghost,
+    draw_rally_marker, draw_range_ground, draw_range_rings, draw_touch_box, draw_units,
 };
 pub use minimap::*;
 use panel_draw::{draw_panel, draw_panel_tooltip};
@@ -678,6 +678,7 @@ pub(crate) fn draw_world(game: &crate::game::Scene<'_>, sprites: &Sprites, input
         draw_placement_ghost(game, sprites, input);
         draw_drag_rect(game, input);
         draw_touch_box(game, input);
+        draw_paint_sweep(game, input);
         draw_long_press_ring(input);
         draw_salvage_tooltip(game, input);
     });
