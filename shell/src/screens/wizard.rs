@@ -21,7 +21,6 @@ use crate::press::{Fed, Press};
 use crate::render::prim::stroke_rect;
 use crate::screens::browser::{Browser, Out as BrowserOut};
 use crate::seating::{Occupant, Seating};
-use crate::text_field::{Edit, Field, Form, Keyboard};
 use aftermine_net::{InstallId, LobbyEvent, MemberId, PlayerName, RoomSeat, SeatHolder};
 use aftermine_protocol::{Key, RawEvent};
 use aftermine_sim::scenario::{BotDifficulty, BotStance};
@@ -171,7 +170,8 @@ pub struct NewMatchDraft {
     /// map to a 2-seat map must not leave a stale seat 7. The human's
     /// own row is inert at launch.
     pub seats: Vec<SeatPlan>,
-    /// The player's saved name, which a hosted lobby shows for the host.
+    /// The player's name, for their seat and for the host of a hosted
+    /// lobby; `None` keeps the seat's own name.
     pub player_name: Option<aftermine_net::PlayerName>,
 }
 
@@ -313,12 +313,10 @@ pub struct Wizard {
     /// The seat whose occupant was picked up, waiting for the seat to
     /// swap with.
     moving: Option<usize>,
-    /// A name prompt or a confirmation over the setup screen.
+    /// A confirmation over the setup screen.
     overlay: Option<Overlay>,
     /// Why hosting or a start failed, until the next change.
     notice: Option<String>,
-    /// A name the player gave the prompt, for the caller to save.
-    saved_name: Option<PlayerName>,
     /// Where a lobby listens.
     pub(crate) lan_bind: String,
     /// The saved LAN match this setup screen resumes, if it resumes one.
@@ -933,8 +931,6 @@ fn draft_seating(draft: &NewMatchDraft, members: &[Option<MemberId>]) -> Seating
 
 /// Something over the setup screen that takes its input.
 enum Overlay {
-    /// Asking for the player's name before hosting.
-    Naming(Form),
     /// Asking before a step that drops players; Cancel sits preselected.
     Confirm { ask: Confirm, menu: Menu<bool> },
 }
@@ -1305,7 +1301,6 @@ impl Wizard {
             moving: None,
             overlay: None,
             notice: None,
-            saved_name: None,
             lan_bind: format!("0.0.0.0:{}", aftermine_net::DEFAULT_PORT),
             resume: None,
             leaving: false,
@@ -1752,7 +1747,6 @@ impl Wizard {
         sprites: &crate::assets::Sprites,
         draft: &NewMatchDraft,
         previews: &mut PreviewCache,
-        mouse: Vec2,
     ) {
         let Some(scenario) = draft.scenario.as_deref() else {
             return;
@@ -1972,7 +1966,7 @@ impl Wizard {
                 icons,
             );
         }
-        self.draw_overlay(sprites, mouse);
+        self.draw_overlay(sprites);
     }
 
     /// The LOCAL | LAN switch: the active half filled, the cursor's outline
@@ -2032,20 +2026,14 @@ impl Wizard {
         ))
     }
 
-    /// Draws the name prompt or a confirmation over a veil.
-    fn draw_overlay(&self, sprites: &crate::assets::Sprites, mouse: Vec2) {
+    /// Draws a confirmation over a veil.
+    fn draw_overlay(&self, sprites: &crate::assets::Sprites) {
         let Some(overlay) = &self.overlay else {
             return;
         };
         let view = crate::render::viewport();
         draw_rectangle(0.0, 0.0, view.x, view.y, crate::theme::VEIL);
         match overlay {
-            Overlay::Naming(form) => form.draw(
-                sprites,
-                &crate::hint_line::HintLine::default(),
-                (TEXT_SECONDARY, macroquad::prelude::WHITE),
-                mouse,
-            ),
             Overlay::Confirm { ask, menu } => {
                 let line = match ask {
                     Confirm::Kick { .. } => String::new(),
@@ -2069,7 +2057,6 @@ impl Wizard {
     /// automation scripts depend on.
     pub fn mode_name(&self) -> &'static str {
         match (&self.overlay, self.step) {
-            (Some(Overlay::Naming(_)), _) => "player_name",
             (Some(Overlay::Confirm { .. }), _) => "confirm_lobby",
             (None, Step::Map) => "main_menu",
             (None, Step::Setup) => "match_setup",
@@ -2081,10 +2068,6 @@ impl Wizard {
     /// lists the seats, Start, and last the LOCAL | LAN switch.
     pub fn ui_surface(&self, draft: &NewMatchDraft) -> (String, Vec<String>, usize) {
         match (&self.overlay, self.step) {
-            (Some(Overlay::Naming(form)), _) => {
-                let view = form.menu(|_| ()).view();
-                (view.title, view.items, view.selected)
-            }
             (Some(Overlay::Confirm { menu, .. }), _) => {
                 let view = menu.view();
                 (view.title, view.items, view.selected)
@@ -2205,12 +2188,6 @@ impl Wizard {
     }
 }
 
-fn name_check(name: &str) -> Result<(), &'static str> {
-    PlayerName::new(name)
-        .map(drop)
-        .map_err(aftermine_net::NameError::reason)
-}
-
 /// The first chair, in display order, a joining member takes: an open one
 /// nobody holds, or else a bot's; `None` when every chair holds a person.
 fn seat_for_joiner(
@@ -2273,22 +2250,14 @@ impl Wizard {
         self.lan.as_ref().map_or(&[], |lan| lan.members.as_slice())
     }
 
-    /// Opens the LAN lobby, asking for the player's name first if none is
-    /// saved. Every chair but the player's opens for joiners.
+    /// Opens the LAN lobby under the player's name. Every chair but the
+    /// player's opens for joiners.
     fn open_lan(&mut self, draft: &mut NewMatchDraft) {
         let Some(scenario) = draft.scenario.as_deref() else {
             return;
         };
         if scenario.players.is_empty() {
             self.notice = Some("This map has no seats".to_owned());
-            return;
-        }
-        if draft.player_name.is_none() {
-            let field =
-                Field::new("", PlayerName::MAX_CHARS, PlayerName::accepts).validated(name_check);
-            self.overlay = Some(Overlay::Naming(
-                Form::new("YOUR NAME", "Host", vec![field], 0).without_cancel(),
-            ));
             return;
         }
         match HostLobby::open(&self.lan_bind, &crate::build_identity().revision, scenario) {
@@ -2511,27 +2480,6 @@ impl Wizard {
         Ok(())
     }
 
-    /// A name the player gave the prompt since the last call, to save.
-    pub fn take_saved_name(&mut self) -> Option<PlayerName> {
-        self.saved_name.take()
-    }
-
-    /// The keyboard the name prompt asks for while it is up.
-    pub fn keyboard(&self) -> Option<Keyboard> {
-        match &self.overlay {
-            Some(Overlay::Naming(form)) => Some(form.keyboard()),
-            _ => None,
-        }
-    }
-
-    /// Consumes the name prompt's request to raise the on-screen keyboard.
-    pub fn take_keyboard_request(&mut self) -> bool {
-        match &mut self.overlay {
-            Some(Overlay::Naming(form)) => form.take_keyboard_request(),
-            _ => false,
-        }
-    }
-
     /// Runs the overlay for a frame.
     fn update_overlay(
         &mut self,
@@ -2540,36 +2488,21 @@ impl Wizard {
         draft: &mut NewMatchDraft,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) {
-        match self.overlay.as_mut() {
-            Some(Overlay::Naming(form)) => match form.update(events, sounds) {
-                Edit::Commit => {
-                    let name = PlayerName::new(form.value(0));
-                    self.overlay = None;
-                    if let Ok(name) = name {
-                        draft.player_name = Some(name.clone());
-                        self.saved_name = Some(name);
-                        self.open_lan(draft);
-                    }
-                }
-                Edit::Cancel => self.overlay = None,
-                Edit::Stay => {}
-            },
-            Some(Overlay::Confirm { ask, menu }) => {
-                let ask = *ask;
-                let escaped = events
-                    .iter()
-                    .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
-                if let Some(picked) = menu.handle(events, mouse) {
-                    sounds.push((SoundKind::Click, None));
-                    self.overlay = None;
-                    if picked.value {
-                        self.confirmed(ask, draft);
-                    }
-                } else if escaped {
-                    self.overlay = None;
-                }
+        let Some(Overlay::Confirm { ask, menu }) = self.overlay.as_mut() else {
+            return;
+        };
+        let ask = *ask;
+        let escaped = events
+            .iter()
+            .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
+        if let Some(picked) = menu.handle(events, mouse) {
+            sounds.push((SoundKind::Click, None));
+            self.overlay = None;
+            if picked.value {
+                self.confirmed(ask, draft);
             }
-            None => {}
+        } else if escaped {
+            self.overlay = None;
         }
     }
 

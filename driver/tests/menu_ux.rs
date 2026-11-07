@@ -268,19 +268,20 @@ fn every_screen_transition_answers_the_walk() -> Result<()> {
 
     activate_labeled(&mut client, "join match")?;
     assert_mode(&mut client, "join_match", "Home > Join Match")?;
-    // A fresh settings file has no name, so the name field takes the text.
+    // A fresh settings file goes by the first default name, so the address
+    // field takes the text.
     inject(&mut client, RawEvent::Text { ch: '7' })?;
     let fields = ui(&mut client)?.items;
     assert!(
-        fields.len() == 2 && fields[0].ends_with("7_"),
-        "the name field takes text: {fields:?}"
+        fields.len() == 2 && fields[0].ends_with("Anvil") && fields[1].ends_with("7_"),
+        "the address field takes text: {fields:?}"
     );
     press_key(&mut client, Key::Tab)?;
     inject(&mut client, RawEvent::Text { ch: '7' })?;
     let fields = ui(&mut client)?.items;
     assert!(
-        fields[1].ends_with("7_"),
-        "Tab moves to the address field: {fields:?}"
+        fields[0].ends_with("Anvil7_"),
+        "Tab moves to the name field: {fields:?}"
     );
     press_key(&mut client, Key::Escape)?;
     assert_mode(&mut client, "home", "Join Match > Esc")?;
@@ -354,7 +355,7 @@ fn a_controller_walks_the_menus_through_the_same_funnel() -> Result<()> {
     press_pad(&mut client, PadButton::East)?;
     assert_mode(&mut client, "home", "map list > Circle")?;
 
-    // Join Match opens with its name field taking text, where keys keep
+    // Join Match opens with its address field taking text, where keys keep
     // their conventional meaning; the pad must still find the way out.
     activate_labeled_by_pad(&mut client, "join match")?;
     assert_mode(&mut client, "join_match", "Home > Join Match by pad")?;

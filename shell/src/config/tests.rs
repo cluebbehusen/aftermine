@@ -291,6 +291,36 @@ fn an_install_id_is_made_once_kept_and_a_bad_one_forgotten() {
 }
 
 #[test]
+fn a_player_without_a_name_goes_by_their_installs_default() {
+    for name in DEFAULT_NAMES {
+        let valid = aftermine_net::PlayerName::new(name).map(String::from);
+        assert_eq!(
+            valid.as_deref(),
+            Ok(name),
+            "a default passes the name rules"
+        );
+    }
+    let mut config = Config::default();
+    assert_eq!(config.name().as_str(), "Anvil", "the first, without an id");
+    for (bits, picked) in [(0, "Anvil"), (8, "Rivet"), (19, "Shale")] {
+        config.install_id = Some(aftermine_net::InstallId::new(bits).to_hex());
+        assert_eq!(config.name().as_str(), picked);
+    }
+
+    // Confirming the default leaves it a default, kept off iCloud.
+    let default = config.name();
+    assert!(!config.set_name(&default));
+    assert_eq!(config.player_name, None);
+    let alex = aftermine_net::PlayerName::new("Alex").unwrap();
+    assert!(config.set_name(&alex));
+    assert!(!config.set_name(&alex), "already theirs");
+    assert_eq!(config.player_name.as_deref(), Some("Alex"));
+    assert_eq!(config.name(), alex);
+    assert!(config.set_name(&default), "given over another name");
+    assert_eq!(config.player_name.as_deref(), Some("Shale"));
+}
+
+#[test]
 fn finished_lessons_and_the_first_match_persist_once_each() {
     use crate::tutorial::Lesson;
     let mut config = Config::default();

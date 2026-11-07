@@ -455,15 +455,26 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     let mut config = Config::default();
     let mut s = SettingsScreen::open(&config);
     let name = Item::Setting(Row::PlayerName);
-    assert_eq!(label(&s, name), "Name: not set");
+    assert_eq!(label(&s, name), "Name: Anvil", "the default stands in");
     focus(&mut s, name);
     let up = drive(&mut s, &mut config, &press(Key::Enter), false);
     assert!(!up.dirty);
     assert_eq!(s.mode_name(), "player_name");
     assert!(!s.edits_bindings(), "the form edits text, not bindings");
     assert_eq!(s.keyboard(), Some(Keyboard::Text));
-    assert_eq!(s.menu.view().items, vec!["_"]);
+    assert_eq!(s.menu.view().items, vec!["Anvil_"]);
 
+    // Saving the default unchanged leaves it a default, which never syncs.
+    let kept = drive(&mut s, &mut config, &press(Key::Enter), false);
+    assert!(!kept.dirty);
+    assert_eq!(config.player_name, None);
+    assert_eq!(s.mode_name(), "settings");
+
+    drive(&mut s, &mut config, &press(Key::Enter), false);
+    for _ in "Anvil".chars() {
+        drive(&mut s, &mut config, &press(Key::Backspace), false);
+    }
+    assert_eq!(s.menu.view().items, vec!["_"]);
     let refused = drive(&mut s, &mut config, &press(Key::Enter), false);
     assert!(!refused.dirty, "a blank name keeps the form up");
     assert_eq!(s.mode_name(), "player_name");

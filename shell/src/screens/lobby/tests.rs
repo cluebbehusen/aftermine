@@ -27,7 +27,7 @@ fn join(name: &str, address: &str) -> Out {
 #[test]
 fn a_new_player_types_a_name_then_an_address_and_joins_on_the_default_port() {
     crate::render::set_viewport(1280.0, 800.0);
-    let mut screen = LobbyScreen::join(None, "");
+    let mut screen = LobbyScreen::join("", "");
     assert_eq!(screen.mode_name(), "join_match");
     assert_eq!(screen.keyboard(), Some(Keyboard::Text));
     feed(&mut screen, &typed("Alex Q. 1/2"));
@@ -49,7 +49,7 @@ fn a_new_player_types_a_name_then_an_address_and_joins_on_the_default_port() {
 #[test]
 fn a_returning_player_starts_on_the_address_and_bad_input_says_why() {
     crate::render::set_viewport(1280.0, 800.0);
-    let mut screen = LobbyScreen::join(Some("Connor"), "192.168.1");
+    let mut screen = LobbyScreen::join("Connor", "192.168.1");
     assert_eq!(screen.keyboard(), Some(Keyboard::Address));
     assert_eq!(press(&mut screen, Key::Enter), Out::Stay);
     let Face::Join { form, .. } = &screen.face else {
@@ -61,7 +61,7 @@ fn a_returning_player_starts_on_the_address_and_bad_input_says_why() {
         "name and address share a row"
     );
 
-    let mut screen = LobbyScreen::join(Some("   "), "connor-mbp:5000");
+    let mut screen = LobbyScreen::join("   ", "connor-mbp:5000");
     assert_eq!(
         screen.keyboard(),
         Some(Keyboard::Text),
@@ -88,7 +88,7 @@ fn a_returning_player_starts_on_the_address_and_bad_input_says_why() {
     let host = [63, 63, 63, 61].map(|len| "a".repeat(len)).join(".");
     let longest = format!("{host}:65535");
     assert_eq!(longest.len(), ADDRESS_MAX);
-    let mut screen = LobbyScreen::join(Some("Connor"), &longest);
+    let mut screen = LobbyScreen::join("Connor", &longest);
     assert_eq!(press(&mut screen, Key::Enter), join("Connor", &longest));
 }
 
@@ -141,7 +141,7 @@ fn a_failed_join_returns_to_the_form_with_the_reason_and_both_values() {
 fn back_leaves_the_form_and_steps_out_of_a_join_onto_the_form() {
     crate::render::set_viewport(1280.0, 800.0);
     for touch in [false, true] {
-        let mut screen = LobbyScreen::join(Some("Alex"), "10.0.0.2");
+        let mut screen = LobbyScreen::join("Alex", "10.0.0.2");
         let mut sounds = Vec::new();
         let out = screen.update(
             &crate::button::press_back(touch),
@@ -229,11 +229,11 @@ fn a_typed_address_that_cannot_parse_opens_the_form_with_why() {
     let screen = LobbyScreen::failed("", "nope:0", "the port must be a number".to_owned());
     assert_eq!(screen.subtitle(), "the port must be a number");
     assert_eq!(screen.keyboard(), Some(Keyboard::Text));
-    assert_eq!(LobbyScreen::join(None, "").subtitle(), "");
+    assert_eq!(LobbyScreen::join("", "").subtitle(), "");
 }
 
 /// A Join form listening on loopback, and an advertiser aimed at it.
-fn listening(name: Option<&str>) -> (LobbyScreen, aftermine_net::Advertiser) {
+fn listening(name: &str) -> (LobbyScreen, aftermine_net::Advertiser) {
     let scanner = aftermine_net::Scanner::bind_to("127.0.0.1:0", "abc").unwrap();
     let target = scanner.local_addr().unwrap();
     let screen = LobbyScreen::join(name, "").with_scanner(scanner);
@@ -282,7 +282,7 @@ fn tap(at: Vec2) -> [RawEvent; 2] {
 #[test]
 fn a_lobby_heard_on_the_network_lists_and_a_tap_joins_it() {
     crate::render::set_viewport(1280.0, 800.0);
-    let (mut screen, mut advertiser) = listening(Some("Alex"));
+    let (mut screen, mut advertiser) = listening("Alex");
     advertiser.poll(&beacon("abc"), Duration::ZERO);
     heard(&mut screen, 3);
     assert_eq!(
@@ -299,7 +299,7 @@ fn a_lobby_heard_on_the_network_lists_and_a_tap_joins_it() {
 #[test]
 fn the_keyboard_reaches_a_listed_lobby_from_the_last_field() {
     crate::render::set_viewport(1280.0, 800.0);
-    let (mut screen, mut advertiser) = listening(Some("Alex"));
+    let (mut screen, mut advertiser) = listening("Alex");
     advertiser.poll(&beacon("abc"), Duration::ZERO);
     heard(&mut screen, 3);
     assert_eq!(press(&mut screen, Key::Down), Out::Stay);
@@ -317,7 +317,7 @@ fn the_keyboard_reaches_a_listed_lobby_from_the_last_field() {
 #[test]
 fn a_tap_joins_the_lobby_it_pressed_even_if_the_list_reorders() {
     crate::render::set_viewport(1280.0, 800.0);
-    let (mut screen, mut advertiser) = listening(Some("Alex"));
+    let (mut screen, mut advertiser) = listening("Alex");
     advertiser.poll(&beacon("abc"), Duration::ZERO);
     heard(&mut screen, 3);
     let Face::Join { form, .. } = &screen.face else {
@@ -344,7 +344,7 @@ fn a_tap_joins_the_lobby_it_pressed_even_if_the_list_reorders() {
 #[test]
 fn joining_a_listed_lobby_still_needs_a_name_and_other_builds_are_inert() {
     crate::render::set_viewport(1280.0, 800.0);
-    let (mut screen, mut advertiser) = listening(None);
+    let (mut screen, mut advertiser) = listening("");
     advertiser.poll(&beacon("abc"), Duration::ZERO);
     heard(&mut screen, 3);
     let Face::Join { form, .. } = &screen.face else {
@@ -361,7 +361,7 @@ fn joining_a_listed_lobby_still_needs_a_name_and_other_builds_are_inert() {
         "the name takes focus"
     );
 
-    let (mut screen, mut advertiser) = listening(Some("Alex"));
+    let (mut screen, mut advertiser) = listening("Alex");
     advertiser.poll(&beacon("other"), Duration::ZERO);
     heard(&mut screen, 3);
     assert_eq!(
