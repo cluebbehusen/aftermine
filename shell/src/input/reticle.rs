@@ -118,7 +118,7 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec
     // A stick held since a menu was up moves the camera too, so it makes
     // the pad the pointer even though the match never saw it move.
     if left != Vec2::ZERO || right != Vec2::ZERO {
-        input.last_pointer = Pointer::Pad;
+        input.pad_points();
     }
     let pad = input.last_pointer == Pointer::Pad;
     let camera = &mut game.presentation.camera;

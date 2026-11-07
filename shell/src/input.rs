@@ -1332,6 +1332,19 @@ impl InputState {
             .or_else(|| placement.ghost.as_ref()?.row.as_ref().map(|row| &row.plan))
     }
 
+    /// A controller is the pointer now. A finger's placement ghost and
+    /// strike aim stand in for the hover the reticle gives, so they go, and
+    /// the preview, the ribbon and the next press all read the reticle.
+    fn pad_points(&mut self) {
+        self.last_pointer = Pointer::Pad;
+        if let Some(placement) = &mut self.placing {
+            placement.ghost = None;
+        }
+        if let Some(strike) = &mut self.striking {
+            strike.aim = None;
+        }
+    }
+
     /// Who lays the live placement stroke, while one is down.
     pub(crate) fn stroke_by(&self) -> Option<Presser> {
         self.placing.as_ref()?.stroke.as_ref().map(|held| held.by)
@@ -2306,13 +2319,13 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         RawEvent::TouchUp { id, x, y } => touch::up(game, input, bindings, id, vec2(x, y)),
         RawEvent::TouchCancel { id } => touch::cancel(input, id),
         RawEvent::PadDown { pad, button } => {
-            input.last_pointer = Pointer::Pad;
+            input.pad_points();
             pad_controls::press(game, input, bindings, pad, button);
             reticle::press(game, input, bindings, button);
         }
         RawEvent::PadUp { pad, button } => pad_controls::release(game, input, pad, button),
         RawEvent::PadStick { x, y, .. } if (x, y) != (0.0, 0.0) => {
-            input.last_pointer = Pointer::Pad;
+            input.pad_points();
         }
         RawEvent::PadDisconnected { pad } => {
             // Hardware releases a pad's buttons before it goes; injected
@@ -2460,6 +2473,13 @@ fn armed_click(
     if click_on_hud(game, p) && crate::render::minimap_world_at(&game.view(), p).is_none() {
         return false;
     }
+    // What the press names: exactly what lies under a click or tap, and as
+    // far around a controller's reticle as it snaps, so the unit or
+    // structure it brackets is the one an armed order takes.
+    let reach = match by {
+        Presser::Pad(_) => reticle::reach(input).in_world(input.ui, game.presentation.camera.zoom),
+        Presser::Mouse | Presser::Touch => OrderReach::EXACT,
+    };
     if let Some(strike) = &mut input.striking {
         // Any tile on the map may be struck, seen or not; the minimap
         // names one as well as the world.
@@ -2482,15 +2502,8 @@ fn armed_click(
         return true;
     }
     if !input.rallying.is_empty() {
-        // The minimap names ground only; the world names the own unit under
-        // the click, or as far around a controller's reticle as it snaps,
-        // which new units then escort, or else the ground.
-        let reach = match by {
-            Presser::Pad(_) => {
-                reticle::reach(input).in_world(input.ui, game.presentation.camera.zoom)
-            }
-            Presser::Mouse | Presser::Touch => OrderReach::EXACT,
-        };
+        // The minimap names ground only; the world names the own unit the
+        // press reaches, which new units then escort, or else the ground.
         let rally = if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
             Some(aftermine_sim::Rally::Tile(ground_tile(&game.state, world)))
         } else {
@@ -2553,7 +2566,7 @@ fn armed_click(
         }
         return true;
     }
-    armed_verb_click(game, input, bindings, p)
+    armed_verb_click(game, input, bindings, p, reach)
 }
 
 /// The anchor that centers `kind`'s footprint on a finger at `world`,
@@ -3201,12 +3214,14 @@ fn deny(game: &mut Game) {
 }
 
 /// The armed left-click verbs after placement: salvage, weld, run, and
-/// hunt.
+/// hunt. A salvage, weld or escort takes the structure or unit within
+/// `reach` of the press.
 fn armed_verb_click(
     game: &mut Game,
     input: &mut InputState,
     bindings: &BindingMap,
     p: Vec2,
+    reach: OrderReach,
 ) -> bool {
     if input.armed(ClickVerb::Salvage) {
         // As in placement: the minimap jumps the camera, a misclick keeps
@@ -3216,8 +3231,7 @@ fn armed_verb_click(
             reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
-            let tile = numeric::tile_at(world);
-            let target = game.state.buildings_at(tile).find(|b| {
+            let target = reach.building(game, world, |b| {
                 b.player == game.presentation.human
                     && b.built()
                     && b.kind != aftermine_sim::BuildingKind::Foundry
@@ -3265,7 +3279,7 @@ fn armed_verb_click(
                     let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
                     (at.distance(world), u.id, u.kind)
                 })
-                .filter(|(distance, _, kind)| *distance <= unit_pick_radius(*kind))
+                .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
                 .min_by(|a, b| a.0.total_cmp(&b.0));
             let Some((_, target, _)) = patient else {
                 game.presentation.toast("Can't repair that");
@@ -3321,7 +3335,7 @@ fn armed_verb_click(
                     let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
                     (at.distance(world), u.id, u.kind)
                 })
-                .filter(|(distance, _, kind)| *distance <= unit_pick_radius(*kind))
+                .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
                 .min_by(|a, b| a.0.total_cmp(&b.0));
             let Some((_, target, _)) = picked else {
                 game.presentation.toast("Pick one of your units");

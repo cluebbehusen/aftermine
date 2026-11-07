@@ -4,7 +4,7 @@
 
 use super::super::tests::pad_scene::{
     FRAME, PAD, ZOOM, building_at, denied, down, feed, frame, left_stick, pad_input, press,
-    push_until, rest_on, scene, unit_at, up,
+    push_until, rest_on, scene, unit_at, up, wound_building,
 };
 use super::*;
 use crate::input::{ClickVerb, Pointer, preview_spot, unit_pick_radius};
@@ -399,4 +399,118 @@ fn x_sets_a_rally_on_the_ground_or_onto_a_unit_the_reticle_reaches() {
     press(&mut game, &mut input, PadButton::South);
     assert_eq!(rallies(&game), [Some(Rally::Unit(escort))]);
     assert_eq!(input.last_pointer, Pointer::Pad);
+}
+
+/// Takes `hp` off unit `id` through the state's own serialization.
+fn wound_unit(game: &mut Game, id: UnitId, hp: u64) {
+    let mut data = serde_json::to_value(&*game.state).expect("state serializes");
+    let unit = data["units"]
+        .as_array_mut()
+        .expect("units")
+        .iter_mut()
+        .find(|u| u["id"] == serde_json::json!(id))
+        .expect("the unit is listed");
+    unit["hp"] = serde_json::json!(unit["hp"].as_u64().expect("hp") - hp);
+    *game.state = serde_json::from_value(data).expect("the wounded state loads");
+}
+
+#[test]
+fn repair_escort_and_salvage_take_what_the_reticle_brackets() {
+    let mut game = scene(
+        &[
+            (0, UnitKind::Harvester, 26, 20),
+            (0, UnitKind::Lancer, 34, 20),
+        ],
+        &[(0, BuildingKind::Turret, 30, 24)],
+    );
+    let mut input = pad_input(&mut game);
+    let harvester = unit_at(&game, 26, 20);
+    let lancer = unit_at(&game, 34, 20);
+    let turret = building_at(&game, 30, 24);
+    wound_unit(&mut game, lancer, 10);
+    wound_building(&mut game, turret, 10);
+    game.presentation.selection.units = vec![harvester];
+    // Off the Lancer's body but inside the reticle's reach.
+    let reach = 24.0 / ZOOM;
+    let off = f32::midpoint(unit_pick_radius(UnitKind::Lancer), reach);
+    assert!(unit_pick_radius(UnitKind::Lancer) < off && off < reach);
+    let beside = vec2(34.5 + off, 20.5);
+
+    dispatch(&mut game, &mut input, Action::RepairUnit);
+    rest_on(&mut game, &mut input, beside);
+    assert!(input.reticle.snap().is_some(), "the reticle brackets it");
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(
+        commands(&game),
+        [Command::RepairUnit {
+            units: vec![harvester],
+            target: lancer,
+            queue: false,
+        }]
+    );
+
+    game.pending.clear();
+    dispatch(&mut game, &mut input, Action::Accompany);
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        commands(&game),
+        [Command::Accompany {
+            units: vec![harvester],
+            target: lancer,
+            queue: false,
+        }]
+    );
+
+    // Off the Turret's footprint corner but inside the bracket's reach.
+    game.pending.clear();
+    dispatch(&mut game, &mut input, Action::Salvage);
+    rest_on(&mut game, &mut input, vec2(29.7, 23.7));
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(
+        commands(&game),
+        [Command::Salvage {
+            units: vec![harvester],
+            building: turret,
+            queue: false,
+        }]
+    );
+}
+
+#[test]
+fn a_controller_taking_over_from_a_finger_drops_its_ghost_and_aim() {
+    let (mut game, mut input) = placing(BARRICADE);
+    rest_on(&mut game, &mut input, vec2(28.5, 20.5));
+    super::super::drop_ghost_in_view(&game.view(), &mut input);
+    assert!(input.ghost_anchor().is_some(), "premise: a finger's ghost");
+    feed(&mut game, &mut input, &[left_stick(0.3, 0.0)]);
+    assert_eq!(input.ghost_anchor(), None, "the reticle takes over");
+    feed(&mut game, &mut input, &[left_stick(0.0, 0.0)]);
+    rest_on(&mut game, &mut input, vec2(28.5, 20.5));
+    super::super::drop_ghost_in_view(&game.view(), &mut input);
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(builds(&game), [(TilePos::new(28, 20), false)]);
+
+    let mut game = scene(&[], &[(0, BuildingKind::Spire, 20, 10)]);
+    let mut input = pad_input(&mut game);
+    let spire = building_at(&game, 20, 10);
+    load_warhead(&mut game, spire);
+    game.presentation.selection.buildings = vec![spire];
+    dispatch(&mut game, &mut input, Action::Launch);
+    rest_on(&mut game, &mut input, vec2(40.5, 30.5));
+    super::super::drop_aim_in_view(&game.view(), &mut input);
+    assert!(
+        input
+            .striking
+            .as_ref()
+            .and_then(crate::input::Strike::aim)
+            .is_some()
+    );
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(
+        commands(&game),
+        [Command::Launch {
+            building: spire,
+            target: TilePos::new(40, 30),
+        }]
+    );
 }
