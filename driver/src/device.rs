@@ -1,7 +1,7 @@
-//! `cargo ios`: build the iPad app through the Xcode project in `apple/`,
-//! install it, and launch it on a paired iPad or an iPad simulator. With
-//! several targets and no `--device`, it lists them and asks, remembering
-//! the choice for next time.
+//! `cargo ipad` and `cargo tv`: build the iPad or Apple TV app through the
+//! Xcode project in `apple/`, install it, and launch it on a paired device
+//! or a simulator. With several targets and no `--device`, it lists them and
+//! asks, remembering each family's choice for next time.
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
@@ -9,6 +9,81 @@ use std::fmt::Write as _;
 use std::io::{BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Which app to build, and so which devices can run it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Family {
+    /// The iPad app, `cargo ipad`.
+    Ipad,
+    /// The Apple TV app, `cargo tv`.
+    Tv,
+}
+
+impl Family {
+    fn command(self) -> &'static str {
+        match self {
+            Family::Ipad => "cargo ipad",
+            Family::Tv => "cargo tv",
+        }
+    }
+
+    fn noun(self) -> &'static str {
+        match self {
+            Family::Ipad => "iPad",
+            Family::Tv => "Apple TV",
+        }
+    }
+
+    fn scheme(self) -> &'static str {
+        match self {
+            Family::Ipad => "Aftermine iPad",
+            Family::Tv => "Aftermine Apple TV",
+        }
+    }
+
+    /// Names this family's folders under `target/`.
+    fn slug(self) -> &'static str {
+        match self {
+            Family::Ipad => "ipad",
+            Family::Tv => "tv",
+        }
+    }
+
+    /// Whether a devicectl device runs this family's app. An iPhone also
+    /// reports the iOS platform, so iPads go by device type.
+    fn runs_on(self, hardware: &Value) -> bool {
+        match self {
+            Family::Ipad => hardware["deviceType"] == "iPad",
+            Family::Tv => hardware["platform"] == "tvOS",
+        }
+    }
+
+    /// The part of a simulator's device type identifier that marks it.
+    fn simulator_type(self) -> &'static str {
+        match self {
+            Family::Ipad => ".iPad",
+            Family::Tv => ".Apple-TV",
+        }
+    }
+
+    /// The OS name in a simulator runtime identifier and in its label.
+    fn runtime_os(self) -> &'static str {
+        match self {
+            Family::Ipad => "iOS",
+            Family::Tv => "tvOS",
+        }
+    }
+
+    /// Xcode's build products folder for a device or a simulator.
+    fn products(self, kind: DeviceKind) -> &'static str {
+        match (self, kind) {
+            (Family::Ipad, DeviceKind::Physical) => "Release-iphoneos",
+            (Family::Ipad, DeviceKind::Simulator { .. }) => "Release-iphonesimulator",
+            (Family::Tv, DeviceKind::Physical) => "Release-appletvos",
+            (Family::Tv, DeviceKind::Simulator { .. }) => "Release-appletvsimulator",
+        }
+    }
+}
 
 /// Somewhere the app can run.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,9 +101,9 @@ pub struct Device {
 /// How the app reaches a device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceKind {
-    /// A paired iPad, over a cable or the local network.
+    /// A paired device, over a cable or the local network.
     Physical,
-    /// An iPad simulator on this Mac.
+    /// A simulator on this Mac.
     Simulator {
         /// Whether it is running already.
         booted: bool,
@@ -41,8 +116,9 @@ impl std::fmt::Display for Device {
     }
 }
 
-/// Paired physical iPads from `xcrun devicectl list devices --json-output`.
-pub fn physical_ipads(devicectl: &Value) -> Vec<Device> {
+/// The family's paired physical devices from
+/// `xcrun devicectl list devices --json-output`.
+pub fn physical_devices(family: Family, devicectl: &Value) -> Vec<Device> {
     let devices = devicectl["result"]["devices"].as_array();
     devices
         .into_iter()
@@ -50,14 +126,14 @@ pub fn physical_ipads(devicectl: &Value) -> Vec<Device> {
         .filter(|device| {
             let hardware = &device["hardwareProperties"];
             hardware["reality"] == "physical"
-                && hardware["deviceType"] == "iPad"
+                && family.runs_on(hardware)
                 && device["connectionProperties"]["pairingState"] == "paired"
         })
         .filter_map(|device| {
             let hardware = &device["hardwareProperties"];
             let id = hardware["udid"].as_str()?;
             let name = device["deviceProperties"]["name"].as_str().unwrap_or(id);
-            let model = hardware["marketingName"].as_str().unwrap_or("iPad");
+            let model = hardware["marketingName"].as_str().unwrap_or(family.noun());
             let link = match device["connectionProperties"]["transportType"].as_str() {
                 Some("localNetwork") => "Wi-Fi",
                 Some("wired") => "USB",
@@ -73,18 +149,22 @@ pub fn physical_ipads(devicectl: &Value) -> Vec<Device> {
         .collect()
 }
 
-/// Available iPad simulators from `xcrun simctl list devices available --json`.
-pub fn ipad_simulators(simctl: &Value) -> Vec<Device> {
+/// The family's available simulators from
+/// `xcrun simctl list devices available --json`.
+pub fn simulators(family: Family, simctl: &Value) -> Vec<Device> {
     let Some(runtimes) = simctl["devices"].as_object() else {
         return Vec::new();
     };
     let mut simulators: Vec<Device> = runtimes
         .iter()
-        .filter_map(|(runtime, devices)| Some((runtime_label(runtime)?, devices.as_array()?)))
+        .filter_map(|(runtime, devices)| {
+            Some((runtime_label(family, runtime)?, devices.as_array()?))
+        })
         .flat_map(|(runtime, devices)| {
             devices.iter().filter_map(move |device| {
-                let family = device["deviceTypeIdentifier"].as_str()?;
-                if !family.contains(".iPad") || device["isAvailable"] == false {
+                let device_type = device["deviceTypeIdentifier"].as_str()?;
+                if !device_type.contains(family.simulator_type()) || device["isAvailable"] == false
+                {
                     return None;
                 }
                 let booted = device["state"] == "Booted";
@@ -111,10 +191,15 @@ pub fn ipad_simulators(simctl: &Value) -> Vec<Device> {
 }
 
 /// "iOS 27.0" from "com.apple.CoreSimulator.SimRuntime.iOS-27-0"; `None`
-/// for runtimes that cannot run an iPad app.
-fn runtime_label(runtime: &str) -> Option<String> {
-    let version = runtime.rsplit('.').next()?.strip_prefix("iOS-")?;
-    Some(format!("iOS {}", version.replace('-', ".")))
+/// for runtimes that cannot run the family's app.
+fn runtime_label(family: Family, runtime: &str) -> Option<String> {
+    let os = family.runtime_os();
+    let version = runtime
+        .rsplit('.')
+        .next()?
+        .strip_prefix(os)?
+        .strip_prefix('-')?;
+    Some(format!("{os} {}", version.replace('-', ".")))
 }
 
 /// The device a `--device` query names: an exact identifier, an exact
@@ -184,19 +269,21 @@ pub fn listing(devices: &[Device]) -> String {
     out
 }
 
-/// Builds, installs, and launches the app. `device` skips the picker;
-/// `list` prints the targets and stops.
-pub fn run(device: Option<&str>, list: bool) -> Result<()> {
+/// Builds, installs, and launches the family's app. `device` skips the
+/// picker; `list` prints the targets and stops.
+pub fn run(family: Family, device: Option<&str>, list: bool) -> Result<()> {
     if !cfg!(target_os = "macos") {
-        bail!("cargo ios needs macOS with Xcode");
+        bail!("{} needs macOS with Xcode", family.command());
     }
     let root = workspace_root();
-    let devices = discover()?;
+    let devices = discover(family)?;
     if list {
         print!("{}", listing(&devices));
         return Ok(());
     }
-    let remembered_path = root.join("target").join("ios-device");
+    let remembered_path = root
+        .join("target")
+        .join(format!("{}-device", family.slug()));
     let target = match device {
         Some(query) => find(&devices, query)?.clone(),
         None => pick(
@@ -209,7 +296,7 @@ pub fn run(device: Option<&str>, list: bool) -> Result<()> {
     let _ = std::fs::write(&remembered_path, &target.id);
 
     println!("building for {target}");
-    let app = build(&root, &target)?;
+    let app = build(family, &root, &target)?;
     let bundle = bundle_id(&app.join("Info.plist"))?;
     match target.kind {
         DeviceKind::Physical => install_physical(&target, &app, &bundle),
@@ -221,15 +308,16 @@ pub(crate) fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
-/// Paired iPads first, then simulators.
-fn discover() -> Result<Vec<Device>> {
-    combine(list_physical(), list_simulators())
+/// Paired devices first, then simulators.
+fn discover(family: Family) -> Result<Vec<Device>> {
+    combine(family, list_physical(family), list_simulators(family))
 }
 
 /// Joins both discoveries. A tool that fails is reported rather than read
 /// as "no devices": its error prints as a warning when the other tool
 /// found something to run on, and becomes the error when nothing did.
 pub fn combine(
+    family: Family,
     physical: std::result::Result<Vec<Device>, String>,
     simulators: std::result::Result<Vec<Device>, String>,
 ) -> Result<Vec<Device>> {
@@ -243,9 +331,10 @@ pub fn combine(
     }
     if devices.is_empty() {
         if problems.is_empty() {
+            let noun = family.noun();
             bail!(
-                "no paired iPad or iPad simulator found; pair an iPad in Xcode or \
-                 add an iPad simulator"
+                "no paired {noun} or {noun} simulator found; pair an {noun} in Xcode or \
+                 add an {noun} simulator"
             );
         }
         bail!("no devices found:\n{}", problems.join("\n"));
@@ -256,9 +345,8 @@ pub fn combine(
     Ok(devices)
 }
 
-fn list_physical() -> std::result::Result<Vec<Device>, String> {
-    let json =
-        std::env::temp_dir().join(format!("aftermine-ios-devices-{}.json", std::process::id()));
+fn list_physical(family: Family) -> std::result::Result<Vec<Device>, String> {
+    let json = std::env::temp_dir().join(format!("aftermine-devices-{}.json", std::process::id()));
     let output = Command::new("xcrun")
         .args(["devicectl", "list", "devices", "--quiet", "--json-output"])
         .arg(&json)
@@ -273,10 +361,10 @@ fn list_physical() -> std::result::Result<Vec<Device>, String> {
     }
     let value: Value = serde_json::from_str(&text)
         .map_err(|error| format!("xcrun devicectl wrote unreadable JSON: {error}"))?;
-    Ok(physical_ipads(&value))
+    Ok(physical_devices(family, &value))
 }
 
-fn list_simulators() -> std::result::Result<Vec<Device>, String> {
+fn list_simulators(family: Family) -> std::result::Result<Vec<Device>, String> {
     let output = Command::new("xcrun")
         .args(["simctl", "list", "devices", "available", "--json"])
         .output()
@@ -286,7 +374,7 @@ fn list_simulators() -> std::result::Result<Vec<Device>, String> {
     }
     let value: Value = serde_json::from_slice(&output.stdout)
         .map_err(|error| format!("xcrun simctl printed unreadable JSON: {error}"))?;
-    Ok(ipad_simulators(&value))
+    Ok(simulators(family, &value))
 }
 
 fn pick(devices: &[Device], remembered: Option<&str>) -> Result<Device> {
@@ -315,19 +403,18 @@ fn pick(devices: &[Device], remembered: Option<&str>) -> Result<Device> {
     }
 }
 
-fn build(root: &Path, target: &Device) -> Result<PathBuf> {
+fn build(family: Family, root: &Path, target: &Device) -> Result<PathBuf> {
+    let derived = format!("target/{}-xcode", family.slug());
+    // Registering lets the first build for a newly paired device sign for it.
     let status = Command::new("xcodebuild")
         .current_dir(root)
+        .args(["-project", "apple/Aftermine.xcodeproj", "-scheme"])
+        .arg(family.scheme())
+        .args(["-configuration", "Release", "-derivedDataPath"])
+        .arg(&derived)
         .args([
-            "-project",
-            "apple/Aftermine.xcodeproj",
-            "-scheme",
-            "Aftermine iPad",
-            "-configuration",
-            "Release",
-            "-derivedDataPath",
-            "target/ios-xcode",
             "-allowProvisioningUpdates",
+            "-allowProvisioningDeviceRegistration",
             "-quiet",
             "-destination",
         ])
@@ -338,13 +425,10 @@ fn build(root: &Path, target: &Device) -> Result<PathBuf> {
     if !status.success() {
         bail!("xcodebuild failed");
     }
-    let products = match target.kind {
-        DeviceKind::Physical => "Release-iphoneos",
-        DeviceKind::Simulator { .. } => "Release-iphonesimulator",
-    };
     Ok(root
-        .join("target/ios-xcode/Build/Products")
-        .join(products)
+        .join(derived)
+        .join("Build/Products")
+        .join(family.products(target.kind))
         .join("Aftermine.app"))
 }
 

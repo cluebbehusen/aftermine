@@ -1,0 +1,20 @@
+// Build settings for the Apple TV app.
+
+#include "Shared.xcconfig"
+
+INFOPLIST_FILE = AppleTV/Info.plist
+CODE_SIGN_ENTITLEMENTS = AppleTV/Aftermine.entitlements
+
+SDKROOT = appletvos
+SUPPORTED_PLATFORMS = appletvos appletvsimulator
+TARGETED_DEVICE_FAMILY = 3
+
+// A tvOS app icon is a layered image stack, which the asset catalog does
+// not have yet.
+ASSETCATALOG_COMPILER_APPICON_NAME =
+
+// build_rust.sh passes this to Cargo: rustc and the C dependencies must
+// link for the same minimum OS.
+TVOS_DEPLOYMENT_TARGET = 17.0
+
+#include? "Local.xcconfig"
