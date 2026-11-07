@@ -5,8 +5,11 @@
 //! finger. Menu input arrives through the same [`RawEvent`] funnel as
 //! gameplay, so injected events drive menus exactly like hardware.
 
+use crate::assets::Sprites;
+use crate::hint_line::HintLine;
 use crate::numeric;
 use crate::numeric::Fit;
+use crate::pad::PadIcon;
 use crate::render::prim::stroke_rect;
 use aftermine_protocol::{MouseButton, RawEvent};
 use aftermine_sim::Scenario;
@@ -934,22 +937,23 @@ impl<R: Clone> Menu<R> {
         }
     }
 
-    /// Draws the menu (over whatever the caller already drew).
-    pub fn draw(&self, subtitle: &str) {
-        self.draw_with_coaching(subtitle, None);
+    /// Draws the menu (over whatever the caller already drew). `sprites`
+    /// holds the controller icons the footer may show.
+    pub fn draw(&self, sprites: &Sprites, subtitle: &str) {
+        self.draw_with_coaching(sprites, subtitle, None);
     }
 
     /// Draws the menu with `coaching` in the footer line in place of the
     /// standard key help. The footer is coaching either way: it fades in
     /// only when the player seems stuck.
-    pub fn draw_with_coaching(&self, subtitle: &str, coaching: Option<&str>) {
-        self.draw_face(subtitle, coaching, false);
+    pub fn draw_with_coaching(&self, sprites: &Sprites, subtitle: &str, coaching: Option<&str>) {
+        self.draw_face(sprites, subtitle, coaching, false);
     }
 
     /// Draws the menu while work it started runs: every row dimmed and
     /// inert-looking, `subtitle` saying what is happening, no footer.
-    pub fn draw_busy(&self, subtitle: &str) {
-        self.draw_face(subtitle, None, true);
+    pub fn draw_busy(&self, sprites: &Sprites, subtitle: &str) {
+        self.draw_face(sprites, subtitle, None, true);
     }
 
     /// Draws the plate a dialog's title and rows sit on, which holds them
@@ -978,7 +982,7 @@ impl<R: Clone> Menu<R> {
         );
     }
 
-    fn draw_face(&self, subtitle: &str, coaching: Option<&str>, busy: bool) {
+    fn draw_face(&self, sprites: &Sprites, subtitle: &str, coaching: Option<&str>, busy: bool) {
         let subtitle = binding_hint(subtitle);
         let s = self.scale();
         let list = self.window();
@@ -1154,22 +1158,16 @@ impl<R: Clone> Menu<R> {
         let scrolls = first > 0 || first + visible < self.lines.len();
         let hint = coaching.map_or_else(
             || menu_footer(crate::platform::hands(), scrolls),
-            binding_hint,
+            |coaching| HintLine::from(binding_hint(coaching)),
         );
-        let hint = crate::typography::sentence_case(&hint);
-        let hint_size = crate::typography::fit(
-            &hint,
-            crate::theme::Type::Label.at(s),
-            view_w() - 32.0 * s,
-            crate::theme::Type::Caption,
-        );
-        let hint_dims = measure_text(&hint, None, numeric::font_size(hint_size), 1.0);
-        draw_text(
-            &hint,
-            (view_w() - hint_dims.width) * 0.5,
+        hint.sentence_cased().draw(
+            sprites,
+            view_w() * 0.5,
             view_h() - 24.0 * s,
-            hint_size,
+            view_w() - 32.0 * s,
+            (crate::theme::Type::Label, crate::theme::Type::Caption),
             crate::hints::fade(TEXT_SECONDARY),
+            crate::hints::fade(WHITE),
         );
     }
 }
@@ -1187,16 +1185,18 @@ fn row_pitch(avail: f32, rows: usize, s: f32, touch_only: bool) -> f32 {
     (avail / rows.max(1) as f32).clamp(min * s, max * s)
 }
 
-/// The line under every menu: a controller's buttons while one is in use,
-/// its keys once the player has a keyboard, the pointer's verb, and without
-/// keys the drag or scroll only when the list actually scrolls. ASCII on
-/// purpose: the default font has no glyphs for arrows.
-fn menu_footer(hands: crate::platform::Hands, scrolls: bool) -> String {
+/// The line under every menu: a controller's button icons while one is in
+/// use, so no key shows, its keys once the player has a keyboard, the
+/// pointer's verb, and without keys the drag or scroll only when the list
+/// actually scrolls. ASCII on purpose: the default font has no glyphs for
+/// arrows.
+fn menu_footer(hands: crate::platform::Hands, scrolls: bool) -> HintLine {
     if let Some(family) = hands.pad {
-        return format!(
-            "D-pad select - {} confirm",
-            crate::pad::button_name(family, crate::pad::CONFIRM)
-        );
+        return HintLine::default()
+            .pad(PadIcon::DpadUpDown)
+            .text(" select - ")
+            .pad(crate::pad::button_icon(family, crate::pad::CONFIRM))
+            .text(" confirm");
     }
     let verb = if hands.touch() { "tap" } else { "click" };
     if !hands.keys {
@@ -1205,16 +1205,16 @@ fn menu_footer(hands: crate::platform::Hands, scrolls: bool) -> String {
             (true, true) => " - drag to scroll",
             (true, false) => " - scroll for more",
         };
-        return format!("{verb} to choose{scroll}");
+        return HintLine::from(format!("{verb} to choose{scroll}"));
     }
     MENU_BINDINGS.with(|bindings| {
         let bindings = bindings.borrow();
-        format!(
+        HintLine::from(format!(
             "{}/{} select - {} confirm - or {verb}",
             bindings.label(crate::action::Action::MenuUp),
             bindings.label(crate::action::Action::MenuDown),
             bindings.label(crate::action::Action::Confirm)
-        )
+        ))
     })
 }
 

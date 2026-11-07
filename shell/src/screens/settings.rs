@@ -837,17 +837,17 @@ impl SettingsScreen {
 
     /// Draws the tab's menu, the strip, and the status line — the caller
     /// draws the veil first, so all land above it.
-    pub fn draw(&self, mouse: Vec2) {
+    pub fn draw(&self, sprites: &crate::assets::Sprites, mouse: Vec2) {
         if let Some(form) = &self.naming {
             form.draw("", crate::theme::TEXT_SECONDARY, mouse);
             return;
         }
         if let Face::Confirming(profile) = self.face {
             // A dialog: no tabs to wander off to while it asks.
-            self.menu.draw(profile.consequence());
+            self.menu.draw(sprites, profile.consequence());
             return;
         }
-        self.menu.draw_with_coaching("", self.coaching());
+        self.menu.draw_with_coaching(sprites, "", self.coaching());
         let keys = crate::tabs::shown_keys();
         let labels = Tab::ALL.map(Tab::label);
         let active = Tab::ALL

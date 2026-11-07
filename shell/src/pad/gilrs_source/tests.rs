@@ -2,12 +2,32 @@ use super::*;
 
 #[test]
 fn vendor_ids_name_the_pad_family() {
-    assert_eq!(family(Some(0x045e)), PadFamily::Xbox);
-    assert_eq!(family(Some(0x28de)), PadFamily::Xbox, "Steam Deck");
-    assert_eq!(family(Some(0x054c)), PadFamily::PlayStation);
-    assert_eq!(family(Some(0x057e)), PadFamily::Switch);
-    assert_eq!(family(Some(0x2dc8)), PadFamily::Other);
-    assert_eq!(family(None), PadFamily::Other);
+    for on_deck in [false, true] {
+        assert_eq!(family(Some(0x045e), on_deck), PadFamily::Xbox);
+        assert_eq!(family(Some(0x054c), on_deck), PadFamily::PlayStation);
+        assert_eq!(family(Some(0x057e), on_deck), PadFamily::Switch);
+        assert_eq!(family(Some(0x2dc8), on_deck), PadFamily::Other);
+        assert_eq!(family(None, on_deck), PadFamily::Other);
+    }
+    assert_eq!(
+        family(Some(0x28de), false),
+        PadFamily::Xbox,
+        "a pad Steam Input presents on a desktop"
+    );
+    assert_eq!(
+        family(Some(0x28de), true),
+        PadFamily::SteamDeck,
+        "the Deck's own controls"
+    );
+}
+
+#[test]
+fn only_a_deck_board_reads_as_a_steam_deck() {
+    assert!(is_steam_deck("Valve\n", "Jupiter\n"), "the LCD Deck");
+    assert!(is_steam_deck("Valve\n", "Galileo\n"), "the OLED Deck");
+    assert!(!is_steam_deck("Valve\n", "Index\n"));
+    assert!(!is_steam_deck("LENOVO\n", "Jupiter\n"));
+    assert!(!is_steam_deck("", ""));
 }
 
 #[test]

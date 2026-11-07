@@ -463,16 +463,21 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
         _ => "...",
     };
     match &*busy.back {
-        Screen::Pause(pause) if !loading => pause.draw_saving(&format!("Saving{dots}")),
-        _ => busy.menu.draw(&format!(
-            "{}{}",
-            if loading {
-                "Loading game"
-            } else {
-                "Saving game"
-            },
-            dots
-        )),
+        Screen::Pause(pause) if !loading => {
+            pause.draw_saving(&app.sprites, &format!("Saving{dots}"));
+        }
+        _ => busy.menu.draw(
+            &app.sprites,
+            &format!(
+                "{}{}",
+                if loading {
+                    "Loading game"
+                } else {
+                    "Saving game"
+                },
+                dots
+            ),
+        ),
     }
     if loading
         && app.persistence_result.is_none()

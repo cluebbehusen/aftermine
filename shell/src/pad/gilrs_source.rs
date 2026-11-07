@@ -10,6 +10,8 @@ pub(super) struct Source {
     /// gilrs sends no connection event for a pad present at startup, so
     /// the first read announces these.
     present: Vec<Reading>,
+    /// Whether the game runs on a Steam Deck, read once at startup.
+    on_deck: bool,
 }
 
 impl Source {
@@ -32,14 +34,19 @@ impl Source {
                 return None;
             }
         };
+        let on_deck = on_steam_deck();
         let present = gilrs
             .gamepads()
             .map(|(id, gamepad)| Reading::Connected {
                 pad: pad_id(id),
-                family: family(gamepad.vendor_id()),
+                family: family(gamepad.vendor_id(), on_deck),
             })
             .collect();
-        Some(Self { gilrs, present })
+        Some(Self {
+            gilrs,
+            present,
+            on_deck,
+        })
     }
 
     /// Appends everything gilrs reported since the last read.
@@ -58,7 +65,7 @@ impl Source {
             let reading = match event.event {
                 EventType::Connected => Some(Reading::Connected {
                     pad,
-                    family: family(self.gilrs.gamepad(event.id).vendor_id()),
+                    family: family(self.gilrs.gamepad(event.id).vendor_id(), self.on_deck),
                 }),
                 EventType::Disconnected => Some(Reading::Disconnected { pad }),
                 EventType::ButtonPressed(button, _) => {
@@ -83,14 +90,35 @@ impl Source {
     }
 }
 
+/// Whether this machine is a Steam Deck, by the board's own identity. Steam
+/// Input presents the Deck's controls under the same vendor and product id
+/// as any pad it wraps on a desktop, so the pad cannot tell; the board can,
+/// in Game Mode, Desktop Mode, and outside Steam alike. Elsewhere,
+/// Windows included, the files are missing and the answer is no.
+fn on_steam_deck() -> bool {
+    let read = |name: &str| std::fs::read_to_string(format!("/sys/class/dmi/id/{name}"));
+    match (read("sys_vendor"), read("product_name")) {
+        (Ok(vendor), Ok(product)) => is_steam_deck(&vendor, &product),
+        _ => false,
+    }
+}
+
+/// Whether a board's DMI vendor and product name a Steam Deck: Valve's
+/// Jupiter (LCD) or Galileo (OLED). Values arrive with a trailing newline.
+pub(super) fn is_steam_deck(vendor: &str, product: &str) -> bool {
+    vendor.trim() == "Valve" && matches!(product.trim(), "Jupiter" | "Galileo")
+}
+
 fn pad_id(id: GamepadId) -> u64 {
     usize::from(id) as u64
 }
 
 /// The family a USB vendor id names. Valve's id covers the Steam Deck's
-/// controls and every pad Steam Input presents, all in Xbox's layout.
-pub(super) fn family(vendor: Option<u16>) -> PadFamily {
+/// controls and every pad Steam Input presents, all in Xbox's layout, so
+/// it names the Deck's own controls only on a Deck.
+pub(super) fn family(vendor: Option<u16>, on_deck: bool) -> PadFamily {
     match vendor {
+        Some(0x28de) if on_deck => PadFamily::SteamDeck,
         Some(0x045e | 0x28de) => PadFamily::Xbox,
         Some(0x054c) => PadFamily::PlayStation,
         Some(0x057e) => PadFamily::Switch,

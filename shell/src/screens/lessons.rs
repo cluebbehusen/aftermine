@@ -150,7 +150,7 @@ impl LessonsScreen {
     /// Draws the list, the selected row's scene and story, and the
     /// buttons.
     pub fn draw(&mut self, sprites: &Sprites, mouse: Vec2) {
-        self.menu.draw("");
+        self.menu.draw(sprites, "");
         crate::button::draw_back(mouse);
         let s = crate::render::ui_scale();
         let measure: Measure = &window_measure;

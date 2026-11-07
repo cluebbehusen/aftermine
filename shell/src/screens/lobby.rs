@@ -373,7 +373,7 @@ impl LobbyScreen {
 
     /// Draws the form; or, waiting, a joiner's copy of the host's setup
     /// once it arrives, else the status and roster; then the corner Back.
-    pub fn draw(&self, mouse: Vec2, previews: &mut PreviewCache) {
+    pub fn draw(&self, sprites: &crate::assets::Sprites, mouse: Vec2, previews: &mut PreviewCache) {
         match &self.face {
             Face::Join {
                 form,
@@ -395,7 +395,7 @@ impl LobbyScreen {
             }
             Face::Waiting(lobby) => match lobby.room_view() {
                 Some((map, seats, you)) => draw_room(map, seats, you, &self.subtitle(), previews),
-                None => self.menu.draw(&self.subtitle()),
+                None => self.menu.draw(sprites, &self.subtitle()),
             },
         }
         crate::button::draw_back(mouse);

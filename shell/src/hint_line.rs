@@ -1,0 +1,148 @@
+//! Hint lines that show a controller's own buttons as icons among the
+//! words, so a pad player reads the button they hold rather than its name.
+
+use crate::assets::Sprites;
+use crate::numeric;
+use crate::pad::PadIcon;
+use crate::theme::Type;
+use macroquad::prelude::*;
+
+/// An icon's height as a share of the text size: a little taller than
+/// capitals, so the label inside it reads at the same size as the copy.
+const ICON_SCALE: f32 = 1.25;
+
+/// One run of a hint line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Segment {
+    Text(String),
+    Pad(PadIcon),
+}
+
+/// A line of hint copy, some of it controller button icons.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct HintLine {
+    segments: Vec<Segment>,
+}
+
+impl From<String> for HintLine {
+    fn from(text: String) -> Self {
+        Self::default().text(text)
+    }
+}
+
+impl HintLine {
+    /// Appends copy.
+    pub(crate) fn text(mut self, text: impl Into<String>) -> Self {
+        self.segments.push(Segment::Text(text.into()));
+        self
+    }
+
+    /// Appends a button icon.
+    pub(crate) fn pad(mut self, icon: PadIcon) -> Self {
+        self.segments.push(Segment::Pad(icon));
+        self
+    }
+
+    /// The line with its opening copy sentence-cased. A line that opens on
+    /// an icon reads like one that opens on the button's name, so it keeps
+    /// its words as written.
+    pub(crate) fn sentence_cased(mut self) -> Self {
+        if let Some(Segment::Text(first)) = self.segments.first_mut() {
+            *first = crate::typography::sentence_case(first);
+        }
+        self
+    }
+
+    /// The line as copy, each icon spelled as the name it shows.
+    #[cfg(test)]
+    pub(crate) fn copy(&self) -> String {
+        self.segments
+            .iter()
+            .map(|segment| match segment {
+                Segment::Text(text) => text.as_str(),
+                Segment::Pad(icon) => icon.name(),
+            })
+            .collect()
+    }
+
+    /// The line's width at text `size`, given how wide `measure` finds a
+    /// run of copy at that size.
+    fn width_with(&self, size: f32, measure: impl Fn(&str, f32) -> f32) -> f32 {
+        self.segments
+            .iter()
+            .map(|segment| match segment {
+                Segment::Text(text) => measure(text, size),
+                Segment::Pad(_) => size * ICON_SCALE,
+            })
+            .sum()
+    }
+
+    /// The size at which the line fits `width`: `size` when it already
+    /// fits, else shrunk to fit, but never below `floor`, as
+    /// [`crate::typography::fit`] does for plain copy.
+    fn fit_with(
+        &self,
+        size: f32,
+        width: f32,
+        floor: f32,
+        measure: impl Fn(&str, f32) -> f32,
+    ) -> f32 {
+        let measured = self.width_with(size, measure);
+        if measured <= width {
+            size
+        } else {
+            (size * width / measured).max(floor).min(size)
+        }
+    }
+
+    /// Draws the line centered on `center_x` with its baseline at
+    /// `baseline`, at `largest` shrunk as far as `smallest` to fit
+    /// `width`. Copy takes `text`; icons take `icons`, which tints the
+    /// bone art and carries its opacity.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one call places, sizes, and colors the whole line"
+    )]
+    pub(crate) fn draw(
+        &self,
+        sprites: &Sprites,
+        center_x: f32,
+        baseline: f32,
+        width: f32,
+        (largest, smallest): (Type, Type),
+        text: Color,
+        icons: Color,
+    ) {
+        let measure =
+            |copy: &str, size: f32| measure_text(copy, None, numeric::font_size(size), 1.0).width;
+        let ui = crate::render::ui_scale();
+        let size = self.fit_with(largest.at(ui), width, smallest.at(ui), measure);
+        let icon = size * ICON_SCALE;
+        let cap = measure_text("H", None, numeric::font_size(size), 1.0).offset_y;
+        let dpi = screen_dpi_scale();
+        let snap = |v: f32| (v * dpi).round() / dpi;
+        let mut x = center_x - self.width_with(size, measure) * 0.5;
+        for segment in &self.segments {
+            match segment {
+                Segment::Text(copy) => {
+                    draw_text(copy, x, baseline, size, text);
+                    x += measure(copy, size);
+                }
+                Segment::Pad(pad) => {
+                    let extent = snap(icon);
+                    let dest = Rect::new(
+                        snap(x),
+                        snap(baseline - cap * 0.5 - icon * 0.5),
+                        extent,
+                        extent,
+                    );
+                    sprites.draw_canvas(dest, &[(sprites.pad_icon(*pad), icons)]);
+                    x += icon;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

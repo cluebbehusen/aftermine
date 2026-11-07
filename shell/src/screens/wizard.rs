@@ -1747,7 +1747,13 @@ impl Wizard {
 
     /// Draws the setup screen: team-grouped seat cards, the Start
     /// button, and the live map with every chair marked.
-    pub fn draw_setup(&self, draft: &NewMatchDraft, previews: &mut PreviewCache, mouse: Vec2) {
+    pub fn draw_setup(
+        &self,
+        sprites: &crate::assets::Sprites,
+        draft: &NewMatchDraft,
+        previews: &mut PreviewCache,
+        mouse: Vec2,
+    ) {
         let Some(scenario) = draft.scenario.as_deref() else {
             return;
         };
@@ -1967,7 +1973,7 @@ impl Wizard {
                 },
             );
         }
-        self.draw_overlay(mouse);
+        self.draw_overlay(sprites, mouse);
     }
 
     /// The LOCAL | LAN switch: the active half filled, the cursor's outline
@@ -2028,7 +2034,7 @@ impl Wizard {
     }
 
     /// Draws the name prompt or a confirmation over a veil.
-    fn draw_overlay(&self, mouse: Vec2) {
+    fn draw_overlay(&self, sprites: &crate::assets::Sprites, mouse: Vec2) {
         let Some(overlay) = &self.overlay else {
             return;
         };
@@ -2050,7 +2056,7 @@ impl Wizard {
                         }
                     }
                 };
-                menu.draw(&line);
+                menu.draw(sprites, &line);
             }
         }
     }

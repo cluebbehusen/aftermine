@@ -69,10 +69,16 @@ fn field_stems() -> impl Iterator<Item = &'static str> {
         )
         .chain(["scrap", "wreck_pile", "extractor_frame"])
 }
+/// Interface sprites drawn well below their art's size: controller icons,
+/// which sit inline with text 11 to 18 px tall.
+fn interface_stems() -> impl Iterator<Item = &'static str> {
+    ["pad"].into_iter()
+}
 fn is_entity_source(name: &str) -> bool {
     let name = name.strip_prefix("rig_").unwrap_or(name);
     unit_stems()
         .chain(field_stems())
+        .chain(interface_stems())
         .any(|stem| has_stem(name, stem))
 }
 fn entity_sources(manifest: &HashMap<String, [f32; 4]>) -> BTreeSet<Source> {
