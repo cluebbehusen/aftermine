@@ -96,7 +96,7 @@ impl HomeScreen {
 
     /// Builds the door with resumability decided by the caller (tests).
     pub fn with_resumable(resumable: bool) -> Self {
-        Self::build(resumable, !crate::platform::TOUCH_ONLY)
+        Self::build(resumable, crate::platform::PLATFORM.desktop())
     }
 
     /// Quit is left out where the platform, not the app, closes apps.

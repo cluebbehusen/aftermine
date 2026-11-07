@@ -384,9 +384,9 @@ impl Row {
         }
     }
 
-    /// Rows a touch-only build cannot use: it has no file manager to
-    /// open a folder in. A keyboard or trackpad can join a touch device
-    /// at any time, so their rows stay.
+    /// Rows only a desktop build can use: elsewhere there is no file
+    /// manager to open a folder in. A keyboard or trackpad can join a
+    /// touch device at any time, so their rows stay.
     fn needs_desktop(self) -> bool {
         matches!(self, Row::OpenDiagnostics)
     }
@@ -460,10 +460,10 @@ fn settings_hint(hands: crate::platform::Hands, tab_keys: bool) -> &'static str 
 }
 
 /// The rows `tab` offers on this build, in order.
-fn rows(tab: Tab, touch_only: bool) -> Vec<Row> {
+fn rows(tab: Tab, desktop: bool) -> Vec<Row> {
     Row::ALL
         .into_iter()
-        .filter(|row| row.tab() == tab && !(touch_only && row.needs_desktop()))
+        .filter(|row| row.tab() == tab && (desktop || !row.needs_desktop()))
         .collect()
 }
 
@@ -471,7 +471,7 @@ fn rows(tab: Tab, touch_only: bool) -> Vec<Row> {
 /// binding sections, the chosen chord column bracketed on every
 /// binding row.
 fn tab_lines(tab: Tab, config: &Config, selected_slot: usize) -> Vec<Line<Item>> {
-    let mut lines: Vec<Line<Item>> = rows(tab, crate::platform::TOUCH_ONLY)
+    let mut lines: Vec<Line<Item>> = rows(tab, crate::platform::PLATFORM.desktop())
         .into_iter()
         .map(|row| Line::Row(row.label(config), Item::Setting(row)))
         .collect();

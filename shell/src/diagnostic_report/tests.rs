@@ -160,3 +160,12 @@ fn a_failed_export_leaves_no_partial_report() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn an_export_points_only_where_the_platform_can_reach() {
+    use crate::platform::Platform;
+    assert!(exported_notice(Platform::Desktop).contains("Open diagnostics folder"));
+    assert!(exported_notice(Platform::Touch).contains("Files"));
+    let tv = exported_notice(Platform::Tv);
+    assert!(!tv.contains("Files") && !tv.contains("folder"), "{tv}");
+}

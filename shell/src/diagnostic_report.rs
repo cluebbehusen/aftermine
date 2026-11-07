@@ -93,12 +93,7 @@ impl ReportJob {
                 let _ = std::fs::remove_dir_all(&report);
                 return Err(error);
             }
-            Ok(if cfg!(target_os = "ios") {
-                "Diagnostic report exported to Files: On My iPad > Aftermine > diagnostics."
-            } else {
-                "Diagnostic report exported. Open diagnostics folder to find it."
-            }
-            .into())
+            Ok(exported_notice(crate::platform::PLATFORM).into())
         })
     }
     pub(crate) fn poll(&mut self) -> Option<Result<String, String>> {
@@ -130,6 +125,19 @@ impl ReportJob {
             );
             Ok(String::new())
         })
+    }
+}
+
+/// What an export tells the player: where to find the report, wherever
+/// `platform` has a way to reach it.
+fn exported_notice(platform: crate::platform::Platform) -> &'static str {
+    use crate::platform::Platform;
+    match platform {
+        Platform::Desktop => "Diagnostic report exported. Open diagnostics folder to find it.",
+        Platform::Touch => {
+            "Diagnostic report exported to Files: On My iPad > Aftermine > diagnostics."
+        }
+        Platform::Tv => "Diagnostic report exported.",
     }
 }
 

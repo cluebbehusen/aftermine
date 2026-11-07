@@ -374,7 +374,7 @@ fn the_transport_row_sits_bottom_left_clear_of_the_timeline() {
                 "{viewport}: the scrub band meets {button:?}"
             );
         }
-        let row = transport_row(viewport, ui, crate::platform::TOUCH_ONLY);
+        let row = transport_row(viewport, ui, crate::platform::PLATFORM.touch_only());
         assert!(
             bar.x > row.faster.right(),
             "{viewport}: the bar starts past the stepper"
@@ -417,7 +417,7 @@ fn a_drag_from_between_the_transport_buttons_never_moves_the_camera() {
     let row = transport_row(
         vec2(1280.0, 800.0),
         render::ui_scale(),
-        crate::platform::TOUCH_ONLY,
+        crate::platform::PLATFORM.touch_only(),
     );
     let readout = row.readout.center();
     let gap = vec2(row.play.right() + 4.0, row.play.center().y);

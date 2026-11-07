@@ -124,18 +124,18 @@ fn the_settings_hint_names_only_what_the_hands_in_use_have() {
 
 #[test]
 fn every_row_lives_on_one_tab_and_touch_hides_only_what_it_cannot_use() {
-    let offered = |touch_only| -> Vec<Row> {
+    let offered = |desktop| -> Vec<Row> {
         Tab::ALL
             .into_iter()
-            .flat_map(|tab| rows(tab, touch_only))
+            .flat_map(|tab| rows(tab, desktop))
             .collect()
     };
     assert_eq!(
-        offered(false),
+        offered(true),
         Row::ALL.to_vec(),
         "desktop shows every row once, in tab order"
     );
-    let touch = offered(true);
+    let touch = offered(false);
     assert!(!touch.contains(&Row::OpenDiagnostics), "no file manager");
     for kept in [Row::EdgePan, Row::LeftHandedPreset] {
         assert!(
@@ -1141,7 +1141,7 @@ fn diagnostics_rows_survive_without_a_capture_toggle() {
             .iter()
             .any(|item| item.starts_with("Diagnostics:"))
     );
-    if !crate::platform::TOUCH_ONLY {
+    if crate::platform::PLATFORM.desktop() {
         assert_eq!(
             label(&screen, Item::Setting(Row::OpenDiagnostics)),
             "Open diagnostics folder"

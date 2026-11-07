@@ -291,7 +291,7 @@ fn confirm_menu(verb: Confirmable) -> Menu<Choice> {
 impl PauseScreen {
     /// Opens on the pause rows.
     pub fn open(finished: bool, can_surrender: bool) -> Self {
-        let rows = rows(finished, can_surrender, !crate::platform::TOUCH_ONLY);
+        let rows = rows(finished, can_surrender, crate::platform::PLATFORM.desktop());
         Self {
             menu: pause_menu(&rows, false),
             rows,

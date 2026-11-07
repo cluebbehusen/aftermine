@@ -623,13 +623,13 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             }
         }
 
-        // A touch-only player types through the on-screen keyboard, which
-        // follows the focused text field: every way out of a field hides
-        // it, its layout follows the field's kind, and a tap on a field
-        // brings back one the player dismissed.
+        // Off the desktop the player types through the system keyboard,
+        // which follows the focused text field: every way out of a field
+        // hides it, its layout follows the field's kind, and a tap on a
+        // field brings back one the player dismissed.
         let refocus = screen.take_keyboard_request();
         let wanted = screen.keyboard();
-        if crate::platform::TOUCH_ONLY {
+        if !crate::platform::PLATFORM.desktop() {
             if let Some(kind) = wanted
                 && wanted != app.soft_keyboard
             {

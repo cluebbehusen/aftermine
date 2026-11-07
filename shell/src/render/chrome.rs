@@ -172,8 +172,8 @@ pub(super) fn group_column_layout(
     let offer = input.group_on_offer(game);
     let shown = crate::render::control_groups()
         && (counts.iter().any(|count| *count > 0) || offer.is_some());
-    let column =
-        crate::layout::group_column(s, crate::platform::TOUCH_ONLY, minimap).filter(|_| shown)?;
+    let column = crate::layout::group_column(s, crate::platform::PLATFORM.touch_only(), minimap)
+        .filter(|_| shown)?;
     let slots = std::array::from_fn(|slot| {
         let number = slot.fit::<u8>() + 1;
         let action = if counts[slot] > 0 {
@@ -250,7 +250,7 @@ pub(super) fn army_strip_layout(
     minimap: Rect,
     s: f32,
 ) -> Option<ArmyStripLayout> {
-    let strip = crate::layout::army_strip(s, crate::platform::TOUCH_ONLY, minimap)?;
+    let strip = crate::layout::army_strip(s, crate::platform::PLATFORM.touch_only(), minimap)?;
     Some(ArmyStripLayout {
         strip,
         all: crate::input::army_units(game, false).len(),
@@ -1280,7 +1280,7 @@ pub(super) fn top_bar_layout(
     let bar = crate::layout::top_bar(
         env.viewport.x,
         s,
-        crate::platform::TOUCH_ONLY,
+        crate::platform::PLATFORM.touch_only(),
         crate::layout::TopBarText {
             scrap: measure(Face::Display, &scrap, crate::theme::Type::Heading.at(s)),
             passive: measure(Face::Body, &passive, crate::theme::Type::Body.at(s)),

@@ -1708,10 +1708,10 @@ pub fn poll_events(text_entry: bool) -> Vec<RawEvent> {
         // never queues a baseline: seed the stream with the position
         // the pointer already holds, or edge pan and wheel zoom anchor
         // at (0, 0) until the first real motion. mouse_position() is
-        // already logical (macroquad divides its dpi out). A touch-only
-        // device has no cursor until a trackpad moves one, and a seed
-        // would read as the mouse in use.
-        if !crate::platform::TOUCH_ONLY {
+        // already logical (macroquad divides its dpi out). Off the
+        // desktop there is no cursor at launch, and a seed would read as
+        // the mouse in use.
+        if crate::platform::PLATFORM.desktop() {
             let (x, y) = mq::mouse_position();
             events.push(RawEvent::MouseMove { x, y });
         }

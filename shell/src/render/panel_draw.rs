@@ -969,7 +969,7 @@ pub(crate) fn layout_panel(
             s,
             mini,
             panel.cards.len(),
-            crate::platform::TOUCH_ONLY,
+            crate::platform::PLATFORM.touch_only(),
         );
         let dock = (!panel.queue.is_empty() || panel.stop.is_some())
             .then(|| layout_dock(game, input, panel, viewport, s, band.y, measure));
@@ -994,7 +994,7 @@ pub(crate) fn layout_panel(
         cards_x,
         s,
         small,
-        crate::platform::TOUCH_ONLY,
+        crate::platform::PLATFORM.touch_only(),
         measure,
     );
     let packing = flush_band(packing, measured.height, viewport.y, s);
@@ -1054,7 +1054,8 @@ fn layout_dock(
     measure: super::hud::Measure<'_>,
 ) -> DockLayout {
     let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
-    let toggle_below = super::chrome::queue_toggle_shown(game, input, crate::platform::TOUCH_ONLY);
+    let toggle_below =
+        super::chrome::queue_toggle_shown(game, input, crate::platform::PLATFORM.touch_only());
     let floor = if toggle_below {
         top - super::chrome::queue_dock_lift(s)
     } else {
