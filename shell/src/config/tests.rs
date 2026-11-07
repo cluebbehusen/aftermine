@@ -476,3 +476,23 @@ fn the_load_checks_settle_in_one_pass() {
     );
     assert_eq!(once.clone().sanitized(), once);
 }
+
+#[test]
+fn config_text_round_trips_and_falls_back_to_defaults() {
+    let config = Config {
+        ui_scale: 1.25,
+        install_id: Some(aftermine_net::InstallId::new(7).to_hex()),
+        ..Config::default()
+    };
+    assert_eq!(Config::from_text(Some(&config.text())), config);
+    assert_eq!(Config::from_text(None), Config::default());
+    assert_eq!(Config::from_text(Some("not json")), Config::default());
+    let other_version = Config {
+        version: CONFIG_VERSION + 1,
+        ..config
+    };
+    assert_eq!(
+        Config::from_text(Some(&other_version.text())),
+        Config::default()
+    );
+}

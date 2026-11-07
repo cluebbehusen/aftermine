@@ -5,9 +5,12 @@
 //! independently of replays. Any read problem (missing file, old version,
 //! parse error) falls back to defaults silently: a bad config file must
 //! never keep the game from starting. The settings that follow the player
-//! also travel through iCloud; [`sync`] says which.
+//! also travel through iCloud; [`sync`] says which. Apple TV keeps the
+//! config in user defaults, the one local store it never clears, and
+//! every other platform in a file.
 
 use crate::action::BindingMap;
+use crate::platform::{PLATFORM, Platform};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -362,10 +365,17 @@ fn config_path() -> Option<PathBuf> {
     crate::paths::config_dir().map(|d| d.join("config.json"))
 }
 
+/// The user defaults key that holds the config on Apple TV.
+const DEFAULTS_KEY: &str = "config";
+
 impl Config {
     /// Loads the persisted config, or defaults on any trouble at all.
     pub fn load() -> Self {
-        Self::load_from(config_path())
+        if PLATFORM == Platform::Tv {
+            Self::from_text(aftermine_icloud::defaults::get(DEFAULTS_KEY).as_deref())
+        } else {
+            Self::load_from(config_path())
+        }
     }
 
     /// Clamps a persisted window size into the envelope the CLI enforces,
@@ -386,13 +396,17 @@ impl Config {
     }
 
     fn load_from(path: Option<PathBuf>) -> Self {
-        let Some(path) = path else {
+        let text = path.and_then(|path| std::fs::read_to_string(path).ok());
+        Self::from_text(text.as_deref())
+    }
+
+    /// The config `text` holds, or defaults when there is none, when it
+    /// does not parse, or when another config version wrote it.
+    fn from_text(text: Option<&str>) -> Self {
+        let Some(text) = text else {
             return Self::default();
         };
-        let Ok(text) = std::fs::read_to_string(path) else {
-            return Self::default();
-        };
-        match serde_json::from_str::<Self>(&text) {
+        match serde_json::from_str::<Self>(text) {
             Ok(config) if config.version == CONFIG_VERSION => config.sanitized(),
             _ => Self::default(),
         }
@@ -489,8 +503,13 @@ impl Config {
         !std::mem::replace(&mut self.first_match_done, true)
     }
 
-    /// Persists atomically (temp + rename), creating the directory.
+    /// Persists to user defaults on Apple TV, and elsewhere to the config
+    /// file atomically (temp + rename), creating the directory.
     pub fn save(&self) -> std::io::Result<()> {
+        if PLATFORM == Platform::Tv {
+            aftermine_icloud::defaults::set(DEFAULTS_KEY, &self.text());
+            return Ok(());
+        }
         let Some(path) = config_path() else {
             return Ok(()); // headless CI without HOME: nothing to do
         };
@@ -498,8 +517,12 @@ impl Config {
     }
 
     fn save_to(&self, path: &std::path::Path) -> std::io::Result<()> {
-        let text = serde_json::to_string_pretty(self).expect("config serializes");
+        let text = self.text();
         chassis::fsx::write_atomic(path, |writer| writer.write_all(text.as_bytes()))
+    }
+
+    fn text(&self) -> String {
+        serde_json::to_string_pretty(self).expect("config serializes")
     }
 }
 

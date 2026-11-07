@@ -5,6 +5,7 @@
 
 use crate::game::SoundKind;
 use crate::menu::{Heading, Label, Line, Menu};
+use crate::platform::{PLATFORM, Platform};
 use crate::saves::ReplayEntry;
 use crate::tabs::TabStrip;
 use aftermine_protocol::{Key, RawEvent};
@@ -279,7 +280,8 @@ impl Shelf {
     }
 
     /// The line above the footer: what the shelf is doing, or what is
-    /// wrong with the focused record. Rows say everything else.
+    /// wrong with the focused record, and otherwise on Apple TV that
+    /// records may not last. Rows say everything else.
     pub fn status(&self) -> String {
         let problem = self
             .menu
@@ -296,7 +298,7 @@ impl Shelf {
         } else if self.menu.lines().is_empty() {
             self.tab().empty().to_string()
         } else {
-            String::new()
+            standing_line(PLATFORM).to_string()
         }
     }
 
@@ -332,6 +334,16 @@ impl Shelf {
             size,
             crate::theme::TEXT_SECONDARY,
         );
+    }
+}
+
+/// What the status line says when nothing more pressing does: on Apple TV,
+/// which may clear the cache that holds every record, that records may not
+/// last.
+fn standing_line(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Tv => "Apple TV may delete saves and replays when it needs space",
+        Platform::Desktop | Platform::Touch => "",
     }
 }
 

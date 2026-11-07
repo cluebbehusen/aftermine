@@ -284,21 +284,24 @@ of a run of failures once. Saves use the chassis atomic-write path.
 
 On iPad and Mac, saves, finished matches, autosaves and replays live in the
 app's iCloud Drive folder when iCloud Drive is available, and on the device
-otherwise; diagnostics and the LAN rejoin ticket always stay on the device. The
-folder is looked up off the frame thread at launch and whenever the app returns
-to the foreground, and only the worker resolves where a record goes, so the
-frame thread never waits on iCloud. Writes, deletes and loads in that folder run
-under file coordination. A catalog scan first starts downloading files iCloud
-holds but the device does not, and the shelf scans again while any are on their
-way. With iCloud on, the shelf still lists records kept on the device.
+otherwise; diagnostics and the LAN rejoin ticket always stay on the device. On
+Apple TV every one of these files lives in the app's cache, which tvOS may clear
+while the app is closed. The folder is looked up off the frame thread at launch
+and whenever the app returns to the foreground, and only the worker resolves
+where a record goes, so the frame thread never waits on iCloud. Writes, deletes
+and loads in that folder run under file coordination. A catalog scan first
+starts downloading files iCloud holds but the device does not, and the shelf
+scans again while any are on their way. With iCloud on, the shelf still lists
+records kept on the device.
 
 Settings that belong to the player, not the device, also travel through iCloud's
 key-value store on iPad, Mac and Apple TV, one key per setting with the newest
 change winning. Settings tied to one device's screen, touch or pointer hardware,
 network or installation, the install id among them, never leave the device, and
-the local settings file stays complete without iCloud. Another device's change
-applies at launch or on Home, never during a match, a lobby or the Settings
-screen, so no synced setting reaches a running session.
+the device's own copy of the settings stays complete without iCloud. That copy
+is a file, except on Apple TV, where only user defaults last. Another device's
+change applies at launch or on Home, never during a match, a lobby or the
+Settings screen, so no synced setting reaches a running session.
 
 One app-owned worker performs save encoding, save and checkpoint disk I/O,
 restoration and catalog scans, one operation at a time. Jobs carry unique ids,

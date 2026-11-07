@@ -5,20 +5,28 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+use crate::platform::{PLATFORM, Platform};
+
 /// Platform config directory for Aftermine, created on save, never on load.
+/// Apple TV has none: it keeps settings in user defaults.
 pub fn config_dir() -> Option<PathBuf> {
-    // An iOS app's HOME is its sandbox container, which keeps the same
-    // Library layout as a Mac home.
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    // An iOS or tvOS app's HOME is its sandbox container, which keeps the
+    // same Library layout as a Mac home.
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join("Library/Application Support/Aftermine"))
+        std::env::var_os("HOME").and_then(|h| apple_config_dir(Path::new(&h), PLATFORM))
     }
     #[cfg(target_os = "windows")]
     {
         std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join("Aftermine"))
     }
-    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "windows"
+    )))]
     {
         std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
@@ -29,21 +37,43 @@ pub fn config_dir() -> Option<PathBuf> {
 
 /// Platform data root (autosaves, the LAN rejoin ticket), if resolvable.
 pub fn data_dir() -> Option<PathBuf> {
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join("Library/Application Support/Aftermine"))
+        std::env::var_os("HOME").map(|h| apple_data_dir(Path::new(&h), PLATFORM))
     }
     #[cfg(target_os = "windows")]
     {
         std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join("Aftermine"))
     }
-    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "windows"
+    )))]
     {
         std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
             .map(|d| d.join("aftermine"))
+    }
+}
+
+/// The config directory under an Apple `home`, which is the data root,
+/// except on Apple TV, which keeps settings in user defaults instead.
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+fn apple_config_dir(home: &Path, platform: Platform) -> Option<PathBuf> {
+    (platform != Platform::Tv).then(|| apple_data_dir(home, platform))
+}
+
+/// The data root under an Apple `home`. Apple TV keeps files only in
+/// Caches, which it may clear while the app is closed.
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+fn apple_data_dir(home: &Path, platform: Platform) -> PathBuf {
+    let library = home.join("Library");
+    match platform {
+        Platform::Tv => library.join("Caches/Aftermine"),
+        Platform::Desktop | Platform::Touch => library.join("Application Support/Aftermine"),
     }
 }
 

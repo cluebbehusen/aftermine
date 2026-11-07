@@ -20,6 +20,23 @@ fn only_apple_platforms_have_a_key_value_store() {
     assert!(KeyValueStore::open().is_none());
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "tvos")))]
+#[test]
+fn only_apple_platforms_have_user_defaults() {
+    defaults::set("aftermine.icloud-test", "dropped");
+    assert_eq!(defaults::get("aftermine.icloud-test"), None);
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos"))]
+#[test]
+fn user_defaults_answer_without_writing() {
+    // Only reads and a refused write, so a test run leaves no preferences
+    // file behind.
+    assert_eq!(defaults::get("aftermine.icloud-test-never-written"), None);
+    defaults::set("bad\0key", "dropped");
+    assert_eq!(defaults::get("bad\0key"), None);
+}
+
 #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos"))]
 #[test]
 fn an_unentitled_store_keeps_working_on_this_device() {
