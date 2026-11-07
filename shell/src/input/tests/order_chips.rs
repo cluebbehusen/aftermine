@@ -328,7 +328,7 @@ fn a_held_site_chip_scraps_nothing_but_a_tap_cancels_the_site() {
 fn a_held_production_chip_cancels_nothing_but_a_tap_does() {
     let mut game = headless_game();
     let mut input = InputState::new();
-    let foundry = game.home_foundry().expect("a Foundry").id;
+    let foundry = game.view().own_foundries().next().expect("a Foundry").id;
     game.presentation.selection.buildings = vec![foundry];
     super::super::orders::train(&mut game, 0);
     let staged: Vec<PlayerCommand> = game.pending.drain(..).collect();

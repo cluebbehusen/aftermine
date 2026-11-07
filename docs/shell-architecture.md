@@ -172,7 +172,10 @@ long-press, box or card press.
 Game controllers have one adapter too. Each platform's pad API reports to `pad`,
 which applies stick dead zones, sends a stick only when it moves, and releases a
 pad's held buttons before it disconnects. Pad buttons are named by position, and
-injected pad events skip the adapter.
+injected pad events skip the adapter. In a match, a reticle at the screen's
+center is the controller's pointer. Every screen records the sticks, so a stick
+let go under a menu cannot keep the camera moving, and hover and hit tests read
+the reticle through the same `LayoutModel` as the mouse.
 
 The HUD lays out in a pure pass (`render::hud`) that measures text through a
 supplied function, so it runs headless. Each frame lays it out before input,
@@ -288,6 +291,14 @@ frame thread never waits on iCloud. Writes, deletes and loads in that folder run
 under file coordination. A catalog scan first starts downloading files iCloud
 holds but the device does not, and the shelf scans again while any are on their
 way. With iCloud on, the shelf still lists records kept on the device.
+
+Settings that belong to the player, not the device, also travel through iCloud's
+key-value store on iPad, Mac and Apple TV, one key per setting with the newest
+change winning. Settings tied to one device's screen, touch or pointer hardware,
+network or installation, the install id among them, never leave the device, and
+the local settings file stays complete without iCloud. Another device's change
+applies at launch or on Home, never during a match, a lobby or the Settings
+screen, so no synced setting reaches a running session.
 
 One app-owned worker performs save encoding, save and checkpoint disk I/O,
 restoration and catalog scans, one operation at a time. Jobs carry unique ids,

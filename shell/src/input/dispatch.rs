@@ -340,8 +340,7 @@ pub(super) fn dispatch_action(
         }
         Action::RecallBookmark(slot) => {
             if let Some(center) = input.bookmarks[slot as usize] {
-                game.presentation.camera.center = center;
-                game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+                super::reticle::look_at(game, input, center);
             }
         }
         Action::Salvage => {
@@ -451,13 +450,12 @@ pub(super) fn dispatch_action(
                 game.presentation.toast("No units selected to hunt");
             }
         }
-        Action::CycleIdleWorker => cycle_idle_worker(game),
+        Action::CycleIdleWorker => cycle_idle_worker(game, input),
         Action::SelectArmy => select_army(game, input, false),
         Action::SelectArmyInView => select_army(game, input, true),
         Action::JumpToLastAlert => {
             if let Some(world) = game.presentation.last_alert {
-                game.presentation.camera.center = world;
-                game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+                super::reticle::look_at(game, input, world);
             } else {
                 game.presentation
                     .sounds_pending
@@ -465,11 +463,30 @@ pub(super) fn dispatch_action(
             }
         }
         Action::HomeCamera => {
-            if let Some(center) = game.home_foundry().map(aftermine_sim::Building::center) {
-                let target = vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>());
-                game.presentation.camera.center = target;
-                game.presentation.camera.pan(vec2(0.0, 0.0)); // re-clamp
+            // From one of your Foundries, under the reticle, the camera moves
+            // to the next by id, so repeated presses cycle through them all.
+            // The reticle rather than the camera's center decides, since the
+            // map's edge can hold the camera to one spot for two Foundries.
+            let foundries = own_foundries(&game.view());
+            let camera = &game.presentation.camera;
+            let looking = input.reticle.ground(camera);
+            let next = foundries
+                .iter()
+                .position(|at| at.distance(looking) <= 0.5)
+                .map_or(0, |index| (index + 1) % foundries.len());
+            if let Some(target) = foundries.get(next) {
+                super::reticle::look_at(game, input, *target);
             }
         }
     }
+}
+
+/// The centers of your built Foundries, in id order.
+pub(super) fn own_foundries(game: &crate::game::Scene<'_>) -> Vec<Vec2> {
+    game.own_foundries()
+        .map(|b| {
+            let center = b.center();
+            vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>())
+        })
+        .collect()
 }

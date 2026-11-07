@@ -149,8 +149,8 @@ impl WaitingScreen {
         out
     }
 
-    pub fn draw(&self) {
-        self.menu.draw(&self.subtitle());
+    pub fn draw(&self, sprites: &crate::assets::Sprites) {
+        self.menu.draw(sprites, &self.subtitle());
     }
 
     pub fn view(&self) -> MenuView {

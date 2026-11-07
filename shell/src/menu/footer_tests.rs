@@ -3,10 +3,14 @@ use super::*;
 #[test]
 fn the_footer_names_only_what_the_hands_in_use_have() {
     use crate::platform::{ALL_HANDS, assert_copy_fits};
-    assert!(menu_footer(ALL_HANDS[0], true).ends_with("confirm - or click"));
+    assert!(
+        menu_footer(ALL_HANDS[0], true)
+            .copy()
+            .ends_with("confirm - or click")
+    );
     for hands in ALL_HANDS {
         for scrolls in [false, true] {
-            assert_copy_fits(hands, &menu_footer(hands, scrolls));
+            assert_copy_fits(hands, &menu_footer(hands, scrolls).copy());
         }
     }
 }
@@ -30,42 +34,104 @@ fn touch_rows_stay_a_full_fingertip_tall_and_desktop_rows_pack() {
 #[test]
 fn a_keyless_footer_offers_a_scroll_only_when_the_list_scrolls() {
     let [_, mouse, _, touch] = crate::platform::ALL_HANDS;
-    assert_eq!(menu_footer(touch, false), "tap to choose");
-    assert!(menu_footer(touch, true).ends_with("drag to scroll"));
-    assert_eq!(menu_footer(mouse, false), "click to choose");
-    assert!(menu_footer(mouse, true).ends_with("scroll for more"));
+    assert_eq!(menu_footer(touch, false).copy(), "tap to choose");
+    assert!(menu_footer(touch, true).copy().ends_with("drag to scroll"));
+    assert_eq!(menu_footer(mouse, false).copy(), "click to choose");
+    assert!(menu_footer(mouse, true).copy().ends_with("scroll for more"));
 }
 
 #[test]
-fn a_controller_in_use_names_its_own_buttons() {
+fn a_controller_in_use_shows_its_own_buttons_and_no_keys() {
+    use crate::hint_line::HintLine;
+    use crate::pad::PadIcon;
     use aftermine_protocol::PadFamily;
     let pad = |family| crate::platform::Hands {
         pad: Some(family),
         ..crate::platform::ALL_HANDS[0]
     };
-    assert_eq!(
-        menu_footer(pad(PadFamily::Xbox), true),
-        "D-pad select - A confirm"
-    );
-    assert_eq!(
-        menu_footer(pad(PadFamily::PlayStation), false),
-        "D-pad select - Cross confirm"
-    );
-    for family in [
-        PadFamily::Xbox,
-        PadFamily::PlayStation,
-        PadFamily::Switch,
-        PadFamily::Other,
+    let footer = |confirm| {
+        HintLine::default()
+            .pad(PadIcon::DpadUpDown)
+            .text(" select - ")
+            .pad(confirm)
+            .text(" confirm")
+    };
+    for (family, confirm) in [
+        (PadFamily::Xbox, PadIcon::A),
+        (PadFamily::PlayStation, PadIcon::Cross),
+        (PadFamily::Switch, PadIcon::B),
+        (PadFamily::SteamDeck, PadIcon::A),
+        (PadFamily::Other, PadIcon::A),
     ] {
+        assert_eq!(
+            menu_footer(pad(family), true),
+            footer(confirm),
+            "{family:?}"
+        );
         for hands in crate::platform::ALL_HANDS {
-            let footer = menu_footer(
+            let line = menu_footer(
                 crate::platform::Hands {
                     pad: Some(family),
                     ..hands
                 },
                 true,
             );
-            crate::platform::assert_touch_copy(&footer);
+            crate::platform::assert_touch_copy(&line.copy());
         }
     }
+    assert_eq!(
+        menu_footer(pad(PadFamily::PlayStation), false).copy(),
+        "D-pad select - Cross confirm"
+    );
+}
+
+#[test]
+fn a_coaching_line_reads_as_its_filled_template_for_every_hand() {
+    let templates = [
+        "{confirm} saves | {back} cancels",
+        "D-pad or {confirm} change a value | {prev_tab}/{next_tab} switch tabs",
+        "D-pad select - {page_up}/{page_down} page - {confirm} plays - {back} back",
+        "{confirm} watches | {delete} twice deletes | {prev_tab}/{next_tab} switch tabs",
+        "{up}/{down} or click select",
+        "no tokens at all",
+    ];
+    let hands = crate::platform::ALL_HANDS
+        .into_iter()
+        .chain(crate::platform::pad_hands());
+    for hands in hands {
+        crate::platform::set_hands(hands);
+        for template in templates {
+            assert_eq!(
+                hint_line(template).copy(),
+                binding_hint(template),
+                "{hands:?} {template:?}"
+            );
+        }
+    }
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}
+
+#[test]
+fn a_controller_in_use_sees_its_own_icons_and_keys_only_where_it_has_no_button() {
+    use crate::hint_line::HintLine;
+    use crate::pad::PadIcon;
+    use aftermine_protocol::PadFamily;
+    crate::platform::set_hands(crate::platform::Hands {
+        pad: Some(PadFamily::PlayStation),
+        ..crate::platform::ALL_HANDS[0]
+    });
+    let line = hint_line("{confirm} watches | {delete} twice deletes | {prev_tab}/{next_tab} tabs");
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+    let delete =
+        MENU_BINDINGS.with(|bindings| bindings.borrow().label(crate::action::Action::DeleteSave));
+    assert_eq!(
+        line,
+        HintLine::default()
+            .pad(PadIcon::Cross)
+            .text(format!(" watches | {delete} twice deletes | "))
+            .pad(PadIcon::L1)
+            .text("/")
+            .pad(PadIcon::R1)
+            .text(" tabs")
+    );
 }

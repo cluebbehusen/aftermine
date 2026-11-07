@@ -217,12 +217,16 @@ pub enum Stick {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PadFamily {
-    /// Xbox pads, and the Steam Deck's controls as Steam presents them.
+    /// Xbox pads, and pads Steam Input presents without saying what they
+    /// are.
     Xbox,
     /// PlayStation pads.
     PlayStation,
     /// Nintendo Switch pads.
     Switch,
+    /// The Steam Deck's built-in controls: Xbox's layout, with the Deck's
+    /// labels on its shoulders, triggers and stick clicks.
+    SteamDeck,
     /// A pad of unknown make; it is named like an Xbox pad.
     Other,
 }

@@ -379,7 +379,13 @@ impl Form {
     /// commit was refused, in danger red), the fields, and the buttons.
     /// Coaching passes a faded color; a notice such as a failure passes a
     /// plain one, since warnings never wait.
-    pub fn draw(&self, hint: &str, hint_color: Color, mouse: Vec2) {
+    pub fn draw(
+        &self,
+        sprites: &crate::assets::Sprites,
+        hint: &crate::hint_line::HintLine,
+        (hint_color, icon_color): (Color, Color),
+        mouse: Vec2,
+    ) {
         let s = crate::render::ui_scale();
         let view = crate::render::viewport();
         let layout = self.layout(view, s);
@@ -390,11 +396,14 @@ impl Form {
         crate::menu::draw_title(self.title, layout.title_y, TEXT_TITLE);
         match self.error {
             Some(reason) => centered(reason, layout.hint_y, Type::Label.at(s), TEXT_DANGER),
-            None => centered(
-                &crate::typography::sentence_case(hint),
+            None => hint.clone().sentence_cased().draw(
+                sprites,
+                view.x * 0.5,
                 layout.hint_y,
-                Type::Label.at(s),
+                view.x,
+                (Type::Label, Type::Label),
                 hint_color,
+                icon_color,
             ),
         }
         for (index, (field, rect)) in self.fields.iter().zip(&layout.fields).enumerate() {

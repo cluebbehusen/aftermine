@@ -5,8 +5,11 @@
 //! finger. Menu input arrives through the same [`RawEvent`] funnel as
 //! gameplay, so injected events drive menus exactly like hardware.
 
+use crate::assets::Sprites;
+use crate::hint_line::HintLine;
 use crate::numeric;
 use crate::numeric::Fit;
+use crate::pad::PadIcon;
 use crate::render::prim::stroke_rect;
 use aftermine_protocol::{MouseButton, RawEvent};
 use aftermine_sim::Scenario;
@@ -77,23 +80,52 @@ pub(crate) fn binding_hint(template: &str) -> String {
     })
 }
 
+/// The coaching tokens a controller's fixed menu layout has buttons for.
+/// Pad copy names the D-pad itself rather than one token per arrow.
+const PAD_TOKENS: [(&str, aftermine_protocol::PadButton); 6] = [
+    ("{confirm}", crate::pad::CONFIRM),
+    ("{back}", crate::pad::BACK),
+    ("{prev_tab}", crate::pad::TABS.0),
+    ("{next_tab}", crate::pad::TABS.1),
+    ("{page_up}", crate::pad::PAGES.0),
+    ("{page_down}", crate::pad::PAGES.1),
+];
+
 /// Fills the tokens of a coaching template that `family` has buttons
-/// for. Pad copy names the D-pad itself rather than one token per arrow,
-/// and leaves the rest to the keys.
+/// for, and leaves the rest to the keys.
 fn pad_hint(template: &str, family: aftermine_protocol::PadFamily) -> String {
-    use crate::pad::{BACK, CONFIRM, PAGES, TABS, button_name};
     let mut text = template.to_string();
-    for (token, button) in [
-        ("{confirm}", CONFIRM),
-        ("{back}", BACK),
-        ("{prev_tab}", TABS.0),
-        ("{next_tab}", TABS.1),
-        ("{page_up}", PAGES.0),
-        ("{page_down}", PAGES.1),
-    ] {
-        text = text.replace(token, button_name(family, button));
+    for (token, button) in PAD_TOKENS {
+        text = text.replace(token, crate::pad::button_name(family, button));
     }
     text
+}
+
+/// A coaching template as a hint line. While a controller is in use, the
+/// tokens its layout has buttons for show that pad's own icons and the
+/// rest name keys; otherwise it is [`binding_hint`]'s copy. Either way it
+/// reads as the same words.
+pub(crate) fn hint_line(template: &str) -> HintLine {
+    let Some(family) = crate::platform::hands().pad else {
+        return HintLine::from(binding_hint(template));
+    };
+    let mut line = HintLine::default();
+    let mut rest = template;
+    while let Some((at, token, button)) = PAD_TOKENS
+        .iter()
+        .filter_map(|(token, button)| Some((rest.find(token)?, *token, *button)))
+        .min_by_key(|(at, ..)| *at)
+    {
+        if at > 0 {
+            line = line.text(binding_hint(&rest[..at]));
+        }
+        line = line.pad(crate::pad::button_icon(family, button));
+        rest = &rest[at + token.len()..];
+    }
+    if !rest.is_empty() {
+        line = line.text(binding_hint(rest));
+    }
+    line
 }
 
 /// The key that steps tabs as `action` in menus right now, if any.
@@ -934,22 +966,23 @@ impl<R: Clone> Menu<R> {
         }
     }
 
-    /// Draws the menu (over whatever the caller already drew).
-    pub fn draw(&self, subtitle: &str) {
-        self.draw_with_coaching(subtitle, None);
+    /// Draws the menu (over whatever the caller already drew). `sprites`
+    /// holds the controller icons the footer may show.
+    pub fn draw(&self, sprites: &Sprites, subtitle: &str) {
+        self.draw_with_coaching(sprites, subtitle, None);
     }
 
     /// Draws the menu with `coaching` in the footer line in place of the
     /// standard key help. The footer is coaching either way: it fades in
     /// only when the player seems stuck.
-    pub fn draw_with_coaching(&self, subtitle: &str, coaching: Option<&str>) {
-        self.draw_face(subtitle, coaching, false);
+    pub fn draw_with_coaching(&self, sprites: &Sprites, subtitle: &str, coaching: Option<&str>) {
+        self.draw_face(sprites, subtitle, coaching, false);
     }
 
     /// Draws the menu while work it started runs: every row dimmed and
     /// inert-looking, `subtitle` saying what is happening, no footer.
-    pub fn draw_busy(&self, subtitle: &str) {
-        self.draw_face(subtitle, None, true);
+    pub fn draw_busy(&self, sprites: &Sprites, subtitle: &str) {
+        self.draw_face(sprites, subtitle, None, true);
     }
 
     /// Draws the plate a dialog's title and rows sit on, which holds them
@@ -978,7 +1011,7 @@ impl<R: Clone> Menu<R> {
         );
     }
 
-    fn draw_face(&self, subtitle: &str, coaching: Option<&str>, busy: bool) {
+    fn draw_face(&self, sprites: &Sprites, subtitle: &str, coaching: Option<&str>, busy: bool) {
         let subtitle = binding_hint(subtitle);
         let s = self.scale();
         let list = self.window();
@@ -1152,24 +1185,16 @@ impl<R: Clone> Menu<R> {
         }
 
         let scrolls = first > 0 || first + visible < self.lines.len();
-        let hint = coaching.map_or_else(
-            || menu_footer(crate::platform::hands(), scrolls),
-            binding_hint,
-        );
-        let hint = crate::typography::sentence_case(&hint);
-        let hint_size = crate::typography::fit(
-            &hint,
-            crate::theme::Type::Label.at(s),
-            view_w() - 32.0 * s,
-            crate::theme::Type::Caption,
-        );
-        let hint_dims = measure_text(&hint, None, numeric::font_size(hint_size), 1.0);
-        draw_text(
-            &hint,
-            (view_w() - hint_dims.width) * 0.5,
+        let hint =
+            coaching.map_or_else(|| menu_footer(crate::platform::hands(), scrolls), hint_line);
+        hint.sentence_cased().draw(
+            sprites,
+            view_w() * 0.5,
             view_h() - 24.0 * s,
-            hint_size,
+            view_w() - 32.0 * s,
+            (crate::theme::Type::Label, crate::theme::Type::Caption),
             crate::hints::fade(TEXT_SECONDARY),
+            crate::hints::fade(WHITE),
         );
     }
 }
@@ -1187,16 +1212,18 @@ fn row_pitch(avail: f32, rows: usize, s: f32, touch_only: bool) -> f32 {
     (avail / rows.max(1) as f32).clamp(min * s, max * s)
 }
 
-/// The line under every menu: a controller's buttons while one is in use,
-/// its keys once the player has a keyboard, the pointer's verb, and without
-/// keys the drag or scroll only when the list actually scrolls. ASCII on
-/// purpose: the default font has no glyphs for arrows.
-fn menu_footer(hands: crate::platform::Hands, scrolls: bool) -> String {
+/// The line under every menu: a controller's button icons while one is in
+/// use, so no key shows, its keys once the player has a keyboard, the
+/// pointer's verb, and without keys the drag or scroll only when the list
+/// actually scrolls. ASCII on purpose: the default font has no glyphs for
+/// arrows.
+fn menu_footer(hands: crate::platform::Hands, scrolls: bool) -> HintLine {
     if let Some(family) = hands.pad {
-        return format!(
-            "D-pad select - {} confirm",
-            crate::pad::button_name(family, crate::pad::CONFIRM)
-        );
+        return HintLine::default()
+            .pad(PadIcon::DpadUpDown)
+            .text(" select - ")
+            .pad(crate::pad::button_icon(family, crate::pad::CONFIRM))
+            .text(" confirm");
     }
     let verb = if hands.touch() { "tap" } else { "click" };
     if !hands.keys {
@@ -1205,16 +1232,16 @@ fn menu_footer(hands: crate::platform::Hands, scrolls: bool) -> String {
             (true, true) => " - drag to scroll",
             (true, false) => " - scroll for more",
         };
-        return format!("{verb} to choose{scroll}");
+        return HintLine::from(format!("{verb} to choose{scroll}"));
     }
     MENU_BINDINGS.with(|bindings| {
         let bindings = bindings.borrow();
-        format!(
+        HintLine::from(format!(
             "{}/{} select - {} confirm - or {verb}",
             bindings.label(crate::action::Action::MenuUp),
             bindings.label(crate::action::Action::MenuDown),
             bindings.label(crate::action::Action::Confirm)
-        )
+        ))
     })
 }
 

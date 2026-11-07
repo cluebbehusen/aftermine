@@ -71,7 +71,7 @@ fn foundry_free_sandbox_accepts_local_input_and_restores_checkpoint() {
     }
     let mut original = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     assert!(original.bots.is_empty());
-    assert!(original.home_foundry().is_none());
+    assert!(original.view().own_foundries().next().is_none());
     let unit = original
         .state
         .units()

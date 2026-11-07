@@ -4,7 +4,8 @@
 //! Nothing here may affect a running match. The config versions
 //! independently of replays. Any read problem (missing file, old version,
 //! parse error) falls back to defaults silently: a bad config file must
-//! never keep the game from starting.
+//! never keep the game from starting. The settings that follow the player
+//! also travel through iCloud; [`sync`] says which.
 
 use crate::action::BindingMap;
 use serde::{Deserialize, Serialize};
@@ -61,6 +62,25 @@ impl Default for Volumes {
             effects: 1.0,
             ui: 1.0,
             music: 1.0,
+        }
+    }
+}
+
+impl Volumes {
+    /// Every bus within 0..=1, a non-finite one back at full.
+    pub fn clamped(self) -> Self {
+        let unit = |volume: f32| {
+            if volume.is_finite() {
+                volume.clamp(0.0, 1.0)
+            } else {
+                1.0
+            }
+        };
+        Self {
+            master: unit(self.master),
+            effects: unit(self.effects),
+            ui: unit(self.ui),
+            music: unit(self.music),
         }
     }
 }
@@ -298,29 +318,34 @@ impl Config {
             return Self::default();
         };
         match serde_json::from_str::<Self>(&text) {
-            Ok(mut config) if config.version == CONFIG_VERSION => {
-                if !config.bindings.valid() {
-                    config.bindings = BindingMap::classic();
-                }
-                config.bindings.keep_offered();
-                config.window = Self::sane_window(config.window);
-                config.ui_scale = Self::sane_ui_scale(config.ui_scale);
-                config.touch = config.touch.clamped();
-                config.markers = config.markers.clamped();
-                // A hand-edited name that no longer passes is forgotten,
-                // not allowed to reset everything else.
-                config.player_name = config
-                    .player_name
-                    .and_then(|name| aftermine_net::PlayerName::new(&name).ok())
-                    .map(String::from);
-                config.install_id = config
-                    .install_id
-                    .filter(|id| aftermine_net::InstallId::from_hex(id).is_some());
-                config.lessons_done = in_course_order(&config.lessons_done);
-                config
-            }
+            Ok(config) if config.version == CONFIG_VERSION => config.sanitized(),
             _ => Self::default(),
         }
+    }
+
+    /// Brings every field a hand edit, or another device, could have put
+    /// out of range back into it, each on its own: one bad field never
+    /// resets the others.
+    fn sanitized(mut self) -> Self {
+        if !self.bindings.valid() {
+            self.bindings = BindingMap::classic();
+        }
+        self.bindings.keep_offered();
+        self.window = Self::sane_window(self.window);
+        self.ui_scale = Self::sane_ui_scale(self.ui_scale);
+        self.touch = self.touch.clamped();
+        self.markers = self.markers.clamped();
+        self.volumes = self.volumes.clamped();
+        // A name that no longer passes is forgotten.
+        self.player_name = self
+            .player_name
+            .and_then(|name| aftermine_net::PlayerName::new(&name).ok())
+            .map(String::from);
+        self.install_id = self
+            .install_id
+            .filter(|id| aftermine_net::InstallId::from_hex(id).is_some());
+        self.lessons_done = in_course_order(&self.lessons_done);
+        self
     }
 
     /// This installation's identifier, made up on first use; the caller
@@ -374,6 +399,8 @@ fn in_course_order(done: &[crate::tutorial::Lesson]) -> Vec<crate::tutorial::Les
         .filter(|lesson| done.contains(lesson))
         .collect()
 }
+
+pub mod sync;
 
 #[cfg(test)]
 mod tests;

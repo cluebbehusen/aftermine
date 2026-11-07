@@ -3,6 +3,8 @@
 //! pointer events first, and the list beneath gets only the ones it
 //! leaves alone.
 
+use crate::assets::Sprites;
+use crate::hint_line::HintLine;
 use crate::numeric;
 use crate::press::{Fed, Press};
 use crate::render::prim::stroke_rect;
@@ -11,22 +13,23 @@ use crate::theme::{
     TEXT_PRIMARY, TEXT_SECONDARY, Type,
 };
 use aftermine_protocol::RawEvent;
-use macroquad::prelude::{Rect, Vec2, draw_rectangle, draw_text, measure_text};
+use macroquad::prelude::{Rect, Vec2, WHITE, draw_rectangle, draw_text, measure_text};
 
 /// The keys that step tabs in menus now, while both have one, or the
-/// bumpers while a controller is in use.
-pub(crate) fn keys() -> Option<(String, String)> {
+/// bumpers' icons while a controller is in use.
+pub(crate) fn keys() -> Option<(HintLine, HintLine)> {
     if let Some(family) = crate::platform::hands().pad {
-        let name = |button| crate::pad::button_name(family, button).to_string();
-        return Some((name(crate::pad::TABS.0), name(crate::pad::TABS.1)));
+        let icon = |button| HintLine::default().pad(crate::pad::button_icon(family, button));
+        return Some((icon(crate::pad::TABS.0), icon(crate::pad::TABS.1)));
     }
     crate::menu::tab_key(crate::action::Action::PrevTab)
         .zip(crate::menu::tab_key(crate::action::Action::NextTab))
+        .map(|(prev, next)| (HintLine::from(prev), HintLine::from(next)))
 }
 
 /// The tab keys to draw beside a strip: none for a player without keys
 /// or a controller, who has no way to press them.
-pub(crate) fn shown_keys() -> Option<(String, String)> {
+pub(crate) fn shown_keys() -> Option<(HintLine, HintLine)> {
     let hands = crate::platform::hands();
     keys().filter(|_| hands.keys || hands.pad.is_some())
 }
@@ -104,17 +107,24 @@ impl TabStrip {
 /// Draws the strip over `labels` with `active` filled and the tab under
 /// `mouse` lit. `keys`, when the player has a keyboard, names the keys
 /// that step left and right, drawn beside the strip's ends.
-pub(crate) fn draw(labels: &[&str], active: usize, mouse: Vec2, keys: Option<(&str, &str)>) {
-    draw_in(&rects(labels.len()), labels, active, mouse, keys);
+pub(crate) fn draw(
+    sprites: &Sprites,
+    labels: &[&str],
+    active: usize,
+    mouse: Vec2,
+    keys: Option<&(HintLine, HintLine)>,
+) {
+    draw_in(sprites, &rects(labels.len()), labels, active, mouse, keys);
 }
 
 /// Draws a strip at `rects`, as [`draw`] does under a page title.
 pub(crate) fn draw_in(
+    sprites: &Sprites,
     rects: &[Rect],
     labels: &[&str],
     active: usize,
     mouse: Vec2,
-    keys: Option<(&str, &str)>,
+    keys: Option<&(HintLine, HintLine)>,
 ) {
     let s = crate::render::ui_scale();
     let size = Type::Body.at(s);
@@ -151,18 +161,26 @@ pub(crate) fn draw_in(
     let (Some((prev, next)), Some(first), Some(last)) = (keys, rects.first(), rects.last()) else {
         return;
     };
-    let size = Type::Small.at(s);
+    // A bumper's icon carries its label inside it, so it needs the size
+    // hint lines give icons to stay legible.
+    let size = if crate::platform::hands().pad.is_some() {
+        Type::Label
+    } else {
+        Type::Small
+    }
+    .at(s);
     let baseline = first.y + first.h * 0.5 + size * 0.35;
     let gap = 12.0 * s;
-    let prev_width = measure_text(prev, None, numeric::font_size(size), 1.0).width;
-    draw_text(
-        prev,
-        first.x - gap - prev_width,
+    let prev_x = first.x - gap - prev.width(size);
+    prev.draw_at(sprites, prev_x, baseline, size, TEXT_SECONDARY, WHITE);
+    next.draw_at(
+        sprites,
+        last.x + last.w + gap,
         baseline,
         size,
         TEXT_SECONDARY,
+        WHITE,
     );
-    draw_text(next, last.x + last.w + gap, baseline, size, TEXT_SECONDARY);
 }
 
 #[cfg(test)]

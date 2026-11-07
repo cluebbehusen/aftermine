@@ -3,6 +3,7 @@
 use super::{Axis, Reading};
 use aftermine_protocol::{PadButton, PadFamily, Stick};
 use gilrs::{EventType, Filter, GamepadId, Gilrs, GilrsBuilder};
+use std::collections::BTreeMap;
 
 /// gilrs, and the pads it found already connected when it started.
 pub(super) struct Source {
@@ -32,11 +33,12 @@ impl Source {
                 return None;
             }
         };
+        let steam = SteamPads::read();
         let present = gilrs
             .gamepads()
             .map(|(id, gamepad)| Reading::Connected {
                 pad: pad_id(id),
-                family: family(gamepad.vendor_id()),
+                family: family(identity(&gamepad), gamepad.os_name(), &steam),
             })
             .collect();
         Some(Self { gilrs, present })
@@ -56,10 +58,13 @@ impl Source {
             self.gilrs.update(&event);
             let pad = pad_id(event.id);
             let reading = match event.event {
-                EventType::Connected => Some(Reading::Connected {
-                    pad,
-                    family: family(self.gilrs.gamepad(event.id).vendor_id()),
-                }),
+                EventType::Connected => {
+                    let gamepad = self.gilrs.gamepad(event.id);
+                    Some(Reading::Connected {
+                        pad,
+                        family: family(identity(&gamepad), gamepad.os_name(), &SteamPads::read()),
+                    })
+                }
                 EventType::Disconnected => Some(Reading::Disconnected { pad }),
                 EventType::ButtonPressed(button, _) => {
                     pad_button(button).map(|button| Reading::Button {
@@ -87,13 +92,111 @@ fn pad_id(id: GamepadId) -> u64 {
     usize::from(id) as u64
 }
 
-/// The family a USB vendor id names. Valve's id covers the Steam Deck's
-/// controls and every pad Steam Input presents, all in Xbox's layout.
-pub(super) fn family(vendor: Option<u16>) -> PadFamily {
-    match vendor {
-        Some(0x045e | 0x28de) => PadFamily::Xbox,
-        Some(0x054c) => PadFamily::PlayStation,
-        Some(0x057e) => PadFamily::Switch,
+/// A controller's USB identity, as far as the platform reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) struct Device {
+    pub(super) vendor: Option<u16>,
+    pub(super) product: Option<u16>,
+}
+
+const VALVE: u16 = 0x28de;
+/// The Steam Deck's built-in controls, read without Steam Input.
+const STEAM_DECK: u16 = 0x1205;
+/// The pad Steam Input presents in place of each controller it wraps.
+const STEAM_VIRTUAL_PAD: u16 = 0x11ff;
+
+fn identity(gamepad: &gilrs::Gamepad<'_>) -> Device {
+    Device {
+        vendor: gamepad.vendor_id(),
+        product: gamepad.product_id(),
+    }
+}
+
+/// The controllers behind Steam Input's virtual pads, by slot, from the
+/// file Steam names in `SteamVirtualGamepadInfo` for the games it starts.
+#[derive(Debug, Default)]
+pub(super) struct SteamPads {
+    real: BTreeMap<u32, Device>,
+}
+
+impl SteamPads {
+    /// Steam's current file. Steam rewrites it as controllers come and go,
+    /// so each connection reads it again; outside Steam there is none.
+    fn read() -> Self {
+        std::env::var_os("SteamVirtualGamepadInfo")
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .map_or_else(Self::default, |text| Self::parse(&text))
+    }
+
+    /// Parses Steam's file: a `[slot N]` heading per virtual pad, then
+    /// `key=value` lines whose `VID` and `PID` name the controller behind
+    /// it. A repeated slot keeps its first entry.
+    pub(super) fn parse(text: &str) -> Self {
+        let mut real = BTreeMap::new();
+        let mut slot = None;
+        for line in text.lines().map(str::trim) {
+            if let Some(heading) = line.strip_prefix("[slot ") {
+                slot = heading
+                    .strip_suffix(']')
+                    .and_then(|n| n.trim().parse::<u32>().ok())
+                    .filter(|n| !real.contains_key(n));
+                if let Some(n) = slot {
+                    real.insert(n, Device::default());
+                }
+                continue;
+            }
+            let (Some(n), Some((key, value))) = (slot, line.split_once('=')) else {
+                continue;
+            };
+            let Some(device) = real.get_mut(&n) else {
+                continue;
+            };
+            match key.trim().as_bytes() {
+                b"VID" => device.vendor = id_number(value),
+                b"PID" => device.product = id_number(value),
+                _ => {}
+            }
+        }
+        Self { real }
+    }
+
+    /// The controller behind the virtual pad the system names `name`.
+    /// Steam names each one ending in `pad N`, N being its slot.
+    pub(super) fn behind(&self, name: &str) -> Option<Device> {
+        let rest = &name[name.find("pad ")? + 4..];
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        self.real.get(&digits.parse().ok()?).copied()
+    }
+}
+
+/// A USB id written in hex with `0x` or in decimal.
+fn id_number(value: &str) -> Option<u16> {
+    let value = value.trim();
+    match value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        Some(hex) => u16::from_str_radix(hex, 16).ok(),
+        None => value.parse().ok(),
+    }
+}
+
+/// The family a pad's identity names. Steam Input presents every
+/// controller it wraps as the same Valve pad, so for those the family is
+/// the controller Steam says is behind it, and one it says nothing about is
+/// in Xbox's layout. The Deck's built-in controls name themselves when
+/// read without Steam Input.
+pub(super) fn family(device: Device, name: &str, steam: &SteamPads) -> PadFamily {
+    let device = if device.vendor == Some(VALVE) && device.product == Some(STEAM_VIRTUAL_PAD) {
+        steam.behind(name).unwrap_or(device)
+    } else {
+        device
+    };
+    match (device.vendor, device.product) {
+        (Some(VALVE), Some(STEAM_DECK)) => PadFamily::SteamDeck,
+        (Some(0x045e | VALVE), _) => PadFamily::Xbox,
+        (Some(0x054c), _) => PadFamily::PlayStation,
+        (Some(0x057e), _) => PadFamily::Switch,
         _ => PadFamily::Other,
     }
 }

@@ -5,6 +5,7 @@ use crate::action::{Action, ActionEvent, ActionResolver, BindingMap, Context as 
 use crate::camera::controls::{MinimapPoint, ViewerHands, event_point, held_pan, pan_toward};
 use crate::frame_time::FrameTime;
 use crate::game::{self, GameReplay, Presentation, Scene};
+use crate::hint_line::HintLine;
 use crate::numeric;
 use crate::numeric::Fit;
 use crate::press::{Fed, Press};
@@ -318,20 +319,22 @@ const CAPTION_PAD: f32 = 10.0;
 /// gap to the minimap, the narrower of the two.
 const CAPTION_OVERHANG: f32 = 8.0;
 
-fn caption_width(line: &str, size: f32) -> f32 {
-    measure_text(line, None, numeric::font_size(size), 1.0).width
-}
-
 /// Whether a caption's plate seats under the timeline.
-fn caption_fits(line: &str, bar: macroquad::prelude::Rect, size: f32, s: f32) -> bool {
-    caption_width(line, size) + 2.0 * CAPTION_PAD * s <= bar.w + 2.0 * CAPTION_OVERHANG * s
+fn caption_fits(line: &HintLine, bar: macroquad::prelude::Rect, size: f32, s: f32) -> bool {
+    line.width(size) + 2.0 * CAPTION_PAD * s <= bar.w + 2.0 * CAPTION_OVERHANG * s
 }
 
 /// Draws one caption line on its plate under the timeline, centered on
 /// the bar. A line too long to seat runs right, under the minimap, rather
 /// than over the transport row's buttons.
-fn draw_caption(line: &str, bar: macroquad::prelude::Rect, size: f32, s: f32) {
-    let width = caption_width(line, size);
+fn draw_caption(
+    sprites: &crate::assets::Sprites,
+    line: &HintLine,
+    bar: macroquad::prelude::Rect,
+    size: f32,
+    s: f32,
+) {
+    let width = line.width(size);
     let x = (bar.center().x - width * 0.5).max(bar.x + (CAPTION_PAD - CAPTION_OVERHANG) * s);
     let y = screen_height() - 14.0 * s;
     draw_rectangle(
@@ -341,10 +344,16 @@ fn draw_caption(line: &str, bar: macroquad::prelude::Rect, size: f32, s: f32) {
         size + 10.0 * s,
         theme::SURFACE_CAPTION,
     );
-    draw_text(line, x, y, size, crate::theme::TEXT_PRIMARY);
+    line.draw_at(sprites, x, y, size, crate::theme::TEXT_PRIMARY, WHITE);
 }
 
-pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2, mouse: Vec2) {
+pub fn playback_hud(
+    sprites: &crate::assets::Sprites,
+    pb: &PlaybackSession,
+    bindings: &BindingMap,
+    viewport: Vec2,
+    mouse: Vec2,
+) {
     let s = render::ui_scale();
     let size = crate::theme::Type::Label.at(s);
     for (rect, button) in transport_buttons(viewport, s) {
@@ -406,7 +415,7 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
             clock_label::ticks(pb.engine.position()),
             clock_label::ticks(target)
         );
-        draw_caption(&line, bar, size, s);
+        draw_caption(sprites, &HintLine::from(line), bar, size, s);
         return;
     }
     // The readout carries the speed and the Play label carries the pause,
@@ -426,37 +435,43 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
     {
         lines.push(pad_caption(&clock, family));
     } else if hands.keys && crate::hints::showing() {
-        lines.push(format!(
+        lines.push(HintLine::from(format!(
             "{clock} | {} pause | {}/{} seek | {} stats | {} leave",
             bindings.label(Action::ReplayPause),
             bindings.label(Action::ReplayBack),
             bindings.label(Action::ReplayForward),
             bindings.label(Action::ReplayStats),
             bindings.label(Action::Back),
-        ));
+        )));
     }
+    let clock = HintLine::from(clock);
     lines.push(clock.clone());
     let line = lines
         .into_iter()
         .find(|line| caption_fits(line, bar, size, s))
         .unwrap_or(clock);
-    draw_caption(&line, bar, size, s);
+    draw_caption(sprites, &line, bar, size, s);
 }
 
 /// The caption's longest form while a controller is in use: the clock and
 /// the viewer's fixed pad layout.
-fn pad_caption(clock: &str, family: aftermine_protocol::PadFamily) -> String {
-    use crate::pad::{BACK, CONFIRM, PAGES, TABS, button_name};
-    let name = |button| button_name(family, button);
-    format!(
-        "{clock} | {} pause | {}/{} seek | {}/{} speed | {} leave",
-        name(CONFIRM),
-        name(TABS.0),
-        name(TABS.1),
-        name(PAGES.0),
-        name(PAGES.1),
-        name(BACK),
-    )
+fn pad_caption(clock: &str, family: aftermine_protocol::PadFamily) -> HintLine {
+    use crate::pad::{BACK, CONFIRM, PAGES, TABS, button_icon};
+    let icon = |button| button_icon(family, button);
+    HintLine::default()
+        .text(format!("{clock} | "))
+        .pad(icon(CONFIRM))
+        .text(" pause | ")
+        .pad(icon(TABS.0))
+        .text("/")
+        .pad(icon(TABS.1))
+        .text(" seek | ")
+        .pad(icon(PAGES.0))
+        .text("/")
+        .pad(icon(PAGES.1))
+        .text(" speed | ")
+        .pad(icon(BACK))
+        .text(" leave")
 }
 
 /// Distinct band colors; the ninth is the gray "other" fold.

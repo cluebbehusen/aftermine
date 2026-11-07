@@ -324,6 +324,25 @@ fn the_shell_and_the_atlas_name_the_same_sprites() {
 }
 
 #[test]
+fn each_pad_icon_reads_the_sprite_named_after_it() {
+    for (index, (icon, key)) in crate::pad::PadIcon::ALL
+        .iter()
+        .zip(PAD_ICON_KEYS)
+        .enumerate()
+    {
+        assert_eq!(*icon as usize, index, "{icon:?} is out of order");
+        let mut snake = String::from("pad");
+        for ch in format!("{icon:?}").chars() {
+            if ch.is_ascii_uppercase() {
+                snake.push('_');
+            }
+            snake.push(ch.to_ascii_lowercase());
+        }
+        assert_eq!(key, snake, "{icon:?}");
+    }
+}
+
+#[test]
 fn the_building_loader_finds_every_kind_in_the_shipped_atlas() {
     let atlas = manifest();
     let art = building_art(&atlas).expect("every building bank is in the atlas");

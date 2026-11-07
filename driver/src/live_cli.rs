@@ -442,8 +442,8 @@ pub(crate) enum LiveCmd {
     },
     /// Inject a controller connecting.
     InjectPadConnect {
-        /// Whose layout names its buttons: xbox, playstation, switch, or
-        /// other.
+        /// Whose layout names its buttons: xbox, playstation, switch,
+        /// steamdeck, or other.
         #[arg(long, default_value = "xbox")]
         family: String,
         /// The pad's id.

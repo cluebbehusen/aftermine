@@ -67,14 +67,16 @@ jobs:
 
       # The iPad build compiles the shell's touch-only branches and the
       # iCloud crate's Foundation calls for real; linting them keeps
-      # iOS-only code from rotting between device builds. The macOS
-      # runner's Xcode supplies the iOS SDK that the C and Objective-C
-      # dependencies compile against.
+      # iOS-only code from rotting between device builds. The iCloud crate's
+      # key-value store also serves Apple TV, so its Objective-C compiles
+      # for tvOS too. The macOS runner's Xcode supplies the iOS and tvOS
+      # SDKs that the C and Objective-C dependencies compile against.
       - name: Clippy (iOS shell)
         if: runner.os == 'macOS'
         run: |
-          rustup target add aarch64-apple-ios
+          rustup target add aarch64-apple-ios aarch64-apple-tvos
           cargo clippy -p aftermine-shell -p aftermine-icloud --target aarch64-apple-ios --locked -- -D warnings
+          cargo clippy -p aftermine-icloud --target aarch64-apple-tvos --locked -- -D warnings
 
       - name: Test
         run: cargo test --workspace --locked

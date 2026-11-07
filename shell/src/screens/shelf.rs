@@ -303,19 +303,20 @@ impl Shelf {
     /// Draws the tab's rows, the strip, and the status line over the
     /// veil the caller drew. `notice_shown` says the app's menu notice
     /// holds the status line's place this frame.
-    pub fn draw(&self, mouse: Vec2, notice_shown: bool) {
-        self.menu.draw_with_coaching("", self.coaching().as_deref());
+    pub fn draw(&self, sprites: &crate::assets::Sprites, mouse: Vec2, notice_shown: bool) {
+        self.menu
+            .draw_with_coaching(sprites, "", self.coaching().as_deref());
         let keys = crate::tabs::shown_keys();
         let active = Tab::ALL
             .iter()
             .position(|tab| *tab == self.tab())
             .unwrap_or_default();
         crate::tabs::draw(
+            sprites,
             &Tab::ALL.map(Tab::label),
             active,
             mouse,
-            keys.as_ref()
-                .map(|(prev, next)| (prev.as_str(), next.as_str())),
+            keys.as_ref(),
         );
         let status = crate::menu::binding_hint(&self.status());
         if notice_shown || status.is_empty() {

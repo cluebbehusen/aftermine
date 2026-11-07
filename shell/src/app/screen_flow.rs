@@ -424,7 +424,7 @@ fn lobby_frame(
             app.config.last_join_address = Some(address.clone());
             app.config.player_name = Some(name.to_string());
             let install = app.config.install_id();
-            if let Err(err) = app.config.save() {
+            if let Err(err) = app.save_settings() {
                 app.notify_failure("Could not save settings", err);
             }
             let commit = crate::build_identity().revision;
@@ -435,7 +435,7 @@ fn lobby_frame(
         }
     }
     page_backdrop();
-    lobby.draw(app.input.mouse, &mut app.previews);
+    lobby.draw(&app.sprites, app.input.mouse, &mut app.previews);
     Screen::Lobby {
         screen: lobby,
         back,
@@ -515,13 +515,14 @@ fn cold_open_frame(
         return Screen::ColdOpen(open);
     }
     app.config.cold_open_seen = true;
-    if let Err(err) = app.config.save() {
+    if let Err(err) = app.save_settings() {
         eprintln!("could not save config: {err}");
     }
     Screen::Home(HomeScreen::open())
 }
 
 fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32) -> Screen {
+    app.pull_settings();
     if !home.catalog_ready || app.catalog_stale() {
         app.request_catalog();
     }
@@ -636,12 +637,12 @@ fn settings_frame(
         _ => {}
     }
     if up.dirty
-        && let Err(err) = app.config.save()
+        && let Err(err) = app.save_settings()
     {
         app.notify_failure("Could not save settings", err);
     }
     page_backdrop();
-    sc.draw(app.input.mouse);
+    sc.draw(&app.sprites, app.input.mouse);
     crate::button::draw_back(app.input.mouse);
     if up.out == screens::settings::Out::Leave {
         // Back to wherever this screen displaced: Home, or
@@ -750,7 +751,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     };
     if let Some(name) = w.take_saved_name() {
         app.config.player_name = Some(name.to_string());
-        if let Err(err) = app.config.save() {
+        if let Err(err) = app.save_settings() {
             app.notify_failure("Could not save settings", err);
         }
     }
@@ -812,8 +813,10 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     } else {
         page_backdrop();
         match w.step {
-            WizardStep::Map => w.browser.draw(&w.entries, &mut app.previews),
-            WizardStep::Setup => w.draw_setup(&app.draft, &mut app.previews, app.input.mouse),
+            WizardStep::Map => w.browser.draw(&app.sprites, &w.entries, &mut app.previews),
+            WizardStep::Setup => {
+                w.draw_setup(&app.sprites, &app.draft, &mut app.previews, app.input.mouse);
+            }
         }
         crate::button::draw_back(app.input.mouse);
         Screen::Wizard(w)
@@ -945,7 +948,7 @@ fn playing_frame(
         events,
         |game, input| relayout_hud(&game.view(), input, &app.config.bindings, Some(performance)),
     );
-    input::update_held(&mut app.game, &app.input, time.presentation);
+    input::update_held(&mut app.game, &mut app.input, time.presentation);
     input::update_touch(&mut app.game, &mut app.input, &app.config.bindings);
     let menu_pressed = app.input.take_menu_request();
     // The cursor telegraphs the verb: crosshair while
@@ -1001,12 +1004,12 @@ fn playing_frame(
     }
     if let Some(lesson) = Tutorial::advance_in(&mut app.game)
         && app.config.finish_lesson(lesson)
-        && let Err(err) = app.config.save()
+        && let Err(err) = app.save_settings()
     {
         app.notify_failure("Could not save settings", err);
     }
     if mark_first_match(&mut app.config, &app.game)
-        && let Err(err) = app.config.save()
+        && let Err(err) = app.save_settings()
     {
         app.notify_failure("Could not save settings", err);
     }
@@ -1027,6 +1030,9 @@ fn playing_frame(
         &app.config.bindings,
         Some(app.performance.view()),
     );
+    pass(FramePass::Hud, || {
+        render::draw_reticle(&app.game.view(), &app.input);
+    });
     if let Some(card) = current_card(app) {
         pass(FramePass::Hud, || {
             tutorial_card::draw(&card, app.input.mouse);
@@ -1128,6 +1134,7 @@ fn playback_frame(
         );
         pass(FramePass::Hud, || {
             screens::playback::playback_hud(
+                &app.sprites,
                 &pb,
                 &app.config.bindings,
                 vec2(screen_width(), screen_height()),
@@ -1170,7 +1177,7 @@ fn final_map_frame(
         &app.config.bindings,
         Some(app.performance.view()),
     );
-    FinalMapScreen::draw_hud(&app.config.bindings, app.input.mouse);
+    FinalMapScreen::draw_hud(&app.sprites, &app.config.bindings, app.input.mouse);
     if leave {
         *rerun = true;
         Screen::Results(ResultsScreen::open(app.game.net_role().is_some()))
@@ -1278,7 +1285,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
         next
     } else {
         page_backdrop();
-        shelf.draw(app.input.mouse, app.menu_notice.is_some());
+        shelf.draw(&app.sprites, app.input.mouse, app.menu_notice.is_some());
         crate::button::draw_back(app.input.mouse);
         Screen::Replays(shelf)
     }
@@ -1327,7 +1334,7 @@ fn waiting_frame(
     waiting.refresh(absent);
     let out = waiting.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     match_backdrop(app);
-    waiting.draw();
+    waiting.draw(&app.sprites);
     match out {
         screens::waiting::Out::Stay => Screen::Waiting(waiting),
         screens::waiting::Out::Drop(seat) => {
@@ -1355,7 +1362,7 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
     let out = ps.update(events, &mut app.input.mouse, &mut app.ui_sounds);
     drop(input_scope);
     match_backdrop(app);
-    ps.draw(&app.game.scenario.name, app.input.mouse);
+    ps.draw(&app.sprites, &app.game.scenario.name, app.input.mouse);
     Ok(match out {
         screens::pause::Out::Stay => Screen::Pause(ps),
         screens::pause::Out::Resume => {

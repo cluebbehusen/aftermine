@@ -19,7 +19,7 @@ fn articulated_mount_tracks_interpolated_positions_without_reading_hidden_target
         .find(|unit| unit.player == game.presentation.human)
         .unwrap()
         .clone();
-    let own = game.home_foundry().unwrap().id;
+    let own = game.view().own_foundries().next().unwrap().id;
     let enemy = game
         .state
         .buildings()

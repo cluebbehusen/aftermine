@@ -89,7 +89,12 @@ fn wizard_seat_swap_opens_on_the_new_humans_foundry() {
     );
 
     assert_eq!(game.presentation.human, aftermine_sim::PlayerId(1));
-    let home = game.home_foundry().expect("human Foundry").center();
+    let home = game
+        .view()
+        .own_foundries()
+        .next()
+        .expect("human Foundry")
+        .center();
     let home = vec2(home.x.to_num::<f32>(), home.y.to_num::<f32>());
     let (lo, hi) = game.presentation.camera.world_rect();
     assert!(
@@ -105,7 +110,7 @@ fn wizard_seat_swap_opens_on_the_new_humans_foundry() {
     assert!(game.presentation.overlay);
 
     let opening_center = game.presentation.camera.center;
-    input::update_held(&mut game, &input, 1.0);
+    input::update_held(&mut game, &mut input, 1.0);
     assert_eq!(
         game.presentation.camera.center, opening_center,
         "edge pan must not mistake the menu click for a pointer at (0, 0)"

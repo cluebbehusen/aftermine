@@ -119,6 +119,7 @@ mod terraces;
 pub(crate) mod tutorial_card;
 mod worker;
 mod world;
+pub(crate) use chrome::draw_reticle;
 use chrome::{
     draw_hud, draw_overlay, draw_overlay_info, draw_result_overlay, draw_salvage_tooltip,
 };
@@ -594,7 +595,7 @@ pub(crate) fn draw_with_performance(
     pass(FramePass::Hud, || {
         chrome::draw_ghost_controls(game, input);
         draw_group_press_ring(input);
-        draw_result_overlay(game);
+        draw_result_overlay(game, sprites);
         draw_panel_tooltip(game, input);
         chrome::draw_army_tooltip(game, input, bindings);
     });

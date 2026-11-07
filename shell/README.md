@@ -94,10 +94,12 @@ cargo ios
 cargo mac
 ```
 
-Both apps keep saves in iCloud Drive, so the app ID needs the iCloud capability
-with the container `iCloud.<bundle ID>`. Signing with your own team means
-registering that container for your bundle ID in the developer portal. A
-workspace `cargo run` never looks for iCloud and keeps saves on the Mac.
+Both apps keep saves in iCloud Drive and sync settings through iCloud's
+key-value store, so the app ID needs the iCloud capability with the container
+`iCloud.<bundle ID>`; key-value storage needs no container. Signing with your
+own team means registering that container for your bundle ID in the developer
+portal. A workspace `cargo run` never looks for iCloud and keeps saves and
+settings on the Mac.
 
 `cargo ios` builds the Release app, installs it and launches it on a paired iPad
 or a simulator. With several devices it asks which one; `--device <name or id>`

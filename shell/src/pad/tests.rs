@@ -249,30 +249,31 @@ fn restating_every_control_each_frame_sends_what_reporting_changes_does() {
     assert_eq!(stick_events(&from_polled).len(), 2, "{from_polled:?}");
 }
 
+const BUTTONS: [PadButton; 16] = [
+    PadButton::South,
+    PadButton::East,
+    PadButton::West,
+    PadButton::North,
+    PadButton::DpadUp,
+    PadButton::DpadDown,
+    PadButton::DpadLeft,
+    PadButton::DpadRight,
+    PadButton::LeftShoulder,
+    PadButton::RightShoulder,
+    PadButton::LeftTrigger,
+    PadButton::RightTrigger,
+    PadButton::LeftStick,
+    PadButton::RightStick,
+    PadButton::Select,
+    PadButton::Start,
+];
+
 #[test]
 fn buttons_are_named_by_family_at_each_position() {
     use PadFamily as F;
-    let families = [F::Xbox, F::PlayStation, F::Switch, F::Other];
-    let buttons = [
-        PadButton::South,
-        PadButton::East,
-        PadButton::West,
-        PadButton::North,
-        PadButton::DpadUp,
-        PadButton::DpadDown,
-        PadButton::DpadLeft,
-        PadButton::DpadRight,
-        PadButton::LeftShoulder,
-        PadButton::RightShoulder,
-        PadButton::LeftTrigger,
-        PadButton::RightTrigger,
-        PadButton::LeftStick,
-        PadButton::RightStick,
-        PadButton::Select,
-        PadButton::Start,
-    ];
+    let families = [F::Xbox, F::PlayStation, F::Switch, F::SteamDeck, F::Other];
     for family in families {
-        let names: Vec<_> = buttons.iter().map(|b| button_name(family, *b)).collect();
+        let names: Vec<_> = BUTTONS.iter().map(|b| button_name(family, *b)).collect();
         for name in &names {
             assert!(!name.is_empty() && name.is_ascii(), "{family:?} {name:?}");
         }
@@ -286,6 +287,51 @@ fn buttons_are_named_by_family_at_each_position() {
     assert_eq!(button_name(F::Switch, CONFIRM), "B");
     assert_eq!(button_name(F::Switch, BACK), "A");
     assert_eq!(button_name(F::Other, CONFIRM), "A");
+}
+
+#[test]
+fn the_deck_prints_xbox_faces_and_numbered_shoulders() {
+    use PadFamily as F;
+    let deck: Vec<_> = BUTTONS
+        .iter()
+        .map(|b| button_name(F::SteamDeck, *b))
+        .collect();
+    assert_eq!(
+        deck,
+        [
+            "A",
+            "B",
+            "X",
+            "Y",
+            "D-pad up",
+            "D-pad down",
+            "D-pad left",
+            "D-pad right",
+            "L1",
+            "R1",
+            "L2",
+            "R2",
+            "L3",
+            "R3",
+            "View",
+            "Menu"
+        ]
+    );
+}
+
+#[test]
+fn every_icon_is_printed_on_some_button() {
+    use PadFamily as F;
+    let printed: Vec<PadIcon> = [F::Xbox, F::PlayStation, F::Switch, F::SteamDeck, F::Other]
+        .iter()
+        .flat_map(|family| BUTTONS.iter().map(|button| button_icon(*family, *button)))
+        .collect();
+    for icon in PadIcon::ALL {
+        assert!(
+            printed.contains(&icon) || icon == PadIcon::DpadUpDown,
+            "{icon:?} is drawn for no button"
+        );
+    }
 }
 
 #[test]
