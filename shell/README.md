@@ -91,9 +91,11 @@ cp ios/Local.xcconfig.example ios/Local.xcconfig   # set DEVELOPMENT_TEAM
 cargo ios
 ```
 
-The app keeps saves in iCloud Drive, so the app ID needs the iCloud capability
-with the container `iCloud.<bundle ID>`. Signing with your own team means
-registering that container for your bundle ID in the developer portal.
+The app keeps saves in iCloud Drive and syncs settings through iCloud's
+key-value store, so the app ID needs the iCloud capability with the container
+`iCloud.<bundle ID>`; key-value storage needs no container. Signing with your
+own team means registering that container for your bundle ID in the developer
+portal.
 
 `cargo ios` builds the Release app, installs it and launches it on a paired iPad
 or a simulator. With several devices it asks which one; `--device <name or id>`

@@ -58,6 +58,8 @@ struct App {
     args: Args,
     /// Presentation config, persisted on change.
     config: config::Config,
+    /// The settings this device shares with the player's others.
+    settings_sync: config::sync::SettingsSync,
     /// The live (or backdrop) game session.
     game: Game,
     /// The wizard's remembered choices. Lives here, not in the wizard, so
@@ -216,11 +218,14 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         input::arm_hardware();
     }
     let mut config = config::Config::load();
-    render::set_user_scale(config.ui_scale);
-    render::set_reduced_motion(config.reduced_motion);
-    render::set_team_colors(config.team_colors);
-    render::set_control_groups(config.control_groups);
-    crate::strategic_markers::set_prefs(config.markers);
+    // A packaged copy's settings follow the player through iCloud, like its
+    // saves; workspace and automation runs keep theirs to themselves.
+    let (settings_sync, synced) =
+        config::sync::SettingsSync::open(crate::paths::bundled() && !args.automation, &mut config);
+    if synced && let Err(error) = config.save() {
+        eprintln!("could not save settings: {error}");
+    }
+    apply_presentation(&config);
     mark("config loaded");
     let sprites = assets::Sprites::load()?;
     mark("sprites loaded");
@@ -348,6 +353,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     let mut app = App {
         args,
         config,
+        settings_sync,
         game,
         draft: NewMatchDraft::default(),
         personality_seeds,
@@ -667,7 +673,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                 Some((size, since)) if size == live => {
                     if get_time() - since > 1.0 {
                         app.config.window = live;
-                        if let Err(err) = app.config.save() {
+                        if let Err(err) = app.save_settings() {
                             app.notify_failure("Could not save settings", err);
                         }
                         app.pending_size = None;
@@ -684,7 +690,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             // window size, and the live session as an autosave. A failed
             // autosave swallows the quit (prevent_quit is in force) and
             // raises the failure dialog instead of exiting over data loss.
-            app.config.save().ok();
+            app.save_settings().ok();
             // The dialog's home-vs-match classification must see through
             // screens opened from Pause: a quit while Settings or Playback
             // sits over a paused match still has an unsaved match behind
@@ -807,6 +813,15 @@ fn track_pointer_position(mouse: &mut Vec2, event: &RawEvent) {
     }
 }
 
+/// Hands the settings the renderer keeps in its own globals over to it.
+fn apply_presentation(config: &config::Config) {
+    render::set_user_scale(config.ui_scale);
+    render::set_reduced_motion(config.reduced_motion);
+    render::set_team_colors(config.team_colors);
+    render::set_control_groups(config.control_groups);
+    crate::strategic_markers::set_prefs(config.markers);
+}
+
 impl App {
     /// The one way a match arrives: session toggles carry over from the
     /// old game, which retires off the frame thread, and the frame profile
@@ -860,6 +875,24 @@ impl App {
         self.game.clock.speed = 1.0;
         self.game.presentation.overlay = false;
         self.input.reset_session();
+    }
+
+    /// Saves the settings, sending the ones that follow the player to
+    /// iCloud first, so a failed write here still reaches the other devices.
+    fn save_settings(&mut self) -> std::io::Result<()> {
+        self.settings_sync.push(&self.config);
+        self.config.save()
+    }
+
+    /// Takes in settings changed on the player's other devices. Only Home
+    /// calls this: there no match runs, so no changed setting can reach one.
+    fn pull_settings(&mut self) {
+        if self.settings_sync.pull(&mut self.config) {
+            apply_presentation(&self.config);
+            if let Err(err) = self.config.save() {
+                self.notify_failure("Could not save settings", err);
+            }
+        }
     }
 
     /// Tells the player something; see [`screen_flow::deliver_notices`].
