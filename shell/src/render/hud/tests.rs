@@ -521,3 +521,62 @@ fn a_roc_s_drone_column_stands_beside_its_orders_dock() {
         ))
     );
 }
+
+#[test]
+fn a_selection_of_every_kind_gets_a_roster_chip_for_each() {
+    use aftermine_sim::UnitKind;
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units.clear();
+    let kinds: Vec<UnitKind> = UnitKind::ALL
+        .into_iter()
+        .filter(|&kind| kind != UnitKind::Drone)
+        .collect();
+    for (index, &kind) in kinds.iter().enumerate() {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
+            player: 0,
+            kind,
+            x: 6 + 3 * crate::numeric::Fit::fit::<i32>(index % 8),
+            y: 5 + 3 * crate::numeric::Fit::fit::<i32>(index / 8),
+        });
+    }
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    game.presentation.selection.units = game.state.units().iter().map(|u| u.id).collect();
+    for (w, h) in [(1133.0, 744.0), (1210.0, 834.0), (1280.0, 800.0)] {
+        let hud = layout(
+            &game.view(),
+            &InputState::new(),
+            &BindingMap::classic(),
+            env(w, h),
+            None,
+            &fixed,
+        );
+        let model = hud.layout;
+        assert_eq!(
+            model.roster_count,
+            kinds.len(),
+            "one chip per kind at {w}x{h}"
+        );
+        let info = model.panel_regions[0];
+        let chips = &model.roster_slots[..model.roster_count];
+        for (index, (rect, action)) in chips.iter().enumerate() {
+            assert!(
+                matches!(action, crate::panel::CardAction::FilterKind(_)),
+                "{action:?}"
+            );
+            assert!(
+                rect.x >= info.x
+                    && rect.y >= info.y
+                    && rect.right() <= info.right()
+                    && rect.bottom() <= info.bottom(),
+                "{rect:?} outside {info:?} at {w}x{h}"
+            );
+            assert!(rect.y >= crate::layout::TOP_BAR_H, "{rect:?} at {w}x{h}");
+            assert!(
+                chips[..index]
+                    .iter()
+                    .all(|(other, _)| !rect.overlaps(other)),
+                "{rect:?} overlaps at {w}x{h}"
+            );
+        }
+    }
+}

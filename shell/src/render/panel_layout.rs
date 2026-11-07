@@ -133,8 +133,7 @@ pub(super) fn measure_info(
     let roster_y = y + 18.0 * scale;
     if !panel.roster.is_empty() {
         y = roster_y
-            + panel.roster.len().min(8).div_ceil(roster_columns) as f32
-                * (roster_size + 4.0 * scale);
+            + panel.roster.len().div_ceil(roster_columns) as f32 * (roster_size + 4.0 * scale);
     }
     InfoLayout {
         title,
@@ -158,7 +157,7 @@ pub(super) struct PanelGeometry {
     pub actions: Rect,
     pub orders: Rect,
     pub select_all: (Rect, crate::panel::CardAction),
-    pub roster_slots: [(Rect, crate::panel::CardAction); 8],
+    pub roster_slots: [(Rect, crate::panel::CardAction); crate::panel::MAX_ROSTER],
     pub roster_count: usize,
     pub cards: [(Rect, crate::panel::CardAction); crate::panel::MAX_CARDS],
     pub card_count: usize,
@@ -181,7 +180,7 @@ impl PanelGeometry {
             actions: zero,
             orders: zero,
             select_all: (zero, CardAction::None),
-            roster_slots: [(zero, CardAction::None); 8],
+            roster_slots: [(zero, CardAction::None); crate::panel::MAX_ROSTER],
             roster_count: 0,
             cards: [(zero, CardAction::None); crate::panel::MAX_CARDS],
             card_count: 0,
