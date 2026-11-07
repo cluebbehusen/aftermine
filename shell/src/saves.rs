@@ -239,41 +239,61 @@ fn scan_cancellable(
     }
 }
 
-/// Every known replay, newest first.
-pub fn discover(cancelled: impl Fn() -> bool) -> Vec<ReplayEntry> {
+/// Every record the shelf can list, and what is still on its way.
+pub struct Catalog {
+    /// Every known record, newest first.
+    pub entries: Vec<ReplayEntry>,
+    /// Records iCloud holds that are still downloading to this device.
+    pub downloading: usize,
+    /// The folders whose finished matches end Continue's offers.
+    matches: Vec<PathBuf>,
+}
+
+impl Catalog {
+    /// Continue's material: the available autosaves, local or LAN, left
+    /// since the player's newest finished match. A finished match
+    /// withdraws the sessions left before it from Continue; the shelf
+    /// still offers them.
+    pub(crate) fn continuable(&self) -> impl Iterator<Item = &ReplayEntry> {
+        continuable_since(&self.entries, &self.matches)
+    }
+}
+
+/// Every known record, newest first, after starting downloads of the ones
+/// iCloud holds but this device does not. Waits on the first iCloud
+/// lookup, so only the save worker runs it.
+pub fn discover(cancelled: impl Fn() -> bool) -> Catalog {
+    let records = crate::paths::records();
+    let downloading = records
+        .cloud_folders()
+        .iter()
+        .map(|dir| aftermine_icloud::download(dir))
+        .sum();
     let mut found = Vec::new();
-    for dir in [
-        crate::paths::autosave_dir(),
-        crate::paths::matches_dir(),
-        crate::paths::saves_dir(),
-    ]
-    .into_iter()
-    .flatten()
-    {
+    for dir in records.listed() {
         scan_cancellable(&dir, &mut found, &cancelled);
     }
-    scan_cancellable(&crate::paths::replays_dir(), &mut found, &cancelled);
-    newest_first(found)
+    Catalog {
+        entries: newest_first(found),
+        downloading,
+        matches: records.match_folders(),
+    }
 }
 
-/// Continue's material in a newest-first catalog: the available autosaves,
-/// local or LAN, left since the player's newest finished match. A finished
-/// match withdraws the sessions left before it from Continue; the shelf
-/// still offers them.
-pub(crate) fn continuable(entries: &[ReplayEntry]) -> impl Iterator<Item = &ReplayEntry> {
-    continuable_since(entries, crate::paths::matches_dir())
-}
-
-/// Only the matches folder records what this player finished; a recording
+/// Only the matches folders record what this player finished; a recording
 /// added to the replays folder says nothing about their last match.
-fn continuable_since(
-    entries: &[ReplayEntry],
-    matches: Option<PathBuf>,
-) -> impl Iterator<Item = &ReplayEntry> {
+fn continuable_since<'a>(
+    entries: &'a [ReplayEntry],
+    matches: &'a [PathBuf],
+) -> impl Iterator<Item = &'a ReplayEntry> {
     entries
         .iter()
         .take_while(move |entry| {
-            entry.kind != RecordKind::Match || entry.path.parent() != matches.as_deref()
+            entry.kind != RecordKind::Match
+                || !entry
+                    .path
+                    .parent()
+                    .is_some_and(|parent| matches.iter().any(|folder| folder == parent))
         })
         .filter(|entry| entry.available() && entry.kind.continues())
 }

@@ -95,6 +95,8 @@ pub struct Shelf {
     /// Everything loadable, watchable, or deletable, newest first.
     pub entries: Vec<ReplayEntry>,
     pub(crate) catalog_ready: bool,
+    /// Records still downloading from iCloud at the last scan.
+    downloading: usize,
     /// The tab on show; `None` until the first catalog lands or the
     /// player picks one, so the shelf opens where the records are.
     tab: Option<Tab>,
@@ -120,7 +122,20 @@ impl Shelf {
         shelf
     }
 
-    pub(crate) fn set_catalog(&mut self, entries: Vec<ReplayEntry>) {
+    pub(crate) fn set_catalog(&mut self, entries: Vec<ReplayEntry>, downloading: usize) {
+        // A rescan while files download usually finds the same records;
+        // keeping the menu then keeps any press on it.
+        let unchanged = self.catalog_ready
+            && self.entries.len() == entries.len()
+            && self
+                .entries
+                .iter()
+                .zip(&entries)
+                .all(|(old, new)| old.path == new.path && old.saved_secs == new.saved_secs);
+        if unchanged {
+            self.downloading = downloading;
+            return;
+        }
         let selected = self.menu.value().map(|i| self.entries[*i].path.clone());
         let mut fresh = Self::at(entries, unix_now(), self.tab);
         if let Some(path) = selected {
@@ -128,6 +143,7 @@ impl Shelf {
             fresh.menu.select_where(|i| paths[*i] == path);
         }
         fresh.catalog_ready = true;
+        fresh.downloading = downloading;
         // A refresh landing mid-press must not drop the BACK or tab
         // gesture.
         fresh.back = std::mem::take(&mut self.back);
@@ -149,6 +165,7 @@ impl Shelf {
         Self {
             entries,
             catalog_ready: true,
+            downloading: 0,
             tab: Some(tab),
             now,
             menu,
@@ -264,17 +281,22 @@ impl Shelf {
     /// The line above the footer: what the shelf is doing, or what is
     /// wrong with the focused record. Rows say everything else.
     pub fn status(&self) -> String {
+        let problem = self
+            .menu
+            .value()
+            .and_then(|i| self.entries.get(*i)?.problem);
         if !self.catalog_ready {
             "looking for saves and replays...".to_string()
-        } else if self.menu.lines().is_empty() {
-            self.tab().empty().to_string()
         } else if self.arming.is_some() && self.arming == self.menu.value().copied() {
             "Press {delete} again to delete".to_string()
+        } else if let Some(problem) = problem {
+            problem.reason().to_string()
+        } else if self.downloading > 0 {
+            downloading_line(self.downloading)
+        } else if self.menu.lines().is_empty() {
+            self.tab().empty().to_string()
         } else {
-            self.menu
-                .value()
-                .and_then(|i| self.entries.get(*i)?.problem)
-                .map_or_else(String::new, |problem| problem.reason().to_string())
+            String::new()
         }
     }
 
@@ -309,6 +331,15 @@ impl Shelf {
             size,
             crate::theme::TEXT_SECONDARY,
         );
+    }
+}
+
+/// What the status line says while records download from iCloud.
+fn downloading_line(files: usize) -> String {
+    if files == 1 {
+        "Downloading 1 file from iCloud".to_string()
+    } else {
+        format!("Downloading {files} files from iCloud")
     }
 }
 

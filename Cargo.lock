@@ -27,6 +27,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aftermine-icloud"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "aftermine-kit"
 version = "0.1.0"
 dependencies = [
@@ -75,6 +82,7 @@ dependencies = [
 name = "aftermine-shell"
 version = "0.1.0"
 dependencies = [
+ "aftermine-icloud",
  "aftermine-kit",
  "aftermine-net",
  "aftermine-protocol",

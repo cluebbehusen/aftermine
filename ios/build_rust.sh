@@ -43,4 +43,18 @@ BUILD="$(git rev-list --count HEAD)"
     -c "Set :CFBundleVersion $BUILD" \
     "$TARGET_BUILD_DIR/$INFOPLIST_PATH"
 
+# The app's iCloud Drive folder, named Aftermine in Files and Finder. The
+# entry is keyed by the container ID, and Xcode expands build settings only
+# in Info.plist values, never in keys, so it is written here.
+CONTAINER=":NSUbiquitousContainers:iCloud.$PRODUCT_BUNDLE_IDENTIFIER"
+/usr/libexec/PlistBuddy -c "Delete :NSUbiquitousContainers" \
+    "$TARGET_BUILD_DIR/$INFOPLIST_PATH" 2> /dev/null || true
+/usr/libexec/PlistBuddy \
+    -c "Add :NSUbiquitousContainers dict" \
+    -c "Add $CONTAINER dict" \
+    -c "Add $CONTAINER:NSUbiquitousContainerIsDocumentScopePublic bool true" \
+    -c "Add $CONTAINER:NSUbiquitousContainerName string Aftermine" \
+    -c "Add $CONTAINER:NSUbiquitousContainerSupportedFolderLevels string Any" \
+    "$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+
 test -x "$TARGET_BUILD_DIR/$EXECUTABLE_PATH"
