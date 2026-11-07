@@ -619,6 +619,30 @@ pub(super) fn hostile_in_reach(game: &Game, screen: Vec2, ui: f32, reach: Reach)
         .map(|(_, b)| Picked::Building(b.id, b.player))
 }
 
+/// The human's own building under `screen` or nearest within `reach` of
+/// it: what a worker's order there names before any enemy near it, as a
+/// right-click checks its own footprint first.
+pub(super) fn own_structure_in_reach(
+    game: &Game,
+    screen: Vec2,
+    ui: f32,
+    reach: Reach,
+) -> Option<BuildingId> {
+    let world = game.presentation.camera.to_world(screen);
+    let reach = reach.structures.unwrap_or(0.0) * ui / game.presentation.camera.zoom;
+    game.state
+        .buildings()
+        .iter()
+        .filter(|b| b.player == game.presentation.human)
+        .map(|b| {
+            let (min, max) = footprint(b);
+            (world.clamp(min, max).distance(world), b.id)
+        })
+        .filter(|(distance, _)| *distance <= reach)
+        .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
+        .map(|(_, id)| id)
+}
+
 /// A building's footprint as world corners.
 pub(super) fn footprint(building: &aftermine_sim::Building) -> (Vec2, Vec2) {
     let (w, h) = building.kind.size();

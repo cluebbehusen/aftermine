@@ -176,16 +176,6 @@ pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
         RawEvent::PadDisconnected { pad } => {
             input.pads.remove(&pad);
             input.sticks.remove(&pad);
-            // Hardware releases a pad's buttons before it goes; injected
-            // input may not, so nothing it held outlives it.
-            input.queue_pads.remove(&pad);
-            if input
-                .pad_press
-                .as_ref()
-                .is_some_and(|press| press.pad == pad)
-            {
-                input.pad_press = None;
-            }
             // With no controller left, nothing can move the reticle, so the
             // pointer goes back to what the platform starts with.
             if input.pads.is_empty() && input.last_pointer == Pointer::Pad {
@@ -1997,6 +1987,8 @@ pub fn apply_events(
                 | RawEvent::MouseUp { .. }
                 | RawEvent::TouchDown { .. }
                 | RawEvent::TouchUp { .. }
+                | RawEvent::PadDown { .. }
+                | RawEvent::PadUp { .. }
         );
         if press && index > 0 {
             relayout(game, input);
@@ -2274,9 +2266,20 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         RawEvent::PadStick { x, y, .. } if (x, y) != (0.0, 0.0) => {
             input.last_pointer = Pointer::Pad;
         }
-        RawEvent::PadConnected { .. }
-        | RawEvent::PadDisconnected { .. }
-        | RawEvent::PadStick { .. } => {
+        RawEvent::PadDisconnected { pad } => {
+            // Hardware releases a pad's buttons before it goes; injected
+            // input may not, so nothing it held outlives it. This runs in
+            // event order, so a press earlier in the batch is dropped too.
+            input.queue_pads.remove(&pad);
+            if input
+                .pad_press
+                .as_ref()
+                .is_some_and(|press| press.pad == pad)
+            {
+                input.pad_press = None;
+            }
+        }
+        RawEvent::PadConnected { .. } | RawEvent::PadStick { .. } => {
             // `track_hands` keeps the sticks; `update_held` pans by them.
         }
     }

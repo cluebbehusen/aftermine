@@ -116,13 +116,24 @@ fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
     super::world_order(game, input, bindings, aim);
 }
 
-/// Where an order at the reticle's `point` lands: on the nearest enemy in
-/// its reach, else on what it brackets, else on the ground under it. A
-/// building is aimed at its footprint's nearest point, so the order names
-/// it as a click on it does.
+/// Where an order at the reticle's `point` lands: for a selection with
+/// workers, on an own structure in its reach, as a right-click names its
+/// own footprint first; else on the nearest enemy in its reach; else on
+/// what it brackets; else on the ground under it. A building is aimed at
+/// its footprint's nearest point, so the order names it as a click on it
+/// does.
 fn aim(game: &Game, point: Vec2, ui: f32, reach: select::Reach) -> Vec2 {
     let camera = &game.presentation.camera;
-    let target = select::hostile_in_reach(game, point, ui, reach)
+    let workers = game.presentation.selection.units.iter().any(|id| {
+        game.state
+            .unit(*id)
+            .is_some_and(|unit| unit.kind.stats().harvest.is_some())
+    });
+    let target = workers
+        .then(|| select::own_structure_in_reach(game, point, ui, reach))
+        .flatten()
+        .map(|id| Picked::Building(id, game.presentation.human))
+        .or_else(|| select::hostile_in_reach(game, point, ui, reach))
         .or_else(|| select::pick(game, point, ui, reach));
     match target {
         Some(Picked::Unit(id, _)) => game.state.unit(id).map_or(point, |unit| {

@@ -436,3 +436,92 @@ fn a_new_session_forgets_the_last_tap_and_the_narrowed_group() {
     input.reset_session();
     assert!(input.narrowed.is_none() && input.last_pad_tap.is_none());
 }
+
+#[test]
+fn a_disconnect_later_in_the_batch_drops_what_the_pad_held() {
+    let mut game = scene(&[(0, SENTINEL, 36, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    feed(
+        &mut game,
+        &mut input,
+        &[
+            down(PadButton::LeftTrigger),
+            down(PadButton::South),
+            RawEvent::PadDisconnected { pad: PAD },
+        ],
+    );
+    assert!(!input.queue_held(), "the trigger went with its pad");
+    assert!(input.pad_press.is_none(), "so did the press");
+}
+
+#[test]
+fn a_press_after_another_in_the_batch_hit_tests_the_layout_it_brought_up() {
+    let mut game = scene(&[(0, SENTINEL, 36, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    rest_on(&mut game, &mut input, CENTER);
+    // A stand-in HUD whose chrome covers the reticle once anything is
+    // selected.
+    let relayout = |game: &Game, _: &InputState| {
+        let mut layout = game.presentation.layout.get();
+        layout.performance = if game.presentation.selection.units.is_empty() {
+            macroquad::prelude::Rect::default()
+        } else {
+            macroquad::prelude::Rect::new(0.0, 0.0, 1280.0, 800.0)
+        };
+        game.presentation.layout.set(layout);
+    };
+    super::super::apply_events(
+        &mut game,
+        &mut input,
+        &BindingMap::classic(),
+        &[
+            down(PadButton::LeftShoulder),
+            up(PadButton::LeftShoulder),
+            down(PadButton::West),
+        ],
+        relayout,
+    );
+    assert_eq!(game.presentation.selection.units.len(), 1);
+    assert!(game.pending.is_empty(), "X met the chrome LB brought up");
+    assert!(denied(&game));
+}
+
+#[test]
+fn x_from_workers_names_their_own_structure_before_an_enemy_beside_it() {
+    let mut game = scene(
+        &[
+            (0, HARVESTER, 26, 20),
+            (0, SENTINEL, 26, 22),
+            (1, SENTINEL, 31, 20),
+        ],
+        &[(0, BuildingKind::Array, 30, 20)],
+    );
+    let mut input = pad_input(&mut game);
+    let (harvester, sentinel) = (unit_at(&game, 26, 20), unit_at(&game, 26, 22));
+    let (array, enemy) = (building_at(&game, 30, 20), unit_at(&game, 31, 20));
+    wound_building(&mut game, array, 10);
+    // On the Array's tile, with the enemy inside the reticle's reach.
+    rest_on(&mut game, &mut input, vec2(30.9, 20.5));
+    game.presentation.selection.units = vec![harvester];
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Repair {
+            units: vec![harvester],
+            building: array,
+            queue: false,
+        }
+    );
+    game.pending.clear();
+    // An army there still takes the enemy, as a right-click does.
+    game.presentation.selection.units = vec![sentinel];
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Attack {
+            units: vec![sentinel],
+            target: aftermine_sim::Target::Unit(enemy).into(),
+            queue: false,
+        }
+    );
+}
