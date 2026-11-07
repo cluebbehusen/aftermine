@@ -453,7 +453,7 @@ fn install_simulator(target: &Device, booted: bool, app: &Path, bundle: &str) ->
     Ok(())
 }
 
-fn tool_output(output: &std::process::Output) -> String {
+pub(crate) fn tool_output(output: &std::process::Output) -> String {
     format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
