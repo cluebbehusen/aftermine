@@ -5,7 +5,6 @@
 //! own+ally selection would refuse every command under own-gating. Fog
 //! and ownership rules for orders live in `orders`.
 
-use super::Pointer;
 use crate::game::Game;
 use crate::numeric;
 use aftermine_sim::UnitId;
@@ -98,21 +97,41 @@ pub(super) fn cycle_idle_worker(game: &mut Game, input: &mut super::InputState) 
     super::reticle::look_at(game, input, at);
 }
 
-/// World-space pick radius around a unit: never below the unit's own
-/// radius, and wider when zoomed out so it keeps a screen-space floor that
-/// is larger for a fingertip.
-fn pick_radius(game: &Game, ui: f32, kind: aftermine_sim::UnitKind, pointer: Pointer) -> f32 {
-    let reach = match pointer {
-        Pointer::Mouse => 10.0,
-        Pointer::Touch => 22.0,
-        Pointer::Pad => PAD_REACH,
-    };
-    (reach * ui / game.presentation.camera.zoom).max(super::unit_pick_radius(kind))
+/// How far around a pointer a press picks, in logical pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct Reach {
+    /// From a unit's center; never less than the unit's own radius.
+    units: f32,
+    /// From a structure's footprint; with none, the press must land on
+    /// the footprint.
+    structures: Option<f32>,
 }
 
-/// Logical pixels around the reticle that it snaps across: a stick aims
-/// far less finely than a mouse.
-const PAD_REACH: f32 = 24.0;
+impl Reach {
+    pub(super) const MOUSE: Self = Self {
+        units: 10.0,
+        structures: None,
+    };
+    /// Wider, for a fingertip.
+    pub(super) const TOUCH: Self = Self {
+        units: 22.0,
+        structures: None,
+    };
+
+    /// As far around a unit as around a structure's footprint.
+    pub(super) const fn around(px: f32) -> Self {
+        Self {
+            units: px,
+            structures: Some(px),
+        }
+    }
+}
+
+/// World-space pick radius around a unit: never below the unit's own
+/// radius, and wider when zoomed out so it keeps a screen-space floor.
+fn pick_radius(game: &Game, ui: f32, kind: aftermine_sim::UnitKind, reach: Reach) -> f32 {
+    (reach.units * ui / game.presentation.camera.zoom).max(super::unit_pick_radius(kind))
+}
 
 /// What a press would select.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,7 +144,7 @@ pub(crate) enum Picked {
 /// reach (own units outrank foreign ones, so a scrum never steals the
 /// press from the machine you command), else a selectable building
 /// under it.
-pub(super) fn pick(game: &Game, screen: Vec2, ui: f32, pointer: Pointer) -> Option<Picked> {
+pub(super) fn pick(game: &Game, screen: Vec2, ui: f32, reach: Reach) -> Option<Picked> {
     let world = game.presentation.camera.to_world(screen);
     let tile = numeric::tile_at(world);
     // Over known salvage only a unit's body counts: the slop that widens
@@ -140,12 +159,12 @@ pub(super) fn pick(game: &Game, screen: Vec2, ui: f32, pointer: Pointer) -> Opti
         .filter_map(|u| {
             let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
             let distance = p.distance(world);
-            let reach = if salvage_here {
+            let radius = if salvage_here {
                 super::unit_pick_radius(u.kind)
             } else {
-                pick_radius(game, ui, u.kind, pointer)
+                pick_radius(game, ui, u.kind, reach)
             };
-            (distance <= reach).then_some((
+            (distance <= radius).then_some((
                 u.player != game.presentation.human,
                 distance,
                 u.id,
@@ -168,10 +187,7 @@ pub(super) fn pick(game: &Game, screen: Vec2, ui: f32, pointer: Pointer) -> Opti
         return Some(Picked::Building(b.id, b.player));
     }
     // The reticle also snaps onto a structure whose footprint lies in reach.
-    if pointer != Pointer::Pad {
-        return None;
-    }
-    let reach = PAD_REACH * ui / game.presentation.camera.zoom;
+    let reach = reach.structures? * ui / game.presentation.camera.zoom;
     game.state
         .buildings()
         .iter()
@@ -238,14 +254,8 @@ impl Picked {
     }
 }
 
-pub(super) fn click_select(
-    game: &mut Game,
-    screen: Vec2,
-    additive: bool,
-    ui: f32,
-    pointer: Pointer,
-) {
-    let picked = pick(game, screen, ui, pointer);
+pub(super) fn click_select(game: &mut Game, screen: Vec2, additive: bool, ui: f32, reach: Reach) {
+    let picked = pick(game, screen, ui, reach);
     if !additive {
         game.presentation.selection.buildings.clear();
     }
@@ -482,12 +492,7 @@ pub(super) fn box_select(game: &mut Game, a_screen: Vec2, b_screen: Vec2, additi
 }
 
 /// Double-click: visible entities of the picked kind and owner on screen.
-pub(super) fn select_all_of_kind_on_screen(
-    game: &mut Game,
-    screen: Vec2,
-    ui: f32,
-    pointer: Pointer,
-) {
+pub(super) fn select_all_of_kind_on_screen(game: &mut Game, screen: Vec2, ui: f32, reach: Reach) {
     let world = game.presentation.camera.to_world(screen);
     // The sweep stays within the picked unit's owner: double-clicking an
     // ally harvester gathers that ally's harvesters on screen. Own units
@@ -500,7 +505,7 @@ pub(super) fn select_all_of_kind_on_screen(
         .filter_map(|u| {
             let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
             let distance = p.distance(world);
-            (distance <= pick_radius(game, ui, u.kind, pointer)).then_some((
+            (distance <= pick_radius(game, ui, u.kind, reach)).then_some((
                 u.player != game.presentation.human,
                 distance,
                 u.kind,

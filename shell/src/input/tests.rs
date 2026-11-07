@@ -4078,7 +4078,7 @@ fn a_pile_the_viewer_cannot_know_is_never_selected_and_is_dropped_once_empty() {
         .presentation
         .camera
         .to_screen(vec2(unseen.x as f32 + 0.5, unseen.y as f32 + 0.5));
-    select::click_select(&mut game, screen, false, input.ui, Pointer::Touch);
+    select::click_select(&mut game, screen, false, input.ui, select::Reach::TOUCH);
     assert_eq!(game.presentation.selection.pile, None, "fog hides it");
 
     game.presentation.selection.pile = Some(empty);

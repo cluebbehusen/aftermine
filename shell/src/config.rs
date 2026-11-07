@@ -1,5 +1,5 @@
-//! Persisted presentation config: bindings, volumes, UI scale, camera
-//! feel, accessibility, touch timing, and window size.
+//! Persisted presentation config: bindings, volumes, UI scale, camera and
+//! controller feel, accessibility, touch timing, and window size.
 //!
 //! Nothing here may affect a running match. The config versions
 //! independently of replays. Any read problem (missing file, old version,
@@ -102,6 +102,72 @@ impl Default for CameraPrefs {
             pan_speed: 1.0,
             edge_pan: false,
             zoom_inverted: false,
+        }
+    }
+}
+
+/// How strongly the controller's reticle holds onto a unit or structure it
+/// passes over, weakest first.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReticleSnap {
+    Off,
+    Light,
+    #[default]
+    Standard,
+    Strong,
+}
+
+impl ReticleSnap {
+    /// Every strength, weakest first.
+    pub const ALL: [Self; 4] = [Self::Off, Self::Light, Self::Standard, Self::Strong];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::Light => "Light",
+            Self::Standard => "Standard",
+            Self::Strong => "Strong",
+        }
+    }
+}
+
+/// Controller feel, apart from the keys' and mouse's.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PadPrefs {
+    /// Left-stick pan speed multiplier.
+    pub stick_speed: f32,
+    /// Flip right-stick zoom direction.
+    pub zoom_inverted: bool,
+    /// How strongly the reticle holds onto what it passes over.
+    pub snap: ReticleSnap,
+}
+
+impl Default for PadPrefs {
+    fn default() -> Self {
+        Self {
+            stick_speed: 1.0,
+            zoom_inverted: false,
+            snap: ReticleSnap::default(),
+        }
+    }
+}
+
+impl PadPrefs {
+    /// The stick speeds Settings steps through, slow to fast.
+    pub const STICK_SPEEDS: [f32; 5] = [0.5, 0.75, 1.0, 1.5, 2.0];
+
+    /// The stick speed within the range Settings steps through, a
+    /// non-finite one back at the default.
+    pub fn clamped(self) -> Self {
+        let (slowest, fastest) = (Self::STICK_SPEEDS[0], Self::STICK_SPEEDS[4]);
+        Self {
+            stick_speed: if self.stick_speed.is_finite() {
+                self.stick_speed.clamp(slowest, fastest)
+            } else {
+                1.0
+            },
+            ..self
         }
     }
 }
@@ -221,6 +287,8 @@ pub struct Config {
     pub ui_scale: f32,
     /// Camera feel.
     pub camera: CameraPrefs,
+    /// Controller feel.
+    pub pad: PadPrefs,
     /// Window size at startup, `WIDTHxHEIGHT`.
     pub window: (u32, u32),
     /// Accessibility: damp decorative animation (alert pulses, ping
@@ -267,6 +335,7 @@ impl Default for Config {
             volumes: Volumes::default(),
             ui_scale: 1.0,
             camera: CameraPrefs::default(),
+            pad: PadPrefs::default(),
             window: (1280, 800),
             reduced_motion: false,
             team_colors: false,
@@ -334,6 +403,7 @@ impl Config {
         self.window = Self::sane_window(self.window);
         self.ui_scale = Self::sane_ui_scale(self.ui_scale);
         self.touch = self.touch.clamped();
+        self.pad = self.pad.clamped();
         self.markers = self.markers.clamped();
         self.volumes = self.volumes.clamped();
         // A name that no longer passes is forgotten.

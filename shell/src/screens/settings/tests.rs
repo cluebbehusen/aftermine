@@ -1205,3 +1205,79 @@ fn the_settings_hints_name_a_controllers_buttons_while_one_is_in_use() {
     );
     crate::platform::set_hands(crate::platform::Hands::BUILD);
 }
+
+#[test]
+fn the_controller_section_sits_before_the_key_lists_and_steps_its_own_settings() {
+    let mut config = Config::default();
+    let mut screen = on(Tab::Controls, &config);
+    let lines = screen.menu.lines();
+    let header = lines
+        .iter()
+        .position(|line| *line == Line::Header("CONTROLLER".to_owned()))
+        .expect("the Controls tab has a controller section");
+    assert!(matches!(
+        lines[header - 1],
+        Line::Row(_, Item::ResetBindings)
+    ));
+    let section: Vec<_> = lines[header + 1..header + 4]
+        .iter()
+        .map(|line| match line {
+            Line::Row(_, item) => *item,
+            Line::Header(name) => panic!("{name} inside the section"),
+        })
+        .collect();
+    assert_eq!(
+        section,
+        [Row::StickSpeed, Row::InvertStickZoom, Row::ReticleSnap].map(Item::Setting)
+    );
+    assert!(
+        matches!(lines[header + 4], Line::Header(_)),
+        "then the keys"
+    );
+
+    focus(&mut screen, Item::Setting(Row::StickSpeed));
+    assert_eq!(
+        label(&screen, Item::Setting(Row::StickSpeed)),
+        "Stick speed: 100%"
+    );
+    drive(&mut screen, &mut config, &press(Key::Right), false);
+    drive(&mut screen, &mut config, &press(Key::Right), false);
+    assert_eq!(config.pad.stick_speed, 2.0);
+    assert!(!drive(&mut screen, &mut config, &press(Key::Right), false).dirty);
+    for _ in 0..5 {
+        drive(&mut screen, &mut config, &press(Key::Left), false);
+    }
+    assert_eq!(config.pad.stick_speed, 0.5, "Left stops at the slowest");
+    assert_eq!(config.camera.pan_speed, 1.0, "the keys keep their speed");
+
+    focus(&mut screen, Item::Setting(Row::InvertStickZoom));
+    assert!(drive(&mut screen, &mut config, &press(Key::Enter), false).dirty);
+    assert!(config.pad.zoom_inverted);
+    assert!(
+        !config.camera.zoom_inverted,
+        "the wheel keeps its direction"
+    );
+
+    focus(&mut screen, Item::Setting(Row::ReticleSnap));
+    let mut seen = vec![label(&screen, Item::Setting(Row::ReticleSnap))];
+    for key in [
+        Key::Left,
+        Key::Left,
+        Key::Left,
+        Key::Right,
+        Key::Right,
+        Key::Right,
+    ] {
+        drive(&mut screen, &mut config, &press(key), false);
+        seen.push(label(&screen, Item::Setting(Row::ReticleSnap)));
+    }
+    assert_eq!(
+        seen,
+        [
+            "Standard", "Light", "Off", "Off", "Light", "Standard", "Strong"
+        ]
+        .map(|value| format!("Reticle snap: {value}"))
+    );
+    drive(&mut screen, &mut config, &press(Key::Enter), false);
+    assert_eq!(config.pad.snap, ReticleSnap::Off, "Enter wraps");
+}
