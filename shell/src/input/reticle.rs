@@ -44,6 +44,13 @@ fn snap_feel(snap: ReticleSnap) -> (Reach, f32) {
     }
 }
 
+/// What the reticle picks and snaps across under the player's snap
+/// setting: a press at the reticle, an order's aim and a paint brush's
+/// start all reach as far.
+pub(super) fn reach(input: &InputState) -> Reach {
+    snap_feel(input.pad_prefs.snap).0
+}
+
 /// Where the reticle sits and what it rests on.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub(crate) struct Reticle {

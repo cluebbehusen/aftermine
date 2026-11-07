@@ -42,6 +42,7 @@ fn activate_card(game: &mut Game, input: &mut InputState, action: crate::panel::
 mod army;
 mod double_click;
 mod lessons;
+pub(super) mod pad_scene;
 
 /// The waypoints `unit` draws in `game`'s current frame.
 fn crumbs(game: &Game, unit: &aftermine_sim::Unit) -> Vec<(usize, Vec2, macroquad::color::Color)> {

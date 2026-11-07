@@ -1,0 +1,438 @@
+//! Controller presses through the real funnel: pad events as the frame
+//! loop feeds them, against a staged sandbox.
+
+use super::super::tests::pad_scene::{
+    CENTER, FRAME, PAD, building_at, denied, down, feed, pad_input, pos, press, push_until,
+    rest_on, scene, unit_at, units_of, up, wound_building,
+};
+use super::*;
+use aftermine_protocol::RawEvent;
+use aftermine_sim::{BuildingKind, Command, PlayerCommand};
+use macroquad::prelude::vec2;
+
+const SENTINEL: UnitKind = UnitKind::Sentinel;
+const LANCER: UnitKind = UnitKind::Lancer;
+const HARVESTER: UnitKind = UnitKind::Harvester;
+
+fn staged(game: &Game) -> Vec<PlayerCommand> {
+    game.pending.iter().cloned().collect()
+}
+
+/// The one command staged.
+fn only_command(game: &Game) -> Command {
+    match staged(game).as_slice() {
+        [one] => one.command.clone(),
+        other => panic!("expected one staged command, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_selects_what_the_reticle_brackets() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20), (0, SENTINEL, 34, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    let near = unit_at(&game, 30, 20);
+    // Beside it, inside the reticle's reach but off its body.
+    rest_on(&mut game, &mut input, vec2(31.1, 20.5));
+    assert_eq!(
+        input.reticle.snap(),
+        Some(Picked::Unit(near, aftermine_sim::PlayerId(0)))
+    );
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(game.presentation.selection.units, vec![near]);
+}
+
+#[test]
+fn a_tap_selects_what_was_bracketed_as_a_went_down() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20), (0, SENTINEL, 31, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    let first = unit_at(&game, 30, 20);
+    rest_on(&mut game, &mut input, vec2(30.5, 20.5));
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    // Most of the way to the next unit, but inside the tap's slop.
+    push_until(&mut game, &mut input, (0.4, 0.0), FRAME, |g| g.x >= 31.1);
+    feed(&mut game, &mut input, &[up(PadButton::South)]);
+    assert_eq!(game.presentation.selection.units, vec![first]);
+}
+
+#[test]
+fn held_queue_toggles_a_pick_and_a_miss_clears() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20), (0, SENTINEL, 33, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    let (a, b) = (unit_at(&game, 30, 20), unit_at(&game, 33, 20));
+    let (at_a, at_b) = (pos(&game, a), pos(&game, b));
+    rest_on(&mut game, &mut input, at_a);
+    press(&mut game, &mut input, PadButton::South);
+    feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
+    assert!(input.queue_held(), "a held left trigger queues");
+    rest_on(&mut game, &mut input, at_b);
+    input.now += 1.0;
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(game.presentation.selection.units, vec![a, b]);
+    input.now += 1.0;
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(
+        game.presentation.selection.units,
+        vec![a],
+        "toggled back out"
+    );
+    feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
+    assert!(!input.queue_held());
+    rest_on(&mut game, &mut input, vec2(30.5, 30.5));
+    input.now += 1.0;
+    press(&mut game, &mut input, PadButton::South);
+    assert!(
+        game.presentation.selection.units.is_empty(),
+        "a miss clears"
+    );
+}
+
+/// Two Sentinels and a Lancer in view, and a Sentinel far out of it.
+fn kinds_scene() -> Game {
+    scene(
+        &[
+            (0, SENTINEL, 30, 20),
+            (0, SENTINEL, 34, 22),
+            (0, LANCER, 32, 18),
+            (0, SENTINEL, 60, 20),
+        ],
+        &[],
+    )
+}
+
+#[test]
+fn a_second_tap_selects_that_kind_in_view() {
+    let mut game = kinds_scene();
+    let mut input = pad_input(&mut game);
+    rest_on(&mut game, &mut input, vec2(30.5, 20.5));
+    press(&mut game, &mut input, PadButton::South);
+    input.now += 0.2;
+    press(&mut game, &mut input, PadButton::South);
+    let in_view = vec![unit_at(&game, 30, 20), unit_at(&game, 34, 22)];
+    assert_eq!(game.presentation.selection.units, in_view);
+}
+
+#[test]
+fn a_late_second_tap_or_one_under_queue_stays_a_tap() {
+    let mut game = kinds_scene();
+    let mut input = pad_input(&mut game);
+    let one = unit_at(&game, 30, 20);
+    rest_on(&mut game, &mut input, vec2(30.5, 20.5));
+    press(&mut game, &mut input, PadButton::South);
+    input.now += 0.5;
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(game.presentation.selection.units, vec![one], "too late");
+    feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
+    input.now += 0.1;
+    press(&mut game, &mut input, PadButton::South);
+    assert!(
+        game.presentation.selection.units.is_empty(),
+        "queue toggles the unit out instead"
+    );
+}
+
+#[test]
+fn a_double_tap_reaches_a_structure_the_reticle_brackets() {
+    let mut game = scene(
+        &[],
+        &[
+            (0, BuildingKind::Array, 30, 20),
+            (0, BuildingKind::Array, 36, 20),
+        ],
+    );
+    let mut input = pad_input(&mut game);
+    let (min, _) = select::footprint(game.state.building(building_at(&game, 30, 20)).unwrap());
+    // Just off the footprint's corner, inside the reticle's reach.
+    rest_on(&mut game, &mut input, min - vec2(0.3, 0.3));
+    press(&mut game, &mut input, PadButton::South);
+    input.now += 0.2;
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(
+        game.presentation.selection.buildings,
+        vec![building_at(&game, 30, 20), building_at(&game, 36, 20)]
+    );
+}
+
+#[test]
+fn x_moves_the_selection_to_the_ground_under_the_reticle() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    let unit = unit_at(&game, 30, 20);
+    game.presentation.selection.units = vec![unit];
+    rest_on(&mut game, &mut input, vec2(36.5, 24.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Advance {
+            units: vec![unit],
+            goal: chassis::grid::TilePos::new(36, 24),
+            queue: false,
+        }
+    );
+}
+
+#[test]
+fn x_attacks_an_enemy_in_reach_even_beside_your_own_unit() {
+    let mut game = scene(
+        &[
+            (0, SENTINEL, 26, 20),
+            (0, SENTINEL, 30, 20),
+            (1, SENTINEL, 31, 20),
+        ],
+        &[],
+    );
+    let mut input = pad_input(&mut game);
+    let (army, own, enemy) = (
+        unit_at(&game, 26, 20),
+        unit_at(&game, 30, 20),
+        unit_at(&game, 31, 20),
+    );
+    game.presentation.selection.units = vec![army];
+    // Nearer your own Sentinel, which the bracket prefers.
+    rest_on(&mut game, &mut input, vec2(30.9, 20.5));
+    assert_eq!(
+        input.reticle.snap(),
+        Some(Picked::Unit(own, aftermine_sim::PlayerId(0)))
+    );
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Attack {
+            units: vec![army],
+            target: aftermine_sim::Target::Unit(enemy).into(),
+            queue: false,
+        }
+    );
+}
+
+#[test]
+fn x_sends_harvesters_to_scrap_and_welds_a_wounded_structure() {
+    let mut game = scene(
+        &[(0, HARVESTER, 37, 20)],
+        &[(0, BuildingKind::Array, 30, 24)],
+    );
+    let mut input = pad_input(&mut game);
+    let harvester = unit_at(&game, 37, 20);
+    let array = building_at(&game, 30, 24);
+    game.presentation.selection.units = vec![harvester];
+    // The drill's scrap lies at (40, 20).
+    rest_on(&mut game, &mut input, vec2(40.5, 20.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Harvest {
+            units: vec![harvester],
+            node: chassis::grid::TilePos::new(40, 20),
+            queue: false,
+        }
+    );
+    game.pending.clear();
+    wound_building(&mut game, array, 10);
+    // Off the footprint's corner but inside the bracket's reach.
+    let (min, _) = select::footprint(game.state.building(array).unwrap());
+    rest_on(&mut game, &mut input, min - vec2(0.3, 0.3));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Repair {
+            units: vec![harvester],
+            building: array,
+            queue: false,
+        }
+    );
+}
+
+#[test]
+fn x_under_a_held_left_trigger_queues_the_order() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    let unit = unit_at(&game, 30, 20);
+    game.presentation.selection.units = vec![unit];
+    feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
+    rest_on(&mut game, &mut input, vec2(36.5, 24.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert!(matches!(
+        only_command(&game),
+        Command::Advance { queue: true, .. }
+    ));
+}
+
+#[test]
+fn x_collects_a_patrol_waypoint_while_a_route_is_armed() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    game.presentation.selection.units = vec![unit_at(&game, 30, 20)];
+    super::super::dispatch_action(
+        &mut game,
+        &mut input,
+        &BindingMap::classic(),
+        Action::Patrol,
+    );
+    rest_on(&mut game, &mut input, vec2(36.5, 24.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(input.patrol_route.as_ref().map(Vec::len), Some(1));
+    assert!(game.pending.is_empty());
+}
+
+#[test]
+fn chrome_under_the_reticle_takes_neither_a_nor_x() {
+    let mut game = scene(&[(0, SENTINEL, 32, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    game.presentation.selection.units = vec![unit_at(&game, 32, 20)];
+    let mut layout = game.presentation.layout.get();
+    layout.performance = macroquad::prelude::Rect::new(0.0, 0.0, 1280.0, 800.0);
+    game.presentation.layout.set(layout);
+    rest_on(&mut game, &mut input, CENTER);
+    press(&mut game, &mut input, PadButton::West);
+    assert!(game.pending.is_empty());
+    assert!(denied(&game));
+    game.presentation.sounds_pending.clear();
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    assert!(input.pad_press.is_none());
+    assert!(denied(&game));
+}
+
+#[test]
+fn a_waits_while_a_mode_is_armed() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20), (0, SENTINEL, 34, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    let held = unit_at(&game, 30, 20);
+    game.presentation.selection.units = vec![held];
+    super::super::dispatch_action(&mut game, &mut input, &BindingMap::classic(), Action::Hunt);
+    rest_on(&mut game, &mut input, vec2(34.5, 20.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert!(denied(&game));
+    assert_eq!(game.presentation.selection.units, vec![held]);
+    assert!(
+        input.armed(super::super::ClickVerb::Hunt),
+        "the mode stands"
+    );
+}
+
+#[test]
+fn b_cancels_the_mode_then_clears_the_selection() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    let unit = unit_at(&game, 30, 20);
+    game.presentation.selection.units = vec![unit];
+    super::super::dispatch_action(&mut game, &mut input, &BindingMap::classic(), Action::Hunt);
+    press(&mut game, &mut input, PadButton::East);
+    assert!(input.armed_mode().is_none());
+    assert_eq!(game.presentation.selection.units, vec![unit]);
+    press(&mut game, &mut input, PadButton::East);
+    assert!(game.presentation.selection.units.is_empty());
+    press(&mut game, &mut input, PadButton::East);
+    assert!(!input.take_menu_request(), "B never opens the menu");
+}
+
+#[test]
+fn the_bumpers_select_the_army_and_the_army_in_view() {
+    let mut game = scene(
+        &[
+            (0, SENTINEL, 30, 20),
+            (0, HARVESTER, 31, 20),
+            (0, SENTINEL, 60, 20),
+        ],
+        &[],
+    );
+    let mut input = pad_input(&mut game);
+    press(&mut game, &mut input, PadButton::LeftShoulder);
+    assert_eq!(
+        game.presentation.selection.units,
+        units_of(&game, 0, SENTINEL)
+    );
+    press(&mut game, &mut input, PadButton::RightShoulder);
+    assert_eq!(
+        game.presentation.selection.units,
+        vec![unit_at(&game, 30, 20)]
+    );
+}
+
+/// Two Harvesters, a Lancer and two Sentinels, all selected.
+fn mixed() -> (Game, InputState) {
+    let mut game = scene(
+        &[
+            (0, SENTINEL, 30, 20),
+            (0, LANCER, 31, 20),
+            (0, HARVESTER, 32, 20),
+            (0, SENTINEL, 33, 20),
+            (0, HARVESTER, 34, 20),
+        ],
+        &[],
+    );
+    let input = pad_input(&mut game);
+    let mut all: Vec<UnitId> = game.state.units().iter().map(|u| u.id).collect();
+    all.sort_unstable();
+    game.presentation.selection.units = all;
+    (game, input)
+}
+
+#[test]
+fn rt_walks_the_kinds_in_roster_order_then_back_to_the_group() {
+    let (mut game, mut input) = mixed();
+    let all = game.presentation.selection.units.clone();
+    for kind in [HARVESTER, LANCER, SENTINEL] {
+        press(&mut game, &mut input, PadButton::RightTrigger);
+        assert_eq!(
+            game.presentation.selection.units,
+            units_of(&game, 0, kind),
+            "{kind:?}"
+        );
+    }
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    assert_eq!(game.presentation.selection.units, all);
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    assert_eq!(
+        game.presentation.selection.units,
+        units_of(&game, 0, HARVESTER)
+    );
+}
+
+#[test]
+fn rt_forgets_its_group_once_the_selection_changes_otherwise() {
+    let (mut game, mut input) = mixed();
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    let fresh = vec![unit_at(&game, 31, 20), unit_at(&game, 33, 20)];
+    game.presentation.selection.units = fresh;
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    assert_eq!(
+        game.presentation.selection.units,
+        units_of(&game, 0, LANCER)
+    );
+}
+
+#[test]
+fn rt_has_nothing_to_narrow_in_one_kind() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20), (0, SENTINEL, 31, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    let both = units_of(&game, 0, SENTINEL);
+    game.presentation.selection.units = both.clone();
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    assert!(denied(&game));
+    assert_eq!(game.presentation.selection.units, both);
+}
+
+#[test]
+fn a_held_left_trigger_drops_with_a_transition_or_its_pad() {
+    let mut game = scene(&[], &[]);
+    let mut input = pad_input(&mut game);
+    feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
+    input.reset_transient();
+    assert!(!input.queue_held());
+    feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::PadDisconnected { pad: PAD }],
+    );
+    assert!(!input.queue_held());
+}
+
+#[test]
+fn a_new_session_forgets_the_last_tap_and_the_narrowed_group() {
+    let (mut game, mut input) = mixed();
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    press(&mut game, &mut input, PadButton::South);
+    assert!(input.narrowed.is_some() && input.last_pad_tap.is_some());
+    input.reset_session();
+    assert!(input.narrowed.is_none() && input.last_pad_tap.is_none());
+}

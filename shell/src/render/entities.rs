@@ -3463,6 +3463,79 @@ pub(crate) fn draw_touch_box(game: &crate::game::Scene<'_>, input: &InputState) 
     }
 }
 
+/// A controller's paint sweep while A is held: a faint trail over the
+/// ground it has crossed, the brush it catches with, growing around the
+/// reticle, and a ring on everything a release would select, each in its
+/// owner's color, as the drag box rings its catch.
+pub(crate) fn draw_paint_sweep(game: &crate::game::Scene<'_>, input: &InputState) {
+    let Some(paint) = crate::input::paint_preview(game, input) else {
+        return;
+    };
+    let s = ui_scale();
+    let camera = &game.presentation.camera;
+    let trail = Color { a: 0.35, ..BONE };
+    for stroke in paint.trail {
+        for pair in stroke.windows(2) {
+            line_between(
+                camera.to_screen(pair[0]),
+                camera.to_screen(pair[1]),
+                2.0 * s,
+                trail,
+            );
+        }
+    }
+    if let Some(last) = paint.trail.last().and_then(|stroke| stroke.last()) {
+        line_between(
+            camera.to_screen(*last),
+            camera.to_screen(paint.head),
+            2.0 * s,
+            trail,
+        );
+    }
+    // The brush rings the reticle as it grows, stroked as the reticle is:
+    // a dark under-stroke keeps it legible on pale ground.
+    fill_circle(paint.brush, paint.radius, Color::new(0.9, 0.88, 0.84, 0.08));
+    stroke_circle(
+        paint.brush,
+        paint.radius,
+        3.5 * s,
+        Color::new(0.05, 0.05, 0.07, 0.45),
+    );
+    stroke_circle(paint.brush, paint.radius, 1.5 * s, Color { a: 0.8, ..BONE });
+    let alpha = game.clock.render_alpha();
+    match paint.kept {
+        Some(crate::input::Kept::Units(owner, ids)) => {
+            let color = Color {
+                a: 0.5,
+                ..crate::render::seat_identity_color(game, owner)
+            };
+            for unit in ids.iter().filter_map(|id| game.state.unit(*id)) {
+                let at = camera.to_screen(game.presentation.draw_pos(unit.id, unit.pos, alpha));
+                let radius = unit.kind.stats().radius.to_num::<f32>() * camera.zoom + 3.0;
+                stroke_circle(at, radius, 1.5, color);
+            }
+        }
+        Some(crate::input::Kept::Buildings(owner, ids)) => {
+            let color = Color {
+                a: 0.5,
+                ..crate::render::seat_identity_color(game, owner)
+            };
+            for building in ids.iter().filter_map(|id| game.state.building(*id)) {
+                let (w, h) = building.kind.size();
+                let min = vec2(building.anchor.x as f32, building.anchor.y as f32);
+                let a = camera.to_screen(min);
+                let b = camera.to_screen(min + vec2(w as f32, h as f32));
+                stroke_rect(
+                    Rect::new(a.x + 2.0, a.y + 2.0, b.x - a.x - 4.0, b.y - a.y - 4.0),
+                    1.5,
+                    color,
+                );
+            }
+        }
+        None => {}
+    }
+}
+
 /// A selection rectangle between two screen corners. With `preview`,
 /// the own units a release would select are ringed.
 fn draw_selection_rect(game: &crate::game::Scene<'_>, corner: Vec2, other: Vec2, preview: bool) {

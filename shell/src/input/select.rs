@@ -7,7 +7,7 @@
 
 use crate::game::Game;
 use crate::numeric;
-use aftermine_sim::UnitId;
+use aftermine_sim::{BuildingId, PlayerId, UnitId};
 use macroquad::prelude::{Vec2, vec2};
 
 /// Own harvesters with nothing to do, in id order — the cycle key and
@@ -124,6 +124,12 @@ impl Reach {
             units: px,
             structures: Some(px),
         }
+    }
+
+    /// How far around a unit's center it reaches, in logical pixels at UI
+    /// scale `ui`.
+    pub(super) fn unit_px(self, ui: f32) -> f32 {
+        self.units * ui
     }
 }
 
@@ -334,160 +340,148 @@ pub(super) fn box_select(game: &mut Game, a_screen: Vec2, b_screen: Vec2, additi
     let a = game.presentation.camera.to_world(a_screen);
     let b = game.presentation.camera.to_world(b_screen);
     let (lo, hi) = (a.min(b), a.max(b));
-    let unit_inside = |u: &&aftermine_sim::Unit| {
-        let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-        p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y
-    };
-    // Commandable subjects win before foreign inspection: own units,
-    // then own buildings. Within one allegiance, units retain marquee
-    // priority so the selection never mixes mobile and static subjects.
-    let mut boxed: Vec<UnitId> = game
+    let inside = |p: Vec2| p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y;
+    let units: Vec<UnitId> = game
         .state
         .units()
         .iter()
-        .filter(|u| u.player == game.presentation.human && u.host.is_none())
-        .filter(unit_inside)
+        .filter(|u| inside(vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>())))
         .map(|u| u.id)
         .collect();
-    if !boxed.is_empty() {
-        if additive {
-            boxed.extend(
-                game.presentation
-                    .selection
-                    .units
-                    .iter()
-                    .copied()
-                    .filter(|id| {
-                        game.state
-                            .unit(*id)
-                            .is_some_and(|u| u.player == game.presentation.human)
-                    }),
-            );
-            boxed.sort_unstable();
-            boxed.dedup();
-        }
-        game.presentation.selection.units = boxed;
-        game.presentation.selection.buildings.clear();
-        return;
-    }
-
     // Building centers are the pick points, matching units and avoiding
     // edge-only grabs of a large footprint.
-    let building_inside = |building: &&aftermine_sim::Building| {
-        let center = building.center();
-        let p = vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>());
-        p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y
-    };
-    let mut buildings: Vec<_> = game
+    let buildings: Vec<BuildingId> = game
         .state
         .buildings()
         .iter()
-        .filter(|building| building.player == game.presentation.human)
-        .filter(building_inside)
+        .filter(|building| {
+            let center = building.center();
+            inside(vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>()))
+        })
         .map(|building| building.id)
         .collect();
-    if !buildings.is_empty() {
-        if additive {
-            buildings.extend(
-                game.presentation
-                    .selection
-                    .buildings
-                    .iter()
-                    .copied()
-                    .filter(|id| {
-                        game.state
-                            .building(*id)
-                            .is_some_and(|building| building.player == game.presentation.human)
-                    }),
-            );
-            buildings.sort_unstable();
-            buildings.dedup();
-        }
-        game.presentation.selection.units.clear();
-        game.presentation.selection.buildings = buildings;
-        return;
-    }
+    select_swept(game, &units, &buildings, additive);
+}
 
-    // With nothing commandable inside, inspect one visible foreign owner
-    // at a time. Units still outrank buildings within that owner-neutral
-    // inspection fallback.
-    let foreign_unit_owner = game
-        .state
-        .units()
+/// What a sweep of the battlefield selects, out of everything it covered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Kept {
+    /// One owner's units, in id order.
+    Units(PlayerId, Vec<UnitId>),
+    /// One owner's buildings, in id order.
+    Buildings(PlayerId, Vec<BuildingId>),
+}
+
+/// The part of a sweep's cover a selection keeps, by one priority for the
+/// box, the two-finger box and the controller's paint: own units, else own
+/// buildings, else the units of one other owner, else that owner's
+/// buildings. Commandable subjects win before foreign inspection, and
+/// within one owner units outrank buildings, so a selection never mixes
+/// mobile and static subjects. Covered entities the human can no longer
+/// see, and the dead, drop out here.
+pub(crate) fn kept(
+    game: &crate::game::Scene<'_>,
+    units: &[UnitId],
+    buildings: &[BuildingId],
+) -> Option<Kept> {
+    let human = game.presentation.human;
+    let units: Vec<&aftermine_sim::Unit> = units
         .iter()
-        .filter(|unit| unit.player != game.presentation.human && selectable(game, unit))
-        .filter(unit_inside)
-        .map(|unit| unit.player)
-        .min();
-    if let Some(owner) = foreign_unit_owner {
-        let mut units: Vec<_> = game
-            .state
-            .units()
+        .filter_map(|id| game.state.unit(*id))
+        .filter(|unit| sees_unit(game, unit))
+        .collect();
+    let buildings: Vec<&aftermine_sim::Building> = buildings
+        .iter()
+        .filter_map(|id| game.state.building(*id))
+        .filter(|building| sees_building(game, building))
+        .collect();
+    let owned_units = |owner: PlayerId| {
+        let mut ids: Vec<UnitId> = units
             .iter()
-            .filter(|unit| unit.player == owner && selectable(game, unit))
-            .filter(unit_inside)
+            .filter(|unit| unit.player == owner)
             .map(|unit| unit.id)
             .collect();
-        if additive {
-            let current_owner = game
-                .presentation
-                .selection
-                .units
-                .first()
-                .and_then(|id| game.state.unit(*id))
-                .map(|unit| unit.player);
-            if current_owner == Some(owner) {
-                units.extend(game.presentation.selection.units.iter().copied());
-                units.sort_unstable();
-                units.dedup();
-            }
-        }
-        game.presentation.selection.units = units;
-        game.presentation.selection.buildings.clear();
-        return;
-    }
-
-    let foreign_building_owner = game
-        .state
-        .buildings()
-        .iter()
-        .filter(|building| building.player != game.presentation.human)
-        .filter(|building| selectable_building(game, building))
-        .filter(building_inside)
-        .map(|building| building.player)
-        .min();
-    if let Some(owner) = foreign_building_owner {
-        buildings = game
-            .state
-            .buildings()
+        ids.sort_unstable();
+        ids.dedup();
+        (!ids.is_empty()).then_some(Kept::Units(owner, ids))
+    };
+    let owned_buildings = |owner: PlayerId| {
+        let mut ids: Vec<BuildingId> = buildings
             .iter()
-            .filter(|building| building.player == owner && selectable_building(game, building))
-            .filter(building_inside)
+            .filter(|building| building.player == owner)
             .map(|building| building.id)
             .collect();
-        if additive {
-            let current_owner = game
-                .presentation
-                .selection
-                .buildings
-                .first()
-                .and_then(|id| game.state.building(*id))
-                .map(|building| building.player);
-            if current_owner == Some(owner) {
-                buildings.extend(game.presentation.selection.buildings.iter().copied());
-                buildings.sort_unstable();
-                buildings.dedup();
-            }
-        }
-        game.presentation.selection.units.clear();
-        game.presentation.selection.buildings = buildings;
-        return;
-    }
+        ids.sort_unstable();
+        ids.dedup();
+        (!ids.is_empty()).then_some(Kept::Buildings(owner, ids))
+    };
+    // With nothing commandable covered, inspect one visible foreign owner
+    // at a time.
+    let foreign_units = units
+        .iter()
+        .map(|unit| unit.player)
+        .filter(|owner| *owner != human)
+        .min();
+    let foreign_buildings = buildings
+        .iter()
+        .map(|building| building.player)
+        .filter(|owner| *owner != human)
+        .min();
+    owned_units(human)
+        .or_else(|| owned_buildings(human))
+        .or_else(|| foreign_units.and_then(owned_units))
+        .or_else(|| foreign_buildings.and_then(owned_buildings))
+}
 
-    if !additive {
-        game.presentation.selection.units.clear();
-        game.presentation.selection.buildings.clear();
-        game.presentation.selection.pile = None;
+/// Selects what [`kept`] keeps of a sweep's cover. Additive, it joins the
+/// current selection when that is the same owner's of the same sort;
+/// otherwise it replaces it, and a sweep that keeps nothing clears it.
+pub(super) fn select_swept(
+    game: &mut Game,
+    units: &[UnitId],
+    buildings: &[BuildingId],
+    additive: bool,
+) {
+    let kept = kept(&game.view(), units, buildings);
+    let state = &game.state;
+    let selection = &mut game.presentation.selection;
+    match kept {
+        Some(Kept::Units(owner, mut ids)) => {
+            if additive {
+                ids.extend(
+                    selection
+                        .units
+                        .iter()
+                        .copied()
+                        .filter(|id| state.unit(*id).is_some_and(|u| u.player == owner)),
+                );
+                ids.sort_unstable();
+                ids.dedup();
+            }
+            selection.units = ids;
+            selection.buildings.clear();
+        }
+        Some(Kept::Buildings(owner, mut ids)) => {
+            if additive {
+                ids.extend(
+                    selection
+                        .buildings
+                        .iter()
+                        .copied()
+                        .filter(|id| state.building(*id).is_some_and(|b| b.player == owner)),
+                );
+                ids.sort_unstable();
+                ids.dedup();
+            }
+            selection.units.clear();
+            selection.buildings = ids;
+        }
+        None if additive => {}
+        None => {
+            selection.units.clear();
+            selection.buildings.clear();
+            selection.pile = None;
+        }
     }
 }
 
@@ -528,12 +522,12 @@ pub(super) fn select_all_of_kind_on_screen(game: &mut Game, screen: Vec2, ui: f3
         return;
     }
 
-    let tile = numeric::tile_at(world);
-    let Some(picked) = game
-        .state
-        .buildings_at(tile)
-        .find(|building| selectable_building(game, building))
-    else {
+    // The building a press there picks: the one under it, or for the
+    // reticle one within its reach.
+    let Some(Picked::Building(id, _)) = pick(game, screen, ui, reach) else {
+        return;
+    };
+    let Some(picked) = game.state.building(id) else {
         return;
     };
     let (kind, owner) = (picked.kind, picked.player);
@@ -551,4 +545,132 @@ pub(super) fn select_all_of_kind_on_screen(game: &mut Game, screen: Vec2, ui: f3
         })
         .map(|building| building.id)
         .collect();
+}
+
+/// Every unit and building the human can see within `radius` logical
+/// pixels of the ground the reticle crossed from `from` to `to`. A unit is
+/// reached anywhere on its body, as a press picks it; at the reticle's own
+/// reach this is exactly what a press there could pick.
+pub(super) fn swept_by_pad(
+    game: &Game,
+    from: Vec2,
+    to: Vec2,
+    radius: f32,
+) -> (Vec<UnitId>, Vec<BuildingId>) {
+    let reach = radius / game.presentation.camera.zoom;
+    let units = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| selectable(game, u))
+        .filter(|u| {
+            let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
+            segment_distance(p, from, to) <= reach.max(super::unit_pick_radius(u.kind))
+        })
+        .map(|u| u.id)
+        .collect();
+    let buildings = game
+        .state
+        .buildings()
+        .iter()
+        .filter(|b| selectable_building(game, b))
+        .filter(|b| {
+            let (min, max) = footprint(b);
+            rect_segment_distance(min, max, from, to) <= reach
+        })
+        .map(|b| b.id)
+        .collect();
+    (units, buildings)
+}
+
+/// The nearest hostile the human can see within `reach` of `screen`: a
+/// unit, else a building. An order aims at it before anything the reticle
+/// brackets, so attack intent holds in a scrum, as a right-click's attack
+/// check comes before its own-unit checks.
+pub(super) fn hostile_in_reach(game: &Game, screen: Vec2, ui: f32, reach: Reach) -> Option<Picked> {
+    let world = game.presentation.camera.to_world(screen);
+    let human = game.presentation.human;
+    let unit = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| game.state.hostile(human, u.player) && selectable(game, u))
+        .filter_map(|u| {
+            let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
+            let distance = p.distance(world);
+            (distance <= pick_radius(game, ui, u.kind, reach)).then_some((distance, u))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.id.cmp(&b.1.id)));
+    if let Some((_, u)) = unit {
+        return Some(Picked::Unit(u.id, u.player));
+    }
+    // Without a reach around footprints, only the footprint itself counts.
+    let reach = reach.structures.unwrap_or(0.0) * ui / game.presentation.camera.zoom;
+    game.state
+        .buildings()
+        .iter()
+        .filter(|b| game.state.hostile(human, b.player) && selectable_building(game, b))
+        .filter_map(|b| {
+            let (min, max) = footprint(b);
+            let distance = world.clamp(min, max).distance(world);
+            (distance <= reach).then_some((distance, b))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.id.cmp(&b.1.id)))
+        .map(|(_, b)| Picked::Building(b.id, b.player))
+}
+
+/// A building's footprint as world corners.
+pub(super) fn footprint(building: &aftermine_sim::Building) -> (Vec2, Vec2) {
+    let (w, h) = building.kind.size();
+    let min = vec2(building.anchor.x as f32, building.anchor.y as f32);
+    (min, min + vec2(w as f32, h as f32))
+}
+
+/// How far `p` lies from the segment `a`..`b`.
+fn segment_distance(p: Vec2, a: Vec2, b: Vec2) -> f32 {
+    let ab = b - a;
+    let length = ab.length_squared();
+    if length == 0.0 {
+        return p.distance(a);
+    }
+    let t = ((p - a).dot(ab) / length).clamp(0.0, 1.0);
+    p.distance(a + ab * t)
+}
+
+/// How far the segment `a`..`b` lies from the rectangle `min`..`max`: zero
+/// where it crosses it, else the nearest of its ends to the rectangle and
+/// the rectangle's corners to it, where two convex shapes apart come
+/// closest.
+fn rect_segment_distance(min: Vec2, max: Vec2, a: Vec2, b: Vec2) -> f32 {
+    if crosses(min, max, a, b) {
+        return 0.0;
+    }
+    let corners = [min, vec2(max.x, min.y), max, vec2(min.x, max.y)];
+    corners
+        .iter()
+        .map(|corner| segment_distance(*corner, a, b))
+        .chain([a, b].map(|end| end.clamp(min, max).distance(end)))
+        .fold(f32::INFINITY, f32::min)
+}
+
+/// Whether the segment `a`..`b` touches the rectangle `min`..`max`, by
+/// clipping it against each axis in turn.
+fn crosses(min: Vec2, max: Vec2, a: Vec2, b: Vec2) -> bool {
+    let d = b - a;
+    let (mut enter, mut leave) = (0.0_f32, 1.0_f32);
+    for (start, step, lo, hi) in [(a.x, d.x, min.x, max.x), (a.y, d.y, min.y, max.y)] {
+        if step == 0.0 {
+            if start < lo || start > hi {
+                return false;
+            }
+            continue;
+        }
+        let (t0, t1) = ((lo - start) / step, (hi - start) / step);
+        enter = enter.max(t0.min(t1));
+        leave = leave.min(t0.max(t1));
+        if enter > leave {
+            return false;
+        }
+    }
+    true
 }
