@@ -32,11 +32,12 @@ key-value store either.
 
 An app needs the iCloud Documents entitlement for its container and the
 `com.apple.developer.ubiquity-kvstore-identifier` entitlement for the key-value
-store; without them, as in tests and unsigned builds, there is no folder and no
-store. The iPad, Mac and Apple TV builds must carry the same key-value store
-identifier, `<team ID>.<bundle ID>` (`dev.luebbehusen.aftermine` for the
-maintainer's builds), or their settings land in separate stores. Xcode writes it
-as `$(TeamIdentifierPrefix)$(CFBundleIdentifier)`.
+store; without them, as in tests and unsigned builds, there is no folder and the
+store keeps its values on the device. The iPad, Mac and Apple TV builds must
+carry the same key-value store identifier, `<team ID>.<bundle ID>`
+(`dev.luebbehusen.aftermine` for the maintainer's builds), or their settings
+land in separate stores. Xcode writes it as
+`$(TeamIdentifierPrefix)$(CFBundleIdentifier)`.
 
 ## Development
 

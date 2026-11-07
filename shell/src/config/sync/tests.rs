@@ -63,9 +63,12 @@ fn every_config_field_either_syncs_or_stays_on_the_device() {
     let serde_json::Value::Object(fields) = serde_json::to_value(Config::default()).unwrap() else {
         panic!("a config serializes as an object");
     };
-    let synced: Vec<&str> = SyncedField::ALL.iter().map(|field| field.name()).collect();
+    let synced: std::collections::BTreeSet<&str> = SyncedField::ALL
+        .iter()
+        .map(|field| field.name().split('.').next().unwrap())
+        .collect();
     for name in fields.keys() {
-        let places = usize::from(synced.contains(&name.as_str()))
+        let places = usize::from(synced.contains(name.as_str()))
             + usize::from(DEVICE_FIELDS.contains(&name.as_str()));
         assert_eq!(places, 1, "`{name}` must either sync or stay on the device");
     }
@@ -77,6 +80,22 @@ fn every_config_field_either_syncs_or_stays_on_the_device() {
     for field in SyncedField::ALL {
         assert!(key(field).len() <= 64, "iCloud keys hold at most 64 bytes");
     }
+    // The fields split into one key per Settings row must keep covering
+    // every part, or a new bus or marker preference would silently stay
+    // behind.
+    let parts = |value: serde_json::Value| -> Vec<String> {
+        value.as_object().unwrap().keys().cloned().collect()
+    };
+    assert_eq!(
+        parts(serde_json::to_value(Volumes::default()).unwrap()),
+        ["effects", "master", "music", "ui"],
+        "one volume key per bus"
+    );
+    assert_eq!(
+        parts(serde_json::to_value(MarkerPrefs::default()).unwrap()),
+        ["end", "scale", "start"],
+        "marker timing carries start and end, marker size the scale"
+    );
 }
 
 #[test]
@@ -133,7 +152,10 @@ fn only_a_change_the_player_makes_goes_up() {
 
     let mut ipad = Config::default();
     ipad.volumes.effects = 0.5;
-    cloud.insert(key(SyncedField::Volumes), SyncedField::Volumes.json(&ipad));
+    cloud.insert(
+        key(SyncedField::EffectsVolume),
+        SyncedField::EffectsVolume.json(&ipad),
+    );
     assert!(mac.catch_up(&mut cloud), "the iPad's value arrives late");
     assert_eq!(mac.config.volumes.effects, 0.5, "and still wins");
     assert!(
@@ -145,7 +167,10 @@ fn only_a_change_the_player_makes_goes_up() {
     mac.save(&mut cloud);
     assert_eq!(
         cloud.keys().collect::<Vec<_>>(),
-        [&key(SyncedField::TeamColors), &key(SyncedField::Volumes)],
+        [
+            &key(SyncedField::TeamColors),
+            &key(SyncedField::EffectsVolume)
+        ],
         "the player's change goes up, and nothing else of this device's"
     );
     assert_eq!(cloud[&key(SyncedField::TeamColors)], "false");
@@ -186,8 +211,8 @@ fn a_change_waits_in_the_cloud_through_unrelated_saves() {
     mac.config.finish_lesson(crate::tutorial::Lesson::Scrap);
     mac.save(&mut cloud);
     assert_eq!(
-        cloud[&key(SyncedField::Volumes)],
-        volumes_json(&ipad.config)
+        cloud[&key(SyncedField::MusicVolume)],
+        SyncedField::MusicVolume.json(&ipad.config)
     );
 
     assert!(mac.catch_up(&mut cloud));
@@ -228,14 +253,11 @@ fn a_value_the_load_checks_would_reject_is_ignored() {
             SyncedField::PlayerName,
             serde_json::to_string(&"\u{7}".repeat(3)).unwrap(),
         ),
-        (
-            SyncedField::Markers,
-            r#"{"start":-100.0,"end":300.0,"scale":-1.0}"#.to_owned(),
-        ),
-        (
-            SyncedField::Volumes,
-            r#"{"master":5.0,"effects":1.0,"ui":1.0,"music":1.0}"#.to_owned(),
-        ),
+        (SyncedField::MarkerTiming, "[-100.0,300.0]".to_owned()),
+        (SyncedField::MarkerTiming, "[16.0,24.0]".to_owned()),
+        (SyncedField::MarkerSize, "-1.0".to_owned()),
+        (SyncedField::MasterVolume, "5.0".to_owned()),
+        (SyncedField::MusicVolume, "-0.5".to_owned()),
         (SyncedField::ReducedMotion, "not json".to_owned()),
     ];
     for (field, text) in bad {
@@ -256,18 +278,12 @@ fn a_value_the_load_checks_would_reject_is_ignored() {
 fn equal_settings_written_differently_go_back_at_most_once() {
     let mut cloud = Cloud::new();
     let mut device = Device::launch(Config::default(), &mut cloud);
-    cloud.insert(
-        key(SyncedField::Volumes),
-        r#"{ "master": 1, "effects": 1, "ui": 1, "music": 0.5 }"#.to_owned(),
-    );
+    cloud.insert(key(SyncedField::MusicVolume), " 5e-1 ".to_owned());
     assert!(device.catch_up(&mut cloud));
     assert_eq!(device.config.volumes.music, 0.5);
     device.save(&mut cloud);
     let rewritten = cloud.clone();
-    assert_eq!(
-        rewritten[&key(SyncedField::Volumes)],
-        volumes_json(&device.config)
-    );
+    assert_eq!(rewritten[&key(SyncedField::MusicVolume)], "0.5");
     device.save(&mut cloud);
     assert!(!device.catch_up(&mut cloud));
     assert_eq!(cloud, rewritten, "settled after one write");
@@ -290,7 +306,13 @@ fn settings_values_cross_the_store_bit_for_bit() {
             ..Config::default()
         };
         let mut copy = Config::default();
-        for field in [SyncedField::Volumes, SyncedField::Markers] {
+        for field in [
+            SyncedField::MasterVolume,
+            SyncedField::EffectsVolume,
+            SyncedField::InterfaceVolume,
+            SyncedField::MusicVolume,
+            SyncedField::MarkerSize,
+        ] {
             assert!(field.read(&mut copy, &field.json(&config)));
             assert_eq!(field.json(&copy), field.json(&config));
         }
@@ -301,16 +323,40 @@ fn settings_values_cross_the_store_bit_for_bit() {
         let mut config = Config::default();
         (config.markers.start, config.markers.end) = (start, end);
         let mut copy = Config::default();
-        assert!(SyncedField::Markers.read(&mut copy, &SyncedField::Markers.json(&config)));
+        let timing = SyncedField::MarkerTiming;
+        assert!(timing.read(&mut copy, &timing.json(&config)));
         assert_eq!(copy.markers.timing(), config.markers.timing());
+    }
+}
+
+#[test]
+fn edits_to_two_rows_on_two_devices_both_survive() {
+    // Neither device has heard of the other's edit when it saves its own,
+    // so each row needs its own key or one edit would undo the other.
+    let mut cloud = Cloud::new();
+    let mut ipad = Device::launch(Config::default(), &mut cloud);
+    let mut mac = Device::launch(Config::default(), &mut cloud);
+    ipad.config.volumes.music = 0.25;
+    ipad.config.markers.set_timing(0);
+    ipad.save(&mut cloud);
+    mac.config.volumes.effects = 0.5;
+    mac.config.markers.scale = 1.25;
+    mac.save(&mut cloud);
+
+    assert!(ipad.catch_up(&mut cloud));
+    assert!(mac.catch_up(&mut cloud));
+    for device in [&ipad, &mac] {
+        assert_eq!(device.config.volumes.music, 0.25);
+        assert_eq!(device.config.volumes.effects, 0.5);
+        assert_eq!(device.config.markers.timing(), Some(0));
+        assert_eq!(device.config.markers.scale, 1.25);
     }
 }
 
 #[test]
 fn without_the_store_nothing_syncs() {
     // A workspace or automation run never opens the store, so settings
-    // stay in the config file alone. (A build iCloud refuses gets no store
-    // either; the iCloud crate's tests cover that.)
+    // stay in the config file alone.
     let mut config = Config {
         team_colors: true,
         ..Config::default()
@@ -320,8 +366,4 @@ fn without_the_store_nothing_syncs() {
     sync.push(&config);
     assert!(!sync.pull(&mut config));
     assert!(config.team_colors);
-}
-
-fn volumes_json(config: &Config) -> String {
-    SyncedField::Volumes.json(config)
 }

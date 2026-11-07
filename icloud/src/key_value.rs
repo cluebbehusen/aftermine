@@ -13,13 +13,15 @@ pub struct KeyValueStore {
 
 impl KeyValueStore {
     /// Starts counting outside changes and asks iCloud for the newest
-    /// values. `None` when the store refuses this app, as it does for a
-    /// build without the key-value store entitlement, and on platforms
-    /// without iCloud.
+    /// values. `None` on platforms without iCloud. A build without the
+    /// key-value store entitlement still gets a store, one that never
+    /// leaves this device; a failed first sync likewise keeps the store,
+    /// which catches up once iCloud answers.
     pub fn open() -> Option<Self> {
         #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos"))]
         {
-            bridge::open().then_some(Self { _opened: () })
+            bridge::open();
+            Some(Self { _opened: () })
         }
         #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "tvos")))]
         {
@@ -75,15 +77,15 @@ mod bridge {
     use std::ffi::{CString, c_char, c_long};
 
     unsafe extern "C" {
-        fn aftermine_icloud_key_value_open() -> bool;
+        fn aftermine_icloud_key_value_open();
         fn aftermine_icloud_key_value_get(key: *const c_char) -> *mut c_char;
         fn aftermine_icloud_key_value_set(key: *const c_char, value: *const c_char);
         fn aftermine_icloud_key_value_changes() -> c_long;
     }
 
-    pub(super) fn open() -> bool {
+    pub(super) fn open() {
         // SAFETY: takes no arguments.
-        unsafe { aftermine_icloud_key_value_open() }
+        unsafe { aftermine_icloud_key_value_open() };
     }
 
     pub(super) fn get(key: &str) -> Option<String> {

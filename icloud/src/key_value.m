@@ -15,9 +15,10 @@
 static atomic_long external_changes = 0;
 
 // Starts counting outside changes, once per process, then asks the store to
-// catch up with iCloud. Returns false when the store refuses this app, as it
-// does for a build without the key-value store entitlement.
-bool aftermine_icloud_key_value_open(void) {
+// catch up with iCloud. Its answer is not kept: it fails for a build without
+// the key-value store entitlement, but also for errors the store recovers
+// from by itself, and either way the store keeps working on this device.
+void aftermine_icloud_key_value_open(void) {
     @autoreleasepool {
         NSUbiquitousKeyValueStore *store =
             NSUbiquitousKeyValueStore.defaultStore;
@@ -35,7 +36,7 @@ bool aftermine_icloud_key_value_open(void) {
                         atomic_fetch_add(&external_changes, 1);
                       }];
         });
-        return [store synchronize];
+        (void)[store synchronize];
     }
 }
 

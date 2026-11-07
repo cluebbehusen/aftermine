@@ -14,11 +14,23 @@ fn an_unentitled_process_has_no_icloud_folder() {
     assert_eq!(documents(), None);
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "tvos")))]
 #[test]
-fn an_unentitled_process_has_no_key_value_store() {
-    // Without the key-value store entitlement the store refuses the app,
-    // so a test binary, like an unsigned build, keeps its settings local.
+fn only_apple_platforms_have_a_key_value_store() {
     assert!(KeyValueStore::open().is_none());
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos"))]
+#[test]
+fn an_unentitled_store_keeps_working_on_this_device() {
+    // A test binary carries no entitlement, like an unsigned build: the
+    // store opens, takes reads and writes, and syncs nothing.
+    let store = KeyValueStore::open().expect("Apple platforms have a store");
+    store.set("aftermine.icloud-test", "kept");
+    let _ = store.get("aftermine.icloud-test");
+    assert!(store.get("aftermine.icloud-test-never-written").is_none());
+    store.set("bad\0key", "dropped");
+    let _ = store.changes();
 }
 
 #[test]

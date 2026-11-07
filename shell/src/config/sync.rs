@@ -24,14 +24,22 @@ use aftermine_icloud::KeyValueStore;
 use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
 
-/// A setting that follows the player through iCloud. Every other config
-/// field stays on the device, because it belongs to the device's screen,
-/// input hardware, network or installation; the tests list them.
+/// A setting that follows the player through iCloud, one per Settings row
+/// so that edits to two rows on two devices both survive. Every other
+/// config field stays on the device, because it belongs to the device's
+/// screen, touch or pointer hardware, network or installation; the tests
+/// list them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum SyncedField {
     Bindings,
-    Volumes,
-    Markers,
+    MasterVolume,
+    EffectsVolume,
+    InterfaceVolume,
+    MusicVolume,
+    /// Marker start and end together: a timing choice sets both, and the
+    /// two must stay apart.
+    MarkerTiming,
+    MarkerSize,
     ReducedMotion,
     TeamColors,
     ControlGroups,
@@ -40,10 +48,14 @@ enum SyncedField {
 }
 
 impl SyncedField {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 12] = [
         Self::Bindings,
-        Self::Volumes,
-        Self::Markers,
+        Self::MasterVolume,
+        Self::EffectsVolume,
+        Self::InterfaceVolume,
+        Self::MusicVolume,
+        Self::MarkerTiming,
+        Self::MarkerSize,
         Self::ReducedMotion,
         Self::TeamColors,
         Self::ControlGroups,
@@ -51,12 +63,17 @@ impl SyncedField {
         Self::PlayerName,
     ];
 
-    /// The config field's name in `config.json`.
+    /// Where the setting sits in `config.json`: the field's name, then the
+    /// part of it this key carries.
     fn name(self) -> &'static str {
         match self {
             Self::Bindings => "bindings",
-            Self::Volumes => "volumes",
-            Self::Markers => "markers",
+            Self::MasterVolume => "volumes.master",
+            Self::EffectsVolume => "volumes.effects",
+            Self::InterfaceVolume => "volumes.ui",
+            Self::MusicVolume => "volumes.music",
+            Self::MarkerTiming => "markers.timing",
+            Self::MarkerSize => "markers.scale",
             Self::ReducedMotion => "reduced_motion",
             Self::TeamColors => "team_colors",
             Self::ControlGroups => "control_groups",
@@ -71,14 +88,19 @@ impl SyncedField {
         format!("config.{CONFIG_VERSION}.{}", self.name())
     }
 
-    /// The field's JSON as this build writes it. Serializing the field's
+    /// The setting's JSON as this build writes it. Serializing the value's
     /// own type keeps `f32` text exact; a `serde_json::Value` would widen
     /// it to `f64` and make an unchanged volume look changed.
     fn json(self, config: &Config) -> String {
+        let markers = &config.markers;
         let text = match self {
             Self::Bindings => serde_json::to_string(&config.bindings),
-            Self::Volumes => serde_json::to_string(&config.volumes),
-            Self::Markers => serde_json::to_string(&config.markers),
+            Self::MasterVolume => serde_json::to_string(&config.volumes.master),
+            Self::EffectsVolume => serde_json::to_string(&config.volumes.effects),
+            Self::InterfaceVolume => serde_json::to_string(&config.volumes.ui),
+            Self::MusicVolume => serde_json::to_string(&config.volumes.music),
+            Self::MarkerTiming => serde_json::to_string(&(markers.start, markers.end)),
+            Self::MarkerSize => serde_json::to_string(&markers.scale),
             Self::ReducedMotion => serde_json::to_string(&config.reduced_motion),
             Self::TeamColors => serde_json::to_string(&config.team_colors),
             Self::ControlGroups => serde_json::to_string(&config.control_groups),
@@ -88,17 +110,24 @@ impl SyncedField {
         text.expect("settings serialize")
     }
 
-    /// Sets the field from `text`; whether it parsed.
+    /// Sets the setting from `text`; whether it parsed.
     fn read(self, config: &mut Config, text: &str) -> bool {
         fn into<T: DeserializeOwned>(field: &mut T, text: &str) -> bool {
             serde_json::from_str(text)
                 .map(|value| *field = value)
                 .is_ok()
         }
+        let markers = &mut config.markers;
         match self {
             Self::Bindings => into(&mut config.bindings, text),
-            Self::Volumes => into(&mut config.volumes, text),
-            Self::Markers => into(&mut config.markers, text),
+            Self::MasterVolume => into(&mut config.volumes.master, text),
+            Self::EffectsVolume => into(&mut config.volumes.effects, text),
+            Self::InterfaceVolume => into(&mut config.volumes.ui, text),
+            Self::MusicVolume => into(&mut config.volumes.music, text),
+            Self::MarkerTiming => serde_json::from_str(text)
+                .map(|(start, end)| (markers.start, markers.end) = (start, end))
+                .is_ok(),
+            Self::MarkerSize => into(&mut markers.scale, text),
             Self::ReducedMotion => into(&mut config.reduced_motion, text),
             Self::TeamColors => into(&mut config.team_colors, text),
             Self::ControlGroups => into(&mut config.control_groups, text),
@@ -194,7 +223,7 @@ fn changed_here(config: &Config, bases: &mut Bases) -> Vec<(SyncedField, String)
 /// This device's side of the settings in iCloud.
 #[derive(Debug)]
 pub struct SettingsSync {
-    /// The store, when this build may use it and iCloud lets it.
+    /// The store, when this build may use it.
     store: Option<KeyValueStore>,
     /// The store's change count this device has caught up with.
     seen: u64,
