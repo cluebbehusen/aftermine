@@ -61,12 +61,17 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32) {
     let prefs = input.camera_prefs;
     let ui = input.ui;
     let (left, right) = input.sticks();
+    // A stick held since a menu was up moves the camera too, so it makes
+    // the pad the pointer even though the match never saw it move.
+    if left != Vec2::ZERO || right != Vec2::ZERO {
+        input.last_pointer = Pointer::Pad;
+    }
     let camera = &mut game.presentation.camera;
     let reticle = &mut input.reticle;
     reticle.center = camera.viewport() * 0.5;
     let bound = drift_bound(camera, ui);
-    // Where the map's edge held back this frame's zoom, the reticle moves
-    // instead, so it stays on the ground it was zooming about.
+    // Where the map's edge held back a zoom, the reticle moves instead, so
+    // it stays on the ground it was zooming about.
     reticle.drift += camera.take_glide_held() * camera.zoom;
     if left != Vec2::ZERO {
         let friction = if reticle.snap.is_some() {

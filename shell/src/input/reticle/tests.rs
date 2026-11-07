@@ -193,11 +193,23 @@ fn the_reticle_snaps_onto_a_unit_in_reach_and_slows_over_it() {
     let fast = game.presentation.camera.center.y - before.y;
     assert!((fast - 2.0 * slow).abs() < 1e-5, "{slow} {fast}");
 
-    // A mouse takes the pointer back, and the reticle rests on nothing.
+    // While the stick still moves the camera, the pad keeps the pointer.
     feed(
         &mut game,
         &mut input,
         &[RawEvent::MouseMove { x: 5.0, y: 6.0 }],
+    );
+    update_held(&mut game, &mut input, 0.0);
+    assert_eq!(input.last_pointer, Pointer::Pad);
+    // Once it is let go, a mouse takes the pointer back, and the reticle
+    // rests on nothing.
+    feed(
+        &mut game,
+        &mut input,
+        &[
+            stick(Stick::Left, 0.0, 0.0),
+            RawEvent::MouseMove { x: 5.0, y: 6.0 },
+        ],
     );
     update_held(&mut game, &mut input, 0.0);
     assert_eq!(input.hover_point(), Some(vec2(5.0, 6.0)));
@@ -423,4 +435,37 @@ fn zooming_out_at_the_map_edge_keeps_the_reticle_on_its_ground() {
         "{aim} moved to {}",
         under_reticle(&game, &input)
     );
+
+    // Let go and open a menu at once: the glide settles under it, where the
+    // match reads no input, and the reticle catches up when play resumes.
+    track_hands(&mut input, &stick(Stick::Right, 0.0, 0.0), false);
+    let before = game.presentation.camera.center;
+    for _ in 0..10 {
+        game.presentation.camera.update(0.05);
+    }
+    assert_ne!(game.presentation.camera.center, before, "the glide went on");
+    update_held(&mut game, &mut input, 0.05);
+    assert!(
+        (under_reticle(&game, &input) - aim).length() < 1e-2,
+        "{aim} moved to {} behind the menu",
+        under_reticle(&game, &input)
+    );
+}
+
+#[test]
+fn a_stick_held_since_a_menu_makes_the_pad_the_pointer() {
+    let mut game = game();
+    let mut input = InputState::new();
+    input.last_pointer = Pointer::Mouse;
+    // Pushed while a menu was up: only the hands saw it.
+    track_hands(&mut input, &stick(Stick::Left, 0.6, 0.0), false);
+    assert_eq!(input.last_pointer, Pointer::Mouse);
+    let before = game.presentation.camera.center;
+    update_held(&mut game, &mut input, 0.1);
+    assert_ne!(
+        game.presentation.camera.center, before,
+        "the held stick pans"
+    );
+    assert_eq!(input.last_pointer, Pointer::Pad, "so the reticle shows");
+    assert_eq!(input.hover_point(), Some(input.reticle.point()));
 }
