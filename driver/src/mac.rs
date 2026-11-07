@@ -98,7 +98,7 @@ fn running(executable: &Path) -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-/// `text` as an AppleScript string literal.
+/// `text` as a string literal in an `osascript` script.
 fn applescript_string(text: &str) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
