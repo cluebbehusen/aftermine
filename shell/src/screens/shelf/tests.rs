@@ -474,3 +474,10 @@ fn a_delete_armed_by_key_still_names_its_key_once_a_controller_takes_over() {
     crate::platform::set_hands(crate::platform::Hands::BUILD);
     assert_eq!(status, "Press X again to delete");
 }
+
+#[test]
+fn only_apple_tv_warns_that_records_may_not_last() {
+    assert!(!standing_line(Platform::Tv).is_empty());
+    assert_eq!(standing_line(Platform::Desktop), "");
+    assert_eq!(standing_line(Platform::Touch), "");
+}

@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod defaults;
 mod key_value;
 
 pub use key_value::KeyValueStore;
