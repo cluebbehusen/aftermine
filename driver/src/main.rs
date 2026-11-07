@@ -2,6 +2,7 @@
 
 use aftermine_driver::build_identity;
 use aftermine_driver::client::Client;
+use aftermine_driver::device::Family;
 use aftermine_driver::smoke;
 use aftermine_kit::render;
 use aftermine_kit::runner;
@@ -590,9 +591,20 @@ enum Cmd {
         threshold: f64,
     },
     /// Build the iPad app, install it, and launch it on a paired iPad or
-    /// an iPad simulator (`cargo ios`). Asks which device when there are
+    /// an iPad simulator (`cargo ipad`). Asks which device when there are
     /// several, remembering the last choice.
-    Ios {
+    Ipad {
+        /// Device name, name fragment, or identifier; skips the picker.
+        #[arg(long)]
+        device: Option<String>,
+        /// Print the available devices and stop.
+        #[arg(long)]
+        list: bool,
+    },
+    /// Build the Apple TV app, install it, and launch it on a paired Apple
+    /// TV or an Apple TV simulator (`cargo tv`). Asks which device when
+    /// there are several, remembering the last choice.
+    Tv {
         /// Device name, name fragment, or identifier; skips the picker.
         #[arg(long)]
         device: Option<String>,
@@ -1495,7 +1507,12 @@ fn main() -> Result<()> {
             dir,
             threshold,
         } => aftermine_driver::shots::run(port, bless, &dir, threshold)?,
-        Cmd::Ios { device, list } => aftermine_driver::ios::run(device.as_deref(), list)?,
+        Cmd::Ipad { device, list } => {
+            aftermine_driver::device::run(Family::Ipad, device.as_deref(), list)?;
+        }
+        Cmd::Tv { device, list } => {
+            aftermine_driver::device::run(Family::Tv, device.as_deref(), list)?;
+        }
         Cmd::Mac => aftermine_driver::mac::run()?,
     }
     Ok(())

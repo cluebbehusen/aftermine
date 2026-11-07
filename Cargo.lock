@@ -786,9 +786,9 @@ checksum = "64b1d96218903768c1ce078b657c0d5965465c95a60d2682fd97443c9d2483dd"
 
 [[package]]
 name = "malloc_buf"
-version = "0.0.6"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb"
+checksum = "3f32c8c0575eee8637bf462087c00098fe16d6cb621f1abb6ebab4da414d57fd"
 dependencies = [
  "libc",
 ]
@@ -808,7 +808,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 [[package]]
 name = "miniquad"
 version = "0.4.11"
-source = "git+https://github.com/cluebbehusen/miniquad?rev=aeaa6956c9303b9ea456ab64f81ba6ade78061ca#aeaa6956c9303b9ea456ab64f81ba6ade78061ca"
+source = "git+https://github.com/cluebbehusen/miniquad?rev=1c156906f23fc229d58d883125e3511fddc0d7de#1c156906f23fc229d58d883125e3511fddc0d7de"
 dependencies = [
  "libc",
  "ndk-sys",
@@ -855,9 +855,9 @@ dependencies = [
 
 [[package]]
 name = "objc-rs"
-version = "0.2.8"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64a1e7069a2525126bf12a9f1f7916835fafade384fb27cabf698e745e2a1eb8"
+checksum = "fed59851ec694c6cc10898f8e07087fd04542c637424ce55bf1dfda2ade673f1"
 dependencies = [
  "malloc_buf",
 ]

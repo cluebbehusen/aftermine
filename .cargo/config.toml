@@ -1,3 +1,4 @@
 [alias]
-ios = "run -q -p aftermine-driver -- ios"
+ipad = "run -q -p aftermine-driver -- ipad"
+tv = "run -q -p aftermine-driver -- tv"
 mac = "run -q -p aftermine-driver -- mac"

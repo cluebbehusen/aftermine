@@ -2715,7 +2715,7 @@ SOFTWARE.
 MIT License
 
 Used by:
-- malloc_buf 0.0.6
+- malloc_buf 1.0.0
 - quad-rand 0.2.3
 
 MIT License
@@ -2742,7 +2742,7 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 MIT License
 
 Used by:
-- objc-rs 0.2.8
+- objc-rs 0.3.2
 
 MIT License
 

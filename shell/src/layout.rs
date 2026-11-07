@@ -73,7 +73,7 @@ pub struct LayoutModel {
     /// is none.
     pub select_all: (Rect, CardAction),
     /// Mixed-selection roster filters, separate from command cards.
-    pub roster_slots: [(Rect, CardAction); 8],
+    pub roster_slots: [(Rect, CardAction); crate::panel::MAX_ROSTER],
     /// How many roster filters are live this frame.
     pub roster_count: usize,
     /// Command cards: rect plus the action a click performs — the
@@ -122,7 +122,8 @@ impl Default for LayoutModel {
             ghost_cancel: Rect::new(0.0, 0.0, 0.0, 0.0),
             ghost_handle: Rect::new(0.0, 0.0, 0.0, 0.0),
             select_all: (Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None),
-            roster_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 8],
+            roster_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None);
+                crate::panel::MAX_ROSTER],
             roster_count: 0,
             cards: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); crate::panel::MAX_CARDS],
             card_count: 0,

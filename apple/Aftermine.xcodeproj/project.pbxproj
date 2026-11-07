@@ -15,6 +15,9 @@
 		0A1B00000000000000000016 /* scenarios in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B00000000000000000022 /* scenarios */; };
 		0A1B00000000000000000017 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B00000000000000000026 /* Assets.xcassets */; };
 		0A1B00000000000000000018 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B00000000000000000027 /* PrivacyInfo.xcprivacy */; };
+		0A1B00000000000000000019 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B00000000000000000021 /* assets */; };
+		0A1B0000000000000000001A /* scenarios in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B00000000000000000022 /* scenarios */; };
+		0A1B0000000000000000001B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B00000000000000000027 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +35,10 @@
 		0A1B0000000000000000002B /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 		0A1B0000000000000000002C /* Aftermine.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Aftermine.entitlements; sourceTree = "<group>"; };
 		0A1B0000000000000000002D /* Aftermine.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Aftermine.entitlements; sourceTree = "<group>"; };
+		0A1B0000000000000000002E /* Aftermine.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aftermine.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A1B0000000000000000002F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		0A1B00000000000000000035 /* AppleTV.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AppleTV.xcconfig; sourceTree = "<group>"; };
+		0A1B00000000000000000036 /* Aftermine.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Aftermine.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -41,9 +48,11 @@
 				0A1B0000000000000000002B /* Shared.xcconfig */,
 				0A1B00000000000000000024 /* iPad.xcconfig */,
 				0A1B0000000000000000002A /* Mac.xcconfig */,
+				0A1B00000000000000000035 /* AppleTV.xcconfig */,
 				0A1B00000000000000000025 /* build_rust.sh */,
 				0A1B00000000000000000032 /* iPad */,
 				0A1B00000000000000000033 /* Mac */,
+				0A1B00000000000000000034 /* AppleTV */,
 				0A1B00000000000000000026 /* Assets.xcassets */,
 				0A1B00000000000000000027 /* PrivacyInfo.xcprivacy */,
 				0A1B00000000000000000021 /* assets */,
@@ -57,6 +66,7 @@
 			children = (
 				0A1B00000000000000000020 /* Aftermine.app */,
 				0A1B00000000000000000028 /* Aftermine.app */,
+				0A1B0000000000000000002E /* Aftermine.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -77,6 +87,15 @@
 				0A1B0000000000000000002D /* Aftermine.entitlements */,
 			);
 			path = Mac;
+			sourceTree = "<group>";
+		};
+		0A1B00000000000000000034 /* AppleTV */ = {
+			isa = PBXGroup;
+			children = (
+				0A1B0000000000000000002F /* Info.plist */,
+				0A1B00000000000000000036 /* Aftermine.entitlements */,
+			);
+			path = AppleTV;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -114,6 +133,22 @@
 			productReference = 0A1B00000000000000000028 /* Aftermine.app */;
 			productType = "com.apple.product-type.application";
 		};
+		0A1B00000000000000000042 /* Aftermine Apple TV */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0A1B00000000000000000063 /* Build configuration list for PBXNativeTarget "Aftermine Apple TV" */;
+			buildPhases = (
+				0A1B00000000000000000055 /* Resources */,
+				0A1B00000000000000000054 /* Build Rust */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Aftermine Apple TV";
+			productName = Aftermine;
+			productReference = 0A1B0000000000000000002E /* Aftermine.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -127,6 +162,9 @@
 						CreatedOnToolsVersion = 27.0;
 					};
 					0A1B00000000000000000041 = {
+						CreatedOnToolsVersion = 27.2;
+					};
+					0A1B00000000000000000042 = {
 						CreatedOnToolsVersion = 27.2;
 					};
 				};
@@ -145,6 +183,7 @@
 			targets = (
 				0A1B00000000000000000040 /* Aftermine iPad */,
 				0A1B00000000000000000041 /* Aftermine Mac */,
+				0A1B00000000000000000042 /* Aftermine Apple TV */,
 			);
 		};
 /* End PBXProject section */
@@ -169,6 +208,16 @@
 				0A1B00000000000000000016 /* scenarios in Resources */,
 				0A1B00000000000000000017 /* Assets.xcassets in Resources */,
 				0A1B00000000000000000018 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0A1B00000000000000000055 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A1B00000000000000000019 /* assets in Resources */,
+				0A1B0000000000000000001A /* scenarios in Resources */,
+				0A1B0000000000000000001B /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -197,6 +246,27 @@
 			shellScript = "exec /bin/sh \"$SRCROOT/build_rust.sh\"\n";
 		};
 		0A1B00000000000000000052 /* Build Rust */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
+			);
+			name = "Build Rust";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "exec /bin/sh \"$SRCROOT/build_rust.sh\"\n";
+		};
+		0A1B00000000000000000054 /* Build Rust */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -262,6 +332,20 @@
 			};
 			name = Release;
 		};
+		0A1B00000000000000000076 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 0A1B00000000000000000035 /* AppleTV.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		0A1B00000000000000000077 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 0A1B00000000000000000035 /* AppleTV.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -288,6 +372,15 @@
 			buildConfigurations = (
 				0A1B00000000000000000074 /* Debug */,
 				0A1B00000000000000000075 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0A1B00000000000000000063 /* Build configuration list for PBXNativeTarget "Aftermine Apple TV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A1B00000000000000000076 /* Debug */,
+				0A1B00000000000000000077 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

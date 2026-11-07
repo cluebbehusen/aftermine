@@ -1,4 +1,4 @@
-// Build settings both app targets share. Each platform's file includes
+// Build settings every app target shares. Each platform's file includes
 // this one, then the ignored Local.xcconfig.
 //
 // Set your signing team in Local.xcconfig (copy Local.xcconfig.example),
