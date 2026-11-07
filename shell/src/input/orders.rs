@@ -44,9 +44,68 @@ pub(super) fn rally_producers(
     game.presentation.ping(at, PingKind::Rally);
 }
 
-/// The rally a world click names: the own unit under it, never a drone,
-/// or else the ground.
-pub(super) fn rally_at(game: &Game, world: Vec2) -> Rally {
+/// How far around its point an order reaches for what it names, in world
+/// units. A click names only what lies under it: a unit by its own pick
+/// radius, a structure by its footprint. A controller's reticle reaches as
+/// far as it snaps.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct OrderReach {
+    /// The least distance from a unit's center that still names it.
+    units: f32,
+    /// How far from a structure's footprint still names it.
+    structures: f32,
+}
+
+impl OrderReach {
+    /// A click's: exactly what lies under the pointer.
+    pub(crate) const EXACT: Self = Self {
+        units: 0.0,
+        structures: 0.0,
+    };
+
+    /// A reach of `units` around a unit's center and `structures` around
+    /// a footprint, in world units.
+    pub(super) const fn new(units: f32, structures: f32) -> Self {
+        Self { units, structures }
+    }
+
+    /// How far from its center a unit of `kind` is named.
+    fn unit(self, kind: aftermine_sim::UnitKind) -> f32 {
+        unit_pick_radius(kind).max(self.units)
+    }
+
+    /// The building `pred` accepts that `world` names: the one under it,
+    /// else the nearest whose footprint lies within reach.
+    fn building(
+        self,
+        game: &Game,
+        world: Vec2,
+        pred: impl Fn(&aftermine_sim::Building) -> bool,
+    ) -> Option<&aftermine_sim::Building> {
+        let under = game
+            .state
+            .buildings_at(numeric::tile_at(world))
+            .find(|building| pred(building));
+        if under.is_some() || self.structures <= 0.0 {
+            return under;
+        }
+        game.state
+            .buildings()
+            .iter()
+            .filter(|building| pred(building))
+            .filter_map(|building| {
+                let (min, max) = super::select::footprint(building);
+                let distance = world.clamp(min, max).distance(world);
+                (distance <= self.structures).then_some((distance, building))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.id.cmp(&b.1.id)))
+            .map(|(_, building)| building)
+    }
+}
+
+/// The rally a world click names: the own unit within `reach`, never a
+/// drone, or else the ground.
+pub(super) fn rally_at(game: &Game, world: Vec2, reach: OrderReach) -> Rally {
     game.state
         .units()
         .iter()
@@ -55,7 +114,7 @@ pub(super) fn rally_at(game: &Game, world: Vec2) -> Rally {
             let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
             (at.distance(world), u.id, u.kind)
         })
-        .filter(|(distance, _, kind)| *distance <= unit_pick_radius(*kind))
+        .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map_or_else(
             || Rally::Tile(ground_tile(&game.state, world)),
@@ -63,10 +122,13 @@ pub(super) fn rally_at(game: &Game, world: Vec2) -> Rally {
         )
 }
 
+/// The nearest hostile the player sees within `reach` of `world`, in a
+/// domain `fires_at` takes: a unit, else a building.
 fn visible_hostile_target_at(
     game: &Game,
     world: Vec2,
-    tile: TilePos,
+    reach: OrderReach,
+    fires_at: &dyn Fn(aftermine_sim::stats::Domain) -> bool,
 ) -> Option<(Target, Vec2, aftermine_sim::stats::Domain)> {
     let unit = game
         .state
@@ -75,11 +137,12 @@ fn visible_hostile_target_at(
         .filter(|unit| {
             game.state.hostile(game.presentation.human, unit.player)
                 && game.my_vision().sees_unit(unit)
+                && fires_at(unit.domain())
         })
         .filter_map(|unit| {
             let position = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
             let distance = position.distance(world);
-            (distance <= unit_pick_radius(unit.kind)).then_some((
+            (distance <= reach.unit(unit.kind)).then_some((
                 distance,
                 unit.id,
                 position,
@@ -96,9 +159,11 @@ fn visible_hostile_target_at(
     if let Some((_, id, position, domain)) = unit {
         return Some((Target::Unit(id), position, domain));
     }
-    game.state
-        .buildings_at(tile)
-        .find(|building| {
+    if !fires_at(aftermine_sim::stats::Domain::Ground) {
+        return None;
+    }
+    reach
+        .building(game, world, |building| {
             game.state.hostile(game.presentation.human, building.player)
                 && building
                     .tiles()
@@ -108,9 +173,10 @@ fn visible_hostile_target_at(
                     .building_apparent(game.presentation.human, building)
         })
         .map(|building| {
+            let (min, max) = super::select::footprint(building);
             (
                 Target::Building(building.id),
-                world,
+                world.clamp(min, max),
                 aftermine_sim::stats::Domain::Ground,
             )
         })
@@ -120,25 +186,29 @@ fn known_hostile_target_at(
     game: &Game,
     world: Vec2,
     tile: TilePos,
+    reach: OrderReach,
+    fires_at: &dyn Fn(aftermine_sim::stats::Domain) -> bool,
 ) -> Option<(
     aftermine_sim::AttackTarget,
     Vec2,
     aftermine_sim::stats::Domain,
 )> {
-    if let Some((target, at, domain)) = visible_hostile_target_at(game, world, tile) {
+    if let Some((target, at, domain)) = visible_hostile_target_at(game, world, reach, fires_at) {
         return Some((target.into(), at, domain));
     }
-    if let Some(track) = game
-        .my_vision()
-        .tracks()
-        .iter()
-        .find(|track| track.visible_unit.is_none() && track.tile == tile)
+    if let Some(track) =
+        game.my_vision().tracks().iter().find(|track| {
+            track.visible_unit.is_none() && track.tile == tile && fires_at(track.domain)
+        })
     {
         return Some((
             aftermine_sim::AttackTarget::Contact(track.id),
             vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5),
             track.domain,
         ));
+    }
+    if !fires_at(aftermine_sim::stats::Domain::Ground) {
+        return None;
     }
     if let Some(ghost) = game.my_vision().ghosts().iter().find(|ghost| {
         let (w, h) = ghost.kind.size();
@@ -201,28 +271,31 @@ fn group_action(game: &mut Game, input: &mut InputState, slot: usize) {
 }
 
 /// Right-click: order the selection by what's under the cursor — enemy →
-/// attack, scrap → harvest, ground → advance. The sim re-validates everything;
+/// attack, scrap → harvest, ground → advance. A controller's X gives the
+/// same order with the reticle's `reach`. The sim re-validates everything;
 /// this is only intent.
-pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
+pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: OrderReach) {
     let world = game.presentation.camera.to_world(screen);
     let tile = numeric::tile_at(world);
     if game.presentation.selection.units.is_empty() {
-        if let Some((target, at, domain)) = known_hostile_target_at(game, world, tile) {
-            let defenses = crate::building_actions::SelectedBuildings::inspect(&game.view())
-                .defenses(Some(domain));
-            if !defenses.is_empty() {
-                game.issue(Command::FocusFire {
-                    buildings: defenses,
-                    target,
-                });
-                game.presentation.ping(at, PingKind::Attack);
-                return;
-            }
+        // Selected defenses focus on the enemy one of them can fire at.
+        let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
+        let fires_at = |domain| !selected.defenses(Some(domain)).is_empty();
+        if let Some((target, at, domain)) =
+            known_hostile_target_at(game, world, tile, reach, &fires_at)
+        {
+            let defenses = selected.defenses(Some(domain));
+            game.issue(Command::FocusFire {
+                buildings: defenses,
+                target,
+            });
+            game.presentation.ping(at, PingKind::Attack);
+            return;
         }
         // Selected producers share one rally destination: the own unit
         // under the cursor, which new units then escort, or the ground.
         // Non-producers ignore the click.
-        let rally = rally_at(game, world);
+        let rally = rally_at(game, world, reach);
         rally_selected_producers(game, rally);
         return;
     }
@@ -247,15 +320,24 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
             .is_some_and(|u| u.kind.stats().harvest.is_some())
     });
 
+    // The harvest check reads the player's *memory*, not the live map —
+    // probing fog with right-clicks must not reveal hidden scrap. Wreck
+    // memory counts the same as node memory.
+    let harvest = has_worker
+        && (game.my_vision().remembered_scrap(tile) > 0
+            || game.my_vision().remembered_wreck(tile) > 0);
+    // Over a pile the order would harvest, only what lies under the point
+    // counts: a reticle's reach must not hand the order to whatever stands
+    // beside the pile.
+    let reach = if harvest { OrderReach::EXACT } else { reach };
+
     // Own-footprint hits outrank enemy-radius hits: a raider attacking a
     // wall sits inside the pick radius of a click on that wall, and the
     // click means the building under the cursor. Own targets need no
     // visibility check, since ownership cannot probe fog and own
     // buildings always draw.
-    let own_building = game
-        .state
-        .buildings_at(tile)
-        .find(|b| b.player == game.presentation.human);
+    let human = game.presentation.human;
+    let own_building = reach.building(game, world, |b| b.player == human);
     if (has_worker || has_welder)
         && let Some(building) = own_building
     {
@@ -358,7 +440,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
                 let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
                 (p.distance(world), u.id, u.kind)
             })
-            .filter(|(distance, _, kind)| *distance <= unit_pick_radius(*kind))
+            .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
             .min_by(|a, b| a.0.total_cmp(&b.0));
         if let Some((_, transport, _)) = sling {
             game.issue(Command::Load {
@@ -384,7 +466,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
     }
     // Fog rules what right-click may target: unseen enemies aren't there
     // as far as the player is concerned (the sim enforces this too).
-    if let Some((target, at, _)) = known_hostile_target_at(game, world, tile) {
+    if let Some((target, at, _)) = known_hostile_target_at(game, world, tile, reach, &|_| true) {
         game.issue(Command::Attack {
             units,
             target,
@@ -415,7 +497,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
                 let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
                 (p.distance(world), u.id, u.kind)
             })
-            .filter(|(distance, _, kind)| *distance <= unit_pick_radius(*kind))
+            .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
             .min_by(|a, b| a.0.total_cmp(&b.0));
         if let Some((_, target, _)) = patient {
             game.issue(Command::RepairUnit {
@@ -428,12 +510,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool) {
             return;
         }
     }
-    // The harvest check reads the player's *memory*, not the live map —
-    // probing fog with right-clicks must not reveal hidden scrap. Wreck
-    // memory counts the same as node memory.
-    if (game.my_vision().remembered_scrap(tile) > 0 || game.my_vision().remembered_wreck(tile) > 0)
-        && has_worker
-    {
+    if harvest {
         game.issue(Command::Harvest {
             units,
             node: tile,

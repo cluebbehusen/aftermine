@@ -131,6 +131,13 @@ impl Reach {
     pub(super) fn unit_px(self, ui: f32) -> f32 {
         self.units * ui
     }
+
+    /// The same reach in world units at UI scale `ui` and camera `zoom`,
+    /// for an order given at the pointer.
+    pub(super) fn in_world(self, ui: f32, zoom: f32) -> super::orders::OrderReach {
+        let world = |px: f32| px * ui / zoom;
+        super::orders::OrderReach::new(world(self.units), world(self.structures.unwrap_or(0.0)))
+    }
 }
 
 /// World-space pick radius around a unit: never below the unit's own
@@ -600,58 +607,6 @@ pub(super) fn swept_by_pad(
         .map(|b| b.id)
         .collect();
     (units, buildings)
-}
-
-/// The nearest hostile the player's own sight shows within `reach` of
-/// `screen`, in a domain `targets` takes: a unit, else a building. An order aims at it
-/// before anything the reticle brackets, so attack intent holds in a
-/// scrum, as a right-click's attack check comes before its own-unit checks.
-pub(super) fn hostile_in_reach(
-    game: &Game,
-    screen: Vec2,
-    ui: f32,
-    reach: Reach,
-    targets: &dyn Fn(aftermine_sim::stats::Domain) -> bool,
-) -> Option<Picked> {
-    let world = game.presentation.camera.to_world(screen);
-    let human = game.presentation.human;
-    let unit = game
-        .state
-        .units()
-        .iter()
-        // What the player sees, never the debug overlay's omniscience: an
-        // order's target is the player's decision.
-        .filter(|u| game.state.hostile(human, u.player) && game.my_vision().sees_unit(u))
-        .filter(|u| targets(u.domain()))
-        .filter_map(|u| {
-            let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-            let distance = p.distance(world);
-            (distance <= pick_radius(game, ui, u.kind, reach)).then_some((distance, u))
-        })
-        .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.id.cmp(&b.1.id)));
-    if let Some((_, u)) = unit {
-        return Some(Picked::Unit(u.id, u.player));
-    }
-    if !targets(aftermine_sim::stats::Domain::Ground) {
-        return None;
-    }
-    // Without a reach around footprints, only the footprint itself counts.
-    let reach = reach.structures.unwrap_or(0.0) * ui / game.presentation.camera.zoom;
-    game.state
-        .buildings()
-        .iter()
-        .filter(|b| {
-            game.state.hostile(human, b.player)
-                && b.tiles().any(|tile| game.my_vision().visible(tile))
-                && game.state.building_apparent(human, b)
-        })
-        .filter_map(|b| {
-            let (min, max) = footprint(b);
-            let distance = world.clamp(min, max).distance(world);
-            (distance <= reach).then_some((distance, b))
-        })
-        .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.id.cmp(&b.1.id)))
-        .map(|(_, b)| Picked::Building(b.id, b.player))
 }
 
 /// A building's footprint as world corners.

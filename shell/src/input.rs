@@ -1921,7 +1921,7 @@ mod tests;
 mod touch;
 
 use dispatch::dispatch_action;
-use orders::{context_order, rally_at, rally_producers, rally_selected_producers};
+use orders::{OrderReach, context_order, rally_at, rally_producers, rally_selected_producers};
 pub(crate) use select::army_units;
 pub use select::idle_harvesters;
 use select::{
@@ -2218,7 +2218,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                     }
                 }
             } else if !click_on_hud(game, vec2(x, y)) {
-                world_order(game, input, bindings, vec2(x, y));
+                world_order(game, input, bindings, vec2(x, y), OrderReach::EXACT);
             }
         }
         RawEvent::MouseUp {
@@ -2315,14 +2315,21 @@ pub(super) fn stand_down_for_order(input: &mut InputState) -> bool {
     false
 }
 
-/// A contextual order at battlefield point `p`: a patrol waypoint while a
-/// route is being collected, else the order for what lies there.
-pub(super) fn world_order(game: &mut Game, input: &mut InputState, bindings: &BindingMap, p: Vec2) {
+/// A contextual order at battlefield point `p`: a patrol waypoint on the
+/// ground there while a route is being collected, else the order for what
+/// lies within `reach`.
+pub(super) fn world_order(
+    game: &mut Game,
+    input: &mut InputState,
+    bindings: &BindingMap,
+    p: Vec2,
+    reach: OrderReach,
+) {
     if input.patrol_route.is_some() {
         let world = game.presentation.camera.to_world(p);
         add_patrol_waypoint(game, input, bindings, world);
     } else {
-        context_order(game, p, input.queue_held());
+        context_order(game, p, input.queue_held(), reach);
     }
 }
 
@@ -2428,7 +2435,13 @@ fn armed_click(
         let rally = if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
             Some(aftermine_sim::Rally::Tile(ground_tile(&game.state, world)))
         } else {
-            (!click_on_hud(game, p)).then(|| rally_at(game, game.presentation.camera.to_world(p)))
+            (!click_on_hud(game, p)).then(|| {
+                rally_at(
+                    game,
+                    game.presentation.camera.to_world(p),
+                    OrderReach::EXACT,
+                )
+            })
         };
         if let Some(rally) = rally {
             let producers = crate::building_actions::SelectedBuildings::inspect_ids(

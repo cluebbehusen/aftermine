@@ -777,3 +777,65 @@ fn x_never_aims_at_what_only_the_debug_overlay_sees() {
         }
     );
 }
+
+#[test]
+fn x_from_workers_on_scrap_harvests_beside_an_enemy_an_army_attacks() {
+    let mut game = scene(
+        &[
+            (0, HARVESTER, 36, 20),
+            (0, SENTINEL, 34, 24),
+            (1, SENTINEL, 41, 21),
+        ],
+        &[],
+    );
+    wide_reach(&mut game);
+    let mut input = pad_input(&mut game);
+    let (harvester, army) = (unit_at(&game, 36, 20), unit_at(&game, 34, 24));
+    let enemy = unit_at(&game, 41, 21);
+    // On the drill's scrap at (40, 20), inside the reticle's reach of the
+    // enemy but off its body.
+    rest_on(&mut game, &mut input, vec2(40.5, 20.5));
+    game.presentation.selection.units = vec![harvester];
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Harvest {
+            units: vec![harvester],
+            node: chassis::grid::TilePos::new(40, 20),
+            queue: false,
+        }
+    );
+    game.pending.clear();
+    game.presentation.selection.units = vec![army];
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Attack {
+            units: vec![army],
+            target: aftermine_sim::Target::Unit(enemy).into(),
+            queue: false,
+        }
+    );
+}
+
+#[test]
+fn x_rallies_onto_your_own_unit_in_reach() {
+    let mut game = scene(
+        &[(0, SENTINEL, 34, 24)],
+        &[(0, BuildingKind::Fabricator, 26, 18)],
+    );
+    wide_reach(&mut game);
+    let mut input = pad_input(&mut game);
+    let (sentinel, fabricator) = (unit_at(&game, 34, 24), building_at(&game, 26, 18));
+    game.presentation.selection.buildings = vec![fabricator];
+    // A tile from the Sentinel, off its body.
+    rest_on(&mut game, &mut input, vec2(33.5, 24.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::SetRally {
+            building: fabricator,
+            rally: Some(aftermine_sim::Rally::Unit(sentinel)),
+        }
+    );
+}
