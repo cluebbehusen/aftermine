@@ -89,7 +89,10 @@ fn tap(game: &mut Game, input: &mut InputState, ground: Vec2) {
     let reach = super::reticle::reach(input);
     let additive = input.queue_held();
     let now = input.now;
+    // Only a tap that picked something sweeps its kind, as a fingertip's
+    // does: over salvage the pick reaches no further than a unit's body.
     let double = !additive
+        && select::pick(game, point, ui, reach).is_some()
         && input.last_pad_tap.take().is_some_and(|(at, spot)| {
             now - at < DOUBLE_CLICK_SECS
                 && (spot - ground).length() * zoom <= DOUBLE_CLICK_SLOP * ui
@@ -127,12 +130,10 @@ fn aim(game: &Game, input: &InputState, point: Vec2) -> Vec2 {
     let target = if input.patrol_route.is_some() {
         None
     } else if game.presentation.selection.units.is_empty() {
-        let defenses = !crate::building_actions::SelectedBuildings::inspect(&game.view())
-            .defenses(None)
-            .is_empty();
-        defenses
-            .then(|| select::hostile_in_reach(game, point, ui, reach))
-            .flatten()
+        // Selected defenses take the nearest enemy one of them can fire at.
+        let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
+        let fires_at = |domain| !selected.defenses(Some(domain)).is_empty();
+        select::hostile_in_reach(game, point, ui, reach, &fires_at)
     } else {
         units_target(game, point, ui, reach)
     };
@@ -201,7 +202,7 @@ fn units_target(game: &Game, point: Vec2, ui: f32, reach: select::Reach) -> Opti
         })
         .or_else(|| {
             (!scouts)
-                .then(|| select::hostile_in_reach(game, point, ui, reach))
+                .then(|| select::hostile_in_reach(game, point, ui, reach, &|_| true))
                 .flatten()
         })
         .or_else(|| workers.then(|| own_unit(&wounded)).flatten())

@@ -594,11 +594,17 @@ pub(super) fn swept_by_pad(
     (units, buildings)
 }
 
-/// The nearest hostile the human can see within `reach` of `screen`: a
-/// unit, else a building. An order aims at it before anything the reticle
-/// brackets, so attack intent holds in a scrum, as a right-click's attack
-/// check comes before its own-unit checks.
-pub(super) fn hostile_in_reach(game: &Game, screen: Vec2, ui: f32, reach: Reach) -> Option<Picked> {
+/// The nearest hostile the human can see within `reach` of `screen`, in a
+/// domain `targets` takes: a unit, else a building. An order aims at it
+/// before anything the reticle brackets, so attack intent holds in a
+/// scrum, as a right-click's attack check comes before its own-unit checks.
+pub(super) fn hostile_in_reach(
+    game: &Game,
+    screen: Vec2,
+    ui: f32,
+    reach: Reach,
+    targets: &dyn Fn(aftermine_sim::stats::Domain) -> bool,
+) -> Option<Picked> {
     let world = game.presentation.camera.to_world(screen);
     let human = game.presentation.human;
     let unit = game
@@ -606,6 +612,7 @@ pub(super) fn hostile_in_reach(game: &Game, screen: Vec2, ui: f32, reach: Reach)
         .units()
         .iter()
         .filter(|u| game.state.hostile(human, u.player) && selectable(game, u))
+        .filter(|u| targets(u.domain()))
         .filter_map(|u| {
             let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
             let distance = p.distance(world);
@@ -614,6 +621,9 @@ pub(super) fn hostile_in_reach(game: &Game, screen: Vec2, ui: f32, reach: Reach)
         .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.id.cmp(&b.1.id)));
     if let Some((_, u)) = unit {
         return Some(Picked::Unit(u.id, u.player));
+    }
+    if !targets(aftermine_sim::stats::Domain::Ground) {
+        return None;
     }
     // Without a reach around footprints, only the footprint itself counts.
     let reach = reach.structures.unwrap_or(0.0) * ui / game.presentation.camera.zoom;

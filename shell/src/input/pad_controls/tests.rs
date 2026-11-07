@@ -685,3 +685,45 @@ fn x_lays_patrol_waypoints_and_rallies_on_the_ground() {
         }
     );
 }
+
+#[test]
+fn a_double_tap_over_salvage_keeps_the_pile() {
+    // A Sentinel beside the drill's scrap, inside the reticle's reach of it
+    // but off its body, and another in view.
+    let mut game = scene(&[(0, SENTINEL, 41, 21), (0, SENTINEL, 34, 24)], &[]);
+    wide_reach(&mut game);
+    let mut input = pad_input(&mut game);
+    rest_on(&mut game, &mut input, vec2(40.5, 20.5));
+    press(&mut game, &mut input, PadButton::South);
+    input.now += 0.2;
+    press(&mut game, &mut input, PadButton::South);
+    assert!(game.presentation.selection.units.is_empty());
+    assert_eq!(
+        game.presentation.selection.pile,
+        Some(chassis::grid::TilePos::new(40, 20))
+    );
+}
+
+#[test]
+fn x_from_defenses_takes_the_nearest_enemy_they_can_fire_at() {
+    let mut game = scene(
+        &[(1, UnitKind::Skyhook, 31, 20), (1, SENTINEL, 32, 20)],
+        &[(0, BuildingKind::Turret, 28, 20)],
+    );
+    wide_reach(&mut game);
+    let mut input = pad_input(&mut game);
+    let turret = building_at(&game, 28, 20);
+    let sentinel = unit_at(&game, 32, 20);
+    game.presentation.selection.buildings = vec![turret];
+    // Nearer the aircraft, which a Turret cannot fire at, with the
+    // Sentinel also in reach.
+    rest_on(&mut game, &mut input, vec2(31.3, 20.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::FocusFire {
+            buildings: vec![turret],
+            target: aftermine_sim::Target::Unit(sentinel).into(),
+        }
+    );
+}
