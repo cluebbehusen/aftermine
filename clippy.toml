@@ -13,5 +13,6 @@ too-many-lines-threshold = 250
 # `use super::*`; every other glob import still warns.
 allowed-wildcard-imports = ["super"]
 
-# Brand names that read as code to the doc lint; ".." keeps the defaults.
-doc-valid-idents = ["PlayStation", ".."]
+# Brand and framework names that read as code to the doc lint; ".." keeps
+# the defaults.
+doc-valid-idents = ["PlayStation", "GameController", ".."]
