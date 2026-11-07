@@ -210,7 +210,7 @@ pub fn run(device: Option<&str>, list: bool) -> Result<()> {
 
     println!("building for {target}");
     let app = build(&root, &target)?;
-    let bundle = bundle_id(&app)?;
+    let bundle = bundle_id(&app.join("Info.plist"))?;
     match target.kind {
         DeviceKind::Physical => install_physical(&target, &app, &bundle),
         DeviceKind::Simulator { booted } => install_simulator(&target, booted, &app, &bundle),
@@ -348,16 +348,16 @@ fn build(root: &Path, target: &Device) -> Result<PathBuf> {
         .join("Aftermine.app"))
 }
 
-/// The bundle ID the build signed, which honors a contributor's own ID
-/// from `apple/Local.xcconfig`.
-fn bundle_id(app: &Path) -> Result<String> {
+/// The bundle ID the build signed, read from the app's `Info.plist`, which
+/// honors a contributor's own ID from `apple/Local.xcconfig`.
+pub(crate) fn bundle_id(info_plist: &Path) -> Result<String> {
     let output = Command::new("plutil")
         .args(["-extract", "CFBundleIdentifier", "raw", "-o", "-"])
-        .arg(app.join("Info.plist"))
+        .arg(info_plist)
         .output()
         .context("reading the app's bundle ID")?;
     if !output.status.success() {
-        bail!("could not read the bundle ID from {}", app.display());
+        bail!("could not read the bundle ID from {}", info_plist.display());
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
