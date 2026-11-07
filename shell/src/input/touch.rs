@@ -434,7 +434,7 @@ pub(super) fn up(
                     return;
                 }
                 if super::ribbon_row_press(game, input, p, super::Pointer::Touch)
-                    || armed_click(game, input, bindings, p, super::Pointer::Touch)
+                    || armed_click(game, input, bindings, p, super::Presser::Touch)
                 {
                     input.last_tap = None;
                     return;

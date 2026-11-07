@@ -6,8 +6,9 @@
 //! the spot, faster the further it is pushed, and the right stick zooms
 //! about it. Because the spot is ground rather than a screen offset, a zoom,
 //! a resized window or a jump never moves it. The reticle snaps onto a unit
-//! or structure near it, and the D-pad and a right-stick click jump the
-//! camera. Menus never see this: they read pad buttons as menu keys.
+//! or structure near it, except while a structure is armed for placement,
+//! and the D-pad and a right-stick click jump the camera. Menus never see
+//! this: they read pad buttons as menu keys.
 
 pub(crate) use super::select::Picked;
 use super::select::{Reach, pick};
@@ -109,12 +110,15 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec
     let (reach, friction) = snap_feel(prefs.snap);
     // A paint sweep wants an even stroke, so nothing it passes slows it.
     let painting = super::paint::painting(input);
+    // A structure goes on the ground under the reticle, never onto what it
+    // rests on, so while one is armed nothing snaps or slows the reticle.
+    let snaps = input.placing_kind().is_none();
     let ui = input.ui;
     let (left, right) = input.sticks();
     // A stick held since a menu was up moves the camera too, so it makes
     // the pad the pointer even though the match never saw it move.
     if left != Vec2::ZERO || right != Vec2::ZERO {
-        input.last_pointer = Pointer::Pad;
+        input.pad_points();
     }
     let pad = input.last_pointer == Pointer::Pad;
     let camera = &mut game.presentation.camera;
@@ -124,7 +128,7 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec
         // camera follows it as far as the map's edge allows.
         let mut travel = keys;
         if left != Vec2::ZERO {
-            let friction = if reticle.snap.is_some() && !painting {
+            let friction = if snaps && reticle.snap.is_some() && !painting {
                 friction
             } else {
                 1.0
@@ -158,7 +162,7 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec
             },
         );
     }
-    input.reticle.snap = pad
+    input.reticle.snap = (pad && snaps)
         .then(|| {
             let point = input.reticle.point;
             (!super::click_on_hud(game, point))

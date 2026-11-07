@@ -1,8 +1,10 @@
-//! Selection and orders on a controller, driven through the real shell's
-//! input funnel with nothing but pad events: the same `InjectEvent`
-//! requests `driver live inject-pad`, `inject-pad-down`, `inject-pad-up`
-//! and `inject-pad-stick` send. `#[ignore]`d because each test spawns a
-//! real window; run them explicitly, under Xvfb where there is no display:
+//! Selection, orders, placement and targeted orders on a controller, driven
+//! through the real shell's input funnel with pad events: the same
+//! `InjectEvent` requests `driver live inject-pad`, `inject-pad-down`,
+//! `inject-pad-up` and `inject-pad-stick` send. Until a controller can arm
+//! a placement or a targeted order itself, its key arms it. `#[ignore]`d
+//! because each test spawns a real window; run them explicitly, under Xvfb
+//! where there is no display:
 //!
 //! ```sh
 //! xvfb-run -s "-screen 0 1280x800x24" \
@@ -16,12 +18,15 @@
 use aftermine_driver::auto::{ShellGuard, SpawnOptions, spawn_shell, ui};
 use aftermine_driver::client::Client;
 use aftermine_protocol::{
-    Key, PadButton, PadFamily, RawEvent, Reply, Request, StateFilter, StateView, Stick, UnitView,
+    FogView, Key, PadButton, PadFamily, RawEvent, Reply, Request, StateFilter, StateView, Stick,
+    UnitView,
 };
 use aftermine_sim::{
-    AttackTarget, BuildingKind, Command, Order, PlayerId, Target, UnitId, UnitKind,
+    AttackTarget, BuildingId, BuildingKind, Command, Order, PlayerId, Rally, Target, UnitId,
+    UnitKind,
 };
 use anyhow::{Context, Result, bail};
+use chassis::grid::TilePos;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -159,6 +164,42 @@ impl PadMatch {
 
     fn state(&mut self) -> Result<StateView> {
         self.client.state(StateFilter::default())
+    }
+
+    /// What seat 0 knows.
+    fn fog(&mut self) -> Result<FogView> {
+        match self.client.call(Request::QueryFogView {
+            player: PlayerId(0),
+        })? {
+            Reply::Fog(view) => Ok(view),
+            other => bail!("expected a fog view, got {other:?}"),
+        }
+    }
+
+    /// Presses and lets go of `key`, which arms a mode as the radial menu
+    /// will once a controller can open it.
+    fn key(&mut self, key: Key) -> Result<()> {
+        self.inject(RawEvent::KeyDown { key })?;
+        self.inject(RawEvent::KeyUp { key })
+    }
+
+    /// Arms placement from the build palette: B, then the category's key,
+    /// then the structure's.
+    fn arm_build(&mut self, category: Key, structure: Key) -> Result<()> {
+        self.key(Key::B)?;
+        self.key(category)?;
+        self.key(structure)
+    }
+
+    /// Taps A at `at`, selecting what the reticle picks there.
+    fn select_at(&mut self, at: [f64; 2]) -> Result<()> {
+        self.aim(at)?;
+        self.press(PadButton::South)
+    }
+
+    /// Commands recorded so far.
+    fn recorded(&mut self) -> Result<usize> {
+        Ok(self.client.status()?.recorded_commands)
     }
 
     fn command(&mut self, player: u8, command: Command) -> Result<()> {
@@ -608,9 +649,284 @@ fn the_bumpers_select_the_army_and_the_army_in_view() -> Result<()> {
     Ok(())
 }
 
+/// A Harvester below the middle of the map, and your Turret at (31, 20),
+/// whose tile refuses a site.
+fn drill_build() -> Value {
+    drill(
+        &[(0, UnitKind::Harvester, 32, 23)],
+        &[(0, BuildingKind::Turret, 31, 20)],
+    )
+}
+
+/// Your sites of `kind` by anchor, in row order.
+fn sites(view: &StateView, kind: BuildingKind) -> Vec<[i32; 2]> {
+    let mut anchors: Vec<[i32; 2]> = view
+        .buildings
+        .iter()
+        .filter(|building| building.player == 0 && building.kind == kind)
+        .map(|building| building.anchor)
+        .collect();
+    anchors.sort_unstable_by_key(|[x, y]| (*y, *x));
+    anchors
+}
+
+/// The Harvester's tile.
+const BUILDER: [f64; 2] = [32.5, 23.5];
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_places_a_structure_centered_on_the_reticle() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_317)?;
+    drill.load(&drill_build())?;
+    drill.select_at(BUILDER)?;
+    // Production, then Fabricator: a 2x2.
+    drill.arm_build(Key::E, Key::Q)?;
+    drill.aim([35.0, 21.0])?;
+    drill.press(PadButton::South)?;
+    drill.client.advance(1)?;
+    assert_eq!(
+        sites(&drill.state()?, BuildingKind::Fabricator),
+        [[34, 20]],
+        "the footprint centers on the reticle"
+    );
+
+    // One placement ends the mode, so the next A selects instead.
+    let recorded = drill.recorded()?;
+    drill.select_at([38.5, 18.5])?;
+    drill.client.advance(1)?;
+    assert_eq!(drill.recorded()?, recorded);
+    Ok(())
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_held_a_drags_a_row_of_barricades() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_318)?;
+    drill.load(&drill_build())?;
+    drill.select_at(BUILDER)?;
+    // Defense, then Barricade.
+    drill.arm_build(Key::R, Key::T)?;
+    drill.aim(tile(28, 20))?;
+    drill.down(PadButton::South)?;
+    drill.aim(tile(33, 20))?;
+    drill.up(PadButton::South)?;
+    drill.client.advance(1)?;
+    assert_eq!(
+        sites(&drill.state()?, BuildingKind::Barricade),
+        [[28, 20], [29, 20], [30, 20], [32, 20], [33, 20]],
+        "a row past the Turret, which keeps its tile"
+    );
+    Ok(())
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_held_left_trigger_keeps_placing() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_319)?;
+    drill.load(&drill_build())?;
+    drill.select_at(BUILDER)?;
+    drill.arm_build(Key::R, Key::T)?;
+    drill.down(PadButton::LeftTrigger)?;
+    drill.aim(tile(28, 18))?;
+    drill.press(PadButton::South)?;
+    drill.aim(tile(30, 18))?;
+    drill.press(PadButton::South)?;
+    drill.up(PadButton::LeftTrigger)?;
+    // Letting go ended placement: this A selects.
+    drill.select_at(tile(35, 18))?;
+    drill.client.advance(1)?;
+    assert_eq!(
+        sites(&drill.state()?, BuildingKind::Barricade),
+        [[28, 18], [30, 18]]
+    );
+    Ok(())
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_refused_spot_builds_nothing_and_placement_stands() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_320)?;
+    drill.load(&drill_build())?;
+    drill.select_at(BUILDER)?;
+    drill.arm_build(Key::R, Key::T)?;
+    let recorded = drill.recorded()?;
+    drill.aim(tile(31, 20))?;
+    drill.press(PadButton::South)?;
+    drill.client.advance(1)?;
+    assert_eq!(drill.recorded()?, recorded, "the Turret's tile refuses");
+    drill.aim(tile(29, 20))?;
+    drill.press(PadButton::South)?;
+    drill.client.advance(1)?;
+    assert_eq!(sites(&drill.state()?, BuildingKind::Barricade), [[29, 20]]);
+    Ok(())
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn b_backs_out_of_placement() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_321)?;
+    drill.load(&drill_build())?;
+    drill.select_at(BUILDER)?;
+    drill.arm_build(Key::R, Key::T)?;
+
+    // B mid-row drops the row; the release then builds nothing.
+    let recorded = drill.recorded()?;
+    drill.aim(tile(27, 20))?;
+    drill.down(PadButton::South)?;
+    drill.aim(tile(29, 20))?;
+    drill.press(PadButton::East)?;
+    drill.up(PadButton::South)?;
+    drill.client.advance(1)?;
+    assert_eq!(drill.recorded()?, recorded);
+
+    // Placement stood, so A builds.
+    drill.aim(tile(28, 22))?;
+    drill.press(PadButton::South)?;
+    drill.client.advance(1)?;
+    assert_eq!(sites(&drill.state()?, BuildingKind::Barricade), [[28, 22]]);
+
+    // Armed again, B ends placement, and A no longer builds.
+    drill.arm_build(Key::R, Key::T)?;
+    drill.press(PadButton::East)?;
+    let recorded = drill.recorded()?;
+    drill.aim(tile(35, 22))?;
+    drill.press(PadButton::South)?;
+    drill.client.advance(1)?;
+    assert_eq!(drill.recorded()?, recorded);
+    Ok(())
+}
+
+/// A Lancer, your Fabricator and your Spire, on open ground.
+fn drill_aim() -> Value {
+    drill(
+        &[(0, UnitKind::Lancer, 29, 20)],
+        &[
+            (0, BuildingKind::Fabricator, 22, 24),
+            (0, BuildingKind::Spire, 24, 14),
+        ],
+    )
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_or_x_confirms_each_targeted_order() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_322)?;
+    let lancer_tile = tile(29, 20);
+
+    // Hunt with A.
+    let view = drill.load(&drill_aim())?;
+    let lancer = unit_at(&view, 29, 20)?;
+    drill.select_at(lancer_tile)?;
+    drill.key(Key::F)?;
+    drill.aim(OPEN)?;
+    drill.press(PadButton::South)?;
+    drill.client.advance(1)?;
+    let after = drill.state()?;
+    assert!(
+        matches!(unit(&after, lancer)?.order, Some(Order::Hunt { goal }) if (goal.x, goal.y) == (31, 26)),
+        "a hunt: {:?}",
+        unit(&after, lancer)?.order
+    );
+
+    // Run with X.
+    drill.load(&drill_aim())?;
+    drill.select_at(lancer_tile)?;
+    drill.key(Key::G)?;
+    drill.aim(OPEN)?;
+    drill.press(PadButton::West)?;
+    drill.client.advance(1)?;
+    let after = drill.state()?;
+    assert!(
+        matches!(unit(&after, lancer)?.order, Some(Order::Run { goal }) if (goal.x, goal.y) == (31, 26)),
+        "a run: {:?}",
+        unit(&after, lancer)?.order
+    );
+
+    // Patrol: A and X lay the waypoints, and Patrol again sends it.
+    drill.load(&drill_aim())?;
+    drill.select_at(lancer_tile)?;
+    drill.key(Key::R)?;
+    drill.aim(tile(34, 22))?;
+    drill.press(PadButton::South)?;
+    drill.aim(tile(34, 17))?;
+    drill.press(PadButton::West)?;
+    drill.key(Key::R)?;
+    drill.client.advance(1)?;
+    let after = drill.state()?;
+    assert_eq!(
+        unit(&after, lancer)?.patrolling,
+        Some(true),
+        "a patrol: {:?}",
+        unit(&after, lancer)?.order
+    );
+
+    // Set rally with X, from the Fabricator.
+    let view = drill.load(&drill_aim())?;
+    let fabricator = building(&view, BuildingKind::Fabricator)?;
+    drill.select_at(tile(22, 24))?;
+    drill.key(Key::Y)?;
+    drill.aim(tile(36, 24))?;
+    drill.press(PadButton::West)?;
+    drill.client.advance(1)?;
+    let rally = drill
+        .state()?
+        .buildings
+        .iter()
+        .find(|b| b.id == fabricator.0)
+        .and_then(|b| b.rally);
+    assert_eq!(rally, Some(Rally::Tile(TilePos::new(36, 24))));
+
+    // Launch with A, once the Spire has a warhead loaded.
+    let view = drill.load(&drill_aim())?;
+    let spire = building(&view, BuildingKind::Spire)?;
+    drill.command(0, Command::OrderRound { building: spire })?;
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !drill
+        .fog()?
+        .magazines
+        .iter()
+        .any(|magazine| magazine.building == spire && magazine.loaded > 0)
+    {
+        if Instant::now() > deadline {
+            bail!("the Spire never loaded its warhead");
+        }
+        drill.client.advance(100)?;
+    }
+    drill.select_at(tile(24, 14))?;
+    drill.key(Key::M)?;
+    drill.aim(tile(40, 26))?;
+    drill.press(PadButton::South)?;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let impact = loop {
+        if let Some(line) = drill
+            .fog()?
+            .warheads
+            .iter()
+            .find_map(|warhead| warhead.line)
+        {
+            break TilePos::containing(line.impact);
+        }
+        if Instant::now() > deadline {
+            bail!("no warhead flew");
+        }
+        drill.client.advance(5)?;
+    };
+    assert_eq!(impact, TilePos::new(40, 26));
+    Ok(())
+}
+
+/// Your one building of `kind`.
+fn building(view: &StateView, kind: BuildingKind) -> Result<BuildingId> {
+    view.buildings
+        .iter()
+        .find(|building| building.player == 0 && building.kind == kind)
+        .map(|building| BuildingId(building.id))
+        .with_context(|| format!("no {kind:?} stands"))
+}
+
 #[test]
 fn the_drills_build() -> Result<()> {
-    for scenario in [field(), drill_repair()] {
+    for scenario in [field(), drill_repair(), drill_build(), drill_aim()] {
         aftermine_sim::Scenario::from_json(&scenario.to_string())?.build()?;
     }
     Ok(())
