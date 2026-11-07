@@ -103,8 +103,10 @@ All three apps sync settings through iCloud's key-value store, which needs no
 container. The iPad and Mac apps also keep saves in iCloud Drive, so the app ID
 needs the iCloud capability with the container `iCloud.<bundle ID>`; signing
 with your own team means registering that container for your bundle ID in the
-developer portal. Apple TV has no iCloud Drive. A workspace `cargo run` never
-looks for iCloud and keeps saves and settings on the Mac.
+developer portal. Apple TV has no iCloud Drive, and tvOS may clear any file
+outside the app's user defaults, so the Apple TV app keeps its settings in user
+defaults and its saves in its cache. A workspace `cargo run` never looks for
+iCloud and keeps saves and settings on the Mac.
 
 `cargo ipad` and `cargo tv` build the Release app, install it and launch it on a
 paired device or a simulator. With several devices they ask which one;

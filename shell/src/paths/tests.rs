@@ -132,3 +132,19 @@ fn a_lookup_that_cannot_answer_keeps_the_last_word() {
     KEPT.give_up();
     assert_eq!(KEPT.answer(), Some(PathBuf::from(CLOUD)));
 }
+
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+#[test]
+fn apple_tv_keeps_files_in_caches_and_settings_out_of_files() {
+    let home = Path::new("/container");
+    assert_eq!(
+        apple_data_dir(home, Platform::Tv),
+        home.join("Library/Caches/Aftermine")
+    );
+    assert_eq!(apple_config_dir(home, Platform::Tv), None);
+    let support = home.join("Library/Application Support/Aftermine");
+    for platform in [Platform::Desktop, Platform::Touch] {
+        assert_eq!(apple_data_dir(home, platform), support);
+        assert_eq!(apple_config_dir(home, platform), Some(support.clone()));
+    }
+}

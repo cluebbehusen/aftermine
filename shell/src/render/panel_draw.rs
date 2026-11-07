@@ -1020,7 +1020,7 @@ pub(crate) fn layout_panel(
         )
     });
     let (size, gap) = (measured.roster_size, 4.0 * s);
-    let roster = (0..panel.roster.len().min(8))
+    let roster = (0..panel.roster.len())
         .map(|index| {
             let row = index / measured.roster_columns;
             let column = index % measured.roster_columns;

@@ -645,3 +645,10 @@ fn a_controller_in_use_hears_its_confirm_delete_and_bumpers() {
         Some("Cross watches | Square deletes | L1/R1 switch tabs")
     );
 }
+
+#[test]
+fn only_apple_tv_warns_that_records_may_not_last() {
+    assert!(!standing_line(Platform::Tv).is_empty());
+    assert_eq!(standing_line(Platform::Desktop), "");
+    assert_eq!(standing_line(Platform::Touch), "");
+}
