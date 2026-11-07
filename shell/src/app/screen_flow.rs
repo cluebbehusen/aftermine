@@ -1024,6 +1024,9 @@ fn playing_frame(
         &app.config.bindings,
         Some(app.performance.view()),
     );
+    pass(FramePass::Hud, || {
+        render::draw_reticle(&app.game.view(), &app.input);
+    });
     if let Some(card) = current_card(app) {
         pass(FramePass::Hud, || {
             tutorial_card::draw(&card, app.input.mouse);

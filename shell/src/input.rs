@@ -170,6 +170,11 @@ pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
         RawEvent::PadDisconnected { pad } => {
             input.pads.remove(&pad);
             input.sticks.remove(&pad);
+            // With no controller left, nothing can move the reticle, so the
+            // pointer goes back to what the platform starts with.
+            if input.pads.is_empty() && input.last_pointer == Pointer::Pad {
+                input.last_pointer = crate::platform::Hands::BUILD.pointer;
+            }
             if input.pad_in_use.is_some_and(|(used, _)| used == pad) {
                 input.pad_in_use = None;
             }
@@ -1490,6 +1495,7 @@ impl InputState {
         self.reset_transient();
         self.groups = Default::default();
         self.bookmarks = [None; 4];
+        self.reticle = reticle::Reticle::default();
         self.salvo = 1;
         self.last_click = None;
         self.last_recall = None;
@@ -1981,8 +1987,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             if input.minimap_drag
                 && let Some(world) = crate::render::minimap_world_clamped(&game.view(), vec2(x, y))
             {
-                game.presentation.camera.center = world;
-                game.presentation.camera.pan(Vec2::ZERO);
+                reticle::look_at(game, input, world);
             }
             // Middle-drag: the world follows the hand, so the pan
             // moves against the cursor delta, scaled out of screen
@@ -2073,8 +2078,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // never start a drag-select there. HUD chrome swallows
             // clicks outright.
             if let Some(world) = crate::render::minimap_world_at(&game.view(), vec2(x, y)) {
-                game.presentation.camera.center = world;
-                game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+                reticle::look_at(game, input, world);
                 input.minimap_drag = true;
             } else if !click_on_hud(game, vec2(x, y)) {
                 input.drag_origin = Some(vec2(x, y));
@@ -2334,8 +2338,7 @@ fn armed_click(
                 // brings the camera along so its ring and controls show.
                 strike.aim_at(target);
                 if minimap.is_some() {
-                    game.presentation.camera.center = tile_center(target);
-                    game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+                    reticle::look_at(game, input, tile_center(target));
                 }
             } else {
                 launch_strike(game, input, target);
@@ -2367,8 +2370,7 @@ fn armed_click(
         // camera, never misread the click as world ground (that would
         // spend scrap on a bogus tile).
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             if pointer == Pointer::Touch || input.ghost_anchor().is_some() {
@@ -3044,8 +3046,7 @@ fn armed_verb_click(
         // the mode armed, and Shift chains teardowns behind the crew's
         // program.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let tile = numeric::tile_at(world);
@@ -3079,8 +3080,7 @@ fn armed_verb_click(
         // As in salvage: the minimap jumps the camera, a misclick keeps the
         // mode armed, and Shift chains welds behind the crew's program.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let patient = game
@@ -3142,8 +3142,7 @@ fn armed_verb_click(
         // mode armed, and Shift queues the escort behind each program. The
         // picked unit may be one of the selection; the rest escort it.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let picked = game
@@ -3196,8 +3195,7 @@ fn armed_verb_click(
         // The minimap jumps the camera, HUD chrome swallows the click, and
         // Shift chains legs and keeps the verb armed.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let goal = ground_tile(&game.state, world);
@@ -3219,8 +3217,7 @@ fn armed_verb_click(
         // Explicit fighting march: minimap jumps the camera, HUD
         // swallows, and Shift chains legs while keeping the verb armed.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let goal = ground_tile(&game.state, world);
@@ -3242,8 +3239,7 @@ fn armed_verb_click(
         // Like Run: the minimap jumps the camera, HUD chrome swallows the
         // click, and Shift chains legs and keeps the verb armed.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let goal = ground_tile(&game.state, world);

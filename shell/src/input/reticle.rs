@@ -146,8 +146,9 @@ pub(super) fn press(
 }
 
 /// Jumps the camera to `world` and rests the reticle on it, off center
-/// where the map's edge holds the camera back. Every camera jump goes
-/// through here, so the reticle always marks what a jump was for.
+/// where the map's edge holds the camera back. Every camera jump in a
+/// match goes through here, so a drift left at an edge never outlives the
+/// view it belonged to.
 pub(super) fn look_at(game: &mut Game, input: &mut InputState, world: Vec2) {
     let camera = &mut game.presentation.camera;
     camera.center = world;

@@ -198,6 +198,10 @@ pub(super) fn click_on_hud(game: &Game, screen: Vec2) -> bool {
 /// must never reach through fog. A drone flies for its host alone and is
 /// never selected.
 fn selectable(game: &Game, unit: &aftermine_sim::Unit) -> bool {
+    sees_unit(&game.view(), unit)
+}
+
+fn sees_unit(game: &crate::game::Scene<'_>, unit: &aftermine_sim::Unit) -> bool {
     unit.host.is_none()
         && (!game.state.hostile(game.presentation.human, unit.player)
             || game.presentation.all_seeing()
@@ -208,12 +212,30 @@ fn selectable(game: &Game, unit: &aftermine_sim::Unit) -> bool {
 /// fog — or through stealth: an undetected buried charge must not be
 /// clickable on ground the player merely sees.
 fn selectable_building(game: &Game, building: &aftermine_sim::Building) -> bool {
+    sees_building(&game.view(), building)
+}
+
+fn sees_building(game: &crate::game::Scene<'_>, building: &aftermine_sim::Building) -> bool {
     building.player == game.presentation.human
         || game.presentation.all_seeing()
         || (building.tiles().any(|tile| game.my_vision().visible(tile))
             && game
                 .state
                 .building_apparent(game.presentation.human, building))
+}
+
+impl Picked {
+    /// Whether the human may still see what was picked: a pick made before
+    /// a tick may have walked into fog or died since.
+    pub(crate) fn seen(self, game: &crate::game::Scene<'_>) -> bool {
+        match self {
+            Self::Unit(id, _) => game.state.unit(id).is_some_and(|u| sees_unit(game, u)),
+            Self::Building(id, _) => game
+                .state
+                .building(id)
+                .is_some_and(|b| sees_building(game, b)),
+        }
+    }
 }
 
 pub(super) fn click_select(

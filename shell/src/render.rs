@@ -119,9 +119,9 @@ mod terraces;
 pub(crate) mod tutorial_card;
 mod worker;
 mod world;
+pub(crate) use chrome::draw_reticle;
 use chrome::{
-    draw_hud, draw_overlay, draw_overlay_info, draw_result_overlay, draw_reticle,
-    draw_salvage_tooltip,
+    draw_hud, draw_overlay, draw_overlay_info, draw_result_overlay, draw_salvage_tooltip,
 };
 use entities::{
     draw_blips, draw_breadcrumbs, draw_buildings, draw_drag_rect, draw_fx, draw_group_press_ring,
@@ -680,7 +680,6 @@ pub(crate) fn draw_world(game: &crate::game::Scene<'_>, sprites: &Sprites, input
         draw_touch_box(game, input);
         draw_long_press_ring(input);
         draw_salvage_tooltip(game, input);
-        draw_reticle(game, input, alpha);
     });
 }
 

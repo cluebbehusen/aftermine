@@ -491,14 +491,19 @@ pub(super) fn hover_point(input: &InputState) -> Option<Vec2> {
 /// The controller's reticle, while a controller is the pointer: a ring with
 /// four ticks, which closes into brackets around the unit or structure it
 /// has snapped onto. A dark under-stroke keeps it legible on pale ground.
-pub(crate) fn draw_reticle(game: &crate::game::Scene<'_>, input: &InputState, alpha: f32) {
+/// Only the live match draws it, over everything as a cursor is: the same
+/// input state reaches the backdrops behind menus and the replay viewer.
+pub(crate) fn draw_reticle(game: &crate::game::Scene<'_>, input: &InputState) {
     if input.last_pointer != crate::input::Pointer::Pad {
         return;
     }
+    let alpha = game.clock.render_alpha();
     let s = ui_scale();
     let camera = &game.presentation.camera;
     let shade = Color::new(0.05, 0.05, 0.07, 0.6);
-    let frame = input.reticle.snap().and_then(|snap| match snap {
+    // The snap was chosen before this frame's ticks, so check it again.
+    let snap = input.reticle.snap().filter(|snap| snap.seen(game));
+    let frame = snap.and_then(|snap| match snap {
         crate::input::reticle::Picked::Unit(id, _) => {
             let unit = game.state.unit(id)?;
             let at = camera.to_screen(game.presentation.draw_pos(id, unit.pos, alpha));

@@ -340,8 +340,7 @@ pub(super) fn dispatch_action(
         }
         Action::RecallBookmark(slot) => {
             if let Some(center) = input.bookmarks[slot as usize] {
-                game.presentation.camera.center = center;
-                game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+                super::reticle::look_at(game, input, center);
             }
         }
         Action::Salvage => {

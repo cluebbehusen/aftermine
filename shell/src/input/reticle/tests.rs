@@ -308,3 +308,93 @@ fn center_on_foundry_cycles_through_them_by_pad_and_key() {
     }
     assert_eq!(framed, [Some(0), Some(1), Some(0)], "it wraps");
 }
+
+/// Drives the reticle off center at the map's right edge.
+fn drift_at_edge(game: &mut Game, input: &mut InputState) {
+    game.presentation.camera.show(vec2(40.0, 12.0), ZOOM);
+    feed(game, input, &[stick(Stick::Left, 1.0, 0.0)]);
+    update_held(game, input, 0.3);
+    feed(game, input, &[stick(Stick::Left, 0.0, 0.0)]);
+    assert_ne!(
+        input.reticle.point(),
+        game.presentation.camera.viewport() * 0.5
+    );
+}
+
+#[test]
+fn every_jump_takes_the_drift_with_it() {
+    let classic = BindingMap::classic();
+    let mut game = game();
+    let mut input = InputState::new();
+
+    // A bookmark in the open: the reticle comes back to center on it.
+    drift_at_edge(&mut game, &mut input);
+    input.bookmarks[0] = Some(vec2(20.0, 12.0));
+    dispatch_action(&mut game, &mut input, &classic, Action::RecallBookmark(0));
+    assert_eq!(game.presentation.camera.center, vec2(20.0, 12.0));
+    assert_eq!(
+        input.reticle.point(),
+        game.presentation.camera.viewport() * 0.5
+    );
+
+    // A control group recalled twice quickly: the reticle rests on it.
+    let sentinel = own(&game, UnitKind::Sentinel);
+    let (id, spot) = (sentinel.id, at(sentinel));
+    game.presentation.selection.units = vec![id];
+    dispatch_action(&mut game, &mut input, &classic, Action::AssignGroup(1));
+    game.presentation.selection.units.clear();
+    drift_at_edge(&mut game, &mut input);
+    dispatch_action(&mut game, &mut input, &classic, Action::Slot(1));
+    dispatch_action(&mut game, &mut input, &classic, Action::Slot(1));
+    assert!((under_reticle(&game, &input) - spot).length() < 1e-3);
+}
+
+#[test]
+fn a_snap_is_seen_only_while_its_target_is() {
+    let game = game();
+    let view = game.view();
+    let sentinel = own(&game, UnitKind::Sentinel);
+    assert!(Picked::Unit(sentinel.id, sentinel.player).seen(&view));
+    let enemy = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player != game.presentation.human)
+        .expect("the enemy fields units");
+    assert!(!Picked::Unit(enemy.id, enemy.player).seen(&view), "fogged");
+    let gone = aftermine_sim::UnitId(u32::MAX);
+    assert!(!Picked::Unit(gone, sentinel.player).seen(&view), "dead");
+}
+
+#[test]
+fn a_new_match_starts_with_a_fresh_reticle() {
+    let mut game = game();
+    let mut input = InputState::new();
+    drift_at_edge(&mut game, &mut input);
+    input.reticle.snap = Some(Picked::Unit(
+        own(&game, UnitKind::Sentinel).id,
+        game.presentation.human,
+    ));
+    input.reset_session();
+    assert_eq!(input.reticle, Reticle::default());
+}
+
+#[test]
+fn the_last_pad_leaving_hands_the_pointer_back() {
+    let mut game = game();
+    let mut input = InputState::new();
+    let connect = |pad| RawEvent::PadConnected {
+        pad,
+        family: aftermine_protocol::PadFamily::Xbox,
+    };
+    feed(
+        &mut game,
+        &mut input,
+        &[connect(1), connect(2), press(PadButton::South)],
+    );
+    assert_eq!(input.last_pointer, Pointer::Pad);
+    track_hands(&mut input, &RawEvent::PadDisconnected { pad: 2 }, false);
+    assert_eq!(input.last_pointer, Pointer::Pad, "another pad remains");
+    track_hands(&mut input, &RawEvent::PadDisconnected { pad: 1 }, false);
+    assert_eq!(input.last_pointer, crate::platform::Hands::BUILD.pointer);
+}
