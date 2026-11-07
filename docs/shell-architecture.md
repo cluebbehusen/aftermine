@@ -212,15 +212,18 @@ Notices from outside a screen's controls go through `App::notify` and appear
 where the player is looking. Toasts report refusals and outcomes, not modes the
 ribbon already names.
 
-### Touch-only builds
+### Platforms and hands
 
-`platform::TOUCH_ONLY` is true on iOS. Platform facts branch on the constant and
-pure helpers take it as a parameter, so both variants compile and test on every
-platform. Copy follows the hands in use instead: each frame publishes the last
-pointer, whether a hardware key has been pressed, and the controller pressed
-since the last key or pointer as `platform::Hands`. Hints name keys only once
-one has been pressed, and name a controller's buttons while it is in use. Every
-screen offers a pointer path for what Escape does.
+`platform::PLATFORM` is desktop on Windows, macOS and Linux, touch on iOS and TV
+on tvOS. Platform facts branch on the constant and pure helpers take it, or the
+fact they need, as a parameter, so every variant compiles and tests on every
+platform. Only a desktop build offers Quit, reads its command line and opens
+folders; elsewhere the player types through the system keyboard. Only a touch
+build sizes controls for fingertips. Copy follows the hands in use instead: each
+frame publishes the last pointer, whether a hardware key has been pressed, and
+the controller pressed since the last key or pointer as `platform::Hands`. Hints
+name keys only once one has been pressed, and name a controller's buttons while
+it is in use. Every screen offers a pointer path for what Escape does.
 
 Each finger records where it landed, and that decides what it may drive for its
 whole life. `InputState::queue_held` merges Shift with the QUEUE toggle. Touch

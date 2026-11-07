@@ -241,7 +241,7 @@ fn transport_row(viewport: Vec2, s: f32, touch_only: bool) -> TransportRow {
 }
 
 fn transport_buttons(viewport: Vec2, s: f32) -> [(macroquad::prelude::Rect, Transport); 4] {
-    let row = transport_row(viewport, s, crate::platform::TOUCH_ONLY);
+    let row = transport_row(viewport, s, crate::platform::PLATFORM.touch_only());
     [
         (crate::button::corner_slot(0, s), Transport::Back),
         (row.play, Transport::PlayPause),
@@ -278,7 +278,7 @@ fn slower(speed: f64) -> Option<f64> {
 pub fn scrub_rect(game: &Scene<'_>, viewport: Vec2) -> macroquad::prelude::Rect {
     let s = render::ui_scale();
     let mini = render::minimap_rect(game);
-    let left = transport_row(viewport, s, crate::platform::TOUCH_ONLY)
+    let left = transport_row(viewport, s, crate::platform::PLATFORM.touch_only())
         .faster
         .right()
         + 12.0 * s;
@@ -332,7 +332,7 @@ pub fn playback_hud(pb: &PlaybackSession, bindings: &BindingMap, viewport: Vec2,
         };
         crate::button::draw(rect, label, rect.contains(mouse), s);
     }
-    let readout = transport_row(viewport, s, crate::platform::TOUCH_ONLY).readout;
+    let readout = transport_row(viewport, s, crate::platform::PLATFORM.touch_only()).readout;
     fill_rect(readout, theme::SURFACE_CAPTION);
     let speed = format!("{}x", pb.clock.speed);
     let body = crate::theme::Type::Body.at(s);
@@ -548,7 +548,7 @@ impl PlaybackSession {
         let mut leave = false;
         let ui = render::ui_scale();
         let buttons = transport_buttons(viewport, ui);
-        let row = transport_row(viewport, ui, crate::platform::TOUCH_ONLY).bounds();
+        let row = transport_row(viewport, ui, crate::platform::PLATFORM.touch_only()).bounds();
         for e in events {
             match e {
                 RawEvent::KeyDown { key } => {

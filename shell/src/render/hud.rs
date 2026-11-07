@@ -128,8 +128,9 @@ pub(crate) fn layout(
         chrome::group_column_layout(game, input, right_dock, env.ui)
     };
     let ribbon = chrome::ribbon_layout(game, input, &panel_regions, right_dock, env, measure);
-    let queue_toggle = chrome::queue_toggle_shown(game, input, crate::platform::TOUCH_ONLY)
-        .then(|| chrome::queue_toggle_rect(env.viewport, env.ui, &panel_regions));
+    let queue_toggle =
+        chrome::queue_toggle_shown(game, input, crate::platform::PLATFORM.touch_only())
+            .then(|| chrome::queue_toggle_rect(env.viewport, env.ui, &panel_regions));
     let ghost_controls = crate::input::ghost_footprint(game, input).map(|footprint| {
         let bottom_chrome = [
             panel_regions[0],

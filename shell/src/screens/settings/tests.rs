@@ -123,19 +123,19 @@ fn the_settings_hint_names_only_what_the_hands_in_use_have() {
 }
 
 #[test]
-fn every_row_lives_on_one_tab_and_touch_hides_only_what_it_cannot_use() {
-    let offered = |touch_only| -> Vec<Row> {
+fn every_row_lives_on_one_tab_and_each_platform_hides_only_what_it_cannot_use() {
+    let offered = |platform| -> Vec<Row> {
         Tab::ALL
             .into_iter()
-            .flat_map(|tab| rows(tab, touch_only))
+            .flat_map(|tab| rows(tab, platform))
             .collect()
     };
     assert_eq!(
-        offered(false),
+        offered(Platform::Desktop),
         Row::ALL.to_vec(),
         "desktop shows every row once, in tab order"
     );
-    let touch = offered(true);
+    let touch = offered(Platform::Touch);
     assert!(!touch.contains(&Row::OpenDiagnostics), "no file manager");
     for kept in [Row::EdgePan, Row::LeftHandedPreset] {
         assert!(
@@ -144,7 +144,21 @@ fn every_row_lives_on_one_tab_and_touch_hides_only_what_it_cannot_use() {
         );
     }
     assert_eq!(touch.len(), Row::ALL.len() - 1);
-    assert!(Tab::ALL.into_iter().all(|tab| !rows(tab, true).is_empty()));
+    let tv = offered(Platform::Tv);
+    assert!(!tv.contains(&Row::OpenDiagnostics), "no file manager");
+    assert!(
+        !tv.contains(&Row::ExportDiagnostics),
+        "nowhere a player can reach the report"
+    );
+    assert_eq!(tv.len(), Row::ALL.len() - 2);
+    for platform in [Platform::Desktop, Platform::Touch, Platform::Tv] {
+        assert!(
+            Tab::ALL
+                .into_iter()
+                .all(|tab| !rows(tab, platform).is_empty()),
+            "{platform:?} leaves a tab empty"
+        );
+    }
 }
 
 #[test]
@@ -495,7 +509,7 @@ fn the_control_group_row_shows_and_hides_the_bar() {
     assert!(!render::control_groups(), "the HUD follows at once");
     step_setting(&mut config, Row::ControlGroups, Step::Cycle);
     assert!(render::control_groups());
-    assert!(rows(Tab::Display, true).contains(&Row::ControlGroups));
+    assert!(rows(Tab::Display, Platform::Touch).contains(&Row::ControlGroups));
 }
 
 #[test]
@@ -542,7 +556,7 @@ fn performance_cycles_with_keyboard_mouse_and_touch_in_small_windows() {
 fn match_tips_start_off_and_switch_with_keyboard_mouse_and_touch() {
     let mut config = Config::default();
     assert!(!config.match_tips);
-    assert!(rows(Tab::General, true).contains(&Row::MatchTips));
+    assert!(rows(Tab::General, Platform::Touch).contains(&Row::MatchTips));
     let mut screen = SettingsScreen::open(&config);
     let row = Item::Setting(Row::MatchTips);
     focus(&mut screen, row);
@@ -1141,7 +1155,7 @@ fn diagnostics_rows_survive_without_a_capture_toggle() {
             .iter()
             .any(|item| item.starts_with("Diagnostics:"))
     );
-    if !crate::platform::TOUCH_ONLY {
+    if crate::platform::PLATFORM.desktop() {
         assert_eq!(
             label(&screen, Item::Setting(Row::OpenDiagnostics)),
             "Open diagnostics folder"

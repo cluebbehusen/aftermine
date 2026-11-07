@@ -6,13 +6,47 @@ use std::cell::Cell;
 use crate::input::Pointer;
 use aftermine_protocol::PadFamily;
 
-/// Whether this build runs on a touch device, where a finger is always
-/// at hand even if a keyboard or trackpad is attached. Platform facts
-/// (no Quit, the on-screen keyboard) and fingertip sizing follow it;
-/// wording and hover follow [`Hands`] instead. Code branches on this
-/// constant rather than `#[cfg]` so both sides compile, lint, and test on
-/// every target; pure helpers take it as a parameter.
-pub(crate) const TOUCH_ONLY: bool = cfg!(target_os = "ios");
+/// The kind of device a build runs on. Platform facts (Quit, the system
+/// keyboard) and fingertip sizing follow it; wording and hover follow
+/// [`Hands`] instead. Code branches on [`PLATFORM`] rather than `#[cfg]`
+/// so every side compiles, lints, and tests on every target; pure helpers
+/// take the platform, or the fact they need, as a parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Platform {
+    /// Windows, macOS, and Linux: a mouse and keyboard, a command line,
+    /// and a window the player closes.
+    Desktop,
+    /// iOS, where a finger is always at hand even if a keyboard or
+    /// trackpad is attached.
+    Touch,
+    /// tvOS: no touch screen and no cursor, played from across the room.
+    Tv,
+}
+
+/// The platform this build runs on.
+pub(crate) const PLATFORM: Platform = if cfg!(target_os = "ios") {
+    Platform::Touch
+} else if cfg!(target_os = "tvos") {
+    Platform::Tv
+} else {
+    Platform::Desktop
+};
+
+impl Platform {
+    /// Whether a finger is always at hand, so controls take fingertip
+    /// sizes and stay clear of the screen's rounded corners.
+    pub(crate) const fn touch_only(self) -> bool {
+        matches!(self, Self::Touch)
+    }
+
+    /// Whether this is a desktop app: it offers Quit, reads its command
+    /// line, has a cursor from launch, and opens folders in a file
+    /// manager. Elsewhere the system closes apps and the player types
+    /// through the system keyboard.
+    pub(crate) const fn desktop(self) -> bool {
+        matches!(self, Self::Desktop)
+    }
+}
 
 /// The pointer, keys, and controller the player is using, which decide how
 /// copy speaks: tap or click, whether it names keys, and whether it names
@@ -29,21 +63,27 @@ pub(crate) struct Hands {
 }
 
 impl Hands {
-    /// What a build assumes before any input: a finger alone on a
-    /// touch device, a mouse and keyboard elsewhere.
-    pub const BUILD: Self = if TOUCH_ONLY {
-        Self {
-            pointer: Pointer::Touch,
-            keys: false,
-            pad: None,
+    /// What this build assumes before any input.
+    pub const BUILD: Self = Self::at_launch(PLATFORM);
+
+    /// What `platform` assumes before any input: a mouse and keyboard on
+    /// the desktop, a finger alone on a touch device. A TV has neither a
+    /// keyboard nor a cursor, so it starts as touch does: nothing hovers
+    /// and copy names no keys.
+    pub const fn at_launch(platform: Platform) -> Self {
+        match platform {
+            Platform::Desktop => Self {
+                pointer: Pointer::Mouse,
+                keys: true,
+                pad: None,
+            },
+            Platform::Touch | Platform::Tv => Self {
+                pointer: Pointer::Touch,
+                keys: false,
+                pad: None,
+            },
         }
-    } else {
-        Self {
-            pointer: Pointer::Mouse,
-            keys: true,
-            pad: None,
-        }
-    };
+    }
 
     /// Whether the pointer in use is a finger.
     pub fn touch(self) -> bool {

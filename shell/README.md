@@ -34,7 +34,8 @@ crate is a binary, and this README is also its crate-level rustdoc.
 - `netplay` runs LAN lobbies and carries a running match between machines over
   `aftermine-net`.
 - `saved_game`, `autosave` and `saves` own save files and the saves shelf.
-- `platform` says whether the build is touch-only (iOS).
+- `platform` says whether the build runs on a desktop, a touch device (iOS) or a
+  TV (tvOS), and which hands the player is using.
 
 The [shell architecture](../docs/shell-architecture.md) describes the contracts
 between these pieces.

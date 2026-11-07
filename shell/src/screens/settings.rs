@@ -10,6 +10,7 @@ use crate::menu::{Heading, Label, Line, Menu};
 use crate::nav::{Axis, Nav, step_line};
 use crate::numeric;
 use crate::numeric::Fit;
+use crate::platform::Platform;
 use crate::render;
 use crate::tabs::TabStrip;
 use crate::text_field::{Edit, Field, Form, Keyboard};
@@ -384,11 +385,16 @@ impl Row {
         }
     }
 
-    /// Rows a touch-only build cannot use: it has no file manager to
-    /// open a folder in. A keyboard or trackpad can join a touch device
-    /// at any time, so their rows stay.
-    fn needs_desktop(self) -> bool {
-        matches!(self, Row::OpenDiagnostics)
+    /// Whether `platform` can use the row. Only a desktop has a file
+    /// manager to open a folder in, and a TV has nowhere a player can
+    /// reach an exported report. A keyboard or trackpad can join a touch
+    /// device at any time, so their rows stay.
+    fn offered_on(self, platform: Platform) -> bool {
+        match self {
+            Row::OpenDiagnostics => platform.desktop(),
+            Row::ExportDiagnostics => platform != Platform::Tv,
+            _ => true,
+        }
     }
 
     fn label(self, config: &Config) -> Label {
@@ -460,10 +466,10 @@ fn settings_hint(hands: crate::platform::Hands, tab_keys: bool) -> &'static str 
 }
 
 /// The rows `tab` offers on this build, in order.
-fn rows(tab: Tab, touch_only: bool) -> Vec<Row> {
+fn rows(tab: Tab, platform: Platform) -> Vec<Row> {
     Row::ALL
         .into_iter()
-        .filter(|row| row.tab() == tab && !(touch_only && row.needs_desktop()))
+        .filter(|row| row.tab() == tab && row.offered_on(platform))
         .collect()
 }
 
@@ -471,7 +477,7 @@ fn rows(tab: Tab, touch_only: bool) -> Vec<Row> {
 /// binding sections, the chosen chord column bracketed on every
 /// binding row.
 fn tab_lines(tab: Tab, config: &Config, selected_slot: usize) -> Vec<Line<Item>> {
-    let mut lines: Vec<Line<Item>> = rows(tab, crate::platform::TOUCH_ONLY)
+    let mut lines: Vec<Line<Item>> = rows(tab, crate::platform::PLATFORM)
         .into_iter()
         .map(|row| Line::Row(row.label(config), Item::Setting(row)))
         .collect();

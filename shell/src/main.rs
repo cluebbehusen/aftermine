@@ -271,13 +271,14 @@ fn window_conf() -> Conf {
     }
 }
 
-/// The command line. A touch-only build has none worth reading: a
-/// launcher's own arguments must not trip the parser into exiting.
+/// The command line. Only a desktop build has one worth reading:
+/// elsewhere a launcher's own arguments must not trip the parser into
+/// exiting.
 fn cli_args() -> Args {
-    if platform::TOUCH_ONLY {
-        Args::parse_from(["Aftermine"])
-    } else {
+    if platform::PLATFORM.desktop() {
         Args::parse()
+    } else {
+        Args::parse_from(["Aftermine"])
     }
 }
 

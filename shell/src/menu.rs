@@ -761,7 +761,7 @@ impl<R: Clone> Menu<R> {
         let bottom_bound = view_h() - 64.0 * s;
         let avail = (bottom_bound - top_bound).max(ITEM_HEIGHT * s);
         let n = self.lines.len().max(1);
-        let pitch = row_pitch(avail, n, s, crate::platform::TOUCH_ONLY);
+        let pitch = row_pitch(avail, n, s, crate::platform::PLATFORM.touch_only());
         let visible = numeric::to_usize((avail / pitch).floor()).clamp(1, n);
         ListWindow {
             top: top_bound + (avail - visible as f32 * pitch) * centring,
