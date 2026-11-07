@@ -192,7 +192,11 @@ pub(super) fn pick(game: &Game, screen: Vec2, ui: f32, reach: Reach) -> Option<P
     if let Some(b) = under {
         return Some(Picked::Building(b.id, b.player));
     }
-    // The reticle also snaps onto a structure whose footprint lies in reach.
+    // The reticle also snaps onto a structure whose footprint lies in reach,
+    // but not from over known salvage, where the pile is what it aims at.
+    if salvage_here {
+        return None;
+    }
     let reach = reach.structures? * ui / game.presentation.camera.zoom;
     game.state
         .buildings()
@@ -207,6 +211,13 @@ pub(super) fn pick(game: &Game, screen: Vec2, ui: f32, reach: Reach) -> Option<P
         })
         .min_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).expect("finite"))
         .map(|(_, _, b)| Picked::Building(b.id, b.player))
+}
+
+/// Whether the HUD covers `screen` for a controller's press: its chrome,
+/// and the minimap too, whose steering belongs to HUD focus rather than to
+/// the battlefield hidden under it.
+pub(super) fn under_hud_for_pad(game: &Game, screen: Vec2) -> bool {
+    click_on_hud(game, screen) || crate::render::minimap_world_at(&game.view(), screen).is_some()
 }
 
 /// Whether HUD chrome swallows a click at `screen`, per the published
@@ -617,30 +628,6 @@ pub(super) fn hostile_in_reach(game: &Game, screen: Vec2, ui: f32, reach: Reach)
         })
         .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.id.cmp(&b.1.id)))
         .map(|(_, b)| Picked::Building(b.id, b.player))
-}
-
-/// The human's own building under `screen` or nearest within `reach` of
-/// it: what a worker's order there names before any enemy near it, as a
-/// right-click checks its own footprint first.
-pub(super) fn own_structure_in_reach(
-    game: &Game,
-    screen: Vec2,
-    ui: f32,
-    reach: Reach,
-) -> Option<BuildingId> {
-    let world = game.presentation.camera.to_world(screen);
-    let reach = reach.structures.unwrap_or(0.0) * ui / game.presentation.camera.zoom;
-    game.state
-        .buildings()
-        .iter()
-        .filter(|b| b.player == game.presentation.human)
-        .map(|b| {
-            let (min, max) = footprint(b);
-            (world.clamp(min, max).distance(world), b.id)
-        })
-        .filter(|(distance, _)| *distance <= reach)
-        .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
-        .map(|(_, id)| id)
 }
 
 /// A building's footprint as world corners.

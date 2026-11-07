@@ -82,6 +82,15 @@ impl Sweep {
         self.buildings.extend(buildings);
     }
 
+    /// Starts a new stroke at `at` after a camera jump, while the trail
+    /// has room for its point.
+    fn break_stroke(&mut self, at: Vec2) {
+        let points: usize = self.trail.iter().map(Vec::len).sum();
+        if points < TRAIL_CAP {
+            self.trail.push(vec![at]);
+        }
+    }
+
     /// Lays a trail point at `to` once the reticle has come far enough.
     fn extend_trail(&mut self, to: Vec2, zoom: f32, ui: f32) {
         let points: usize = self.trail.iter().map(Vec::len).sum();
@@ -133,7 +142,7 @@ pub(super) fn sweep(game: &Game, input: &mut InputState, before: Vec2) {
     let reach = super::reticle::reach(input).unit_px(ui);
     let camera = &game.presentation.camera;
     let after = input.reticle.ground(camera);
-    let over_chrome = super::click_on_hud(game, input.reticle.point());
+    let over_chrome = select::under_hud_for_pad(game, input.reticle.point());
     let Some(press) = input.pad_press.as_mut() else {
         return;
     };
@@ -141,7 +150,7 @@ pub(super) fn sweep(game: &Game, input: &mut InputState, before: Vec2) {
     press.last = after;
     let from = if let Some(sweep) = press.sweep.as_mut() {
         if jumped {
-            sweep.trail.push(vec![before]);
+            sweep.break_stroke(before);
         }
         before
     } else {

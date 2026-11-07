@@ -401,3 +401,13 @@ fn nothing_the_reticle_rests_on_slows_a_sweep() {
 fn preview_gone(game: &crate::game::Game, input: &InputState) -> bool {
     preview(&game.view(), input).is_none()
 }
+
+#[test]
+fn a_full_trail_starts_no_new_stroke() {
+    let mut sweep = Sweep::at(vec2(0.0, 0.0), 0.0);
+    for step in 1..TRAIL_CAP {
+        sweep.extend_trail(vec2(step as f32, 0.0), 32.0, 1.0);
+    }
+    sweep.break_stroke(vec2(-5.0, 0.0));
+    assert_eq!(sweep.trail.len(), 1, "a jump past the cap lays no stroke");
+}

@@ -576,3 +576,112 @@ fn a_press_and_the_last_disconnect_in_one_batch_hand_the_pointer_back() {
         "no reticle is left without a controller"
     );
 }
+
+#[test]
+fn the_minimap_under_the_reticle_takes_neither_a_nor_x() {
+    let mut game = scene(&[(0, SENTINEL, 36, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    game.presentation.selection.units = vec![unit_at(&game, 36, 20)];
+    let mut layout = game.presentation.layout.get();
+    layout.minimap = macroquad::prelude::Rect::new(0.0, 0.0, 1280.0, 800.0);
+    game.presentation.layout.set(layout);
+    rest_on(&mut game, &mut input, CENTER);
+    press(&mut game, &mut input, PadButton::West);
+    assert!(game.pending.is_empty());
+    assert!(denied(&game));
+    game.presentation.sounds_pending.clear();
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    assert!(input.pad_press.is_none());
+    assert!(denied(&game));
+}
+
+/// Zoomed out, so the reticle's reach spans a tile and a half.
+fn wide_reach(game: &mut Game) {
+    game.presentation.camera.show(CENTER, 16.0);
+}
+
+#[test]
+fn x_from_workers_on_scrap_beside_their_structure_harvests() {
+    let mut game = scene(
+        &[(0, HARVESTER, 36, 20)],
+        &[(0, BuildingKind::Array, 39, 20)],
+    );
+    wide_reach(&mut game);
+    let mut input = pad_input(&mut game);
+    let harvester = unit_at(&game, 36, 20);
+    let array = building_at(&game, 39, 20);
+    wound_building(&mut game, array, 10);
+    game.presentation.selection.units = vec![harvester];
+    // The drill's scrap lies at (40, 20), right beside the wounded Array.
+    rest_on(&mut game, &mut input, vec2(40.5, 20.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Harvest {
+            units: vec![harvester],
+            node: chassis::grid::TilePos::new(40, 20),
+            queue: false,
+        }
+    );
+}
+
+#[test]
+fn x_moves_to_the_ground_beside_your_own_unit_not_onto_it() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20), (0, HARVESTER, 37, 25)], &[]);
+    wide_reach(&mut game);
+    let mut input = pad_input(&mut game);
+    let sentinel = unit_at(&game, 30, 20);
+    game.presentation.selection.units = vec![sentinel];
+    // Inside the reticle's reach of the Harvester, which it brackets.
+    rest_on(&mut game, &mut input, vec2(36.5, 24.5));
+    assert!(matches!(input.reticle.snap(), Some(Picked::Unit(..))));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Advance {
+            units: vec![sentinel],
+            goal: chassis::grid::TilePos::new(36, 24),
+            queue: false,
+        }
+    );
+}
+
+#[test]
+fn x_lays_patrol_waypoints_and_rallies_on_the_ground() {
+    let mut game = scene(
+        &[(0, SENTINEL, 30, 20), (1, SENTINEL, 34, 24)],
+        &[(0, BuildingKind::Fabricator, 26, 18)],
+    );
+    wide_reach(&mut game);
+    let mut input = pad_input(&mut game);
+    let fabricator = building_at(&game, 26, 18);
+    // Beside the enemy, inside the reticle's reach of it.
+    let ground = vec2(33.5, 24.5);
+    game.presentation.selection.units = vec![unit_at(&game, 30, 20)];
+    super::super::dispatch_action(
+        &mut game,
+        &mut input,
+        &BindingMap::classic(),
+        Action::Patrol,
+    );
+    rest_on(&mut game, &mut input, ground);
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        input.patrol_route.as_deref(),
+        Some(&[chassis::grid::TilePos::new(33, 24)][..]),
+        "the waypoint stays on the ground"
+    );
+    input.patrol_route = None;
+    game.presentation.selection.units.clear();
+    game.presentation.selection.buildings = vec![fabricator];
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::SetRally {
+            building: fabricator,
+            rally: Some(aftermine_sim::Rally::Tile(chassis::grid::TilePos::new(
+                33, 24
+            ))),
+        }
+    );
+}

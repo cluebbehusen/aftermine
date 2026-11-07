@@ -6,9 +6,10 @@
 
 use super::paint::{self, Release};
 use super::select::{self, Picked};
-use super::{DOUBLE_CLICK_SECS, DOUBLE_CLICK_SLOP, InputState, click_on_hud};
+use super::{DOUBLE_CLICK_SECS, DOUBLE_CLICK_SLOP, InputState};
 use crate::action::{Action, BindingMap};
 use crate::game::Game;
+use crate::numeric;
 use aftermine_protocol::PadButton;
 use aftermine_sim::{UnitId, UnitKind};
 use macroquad::prelude::{Vec2, vec2};
@@ -69,7 +70,7 @@ fn press_select(game: &mut Game, input: &mut InputState, pad: u64) {
     if input.pad_press.is_some() {
         return;
     }
-    if input.armed_mode().is_some() || click_on_hud(game, input.reticle.point()) {
+    if input.armed_mode().is_some() || select::under_hud_for_pad(game, input.reticle.point()) {
         super::deny(game);
         return;
     }
@@ -105,53 +106,37 @@ fn tap(game: &mut Game, input: &mut InputState, ground: Vec2) {
 /// [`aim`].
 fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
     let point = input.reticle.point();
-    if click_on_hud(game, point) {
+    if select::under_hud_for_pad(game, point) {
         super::deny(game);
         return;
     }
     if super::stand_down_for_order(input) {
         return;
     }
-    let aim = aim(game, point, input.ui, super::reticle::reach(input));
+    let aim = aim(game, input, point);
     super::world_order(game, input, bindings, aim);
 }
 
-/// Where an order at the reticle's `point` lands. What a right-click names
-/// before any enemy comes first: an own structure in reach for a selection
-/// with workers, an own transport the reticle brackets for one with units
-/// that board. Then the nearest enemy in reach, then what the reticle
-/// brackets, then the ground under it. A building is aimed at its
-/// footprint's nearest point, so the order names it as a click on it does.
-fn aim(game: &Game, point: Vec2, ui: f32, reach: select::Reach) -> Vec2 {
-    let camera = &game.presentation.camera;
-    let human = game.presentation.human;
-    let selected = &game.presentation.selection.units;
-    let selection_has = |test: &dyn Fn(&aftermine_sim::Unit) -> bool| {
-        selected
-            .iter()
-            .any(|id| game.state.unit(*id).is_some_and(test))
+/// Where an order at the reticle's `point` lands: the ground under it, as
+/// a right-click's, unless the reticle reaches something the order acts on.
+/// Patrol waypoints and rally points always stay on the ground; selected
+/// defenses take an enemy in reach; a unit selection takes what
+/// [`units_target`] finds.
+fn aim(game: &Game, input: &InputState, point: Vec2) -> Vec2 {
+    let (ui, reach) = (input.ui, super::reticle::reach(input));
+    let target = if input.patrol_route.is_some() {
+        None
+    } else if game.presentation.selection.units.is_empty() {
+        let defenses = !crate::building_actions::SelectedBuildings::inspect(&game.view())
+            .defenses(None)
+            .is_empty();
+        defenses
+            .then(|| select::hostile_in_reach(game, point, ui, reach))
+            .flatten()
+    } else {
+        units_target(game, point, ui, reach)
     };
-    let workers = selection_has(&|unit| unit.kind.stats().harvest.is_some());
-    let riders = selection_has(&|unit| unit.kind.stats().transport_size > 0);
-    let bracketed = select::pick(game, point, ui, reach);
-    let transport = bracketed.filter(|picked| match *picked {
-        Picked::Unit(id, owner) => {
-            owner == human
-                && !selected.contains(&id)
-                && game
-                    .state
-                    .unit(id)
-                    .is_some_and(|unit| unit.kind.stats().transport_capacity > 0)
-        }
-        Picked::Building(..) => false,
-    });
-    let target = workers
-        .then(|| select::own_structure_in_reach(game, point, ui, reach))
-        .flatten()
-        .map(|id| Picked::Building(id, human))
-        .or_else(|| transport.filter(|_| riders))
-        .or_else(|| select::hostile_in_reach(game, point, ui, reach))
-        .or(bracketed);
+    let camera = &game.presentation.camera;
     match target {
         Some(Picked::Unit(id, _)) => game.state.unit(id).map_or(point, |unit| {
             camera.to_screen(vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>()))
@@ -164,6 +149,62 @@ fn aim(game: &Game, point: Vec2, ui: f32, reach: select::Reach) -> Vec2 {
         }),
         None => point,
     }
+}
+
+/// What a unit selection's order at `point` acts on within the reticle's
+/// reach, checked in a right-click's order: an own structure under it or
+/// bracketed, for a selection with workers; an own transport bracketed, for
+/// one with units that board; the nearest enemy in reach, unless every
+/// selected unit scouts, as scouts go to the ground they are sent to; a
+/// wounded own machine bracketed, for workers. Anything else leaves the
+/// order on the ground.
+fn units_target(game: &Game, point: Vec2, ui: f32, reach: select::Reach) -> Option<Picked> {
+    let human = game.presentation.human;
+    let selected = &game.presentation.selection.units;
+    let units: Vec<&aftermine_sim::Unit> = selected
+        .iter()
+        .filter_map(|id| game.state.unit(*id))
+        .collect();
+    let workers = units.iter().any(|u| u.kind.stats().harvest.is_some());
+    let riders = units.iter().any(|u| u.kind.stats().transport_size > 0);
+    let scouts = units.iter().all(|u| u.kind.stats().scouts);
+    let bracketed = select::pick(game, point, ui, reach);
+    let own_unit = |test: &dyn Fn(&aftermine_sim::Unit) -> bool| match bracketed {
+        Some(Picked::Unit(id, owner)) if owner == human && !selected.contains(&id) => game
+            .state
+            .unit(id)
+            .filter(|unit| test(unit))
+            .map(|_| Picked::Unit(id, owner)),
+        _ => None,
+    };
+    let structure = || {
+        let tile = numeric::tile_at(game.presentation.camera.to_world(point));
+        game.state
+            .buildings_at(tile)
+            .find(|b| b.player == human)
+            .map(|b| Picked::Building(b.id, human))
+            .or(bracketed.filter(|p| matches!(p, Picked::Building(_, owner) if *owner == human)))
+    };
+    let wounded = |unit: &aftermine_sim::Unit| {
+        unit.hp > 0
+            && unit.hp < unit.kind.stats().max_hp
+            && unit.kind.stats().repairable()
+            && unit.domain() == aftermine_sim::stats::Domain::Ground
+    };
+    workers
+        .then(structure)
+        .flatten()
+        .or_else(|| {
+            riders
+                .then(|| own_unit(&|unit| unit.kind.stats().transport_capacity > 0))
+                .flatten()
+        })
+        .or_else(|| {
+            (!scouts)
+                .then(|| select::hostile_in_reach(game, point, ui, reach))
+                .flatten()
+        })
+        .or_else(|| workers.then(|| own_unit(&wounded)).flatten())
 }
 
 /// B: a held A goes first, leaving the selection as it was; then what Back
