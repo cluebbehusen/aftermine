@@ -331,3 +331,78 @@ fn the_cold_open_shows_until_a_saved_config_says_it_has() {
     assert!(Config::load_from(Some(path)).cold_open_seen);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn hand_edited_volumes_load_within_range() {
+    let dir = std::env::temp_dir().join(format!("aftermine-config-volumes-{}", std::process::id()));
+    let path = dir.join("config.json");
+    let config = Config {
+        volumes: Volumes {
+            master: 5.0,
+            effects: -1.0,
+            ui: 0.5,
+            music: 1.0,
+        },
+        ..Config::default()
+    };
+    config.save_to(&path).unwrap();
+    assert_eq!(
+        Config::load_from(Some(path)).volumes,
+        Volumes {
+            master: 1.0,
+            effects: 0.0,
+            ui: 0.5,
+            music: 1.0,
+        }
+    );
+    let unreadable = Volumes {
+        master: f32::NAN,
+        effects: f32::INFINITY,
+        ui: f32::NEG_INFINITY,
+        music: 0.25,
+    };
+    assert_eq!(
+        unreadable.clamped(),
+        Volumes {
+            music: 0.25,
+            ..Volumes::default()
+        }
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn the_load_checks_settle_in_one_pass() {
+    // Settings from another device pass the same checks and are taken only
+    // when the checks leave them as they are, so a second pass must never
+    // move what the first one settled.
+    use crate::tutorial::Lesson;
+    let messy = Config {
+        ui_scale: 9.0,
+        window: (1, 1),
+        player_name: Some("\u{7}".repeat(3)),
+        install_id: Some("not hex".to_owned()),
+        lessons_done: vec![Lesson::Scrap, Lesson::Command, Lesson::Scrap],
+        markers: MarkerPrefs {
+            start: -100.0,
+            end: 300.0,
+            scale: -1.0,
+        },
+        volumes: Volumes {
+            master: 5.0,
+            ..Volumes::default()
+        },
+        touch: TouchPrefs {
+            double_tap_ms: 0,
+            long_press_ms: 0,
+        },
+        ..Config::default()
+    };
+    let once = messy.sanitized();
+    assert_ne!(
+        once,
+        Config::default().sanitized(),
+        "the pass kept what it could"
+    );
+    assert_eq!(once.clone().sanitized(), once);
+}

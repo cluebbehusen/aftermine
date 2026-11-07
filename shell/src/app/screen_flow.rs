@@ -424,7 +424,7 @@ fn lobby_frame(
             app.config.last_join_address = Some(address.clone());
             app.config.player_name = Some(name.to_string());
             let install = app.config.install_id();
-            if let Err(err) = app.config.save() {
+            if let Err(err) = app.save_settings() {
                 app.notify_failure("Could not save settings", err);
             }
             let commit = crate::build_identity().revision;
@@ -515,13 +515,14 @@ fn cold_open_frame(
         return Screen::ColdOpen(open);
     }
     app.config.cold_open_seen = true;
-    if let Err(err) = app.config.save() {
+    if let Err(err) = app.save_settings() {
         eprintln!("could not save config: {err}");
     }
     Screen::Home(HomeScreen::open())
 }
 
 fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32) -> Screen {
+    app.pull_settings();
     if !home.catalog_ready || app.catalog_stale() {
         app.request_catalog();
     }
@@ -636,7 +637,7 @@ fn settings_frame(
         _ => {}
     }
     if up.dirty
-        && let Err(err) = app.config.save()
+        && let Err(err) = app.save_settings()
     {
         app.notify_failure("Could not save settings", err);
     }
@@ -750,7 +751,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     };
     if let Some(name) = w.take_saved_name() {
         app.config.player_name = Some(name.to_string());
-        if let Err(err) = app.config.save() {
+        if let Err(err) = app.save_settings() {
             app.notify_failure("Could not save settings", err);
         }
     }
@@ -1003,12 +1004,12 @@ fn playing_frame(
     }
     if let Some(lesson) = Tutorial::advance_in(&mut app.game)
         && app.config.finish_lesson(lesson)
-        && let Err(err) = app.config.save()
+        && let Err(err) = app.save_settings()
     {
         app.notify_failure("Could not save settings", err);
     }
     if mark_first_match(&mut app.config, &app.game)
-        && let Err(err) = app.config.save()
+        && let Err(err) = app.save_settings()
     {
         app.notify_failure("Could not save settings", err);
     }

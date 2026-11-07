@@ -17,7 +17,7 @@ Read the README for the crate you are changing:
 | [`aftermine-protocol`](protocol/README.md) | Debug wire types, framing, input events, and state views.                            |
 | [`aftermine-kit`](kit/README.md)           | Shared replay, statistics, fixture, and CPU-rendering services.                      |
 | [`aftermine-net`](net/README.md)           | Lockstep multiplayer: wire messages, session core, start barrier, and TCP transport. |
-| [`aftermine-icloud`](icloud/README.md)     | iCloud Drive folder lookup, file coordination and downloads; the only `unsafe` code. |
+| [`aftermine-icloud`](icloud/README.md)     | iCloud Drive files and the iCloud key-value store; the only `unsafe` code.           |
 | [`aftermine-shell`](shell/README.md)       | Macroquad input, UI, rendering, audio, persistence, and live session.                |
 | [`aftermine-driver`](driver/README.md)     | Headless runner, inspectors, map audit, live client, profiling, and smoke QA.        |
 

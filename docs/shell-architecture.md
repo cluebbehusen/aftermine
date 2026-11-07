@@ -292,6 +292,14 @@ under file coordination. A catalog scan first starts downloading files iCloud
 holds but the device does not, and the shelf scans again while any are on their
 way. With iCloud on, the shelf still lists records kept on the device.
 
+Settings that belong to the player, not the device, also travel through iCloud's
+key-value store on iPad, Mac and Apple TV, one key per setting with the newest
+change winning. Settings tied to one device's screen, touch or pointer hardware,
+network or installation, the install id among them, never leave the device, and
+the local settings file stays complete without iCloud. Another device's change
+applies at launch or on Home, never during a match, a lobby or the Settings
+screen, so no synced setting reaches a running session.
+
 One app-owned worker performs save encoding, save and checkpoint disk I/O,
 restoration and catalog scans, one operation at a time. Jobs carry unique ids,
 so a stale result cannot replace a newer session. Restoration produces CPU data,
