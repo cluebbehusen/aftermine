@@ -448,3 +448,29 @@ fn a_controller_in_use_hears_its_confirm_and_bumpers_and_no_delete() {
         Some("Cross watches | L1/R1 switch tabs")
     );
 }
+
+#[test]
+fn a_delete_armed_by_key_still_names_its_key_once_a_controller_takes_over() {
+    let records = ["a", "b"].map(|name| {
+        entry(
+            name,
+            true,
+            RecordKind::Match,
+            format!("/nowhere/{name}.json").into(),
+        )
+    });
+    let mut shelf = Shelf::from_entries(records.into());
+    shelf.catalog_ready = true;
+    drive(&mut shelf, Key::X);
+    // The controller walks away and back; the arm stays on its row.
+    drive(&mut shelf, Key::Down);
+    drive(&mut shelf, Key::Up);
+    crate::menu::set_bindings(&crate::action::BindingMap::classic());
+    crate::platform::set_hands(crate::platform::Hands {
+        pad: Some(aftermine_protocol::PadFamily::Xbox),
+        ..crate::platform::ALL_HANDS[0]
+    });
+    let status = crate::menu::binding_hint(&shelf.status());
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+    assert_eq!(status, "Press X again to delete");
+}

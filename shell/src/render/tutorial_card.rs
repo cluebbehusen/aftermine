@@ -423,7 +423,7 @@ pub(crate) fn draw(card: &CardLayout, mouse: Vec2) {
     }
     let hovered = crate::platform::hands().pointer == crate::input::Pointer::Mouse;
     for (rect, button) in &card.buttons {
-        let lit = hovered && rect.contains(mouse);
+        let lit = hovered && crate::platform::hovers(*rect, mouse);
         if matches!(button, CardButton::Fold | CardButton::Dismiss) {
             let color = fade(if lit { TEXT_PRIMARY } else { TEXT_SECONDARY });
             let stroke = Stroke::Edge.at(s);

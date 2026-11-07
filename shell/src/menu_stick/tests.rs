@@ -103,3 +103,33 @@ fn reset_forgets_a_held_arrow_and_other_events_pass_through() {
     ];
     assert_eq!(stick.arrows(&others, 0.0), others);
 }
+
+#[test]
+fn a_repeat_due_as_the_stick_lets_go_or_turns_never_moves_the_cursor_first() {
+    let confirm = [
+        RawEvent::KeyDown { key: Key::Enter },
+        RawEvent::KeyUp { key: Key::Enter },
+    ];
+    let mut stick = MenuStick::default();
+    stick.arrows(&[left(0.0, 1.0)], 0.0);
+    let frame = [left(0.0, 0.0), confirm[0], confirm[1]];
+    assert_eq!(
+        stick.arrows(&frame, 1.0),
+        confirm,
+        "a release with a press confirms the row the cursor is on"
+    );
+    let mut stick = MenuStick::default();
+    stick.arrows(&[left(0.0, 1.0)], 0.0);
+    assert_eq!(
+        pressed(&stick.arrows(&[left(1.0, 0.0)], 1.0)),
+        [Key::Right],
+        "turning presses only the new arrow"
+    );
+    let mut stick = MenuStick::default();
+    stick.arrows(&[left(0.0, 1.0)], 0.0);
+    assert_eq!(
+        pressed(&stick.arrows(&[left(0.1, 0.9), confirm[0]], 1.0)),
+        [Key::Down, Key::Enter],
+        "a stick still held repeats ahead of the frame's own presses"
+    );
+}

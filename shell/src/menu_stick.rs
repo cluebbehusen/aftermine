@@ -30,14 +30,16 @@ impl MenuStick {
     /// mean, plus any repeat `dt` seconds of holding have earned. Other
     /// events pass through in order.
     pub(crate) fn arrows(&mut self, events: &[RawEvent], dt: f32) -> Vec<RawEvent> {
-        let mut out = Vec::with_capacity(events.len());
+        let mut out = Vec::with_capacity(events.len() + 2);
+        let mut due = None;
+        let mut changed = false;
         if let Some((key, wait)) = &mut self.held {
             *wait -= dt.max(0.0);
             if *wait <= 0.0 {
                 // One press a frame however long the frame took, so a
                 // hitch never fires a burst.
                 *wait = REPEAT;
-                press(*key, &mut out);
+                due = Some(*key);
             }
         }
         for event in events {
@@ -47,9 +49,16 @@ impl MenuStick {
                     x,
                     y,
                     ..
-                } => self.moved(x, y, &mut out),
+                } => changed |= self.moved(x, y, &mut out),
                 other => out.push(other),
             }
+        }
+        // The repeat belongs before the frame's events, but only if the
+        // stick still holds that arrow after them: a stick let go or
+        // turned this frame must not move the cursor first, or a press
+        // that comes with the release lands on the wrong row.
+        if let Some(key) = due.filter(|_| !changed) {
+            out.splice(0..0, [RawEvent::KeyDown { key }, RawEvent::KeyUp { key }]);
         }
         out
     }
@@ -59,18 +68,24 @@ impl MenuStick {
         self.held = None;
     }
 
-    fn moved(&mut self, x: f32, y: f32, out: &mut Vec<RawEvent>) {
+    /// Follows the stick to `(x, y)`, pressing an arrow it newly points
+    /// at. Returns whether the held arrow changed: let go, or another.
+    fn moved(&mut self, x: f32, y: f32, out: &mut Vec<RawEvent>) -> bool {
         let pointing = pointing(x, y);
         let held = self.held.map(|(key, _)| key);
         let keeps = held.is_some_and(|key| along(key, x, y) >= RELEASE);
         match (pointing, held) {
-            (Some(key), Some(current)) if key == current => {}
+            (Some(key), Some(current)) if key == current => false,
             (Some(key), _) => {
                 self.held = Some((key, FIRST_REPEAT));
                 press(key, out);
+                true
             }
-            (None, Some(_)) if keeps => {}
-            (None, _) => self.held = None,
+            (None, Some(_)) if keeps => false,
+            (None, held) => {
+                self.held = None;
+                held.is_some()
+            }
         }
     }
 }

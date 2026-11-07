@@ -43,15 +43,17 @@ pub(crate) fn set_bindings(bindings: &crate::action::BindingMap) {
 
 /// Fills a coaching template's tokens with the keys that do each thing in
 /// menus now or, while a controller is in use, the buttons of its fixed
-/// layout.
+/// layout. A token with no button, such as `{delete}`, still names its
+/// key, which keeps working while the controller is in use.
 pub(crate) fn binding_hint(template: &str) -> String {
     use crate::action::Action;
-    if let Some(family) = crate::platform::hands().pad {
-        return pad_hint(template, family);
-    }
+    let template = match crate::platform::hands().pad {
+        Some(family) => pad_hint(template, family),
+        None => template.to_string(),
+    };
     MENU_BINDINGS.with(|bindings| {
         let bindings = bindings.borrow();
-        let mut text = template.to_string();
+        let mut text = template;
         for (token, action) in [
             ("{confirm}", Action::Confirm),
             ("{back}", Action::Back),
@@ -75,10 +77,9 @@ pub(crate) fn binding_hint(template: &str) -> String {
     })
 }
 
-/// Fills a coaching template's tokens with `family`'s buttons. Pad
-/// copy names the D-pad itself rather than one token per arrow; a token
-/// with no button, such as `{delete}`, stays a key, since pad copy never
-/// offers it.
+/// Fills the tokens of a coaching template that `family` has buttons
+/// for. Pad copy names the D-pad itself rather than one token per arrow,
+/// and leaves the rest to the keys.
 fn pad_hint(template: &str, family: aftermine_protocol::PadFamily) -> String {
     use crate::pad::{BACK, CONFIRM, PAGES, TABS, button_name};
     let mut text = template.to_string();
