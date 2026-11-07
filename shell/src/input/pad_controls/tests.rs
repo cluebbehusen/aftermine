@@ -292,23 +292,6 @@ fn chrome_under_the_reticle_takes_neither_a_nor_x() {
 }
 
 #[test]
-fn a_waits_while_a_mode_is_armed() {
-    let mut game = scene(&[(0, SENTINEL, 30, 20), (0, SENTINEL, 34, 20)], &[]);
-    let mut input = pad_input(&mut game);
-    let held = unit_at(&game, 30, 20);
-    game.presentation.selection.units = vec![held];
-    super::super::dispatch_action(&mut game, &mut input, &BindingMap::classic(), Action::Hunt);
-    rest_on(&mut game, &mut input, vec2(34.5, 20.5));
-    press(&mut game, &mut input, PadButton::South);
-    assert!(denied(&game));
-    assert_eq!(game.presentation.selection.units, vec![held]);
-    assert!(
-        input.armed(super::super::ClickVerb::Hunt),
-        "the mode stands"
-    );
-}
-
-#[test]
 fn b_cancels_the_mode_then_clears_the_selection() {
     let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
     let mut input = pad_input(&mut game);

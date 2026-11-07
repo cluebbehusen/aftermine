@@ -116,7 +116,7 @@ impl ArmedMode {
 
 /// Where the placement preview sits: the touch ghost when one is down,
 /// otherwise under the hover point (a stale mouse point on a touch device
-/// would draw a stray ghost).
+/// would draw a stray ghost), anchored as a press there would anchor it.
 pub(crate) fn placement_preview_anchor(
     game: &crate::game::Scene<'_>,
     input: &InputState,
@@ -127,9 +127,24 @@ pub(crate) fn placement_preview_anchor(
     }
     input.hover_point().map(|point| {
         let world = game.presentation.camera.to_world(point);
-        let hovered = numeric::tile_at(world);
-        (kind, placement_anchor(game, kind, hovered))
+        (kind, anchor_under(game, kind, world, input.last_pointer))
     })
+}
+
+/// The anchor `pointer` names for `kind` at `world`. A finger and the
+/// reticle center the footprint on the point they name; the mouse's tip
+/// names the footprint's corner tile. An Extractor snaps to the frame there
+/// either way.
+fn anchor_under(
+    game: &crate::game::Scene<'_>,
+    kind: aftermine_sim::BuildingKind,
+    world: Vec2,
+    pointer: Pointer,
+) -> TilePos {
+    match pointer {
+        Pointer::Mouse => placement_anchor(game, kind, numeric::tile_at(world)),
+        Pointer::Touch | Pointer::Pad => ghost_anchor_under(game, kind, world),
+    }
 }
 
 /// Which pointer produced a press.
@@ -139,6 +154,27 @@ pub(crate) enum Pointer {
     Touch,
     /// A controller's reticle, which only a match has.
     Pad,
+}
+
+/// Who presses at a point: the mouse, a finger, or a controller at its
+/// reticle. A controller is named, so a stroke its A lays ends only with
+/// that controller's A.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Presser {
+    Mouse,
+    Touch,
+    Pad(u64),
+}
+
+impl Presser {
+    /// The pointer the press comes from.
+    fn pointer(self) -> Pointer {
+        match self {
+            Self::Mouse => Pointer::Mouse,
+            Self::Touch => Pointer::Touch,
+            Self::Pad(_) => Pointer::Pad,
+        }
+    }
 }
 
 impl Pointer {
@@ -473,8 +509,8 @@ pub struct InputState {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Placement {
     pub(crate) kind: aftermine_sim::BuildingKind,
-    /// The live drag-to-place stroke, while the button stays down.
-    stroke: Option<PlacingStroke>,
+    /// The live drag-to-place stroke, while the button laying it stays down.
+    stroke: Option<HeldStroke>,
     /// The touch placement's ghost, once a tap has dropped one.
     ghost: Option<PlacementGhost>,
     /// The last site this placement staged, once one has. Letting go of
@@ -509,6 +545,14 @@ pub(crate) struct LatchProbe {
     staged: usize,
     units: Vec<UnitId>,
     buildings: Vec<aftermine_sim::BuildingId>,
+}
+
+/// A drag-to-place stroke and who lays it: only that mouse button or
+/// controller's A extends it and stages it.
+#[derive(Debug, Clone, PartialEq)]
+struct HeldStroke {
+    by: Presser,
+    plan: PlacingStroke,
 }
 
 /// A live drag-to-place stroke: the row it plans, staged only when the
@@ -1284,7 +1328,13 @@ impl InputState {
         placement
             .stroke
             .as_ref()
+            .map(|held| &held.plan)
             .or_else(|| placement.ghost.as_ref()?.row.as_ref().map(|row| &row.plan))
+    }
+
+    /// Who lays the live placement stroke, while one is down.
+    pub(crate) fn stroke_by(&self) -> Option<Presser> {
+        self.placing.as_ref()?.stroke.as_ref().map(|held| held.by)
     }
 
     /// The previewed plan's stamps.
@@ -2015,8 +2065,12 @@ pub fn apply_events(
 fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, event: &RawEvent) {
     if let Some(pointer) = Pointer::of(event) {
         input.last_pointer = pointer;
-        // Another pointer took over: a held A's sweep ends unfinished.
+        // Another pointer took over: a held A's sweep or row ends
+        // unfinished.
         input.pad_press = None;
+        if matches!(input.stroke_by(), Some(Presser::Pad(_))) {
+            input.drop_stroke();
+        }
     }
     match *event {
         RawEvent::MouseMove { x, y } => {
@@ -2045,7 +2099,9 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // stamps before it: a wall in one stroke. Nothing stages
             // until the release, so a careless stroke costs nothing.
             // Refused cells skip silently (the ghost tells that story).
-            extend_stroke(game, input, from, vec2(x, y));
+            let camera = &game.presentation.camera;
+            let (a, b) = (camera.to_world(from), camera.to_world(vec2(x, y)));
+            extend_stroke(game, input, Presser::Mouse, a, b);
             if input.handle_drag {
                 pull_row(&game.view(), input, vec2(x, y));
             }
@@ -2080,7 +2136,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                 return;
             }
             if ribbon_row_press(game, input, vec2(x, y), Pointer::Mouse)
-                || armed_click(game, input, bindings, vec2(x, y), Pointer::Mouse)
+                || armed_click(game, input, bindings, vec2(x, y), Presser::Mouse)
             {
                 return;
             }
@@ -2141,19 +2197,11 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                 return;
             }
             // The placement stroke ends at release, taking the ground
-            // up to the release point; Shift decides whether the mode
-            // stays armed, as letting go of it mid-stroke would have.
-            extend_stroke(game, input, from, vec2(x, y));
-            let stroke = input
-                .placing
-                .as_mut()
-                .and_then(|placement| placement.stroke.take());
-            if let (Some(kind), Some(stroke)) = (input.placing_kind(), stroke) {
-                commit_stroke(game, input, kind, &stroke, None);
-                if !input.queue_held() {
-                    input.queue_released();
-                }
-            }
+            // up to the release point.
+            let camera = &game.presentation.camera;
+            let (a, b) = (camera.to_world(from), camera.to_world(vec2(x, y)));
+            extend_stroke(game, input, Presser::Mouse, a, b);
+            finish_stroke(game, input, Presser::Mouse);
             if let Some(origin) = input.drag_origin.take() {
                 let release = vec2(x, y);
                 let additive = input.queue_held();
@@ -2278,6 +2326,9 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             {
                 input.pad_press = None;
             }
+            if input.stroke_by() == Some(Presser::Pad(pad)) {
+                input.drop_stroke();
+            }
             // A press earlier in the batch made the pad the pointer again
             // after the batch's notes saw the last one go.
             if input.pads.is_empty() && input.last_pointer == Pointer::Pad {
@@ -2393,17 +2444,18 @@ pub(super) fn press_group_slot(
     }
 }
 
-/// One armed world click or tap at screen point `p`. Returns whether
-/// an armed mode consumed the event (whatever the outcome: issued,
-/// denied, or a minimap camera jump). Mouse and touch route here
-/// identically: a fingertip that armed a Build card completes the build
-/// with its next tap.
+/// One armed world click, tap or controller press at screen point `p`.
+/// Returns whether an armed mode consumed the event (whatever the outcome:
+/// issued, denied, or a minimap camera jump). Mouse, touch and controller
+/// route here identically: a fingertip that armed a Build card completes
+/// the build with its next tap, and a controller's press at its reticle
+/// places or aims as a click there does.
 fn armed_click(
     game: &mut Game,
     input: &mut InputState,
     bindings: &BindingMap,
     p: Vec2,
-    pointer: Pointer,
+    by: Presser,
 ) -> bool {
     if click_on_hud(game, p) && crate::render::minimap_world_at(&game.view(), p).is_none() {
         return false;
@@ -2416,7 +2468,7 @@ fn armed_click(
             .or_else(|| (!click_on_hud(game, p)).then(|| game.presentation.camera.to_world(p)));
         if let Some(world) = world {
             let target = ground_tile(&game.state, world);
-            if pointer == Pointer::Touch || strike.aim.is_some() {
+            if by == Presser::Touch || strike.aim.is_some() {
                 // A tap only aims; the check mark launches. A minimap aim
                 // brings the camera along so its ring and controls show.
                 strike.aim_at(target);
@@ -2431,17 +2483,19 @@ fn armed_click(
     }
     if !input.rallying.is_empty() {
         // The minimap names ground only; the world names the own unit under
-        // the click, which new units then escort, or else the ground.
+        // the click, or as far around a controller's reticle as it snaps,
+        // which new units then escort, or else the ground.
+        let reach = match by {
+            Presser::Pad(_) => {
+                reticle::reach(input).in_world(input.ui, game.presentation.camera.zoom)
+            }
+            Presser::Mouse | Presser::Touch => OrderReach::EXACT,
+        };
         let rally = if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
             Some(aftermine_sim::Rally::Tile(ground_tile(&game.state, world)))
         } else {
-            (!click_on_hud(game, p)).then(|| {
-                rally_at(
-                    game,
-                    game.presentation.camera.to_world(p),
-                    OrderReach::EXACT,
-                )
-            })
+            (!click_on_hud(game, p))
+                .then(|| rally_at(game, game.presentation.camera.to_world(p), reach))
         };
         if let Some(rally) = rally {
             let producers = crate::building_actions::SelectedBuildings::inspect_ids(
@@ -2462,7 +2516,7 @@ fn armed_click(
             reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
-            if pointer == Pointer::Touch || input.ghost_anchor().is_some() {
+            if by == Presser::Touch || input.ghost_anchor().is_some() {
                 // A tap never builds on its own: it drops the ghost (or
                 // moves it here), and only the check mark builds. While a
                 // ghost is down a click does the same, so a trackpad that
@@ -2475,12 +2529,11 @@ fn armed_click(
                 }
                 return true;
             }
-            let clicked = numeric::tile_at(world);
-            let anchor = placement_anchor(&game.view(), kind, clicked);
+            let anchor = anchor_under(&game.view(), kind, world, by.pointer());
             // The press plans the stroke's first stamp; dragging plans
             // more of the same kind, queued, and the release stages
             // them. Whether the MODE survives the release is still
-            // Shift's call, decided at MouseUp.
+            // Shift's call, decided at the release.
             let queue = input.queue_held();
             let verdict = placement_verdict(&game.view(), kind, anchor, queue);
             if !matches!(
@@ -2489,9 +2542,12 @@ fn armed_click(
             ) {
                 deny(game);
             } else if let Some(placement) = &mut input.placing {
-                placement.stroke = Some(PlacingStroke {
-                    queue,
-                    stamps: vec![anchor],
+                placement.stroke = Some(HeldStroke {
+                    by,
+                    plan: PlacingStroke {
+                        queue,
+                        stamps: vec![anchor],
+                    },
                 });
             }
         }
@@ -3046,21 +3102,43 @@ fn commit_stroke(
     }
     !staged.is_empty()
 }
-/// Plans the stamps a cursor dragged from `from` to `to` (screen points)
-/// crosses while a stroke is live, sampled finely enough that a fast move
-/// leaves no footprint out. Samples over chrome or the minimap plan nothing.
-fn extend_stroke(game: &Game, input: &mut InputState, from: Vec2, to: Vec2) {
+
+/// Ends the stroke `by` lays, staging its plan, and lets queue decide
+/// whether placement stays armed, as letting go of it mid-stroke would
+/// have. Returns whether `by` was laying one.
+fn finish_stroke(game: &mut Game, input: &mut InputState, by: Presser) -> bool {
+    let Some(placement) = input.placing.as_mut() else {
+        return false;
+    };
+    let Some(held) = placement.stroke.take_if(|held| held.by == by) else {
+        return false;
+    };
+    let kind = placement.kind;
+    commit_stroke(game, input, kind, &held.plan, None);
+    if !input.queue_held() {
+        input.queue_released();
+    }
+    true
+}
+
+/// Plans the stamps the ground from `a` to `b` (world points) crosses while
+/// `by` lays a stroke, sampled finely enough that a fast move leaves no
+/// footprint out. Samples under chrome or the minimap plan nothing.
+fn extend_stroke(game: &Game, input: &mut InputState, by: Presser, a: Vec2, b: Vec2) {
     let Some(Placement {
         kind,
-        stroke: Some(stroke),
+        stroke: Some(held),
         ..
     }) = input.placing.as_mut()
     else {
         return;
     };
+    if held.by != by {
+        return;
+    }
+    let stroke = &mut held.plan;
     let kind = *kind;
     let camera = &game.presentation.camera;
-    let (a, b) = (camera.to_world(from), camera.to_world(to));
     // Half a tile a sample, bounded so a flung cursor cannot stall a frame.
     let samples = numeric::to_i32((a.distance(b) * 2.0).ceil()).clamp(1, 256);
     for step in 1..=samples {
@@ -3072,7 +3150,7 @@ fn extend_stroke(game: &Game, input: &mut InputState, from: Vec2, to: Vec2) {
         {
             continue;
         }
-        let anchor = placement_anchor(&game.view(), kind, numeric::tile_at(world));
+        let anchor = anchor_under(&game.view(), kind, world, by.pointer());
         if !stroke.overlaps(kind, anchor)
             && stroke_verdict(&game.view(), kind, stroke, anchor).builds()
         {
@@ -3608,10 +3686,15 @@ pub fn update_held(game: &mut Game, input: &mut InputState, dt: f32) {
     }
     let keys =
         crate::camera::controls::pan_travel(&game.presentation.camera, dir, input.camera_prefs, dt);
-    // A held A paints the ground the reticle crosses this frame.
+    // A held A paints the ground the reticle crosses this frame, or lays a
+    // placement row along it.
     let before = input.reticle.ground(&game.presentation.camera);
     reticle::update(game, input, dt, keys);
     paint::sweep(game, input, before);
+    if let Some(by @ Presser::Pad(_)) = input.stroke_by() {
+        let after = input.reticle.ground(&game.presentation.camera);
+        extend_stroke(game, input, by, before, after);
+    }
 }
 
 /// How the native layer scales a wheel reading.

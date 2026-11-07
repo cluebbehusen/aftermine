@@ -1,0 +1,402 @@
+//! Placement and targeted orders on a controller: A and X act at the
+//! reticle while a mode is armed, a held A drags a placement row, and B
+//! backs out, all through the real funnel against a staged sandbox.
+
+use super::super::tests::pad_scene::{
+    FRAME, PAD, ZOOM, building_at, denied, down, feed, frame, left_stick, pad_input, press,
+    push_until, rest_on, scene, unit_at, up,
+};
+use super::*;
+use crate::input::{ClickVerb, Pointer, preview_spot, unit_pick_radius};
+use aftermine_protocol::RawEvent;
+use aftermine_sim::{BuildingId, BuildingKind, Command, Rally};
+use chassis::grid::TilePos;
+use macroquad::prelude::vec2;
+
+const BARRICADE: BuildingKind = BuildingKind::Barricade;
+const FABRICATOR: BuildingKind = BuildingKind::Fabricator;
+
+/// A Harvester below the middle of the map, selected, with `kind` armed
+/// as its Build card arms it, and an own Turret at (31, 20) whose tile
+/// refuses a site.
+fn placing(kind: BuildingKind) -> (Game, InputState) {
+    let mut game = scene(
+        &[(0, UnitKind::Harvester, 32, 23)],
+        &[(0, BuildingKind::Turret, 31, 20)],
+    );
+    let mut input = pad_input(&mut game);
+    game.presentation.selection.units = vec![unit_at(&game, 32, 23)];
+    input.build_menu = true;
+    input.build_category = Some(crate::action::building_category(kind));
+    input.arm_placement(kind);
+    (game, input)
+}
+
+/// Every staged build as (anchor, queued), in order.
+fn builds(game: &Game) -> Vec<(TilePos, bool)> {
+    game.pending
+        .iter()
+        .filter_map(|pc| match pc.command {
+            Command::Build { anchor, queue, .. } => Some((anchor, queue)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn dispatch(game: &mut Game, input: &mut InputState, action: Action) {
+    super::super::dispatch_action(game, input, &BindingMap::classic(), action);
+}
+
+/// Every staged command, in order.
+fn commands(game: &Game) -> Vec<Command> {
+    game.pending.iter().map(|pc| pc.command.clone()).collect()
+}
+
+#[test]
+fn a_places_a_structure_centered_on_the_reticle_where_the_ghost_shows() {
+    let (mut game, mut input) = placing(FABRICATOR);
+    rest_on(&mut game, &mut input, vec2(35.0, 21.0));
+    let spot = preview_spot(&game.view(), &input).expect("the ghost follows the reticle");
+    // A 2x2 centered on the reticle, not hanging down and right of it.
+    assert_eq!(spot.anchor, TilePos::new(34, 20));
+    assert!(spot.verdict.builds(), "{:?}", spot.verdict);
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(builds(&game), [(spot.anchor, false)]);
+    assert!(input.placing.is_none(), "one placement ends the mode");
+    assert_eq!(
+        game.presentation.selection.units,
+        vec![unit_at(&game, 32, 23)],
+        "A placed rather than selected"
+    );
+}
+
+#[test]
+fn a_held_a_drags_a_row_that_skips_a_refused_cell_and_stages_on_release() {
+    let (mut game, mut input) = placing(BARRICADE);
+    rest_on(&mut game, &mut input, vec2(28.5, 20.5));
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    push_until(&mut game, &mut input, (0.6, 0.0), FRAME, |g| g.x >= 33.5);
+    assert_eq!(
+        input.planned_stamps(),
+        [28, 29, 30, 32, 33].map(|x| TilePos::new(x, 20)),
+        "the row skips the Turret's tile"
+    );
+    assert!(game.pending.is_empty(), "nothing stages while A is held");
+    feed(&mut game, &mut input, &[up(PadButton::South)]);
+    assert_eq!(
+        builds(&game),
+        [
+            (TilePos::new(28, 20), false),
+            (TilePos::new(29, 20), true),
+            (TilePos::new(30, 20), true),
+            (TilePos::new(32, 20), true),
+            (TilePos::new(33, 20), true),
+        ]
+    );
+    assert!(input.placing.is_none());
+}
+
+#[test]
+fn a_held_left_trigger_keeps_placing_until_it_is_let_go() {
+    let (mut game, mut input) = placing(BARRICADE);
+    feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
+    rest_on(&mut game, &mut input, vec2(28.5, 18.5));
+    press(&mut game, &mut input, PadButton::South);
+    rest_on(&mut game, &mut input, vec2(30.5, 18.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(
+        builds(&game),
+        [(TilePos::new(28, 18), true), (TilePos::new(30, 18), true)]
+    );
+    assert!(input.placing.is_some(), "a held LT keeps placing");
+    feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
+    assert!(input.placing.is_none(), "letting go ends the chain");
+}
+
+#[test]
+fn a_on_a_refused_spot_is_denied_and_placement_stands() {
+    let (mut game, mut input) = placing(BARRICADE);
+    rest_on(&mut game, &mut input, vec2(31.5, 20.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert!(denied(&game));
+    assert!(game.pending.is_empty());
+    assert_eq!(input.placing_kind(), Some(BARRICADE));
+    rest_on(&mut game, &mut input, vec2(29.5, 20.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(builds(&game), [(TilePos::new(29, 20), false)]);
+}
+
+#[test]
+fn x_places_one_structure_but_waits_while_a_lays_a_row() {
+    let (mut game, mut input) = placing(BARRICADE);
+    rest_on(&mut game, &mut input, vec2(29.5, 20.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(builds(&game), [(TilePos::new(29, 20), false)]);
+    assert!(input.placing.is_none(), "X is a tap of A");
+
+    let (mut game, mut input) = placing(BARRICADE);
+    rest_on(&mut game, &mut input, vec2(29.5, 20.5));
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    press(&mut game, &mut input, PadButton::West);
+    assert!(denied(&game));
+    assert!(game.pending.is_empty());
+    assert_eq!(input.stroke_by(), Some(Presser::Pad(PAD)));
+    feed(&mut game, &mut input, &[up(PadButton::South)]);
+    assert_eq!(builds(&game), [(TilePos::new(29, 20), false)]);
+}
+
+#[test]
+fn b_drops_a_held_row_then_walks_out_of_placement() {
+    let (mut game, mut input) = placing(BARRICADE);
+    rest_on(&mut game, &mut input, vec2(27.5, 20.5));
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    push_until(&mut game, &mut input, (0.6, 0.0), FRAME, |g| g.x >= 29.5);
+    press(&mut game, &mut input, PadButton::East);
+    assert!(input.planned_stamps().is_empty(), "B dropped the row");
+    assert_eq!(input.placing_kind(), Some(BARRICADE), "and kept placing");
+    feed(&mut game, &mut input, &[up(PadButton::South)]);
+    assert!(game.pending.is_empty(), "the release builds nothing");
+
+    press(&mut game, &mut input, PadButton::East);
+    assert!(input.placing.is_none());
+    assert!(input.build_menu, "back to the palette, as Esc goes");
+    press(&mut game, &mut input, PadButton::East);
+    assert_eq!(input.build_category, None);
+    press(&mut game, &mut input, PadButton::East);
+    assert!(!input.construction_open());
+    assert_eq!(game.presentation.selection.units.len(), 1);
+    press(&mut game, &mut input, PadButton::East);
+    assert!(game.presentation.selection.units.is_empty());
+}
+
+#[test]
+fn another_pointer_a_second_pad_or_a_disconnect_leaves_no_stray_row() {
+    // The mouse taking over ends the row unbuilt.
+    let (mut game, mut input) = placing(BARRICADE);
+    rest_on(&mut game, &mut input, vec2(28.5, 20.5));
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::MouseMove { x: 5.0, y: 5.0 }],
+    );
+    assert_eq!(input.stroke_by(), None);
+    assert_eq!(input.placing_kind(), Some(BARRICADE));
+    feed(&mut game, &mut input, &[up(PadButton::South)]);
+    assert!(game.pending.is_empty());
+
+    // A second pad's A neither opens a row nor ends the first pad's.
+    let (mut game, mut input) = placing(BARRICADE);
+    let other = |button| RawEvent::PadDown {
+        pad: PAD + 1,
+        button,
+    };
+    rest_on(&mut game, &mut input, vec2(28.5, 20.5));
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    feed(
+        &mut game,
+        &mut input,
+        &[
+            other(PadButton::South),
+            RawEvent::PadUp {
+                pad: PAD + 1,
+                button: PadButton::South,
+            },
+        ],
+    );
+    assert!(game.pending.is_empty());
+    assert_eq!(input.stroke_by(), Some(Presser::Pad(PAD)));
+    feed(&mut game, &mut input, &[up(PadButton::South)]);
+    assert_eq!(builds(&game), [(TilePos::new(28, 20), false)]);
+
+    // A pad that goes takes its row with it.
+    let (mut game, mut input) = placing(BARRICADE);
+    rest_on(&mut game, &mut input, vec2(28.5, 20.5));
+    feed(
+        &mut game,
+        &mut input,
+        &[
+            down(PadButton::South),
+            RawEvent::PadDisconnected { pad: PAD },
+        ],
+    );
+    assert_eq!(input.stroke_by(), None);
+    assert!(game.pending.is_empty());
+}
+
+#[test]
+fn the_reticle_neither_snaps_nor_slows_while_placing() {
+    let (mut game, mut input) = placing(BARRICADE);
+    let beside = vec2(32.5, 23.9);
+    rest_on(&mut game, &mut input, beside);
+    assert_eq!(input.reticle.snap(), None, "no bracket while placing");
+    let travel = |game: &mut Game, input: &mut InputState| {
+        let from = input.reticle.ground(&game.presentation.camera);
+        feed(game, input, &[left_stick(0.5, 0.0)]);
+        frame(game, input, FRAME);
+        feed(game, input, &[left_stick(0.0, 0.0)]);
+        input.reticle.ground(&game.presentation.camera).x - from.x
+    };
+    let placing_travel = travel(&mut game, &mut input);
+
+    input.stop_placing();
+    rest_on(&mut game, &mut input, beside);
+    assert!(
+        input.reticle.snap().is_some(),
+        "premise: it snaps otherwise"
+    );
+    let snapped_travel = travel(&mut game, &mut input);
+    assert!(
+        snapped_travel < placing_travel * 0.9,
+        "{snapped_travel} slows where {placing_travel} does not"
+    );
+}
+
+/// A Sentinel at (30, 20), selected.
+fn sentinel() -> (Game, InputState, UnitId) {
+    let mut game = scene(&[(0, UnitKind::Sentinel, 30, 20)], &[]);
+    let input = pad_input(&mut game);
+    let unit = unit_at(&game, 30, 20);
+    game.presentation.selection.units = vec![unit];
+    (game, input, unit)
+}
+
+#[test]
+fn a_or_x_confirms_hunt_run_and_patrol_at_the_reticle() {
+    let (mut game, mut input, unit) = sentinel();
+    dispatch(&mut game, &mut input, Action::Hunt);
+    rest_on(&mut game, &mut input, vec2(36.5, 24.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(
+        commands(&game),
+        [Command::Hunt {
+            units: vec![unit],
+            goal: TilePos::new(36, 24),
+            queue: false,
+        }]
+    );
+    assert!(input.armed_mode().is_none(), "the order spent the mode");
+    assert_eq!(game.presentation.selection.units, vec![unit]);
+
+    let (mut game, mut input, unit) = sentinel();
+    dispatch(&mut game, &mut input, Action::Run);
+    rest_on(&mut game, &mut input, vec2(26.5, 14.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        commands(&game),
+        [Command::Run {
+            units: vec![unit],
+            goal: TilePos::new(26, 14),
+            queue: false,
+        }]
+    );
+
+    let (mut game, mut input, unit) = sentinel();
+    dispatch(&mut game, &mut input, Action::Patrol);
+    rest_on(&mut game, &mut input, vec2(36.5, 24.5));
+    press(&mut game, &mut input, PadButton::South);
+    rest_on(&mut game, &mut input, vec2(26.5, 24.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert!(game.pending.is_empty(), "waypoints collect until Patrol");
+    dispatch(&mut game, &mut input, Action::Patrol);
+    assert_eq!(
+        commands(&game),
+        [Command::Patrol {
+            units: vec![unit],
+            waypoints: vec![TilePos::new(36, 24), TilePos::new(26, 24)],
+        }]
+    );
+}
+
+#[test]
+fn a_held_left_trigger_keeps_a_targeted_order_armed() {
+    let (mut game, mut input, unit) = sentinel();
+    dispatch(&mut game, &mut input, Action::Hunt);
+    feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
+    for x in [36, 40] {
+        rest_on(&mut game, &mut input, vec2(x as f32 + 0.5, 24.5));
+        press(&mut game, &mut input, PadButton::South);
+    }
+    assert_eq!(
+        commands(&game),
+        [36, 40].map(|x| Command::Hunt {
+            units: vec![unit],
+            goal: TilePos::new(x, 24),
+            queue: true,
+        })
+    );
+    assert!(input.armed(ClickVerb::Hunt));
+}
+
+/// Loads one warhead into Spire `id` through the state's own
+/// serialization.
+fn load_warhead(game: &mut Game, id: BuildingId) {
+    let mut data = serde_json::to_value(&*game.state).expect("state serializes");
+    let spire = data["buildings"]
+        .as_array_mut()
+        .expect("buildings")
+        .iter_mut()
+        .find(|b| b["id"] == serde_json::json!(id))
+        .expect("the Spire is listed");
+    spire["magazine"]["loaded"] = 1.into();
+    *game.state = serde_json::from_value(data).expect("the loaded state loads");
+}
+
+#[test]
+fn a_launches_at_the_reticle() {
+    let mut game = scene(&[], &[(0, BuildingKind::Spire, 20, 10)]);
+    let mut input = pad_input(&mut game);
+    let spire = building_at(&game, 20, 10);
+    load_warhead(&mut game, spire);
+    game.presentation.selection.buildings = vec![spire];
+    dispatch(&mut game, &mut input, Action::Launch);
+    rest_on(&mut game, &mut input, vec2(40.5, 30.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(
+        commands(&game),
+        [Command::Launch {
+            building: spire,
+            target: TilePos::new(40, 30),
+        }]
+    );
+    assert!(input.striking.is_none(), "its one warhead is spent");
+}
+
+#[test]
+fn x_sets_a_rally_on_the_ground_or_onto_a_unit_the_reticle_reaches() {
+    let mut game = scene(
+        &[(0, UnitKind::Sentinel, 30, 20)],
+        &[(0, FABRICATOR, 20, 25)],
+    );
+    let mut input = pad_input(&mut game);
+    let fabricator = building_at(&game, 20, 25);
+    let escort = unit_at(&game, 30, 20);
+    game.presentation.selection.buildings = vec![fabricator];
+    let rallies = |game: &Game| -> Vec<Option<Rally>> {
+        game.pending
+            .iter()
+            .filter_map(|pc| match pc.command {
+                Command::SetRally { rally, .. } => Some(rally),
+                _ => None,
+            })
+            .collect()
+    };
+
+    input.rallying = vec![fabricator];
+    rest_on(&mut game, &mut input, vec2(36.5, 24.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(rallies(&game), [Some(Rally::Tile(TilePos::new(36, 24)))]);
+    assert!(input.rallying.is_empty(), "a rally takes one pick");
+
+    // Off the Sentinel's body but inside the reticle's reach, as X's
+    // contextual order reaches.
+    let reach = 24.0 / ZOOM;
+    let off = f32::midpoint(unit_pick_radius(UnitKind::Sentinel), reach);
+    assert!(unit_pick_radius(UnitKind::Sentinel) < off && off < reach);
+    game.pending.clear();
+    input.rallying = vec![fabricator];
+    rest_on(&mut game, &mut input, vec2(30.5 + off, 20.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(rallies(&game), [Some(Rally::Unit(escort))]);
+    assert_eq!(input.last_pointer, Pointer::Pad);
+}
