@@ -217,7 +217,8 @@ pub enum Stick {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PadFamily {
-    /// Xbox pads, and pads Steam Input presents in Xbox's layout.
+    /// Xbox pads, and pads Steam Input presents without saying what they
+    /// are.
     Xbox,
     /// PlayStation pads.
     PlayStation,
