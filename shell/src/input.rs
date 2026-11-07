@@ -1922,7 +1922,7 @@ pub(crate) use groups::Group;
 mod orders;
 mod pad_controls;
 mod paint;
-pub(crate) use paint::preview as paint_preview;
+pub(crate) use paint::{painting, preview as paint_preview};
 pub(crate) use select::Kept;
 pub(crate) mod reticle;
 mod select;

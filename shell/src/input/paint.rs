@@ -191,6 +191,15 @@ pub(super) fn abandon(input: &mut InputState) -> bool {
     input.pad_press.take().is_some()
 }
 
+/// Whether a paint sweep is under way, while the controller points.
+pub(crate) fn painting(input: &InputState) -> bool {
+    input.last_pointer == Pointer::Pad
+        && input
+            .pad_press
+            .as_ref()
+            .is_some_and(|press| press.sweep.is_some())
+}
+
 /// A sweep as the frame draws it.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Preview<'a> {

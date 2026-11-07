@@ -2,8 +2,8 @@
 //! feeds them, then frames of a held stick.
 
 use super::super::tests::pad_scene::{
-    FRAME, PAD, building_at, down, feed, frame, pad_input, press, push_until, rest_on, scene,
-    unit_at, units_of, up,
+    FRAME, PAD, building_at, down, feed, frame, left_stick, pad_input, press, push_until, rest_on,
+    scene, unit_at, units_of, up,
 };
 use super::*;
 use aftermine_protocol::{PadButton, RawEvent};
@@ -366,6 +366,35 @@ fn a_release_held_past_a_tap_paints_even_before_a_frame_draws_it() {
         game.presentation.selection.units,
         units_of(&game, 0, SENTINEL),
         "a hold paints both"
+    );
+}
+
+#[test]
+fn nothing_the_reticle_rests_on_slows_a_sweep() {
+    let mut game = scene(&[(0, SENTINEL, 32, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    // How far one frame of a half-pushed stick carries the reticle off the
+    // Sentinel it rests on.
+    let step = |game: &mut crate::game::Game, input: &mut InputState| {
+        let from = input.reticle.ground(&game.presentation.camera);
+        feed(game, input, &[left_stick(0.5, 0.0)]);
+        frame(game, input, 0.1);
+        feed(game, input, &[left_stick(0.0, 0.0)]);
+        input.reticle.ground(&game.presentation.camera).x - from.x
+    };
+    rest_on(&mut game, &mut input, vec2(32.5, 20.5));
+    assert!(input.reticle.snap().is_some());
+    let resting = step(&mut game, &mut input);
+    rest_on(&mut game, &mut input, vec2(32.5, 20.5));
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    input.now += TAP_SECS;
+    frame(&mut game, &mut input, 0.0);
+    assert!(painting(&input));
+    assert!(input.reticle.snap().is_some());
+    let painting_step = step(&mut game, &mut input);
+    assert!(
+        painting_step > resting * 1.9,
+        "a sweep glides at full speed: {painting_step} against {resting} at rest"
     );
 }
 
