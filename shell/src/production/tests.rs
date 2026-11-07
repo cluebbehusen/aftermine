@@ -27,7 +27,7 @@ fn factories(scrap: u32) -> Game {
 #[test]
 fn provisional_foundry_does_not_keep_production_or_the_home_target_alive() {
     let mut game = factories(500);
-    let home = game.home_foundry().unwrap().clone();
+    let home = game.view().own_foundries().next().unwrap().clone();
     let worker = game
         .state
         .units()
@@ -63,7 +63,7 @@ fn provisional_foundry_does_not_keep_production_or_the_home_target_alive() {
     game.state.validate_invariants().unwrap();
     assert!(game.state.result().is_none());
     assert!(!game.state.player(game.presentation.human).resigned);
-    assert!(game.home_foundry().is_none());
+    assert!(game.view().own_foundries().next().is_none());
     assert!(!Production::inspect(&game.view()).selected.accepts);
 }
 

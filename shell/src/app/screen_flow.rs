@@ -942,7 +942,7 @@ fn playing_frame(
         events,
         |game, input| relayout_hud(&game.view(), input, &app.config.bindings, Some(performance)),
     );
-    input::update_held(&mut app.game, &app.input, time.presentation);
+    input::update_held(&mut app.game, &mut app.input, time.presentation);
     input::update_touch(&mut app.game, &mut app.input, &app.config.bindings);
     let menu_pressed = app.input.take_menu_request();
     // The cursor telegraphs the verb: crosshair while

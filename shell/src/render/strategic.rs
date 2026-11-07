@@ -1098,10 +1098,11 @@ fn strike_marks<'a>(game: &crate::game::Scene<'a>, input: &InputState) -> Vec<St
     let state = game.state;
     let mut marks = Vec::new();
     if let Some(strike) = &input.striking {
-        // A touch aim, once down, is where it lands; else the mouse's hover.
+        // A touch aim, once down, is where it lands; else the hover point.
         let tile = strike.aim().or_else(|| {
-            (input.last_pointer == crate::input::Pointer::Mouse)
-                .then(|| crate::input::ground_tile(state, camera.to_world(input.mouse)))
+            input
+                .hover_point()
+                .map(|point| crate::input::ground_tile(state, camera.to_world(point)))
         });
         if let Some(tile) = tile {
             // The lines run from the Spires the next pick would fire.

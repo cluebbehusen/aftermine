@@ -167,7 +167,10 @@ long-press, box or card press.
 Game controllers have one adapter too. Each platform's pad API reports to `pad`,
 which applies stick dead zones, sends a stick only when it moves, and releases a
 pad's held buttons before it disconnects. Pad buttons are named by position, and
-injected pad events skip the adapter.
+injected pad events skip the adapter. In a match, a reticle at the screen's
+center is the controller's pointer. Every screen records the sticks, so a stick
+let go under a menu cannot keep the camera moving, and hover and hit tests read
+the reticle through the same `LayoutModel` as the mouse.
 
 The HUD lays out in a pure pass (`render::hud`) that measures text through a
 supplied function, so it runs headless. Each frame lays it out before input,

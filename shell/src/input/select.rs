@@ -75,7 +75,7 @@ pub(super) fn select_army(game: &mut Game, input: &mut super::InputState, in_vie
 /// Selects the next idle harvester after the current selection (id
 /// order, wrapping) and centers the camera on it. Stateless: the
 /// selection itself is the cursor.
-pub(super) fn cycle_idle_worker(game: &mut Game) {
+pub(super) fn cycle_idle_worker(game: &mut Game, input: &mut super::InputState) {
     let idle = idle_harvesters(&game.view());
     let Some(&first) = idle.first() else {
         game.presentation
@@ -94,8 +94,8 @@ pub(super) fn cycle_idle_worker(game: &mut Game) {
     game.presentation.selection.units = vec![next];
     game.presentation.selection.buildings.clear();
     let unit = game.state.unit(next).expect("listed above");
-    game.presentation.camera.center = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
-    game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+    let at = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
+    super::reticle::look_at(game, input, at);
 }
 
 /// World-space pick radius around a unit: never below the unit's own
@@ -105,13 +105,18 @@ fn pick_radius(game: &Game, ui: f32, kind: aftermine_sim::UnitKind, pointer: Poi
     let reach = match pointer {
         Pointer::Mouse => 10.0,
         Pointer::Touch => 22.0,
+        Pointer::Pad => PAD_REACH,
     };
     (reach * ui / game.presentation.camera.zoom).max(super::unit_pick_radius(kind))
 }
 
+/// Logical pixels around the reticle that it snaps across: a stick aims
+/// far less finely than a mouse.
+const PAD_REACH: f32 = 24.0;
+
 /// What a press would select.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Picked {
+pub(crate) enum Picked {
     Unit(UnitId, aftermine_sim::PlayerId),
     Building(aftermine_sim::BuildingId, aftermine_sim::PlayerId),
 }
@@ -155,10 +160,31 @@ pub(super) fn pick(game: &Game, screen: Vec2, ui: f32, pointer: Pointer) -> Opti
     // buildings are always inside shared team sight anyway, but ally
     // sites are blind until built, and selecting one through fog would
     // leak its live kind and hp through the panel.
-    game.state
+    let under = game
+        .state
         .buildings_at(tile)
-        .find(|b| selectable_building(game, b))
-        .map(|b| Picked::Building(b.id, b.player))
+        .find(|b| selectable_building(game, b));
+    if let Some(b) = under {
+        return Some(Picked::Building(b.id, b.player));
+    }
+    // The reticle also snaps onto a structure whose footprint lies in reach.
+    if pointer != Pointer::Pad {
+        return None;
+    }
+    let reach = PAD_REACH * ui / game.presentation.camera.zoom;
+    game.state
+        .buildings()
+        .iter()
+        .filter(|b| selectable_building(game, b))
+        .filter_map(|b| {
+            let (w, h) = b.kind.size();
+            let min = vec2(b.anchor.x as f32, b.anchor.y as f32);
+            let max = min + vec2(w as f32, h as f32);
+            let distance = world.clamp(min, max).distance(world);
+            (distance <= reach).then_some((b.player != game.presentation.human, distance, b))
+        })
+        .min_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).expect("finite"))
+        .map(|(_, _, b)| Picked::Building(b.id, b.player))
 }
 
 /// Whether HUD chrome swallows a click at `screen`, per the published

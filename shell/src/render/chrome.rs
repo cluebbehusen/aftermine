@@ -6,7 +6,7 @@
 use super::*;
 use crate::numeric;
 use crate::numeric::Fit;
-use crate::render::prim::{fill_rect, line_between, stroke_rect};
+use crate::render::prim::{fill_circle, fill_rect, line_between, stroke_circle, stroke_rect};
 use crate::theme::TEXT_ACCENT;
 
 /// The paused status names the pause key where one exists. A
@@ -482,11 +482,69 @@ fn draw_pause_button(rect: Rect, paused: bool, s: f32) {
     }
 }
 
-/// Where the cursor hovers: only while the mouse is the pointer in use,
-/// never at a stale point on a touch device.
+/// Where the pointer in use hovers: the mouse or the reticle, never a
+/// stale point on a touch device.
 pub(super) fn hover_point(input: &InputState) -> Option<Vec2> {
-    (input.touches.is_empty() && input.last_pointer == crate::input::Pointer::Mouse)
-        .then_some(input.mouse)
+    input.hover_point()
+}
+
+/// The controller's reticle, while a controller is the pointer: a ring with
+/// four ticks, which closes into brackets around the unit or structure it
+/// has snapped onto. A dark under-stroke keeps it legible on pale ground.
+pub(crate) fn draw_reticle(game: &crate::game::Scene<'_>, input: &InputState, alpha: f32) {
+    if input.last_pointer != crate::input::Pointer::Pad {
+        return;
+    }
+    let s = ui_scale();
+    let camera = &game.presentation.camera;
+    let shade = Color::new(0.05, 0.05, 0.07, 0.6);
+    let frame = input.reticle.snap().and_then(|snap| match snap {
+        crate::input::reticle::Picked::Unit(id, _) => {
+            let unit = game.state.unit(id)?;
+            let at = camera.to_screen(game.presentation.draw_pos(id, unit.pos, alpha));
+            let radius = crate::input::unit_pick_radius(unit.kind) * camera.zoom;
+            Some((at, Vec2::splat(radius)))
+        }
+        crate::input::reticle::Picked::Building(id, _) => {
+            let building = game.state.building(id)?;
+            let (w, h) = building.kind.size();
+            let min = vec2(building.anchor.x as f32, building.anchor.y as f32);
+            let a = camera.to_screen(min);
+            let b = camera.to_screen(min + vec2(w as f32, h as f32));
+            Some(((a + b) * 0.5, (b - a) * 0.5))
+        }
+    });
+    let point = input.reticle.point();
+    for (thickness, color) in [(3.5 * s, shade), (1.5 * s, BONE)] {
+        if let Some((center, half)) = frame {
+            // Brackets a little outside the target, each arm a third of
+            // the shorter side.
+            let half = half + Vec2::splat(4.0 * s);
+            let arm = (half.min_element() * 0.66).max(5.0 * s);
+            for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+                let corner = center + vec2(sx * half.x, sy * half.y);
+                line_between(corner, corner - vec2(sx * arm, 0.0), thickness, color);
+                line_between(corner, corner - vec2(0.0, sy * arm), thickness, color);
+            }
+            fill_circle(point, thickness, color);
+        } else {
+            let radius = 11.0 * s;
+            stroke_circle(point, radius, thickness, color);
+            for dir in [
+                vec2(1.0, 0.0),
+                vec2(-1.0, 0.0),
+                vec2(0.0, 1.0),
+                vec2(0.0, -1.0),
+            ] {
+                line_between(
+                    point + dir * (radius - 4.0 * s),
+                    point + dir * (radius + 5.0 * s),
+                    thickness,
+                    color,
+                );
+            }
+        }
+    }
 }
 
 /// Hovered salvage says what it holds, by the same fog rule as the

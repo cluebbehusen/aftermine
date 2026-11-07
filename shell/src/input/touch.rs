@@ -465,7 +465,7 @@ pub(super) fn up(
                     // fingertip too — it sits in the top
                     // bar, which the bare-chrome swallow
                     // below would otherwise eat.
-                    cycle_idle_worker(game);
+                    cycle_idle_worker(game, input);
                 } else if let Some(reach) = lifted.army.filter(|reach| {
                     crate::layout::army_button_under(&layout, p, Some(input.ui)) == Some(*reach)
                 }) {

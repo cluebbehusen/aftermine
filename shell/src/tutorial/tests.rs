@@ -432,7 +432,12 @@ fn the_coach_stops_pricing_a_machine_once_it_is_paid_for() {
         tutorial(&game).coach(&game),
         Some(CoachLine::Status(_))
     ));
-    let foundry = game.home_foundry().expect("the lesson's Foundry").id;
+    let foundry = game
+        .view()
+        .own_foundries()
+        .next()
+        .expect("the lesson's Foundry")
+        .id;
     step(
         &mut game,
         [Command::Train {
@@ -474,7 +479,12 @@ fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
     let mut game = Game::with_viewport(scene, vec2(1280.0, 800.0)).unwrap();
     game.tutorial = begin(Lesson::Scrap).tutorial;
     tutorial_mut(&mut game).step = 1;
-    let foundry = game.home_foundry().expect("the lesson's Foundry").id;
+    let foundry = game
+        .view()
+        .own_foundries()
+        .next()
+        .expect("the lesson's Foundry")
+        .id;
     step(
         &mut game,
         [Command::Train {
@@ -686,7 +696,12 @@ fn hand_over(scene: &mut Scenario, lost: impl Fn(UnitKind) -> bool) {
 /// spending it on Surveyors as it arrives. They neither fight nor collect,
 /// so only the slow income floor is left.
 fn spend_recovery(game: &mut Game) {
-    let foundry = game.home_foundry().expect("the lesson's Foundry").id;
+    let foundry = game
+        .view()
+        .own_foundries()
+        .next()
+        .expect("the lesson's Foundry")
+        .id;
     let surveyor = UnitKind::Surveyor.stats().cost;
     for _ in 0..SOLVE_TICKS {
         if matches!(
@@ -843,7 +858,7 @@ fn open_ground(game: &Game, kind: BuildingKind) -> Option<TilePos> {
         .filter(|_| !kind.base_stats().weapons.is_empty());
     let home = match raid {
         Some(tile) => tile,
-        None => TilePos::containing(game.home_foundry()?.center()),
+        None => TilePos::containing(game.view().own_foundries().next()?.center()),
     };
     let map = game.state.map();
     (0..map.height())

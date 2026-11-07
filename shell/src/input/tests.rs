@@ -603,7 +603,7 @@ fn training_skips_a_selected_nonproducer_before_the_factory() {
         .find(|building| building.kind == aftermine_sim::BuildingKind::Turret)
         .unwrap()
         .id;
-    let foundry = game.home_foundry().unwrap().id;
+    let foundry = game.view().own_foundries().next().unwrap().id;
     game.presentation.selection.buildings = vec![turret, foundry];
 
     super::orders::train(&mut game, 0);
@@ -630,7 +630,7 @@ fn training_uses_the_first_selected_factory_that_supports_the_slot() {
         });
     let mut game =
         Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("crucible fixture builds");
-    let foundry = game.home_foundry().unwrap().id;
+    let foundry = game.view().own_foundries().next().unwrap().id;
     let crucible = game
         .state
         .buildings()
@@ -4520,13 +4520,13 @@ fn only_the_mouse_edge_pans() {
     input.mouse = vec2(game.presentation.camera.viewport().x, 400.0);
     input.last_pointer = Pointer::Touch;
     let before = game.presentation.camera.center;
-    update_held(&mut game, &input, 0.5);
+    update_held(&mut game, &mut input, 0.5);
     assert_eq!(
         game.presentation.camera.center, before,
         "a finger leaves the mouse point stale"
     );
     input.last_pointer = Pointer::Mouse;
-    update_held(&mut game, &input, 0.5);
+    update_held(&mut game, &mut input, 0.5);
     assert_ne!(game.presentation.camera.center, before);
 }
 
@@ -7670,7 +7670,8 @@ fn group_recall_from_production_or_construction_never_purchases_anything() {
     controls_key(&mut game, &mut input, Key::Num1);
     apply_events(&mut game, &mut input, &[key_up(Key::Ctrl)]);
     game.presentation.selection.units.clear();
-    game.presentation.selection.buildings = vec![game.home_foundry().unwrap().id];
+    let foundry = game.view().own_foundries().next().unwrap().id;
+    game.presentation.selection.buildings = vec![foundry];
     controls_key(&mut game, &mut input, Key::Num1);
     assert_eq!(game.presentation.selection.units, vec![worker]);
     assert!(game.presentation.selection.buildings.is_empty());
@@ -7805,7 +7806,7 @@ fn upgrade_and_rally_shortcuts_share_the_cards_owner_and_affordability_gates() {
     game.presentation.selection.buildings = vec![enemy];
     controls_key_with(&mut game, &mut input, &bindings, Key::I);
     assert!(game.pending.is_empty());
-    let foundry = game.home_foundry().unwrap().id;
+    let foundry = game.view().own_foundries().next().unwrap().id;
     game.presentation.selection.buildings = vec![foundry];
     controls_key_with(&mut game, &mut input, &bindings, Key::Y);
     assert_eq!(input.rallying, vec![foundry]);
