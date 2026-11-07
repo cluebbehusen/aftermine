@@ -313,9 +313,9 @@ impl Screen {
             Self::Pause(pause) => pause.keyboard(),
             Self::Lobby { screen, .. } => screen.keyboard(),
             Self::Settings { screen, .. } => screen.keyboard(),
-            Self::Wizard(wizard) => wizard.keyboard(),
             Self::ColdOpen(_)
             | Self::Home(_)
+            | Self::Wizard(_)
             | Self::Codex { .. }
             | Self::Lessons { .. }
             | Self::Playing
@@ -340,9 +340,9 @@ impl Screen {
             Self::Pause(pause) => pause.take_keyboard_request(),
             Self::Lobby { screen, .. } => screen.take_keyboard_request(),
             Self::Settings { screen, .. } => screen.take_keyboard_request(),
-            Self::Wizard(wizard) => wizard.take_keyboard_request(),
             Self::ColdOpen(_)
             | Self::Home(_)
+            | Self::Wizard(_)
             | Self::Codex { .. }
             | Self::Lessons { .. }
             | Self::Playing

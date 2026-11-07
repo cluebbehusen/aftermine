@@ -15,6 +15,11 @@ use std::path::PathBuf;
 /// defaults rather than guessing.
 const CONFIG_VERSION: u32 = 1;
 
+/// The names a player goes by until they give one, one per installation.
+const DEFAULT_NAMES: [&str; 10] = [
+    "Anvil", "Canary", "Flint", "Gravel", "Hopper", "Ingot", "Lantern", "Nickel", "Rivet", "Shale",
+];
+
 /// Optional player-facing frame timing, independent of the debug overlay.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -308,12 +313,13 @@ pub struct Config {
     pub touch: TouchPrefs,
     /// The host address the last LAN join used.
     pub last_join_address: Option<String>,
-    /// The name other players see and that replaces the player's seat
-    /// name; unset until the player first gives one.
+    /// The name the player gave, which other players see and which
+    /// replaces the player's seat name; unset until they give one, and
+    /// [`Config::name`] stands in a default meanwhile.
     pub player_name: Option<String>,
     /// This installation's identifier as hex, sent only to hosts it joins
-    /// so a resumed match can seat the player again; made up the first
-    /// time it is needed.
+    /// so a resumed match can seat the player again. It also picks the
+    /// default name, so the launch makes it up once outside automation.
     pub install_id: Option<String>,
     /// The Basic Training lessons this player has finished, in course
     /// order.
@@ -416,6 +422,41 @@ impl Config {
             .filter(|id| aftermine_net::InstallId::from_hex(id).is_some());
         self.lessons_done = in_course_order(&self.lessons_done);
         self
+    }
+
+    /// The name the player goes by: the one they gave, or else this
+    /// installation's default, so nothing waits on typing. The default is
+    /// never stored as theirs, so it never syncs over a name given on
+    /// another device.
+    pub fn name(&self) -> aftermine_net::PlayerName {
+        self.player_name
+            .as_deref()
+            .and_then(|name| aftermine_net::PlayerName::new(name).ok())
+            .unwrap_or_else(|| self.default_name())
+    }
+
+    /// This installation's default name, picked by its install ID; the
+    /// first one while it has none, as an automation run does until it
+    /// joins a lobby.
+    fn default_name(&self) -> aftermine_net::PlayerName {
+        let pick = self
+            .install_id
+            .as_deref()
+            .and_then(|hex| u128::from_str_radix(hex, 16).ok())
+            .map_or(0, |bits| bits % DEFAULT_NAMES.len() as u128);
+        let name = DEFAULT_NAMES[usize::try_from(pick).unwrap_or_default()];
+        aftermine_net::PlayerName::new(name).expect("default names are valid")
+    }
+
+    /// Keeps `name` as the player's own unless it is the name they already
+    /// go by, so confirming a default leaves it a default; whether it
+    /// changed.
+    pub fn set_name(&mut self, name: &aftermine_net::PlayerName) -> bool {
+        if *name == self.name() {
+            return false;
+        }
+        self.player_name = Some(name.to_string());
+        true
     }
 
     /// This installation's identifier, made up on first use; the caller

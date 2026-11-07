@@ -55,19 +55,15 @@ fn start_lesson(app: &mut App, lesson: Lesson) -> Result<Screen> {
     Ok(Screen::Playing)
 }
 
-/// Builds Basic Training's first match under the player's saved name.
+/// Builds Basic Training's first match under the player's name.
 /// Like a New Match launch, a successful build spends one window of fresh
 /// personality seeds.
 fn first_match_game(
     config: &config::Config,
     personality_seeds: &mut PersonalitySeedSource,
 ) -> Result<Game> {
-    let name = config
-        .player_name
-        .as_deref()
-        .and_then(|name| aftermine_net::PlayerName::new(name).ok());
     let game = Game::new(crate::tutorial::first_match(
-        name,
+        Some(config.name()),
         personality_seeds.match_base(),
     )?)?;
     personality_seeds.commit_launch();
@@ -422,7 +418,7 @@ fn lobby_frame(
         crate::screens::lobby::Out::Leave => return *back,
         crate::screens::lobby::Out::Join { name, address } => {
             app.config.last_join_address = Some(address.clone());
-            app.config.player_name = Some(name.to_string());
+            app.config.set_name(&name);
             let install = app.config.install_id();
             if let Err(err) = app.save_settings() {
                 app.notify_failure("Could not save settings", err);
@@ -588,11 +584,8 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         let address = app.config.last_join_address.as_deref().unwrap_or_default();
         Screen::Lobby {
             screen: Box::new(
-                crate::screens::lobby::LobbyScreen::join(
-                    app.config.player_name.as_deref(),
-                    address,
-                )
-                .discovering(),
+                crate::screens::lobby::LobbyScreen::join(app.config.name().as_str(), address)
+                    .discovering(),
             ),
             back: Box::new(Screen::Home(home)),
         }
@@ -709,11 +702,7 @@ fn lessons_frame(
 }
 
 fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut bool) -> Screen {
-    app.draft.player_name = app
-        .config
-        .player_name
-        .as_deref()
-        .and_then(|name| aftermine_net::PlayerName::new(name).ok());
+    app.draft.player_name = Some(app.config.name());
     // A hosting setup screen runs its lobby before input, like every lobby.
     let resuming = w.resuming();
     if let Some((game, link)) = w.poll_lan(&mut app.draft, app.clock.elapsed()) {
@@ -749,12 +738,6 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
             WizardOut::Stay
         }
     };
-    if let Some(name) = w.take_saved_name() {
-        app.config.player_name = Some(name.to_string());
-        if let Err(err) = app.save_settings() {
-            app.notify_failure("Could not save settings", err);
-        }
-    }
     let mut next: Option<Screen> = None;
     drop(input_scope);
     let hosted = out == WizardOut::Launch && w.hosting_players();
@@ -815,7 +798,7 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
         match w.step {
             WizardStep::Map => w.browser.draw(&app.sprites, &w.entries, &mut app.previews),
             WizardStep::Setup => {
-                w.draw_setup(&app.sprites, &app.draft, &mut app.previews, app.input.mouse);
+                w.draw_setup(&app.sprites, &app.draft, &mut app.previews);
             }
         }
         crate::button::draw_back(app.input.mouse);

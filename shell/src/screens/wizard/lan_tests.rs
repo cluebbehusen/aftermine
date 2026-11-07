@@ -402,46 +402,13 @@ fn leaving_or_going_local_with_players_asks_first() {
 }
 
 #[test]
-fn hosting_without_a_name_asks_for_one_and_saves_it() {
+fn switching_to_lan_opens_the_lobby_at_once() {
     let (mut w, mut draft) = hosting();
     w.close_lan(&mut draft);
-    draft.player_name = None;
     w.on_switch = true;
     drive(&mut w, &mut draft, Key::Enter);
-    assert_eq!(w.mode_name(), "player_name");
-    assert_eq!(w.keyboard(), Some(Keyboard::Text));
-    let typed: Vec<RawEvent> = "Riley".chars().map(|ch| RawEvent::Text { ch }).collect();
-    w.update(&typed, &mut vec2(0.0, 0.0), &mut draft, &mut Vec::new())
-        .unwrap();
-    drive(&mut w, &mut draft, Key::Enter);
-    assert_eq!(w.take_saved_name(), Some(name("Riley")));
-    assert_eq!(w.take_saved_name(), None);
-    assert_eq!(draft.player_name, Some(name("Riley")));
-    assert!(w.lan.is_some(), "the lobby opens once named");
-    assert_eq!(w.keyboard(), None);
-
-    w.close_lan(&mut draft);
-    draft.player_name = None;
-    w.on_switch = true;
-    drive(&mut w, &mut draft, Key::Enter);
-    drive(&mut w, &mut draft, Key::Escape);
-    assert!(w.lan.is_none(), "cancelling the name stays local");
-
-    // The corner Back closes the name box, as Escape does.
-    w.on_switch = true;
-    drive(&mut w, &mut draft, Key::Enter);
-    assert_eq!(w.mode_name(), "player_name");
-    let out = w
-        .update(
-            &crate::button::press_back(true),
-            &mut vec2(0.0, 0.0),
-            &mut draft,
-            &mut Vec::new(),
-        )
-        .unwrap();
-    assert_eq!(out, Out::Stay);
-    assert_eq!(w.mode_name(), "match_setup", "Back stays on setup");
-    assert!(w.lan.is_none());
+    assert!(w.lan.is_some(), "nothing stops to ask for a name");
+    assert_eq!(w.mode_name(), "match_setup");
 }
 
 #[test]

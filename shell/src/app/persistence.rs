@@ -515,12 +515,8 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                         *busy.back,
                     ));
                 }
-                // The lobby opens at once, under the player's saved name.
-                app.draft.player_name = app
-                    .config
-                    .player_name
-                    .as_deref()
-                    .and_then(|name| aftermine_net::PlayerName::new(name).ok());
+                // The lobby opens at once, under the player's name.
+                app.draft.player_name = Some(app.config.name());
                 return Ok(Screen::Wizard(screens::wizard::Wizard::resume(
                     *save,
                     &mut app.draft,
