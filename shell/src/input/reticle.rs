@@ -110,7 +110,7 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec
     // A paint sweep wants an even stroke, so nothing it passes slows it.
     let painting = super::paint::painting(input);
     let ui = input.ui;
-    let (left, right) = input.sticks();
+    let (left, right) = input.camera_sticks();
     // A stick held since a menu was up moves the camera too, so it makes
     // the pad the pointer even though the match never saw it move.
     if left != Vec2::ZERO || right != Vec2::ZERO {

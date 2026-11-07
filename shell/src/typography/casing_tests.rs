@@ -49,6 +49,7 @@ const LABELS: &[&str] = &[
     "BAL",
     "BUILD",
     "BUILT",
+    "COMMANDS",
     "EARNED",
     "CONSTRUCTION",
     "CONTROLLER",

@@ -1282,17 +1282,16 @@ pub(crate) fn unit_portrait(
     ]
 }
 
-/// Draws the command panel band laid out by [`layout_panel`].
-#[expect(clippy::too_many_lines, reason = "draws the whole selection panel")]
-pub(crate) fn draw_panel(
+/// A card's face drawn in `dest`, tinted by `tint` and wearing `owner`'s
+/// color: its sprite, or an order chip's subject under its verb badge.
+pub(crate) fn draw_card_icon(
     sprites: &Sprites,
-    input: &InputState,
-    bindings: &crate::action::BindingMap,
-    panel: &crate::panel::Panel,
-    layout: &PanelLayout,
+    dest: Rect,
+    icon: &crate::panel::CardIcon,
+    tint: Color,
+    owner: Color,
 ) {
-    use crate::panel::{CardAction, CardIcon};
-    let s = ui_scale();
+    use crate::panel::CardIcon;
     let blit = |dest: Rect, source: Rect, tint: Color| {
         sprites.draw_canvas(dest, &[(source, tint)]);
     };
@@ -1308,84 +1307,95 @@ pub(crate) fn draw_panel(
     // (translucent under a scaffold while its site is still rising) and
     // the verb as a corner badge on a dark plate, so the pictogram never
     // dissolves into the hull beneath it. Every other icon is one sprite.
-    let draw_icon = |dest: Rect, icon: &CardIcon, tint: Color| {
-        let CardIcon::Order {
-            subject,
-            verb,
-            ghost,
-        } = icon
-        else {
-            match icon {
-                CardIcon::Unit(kind) => {
-                    sprites.draw_portrait(dest, &unit_layers(*kind, tint, panel.owner));
-                }
-                CardIcon::Building(kind, tier) => {
-                    sprites.draw_portrait(
-                        dest,
-                        &building_layers(*kind, *tier, true, tint, panel.owner),
-                    );
-                }
-                CardIcon::Round(kind) => {
-                    let layers = sprites.round(*kind).map_or_else(
-                        || building_layers(*kind, 0, true, tint, panel.owner),
-                        |[body, accent]| vec![(body, tint), (accent, shade(panel.owner, tint))],
-                    );
-                    sprites.draw_portrait(dest, &layers);
-                }
-                CardIcon::Verb(v) => blit(dest, sprites.verb_icon(*v), tint),
-                CardIcon::Salvage { wreck } => blit(
-                    dest,
-                    if *wreck {
-                        sprites.wreck_pile()
-                    } else {
-                        sprites.scrap(
-                            aftermine_sim::stats::SCRAP_NODE_AMOUNT,
-                            aftermine_sim::stats::SCRAP_NODE_AMOUNT,
-                        )
-                    },
-                    tint,
-                ),
-                CardIcon::Order { verb, .. } => blit(dest, sprites.verb_icon(*verb), tint),
+    let CardIcon::Order {
+        subject,
+        verb,
+        ghost,
+    } = icon
+    else {
+        match icon {
+            CardIcon::Unit(kind) => {
+                sprites.draw_portrait(dest, &unit_layers(*kind, tint, owner));
             }
-            return;
-        };
-        let hull = if *ghost {
-            Color::new(tint.r, tint.g, tint.b, tint.a * 0.7)
-        } else {
-            tint
-        };
-        let mut layers = match subject {
-            crate::panel::OrderSubject::Unit(kind, owner) => unit_layers(*kind, hull, *owner),
-            crate::panel::OrderSubject::Building(kind, tier, owner) => {
-                building_layers(*kind, *tier, !*ghost, hull, *owner)
+            CardIcon::Building(kind, tier) => {
+                sprites.draw_portrait(dest, &building_layers(*kind, *tier, true, tint, owner));
             }
-        };
-        if *ghost {
-            // Scaffold and subject share their authored canvas, including its margins.
-            layers.push((
-                sprites.scaffold(false),
-                Color::new(tint.r, tint.g, tint.b, tint.a * 0.45),
-            ));
-            sprites.draw_canvas(dest, &layers);
-        } else {
-            sprites.draw_portrait(dest, &layers);
+            CardIcon::Round(kind) => {
+                let layers = sprites.round(*kind).map_or_else(
+                    || building_layers(*kind, 0, true, tint, owner),
+                    |[body, accent]| vec![(body, tint), (accent, shade(owner, tint))],
+                );
+                sprites.draw_portrait(dest, &layers);
+            }
+            CardIcon::Verb(v) => blit(dest, sprites.verb_icon(*v), tint),
+            CardIcon::Salvage { wreck } => blit(
+                dest,
+                if *wreck {
+                    sprites.wreck_pile()
+                } else {
+                    sprites.scrap(
+                        aftermine_sim::stats::SCRAP_NODE_AMOUNT,
+                        aftermine_sim::stats::SCRAP_NODE_AMOUNT,
+                    )
+                },
+                tint,
+            ),
+            CardIcon::Order { verb, .. } => blit(dest, sprites.verb_icon(*verb), tint),
         }
-        let badge = dest.w * 0.44;
-        let plate = Rect::new(
-            dest.x + dest.w - badge,
-            dest.y + dest.h - badge,
-            badge,
-            badge,
-        );
-        let base = crate::theme::ICON_PLATE;
-        fill_rect(
-            plate,
-            Color {
-                a: base.a * tint.a,
-                ..base
-            },
-        );
-        blit(plate, sprites.verb_icon(*verb), tint);
+        return;
+    };
+    let hull = if *ghost {
+        Color::new(tint.r, tint.g, tint.b, tint.a * 0.7)
+    } else {
+        tint
+    };
+    let mut layers = match subject {
+        crate::panel::OrderSubject::Unit(kind, owner) => unit_layers(*kind, hull, *owner),
+        crate::panel::OrderSubject::Building(kind, tier, owner) => {
+            building_layers(*kind, *tier, !*ghost, hull, *owner)
+        }
+    };
+    if *ghost {
+        // Scaffold and subject share their authored canvas, including its margins.
+        layers.push((
+            sprites.scaffold(false),
+            Color::new(tint.r, tint.g, tint.b, tint.a * 0.45),
+        ));
+        sprites.draw_canvas(dest, &layers);
+    } else {
+        sprites.draw_portrait(dest, &layers);
+    }
+    let badge = dest.w * 0.44;
+    let plate = Rect::new(
+        dest.x + dest.w - badge,
+        dest.y + dest.h - badge,
+        badge,
+        badge,
+    );
+    let base = crate::theme::ICON_PLATE;
+    fill_rect(
+        plate,
+        Color {
+            a: base.a * tint.a,
+            ..base
+        },
+    );
+    blit(plate, sprites.verb_icon(*verb), tint);
+}
+
+/// Draws the command panel band laid out by [`layout_panel`].
+#[expect(clippy::too_many_lines, reason = "draws the whole selection panel")]
+pub(crate) fn draw_panel(
+    sprites: &Sprites,
+    input: &InputState,
+    bindings: &crate::action::BindingMap,
+    panel: &crate::panel::Panel,
+    layout: &PanelLayout,
+) {
+    use crate::panel::{CardAction, CardIcon};
+    let s = ui_scale();
+    let draw_icon = |dest: Rect, icon: &CardIcon, tint: Color| {
+        draw_card_icon(sprites, dest, icon, tint, panel.owner);
     };
 
     let selection = match layout {
@@ -2073,6 +2083,39 @@ pub(crate) fn draw_panel_tooltip(game: &crate::game::Scene<'_>, input: &InputSta
         ),
         None => (r, TooltipSide::Above),
     };
+    let comparison = matches!(card.action, crate::panel::CardAction::Upgrade)
+        .then_some(panel.info.upgrade.as_ref())
+        .flatten();
+    // The box fits between the top bar and the band so it never covers
+    // the command cards.
+    let bounds = vec2(
+        screen_width(),
+        if matches!(side, TooltipSide::Above) {
+            anchor.y
+        } else if layout.panel_regions[1].w > 0.0 {
+            layout.panel_regions[1].y
+        } else {
+            screen_height()
+        },
+    );
+    draw_card_tooltip(
+        card,
+        comparison,
+        (400.0 * s).min(screen_width() - 40.0 * s),
+        |size| crate::layout::tooltip_origin(anchor, size, side, bounds, layout.top_bar_h, 6.0 * s),
+    );
+}
+
+/// A card's tooltip: name and hotkey, cost, description, an upgrade's
+/// before and after, and why a disabled card refuses. Its lines wrap at
+/// `wrap_w`, and `place` turns the box's size into its top-left corner.
+pub(crate) fn draw_card_tooltip(
+    card: &crate::panel::Card,
+    comparison: Option<&crate::panel::UpgradeComparison>,
+    wrap_w: f32,
+    place: impl FnOnce(Vec2) -> Vec2,
+) {
+    let s = ui_scale();
     let mut lines: Vec<(String, Color)> = Vec::new();
     let header = if card.hotkey.is_empty() {
         card.title.clone()
@@ -2084,14 +2127,8 @@ pub(crate) fn draw_panel_tooltip(game: &crate::game::Scene<'_>, input: &InputSta
         lines.push((format!("{cost} scrap"), SCRAP_COLOR));
     }
     let intro_lines = lines.len();
-    let comparison = matches!(card.action, crate::panel::CardAction::Upgrade)
-        .then_some(panel.info.upgrade.as_ref())
-        .flatten();
     let size = crate::theme::Type::Body.at(s);
     let pad = 12.0 * s;
-    // The box wraps descriptions at a reading width, capped by the
-    // window, instead of growing to the longest line.
-    let wrap_w = (400.0 * s).min(screen_width() - 40.0 * s);
     for d in &card.desc {
         for line in crate::render::wrap_words(
             d,
@@ -2128,25 +2165,7 @@ pub(crate) fn draw_panel_tooltip(game: &crate::game::Scene<'_>, input: &InputSta
     let line_h = 22.0 * s;
     let table_height = comparison.map_or(0.0, |c| (c.rows.len() + 2) as f32 * line_h);
     let height = lines.len() as f32 * line_h + table_height + pad * 1.5;
-    // The box fits between the top bar and the band so it never covers
-    // the command cards.
-    let origin = crate::layout::tooltip_origin(
-        anchor,
-        vec2(width, height),
-        side,
-        vec2(
-            screen_width(),
-            if matches!(side, TooltipSide::Above) {
-                anchor.y
-            } else if layout.panel_regions[1].w > 0.0 {
-                layout.panel_regions[1].y
-            } else {
-                screen_height()
-            },
-        ),
-        layout.top_bar_h,
-        6.0 * s,
-    );
+    let origin = place(vec2(width, height));
     let (x, y) = (origin.x, origin.y);
     draw_rectangle(x, y, width, height, crate::theme::SURFACE_CARD);
     stroke_rect(

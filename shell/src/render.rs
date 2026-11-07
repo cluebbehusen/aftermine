@@ -107,6 +107,7 @@ mod panel_layout;
 mod performance;
 mod pits;
 pub(crate) mod prim;
+mod radial;
 mod roc;
 pub(crate) mod sky;
 mod strategic;
@@ -598,6 +599,9 @@ pub(crate) fn draw_with_performance(
         draw_result_overlay(game, sprites);
         draw_panel_tooltip(game, input);
         chrome::draw_army_tooltip(game, input, bindings);
+        if let Some(ring) = &hud.ring {
+            radial::draw(sprites, ring);
+        }
     });
 }
 

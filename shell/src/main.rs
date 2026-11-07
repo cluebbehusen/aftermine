@@ -52,6 +52,7 @@ mod platform;
 mod presentation_animation;
 mod press;
 mod production;
+mod radial;
 mod rejoin_ticket;
 mod render;
 mod rocket_audio;

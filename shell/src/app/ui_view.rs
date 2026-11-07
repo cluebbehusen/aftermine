@@ -82,6 +82,18 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
         ),
         None => (None, None, Vec::new(), None, None),
     };
+    // Over a match, the controller's command ring is the menu that owns
+    // the pad: its heading, its slices, and the one the stick points at.
+    let (title, selected, items, visible_range) = match (screen.kind() == ScreenKind::Playing)
+        .then(|| command_ring(app))
+        .flatten()
+    {
+        Some((heading, pointed, slices)) => {
+            let shown = [0, slices.len()];
+            (Some(heading), pointed, slices, Some(shown))
+        }
+        None => (title, selected, items, visible_range),
+    };
     UiView {
         mode: mode_name.to_string(),
         title,
@@ -127,4 +139,17 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
             ]
         }),
     }
+}
+
+/// The open command ring as the automation surface reports it: its
+/// heading, the slice the stick points at, and every slice's name.
+fn command_ring(app: &App) -> Option<(String, Option<usize>, Vec<String>)> {
+    let ring = crate::input::pad_ring::current(&app.game.view(), &app.input)?;
+    let pointed = app.input.ring.as_ref()?.pointed(&ring);
+    let names = ring
+        .slices
+        .iter()
+        .map(|slice| slice.card.title.clone())
+        .collect();
+    Some((ring.heading, pointed, names))
 }

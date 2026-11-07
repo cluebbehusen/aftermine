@@ -462,7 +462,10 @@ pub struct CameraView {
 /// screen the same way, and `[0, 0]` when the window shows none —
 /// distinct from `None`, which means the mode has no menu at all.
 /// Gameplay has no active menu and reports `None` for the
-/// menu-specific fields.
+/// menu-specific fields, except while a controller's command ring is
+/// open: then `title` is the ring's heading, `items` its slices in order
+/// clockwise from the top, and `selected` the slice the stick points at,
+/// absent until it points at one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UiView {
     /// Stable snake-case mode name, such as `main_menu` or `playing`.

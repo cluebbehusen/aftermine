@@ -496,7 +496,8 @@ pub(super) fn hover_point(input: &InputState) -> Option<Vec2> {
 /// Only the live match draws it, over everything as a cursor is: the same
 /// input state reaches the backdrops behind menus and the replay viewer.
 pub(crate) fn draw_reticle(game: &crate::game::Scene<'_>, input: &InputState) {
-    if input.last_pointer != crate::input::Pointer::Pad {
+    // An open ring's hub stands where the reticle would.
+    if input.last_pointer != crate::input::Pointer::Pad || input.ring.is_some() {
         return;
     }
     let alpha = game.clock.render_alpha();

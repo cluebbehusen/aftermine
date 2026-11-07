@@ -9,6 +9,7 @@
 
 pub(crate) mod info;
 mod upgrade;
+pub(crate) use upgrade::UpgradeComparison;
 
 use crate::action::{Action, BindingMap};
 use crate::bot_label::{BotLabelStyle, bot_label};
@@ -191,6 +192,7 @@ impl CardAction {
 }
 
 /// One button (or display chip) on the panel.
+#[derive(Clone)]
 pub struct Card {
     /// Face of the card.
     pub icon: CardIcon,
@@ -322,6 +324,10 @@ pub struct Panel {
     /// A lone host's drones on order, in their own column beside the
     /// orders dock; absent while it has none.
     pub drones: Option<DroneColumn>,
+    /// Return cargo and Stop as they stand while the selection has no
+    /// use for them: disabled and never drawn on the panel, but held so a
+    /// command ring keeps their places as they come and go.
+    pub(crate) absent: Vec<Card>,
 }
 
 /// The drones a host has on order: one chip each, the one building
@@ -1272,6 +1278,7 @@ fn strip_hotkeys(panel: &mut Panel) {
         .iter_mut()
         .chain(&mut panel.cards)
         .chain(&mut panel.queue)
+        .chain(&mut panel.absent)
     {
         card.hotkey.clear();
     }
@@ -1476,6 +1483,7 @@ fn pile_panel(game: &Scene<'_>, tile: chassis::grid::TilePos) -> Option<Panel> {
         queue_label: String::new(),
         stop: None,
         drones: None,
+        absent: Vec::new(),
     })
 }
 
@@ -1521,6 +1529,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             queue_label: "Queue".into(),
             stop: None,
             drones: None,
+            absent: Vec::new(),
         };
         if selected_buildings
             .iter()
@@ -1674,6 +1683,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         queue_label: "Orders".to_string(),
         stop: None,
         drones: None,
+        absent: Vec::new(),
     };
     if units.len() == 1 && !game.state.hostile(game.presentation.human, owner) {
         panel.drones = crate::unit_bays::column(game, first.id);
@@ -2018,24 +2028,18 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
     }
     // Return cargo comes and goes as workers load and unload, so it goes
     // last: its arrival never shifts a card a finger is reaching for.
-    if !build_menu_open
-        && units
-            .iter()
-            .any(|unit| unit.kind.stats().harvest.is_some() && unit.carrying() > 0)
-    {
-        panel.cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Harvest),
-            title: "Return cargo".into(),
-            cost: None,
-            hotkey: chord(bindings, Action::ReturnCargo),
-            action: CardAction::Dispatch(Action::ReturnCargo),
-            enabled: true,
-            why: None,
-            desc: vec!["Cancel current and queued work, deliver scrap to the nearest reachable Foundry, then stay there.".into()],
-            progress: None,
-            autocast: None,
-            hold: None,
-        });
+    let carrying = units
+        .iter()
+        .any(|unit| unit.kind.stats().harvest.is_some() && unit.carrying() > 0);
+    if has_builder && !build_menu_open {
+        let mut card = return_cargo_card(bindings);
+        if carrying {
+            panel.cards.push(card);
+        } else {
+            card.enabled = false;
+            card.why = Some("no scrap carried".into());
+            panel.absent.push(card);
+        }
     }
     // The first unit's program: what it is doing and what comes next.
     // An idle unit with nothing queued contributes no chips, so the
@@ -2059,13 +2063,40 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         .iter()
         .any(|u| !matches!(u.order, Order::Idle) || !u.queue.is_empty())
     {
-        panel.stop = Some(stop_card(
-            CardAction::Dispatch(Action::StopOrScrap),
-            chord(bindings, Action::StopOrScrap),
-            "Clear orders; stand and auto-engage.",
-        ));
+        panel.stop = Some(unit_stop_card(bindings));
+    } else {
+        let mut card = unit_stop_card(bindings);
+        card.enabled = false;
+        card.why = Some("nothing to stop".into());
+        panel.absent.push(card);
     }
     Some(panel)
+}
+
+/// The Stop button over a unit selection's orders.
+fn unit_stop_card(bindings: &BindingMap) -> Card {
+    stop_card(
+        CardAction::Dispatch(Action::StopOrScrap),
+        chord(bindings, Action::StopOrScrap),
+        "Clear orders; stand and auto-engage.",
+    )
+}
+
+/// The Harvesters' Return cargo card.
+fn return_cargo_card(bindings: &BindingMap) -> Card {
+    Card {
+        icon: CardIcon::Verb(VerbIcon::Harvest),
+        title: "Return cargo".into(),
+        cost: None,
+        hotkey: chord(bindings, Action::ReturnCargo),
+        action: CardAction::Dispatch(Action::ReturnCargo),
+        enabled: true,
+        why: None,
+        desc: vec!["Cancel current and queued work, deliver scrap to the nearest reachable Foundry, then stay there.".into()],
+        progress: None,
+        autocast: None,
+        hold: None,
+    }
 }
 
 #[cfg(test)]
