@@ -11,7 +11,7 @@ use crate::action::{Action, BindingMap};
 use crate::game::Game;
 use aftermine_protocol::PadButton;
 use aftermine_sim::{UnitId, UnitKind};
-use macroquad::prelude::{Vec2, vec2};
+use macroquad::prelude::Vec2;
 
 /// The group RT narrowed last and the kind it left selected. It stands
 /// only while the selection is still exactly that kind of the group.
@@ -106,31 +106,11 @@ fn tap(game: &mut Game, input: &mut InputState, ground: Vec2, pressed: Option<Pi
             now - at < DOUBLE_CLICK_SECS
                 && (spot - ground).length() * zoom <= DOUBLE_CLICK_SLOP * ui
         });
-    if double {
-        let at = picked
-            .and_then(|picked| on_screen(game, picked))
-            .unwrap_or(point);
-        select::select_all_of_kind_on_screen(game, at, ui, reach);
-    } else {
-        select::select_picked(game, picked, point, additive);
+    match picked {
+        Some(picked) if double => select::select_all_like(game, picked),
+        _ => select::select_picked(game, picked, point, additive),
     }
     input.last_pad_tap = Some((now, ground));
-}
-
-/// Where a picked unit or building stands on screen now, while it stands.
-fn on_screen(game: &Game, picked: Picked) -> Option<Vec2> {
-    let camera = &game.presentation.camera;
-    let world = match picked {
-        Picked::Unit(id, _) => game
-            .state
-            .unit(id)
-            .map(|unit| vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>())),
-        Picked::Building(id, _) => game.state.building(id).map(|building| {
-            let center = building.center();
-            vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>())
-        }),
-    };
-    world.map(|world| camera.to_screen(world))
 }
 
 /// X: the contextual order a right-click at the reticle gives, reaching as

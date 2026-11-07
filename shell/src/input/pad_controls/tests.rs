@@ -839,3 +839,29 @@ fn x_rallies_onto_your_own_unit_in_reach() {
         }
     );
 }
+
+#[test]
+fn a_double_tap_on_a_structure_keeps_to_its_kind_beside_a_unit() {
+    // A Skyhook hovers by the first Foundry's center, beyond the reticle's
+    // reach of the footprint's far corner.
+    let mut game = scene(
+        &[
+            (0, UnitKind::Skyhook, 30, 20),
+            (0, UnitKind::Skyhook, 26, 24),
+        ],
+        &[
+            (0, BuildingKind::Foundry, 30, 20),
+            (0, BuildingKind::Foundry, 36, 20),
+        ],
+    );
+    let mut input = pad_input(&mut game);
+    rest_on(&mut game, &mut input, vec2(31.9, 21.9));
+    press(&mut game, &mut input, PadButton::South);
+    input.now += 0.2;
+    press(&mut game, &mut input, PadButton::South);
+    assert!(game.presentation.selection.units.is_empty());
+    assert_eq!(
+        game.presentation.selection.buildings,
+        vec![building_at(&game, 30, 20), building_at(&game, 36, 20)]
+    );
+}

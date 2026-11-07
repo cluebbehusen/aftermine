@@ -517,7 +517,7 @@ pub(super) fn select_all_of_kind_on_screen(game: &mut Game, screen: Vec2, ui: f3
     // The sweep stays within the picked unit's owner: double-clicking an
     // ally harvester gathers that ally's harvesters on screen. Own units
     // outrank foreign at the pick, as with plain clicks.
-    let picked = game
+    let unit = game
         .state
         .units()
         .iter()
@@ -528,49 +528,65 @@ pub(super) fn select_all_of_kind_on_screen(game: &mut Game, screen: Vec2, ui: f3
             (distance <= pick_radius(game, ui, u.kind, reach)).then_some((
                 u.player != game.presentation.human,
                 distance,
-                u.kind,
+                u.id,
                 u.player,
             ))
         })
         .min_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).expect("finite"));
+    // Else the building a press there picks: the one under it, or for the
+    // reticle one within its reach.
+    let picked = match unit {
+        Some((_, _, id, owner)) => Picked::Unit(id, owner),
+        None => match pick(game, screen, ui, reach) {
+            Some(building @ Picked::Building(..)) => building,
+            _ => return,
+        },
+    };
+    select_all_like(game, picked);
+}
+
+/// Selects every unit or building on screen of `picked`'s kind and owner,
+/// as a double-click on it does.
+pub(super) fn select_all_like(game: &mut Game, picked: Picked) {
     let (lo, hi) = game.presentation.camera.world_rect();
     let on_screen = |p: Vec2| p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y;
-    if let Some((_, _, kind, owner)) = picked {
-        game.presentation.selection.buildings.clear();
-        game.presentation.selection.units = game
-            .state
-            .units()
-            .iter()
-            .filter(|u| u.player == owner && u.kind == kind && selectable(game, u))
-            .filter(|u| on_screen(vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>())))
-            .map(|u| u.id)
-            .collect();
-        return;
+    match picked {
+        Picked::Unit(id, owner) => {
+            let Some(kind) = game.state.unit(id).map(|unit| unit.kind) else {
+                return;
+            };
+            game.presentation.selection.buildings.clear();
+            game.presentation.selection.units = game
+                .state
+                .units()
+                .iter()
+                .filter(|u| u.player == owner && u.kind == kind && selectable(game, u))
+                .filter(|u| on_screen(vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>())))
+                .map(|u| u.id)
+                .collect();
+        }
+        Picked::Building(id, owner) => {
+            let Some(kind) = game.state.building(id).map(|building| building.kind) else {
+                return;
+            };
+            game.presentation.selection.units.clear();
+            game.presentation.selection.buildings = game
+                .state
+                .buildings()
+                .iter()
+                .filter(|building| {
+                    building.player == owner
+                        && building.kind == kind
+                        && selectable_building(game, building)
+                })
+                .filter(|building| {
+                    let center = building.center();
+                    on_screen(vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>()))
+                })
+                .map(|building| building.id)
+                .collect();
+        }
     }
-
-    // The building a press there picks: the one under it, or for the
-    // reticle one within its reach.
-    let Some(Picked::Building(id, _)) = pick(game, screen, ui, reach) else {
-        return;
-    };
-    let Some(picked) = game.state.building(id) else {
-        return;
-    };
-    let (kind, owner) = (picked.kind, picked.player);
-    game.presentation.selection.units.clear();
-    game.presentation.selection.buildings = game
-        .state
-        .buildings()
-        .iter()
-        .filter(|building| {
-            building.player == owner && building.kind == kind && selectable_building(game, building)
-        })
-        .filter(|building| {
-            let center = building.center();
-            on_screen(vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>()))
-        })
-        .map(|building| building.id)
-        .collect();
 }
 
 /// Every unit and building the human can see within `radius` logical
