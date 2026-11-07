@@ -432,3 +432,11 @@ fn a_free_for_all_gets_its_own_section_after_the_team_format_of_its_size() {
         ["1v1", "3-way FFA", "2v2", "4-way FFA", "3v3", "6-way FFA"]
     );
 }
+
+#[test]
+fn the_map_hint_names_a_controllers_buttons_while_one_is_in_use() {
+    for hands in crate::platform::pad_hands() {
+        let hint = crate::platform::assert_pad_copy(hands, browser_hint(hands));
+        assert!(hint.starts_with("D-pad select"), "{hint}");
+    }
+}

@@ -769,7 +769,8 @@ impl ResultsScreen {
                 .copied()
                 .zip(action_rects(self.actions.len(), viewport, s))
         {
-            let active = self.hover == Some(action) || self.selected == action;
+            let active = self.selected == action
+                || (self.hover == Some(action) && crate::platform::hands().hover_shown());
             crate::button::draw(rect, action.label(), active, s);
         }
     }

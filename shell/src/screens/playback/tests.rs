@@ -936,3 +936,45 @@ fn playback_uses_rebound_camera_and_transport_keys_without_advancing_the_record(
     key_with(&mut pb, &bindings, Key::O);
     assert!(pb.show_stats);
 }
+
+#[test]
+fn a_controller_pauses_seeks_steps_the_speed_and_leaves() {
+    let pad = |button| {
+        [
+            RawEvent::PadDown { pad: 0, button },
+            RawEvent::PadUp { pad: 0, button },
+        ]
+    };
+    let mut pb = long_session(2_000);
+    assert!(!feed(&mut pb, &pad(crate::pad::CONFIRM)));
+    assert!(pb.clock.paused, "A pauses");
+    assert!(!feed(&mut pb, &pad(crate::pad::CONFIRM)));
+    assert!(!pb.clock.paused, "and plays");
+    assert!(!feed(&mut pb, &pad(crate::pad::PAGES.1)));
+    assert!((pb.clock.speed - 2.0).abs() < f64::EPSILON, "RT speeds up");
+    assert!(!feed(&mut pb, &pad(crate::pad::PAGES.0)));
+    assert!(!feed(&mut pb, &pad(crate::pad::PAGES.0)));
+    assert!((pb.clock.speed - 0.5).abs() < f64::EPSILON, "LT slows down");
+    assert!(!feed(&mut pb, &pad(crate::pad::TABS.1)));
+    assert_eq!(pb.seeking, Some(500), "RB seeks forward 25 seconds");
+    pb.seek_to(1_200);
+    pb.engine.seek_step(1_200, u64::MAX);
+    pb.seeking = None;
+    assert!(!feed(&mut pb, &pad(crate::pad::TABS.0)));
+    assert_eq!(pb.seeking, Some(700), "LB seeks back 25 seconds");
+    assert!(!feed(&mut pb, &pad(PadButton::North)), "Y does nothing");
+    assert!(feed(&mut pb, &pad(crate::pad::BACK)), "B leaves");
+}
+
+#[test]
+fn the_caption_names_the_controllers_transport_while_one_is_in_use() {
+    use aftermine_protocol::PadFamily;
+    assert_eq!(
+        pad_caption("0:00 / 1:00", PadFamily::Xbox),
+        "0:00 / 1:00 | A pause | LB/RB seek | LT/RT speed | B leave"
+    );
+    for hands in crate::platform::pad_hands() {
+        let family = hands.pad.expect("pad hands");
+        crate::platform::assert_pad_copy(hands, &pad_caption("0:00", family));
+    }
+}

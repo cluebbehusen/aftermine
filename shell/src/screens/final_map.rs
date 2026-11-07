@@ -56,6 +56,11 @@ impl FinalMapScreen {
                     self.resolver
                         .key_edge_in(bindings, *key, false, Context::FinalMap);
                 }
+                // The controller's back button, by position like the menus'.
+                RawEvent::PadDown {
+                    button: crate::pad::BACK,
+                    ..
+                } => return true,
                 _ => {
                     let minimap =
                         event_point(event).map_or_else(MinimapPoint::default, |p| MinimapPoint {
@@ -84,6 +89,12 @@ impl FinalMapScreen {
 
     /// The camera line, for the hands the player is using.
     fn coaching(bindings: &BindingMap, hands: crate::platform::Hands) -> String {
+        if let Some(family) = hands.pad {
+            return format!(
+                "{} back to the report",
+                crate::pad::button_name(family, crate::pad::BACK)
+            );
+        }
         match (hands.touch(), hands.keys) {
             (false, true) => format!(
                 "Pan with the keys, minimap or middle drag | wheel to zoom | {} back",

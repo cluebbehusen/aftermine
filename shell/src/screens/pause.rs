@@ -8,13 +8,16 @@ use crate::text_field::{Edit, Field, Form, Keyboard};
 use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::Vec2;
 
-/// The name field's coaching line; a touch-only build has no keys to
-/// name.
-fn naming_hint(keyless: bool) -> &'static str {
-    if keyless {
-        ""
-    } else {
+/// The name field's coaching line, for [`crate::menu::binding_hint`]. A
+/// text field keeps the classic keys, so those are what it names; a
+/// player with neither keys nor a controller has nothing to name.
+fn naming_hint(hands: crate::platform::Hands) -> &'static str {
+    if hands.pad.is_some() {
+        "{confirm} saves | {back} cancels"
+    } else if hands.keys {
         "Enter saves | Esc cancels"
+    } else {
+        ""
     }
 }
 
@@ -321,7 +324,7 @@ impl PauseScreen {
     pub fn draw(&self, scenario_name: &str, mouse: Vec2) {
         match &self.face {
             Face::Naming(field) => field.draw(
-                naming_hint(!crate::platform::hands().keys),
+                &crate::menu::binding_hint(naming_hint(crate::platform::hands())),
                 crate::hints::fade(crate::theme::TEXT_SECONDARY),
                 mouse,
             ),
@@ -453,7 +456,7 @@ impl PauseScreen {
     pub fn subtitle<'a>(&'a self, scenario_name: &'a str) -> &'a str {
         match &self.face {
             Face::SaveFailed(dialog) => &dialog.line,
-            Face::Naming(_) => naming_hint(!crate::platform::hands().keys),
+            Face::Naming(_) => naming_hint(crate::platform::hands()),
             Face::Confirm(verb) => verb.consequence(self.lesson, self.lan),
             Face::Rows => self.notice.as_deref().unwrap_or(scenario_name),
         }

@@ -89,6 +89,13 @@ impl Hands {
     pub fn touch(self) -> bool {
         self.pointer == Pointer::Touch
     }
+
+    /// Whether a pointer's hover may light what lies under it. While a
+    /// controller is in use its cursor is the only highlight, so a mouse
+    /// left parked over another item never lights a second one.
+    pub fn hover_shown(self) -> bool {
+        self.pad.is_none()
+    }
 }
 
 thread_local! {
@@ -105,6 +112,22 @@ pub(crate) fn set_hands(hands: Hands) {
 /// This frame's hands.
 pub(crate) fn hands() -> Hands {
     HANDS.with(Cell::get)
+}
+
+/// Whether `rect` is lit as hovered by the pointer at `mouse` this frame.
+pub(crate) fn hovers(rect: macroquad::prelude::Rect, mouse: macroquad::prelude::Vec2) -> bool {
+    hands().hover_shown() && rect.contains(mouse)
+}
+
+/// The outline the menu cursor wears this frame: the focus weight, and
+/// heavier while a controller is in use, whose player often reads the
+/// screen from further away and has no pointer to find their place by.
+pub(crate) fn cursor_stroke() -> crate::theme::Stroke {
+    if hands().pad.is_some() {
+        crate::theme::Stroke::Heavy
+    } else {
+        crate::theme::Stroke::Focus
+    }
 }
 
 /// The pointer verb opening an instruction: a touch player taps what a
@@ -184,6 +207,44 @@ pub(crate) fn assert_copy_fits(hands: Hands, text: &str) {
         assert_mouseless_copy(text);
     }
     assert!(text.is_ascii(), "copy {text:?} is not ASCII");
+}
+
+/// Every pointer and keyboard pairing with a controller of each family in
+/// use.
+#[cfg(test)]
+pub(crate) fn pad_hands() -> impl Iterator<Item = Hands> {
+    [
+        PadFamily::Xbox,
+        PadFamily::PlayStation,
+        PadFamily::Switch,
+        PadFamily::Other,
+    ]
+    .into_iter()
+    .flat_map(|family| {
+        ALL_HANDS.map(|hands| Hands {
+            pad: Some(family),
+            ..hands
+        })
+    })
+}
+
+/// Fills `template` as a player with `hands` sees it and fails unless it
+/// names the controller's confirm or back button and nothing a controller
+/// player may lack: no key, no mouse action, no unfilled token.
+#[cfg(test)]
+pub(crate) fn assert_pad_copy(hands: Hands, template: &str) -> String {
+    let family = hands.pad.expect("pad copy is for a controller in use");
+    set_hands(hands);
+    let text = crate::menu::binding_hint(template);
+    set_hands(Hands::BUILD);
+    assert_touch_copy(&text);
+    let names = [crate::pad::CONFIRM, crate::pad::BACK]
+        .map(|button| crate::pad::button_name(family, button));
+    assert!(
+        names.iter().any(|name| text.contains(name)),
+        "pad copy {text:?} names neither {names:?}"
+    );
+    text
 }
 
 #[cfg(test)]

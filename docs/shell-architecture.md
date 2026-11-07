@@ -152,12 +152,17 @@ gestures, held keys, touch state and control groups belong to the input layer.
 Key bindings belong to the configuration alone; everything else borrows
 `Config::bindings`. Controller buttons reach menus as the same canonical menu
 keys through a fixed layout by position that no binding changes, text fields
-included. Only a chord capture for a binding takes them raw: keys alone bind,
-and a controller press cancels. `ActionResolver` pairs each release with its
-original press, so modifier changes cannot strand a held action. Keyboard card
-actions use the same availability checks as clicks. The debug protocol's
-`SendCommand` stages an already-semantic command and does not exercise UI
-mapping.
+included: the D-pad moves, the bottom and right face buttons confirm and go
+back, the bumpers step tabs and the triggers page. The left stick presses the
+arrows in menus only and never reaches a gameplay screen. The replay viewer and
+final map read their own fixed pad layout by position. While a controller is in
+use, pointer hover lights nothing and the cursor wears a heavier outline, so it
+is the only highlight. Only a chord capture for a binding takes them raw: keys
+alone bind, and a controller press cancels. `ActionResolver` pairs each release
+with its original press, so modifier changes cannot strand a held action.
+Keyboard card actions use the same availability checks as clicks. The debug
+protocol's `SendCommand` stages an already-semantic command and does not
+exercise UI mapping.
 
 Coordinates are logical throughout input and layout; the hardware adapter
 applies DPI conversion once. Touches arrive in the same ordered stream as mouse

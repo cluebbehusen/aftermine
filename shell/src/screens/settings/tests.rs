@@ -1174,3 +1174,34 @@ fn diagnostics_rows_survive_without_a_capture_toggle() {
         "a config saved with the old toggle still loads"
     );
 }
+
+#[test]
+fn the_settings_hints_name_a_controllers_buttons_while_one_is_in_use() {
+    use aftermine_protocol::PadFamily;
+    for hands in crate::platform::pad_hands() {
+        for tab_keys in [true, false] {
+            crate::platform::assert_pad_copy(hands, settings_hint(hands, tab_keys));
+        }
+    }
+    let xbox = crate::platform::Hands {
+        pad: Some(PadFamily::Xbox),
+        ..crate::platform::ALL_HANDS[0]
+    };
+    crate::platform::set_hands(xbox);
+    assert_eq!(
+        crate::menu::binding_hint(settings_hint(xbox, false)),
+        "D-pad or A change a value | LB/RB switch tabs"
+    );
+    let mut screen = SettingsScreen::open(&Config::default());
+    screen.show(Tab::Controls, &Config::default());
+    assert_eq!(
+        screen.coaching().map(crate::menu::binding_hint).as_deref(),
+        Some("Remapping takes a keyboard | LB/RB switch tabs"),
+        "a controller cannot remap keys, so Controls says so"
+    );
+    assert_eq!(
+        crate::tabs::shown_keys(),
+        Some(("LB".to_string(), "RB".to_string()))
+    );
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}

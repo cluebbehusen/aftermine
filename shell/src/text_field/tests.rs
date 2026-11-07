@@ -235,3 +235,20 @@ fn a_heavier_field_gets_the_wider_share_of_the_row() {
     assert!(name.x + name.w < code.x);
     assert_eq!(name.y, code.y);
 }
+
+#[test]
+fn the_controller_tab_and_page_keys_leave_a_field_alone() {
+    // A pad's bumpers and triggers press Q, E, PageUp and PageDown as
+    // keys, never as typed text, so a focused field keeps its value.
+    let mut form = pair("ab", "12", 0);
+    for button in [
+        crate::pad::TABS.0,
+        crate::pad::TABS.1,
+        crate::pad::PAGES.0,
+        crate::pad::PAGES.1,
+    ] {
+        let events = crate::pad::menu_keys(&[RawEvent::PadDown { pad: 0, button }]);
+        assert_eq!(feed(&mut form, &events).0, Edit::Stay, "{button:?}");
+    }
+    assert_eq!((form.value(0), form.value(1)), ("ab", "12"));
+}

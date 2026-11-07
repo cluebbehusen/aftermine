@@ -496,26 +496,32 @@ fn draw_matches(
     }
     for (rect, sighting) in match_rows(form, sightings.len()).iter().zip(sightings) {
         let joinable = sighting.address().is_some();
-        let hovered = joinable && (rect.contains(mouse) || sighting.address() == cursor);
+        // The key or controller cursor wears the focus outline; the
+        // pointer only lights what it is over.
+        let focused = joinable && sighting.address() == cursor;
+        let hovered = joinable && crate::platform::hovers(*rect, mouse);
         draw_rectangle(
             rect.x,
             rect.y,
             rect.w,
             rect.h,
-            if hovered {
+            if focused || hovered {
                 crate::theme::SURFACE_CARD
             } else {
                 crate::theme::SURFACE_PANEL
             },
         );
+        let (stroke, edge) = if focused {
+            (crate::platform::cursor_stroke(), crate::theme::TEXT_TITLE)
+        } else if hovered {
+            (crate::theme::Stroke::Hairline, crate::theme::TEXT_ACCENT)
+        } else {
+            (crate::theme::Stroke::Hairline, crate::theme::BORDER_STRONG)
+        };
         stroke_rect(
             Rect::new(rect.x, rect.y, rect.w, rect.h),
-            crate::theme::Stroke::Hairline.at(s),
-            if hovered {
-                crate::theme::TEXT_ACCENT
-            } else {
-                crate::theme::BORDER_STRONG
-            },
+            stroke.at(s),
+            edge,
         );
         let (left, right) = match &sighting.heard {
             Heard::Joinable(beacon) => (

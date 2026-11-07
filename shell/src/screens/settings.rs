@@ -451,6 +451,9 @@ impl Row {
 /// tabs each way; a tab action left unbound has none once another menu
 /// action takes its classic key.
 fn settings_hint(hands: crate::platform::Hands, tab_keys: bool) -> &'static str {
+    if hands.pad.is_some() {
+        return "D-pad or {confirm} change a value | {prev_tab}/{next_tab} switch tabs";
+    }
     match (hands.touch(), hands.keys, tab_keys) {
         (false, true, true) => {
             "{left}/{right} or {confirm} change a value | {prev_tab}/{next_tab} switch tabs"
@@ -771,6 +774,9 @@ impl SettingsScreen {
     /// The tab's coaching line, in the footer.
     fn coaching(&self) -> Option<&'static str> {
         match self.face {
+            Face::Tab(Tab::Controls) if crate::platform::hands().pad.is_some() => {
+                Some("Remapping takes a keyboard | {prev_tab}/{next_tab} switch tabs")
+            }
             Face::Tab(Tab::Controls) => crate::platform::hands()
                 .keys
                 .then_some("Left/Right column | Enter remaps | X clears | Q/E tabs"),
@@ -842,7 +848,7 @@ impl SettingsScreen {
             return;
         }
         self.menu.draw_with_coaching("", self.coaching());
-        let keys = crate::tabs::keys().filter(|_| crate::platform::hands().keys);
+        let keys = crate::tabs::shown_keys();
         let labels = Tab::ALL.map(Tab::label);
         let active = Tab::ALL
             .iter()

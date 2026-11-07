@@ -279,3 +279,33 @@ fn the_camera_line_names_only_what_the_hands_in_use_have() {
         );
     }
 }
+
+#[test]
+fn the_controller_back_button_returns_to_the_report_and_others_do_nothing() {
+    let viewport = vec2(1280.0, 800.0);
+    let mut game = Game::with_viewport(Scenario::skirmish(), viewport).expect("game");
+    let mut screen = FinalMapScreen::open();
+    let mut mouse = Vec2::ZERO;
+    let mut press = |screen: &mut FinalMapScreen, button| {
+        screen.update(
+            &crate::action::BindingMap::classic(),
+            &[RawEvent::PadDown { pad: 0, button }],
+            0.0,
+            crate::config::CameraPrefs::default(),
+            &mut mouse,
+            &mut game,
+        )
+    };
+    assert!(!press(&mut screen, crate::pad::CONFIRM));
+    assert!(!press(&mut screen, aftermine_protocol::PadButton::Start));
+    assert!(press(&mut screen, crate::pad::BACK));
+}
+
+#[test]
+fn the_camera_line_names_a_controllers_back_button_while_one_is_in_use() {
+    let bindings = BindingMap::classic();
+    for hands in crate::platform::pad_hands() {
+        let line = FinalMapScreen::coaching(&bindings, hands);
+        crate::platform::assert_pad_copy(hands, &line);
+    }
+}

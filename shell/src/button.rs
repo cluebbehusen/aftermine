@@ -36,7 +36,7 @@ pub(crate) fn draw(rect: Rect, label: &str, active: bool, s: f32) {
     stroke_rect(
         Rect::new(rect.x, rect.y, rect.w, rect.h),
         if active {
-            theme::Stroke::Focus
+            crate::platform::cursor_stroke()
         } else {
             theme::Stroke::Hairline
         }
@@ -100,7 +100,7 @@ impl BackButton {
 pub(crate) fn draw_back(mouse: Vec2) {
     let s = crate::render::ui_scale();
     let rect = corner_slot(0, s);
-    draw(rect, "Back", rect.contains(mouse), s);
+    draw(rect, "Back", crate::platform::hovers(rect, mouse), s);
 }
 
 /// A click (or, with `touch`, a tap) on the BACK button.
