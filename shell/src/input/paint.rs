@@ -146,7 +146,6 @@ pub(super) fn sweep(game: &Game, input: &mut InputState, before: Vec2) {
     let reach = super::reticle::reach(input).unit_px(ui);
     let camera = &game.presentation.camera;
     let after = input.reticle.ground(camera);
-    let over_chrome = select::under_hud_for_pad(game, input.reticle.point());
     let Some(press) = input.pad_press.as_mut() else {
         return;
     };
@@ -169,9 +168,7 @@ pub(super) fn sweep(game: &Game, input: &mut InputState, before: Vec2) {
         press.ground
     };
     let sweep = press.sweep.get_or_insert_with(|| Sweep::at(from, now));
-    if !over_chrome {
-        sweep.catch(game, from, after, sweep.radius(now, reach, ui));
-    }
+    sweep.catch(game, from, after, sweep.radius(now, reach, ui));
     sweep.extend_trail(after, camera.zoom, ui);
 }
 

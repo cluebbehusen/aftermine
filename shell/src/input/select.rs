@@ -574,16 +574,20 @@ pub(super) fn select_all_of_kind_on_screen(game: &mut Game, screen: Vec2, ui: f3
 }
 
 /// Every unit and building the human can see within `radius` logical
-/// pixels of the ground the reticle crossed from `from` to `to`. A unit is
-/// reached anywhere on its body, as a press picks it; at the reticle's own
-/// reach this is exactly what a press there could pick.
+/// pixels of the ground the reticle crossed from `from` to `to`, where the
+/// brush meets it on open battlefield: what HUD chrome or the minimap
+/// covers there stays out. A unit is reached anywhere on its body, as a
+/// press picks it; at the reticle's own reach this is exactly what a press
+/// there could pick.
 pub(super) fn swept_by_pad(
     game: &Game,
     from: Vec2,
     to: Vec2,
     radius: f32,
 ) -> (Vec<UnitId>, Vec<BuildingId>) {
-    let reach = radius / game.presentation.camera.zoom;
+    let camera = &game.presentation.camera;
+    let reach = radius / camera.zoom;
+    let uncovered = |world: Vec2| !under_hud_for_pad(game, camera.to_screen(world));
     let units = game
         .state
         .units()
@@ -592,6 +596,7 @@ pub(super) fn swept_by_pad(
         .filter(|u| {
             let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
             segment_distance(p, from, to) <= reach.max(super::unit_pick_radius(u.kind))
+                && uncovered(p)
         })
         .map(|u| u.id)
         .collect();
@@ -602,7 +607,8 @@ pub(super) fn swept_by_pad(
         .filter(|b| selectable_building(game, b))
         .filter(|b| {
             let (min, max) = footprint(b);
-            rect_segment_distance(min, max, from, to) <= reach
+            let contact = rect_contact(min, max, from, to);
+            segment_distance(contact, from, to) <= reach && uncovered(contact)
         })
         .map(|b| b.id)
         .collect();
@@ -627,31 +633,31 @@ fn segment_distance(p: Vec2, a: Vec2, b: Vec2) -> f32 {
     p.distance(a + ab * t)
 }
 
-/// How far the segment `a`..`b` lies from the rectangle `min`..`max`: zero
-/// where it crosses it, else the nearest of its ends to the rectangle and
-/// the rectangle's corners to it, where two convex shapes apart come
-/// closest.
-fn rect_segment_distance(min: Vec2, max: Vec2, a: Vec2, b: Vec2) -> f32 {
-    if crosses(min, max, a, b) {
-        return 0.0;
+/// The point of the rectangle `min`..`max` nearest the segment `a`..`b`:
+/// where the segment enters it, if it does; else the nearest of its corners
+/// and of the ends' nearest points on it, as two convex shapes apart come
+/// closest at a corner of one.
+fn rect_contact(min: Vec2, max: Vec2, a: Vec2, b: Vec2) -> Vec2 {
+    if let Some(enter) = entry(min, max, a, b) {
+        return a + (b - a) * enter;
     }
-    let corners = [min, vec2(max.x, min.y), max, vec2(min.x, max.y)];
-    corners
-        .iter()
-        .map(|corner| segment_distance(*corner, a, b))
-        .chain([a, b].map(|end| end.clamp(min, max).distance(end)))
-        .fold(f32::INFINITY, f32::min)
+    [min, vec2(max.x, min.y), max, vec2(min.x, max.y)]
+        .into_iter()
+        .chain([a, b].map(|end| end.clamp(min, max)))
+        .min_by(|p, q| segment_distance(*p, a, b).total_cmp(&segment_distance(*q, a, b)))
+        .expect("a rectangle has corners")
 }
 
-/// Whether the segment `a`..`b` touches the rectangle `min`..`max`, by
-/// clipping it against each axis in turn.
-fn crosses(min: Vec2, max: Vec2, a: Vec2, b: Vec2) -> bool {
+/// How far along the segment `a`..`b` it first touches the rectangle
+/// `min`..`max`, as a fraction of its length, by clipping it against each
+/// axis in turn; none where it misses.
+fn entry(min: Vec2, max: Vec2, a: Vec2, b: Vec2) -> Option<f32> {
     let d = b - a;
     let (mut enter, mut leave) = (0.0_f32, 1.0_f32);
     for (start, step, lo, hi) in [(a.x, d.x, min.x, max.x), (a.y, d.y, min.y, max.y)] {
         if step == 0.0 {
             if start < lo || start > hi {
-                return false;
+                return None;
             }
             continue;
         }
@@ -659,8 +665,8 @@ fn crosses(min: Vec2, max: Vec2, a: Vec2, b: Vec2) -> bool {
         enter = enter.max(t0.min(t1));
         leave = leave.min(t0.max(t1));
         if enter > leave {
-            return false;
+            return None;
         }
     }
-    true
+    Some(enter)
 }

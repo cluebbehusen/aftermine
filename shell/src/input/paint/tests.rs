@@ -411,3 +411,44 @@ fn a_full_trail_starts_no_new_stroke() {
     sweep.break_stroke(vec2(-5.0, 0.0));
     assert_eq!(sweep.trail.len(), 1, "a jump past the cap lays no stroke");
 }
+
+/// Holds A still on (32.5, 20.5) until the brush is full, three tiles
+/// across, with chrome over the screen from 60 pixels right of the
+/// reticle, and returns what the sweep would keep.
+fn kept_beside_chrome(game: &mut crate::game::Game) -> Option<Kept> {
+    let mut input = pad_input(game);
+    rest_on(game, &mut input, vec2(32.5, 20.5));
+    let edge = input.reticle.point().x + 60.0;
+    let mut layout = game.presentation.layout.get();
+    layout.performance = macroquad::prelude::Rect::new(edge, 0.0, 1280.0 - edge, 800.0);
+    game.presentation.layout.set(layout);
+    feed(game, &mut input, &[down(PadButton::South)]);
+    wait_until(game, &mut input, TAP_SECS + GROW_SECS * 2.0);
+    preview(&game.view(), &input).and_then(|p| p.kept)
+}
+
+#[test]
+fn chrome_beside_the_brush_hides_what_it_reaches_under_it() {
+    // Two tiles either side of the reticle: the right one under chrome.
+    let mut game = scene(&[(0, SENTINEL, 30, 20), (0, SENTINEL, 34, 20)], &[]);
+    let left = unit_at(&game, 30, 20);
+    assert_eq!(
+        kept_beside_chrome(&mut game),
+        Some(Kept::Units(PlayerId(0), vec![left]))
+    );
+    // A structure counts where the brush meets it: the near edge of the
+    // one at x 34 lies in the open, all of the one at x 35 under chrome.
+    let mut game = scene(
+        &[],
+        &[
+            (0, BuildingKind::Array, 29, 20),
+            (0, BuildingKind::Array, 34, 20),
+            (0, BuildingKind::Array, 35, 20),
+        ],
+    );
+    let open = vec![building_at(&game, 29, 20), building_at(&game, 34, 20)];
+    assert_eq!(
+        kept_beside_chrome(&mut game),
+        Some(Kept::Buildings(PlayerId(0), open))
+    );
+}
