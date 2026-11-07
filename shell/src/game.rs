@@ -7,7 +7,7 @@ use aftermine_kit::controller::{SeatController, seat_controllers};
 use aftermine_kit::diagnostics::{Stage, StageGuard};
 use aftermine_protocol::hash_hex;
 use aftermine_sim::{
-    Building, BuildingId, Command, Event, PlayerCommand, PlayerId, SIM_VERSION, Scenario, State,
+    BuildingId, Command, Event, PlayerCommand, PlayerId, SIM_VERSION, Scenario, State,
     TICKS_PER_SECOND, UnitId, UnitKind,
 };
 use anyhow::Result;
@@ -210,9 +210,6 @@ impl Game {
     }
     pub fn selection_commandable(&self) -> bool {
         self.view().selection_commandable()
-    }
-    pub fn home_foundry(&self) -> Option<&Building> {
-        self.view().home_foundry()
     }
     pub fn my_vision(&self) -> &aftermine_sim::Vision {
         self.state.vision(self.presentation.human)

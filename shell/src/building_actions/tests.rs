@@ -174,7 +174,7 @@ fn funding_and_prerequisites_are_per_recipient_in_canonical_order() {
 #[test]
 fn pending_purchases_refunds_invalid_commands_and_surrender_share_one_preview() {
     let mut game = fixture(BuildingKind::Reclaimer, &[0, 0], 600);
-    let home = game.home_foundry().unwrap().id;
+    let home = game.view().own_foundries().next().unwrap().id;
     game.issue(Command::Train {
         building: home,
         kind: aftermine_sim::UnitKind::Harvester,

@@ -220,7 +220,7 @@ fn scrap_left_unspent_for_a_while_brings_the_spending_tip() {
     ));
     assert!(due_after(&game, &watch, Tip::UnspentScrap, UNSPENT_WAIT));
 
-    let foundry = game.home_foundry().unwrap().id;
+    let foundry = game.view().own_foundries().next().unwrap().id;
     game.issue(Command::Train {
         building: foundry,
         kind: UnitKind::Harvester,
@@ -253,7 +253,7 @@ fn a_badly_damaged_building_nobody_welds_brings_the_weld_tip_once_the_fight_is_o
     assert!(due_after(&game, &watched(&game), Tip::WeldDamage, 0));
 
     let harvester = unit(&game, 0, UnitKind::Harvester);
-    let foundry = game.home_foundry().unwrap().id;
+    let foundry = game.view().own_foundries().next().unwrap().id;
     game.issue(Command::Repair {
         units: vec![harvester],
         building: foundry,

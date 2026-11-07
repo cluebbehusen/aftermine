@@ -119,6 +119,7 @@ mod terraces;
 pub(crate) mod tutorial_card;
 mod worker;
 mod world;
+pub(crate) use chrome::draw_reticle;
 use chrome::{
     draw_hud, draw_overlay, draw_overlay_info, draw_result_overlay, draw_salvage_tooltip,
 };

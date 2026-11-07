@@ -32,10 +32,18 @@ pub(crate) fn held_pan(resolver: &ActionResolver) -> Vec2 {
 /// Pans `camera` along `direction` at the player's pan speed for `dt`
 /// seconds; a zero direction stays put.
 pub(crate) fn pan_toward(camera: &mut Camera, direction: Vec2, prefs: CameraPrefs, dt: f32) {
-    if direction != Vec2::ZERO {
-        let world_per_second = crate::input::PAN_PX_PER_SEC * prefs.pan_speed / camera.zoom;
-        camera.pan(direction.normalize() * world_per_second * dt);
+    let travel = pan_travel(camera, direction, prefs, dt);
+    camera.pan(travel);
+}
+
+/// The world travel a pan along `direction` at the player's pan speed asks
+/// for over `dt` seconds; zero for a zero direction.
+pub(crate) fn pan_travel(camera: &Camera, direction: Vec2, prefs: CameraPrefs, dt: f32) -> Vec2 {
+    if direction == Vec2::ZERO {
+        return Vec2::ZERO;
     }
+    let world_per_second = crate::input::PAN_PX_PER_SEC * prefs.pan_speed / camera.zoom;
+    direction.normalize() * world_per_second * dt
 }
 
 /// Zooms toward the screen point `at` by one wheel reading, honoring the

@@ -166,10 +166,9 @@ fn minimap_targets(input: &InputState) -> bool {
 }
 
 /// Points the camera at the minimap spot under a steering finger.
-fn steer_minimap(game: &mut Game, p: Vec2) {
+fn steer_minimap(game: &mut Game, input: &mut InputState, p: Vec2) {
     if let Some(world) = crate::render::minimap_world_clamped(&game.view(), p) {
-        game.presentation.camera.center = world;
-        game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+        super::reticle::look_at(game, input, world);
     }
 }
 
@@ -277,7 +276,7 @@ pub(super) fn down(game: &mut Game, input: &mut InputState, id: u64, p: Vec2) {
     // A finger landing on the minimap jumps the camera there at once,
     // like a mouse press, and steers it for as long as it drags.
     if born == TouchBorn::Minimap && !minimap_targets(input) {
-        steer_minimap(game, p);
+        steer_minimap(game, input, p);
     }
     // A fresh pair starts undecided, whatever the last pair was doing:
     // a pinch must not outlive its fingers and swallow the next box.
@@ -322,7 +321,7 @@ pub(super) fn moved(game: &mut Game, input: &mut InputState, id: u64, p: Vec2) {
     }
     if born == TouchBorn::Minimap {
         if !minimap_targets(input) {
-            steer_minimap(game, p);
+            steer_minimap(game, input, p);
         }
         return;
     }
@@ -445,8 +444,7 @@ pub(super) fn up(
                 // ownership order as clicks, so a tap on chrome
                 // never selects the world ground under it.
                 if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-                    game.presentation.camera.center = world;
-                    game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+                    super::reticle::look_at(game, input, world);
                     return;
                 }
                 // Chrome next, through the touch pad, so a
@@ -465,7 +463,7 @@ pub(super) fn up(
                     // fingertip too — it sits in the top
                     // bar, which the bare-chrome swallow
                     // below would otherwise eat.
-                    cycle_idle_worker(game);
+                    cycle_idle_worker(game, input);
                 } else if let Some(reach) = lifted.army.filter(|reach| {
                     crate::layout::army_button_under(&layout, p, Some(input.ui)) == Some(*reach)
                 }) {

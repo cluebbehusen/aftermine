@@ -195,8 +195,7 @@ fn group_action(game: &mut Game, input: &mut InputState, slot: usize) {
         .is_some_and(|(s, t)| s == slot && now - t < 0.4)
         && let Some(center) = alive.center(&game.view())
     {
-        game.presentation.camera.center = center;
-        game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+        super::reticle::look_at(game, input, center);
     }
     input.last_recall = Some((slot, now));
 }

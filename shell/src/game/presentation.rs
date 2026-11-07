@@ -253,12 +253,12 @@ impl<'a> Scene<'a> {
             .and_then(|id| self.state.unit(*id))
             .is_none_or(|u| u.player == self.presentation.human)
     }
-    /// The human's first Foundry (hotkey target, camera home).
-    pub fn home_foundry(&self) -> Option<&'a Building> {
-        self.state.buildings().iter().find(|b| {
-            b.player == self.presentation.human
-                && !b.provisional()
-                && b.kind == aftermine_sim::BuildingKind::Foundry
+    /// The human's built Foundries, in id order: where Center on Foundry
+    /// cycles.
+    pub fn own_foundries(&self) -> impl Iterator<Item = &'a Building> + use<'a> {
+        let human = self.presentation.human;
+        self.state.buildings().iter().filter(move |b| {
+            b.player == human && !b.provisional() && b.kind == aftermine_sim::BuildingKind::Foundry
         })
     }
     /// The map's ground layouts, built by the first call.

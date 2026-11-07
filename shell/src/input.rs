@@ -55,7 +55,7 @@ pub(crate) fn drag_feedback(origin: Vec2, at: Vec2, ui: f32) -> DragFeedback {
 /// World-unit pick radius around a unit's center.
 const PICK_RADIUS: f32 = 0.6;
 
-fn unit_pick_radius(kind: aftermine_sim::UnitKind) -> f32 {
+pub(crate) fn unit_pick_radius(kind: aftermine_sim::UnitKind) -> f32 {
     PICK_RADIUS
         .max(crate::render::unit_visual_radius(kind))
         .max(kind.stats().radius.to_num::<f32>())
@@ -109,8 +109,8 @@ impl ArmedMode {
 }
 
 /// Where the placement preview sits: the touch ghost when one is down,
-/// otherwise under the mouse, but only while the mouse is the pointer in
-/// use (a stale mouse point on a touch device would draw a stray ghost).
+/// otherwise under the hover point (a stale mouse point on a touch device
+/// would draw a stray ghost).
 pub(crate) fn placement_preview_anchor(
     game: &crate::game::Scene<'_>,
     input: &InputState,
@@ -119,8 +119,8 @@ pub(crate) fn placement_preview_anchor(
     if let Some(anchor) = input.ghost_anchor() {
         return Some((kind, anchor));
     }
-    (input.last_pointer == Pointer::Mouse).then(|| {
-        let world = game.presentation.camera.to_world(input.mouse);
+    input.hover_point().map(|point| {
+        let world = game.presentation.camera.to_world(point);
         let hovered = numeric::tile_at(world);
         (kind, placement_anchor(game, kind, hovered))
     })
@@ -131,6 +131,8 @@ pub(crate) fn placement_preview_anchor(
 pub(crate) enum Pointer {
     Mouse,
     Touch,
+    /// A controller's reticle, which only a match has.
+    Pad,
 }
 
 impl Pointer {
@@ -167,13 +169,29 @@ pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
         }
         RawEvent::PadDisconnected { pad } => {
             input.pads.remove(&pad);
+            input.sticks.remove(&pad);
+            // With no controller left, nothing can move the reticle, so the
+            // pointer goes back to what the platform starts with.
+            if input.pads.is_empty() && input.last_pointer == Pointer::Pad {
+                input.last_pointer = crate::platform::Hands::BUILD.pointer;
+            }
             if input.pad_in_use.is_some_and(|(used, _)| used == pad) {
                 input.pad_in_use = None;
             }
         }
         RawEvent::PadDown { pad, .. } => input.pad_in_use = Some((pad, input.pad_family(pad))),
-        RawEvent::PadStick { pad, x, y, .. } if (x, y) != (0.0, 0.0) => {
-            input.pad_in_use = Some((pad, input.pad_family(pad)));
+        RawEvent::PadStick { pad, stick, x, y } => {
+            let held = input.sticks.entry(pad).or_default();
+            match stick {
+                aftermine_protocol::Stick::Left => held.0 = vec2(x, y),
+                aftermine_protocol::Stick::Right => held.1 = vec2(x, y),
+            }
+            if *held == (Vec2::ZERO, Vec2::ZERO) {
+                input.sticks.remove(&pad);
+            }
+            if (x, y) != (0.0, 0.0) {
+                input.pad_in_use = Some((pad, input.pad_family(pad)));
+            }
         }
         _ => {}
     }
@@ -382,6 +400,13 @@ pub struct InputState {
     /// The controller pressed last and its family, while a controller is
     /// the hands in use, so copy names its buttons.
     pad_in_use: Option<(u64, aftermine_protocol::PadFamily)>,
+    /// Each pad's left and right sticks, as last sent, while either is off
+    /// center. Pads send a stick only when it moves, and every screen
+    /// records it, so a stick let go under a menu reads centered when the
+    /// match resumes.
+    sticks: std::collections::BTreeMap<u64, (Vec2, Vec2)>,
+    /// The match's reticle: where it sits and what it has snapped onto.
+    pub(crate) reticle: reticle::Reticle,
     /// The verb the next world click issues, if one is armed.
     pub(crate) click_verb: Option<ClickVerb>,
     /// Producers whose rally point the next world/minimap click sets.
@@ -1088,6 +1113,8 @@ impl InputState {
             keys_seen: crate::platform::Hands::BUILD.keys,
             pads: std::collections::BTreeMap::new(),
             pad_in_use: None,
+            sticks: std::collections::BTreeMap::new(),
+            reticle: reticle::Reticle::default(),
             click_verb: None,
             rallying: Vec::new(),
             striking: None,
@@ -1107,6 +1134,28 @@ impl InputState {
             bookmarks: [None; 4],
             resolver: ActionResolver::default(),
         }
+    }
+
+    /// Where the pointer in use hovers: the mouse while it is in use, the
+    /// reticle while a controller is, and nowhere for a finger.
+    pub(crate) fn hover_point(&self) -> Option<Vec2> {
+        match self.last_pointer {
+            Pointer::Mouse => self.touches.is_empty().then_some(self.mouse),
+            Pointer::Pad => Some(self.reticle.point()),
+            Pointer::Touch => None,
+        }
+    }
+
+    /// The left and right sticks, summed over every pad and held to full
+    /// deflection.
+    pub(crate) fn sticks(&self) -> (Vec2, Vec2) {
+        let (left, right) = self
+            .sticks
+            .values()
+            .fold((Vec2::ZERO, Vec2::ZERO), |sum, held| {
+                (sum.0 + held.0, sum.1 + held.1)
+            });
+        (left.clamp_length_max(1.0), right.clamp_length_max(1.0))
     }
 
     /// The family of the controller in use, if one is.
@@ -1446,6 +1495,7 @@ impl InputState {
         self.reset_transient();
         self.groups = Default::default();
         self.bookmarks = [None; 4];
+        self.reticle = reticle::Reticle::default();
         self.salvo = 1;
         self.last_click = None;
         self.last_recall = None;
@@ -1828,6 +1878,7 @@ mod dispatch;
 mod groups;
 pub(crate) use groups::Group;
 mod orders;
+pub(crate) mod reticle;
 mod select;
 #[cfg(test)]
 mod tests;
@@ -1936,8 +1987,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             if input.minimap_drag
                 && let Some(world) = crate::render::minimap_world_clamped(&game.view(), vec2(x, y))
             {
-                game.presentation.camera.center = world;
-                game.presentation.camera.pan(Vec2::ZERO);
+                reticle::look_at(game, input, world);
             }
             // Middle-drag: the world follows the hand, so the pan
             // moves against the cursor delta, scaled out of screen
@@ -1960,9 +2010,15 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                 pull_row(&game.view(), input, vec2(x, y));
             }
         }
+        // While the pad points, the wheel zooms about the reticle as the
+        // right stick does.
         RawEvent::Wheel { delta } => crate::camera::controls::wheel_zoom(
             &mut game.presentation.camera,
-            input.mouse,
+            if input.last_pointer == Pointer::Pad {
+                input.reticle.point()
+            } else {
+                input.mouse
+            },
             delta,
             input.camera_prefs,
         ),
@@ -1999,7 +2055,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             let layout = game.presentation.layout.get();
             let badge = layout.idle_badge;
             if badge.w > 0.0 && badge.contains(vec2(x, y)) {
-                cycle_idle_worker(game);
+                cycle_idle_worker(game, input);
                 return;
             }
             let alert = layout.alert_badge;
@@ -2028,8 +2084,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // never start a drag-select there. HUD chrome swallows
             // clicks outright.
             if let Some(world) = crate::render::minimap_world_at(&game.view(), vec2(x, y)) {
-                game.presentation.camera.center = world;
-                game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+                reticle::look_at(game, input, world);
                 input.minimap_drag = true;
             } else if !click_on_hud(game, vec2(x, y)) {
                 input.drag_origin = Some(vec2(x, y));
@@ -2177,12 +2232,18 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         }
         RawEvent::TouchUp { id, x, y } => touch::up(game, input, bindings, id, vec2(x, y)),
         RawEvent::TouchCancel { id } => touch::cancel(input, id),
+        RawEvent::PadDown { button, .. } => {
+            input.last_pointer = Pointer::Pad;
+            reticle::press(game, input, bindings, button);
+        }
+        RawEvent::PadStick { x, y, .. } if (x, y) != (0.0, 0.0) => {
+            input.last_pointer = Pointer::Pad;
+        }
         RawEvent::PadConnected { .. }
         | RawEvent::PadDisconnected { .. }
-        | RawEvent::PadDown { .. }
         | RawEvent::PadUp { .. }
         | RawEvent::PadStick { .. } => {
-            // A match maps no controller controls; pads drive menus.
+            // `track_hands` keeps the sticks; `update_held` pans by them.
         }
     }
     if input.construction_open()
@@ -2210,7 +2271,7 @@ pub(super) fn ribbon_row_press(
         rect.w > 0.0
             && match pointer {
                 Pointer::Mouse => rect.contains(p),
-                Pointer::Touch => crate::layout::touch_pad(rect, ui).contains(p),
+                Pointer::Touch | Pointer::Pad => crate::layout::touch_pad(rect, ui).contains(p),
             }
     };
     // The ghost's controls draw over everything else, so they answer first.
@@ -2283,8 +2344,7 @@ fn armed_click(
                 // brings the camera along so its ring and controls show.
                 strike.aim_at(target);
                 if minimap.is_some() {
-                    game.presentation.camera.center = tile_center(target);
-                    game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+                    reticle::look_at(game, input, tile_center(target));
                 }
             } else {
                 launch_strike(game, input, target);
@@ -2316,8 +2376,7 @@ fn armed_click(
         // camera, never misread the click as world ground (that would
         // spend scrap on a bogus tile).
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             if pointer == Pointer::Touch || input.ghost_anchor().is_some() {
@@ -2993,8 +3052,7 @@ fn armed_verb_click(
         // the mode armed, and Shift chains teardowns behind the crew's
         // program.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let tile = numeric::tile_at(world);
@@ -3028,8 +3086,7 @@ fn armed_verb_click(
         // As in salvage: the minimap jumps the camera, a misclick keeps the
         // mode armed, and Shift chains welds behind the crew's program.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let patient = game
@@ -3091,8 +3148,7 @@ fn armed_verb_click(
         // mode armed, and Shift queues the escort behind each program. The
         // picked unit may be one of the selection; the rest escort it.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let picked = game
@@ -3145,8 +3201,7 @@ fn armed_verb_click(
         // The minimap jumps the camera, HUD chrome swallows the click, and
         // Shift chains legs and keeps the verb armed.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let goal = ground_tile(&game.state, world);
@@ -3168,8 +3223,7 @@ fn armed_verb_click(
         // Explicit fighting march: minimap jumps the camera, HUD
         // swallows, and Shift chains legs while keeping the verb armed.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let goal = ground_tile(&game.state, world);
@@ -3191,8 +3245,7 @@ fn armed_verb_click(
         // Like Run: the minimap jumps the camera, HUD chrome swallows the
         // click, and Shift chains legs and keeps the verb armed.
         if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            game.presentation.camera.center = world;
-            game.presentation.camera.pan(Vec2::ZERO); // re-clamp
+            reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
             let goal = ground_tile(&game.state, world);
@@ -3448,8 +3501,9 @@ fn press_card(
     }
 }
 
-/// Continuous per-frame input (held-key and edge panning).
-pub fn update_held(game: &mut Game, input: &InputState, dt: f32) {
+/// Continuous per-frame input: held-key, edge and stick panning, and stick
+/// zoom.
+pub fn update_held(game: &mut Game, input: &mut InputState, dt: f32) {
     let mut dir = crate::camera::controls::held_pan(&input.resolver);
     if input.camera_prefs.edge_pan && input.last_pointer == Pointer::Mouse && dir == vec2(0.0, 0.0)
     {
@@ -3469,7 +3523,9 @@ pub fn update_held(game: &mut Game, input: &InputState, dt: f32) {
             dir.y += 1.0;
         }
     }
-    crate::camera::controls::pan_toward(&mut game.presentation.camera, dir, input.camera_prefs, dt);
+    let keys =
+        crate::camera::controls::pan_travel(&game.presentation.camera, dir, input.camera_prefs, dt);
+    reticle::update(game, input, dt, keys);
 }
 
 /// How the native layer scales a wheel reading.

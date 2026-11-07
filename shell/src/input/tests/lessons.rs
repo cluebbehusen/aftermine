@@ -100,7 +100,12 @@ fn on_screen(game: &Game, world: Vec2) -> Vec2 {
 }
 
 fn foundry(game: &Game) -> Vec2 {
-    let c = game.home_foundry().expect("the lesson's Foundry").center();
+    let c = game
+        .view()
+        .own_foundries()
+        .next()
+        .expect("the lesson's Foundry")
+        .center();
     vec2(c.x.to_num::<f32>(), c.y.to_num::<f32>())
 }
 
@@ -190,7 +195,7 @@ fn the_command_lesson_plays_as_its_mouse_and_keys_card_says() {
     assert_eq!(objective(&game), Some("Move the camera"));
     assert!(copy(&game, Pointer::Mouse, true).contains("W A S D"));
     send(&mut game, &mut input, &[key_down(Key::D)]);
-    update_held(&mut game, &input, 0.5);
+    update_held(&mut game, &mut input, 0.5);
     send(&mut game, &mut input, &[key_up(Key::D)]);
 
     assert_eq!(objective(&game), Some("Select a Sentinel"));
@@ -228,7 +233,7 @@ fn the_command_lesson_plays_as_its_mouse_and_keys_card_says() {
     // The squad walked east; the camera follows it there with the keys.
     while on_screen(&game, fabricator(&game)).x > 1100.0 {
         send(&mut game, &mut input, &[key_down(Key::D)]);
-        update_held(&mut game, &input, 0.1);
+        update_held(&mut game, &mut input, 0.1);
         send(&mut game, &mut input, &[key_up(Key::D)]);
     }
     let target = fabricator(&game);
