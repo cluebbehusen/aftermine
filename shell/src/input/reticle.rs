@@ -10,21 +10,19 @@
 //! camera. Menus never see this: they read pad buttons as menu keys.
 
 pub(crate) use super::select::Picked;
-use super::select::pick;
+use super::select::{Reach, pick};
 use super::{InputState, Pointer, dispatch_action};
 use crate::action::{Action, BindingMap};
 use crate::camera::Camera;
+use crate::config::ReticleSnap;
 use crate::game::Game;
 use aftermine_protocol::PadButton;
 use macroquad::prelude::Vec2;
 
 /// How sharply pan speed rises with stick travel: speed follows travel to
 /// this power, so a light push aims finely and a full push matches the pan
-/// keys.
+/// keys while both speeds are at their defaults.
 const PAN_CURVE: f32 = 2.0;
-/// The share of pan speed left while the reticle rests on something, so a
-/// passing unit is easy to stop on.
-const SNAP_FRICTION: f32 = 0.5;
 /// Zoom steps per second at full right-stick travel, in wheel notches.
 const ZOOM_NOTCHES_PER_SEC: f32 = 6.0;
 /// Logical pixels an off-center reticle keeps from the window's edge.
@@ -32,6 +30,19 @@ const EDGE_MARGIN: f32 = 32.0;
 /// An offset under this many logical pixels is rounding: the reticle is
 /// centered.
 const CENTERED: f32 = 0.01;
+
+/// How far around the reticle it snaps, and the share of stick speed left
+/// while it rests on something, so a passing unit is easy to stop on. A
+/// stick aims far less finely than a mouse; with snap off, the reticle
+/// picks as a mouse does and never slows.
+fn snap_feel(snap: ReticleSnap) -> (Reach, f32) {
+    match snap {
+        ReticleSnap::Off => (Reach::MOUSE, 1.0),
+        ReticleSnap::Light => (Reach::around(16.0), 0.75),
+        ReticleSnap::Standard => (Reach::around(24.0), 0.5),
+        ReticleSnap::Strong => (Reach::around(32.0), 0.35),
+    }
+}
 
 /// Where the reticle sits and what it rests on.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -87,7 +98,8 @@ impl Reticle {
 /// what the reticle rests on. Runs every frame of a match: sticks send only
 /// when they move. `keys` is the world travel the held pan keys ask for.
 pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec2) {
-    let prefs = input.camera_prefs;
+    let prefs = input.pad_prefs;
+    let (reach, friction) = snap_feel(prefs.snap);
     let ui = input.ui;
     let (left, right) = input.sticks();
     // A stick held since a menu was up moves the camera too, so it makes
@@ -104,12 +116,14 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec
         let mut travel = keys;
         if left != Vec2::ZERO {
             let friction = if reticle.snap.is_some() {
-                SNAP_FRICTION
+                friction
             } else {
                 1.0
             };
-            let speed =
-                super::PAN_PX_PER_SEC * prefs.pan_speed * left.length().powf(PAN_CURVE) * friction;
+            let speed = super::PAN_PX_PER_SEC
+                * prefs.stick_speed
+                * left.length().powf(PAN_CURVE)
+                * friction;
             travel += left.normalize() * speed * dt / camera.zoom;
         }
         if travel != Vec2::ZERO {
@@ -123,15 +137,23 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec
     }
     reticle.settle(camera, ui);
     if pad && right.y != 0.0 {
-        // Up zooms in, as the wheel rolled away does.
+        // Up zooms in, as the wheel rolled away does, unless the player
+        // flipped the stick; the wheel's own setting leaves it alone.
         let notches = -right.y * ZOOM_NOTCHES_PER_SEC * dt;
-        crate::camera::controls::wheel_zoom(camera, reticle.point, notches, prefs);
+        camera.zoom_at(
+            reticle.point,
+            if prefs.zoom_inverted {
+                -notches
+            } else {
+                notches
+            },
+        );
     }
     input.reticle.snap = pad
         .then(|| {
             let point = input.reticle.point;
             (!super::click_on_hud(game, point))
-                .then(|| pick(game, point, ui, Pointer::Pad))
+                .then(|| pick(game, point, ui, reach))
                 .flatten()
         })
         .flatten();

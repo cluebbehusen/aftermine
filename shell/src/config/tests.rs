@@ -203,6 +203,42 @@ fn a_hand_edited_ui_scale_loads_within_the_settings_range() {
 }
 
 #[test]
+fn controller_settings_round_trip_and_a_hand_edited_stick_speed_loads_in_range() {
+    let dir = std::env::temp_dir().join(format!("aftermine-config-pad-{}", std::process::id()));
+    let path = dir.join("config.json");
+    let config = Config {
+        pad: PadPrefs {
+            stick_speed: 1.5,
+            zoom_inverted: true,
+            snap: ReticleSnap::Strong,
+        },
+        ..Config::default()
+    };
+    config.save_to(&path).unwrap();
+    assert_eq!(Config::load_from(Some(path.clone())), config);
+    for (stored, loaded) in [(0.1, 0.5), (0.75, 0.75), (9.0, 2.0)] {
+        let config = Config {
+            pad: PadPrefs {
+                stick_speed: stored,
+                ..PadPrefs::default()
+            },
+            ..Config::default()
+        };
+        config.save_to(&path).unwrap();
+        assert_eq!(
+            Config::load_from(Some(path.clone())).pad.stick_speed,
+            loaded
+        );
+    }
+    let unreadable = PadPrefs {
+        stick_speed: f32::NAN,
+        ..PadPrefs::default()
+    };
+    assert_eq!(unreadable.clamped(), PadPrefs::default());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn any_trouble_at_all_falls_back_to_defaults() {
     // Missing file.
     let missing = Config::load_from(Some(PathBuf::from("/definitely/not/here.json")));
@@ -395,6 +431,10 @@ fn the_load_checks_settle_in_one_pass() {
         touch: TouchPrefs {
             double_tap_ms: 0,
             long_press_ms: 0,
+        },
+        pad: PadPrefs {
+            stick_speed: -3.0,
+            ..PadPrefs::default()
         },
         ..Config::default()
     };

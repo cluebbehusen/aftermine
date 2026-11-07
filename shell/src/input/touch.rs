@@ -532,17 +532,17 @@ fn lift_presses(input: &InputState, finger: &TouchPoint, card: PressedCard) -> b
 /// unit sweeps its kind. With the build palette open and nothing armed,
 /// a tap that picks nothing only closes the palette.
 fn world_tap(game: &mut Game, input: &mut InputState, p: Vec2, double: bool) {
-    let picked = select::pick(game, p, input.ui, super::Pointer::Touch);
+    let picked = select::pick(game, p, input.ui, select::Reach::TOUCH);
     if picked.is_none() && input.build_menu && input.placing.is_none() {
         // Tapping away from the open palette dismisses it and keeps the
         // builder: touch has no Esc, and a deselect would lose the crew.
         input.close_construction();
         input.last_tap = None;
     } else if double && picked.is_some() && !input.queue_held() {
-        select_all_of_kind_on_screen(game, p, input.ui, super::Pointer::Touch);
+        select_all_of_kind_on_screen(game, p, input.ui, select::Reach::TOUCH);
         input.last_tap = None;
     } else {
-        click_select(game, p, input.queue_held(), input.ui, super::Pointer::Touch);
+        click_select(game, p, input.queue_held(), input.ui, select::Reach::TOUCH);
         input.last_tap = Some((input.now, p));
     }
 }
@@ -607,9 +607,9 @@ fn held_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action:
     // The same pick a tap uses, so only what the viewer can SEE steers
     // the gesture: a hidden hostile or an undetected charge never flips
     // an order into a select, which would make occupancy observable.
-    let on_entity = select::pick(game, tp.at, input.ui, super::Pointer::Touch).is_some();
+    let on_entity = select::pick(game, tp.at, input.ui, select::Reach::TOUCH).is_some();
     if on_entity && game.presentation.selection.units.is_empty() {
-        select::click_select(game, tp.at, false, input.ui, super::Pointer::Touch);
+        select::click_select(game, tp.at, false, input.ui, select::Reach::TOUCH);
     } else {
         orders::context_order(game, tp.at, input.queue_held());
     }

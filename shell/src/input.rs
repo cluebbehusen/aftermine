@@ -426,6 +426,8 @@ pub struct InputState {
     pub(crate) now: f64,
     /// Camera feel from settings, injected per frame.
     pub(crate) camera_prefs: crate::config::CameraPrefs,
+    /// Controller feel from settings, injected likewise.
+    pub(crate) pad_prefs: crate::config::PadPrefs,
     /// Touch timing windows, injected from config each frame.
     pub(crate) touch_prefs: crate::config::TouchPrefs,
     /// Live fingers, in touch-down order (deterministic; two at most
@@ -1124,6 +1126,7 @@ impl InputState {
             ui: 1.0,
             now: 0.0,
             camera_prefs: crate::config::CameraPrefs::default(),
+            pad_prefs: crate::config::PadPrefs::default(),
             touch_prefs: crate::config::TouchPrefs::default(),
             touches: Vec::new(),
             last_tap: None,
@@ -1889,7 +1892,7 @@ use orders::{context_order, rally_at, rally_producers, rally_selected_producers}
 pub(crate) use select::army_units;
 pub use select::idle_harvesters;
 use select::{
-    box_select, click_on_hud, click_select, cycle_idle_worker, select_all_of_kind_on_screen,
+    Reach, box_select, click_on_hud, click_select, cycle_idle_worker, select_all_of_kind_on_screen,
 };
 pub use touch::update_touch;
 pub(crate) use touch::{
@@ -2124,9 +2127,9 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                             now - t < 0.35 && p.distance(release) <= 12.0 * input.ui
                         });
                     if double {
-                        select_all_of_kind_on_screen(game, release, input.ui, Pointer::Mouse);
+                        select_all_of_kind_on_screen(game, release, input.ui, Reach::MOUSE);
                     } else {
-                        click_select(game, release, additive, input.ui, Pointer::Mouse);
+                        click_select(game, release, additive, input.ui, Reach::MOUSE);
                     }
                     input.last_click = Some((now, release));
                 } else {

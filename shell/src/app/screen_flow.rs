@@ -933,6 +933,7 @@ fn playing_frame(
     app.input.ui = render::ui_scale();
     app.input.now = get_time();
     app.input.camera_prefs = app.config.camera;
+    app.input.pad_prefs = app.config.pad;
     app.input.touch_prefs = app.config.touch;
     let performance = app.performance.view();
     relayout_hud(
