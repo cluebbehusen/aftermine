@@ -51,17 +51,21 @@ pub(crate) const BACK: PadButton = PadButton::East;
 pub(crate) const TABS: (PadButton, PadButton) = (PadButton::LeftShoulder, PadButton::RightShoulder);
 /// The buttons that page menus, up and down.
 pub(crate) const PAGES: (PadButton, PadButton) = (PadButton::LeftTrigger, PadButton::RightTrigger);
+/// The button that deletes the saved game or replay under the menu cursor.
+pub(crate) const DELETE: PadButton = PadButton::West;
 
 /// The canonical menu keys controller buttons press: the D-pad moves the
-/// cursor, the bumpers press the tab keys and the triggers page. Key
-/// bindings never move this layout.
-const MENU_KEYS: [(PadButton, Key); 10] = [
+/// cursor, the bumpers press the tab keys, the triggers page and the left
+/// face button presses the delete key. Key bindings never move this
+/// layout.
+const MENU_KEYS: [(PadButton, Key); 11] = [
     (PadButton::DpadUp, Key::Up),
     (PadButton::DpadDown, Key::Down),
     (PadButton::DpadLeft, Key::Left),
     (PadButton::DpadRight, Key::Right),
     (CONFIRM, Key::Enter),
     (BACK, Key::Escape),
+    (DELETE, Key::X),
     (TABS.0, Key::Q),
     (TABS.1, Key::E),
     (PAGES.0, Key::PageUp),

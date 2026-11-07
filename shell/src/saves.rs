@@ -96,24 +96,24 @@ impl ReplayEntry {
 }
 
 /// How to act on a shelf row: activate it, where it can be activated,
-/// and delete it. Deleting takes a key, so without a keyboard the delete
-/// clause is left out.
+/// and delete it by key or button. A finger or a pointer alone deletes
+/// with the row's own Delete button, which says so itself.
 fn entry_hint(action: Option<(&str, &str)>, hands: crate::platform::Hands) -> String {
-    if hands.pad.is_some() {
-        return action.map_or_else(String::new, |(key_action, _)| {
-            format!("{{confirm}} {key_action}")
-        });
-    }
+    let by_key = hands.pad.is_some() || (hands.keys && !hands.touch());
     let verb = if hands.touch() { "tap" } else { "click" };
-    match (action, hands.keys) {
-        (Some((key_action, _)), true) if !hands.touch() => {
-            format!("{{confirm}} {key_action} | {{delete}} twice deletes")
+    let activate = action.map(|(key_action, action)| {
+        if by_key {
+            format!("{{confirm}} {key_action}")
+        } else {
+            format!("{verb} to {action}")
         }
-        (Some((_, action)), true) => format!("{verb} to {action} | {{delete}} twice deletes"),
-        (Some((_, action)), false) => format!("{verb} to {action}"),
-        (None, true) => "{delete} twice deletes".to_string(),
-        (None, false) => String::new(),
-    }
+    });
+    let delete = (hands.pad.is_some() || hands.keys).then(|| "{delete} deletes".to_string());
+    activate
+        .into_iter()
+        .chain(delete)
+        .collect::<Vec<_>>()
+        .join(" | ")
 }
 
 const MONTHS: [&str; 12] = [

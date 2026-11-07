@@ -60,7 +60,7 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
                 army_strip: None,
             };
         }
-        Screen::Replays(shelf) => (screen.mode(), Some(shelf.menu.view())),
+        Screen::Replays(shelf) => (screen.mode(), Some(shelf.view())),
         Screen::Lobby { screen: lobby, .. } => (screen.mode(), Some(lobby.menu.view())),
         Screen::Busy(busy) => (screen.mode(), Some(busy.menu.view())),
         Screen::Pause(ps) => (screen.mode(), Some(ps.menu.view())),

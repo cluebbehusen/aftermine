@@ -6,12 +6,13 @@ fn shelf_hints_offer_only_the_gestures_the_hands_in_use_have() {
     use crate::platform::{ALL_HANDS, assert_copy_fits};
     assert_eq!(
         entry_hint(Some(("watches", "watch")), ALL_HANDS[0]),
-        "{confirm} watches | {delete} twice deletes"
+        "{confirm} watches | {delete} deletes"
     );
     for hands in ALL_HANDS {
         for action in [("watches", "watch"), ("loads paused", "load paused")] {
             let hint = entry_hint(Some(action), hands);
             assert_copy_fits(hands, &hint);
+            // Without a key, the row's own Delete button says it.
             assert_eq!(hint.contains("{delete}"), hands.keys, "{hint}");
         }
         let hint = entry_hint(None, hands);
@@ -404,12 +405,16 @@ fn a_chip_names_only_the_kinds_its_tab_does_not_imply() {
 }
 
 #[test]
-fn shelf_hints_name_only_the_controllers_confirm_while_one_is_in_use() {
+fn shelf_hints_name_the_controllers_buttons_while_one_is_in_use() {
     for hands in crate::platform::pad_hands() {
-        for action in [("watches", "watch"), ("loads paused", "load paused")] {
-            let hint = crate::platform::assert_pad_copy(hands, &entry_hint(Some(action), hands));
-            assert!(!hint.contains("delete"), "{hint}");
+        for (key_action, action) in [("watches", "watch"), ("loads paused", "load paused")] {
+            let hint = entry_hint(Some((key_action, action)), hands);
+            assert_eq!(
+                hint,
+                format!("{{confirm}} {key_action} | {{delete}} deletes")
+            );
+            crate::platform::assert_pad_copy(hands, &hint);
         }
-        assert_eq!(entry_hint(None, hands), "");
+        assert_eq!(entry_hint(None, hands), "{delete} deletes");
     }
 }

@@ -89,8 +89,18 @@ impl Tab {
     }
 }
 
+/// The question a delete asks first.
+struct Ask {
+    /// The record it would delete.
+    path: std::path::PathBuf,
+    /// The record's name, and its map beside a name the player gave.
+    subtitle: String,
+    /// Cancel, preselected, then Delete.
+    menu: Menu<bool>,
+}
+
 /// The shelf screen: discovered records, the active tab's menu, and the
-/// two-press delete arming state.
+/// question a delete asks first.
 pub struct Shelf {
     /// Everything loadable, watchable, or deletable, newest first.
     pub entries: Vec<ReplayEntry>,
@@ -107,8 +117,9 @@ pub struct Shelf {
     /// delete-refresh can drop it and strand a mouse-only player in an
     /// exitless menu.
     pub menu: Menu<usize>,
-    /// Entry armed for deletion; X on the same entry confirms.
-    pub arming: Option<usize>,
+    /// The delete waiting on the player's answer, drawn in place of the
+    /// tab.
+    asking: Option<Ask>,
     back: crate::button::BackButton,
     tabs: TabStrip,
 }
@@ -137,11 +148,23 @@ impl Shelf {
             return;
         }
         let selected = self.menu.value().map(|i| self.entries[*i].path.clone());
+        let line = self.menu.selected;
+        // A question about a record that has gone, deleted on another
+        // device, has nothing left to ask about.
+        let asking = self
+            .asking
+            .take()
+            .filter(|ask| entries.iter().any(|entry| entry.path == ask.path));
         let mut fresh = Self::at(entries, unix_now(), self.tab);
         if let Some(path) = selected {
             let paths: Vec<_> = fresh.entries.iter().map(|e| e.path.clone()).collect();
-            fresh.menu.select_where(|i| paths[*i] == path);
+            if !fresh.menu.select_where(|i| paths[*i] == path) {
+                // The focused record is gone: the cursor stays in place,
+                // on the record that moved up into its row.
+                fresh.menu.select(line);
+            }
         }
+        fresh.asking = asking;
         fresh.catalog_ready = true;
         fresh.downloading = downloading;
         // A refresh landing mid-press must not drop the BACK or tab
@@ -169,7 +192,7 @@ impl Shelf {
             tab: Some(tab),
             now,
             menu,
-            arming: None,
+            asking: None,
             back: crate::button::BackButton::default(),
             tabs: TabStrip::default(),
         }
@@ -180,21 +203,62 @@ impl Shelf {
         self.tab.unwrap_or(Tab::Saves)
     }
 
-    /// The debug protocol's stable mode name for the tab on show.
+    /// The debug protocol's stable mode name: the delete question while
+    /// it is up, else the tab on show.
     pub fn mode_name(&self) -> &'static str {
-        self.tab().mode_name()
+        if self.asking.is_some() {
+            "confirm_delete"
+        } else {
+            self.tab().mode_name()
+        }
     }
 
-    /// Shows `tab` from its first row, disarming any delete.
+    /// What automation reads: the delete question while it is up, else
+    /// the tab's rows.
+    pub fn view(&self) -> crate::menu::MenuView {
+        self.asking
+            .as_ref()
+            .map_or_else(|| self.menu.view(), |ask| ask.menu.view())
+    }
+
+    /// Shows `tab` from its first row.
     fn show(&mut self, tab: Tab) {
         self.tab = Some(tab);
         self.menu = tab_menu(&self.entries, tab, self.now);
-        self.arming = None;
     }
 
-    /// Applies a frame's events. Deletion happens here (two X presses
-    /// on the same row); everything session-shaped is returned to the
-    /// caller as an [`Out`].
+    /// Asks before deleting `entries[index]`. Cancel sits first and
+    /// preselected, as in the other dialogs, so a second press of the key
+    /// or button that asked never deletes.
+    fn ask(&mut self, index: usize) {
+        let Some(entry) = self.entries.get(index) else {
+            return;
+        };
+        let title = if entry.kind.resumable() {
+            "DELETE THIS SAVE?"
+        } else {
+            "DELETE THIS REPLAY?"
+        };
+        let subtitle = match &entry.map {
+            Some(map) => format!("{} \u{b7} {map}", entry.title),
+            None => entry.title.clone(),
+        };
+        self.asking = Some(Ask {
+            path: entry.path.clone(),
+            subtitle,
+            menu: Menu::rows(
+                title,
+                [
+                    (Label::from("Cancel"), false),
+                    (Label::from("Delete"), true),
+                ],
+            ),
+        });
+    }
+
+    /// Applies a frame's events. A delete asks first, here; the deletion
+    /// itself and everything session-shaped are returned to the caller
+    /// as an [`Out`].
     pub fn update(
         &mut self,
         events: &[RawEvent],
@@ -204,10 +268,24 @@ impl Shelf {
         let escaped = events
             .iter()
             .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }));
-        let x_pressed = events
+        let delete_pressed = events
             .iter()
             .any(|e| matches!(e, RawEvent::KeyDown { key: Key::X }));
         let (back, events) = self.back.route(events);
+        if let Some(ask) = &mut self.asking {
+            // As in the pause menu's dialogs, BACK and Escape outrank a
+            // row picked in the same frame.
+            let picked = ask.menu.handle(&events, mouse).map(|row| row.value);
+            if back || escaped || picked == Some(false) {
+                sounds.push((SoundKind::Click, None));
+                self.asking = None;
+            } else if picked == Some(true) {
+                sounds.push((SoundKind::Click, None));
+                let ask = self.asking.take();
+                return ask.map_or(Out::Stay, |ask| Out::Delete(ask.path));
+            }
+            return Out::Stay;
+        }
         if back {
             sounds.push((SoundKind::Click, None));
             return Out::Home;
@@ -231,6 +309,14 @@ impl Shelf {
         }
         if let Some(row) = picked {
             sounds.push((SoundKind::Click, None));
+            if row.column == Some(crate::menu::ROW_ACTION) {
+                // A list still rescanning after a delete may hold the
+                // record already gone.
+                if self.catalog_ready {
+                    self.ask(row.value);
+                }
+                return Out::Stay;
+            }
             return match self.entries.get(row.value) {
                 Some(entry) if entry.available() && entry.kind.resumable() => {
                     Out::Load(entry.path.clone())
@@ -244,27 +330,19 @@ impl Shelf {
                 None => Out::Stay,
             };
         }
-        if x_pressed
+        if delete_pressed
             && self.catalog_ready
             && let Some(&i) = self.menu.value()
         {
-            if self.arming == Some(i) {
-                self.arming = None;
-                return Out::Delete(self.entries[i].path.clone());
-            }
-            self.arming = Some(i);
+            sounds.push((SoundKind::Click, None));
+            self.ask(i);
         }
         Out::Stay
     }
 
-    /// How to act on the focused row: coaching for the footer. None while
-    /// a delete is armed, since the status line already says what to
-    /// press.
+    /// How to act on the focused row: coaching for the footer.
     pub fn coaching(&self) -> Option<String> {
         let i = *self.menu.value()?;
-        if self.arming == Some(i) {
-            return None;
-        }
         let hands = crate::platform::hands();
         let hint = self
             .entries
@@ -287,8 +365,6 @@ impl Shelf {
             .and_then(|i| self.entries.get(*i)?.problem);
         if !self.catalog_ready {
             "looking for saves and replays...".to_string()
-        } else if self.arming.is_some() && self.arming == self.menu.value().copied() {
-            "Press {delete} again to delete".to_string()
         } else if let Some(problem) = problem {
             problem.reason().to_string()
         } else if self.downloading > 0 {
@@ -300,10 +376,15 @@ impl Shelf {
         }
     }
 
-    /// Draws the tab's rows, the strip, and the status line over the
-    /// veil the caller drew. `notice_shown` says the app's menu notice
-    /// holds the status line's place this frame.
+    /// Draws the delete question, or else the tab's rows, the strip, and
+    /// the status line, over the veil the caller drew. `notice_shown`
+    /// says the app's menu notice holds the status line's place this
+    /// frame.
     pub fn draw(&self, sprites: &crate::assets::Sprites, mouse: Vec2, notice_shown: bool) {
+        if let Some(ask) = &self.asking {
+            ask.menu.draw(sprites, &ask.subtitle);
+            return;
+        }
         self.menu
             .draw_with_coaching(sprites, "", self.coaching().as_deref());
         let keys = crate::tabs::shown_keys();
@@ -366,6 +447,7 @@ fn tab_menu(entries: &[ReplayEntry], tab: Tab, now: u64) -> Menu<usize> {
         .collect();
     let mut menu = Menu::new("SAVES & REPLAYS", lines);
     menu.wide = true;
+    menu.row_action = Some("Delete");
     menu.heading = Heading::Page {
         band: crate::tabs::BAND,
     };

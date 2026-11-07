@@ -481,6 +481,10 @@ fn a_controller_watches_a_replay() -> Result<()> {
     assert_mode(&mut client, "saves", "R1 steps the tab")?;
     press_pad(&mut client, PadButton::LeftShoulder)?;
     assert_mode(&mut client, "replays", "L1 steps it back")?;
+    press_pad(&mut client, PadButton::West)?;
+    assert_mode(&mut client, "confirm_delete", "Square asks before deleting")?;
+    press_pad(&mut client, PadButton::East)?;
+    assert_mode(&mut client, "replays", "Circle keeps the replay")?;
     // The only record, so the cursor is already on it.
     press_pad(&mut client, PadButton::South)?;
     wait_for_mode(
