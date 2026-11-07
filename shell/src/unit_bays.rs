@@ -104,6 +104,14 @@ impl SelectedBays {
         Ok(host.id)
     }
 
+    /// The drones the selected bays have on order, staged orders included.
+    pub fn on_order(&self) -> usize {
+        self.hosts
+            .iter()
+            .map(|host| usize::from(host.ordered))
+            .sum()
+    }
+
     /// The cancel refunding the latest paid drone of the selected bay with
     /// the most on order.
     pub fn cancel(&self) -> Option<Command> {

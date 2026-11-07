@@ -63,6 +63,7 @@ pub(crate) struct HudGeometry {
     pub(super) ribbon: Option<chrome::RibbonLayout>,
     pub(super) queue_toggle: Option<Rect>,
     pub(super) performance: Option<performance::PerformanceLayout>,
+    pub(super) ring: Option<radial::RingLayout>,
 }
 
 /// Lays out the HUD for the scene as it stands, before anything draws.
@@ -107,6 +108,17 @@ pub(crate) fn layout(
         .map(|r| r.y)
         .fold(f32::INFINITY, f32::min);
     let panel_right = panel_regions.iter().map(|r| r.x + r.w).fold(0.0, f32::max);
+    let ring = radial::layout(
+        game,
+        input,
+        panel.as_ref(),
+        env,
+        if panel_top.is_finite() {
+            panel_top
+        } else {
+            env.viewport.y
+        },
+    );
     // A spectator commands no army. The strip sits on the minimap and the
     // group column on the strip.
     let army_strip = (!game.presentation.spectating())
@@ -226,6 +238,7 @@ pub(crate) fn layout(
             ribbon,
             queue_toggle,
             performance,
+            ring,
         },
     }
 }

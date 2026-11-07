@@ -9,13 +9,13 @@ use aftermine_sim::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct UpgradeRow {
     pub label: String,
     pub upgraded: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct UpgradeComparison {
     pub rows: Vec<UpgradeRow>,
 }

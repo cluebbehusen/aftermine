@@ -580,3 +580,61 @@ fn a_selection_of_every_kind_gets_a_roster_chip_for_each() {
         }
     }
 }
+
+#[test]
+fn a_ring_fits_between_the_top_bar_and_the_panel_wherever_it_opens() {
+    let mut game = skirmish();
+    let human = game.presentation.human;
+    let foundry = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.player == human)
+        .unwrap()
+        .id;
+    // A producer's panel is the tallest band a ring opens over.
+    game.presentation.selection.buildings.push(foundry);
+    for (w, h, ui) in [
+        (1133.0, 744.0, 1.0),
+        (1280.0, 800.0, 1.0),
+        (1280.0, 800.0, 1.5),
+        (1133.0, 744.0, 1.5),
+    ] {
+        let viewport = vec2(w, h);
+        let model = layout(
+            &game.view(),
+            &InputState::new(),
+            &BindingMap::classic(),
+            HudEnv { viewport, ui },
+            None,
+            &fixed,
+        )
+        .layout;
+        for anchor in [viewport * 0.5, Vec2::ZERO, viewport] {
+            let ring = crate::radial::Geometry::fit(
+                anchor,
+                viewport,
+                ui,
+                model.top_bar_h,
+                model.panel_top,
+            );
+            let at = format!("{w}x{h} at {ui}x from {anchor}");
+            assert!(ring.center.y - ring.reach() >= model.top_bar_h, "{at}");
+            assert!(ring.legend_baseline() <= model.panel_top, "{at}");
+            assert!(ring.center.x - ring.reach() >= 0.0, "{at}");
+            assert!(ring.center.x + ring.reach() <= w, "{at}");
+            assert!(ring.scale <= ui, "{at}");
+        }
+        // The window's center leaves room for the whole ring at UI scale 1.
+        if ui == 1.0 {
+            let ring = crate::radial::Geometry::fit(
+                viewport * 0.5,
+                viewport,
+                ui,
+                model.top_bar_h,
+                model.panel_top,
+            );
+            assert_eq!(ring.scale, 1.0, "{w}x{h}");
+        }
+    }
+}

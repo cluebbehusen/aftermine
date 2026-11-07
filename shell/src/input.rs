@@ -461,6 +461,14 @@ pub struct InputState {
     /// The group RT narrowed last, while the selection is still the kind
     /// it left.
     narrowed: Option<pad_controls::Narrowed>,
+    /// The command ring a controller opened, while it is open.
+    pub(crate) ring: Option<pad_ring::PadRing>,
+    /// Pad buttons whose press the ring took, so it takes their release
+    /// too, even after it closes.
+    ring_held: Vec<(u64, aftermine_protocol::PadButton)>,
+    /// Whether the left stick was still pushed when a ring closed: it
+    /// moves the camera again only once let go.
+    stick_latched: bool,
     /// The verb the next world click issues, if one is armed.
     pub(crate) click_verb: Option<ClickVerb>,
     /// Producers whose rally point the next world/minimap click sets.
@@ -1183,6 +1191,9 @@ impl InputState {
             last_pad_tap: None,
             queue_pads: std::collections::BTreeSet::new(),
             narrowed: None,
+            ring: None,
+            ring_held: Vec::new(),
+            stick_latched: false,
             click_verb: None,
             rallying: Vec::new(),
             striking: None,
@@ -1225,6 +1236,16 @@ impl InputState {
                 (sum.0 + held.0, sum.1 + held.1)
             });
         (left.clamp_length_max(1.0), right.clamp_length_max(1.0))
+    }
+
+    /// The sticks as the camera reads them: still while a ring is open,
+    /// and the left one still while it is latched after a ring closed.
+    pub(crate) fn camera_sticks(&self) -> (Vec2, Vec2) {
+        if self.ring.is_some() {
+            return (Vec2::ZERO, Vec2::ZERO);
+        }
+        let (left, right) = self.sticks();
+        (if self.stick_latched { Vec2::ZERO } else { left }, right)
     }
 
     /// The family of the controller in use, if one is.
@@ -1459,6 +1480,9 @@ impl InputState {
         self.menu_requested = false;
         self.pad_press = None;
         self.queue_pads.clear();
+        self.ring = None;
+        self.ring_held.clear();
+        self.stick_latched = false;
     }
 
     /// Where a lone finger has rested on chrome long enough to preview
@@ -1974,6 +1998,7 @@ mod groups;
 pub(crate) use groups::Group;
 mod orders;
 mod pad_controls;
+pub(crate) mod pad_ring;
 mod paint;
 pub(crate) use paint::{painting, preview as paint_preview};
 pub(crate) use select::Kept;
@@ -2079,11 +2104,12 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
     if let Some(pointer) = Pointer::of(event) {
         input.last_pointer = pointer;
         // Another pointer took over: a held A's sweep or row ends
-        // unfinished.
+        // unfinished, and the controller's ring closes.
         input.pad_press = None;
         if matches!(input.stroke_by(), Some(Presser::Pad(_))) {
             input.drop_stroke();
         }
+        pad_ring::other_hands(input);
     }
     match *event {
         RawEvent::MouseMove { x, y } => {
@@ -2300,6 +2326,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             input.mmb_anchor = None;
         }
         RawEvent::KeyDown { key } => {
+            pad_ring::other_hands(input);
             if let Some(ActionEvent::Pressed(action)) =
                 input.key_edge(bindings, key, true, input.context(game))
             {
@@ -2320,10 +2347,16 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         RawEvent::TouchCancel { id } => touch::cancel(input, id),
         RawEvent::PadDown { pad, button } => {
             input.pad_points();
-            pad_controls::press(game, input, bindings, pad, button);
-            reticle::press(game, input, bindings, button);
+            if !pad_ring::press(game, input, bindings, pad, button) {
+                pad_controls::press(game, input, bindings, pad, button);
+                reticle::press(game, input, bindings, button);
+            }
         }
-        RawEvent::PadUp { pad, button } => pad_controls::release(game, input, pad, button),
+        RawEvent::PadUp { pad, button } => {
+            if !pad_ring::release(input, pad, button) {
+                pad_controls::release(game, input, pad, button);
+            }
+        }
         RawEvent::PadStick { x, y, .. } if (x, y) != (0.0, 0.0) => {
             input.pad_points();
         }
@@ -2332,6 +2365,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // input may not, so nothing it held outlives it. This runs in
             // event order, so a press earlier in the batch is dropped too.
             input.queue_pads.remove(&pad);
+            pad_ring::disconnected(input, pad);
             if input
                 .pad_press
                 .as_ref()
@@ -3708,6 +3742,7 @@ pub fn update_held(game: &mut Game, input: &mut InputState, dt: f32) {
     // A held A paints the ground the reticle crosses this frame, or lays a
     // placement row along it.
     let before = input.reticle.ground(&game.presentation.camera);
+    pad_ring::update(game, input);
     reticle::update(game, input, dt, keys);
     paint::sweep(game, input, before);
     if let Some(by @ Presser::Pad(_)) = input.stroke_by() {

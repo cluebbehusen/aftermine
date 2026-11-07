@@ -114,7 +114,7 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec
     // rests on, so while one is armed nothing snaps or slows the reticle.
     let snaps = input.placing_kind().is_none();
     let ui = input.ui;
-    let (left, right) = input.sticks();
+    let (left, right) = input.camera_sticks();
     // A stick held since a menu was up moves the camera too, so it makes
     // the pad the pointer even though the match never saw it move.
     if left != Vec2::ZERO || right != Vec2::ZERO {

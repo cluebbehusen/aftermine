@@ -180,6 +180,14 @@ the reticle through the same selection, order, placement and targeting paths as
 clicks, and the buttons a pad holds drop with the rest of held input on every
 transition.
 
+The controller's command ring (`radial`) is built from the panel model the
+layout pass published, so a ring never offers what the panel would refuse, and a
+pick presses the card itself, arming what its hotkey arms. Its build rings step
+the same construction state the build keys do. While a ring is open it owns the
+pad's buttons and left stick, except the queueing trigger; a button whose press
+it took, it also takes up, and a stick still pushed when it closes moves the
+camera only once let go.
+
 The HUD lays out in a pure pass (`render::hud`) that measures text through a
 supplied function, so it runs headless. Each frame lays it out before input,
 again before each press or release that follows another event in the batch, and
@@ -462,7 +470,7 @@ shell.
 | ----------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`       | Screen tests, `driver/tests/menu_ux.rs`                                             |
 | Live tick and recording       | `shell/src/game.rs`                                                            | Game tests, `driver/src/smoke.rs`                                                   |
-| Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests, `driver/tests/pad_match.rs`                                 |
+| Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests, `driver/tests/pad_match.rs`, `driver/tests/pad_ring.rs`     |
 | Saves                         | `shell/src/autosave.rs`, `shell/src/saves.rs`                                  | Module tests                                                                        |
 | Diagnostic persistence        | `kit/src/diagnostics.rs`, `shell/src/diagnostic_report.rs`                     | Module tests                                                                        |
 | Playback and seeking          | `kit/src/playback.rs`, `shell/src/screens/playback.rs`                         | Playback tests                                                                      |
