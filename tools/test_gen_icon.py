@@ -30,7 +30,7 @@ class IconGenerationTests(unittest.TestCase):
             output = Path(temp)
             with (
                 patch.object(gen_icon, "OUT", output / "desktop"),
-                patch.object(gen_icon, "IOS_OUT", output / "ios"),
+                patch.object(gen_icon, "APP_ICON_OUT", output / "apple"),
                 redirect_stdout(StringIO()),
             ):
                 gen_icon.main()
@@ -40,16 +40,17 @@ class IconGenerationTests(unittest.TestCase):
                 expected_names,
                 "the generator must neither omit nor invent packaged icon files",
             )
+            app_icon_names = {path.name for path in gen_icon.APP_ICON_OUT.iterdir()}
             self.assertEqual(
-                {path.name for path in (output / "ios").iterdir()},
-                {"aftermine_1024.png"},
+                {path.name for path in (output / "apple").iterdir()},
+                app_icon_names,
+                "the generator must neither omit nor invent app icon files",
             )
             expected_files = {
                 Path("desktop") / name: committed / name for name in expected_names
             }
-            expected_files[Path("ios/aftermine_1024.png")] = (
-                gen_icon.IOS_OUT / "aftermine_1024.png"
-            )
+            for name in app_icon_names:
+                expected_files[Path("apple") / name] = gen_icon.APP_ICON_OUT / name
             for name, expected in expected_files.items():
                 with self.subTest(name=str(name)):
                     actual = output / name
@@ -74,19 +75,20 @@ class IconGenerationTests(unittest.TestCase):
                             f"{name} no longer reproduces from tools/gen_icon.py",
                         )
 
-    def test_ios_catalog_uses_the_approved_opaque_master(self) -> None:
+    def test_ipad_icon_is_the_approved_opaque_master(self) -> None:
         self.assertEqual(
             hashlib.sha256(gen_icon.SOURCE.read_bytes()).hexdigest(),
             "e020b65d4841ed2237354ea8c27fca6559f142bfe14e98495757743429008561",
             "the original approved artwork must be preserved byte-for-byte",
         )
-        catalog = json.loads((gen_icon.IOS_OUT / "Contents.json").read_text())
-        self.assertEqual(len(catalog["images"]), 1)
-        entry = catalog["images"][0]
+        catalog = json.loads((gen_icon.APP_ICON_OUT / "Contents.json").read_text())
+        ios = [entry for entry in catalog["images"] if entry["idiom"] != "mac"]
+        self.assertEqual(len(ios), 1)
+        entry = ios[0]
         self.assertEqual(entry["idiom"], "universal")
         self.assertEqual(entry["platform"], "ios")
         self.assertEqual(entry["size"], "1024x1024")
-        ios_icon = gen_icon.IOS_OUT / entry["filename"]
+        ios_icon = gen_icon.APP_ICON_OUT / entry["filename"]
         self.assertEqual(
             ios_icon.read_bytes(), (gen_icon.OUT / "aftermine_1024.png").read_bytes()
         )
@@ -98,6 +100,28 @@ class IconGenerationTests(unittest.TestCase):
                 "dd260fff9b4af93442b74353b9257268953ef99209398fbdea211c9045989b07",
                 "the approved icon artwork must remain unchanged across exports",
             )
+
+    def test_mac_icon_fills_every_slot_with_the_desktop_silhouette(self) -> None:
+        catalog = json.loads((gen_icon.APP_ICON_OUT / "Contents.json").read_text())
+        mac = [entry for entry in catalog["images"] if entry["idiom"] == "mac"]
+        self.assertEqual(
+            sorted((entry["size"], entry["scale"]) for entry in mac),
+            sorted(
+                (f"{points}x{points}", f"{scale}x")
+                for points in (16, 32, 128, 256, 512)
+                for scale in (1, 2)
+            ),
+        )
+        with Image.open(gen_icon.OUT / "aftermine_desktop_1024.png") as desktop:
+            for entry in mac:
+                with self.subTest(size=entry["size"], scale=entry["scale"]):
+                    points = int(entry["size"].split("x")[0])
+                    pixels = points * int(entry["scale"].removesuffix("x"))
+                    with Image.open(gen_icon.APP_ICON_OUT / entry["filename"]) as icon:
+                        self.assertEqual(icon.mode, "RGBA")
+                        self.assertEqual(icon.size, (pixels, pixels))
+                        if pixels == 1024:
+                            self.assertEqual(icon.tobytes(), desktop.tobytes())
 
     def test_desktop_mask_preserves_artwork_and_approved_corners(self) -> None:
         with (
@@ -118,7 +142,7 @@ class IconGenerationTests(unittest.TestCase):
             output = Path(temp)
             with (
                 patch.object(gen_icon, "OUT", output / "desktop"),
-                patch.object(gen_icon, "IOS_OUT", output / "ios"),
+                patch.object(gen_icon, "APP_ICON_OUT", output / "apple"),
                 redirect_stdout(StringIO()),
             ):
                 gen_icon.main()

@@ -600,6 +600,9 @@ enum Cmd {
         #[arg(long)]
         list: bool,
     },
+    /// Build the signed Mac app and open it (`cargo mac`). Unlike a
+    /// workspace run, it keeps saves in iCloud Drive.
+    Mac,
 }
 
 mod live_cli;
@@ -1493,6 +1496,7 @@ fn main() -> Result<()> {
             threshold,
         } => aftermine_driver::shots::run(port, bless, &dir, threshold)?,
         Cmd::Ios { device, list } => aftermine_driver::ios::run(device.as_deref(), list)?,
+        Cmd::Mac => aftermine_driver::mac::run()?,
     }
     Ok(())
 }

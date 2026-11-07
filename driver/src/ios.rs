@@ -1,4 +1,4 @@
-//! `cargo ios`: build the iPad app through the Xcode wrapper in `ios/`,
+//! `cargo ios`: build the iPad app through the Xcode project in `apple/`,
 //! install it, and launch it on a paired iPad or an iPad simulator. With
 //! several targets and no `--device`, it lists them and asks, remembering
 //! the choice for next time.
@@ -217,7 +217,7 @@ pub fn run(device: Option<&str>, list: bool) -> Result<()> {
     }
 }
 
-fn workspace_root() -> PathBuf {
+pub(crate) fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
@@ -320,9 +320,9 @@ fn build(root: &Path, target: &Device) -> Result<PathBuf> {
         .current_dir(root)
         .args([
             "-project",
-            "ios/Aftermine.xcodeproj",
+            "apple/Aftermine.xcodeproj",
             "-scheme",
-            "Aftermine",
+            "Aftermine iPad",
             "-configuration",
             "Release",
             "-derivedDataPath",
@@ -349,7 +349,7 @@ fn build(root: &Path, target: &Device) -> Result<PathBuf> {
 }
 
 /// The bundle ID the build signed, which honors a contributor's own ID
-/// from `ios/Local.xcconfig`.
+/// from `apple/Local.xcconfig`.
 fn bundle_id(app: &Path) -> Result<String> {
     let output = Command::new("plutil")
         .args(["-extract", "CFBundleIdentifier", "raw", "-o", "-"])

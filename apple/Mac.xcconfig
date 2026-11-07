@@ -1,0 +1,19 @@
+// Build settings for the Mac app.
+
+#include "Shared.xcconfig"
+
+INFOPLIST_FILE = Mac/Info.plist
+CODE_SIGN_ENTITLEMENTS = Mac/Aftermine.entitlements
+
+SDKROOT = macosx
+SUPPORTED_PLATFORMS = macosx
+
+// build_rust.sh passes this to Cargo: rustc and the C dependencies must
+// link for the same minimum OS.
+MACOSX_DEPLOYMENT_TARGET = 14.0
+
+// Notarization, which a Developer ID build needs, requires the hardened
+// runtime.
+ENABLE_HARDENED_RUNTIME = YES
+
+#include? "Local.xcconfig"

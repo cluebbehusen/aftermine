@@ -450,4 +450,4 @@ shell.
 | Native presentation           | `shell/src/look.rs`, `shell/src/render.rs`, `shell/src/assets.rs`              | Asset and look tests, `shell/tests/presentation_animation.rs`, native capture tests |
 | CPU schematics                | `kit/src/render.rs`                                                            | `driver/tests/golden.rs`                                                            |
 | Audio                         | `shell/src/mixer.rs`, `shell/src/audio_mix.rs`, `shell/src/soundtrack.rs`      | Module tests                                                                        |
-| iPad build                    | `ios/`, `shell/src/platform.rs`                                                | iOS clippy in CI, device builds                                                     |
+| iPad and Mac apps             | `apple/`, `shell/src/platform.rs`                                              | iOS clippy in CI, device builds                                                     |

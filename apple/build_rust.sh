@@ -1,25 +1,33 @@
 #!/bin/sh
-# The Aftermine target's Run Script phase: builds the Rust shell for the
-# device and puts the executable where Xcode signs and packages it.
-# Xcode runs this with its build settings in the environment; see
-# README's iPad section for the commands that drive it.
+# Both app targets' Run Script phase: builds the Rust shell for the
+# platform Xcode is building and puts the executable where Xcode signs and
+# packages it. Xcode runs this with its build settings in the environment;
+# see the shell README's iPad and Mac section for the commands that drive it.
 set -eu
 
 # Xcode's script environment does not include the user's shell setup.
 PATH="$HOME/.cargo/bin:$PATH"
 cd "$SRCROOT/.."
 
-# Xcode exports the iOS SDK for its own compiles. Cargo build scripts
-# run on the Mac and must not inherit it; the iOS compiles find the SDK
-# themselves. IPHONEOS_DEPLOYMENT_TARGET stays exported so rustc and the
-# C dependencies link for the same minimum OS.
-unset SDKROOT
-
-if [ "$PLATFORM_NAME" = "iphonesimulator" ]; then
-    TARGET=aarch64-apple-ios-sim
-else
-    TARGET=aarch64-apple-ios
-fi
+# Xcode exports the target platform's SDK for its own compiles. For an
+# iPad build, Cargo build scripts run on the Mac and must not inherit the
+# iOS SDK; the iOS compiles find theirs themselves. A Mac build keeps it:
+# Xcode's compiler finds no system headers without it. The deployment
+# target stays exported so rustc and the C dependencies link for the same
+# minimum OS.
+case "$PLATFORM_NAME" in
+    macosx)
+        TARGET=aarch64-apple-darwin
+        ;;
+    iphonesimulator)
+        TARGET=aarch64-apple-ios-sim
+        unset SDKROOT
+        ;;
+    *)
+        TARGET=aarch64-apple-ios
+        unset SDKROOT
+        ;;
+esac
 
 if [ "$CONFIGURATION" = "Release" ]; then
     cargo build -p aftermine-shell --target "$TARGET" --locked --release
@@ -32,9 +40,9 @@ fi
 mkdir -p "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH"
 cp "$BUILT" "$TARGET_BUILD_DIR/$EXECUTABLE_PATH"
 
-# The app wears the workspace version, derived like the macOS bundle's. App
-# Store Connect requires every upload to carry a higher build number than the
-# last, so the build number is the commit count.
+# The app wears the workspace version. App Store Connect requires every
+# upload to carry a higher build number than the last, so the build number
+# is the commit count.
 VERSION="$(cargo pkgid -p aftermine-shell)"
 VERSION="${VERSION##*[@#]}"
 BUILD="$(git rev-list --count HEAD)"
