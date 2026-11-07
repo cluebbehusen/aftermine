@@ -278,6 +278,14 @@ pub enum CapabilityIcon {
 /// building and its Back card.
 pub const MAX_CARDS: usize = aftermine_sim::BuildingKind::ALL.len() + 1;
 
+/// The most roster chips a mixed selection shows: one for every kind it
+/// could hold, so no selected kind is ever left without a chip.
+pub const MAX_ROSTER: usize = if UnitKind::ALL.len() > BuildingKind::ALL.len() {
+    UnitKind::ALL.len()
+} else {
+    BuildingKind::ALL.len()
+};
+
 /// The panel for the current selection.
 pub struct Panel {
     pub(crate) info: info::SelectionInfo,
@@ -1347,7 +1355,6 @@ fn building_roster(buildings: &[aftermine_sim::Building]) -> Vec<Card> {
     kinds.sort_by_key(|(kind, _)| kind.name());
     kinds
         .into_iter()
-        .take(8)
         .map(|(kind, mut tiers)| {
             tiers.sort_unstable_by(|a, b| b.cmp(a));
             let mut desc = Vec::new();
@@ -1675,7 +1682,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         return Some(panel);
     }
     // The roster strip: a mixed army offers one counted chip per kind.
-    // It has its own eight-chip budget, so every roster role stays
+    // It sits apart from the command cards, so every selected kind stays
     // reachable without consuming command verbs.
     if units.len() > 1 {
         let mut counts: Vec<(UnitKind, usize)> = Vec::new();
@@ -1691,7 +1698,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             // into those tiles and gives the eye two competing summaries.
             panel.summary.clear();
             counts.sort_by_key(|(k, _)| k.name());
-            for (kind, n) in counts.into_iter().take(8) {
+            for (kind, n) in counts {
                 panel.roster.push(Card {
                     icon: CardIcon::Unit(kind),
                     title: format!("{} x{n}", entity_name(kind.name())),
