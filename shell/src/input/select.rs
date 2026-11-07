@@ -273,6 +273,14 @@ impl Picked {
 
 pub(super) fn click_select(game: &mut Game, screen: Vec2, additive: bool, ui: f32, reach: Reach) {
     let picked = pick(game, screen, ui, reach);
+    select_picked(game, picked, screen, additive);
+}
+
+/// Selects what a press `picked`, as a click does: a unit or building
+/// replaces the selection, or with `additive` toggles within one owner; a
+/// miss clears it, or inspects known salvage under `screen`, and an
+/// additive miss leaves it alone.
+pub(super) fn select_picked(game: &mut Game, picked: Option<Picked>, screen: Vec2, additive: bool) {
     if !additive {
         game.presentation.selection.buildings.clear();
     }
@@ -594,8 +602,8 @@ pub(super) fn swept_by_pad(
     (units, buildings)
 }
 
-/// The nearest hostile the human can see within `reach` of `screen`, in a
-/// domain `targets` takes: a unit, else a building. An order aims at it
+/// The nearest hostile the player's own sight shows within `reach` of
+/// `screen`, in a domain `targets` takes: a unit, else a building. An order aims at it
 /// before anything the reticle brackets, so attack intent holds in a
 /// scrum, as a right-click's attack check comes before its own-unit checks.
 pub(super) fn hostile_in_reach(
@@ -611,7 +619,9 @@ pub(super) fn hostile_in_reach(
         .state
         .units()
         .iter()
-        .filter(|u| game.state.hostile(human, u.player) && selectable(game, u))
+        // What the player sees, never the debug overlay's omniscience: an
+        // order's target is the player's decision.
+        .filter(|u| game.state.hostile(human, u.player) && game.my_vision().sees_unit(u))
         .filter(|u| targets(u.domain()))
         .filter_map(|u| {
             let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
@@ -630,7 +640,11 @@ pub(super) fn hostile_in_reach(
     game.state
         .buildings()
         .iter()
-        .filter(|b| game.state.hostile(human, b.player) && selectable_building(game, b))
+        .filter(|b| {
+            game.state.hostile(human, b.player)
+                && b.tiles().any(|tile| game.my_vision().visible(tile))
+                && game.state.building_apparent(human, b)
+        })
         .filter_map(|b| {
             let (min, max) = footprint(b);
             let distance = world.clamp(min, max).distance(world);

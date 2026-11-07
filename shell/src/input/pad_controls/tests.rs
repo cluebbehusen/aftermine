@@ -727,3 +727,53 @@ fn x_from_defenses_takes_the_nearest_enemy_they_can_fire_at() {
         }
     );
 }
+
+#[test]
+fn a_tap_keeps_the_unit_it_bracketed_after_that_unit_moves_on() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20), (0, SENTINEL, 30, 26)], &[]);
+    let mut input = pad_input(&mut game);
+    let mover = unit_at(&game, 30, 20);
+    rest_on(&mut game, &mut input, vec2(30.5, 20.5));
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    // The Sentinel walks out of the reticle's reach before A comes up.
+    let run = PlayerCommand {
+        player: aftermine_sim::PlayerId(0),
+        command: Command::Run {
+            units: vec![mover],
+            goal: chassis::grid::TilePos::new(36, 20),
+            queue: false,
+        },
+    };
+    let _ = game.state.tick(&[run]);
+    for _ in 0..40 {
+        let _ = game.state.tick(&[]);
+    }
+    assert!(
+        pos(&game, mover).distance(vec2(30.5, 20.5)) > 1.0,
+        "it left the reticle's reach"
+    );
+    feed(&mut game, &mut input, &[up(PadButton::South)]);
+    assert_eq!(game.presentation.selection.units, vec![mover]);
+}
+
+#[test]
+fn x_never_aims_at_what_only_the_debug_overlay_sees() {
+    // An enemy far beyond your Sentinel's sight.
+    let mut game = scene(&[(0, SENTINEL, 14, 10), (1, SENTINEL, 50, 30)], &[]);
+    wide_reach(&mut game);
+    let mut input = pad_input(&mut game);
+    let sentinel = unit_at(&game, 14, 10);
+    game.presentation.overlay = true;
+    game.presentation.selection.units = vec![sentinel];
+    // Inside the reticle's reach of the hidden enemy.
+    rest_on(&mut game, &mut input, vec2(49.3, 30.5));
+    press(&mut game, &mut input, PadButton::West);
+    assert_eq!(
+        only_command(&game),
+        Command::Advance {
+            units: vec![sentinel],
+            goal: chassis::grid::TilePos::new(49, 30),
+            queue: false,
+        }
+    );
+}

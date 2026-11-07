@@ -52,8 +52,8 @@ pub(super) fn press(
 pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button: PadButton) {
     match button {
         PadButton::South => {
-            if let Release::Tap(ground) = paint::release(game, input, pad) {
-                tap(game, input, ground);
+            if let Release::Tap(ground, picked) = paint::release(game, input, pad) {
+                tap(game, input, ground, picked);
             }
         }
         PadButton::LeftTrigger => {
@@ -75,13 +75,18 @@ fn press_select(game: &mut Game, input: &mut InputState, pad: u64) {
         return;
     }
     let ground = input.reticle.ground(&game.presentation.camera);
-    paint::press(input, pad, ground);
+    let reach = super::reticle::reach(input);
+    let picked = select::pick(game, input.reticle.point(), input.ui, reach);
+    paint::press(input, pad, ground, picked);
 }
 
 /// An A that never left its spot selects what the reticle bracketed as it
 /// went down, as a click does, and a second tap there soon after sweeps
-/// that kind in view, as a double-click does.
-fn tap(game: &mut Game, input: &mut InputState, ground: Vec2) {
+/// that kind in view, as a double-click does. What it bracketed is kept
+/// from the press, so a unit that moves on before A comes up is still the
+/// one selected; if it has since died or gone into fog, the press spot
+/// picks again.
+fn tap(game: &mut Game, input: &mut InputState, ground: Vec2, pressed: Option<Picked>) {
     let camera = &game.presentation.camera;
     let point = camera.to_screen(ground);
     let zoom = camera.zoom;
@@ -89,20 +94,44 @@ fn tap(game: &mut Game, input: &mut InputState, ground: Vec2) {
     let reach = super::reticle::reach(input);
     let additive = input.queue_held();
     let now = input.now;
+    let picked = match pressed {
+        Some(picked) if picked.seen(&game.view()) => Some(picked),
+        Some(_) => select::pick(game, point, ui, reach),
+        None => None,
+    };
     // Only a tap that picked something sweeps its kind, as a fingertip's
     // does: over salvage the pick reaches no further than a unit's body.
     let double = !additive
-        && select::pick(game, point, ui, reach).is_some()
+        && picked.is_some()
         && input.last_pad_tap.take().is_some_and(|(at, spot)| {
             now - at < DOUBLE_CLICK_SECS
                 && (spot - ground).length() * zoom <= DOUBLE_CLICK_SLOP * ui
         });
     if double {
-        select::select_all_of_kind_on_screen(game, point, ui, reach);
+        let at = picked
+            .and_then(|picked| on_screen(game, picked))
+            .unwrap_or(point);
+        select::select_all_of_kind_on_screen(game, at, ui, reach);
     } else {
-        select::click_select(game, point, additive, ui, reach);
+        select::select_picked(game, picked, point, additive);
     }
     input.last_pad_tap = Some((now, ground));
+}
+
+/// Where a picked unit or building stands on screen now, while it stands.
+fn on_screen(game: &Game, picked: Picked) -> Option<Vec2> {
+    let camera = &game.presentation.camera;
+    let world = match picked {
+        Picked::Unit(id, _) => game
+            .state
+            .unit(id)
+            .map(|unit| vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>())),
+        Picked::Building(id, _) => game.state.building(id).map(|building| {
+            let center = building.center();
+            vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>())
+        }),
+    };
+    world.map(|world| camera.to_screen(world))
 }
 
 /// X: the contextual order a right-click at the reticle gives, aimed by

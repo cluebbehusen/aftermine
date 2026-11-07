@@ -6,7 +6,7 @@
 //! by the box's priority ([`select::kept`]), so a paint keeps every rule a
 //! box keeps. Nothing selects before A comes up, and B abandons the sweep.
 
-use super::select::{self, Kept};
+use super::select::{self, Kept, Picked};
 use super::{InputState, Pointer};
 use crate::game::Game;
 use aftermine_sim::{BuildingId, UnitId};
@@ -39,6 +39,8 @@ pub(crate) struct Press {
     /// The ground under the reticle as A went down, or where a camera jump
     /// carried a press that had not yet begun to paint.
     ground: Vec2,
+    /// What the reticle bracketed as A went down, which a tap selects.
+    picked: Option<Picked>,
     /// The wall clock as A went down.
     at: f64,
     /// The ground under the reticle as the last frame left it.
@@ -109,19 +111,21 @@ impl Sweep {
 /// How a release of A ends its press.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum Release {
-    /// The reticle never left the spot: a tap at this ground.
-    Tap(Vec2),
+    /// The reticle never left the spot: a tap at this ground, on what the
+    /// reticle bracketed as A went down.
+    Tap(Vec2, Option<Picked>),
     /// A sweep selected what it caught.
     Swept,
     /// No press of this controller was held.
     Nothing,
 }
 
-/// A goes down with the reticle over `ground`.
-pub(super) fn press(input: &mut InputState, pad: u64, ground: Vec2) {
+/// A goes down with the reticle over `ground`, bracketing `picked`.
+pub(super) fn press(input: &mut InputState, pad: u64, ground: Vec2, picked: Option<Picked>) {
     input.pad_press = Some(Press {
         pad,
         ground,
+        picked,
         at: input.now,
         last: ground,
         sweep: None,
@@ -186,7 +190,7 @@ pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64) -> Rele
         press.sweep = Some(sweep);
     }
     let Some(sweep) = press.sweep else {
-        return Release::Tap(press.ground);
+        return Release::Tap(press.ground, press.picked);
     };
     let units: Vec<UnitId> = sweep.units.into_iter().collect();
     let buildings: Vec<BuildingId> = sweep.buildings.into_iter().collect();
