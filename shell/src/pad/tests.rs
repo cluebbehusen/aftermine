@@ -365,7 +365,7 @@ fn the_dpad_moves_menus_two_face_buttons_confirm_and_go_back_and_the_shoulders_t
         text,
     ];
     assert_eq!(
-        menu_keys(&events),
+        menu_keys(&events, true),
         [
             connect,
             RawEvent::KeyDown { key: Key::Down },
@@ -391,5 +391,27 @@ fn the_dpad_moves_menus_two_face_buttons_confirm_and_go_back_and_the_shoulders_t
             .map(|family| button_name(family, DELETE)),
         ["X", "Square", "Y"],
         "the left face button deletes"
+    );
+}
+
+#[test]
+fn a_screen_without_deletes_drops_only_the_delete_button() {
+    let events = [
+        RawEvent::PadDown {
+            pad: 0,
+            button: DELETE,
+        },
+        RawEvent::PadUp {
+            pad: 0,
+            button: DELETE,
+        },
+        RawEvent::PadDown {
+            pad: 0,
+            button: CONFIRM,
+        },
+    ];
+    assert_eq!(
+        menu_keys(&events, false),
+        [RawEvent::KeyDown { key: Key::Enter }]
     );
 }

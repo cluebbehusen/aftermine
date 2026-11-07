@@ -1018,7 +1018,6 @@ impl SettingsScreen {
             return update;
         }
         if tab == Tab::Controls
-            && crate::platform::hands().pad.is_none()
             && events
                 .iter()
                 .any(|e| matches!(e, RawEvent::KeyDown { key: Key::X }))
@@ -1026,8 +1025,7 @@ impl SettingsScreen {
         {
             // X on a binding row unbinds it (outside capture, so the key
             // is free to mean this). Like any action, it retires the
-            // standing notice. A controller's delete button presses X
-            // too, but remapping takes a keyboard.
+            // standing notice.
             config.bindings.unbind_slot(target, self.binding_slot);
             self.notice = None;
             update.dirty = true;

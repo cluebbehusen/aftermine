@@ -382,7 +382,7 @@ impl Shelf {
     /// frame.
     pub fn draw(&self, sprites: &crate::assets::Sprites, mouse: Vec2, notice_shown: bool) {
         if let Some(ask) = &self.asking {
-            ask.menu.draw(sprites, &ask.subtitle);
+            ask.menu.draw_named(sprites, &ask.subtitle);
             return;
         }
         self.menu

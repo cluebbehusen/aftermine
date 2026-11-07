@@ -82,16 +82,17 @@ fn menu_key(button: PadButton) -> Option<Key> {
 
 /// Turns controller presses into the canonical menu keys of their fixed
 /// layout, which every menu screen reads, and drops buttons with no menu
-/// role. Other events pass through. Run it after the key bindings, so the
-/// keys it makes are never bound again.
-pub(crate) fn menu_keys(events: &[RawEvent]) -> Vec<RawEvent> {
+/// role. `deletes` says whether the screen gives [`DELETE`] one: the key
+/// binding editor's X unbinds a key, and remapping takes a keyboard.
+/// Other events pass through. Run it after the key bindings, so the keys
+/// it makes are never bound again.
+pub(crate) fn menu_keys(events: &[RawEvent], deletes: bool) -> Vec<RawEvent> {
+    let key = |button| menu_key(button).filter(|_| deletes || button != DELETE);
     events
         .iter()
         .filter_map(|event| match *event {
-            RawEvent::PadDown { button, .. } => {
-                menu_key(button).map(|key| RawEvent::KeyDown { key })
-            }
-            RawEvent::PadUp { button, .. } => menu_key(button).map(|key| RawEvent::KeyUp { key }),
+            RawEvent::PadDown { button, .. } => key(button).map(|key| RawEvent::KeyDown { key }),
+            RawEvent::PadUp { button, .. } => key(button).map(|key| RawEvent::KeyUp { key }),
             other => Some(other),
         })
         .collect()

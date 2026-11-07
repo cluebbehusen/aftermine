@@ -422,6 +422,47 @@ fn a_rows_delete_button_asks_by_click_or_tap_and_the_rest_of_the_row_opens_it() 
 }
 
 #[test]
+fn a_press_that_crosses_a_rows_delete_edge_does_nothing() {
+    use aftermine_protocol::MouseButton;
+    crate::render::set_viewport(1180.0, 820.0);
+    crate::render::set_user_scale(1.0);
+    let mut shelf = Shelf::from_entries(mixed());
+    let button = shelf.menu.action_rect(1).unwrap().center();
+    let row = shelf.menu.item_rect(1).unwrap();
+    let title = vec2(row.x + 40.0, row.center().y);
+    for (from, to) in [(button, title), (title, button)] {
+        let mouse = [
+            RawEvent::MouseDown {
+                button: MouseButton::Left,
+                x: from.x,
+                y: from.y,
+            },
+            RawEvent::MouseUp {
+                button: MouseButton::Left,
+                x: to.x,
+                y: to.y,
+            },
+        ];
+        let finger = [
+            RawEvent::TouchDown {
+                id: 1,
+                x: from.x,
+                y: from.y,
+            },
+            RawEvent::TouchUp {
+                id: 1,
+                x: to.x,
+                y: to.y,
+            },
+        ];
+        for events in [&mouse, &finger] {
+            assert_eq!(drive_events(&mut shelf, events), Out::Stay);
+            assert!(shelf.asking.is_none(), "{from} to {to} asked");
+        }
+    }
+}
+
+#[test]
 fn a_finger_dragging_from_a_delete_button_scrolls_instead() {
     crate::render::set_viewport(1180.0, 400.0);
     crate::render::set_user_scale(1.0);
@@ -460,10 +501,13 @@ fn a_finger_dragging_from_a_delete_button_scrolls_instead() {
 #[test]
 fn the_controllers_delete_button_asks_too() {
     let mut shelf = Shelf::from_entries(mixed());
-    let events = crate::pad::menu_keys(&[RawEvent::PadDown {
-        pad: 0,
-        button: crate::pad::DELETE,
-    }]);
+    let events = crate::pad::menu_keys(
+        &[RawEvent::PadDown {
+            pad: 0,
+            button: crate::pad::DELETE,
+        }],
+        true,
+    );
     assert_eq!(drive_events(&mut shelf, &events), Out::Stay);
     assert_eq!(shelf.mode_name(), "confirm_delete");
 }

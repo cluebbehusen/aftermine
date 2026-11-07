@@ -50,6 +50,12 @@ pub(crate) fn set_bindings(bindings: &crate::action::BindingMap) {
     });
 }
 
+/// A game-written subtitle as it reads: its key tokens filled in and its
+/// first letter capitalized.
+fn subtitle_line(subtitle: &str) -> String {
+    crate::typography::sentence_case(&binding_hint(subtitle))
+}
+
 /// Fills a coaching template's tokens with the keys that do each thing in
 /// menus now or, while a controller is in use, the buttons of its fixed
 /// layout. A token with no button, such as `{up}`, still names its key,
@@ -547,25 +553,30 @@ pub(crate) fn title_width(title: &str) -> f32 {
 
 /// Draws a page's title along the top edge and its subtitle beneath.
 pub(crate) fn draw_page_heading(title: &str, subtitle: &str) {
+    draw_page_heading_as_is(title, &crate::typography::sentence_case(subtitle));
+}
+
+/// [`draw_page_heading`] with the subtitle drawn exactly as given.
+fn draw_page_heading_as_is(title: &str, subtitle: &str) {
     let s = ui();
     let baseline = page_title_baseline(s);
     draw_title(title, baseline, TEXT_TITLE);
     draw_subtitle(subtitle, baseline + SUBTITLE_DROP * s);
 }
 
-/// Draws a subtitle centered at `baseline`, shrinking to fit the window.
-pub(crate) fn draw_subtitle(subtitle: &str, baseline: f32) {
+/// Draws a subtitle centered at `baseline` exactly as given, shrinking to
+/// fit the window.
+fn draw_subtitle(subtitle: &str, baseline: f32) {
     let s = ui();
-    let subtitle = crate::typography::sentence_case(subtitle);
     let size = crate::typography::fit(
-        &subtitle,
+        subtitle,
         crate::theme::Type::Label.at(s),
         view_w() - 2.0 * (crate::button::corner_slot(0, s).right() + 16.0 * s),
         crate::theme::Type::Caption,
     );
-    let dims = measure_text(&subtitle, None, numeric::font_size(size), 1.0);
+    let dims = measure_text(subtitle, None, numeric::font_size(size), 1.0);
     draw_text(
-        &subtitle,
+        subtitle,
         (view_w() - dims.width) * 0.5,
         baseline,
         size,
@@ -616,11 +627,12 @@ pub struct Menu<R> {
     /// Fractional wheel accumulation: trackpads deliver hundredths per
     /// frame, so only whole accumulated rows scroll.
     wheel_accum: f32,
-    /// Row armed by a mouse press or the owning finger. The first finger
-    /// down scrolls the list once it drags: a touch-only player has no
-    /// wheel or paging keys, so this is the only way to reach rows below
-    /// the window.
-    press: ScrollPress<usize>,
+    /// Row armed by a mouse press or the owning finger, and whether the
+    /// press landed on the row's action button: a release across that
+    /// edge does neither. The first finger down scrolls the list once it
+    /// drags: a touch-only player has no wheel or paging keys, so this is
+    /// the only way to reach rows below the window.
+    press: ScrollPress<(usize, bool)>,
     /// Drag travel not yet spent on a whole row of scrolling.
     carry: f32,
     /// Horizontal offset of the list as a fraction of the viewport
@@ -965,7 +977,9 @@ impl<R: Clone> Menu<R> {
         for event in events {
             let mut press = self.press;
             let swipe = press.feed(event, scale, |p, _| {
-                self.row_at(p).filter(|row| !self.is_header(*row))
+                let row = self.row_at(p).filter(|row| !self.is_header(*row))?;
+                let on_action = self.action_rect(row).is_some_and(|rect| rect.contains(p));
+                Some((row, on_action))
             });
             self.press = press;
             match swipe {
@@ -973,7 +987,7 @@ impl<R: Clone> Menu<R> {
                     self.drag_by(dy, began);
                     continue;
                 }
-                Swipe::Activated(row) => {
+                Swipe::Activated((row, _)) => {
                     let point = crate::press::position(event);
                     if let Some(p) = point {
                         *mouse = p;
@@ -1065,13 +1079,20 @@ impl<R: Clone> Menu<R> {
     /// standard key help. The footer is coaching either way: it fades in
     /// only when the player seems stuck.
     pub fn draw_with_coaching(&self, sprites: &Sprites, subtitle: &str, coaching: Option<&str>) {
-        self.draw_face(sprites, subtitle, coaching, false);
+        self.draw_face(sprites, &subtitle_line(subtitle), coaching, false);
+    }
+
+    /// Draws the menu under `name`, a name the player typed, exactly as
+    /// typed: braces in it name no keys, and its first letter keeps its
+    /// case.
+    pub fn draw_named(&self, sprites: &Sprites, name: &str) {
+        self.draw_face(sprites, name, None, false);
     }
 
     /// Draws the menu while work it started runs: every row dimmed and
     /// inert-looking, `subtitle` saying what is happening, no footer.
     pub fn draw_busy(&self, sprites: &Sprites, subtitle: &str) {
-        self.draw_face(sprites, subtitle, None, true);
+        self.draw_face(sprites, &subtitle_line(subtitle), None, true);
     }
 
     /// Draws the plate a dialog's title and rows sit on, which holds them
@@ -1100,19 +1121,19 @@ impl<R: Clone> Menu<R> {
         );
     }
 
+    /// Draws the menu under `subtitle`, which reads exactly as given.
     fn draw_face(&self, sprites: &Sprites, subtitle: &str, coaching: Option<&str>, busy: bool) {
-        let subtitle = binding_hint(subtitle);
         let s = self.scale();
         let list = self.window();
         match self.heading {
             // Home draws its own art above the list.
             Heading::Wordmark => {}
-            Heading::Page { .. } => draw_page_heading(&self.title, &subtitle),
+            Heading::Page { .. } => draw_page_heading_as_is(&self.title, subtitle),
             Heading::Dialog => {
                 let baseline = list.top - 64.0 * s;
                 self.draw_dialog_plate(baseline);
                 draw_title(&self.title, baseline, TEXT_TITLE);
-                draw_subtitle(&subtitle, baseline + SUBTITLE_DROP * s);
+                draw_subtitle(subtitle, baseline + SUBTITLE_DROP * s);
             }
         }
 

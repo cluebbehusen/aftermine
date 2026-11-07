@@ -249,7 +249,7 @@ fn the_controller_menu_keys_leave_a_field_alone() {
         crate::pad::PAGES.0,
         crate::pad::PAGES.1,
     ] {
-        let events = crate::pad::menu_keys(&[RawEvent::PadDown { pad: 0, button }]);
+        let events = crate::pad::menu_keys(&[RawEvent::PadDown { pad: 0, button }], true);
         assert_eq!(feed(&mut form, &events).0, Edit::Stay, "{button:?}");
     }
     assert_eq!((form.value(0), form.value(1)), ("ab", "12"));

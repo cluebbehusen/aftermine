@@ -156,7 +156,7 @@ fn a_touch_gesture_belongs_to_its_first_finger_and_armed_row() {
         ),
         None
     );
-    assert_eq!(menu.press.armed_touch(), Some((7, 1)));
+    assert_eq!(menu.press.armed_touch(), Some((7, (1, false))));
 
     // A second finger cannot steal or resolve the first finger's press.
     assert_eq!(
@@ -177,7 +177,7 @@ fn a_touch_gesture_belongs_to_its_first_finger_and_armed_row() {
         ),
         None
     );
-    assert_eq!(menu.press.armed_touch(), Some((7, 1)));
+    assert_eq!(menu.press.armed_touch(), Some((7, (1, false))));
     assert_eq!(menu.selected, 0);
 
     // The owning finger resolves on another row, so the gesture cancels.
