@@ -4,7 +4,7 @@
 //! under headless tests.
 
 use crate::action::{Action, BindingMap, Chord, Context};
-use crate::config::{Config, MarkerPrefs, PerformanceDisplay};
+use crate::config::{Config, MarkerPrefs, PadPrefs, PerformanceDisplay, ReticleSnap};
 use crate::game::SoundKind;
 use crate::menu::{Heading, Label, Line, Menu};
 use crate::nav::{Axis, Nav, step_line};
@@ -333,6 +333,9 @@ pub(crate) enum Row {
     EdgePan,
     InvertZoom,
     LeftHandedPreset,
+    StickSpeed,
+    InvertStickZoom,
+    ReticleSnap,
 }
 
 /// The capture prompt, shown while a binding row listens.
@@ -345,7 +348,7 @@ const SCALES: [f32; 4] = [render::MIN_USER_SCALE, 1.0, 1.25, render::MAX_USER_SC
 
 impl Row {
     /// Every row, in the order its tab shows them.
-    const ALL: [Row; 18] = [
+    const ALL: [Row; 21] = [
         Row::PlayerName,
         Row::MatchTips,
         Row::PerformanceDisplay,
@@ -364,6 +367,9 @@ impl Row {
         Row::EdgePan,
         Row::InvertZoom,
         Row::LeftHandedPreset,
+        Row::StickSpeed,
+        Row::InvertStickZoom,
+        Row::ReticleSnap,
     ];
 
     /// The tab the row lives on.
@@ -381,8 +387,21 @@ impl Row {
             | Row::ControlGroups
             | Row::MarkerTiming
             | Row::MarkerSize => Tab::Display,
-            Row::EdgePan | Row::InvertZoom | Row::LeftHandedPreset => Tab::Controls,
+            Row::EdgePan
+            | Row::InvertZoom
+            | Row::LeftHandedPreset
+            | Row::StickSpeed
+            | Row::InvertStickZoom
+            | Row::ReticleSnap => Tab::Controls,
         }
+    }
+
+    /// Whether the row sits in the Controls tab's CONTROLLER section.
+    fn pad(self) -> bool {
+        matches!(
+            self,
+            Row::StickSpeed | Row::InvertStickZoom | Row::ReticleSnap
+        )
     }
 
     /// Whether `platform` can use the row. Only a desktop has a file
@@ -441,6 +460,9 @@ impl Row {
             Row::EdgePan => setting("Edge pan", on(config.camera.edge_pan)),
             Row::InvertZoom => setting("Invert zoom", on(config.camera.zoom_inverted)),
             Row::LeftHandedPreset => Label::from("Apply left-handed bindings"),
+            Row::StickSpeed => setting("Stick speed", pct(config.pad.stick_speed)),
+            Row::InvertStickZoom => setting("Invert stick zoom", on(config.pad.zoom_inverted)),
+            Row::ReticleSnap => setting("Reticle snap", config.pad.snap.label().to_string()),
             Row::OpenDiagnostics => Label::from("Open diagnostics folder"),
             Row::ExportDiagnostics => Label::from("Export diagnostic report"),
         }
@@ -476,19 +498,22 @@ fn rows(tab: Tab, platform: Platform) -> Vec<Row> {
         .collect()
 }
 
-/// A tab's lines: its rows, and on Controls the reset row and the
-/// binding sections, the chosen chord column bracketed on every
-/// binding row.
+/// A tab's lines: its rows, and on Controls the reset row, the
+/// controller section and the binding sections, the chosen chord column
+/// bracketed on every binding row.
 fn tab_lines(tab: Tab, config: &Config, selected_slot: usize) -> Vec<Line<Item>> {
-    let mut lines: Vec<Line<Item>> = rows(tab, crate::platform::PLATFORM)
+    let line = |row: Row| Line::Row(row.label(config), Item::Setting(row));
+    let (pad, rest): (Vec<Row>, Vec<Row>) = rows(tab, crate::platform::PLATFORM)
         .into_iter()
-        .map(|row| Line::Row(row.label(config), Item::Setting(row)))
-        .collect();
+        .partition(|row| row.pad());
+    let mut lines: Vec<Line<Item>> = rest.into_iter().map(line).collect();
     if tab == Tab::Controls {
         lines.push(Line::Row(
             Label::from("Reset bindings to defaults"),
             Item::ResetBindings,
         ));
+        lines.push(Line::Header("CONTROLLER".to_owned()));
+        lines.extend(pad.into_iter().map(line));
         lines.extend(binding_lines(config, selected_slot));
     }
     lines
@@ -596,6 +621,18 @@ fn step_setting(config: &mut Config, row: Row, step: Step) -> bool {
         Row::EdgePan => config.camera.edge_pan = toggle(config.camera.edge_pan),
         Row::MatchTips => config.match_tips = toggle(config.match_tips),
         Row::InvertZoom => config.camera.zoom_inverted = toggle(config.camera.zoom_inverted),
+        Row::StickSpeed => {
+            config.pad.stick_speed = level(&PadPrefs::STICK_SPEEDS, config.pad.stick_speed, step);
+        }
+        Row::InvertStickZoom => config.pad.zoom_inverted = toggle(config.pad.zoom_inverted),
+        Row::ReticleSnap => {
+            let strengths = ReticleSnap::ALL;
+            let at = strengths
+                .iter()
+                .position(|snap| *snap == config.pad.snap)
+                .unwrap_or_default();
+            config.pad.snap = strengths[stepped(strengths.len(), at, step)];
+        }
         Row::ReducedMotion => {
             config.reduced_motion = toggle(config.reduced_motion);
             render::set_reduced_motion(config.reduced_motion);

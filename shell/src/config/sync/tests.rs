@@ -44,11 +44,12 @@ fn key(field: SyncedField) -> String {
 
 /// The config fields that stay on each device. `version` names the store
 /// keys instead.
-const DEVICE_FIELDS: [&str; 11] = [
+const DEVICE_FIELDS: [&str; 12] = [
     "version",
     "performance_display",
     "ui_scale",
     "camera",
+    "pad",
     "window",
     "touch",
     "last_join_address",
