@@ -38,11 +38,60 @@ fn every_unit_exposes_health_sight_and_its_weapon_reload() {
             .filter(|r| r.label == "Reload")
             .map(|r| &r.value)
             .collect();
-        assert_eq!(cycles.len(), kind.stats().weapons.len());
-        for (actual, weapon) in cycles.into_iter().zip(kind.stats().weapons) {
-            assert_eq!(*actual, tick_time_label(weapon.cooldown_ticks));
+        // Neighbouring weapons that read the same share one block.
+        let contact = kind.stats().contact_reach.is_some();
+        let mut blocks: Vec<_> = kind
+            .stats()
+            .weapons
+            .iter()
+            .map(|weapon| (weapon_rows(weapon, contact), weapon.cooldown_ticks))
+            .collect();
+        blocks.dedup_by(|a, b| a.0 == b.0);
+        assert_eq!(cycles.len(), blocks.len(), "{kind:?}");
+        for (actual, (_, cooldown)) in cycles.into_iter().zip(blocks) {
+            assert_eq!(*actual, tick_time_label(cooldown));
         }
     }
+}
+
+#[test]
+fn a_roc_shows_its_twin_guns_once_and_counts_its_drones() {
+    let stats = UnitKind::Roc.stats();
+    let bay = stats.bay.unwrap();
+    let panel = selected(UnitKind::Roc, false);
+    let sections: Vec<_> = panel
+        .info
+        .rows
+        .iter()
+        .filter(|row| row.section)
+        .map(|row| (row.label.as_str(), row.value.as_str()))
+        .collect();
+    let damage = format!("{} dmg/hit", stats.weapons[0].damage);
+    assert_eq!(
+        sections,
+        [("Ground \u{d7}2", damage.as_str())],
+        "two identical guns, one block"
+    );
+    let drones = panel
+        .info
+        .rows
+        .iter()
+        .find(|r| r.label == "Drones")
+        .unwrap();
+    assert_eq!(drones.value, format!("0/{}", bay.capacity));
+    assert_eq!(
+        drones.icon,
+        Some(StatIcon::Capability(CapabilityIcon::Drones)),
+        "not the Cargo row's crane"
+    );
+    let hostile = selected(UnitKind::Roc, true);
+    let drones = hostile
+        .info
+        .rows
+        .iter()
+        .find(|r| r.label == "Drones")
+        .unwrap();
+    assert_eq!(drones.value, format!("up to {}", bay.capacity));
 }
 
 #[test]

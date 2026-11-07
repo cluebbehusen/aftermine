@@ -210,6 +210,9 @@ pub(crate) fn layout(
         queue_slots: geometry.queue_slots,
         queue_count: geometry.queue_count,
         queue_stop: geometry.queue_stop,
+        drones: geometry.drones,
+        drone_slots: geometry.drone_slots,
+        drone_count: geometry.drone_count,
     };
     Hud {
         layout,

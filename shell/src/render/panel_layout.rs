@@ -165,6 +165,9 @@ pub(super) struct PanelGeometry {
     pub queue_slots: [(Rect, crate::panel::CardAction); 8],
     pub queue_count: usize,
     pub queue_stop: (Rect, crate::panel::CardAction),
+    pub drones: Rect,
+    pub drone_slots: [(Rect, crate::panel::CardAction); 8],
+    pub drone_count: usize,
     pub hides_minimap: bool,
 }
 
@@ -185,6 +188,9 @@ impl PanelGeometry {
             queue_slots: [(zero, CardAction::None); 8],
             queue_count: 0,
             queue_stop: (zero, CardAction::None),
+            drones: zero,
+            drone_slots: [(zero, CardAction::None); 8],
+            drone_count: 0,
             hides_minimap: false,
         }
     }

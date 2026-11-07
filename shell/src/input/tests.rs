@@ -8693,6 +8693,59 @@ fn a_selected_roc_offers_its_drone_bay() {
 }
 
 #[test]
+fn a_click_on_a_drone_chip_cancels_that_drone() {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
+        player: 0,
+        kind: aftermine_sim::UnitKind::Roc,
+        x: 12,
+        y: 10,
+    });
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let roc = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.kind == aftermine_sim::UnitKind::Roc)
+        .unwrap()
+        .id;
+    // The bay autofills its first drone.
+    game.do_tick();
+    game.presentation.selection.units = vec![roc];
+    let mut input = InputState::new();
+    let measure = |_: crate::render::hud::Face, text: &str, size: f32| {
+        text.chars().count() as f32 * size * 0.5
+    };
+    crate::render::hud::refresh(
+        &game.view(),
+        &input,
+        &classic(),
+        crate::render::hud::HudEnv {
+            viewport: vec2(1280.0, 800.0),
+            ui: 1.0,
+        },
+        None,
+        &measure,
+    );
+    let layout = game.presentation.layout.get();
+    assert_eq!(layout.drone_count, 1, "premise: one drone on order");
+    let chip = layout.drone_slots[0].0.center();
+    assert!(
+        layout.chrome_owns(chip),
+        "the column keeps clicks off the map"
+    );
+    apply_events(&mut game, &mut input, &click(chip.x, chip.y));
+    assert!(
+        game.pending.iter().any(|pending| matches!(
+            pending.command,
+            Command::CancelDrone { unit, index: 0 } if unit == roc
+        )),
+        "{:?}",
+        game.pending
+    );
+}
+
+#[test]
 fn the_auto_weld_key_switches_the_selected_workers() {
     let mut game = headless_game();
     let worker = game
