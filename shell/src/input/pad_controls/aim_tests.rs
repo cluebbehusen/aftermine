@@ -363,6 +363,58 @@ fn a_launches_at_the_reticle() {
 }
 
 #[test]
+fn launch_takes_the_bumpers_over_to_fire_fewer_or_more() {
+    let mut game = scene(
+        &[(0, UnitKind::Sentinel, 30, 30)],
+        &[
+            (0, BuildingKind::Spire, 20, 10),
+            (0, BuildingKind::Spire, 26, 10),
+        ],
+    );
+    let mut input = pad_input(&mut game);
+    let spires = vec![building_at(&game, 20, 10), building_at(&game, 26, 10)];
+    for &spire in &spires {
+        load_warhead(&mut game, spire);
+    }
+    game.presentation.selection.buildings = spires.clone();
+    dispatch(&mut game, &mut input, Action::Launch);
+    let salvo = |game: &Game, input: &InputState| {
+        crate::input::salvo_readout(&game.view(), input).map(|(fires, _)| fires)
+    };
+    assert_eq!(salvo(&game, &input), Some(1), "one fires to begin with");
+    for (bumper, fires) in [
+        (PadButton::RightShoulder, 2),
+        (PadButton::RightShoulder, 2),
+        (PadButton::LeftShoulder, 1),
+        (PadButton::RightShoulder, 2),
+    ] {
+        press(&mut game, &mut input, bumper);
+        assert_eq!(salvo(&game, &input), Some(fires), "{bumper:?}");
+    }
+    assert!(
+        game.presentation.selection.units.is_empty(),
+        "the bumpers selected no army while Launch was armed"
+    );
+    rest_on(&mut game, &mut input, vec2(40.5, 30.5));
+    press(&mut game, &mut input, PadButton::South);
+    let target = TilePos::new(40, 30);
+    assert_eq!(
+        commands(&game),
+        spires
+            .iter()
+            .map(|&building| Command::Launch { building, target })
+            .collect::<Vec<_>>()
+    );
+    assert!(input.striking.is_none(), "both warheads are spent");
+    press(&mut game, &mut input, PadButton::LeftShoulder);
+    assert_eq!(
+        game.presentation.selection.units,
+        vec![unit_at(&game, 30, 30)],
+        "with Launch done, LB selects the army again"
+    );
+}
+
+#[test]
 fn x_sets_a_rally_on_the_ground_or_onto_a_unit_the_reticle_reaches() {
     let mut game = scene(
         &[(0, UnitKind::Sentinel, 30, 20)],

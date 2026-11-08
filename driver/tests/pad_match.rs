@@ -932,6 +932,80 @@ fn a_or_x_confirms_each_targeted_order() -> Result<()> {
     Ok(())
 }
 
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn rt_widens_one_kind_to_every_one_on_the_map() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_324)?;
+    let view = drill.load(&field())?;
+    drill.select_at(tile(27, 20))?;
+    drill.press(PadButton::RightTrigger)?;
+    assert_eq!(
+        obeying(&drill.order_at(OPEN)?),
+        own(&view, UnitKind::Lancer),
+        "every Lancer, the one far out of view too"
+    );
+    Ok(())
+}
+
+/// Two Spires of yours and a Lancer, on open ground, with the scrap for a
+/// warhead in each.
+fn drill_salvo() -> Value {
+    let mut scenario = drill(
+        &[(0, UnitKind::Lancer, 29, 20)],
+        &[
+            (0, BuildingKind::Spire, 24, 14),
+            (0, BuildingKind::Spire, 30, 14),
+        ],
+    );
+    scenario["players"][0]["scrap"] = json!(2000);
+    scenario
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn launch_takes_the_bumpers_over_to_fire_more() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_325)?;
+    let view = drill.load(&drill_salvo())?;
+    let spires: Vec<BuildingId> = view
+        .buildings
+        .iter()
+        .filter(|b| b.kind == BuildingKind::Spire)
+        .map(|b| BuildingId(b.id))
+        .collect();
+    for &building in &spires {
+        drill.command(0, Command::OrderRound { building })?;
+    }
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while drill
+        .fog()?
+        .magazines
+        .iter()
+        .filter(|magazine| spires.contains(&magazine.building) && magazine.loaded > 0)
+        .count()
+        < spires.len()
+    {
+        if Instant::now() > deadline {
+            bail!("the Spires never loaded their warheads");
+        }
+        drill.client.advance(100)?;
+    }
+    // A picks one Spire and RT widens to both, as the All button does.
+    drill.select_at(tile(24, 14))?;
+    drill.press(PadButton::RightTrigger)?;
+    drill.key(Key::M)?;
+    drill.press(PadButton::RightShoulder)?;
+    drill.aim(tile(40, 26))?;
+    drill.press(PadButton::South)?;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while drill.fog()?.warheads.len() < 2 {
+        if Instant::now() > deadline {
+            bail!("RB never raised the salvo to both warheads");
+        }
+        drill.client.advance(5)?;
+    }
+    Ok(())
+}
+
 /// Your Foundry, on open ground.
 fn drill_foundry() -> Value {
     drill(&[], &[(0, BuildingKind::Foundry, 30, 18)])
@@ -1018,6 +1092,7 @@ fn the_drills_build() -> Result<()> {
         drill_repair(),
         drill_build(),
         drill_aim(),
+        drill_salvo(),
         drill_foundry(),
     ] {
         aftermine_sim::Scenario::from_json(&scenario.to_string())?.build()?;

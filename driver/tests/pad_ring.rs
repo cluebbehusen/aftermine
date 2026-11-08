@@ -21,7 +21,7 @@ use aftermine_protocol::{
     MouseButton, PadButton, PadFamily, RawEvent, Reply, Request, StateFilter, StateView, Stick,
     UiView,
 };
-use aftermine_sim::{BuildingKind, Order, UnitId, UnitKind};
+use aftermine_sim::{BuildingId, BuildingKind, Order, PlayerId, UnitId, UnitKind};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -645,11 +645,85 @@ fn groups_assign_and_recall_with_the_group_bar_hidden() -> Result<()> {
 }
 
 #[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn x_switches_auto_repair_on_the_repair_slice() -> Result<()> {
+    let mut drill = Drill::spawn(44_338)?;
+    let view = drill.load(&drill_harvester())?;
+    let worker = own(&view, UnitKind::Harvester)[0];
+    let auto_repair = |view: &StateView| {
+        view.units
+            .iter()
+            .find(|unit| unit.id == worker.0)
+            .and_then(|unit| unit.idle_weld)
+    };
+    let before = auto_repair(&view);
+    drill.press(PadButton::DpadDown)?;
+    drill.press(PadButton::North)?;
+    drill.point("Repair")?;
+    drill.press(PadButton::West)?;
+    drill.client.advance(1)?;
+    let after = auto_repair(&drill.state()?);
+    assert!(
+        before.is_some() && after == before.map(|on| !on),
+        "X switched auto-repair: {before:?} then {after:?}"
+    );
+    Ok(())
+}
+
+/// One Lattice of yours.
+fn drill_lattice() -> Value {
+    scene(&[], &[(BuildingKind::Lattice, 30, 18)])
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_held_left_trigger_turns_order_into_fill() -> Result<()> {
+    let mut drill = Drill::spawn(44_339)?;
+    let view = drill.load(&drill_lattice())?;
+    let lattice = view
+        .buildings
+        .iter()
+        .find(|b| b.kind == BuildingKind::Lattice)
+        .map(|b| BuildingId(b.id))
+        .context("the Lattice stands")?;
+    drill.aim([31.0, 19.0])?;
+    drill.press(PadButton::South)?;
+    drill.press(PadButton::North)?;
+    drill.point("Order")?;
+    drill.down(PadButton::LeftTrigger)?;
+    assert!(
+        drill
+            .ring()?
+            .1
+            .iter()
+            .any(|slice| slice.starts_with("Fill")),
+        "LT shows Order as Fill"
+    );
+    drill.press(PadButton::South)?;
+    drill.up(PadButton::LeftTrigger)?;
+    drill.client.advance(1)?;
+    let ordered = match drill.client.call(Request::QueryFogView {
+        player: PlayerId(0),
+    })? {
+        Reply::Fog(fog) => fog
+            .magazines
+            .iter()
+            .find(|magazine| magazine.building == lattice)
+            .and_then(|magazine| magazine.detail)
+            .map(|detail| detail.ordered),
+        other => bail!("expected a fog view, got {other:?}"),
+    };
+    assert_eq!(ordered, Some(2), "one A filled both empty slots");
+    Ok(())
+}
+
+#[test]
 fn the_drills_build() -> Result<()> {
     for scenario in [
         squad(),
         squads(),
         drill_harvester(),
+        drill_lattice(),
         scene(&[], &[(BuildingKind::Foundry, 30, 18)]),
     ] {
         aftermine_sim::Scenario::from_json(&scenario.to_string())?.build()?;

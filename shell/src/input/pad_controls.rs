@@ -1,10 +1,12 @@
 //! A controller's presses in a match, at the reticle: A selects, or
 //! paints while held ([`super::paint`]), X gives the contextual order, the
 //! bumpers select the army, a held LT queues, RT narrows the selection by
-//! kind, and B backs out. Menu opens the pause menu and View pauses, as
-//! the top bar's buttons do. While a placement or targeted order is armed, A
-//! and X confirm it at the reticle as a click there would, and a held A
-//! drags a placement row. Each takes the path its mouse counterpart takes.
+//! kind or widens one kind to every one of it, and B backs out. Menu opens
+//! the pause menu and View pauses, as the top bar's buttons do. While a
+//! placement or targeted order is armed, A and X confirm it at the reticle
+//! as a click there would, and a held A drags a placement row; while Launch
+//! is armed, the bumpers fire fewer or more warheads instead. Each takes
+//! the path its mouse counterpart takes.
 //! The D-pad and the stick clicks belong to [`super::reticle`], except
 //! D-pad right, which opens the group ring of [`super::pad_ring`] as Y
 //! opens its command ring.
@@ -15,15 +17,21 @@ use super::{DOUBLE_CLICK_SECS, DOUBLE_CLICK_SLOP, InputState, Presser};
 use crate::action::{Action, BindingMap};
 use crate::game::Game;
 use aftermine_protocol::PadButton;
-use aftermine_sim::{UnitId, UnitKind};
+use aftermine_sim::{BuildingId, BuildingKind, UnitId, UnitKind};
 use macroquad::prelude::Vec2;
 
 /// The group RT narrowed last and the kind it left selected. It stands
 /// only while the selection is still exactly that kind of the group.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Narrowed {
-    group: Vec<UnitId>,
-    kind: UnitKind,
+pub(crate) enum Narrowed {
+    Units {
+        group: Vec<UnitId>,
+        kind: UnitKind,
+    },
+    Buildings {
+        group: Vec<BuildingId>,
+        kind: BuildingKind,
+    },
 }
 
 /// A controller button pressed during a match.
@@ -38,6 +46,10 @@ pub(super) fn press(
         PadButton::South => press_select(game, input, bindings, pad),
         PadButton::West => order(game, input, bindings, pad),
         PadButton::East => back(game, input, bindings),
+        // Launch takes the bumpers over, as the strike ribbon's steppers.
+        PadButton::LeftShoulder | PadButton::RightShoulder if input.striking.is_some() => {
+            super::step_salvo(&game.view(), input, button == PadButton::RightShoulder);
+        }
         PadButton::LeftShoulder => {
             super::dispatch_action(game, input, bindings, Action::SelectArmy);
         }
@@ -47,7 +59,7 @@ pub(super) fn press(
         PadButton::LeftTrigger => {
             input.queue_pads.insert(pad);
         }
-        PadButton::RightTrigger => narrow(game, input),
+        PadButton::RightTrigger => by_kind(game, input, bindings),
         // The top bar's buttons: Menu opens the pause menu, as the menu
         // button does, and View pauses and resumes, as the pause button
         // does.
@@ -163,46 +175,46 @@ fn back(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
     super::dispatch_action(game, input, bindings, Action::Back);
 }
 
-/// RT: narrows the selection to its first unit kind in the roster's order,
-/// then each press to the next kind of the same group, and after the last
-/// back to the whole group. A selection of one kind has nothing to narrow.
-fn narrow(game: &mut Game, input: &mut InputState) {
-    let alive = |ids: &[UnitId]| -> Vec<UnitId> {
+/// One RT press over a selection: the next kind of the group RT narrowed
+/// last, the selection's first kind, or the whole group after its last.
+enum Cycle<Id, Kind> {
+    /// The selection holds one kind, or none, and no cycle stands.
+    OneKind,
+    /// Select `ids`, the group's members of `kind`, and remember both.
+    Narrow {
+        group: Vec<Id>,
+        kind: Kind,
+        ids: Vec<Id>,
+    },
+    /// Back to the whole group after its last kind.
+    Whole(Vec<Id>),
+}
+
+/// Steps RT's cycle over the live `selection`. `narrowed` is the group RT
+/// left last, with its dead members gone, and the kind it left; it counts
+/// only while the selection is still exactly that kind of it. `kinds`
+/// lists a group's kinds, and the kind RT left, in the roster tiles'
+/// order: a kind whose last member died keeps its place, so the walk
+/// moves on to the kind after it.
+fn cycle<Id: Copy + PartialEq, Kind: Copy + PartialEq>(
+    selection: Vec<Id>,
+    narrowed: Option<(Vec<Id>, Kind)>,
+    kind_of: impl Fn(Id) -> Option<Kind>,
+    kinds: impl Fn(&[Id], Option<Kind>) -> Vec<Kind>,
+) -> Cycle<Id, Kind> {
+    let of_kind = |ids: &[Id], kind: Kind| -> Vec<Id> {
         ids.iter()
             .copied()
-            .filter(|id| game.state.unit(*id).is_some())
+            .filter(|id| kind_of(*id) == Some(kind))
             .collect()
     };
-    let of_kind = |ids: &[UnitId], kind: UnitKind| -> Vec<UnitId> {
-        ids.iter()
-            .copied()
-            .filter(|id| game.state.unit(*id).is_some_and(|unit| unit.kind == kind))
-            .collect()
+    let (group, last) = match narrowed {
+        Some((group, kind)) if of_kind(&group, kind) == selection => (group, Some(kind)),
+        _ => (selection, None),
     };
-    let selection = alive(&game.presentation.selection.units);
-    // The group RT left, while the selection is still the kind it left.
-    let (group, last) = match input.narrowed.take() {
-        Some(narrowed) => {
-            let group = alive(&narrowed.group);
-            if of_kind(&group, narrowed.kind) == selection {
-                (group, Some(narrowed.kind))
-            } else {
-                (selection, None)
-            }
-        }
-        None => (selection, None),
-    };
-    let kinds: Vec<UnitKind> = crate::panel::kind_counts(
-        group
-            .iter()
-            .filter_map(|id| game.state.unit(*id).map(|unit| unit.kind)),
-    )
-    .into_iter()
-    .map(|(kind, _)| kind)
-    .collect();
+    let kinds = kinds(&group, last);
     if kinds.len() < 2 {
-        super::deny(game);
-        return;
+        return Cycle::OneKind;
     }
     let next = match last {
         None => kinds.first().copied(),
@@ -211,14 +223,93 @@ fn narrow(game: &mut Game, input: &mut InputState) {
             .position(|k| *k == kind)
             .and_then(|at| kinds.get(at + 1).copied()),
     };
-    game.presentation.selection.units = match next {
-        Some(kind) => {
-            let narrowed = of_kind(&group, kind);
-            input.narrowed = Some(Narrowed { group, kind });
-            narrowed
+    match next {
+        Some(kind) => Cycle::Narrow {
+            ids: of_kind(&group, kind),
+            group,
+            kind,
+        },
+        None => Cycle::Whole(group),
+    }
+}
+
+/// RT: narrows a mixed selection to its first kind in the roster's order,
+/// then each press to the next kind of the same group, and after the last
+/// back to the whole group. A selection of one kind widens instead to
+/// every one of that kind, as the panel's All button does.
+fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
+    let last = input.narrowed.take();
+    let state = &game.state;
+    let selection = &game.presentation.selection;
+    // Units RT narrowed to that all died leave nothing selected; the walk
+    // goes on over their group.
+    let on_units = !selection.units.is_empty()
+        || (selection.buildings.is_empty() && matches!(last, Some(Narrowed::Units { .. })));
+    if on_units {
+        let alive = |ids: &[UnitId]| -> Vec<UnitId> {
+            ids.iter()
+                .copied()
+                .filter(|id| state.unit(*id).is_some())
+                .collect()
+        };
+        let last = match last {
+            Some(Narrowed::Units { group, kind }) => Some((alive(&group), kind)),
+            _ => None,
+        };
+        let kind_of = |id| state.unit(id).map(|unit| unit.kind);
+        match cycle(alive(&selection.units), last, kind_of, |ids, left| {
+            crate::panel::kind_counts(ids.iter().filter_map(|id| kind_of(*id)).chain(left))
+                .into_iter()
+                .map(|(kind, _)| kind)
+                .collect()
+        }) {
+            Cycle::OneKind => select_all(game, input, bindings),
+            Cycle::Narrow { group, kind, ids } => {
+                game.presentation.selection.units = ids;
+                input.narrowed = Some(Narrowed::Units { group, kind });
+            }
+            Cycle::Whole(group) => game.presentation.selection.units = group,
         }
-        None => group,
-    };
+    } else {
+        let alive = |ids: &[BuildingId]| -> Vec<BuildingId> {
+            ids.iter()
+                .copied()
+                .filter(|id| state.building(*id).is_some())
+                .collect()
+        };
+        let last = match last {
+            Some(Narrowed::Buildings { group, kind }) => Some((alive(&group), kind)),
+            _ => None,
+        };
+        let kind_of = |id| state.building(id).map(|b| b.kind);
+        match cycle(alive(&selection.buildings), last, kind_of, |ids, left| {
+            crate::panel::building_kinds(ids.iter().filter_map(|id| kind_of(*id)).chain(left))
+        }) {
+            Cycle::OneKind => select_all(game, input, bindings),
+            Cycle::Narrow { group, kind, ids } => {
+                game.presentation.selection.buildings = ids;
+                input.narrowed = Some(Narrowed::Buildings { group, kind });
+            }
+            Cycle::Whole(group) => game.presentation.selection.buildings = group,
+        }
+    }
+}
+
+/// Presses the panel's All button for a selection of one kind, through the
+/// card it published; with no such offer, as when every one is already
+/// selected, the press is refused.
+fn select_all(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
+    let offer = game
+        .presentation
+        .panel_model
+        .borrow()
+        .as_ref()
+        .and_then(|panel| panel.select_all.as_ref())
+        .map(|all| all.card.action);
+    match offer {
+        Some(action) => super::activate_card(game, input, bindings, action),
+        None => super::deny(game),
+    }
 }
 
 #[cfg(test)]

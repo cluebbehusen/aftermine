@@ -325,14 +325,14 @@ fn legend(ring: &Ring, pointed: Option<&Slice>) -> crate::hint_line::HintLine {
         .pad
         .unwrap_or(aftermine_protocol::PadFamily::Xbox);
     let icon = |button| crate::pad::button_icon(family, button);
-    let (pick, second) = match ring.kind {
-        RingKind::Commands => (" pick - ", " cancel one - "),
-        RingKind::Groups => (" recall - ", " assign - "),
+    let pick = match ring.kind {
+        RingKind::Commands => " pick - ",
+        RingKind::Groups => " recall - ",
     };
     let mut line = crate::hint_line::HintLine::default()
         .pad(icon(PadButton::South))
         .text(pick);
-    if pointed.is_some_and(Slice::takes_x) {
+    if let Some(second) = pointed.and_then(second_label) {
         line = line.pad(icon(PadButton::West)).text(second);
     }
     if ring.path.is_empty() {
@@ -342,5 +342,21 @@ fn legend(ring: &Ring, pointed: Option<&Slice>) -> crate::hint_line::HintLine {
             .text(" back - ")
             .pad(icon(PadButton::North))
             .text(" close")
+    }
+}
+
+/// What the legend says X does to `slice`, when X does anything to it.
+fn second_label(slice: &Slice) -> Option<&'static str> {
+    use crate::action::Action;
+    use crate::panel::CardAction;
+    match slice.pick {
+        Pick::Group(_) => Some(" assign - "),
+        Pick::Open(_) => None,
+        Pick::Card(_) if slice.cancel.is_some() => Some(" cancel one - "),
+        Pick::Card(_) => match slice.second()? {
+            CardAction::Dispatch(Action::ToggleIdleWeld) => Some(" switch auto-repair - "),
+            CardAction::FillRounds => Some(" fill every slot - "),
+            _ => None,
+        },
     }
 }

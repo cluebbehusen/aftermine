@@ -73,7 +73,8 @@ pub(crate) struct Slice {
     /// How many it counts: of what it trains or orders, those waiting in
     /// the queue dock; of a group, its members.
     pub(crate) count: usize,
-    /// What X does to it: the dock's own act that cancels one.
+    /// The dock's own act that cancels one of what it queues, which X
+    /// does before anything else.
     pub(crate) cancel: Option<CardAction>,
     /// The slices of the ring it opens, when it opens one here.
     within: Vec<Slice>,
@@ -169,10 +170,14 @@ impl Slice {
         }
     }
 
-    /// Whether X does anything to it: cancels one of what it queues, or
-    /// saves the selection to its group.
-    pub(crate) fn takes_x(&self) -> bool {
-        self.cancel.is_some() || matches!(self.pick, Pick::Group(_))
+    /// What X does to a card's slice: cancels one of what it queues, or
+    /// else does what a right-click on the card does, such as switching
+    /// auto-repair.
+    pub(crate) fn second(&self) -> Option<CardAction> {
+        match self.pick {
+            Pick::Card(_) => self.cancel.or_else(|| self.card.second_act()),
+            Pick::Open(_) | Pick::Group(_) => None,
+        }
     }
 }
 
@@ -340,10 +345,17 @@ fn offered(card: &Card) -> bool {
 /// that would still hold too many gives the rest to More.
 fn first_ring(game: &Scene<'_>, panel: &Panel) -> Vec<Slice> {
     let stop = CardAction::Dispatch(Action::StopOrScrap);
+    // X on the Order slice cancels one, as the Cancel card does, so a ring
+    // with Order needs no Cancel slice beside it.
+    let orders = panel
+        .cards
+        .iter()
+        .any(|card| card.action == CardAction::Dispatch(Action::OrderRound));
+    let cancel = CardAction::Dispatch(Action::CancelRound);
     let mut slices: Vec<Slice> = panel
         .cards
         .iter()
-        .filter(|card| offered(card))
+        .filter(|card| offered(card) && !(orders && card.action == cancel))
         .chain(panel.absent.iter().filter(|card| card.action != stop))
         .chain(
             panel
