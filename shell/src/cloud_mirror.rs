@@ -8,14 +8,25 @@
 //! A manifest holds what this device last agreed with CloudKit: each name
 //! with its file's size and modification time and the save time both sides
 //! held. Against it, a pass tells an edit from a deletion on either side.
-//! When both sides changed a record, the newer save wins; a named save
-//! that collides with an unsynced one of the same name moves aside first,
-//! so neither is lost. Only the save worker runs a pass, since every
-//! CloudKit call waits on the network.
+//! When both sides changed a record, the newer save wins, and an older copy
+//! that lands over a newer one, as when two uploads cross, goes up again.
+//! A named save that collides with an unsynced one of the same name moves
+//! aside first, so neither is lost.
+//!
+//! A missing file counts as deleted, except where the system removes files
+//! on its own, as tvOS clears its cache: there only a deletion the game made
+//! goes up, and a file that vanished is fetched again. A file iCloud Drive
+//! has not brought down yet is left alone until it arrives.
+//!
+//! Passes run on a thread of their own, since every CloudKit call waits on
+//! the network and must never hold up a load or a save.
 
-use std::collections::BTreeMap;
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, AtomicUsize};
+use std::sync::{Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aftermine_icloud::cloudkit::{Changed, Changes};
@@ -64,6 +75,29 @@ struct Manifest {
     folders: Vec<(String, PathBuf)>,
     token: Option<String>,
     synced: BTreeMap<String, Synced>,
+    /// Synced records the game deleted here, until the deletion goes up or
+    /// another device's copy replaces them.
+    deleted: BTreeSet<String>,
+}
+
+impl Manifest {
+    /// Notes the game's deletions of synced records among `paths`; whether
+    /// any was new.
+    fn note_deleted(&mut self, places: &Places, paths: &[PathBuf]) -> bool {
+        let mut noted = false;
+        for name in paths.iter().filter_map(|path| places.name_of(path)) {
+            if self.synced.contains_key(&name) {
+                noted |= self.deleted.insert(name);
+            }
+        }
+        noted
+    }
+
+    /// Records `name` as gone from both sides.
+    fn forget(&mut self, name: &str) {
+        self.synced.remove(name);
+        self.deleted.remove(name);
+    }
 }
 
 /// One step a pass takes.
@@ -84,8 +118,16 @@ pub(crate) enum Action {
     DeleteRemote(String),
     /// Gone on both sides.
     Forget(String),
-    /// The remote copy lost to a newer local one, which goes up instead.
+    /// The remote copy lost to a newer local one, which goes up instead, or
+    /// waits for a later pass.
     Keep(Changed),
+    /// iCloud Drive is still bringing the file here: leave it, and fetch
+    /// its change again once it has arrived.
+    Wait(String),
+    /// The file vanished without the game deleting it, as when tvOS clears
+    /// cached files: forget it and fetch every record again, which brings
+    /// it back.
+    Refetch(String),
 }
 
 /// How a local file stands against the manifest.
@@ -101,12 +143,33 @@ enum Local {
     Edited,
 }
 
+/// What this device holds, as a pass finds it.
+pub(crate) struct Here<'a> {
+    /// Each record file and its stamp.
+    pub local: &'a BTreeMap<String, Stamp>,
+    /// Records iCloud Drive holds for this device but has not brought down.
+    pub arriving: &'a BTreeSet<String>,
+    /// Synced records the game deleted here.
+    pub deleted: &'a BTreeSet<String>,
+    /// Whether the system removes files on its own, so that a missing file
+    /// counts as deleted only when the game deleted it.
+    pub purgeable: bool,
+}
+
+impl Here<'_> {
+    /// Whether a synced record missing here was deleted, rather than
+    /// removed by the system.
+    fn deleted_here(&self, name: &str) -> bool {
+        !self.purgeable || self.deleted.contains(name)
+    }
+}
+
 /// What to do about each record, from the manifest, this device's files
 /// and what CloudKit reported. `saved_at` reads a local file's save time,
 /// and only runs for files that changed.
 pub(crate) fn plan(
     synced: &BTreeMap<String, Synced>,
-    local: &BTreeMap<String, Stamp>,
+    here: &Here,
     changes: &Changes,
     saved_at: &mut impl FnMut(&str) -> Option<u64>,
 ) -> Vec<Action> {
@@ -115,7 +178,7 @@ pub(crate) fn plan(
         known: BTreeMap::new(),
     };
     let standing = |name: &str, times: &mut Times<_>| -> Option<Local> {
-        let stamp = local.get(name)?;
+        let stamp = here.local.get(name)?;
         Some(match synced.get(name) {
             None => Local::New,
             Some(entry) if entry.stamp == *stamp => Local::Same,
@@ -124,27 +187,42 @@ pub(crate) fn plan(
         })
     };
     let mut actions = Vec::new();
-    let mut handled = std::collections::BTreeSet::new();
+    let mut handled = BTreeSet::new();
     for change in &changes.changed {
         handled.insert(change.name.clone());
+        if here.arriving.contains(&change.name) {
+            actions.push(Action::Keep(change.clone()));
+            actions.push(Action::Wait(change.name.clone()));
+            continue;
+        }
         let agreed = synced.get(&change.name);
         let action = match standing(&change.name, &mut times) {
             None => match agreed {
-                // Deleted here, but nothing changed there since: the
-                // deletion goes up.
-                Some(entry) if entry.saved_at == change.saved_at => {
+                // Deleted here, and nothing newer there: the deletion goes
+                // up.
+                Some(entry)
+                    if here.deleted_here(&change.name) && change.saved_at <= entry.saved_at =>
+                {
                     actions.push(Action::Keep(change.clone()));
                     Action::DeleteRemote(change.name.clone())
                 }
-                // A change there outranks a deletion here.
+                // A change there outranks a deletion here, and a file the
+                // system removed comes back.
                 _ => Action::Download(change.clone()),
             },
             Some(Local::Same | Local::Touched) => {
-                if agreed.is_some_and(|entry| entry.saved_at == change.saved_at) {
-                    actions.push(Action::Keep(change.clone()));
-                    Action::Adopt(change.name.clone(), change.saved_at)
-                } else {
-                    Action::Download(change.clone())
+                match agreed.map_or(Ordering::Less, |entry| entry.saved_at.cmp(&change.saved_at)) {
+                    Ordering::Equal => {
+                        actions.push(Action::Keep(change.clone()));
+                        Action::Adopt(change.name.clone(), change.saved_at)
+                    }
+                    // An older copy landed over the one this device sent,
+                    // as when two uploads cross: this one goes up again.
+                    Ordering::Greater => {
+                        actions.push(Action::Keep(change.clone()));
+                        Action::Upload(change.name.clone())
+                    }
+                    Ordering::Less => Action::Download(change.clone()),
                 }
             }
             Some(standing @ (Local::New | Local::Edited)) => {
@@ -168,6 +246,10 @@ pub(crate) fn plan(
         if !handled.insert(name.clone()) {
             continue;
         }
+        if here.arriving.contains(name) {
+            actions.push(Action::Wait(name.clone()));
+            continue;
+        }
         actions.push(match standing(name, &mut times) {
             None if synced.contains_key(name) => Action::Forget(name.clone()),
             None => continue,
@@ -176,7 +258,7 @@ pub(crate) fn plan(
             Some(Local::New | Local::Edited) => Action::Upload(name.clone()),
         });
     }
-    for name in local.keys() {
+    for name in here.local.keys() {
         if handled.contains(name) {
             continue;
         }
@@ -191,9 +273,14 @@ pub(crate) fn plan(
         }
     }
     for name in synced.keys() {
-        if !handled.contains(name) && !local.contains_key(name) {
-            actions.push(Action::DeleteRemote(name.clone()));
+        if handled.contains(name) || here.local.contains_key(name) || here.arriving.contains(name) {
+            continue;
         }
+        actions.push(if here.deleted_here(name) {
+            Action::DeleteRemote(name.clone())
+        } else {
+            Action::Refetch(name.clone())
+        });
     }
     actions
 }
@@ -242,7 +329,7 @@ impl Remote for CloudKit {
 }
 
 /// How much of the mirror a pass covers.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Mode {
     /// Both directions.
     Full,
@@ -254,24 +341,142 @@ pub(crate) enum Mode {
 /// How often Home and the shelf look for records other devices changed.
 pub(crate) const EVERY: Duration = Duration::from_secs(30);
 
-/// Runs a pass for this device against iCloud, reporting failures rather
-/// than raising them: a mirror that cannot reach iCloud leaves records
-/// where they are.
-pub(crate) fn run(mode: Mode, cancelled: &impl Fn() -> bool) -> Outcome {
-    let Some(places) = Places::here() else {
-        return Outcome::default();
-    };
-    pass(&CloudKit, &places, mode, cancelled).unwrap_or_else(|error| {
+/// The mirror's thread, once started, and what it is asked to do.
+static MIRROR: OnceLock<Shared> = OnceLock::new();
+
+#[derive(Default)]
+struct Shared {
+    queue: Mutex<Queue>,
+    wake: Condvar,
+    /// Records the last pass left on their way to this device.
+    pending: AtomicUsize,
+    /// How many passes added, replaced or removed a local file.
+    changes: AtomicU64,
+}
+
+#[derive(Default)]
+struct Queue {
+    /// The pass wanted next.
+    wanted: Option<Mode>,
+    /// Records the game deleted since a pass last took them.
+    deleted: Vec<PathBuf>,
+}
+
+impl Shared {
+    fn queue(&self) -> MutexGuard<'_, Queue> {
+        self.queue.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Asks for a pass; a full pass covers a push.
+    fn want(&self, mode: Mode) {
+        let mut queue = self.queue();
+        if queue.wanted != Some(Mode::Full) {
+            queue.wanted = Some(mode);
+        }
+        self.wake.notify_one();
+    }
+}
+
+/// Starts the mirror's thread with a full pass. Only the first call does
+/// anything.
+pub(crate) fn start() {
+    let mut first = false;
+    let shared = MIRROR.get_or_init(|| {
+        first = true;
+        Shared::default()
+    });
+    if !first {
+        return;
+    }
+    shared.want(Mode::Full);
+    if let Err(error) = std::thread::Builder::new()
+        .name("cloud-mirror".into())
+        .spawn(|| serve(shared))
+    {
         eprintln!("iCloud mirror: {error}");
-        Outcome::default()
+    }
+}
+
+/// Asks the mirror for a pass, if it runs.
+pub(crate) fn request(mode: Mode) {
+    if let Some(shared) = MIRROR.get() {
+        shared.want(mode);
+    }
+}
+
+/// Tells the mirror the game is about to delete the record at `path`, so
+/// the deletion goes up even where a missing file alone would not count.
+/// Called before the file goes, so a pass never finds it missing unnoted.
+pub(crate) fn deleting(path: &Path) {
+    if let Some(shared) = MIRROR.get() {
+        shared.queue().deleted.push(path.to_owned());
+    }
+}
+
+/// Records the last pass left on their way to this device.
+pub(crate) fn pending() -> usize {
+    MIRROR.get().map_or(0, |shared| {
+        shared.pending.load(std::sync::atomic::Ordering::Relaxed)
     })
 }
 
-/// What a pass left undone.
+/// How many passes added, replaced or removed a local file. A catalog
+/// scanned before a change may be out of date.
+pub(crate) fn changes() -> u64 {
+    MIRROR.get().map_or(0, |shared| {
+        shared.changes.load(std::sync::atomic::Ordering::Acquire)
+    })
+}
+
+/// Runs the passes asked for, one at a time, reporting failures rather
+/// than raising them: a mirror that cannot reach iCloud leaves records
+/// where they are.
+fn serve(shared: &'static Shared) {
+    loop {
+        let mode = {
+            let mut queue = shared.queue();
+            loop {
+                if let Some(mode) = queue.wanted.take() {
+                    break mode;
+                }
+                queue = shared
+                    .wake
+                    .wait(queue)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+        };
+        let Some(places) = Places::here() else {
+            continue;
+        };
+        let taken = || std::mem::take(&mut shared.queue().deleted);
+        let outcome = pass(&CloudKit, &places, mode, taken).unwrap_or_else(|error| {
+            eprintln!("iCloud mirror: {error}");
+            Outcome::default()
+        });
+        shared
+            .pending
+            .store(outcome.pending, std::sync::atomic::Ordering::Relaxed);
+        if outcome.changed {
+            shared
+                .changes
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+        }
+        if outcome.again {
+            shared.want(Mode::Full);
+        }
+    }
+}
+
+/// What a pass did and left undone.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Outcome {
     /// Records from other devices still to arrive.
     pub pending: usize,
+    /// Whether it added, replaced or removed a local file.
+    pub changed: bool,
+    /// Whether another pass should follow at once: more changes wait, the
+    /// pass ran out of time, or every record must be fetched again.
+    pub again: bool,
 }
 
 /// Where a pass keeps its state and finds records.
@@ -279,6 +484,8 @@ pub(crate) struct Places {
     pub manifest: PathBuf,
     pub staging: PathBuf,
     pub folders: Vec<(&'static str, PathBuf)>,
+    /// Whether the system may remove record files on its own.
+    pub purgeable: bool,
 }
 
 impl Places {
@@ -289,6 +496,7 @@ impl Places {
             manifest: crate::paths::mirror_manifest()?,
             staging: crate::paths::mirror_staging()?,
             folders: crate::paths::records().mirrored(),
+            purgeable: crate::paths::records_purgeable(),
         })
     }
 
@@ -303,28 +511,54 @@ impl Places {
             .map(|(_, dir)| dir.join(file))
     }
 
-    fn local(&self) -> BTreeMap<String, Stamp> {
+    /// The record name of the file at `path`, if a mirrored folder holds it.
+    fn name_of(&self, path: &Path) -> Option<String> {
+        let dir = path.parent()?;
+        let file = path.file_name()?.to_str()?;
+        let (label, _) = self.folders.iter().find(|(_, folder)| folder == dir)?;
+        Some(format!("{label}/{file}"))
+    }
+
+    /// Each record file with its stamp, and the records iCloud Drive has
+    /// not brought down yet.
+    fn local(&self) -> (BTreeMap<String, Stamp>, BTreeSet<String>) {
         let mut found = BTreeMap::new();
+        let mut arriving = BTreeSet::new();
         for (label, dir) in &self.folders {
             let Ok(entries) = std::fs::read_dir(dir) else {
                 continue;
             };
             for path in entries.filter_map(Result::ok).map(|entry| entry.path()) {
-                let mirrored = matches!(
-                    path.extension().and_then(|e| e.to_str()),
-                    Some("json" | "amreplay" | "amsave")
-                );
-                if let (true, Some(file), Some(stamp)) = (
-                    mirrored,
-                    path.file_name().and_then(|f| f.to_str()),
-                    Stamp::of(&path),
-                ) {
+                let Some(file) = path.file_name().and_then(|f| f.to_str()) else {
+                    continue;
+                };
+                // iOS stands a hidden `.name.icloud` file in for a file
+                // iCloud Drive has not brought down.
+                if let Some(real) = file
+                    .strip_prefix('.')
+                    .and_then(|file| file.strip_suffix(".icloud"))
+                {
+                    if mirrored(real) {
+                        arriving.insert(format!("{label}/{real}"));
+                    }
+                } else if !file.starts_with('.')
+                    && mirrored(file)
+                    && let Some(stamp) = Stamp::of(&path)
+                {
                     found.insert(format!("{label}/{file}"), stamp);
                 }
             }
         }
-        found
+        (found, arriving)
     }
+}
+
+/// Whether a file of this name is a record the mirror carries.
+fn mirrored(file: &str) -> bool {
+    matches!(
+        Path::new(file).extension().and_then(|e| e.to_str()),
+        Some("json" | "amreplay" | "amsave")
+    )
 }
 
 /// When the record at `path` was saved, in Unix seconds: its own record of
@@ -343,17 +577,22 @@ fn saved_at(path: &Path) -> Option<u64> {
 }
 
 /// Runs one pass against `remote`: fetches what changed elsewhere unless
-/// pushing, decides with [`plan`], and carries it out until `cancelled`
-/// says stop or the time budget runs out. The token advances only once
-/// every remote change it covers is applied, so a cut-short pass fetches
-/// them again.
+/// pushing, takes the game's deletions from `deleted`, decides with
+/// [`plan`], and carries it out until the time budget runs out. The token
+/// advances only once every remote change it covers is applied, so a
+/// cut-short pass fetches them again.
 pub(crate) fn pass(
     remote: &impl Remote,
     places: &Places,
     mode: Mode,
-    cancelled: &impl Fn() -> bool,
+    deleted: impl FnOnce() -> Vec<PathBuf>,
 ) -> io::Result<Outcome> {
+    let mut manifest = load(&places.manifest);
     let Some(account) = remote.account() else {
+        // Deletions made while signed out still go up once signed in.
+        if manifest.note_deleted(places, &deleted()) {
+            save(&places.manifest, &manifest)?;
+        }
         return Ok(Outcome::default());
     };
     let folders: Vec<(String, PathBuf)> = places
@@ -361,7 +600,6 @@ pub(crate) fn pass(
         .iter()
         .map(|(label, dir)| ((*label).to_owned(), dir.clone()))
         .collect();
-    let mut manifest = load(&places.manifest);
     if manifest.account != account || manifest.folders != folders {
         manifest = Manifest {
             account,
@@ -375,34 +613,67 @@ pub(crate) fn pass(
         Mode::Full => remote.fetch(manifest.token.as_deref(), &places.staging)?,
         Mode::Push => Changes::default(),
     };
-    let local = places.local();
+    // The game notes a deletion before the file goes, and the notes are
+    // taken after the scan, so every file the scan finds missing that the
+    // game deleted has its note.
+    let (local, arriving) = places.local();
+    manifest.note_deleted(places, &deleted());
     let mut read = |name: &str| places.path(name).and_then(|path| saved_at(&path));
-    let actions = plan(&manifest.synced, &local, &changes, &mut read);
+    let here = Here {
+        local: &local,
+        arriving: &arriving,
+        deleted: &manifest.deleted,
+        purgeable: places.purgeable,
+    };
+    let actions = plan(&manifest.synced, &here, &changes, &mut read);
+    let incoming: BTreeSet<String> = changes
+        .changed
+        .iter()
+        .map(|change| change.name.clone())
+        .collect();
     let started = Instant::now();
-    let mut pending = 0;
-    let mut complete = true;
+    let mut outcome = Outcome::default();
+    let mut complete = changes.failed == 0;
+    let mut refetch = false;
     for action in actions {
-        let out_of_time = cancelled() || started.elapsed() > BUDGET;
+        let out_of_time = started.elapsed() > BUDGET;
         if out_of_time {
             complete = false;
+            outcome.again = true;
         }
-        match apply(remote, places, &mut manifest, action, out_of_time) {
-            Applied::Done => {}
+        refetch |= matches!(action, Action::Refetch(_));
+        let writes = matches!(
+            action,
+            Action::Download(_) | Action::MoveAsideThenDownload(_) | Action::DeleteLocal(_)
+        );
+        match apply(
+            remote,
+            places,
+            &mut manifest,
+            action,
+            out_of_time,
+            &incoming,
+        ) {
+            Applied::Done => outcome.changed |= writes,
             Applied::Skipped { arriving } => {
                 complete &= !arriving;
-                pending += usize::from(arriving);
+                outcome.pending += usize::from(arriving);
             }
         }
     }
-    if complete && mode == Mode::Full {
+    if refetch {
+        manifest.token = None;
+        outcome.again = true;
+    } else if mode == Mode::Full && complete {
         manifest.token = changes.token;
-        pending += usize::from(changes.more);
-    } else if mode == Mode::Full {
-        pending += usize::from(changes.more);
+        outcome.again |= changes.more;
+    }
+    if mode == Mode::Full {
+        outcome.pending += usize::from(changes.more) + changes.failed;
     }
     save(&places.manifest, &manifest)?;
     std::fs::remove_dir_all(&places.staging).ok();
-    Ok(Outcome { pending })
+    Ok(outcome)
 }
 
 enum Applied {
@@ -419,13 +690,21 @@ fn apply(
     manifest: &mut Manifest,
     action: Action,
     out_of_time: bool,
+    incoming: &BTreeSet<String>,
 ) -> Applied {
     let arriving = matches!(
         action,
-        Action::Download(_) | Action::MoveAsideThenDownload(_) | Action::DeleteLocal(_)
+        Action::Download(_)
+            | Action::MoveAsideThenDownload(_)
+            | Action::DeleteLocal(_)
+            | Action::Wait(_)
     );
     let skipped = Applied::Skipped { arriving };
-    if out_of_time && !matches!(action, Action::Keep(_) | Action::Forget(_)) {
+    let moves_nothing = matches!(
+        action,
+        Action::Keep(_) | Action::Forget(_) | Action::Refetch(_)
+    );
+    if out_of_time && !moves_nothing {
         return skipped;
     }
     let result = match action {
@@ -438,20 +717,20 @@ fn apply(
             Ok(())
         }
         Action::MoveAsideThenDownload(change) => {
-            move_aside(places, &change.name).and_then(|()| download(places, manifest, &change))
+            move_aside(places, &change.name, incoming, &manifest.synced)
+                .and_then(|()| download(places, manifest, &change))
         }
         Action::DeleteLocal(name) => delete_local(places, manifest, &name),
-        Action::DeleteRemote(name) => remote.delete(&name).map(|()| {
-            manifest.synced.remove(&name);
-        }),
-        Action::Forget(name) => {
-            manifest.synced.remove(&name);
+        Action::DeleteRemote(name) => remote.delete(&name).map(|()| manifest.forget(&name)),
+        Action::Forget(name) | Action::Refetch(name) => {
+            manifest.forget(&name);
             Ok(())
         }
         Action::Keep(change) => {
             std::fs::remove_file(&change.staged).ok();
             Ok(())
         }
+        Action::Wait(_) => return skipped,
     };
     match result {
         Ok(()) => Applied::Done,
@@ -516,6 +795,7 @@ fn download(places: &Places, manifest: &mut Manifest, change: &Changed) -> io::R
     })??;
     std::fs::remove_file(&change.staged).ok();
     let stamp = Stamp::of(&path).ok_or_else(|| io::Error::other("downloaded file vanished"))?;
+    manifest.deleted.remove(&change.name);
     manifest.synced.insert(
         change.name.clone(),
         Synced {
@@ -526,11 +806,19 @@ fn download(places: &Places, manifest: &mut Manifest, change: &Changed) -> io::R
     Ok(())
 }
 
-/// Renames the local file `name` to the first free `-n` name beside it.
-fn move_aside(places: &Places, name: &str) -> io::Result<()> {
+/// Renames the local file `name` to the first `-n` name beside it that no
+/// file holds and no record arriving in this pass or already synced
+/// claims, so a later download cannot land on it.
+fn move_aside(
+    places: &Places,
+    name: &str,
+    incoming: &BTreeSet<String>,
+    synced: &BTreeMap<String, Synced>,
+) -> io::Result<()> {
     let path = places
         .path(name)
         .ok_or_else(|| io::Error::other(format!("no folder for {name}")))?;
+    let folder = name.split_once('/').map_or(name, |(folder, _)| folder);
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -542,8 +830,14 @@ fn move_aside(places: &Places, name: &str) -> io::Result<()> {
         .unwrap_or("amsave")
         .to_owned();
     let free = (1..1000)
-        .map(|n| path.with_file_name(format!("{stem}-{n}.{extension}")))
-        .find(|candidate| !candidate.exists())
+        .map(|n| format!("{stem}-{n}.{extension}"))
+        .find(|file| {
+            let claimed = format!("{folder}/{file}");
+            !incoming.contains(&claimed)
+                && !synced.contains_key(&claimed)
+                && !path.with_file_name(file).exists()
+        })
+        .map(|file| path.with_file_name(file))
         .ok_or_else(|| io::Error::other("no free name"))?;
     aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Delete, |granted| {
         std::fs::rename(granted, &free)
@@ -559,7 +853,7 @@ fn delete_local(places: &Places, manifest: &mut Manifest, name: &str) -> io::Res
             }
         })??;
     }
-    manifest.synced.remove(name);
+    manifest.forget(name);
     Ok(())
 }
 

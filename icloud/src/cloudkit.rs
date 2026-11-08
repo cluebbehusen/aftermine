@@ -28,6 +28,10 @@ pub struct Changes {
     pub token: Option<String>,
     /// Whether more changes wait beyond this batch.
     pub more: bool,
+    /// Changed records that could not be copied to this device. While any
+    /// failed, the token must not advance, or they are never fetched again.
+    #[serde(default)]
+    pub failed: usize,
 }
 
 /// The iCloud account CloudKit would act for: its user record name, or

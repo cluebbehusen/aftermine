@@ -303,17 +303,22 @@ records kept on the device.
 Every record file also mirrors through CloudKit's private database, one record
 per file named by its folder and file name, so Apple TV shares records with iPad
 and Mac. iPad and Mac mirror their iCloud Drive folder and Apple TV its cache;
-workspace and automation runs never mirror. A pass runs on the worker ahead of a
-catalog scan, the first time Home opens and then at most every 30 seconds while
-Home or the shelf is open; right after a background save, a pass sends this
-device's changes and takes none in, so files never arrive during a match. Each
-device keeps a manifest of what it last agreed with CloudKit beside its own
-records, so an edit or deletion on either side crosses to the other. When both
-sides changed a record, the newer save wins, and an unsynced named save that
-collides with another device's keeps both. A cleared Apple TV cache takes the
+workspace and automation runs never mirror. Passes run on a thread of their own,
+never the worker, so CloudKit's waits never hold up a load or save: one at
+launch, then at most every 30 seconds while Home or the shelf is open, and right
+after a background save a pass that sends this device's changes and takes none
+in, so files never arrive during a match. A pass that changes local records
+makes the shelf scan again. Each device keeps a manifest of what it last agreed
+with CloudKit beside its own records, so an edit or deletion on either side
+crosses to the other. When both sides changed a record, the newer save wins,
+including when two uploads cross, and an unsynced named save that collides with
+another device's keeps both. A missing file counts as deleted only where the
+system does not remove files on its own: on Apple TV only the game's own
+deletions go up, and a file tvOS removed is fetched again; a file iCloud Drive
+has not brought down yet is left alone. A cleared Apple TV cache takes the
 manifest with it, so the TV downloads its records again rather than deleting
-them. A pass cut short leaves the rest to the next one and fetches the same
-changes again.
+them. A pass cut short, or one with a record that failed to arrive, keeps its
+place and fetches the same changes again.
 
 Settings that belong to the player, not the device, also travel through iCloud's
 key-value store on iPad, Mac and Apple TV, one key per setting with the newest

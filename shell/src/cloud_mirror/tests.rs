@@ -27,7 +27,26 @@ fn changed(name: &str, saved_at: u64) -> Changed {
     }
 }
 
-fn plan_with(
+/// How a planning device keeps its files.
+struct Kept<'a> {
+    purgeable: bool,
+    arriving: &'a [&'a str],
+    deleted: &'a [&'a str],
+}
+
+/// An iCloud Drive folder with every file on the device.
+const DRIVE: Kept = Kept {
+    purgeable: false,
+    arriving: &[],
+    deleted: &[],
+};
+
+fn names(list: &[&str]) -> BTreeSet<String> {
+    list.iter().map(|name| (*name).to_owned()).collect()
+}
+
+fn plan_on(
+    kept: &Kept,
     agreed: &[(&str, Synced)],
     local: &[(&str, Stamp)],
     changes: &Changes,
@@ -45,9 +64,24 @@ fn plan_with(
         .iter()
         .map(|(name, at)| ((*name).to_owned(), *at))
         .collect();
-    plan(&agreed, &local, changes, &mut |name| {
+    let here = Here {
+        local: &local,
+        arriving: &names(kept.arriving),
+        deleted: &names(kept.deleted),
+        purgeable: kept.purgeable,
+    };
+    plan(&agreed, &here, changes, &mut |name| {
         times.get(name).copied()
     })
+}
+
+fn plan_with(
+    agreed: &[(&str, Synced)],
+    local: &[(&str, Stamp)],
+    changes: &Changes,
+    times: &[(&str, u64)],
+) -> Vec<Action> {
+    plan_on(&DRIVE, agreed, local, changes, times)
 }
 
 #[test]
@@ -216,6 +250,100 @@ fn a_named_save_colliding_with_an_unsynced_one_moves_aside() {
     );
 }
 
+#[test]
+fn an_older_copy_over_this_devices_own_goes_up_again() {
+    // Two uploads crossed: the older one landed last.
+    let name = "autosaves/autosave-1.amsave";
+    let actions = plan_with(
+        &[(name, synced(10, 100, 500))],
+        &[(name, stamp(10, 100))],
+        &Changes {
+            changed: vec![changed(name, 300)],
+            ..Changes::default()
+        },
+        &[],
+    );
+    assert_eq!(
+        actions,
+        vec![
+            Action::Keep(changed(name, 300)),
+            Action::Upload(name.into())
+        ]
+    );
+}
+
+#[test]
+fn where_the_system_removes_files_only_the_games_deletions_go_up() {
+    let removed = "autosaves/autosave-1.amsave";
+    let deleted = "autosaves/autosave-2.amsave";
+    let agreed = [
+        (removed, synced(10, 100, 100)),
+        (deleted, synced(10, 100, 100)),
+    ];
+    let cache = Kept {
+        purgeable: true,
+        arriving: &[],
+        deleted: &[deleted],
+    };
+    assert_eq!(
+        plan_on(&cache, &agreed, &[], &Changes::default(), &[]),
+        vec![
+            Action::Refetch(removed.into()),
+            Action::DeleteRemote(deleted.into()),
+        ]
+    );
+    // A removed file that comes back in a fetch is downloaded, not deleted.
+    let refetched = Changes {
+        changed: vec![changed(removed, 100)],
+        ..Changes::default()
+    };
+    assert_eq!(
+        plan_on(&cache, &agreed[..1], &[], &refetched, &[]),
+        vec![Action::Download(changed(removed, 100))]
+    );
+    assert_eq!(
+        plan_on(&DRIVE, &agreed[..1], &[], &refetched, &[]),
+        vec![
+            Action::Keep(changed(removed, 100)),
+            Action::DeleteRemote(removed.into())
+        ]
+    );
+}
+
+#[test]
+fn a_file_icloud_drive_has_not_brought_down_is_left_alone() {
+    let waiting = "saves/save-1.amsave";
+    let changed_there = "saves/save-2.amsave";
+    let deleted_there = "saves/save-3.amsave";
+    let actions = plan_on(
+        &Kept {
+            purgeable: false,
+            arriving: &[waiting, changed_there, deleted_there],
+            deleted: &[],
+        },
+        &[
+            (waiting, synced(10, 100, 100)),
+            (changed_there, synced(10, 100, 100)),
+            (deleted_there, synced(10, 100, 100)),
+        ],
+        &[],
+        &Changes {
+            changed: vec![changed(changed_there, 300)],
+            deleted: vec![deleted_there.into()],
+            ..Changes::default()
+        },
+        &[],
+    );
+    assert_eq!(
+        actions,
+        vec![
+            Action::Keep(changed(changed_there, 300)),
+            Action::Wait(changed_there.into()),
+            Action::Wait(deleted_there.into()),
+        ]
+    );
+}
+
 /// An iCloud account in memory: each record's bytes and save time, and a
 /// log of changes a token counts into.
 #[derive(Default)]
@@ -223,6 +351,8 @@ struct FakeCloud {
     records: RefCell<BTreeMap<String, (Vec<u8>, u64)>>,
     log: RefCell<Vec<String>>,
     account: RefCell<Option<String>>,
+    /// Records the next fetch fails to copy down.
+    missed: RefCell<BTreeSet<String>>,
 }
 
 impl FakeCloud {
@@ -246,6 +376,10 @@ impl Remote for FakeCloud {
             ..Changes::default()
         };
         for name in names {
+            if self.missed.borrow_mut().remove(name) {
+                changes.failed += 1;
+                continue;
+            }
             match self.records.borrow().get(name) {
                 Some((bytes, saved_at)) => {
                     let staged = staging.join(name.replace('/', "-"));
@@ -275,16 +409,23 @@ impl Remote for FakeCloud {
     }
 }
 
+/// An Apple TV's folders, in a cache the system may clear.
+fn tv() -> Places {
+    Places {
+        purgeable: true,
+        ..device("tv")
+    }
+}
+
 /// A device's folders under a fresh scratch directory.
 fn device(name: &str) -> Places {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let root = std::env::temp_dir().join(format!(
         "aftermine-mirror-{name}-{}-{}",
         std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
+    std::fs::remove_dir_all(&root).ok();
     let folders = ["autosaves", "matches", "saves", "replays"].map(|label| {
         let dir = root.join(label);
         std::fs::create_dir_all(&dir).unwrap();
@@ -294,6 +435,7 @@ fn device(name: &str) -> Places {
         manifest: root.join("cloud-mirror.json"),
         staging: root.join("cloud-staging"),
         folders: folders.to_vec(),
+        purgeable: false,
     }
 }
 
@@ -309,13 +451,13 @@ fn write_record(places: &Places, name: &str, saved_at: u64, description: &str) -
 }
 
 fn sync(cloud: &FakeCloud, places: &Places) -> Outcome {
-    pass(cloud, places, Mode::Full, &|| false).unwrap()
+    pass(cloud, places, Mode::Full, Vec::new).unwrap()
 }
 
 #[test]
 fn a_record_saved_on_one_device_arrives_on_another_and_a_deletion_follows() {
     let cloud = FakeCloud::signed_in();
-    let tv = device("tv");
+    let tv = tv();
     let ipad = device("ipad");
     let name = "saves/save-1.json";
     let saved = write_record(&tv, name, 1_000, "from the TV");
@@ -348,7 +490,7 @@ fn a_record_saved_on_one_device_arrives_on_another_and_a_deletion_follows() {
 #[test]
 fn a_cleared_cache_brings_records_back_instead_of_deleting_them() {
     let cloud = FakeCloud::signed_in();
-    let tv = device("tv");
+    let tv = tv();
     let name = "autosaves/autosave-1.json";
     write_record(&tv, name, 1_000, "kept");
     sync(&cloud, &tv);
@@ -364,14 +506,15 @@ fn a_cleared_cache_brings_records_back_instead_of_deleting_them() {
 }
 
 #[test]
-fn a_cut_short_pass_fetches_the_same_changes_again() {
+fn a_record_that_failed_to_arrive_is_fetched_again() {
     let cloud = FakeCloud::signed_in();
-    let tv = device("tv");
+    let tv = tv();
     let ipad = device("ipad");
     let name = "matches/match-1.json";
     write_record(&tv, name, 1_000, "a match");
     sync(&cloud, &tv);
-    let outcome = pass(&cloud, &ipad, Mode::Full, &|| true).unwrap();
+    cloud.missed.borrow_mut().insert(name.into());
+    let outcome = sync(&cloud, &ipad);
     assert_eq!(outcome.pending, 1);
     assert!(!ipad.path(name).unwrap().exists());
     sync(&cloud, &ipad);
@@ -379,14 +522,68 @@ fn a_cut_short_pass_fetches_the_same_changes_again() {
 }
 
 #[test]
+fn a_file_the_system_removed_comes_back_and_a_deletion_the_game_made_goes_up() {
+    let cloud = FakeCloud::signed_in();
+    let tv = tv();
+    let removed = "autosaves/autosave-1.json";
+    let deleted = "autosaves/autosave-2.json";
+    let removed_path = write_record(&tv, removed, 1_000, "removed by tvOS");
+    let deleted_path = write_record(&tv, deleted, 1_000, "deleted by the game");
+    // The second pass's token covers the first pass's uploads.
+    sync(&cloud, &tv);
+    sync(&cloud, &tv);
+    std::fs::remove_file(&removed_path).unwrap();
+    std::fs::remove_file(&deleted_path).unwrap();
+    let outcome = pass(&cloud, &tv, Mode::Full, || vec![deleted_path.clone()]).unwrap();
+    assert!(outcome.again, "a removed file asks for every record again");
+    assert!(cloud.records.borrow().contains_key(removed));
+    assert!(!cloud.records.borrow().contains_key(deleted));
+    sync(&cloud, &tv);
+    assert!(removed_path.exists());
+    assert!(!deleted_path.exists());
+}
+
+#[test]
+fn a_file_waiting_on_icloud_drive_is_not_deleted() {
+    let cloud = FakeCloud::signed_in();
+    let ipad = device("ipad");
+    let name = "saves/save-1.json";
+    let path = write_record(&ipad, name, 1_000, "evicted");
+    sync(&cloud, &ipad);
+    // iOS frees space by swapping the file for a placeholder.
+    std::fs::remove_file(&path).unwrap();
+    std::fs::write(path.with_file_name(".save-1.json.icloud"), b"").unwrap();
+    sync(&cloud, &ipad);
+    assert!(cloud.records.borrow().contains_key(name));
+}
+
+#[test]
+fn crossed_uploads_settle_on_the_newer_save() {
+    let cloud = FakeCloud::signed_in();
+    let tv = tv();
+    let name = "autosaves/autosave-1.json";
+    let path = write_record(&tv, name, 2_000, "newer");
+    sync(&cloud, &tv);
+    // Another device's older upload lands after this one's.
+    cloud
+        .records
+        .borrow_mut()
+        .insert(name.into(), (b"older".to_vec(), 1_000));
+    cloud.log.borrow_mut().push(name.into());
+    sync(&cloud, &tv);
+    assert_eq!(cloud.records.borrow()[name].1, 2_000);
+    assert!(std::fs::read_to_string(path).unwrap().contains("newer"));
+}
+
+#[test]
 fn a_push_after_a_save_sends_without_taking_anything_in() {
     let cloud = FakeCloud::signed_in();
-    let tv = device("tv");
+    let tv = tv();
     let ipad = device("ipad");
     write_record(&ipad, "saves/save-1.json", 1_000, "on the iPad");
     sync(&cloud, &ipad);
     write_record(&tv, "autosaves/autosave-2.json", 2_000, "mid-match");
-    pass(&cloud, &tv, Mode::Push, &|| false).unwrap();
+    pass(&cloud, &tv, Mode::Push, Vec::new).unwrap();
     assert!(
         cloud
             .records
@@ -399,7 +596,7 @@ fn a_push_after_a_save_sends_without_taking_anything_in() {
 #[test]
 fn a_different_account_starts_the_manifest_over() {
     let cloud = FakeCloud::signed_in();
-    let tv = device("tv");
+    let tv = tv();
     let name = "saves/save-1.json";
     write_record(&tv, name, 1_000, "mine");
     sync(&cloud, &tv);
@@ -416,7 +613,7 @@ fn a_different_account_starts_the_manifest_over() {
 #[test]
 fn a_signed_out_device_leaves_everything_alone() {
     let cloud = FakeCloud::default();
-    let tv = device("tv");
+    let tv = tv();
     write_record(&tv, "saves/save-1.json", 1_000, "offline");
     assert_eq!(sync(&cloud, &tv), Outcome::default());
     assert!(cloud.records.borrow().is_empty());
@@ -426,7 +623,7 @@ fn a_signed_out_device_leaves_everything_alone() {
 #[test]
 fn a_colliding_named_save_keeps_both_copies() {
     let cloud = FakeCloud::signed_in();
-    let tv = device("tv");
+    let tv = tv();
     let ipad = device("ipad");
     let name = "saves/save-1.json";
     write_record(&tv, name, 1_000, "the TV's");
@@ -444,8 +641,24 @@ fn a_colliding_named_save_keeps_both_copies() {
 }
 
 #[test]
+fn a_save_moved_aside_never_takes_a_name_arriving_with_it() {
+    let cloud = FakeCloud::signed_in();
+    let tv = tv();
+    let ipad = device("ipad");
+    write_record(&tv, "saves/save-1.json", 1_000, "the TV's first");
+    write_record(&tv, "saves/save-1-1.json", 1_100, "the TV's second");
+    write_record(&ipad, "saves/save-1.json", 2_000, "the iPad's");
+    sync(&cloud, &tv);
+    sync(&cloud, &ipad);
+    let read = |name: &str| std::fs::read_to_string(ipad.path(name).unwrap()).unwrap();
+    assert!(read("saves/save-1.json").contains("the TV's first"));
+    assert!(read("saves/save-1-1.json").contains("the TV's second"));
+    assert!(read("saves/save-1-2.json").contains("the iPad's"));
+}
+
+#[test]
 fn record_names_never_leave_their_folder() {
-    let tv = device("tv");
+    let tv = tv();
     for name in [
         "saves/../escape.json",
         "nowhere/x.json",

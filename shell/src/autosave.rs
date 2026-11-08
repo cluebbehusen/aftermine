@@ -286,6 +286,7 @@ fn discard_in(slots: &[SaveSlot], folders: &[PathBuf]) {
 /// Removes a record while iCloud holds off syncing it; a missing file is
 /// already gone.
 pub(crate) fn remove(path: &Path) {
+    crate::cloud_mirror::deleting(path);
     aftermine_icloud::coordinate(path, aftermine_icloud::Access::Delete, |granted| {
         std::fs::remove_file(granted)
     })
