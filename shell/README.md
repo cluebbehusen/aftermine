@@ -27,8 +27,8 @@ crate is a binary, and this README is also its crate-level rustdoc.
 - `home_backdrop` plays a bundled recording behind Home.
 - `render`, `panel` and `layout` draw the world and HUD and share hit-test
   geometry. `look` declares how each unit and defense is drawn.
-- `radial` sets the command panel's cards around a ring, the controller's
-  commands, which `input` opens and `render` draws.
+- `radial` sets the command panel's cards, or the control groups, around a ring
+  for the controller, which `input` opens and `render` draws.
 - `theme` names the interface colors, stroke weights and type sizes.
 - `assets`, `typography`, `mixer`, `audio_mix` and `soundtrack` own the art,
   fonts and sound.

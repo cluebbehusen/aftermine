@@ -1,11 +1,12 @@
-//! Draws the command ring over the match: its slices around a hub, each
-//! wearing its card's face, cost, queued count and progress; the ring's
-//! heading and the pointed slice's name in the hub; that card's own
-//! tooltip beside the ring; and the buttons that drive it underneath.
+//! Draws the open ring over the match: its slices around a hub, each
+//! wearing its card's face, cost, queued count and progress, or its
+//! group's lead kind, number and size; the ring's heading and the pointed
+//! slice's name in the hub; that card's own tooltip beside the ring; and
+//! the buttons that drive it underneath.
 
 use super::prim::{fill_circle, stroke_arc, stroke_circle};
 use super::*;
-use crate::radial::{Geometry, Pick, Ring, Slice};
+use crate::radial::{Geometry, Pick, Ring, RingKind, Slice};
 use crate::theme::{Stroke, Type};
 
 /// How long a ring takes to scale in after it opens, in seconds.
@@ -32,7 +33,7 @@ pub(crate) fn layout(
     bottom: f32,
 ) -> Option<RingLayout> {
     let open = input.ring.as_ref()?;
-    let ring = crate::input::pad_ring::shown(game, panel?, open)?;
+    let ring = crate::input::pad_ring::shown(game, panel, input)?;
     let geometry = Geometry::fit(
         input.reticle.point(),
         env.viewport,
@@ -115,7 +116,9 @@ pub(crate) fn draw(sprites: &Sprites, shown: &RingLayout) {
 
 /// One slice: its disc wearing its card's face and cost, the progress of
 /// what it builds swept around it, its queued count, and a notch on the
-/// rim when it opens a ring of its own.
+/// rim when it opens a ring of its own. A group's slice wears its number
+/// where a cost would stand and its size as the count; an empty group's
+/// wears only its number.
 fn draw_slice(
     sprites: &Sprites,
     geometry: &Geometry,
@@ -167,17 +170,42 @@ fn draw_slice(
         let tip = center + direction * (radius + 12.0 * k);
         draw_triangle(base + across, base - across, tip, fade(TEXT_BODY));
     }
+    let centered = |text: &str, size: f32, baseline: f32, color: Color| {
+        let width = measure_text(text, None, numeric::font_size(size), 1.0).width;
+        draw_text(text, center.x - width * 0.5, baseline, size, fade(color));
+    };
+    if let Pick::Group(number) = slice.pick
+        && slice.count == 0
+    {
+        let size = Type::Body.at(k);
+        centered(
+            &number.to_string(),
+            size,
+            center.y + size * 0.35,
+            if pointed { TEXT_BODY } else { TEXT_DISABLED },
+        );
+        return;
+    }
+    // What the slice wears under its face: a cost, or its group's number.
+    let label = match (slice.pick, card.cost) {
+        (Pick::Group(number), _) => Some((number.to_string(), TEXT_BODY)),
+        (_, Some(cost)) => Some((
+            cost.to_string(),
+            if card.enabled {
+                SCRAP_COLOR
+            } else {
+                TEXT_DISABLED
+            },
+        )),
+        _ => None,
+    };
     let tint = if card.enabled {
         WHITE
     } else {
         Color::new(1.0, 1.0, 1.0, 0.35)
     };
     let side = radius * 1.15;
-    let lift = if card.cost.is_some() {
-        radius * 0.14
-    } else {
-        0.0
-    };
+    let lift = if label.is_some() { radius * 0.14 } else { 0.0 };
     panel_draw::draw_card_icon(
         sprites,
         Rect::new(
@@ -190,21 +218,8 @@ fn draw_slice(
         fade(tint),
         owner,
     );
-    if let Some(cost) = card.cost {
-        let text = cost.to_string();
-        let size = Type::Caption.at(k);
-        let width = measure_text(&text, None, numeric::font_size(size), 1.0).width;
-        draw_text(
-            &text,
-            center.x - width * 0.5,
-            center.y + radius * 0.78,
-            size,
-            fade(if card.enabled {
-                SCRAP_COLOR
-            } else {
-                TEXT_DISABLED
-            }),
-        );
+    if let Some((text, color)) = label {
+        centered(&text, Type::Caption.at(k), center.y + radius * 0.78, color);
     }
     if slice.count > 0 {
         let text = slice.count.to_string();
@@ -249,19 +264,18 @@ fn draw_hub(
         geometry.center.y - 18.0 * k,
         TEXT_SECONDARY,
     );
-    let Some(card) = pointed.map(|slice| &slice.card) else {
+    let Some(slice) = pointed else {
         return;
     };
+    let card = &slice.card;
+    // An empty group still takes the selection, so its name stays legible.
+    let legible = card.enabled || matches!(slice.pick, Pick::Group(_));
     let size = crate::typography::fit(&card.title, Type::Body.at(k), room, Type::Caption);
     centered(
         &card.title,
         size,
         geometry.center.y + 6.0 * k,
-        if card.enabled {
-            TEXT_PRIMARY
-        } else {
-            TEXT_DISABLED
-        },
+        if legible { TEXT_PRIMARY } else { TEXT_DISABLED },
     );
     if let Some(cost) = card.cost {
         centered(
@@ -303,19 +317,23 @@ fn draw_tooltip(
 }
 
 /// The buttons that drive the ring, as the controller in use names them:
-/// X only while the pointed slice has one to cancel, and Y beside B only
-/// once B no longer closes the ring itself.
+/// X only while the pointed slice takes it, and Y beside B only once B no
+/// longer closes the ring itself.
 fn legend(ring: &Ring, pointed: Option<&Slice>) -> crate::hint_line::HintLine {
     use aftermine_protocol::PadButton;
     let family = crate::platform::hands()
         .pad
         .unwrap_or(aftermine_protocol::PadFamily::Xbox);
     let icon = |button| crate::pad::button_icon(family, button);
+    let (pick, second) = match ring.kind {
+        RingKind::Commands => (" pick - ", " cancel one - "),
+        RingKind::Groups => (" recall - ", " assign - "),
+    };
     let mut line = crate::hint_line::HintLine::default()
         .pad(icon(PadButton::South))
-        .text(" pick - ");
-    if pointed.is_some_and(|slice| slice.cancel.is_some()) {
-        line = line.pad(icon(PadButton::West)).text(" cancel one - ");
+        .text(pick);
+    if pointed.is_some_and(Slice::takes_x) {
+        line = line.pad(icon(PadButton::West)).text(second);
     }
     if ring.path.is_empty() {
         line.pad(icon(PadButton::East)).text(" close")

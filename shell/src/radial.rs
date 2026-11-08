@@ -1,17 +1,19 @@
-//! The command ring: a selection's command cards set around a circle, so
-//! a controller picks one by pointing a stick.
+//! The rings: a selection's command cards, or the control groups, set
+//! around a circle, so a controller picks one by pointing a stick.
 //!
-//! Each ring is built from the command panel's own cards, so it never
-//! offers what the panel would refuse, and its slices wear their cards'
-//! costs, progress and tooltips. A slice may open a ring of its own: a
-//! Harvester's Build opens the build categories, a mixed selection's
+//! Each command ring is built from the command panel's own cards, so it
+//! never offers what the panel would refuse, and its slices wear their
+//! cards' costs, progress and tooltips. A slice may open a ring of its own:
+//! a Harvester's Build opens the build categories, a mixed selection's
 //! Harvesters or drones open their own cards, and a full ring's More
-//! opens what did not fit. How a ring opens and how a slice is chosen
-//! belong to the hands that drive it; [`crate::input`] drives it from a
-//! controller.
+//! opens what did not fit. The group ring holds one slice per control
+//! group, wearing its lead kind and how many it holds. How a ring opens
+//! and how a slice is chosen belong to the hands that drive it;
+//! [`crate::input`] drives it from a controller.
 
 use crate::action::{Action, BUILD_CATEGORIES, building_category};
 use crate::game::Scene;
+use crate::input::Group;
 use crate::panel::{Card, CardAction, CardIcon, Panel, UpgradeComparison, VerbIcon};
 use crate::typography::{entity_name, plural_name};
 use aftermine_sim::UnitKind;
@@ -22,6 +24,15 @@ pub(crate) const MAX_SLICES: usize = 8;
 
 /// How far the stick must travel before it points at a slice.
 const POINT_TRAVEL: f32 = 0.5;
+
+/// Which first ring a ring stands in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RingKind {
+    /// The selection's command cards and the rings they open.
+    Commands,
+    /// The control groups.
+    Groups,
+}
 
 /// A ring opened from a slice of the one before it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +58,9 @@ pub(crate) enum Pick {
     Card(CardAction),
     /// Opens a ring of its own.
     Open(Branch),
+    /// Recalls control group `n`, numbered from 1; X saves the selection
+    /// to it.
+    Group(u8),
 }
 
 /// One slice of a ring: the card it shows and what picking it does.
@@ -56,7 +70,8 @@ pub(crate) struct Slice {
     pub(crate) card: Card,
     /// What picking it does.
     pub(crate) pick: Pick,
-    /// How many of what it trains or orders wait in the queue dock.
+    /// How many it counts: of what it trains or orders, those waiting in
+    /// the queue dock; of a group, its members.
     pub(crate) count: usize,
     /// What X does to it: the dock's own act that cancels one.
     pub(crate) cancel: Option<CardAction>,
@@ -126,10 +141,45 @@ impl Slice {
             within,
         }
     }
+
+    /// Control group `number`'s slice: its lead kind and members while it
+    /// holds any, else an empty slot that only X can fill.
+    fn group(game: &Scene<'_>, number: u8, group: &Group) -> Self {
+        let live = group.live(game);
+        let card = Card {
+            // An empty slot draws no face, only its number.
+            icon: live.lead(game).unwrap_or(CardIcon::Verb(VerbIcon::Idle)),
+            title: format!("Group {number}"),
+            cost: None,
+            hotkey: String::new(),
+            action: CardAction::None,
+            enabled: !live.is_empty(),
+            why: None,
+            desc: vec![members(game, &live)],
+            progress: None,
+            autocast: None,
+            hold: None,
+        };
+        Self {
+            card,
+            pick: Pick::Group(number),
+            count: live.len(),
+            cancel: None,
+            within: Vec::new(),
+        }
+    }
+
+    /// Whether X does anything to it: cancels one of what it queues, or
+    /// saves the selection to its group.
+    pub(crate) fn takes_x(&self) -> bool {
+        self.cancel.is_some() || matches!(self.pick, Pick::Group(_))
+    }
 }
 
 /// A ring as it stands this frame.
 pub(crate) struct Ring {
+    /// Which first ring it stands in.
+    pub(crate) kind: RingKind,
     /// The small label the ring wears over its hub.
     pub(crate) heading: String,
     /// The branches it stands under, from the first ring.
@@ -193,12 +243,74 @@ pub(crate) fn ring(game: &Scene<'_>, panel: &Panel, path: &[Branch]) -> Option<R
         (heading, shown, slices)
     };
     (!slices.is_empty()).then(|| Ring {
+        kind: RingKind::Commands,
         heading,
         path: shown,
         slices,
         owner: panel.owner,
         upgrade: panel.info.upgrade.clone(),
     })
+}
+
+/// The group ring: one slice per control group, the first at the top. A
+/// spectator keeps no groups, so is offered none.
+pub(crate) fn groups(game: &Scene<'_>, groups: &[Group]) -> Option<Ring> {
+    if game.presentation.spectating() {
+        return None;
+    }
+    let human = game.presentation.human;
+    Some(Ring {
+        kind: RingKind::Groups,
+        heading: "GROUPS".to_string(),
+        path: Vec::new(),
+        slices: groups
+            .iter()
+            .zip(1..)
+            .map(|(group, number)| Slice::group(game, number, group))
+            .collect(),
+        owner: crate::render::seat_identity_color(game, human),
+        upgrade: None,
+    })
+}
+
+/// A group's members by kind, the most numerous first and then by name,
+/// as one line: "3 Sentinels, 1 Scuttler".
+fn members(game: &Scene<'_>, group: &Group) -> String {
+    let names: Vec<&str> = match group {
+        Group::Units(ids) => ids
+            .iter()
+            .filter_map(|id| game.state.unit(*id))
+            .map(|unit| unit.kind.name())
+            .collect(),
+        Group::Buildings(ids) => ids
+            .iter()
+            .filter_map(|id| game.state.building(*id))
+            .map(|building| building.kind.name())
+            .collect(),
+    };
+    let mut counts: Vec<(&str, usize)> = Vec::new();
+    for name in names {
+        match counts.iter_mut().find(|(seen, _)| *seen == name) {
+            Some((_, count)) => *count += 1,
+            None => counts.push((name, 1)),
+        }
+    }
+    if counts.is_empty() {
+        return "Empty.".to_string();
+    }
+    counts.sort_by(|(a, m), (b, n)| n.cmp(m).then(a.cmp(b)));
+    let parts: Vec<String> = counts
+        .iter()
+        .map(|&(name, count)| {
+            let name = entity_name(name);
+            if count == 1 {
+                format!("1 {name}")
+            } else {
+                format!("{count} {}", plural_name(&name))
+            }
+        })
+        .collect();
+    format!("{}.", parts.join(", "))
 }
 
 /// Whether the panel shows the construction palette.

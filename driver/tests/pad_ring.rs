@@ -1,7 +1,7 @@
-//! The command ring on a controller, driven through the real shell's input
-//! funnel with nothing but pad events: the same `InjectEvent` requests
-//! `driver live inject-pad`, `inject-pad-down`, `inject-pad-up` and
-//! `inject-pad-stick` send. `#[ignore]`d because each test spawns a real
+//! The controller's rings, of commands on Y and of control groups on D-pad
+//! right, driven through the real shell's input funnel with nothing but pad
+//! events: the same `InjectEvent` requests `driver live inject-pad`,
+//! `inject-pad-down`, `inject-pad-up` and `inject-pad-stick` send. `#[ignore]`d because each test spawns a real
 //! window; run them explicitly, under Xvfb where there is no display:
 //!
 //! ```sh
@@ -11,7 +11,9 @@
 //!
 //! While a ring is open the UI view reports it as the menu that owns the
 //! pad: its heading, its slices clockwise from the top, and the one the
-//! stick points at. What a pick does shows in the world after a tick.
+//! stick points at. What a pick does shows in the world after a tick; the
+//! debug protocol reports no selection, so which units take the next X
+//! order proves what a group recalled.
 
 use aftermine_driver::auto::{ShellGuard, SpawnOptions, spawn_shell, ui};
 use aftermine_driver::client::Client;
@@ -43,8 +45,16 @@ struct Drill {
 
 impl Drill {
     fn spawn(port: u16) -> Result<Self> {
+        Self::spawn_with(port, &quiet_config()?)
+    }
+
+    /// Spawns with `config` as the player's settings.
+    fn spawn_with(port: u16, config: &Value) -> Result<Self> {
         let home = scratch_home(port)?;
-        write_config(&home)?;
+        if let Err(error) = write_config(&home, config) {
+            std::fs::remove_dir_all(&home).ok();
+            return Err(error);
+        }
         match spawn_shell(&SpawnOptions {
             port,
             paused: true,
@@ -237,15 +247,22 @@ fn scratch_home(port: u16) -> Result<PathBuf> {
     }
 }
 
-fn write_config(home: &Path) -> Result<()> {
-    let config = include_bytes!("../src/quiet_config.json");
+/// The driver's quiet settings: no music, sound or first-run prompts.
+fn quiet_config() -> Result<Value> {
+    Ok(serde_json::from_slice(include_bytes!(
+        "../src/quiet_config.json"
+    ))?)
+}
+
+fn write_config(home: &Path, config: &Value) -> Result<()> {
+    let config = serde_json::to_vec_pretty(config)?;
     for dir in [
         home.join("Library/Application Support/Aftermine"),
         home.join(".config/aftermine"),
         home.join("AppData/Aftermine"),
     ] {
         std::fs::create_dir_all(&dir)?;
-        std::fs::write(dir.join("config.json"), config)?;
+        std::fs::write(dir.join("config.json"), &config)?;
     }
     Ok(())
 }
@@ -520,10 +537,118 @@ fn a_mixed_selection_opens_its_harvesters_from_one_slice() -> Result<()> {
     Ok(())
 }
 
+/// Two Sentinels and, apart from them, a Scuttler.
+fn squads() -> Value {
+    scene(
+        &[
+            (UnitKind::Sentinel, 30, 20),
+            (UnitKind::Sentinel, 31, 20),
+            (UnitKind::Scuttler, 26, 24),
+        ],
+        &[],
+    )
+}
+
+/// More open ground, clear of [`OPEN`] and of every unit.
+const FAR: [f64; 2] = [22.5, 14.5];
+
+fn group_titles() -> Vec<String> {
+    strings(&["Group 1", "Group 2", "Group 3", "Group 4", "Group 5"])
+}
+
+/// Saves the Scuttler to Group 2 and the whole army to Group 1, then
+/// clears the selection, all on the pad: the reticle and A select, LB the
+/// army, and D-pad right then X on a slot saves it.
+fn assign_squads(drill: &mut Drill) -> Result<()> {
+    drill.aim(tile(26, 24))?;
+    drill.press(PadButton::South)?;
+    drill.press(PadButton::DpadRight)?;
+    assert_eq!(drill.ring()?, (Some("GROUPS".to_string()), group_titles()));
+    assert_eq!(drill.ui()?.selected, None, "nothing points until the stick");
+    drill.point("Group 2")?;
+    drill.press(PadButton::West)?;
+    assert_eq!(drill.ring()?, (None, Vec::new()), "X closes the ring");
+    drill.press(PadButton::LeftShoulder)?;
+    drill.press(PadButton::DpadRight)?;
+    drill.point("Group 1")?;
+    drill.press(PadButton::West)?;
+    // B with nothing armed clears the selection: X then orders nothing.
+    drill.press(PadButton::East)?;
+    let recorded = drill.client.status()?.recorded_commands;
+    drill.order_at(OPEN)?;
+    assert_eq!(drill.client.status()?.recorded_commands, recorded);
+    Ok(())
+}
+
+/// Recalls `slot` from the group ring and gives X at `at`, returning the
+/// units that then obey.
+fn recall_and_order(drill: &mut Drill, slot: &str, at: [f64; 2]) -> Result<Vec<UnitId>> {
+    drill.press(PadButton::DpadRight)?;
+    drill.pick(slot)?;
+    assert_eq!(drill.ring()?, (None, Vec::new()), "A closes the ring");
+    Ok(obeying(&drill.order_at(at)?))
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn dpad_right_assigns_and_recalls_groups_on_the_pad_alone() -> Result<()> {
+    let mut drill = Drill::spawn(44_335)?;
+    let view = drill.load(&squads())?;
+    assign_squads(&mut drill)?;
+    let scuttler = own(&view, UnitKind::Scuttler);
+    assert_eq!(recall_and_order(&mut drill, "Group 2", OPEN)?, scuttler);
+    let mut army = [own(&view, UnitKind::Sentinel), scuttler].concat();
+    army.sort_unstable();
+    assert_eq!(recall_and_order(&mut drill, "Group 1", FAR)?, army);
+    Ok(())
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn each_rings_button_opens_it_in_the_others_place_and_closes_its_own() -> Result<()> {
+    let mut drill = Drill::spawn(44_336)?;
+    let view = drill.load(&squad())?;
+    drill.press(PadButton::LeftShoulder)?;
+    let heading = |drill: &mut Drill| -> Result<Option<String>> { Ok(drill.ring()?.0) };
+    drill.press(PadButton::North)?;
+    assert_eq!(heading(&mut drill)?.as_deref(), Some("COMMANDS"));
+    drill.press(PadButton::DpadRight)?;
+    assert_eq!(heading(&mut drill)?.as_deref(), Some("GROUPS"));
+    drill.press(PadButton::North)?;
+    assert_eq!(heading(&mut drill)?.as_deref(), Some("COMMANDS"));
+    drill.press(PadButton::North)?;
+    assert_eq!(heading(&mut drill)?, None);
+    drill.press(PadButton::DpadRight)?;
+    assert_eq!(heading(&mut drill)?.as_deref(), Some("GROUPS"));
+    drill.press(PadButton::DpadRight)?;
+    assert_eq!(heading(&mut drill)?, None);
+    drill.press(PadButton::DpadRight)?;
+    drill.press(PadButton::East)?;
+    assert_eq!(heading(&mut drill)?, None);
+    // Every ring closed without touching the selection: the squad takes X.
+    let after = drill.order_at(OPEN)?;
+    assert_eq!(obeying(&after), own(&view, UnitKind::Sentinel));
+    Ok(())
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn groups_assign_and_recall_with_the_group_bar_hidden() -> Result<()> {
+    let mut config = quiet_config()?;
+    config["control_groups"] = json!(false);
+    let mut drill = Drill::spawn_with(44_337, &config)?;
+    let view = drill.load(&squads())?;
+    assign_squads(&mut drill)?;
+    let scuttler = own(&view, UnitKind::Scuttler);
+    assert_eq!(recall_and_order(&mut drill, "Group 2", OPEN)?, scuttler);
+    Ok(())
+}
+
 #[test]
 fn the_drills_build() -> Result<()> {
     for scenario in [
         squad(),
+        squads(),
         drill_harvester(),
         scene(&[], &[(BuildingKind::Foundry, 30, 18)]),
     ] {
