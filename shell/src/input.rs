@@ -1501,9 +1501,13 @@ impl InputState {
     /// keyboard, the sticky QUEUE toggle on touch, a held left trigger on
     /// a controller.
     pub(crate) fn queue_held(&self) -> bool {
-        self.queue_toggle != QueueToggle::Off
-            || self.resolver.shift_held()
-            || !self.queue_pads.is_empty()
+        self.queue_toggle != QueueToggle::Off || self.queue_keys_held()
+    }
+
+    /// Whether a held key queues the next press: Shift on a keyboard or
+    /// the left trigger on a controller.
+    pub(crate) fn queue_keys_held(&self) -> bool {
+        self.resolver.shift_held() || !self.queue_pads.is_empty()
     }
 
     /// Each control group's live own member count. Dead ids linger in a

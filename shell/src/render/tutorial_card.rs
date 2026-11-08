@@ -127,6 +127,27 @@ const TIP_W: f32 = 420.0;
 /// performance panel keeps on the right.
 const EDGE: f32 = 12.0;
 
+/// Which card holds the top-left corner under the top bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CornerCard {
+    Lesson,
+    Tip,
+}
+
+impl CornerCard {
+    /// The card's right edge in window px, whatever its height.
+    pub(crate) fn right(self, env: HudEnv) -> f32 {
+        let (x, _, w) = corner(
+            match self {
+                Self::Lesson => CARD_W,
+                Self::Tip => TIP_W,
+            },
+            env,
+        );
+        x + w
+    }
+}
+
 /// Where a card at most `width` wide sits: the top-left corner under the
 /// top bar, narrowed to fit the window. Returns its x, y and width.
 fn corner(width: f32, env: HudEnv) -> (f32, f32, f32) {

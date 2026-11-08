@@ -62,6 +62,7 @@ pub(crate) struct HudGeometry {
     pub(super) army_strip: Option<chrome::ArmyStripLayout>,
     pub(super) ribbon: Option<chrome::RibbonLayout>,
     pub(super) queue_toggle: Option<Rect>,
+    pub(super) queue_flag: Option<chrome::QueueFlagLayout>,
     pub(super) performance: Option<performance::PerformanceLayout>,
     pub(super) ring: Option<radial::RingLayout>,
 }
@@ -169,6 +170,15 @@ pub(crate) fn layout(
             measure,
         )
     });
+    let queue_flag = chrome::queue_flag_layout(
+        game,
+        input,
+        env,
+        performance
+            .as_ref()
+            .map_or(zero, super::performance::PerformanceLayout::panel),
+        measure,
+    );
     let mut group_slots = [None; crate::action::CONTROL_GROUPS];
     if let Some(column) = &group_column {
         for (published, (rect, slot, _)) in group_slots.iter_mut().zip(column.slots) {
@@ -212,6 +222,9 @@ pub(crate) fn layout(
             .and_then(|ribbon| ribbon.salvo)
             .map_or(zero, |steppers| steppers.more),
         queue_toggle: queue_toggle.unwrap_or(zero),
+        queue_flag: queue_flag
+            .as_ref()
+            .map_or([zero; 2], chrome::QueueFlagLayout::regions),
         ghost_confirm: ghost_controls.map_or(zero, |controls| controls.confirm),
         ghost_cancel: ghost_controls.map_or(zero, |controls| controls.cancel),
         ghost_handle: ghost_controls.map_or(zero, |controls| controls.handle),
@@ -237,6 +250,7 @@ pub(crate) fn layout(
             army_strip,
             ribbon,
             queue_toggle,
+            queue_flag,
             performance,
             ring,
         },

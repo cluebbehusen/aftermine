@@ -219,6 +219,9 @@ pub(crate) struct Scene<'a> {
     /// The clock pacing this world: paused, speed, and render alpha.
     pub clock: &'a super::Clock,
     pub seat_styles: crate::seat_style::SeatStyles,
+    /// The lesson or match tip card holding the corner under the top bar,
+    /// which the HUD's top-centre chrome keeps clear of.
+    pub corner_card: Option<crate::render::tutorial_card::CornerCard>,
 }
 impl<'a> Scene<'a> {
     pub fn new(
@@ -239,6 +242,7 @@ impl<'a> Scene<'a> {
                 presentation.human,
                 crate::render::team_colors(),
             ),
+            corner_card: None,
         }
     }
 

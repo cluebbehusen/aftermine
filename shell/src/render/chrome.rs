@@ -735,16 +735,185 @@ pub(super) fn queue_toggle_shown(
     input: &InputState,
     touch_only: bool,
 ) -> bool {
+    touch_only
+        && !game.presentation.spectating()
+        && (commands_units(game) || input.queue_toggle != crate::input::QueueToggle::Off)
+}
+
+/// Whether the selection holds a unit of the human's, the only kind of
+/// selection whose orders queue.
+fn commands_units(game: &crate::game::Scene<'_>) -> bool {
     let human = game.presentation.human;
-    let commands_units = game
-        .presentation
+    game.presentation
         .selection
         .units
         .iter()
-        .any(|id| game.state.unit(*id).is_some_and(|u| u.player == human));
-    touch_only
-        && !game.presentation.spectating()
-        && (commands_units || input.queue_toggle != crate::input::QueueToggle::Off)
+        .any(|id| game.state.unit(*id).is_some_and(|u| u.player == human))
+}
+
+/// How long the queue flag says orders keep queuing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QueueSpan {
+    /// A latched QUEUE: the action at hand.
+    Once,
+    /// A locked QUEUE, or a held Shift or left trigger.
+    On,
+}
+
+impl QueueSpan {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Once => "Queue once",
+            Self::On => "Queue on",
+        }
+    }
+}
+
+/// The queue flag: an amber rule under the top bar and a tab hanging from
+/// it that names the span. It shows wherever the player looks, since a
+/// hand often covers the QUEUE toggle.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct QueueFlagLayout {
+    rule: Rect,
+    tab: Rect,
+    span: QueueSpan,
+    label_w: f32,
+}
+
+/// The LAN notice plate's height under the top bar, in logical px.
+const NET_NOTICE_H: f32 = 30.0;
+
+/// The queue flag's tab height, in logical px.
+const QUEUE_TAB_H: f32 = 28.0;
+/// The chain glyph's width and its gap to the label, in logical px.
+const QUEUE_TAB_GLYPH: f32 = 22.0;
+const QUEUE_TAB_GAP: f32 = 8.0;
+const QUEUE_TAB_PAD: f32 = 10.0;
+
+/// The queue flag while orders queue: while the QUEUE toggle is lit, as
+/// long as the toggle shows, and while a held key queues orders for a
+/// selected own unit. A held Shift alone, with nothing to queue, also
+/// drives hotkeys and adds to a selection; it raises no flag.
+pub(super) fn queue_flag_layout(
+    game: &crate::game::Scene<'_>,
+    input: &InputState,
+    env: super::hud::HudEnv,
+    performance: Rect,
+    measure: super::hud::Measure<'_>,
+) -> Option<QueueFlagLayout> {
+    use crate::input::QueueToggle;
+    let human = game.presentation.human;
+    if game.presentation.spectating() || !game.state.accepts_commands(human) {
+        return None;
+    }
+    let keys = input.queue_keys_held() && commands_units(game);
+    let span = match input.queue_toggle {
+        QueueToggle::Latched { .. } if !keys => QueueSpan::Once,
+        QueueToggle::Off if !keys => return None,
+        _ => QueueSpan::On,
+    };
+    let (viewport, s) = (env.viewport, env.ui);
+    let top = crate::layout::TOP_BAR_H * s;
+    let rule = Rect::new(0.0, top, viewport.x, crate::theme::Stroke::Heavy.at(s));
+    // The tab is as wide as its widest label, so it holds still when a
+    // double-tap locks QUEUE on.
+    let size = crate::theme::Type::Body.at(s);
+    let label_w = measure(super::hud::Face::Body, span.label(), size);
+    let widest = [QueueSpan::Once, QueueSpan::On]
+        .into_iter()
+        .map(|span| measure(super::hud::Face::Body, span.label(), size))
+        .fold(0.0, f32::max);
+    let width = ((2.0 * QUEUE_TAB_PAD + QUEUE_TAB_GLYPH + QUEUE_TAB_GAP) * s + widest).round();
+    // A LAN notice takes the spot under the bar; the tab hangs below it.
+    let y = if game.presentation.net_notice.is_some() {
+        top + (NET_NOTICE_H + 4.0) * s
+    } else {
+        rule.y + rule.h
+    };
+    // A lesson or tip card holds the corner under the bar and draws over
+    // the HUD, and the performance readout may hold the other corner; the
+    // tab keeps between them, or hangs under the readout when no room is
+    // left between.
+    let h = QUEUE_TAB_H * s;
+    let left = game
+        .corner_card
+        .map_or(0.0, |card| (card.right(env) + 8.0 * s).round());
+    let readout = (performance.w > 0.0 && performance.y < y + h && performance.bottom() > y)
+        .then_some(performance);
+    let right = readout.map_or(viewport.x - 12.0 * s, |panel| panel.x - 8.0 * s);
+    let x = ((viewport.x - width) * 0.5)
+        .round()
+        .max(left)
+        .min((right - width).round());
+    let tab = match readout {
+        Some(panel) if x < left => Rect::new(
+            (panel.right() - width).round(),
+            panel.bottom() + 4.0 * s,
+            width,
+            h,
+        ),
+        _ => Rect::new(x, y, width, h),
+    };
+    Some(QueueFlagLayout {
+        rule,
+        tab,
+        span,
+        label_w,
+    })
+}
+
+impl QueueFlagLayout {
+    /// The rule and the tab, which own their pixels against presses.
+    pub(crate) fn regions(&self) -> [Rect; 2] {
+        [self.rule, self.tab]
+    }
+}
+
+/// Draws the queue flag: solid amber while orders keep queuing, the rule
+/// dashed and the tab outlined while QUEUE covers only the action at hand,
+/// as the toggle itself shows the two.
+fn draw_queue_flag(flag: &QueueFlagLayout, s: f32) {
+    let QueueFlagLayout {
+        rule,
+        tab,
+        span,
+        label_w,
+    } = flag;
+    let (rule, tab) = (*rule, *tab);
+    let ink = match span {
+        QueueSpan::On => {
+            fill_rect(rule, TEXT_ACCENT);
+            fill_rect(tab, TEXT_ACCENT);
+            crate::theme::SURFACE_CARD
+        }
+        QueueSpan::Once => {
+            let (dash, gap) = (16.0 * s, 10.0 * s);
+            let mut x = rule.x;
+            while x < rule.right() {
+                let w = dash.min(rule.right() - x);
+                fill_rect(Rect::new(x, rule.y, w, rule.h), TEXT_ACCENT);
+                x += dash + gap;
+            }
+            fill_rect(tab, crate::theme::SURFACE_PLATE);
+            stroke_rect(tab, crate::theme::Stroke::Heavy.at(s), TEXT_ACCENT);
+            TEXT_ACCENT
+        }
+    };
+    let content = (QUEUE_TAB_GLYPH + QUEUE_TAB_GAP) * s + label_w;
+    let left = tab.x + (tab.w - content) * 0.5;
+    draw_queue_chain(
+        vec2(left + QUEUE_TAB_GLYPH * 0.5 * s, tab.center().y),
+        0.75 * s,
+        ink,
+    );
+    let size = crate::theme::Type::Body.at(s);
+    draw_text(
+        span.label(),
+        left + (QUEUE_TAB_GLYPH + QUEUE_TAB_GAP) * s,
+        tab.center().y + size * 0.32,
+        size,
+        ink,
+    );
 }
 
 /// Where the QUEUE toggle sits: over the panel's left corner, in the
@@ -788,16 +957,21 @@ fn draw_queue_toggle(rect: Rect, toggle: crate::input::QueueToggle, s: f32) {
             SURFACE_CARD
         }
     };
-    let c = rect.center();
+    draw_queue_chain(rect.center(), s, glyph);
+}
+
+/// QUEUE's mark: a chain of three queued waypoints, centered on `c` and
+/// drawn at scale `s`.
+fn draw_queue_chain(c: Vec2, s: f32, ink: Color) {
     let points = [
         c + vec2(-11.0, 6.0) * s,
         c + vec2(0.0, -6.0) * s,
         c + vec2(11.0, 6.0) * s,
     ];
-    line_between(points[0], points[1], 2.0 * s, glyph);
-    line_between(points[1], points[2], 2.0 * s, glyph);
+    line_between(points[0], points[1], 2.0 * s, ink);
+    line_between(points[1], points[2], 2.0 * s, ink);
     for point in points {
-        crate::render::prim::fill_circle(point, 3.5 * s, glyph);
+        fill_circle(point, 3.5 * s, ink);
     }
 }
 
@@ -1460,9 +1634,9 @@ fn draw_top_bar(top: &TopBarLayout, s: f32) {
     );
 }
 
-/// Draws the HUD the layout pass placed: the top bar, the command panel,
-/// the control groups, the armed-mode ribbon, the QUEUE toggle, the
-/// performance readout, toasts, and the spectator strip.
+/// Draws the HUD the layout pass placed: the top bar, the queue flag, the
+/// command panel, the control groups, the armed-mode ribbon, the QUEUE
+/// toggle, the performance readout, toasts, and the spectator strip.
 pub(crate) fn draw_hud(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
@@ -1474,6 +1648,9 @@ pub(crate) fn draw_hud(
     let s = ui_scale();
     if let Some(top_bar) = &hud.top_bar {
         draw_top_bar(top_bar, s);
+    }
+    if let Some(flag) = &hud.queue_flag {
+        draw_queue_flag(flag, s);
     }
     if let (Some(panel), Some(layout)) = (
         game.presentation.panel_model.borrow().as_ref(),
@@ -1603,7 +1780,13 @@ pub(crate) fn draw_hud(
         let size = crate::theme::Type::Heading.at(s);
         let dims = measure_text(text, None, numeric::font_size(size), 1.0);
         let x = (screen_width() - dims.width) * 0.5;
-        draw_rectangle(x - 12.0 * s, top, dims.width + 24.0 * s, 30.0 * s, PANEL);
+        draw_rectangle(
+            x - 12.0 * s,
+            top,
+            dims.width + 24.0 * s,
+            NET_NOTICE_H * s,
+            PANEL,
+        );
         draw_text(text, x, top + 20.0 * s, size, crate::theme::TEXT_ALERT);
     }
 }
