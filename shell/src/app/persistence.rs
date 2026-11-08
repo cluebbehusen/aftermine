@@ -41,7 +41,7 @@ pub(super) enum Output {
     Loaded(Box<crate::game::checkpoint::RestoredGame>),
     /// A saved LAN match, for Match Setup to resume with its players.
     LanSave(Box<crate::game::checkpoint::LanSave>),
-    /// A save finished; an unnamed one names the slot and content it wrote.
+    /// A save finished, with the slot and content the match counts as saved.
     Saved(Option<autosave::SaveMark>),
     Retired,
     Discarded,

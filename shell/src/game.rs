@@ -143,8 +143,9 @@ pub struct Game {
     pub(crate) pending: PendingCommands,
     /// Where this match's autosave and finished record go.
     pub(crate) slot: crate::autosave::SaveSlot,
-    /// What the slot last received. Guards double-writes when Main Menu
-    /// saves and the same game then quits as the Home backdrop.
+    /// What a record of this match last received. Guards double-writes when
+    /// a player saves by name and then leaves, or Main Menu saves and the
+    /// same game then quits as the Home backdrop.
     pub(crate) saved: Option<crate::autosave::SaveKey>,
     /// Where a tick that panics leaves its command log; none keeps nothing.
     pub(crate) crash_dumps: Option<std::path::PathBuf>,
@@ -526,7 +527,7 @@ impl Game {
         crate::autosave::SaveKey::new(self.state.current_tick(), self.pending.len())
     }
 
-    /// Whether the slot already holds this session's content.
+    /// Whether a record already holds this session's content.
     pub(crate) fn is_saved(&self) -> bool {
         self.saved == Some(self.save_key())
     }

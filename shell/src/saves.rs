@@ -11,7 +11,7 @@ use std::path::PathBuf;
 /// untagged record is a finished match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordKind {
-    /// A live session written on quit; Continue's material.
+    /// A live session written on quit.
     Autosave,
     /// A player-named explicit save.
     Save,
@@ -31,9 +31,14 @@ impl RecordKind {
         !matches!(self, RecordKind::Match)
     }
 
-    /// Whether Continue picks up this record: the autosaves, local or LAN.
+    /// Whether Continue picks up this record: the autosaves, local or LAN,
+    /// and named local saves. A LAN host's leave always writes an autosave,
+    /// so its named saves are never a session's latest.
     pub fn continues(self) -> bool {
-        matches!(self, RecordKind::Autosave | RecordKind::LanAutosave)
+        matches!(
+            self,
+            RecordKind::Autosave | RecordKind::Save | RecordKind::LanAutosave
+        )
     }
 
     /// The chip a shelf row wears beside its title, for the kinds its
@@ -255,10 +260,9 @@ pub struct Catalog {
 }
 
 impl Catalog {
-    /// Continue's material: the available autosaves, local or LAN, left
-    /// since the player's newest finished match. A finished match
-    /// withdraws the sessions left before it from Continue; the shelf
-    /// still offers them.
+    /// Continue's material: the available records it picks up, left since
+    /// the player's newest finished match. A finished match withdraws the
+    /// sessions left before it from Continue; the shelf still offers them.
     pub(crate) fn continuable(&self) -> impl Iterator<Item = &ReplayEntry> {
         continuable_since(&self.entries, &self.matches)
     }

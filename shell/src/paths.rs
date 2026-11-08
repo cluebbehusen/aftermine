@@ -172,7 +172,7 @@ impl Records {
         self.cloud.as_ref().unwrap_or(&self.local)
     }
 
-    /// Where the autosave rotation lives; Continue resumes from here.
+    /// Where the autosave rotation lives.
     pub fn autosaves(&self) -> Option<PathBuf> {
         self.writing().autosaves.clone()
     }

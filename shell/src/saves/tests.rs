@@ -221,7 +221,7 @@ fn continue_offers_only_sessions_left_since_the_last_finished_match() {
                 record.meta = meta;
                 record.save(path).unwrap();
             }
-            "lan-autosave" => {
+            "lan" | "lan-autosave" => {
                 let manifest = crate::game::checkpoint::LanManifest::new(
                     &game.scenario,
                     game.presentation.human,
@@ -259,18 +259,25 @@ fn continue_offers_only_sessions_left_since_the_last_finished_match() {
         "a finished match withdraws the sessions left before it"
     );
     write(&saves, "save-0000000001.amsave", "save", 300);
+    write(&saves, "lan-0000000002.amsave", "lan", 300);
     write(&replays, "shared.json", "match", 300);
-    assert!(
-        continuable().is_empty(),
-        "neither a named save nor an added recording is a session left"
+    assert_eq!(
+        continuable(),
+        ["save-0000000001"],
+        "a named local save is a session left; a named LAN save and an added recording are not"
     );
     write(&autosaves, "lan-autosave-3.amsave", "lan-autosave", 400);
     write(&autosaves, "autosave-4.amsave", "autosave", 500);
     write(&replays, "newer.json", "match", 600);
     assert_eq!(
         continuable(),
-        ["autosave-4", "lan-autosave-3"],
+        ["autosave-4", "lan-autosave-3", "save-0000000001"],
         "sessions left since the last finished match stay, newest first"
+    );
+    write(&matches, "match-5.json", "match", 700);
+    assert!(
+        continuable().is_empty(),
+        "a finished match withdraws named saves too"
     );
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -380,8 +387,12 @@ fn lan_saves_are_their_own_kinds_and_resume_rather_than_play_back() {
     .collect();
     assert_eq!(
         continues,
-        [RecordKind::Autosave, RecordKind::LanAutosave],
-        "Continue picks up the newest autosave, local or LAN"
+        [
+            RecordKind::Autosave,
+            RecordKind::Save,
+            RecordKind::LanAutosave
+        ],
+        "Continue picks up the newest autosave, local or LAN, or named local save"
     );
 }
 

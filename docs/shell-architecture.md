@@ -307,11 +307,14 @@ without keyframes.
 
 Each match owns one autosave slot. Its autosave and its finished recording share
 an id, so the finished recording replaces the autosave, and rotation keeps whole
-matches. A decided match writes its recording as soon as it ends. A match this
-machine can resume autosaves after each minute of play, counted in ticks over
-speed so slow frames still count and an OS suspension does not, and when the
-window goes inactive. A failed background save is retried, and the player hears
-of a run of failures once. Saves use the chassis atomic-write path.
+matches. A local match's named save also removes its autosave, and a session
+whose content a save or loaded file already holds writes no autosave, so
+Continue resumes the newest autosave or local named save. A decided match writes
+its recording as soon as it ends. A match this machine can resume autosaves
+after each minute of play, counted in ticks over speed so slow frames still
+count and an OS suspension does not, and when the window goes inactive. A failed
+background save is retried, and the player hears of a run of failures once.
+Saves use the chassis atomic-write path.
 
 On iPad and Mac, saves, finished matches, autosaves and replays live in the
 app's iCloud Drive folder when iCloud Drive is available, and on the device

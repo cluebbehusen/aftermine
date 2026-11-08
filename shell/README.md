@@ -143,14 +143,14 @@ sandbox-matches skill shows how to build a scene.
 ## Autosaves and diagnostics
 
 A match autosaves every minute, when the window goes inactive, and when the
-player leaves or quits. Each match keeps one autosave, which its replay replaces
-once the match is decided. Continue resumes the newest autosave since the last
-finished match; older ones stay on the Replays shelf. With iCloud Drive on, an
-iPad keeps saves, autosaves and replays in the Aftermine folder in iCloud Drive,
-which the Files app shows; otherwise they appear under On My iPad > Aftermine.
-Diagnostics always stay under On My iPad. A Mac uses iCloud Drive only from a
-signed build, so `cargo run` and today's packaged app keep everything on the
-Mac.
+player leaves or quits, unless a save already holds that moment. Each match
+keeps one autosave, which a named save or its finished replay replaces. Continue
+resumes the newest autosave or local named save since the last finished match;
+older ones stay on the Replays shelf. With iCloud Drive on, an iPad keeps saves,
+autosaves and replays in the Aftermine folder in iCloud Drive, which the Files
+app shows; otherwise they appear under On My iPad > Aftermine. Diagnostics
+always stay under On My iPad. A Mac uses iCloud Drive only from a signed build,
+so `cargo run` and today's packaged app keep everything on the Mac.
 
 Crash and freeze diagnostics are always on and write only when a panic, stall or
 fatal error happens. A panic during a tick also leaves a crash dump with the

@@ -29,7 +29,7 @@ pub(super) struct Frame {
     pub(super) played: f32,
     /// The native minimize state, when the platform reports one.
     pub(super) minimized: Option<bool>,
-    /// The session holds content its slot lacks.
+    /// The session holds content no record of it has.
     pub(super) unsaved: bool,
 }
 

@@ -72,6 +72,12 @@ fn pending_tick_zero_input_is_saved_and_finished_matches_remain_recordings() {
     let mut playback = aftermine_kit::playback::Playback::load(record).unwrap();
     playback.seek(restored.state.current_tick());
     assert_eq!(playback.state.hash(), restored.state.hash());
+    assert!(
+        SaveJob::capture(&restored, Some("after the end"))
+            .mark()
+            .is_none(),
+        "a named save never stands in for a finished match's record"
+    );
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -142,10 +148,6 @@ fn records_carry_their_kind_and_a_named_save_leaves_the_session_recorder_alone()
     assert!(
         game.recorder.meta.description.is_none(),
         "the live recorder never inherits the name"
-    );
-    assert!(
-        !game.is_saved(),
-        "an explicit save is not the session's quit record"
     );
     // A second save on the same tick walks the name instead of
     // overwriting the first.
@@ -359,6 +361,89 @@ fn a_lan_host_save_is_a_resumable_checkpoint() {
         assert_eq!(info.meta.kind.as_deref(), Some(kind));
         assert_eq!(info.meta.description.as_deref(), name);
     }
+    assert_eq!(
+        files(&dir).len(),
+        2,
+        "a named LAN save leaves the LAN autosave"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn a_named_save_replaces_the_matchs_autosave_and_counts_as_saved() {
+    let dir = scratch("named-replaces-autosave");
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(1);
+    let Ok(SaveOutcome::Wrote(autosave)) = write_record(&mut game, &dir) else {
+        panic!("the autosave lands");
+    };
+    game.advance_ticks(1);
+    let job = SaveJob::capture(&game, Some("before the push"));
+    let mark = job.mark().expect("a local match counts its named save");
+    let Ok(SaveOutcome::Wrote(named)) = run_at(job, &dir) else {
+        panic!("the named save lands");
+    };
+    game.mark_saved(&mark);
+    assert!(!autosave.exists(), "the named save holds what it held");
+    assert!(
+        matches!(write_record(&mut game, &dir), Ok(SaveOutcome::AlreadySaved)),
+        "leaving right after a named save writes nothing"
+    );
+    assert_eq!(files(&dir).len(), 1);
+    game.advance_ticks(1);
+    let Ok(SaveOutcome::Wrote(again)) = write_record(&mut game, &dir) else {
+        panic!("play after the named save autosaves");
+    };
+    assert_eq!(again, autosave);
+    assert!(named.exists(), "autosaves never touch a named save");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn a_failed_named_save_keeps_the_matchs_autosave() {
+    let autosaves = scratch("failed-named-autosaves");
+    let blocked = scratch("failed-named-target");
+    std::fs::create_dir_all(blocked.parent().unwrap()).unwrap();
+    std::fs::write(&blocked, b"in the way").unwrap();
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(1);
+    let Ok(SaveOutcome::Wrote(autosave)) = write_record(&mut game, &autosaves) else {
+        panic!("the autosave lands");
+    };
+    game.advance_ticks(1);
+    let error = SaveJob::capture(&game, Some("refused"))
+        .run_in(Some(blocked.clone()), std::slice::from_ref(&autosaves))
+        .expect_err("the failure surfaces");
+    assert!(matches!(error, SaveError::CreateDir { .. }));
+    assert!(autosave.exists());
+    std::fs::remove_dir_all(&autosaves).ok();
+    std::fs::remove_file(&blocked).ok();
+}
+
+#[test]
+fn leaving_a_loaded_named_save_unplayed_writes_nothing() {
+    let dir = scratch("load-named");
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    game.advance_ticks(4);
+    let named = write_named(&game, "raid", &dir, 1).unwrap();
+    let crate::saved_game::Loaded::Local(restored) = crate::saved_game::prepare(&named).unwrap()
+    else {
+        panic!("a local save restores locally");
+    };
+    let mut resumed = restored.install();
+    assert!(
+        matches!(
+            write_record(&mut resumed, &dir),
+            Ok(SaveOutcome::AlreadySaved)
+        ),
+        "the named save already holds this moment"
+    );
+    resumed.advance_ticks(3);
+    let Ok(SaveOutcome::Wrote(autosave)) = write_record(&mut resumed, &dir) else {
+        panic!("play after the load autosaves");
+    };
+    assert_ne!(autosave, named, "a named save is never overwritten");
+    assert_eq!(files(&dir).len(), 2);
     std::fs::remove_dir_all(&dir).ok();
 }
 
