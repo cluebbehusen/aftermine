@@ -138,3 +138,49 @@ fn a_controller_in_use_sees_its_own_icons_and_keys_only_where_it_has_no_button()
             .text(" tabs")
     );
 }
+
+fn remote_hands() -> crate::platform::Hands {
+    crate::platform::Hands {
+        pad: Some(aftermine_protocol::PadFamily::Remote),
+        ..crate::platform::ALL_HANDS[3]
+    }
+}
+
+#[test]
+fn a_remote_footer_names_its_buttons_in_words() {
+    crate::platform::set_hands(remote_hands());
+    assert_eq!(
+        menu_footer(remote_hands(), true).copy(),
+        "Swipe to select - Click to confirm"
+    );
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}
+
+#[test]
+fn a_remote_template_fills_its_buttons_with_words() {
+    crate::platform::set_hands(remote_hands());
+    let template = "{confirm} to take it - {dpad} to move - {back} to leave";
+    let expected = "Click to take it - Swipe to move - Back to leave";
+    assert_eq!(binding_hint(template), expected);
+    assert_eq!(hint_line(template).copy(), expected);
+    assert_eq!(
+        hint_line(crate::tabs::ON_STRIP_HINT).copy(),
+        "Swipe to switch tabs - Back to leave"
+    );
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}
+
+#[test]
+fn other_controllers_still_read_d_pad_and_back_back() {
+    use aftermine_protocol::PadFamily;
+    let hands = crate::platform::Hands {
+        pad: Some(PadFamily::Xbox),
+        ..crate::platform::ALL_HANDS[3]
+    };
+    crate::platform::set_hands(hands);
+    assert_eq!(
+        binding_hint("{dpad} moves - {back} back"),
+        "D-pad moves - B back"
+    );
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}

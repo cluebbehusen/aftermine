@@ -254,3 +254,140 @@ fn the_controller_menu_keys_leave_a_field_alone() {
     }
     assert_eq!((form.value(0), form.value(1)), ("ab", "12"));
 }
+
+fn tv_form() -> Form {
+    let mut form = Form::new(
+        "JOIN MATCH",
+        "Join",
+        vec![
+            Field::new("Anvil", 10, |_| true),
+            Field::new("", 10, |_| true),
+        ],
+        1,
+    );
+    form.tv = Some(TvCursor::default());
+    form
+}
+
+fn press(form: &mut Form, key: Key) -> Edit {
+    form.update(&[RawEvent::KeyDown { key }], &mut Vec::new())
+}
+
+#[test]
+fn a_tvs_keyboard_opens_only_when_asked_and_a_touch_devices_follows_the_field() {
+    use Platform::{Touch, Tv};
+    assert_eq!(keyboard_change(Tv, true, false, false), None, "on arrival");
+    assert_eq!(keyboard_change(Tv, true, false, true), Some(true));
+    assert_eq!(keyboard_change(Tv, true, true, true), Some(true), "reopens");
+    assert_eq!(keyboard_change(Tv, true, true, false), None);
+    assert_eq!(keyboard_change(Tv, false, true, false), Some(false));
+    assert_eq!(keyboard_change(Tv, false, false, false), None);
+    assert_eq!(keyboard_change(Touch, true, false, false), Some(true));
+    assert_eq!(keyboard_change(Touch, true, true, false), None);
+    assert_eq!(keyboard_change(Touch, true, true, true), Some(true));
+    assert_eq!(keyboard_change(Touch, false, true, false), Some(false));
+}
+
+#[test]
+fn on_a_tv_a_click_on_a_field_opens_the_keyboard_and_commits_nothing() {
+    let mut form = tv_form();
+    assert_eq!(press(&mut form, Key::Enter), Edit::Stay);
+    assert!(form.take_keyboard_request());
+    assert!(!form.take_keyboard_request(), "one request a click");
+    assert_eq!(form.focus, 1, "the cursor stays on the field");
+}
+
+#[test]
+fn on_a_tv_the_cursor_moves_as_the_form_is_laid_out() {
+    let mut form = tv_form();
+    press(&mut form, Key::Left);
+    assert_eq!(form.focus, 0);
+    press(&mut form, Key::Left);
+    assert_eq!(form.focus, 0, "no wrap");
+    press(&mut form, Key::Right);
+    assert_eq!(form.focus, 1);
+    press(&mut form, Key::Right);
+    assert_eq!(form.focus, 1, "no wrap");
+    assert!(!form.at_bottom());
+    press(&mut form, Key::Down);
+    assert!(form.at_bottom(), "the button lies under the fields");
+    press(&mut form, Key::Down);
+    assert!(form.at_bottom());
+    press(&mut form, Key::Up);
+    assert!(!form.at_bottom());
+    assert_eq!(form.focus, 1, "back on the field it left");
+}
+
+#[test]
+fn on_a_tv_a_click_on_the_button_commits_or_returns_to_the_field_at_fault() {
+    let mut form = tv_form();
+    press(&mut form, Key::Down);
+    assert_eq!(press(&mut form, Key::Enter), Edit::Stay);
+    assert!(!form.at_bottom(), "refused, back on the empty field");
+    assert_eq!(form.focus, 1);
+    assert!(form.error.is_some());
+    assert!(!form.take_keyboard_request());
+
+    form.update(&[RawEvent::Text { ch: 'a' }], &mut Vec::new());
+    assert_eq!(form.keyboard_text(), "a");
+    press(&mut form, Key::Down);
+    assert_eq!(press(&mut form, Key::Enter), Edit::Commit);
+}
+
+#[test]
+fn a_form_starts_on_its_button_only_on_a_tv_with_nothing_left_to_type() {
+    let filled = |tv: bool| {
+        let mut form = Form::new("SAVE MATCH", "Save", vec![Field::new("a", 10, |_| true)], 0);
+        form.tv = tv.then(TvCursor::default);
+        form.starting_on_confirm()
+    };
+    assert!(filled(true).on_confirm());
+    assert!(!filled(false).on_confirm());
+    assert!(
+        !tv_form().starting_on_confirm().on_confirm(),
+        "address to type"
+    );
+}
+
+#[test]
+fn a_tv_form_says_what_a_click_does_where_the_cursor_is() {
+    let mut form = tv_form();
+    assert_eq!(form.tv_pad_hint(), None, "no controller in use");
+    crate::platform::set_hands(crate::platform::Hands {
+        pad: Some(aftermine_protocol::PadFamily::Remote),
+        ..crate::platform::ALL_HANDS[3]
+    });
+    assert_eq!(
+        crate::menu::hint_line(&form.tv_pad_hint().unwrap()).copy(),
+        "Click to type | Back to cancel"
+    );
+    press(&mut form, Key::Down);
+    assert_eq!(
+        crate::menu::hint_line(&form.tv_pad_hint().unwrap()).copy(),
+        "Click to join | Back to cancel"
+    );
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}
+
+#[test]
+fn off_a_tv_enter_still_walks_the_fields_and_commits() {
+    let mut form = Form::new(
+        "JOIN MATCH",
+        "Join",
+        vec![Field::new("a", 10, |_| true), Field::new("b", 10, |_| true)],
+        0,
+    );
+    assert_eq!(press(&mut form, Key::Enter), Edit::Stay);
+    assert_eq!(form.focus, 1);
+    assert!(form.at_bottom());
+    assert_eq!(press(&mut form, Key::Enter), Edit::Commit);
+    assert!(!form.take_keyboard_request());
+}
+
+#[test]
+fn a_tv_keyboard_hears_an_empty_field_first_and_then_only_changes() {
+    assert!(keyboard_text_is_stale(None, ""), "clears its placeholder");
+    assert!(!keyboard_text_is_stale(Some(""), ""));
+    assert!(keyboard_text_is_stale(Some(""), "a"));
+    assert!(!keyboard_text_is_stale(Some("a"), "a"));
+}

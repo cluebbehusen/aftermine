@@ -145,6 +145,55 @@ fn joiners_take_open_chairs_then_bots_in_display_order_and_see_who_sits_where() 
 }
 
 #[test]
+fn the_setup_hint_says_what_a_press_does_on_each_kind_of_lobby_seat() {
+    let (mut w, mut draft) = hosting();
+    let mut clients = vec![join(&w, "Alex")];
+    settle(&mut w, &mut draft, &mut clients, |w, _, _| {
+        member_at(w, 2).is_some()
+    });
+    let order = seat_display_order(draft.scenario.as_deref().unwrap());
+    let press_at = |w: &mut Wizard, draft: &NewMatchDraft, row: usize, cell: Cell| {
+        w.setup_sel = row;
+        w.setup_cell = cell;
+        w.cursor_press(draft, &w.open_flags(draft), &order)
+    };
+    assert_eq!(
+        press_at(&mut w, &draft, 0, Cell::Seat),
+        CursorPress::MoveSelf
+    );
+    assert_eq!(
+        press_at(&mut w, &draft, 1, Cell::Seat),
+        CursorPress::MovePlayer
+    );
+    assert_eq!(
+        press_at(&mut w, &draft, 1, Cell::Difficulty),
+        CursorPress::RemovePlayer
+    );
+    assert_eq!(
+        press_at(&mut w, &draft, 2, Cell::Seat),
+        CursorPress::TakeOpenSeat
+    );
+    assert_eq!(
+        press_at(&mut w, &draft, 2, Cell::Difficulty),
+        CursorPress::BotForChair
+    );
+    assert_eq!(
+        press_at(&mut w, &draft, 2, Cell::Team),
+        CursorPress::Card(Cell::Team)
+    );
+
+    bot_chair(&mut w, &mut draft, 2);
+    assert_eq!(
+        press_at(&mut w, &draft, 2, Cell::Seat),
+        CursorPress::Card(Cell::Seat)
+    );
+    assert_eq!(
+        press_at(&mut w, &draft, 2, Cell::Difficulty),
+        CursorPress::Card(Cell::Difficulty)
+    );
+}
+
+#[test]
 fn the_host_moves_players_kicks_them_and_starts_only_with_every_chair_filled() {
     let (mut w, mut draft) = hosting();
     let mut clients = vec![join(&w, "Alex")];

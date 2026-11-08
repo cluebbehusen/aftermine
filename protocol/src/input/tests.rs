@@ -25,10 +25,11 @@ fn event_tag(event: &RawEvent) -> usize {
         RawEvent::PadDown { .. } => 13,
         RawEvent::PadUp { .. } => 14,
         RawEvent::PadStick { .. } => 15,
+        RawEvent::PadSwipe { .. } => 16,
     }
 }
 
-const EVENT_VARIANTS: usize = 16;
+const EVENT_VARIANTS: usize = 17;
 
 #[test]
 fn every_raw_event_variant_including_touch_survives_a_roundtrip() {
@@ -84,6 +85,11 @@ fn every_raw_event_variant_including_touch_survives_a_roundtrip() {
             x: 0.25,
             y: -1.0,
         },
+        RawEvent::PadSwipe {
+            pad: 2,
+            x: 0.25,
+            y: -0.5,
+        },
     ];
     assert_every_tag_sampled(events.iter().map(event_tag), EVENT_VARIANTS, "raw event");
     for event in events {
@@ -121,6 +127,28 @@ fn pad_events_speak_the_documented_wire_names() {
             RawEvent::PadConnected {
                 pad: 3,
                 family: PadFamily::SteamDeck,
+            },
+        ),
+        (
+            r#"{"type":"pad_connected","pad":4,"family":"remote"}"#,
+            RawEvent::PadConnected {
+                pad: 4,
+                family: PadFamily::Remote,
+            },
+        ),
+        (
+            r#"{"type":"pad_down","pad":4,"button":"play_pause"}"#,
+            RawEvent::PadDown {
+                pad: 4,
+                button: PadButton::PlayPause,
+            },
+        ),
+        (
+            r#"{"type":"pad_swipe","pad":4,"x":0.25,"y":0.5}"#,
+            RawEvent::PadSwipe {
+                pad: 4,
+                x: 0.25,
+                y: 0.5,
             },
         ),
         (

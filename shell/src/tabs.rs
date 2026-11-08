@@ -10,15 +10,24 @@ use crate::press::{Fed, Press};
 use crate::render::prim::stroke_rect;
 use crate::theme::{
     BORDER_STRONG, CARD_IDLE, MIN_TOUCH_TARGET, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY,
-    TEXT_PRIMARY, TEXT_SECONDARY, Type,
+    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TITLE, Type,
 };
-use aftermine_protocol::RawEvent;
+use aftermine_protocol::{Key, PadFamily, RawEvent};
 use macroquad::prelude::{Rect, Vec2, WHITE, draw_rectangle, draw_text, measure_text};
 
+/// How the Siri Remote, which has no tab buttons, reaches a strip.
+pub(crate) const REMOTE_HINT: &str = "Swipe up for tabs";
+/// What the remote does once it is on a strip.
+pub(crate) const ON_STRIP_HINT: &str = "{dpad} to switch tabs - {back} to leave";
+
 /// The keys that step tabs in menus now, while both have one, or the
-/// bumpers' icons while a controller is in use.
+/// bumpers' icons while a controller is in use. The Siri Remote has neither;
+/// it moves onto the strip instead.
 pub(crate) fn keys() -> Option<(HintLine, HintLine)> {
     if let Some(family) = crate::platform::hands().pad {
+        if family == PadFamily::Remote {
+            return None;
+        }
         let icon = |button| HintLine::default().pad(crate::pad::button_icon(family, button));
         return Some((icon(crate::pad::TABS.0), icon(crate::pad::TABS.1)));
     }
@@ -59,10 +68,12 @@ pub(crate) fn rects_in(count: usize, area: Rect, widest: f32) -> Vec<Rect> {
         .collect()
 }
 
-/// A strip's pointer state: the tab a press armed.
+/// A strip's pointer state, the tab a press armed, and whether the Siri
+/// Remote's cursor is on it.
 #[derive(Default)]
 pub(crate) struct TabStrip {
     press: Press<usize>,
+    focused: bool,
 }
 
 impl TabStrip {
@@ -70,6 +81,66 @@ impl TabStrip {
     /// strip.
     pub(crate) fn cancel(&mut self) {
         self.press.cancel();
+    }
+
+    /// Whether the Siri Remote's cursor is on the strip, not on what lies
+    /// below it.
+    pub(crate) fn focused(&self) -> bool {
+        self.focused
+    }
+
+    /// [`Self::route_remote`] for a strip above `menu`: Up from its first row
+    /// reaches the strip, and the row cursor hides while the strip has it.
+    pub(crate) fn route_remote_above<R: Clone>(
+        &mut self,
+        events: &[RawEvent],
+        menu: &mut crate::menu::Menu<R>,
+    ) -> (Option<isize>, Vec<RawEvent>) {
+        let routed = self.route_remote(events, menu.at_top());
+        menu.cursor_hidden = self.focused;
+        routed
+    }
+
+    /// Takes the arrow and confirm keys of a frame while the Siri Remote is
+    /// in use, whose only way to a tab is to move onto the strip. `at_top`
+    /// says Up may enter it. Left and right step the tab, and down or a click
+    /// goes back. Returns the tab step and the events left for the screen.
+    pub(crate) fn route_remote(
+        &mut self,
+        events: &[RawEvent],
+        at_top: bool,
+    ) -> (Option<isize>, Vec<RawEvent>) {
+        let remote = crate::platform::hands().pad == Some(PadFamily::Remote);
+        self.route_keys(events, at_top, remote)
+    }
+
+    fn route_keys(
+        &mut self,
+        events: &[RawEvent],
+        at_top: bool,
+        remote: bool,
+    ) -> (Option<isize>, Vec<RawEvent>) {
+        if !remote {
+            self.focused = false;
+            return (None, events.to_vec());
+        }
+        let mut step = 0;
+        let mut rest = Vec::with_capacity(events.len());
+        for event in events {
+            let RawEvent::KeyDown { key } = *event else {
+                rest.push(*event);
+                continue;
+            };
+            match (self.focused, key) {
+                (false, Key::Up) if at_top => self.focused = true,
+                (true, Key::Left) => step -= 1,
+                (true, Key::Right) => step += 1,
+                (true, Key::Down | Key::Enter) => self.focused = false,
+                (true, Key::Up) => {}
+                _ => rest.push(*event),
+            }
+        }
+        ((step != 0).then_some(step), rest)
     }
 
     /// The tab this frame clicked or tapped among `count`, and the
@@ -106,15 +177,25 @@ impl TabStrip {
 
 /// Draws the strip over `labels` with `active` filled and the tab under
 /// `mouse` lit. `keys`, when the player has a keyboard, names the keys
-/// that step left and right, drawn beside the strip's ends.
+/// that step left and right, drawn beside the strip's ends. `cursor` says
+/// the menu cursor is on the strip, so the active tab wears it.
 pub(crate) fn draw(
     sprites: &Sprites,
     labels: &[&str],
     active: usize,
     mouse: Vec2,
     keys: Option<&(HintLine, HintLine)>,
+    cursor: bool,
 ) {
-    draw_in(sprites, &rects(labels.len()), labels, active, mouse, keys);
+    draw_in(
+        sprites,
+        &rects(labels.len()),
+        labels,
+        active,
+        mouse,
+        keys,
+        cursor,
+    );
 }
 
 /// Draws a strip at `rects`, as [`draw`] does under a page title.
@@ -125,6 +206,7 @@ pub(crate) fn draw_in(
     active: usize,
     mouse: Vec2,
     keys: Option<&(HintLine, HintLine)>,
+    cursor: bool,
 ) {
     let s = crate::render::ui_scale();
     let size = Type::Body.at(s);
@@ -143,6 +225,13 @@ pub(crate) fn draw_in(
             Stroke::Hairline.at(s),
             if current { TEXT_ACCENT } else { BORDER_STRONG },
         );
+        if current && cursor {
+            stroke_rect(
+                Rect::new(rect.x, rect.y, rect.w, rect.h),
+                crate::platform::cursor_stroke().at(s),
+                TEXT_TITLE,
+            );
+        }
         let fitted =
             crate::typography::fit(label, size, rect.w - 12.0 * s, crate::theme::Type::Caption);
         let width = measure_text(label, None, numeric::font_size(fitted), 1.0).width;
@@ -180,6 +269,38 @@ pub(crate) fn draw_in(
         size,
         TEXT_SECONDARY,
         WHITE,
+    );
+}
+
+/// Each mode's width in the Siri Remote's strip of camera modes.
+const REMOTE_MODE_WIDTH: f32 = 110.0;
+/// The height of the Siri Remote's strip of camera modes.
+pub(crate) const REMOTE_MODES_HEIGHT: f32 = 32.0;
+
+/// Draws the Siri Remote's camera modes as a strip centred on `x` and standing
+/// on `bottom`, with the one in use lit, so what its swipes do now is plain.
+pub(crate) fn draw_remote_modes(
+    sprites: &Sprites,
+    remote: crate::camera::controls::RemoteCamera,
+    x: f32,
+    bottom: f32,
+    mouse: Vec2,
+) {
+    let s = crate::render::ui_scale();
+    let modes = remote.modes();
+    let labels: Vec<&str> = modes.iter().map(|mode| mode.label()).collect();
+    let widest = REMOTE_MODE_WIDTH * s;
+    let width = widest * modes.len() as f32;
+    let height = REMOTE_MODES_HEIGHT * s;
+    let area = Rect::new(x - width * 0.5, bottom - height, width, height);
+    draw_in(
+        sprites,
+        &rects_in(modes.len(), area, widest),
+        &labels,
+        remote.mode_index(),
+        mouse,
+        None,
+        true,
     );
 }
 

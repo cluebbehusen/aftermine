@@ -202,25 +202,100 @@ impl NewMatchDraft {
 
 const COMPACT_PAGE_ITEMS: usize = 5;
 
+/// What a press at the setup cursor does, for its coaching line.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CursorPress {
+    /// Flips the Local and LAN switch.
+    Switch,
+    Start,
+    /// Does nothing: a resume fixes the seat, or the lobby stays open.
+    Nothing,
+    /// Picks the player up to move them to another seat.
+    MoveSelf,
+    /// Picks up the LAN player in the seat.
+    MovePlayer,
+    /// Asks to remove the LAN player in the seat.
+    RemovePlayer,
+    /// Moves the player to an open chair.
+    TakeOpenSeat,
+    /// Gives an open chair to a bot.
+    BotForChair,
+    /// Uses this cell of the seat's card; [`Cell::Seat`] takes a bot's seat.
+    Card(Cell),
+}
+
 /// The setup screen's coaching line. The keyboard hint follows the
 /// cursor; a pointer moves the cursor anyway, so its hint is one line.
-fn setup_hint(
-    one_team: bool,
-    on_start: bool,
-    cell: Cell,
-    hands: crate::platform::Hands,
-) -> &'static str {
-    if hands.pad.is_some() {
-        return match (one_team, on_start, cell) {
-            (true, _, _) => "Every seat is on one team - change a TEAM chip - {back} back",
-            (false, true, _) => "{confirm} starts the match - {back} back",
-            (false, false, Cell::Difficulty) => {
-                "{confirm} cycles difficulty - D-pad moves - {back} back"
+fn setup_hint(one_team: bool, press: CursorPress, hands: crate::platform::Hands) -> &'static str {
+    if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
+        if one_team {
+            return "Every seat is on one team - {confirm} a TEAM chip to change it - {back} to leave";
+        }
+        return match press {
+            CursorPress::Switch => "{confirm} to switch between Local and LAN - {back} to leave",
+            CursorPress::Start => "{confirm} to start the match - {back} to leave",
+            CursorPress::Nothing => "{dpad} to move - {back} to leave",
+            CursorPress::MoveSelf => {
+                "{confirm} to move to another seat - {dpad} to reach team - {back} to leave"
             }
-            (false, false, Cell::Stance) => "{confirm} cycles stance - D-pad moves - {back} back",
-            (false, false, Cell::Team) => "{confirm} cycles the chip - D-pad moves - {back} back",
-            (false, false, Cell::Seat) => {
-                "{confirm} takes this seat - D-pad reaches difficulty, stance, and team - {back} back"
+            CursorPress::MovePlayer => {
+                "{confirm} to pick up this player - {dpad} to move - {back} to leave"
+            }
+            CursorPress::RemovePlayer => {
+                "{confirm} to remove this player - {dpad} to move - {back} to leave"
+            }
+            CursorPress::TakeOpenSeat => {
+                "{confirm} to take this seat - {dpad} to move - {back} to leave"
+            }
+            CursorPress::BotForChair => {
+                "{confirm} to give this seat to a bot - {dpad} to move - {back} to leave"
+            }
+            CursorPress::Card(Cell::Difficulty) => {
+                "{confirm} to change difficulty - {dpad} to move - {back} to leave"
+            }
+            CursorPress::Card(Cell::Stance) => {
+                "{confirm} to change stance - {dpad} to move - {back} to leave"
+            }
+            CursorPress::Card(Cell::Team) => {
+                "{confirm} to change team - {dpad} to move - {back} to leave"
+            }
+            CursorPress::Card(Cell::Seat) => {
+                "{confirm} to take this seat - {dpad} to reach difficulty, stance, and team - {back} to leave"
+            }
+        };
+    }
+    if hands.pad.is_some() {
+        if one_team {
+            return "Every seat is on one team - change a TEAM chip - {back} back";
+        }
+        return match press {
+            CursorPress::Switch => "{confirm} switches between Local and LAN - {back} back",
+            CursorPress::Start => "{confirm} starts the match - {back} back",
+            CursorPress::Nothing => "{dpad} moves - {back} back",
+            CursorPress::MoveSelf => {
+                "{confirm} moves to another seat - {dpad} reaches team - {back} back"
+            }
+            CursorPress::MovePlayer => {
+                "{confirm} picks up this player - {dpad} moves - {back} back"
+            }
+            CursorPress::RemovePlayer => {
+                "{confirm} removes this player - {dpad} moves - {back} back"
+            }
+            CursorPress::TakeOpenSeat => "{confirm} takes this seat - {dpad} moves - {back} back",
+            CursorPress::BotForChair => {
+                "{confirm} gives this seat to a bot - {dpad} moves - {back} back"
+            }
+            CursorPress::Card(Cell::Difficulty) => {
+                "{confirm} cycles difficulty - {dpad} moves - {back} back"
+            }
+            CursorPress::Card(Cell::Stance) => {
+                "{confirm} cycles stance - {dpad} moves - {back} back"
+            }
+            CursorPress::Card(Cell::Team) => {
+                "{confirm} cycles the chip - {dpad} moves - {back} back"
+            }
+            CursorPress::Card(Cell::Seat) => {
+                "{confirm} takes this seat - {dpad} reaches difficulty, stance, and team - {back} back"
             }
         };
     }
@@ -238,20 +313,63 @@ fn setup_hint(
         }
         (false, false, false) => "click a seat to take it - click a chip to change it",
         (false, true, true) => "Every seat is on one team - change a TEAM chip - {back} back",
-        (false, true, false) if on_start => "{confirm} starts the match - {back} back",
-        (false, true, false) => match cell {
-            Cell::Difficulty => "{confirm} cycles difficulty - {left}/{right} move - {back} back",
-            Cell::Stance => "{confirm} cycles stance - {left}/{right} move - {back} back",
-            Cell::Team => "{confirm} cycles the chip - {left}/{right} move - {back} back",
-            Cell::Seat => {
+        (false, true, false) => match press {
+            CursorPress::Switch => "{confirm} switches between Local and LAN - {back} back",
+            CursorPress::Start => "{confirm} starts the match - {back} back",
+            CursorPress::Nothing => "{up}/{down} move - {back} back",
+            CursorPress::MoveSelf => {
+                "{confirm} moves to another seat - {left}/{right} reach team - {back} back"
+            }
+            CursorPress::MovePlayer => {
+                "{confirm} picks up this player - {left}/{right} move - {back} back"
+            }
+            CursorPress::RemovePlayer => {
+                "{confirm} removes this player - {left}/{right} move - {back} back"
+            }
+            CursorPress::TakeOpenSeat => {
+                "{confirm} takes this seat - {left}/{right} move - {back} back"
+            }
+            CursorPress::BotForChair => {
+                "{confirm} gives this seat to a bot - {left}/{right} move - {back} back"
+            }
+            CursorPress::Card(Cell::Difficulty) => {
+                "{confirm} cycles difficulty - {left}/{right} move - {back} back"
+            }
+            CursorPress::Card(Cell::Stance) => {
+                "{confirm} cycles stance - {left}/{right} move - {back} back"
+            }
+            CursorPress::Card(Cell::Team) => {
+                "{confirm} cycles the chip - {left}/{right} move - {back} back"
+            }
+            CursorPress::Card(Cell::Seat) => {
                 "{confirm} takes this seat - {left}/{right} reach difficulty, stance, and team - {back} back"
             }
         },
     }
 }
 
+/// Whether a press on `seat`'s card can use `cell`.
+fn seat_cell_live(
+    cell: Cell,
+    seat: usize,
+    own_seat: usize,
+    open: &[bool],
+    movable: &[bool],
+    resuming: bool,
+) -> bool {
+    match cell {
+        Cell::Seat => movable[seat],
+        Cell::Team => !resuming,
+        Cell::Difficulty => seat != own_seat && movable[seat],
+        Cell::Stance => seat != own_seat && !open[seat] && movable[seat],
+    }
+}
+
 /// The coaching line while an occupant is picked up.
 fn moving_hint(hands: crate::platform::Hands) -> &'static str {
+    if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
+        return "{confirm} a seat to swap them there - {back} to cancel";
+    }
     if hands.pad.is_some() {
         return "{confirm} on a seat swaps them there - {back} cancels";
     }
@@ -1505,23 +1623,17 @@ impl Wizard {
         // A resume fixes the map's bots and teams and the host's seat: only
         // the reserved seats change hands.
         let resuming = self.resume.is_some();
-        let movable: Vec<bool> = (0..draft.seats.len())
-            .map(|seat| {
-                self.resume
-                    .as_deref()
-                    .is_none_or(|resume| resume.reserved(seat))
-            })
-            .collect();
+        let movable = self.movable_seats(draft);
         let cell_live = |row: usize, cell: Cell| -> bool {
             row < start_index
-                && match cell {
-                    Cell::Seat => movable[order[row]],
-                    Cell::Team => !resuming,
-                    Cell::Difficulty => order[row] != draft.seat_choice && movable[order[row]],
-                    Cell::Stance => {
-                        order[row] != draft.seat_choice && !open[order[row]] && movable[order[row]]
-                    }
-                }
+                && seat_cell_live(
+                    cell,
+                    order[row],
+                    draft.seat_choice,
+                    &open,
+                    &movable,
+                    resuming,
+                )
         };
         let zone_at = |p: Vec2, touch: bool| -> Option<SetupZone> {
             for (index, half) in layout.switch.iter().enumerate() {
@@ -1585,16 +1697,9 @@ impl Wizard {
                     } else if self.setup_sel >= start_index {
                         SetupZone::Start
                     } else {
-                        // The sticky column falls back to the seat zone
-                        // on rows where its cell is dead.
-                        let cell = if cell_live(self.setup_sel, self.setup_cell) {
-                            self.setup_cell
-                        } else {
-                            Cell::Seat
-                        };
                         SetupZone::Card {
                             row: self.setup_sel,
-                            cell,
+                            cell: self.pressed_cell(draft, &open, order[self.setup_sel]),
                         }
                     });
                     break;
@@ -1939,13 +2044,11 @@ impl Wizard {
             } else if self.moving.is_some() {
                 (crate::menu::hint_line(moving_hint(hands)), false)
             } else {
-                let hint = setup_hint(
+                let press = self.cursor_press(draft, &open, &order);
+                (
+                    crate::menu::hint_line(setup_hint(one_team, press, hands)),
                     one_team,
-                    self.setup_sel == order.len(),
-                    self.setup_cell,
-                    hands,
-                );
-                (crate::menu::hint_line(hint), one_team)
+                )
             };
             // Warnings are information, not coaching.
             let (text, icons) = if warning {
@@ -2250,6 +2353,69 @@ impl Wizard {
         self.lan.as_ref().map_or(&[], |lan| lan.members.as_slice())
     }
 
+    /// Which seats can change hands: a resume fixes the map's bots and
+    /// teams and the host's seat, so only the reserved seats can.
+    fn movable_seats(&self, draft: &NewMatchDraft) -> Vec<bool> {
+        (0..draft.seats.len())
+            .map(|seat| {
+                self.resume
+                    .as_deref()
+                    .is_none_or(|resume| resume.reserved(seat))
+            })
+            .collect()
+    }
+
+    /// The cell a press on `seat`'s card uses: the sticky column falls back
+    /// to the seat zone on rows where its cell is dead.
+    fn pressed_cell(&self, draft: &NewMatchDraft, open: &[bool], seat: usize) -> Cell {
+        let live = seat_cell_live(
+            self.setup_cell,
+            seat,
+            draft.seat_choice,
+            open,
+            &self.movable_seats(draft),
+            self.resume.is_some(),
+        );
+        if live { self.setup_cell } else { Cell::Seat }
+    }
+
+    /// What a press at the cursor does.
+    fn cursor_press(&self, draft: &NewMatchDraft, open: &[bool], order: &[usize]) -> CursorPress {
+        if self.on_switch {
+            // A saved LAN match resumes only with its players, so an open
+            // lobby stays open.
+            return if self.resume.is_some() && self.lan.is_some() {
+                CursorPress::Nothing
+            } else {
+                CursorPress::Switch
+            };
+        }
+        let Some(&seat) = order.get(self.setup_sel) else {
+            return CursorPress::Start;
+        };
+        let held = self.holds_member(seat);
+        match self.pressed_cell(draft, open, seat) {
+            Cell::Seat if held => CursorPress::MovePlayer,
+            Cell::Seat if self.picks_up_occupant(draft, seat) => CursorPress::MoveSelf,
+            Cell::Seat if self.resume.is_some() => CursorPress::Nothing,
+            Cell::Seat if open[seat] => CursorPress::TakeOpenSeat,
+            Cell::Difficulty if held => CursorPress::RemovePlayer,
+            Cell::Difficulty if open[seat] => CursorPress::BotForChair,
+            cell => CursorPress::Card(cell),
+        }
+    }
+
+    /// Whether a LAN player sits in `seat`.
+    fn holds_member(&self, seat: usize) -> bool {
+        self.members().get(seat).copied().flatten().is_some()
+    }
+
+    /// Whether pressing `seat` picks its occupant up to move them, rather
+    /// than swapping the player there.
+    fn picks_up_occupant(&self, draft: &NewMatchDraft, seat: usize) -> bool {
+        self.holds_member(seat) || (self.resume.is_none() && seat == draft.seat_choice)
+    }
+
     /// Opens the LAN lobby under the player's name. Every chair but the
     /// player's opens for joiners.
     fn open_lan(&mut self, draft: &mut NewMatchDraft) {
@@ -2552,6 +2718,8 @@ impl Wizard {
     /// A press on a seat card's name: puts a picked-up occupant here, picks
     /// up the human or a LAN player sitting here, or sits the human here.
     fn seat_pressed(&mut self, draft: &mut NewMatchDraft, seat: usize) {
+        let picks_up = self.picks_up_occupant(draft, seat);
+        let resuming = self.resume.is_some();
         let mut none: [Option<MemberId>; 0] = [];
         let members = match self.lan.as_mut() {
             Some(lan) => lan.members.as_mut_slice(),
@@ -2560,20 +2728,12 @@ impl Wizard {
         match self.moving.take() {
             Some(from) if from == seat => {}
             Some(from) => swap_seats(draft, members, from, seat),
+            None if picks_up => self.moving = Some(seat),
+            // The host keeps its seat; players move among the reserved ones.
+            None if resuming => {}
             None => {
-                let held = members.get(seat).copied().flatten().is_some();
-                if self.resume.is_some() {
-                    // The host keeps its seat; players move among the
-                    // reserved ones.
-                    if held {
-                        self.moving = Some(seat);
-                    }
-                } else if seat == draft.seat_choice || held {
-                    self.moving = Some(seat);
-                } else {
-                    let you = draft.seat_choice;
-                    swap_seats(draft, members, you, seat);
-                }
+                let you = draft.seat_choice;
+                swap_seats(draft, members, you, seat);
             }
         }
     }

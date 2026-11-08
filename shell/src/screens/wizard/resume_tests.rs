@@ -172,6 +172,49 @@ fn play_on(machines: &mut [(Game, Link)]) {
 }
 
 #[test]
+fn the_setup_hint_says_when_a_press_does_nothing_on_a_resume() {
+    let (mut w, mut draft) = resuming();
+    let order = seat_display_order(draft.scenario.as_deref().unwrap());
+    let press_at = |w: &mut Wizard, draft: &NewMatchDraft, row: usize, cell: Cell| {
+        w.setup_sel = row;
+        w.setup_cell = cell;
+        w.cursor_press(draft, &w.open_flags(draft), &order)
+    };
+    for row in [0, 1, 3] {
+        assert_eq!(
+            press_at(&mut w, &draft, row, Cell::Seat),
+            CursorPress::Nothing,
+            "row {row}: the host, a missing player and a bot stay put"
+        );
+    }
+    assert_eq!(
+        press_at(&mut w, &draft, 1, Cell::Difficulty),
+        CursorPress::BotForChair,
+        "a missing player's chair can go to a bot"
+    );
+    w.on_switch = true;
+    assert_eq!(
+        press_at(&mut w, &draft, 0, Cell::Seat),
+        CursorPress::Nothing,
+        "the lobby stays open"
+    );
+    w.on_switch = false;
+
+    let mut clients = vec![join(&w, "Alex", ALEX)];
+    settle(&mut w, &mut draft, &mut clients, |w, _| {
+        member_at(w, 2).is_some()
+    });
+    assert_eq!(
+        press_at(&mut w, &draft, 1, Cell::Seat),
+        CursorPress::MovePlayer
+    );
+    assert_eq!(
+        press_at(&mut w, &draft, 1, Cell::Difficulty),
+        CursorPress::RemovePlayer
+    );
+}
+
+#[test]
 fn a_resume_reserves_each_players_seat_and_fixes_everything_else() {
     let (mut w, mut draft) = resuming();
     assert_eq!(draft.seat_choice, 0, "the host keeps its seat");

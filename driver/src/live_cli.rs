@@ -403,8 +403,8 @@ pub(crate) enum LiveCmd {
     InjectPad {
         /// A button by position: south, east, west, north, dpad-up,
         /// dpad-down, dpad-left, dpad-right, left-shoulder, right-shoulder,
-        /// left-trigger, right-trigger, left-stick, right-stick, select, or
-        /// start.
+        /// left-trigger, right-trigger, left-stick, right-stick, select,
+        /// start, or play-pause.
         button: String,
         /// The pad's id.
         #[arg(long, default_value_t = 0)]
@@ -440,10 +440,23 @@ pub(crate) enum LiveCmd {
         #[arg(long, default_value_t = 0)]
         pad: u64,
     },
+    /// Inject a finger's travel across a remote's touch surface, which spans
+    /// 2 across.
+    InjectPadSwipe {
+        /// Rightward travel.
+        #[arg(allow_negative_numbers = true)]
+        x: f32,
+        /// Downward travel.
+        #[arg(allow_negative_numbers = true)]
+        y: f32,
+        /// The pad's id.
+        #[arg(long, default_value_t = 0)]
+        pad: u64,
+    },
     /// Inject a controller connecting.
     InjectPadConnect {
         /// Whose layout names its buttons: xbox, playstation, switch,
-        /// steamdeck, or other.
+        /// steamdeck, remote, or other.
         #[arg(long, default_value = "xbox")]
         family: String,
         /// The pad's id.
@@ -915,6 +928,9 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
                 },
             }
         }
+        LiveCmd::InjectPadSwipe { x, y, pad } => Request::InjectEvent {
+            event: RawEvent::PadSwipe { pad, x, y },
+        },
         LiveCmd::InjectPadConnect { family, pad } => Request::InjectEvent {
             event: RawEvent::PadConnected {
                 pad,

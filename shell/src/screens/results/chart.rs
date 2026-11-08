@@ -313,6 +313,11 @@ pub(super) struct Chart {
 }
 
 impl Chart {
+    /// Whether the Siri Remote's cursor is on the chart's tabs.
+    pub(super) fn tabs_focused(&self) -> bool {
+        self.tabs.focused()
+    }
+
     pub(super) fn view(&self) -> ChartView {
         ChartView::ALL[self.view]
     }
@@ -344,6 +349,11 @@ impl Chart {
             self.press.cancel();
             self.pointer = None;
             sounds.push((SoundKind::Click, None));
+        }
+        // No list lies under this strip, so Up always reaches it.
+        let (stepped, events) = self.tabs.route_remote(&events, true);
+        if let Some(delta) = stepped {
+            self.step(delta, sounds);
         }
         let charted = self.view() != ChartView::Built;
         let plot = layout.plot;
@@ -419,6 +429,7 @@ impl Chart {
             self.view,
             mouse,
             keys.as_ref(),
+            self.tabs.focused(),
         );
         if self.view() == ChartView::Built {
             super::built::draw(game, sprites, report, layout.body, s);

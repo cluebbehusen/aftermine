@@ -328,6 +328,27 @@ impl Screen {
         }
     }
 
+    /// The text the on-screen keyboard should show for the field on screen.
+    pub(super) fn keyboard_text(&self) -> Option<&str> {
+        match self {
+            Self::Pause(pause) => pause.keyboard_text(),
+            Self::Lobby { screen, .. } => screen.keyboard_text(),
+            Self::Settings { screen, .. } => screen.keyboard_text(),
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Wizard(_)
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Playing
+            | Self::Playback { .. }
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => None,
+        }
+    }
+
     /// Whether a text field owns input.
     pub(super) fn text_entry(&self) -> bool {
         self.keyboard().is_some()

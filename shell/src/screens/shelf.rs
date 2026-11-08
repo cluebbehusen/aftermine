@@ -73,8 +73,8 @@ impl Tab {
     /// What the tab says when it lists nothing.
     fn empty(self) -> &'static str {
         match self {
-            Tab::Saves => "no saves yet: save from the pause menu or quit a match mid-way",
-            Tab::Replays => "no replays yet: finish a match to keep its replay",
+            Tab::Saves => "No saves yet",
+            Tab::Replays => "No replays yet",
         }
     }
 
@@ -226,6 +226,7 @@ impl Shelf {
     fn show(&mut self, tab: Tab) {
         self.tab = Some(tab);
         self.menu = tab_menu(&self.entries, tab, self.now);
+        self.menu.cursor_hidden = self.tabs.focused();
     }
 
     /// Asks before deleting `entries[index]`. Cancel sits first and
@@ -292,9 +293,10 @@ impl Shelf {
             return Out::Home;
         }
         let (picked, events) = self.tabs.route(&events, Tab::ALL.len());
+        let (stepped, events) = self.tabs.route_remote_above(&events, &mut self.menu);
         let next = picked
             .map(|index| Tab::ALL[index])
-            .or_else(|| steps_tab(&events).then(|| self.tab().other()));
+            .or_else(|| (stepped.is_some() || steps_tab(&events)).then(|| self.tab().other()));
         if let Some(next) = next {
             sounds.push((SoundKind::Click, None));
             if next == self.tab() {
@@ -343,13 +345,24 @@ impl Shelf {
 
     /// How to act on the focused row: coaching for the footer.
     pub fn coaching(&self) -> Option<String> {
-        let i = *self.menu.value()?;
+        if self.tabs.focused() {
+            return Some(crate::tabs::ON_STRIP_HINT.to_string());
+        }
         let hands = crate::platform::hands();
         let hint = self
-            .entries
-            .get(i)
+            .menu
+            .value()
+            .and_then(|i| self.entries.get(*i))
             .map(|entry| entry.hint(hands))
-            .filter(|hint| !hint.is_empty())?;
+            .filter(|hint| !hint.is_empty());
+        if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
+            // An empty tab or a damaged record still leaves the tabs to reach.
+            return Some(hint.map_or_else(
+                || crate::tabs::REMOTE_HINT.to_string(),
+                |hint| format!("{hint} | {}", crate::tabs::REMOTE_HINT),
+            ));
+        }
+        let hint = hint?;
         Some(if crate::tabs::shown_keys().is_some() {
             format!("{hint} | {{prev_tab}}/{{next_tab}} switch tabs")
         } else {
@@ -357,9 +370,16 @@ impl Shelf {
         })
     }
 
+    /// What the tab says in place of rows, once no record is on its way.
+    fn empty_message(&self) -> Option<&'static str> {
+        (self.catalog_ready && self.downloading == 0 && self.menu.lines().is_empty())
+            .then(|| self.tab().empty())
+    }
+
     /// The line above the footer: what the shelf is doing, or what is
     /// wrong with the focused record, and otherwise on Apple TV that
-    /// records may not last. Rows say everything else.
+    /// records may not last. Rows and an empty tab's message say
+    /// everything else.
     pub fn status(&self) -> String {
         let problem = self
             .menu
@@ -371,8 +391,8 @@ impl Shelf {
             problem.reason().to_string()
         } else if self.downloading > 0 {
             downloading_line(self.downloading)
-        } else if self.menu.lines().is_empty() {
-            self.tab().empty().to_string()
+        } else if self.empty_message().is_some() {
+            String::new()
         } else {
             standing_line(PLATFORM).to_string()
         }
@@ -400,22 +420,31 @@ impl Shelf {
             active,
             mouse,
             keys.as_ref(),
+            self.tabs.focused(),
         );
+        let s = crate::render::ui_scale();
+        let view_h = crate::render::viewport().y;
+        if let Some(message) = self.empty_message() {
+            draw_centered(message, view_h * 0.5, crate::theme::Type::Row.at(s));
+        }
         let status = crate::menu::binding_hint(&self.status());
         if notice_shown || status.is_empty() {
             return;
         }
-        let s = crate::render::ui_scale();
-        let size = crate::theme::Type::Body.at(s);
-        let width = measure_text(&status, None, crate::numeric::font_size(size), 1.0).width;
-        draw_text(
-            &status,
-            (crate::render::viewport().x - width) * 0.5,
-            crate::render::viewport().y - 48.0 * s,
-            size,
-            crate::theme::TEXT_SECONDARY,
-        );
+        draw_centered(&status, view_h - 48.0 * s, crate::theme::Type::Body.at(s));
     }
+}
+
+/// Draws secondary text centered across the screen, on `baseline`.
+fn draw_centered(text: &str, baseline: f32, size: f32) {
+    let width = measure_text(text, None, crate::numeric::font_size(size), 1.0).width;
+    draw_text(
+        text,
+        (crate::render::viewport().x - width) * 0.5,
+        baseline,
+        size,
+        crate::theme::TEXT_SECONDARY,
+    );
 }
 
 /// What the status line says when nothing more pressing does: on Apple TV,

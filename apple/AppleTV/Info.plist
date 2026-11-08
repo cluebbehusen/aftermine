@@ -41,6 +41,8 @@
 			</array>
 		</dict>
 	</dict>
+	<key>GCSupportsMultipleMicroGamepads</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiredDeviceCapabilities</key>

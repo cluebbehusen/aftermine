@@ -108,7 +108,7 @@ const PAD_TOKENS: [(&str, aftermine_protocol::PadButton); 8] = [
 /// Fills the tokens of a coaching template that `family` has buttons
 /// for, and leaves the rest to the keys.
 fn pad_hint(template: &str, family: aftermine_protocol::PadFamily) -> String {
-    let mut text = template.to_string();
+    let mut text = template.replace("{dpad}", crate::pad::dpad_name(family));
     for (token, button) in PAD_TOKENS {
         text = text.replace(token, crate::pad::button_name(family, button));
     }
@@ -116,8 +116,9 @@ fn pad_hint(template: &str, family: aftermine_protocol::PadFamily) -> String {
 }
 
 /// A coaching template as a hint line. While a controller is in use, the
-/// tokens its layout has buttons for show that pad's own icons and the
-/// rest name keys; otherwise it is [`binding_hint`]'s copy. Either way it
+/// tokens its layout has buttons for show that pad's own icons, or the Siri
+/// Remote's words, and the rest name keys; otherwise it is [`binding_hint`]'s
+/// copy. Either way it
 /// reads as the same words.
 pub(crate) fn hint_line(template: &str) -> HintLine {
     let Some(family) = crate::platform::hands().pad else {
@@ -133,7 +134,7 @@ pub(crate) fn hint_line(template: &str) -> HintLine {
         if at > 0 {
             line = line.text(binding_hint(&rest[..at]));
         }
-        line = line.pad(crate::pad::button_icon(family, button));
+        line = line.button(family, button);
         rest = &rest[at + token.len()..];
     }
     if !rest.is_empty() {
@@ -620,6 +621,8 @@ pub struct Menu<R> {
     lines: Vec<Line<R>>,
     /// Keyboard cursor; what Enter activates.
     pub selected: usize,
+    /// Draws no cursor, while the screen's tab strip has it instead.
+    pub cursor_hidden: bool,
     /// First visible row — moved by the wheel, paging keys, and
     /// `ensure_visible`; never by the pointer.
     scroll: usize,
@@ -695,6 +698,7 @@ impl<R: Clone> Menu<R> {
             title: title.into(),
             lines,
             selected: 0,
+            cursor_hidden: false,
             scroll: 0,
             hover: None,
             wheel_accum: 0.0,
@@ -779,6 +783,12 @@ impl<R: Clone> Menu<R> {
                     Line::Row(Label::Binding { .. } | Label::Record { .. }, _)
                 )
             })
+    }
+
+    /// Whether the cursor can go no higher: it is on the first row, or the
+    /// list has none.
+    pub(crate) fn at_top(&self) -> bool {
+        self.lines.is_empty() || self.selected == self.settle(0, false)
     }
 
     /// The nearest non-header row from `index`, toward the start when
@@ -1172,7 +1182,7 @@ impl<R: Clone> Menu<R> {
                 }
                 Line::Row(label, _) => label,
             };
-            let selected = index == self.selected && !busy;
+            let selected = index == self.selected && !busy && !self.cursor_hidden;
             let hovered =
                 self.hover == Some(index) && !busy && crate::platform::hands().hover_shown();
             if selected {
@@ -1301,8 +1311,9 @@ impl<R: Clone> Menu<R> {
         }
 
         // A list of headings alone, such as a lobby's roster, has nothing
-        // to select or confirm.
-        if busy || !self.lines.iter().any(|line| matches!(line, Line::Row(..))) {
+        // to select or confirm, so only its screen's own coaching applies.
+        let has_rows = self.lines.iter().any(|line| matches!(line, Line::Row(..)));
+        if busy || (!has_rows && coaching.is_none()) {
             return;
         }
 
@@ -1340,6 +1351,9 @@ fn row_pitch(avail: f32, rows: usize, s: f32, touch_only: bool) -> f32 {
 /// actually scrolls. ASCII on purpose: the default font has no glyphs for
 /// arrows.
 fn menu_footer(hands: crate::platform::Hands, scrolls: bool) -> HintLine {
+    if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
+        return HintLine::from(binding_hint("{dpad} to select - {confirm} to confirm"));
+    }
     if let Some(family) = hands.pad {
         return HintLine::default()
             .pad(PadIcon::DpadUpDown)

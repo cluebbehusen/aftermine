@@ -180,6 +180,33 @@ the reticle through the same selection, order, placement and targeting paths as
 clicks. Menu opens the pause menu and View pauses, as the top bar's buttons do.
 The buttons a pad holds drop with the rest of held input on every transition.
 
+The Siri Remote is a pad of its own family on Apple TV: a press on its center is
+the bottom face button, Back is the right one, and a press on the ring around
+the center is a D-pad direction, as each step of swipe travel taps one. A remote
+with no ring clicks with its whole surface. Play/Pause is its own button, a
+click in menus. Everything past the adapter treats it as a pad, so menus need no
+second path. It has no tab buttons, so a tab strip takes its arrows: Up from the
+top row moves the cursor onto the strip, and only one of the two wears it. It
+can't play a match: there its only press is Back, which walks outward as Escape
+does, and copy names a connected controller instead of the remote. tvOS keeps
+controller presses from UIKit until the shell offers them, which it does on
+Home, so Back leaves the app from there and nowhere else, and never on the
+release of the Back that reached Home.
+
+The replay viewer and final map give controllers one camera,
+`camera::controls::RemoteCamera`. Sticks pan and zoom it. The remote's one
+surface can't, so a click steps through modes that say what its swipes and ring
+mean. A strip always shows the mode in use and a hint says what it does. The
+replay clock keeps its place under the timeline, and hints stand on their own
+plate above it. Pan follows the raw finger travel a swipe also reports; nothing
+else reads that travel.
+
+A TV's system keyboard fills the screen, so it opens only when the player clicks
+a field, and a form's cursor reaches its confirm button. The keyboard shows the
+field's text, which the shell sends after each change, so the field's own rules
+still decide what it holds. While it is up it has the controllers' presses, and
+the game sees none of them, including a press that outlives it.
+
 The controller's command ring (`radial`) is built from the panel model the
 layout pass published, so a ring never offers what the panel would refuse, and a
 pick presses the card itself, arming what its hotkey arms; X cancels one of what
@@ -252,8 +279,9 @@ build sizes controls for fingertips. Copy follows the hands in use instead: each
 frame publishes the last pointer, whether a hardware key has been pressed, and
 the controller pressed since the last key, click or tap as `platform::Hands`; a
 mouse that only moves leaves a controller in use. Hints name keys only once one
-has been pressed, and name a controller's buttons while it is in use. Every
-screen offers a pointer path for what Escape does.
+has been pressed, and name a controller's buttons while it is in use. A TV names
+its remote until something else is used. Every screen offers a pointer path for
+what Escape does.
 
 While a controller is in use, and always on a TV, the match HUD stands in pad
 mode: it leaves out the controls a controller's buttons stand in for and names
@@ -533,4 +561,4 @@ shell.
 | Native presentation           | `shell/src/look.rs`, `shell/src/render.rs`, `shell/src/assets.rs`              | Asset and look tests, `shell/tests/presentation_animation.rs`, native capture tests |
 | CPU schematics                | `kit/src/render.rs`                                                            | `driver/tests/golden.rs`                                                            |
 | Audio                         | `shell/src/mixer.rs`, `shell/src/audio_mix.rs`, `shell/src/soundtrack.rs`      | Module tests                                                                        |
-| iPad and Mac apps             | `apple/`, `shell/src/platform.rs`                                              | iOS clippy in CI, device builds                                                     |
+| iPad, Apple TV and Mac apps   | `apple/`, `shell/src/platform.rs`                                              | iOS clippy in CI, device builds                                                     |

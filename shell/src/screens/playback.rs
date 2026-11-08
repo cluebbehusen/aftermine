@@ -2,7 +2,9 @@
 //! borrows it for rendering, interpolation, effects, and audio.
 
 use crate::action::{Action, ActionEvent, ActionResolver, BindingMap, Context as InputContext};
-use crate::camera::controls::{MinimapPoint, ViewerHands, event_point, held_pan, pan_toward};
+use crate::camera::controls::{
+    MinimapPoint, RemoteCamera, ViewerHands, ViewerPads, event_point, held_pan, pan_toward,
+};
 use crate::frame_time::FrameTime;
 use crate::game::{self, GameReplay, Presentation, Scene};
 use crate::hint_line::HintLine;
@@ -13,7 +15,7 @@ use crate::render::prim::{fill_rect, stroke_rect};
 use crate::{clock_label, render, theme};
 #[cfg(test)]
 use aftermine_protocol::Key;
-use aftermine_protocol::{MouseButton, PadButton, RawEvent};
+use aftermine_protocol::{MouseButton, PadButton, PadFamily, RawEvent};
 use aftermine_sim::SIM_VERSION;
 use anyhow::{Context, Result};
 use macroquad::prelude::*;
@@ -45,6 +47,8 @@ pub struct PlaybackSession {
     scrub_finger: Option<u64>,
     /// Middle-drag, wheel, minimap and finger camera control.
     hands: ViewerHands,
+    /// Controller sticks and the Siri Remote's camera modes.
+    remote: RemoteCamera,
     /// The composition timeline overlay is showing.
     pub show_stats: bool,
     /// Match statistics, computed from the record on first toggle —
@@ -139,6 +143,7 @@ impl PlaybackSession {
             buttons: Press::default(),
             scrub_finger: None,
             hands: ViewerHands::default(),
+            remote: RemoteCamera::with_control(),
             show_stats: false,
             stats: None,
             replay: record,
@@ -188,7 +193,9 @@ enum Transport {
 
 /// What a controller button does in the viewer. Like the menus' layout it
 /// goes by position and no binding moves it: confirm plays and pauses,
-/// back leaves, the bumpers seek and the triggers step the speed.
+/// back leaves, the bumpers and the D-pad's sides seek, and the triggers and
+/// its other two arms step the speed. The D-pad is how the Siri Remote's
+/// swipes reach all this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PadPress {
     Transport(Transport),
@@ -198,12 +205,16 @@ enum PadPress {
 
 fn pad_press(button: PadButton) -> Option<PadPress> {
     Some(match button {
-        crate::pad::CONFIRM => PadPress::Transport(Transport::PlayPause),
+        crate::pad::CONFIRM | PadButton::PlayPause => PadPress::Transport(Transport::PlayPause),
         crate::pad::BACK => PadPress::Transport(Transport::Back),
         b if b == crate::pad::TABS.0 => PadPress::SeekBack,
         b if b == crate::pad::TABS.1 => PadPress::SeekForward,
         b if b == crate::pad::PAGES.0 => PadPress::Transport(Transport::Slower),
         b if b == crate::pad::PAGES.1 => PadPress::Transport(Transport::Faster),
+        PadButton::DpadLeft => PadPress::SeekBack,
+        PadButton::DpadRight => PadPress::SeekForward,
+        PadButton::DpadDown => PadPress::Transport(Transport::Slower),
+        PadButton::DpadUp => PadPress::Transport(Transport::Faster),
         _ => return None,
     })
 }
@@ -324,6 +335,25 @@ fn caption_fits(line: &HintLine, bar: macroquad::prelude::Rect, size: f32, s: f3
     line.width(size) + 2.0 * CAPTION_PAD * s <= bar.w + 2.0 * CAPTION_OVERHANG * s
 }
 
+/// Draws a line of copy on its plate, its baseline at `y`.
+fn draw_plate(
+    sprites: &crate::assets::Sprites,
+    line: &HintLine,
+    x: f32,
+    y: f32,
+    size: f32,
+    s: f32,
+) {
+    draw_rectangle(
+        x - CAPTION_PAD * s,
+        y - size,
+        line.width(size) + 2.0 * CAPTION_PAD * s,
+        size + 10.0 * s,
+        theme::SURFACE_CAPTION,
+    );
+    line.draw_at(sprites, x, y, size, crate::theme::TEXT_PRIMARY, WHITE);
+}
+
 /// Draws one caption line on its plate under the timeline, centered on
 /// the bar. A line too long to seat runs right, under the minimap, rather
 /// than over the transport row's buttons.
@@ -334,17 +364,49 @@ fn draw_caption(
     size: f32,
     s: f32,
 ) {
-    let width = line.width(size);
-    let x = (bar.center().x - width * 0.5).max(bar.x + (CAPTION_PAD - CAPTION_OVERHANG) * s);
-    let y = screen_height() - 14.0 * s;
-    draw_rectangle(
-        x - CAPTION_PAD * s,
-        y - size,
-        width + 2.0 * CAPTION_PAD * s,
-        size + 10.0 * s,
-        theme::SURFACE_CAPTION,
-    );
-    line.draw_at(sprites, x, y, size, crate::theme::TEXT_PRIMARY, WHITE);
+    let x =
+        (bar.center().x - line.width(size) * 0.5).max(bar.x + (CAPTION_PAD - CAPTION_OVERHANG) * s);
+    draw_plate(sprites, line, x, screen_height() - 14.0 * s, size, s);
+}
+
+/// How far the composition band's top stands above the timeline.
+const STATS_BAND_RISE: f32 = 96.0;
+/// Room above the composition band for its legend.
+const STATS_LEGEND: f32 = 20.0;
+/// How far above whatever it rests on a hint's baseline sits.
+const HINT_RISE: f32 = 16.0;
+/// The gap between the top of the hint and the remote's strip of modes.
+const MODES_GAP: f32 = 8.0;
+
+/// The line of hints above the timeline, for the hands in use, longest first
+/// so the longest that fits is the one shown. A player without a keyboard or
+/// controller has nothing to press. The remote's line is state, not coaching,
+/// since it says what its swipes do now, so it never fades.
+fn hint_lines(pb: &PlaybackSession, bindings: &BindingMap) -> Vec<HintLine> {
+    let hands = crate::platform::hands();
+    if hands.pad == Some(PadFamily::Remote) {
+        return vec![
+            remote_hint(pb.remote),
+            HintLine::from(pb.remote.swipe_hint().to_string()),
+        ];
+    }
+    if !crate::hints::showing() {
+        return Vec::new();
+    }
+    if let Some(family) = hands.pad {
+        return vec![pad_hint(family, true), pad_hint(family, false)];
+    }
+    if hands.keys {
+        return vec![HintLine::from(format!(
+            "{} pause | {}/{} seek | {} stats | {} leave",
+            bindings.label(Action::ReplayPause),
+            bindings.label(Action::ReplayBack),
+            bindings.label(Action::ReplayForward),
+            bindings.label(Action::ReplayStats),
+            bindings.label(Action::Back),
+        ))];
+    }
+    Vec::new()
 }
 
 pub fn playback_hud(
@@ -407,6 +469,29 @@ pub fn playback_hud(
     {
         composition_band(pb, stats, bar, s);
     }
+    // Hints stand above the timeline, so the clock under it never moves.
+    let rests_on = if pb.show_stats && pb.stats.is_some() {
+        bar.y - (STATS_BAND_RISE + STATS_LEGEND) * s
+    } else {
+        bar.y
+    };
+    let hint_baseline = rests_on - HINT_RISE * s;
+    if let Some(line) = hint_lines(pb, bindings)
+        .iter()
+        .find(|line| caption_fits(line, bar, size, s))
+    {
+        let x = bar.center().x - line.width(size) * 0.5;
+        draw_plate(sprites, line, x, hint_baseline, size, s);
+    }
+    if crate::platform::hands().pad == Some(PadFamily::Remote) {
+        crate::tabs::draw_remote_modes(
+            sprites,
+            pb.remote,
+            bar.center().x,
+            hint_baseline - size - MODES_GAP * s,
+            mouse,
+        );
+    }
     if let Some(target) = pb.seeking {
         // Mid-seek the transport numbers would show intermediate state;
         // show seek progress instead.
@@ -418,48 +503,26 @@ pub fn playback_hud(
         draw_caption(sprites, &HintLine::from(line), bar, size, s);
         return;
     }
-    // The readout carries the speed and the Play label carries the pause,
-    // so no caption repeats either. The caption takes the longest form the
-    // timeline seats: a 640px
-    // window holds only the bare clock, and a player without a keyboard
-    // has no keys to hint at.
     let clock = format!(
         "{} / {}",
         clock_label::ticks(pb.engine.position()),
         clock_label::ticks(pb.engine.total()),
     );
-    let mut lines = Vec::with_capacity(2);
-    let hands = crate::platform::hands();
-    if let Some(family) = hands.pad
-        && crate::hints::showing()
-    {
-        lines.push(pad_caption(&clock, family));
-    } else if hands.keys && crate::hints::showing() {
-        lines.push(HintLine::from(format!(
-            "{clock} | {} pause | {}/{} seek | {} stats | {} leave",
-            bindings.label(Action::ReplayPause),
-            bindings.label(Action::ReplayBack),
-            bindings.label(Action::ReplayForward),
-            bindings.label(Action::ReplayStats),
-            bindings.label(Action::Back),
-        )));
-    }
-    let clock = HintLine::from(clock);
-    lines.push(clock.clone());
-    let line = lines
-        .into_iter()
-        .find(|line| caption_fits(line, bar, size, s))
-        .unwrap_or(clock);
-    draw_caption(sprites, &line, bar, size, s);
+    draw_caption(sprites, &HintLine::from(clock), bar, size, s);
 }
 
-/// The caption's longest form while a controller is in use: the clock and
-/// the viewer's fixed pad layout.
-fn pad_caption(clock: &str, family: aftermine_protocol::PadFamily) -> HintLine {
+/// The hint for the Siri Remote: what its swipes do now and the click that
+/// changes that.
+fn remote_hint(remote: RemoteCamera) -> HintLine {
+    HintLine::from(remote.hint())
+}
+
+/// The hint while a full controller is in use: the viewer's fixed pad layout,
+/// with the sticks where there's room for them.
+fn pad_hint(family: PadFamily, sticks: bool) -> HintLine {
     use crate::pad::{BACK, CONFIRM, PAGES, TABS, button_icon};
     let icon = |button| button_icon(family, button);
-    HintLine::default()
-        .text(format!("{clock} | "))
+    let line = HintLine::default()
         .pad(icon(CONFIRM))
         .text(" pause | ")
         .pad(icon(TABS.0))
@@ -469,9 +532,16 @@ fn pad_caption(clock: &str, family: aftermine_protocol::PadFamily) -> HintLine {
         .pad(icon(PAGES.0))
         .text("/")
         .pad(icon(PAGES.1))
-        .text(" speed | ")
-        .pad(icon(BACK))
-        .text(" leave")
+        .text(" speed | ");
+    let line = if sticks {
+        line.pad(icon(PadButton::LeftStick))
+            .text(" pan | ")
+            .pad(icon(PadButton::RightStick))
+            .text(" zoom | ")
+    } else {
+        line
+    };
+    line.pad(icon(BACK)).text(" leave")
 }
 
 /// Distinct band colors; the ninth is the gray "other" fold.
@@ -533,7 +603,7 @@ fn composition_band(
     ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
     let named: Vec<&'static str> = ranked.iter().take(8).map(|(kind, _)| *kind).collect();
 
-    let band = macroquad::prelude::Rect::new(bar.x, bar.y - 96.0 * s, bar.w, 72.0 * s);
+    let band = macroquad::prelude::Rect::new(bar.x, bar.y - STATS_BAND_RISE * s, bar.w, 72.0 * s);
     fill_rect(band, theme::SURFACE_CAPTION);
     for (column, counts) in pooled.iter().enumerate() {
         let (left, right) = composition_interval(&stats.sample_ticks, column);
@@ -594,6 +664,18 @@ impl PlaybackSession {
             + numeric::to_u64((frac * (self.engine.total() - self.engine.start()) as f32).round())
     }
 
+    /// Moves the camera by a frame's sticks and takes the Siri Remote's camera
+    /// input. Returns the events left for [`Self::apply_input`].
+    pub(crate) fn route_pads(
+        &mut self,
+        events: &[RawEvent],
+        pads: &ViewerPads,
+        dt: f32,
+    ) -> Vec<RawEvent> {
+        self.remote
+            .route(events, &mut self.presentation.camera, pads, dt)
+    }
+
     /// Applies transport input without advancing replay time.
     /// Returns true when the viewer should close.
     pub fn apply_input(
@@ -621,10 +703,10 @@ impl PlaybackSession {
                             Action::Back => leave = true,
                             Action::ReplayPause => self.clock.paused = !self.clock.paused,
                             Action::ReplayBack => {
-                                seek_to = Some(self.engine.position().saturating_sub(SEEK_STEP));
+                                seek_to = Some(self.seek_base(seek_to).saturating_sub(SEEK_STEP));
                             }
                             Action::ReplayForward => {
-                                seek_to = Some(self.engine.position() + SEEK_STEP);
+                                seek_to = Some(self.seek_base(seek_to) + SEEK_STEP);
                             }
                             Action::ReplayStart => seek_to = Some(self.engine.start()),
                             Action::ReplayEnd => seek_to = Some(self.engine.total()),
@@ -641,10 +723,10 @@ impl PlaybackSession {
                 RawEvent::PadDown { button, .. } => match pad_press(*button) {
                     Some(PadPress::Transport(button)) => leave |= self.press(button),
                     Some(PadPress::SeekBack) => {
-                        seek_to = Some(self.engine.position().saturating_sub(SEEK_STEP));
+                        seek_to = Some(self.seek_base(seek_to).saturating_sub(SEEK_STEP));
                     }
                     Some(PadPress::SeekForward) => {
-                        seek_to = Some(self.engine.position() + SEEK_STEP);
+                        seek_to = Some(self.seek_base(seek_to) + SEEK_STEP);
                     }
                     None => {}
                 },
@@ -683,6 +765,15 @@ impl PlaybackSession {
             self.seek_to(target);
         }
         false
+    }
+
+    /// Where a seek press measures from: where this frame's last press or the
+    /// seek in flight lands. A seek's progress can be far from that, since a
+    /// seek back first restores a world from well before its target.
+    fn seek_base(&self, pressed: Option<u64>) -> u64 {
+        pressed
+            .or(self.seeking)
+            .unwrap_or_else(|| self.engine.position())
     }
 
     /// Presses a transport button, by pointer or controller. Returns

@@ -270,7 +270,7 @@ fn the_camera_line_names_only_what_the_hands_in_use_have() {
     let bindings = BindingMap::classic();
     let back = bindings.label(Action::Back);
     for hands in crate::platform::ALL_HANDS {
-        let line = FinalMapScreen::coaching(&bindings, hands).copy();
+        let line = FinalMapScreen::open().coaching(&bindings, hands).copy();
         crate::platform::assert_copy_fits(hands, &line.replace(&back, ""));
         assert_eq!(
             line.ends_with(&format!("{back} back")),
@@ -305,7 +305,61 @@ fn the_controller_back_button_returns_to_the_report_and_others_do_nothing() {
 fn the_camera_line_names_a_controllers_back_button_while_one_is_in_use() {
     let bindings = BindingMap::classic();
     for hands in crate::platform::pad_hands() {
-        let line = FinalMapScreen::coaching(&bindings, hands).copy();
+        let line = FinalMapScreen::open().coaching(&bindings, hands).copy();
         crate::platform::assert_pad_copy(hands, &line);
     }
+}
+
+#[test]
+fn the_camera_line_names_a_remotes_mode_and_the_click_that_changes_it() {
+    let bindings = BindingMap::classic();
+    let hands = crate::platform::Hands {
+        pad: Some(aftermine_protocol::PadFamily::Remote),
+        ..crate::platform::ALL_HANDS[3]
+    };
+    let viewport = vec2(1280.0, 800.0);
+    let mut game = Game::with_viewport(Scenario::skirmish(), viewport).expect("game");
+    let mut screen = FinalMapScreen::open();
+    assert_eq!(
+        screen.coaching(&bindings, hands).copy(),
+        "Swipe or hold a direction to pan | Click to change mode | Back to the report"
+    );
+    let pads = crate::camera::controls::ViewerPads {
+        remotes: vec![0],
+        ..Default::default()
+    };
+    let click = [RawEvent::PadDown {
+        pad: 0,
+        button: crate::pad::CONFIRM,
+    }];
+    assert!(screen.route_pads(&click, &pads, 0.0, &mut game).is_empty());
+    assert_eq!(
+        screen.coaching(&bindings, hands).copy(),
+        "Swipe up or down, or hold, to zoom | Click to change mode | Back to the report"
+    );
+}
+
+#[test]
+fn a_remotes_back_passes_through_to_return_to_the_report() {
+    let viewport = vec2(1280.0, 800.0);
+    let mut game = Game::with_viewport(Scenario::skirmish(), viewport).expect("game");
+    let mut screen = FinalMapScreen::open();
+    let pads = crate::camera::controls::ViewerPads {
+        remotes: vec![0],
+        ..Default::default()
+    };
+    let back = [RawEvent::PadDown {
+        pad: 0,
+        button: crate::pad::BACK,
+    }];
+    let rest = screen.route_pads(&back, &pads, 0.0, &mut game);
+    let mut mouse = Vec2::ZERO;
+    assert!(screen.update(
+        &BindingMap::classic(),
+        &rest,
+        0.0,
+        crate::config::CameraPrefs::default(),
+        &mut mouse,
+        &mut game,
+    ));
 }

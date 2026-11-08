@@ -415,3 +415,86 @@ fn a_screen_without_deletes_drops_only_the_delete_button() {
         [RawEvent::KeyDown { key: Key::Enter }]
     );
 }
+
+#[test]
+fn the_system_hears_presses_only_on_the_top_screen_once_back_is_up() {
+    assert!(!system_receives_presses(false, false));
+    assert!(system_receives_presses(true, false));
+    assert!(
+        !system_receives_presses(true, true),
+        "the Back that reached the top screen never leaves it on release"
+    );
+}
+
+#[test]
+fn the_adapter_knows_which_buttons_are_held_by_any_pad() {
+    let mut adapter = connected(1);
+    assert!(!adapter.holds(BACK));
+    feed(&mut adapter, &[button(1, BACK, true)]);
+    assert!(adapter.holds(BACK));
+    assert!(!adapter.holds(CONFIRM));
+    feed(&mut adapter, &[button(1, BACK, false)]);
+    assert!(!adapter.holds(BACK));
+}
+
+#[test]
+fn the_remote_goes_by_words_and_other_families_by_icons() {
+    let remote = PadFamily::Remote;
+    assert_eq!(button_name(remote, CONFIRM), "Click");
+    assert_eq!(button_name(remote, BACK), "Back");
+    assert_eq!(button_name(remote, PadButton::DpadLeft), "Swipe");
+    assert_eq!(dpad_name(remote), "Swipe");
+    assert_eq!(remote_name(remote, DELETE), None, "it has no such button");
+    for family in [
+        PadFamily::Xbox,
+        PadFamily::PlayStation,
+        PadFamily::Switch,
+        PadFamily::SteamDeck,
+        PadFamily::Other,
+    ] {
+        assert_eq!(remote_name(family, CONFIRM), None);
+        assert_eq!(dpad_name(family), "D-pad");
+    }
+}
+
+#[test]
+fn a_remotes_presses_reach_menus_as_their_arrows_and_confirm_and_back() {
+    let press = |button| RawEvent::PadDown { pad: 7, button };
+    assert_eq!(
+        menu_keys(
+            &[
+                press(PadButton::DpadUp),
+                press(PadButton::DpadRight),
+                press(CONFIRM),
+                press(PadButton::PlayPause),
+                press(BACK),
+            ],
+            true,
+        ),
+        [
+            RawEvent::KeyDown { key: Key::Up },
+            RawEvent::KeyDown { key: Key::Right },
+            RawEvent::KeyDown { key: Key::Enter },
+            RawEvent::KeyDown { key: Key::Enter },
+            RawEvent::KeyDown { key: Key::Escape },
+        ]
+    );
+}
+
+#[test]
+fn a_swipe_passes_through_only_from_an_announced_pad() {
+    let mut adapter = connected(1);
+    let swipe = |pad| Reading::Swipe {
+        pad,
+        x: 0.5,
+        y: -0.5,
+    };
+    assert_eq!(
+        feed(&mut adapter, &[swipe(1), swipe(2)]),
+        [RawEvent::PadSwipe {
+            pad: 1,
+            x: 0.5,
+            y: -0.5,
+        }]
+    );
+}

@@ -467,8 +467,11 @@ impl Row {
 /// tabs each way; a tab action left unbound has none once another menu
 /// action takes its classic key.
 fn settings_hint(hands: crate::platform::Hands, tab_keys: bool) -> &'static str {
+    if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
+        return "{dpad} or {confirm} to change a value | Swipe up for tabs";
+    }
     if hands.pad.is_some() {
-        return "D-pad or {confirm} change a value | {prev_tab}/{next_tab} switch tabs";
+        return "{dpad} or {confirm} change a value | {prev_tab}/{next_tab} switch tabs";
     }
     match (hands.touch(), hands.keys, tab_keys) {
         (false, true, true) => {
@@ -706,6 +709,11 @@ impl SettingsScreen {
     }
 
     /// Consumes the name form's request to raise the on-screen keyboard.
+    pub fn keyboard_text(&self) -> Option<&str> {
+        self.naming.as_ref().map(Form::keyboard_text)
+    }
+
+    /// Consumes a request to raise the on-screen keyboard again.
     pub fn take_keyboard_request(&mut self) -> bool {
         self.naming
             .as_mut()
@@ -800,8 +808,17 @@ impl SettingsScreen {
 
     /// The tab's coaching line, in the footer.
     fn coaching(&self) -> Option<&'static str> {
+        if self.tabs.focused() {
+            return Some(crate::tabs::ON_STRIP_HINT);
+        }
+        let hands = crate::platform::hands();
         match self.face {
-            Face::Tab(Tab::Controls) if crate::platform::hands().pad.is_some() => {
+            Face::Tab(Tab::Controls)
+                if hands.pad == Some(aftermine_protocol::PadFamily::Remote) =>
+            {
+                Some("Remapping takes a keyboard | Swipe up for tabs")
+            }
+            Face::Tab(Tab::Controls) if hands.pad.is_some() => {
                 Some("Remapping takes a keyboard | {prev_tab}/{next_tab} switch tabs")
             }
             Face::Tab(Tab::Controls) => crate::platform::hands()
@@ -821,6 +838,7 @@ impl SettingsScreen {
     fn show(&mut self, tab: Tab, config: &Config) {
         self.face = Face::Tab(tab);
         self.menu = tab_menu(tab, config, self.binding_slot);
+        self.menu.cursor_hidden = self.tabs.focused();
         self.notice = None;
     }
 
@@ -868,7 +886,11 @@ impl SettingsScreen {
         if let Some(form) = &self.naming {
             form.draw(
                 sprites,
-                &crate::hint_line::HintLine::default(),
+                &form
+                    .tv_pad_hint()
+                    .map_or_else(crate::hint_line::HintLine::default, |template| {
+                        crate::menu::hint_line(&template)
+                    }),
                 (crate::theme::TEXT_SECONDARY, macroquad::prelude::WHITE),
                 mouse,
             );
@@ -886,7 +908,14 @@ impl SettingsScreen {
             .iter()
             .position(|tab| *tab == self.face.tab())
             .unwrap_or_default();
-        crate::tabs::draw(sprites, &labels, active, mouse, keys.as_ref());
+        crate::tabs::draw(
+            sprites,
+            &labels,
+            active,
+            mouse,
+            keys.as_ref(),
+            self.tabs.focused(),
+        );
         if let Some((text, danger)) = self.status() {
             let s = render::ui_scale();
             let size = crate::theme::Type::Body.at(s);
@@ -961,9 +990,11 @@ impl SettingsScreen {
         }
         let tab = self.face.tab();
         let (picked, routed) = self.tabs.route(events, Tab::ALL.len());
+        let (stepped, routed) = self.tabs.route_remote_above(&routed, &mut self.menu);
         let events = routed.as_slice();
         let next = picked.map(|index| Tab::ALL[index]).or_else(|| {
-            self.tab_key(events, &config.bindings, ctrl0, shift0)
+            stepped
+                .or_else(|| self.tab_key(events, &config.bindings, ctrl0, shift0))
                 .map(|delta| tab.stepped(delta))
         });
         if let Some(next) = next {

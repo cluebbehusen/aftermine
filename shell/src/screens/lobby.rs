@@ -100,7 +100,8 @@ impl LobbyScreen {
             .weight(2.0);
         let focus = usize::from(PlayerName::new(name).is_ok());
         let form = Form::new("JOIN MATCH", "Join", vec![name_field, address_field], focus)
-            .without_cancel();
+            .without_cancel()
+            .starting_on_confirm();
         Self::face(Face::Join {
             form,
             failure: None,
@@ -211,6 +212,14 @@ impl LobbyScreen {
         }
     }
 
+    /// The text the on-screen keyboard should show, while the form is up.
+    pub fn keyboard_text(&self) -> Option<&str> {
+        match &self.face {
+            Face::Join { form, .. } => Some(form.keyboard_text()),
+            Face::Waiting(_) => None,
+        }
+    }
+
     /// Consumes a request to raise the on-screen keyboard again.
     pub fn take_keyboard_request(&mut self) -> bool {
         match &mut self.face {
@@ -311,7 +320,7 @@ impl LobbyScreen {
             }
             match (*cursor, event) {
                 (None, RawEvent::KeyDown { key: Key::Down })
-                    if form.on_last_field() && !joinable.is_empty() =>
+                    if form.at_bottom() && !joinable.is_empty() =>
                 {
                     *cursor = joinable.first().copied();
                 }
@@ -353,6 +362,7 @@ impl LobbyScreen {
                 }
             }
         }
+        form.set_cursor_away(cursor.is_some());
         let edit = form.update(&form_events, sounds);
         self.menu = join_menu(form, sightings, *cursor);
         match edit {
@@ -388,12 +398,15 @@ impl LobbyScreen {
                 } else {
                     crate::theme::TEXT_SECONDARY
                 };
-                form.draw(
-                    sprites,
-                    &HintLine::from(self.subtitle()),
-                    (color, WHITE),
-                    mouse,
-                );
+                let hint = failure
+                    .is_none()
+                    .then(|| form.tv_pad_hint())
+                    .flatten()
+                    .map_or_else(
+                        || HintLine::from(self.subtitle()),
+                        |template| crate::menu::hint_line(&template),
+                    );
+                form.draw(sprites, &hint, (color, WHITE), mouse);
                 if !matches!(scan, Scan::Off) {
                     draw_matches(form, scan, sightings, *cursor, mouse);
                 }

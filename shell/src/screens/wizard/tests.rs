@@ -7,24 +7,132 @@ fn card(layout: &SetupLayout, row: usize) -> CardRects {
     layout.cards[row].expect("the card is on this page")
 }
 
+const EVERY_PRESS: [CursorPress; 12] = [
+    CursorPress::Switch,
+    CursorPress::Start,
+    CursorPress::Nothing,
+    CursorPress::MoveSelf,
+    CursorPress::MovePlayer,
+    CursorPress::RemovePlayer,
+    CursorPress::TakeOpenSeat,
+    CursorPress::BotForChair,
+    CursorPress::Card(Cell::Seat),
+    CursorPress::Card(Cell::Difficulty),
+    CursorPress::Card(Cell::Stance),
+    CursorPress::Card(Cell::Team),
+];
+
 #[test]
 fn the_setup_hint_names_only_what_the_hands_in_use_have() {
     use crate::platform::ALL_HANDS;
     assert_eq!(
-        setup_hint(false, true, Cell::Seat, ALL_HANDS[0]),
+        setup_hint(false, CursorPress::Start, ALL_HANDS[0]),
         "{confirm} starts the match - {back} back"
     );
     for hands in ALL_HANDS {
         for one_team in [false, true] {
-            for on_start in [false, true] {
-                for cell in Cell::ALL {
-                    let hint = setup_hint(one_team, on_start, cell, hands);
-                    crate::platform::assert_copy_fits(hands, hint);
-                    assert_eq!(hint.contains("{back}"), hands.keys, "{hint}");
-                }
+            for press in EVERY_PRESS {
+                let hint = setup_hint(one_team, press, hands);
+                crate::platform::assert_copy_fits(hands, hint);
+                assert_eq!(hint.contains("{back}"), hands.keys, "{hint}");
             }
         }
     }
+}
+
+#[test]
+fn the_setup_hints_spell_out_what_the_remotes_buttons_do() {
+    let hands = crate::platform::Hands {
+        pad: Some(aftermine_protocol::PadFamily::Remote),
+        ..crate::platform::ALL_HANDS[3]
+    };
+    let filled = |template| crate::platform::assert_pad_copy(hands, template);
+    assert_eq!(
+        filled(setup_hint(true, CursorPress::Start, hands)),
+        "Every seat is on one team - Click a TEAM chip to change it - Back to leave"
+    );
+    for (press, expected) in [
+        (
+            CursorPress::Switch,
+            "Click to switch between Local and LAN - Back to leave",
+        ),
+        (
+            CursorPress::Start,
+            "Click to start the match - Back to leave",
+        ),
+        (CursorPress::Nothing, "Swipe to move - Back to leave"),
+        (
+            CursorPress::MoveSelf,
+            "Click to move to another seat - Swipe to reach team - Back to leave",
+        ),
+        (
+            CursorPress::MovePlayer,
+            "Click to pick up this player - Swipe to move - Back to leave",
+        ),
+        (
+            CursorPress::RemovePlayer,
+            "Click to remove this player - Swipe to move - Back to leave",
+        ),
+        (
+            CursorPress::TakeOpenSeat,
+            "Click to take this seat - Swipe to move - Back to leave",
+        ),
+        (
+            CursorPress::BotForChair,
+            "Click to give this seat to a bot - Swipe to move - Back to leave",
+        ),
+        (
+            CursorPress::Card(Cell::Difficulty),
+            "Click to change difficulty - Swipe to move - Back to leave",
+        ),
+        (
+            CursorPress::Card(Cell::Stance),
+            "Click to change stance - Swipe to move - Back to leave",
+        ),
+        (
+            CursorPress::Card(Cell::Team),
+            "Click to change team - Swipe to move - Back to leave",
+        ),
+        (
+            CursorPress::Card(Cell::Seat),
+            "Click to take this seat - Swipe to reach difficulty, stance, and team - Back to leave",
+        ),
+    ] {
+        assert_eq!(filled(setup_hint(false, press, hands)), expected);
+    }
+    assert_eq!(
+        filled(moving_hint(hands)),
+        "Click a seat to swap them there - Back to cancel"
+    );
+}
+
+#[test]
+fn the_setup_hint_follows_what_a_press_on_the_cursors_row_does() {
+    let mut draft = NewMatchDraft::default();
+    let mut w = Wizard::open(&draft);
+    pick_first_map(&mut w, &mut draft);
+    let scenario = draft.scenario.clone().expect("a map was picked");
+    let order = seat_display_order(&scenario);
+    let at_cursor =
+        |w: &Wizard, draft: &NewMatchDraft| w.cursor_press(draft, &w.open_flags(draft), &order);
+    assert_eq!(at_cursor(&w, &draft), CursorPress::Start);
+
+    drive(&mut w, &mut draft, Key::Up);
+    assert_eq!(at_cursor(&w, &draft), CursorPress::Card(Cell::Seat));
+    drive(&mut w, &mut draft, Key::Right);
+    drive(&mut w, &mut draft, Key::Right);
+    assert_eq!(at_cursor(&w, &draft), CursorPress::Card(Cell::Stance));
+
+    drive(&mut w, &mut draft, Key::Up);
+    assert_eq!(
+        at_cursor(&w, &draft),
+        CursorPress::MoveSelf,
+        "the player's own row has no stance chip, so a press lands on the seat"
+    );
+    assert_eq!(w.setup_cell, Cell::Stance, "the column stays sticky");
+
+    drive(&mut w, &mut draft, Key::Up);
+    assert_eq!(at_cursor(&w, &draft), CursorPress::Switch);
 }
 
 fn press(key: Key) -> Vec<RawEvent> {
@@ -1451,11 +1559,8 @@ fn the_setup_hints_name_a_controllers_buttons_while_one_is_in_use() {
     for hands in crate::platform::pad_hands() {
         crate::platform::assert_pad_copy(hands, moving_hint(hands));
         for one_team in [false, true] {
-            for on_start in [false, true] {
-                for cell in Cell::ALL {
-                    let template = setup_hint(one_team, on_start, cell, hands);
-                    crate::platform::assert_pad_copy(hands, template);
-                }
+            for press in EVERY_PRESS {
+                crate::platform::assert_pad_copy(hands, setup_hint(one_team, press, hands));
             }
         }
     }

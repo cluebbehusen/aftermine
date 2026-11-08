@@ -983,3 +983,80 @@ fn menu_and_view_reach_past_an_open_ring_and_a_held_a() {
     assert!(!game.clock.paused, "View resumes");
     assert!(input.pad_press.is_some(), "and the held A carries on");
 }
+
+/// A controller connected, and a remote beside it.
+fn with_remote(game: &mut Game) -> InputState {
+    let mut input = pad_input(game);
+    feed(
+        game,
+        &mut input,
+        &[RawEvent::PadConnected {
+            pad: REMOTE,
+            family: aftermine_protocol::PadFamily::Remote,
+        }],
+    );
+    input
+}
+
+const REMOTE: u64 = 9;
+
+fn remote_press(game: &mut Game, input: &mut InputState, button: PadButton) {
+    feed(
+        game,
+        input,
+        &[
+            RawEvent::PadDown {
+                pad: REMOTE,
+                button,
+            },
+            RawEvent::PadUp {
+                pad: REMOTE,
+                button,
+            },
+        ],
+    );
+}
+
+#[test]
+fn a_remote_plays_no_part_in_a_match_but_back() {
+    use super::super::Pointer;
+    let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
+    let mut input = with_remote(&mut game);
+    rest_on(&mut game, &mut input, vec2(30.5, 20.5));
+    input.last_pointer = Pointer::Touch;
+    let camera = game.presentation.camera.center;
+    for button in [
+        PadButton::South,
+        PadButton::West,
+        PadButton::North,
+        PadButton::DpadUp,
+        PadButton::DpadDown,
+        PadButton::DpadLeft,
+        PadButton::DpadRight,
+    ] {
+        remote_press(&mut game, &mut input, button);
+    }
+    assert!(
+        game.presentation.selection.units.is_empty(),
+        "a click selects nothing"
+    );
+    assert_eq!(
+        game.presentation.camera.center, camera,
+        "a swipe moves nothing"
+    );
+    assert!(input.ring.is_none(), "a swipe right opens no ring");
+    assert_eq!(input.last_pointer, Pointer::Touch, "no reticle comes up");
+    assert!(staged(&game).is_empty());
+}
+
+#[test]
+fn a_remotes_back_clears_a_selection_as_a_controllers_does() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
+    let id = unit_at(&game, 30, 20);
+    let mut input = with_remote(&mut game);
+    rest_on(&mut game, &mut input, vec2(30.5, 20.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(game.presentation.selection.units, vec![id]);
+    remote_press(&mut game, &mut input, crate::pad::BACK);
+    assert!(game.presentation.selection.units.is_empty());
+}

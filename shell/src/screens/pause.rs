@@ -306,6 +306,14 @@ impl PauseScreen {
     }
 
     /// Consumes a request to raise the on-screen keyboard again.
+    pub fn keyboard_text(&self) -> Option<&str> {
+        match &self.face {
+            Face::Naming(form) => Some(form.keyboard_text()),
+            _ => None,
+        }
+    }
+
+    /// Consumes a request to raise the on-screen keyboard again.
     pub fn take_keyboard_request(&mut self) -> bool {
         match &mut self.face {
             Face::Naming(field) => field.take_keyboard_request(),
@@ -325,7 +333,12 @@ impl PauseScreen {
         match &self.face {
             Face::Naming(field) => field.draw(
                 sprites,
-                &crate::menu::hint_line(naming_hint(crate::platform::hands())),
+                &crate::menu::hint_line(
+                    field
+                        .tv_pad_hint()
+                        .as_deref()
+                        .unwrap_or_else(|| naming_hint(crate::platform::hands())),
+                ),
                 (
                     crate::hints::fade(crate::theme::TEXT_SECONDARY),
                     crate::hints::fade(macroquad::prelude::WHITE),
@@ -386,7 +399,7 @@ impl PauseScreen {
         let name = Field::new(suggested, Self::NAME_MAX, |ch| {
             ch.is_ascii() || ch == '\u{b7}'
         });
-        let form = Form::new("SAVE MATCH", "Save", vec![name], 0);
+        let form = Form::new("SAVE MATCH", "Save", vec![name], 0).starting_on_confirm();
         self.menu = form.menu(|_| Choice::Field);
         self.face = Face::Naming(form);
     }

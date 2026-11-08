@@ -1141,3 +1141,63 @@ fn the_drills_build() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_remote_in_a_match_reaches_only_pause() -> Result<()> {
+    const REMOTE: u64 = 9;
+    let mut drill = PadMatch::spawn(44_330)?;
+    drill.load(&field())?;
+    drill.inject(RawEvent::PadConnected {
+        pad: REMOTE,
+        family: PadFamily::Remote,
+    })?;
+    let before = drill.recorded()?;
+    for button in [
+        PadButton::South,
+        PadButton::West,
+        PadButton::North,
+        PadButton::DpadUp,
+        PadButton::DpadDown,
+        PadButton::DpadLeft,
+        PadButton::DpadRight,
+    ] {
+        drill.inject(RawEvent::PadDown {
+            pad: REMOTE,
+            button,
+        })?;
+        drill.inject(RawEvent::PadUp {
+            pad: REMOTE,
+            button,
+        })?;
+        assert_eq!(ui(&mut drill.client)?.mode, "playing", "{button:?}");
+    }
+    assert_eq!(drill.recorded()?, before, "the remote gave no order");
+
+    drill.inject(RawEvent::PadDown {
+        pad: REMOTE,
+        button: PadButton::East,
+    })?;
+    drill.inject(RawEvent::PadUp {
+        pad: REMOTE,
+        button: PadButton::East,
+    })?;
+    assert_eq!(
+        ui(&mut drill.client)?.mode,
+        "pause_menu",
+        "Back opens Pause"
+    );
+
+    // Pause is a menu, so the remote drives it like any other: a click on
+    // its first row resumes.
+    drill.inject(RawEvent::PadDown {
+        pad: REMOTE,
+        button: PadButton::South,
+    })?;
+    drill.inject(RawEvent::PadUp {
+        pad: REMOTE,
+        button: PadButton::South,
+    })?;
+    assert_eq!(ui(&mut drill.client)?.mode, "playing", "Resume by click");
+    Ok(())
+}
