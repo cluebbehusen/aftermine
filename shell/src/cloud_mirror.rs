@@ -1031,9 +1031,10 @@ fn apply(
     if (step.out_of_time && !moves_nothing) || (arriving && !step.arrivals) {
         return Applied::Skipped { arriving };
     }
+    let scanned = |name: &str| step.listing.found.get(name).copied();
     let result = match action {
         Action::Upload(name) => upload(remote, places, manifest, &name),
-        Action::Download(change) => download(places, manifest, &change),
+        Action::Download(change) => download(places, manifest, &change, scanned(&change.name)),
         // The stamp the scan saw: a save landing since then differs from it,
         // so the next pass still notices.
         Action::Adopt(name, version) if version.live => {
@@ -1047,10 +1048,9 @@ fn apply(
             manifest.agree_deleted(&name, version.ticks);
             Ok(())
         }
-        Action::DeleteLocal(name, ticks) => {
-            remove_local(places, &name).map(|()| manifest.agree_deleted(&name, ticks))
-        }
-        Action::RemoveCopy(name) => remove_local(places, &name),
+        Action::DeleteLocal(name, ticks) => remove_local(places, &name, scanned(&name))
+            .map(|()| manifest.agree_deleted(&name, ticks)),
+        Action::RemoveCopy(name) => remove_local(places, &name, scanned(&name)),
         Action::DeleteRemote(name, ticks) => remote
             .delete(&name, ticks)
             .map(|()| manifest.agree_deleted(&name, ticks)),
@@ -1119,7 +1119,23 @@ fn upload(
     Ok(())
 }
 
-fn download(places: &Places, manifest: &mut Manifest, change: &Changed) -> io::Result<()> {
+/// Fails unless the file at `path` is as the pass's scan found it. iCloud
+/// Drive can deliver a newer copy after the scan, which the plan never weighed,
+/// so the pass leaves the file for the next one to weigh.
+fn unchanged_since_scan(name: &str, path: &Path, scanned: Option<Stamp>) -> io::Result<()> {
+    if Stamp::of(path) == scanned {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!("{name} changed since the scan")))
+    }
+}
+
+fn download(
+    places: &Places,
+    manifest: &mut Manifest,
+    change: &Changed,
+    scanned: Option<Stamp>,
+) -> io::Result<()> {
     let staged = change
         .staged
         .as_ref()
@@ -1133,21 +1149,23 @@ fn download(places: &Places, manifest: &mut Manifest, change: &Changed) -> io::R
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Replace, |granted| {
-        chassis::fsx::write_atomic(granted, |writer| {
-            io::copy(&mut std::fs::File::open(staged)?, writer).map(|_| ())
-        })?;
-        // The save time stands in for when the file changed, so autosave
-        // rotation, which goes by modification time, orders downloaded
-        // records as it orders this device's own.
-        let when = UNIX_EPOCH + Duration::from_secs(change.saved_at);
-        std::fs::File::options()
-            .write(true)
-            .open(granted)?
-            .set_modified(when.min(SystemTime::now()))
-    })??;
+    let stamp =
+        aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Replace, |granted| {
+            unchanged_since_scan(&change.name, granted, scanned)?;
+            chassis::fsx::write_atomic(granted, |writer| {
+                io::copy(&mut std::fs::File::open(staged)?, writer).map(|_| ())
+            })?;
+            // The save time stands in for when the file changed, so autosave
+            // rotation, which goes by modification time, orders downloaded
+            // records as it orders this device's own.
+            let when = UNIX_EPOCH + Duration::from_secs(change.saved_at);
+            std::fs::File::options()
+                .write(true)
+                .open(granted)?
+                .set_modified(when.min(SystemTime::now()))?;
+            Stamp::of(granted).ok_or_else(|| io::Error::other("downloaded file vanished"))
+        })??;
     std::fs::remove_file(staged).ok();
-    let stamp = Stamp::of(&path).ok_or_else(|| io::Error::other("downloaded file vanished"))?;
     manifest.deleted.remove(&change.name);
     manifest
         .synced
@@ -1155,9 +1173,10 @@ fn download(places: &Places, manifest: &mut Manifest, change: &Changed) -> io::R
     Ok(())
 }
 
-fn remove_local(places: &Places, name: &str) -> io::Result<()> {
+fn remove_local(places: &Places, name: &str, scanned: Option<Stamp>) -> io::Result<()> {
     if let Some(path) = places.path(name) {
         aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Delete, |granted| {
+            unchanged_since_scan(name, granted, scanned)?;
             match std::fs::remove_file(granted) {
                 Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
                 _ => Ok(()),

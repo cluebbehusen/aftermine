@@ -1240,6 +1240,85 @@ fn a_late_older_save_never_replaces_a_newer_one() {
     );
 }
 
+/// Runs `arrive` once the pass has scanned the folders, as iCloud Drive might
+/// deliver a file while a pass is under way.
+struct ArrivesMidPass<F>(Cell<Option<F>>);
+
+impl<F: FnOnce()> Host for ArrivesMidPass<F> {
+    fn take_deleted(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+    fn take_answers(&self) -> Vec<Answer> {
+        Vec::new()
+    }
+    fn allows_arrivals(&self) -> bool {
+        if let Some(arrive) = self.0.take() {
+            arrive();
+        }
+        true
+    }
+}
+
+#[test]
+fn a_file_arriving_mid_pass_is_not_replaced_by_an_older_download() {
+    let cloud = FakeCloud::signed_in();
+    let tv = tv();
+    let ipad = device("ipad");
+    let agreed = "saves/save-agreed.amsave";
+    let unseen = "saves/save-unseen.amsave";
+    write_save(&tv.path(agreed).unwrap(), 50, 1_000);
+    sync(&cloud, &tv);
+    sync(&cloud, &ipad);
+    write_save(&tv.path(agreed).unwrap(), 90, 2_000);
+    write_save(&tv.path(unseen).unwrap(), 90, 2_000);
+    sync(&cloud, &tv);
+
+    let arrive = || {
+        write_save(&ipad.path(agreed).unwrap(), 100, 3_000);
+        write_save(&ipad.path(unseen).unwrap(), 100, 3_000);
+    };
+    pass(
+        &cloud,
+        &ipad,
+        Mode::Full,
+        &ArrivesMidPass(Cell::new(Some(arrive))),
+    )
+    .unwrap();
+    assert_eq!(read_ticks(&ipad.path(agreed).unwrap()), 100);
+    assert_eq!(read_ticks(&ipad.path(unseen).unwrap()), 100);
+
+    sync(&cloud, &ipad);
+    sync(&cloud, &tv);
+    assert_eq!(read_ticks(&tv.path(agreed).unwrap()), 100);
+    assert_eq!(read_ticks(&tv.path(unseen).unwrap()), 100);
+}
+
+#[test]
+fn a_file_arriving_mid_pass_outlasts_an_older_delete_record() {
+    let cloud = FakeCloud::signed_in();
+    let tv = tv();
+    let ipad = device("ipad");
+    let name = "saves/save-1.amsave";
+    write_save(&tv.path(name).unwrap(), 50, 1_000);
+    sync(&cloud, &tv);
+    sync(&cloud, &ipad);
+    game_delete(&cloud, &tv, &tv.path(name).unwrap());
+
+    let arrive = || write_save(&ipad.path(name).unwrap(), 100, 3_000);
+    pass(
+        &cloud,
+        &ipad,
+        Mode::Full,
+        &ArrivesMidPass(Cell::new(Some(arrive))),
+    )
+    .unwrap();
+    assert_eq!(read_ticks(&ipad.path(name).unwrap()), 100);
+
+    sync(&cloud, &ipad);
+    sync(&cloud, &tv);
+    assert_eq!(read_ticks(&tv.path(name).unwrap()), 100);
+}
+
 #[test]
 fn a_push_sends_new_files_and_deletions_and_takes_nothing_in() {
     let cloud = FakeCloud::signed_in();
