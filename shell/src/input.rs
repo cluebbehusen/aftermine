@@ -475,9 +475,15 @@ pub struct InputState {
     /// Pad buttons whose press the ring took, so it takes their release
     /// too, even after it closes.
     ring_held: Vec<(u64, aftermine_protocol::PadButton)>,
-    /// Whether the left stick was still pushed when a ring closed: it
-    /// moves the camera again only once let go.
+    /// Whether the left stick was still pushed when a ring or the queue
+    /// strip closed: it moves the camera again only once let go.
     stick_latched: bool,
+    /// The queue strip a controller opened on the orders dock, while it
+    /// is open.
+    pub(crate) dock: Option<pad_dock::DockFocus>,
+    /// Pad buttons whose press the queue strip took, so it takes their
+    /// release too, even after it closes.
+    dock_held: Vec<(u64, aftermine_protocol::PadButton)>,
     /// The verb the next world click issues, if one is armed.
     pub(crate) click_verb: Option<ClickVerb>,
     /// Producers whose rally point the next world/minimap click sets.
@@ -1203,6 +1209,8 @@ impl InputState {
             ring: None,
             ring_held: Vec::new(),
             stick_latched: false,
+            dock: None,
+            dock_held: Vec::new(),
             click_verb: None,
             rallying: Vec::new(),
             striking: None,
@@ -1222,6 +1230,15 @@ impl InputState {
             menu_requested: false,
             bookmarks: [None; 4],
             resolver: ActionResolver::default(),
+        }
+    }
+
+    /// Where the HUD reads its hover: the queue strip's lit entry while
+    /// the strip is open, else wherever the pointer in use hovers.
+    pub(crate) fn chrome_hover_point(&self) -> Option<Vec2> {
+        match &self.dock {
+            Some(focus) => Some(focus.lit().rect.center()),
+            None => self.hover_point(),
         }
     }
 
@@ -1247,10 +1264,11 @@ impl InputState {
         (left.clamp_length_max(1.0), right.clamp_length_max(1.0))
     }
 
-    /// The sticks as the camera reads them: still while a ring is open,
-    /// and the left one still while it is latched after a ring closed.
+    /// The sticks as the camera reads them: still while a ring or the
+    /// queue strip is open, and the left one still while it is latched
+    /// after one closed.
     pub(crate) fn camera_sticks(&self) -> (Vec2, Vec2) {
-        if self.ring.is_some() {
+        if self.ring.is_some() || self.dock.is_some() {
             return (Vec2::ZERO, Vec2::ZERO);
         }
         let (left, right) = self.sticks();
@@ -1492,6 +1510,8 @@ impl InputState {
         self.ring = None;
         self.ring_held.clear();
         self.stick_latched = false;
+        self.dock = None;
+        self.dock_held.clear();
     }
 
     /// Where a lone finger has rested on chrome long enough to preview
@@ -2011,6 +2031,7 @@ mod groups;
 pub(crate) use groups::Group;
 mod orders;
 mod pad_controls;
+pub(crate) mod pad_dock;
 pub(crate) mod pad_ring;
 mod paint;
 pub(crate) use paint::{painting, preview as paint_preview};
@@ -2123,6 +2144,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             input.drop_stroke();
         }
         pad_ring::other_hands(input);
+        pad_dock::other_hands(input);
     }
     match *event {
         RawEvent::MouseMove { x, y } => {
@@ -2340,6 +2362,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         }
         RawEvent::KeyDown { key } => {
             pad_ring::other_hands(input);
+            pad_dock::other_hands(input);
             if let Some(ActionEvent::Pressed(action)) =
                 input.key_edge(bindings, key, true, input.context(game))
             {
@@ -2358,18 +2381,8 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         }
         RawEvent::TouchUp { id, x, y } => touch::up(game, input, bindings, id, vec2(x, y)),
         RawEvent::TouchCancel { id } => touch::cancel(input, id),
-        RawEvent::PadDown { pad, button } => {
-            input.pad_points();
-            if !pad_ring::press(game, input, bindings, pad, button) {
-                pad_controls::press(game, input, bindings, pad, button);
-                reticle::press(game, input, bindings, button);
-            }
-        }
-        RawEvent::PadUp { pad, button } => {
-            if !pad_ring::release(input, pad, button) {
-                pad_controls::release(game, input, pad, button);
-            }
-        }
+        RawEvent::PadDown { pad, button } => pad_down(game, input, bindings, pad, button),
+        RawEvent::PadUp { pad, button } => pad_up(game, input, pad, button),
         RawEvent::PadStick { x, y, .. } if (x, y) != (0.0, 0.0) => {
             input.pad_points();
         }
@@ -2379,6 +2392,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // event order, so a press earlier in the batch is dropped too.
             input.queue_pads.remove(&pad);
             pad_ring::disconnected(input, pad);
+            pad_dock::disconnected(input, pad);
             if input
                 .pad_press
                 .as_ref()
@@ -2406,6 +2420,37 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         )
     {
         input.close_construction();
+    }
+}
+
+/// A controller button going down in a match: the queue strip takes it
+/// first, then a ring, and otherwise it acts at the reticle.
+fn pad_down(
+    game: &mut Game,
+    input: &mut InputState,
+    bindings: &BindingMap,
+    pad: u64,
+    button: aftermine_protocol::PadButton,
+) {
+    input.pad_points();
+    if !pad_dock::press(game, input, bindings, pad, button)
+        && !pad_ring::press(game, input, bindings, pad, button)
+    {
+        pad_controls::press(game, input, bindings, pad, button);
+        reticle::press(game, input, bindings, button);
+    }
+}
+
+/// A controller button coming up in a match: whatever took its press
+/// takes its release.
+fn pad_up(
+    game: &mut Game,
+    input: &mut InputState,
+    pad: u64,
+    button: aftermine_protocol::PadButton,
+) {
+    if !pad_dock::release(input, pad, button) && !pad_ring::release(input, pad, button) {
+        pad_controls::release(game, input, pad, button);
     }
 }
 
@@ -3786,6 +3831,7 @@ pub fn update_held(game: &mut Game, input: &mut InputState, dt: f32) {
     // A held A paints the ground the reticle crosses this frame, or lays a
     // placement row along it.
     let before = input.reticle.ground(&game.presentation.camera);
+    pad_dock::update(game, input);
     pad_ring::update(game, input);
     reticle::update(game, input, dt, keys);
     paint::sweep(game, input, before);

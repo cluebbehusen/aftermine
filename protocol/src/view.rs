@@ -463,9 +463,12 @@ pub struct CameraView {
 /// distinct from `None`, which means the mode has no menu at all.
 /// Gameplay has no active menu and reports `None` for the
 /// menu-specific fields, except while a controller's ring of commands or
-/// of control groups is open: then `title` is the ring's heading, `items` its slices in order
-/// clockwise from the top, and `selected` the slice the stick points at,
-/// absent until it points at one.
+/// of control groups is open: then `title` is the ring's heading, `items`
+/// its slices in order clockwise from the top, and `selected` the slice
+/// the stick points at, absent until it points at one. While a
+/// controller's queue strip is open, `title` is `Queue`, `items` the
+/// orders dock's pressable entries top to bottom and then the drone
+/// column's, and `selected` the lit one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UiView {
     /// Stable snake-case mode name, such as `main_menu` or `playing`.

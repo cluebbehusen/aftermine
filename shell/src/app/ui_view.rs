@@ -83,9 +83,10 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
         None => (None, None, Vec::new(), None, None),
     };
     // Over a match, the controller's open ring is the menu that owns the
-    // pad: its heading, its slices, and the one the stick points at.
+    // pad: its heading, its slices, and the one the stick points at. The
+    // queue strip reports the same way.
     let (title, selected, items, visible_range) = match (screen.kind() == ScreenKind::Playing)
-        .then(|| open_ring(app))
+        .then(|| open_ring(app).or_else(|| queue_strip(app)))
         .flatten()
     {
         Some((heading, pointed, slices)) => {
@@ -153,4 +154,24 @@ fn open_ring(app: &App) -> Option<(String, Option<usize>, Vec<String>)> {
         .map(|slice| slice.card.title.clone())
         .collect();
     Some((ring.heading, pointed, names))
+}
+
+/// The open queue strip as the automation surface reports it: Queue, the
+/// lit entry, and every entry it walks, the dock's top to bottom and then
+/// the drone column's.
+fn queue_strip(app: &App) -> Option<(String, Option<usize>, Vec<String>)> {
+    let focus = app.input.dock.as_ref()?;
+    let panel = app.game.presentation.panel_model.borrow();
+    let panel = panel.as_ref()?;
+    let entries = crate::input::pad_dock::entries(&app.game.presentation.layout.get());
+    let names = entries
+        .iter()
+        .map(|entry| {
+            panel
+                .card(entry.hit.row, entry.hit.index)
+                .map_or_else(String::new, |card| card.title.clone())
+        })
+        .collect();
+    let lit = entries.iter().position(|entry| entry.hit == focus.lit());
+    Some(("Queue".to_string(), lit, names))
 }
