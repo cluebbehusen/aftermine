@@ -245,6 +245,47 @@ fn the_placement_ribbon_says_what_a_click_would_do_and_holds_still() {
 }
 
 #[test]
+fn the_patrol_ribbon_holds_still_and_lights_start_once_it_has_a_point() {
+    let game = skirmish();
+    let mut input = InputState::new();
+    let ribbon = |input: &InputState| {
+        let hud = layout(
+            &game.view(),
+            input,
+            &BindingMap::classic(),
+            env(1133.0, 744.0),
+            None,
+            &fixed,
+        );
+        let ribbon = hud.geometry.ribbon.expect("patrol shows its ribbon");
+        assert_eq!(hud.layout.mode_ribbon, ribbon.rect);
+        let buttons = ribbon.patrol.expect("patrol buttons");
+        assert_eq!(hud.layout.patrol_start, buttons.start);
+        assert_eq!(hud.layout.patrol_cancel, buttons.cancel);
+        (ribbon.rect, buttons)
+    };
+    input.patrol_route = Some(Vec::new());
+    let (empty, waiting) = ribbon(&input);
+    assert!(!waiting.ready, "Start waits for a point");
+    for button in [waiting.start, waiting.cancel] {
+        assert!(empty.contains(button.center()), "{button:?} in {empty:?}");
+        assert!(button.h <= empty.h);
+    }
+    assert!(waiting.start.right() < waiting.cancel.x);
+
+    input.patrol_route = Some(vec![chassis::grid::TilePos::new(3, 3)]);
+    let (one, ready) = ribbon(&input);
+    assert!(ready.ready);
+    input.patrol_route = Some(vec![
+        chassis::grid::TilePos::new(3, 3);
+        aftermine_sim::stats::ORDER_QUEUE_CAP
+    ]);
+    let (full, _) = ribbon(&input);
+    assert_eq!(one, empty, "the ribbon holds still");
+    assert_eq!(full, empty);
+}
+
+#[test]
 fn a_finger_with_no_ghost_down_leaves_the_ribbon_one_row_tall() {
     let mut game = skirmish();
     let human = game.presentation.human;

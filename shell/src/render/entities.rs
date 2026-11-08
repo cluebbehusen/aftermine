@@ -274,21 +274,28 @@ pub(crate) fn decor_units(game: &crate::game::Scene<'_>) -> Vec<aftermine_sim::U
 
 /// Queued waypoints of the selection, drawn as a faint chain; a patrol
 /// closes the loop. While a patrol is being armed, the collected route
-/// draws in scrap-amber instead.
+/// draws in scrap-amber instead, its closing leg fainter, so it reads as
+/// the loop Start will send.
 pub(crate) fn draw_breadcrumbs(game: &crate::game::Scene<'_>, input: &InputState) {
     let dot = |p: Vec2, color: Color| fill_circle(p, 3.0, color);
     if let Some(route) = &input.patrol_route {
-        let mut prev: Option<Vec2> = None;
-        for tile in route {
-            let p = game
-                .presentation
-                .camera
-                .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5));
-            if let Some(a) = prev {
-                line_between(a, p, 1.5, SCRAP_COLOR);
-            }
+        let points: Vec<Vec2> = route
+            .iter()
+            .map(|tile| {
+                game.presentation
+                    .camera
+                    .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5))
+            })
+            .collect();
+        for leg in points.windows(2) {
+            line_between(leg[0], leg[1], 2.0, SCRAP_COLOR);
+        }
+        if let [first, .., last] = points[..] {
+            let closing = Color::new(SCRAP_COLOR.r, SCRAP_COLOR.g, SCRAP_COLOR.b, 0.5);
+            line_between(last, first, 2.0, closing);
+        }
+        for p in points {
             dot(p, SCRAP_COLOR);
-            prev = Some(p);
         }
         return;
     }

@@ -53,12 +53,17 @@ pub struct LayoutModel {
     /// the pause key. Zero-sized while spectating.
     pub pause_button: Rect,
     /// Persistent armed-command ribbon. It is chrome even away from
-    /// the command band, and a press anywhere on it cancels the mode.
+    /// the command band, and a press anywhere on it cancels the mode,
+    /// except on a patrol's, where only its Start and cross act.
     pub mode_ribbon: Rect,
     /// The strike ribbon's buttons that shrink and grow the salvo; they
     /// answer before the ribbon's cancel.
     pub salvo_less: Rect,
     pub salvo_more: Rect,
+    /// The patrol ribbon's Start, which sends the route once it has a
+    /// point, and its cross, which drops the route.
+    pub patrol_start: Rect,
+    pub patrol_cancel: Rect,
     /// The QUEUE toggle beside the ribbon, on touch-only builds.
     pub queue_toggle: Rect,
     /// The touch ghost's check mark, which builds it; zero-sized without
@@ -117,6 +122,8 @@ impl Default for LayoutModel {
             mode_ribbon: Rect::new(0.0, 0.0, 0.0, 0.0),
             salvo_less: Rect::new(0.0, 0.0, 0.0, 0.0),
             salvo_more: Rect::new(0.0, 0.0, 0.0, 0.0),
+            patrol_start: Rect::new(0.0, 0.0, 0.0, 0.0),
+            patrol_cancel: Rect::new(0.0, 0.0, 0.0, 0.0),
             queue_toggle: Rect::new(0.0, 0.0, 0.0, 0.0),
             ghost_confirm: Rect::new(0.0, 0.0, 0.0, 0.0),
             ghost_cancel: Rect::new(0.0, 0.0, 0.0, 0.0),
