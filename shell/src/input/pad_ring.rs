@@ -1,19 +1,25 @@
-//! The command ring on a controller.
+//! The controller's rings.
 //!
-//! Y opens a ring for the selection, and it stays open with nothing held:
-//! the left stick points at a slice, A picks it, X cancels one of what it
-//! queues, B goes back one ring and closes the first, and Y closes every
-//! ring, as does holding B. While a ring is open it owns the pad's buttons
-//! and left stick; the left trigger still queues. A ring is read off the
-//! panel the HUD last published, as every card press is, and a pick
-//! presses the card itself. The build rings step the same construction
-//! state the build keys do, so the panel shows the palette beneath them.
+//! Y opens a ring of the selection's commands and D-pad right a ring of
+//! the control groups. Either stays open with nothing held: the left stick
+//! points at a slice, A picks it, X acts on it a second way, B goes back
+//! one ring and closes the first, and the button that opened a ring closes
+//! every ring, as does holding B; the other ring's button opens that ring
+//! in its place. While a ring is open it owns the pad's buttons and left
+//! stick; the left trigger still queues.
+//!
+//! A command ring is read off the panel the HUD last published, as every
+//! card press is, a pick presses the card itself, and X cancels one of
+//! what a slice queues. The build rings step the same construction state
+//! the build keys do, so the panel shows the palette beneath them. The
+//! group ring recalls a group with A and saves the selection to it with
+//! X, through the actions the group keys dispatch.
 
 use super::{InputState, deny};
 use crate::action::{Action, BindingMap};
 use crate::game::{Game, Scene};
 use crate::panel::{CardAction, Panel};
-use crate::radial::{self, Branch, Pick, Ring};
+use crate::radial::{self, Branch, Pick, Ring, RingKind};
 use aftermine_protocol::PadButton;
 use macroquad::prelude::Vec2;
 
@@ -24,6 +30,8 @@ const HOLD_CLOSE_SECS: f64 = 0.5;
 /// close every ring.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PadRing {
+    /// Which first ring it stands in.
+    kind: RingKind,
     /// The branches from the first ring to the one showing.
     path: Vec<Branch>,
     /// The slice the stick last pointed at. Letting the stick go keeps
@@ -48,16 +56,30 @@ impl PadRing {
     }
 }
 
-/// The open ring as the selection offers it now, off the published panel.
+/// The open ring as it stands now: the selection's commands off the
+/// published panel, or the control groups.
 pub(crate) fn current(game: &Scene<'_>, input: &InputState) -> Option<Ring> {
-    let open = input.ring.as_ref()?;
     let panel = game.presentation.panel_model.borrow();
-    shown(game, panel.as_ref()?, open)
+    shown(game, panel.as_ref(), input)
 }
 
-/// The ring `open` shows from `panel`.
-pub(crate) fn shown(game: &Scene<'_>, panel: &Panel, open: &PadRing) -> Option<Ring> {
-    radial::ring(game, panel, &open.path)
+/// The ring open in `input`, a command ring reading its cards from
+/// `panel`.
+pub(crate) fn shown(game: &Scene<'_>, panel: Option<&Panel>, input: &InputState) -> Option<Ring> {
+    let open = input.ring.as_ref()?;
+    match open.kind {
+        RingKind::Commands => radial::ring(game, panel?, &open.path),
+        RingKind::Groups => radial::groups(game, &input.groups),
+    }
+}
+
+/// The first ring a button opens: Y the commands, D-pad right the groups.
+fn opened_by(button: PadButton) -> Option<RingKind> {
+    match button {
+        PadButton::North => Some(RingKind::Commands),
+        PadButton::DpadRight => Some(RingKind::Groups),
+        _ => None,
+    }
 }
 
 /// A controller button pressed during a match. Returns whether the ring
@@ -69,7 +91,8 @@ pub(super) fn press(
     pad: u64,
     button: PadButton,
 ) -> bool {
-    let taken = if input.ring.is_some() {
+    let taken = if let Some(open) = input.ring.as_ref() {
+        let kind = open.kind;
         match button {
             // Queueing and the pause menu reach past the ring.
             PadButton::LeftTrigger | PadButton::Start => false,
@@ -78,21 +101,24 @@ pub(super) fn press(
                 true
             }
             PadButton::West => {
-                cancel(game, input, bindings);
+                second(game, input, bindings);
                 true
             }
             PadButton::East => {
                 back(input, pad);
                 true
             }
-            PadButton::North => {
-                dismiss(input);
+            _ => {
+                match opened_by(button) {
+                    Some(opens) if opens == kind => dismiss(input),
+                    Some(opens) => swap(game, input, opens),
+                    None => {}
+                }
                 true
             }
-            _ => true,
         }
-    } else if button == PadButton::North {
-        open(game, input);
+    } else if let Some(kind) = opened_by(button) {
+        open(game, input, kind);
         true
     } else {
         false
@@ -187,31 +213,52 @@ pub(super) fn disconnected(input: &mut InputState, pad: u64) {
     }
 }
 
-/// Y on a closed ring: opens it, unless the selection offers nothing or a
-/// held A is still selecting or laying a row. Over an open palette it
-/// opens on the build ring the palette shows.
-fn open(game: &mut Game, input: &mut InputState) {
-    if input.pad_press.is_some() || input.stroke_by().is_some() {
+/// A ring's button with no ring open: opens its ring, unless it has
+/// nothing to offer or a held A is still selecting or laying a row.
+fn open(game: &mut Game, input: &mut InputState, kind: RingKind) {
+    if input.pad_press.is_some() || input.stroke_by().is_some() || !show(game, input, kind) {
+        deny(game);
+    }
+}
+
+/// The other ring's button over an open ring: opens that ring in its
+/// place, closing the open one as its own button would. Should the other
+/// have nothing to offer, the open ring stays.
+fn swap(game: &mut Game, input: &mut InputState, kind: RingKind) {
+    let building = building(input.ring.as_ref());
+    if !show(game, input, kind) {
         deny(game);
         return;
     }
-    let path = if input.build_menu {
+    if building && input.placing.is_none() {
+        input.close_construction();
+    }
+}
+
+/// Shows `kind`'s first ring in place of any open one, as its button
+/// opens it: over an open palette, the command ring opens on the build
+/// ring the palette shows. Returns false, leaving any open ring as it
+/// was, when `kind` has nothing to offer.
+fn show(game: &Game, input: &mut InputState, kind: RingKind) -> bool {
+    let path = if kind == RingKind::Commands && input.build_menu {
         std::iter::once(Branch::Build)
             .chain(input.build_category.map(Branch::Category))
             .collect()
     } else {
         Vec::new()
     };
-    input.ring = Some(PadRing {
+    let was = input.ring.replace(PadRing {
+        kind,
         path,
         pointed: None,
         opened_at: input.now,
         back_held: None,
     });
-    if current(&game.view(), input).is_none() {
-        input.ring = None;
-        deny(game);
+    if current(&game.view(), input).is_some() {
+        return true;
     }
+    input.ring = was;
+    false
 }
 
 /// The slice the stick points at in the open ring as it stands now, if
@@ -223,9 +270,10 @@ fn pointed(game: &Game, input: &mut InputState) -> Option<radial::Slice> {
     ring.slices.into_iter().nth(index)
 }
 
-/// A: presses the pointed slice's card, as a click on it would, or opens
-/// its ring. A disabled card explains itself instead, and a pick worth
-/// repeating leaves the ring open so its count climbs.
+/// A: presses the pointed slice's card, as a click on it would, opens its
+/// ring, or recalls its group. A disabled card explains itself instead, an
+/// empty group refuses, and a pick worth repeating leaves the ring open so
+/// its count climbs.
 fn pick(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
     let Some(slice) = pointed(game, input) else {
         deny(game);
@@ -243,6 +291,11 @@ fn pick(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
             if !repeats(action) {
                 close(input);
             }
+        }
+        Pick::Group(_) if !slice.card.enabled => deny(game),
+        Pick::Group(group) => {
+            super::dispatch_action(game, input, bindings, Action::Slot(group));
+            close(input);
         }
     }
 }
@@ -263,12 +316,21 @@ fn enter(game: &mut Game, input: &mut InputState, bindings: &BindingMap, branch:
     }
 }
 
-/// X: cancels one of what the pointed slice queues, as the dock's own
-/// chip does.
-fn cancel(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
-    match pointed(game, input).and_then(|slice| slice.cancel) {
-        Some(action) => super::activate_card(game, input, bindings, action),
-        None => deny(game),
+/// X: saves the selection to the pointed group, as the group keys do,
+/// and closes the ring; on a command, cancels one of what the slice
+/// queues, as the dock's own chip does.
+fn second(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
+    let Some(slice) = pointed(game, input) else {
+        deny(game);
+        return;
+    };
+    match (slice.pick, slice.cancel) {
+        (Pick::Group(group), _) => {
+            super::dispatch_action(game, input, bindings, Action::AssignGroup(group));
+            close(input);
+        }
+        (_, Some(action)) => super::activate_card(game, input, bindings, action),
+        (_, None) => deny(game),
     }
 }
 
@@ -314,14 +376,16 @@ fn back(input: &mut InputState, pad: u64) {
 /// Closes every ring without a pick: a palette the rings opened closes
 /// with them, unless a placement is armed.
 fn dismiss(input: &mut InputState) {
-    let building = input
-        .ring
-        .as_ref()
-        .is_some_and(|open| open.path.contains(&Branch::Build));
-    if building && input.placing.is_none() {
+    if building(input.ring.as_ref()) && input.placing.is_none() {
         input.close_construction();
     }
     close(input);
+}
+
+/// Whether `open` stands in the build rings, whose palette closes with
+/// them.
+fn building(open: Option<&PadRing>) -> bool {
+    open.is_some_and(|open| open.path.contains(&Branch::Build))
 }
 
 /// Closes every ring. A stick still pushed stays latched until let go.

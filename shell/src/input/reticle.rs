@@ -7,8 +7,8 @@
 //! about it. Because the spot is ground rather than a screen offset, a zoom,
 //! a resized window or a jump never moves it. The reticle snaps onto a unit
 //! or structure near it, except while a structure is armed for placement,
-//! and the D-pad and a right-stick click jump the camera. Menus never see
-//! this: they read pad buttons as menu keys.
+//! and D-pad up, down and left and a right-stick click jump the camera.
+//! Menus never see this: they read pad buttons as menu keys.
 
 pub(crate) use super::select::Picked;
 use super::select::{Reach, pick};
@@ -172,9 +172,9 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec
         .flatten();
 }
 
-/// A controller button pressed during a match. The D-pad jumps the camera
-/// as the matching keys do, and a right-stick click centers on the
-/// selection.
+/// A controller button pressed during a match. D-pad up, down and left
+/// jump the camera as the matching keys do, and a right-stick click
+/// centers on the selection; D-pad right belongs to [`super::pad_ring`].
 pub(super) fn press(
     game: &mut Game,
     input: &mut InputState,

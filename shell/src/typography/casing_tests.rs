@@ -60,6 +60,7 @@ const LABELS: &[&str] = &[
     "ELIMINATED - SPECTATING",
     "FABRICATOR",
     "FOUNDRY",
+    "GROUPS",
     "HEAP",
     "LAN AUTO",
     "LESSON :   |",

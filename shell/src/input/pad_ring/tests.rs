@@ -1,8 +1,9 @@
 use super::super::tests::pad_scene::{FRAME, down, left_stick, pad_input, scene, units_of, up};
-use super::super::{ArmedMode, InputState, apply_events, track_hands, update_held};
+use super::super::{ArmedMode, Group, InputState, apply_events, track_hands, update_held};
 use super::current;
 use crate::action::BindingMap;
 use crate::game::Game;
+use crate::panel::CardIcon;
 use aftermine_protocol::{PadButton, RawEvent};
 use aftermine_sim::{BuildingKind, Command, UnitKind};
 
@@ -601,6 +602,210 @@ fn y_waits_while_a_held_a_lays_a_row() {
     feed(&mut game, &mut input, &[down(PadButton::South)]);
     assert!(input.stroke_by().is_some(), "a held A lays a row");
     tap(&mut game, &mut input, PadButton::North);
+    assert!(input.ring.is_none());
+    assert!(denied(&game));
+}
+
+/// Opens the group ring with D-pad right, as a frame lays it out.
+fn open_groups(game: &mut Game, input: &mut InputState) {
+    frame(game, input);
+    tap(game, input, PadButton::DpadRight);
+    frame(game, input);
+}
+
+/// Group `number`'s slice in the open ring.
+fn slot(game: &Game, input: &InputState, number: usize) -> crate::radial::Slice {
+    current(&game.view(), input)
+        .expect("a ring is open")
+        .slices
+        .into_iter()
+        .nth(number - 1)
+        .expect("the ring holds the slot")
+}
+
+/// Two Sentinels and a Scuttler of seat 0, and a Sentinel of seat 1.
+fn squads() -> Game {
+    scene(
+        &[
+            (0, UnitKind::Sentinel, 30, 20),
+            (0, UnitKind::Sentinel, 31, 20),
+            (0, UnitKind::Scuttler, 26, 24),
+            (1, UnitKind::Sentinel, 40, 30),
+        ],
+        &[],
+    )
+}
+
+#[test]
+fn dpad_right_opens_the_five_groups_with_nothing_selected() {
+    let mut game = squads();
+    let mut input = pad_input(&mut game);
+    open_groups(&mut game, &mut input);
+    assert_eq!(heading(&game, &input).as_deref(), Some("GROUPS"));
+    assert_eq!(
+        titles(&game, &input),
+        names(&["Group 1", "Group 2", "Group 3", "Group 4", "Group 5"])
+    );
+    for number in 1..=5 {
+        let empty = slot(&game, &input, number);
+        assert!(!empty.card.enabled, "an empty group draws faint");
+        assert_eq!(empty.count, 0);
+        assert_eq!(empty.card.desc, names(&["Empty."]));
+    }
+    tap(&mut game, &mut input, PadButton::DpadRight);
+    assert!(input.ring.is_none(), "its own button closes it");
+}
+
+#[test]
+fn x_saves_the_selection_to_the_pointed_group_and_closes_the_ring() {
+    let mut game = squads();
+    let mut input = pad_input(&mut game);
+    let sentinels = units_of(&game, 0, UnitKind::Sentinel);
+    let scuttler = units_of(&game, 0, UnitKind::Scuttler);
+    game.presentation.selection.units = [sentinels.clone(), scuttler].concat();
+    open_groups(&mut game, &mut input);
+    aim(&mut game, &mut input, "Group 2");
+    tap(&mut game, &mut input, PadButton::West);
+    assert!(input.ring.is_none());
+    assert!(input.groups[1].same_members(&Group::Units(game.presentation.selection.units.clone())));
+    open_groups(&mut game, &mut input);
+    // The slice wears the kind most members share, how many it holds,
+    // and its members by kind, the most numerous first.
+    let two = slot(&game, &input, 2);
+    assert!(two.card.enabled);
+    assert_eq!(two.count, 3);
+    assert_eq!(two.card.icon, CardIcon::Unit(UnitKind::Sentinel));
+    assert_eq!(two.card.desc, names(&["2 Sentinels, 1 Scuttler."]));
+    assert_eq!(slot(&game, &input, 1).count, 0);
+}
+
+#[test]
+fn a_recalls_the_pointed_group_and_an_empty_one_refuses() {
+    let mut game = squads();
+    let mut input = pad_input(&mut game);
+    let sentinels = units_of(&game, 0, UnitKind::Sentinel);
+    let scuttler = units_of(&game, 0, UnitKind::Scuttler);
+    input.groups[0] = Group::Units(sentinels.clone());
+    game.presentation.selection.units.clone_from(&scuttler);
+    open_groups(&mut game, &mut input);
+    aim(&mut game, &mut input, "Group 3");
+    tap(&mut game, &mut input, PadButton::South);
+    assert!(denied(&game));
+    assert!(
+        input.ring.is_some(),
+        "a refused recall leaves the ring open"
+    );
+    assert_eq!(game.presentation.selection.units, scuttler);
+    pick(&mut game, &mut input, "Group 1");
+    assert!(input.ring.is_none());
+    assert_eq!(game.presentation.selection.units, sentinels);
+}
+
+#[test]
+fn x_keeps_only_own_units_and_with_nothing_selected_empties_the_group() {
+    let mut game = squads();
+    let mut input = pad_input(&mut game);
+    let own = units_of(&game, 0, UnitKind::Sentinel);
+    let enemy = units_of(&game, 1, UnitKind::Sentinel);
+    game.presentation.selection.units = [own.clone(), enemy].concat();
+    open_groups(&mut game, &mut input);
+    aim(&mut game, &mut input, "Group 1");
+    tap(&mut game, &mut input, PadButton::West);
+    assert_eq!(input.groups[0], Group::Units(own));
+    assert!(toasted(&game, "Only your own units join a control group"));
+    // As Ctrl and a number does, X with nothing selected clears the group.
+    game.presentation.selection.units.clear();
+    open_groups(&mut game, &mut input);
+    aim(&mut game, &mut input, "Group 1");
+    tap(&mut game, &mut input, PadButton::West);
+    assert!(input.groups[0].is_empty());
+}
+
+#[test]
+fn a_group_of_structures_wears_its_lead_and_a_lost_member_drops_out() {
+    let mut game = scene(
+        &[(0, UnitKind::Sentinel, 30, 20)],
+        &[
+            (0, BuildingKind::Foundry, 30, 18),
+            (0, BuildingKind::Turret, 24, 24),
+        ],
+    );
+    let mut input = pad_input(&mut game);
+    let structures: Vec<_> = game.state.buildings().iter().map(|b| b.id).collect();
+    input.groups[0] = Group::Buildings(structures);
+    // An id that names nothing any more, as a destroyed unit's does.
+    let sentinel = units_of(&game, 0, UnitKind::Sentinel)[0];
+    input.groups[1] = Group::Units(vec![sentinel, aftermine_sim::UnitId(9_999)]);
+    open_groups(&mut game, &mut input);
+    let one = slot(&game, &input, 1);
+    assert_eq!(one.count, 2);
+    assert!(matches!(
+        one.card.icon,
+        CardIcon::Building(BuildingKind::Foundry, _)
+    ));
+    assert_eq!(one.card.desc, names(&["1 Foundry, 1 Turret."]));
+    let two = slot(&game, &input, 2);
+    assert_eq!(two.count, 1);
+    assert_eq!(two.card.desc, names(&["1 Sentinel."]));
+}
+
+#[test]
+fn each_rings_button_opens_it_in_the_others_place_and_closes_its_own() {
+    let (mut game, mut input) = sentinels();
+    assert_eq!(heading(&game, &input).as_deref(), Some("COMMANDS"));
+    tap(&mut game, &mut input, PadButton::DpadRight);
+    frame(&mut game, &mut input);
+    assert_eq!(heading(&game, &input).as_deref(), Some("GROUPS"));
+    tap(&mut game, &mut input, PadButton::North);
+    frame(&mut game, &mut input);
+    assert_eq!(heading(&game, &input).as_deref(), Some("COMMANDS"));
+    tap(&mut game, &mut input, PadButton::North);
+    assert!(input.ring.is_none());
+    open_groups(&mut game, &mut input);
+    tap(&mut game, &mut input, PadButton::East);
+    assert!(input.ring.is_none(), "B closes the group ring");
+    // With no command ring to offer, Y over the group ring keeps it.
+    game.presentation.selection.units.clear();
+    open_groups(&mut game, &mut input);
+    tap(&mut game, &mut input, PadButton::North);
+    frame(&mut game, &mut input);
+    assert!(denied(&game));
+    assert_eq!(heading(&game, &input).as_deref(), Some("GROUPS"));
+}
+
+#[test]
+fn leaving_the_build_rings_for_the_groups_closes_their_palette() {
+    let (mut game, mut input) = harvester();
+    pick(&mut game, &mut input, "Build");
+    assert!(input.build_menu);
+    tap(&mut game, &mut input, PadButton::DpadRight);
+    frame(&mut game, &mut input);
+    assert_eq!(heading(&game, &input).as_deref(), Some("GROUPS"));
+    assert!(!input.build_menu);
+    // An armed placement stays through the swap, as through Y.
+    tap(&mut game, &mut input, PadButton::North);
+    frame(&mut game, &mut input);
+    pick(&mut game, &mut input, "Build");
+    pick(&mut game, &mut input, "Defense");
+    pick(&mut game, &mut input, "Turret");
+    tap(&mut game, &mut input, PadButton::North);
+    frame(&mut game, &mut input);
+    assert_eq!(heading(&game, &input).as_deref(), Some("DEFENSE"));
+    tap(&mut game, &mut input, PadButton::DpadRight);
+    frame(&mut game, &mut input);
+    assert_eq!(heading(&game, &input).as_deref(), Some("GROUPS"));
+    assert_eq!(
+        input.armed_mode(),
+        Some(ArmedMode::Build(BuildingKind::Turret))
+    );
+}
+
+#[test]
+fn a_spectator_has_no_group_ring() {
+    let mut game = squads();
+    let mut input = pad_input(&mut game);
+    game.presentation.stance = crate::game::Stance::Spectator;
+    open_groups(&mut game, &mut input);
     assert!(input.ring.is_none());
     assert!(denied(&game));
 }

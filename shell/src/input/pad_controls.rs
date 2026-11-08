@@ -4,7 +4,9 @@
 //! kind, and B backs out. While a placement or targeted order is armed, A
 //! and X confirm it at the reticle as a click there would, and a held A
 //! drags a placement row. Each takes the path its mouse counterpart takes.
-//! The D-pad and the stick clicks belong to [`super::reticle`].
+//! The D-pad and the stick clicks belong to [`super::reticle`], except
+//! D-pad right, which opens the group ring of [`super::pad_ring`] as Y
+//! opens its command ring.
 
 use super::paint::{self, Release};
 use super::select::{self, Picked};
