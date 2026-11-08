@@ -597,6 +597,7 @@ pub(crate) fn draw_with_performance(
         chrome::draw_ghost_controls(game, input);
         draw_group_press_ring(input);
         draw_result_overlay(game, sprites);
+        chrome::draw_queue_strip(game, sprites, input);
         draw_panel_tooltip(game, input);
         chrome::draw_army_tooltip(game, input, bindings);
         if let Some(ring) = &hud.ring {

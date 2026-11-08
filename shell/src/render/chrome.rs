@@ -482,10 +482,83 @@ fn draw_pause_button(rect: Rect, paused: bool, s: f32) {
     }
 }
 
-/// Where the pointer in use hovers: the mouse or the reticle, never a
-/// stale point on a touch device.
+/// Where the HUD reads its hover: the queue strip's lit entry while it is
+/// open, else the mouse or the reticle, never a stale point on a touch
+/// device.
 pub(super) fn hover_point(input: &InputState) -> Option<Vec2> {
-    input.hover_point()
+    input.chrome_hover_point()
+}
+
+/// The queue strip while a controller has it open: its lit entry outlined
+/// as the menus' cursor is, and the buttons that drive it on a plate above
+/// the dock.
+pub(crate) fn draw_queue_strip(
+    game: &crate::game::Scene<'_>,
+    sprites: &crate::assets::Sprites,
+    input: &InputState,
+) {
+    use aftermine_protocol::PadButton;
+    let Some(focus) = input.dock.as_ref() else {
+        return;
+    };
+    let s = ui_scale();
+    let lit = focus.lit();
+    let grow = 3.0 * s;
+    let outline = Rect::new(
+        lit.rect.x - grow,
+        lit.rect.y - grow,
+        lit.rect.w + 2.0 * grow,
+        lit.rect.h + 2.0 * grow,
+    );
+    let weight = crate::platform::cursor_stroke().at(s);
+    stroke_rect(outline, weight + 2.0 * s, Color::new(0.05, 0.05, 0.07, 0.7));
+    stroke_rect(outline, weight, crate::theme::TEXT_TITLE);
+    let family = crate::platform::hands()
+        .pad
+        .unwrap_or(aftermine_protocol::PadFamily::Xbox);
+    let icon = |button| crate::pad::button_icon(family, button);
+    let mut legend = crate::hint_line::HintLine::default();
+    if let Some(verb) = strip_verb(lit.action) {
+        legend = legend
+            .pad(icon(PadButton::South))
+            .text(format!(" {verb} - "));
+    }
+    let legend = legend.pad(icon(PadButton::East)).text(" close");
+    let layout = game.presentation.layout.get();
+    let columns = [layout.orders, layout.drones];
+    let mut columns = columns.iter().filter(|rect| rect.w > 0.0);
+    let Some(first) = columns.next() else {
+        return;
+    };
+    let top = columns.fold(first.y, |top, rect| top.min(rect.y));
+    let size = crate::theme::Type::Body.at(s);
+    let pad = 6.0 * s;
+    let plate = Rect::new(
+        first.x,
+        top - size * 1.6 - 2.0 * pad,
+        legend.width(size) + 2.0 * pad,
+        size * 1.6 + pad,
+    );
+    fill_rect(plate, crate::theme::SURFACE_PLATE);
+    legend.draw_at(
+        sprites,
+        plate.x + pad,
+        plate.y + plate.h * 0.5 + size * 0.35,
+        size,
+        crate::theme::TEXT_SECONDARY,
+        crate::theme::TEXT_BODY,
+    );
+}
+
+/// What A does to the queue strip's lit entry, as its legend names it.
+fn strip_verb(action: crate::panel::CardAction) -> Option<&'static str> {
+    use crate::panel::CardAction;
+    match action {
+        CardAction::Dispatch(crate::action::Action::StopOrScrap) => Some("stop"),
+        CardAction::ClearQueues => Some("clear queues"),
+        action if action.discards_work() => Some("cancel"),
+        _ => None,
+    }
 }
 
 /// The controller's reticle, while a controller is the pointer: a ring with

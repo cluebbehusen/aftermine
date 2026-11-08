@@ -1006,6 +1006,76 @@ fn launch_takes_the_bumpers_over_to_fire_more() -> Result<()> {
     Ok(())
 }
 
+/// Your Foundry, on open ground.
+fn drill_foundry() -> Value {
+    drill(&[], &[(0, BuildingKind::Foundry, 30, 18)])
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn the_left_stick_click_walks_and_cancels_the_queue() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_326)?;
+    let view = drill.load(&drill_foundry())?;
+    let foundry = building(&view, BuildingKind::Foundry)?;
+    for _ in 0..3 {
+        drill.command(
+            0,
+            Command::Train {
+                building: foundry,
+                kind: UnitKind::Harvester,
+            },
+        )?;
+    }
+    drill.client.advance(1)?;
+    let queued = |view: &StateView| {
+        view.buildings
+            .iter()
+            .find(|b| b.id == foundry.0)
+            .and_then(|b| b.queue.as_ref())
+            .map_or(0, Vec::len)
+    };
+    drill.press(PadButton::DpadUp)?;
+    drill.press(PadButton::South)?;
+    drill.press(PadButton::LeftStick)?;
+    let strip = ui(&mut drill.client)?;
+    assert_eq!(strip.title.as_deref(), Some("Queue"));
+    assert_eq!(
+        strip.items.len(),
+        4,
+        "three chips and Stop: {:?}",
+        strip.items
+    );
+    assert_eq!(strip.selected, Some(3), "the chip nearest the band is lit");
+    drill.press(PadButton::South)?;
+    drill.client.advance(1)?;
+    assert_eq!(queued(&drill.state()?), 2, "A cancelled the lit chip");
+    let camera = drill.client.camera()?.center;
+    drill.stick(1.0, 0.0)?;
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(drill.client.camera()?.center, camera, "the camera holds");
+    drill.stick(0.0, 0.0)?;
+    for _ in 0..4 {
+        if ui(&mut drill.client)?.selected == Some(0) {
+            break;
+        }
+        drill.press(PadButton::DpadUp)?;
+    }
+    assert_eq!(
+        ui(&mut drill.client)?.selected,
+        Some(0),
+        "Stop tops the dock"
+    );
+    drill.press(PadButton::South)?;
+    drill.client.advance(1)?;
+    assert_eq!(queued(&drill.state()?), 0, "Stop cleared the queue");
+    assert_eq!(
+        ui(&mut drill.client)?.title,
+        None,
+        "with nothing left to press the strip closed"
+    );
+    Ok(())
+}
+
 /// Your one building of `kind`.
 fn building(view: &StateView, kind: BuildingKind) -> Result<BuildingId> {
     view.buildings
@@ -1023,6 +1093,7 @@ fn the_drills_build() -> Result<()> {
         drill_build(),
         drill_aim(),
         drill_salvo(),
+        drill_foundry(),
     ] {
         aftermine_sim::Scenario::from_json(&scenario.to_string())?.build()?;
     }

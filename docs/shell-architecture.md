@@ -191,6 +191,12 @@ a ring is open it owns the pad's buttons and left stick, except the queueing
 trigger, Menu and View; a button whose press it took, it also takes up, and a
 stick still pushed when it closes moves the camera only once let go.
 
+The controller's queue strip (`input::pad_dock`) lights one entry of the orders
+dock as the layout pass published it, and A presses it through the same path as
+a click on it. It holds the pad as a ring does, and while it is open the HUD
+reads the lit entry as its hover. It closes once the dock has nothing to press,
+the selection changes or another hand takes over.
+
 The HUD lays out in a pure pass (`render::hud`) that measures text through a
 supplied function, so it runs headless. Each frame lays it out before input,
 again before each press or release that follows another event in the batch, and
