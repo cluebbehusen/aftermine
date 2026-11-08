@@ -1434,6 +1434,181 @@ fn a_ribbon_tap_cancels_the_mode_and_keeps_the_selection() {
 }
 
 #[test]
+fn a_patrol_ribbon_acts_only_through_start_and_the_cross() {
+    let (mut game, mut input, fighter) = armed_patrol();
+    let ribbon = macroquad::math::Rect::new(220.0, 620.0, 360.0, 44.0);
+    let start = macroquad::math::Rect::new(460.0, 624.0, 76.0, 36.0);
+    let cancel = macroquad::math::Rect::new(540.0, 624.0, 36.0, 36.0);
+    let mut layout = bare_layout(f32::INFINITY, 0.0);
+    layout.mode_ribbon = ribbon;
+    layout.patrol_start = start;
+    layout.patrol_cancel = cancel;
+    game.presentation.layout.set(layout);
+    let words = vec2(ribbon.x + 20.0, ribbon.center().y);
+
+    tap(&mut game, &mut input, start.center());
+    assert_eq!(
+        input.patrol_route,
+        Some(Vec::new()),
+        "Start waits for a point"
+    );
+    tap(&mut game, &mut input, words);
+    assert_eq!(
+        input.patrol_route,
+        Some(Vec::new()),
+        "the words keep the route"
+    );
+    tap_world(&mut game, &mut input, vec2(9.5, 5.5));
+    apply_events(&mut game, &mut input, &click(words.x, words.y));
+    assert_eq!(
+        input.patrol_route.as_ref().map(Vec::len),
+        Some(1),
+        "a click on the words keeps it too"
+    );
+    tap(&mut game, &mut input, cancel.center());
+    assert_eq!(input.patrol_route, None, "the cross drops the route");
+    assert!(game.pending.is_empty(), "dropping sends nothing");
+    assert_eq!(game.presentation.selection.units, vec![fighter]);
+
+    dispatch_action(&mut game, &mut input, Action::Patrol);
+    tap_world(&mut game, &mut input, vec2(9.5, 5.5));
+    tap(&mut game, &mut input, start.center());
+    assert_eq!(input.patrol_route, None, "Start stands targeting down");
+    assert!(
+        matches!(
+            &game.pending[..],
+            [PlayerCommand { command: Command::Patrol { units, waypoints }, .. }]
+                if units == &vec![fighter] && waypoints == &vec![TilePos::new(9, 5)]
+        ),
+        "Start sends the route: {:?}",
+        game.pending
+    );
+}
+
+#[test]
+fn patrol_stops_a_patrolling_selection_and_arms_any_other() {
+    let (mut game, mut input, fighter) = armed_patrol();
+    tap_world(&mut game, &mut input, vec2(9.5, 5.5));
+    tap_world(&mut game, &mut input, vec2(12.5, 8.5));
+    assert!(
+        !crate::panel::selection_patrols(&game.view()),
+        "picking is no patrol"
+    );
+    dispatch_action(&mut game, &mut input, Action::Patrol);
+    assert_eq!(input.patrol_route, None);
+    assert!(
+        crate::panel::selection_patrols(&game.view()),
+        "the staged patrol already counts"
+    );
+
+    // A selection with a unit off patrol is not lit: Patrol arms a route
+    // for all of it.
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
+        .expect("a starting harvester")
+        .id;
+    game.presentation.selection.units = vec![fighter, harvester];
+    assert!(!crate::panel::selection_patrols(&game.view()));
+    dispatch_action(&mut game, &mut input, Action::Patrol);
+    assert_eq!(input.patrol_route, Some(Vec::new()));
+    input.patrol_route = None;
+
+    // On the patrolling unit alone the card is lit, and a press stops it.
+    game.presentation.selection.units = vec![fighter];
+    dispatch_action(&mut game, &mut input, Action::Patrol);
+    assert!(
+        matches!(
+            game.pending.last().map(|c| &c.command),
+            Some(Command::Stop { units }) if units == &vec![fighter]
+        ),
+        "{:?}",
+        game.pending
+    );
+    assert_eq!(input.patrol_route, None, "stopping arms nothing");
+    assert!(!crate::panel::selection_patrols(&game.view()));
+    dispatch_action(&mut game, &mut input, Action::Patrol);
+    assert_eq!(
+        input.patrol_route,
+        Some(Vec::new()),
+        "stopped, it arms again"
+    );
+}
+
+#[test]
+fn patrol_reads_the_whole_selection_past_the_decor_cap() {
+    // More fighters than draw decor: a staged patrol must still light the
+    // card for every one of them, so the next press stops them all.
+    let units: Vec<_> = (0..14)
+        .map(|i| serde_json::json!({"player": 0, "kind": "sentinel", "x": 2 + i, "y": 2}))
+        .collect();
+    let scenario = aftermine_sim::Scenario::from_json(
+        &serde_json::json!({
+            "name": "Crowd",
+            "players": [
+                {"name": "Mass", "scrap": 0, "bot": false},
+                {"name": "Idle", "scrap": 0, "bot": true}
+            ],
+            "map": [
+                "######################",
+                "#....................#",
+                "#....................#",
+                "#....................#",
+                "#....................#",
+                "#....................#",
+                "#1.................2.#",
+                "#....................#",
+                "######################"
+            ],
+            "units": units
+        })
+        .to_string(),
+    )
+    .expect("crowd parses");
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
+    let mut input = InputState::new();
+    let fighters: Vec<_> = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == game.presentation.human)
+        .map(|u| u.id)
+        .collect();
+    game.presentation.selection.units = fighters.clone();
+    assert!(
+        crate::render::entities::decor_units(&game.view()).len() < fighters.len(),
+        "premise: some fighters draw no decor"
+    );
+    dispatch_action(&mut game, &mut input, Action::Patrol);
+    tap_world(&mut game, &mut input, vec2(5.5, 5.5));
+    tap_world(&mut game, &mut input, vec2(14.5, 5.5));
+    dispatch_action(&mut game, &mut input, Action::Patrol);
+    assert!(
+        matches!(
+            game.pending.last().map(|c| &c.command),
+            Some(Command::Patrol { units, .. }) if units == &fighters
+        ),
+        "premise: {:?}",
+        game.pending
+    );
+    assert!(
+        crate::panel::selection_patrols(&game.view()),
+        "the staged patrol counts for every fighter"
+    );
+    dispatch_action(&mut game, &mut input, Action::Patrol);
+    assert!(
+        matches!(
+            game.pending.last().map(|c| &c.command),
+            Some(Command::Stop { units }) if units == &fighters
+        ),
+        "{:?}",
+        game.pending
+    );
+}
+
+#[test]
 fn a_lit_queue_turns_off_with_a_tap_so_the_next_ground_tap_clears() {
     let mut game = headless_game();
     let mut input = InputState::new();
@@ -1497,10 +1672,17 @@ fn every_targeting_mode_has_persistent_human_copy() {
     input.click_verb = Some(ClickVerb::Hunt);
     assert_eq!(input.armed_mode().unwrap().label(), "Hunt");
     input.disarm_click_verbs();
+    input.patrol_route = Some(Vec::new());
+    assert_eq!(
+        input.armed_mode().unwrap().label(),
+        "Patrol: pick points to loop"
+    );
+    input.patrol_route = Some(vec![TilePos::new(1, 1)]);
+    assert_eq!(input.armed_mode().unwrap().label(), "Patrol \u{b7} 1 point");
     input.patrol_route = Some(vec![TilePos::new(1, 1), TilePos::new(2, 2)]);
     assert_eq!(
         input.armed_mode().unwrap().label(),
-        "Patrol \u{b7} 2: press Patrol to start"
+        "Patrol \u{b7} 2 points"
     );
     assert!(input.cancel_armed_mode());
     assert_eq!(input.armed_mode(), None);

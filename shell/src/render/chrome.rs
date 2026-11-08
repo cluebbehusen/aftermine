@@ -1042,7 +1042,20 @@ pub(crate) struct RibbonLayout {
     icon_w: f32,
     pub(super) status: Option<RibbonStatus>,
     pub(super) salvo: Option<SalvoSteppers>,
+    pub(super) patrol: Option<PatrolButtons>,
 }
+
+/// A patrol ribbon's buttons: Start, lit once the route has a point, and
+/// the cross that drops the route.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PatrolButtons {
+    pub(crate) start: Rect,
+    pub(crate) cancel: Rect,
+    pub(crate) ready: bool,
+}
+
+/// The Start button's word.
+const PATROL_START: &str = "Start";
 
 /// A strike ribbon's buttons that shrink and grow the salvo.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1102,7 +1115,24 @@ pub(super) fn ribbon_layout(
         .and_then(|kind| kind.base_stats().construction)
         .map(|construction| (construction.cost * planned.max(1).fit::<u32>()).to_string());
     let icon_w = if building.is_some() { 40.0 * s } else { 0.0 };
-    let label_w = measure(Face::Body, &label, crate::theme::Type::Label.at(s));
+    let label_size = crate::theme::Type::Label.at(s);
+    let label_w = measure(Face::Body, &label, label_size);
+    let patrol = match mode {
+        crate::input::ArmedMode::Patrol(points) => Some(points > 0),
+        _ => None,
+    };
+    // A patrol ribbon holds still as points are picked: its words are
+    // measured at their widest.
+    let words_w = if patrol.is_some() {
+        [0, aftermine_sim::stats::ORDER_QUEUE_CAP]
+            .map(|points| measure(Face::Body, &crate::input::patrol_label(points), label_size))
+            .into_iter()
+            .fold(label_w, f32::max)
+    } else {
+        label_w
+    };
+    let start_w = measure(Face::Body, PATROL_START, label_size) + 36.0 * s;
+    let patrol_w = patrol.map_or(0.0, |_| 16.0 * s + start_w + 6.0 * s + STEPPER * s);
     let cost_w = cost.as_deref().map_or(0.0, |cost| {
         12.0 * s + measure(Face::Body, cost, crate::theme::Type::Body.at(s))
     });
@@ -1131,7 +1161,7 @@ pub(super) fn ribbon_layout(
         );
         (widest - label_w).max(0.0) + 8.0 * s + 2.0 * STEPPER * s + 4.0 * s
     });
-    let content = icon_w + (label_w + cost_w).max(status_w) + steppers_w;
+    let content = icon_w + (words_w + cost_w).max(status_w) + steppers_w + patrol_w;
     let size = (
         ribbon_width(viewport, s, content),
         ribbon_height(s, status.is_some()),
@@ -1161,6 +1191,16 @@ pub(super) fn ribbon_layout(
                 more,
                 less_enabled: fires > 1,
                 more_enabled: fires < ready,
+            }
+        }),
+        patrol: patrol.map(|ready| {
+            let side = STEPPER * s;
+            let y = rect.y + (crate::theme::MIN_TOUCH_TARGET * s - side) * 0.5;
+            let cancel = Rect::new(rect.x + rect.w - 4.0 * s - side, y, side, side);
+            PatrolButtons {
+                start: Rect::new(cancel.x - 6.0 * s - start_w, y, start_w, side),
+                cancel,
+                ready,
             }
         }),
     })
@@ -1286,6 +1326,7 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
         icon_w,
         status,
         salvo,
+        patrol,
     } = layout;
     let (ribbon, building, label_w, icon_w) = (*ribbon, *building, *label_w, *icon_w);
     // The label keeps the touch-target row; a status row hangs under it.
@@ -1328,6 +1369,9 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
     if let Some(steppers) = salvo {
         draw_salvo_steppers(steppers, input, s);
     }
+    if let Some(buttons) = patrol {
+        draw_patrol_buttons(buttons, input, s);
+    }
     if let Some(status) = status {
         let size = crate::theme::Type::Small.at(s);
         let baseline = ribbon.y + ribbon.h - 8.0 * s;
@@ -1342,6 +1386,57 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
             );
         }
     }
+}
+
+/// The patrol ribbon's Start, lit amber once there is a point to loop,
+/// and its cross.
+fn draw_patrol_buttons(buttons: &PatrolButtons, input: &InputState, s: f32) {
+    use crate::theme::{BORDER_FAINT, CARD_ARMED, CARD_HOVER, CARD_IDLE, EDGE_CARD, EDGE_FOCUS};
+    let hover = hover_point(input);
+    let (start, ready) = (buttons.start, buttons.ready);
+    let start_hovered = ready && hover.is_some_and(|p| start.contains(p));
+    fill_rect(start, if ready { CARD_ARMED } else { CARD_IDLE });
+    let (stroke, edge) = match (ready, start_hovered) {
+        (false, _) => (crate::theme::Stroke::Edge, BORDER_FAINT),
+        (true, false) => (crate::theme::Stroke::Heavy, SCRAP_COLOR),
+        (true, true) => (crate::theme::Stroke::Heavy, EDGE_FOCUS),
+    };
+    stroke_rect(start, stroke.at(s), edge);
+    let size = crate::theme::Type::Label.at(s);
+    let word_w = measure_text(PATROL_START, None, numeric::font_size(size), 1.0).width;
+    draw_text(
+        PATROL_START,
+        start.x + (start.w - word_w) * 0.5,
+        start.y + start.h * 0.66,
+        size,
+        if ready {
+            TEXT_ACCENT
+        } else {
+            crate::theme::TEXT_DISABLED
+        },
+    );
+    let cancel = buttons.cancel;
+    let cancel_hovered = hover.is_some_and(|p| cancel.contains(p));
+    fill_rect(
+        cancel,
+        if cancel_hovered {
+            CARD_HOVER
+        } else {
+            CARD_IDLE
+        },
+    );
+    stroke_rect(
+        cancel,
+        crate::theme::Stroke::Edge.at(s),
+        if cancel_hovered {
+            EDGE_FOCUS
+        } else {
+            EDGE_CARD
+        },
+    );
+    let (c, arm) = (cancel.center(), 7.0 * s);
+    line_between(c - vec2(arm, arm), c + vec2(arm, arm), 2.5 * s, TEXT_BODY);
+    line_between(c + vec2(-arm, arm), c + vec2(arm, -arm), 2.5 * s, TEXT_BODY);
 }
 
 /// The salvo's minus and plus, faint where the size can go no further.

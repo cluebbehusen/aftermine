@@ -273,17 +273,17 @@ pub(super) fn dispatch_action(
                     .toast("You can only command your own units");
                 return;
             }
-            // First press arms a route; the second sends the circuit.
-            match input.patrol_route.take() {
-                None if !game.presentation.selection.units.is_empty() => {
-                    input.disarm_click_verbs();
-                    input.patrol_route = Some(Vec::new());
-                }
-                Some(waypoints) if !waypoints.is_empty() => {
-                    let units = game.presentation.selection.units.clone();
-                    game.issue(Command::Patrol { units, waypoints });
-                }
-                _ => {}
+            // First press arms a route; the second sends the circuit. On
+            // a selection already patrolling, the card is lit and a press
+            // turns the patrol off: they stop where they are.
+            if input.patrol_route.is_some() {
+                super::start_patrol(game, input);
+            } else if crate::panel::selection_patrols(&game.view()) {
+                let units = game.presentation.selection.units.clone();
+                game.issue(Command::Stop { units });
+            } else if !game.presentation.selection.units.is_empty() {
+                input.disarm_click_verbs();
+                input.patrol_route = Some(Vec::new());
             }
         }
         // The overlay sees through fog, so it is a development tool: a

@@ -328,6 +328,9 @@ pub struct Panel {
     /// use for them: disabled and never drawn on the panel, but held so a
     /// command ring keeps their places as they come and go.
     pub(crate) absent: Vec<Card>,
+    /// Whether every selected unit walks a patrol: the Patrol card draws
+    /// lit, and pressing it stops them.
+    pub(crate) patrolling: bool,
 }
 
 /// The drones a host has on order: one chip each, the one building
@@ -1106,6 +1109,9 @@ fn own_order_card(
 ) -> Card {
     let order = &program.orders[index];
     let mut card = order_card(game, order, index == 0, true, Some(projection));
+    if program.looping {
+        patrol_leg(&mut card, order, index == 0);
+    }
     let unbuilt = match order {
         Order::Build { site } => projection
             .building(game.state, *site)
@@ -1150,6 +1156,29 @@ fn own_order_card(
         }
     }
     card
+}
+
+/// Names a patrol's leg as Patrol, with the loop icon, so a patrolling
+/// unit's dock says what it does rather than listing plain Hunts. A worker
+/// welding on the way keeps its Repair chip.
+fn patrol_leg(card: &mut Card, order: &Order, active: bool) {
+    let does = match order {
+        Order::Hunt { .. } => "Fights what it meets on the way.",
+        Order::Run { .. } => "Walks the route without engaging.",
+        Order::Scout { .. } => "Scouts each point.",
+        Order::Tend { weld: None, .. } => "Repairs what it passes; costs scrap.",
+        _ => return,
+    };
+    card.icon = CardIcon::Verb(VerbIcon::Patrol);
+    card.title = if active {
+        "Patrol (now)".into()
+    } else {
+        "Patrol".into()
+    };
+    card.desc = vec![
+        does.into(),
+        "Loops back to the first point after the last.".into(),
+    ];
 }
 
 /// The concrete second tooltip line for a subject-bearing order: how
@@ -1300,14 +1329,43 @@ fn roster_filter_desc(hands: Hands) -> Vec<String> {
     vec![format!("{keep}: keep only this kind."), drop.into()]
 }
 
+/// Whether every selected own unit walks a patrol, as the staged commands
+/// will leave it, so the Patrol card is lit and a press stops them.
+pub(crate) fn selection_patrols(game: &Scene<'_>) -> bool {
+    let human = game.presentation.human;
+    let projection = game.projection();
+    let mut own = game
+        .presentation
+        .selection
+        .units
+        .iter()
+        .filter_map(|id| game.state.unit(*id))
+        .filter(|unit| unit.player == human)
+        .peekable();
+    own.peek().is_some()
+        && own.all(|unit| {
+            projection
+                .program(unit.id)
+                .map_or(unit.looping, |program| program.looping)
+        })
+}
+
 /// How the Patrol card collects and starts its route.
 fn patrol_desc(hands: Hands) -> &'static str {
     match (hands.touch(), hands.keys) {
-        (false, true) => "Click waypoints, then press again to loop them.",
-        (false, false) => "Click waypoints, then click Patrol again to loop them.",
-        (true, true) => "Tap waypoints, then press again or tap Patrol to loop them.",
-        (true, false) => "Tap waypoints, then tap Patrol again to loop them.",
+        (false, true) => "Click points, then press again or click Start to loop them.",
+        (false, false) => "Click points, then click Start to loop them.",
+        (true, true) => "Tap points, then press again or tap Start to loop them.",
+        (true, false) => "Tap points, then tap Start to loop them.",
     }
+}
+
+/// The lit Patrol card's line: a press stops the patrol.
+fn patrolling_desc(hands: Hands) -> String {
+    format!(
+        "Patrolling. {} to stop them where they are.",
+        crate::platform::tap_or_click_capitalized(hands.touch())
+    )
 }
 
 /// The Repair card's autocast lines: what auto-repair does and how far the
@@ -1484,6 +1542,7 @@ fn pile_panel(game: &Scene<'_>, tile: chassis::grid::TilePos) -> Option<Panel> {
         stop: None,
         drones: None,
         absent: Vec::new(),
+        patrolling: false,
     })
 }
 
@@ -1530,6 +1589,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             stop: None,
             drones: None,
             absent: Vec::new(),
+            patrolling: false,
         };
         if selected_buildings
             .iter()
@@ -1684,6 +1744,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         stop: None,
         drones: None,
         absent: Vec::new(),
+        patrolling: false,
     };
     if units.len() == 1 && !game.state.hostile(game.presentation.human, owner) {
         panel.drones = crate::unit_bays::column(game, first.id);
@@ -1798,6 +1859,8 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             hold: None,
         });
     }
+    panel.patrolling = selection_patrols(game);
+    let hands = crate::platform::hands();
     panel.cards.push(Card {
         icon: CardIcon::Verb(VerbIcon::Patrol),
         title: "Patrol".into(),
@@ -1807,7 +1870,11 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         enabled: true,
         why: None,
         desc: vec![
-            patrol_desc(crate::platform::hands()).into(),
+            if panel.patrolling {
+                patrolling_desc(hands)
+            } else {
+                patrol_desc(hands).into()
+            },
             patrol_engagement(
                 armed,
                 units.iter().filter(|u| u.worker.is_some()).count(),

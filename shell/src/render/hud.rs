@@ -221,6 +221,14 @@ pub(crate) fn layout(
             .as_ref()
             .and_then(|ribbon| ribbon.salvo)
             .map_or(zero, |steppers| steppers.more),
+        patrol_start: ribbon
+            .as_ref()
+            .and_then(|ribbon| ribbon.patrol)
+            .map_or(zero, |buttons| buttons.start),
+        patrol_cancel: ribbon
+            .as_ref()
+            .and_then(|ribbon| ribbon.patrol)
+            .map_or(zero, |buttons| buttons.cancel),
         queue_toggle: queue_toggle.unwrap_or(zero),
         queue_flag: queue_flag
             .as_ref()

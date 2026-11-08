@@ -42,6 +42,7 @@ fn card_copy_names_only_what_the_hands_in_use_have() {
             assert_copy_fits(hands, line);
         }
         assert_copy_fits(hands, patrol_desc(hands));
+        assert_copy_fits(hands, &patrolling_desc(hands));
         assert_copy_fits(hands, unload_queue_desc(hands));
         assert_copy_fits(hands, transport_load_desc(hands.touch()));
     }
@@ -728,6 +729,57 @@ fn the_patrol_card_says_what_each_kind_of_unit_does_on_the_way() {
             .expect("patrol card");
         assert_eq!(patrol.desc.last().map(String::as_str), Some(promise));
     }
+}
+
+#[test]
+fn a_patrolling_selection_lights_patrol_and_its_dock_says_patrol() {
+    let mut game = game();
+    let sentinel = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
+        .expect("the scenario fields a Sentinel")
+        .id;
+    game.presentation.selection.units = vec![sentinel];
+    let patrol_card = |panel: &Panel| {
+        panel
+            .cards
+            .iter()
+            .find(|c| c.title == "Patrol")
+            .expect("patrol card")
+            .desc[0]
+            .clone()
+    };
+    let idle = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
+    assert!(!idle.patrolling);
+    assert_eq!(patrol_card(&idle), patrol_desc(crate::platform::hands()));
+
+    let tile = chassis::grid::TilePos::new;
+    game.issue(aftermine_sim::Command::Patrol {
+        units: vec![sentinel],
+        waypoints: vec![tile(14, 7), tile(14, 11)],
+    });
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
+    assert!(panel.patrolling, "a staged patrol lights the card");
+    assert_eq!(
+        patrol_card(&panel),
+        patrolling_desc(crate::platform::hands())
+    );
+    let chips: Vec<(&str, &CardIcon)> = panel
+        .queue
+        .iter()
+        .map(|chip| (chip.title.as_str(), &chip.icon))
+        .collect();
+    let looped = CardIcon::Verb(VerbIcon::Patrol);
+    assert_eq!(chips, [("Patrol (now)", &looped), ("Patrol", &looped)]);
+    assert_eq!(
+        panel.queue[1].desc,
+        [
+            "Fights what it meets on the way.",
+            "Loops back to the first point after the last."
+        ]
+    );
 }
 
 #[test]

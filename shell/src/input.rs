@@ -108,9 +108,18 @@ impl ArmedMode {
             Self::Run => "Run".to_string(),
             Self::Hunt => "Hunt".to_string(),
             Self::Scout => "Scout".to_string(),
-            Self::Patrol(0) => "Patrol: pick waypoints".to_string(),
-            Self::Patrol(count) => format!("Patrol \u{b7} {count}: press Patrol to start"),
+            Self::Patrol(count) => patrol_label(count),
         }
+    }
+}
+
+/// The patrol ribbon's words. They only name the route: its Start and
+/// cross buttons act, so the words are no button to press.
+pub(crate) fn patrol_label(points: usize) -> String {
+    match points {
+        0 => "Patrol: pick points to loop".to_string(),
+        1 => "Patrol \u{b7} 1 point".to_string(),
+        points => format!("Patrol \u{b7} {points} points"),
     }
 }
 
@@ -2436,8 +2445,10 @@ pub(super) fn world_order(
 }
 
 /// A press on the ribbon row: QUEUE toggles, and the ribbon cancels its
-/// mode but keeps the selection. It runs before every other target, for
-/// mouse and touch alike.
+/// mode but keeps the selection. A patrol's ribbon is the exception: its
+/// Start and cross act, and its words do nothing, so a press meant for
+/// Start never throws the route away. It runs before every other target,
+/// for mouse and touch alike.
 pub(super) fn ribbon_row_press(
     game: &mut Game,
     input: &mut InputState,
@@ -2462,6 +2473,24 @@ pub(super) fn ribbon_row_press(
         step_salvo(&game.view(), input, hits(layout.salvo_more));
     } else if hits(layout.queue_toggle) {
         input.toggle_queue();
+    } else if hits(layout.patrol_start) {
+        if input
+            .patrol_route
+            .as_ref()
+            .is_some_and(|route| !route.is_empty())
+        {
+            start_patrol(game, input);
+            game.presentation
+                .sounds_pending
+                .push((crate::game::SoundKind::Click, None));
+        }
+    } else if hits(layout.patrol_cancel) {
+        input.patrol_route = None;
+        game.presentation
+            .sounds_pending
+            .push((crate::game::SoundKind::Click, None));
+    } else if input.patrol_route.is_some() && hits(layout.mode_ribbon) {
+        // The words of a patrol's ribbon only name the route.
     } else if hits(layout.mode_ribbon) {
         if input.cancel_armed_mode() {
             game.presentation
@@ -3517,13 +3546,24 @@ fn add_patrol_waypoint(
     }
 }
 
+/// Sends the route being collected as the selection's patrol and stands
+/// patrol targeting down. An empty route only stands down.
+pub(super) fn start_patrol(game: &mut Game, input: &mut InputState) {
+    if let Some(waypoints) = input.patrol_route.take()
+        && !waypoints.is_empty()
+    {
+        let units = game.presentation.selection.units.clone();
+        game.issue(Command::Patrol { units, waypoints });
+    }
+}
+
 /// The toast when the route has no room for another waypoint.
 fn patrol_full_toast(key: &str, hands: crate::platform::Hands) -> String {
     match (hands.touch(), hands.keys) {
-        (false, true) => format!("Patrol is full: {key} starts it"),
-        (false, false) => "Patrol is full: click Patrol to start it".to_string(),
-        (true, true) => format!("Patrol is full: {key} or tap Patrol to start it"),
-        (true, false) => "Patrol is full: tap Patrol to start it".to_string(),
+        (false, true) => format!("Patrol is full: press {key} or click Start"),
+        (false, false) => "Patrol is full: click Start".to_string(),
+        (true, true) => format!("Patrol is full: press {key} or tap Start"),
+        (true, false) => "Patrol is full: tap Start".to_string(),
     }
 }
 
