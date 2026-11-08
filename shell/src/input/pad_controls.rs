@@ -1,7 +1,8 @@
-//! A controller's presses in a match, all at the reticle: A selects, or
+//! A controller's presses in a match, at the reticle: A selects, or
 //! paints while held ([`super::paint`]), X gives the contextual order, the
 //! bumpers select the army, a held LT queues, RT narrows the selection by
-//! kind, and B backs out. While a placement or targeted order is armed, A
+//! kind, and B backs out. Menu opens the pause menu and View pauses, as
+//! the top bar's buttons do. While a placement or targeted order is armed, A
 //! and X confirm it at the reticle as a click there would, and a held A
 //! drags a placement row. Each takes the path its mouse counterpart takes.
 //! The D-pad and the stick clicks belong to [`super::reticle`], except
@@ -47,6 +48,11 @@ pub(super) fn press(
             input.queue_pads.insert(pad);
         }
         PadButton::RightTrigger => narrow(game, input),
+        // The top bar's buttons: Menu opens the pause menu, as the menu
+        // button does, and View pauses and resumes, as the pause button
+        // does.
+        PadButton::Start => input.menu_requested = true,
+        PadButton::Select => super::dispatch_action(game, input, bindings, Action::TogglePause),
         _ => {}
     }
 }
