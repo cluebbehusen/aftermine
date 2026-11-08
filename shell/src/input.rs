@@ -199,14 +199,28 @@ impl Pointer {
     }
 }
 
+/// The pointer an event puts in use, if it puts one: none for a mouse that
+/// only moves while a controller is in use.
+fn taking_over(input: &InputState, event: &RawEvent) -> Option<Pointer> {
+    let moved = matches!(event, RawEvent::MouseMove { .. });
+    Pointer::of(event).filter(|_| !(moved && input.pad_in_use.is_some()))
+}
+
+/// Whether the HUD stands in pad mode: while a controller is in use, and
+/// always on a TV, which has no other hands.
+fn hud_in_pad_mode(platform: crate::platform::Platform, pad_in_use: bool) -> bool {
+    pad_in_use || platform == crate::platform::Platform::Tv
+}
+
 /// Notes the hands behind one event, whatever the screen: the pointer in
 /// use, whether a hardware key has been pressed, and whether a controller
 /// is in use. A key pressed while a text field has focus doesn't count,
 /// since iOS's on-screen keyboard sends Enter, Space, and Backspace as key
-/// events. A controller stays in use until a key or pointer is used, or
-/// until it disconnects.
+/// events. A controller stays in use until a key is pressed, the mouse
+/// clicks or a finger lands, or until it disconnects: a mouse that only
+/// moves, nudged or brushed, leaves the controller in use.
 pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
-    if let Some(pointer) = Pointer::of(event) {
+    if let Some(pointer) = taking_over(input, event) {
         input.last_pointer = pointer;
         input.pad_in_use = None;
     }
@@ -230,7 +244,7 @@ pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
                 input.pad_in_use = None;
             }
         }
-        RawEvent::PadDown { pad, .. } => input.pad_in_use = Some((pad, input.pad_family(pad))),
+        RawEvent::PadDown { pad, .. } => take_pad(input, pad),
         RawEvent::PadStick { pad, stick, x, y } => {
             let held = input.sticks.entry(pad).or_default();
             match stick {
@@ -241,11 +255,19 @@ pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
                 input.sticks.remove(&pad);
             }
             if (x, y) != (0.0, 0.0) {
-                input.pad_in_use = Some((pad, input.pad_family(pad)));
+                take_pad(input, pad);
             }
         }
         _ => {}
     }
+}
+
+/// A controller press or push: the controller is the hands in use. Pad
+/// mode hides the touch QUEUE toggle, so a toggle left latched or locked
+/// lets go rather than queue every press with no way to turn it off.
+fn take_pad(input: &mut InputState, pad: u64) {
+    input.pad_in_use = Some((pad, input.pad_family(pad)));
+    input.queue_toggle = QueueToggle::Off;
 }
 
 /// Where a touch placement's ghost sits until a tap on it confirms.
@@ -484,6 +506,11 @@ pub struct InputState {
     /// Pad buttons whose press the queue strip took, so it takes their
     /// release too, even after it closes.
     dock_held: Vec<(u64, aftermine_protocol::PadButton)>,
+    /// Whether the HUD stands in pad mode, hiding the controls a
+    /// controller's buttons stand in for and naming those buttons. It
+    /// settles once a frame, after the frame's input, so every press is
+    /// judged against the HUD the last frame drew.
+    pub(crate) hud_pad: bool,
     /// The verb the next world click issues, if one is armed.
     pub(crate) click_verb: Option<ClickVerb>,
     /// Producers whose rally point the next world/minimap click sets.
@@ -1211,6 +1238,7 @@ impl InputState {
             stick_latched: false,
             dock: None,
             dock_held: Vec::new(),
+            hud_pad: false,
             click_verb: None,
             rallying: Vec::new(),
             striking: None,
@@ -1231,6 +1259,21 @@ impl InputState {
             bookmarks: [None; 4],
             resolver: ActionResolver::default(),
         }
+    }
+
+    /// Settles the HUD's pad mode for the next frame, after the frame's
+    /// input.
+    pub(crate) fn settle_hud(&mut self) {
+        self.hud_pad = hud_in_pad_mode(crate::platform::PLATFORM, self.pad_in_use.is_some());
+    }
+
+    /// Whose buttons the HUD names while it stands in pad mode: the
+    /// controller in use, or a common pad's before any is pressed.
+    pub(crate) fn hud_pad_family(&self) -> Option<aftermine_protocol::PadFamily> {
+        self.hud_pad.then(|| {
+            self.pad_family_in_use()
+                .unwrap_or(aftermine_protocol::PadFamily::Xbox)
+        })
     }
 
     /// Where the HUD reads its hover: the queue strip's lit entry while
@@ -2135,7 +2178,7 @@ pub fn apply_events(
 }
 
 fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, event: &RawEvent) {
-    if let Some(pointer) = Pointer::of(event) {
+    if let Some(pointer) = taking_over(input, event) {
         input.last_pointer = pointer;
         // Another pointer took over: a held A's sweep or row ends
         // unfinished, and the controller's ring closes.

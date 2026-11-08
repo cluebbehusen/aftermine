@@ -323,8 +323,17 @@ fn card_title_lines(title: &str, measure: impl Fn(&str) -> f32, width: f32) -> V
     lines
 }
 
-/// The title row's select-all button, framed like a strip chip.
-fn draw_select_all(label: &str, rect: Rect, hovered: bool, s: f32) {
+/// The title row's select-all button, framed like a strip chip. In pad
+/// mode (`pad`) the controller's RT stands in for its word, so the count
+/// reads beside the button that presses it, inside the same rect.
+fn draw_select_all(
+    sprites: &Sprites,
+    all: &crate::panel::SelectAll,
+    rect: Rect,
+    hovered: bool,
+    pad: Option<aftermine_protocol::PadFamily>,
+    s: f32,
+) {
     let (fill, stroke, edge) = if hovered {
         (
             crate::theme::CARD_HOVER,
@@ -341,14 +350,20 @@ fn draw_select_all(label: &str, rect: Rect, hovered: bool, s: f32) {
     fill_rect(rect, fill);
     stroke_rect(rect, stroke.at(s), edge);
     let size = crate::theme::Type::Small.at(s);
-    let width = measure_text(label, None, numeric::font_size(size), 1.0).width;
-    draw_text(
-        label,
-        rect.x + (rect.w - width) * 0.5,
-        rect.y + rect.h * 0.5 + size * 0.35,
-        size,
-        TEXT_PRIMARY,
-    );
+    let baseline = rect.y + rect.h * 0.5 + size * 0.35;
+    let measure = |text: &str| measure_text(text, None, numeric::font_size(size), 1.0).width;
+    let Some(family) = pad else {
+        let label = all.label();
+        let x = rect.x + (rect.w - measure(&label)) * 0.5;
+        draw_text(&label, x, baseline, size, TEXT_PRIMARY);
+        return;
+    };
+    let count = format!(" {}", all.owned);
+    let width = crate::hint_line::icon_width(size) + measure(&count);
+    let x = rect.x + (rect.w - width) * 0.5;
+    let icon = crate::pad::button_icon(family, aftermine_protocol::PadButton::RightTrigger);
+    let x = x + crate::hint_line::draw_icon(sprites, icon, x, baseline, size, TEXT_PRIMARY);
+    draw_text(&count, x, baseline, size, TEXT_PRIMARY);
 }
 
 /// Packs every visible queue chip above the command band: a single
@@ -1397,6 +1412,7 @@ pub(crate) fn draw_panel(
     let draw_icon = |dest: Rect, icon: &CardIcon, tint: Color| {
         draw_card_icon(sprites, dest, icon, tint, panel.owner);
     };
+    let pad = input.hud_pad_family();
 
     let selection = match layout {
         PanelLayout::Catalog {
@@ -1405,7 +1421,10 @@ pub(crate) fn draw_panel(
             grouped,
             dock,
         } => {
-            draw_catalog(panel, input, bindings, (*band, slots, *grouped), &draw_icon);
+            // Pad mode builds through the ring's build rings instead.
+            if pad.is_none() {
+                draw_catalog(panel, input, bindings, (*band, slots, *grouped), &draw_icon);
+            }
             if let Some(dock) = dock {
                 draw_dock(panel, input, dock, s, &draw_icon);
             }
@@ -1429,6 +1448,14 @@ pub(crate) fn draw_panel(
     } = &**selection;
     let (small, cards_x, info_rect, action_rect) = (*small, *cards_x, *info_rect, *action_rect);
     let top = info_rect.y;
+    // Pad mode leaves the command cards to the ring: their plate, the
+    // rally mark over them and the cards themselves stay undrawn, and
+    // nothing else moves.
+    let (action_rect, card_rects): (Rect, &[Rect]) = if pad.is_some() {
+        (Rect::new(0.0, 0.0, 0.0, 0.0), &[])
+    } else {
+        (action_rect, card_rects)
+    };
 
     for rect in [info_rect, action_rect] {
         if rect.w == 0.0 {
@@ -1453,7 +1480,7 @@ pub(crate) fn draw_panel(
         );
     }
     if let (Some(all), Some(rect)) = (&panel.select_all, *select_all) {
-        draw_select_all(&all.label(), rect, hovers(input, rect), s);
+        draw_select_all(sprites, all, rect, hovers(input, rect), pad, s);
     }
     for (index, status) in measured.status.iter().enumerate() {
         draw_text(
@@ -1608,7 +1635,7 @@ pub(crate) fn draw_panel(
         }
     }
 
-    if *rally_count > 0 {
+    if *rally_count > 0 && !card_rects.is_empty() {
         draw_icon(
             rally_context_rect(card_rects[0], s),
             &CardIcon::Verb(crate::panel::VerbIcon::Rally),

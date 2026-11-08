@@ -250,9 +250,17 @@ platform. Only a desktop build offers Quit, reads its command line and opens
 folders; elsewhere the player types through the system keyboard. Only a touch
 build sizes controls for fingertips. Copy follows the hands in use instead: each
 frame publishes the last pointer, whether a hardware key has been pressed, and
-the controller pressed since the last key or pointer as `platform::Hands`. Hints
-name keys only once one has been pressed, and name a controller's buttons while
-it is in use. Every screen offers a pointer path for what Escape does.
+the controller pressed since the last key, click or tap as `platform::Hands`; a
+mouse that only moves leaves a controller in use. Hints name keys only once one
+has been pressed, and name a controller's buttons while it is in use. Every
+screen offers a pointer path for what Escape does.
+
+While a controller is in use, and always on a TV, the match HUD stands in pad
+mode: it leaves out the controls a controller's buttons stand in for and names
+those buttons on the controls that stay. The HUD lays out as usual and pad mode
+only withholds what it hides from hit testing and drawing, so nothing that stays
+moves. Pad mode settles once a frame after the frame's input, so the press that
+ends it is judged against the HUD the last frame drew.
 
 Each finger records where it landed, and that decides what it may drive for its
 whole life. `InputState::queue_held` merges Shift, the QUEUE toggle and a held

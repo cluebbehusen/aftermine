@@ -18,8 +18,8 @@
 use aftermine_driver::auto::{ShellGuard, SpawnOptions, spawn_shell, ui};
 use aftermine_driver::client::Client;
 use aftermine_protocol::{
-    FogView, Key, PadButton, PadFamily, RawEvent, Reply, Request, StateFilter, StateView, Stick,
-    UnitView,
+    FogView, Key, MouseButton, PadButton, PadFamily, RawEvent, Reply, Request, StateFilter,
+    StateView, Stick, UnitView,
 };
 use aftermine_sim::{
     AttackTarget, BuildingId, BuildingKind, Command, Order, PlayerId, Rally, Target, UnitId,
@@ -1073,6 +1073,48 @@ fn the_left_stick_click_walks_and_cancels_the_queue() -> Result<()> {
         None,
         "with nothing left to press the strip closed"
     );
+    Ok(())
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_pad_hides_what_its_buttons_do_until_a_click() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_327)?;
+    drill.load(&drill_foundry())?;
+    // D-pad up centers the Foundry under the reticle and A selects it.
+    drill.press(PadButton::DpadUp)?;
+    drill.press(PadButton::South)?;
+    let card_plate = |drill: &mut PadMatch| -> Result<f32> {
+        let regions = ui(&mut drill.client)?
+            .panel_regions
+            .context("live play reports its panel")?;
+        Ok(regions[1][2])
+    };
+    assert_eq!(
+        card_plate(&mut drill)?,
+        0.0,
+        "the ring stands in for the cards"
+    );
+    assert_eq!(ui(&mut drill.client)?.menu_button, None, "Menu stands in");
+    drill.inject(RawEvent::MouseMove { x: 640.0, y: 400.0 })?;
+    assert_eq!(
+        card_plate(&mut drill)?,
+        0.0,
+        "a mouse that only moves changes nothing"
+    );
+    // A click on the Foundry under the reticle hands the HUD back.
+    drill.inject(RawEvent::MouseDown {
+        button: MouseButton::Left,
+        x: 640.0,
+        y: 400.0,
+    })?;
+    drill.inject(RawEvent::MouseUp {
+        button: MouseButton::Left,
+        x: 640.0,
+        y: 400.0,
+    })?;
+    assert!(card_plate(&mut drill)? > 0.0, "the cards are back");
+    assert!(ui(&mut drill.client)?.menu_button.is_some());
     Ok(())
 }
 

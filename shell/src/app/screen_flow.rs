@@ -848,6 +848,26 @@ fn filter_card_pointer(events: &mut Vec<RawEvent>, card: &CardLayout, ui: f32) -
     filtered
 }
 
+/// In pad mode, takes the controller buttons a finished lesson's card
+/// offers out of the frame's events, and returns the card button the first
+/// one pressed: A for the next lesson or the first match, B for the lesson
+/// list. Their releases go with them, so neither reaches the match.
+fn filter_card_pad(events: &mut Vec<RawEvent>, card: &CardLayout) -> Option<CardButton> {
+    let mut pressed = None;
+    events.retain(|e| match *e {
+        RawEvent::PadDown { button, .. } => match card.pad_press(button) {
+            Some(press) => {
+                pressed = pressed.or(Some(press));
+                false
+            }
+            None => true,
+        },
+        RawEvent::PadUp { button, .. } => card.pad_press(button).is_none(),
+        _ => true,
+    });
+    pressed
+}
+
 /// Carries out a press on the lesson or tip card: closing a tip and
 /// folding stay in the match, and every other button leaves the lesson.
 fn press_card(app: &mut App, button: CardButton) -> Result<Option<Screen>> {
@@ -891,6 +911,10 @@ fn playing_frame(
         // also end that drag, or a later release completes it.
         if filtered.swallowed_release {
             app.input.drag_origin = None;
+        }
+        // A ring or the queue strip keeps the pad's buttons while open.
+        if card_press.is_none() && app.input.ring.is_none() && app.input.dock.is_none() {
+            card_press = filter_card_pad(events, &card);
         }
     }
     let had_selection = !app.game.presentation.selection.units.is_empty()
@@ -936,6 +960,7 @@ fn playing_frame(
     );
     input::update_held(&mut app.game, &mut app.input, time.presentation);
     input::update_touch(&mut app.game, &mut app.input, &app.config.bindings);
+    app.input.settle_hud();
     let menu_pressed = app.input.take_menu_request();
     // The cursor telegraphs the verb: crosshair while
     // placing or plotting, pointer over chrome.
@@ -1021,7 +1046,7 @@ fn playing_frame(
     });
     if let Some(card) = current_card(app) {
         pass(FramePass::Hud, || {
-            tutorial_card::draw(&card, app.input.mouse);
+            tutorial_card::draw(&card, &app.sprites, app.input.mouse);
         });
     }
     next.unwrap_or(Screen::Playing)
@@ -1030,13 +1055,17 @@ fn playing_frame(
 /// The card over the match this frame: the lesson's, or a match tip
 /// while one shows.
 fn current_card(app: &App) -> Option<CardLayout> {
+    // The card follows the HUD's pad mode, so a press is judged against
+    // the card the last frame drew.
+    let pad = app.input.hud_pad_family();
     match &app.game.tutorial {
         Some(tutorial) => Some(tutorial_card::current(
             tutorial,
             &app.game,
             &app.config.bindings,
+            pad,
         )),
-        None => tutorial_card::current_tip(&app.game, &app.config.bindings),
+        None => tutorial_card::current_tip(&app.game, &app.config.bindings, pad),
     }
 }
 

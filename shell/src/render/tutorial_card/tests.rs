@@ -35,6 +35,7 @@ fn lay(tutorial: &Tutorial, coach: Option<&CoachLine>, hands: Hands, w: f32) -> 
         hands,
         env(w),
         &fixed,
+        None,
     )
 }
 
@@ -177,7 +178,15 @@ fn a_finger_reaches_a_button_just_past_its_drawn_edge() {
 }
 
 fn lay_tip(tip: Tip, hands: Hands, w: f32) -> CardLayout {
-    tip_layout(tip, 1.0, &BindingMap::classic(), hands, env(w), &fixed)
+    tip_layout(
+        tip,
+        1.0,
+        &BindingMap::classic(),
+        hands,
+        env(w),
+        &fixed,
+        None,
+    )
 }
 
 #[test]
@@ -229,4 +238,66 @@ fn the_tip_card_heads_its_tip_names_real_bindings_and_keeps_inside_itself() {
     }
     let keys = lay_tip(Tip::UnderAttack, MOUSE, 1280.0).text().join(" ");
     assert!(keys.contains("press Tab"), "{keys}");
+}
+
+#[test]
+fn in_pad_mode_a_finished_lesson_takes_a_and_b_and_nothing_else_offers_a_button() {
+    use aftermine_protocol::{PadButton, PadFamily};
+    let pad = Some(PadFamily::Xbox);
+    let lay_pad = |tutorial: &Tutorial, coach: Option<&CoachLine>| {
+        layout(
+            tutorial,
+            coach,
+            &BindingMap::classic(),
+            MOUSE,
+            env(1280.0),
+            &fixed,
+            pad,
+        )
+    };
+    let done = lay_pad(&lesson(Lesson::Command, 5), None);
+    assert_eq!(actions(&done), [CardButton::Next, CardButton::Lessons]);
+    assert_eq!(done.pad_press(PadButton::South), Some(CardButton::Next));
+    assert_eq!(done.pad_press(PadButton::East), Some(CardButton::Lessons));
+    assert_eq!(done.pad_press(PadButton::West), None);
+    let mouse = lay(&lesson(Lesson::Command, 5), None, MOUSE, 1280.0);
+    assert_eq!(
+        mouse.pad_press(PadButton::South),
+        None,
+        "outside pad mode A stays the match's"
+    );
+
+    let last = Lesson::ALL[Lesson::ALL.len() - 1];
+    let graduate = lay_pad(&lesson(last, last.steps().len()), None);
+    assert_eq!(
+        graduate.pad_press(PadButton::South),
+        Some(CardButton::FirstMatch)
+    );
+
+    // Stuck, Restart in the pause menu stands in for Retry; and a running
+    // step has nothing to press.
+    let stuck = lay_pad(&lesson(Lesson::Command, 4), Some(&CoachLine::Stuck));
+    assert!(actions(&stuck).is_empty());
+    assert_eq!(stuck.pad_press(PadButton::South), None);
+    assert!(actions(&lay_pad(&lesson(Lesson::Scrap, 2), None)).is_empty());
+
+    // A controller cannot fold the card, so it stands open.
+    let mut folded = lesson(Lesson::Scrap, 2);
+    folded.toggle_collapsed();
+    assert_eq!(
+        lay_pad(&folded, None).text(),
+        lay(&lesson(Lesson::Scrap, 2), None, MOUSE, 1280.0).text()
+    );
+
+    // A tip closes itself in time, so it offers no close button.
+    let tip = tip_layout(
+        Tip::IdleHarvesters,
+        1.0,
+        &BindingMap::classic(),
+        MOUSE,
+        env(1280.0),
+        &fixed,
+        pad,
+    );
+    assert!(tip.buttons.is_empty());
 }

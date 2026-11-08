@@ -32,6 +32,17 @@ pub(crate) enum CardButton {
 }
 
 impl CardButton {
+    /// The controller button that presses it in pad mode, for the buttons
+    /// a finished lesson offers.
+    fn pad_button(self) -> Option<aftermine_protocol::PadButton> {
+        use aftermine_protocol::PadButton;
+        match self {
+            Self::Next | Self::FirstMatch => Some(PadButton::South),
+            Self::Lessons => Some(PadButton::East),
+            Self::Fold | Self::Retry | Self::Dismiss => None,
+        }
+    }
+
     fn label(self) -> &'static str {
         match self {
             Self::Fold | Self::Dismiss => "",
@@ -87,9 +98,22 @@ pub(crate) struct CardLayout {
     folded: bool,
     /// The card's opacity, below 1 while a tip fades out.
     alpha: f32,
+    /// In pad mode, whose buttons the card's own buttons wear.
+    pad: Option<aftermine_protocol::PadFamily>,
 }
 
 impl CardLayout {
+    /// In pad mode, the card button a controller button presses: A for
+    /// the next lesson or the first match and B for the lesson list, while
+    /// the card offers them.
+    pub(crate) fn pad_press(&self, pressed: aftermine_protocol::PadButton) -> Option<CardButton> {
+        self.pad?;
+        self.buttons
+            .iter()
+            .map(|(_, button)| *button)
+            .find(|button| button.pad_button() == Some(pressed))
+    }
+
     /// The button whose drawn rectangle, padded to a fingertip for a
     /// finger, holds `point`.
     pub(crate) fn button_at(&self, point: Vec2, finger: bool, ui: f32) -> Option<CardButton> {
@@ -189,7 +213,11 @@ pub(crate) fn expand(text: &str, bindings: &crate::action::BindingMap) -> String
 }
 
 /// Lays the card out for `tutorial` over `game`. `coach` is the step's
-/// live line, which the caller reads from the world.
+/// live line, which the caller reads from the world. In pad mode
+/// (`pad_family`) the card stands open with no fold, since a controller
+/// cannot fold it, and offers only what a finished lesson's buttons do,
+/// each wearing the controller button that presses it; Restart in the
+/// pause menu stands in for Retry.
 pub(crate) fn layout(
     tutorial: &Tutorial,
     coach: Option<&CoachLine>,
@@ -197,6 +225,7 @@ pub(crate) fn layout(
     hands: crate::platform::Hands,
     env: HudEnv,
     measure: Measure,
+    pad_family: Option<aftermine_protocol::PadFamily>,
 ) -> CardLayout {
     let s = env.ui;
     let (x, y, w) = corner(CARD_W, env);
@@ -205,7 +234,7 @@ pub(crate) fn layout(
     let text_w = w - pad * 2.0;
     let lesson = tutorial.lesson();
     let steps = lesson.steps().len();
-    let folded = tutorial.collapsed();
+    let folded = tutorial.collapsed() && pad_family.is_none();
     let mut column = Column {
         x: x + pad,
         cursor: y + pad,
@@ -242,10 +271,13 @@ pub(crate) fn layout(
 
     let body_size = Type::Body.at(s);
     let wrap = |text: &str| super::wrap_words(text, |t| measure(Face::Body, t, body_size), text_w);
-    let mut buttons = vec![(
-        Rect::new(x + w - pad - fold, y + 6.0 * s, fold, fold),
-        CardButton::Fold,
-    )];
+    let mut buttons = Vec::new();
+    if pad_family.is_none() {
+        buttons.push((
+            Rect::new(x + w - pad - fold, y + 6.0 * s, fold, fold),
+            CardButton::Fold,
+        ));
+    }
     if !folded {
         let paragraphs: Vec<String> = if let Some(step) = tutorial.current() {
             step.body(hands)
@@ -300,7 +332,7 @@ pub(crate) fn layout(
                 Course::Lesson(_) => &[CardButton::Next, CardButton::Lessons],
                 Course::FirstMatch => &[CardButton::FirstMatch, CardButton::Lessons],
             }
-        } else if matches!(coach, Some(CoachLine::Stuck)) {
+        } else if matches!(coach, Some(CoachLine::Stuck)) && pad_family.is_none() {
             &[CardButton::Retry]
         } else {
             &[]
@@ -310,7 +342,11 @@ pub(crate) fn layout(
             let top = column.cursor + 12.0 * s;
             let mut left = x + pad;
             for action in actions {
-                let label_w = measure(Face::Body, action.label(), body_size);
+                let mut label_w = measure(Face::Body, action.label(), body_size);
+                if pad_family.is_some() {
+                    label_w += measure(Face::Body, " ", body_size)
+                        + crate::hint_line::icon_width(body_size);
+                }
                 let bw = (label_w + 28.0 * s).max(112.0 * s);
                 buttons.push((Rect::new(left, top, bw, h), *action));
                 left += bw + 8.0 * s;
@@ -325,11 +361,14 @@ pub(crate) fn layout(
         lines: column.lines,
         folded,
         alpha: 1.0,
+        pad: pad_family,
     }
 }
 
 /// Lays out the card for match tip `tip` at opacity `alpha`, where the
-/// lesson card sits: its heading, what to do, and a close button.
+/// lesson card sits: its heading, what to do, and a close button. In pad
+/// mode (`pad_family`) it has no close button: a tip closes itself in
+/// time.
 pub(crate) fn tip_layout(
     tip: Tip,
     alpha: f32,
@@ -337,6 +376,7 @@ pub(crate) fn tip_layout(
     hands: crate::platform::Hands,
     env: HudEnv,
     measure: Measure,
+    pad_family: Option<aftermine_protocol::PadFamily>,
 ) -> CardLayout {
     let s = env.ui;
     let (x, y, w) = corner(TIP_W, env);
@@ -367,15 +407,21 @@ pub(crate) fn tip_layout(
         );
     }
     let h = column.cursor + pad - y;
-    CardLayout {
-        rect: Rect::new(x, y, w, h),
-        buttons: vec![(
+    let buttons = if pad_family.is_none() {
+        vec![(
             Rect::new(x + w - pad - close, y + 6.0 * s, close, close),
             CardButton::Dismiss,
-        )],
+        )]
+    } else {
+        Vec::new()
+    };
+    CardLayout {
+        rect: Rect::new(x, y, w, h),
+        buttons,
         lines: column.lines,
         folded: false,
         alpha,
+        pad: pad_family,
     }
 }
 
@@ -384,6 +430,7 @@ pub(crate) fn current(
     tutorial: &Tutorial,
     game: &crate::game::Game,
     bindings: &crate::action::BindingMap,
+    pad: Option<aftermine_protocol::PadFamily>,
 ) -> CardLayout {
     layout(
         tutorial,
@@ -392,6 +439,7 @@ pub(crate) fn current(
         crate::platform::hands(),
         HudEnv::current(),
         &super::hud::window_measure,
+        pad,
     )
 }
 
@@ -400,6 +448,7 @@ pub(crate) fn current(
 pub(crate) fn current_tip(
     game: &crate::game::Game,
     bindings: &crate::action::BindingMap,
+    pad: Option<aftermine_protocol::PadFamily>,
 ) -> Option<CardLayout> {
     let tip = game.tips.showing()?;
     let alpha = game.tips.alpha(
@@ -414,11 +463,12 @@ pub(crate) fn current_tip(
         crate::platform::hands(),
         HudEnv::current(),
         &super::hud::window_measure,
+        pad,
     ))
 }
 
 /// Draws a laid-out card; `mouse` lights the button under the pointer.
-pub(crate) fn draw(card: &CardLayout, mouse: Vec2) {
+pub(crate) fn draw(card: &CardLayout, sprites: &crate::assets::Sprites, mouse: Vec2) {
     let s = super::ui_scale();
     let r = card.rect;
     let fade = |color: Color| Color {
@@ -463,6 +513,19 @@ pub(crate) fn draw(card: &CardLayout, mouse: Vec2) {
             if card.folded {
                 draw_line(cx, cy - arm, cx, cy + arm, stroke, color);
             }
+        } else if let (Some(family), Some(pressed)) = (card.pad, button.pad_button()) {
+            // The button wears the controller button that presses it,
+            // ahead of its words.
+            crate::button::draw(*rect, "", false, s);
+            let size = Type::Body.at(s);
+            let gap = measure_text(" ", None, crate::numeric::font_size(size), 1.0).width;
+            let words = measure_text(button.label(), None, crate::numeric::font_size(size), 1.0);
+            let width = crate::hint_line::icon_width(size) + gap + words.width;
+            let x = rect.x + (rect.w - width) * 0.5;
+            let baseline = rect.y + rect.h * 0.62;
+            let icon = crate::pad::button_icon(family, pressed);
+            let x = x + crate::hint_line::draw_icon(sprites, icon, x, baseline, size, TEXT_PRIMARY);
+            draw_text(button.label(), x + gap, baseline, size, TEXT_BODY);
         } else {
             crate::button::draw(*rect, button.label(), lit, s);
         }

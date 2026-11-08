@@ -4603,7 +4603,76 @@ fn every_screen_tracks_the_pointer_and_keys_in_use() {
 }
 
 #[test]
-fn a_controller_is_the_hands_in_use_from_its_press_until_a_key_or_pointer() {
+fn the_hud_stands_in_pad_mode_while_a_controller_is_in_use_and_always_on_a_tv() {
+    use crate::platform::Platform;
+    use aftermine_protocol::{PadButton, PadFamily};
+    assert!(!super::hud_in_pad_mode(Platform::Desktop, false));
+    assert!(super::hud_in_pad_mode(Platform::Desktop, true));
+    assert!(!super::hud_in_pad_mode(Platform::Touch, false));
+    assert!(super::hud_in_pad_mode(Platform::Tv, false));
+    // It settles after the frame's input, so a press is judged against
+    // the HUD the last frame drew.
+    let mut input = InputState::new();
+    track_hands(
+        &mut input,
+        &RawEvent::PadConnected {
+            pad: 1,
+            family: PadFamily::Switch,
+        },
+        false,
+    );
+    track_hands(
+        &mut input,
+        &RawEvent::PadDown {
+            pad: 1,
+            button: PadButton::South,
+        },
+        false,
+    );
+    assert!(!input.hud_pad, "not until the frame settles it");
+    input.settle_hud();
+    assert_eq!(input.hud_pad_family(), Some(PadFamily::Switch));
+    track_hands(&mut input, &mouse_move(vec2(2.0, 2.0)), false);
+    input.settle_hud();
+    assert!(input.hud_pad, "a mouse that only moves leaves pad mode up");
+    track_hands(&mut input, &left_down(vec2(3.0, 3.0)), false);
+    assert!(input.hud_pad, "the click is judged against pad mode");
+    input.settle_hud();
+    assert!(!input.hud_pad, "and pad mode ends after it");
+}
+
+#[test]
+fn a_controller_taking_over_lets_go_of_the_touch_queue_toggle_pad_mode_hides() {
+    use aftermine_protocol::{PadButton, PadFamily, Stick};
+    let connect = RawEvent::PadConnected {
+        pad: 1,
+        family: PadFamily::Xbox,
+    };
+    let takeovers = [
+        RawEvent::PadDown {
+            pad: 1,
+            button: PadButton::South,
+        },
+        RawEvent::PadStick {
+            pad: 1,
+            stick: Stick::Left,
+            x: 0.5,
+            y: 0.0,
+        },
+    ];
+    for takeover in takeovers {
+        let mut input = InputState::new();
+        track_hands(&mut input, &connect, false);
+        input.queue_toggle = QueueToggle::Locked;
+        assert!(input.queue_held());
+        track_hands(&mut input, &takeover, false);
+        assert_eq!(input.queue_toggle, QueueToggle::Off, "{takeover:?}");
+        assert!(!input.queue_held(), "{takeover:?}");
+    }
+}
+
+#[test]
+fn a_controller_is_the_hands_in_use_from_its_press_until_a_key_click_or_tap() {
     use aftermine_protocol::{PadButton, PadFamily, Stick};
     let mut input = InputState::new();
     let press = |pad| RawEvent::PadDown {
@@ -4632,9 +4701,14 @@ fn a_controller_is_the_hands_in_use_from_its_press_until_a_key_or_pointer() {
     track_hands(&mut input, &press(1), false);
     assert_eq!(input.pad_family_in_use(), Some(PadFamily::PlayStation));
 
+    track_hands(&mut input, &mouse_move(vec2(2.0, 2.0)), false);
+    assert_eq!(
+        input.pad_family_in_use(),
+        Some(PadFamily::PlayStation),
+        "a mouse that only moves leaves the pad in use"
+    );
     for event in [
         key_down(Key::H),
-        mouse_move(vec2(2.0, 2.0)),
         left_down(vec2(3.0, 3.0)),
         touch_down(1, vec2(1.0, 1.0)),
     ] {

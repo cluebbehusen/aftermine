@@ -72,7 +72,7 @@ impl HintLine {
             .iter()
             .map(|segment| match segment {
                 Segment::Text(text) => measure(text, size),
-                Segment::Pad(_) => size * ICON_SCALE,
+                Segment::Pad(_) => icon_width(size),
             })
             .sum()
     }
@@ -119,10 +119,6 @@ impl HintLine {
         text: Color,
         icons: Color,
     ) {
-        let icon = size * ICON_SCALE;
-        let cap = measure_text("H", None, numeric::font_size(size), 1.0).offset_y;
-        let dpi = screen_dpi_scale();
-        let snap = |v: f32| (v * dpi).round() / dpi;
         let mut x = x;
         for segment in &self.segments {
             match segment {
@@ -130,17 +126,7 @@ impl HintLine {
                     draw_text(copy, x, baseline, size, text);
                     x += measure(copy, size);
                 }
-                Segment::Pad(pad) => {
-                    let extent = snap(icon);
-                    let dest = Rect::new(
-                        snap(x),
-                        snap(baseline - cap * 0.5 - icon * 0.5),
-                        extent,
-                        extent,
-                    );
-                    sprites.draw_canvas(dest, &[(sprites.pad_icon(*pad), icons)]);
-                    x += icon;
-                }
+                Segment::Pad(pad) => x += draw_icon(sprites, *pad, x, baseline, size, icons),
             }
         }
     }
@@ -166,6 +152,37 @@ impl HintLine {
         let x = center_x - self.width(size) * 0.5;
         self.draw_at(sprites, x, baseline, size, text, icons);
     }
+}
+
+/// How wide a controller button's icon stands beside copy at text `size`.
+pub(crate) fn icon_width(size: f32) -> f32 {
+    size * ICON_SCALE
+}
+
+/// Draws `icon` beside copy at text `size`, from `x`, centered on the
+/// capitals of a line whose baseline is `baseline`, tinted with `tint`.
+/// Returns how wide it stands.
+pub(crate) fn draw_icon(
+    sprites: &Sprites,
+    icon: PadIcon,
+    x: f32,
+    baseline: f32,
+    size: f32,
+    tint: Color,
+) -> f32 {
+    let width = icon_width(size);
+    let cap = measure_text("H", None, numeric::font_size(size), 1.0).offset_y;
+    let dpi = screen_dpi_scale();
+    let snap = |v: f32| (v * dpi).round() / dpi;
+    let extent = snap(width);
+    let dest = Rect::new(
+        snap(x),
+        snap(baseline - cap * 0.5 - width * 0.5),
+        extent,
+        extent,
+    );
+    sprites.draw_canvas(dest, &[(sprites.pad_icon(icon), tint)]);
+    width
 }
 
 /// How wide a run of copy is at text `size`.

@@ -229,8 +229,8 @@ fn the_reticle_snaps_onto_a_unit_in_reach_and_slows_over_it() {
     );
     update_held(&mut game, &mut input, 0.0);
     assert_eq!(input.last_pointer, Pointer::Pad);
-    // Once it is let go, a mouse takes the pointer back, and the reticle
-    // rests on nothing.
+    // Once it is let go, a mouse that only moves leaves the pad the
+    // pointer; a click takes it back, and the reticle rests on nothing.
     feed(
         &mut game,
         &mut input,
@@ -238,6 +238,17 @@ fn the_reticle_snaps_onto_a_unit_in_reach_and_slows_over_it() {
             stick(Stick::Left, 0.0, 0.0),
             RawEvent::MouseMove { x: 5.0, y: 6.0 },
         ],
+    );
+    update_held(&mut game, &mut input, 0.0);
+    assert_eq!(input.last_pointer, Pointer::Pad);
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::MouseDown {
+            button: aftermine_protocol::MouseButton::Left,
+            x: 5.0,
+            y: 6.0,
+        }],
     );
     update_held(&mut game, &mut input, 0.0);
     assert_eq!(input.hover_point(), Some(vec2(5.0, 6.0)));

@@ -37,6 +37,13 @@ fn hud_copy_names_keys_only_on_desktop() {
             crate::platform::assert_mouseless_copy(hint);
         }
     }
+    // A controller names its own Menu button, since pad mode hides the
+    // top bar's.
+    for hands in crate::platform::pad_hands() {
+        let hint = concede_hint(hands);
+        assert!(hint.contains("{menu}"), "{hint}");
+        crate::platform::assert_touch_copy(&hint.replace("{menu}", "Menu"));
+    }
 }
 
 #[test]
@@ -182,8 +189,34 @@ fn the_top_bar_shows_income_before_anything_earns() {
             ui: 1.0,
         },
         &measure,
+        None,
     );
     assert_eq!(top.passive, "+0/min income");
+}
+
+#[test]
+fn in_pad_mode_the_running_clock_makes_room_for_view() {
+    let game =
+        crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0))
+            .unwrap();
+    let view = game.view();
+    assert!(!view.clock.paused);
+    let measure = |_: super::super::hud::Face, text: &str, size: f32| {
+        text.chars().count() as f32 * size * 0.5
+    };
+    let env = super::super::hud::HudEnv {
+        viewport: vec2(1280.0, 800.0),
+        ui: 1.0,
+    };
+    let bindings = crate::action::BindingMap::classic();
+    let lay = |pad| top_bar_layout(&view, &bindings, env, &measure, pad);
+    let (mouse, pad) = (lay(None), lay(Some(aftermine_protocol::PadFamily::Xbox)));
+    assert_eq!(mouse.status, pad.status, "the same clock");
+    let icon = crate::hint_line::icon_width(crate::theme::Type::Small.at(1.0));
+    assert!(
+        mouse.bar.status_x - pad.bar.status_x >= icon,
+        "the clock leaves room for View's icon, as PAUSED does"
+    );
 }
 
 #[test]
