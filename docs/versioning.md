@@ -45,3 +45,6 @@ along `main` but can repeat across branches.
   refusal says so instead of offering the same-version override.
 - Each format version moves with its file's shape, and the package version moves
   with each release.
+- The apps' `icloud-container-environment` entitlement moves from Development to
+  Production, after the CloudKit schema is deployed to Production in the
+  CloudKit Console. Records mirrored during development stay behind.

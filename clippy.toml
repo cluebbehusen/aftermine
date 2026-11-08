@@ -15,4 +15,4 @@ allowed-wildcard-imports = ["super"]
 
 # Brand and framework names that read as code to the doc lint; ".." keeps
 # the defaults.
-doc-valid-idents = ["PlayStation", "GameController", ".."]
+doc-valid-idents = ["PlayStation", "GameController", "CloudKit", ".."]

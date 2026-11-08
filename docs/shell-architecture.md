@@ -300,6 +300,21 @@ starts downloading files iCloud holds but the device does not, and the shelf
 scans again while any are on their way. With iCloud on, the shelf still lists
 records kept on the device.
 
+Every record file also mirrors through CloudKit's private database, one record
+per file named by its folder and file name, so Apple TV shares records with iPad
+and Mac. iPad and Mac mirror their iCloud Drive folder and Apple TV its cache;
+workspace and automation runs never mirror. A pass runs on the worker ahead of a
+catalog scan, the first time Home opens and then at most every 30 seconds while
+Home or the shelf is open; right after a background save, a pass sends this
+device's changes and takes none in, so files never arrive during a match. Each
+device keeps a manifest of what it last agreed with CloudKit beside its own
+records, so an edit or deletion on either side crosses to the other. When both
+sides changed a record, the newer save wins, and an unsynced named save that
+collides with another device's keeps both. A cleared Apple TV cache takes the
+manifest with it, so the TV downloads its records again rather than deleting
+them. A pass cut short leaves the rest to the next one and fetches the same
+changes again.
+
 Settings that belong to the player, not the device, also travel through iCloud's
 key-value store on iPad, Mac and Apple TV, one key per setting with the newest
 change winning. Settings tied to one device's screen, touch or pointer hardware,

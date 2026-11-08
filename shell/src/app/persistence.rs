@@ -298,11 +298,15 @@ impl App {
         };
         let job = autosave::SaveJob::lan(&self.game, capture, None);
         let mark = job.mark();
-        let task: Task = Box::new(move |_| {
+        let mirror = self.mirror_at.is_some();
+        let task: Task = Box::new(move |cancel| {
             job.run().map_err(|error| {
                 let line = error.player_line();
                 anyhow::Error::new(error).context(line)
             })?;
+            if mirror {
+                crate::cloud_mirror::run(crate::cloud_mirror::Mode::Push, &|| cancel.cancelled());
+            }
             Ok(Output::Saved(mark))
         });
         match self.persistence.start(task) {
@@ -369,11 +373,17 @@ impl App {
         }
         let job = autosave::SaveJob::capture(&self.game, None);
         let mark = job.mark();
-        let task: Task = Box::new(move |_| {
+        let mirror = self.mirror_at.is_some();
+        let task: Task = Box::new(move |cancel| {
             job.run().map_err(|error| {
                 let line = error.player_line();
                 anyhow::Error::new(error).context(line)
             })?;
+            // Sent at once, so a session left on one device can continue
+            // on another.
+            if mirror {
+                crate::cloud_mirror::run(crate::cloud_mirror::Mode::Push, &|| cancel.cancelled());
+            }
             Ok(Output::Saved(mark))
         });
         match self.persistence.start(task) {
@@ -390,6 +400,7 @@ impl App {
             return;
         }
         let delete = self.catalog_delete.take();
+        let mirror = self.mirror_at.is_some_and(|at| self.clock.elapsed() >= at);
         let task: Task = Box::new(move |cancel| {
             if let Some(path) = delete {
                 aftermine_icloud::coordinate(
@@ -398,8 +409,15 @@ impl App {
                     |granted| std::fs::remove_file(granted),
                 )??;
             }
-            let catalog = crate::saves::discover(|| cancel.cancelled());
+            let arriving = if mirror {
+                crate::cloud_mirror::run(crate::cloud_mirror::Mode::Full, &|| cancel.cancelled())
+                    .pending
+            } else {
+                0
+            };
+            let mut catalog = crate::saves::discover(|| cancel.cancelled());
             anyhow::ensure!(!cancel.cancelled(), "catalog cancelled");
+            catalog.downloading += arriving;
             Ok(Output::Catalog(catalog))
         });
         match self.persistence.start(task) {
@@ -407,18 +425,23 @@ impl App {
                 self.catalog_id = Some(id);
                 self.catalog_rescan = None;
                 self.catalog_cloud = crate::paths::cloud_changes();
+                if mirror {
+                    self.mirror_at = Some(self.clock.elapsed() + crate::cloud_mirror::EVERY);
+                }
             }
             Err(error) => self.notify(error.to_string(), true),
         }
     }
 
     /// Whether the last catalog may be out of date: records were still
-    /// downloading from iCloud long enough ago to look again, or the iCloud
-    /// folder changed since its scan began.
+    /// downloading from iCloud long enough ago to look again, the iCloud
+    /// folder changed since its scan began, or it is time to look for
+    /// records other devices changed.
     pub(super) fn catalog_stale(&self) -> bool {
-        self.catalog_rescan
-            .is_some_and(|at| self.clock.elapsed() >= at)
+        let now = self.clock.elapsed();
+        self.catalog_rescan.is_some_and(|at| now >= at)
             || crate::paths::cloud_changes() != self.catalog_cloud
+            || self.mirror_at.is_some_and(|at| now >= at)
     }
 }
 

@@ -9,17 +9,17 @@ window.
 
 Read the README for the crate you are changing:
 
-| Crate                                      | Responsibility                                                                            |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| [`chassis`](chassis/README.md)             | Reusable deterministic primitives. No game rules or engine dependencies.                  |
-| [`aftermine-sim`](sim/README.md)           | Game rules and player-knowledge projection.                                               |
-| [`aftermine-opponent`](opponent/README.md) | Reactive, best-effort opponent controller.                                                |
-| [`aftermine-protocol`](protocol/README.md) | Debug wire types, framing, input events, and state views.                                 |
-| [`aftermine-kit`](kit/README.md)           | Shared replay, statistics, fixture, and CPU-rendering services.                           |
-| [`aftermine-net`](net/README.md)           | Lockstep multiplayer: wire messages, session core, start barrier, and TCP transport.      |
-| [`aftermine-icloud`](icloud/README.md)     | iCloud Drive files, the iCloud key-value store and user defaults; the only `unsafe` code. |
-| [`aftermine-shell`](shell/README.md)       | Macroquad input, UI, rendering, audio, persistence, and live session.                     |
-| [`aftermine-driver`](driver/README.md)     | Headless runner, inspectors, map audit, live client, profiling, and smoke QA.             |
+| Crate                                      | Responsibility                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| [`chassis`](chassis/README.md)             | Reusable deterministic primitives. No game rules or engine dependencies.                                |
+| [`aftermine-sim`](sim/README.md)           | Game rules and player-knowledge projection.                                                             |
+| [`aftermine-opponent`](opponent/README.md) | Reactive, best-effort opponent controller.                                                              |
+| [`aftermine-protocol`](protocol/README.md) | Debug wire types, framing, input events, and state views.                                               |
+| [`aftermine-kit`](kit/README.md)           | Shared replay, statistics, fixture, and CPU-rendering services.                                         |
+| [`aftermine-net`](net/README.md)           | Lockstep multiplayer: wire messages, session core, start barrier, and TCP transport.                    |
+| [`aftermine-icloud`](icloud/README.md)     | iCloud Drive files, the key-value store, the CloudKit mirror and user defaults; the only `unsafe` code. |
+| [`aftermine-shell`](shell/README.md)       | Macroquad input, UI, rendering, audio, persistence, and live session.                                   |
+| [`aftermine-driver`](driver/README.md)     | Headless runner, inspectors, map audit, live client, profiling, and smoke QA.                           |
 
 Contracts live in `docs/simulation-architecture.md`,
 `docs/shell-architecture.md` and `docs/netplay-architecture.md`.
