@@ -282,3 +282,139 @@ fn army_tooltips_say_what_a_press_selects() {
         "No army units in view"
     );
 }
+
+#[test]
+fn the_queue_flag_shows_while_orders_queue_for_own_units() {
+    use crate::input::QueueToggle;
+    use aftermine_protocol::{Key, PadButton, RawEvent};
+    let mut game =
+        crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0))
+            .unwrap();
+    let bindings = crate::action::BindingMap::classic();
+    let mut input = InputState::new();
+    let measure = |_: super::super::hud::Face, text: &str, size: f32| {
+        text.chars().count() as f32 * size * 0.5
+    };
+    let env = super::super::hud::HudEnv {
+        viewport: vec2(1280.0, 800.0),
+        ui: 1.0,
+    };
+    let flag = |game: &crate::game::Game, input: &InputState| {
+        queue_flag_layout(&game.view(), input, env, &measure)
+    };
+    let feed = |game: &mut crate::game::Game, input: &mut InputState, event: RawEvent| {
+        crate::input::apply_events(game, input, &bindings, &[event], |_, _| {});
+    };
+    let human = game.presentation.human;
+    let own = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == human)
+        .expect("an own unit")
+        .id;
+    let foundry = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.player == human)
+        .expect("an own Foundry")
+        .id;
+
+    game.presentation.selection.buildings = vec![foundry];
+    feed(&mut game, &mut input, RawEvent::KeyDown { key: Key::Shift });
+    assert_eq!(
+        flag(&game, &input),
+        None,
+        "Shift with a structure is a hotkey or an added pick, not a queue"
+    );
+    game.presentation.selection.buildings.clear();
+    game.presentation.selection.units = vec![own];
+    let held = flag(&game, &input).expect("Shift queues a unit's orders");
+    assert_eq!(held.span, QueueSpan::On);
+    assert_eq!(
+        held.rule,
+        Rect::new(0.0, crate::layout::TOP_BAR_H, 1280.0, 3.0)
+    );
+    assert_eq!(
+        held.tab.y,
+        held.rule.y + held.rule.h,
+        "the tab hangs from the rule"
+    );
+    assert!((held.tab.center().x - 640.0).abs() <= 1.0, "centred");
+    feed(&mut game, &mut input, RawEvent::KeyUp { key: Key::Shift });
+    assert_eq!(flag(&game, &input), None);
+
+    feed(
+        &mut game,
+        &mut input,
+        RawEvent::PadDown {
+            pad: 0,
+            button: PadButton::LeftTrigger,
+        },
+    );
+    assert_eq!(flag(&game, &input).map(|f| f.span), Some(QueueSpan::On));
+    feed(
+        &mut game,
+        &mut input,
+        RawEvent::PadUp {
+            pad: 0,
+            button: PadButton::LeftTrigger,
+        },
+    );
+    assert_eq!(flag(&game, &input), None);
+
+    input.queue_toggle = QueueToggle::Latched { at: 0.0 };
+    let once = flag(&game, &input).expect("a latched QUEUE");
+    assert_eq!(once.span, QueueSpan::Once);
+    assert_eq!(once.tab, held.tab, "the tab holds still as QUEUE locks");
+    input.queue_toggle = QueueToggle::Locked;
+    game.presentation.selection.units.clear();
+    assert_eq!(
+        flag(&game, &input).map(|f| f.span),
+        Some(QueueSpan::On),
+        "a lit QUEUE flags itself as long as its toggle shows"
+    );
+
+    game.presentation.net_notice = Some("Waiting for the host".to_string());
+    let under = flag(&game, &input).expect("still queuing");
+    assert!(
+        under.tab.y >= crate::layout::TOP_BAR_H + NET_NOTICE_H,
+        "the tab hangs below a LAN notice"
+    );
+    game.presentation.stance = crate::game::Stance::Spectator;
+    assert_eq!(flag(&game, &input), None, "a spectator queues nothing");
+}
+
+#[test]
+fn the_queue_tab_keeps_clear_of_a_lesson_or_tip_card() {
+    use crate::render::tutorial_card::CornerCard;
+    let game =
+        crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1133.0, 744.0))
+            .unwrap();
+    let mut input = InputState::new();
+    input.queue_toggle = crate::input::QueueToggle::Locked;
+    let measure = |_: super::super::hud::Face, text: &str, size: f32| {
+        text.chars().count() as f32 * size * 0.5
+    };
+    // iPad mini at the default scale, and an 11-inch iPad at 125%.
+    for (w, h, ui) in [(1133.0, 744.0, 1.0), (1194.0, 834.0, 1.25)] {
+        let env = super::super::hud::HudEnv {
+            viewport: vec2(w, h),
+            ui,
+        };
+        let mut view = game.view();
+        let open = queue_flag_layout(&view, &input, env, &measure).expect("QUEUE is on");
+        assert!((open.tab.center().x - w * 0.5).abs() <= 1.0, "centred");
+        for card in [CornerCard::Lesson, CornerCard::Tip] {
+            view.corner_card = Some(card);
+            let tab = queue_flag_layout(&view, &input, env, &measure)
+                .expect("QUEUE is on")
+                .tab;
+            assert!(
+                tab.x >= card.right(env) && tab.right() <= w,
+                "{card:?} at {w}x{h} x{ui}: {tab:?}"
+            );
+        }
+    }
+}

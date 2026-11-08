@@ -62,6 +62,7 @@ pub(crate) struct HudGeometry {
     pub(super) army_strip: Option<chrome::ArmyStripLayout>,
     pub(super) ribbon: Option<chrome::RibbonLayout>,
     pub(super) queue_toggle: Option<Rect>,
+    pub(super) queue_flag: Option<chrome::QueueFlagLayout>,
     pub(super) performance: Option<performance::PerformanceLayout>,
     pub(super) ring: Option<radial::RingLayout>,
 }
@@ -143,6 +144,7 @@ pub(crate) fn layout(
     let queue_toggle =
         chrome::queue_toggle_shown(game, input, crate::platform::PLATFORM.touch_only())
             .then(|| chrome::queue_toggle_rect(env.viewport, env.ui, &panel_regions));
+    let queue_flag = chrome::queue_flag_layout(game, input, env, measure);
     let ghost_controls = crate::input::ghost_footprint(game, input).map(|footprint| {
         let bottom_chrome = [
             panel_regions[0],
@@ -237,6 +239,7 @@ pub(crate) fn layout(
             army_strip,
             ribbon,
             queue_toggle,
+            queue_flag,
             performance,
             ring,
         },
