@@ -195,6 +195,31 @@ fn the_top_bar_shows_income_before_anything_earns() {
 }
 
 #[test]
+fn in_pad_mode_the_running_clock_makes_room_for_view() {
+    let game =
+        crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0))
+            .unwrap();
+    let view = game.view();
+    assert!(!view.clock.paused);
+    let measure = |_: super::super::hud::Face, text: &str, size: f32| {
+        text.chars().count() as f32 * size * 0.5
+    };
+    let env = super::super::hud::HudEnv {
+        viewport: vec2(1280.0, 800.0),
+        ui: 1.0,
+    };
+    let bindings = crate::action::BindingMap::classic();
+    let lay = |pad| top_bar_layout(&view, &bindings, env, &measure, pad);
+    let (mouse, pad) = (lay(None), lay(Some(aftermine_protocol::PadFamily::Xbox)));
+    assert_eq!(mouse.status, pad.status, "the same clock");
+    let icon = crate::hint_line::icon_width(crate::theme::Type::Small.at(1.0));
+    assert!(
+        mouse.bar.status_x - pad.bar.status_x >= icon,
+        "the clock leaves room for View's icon, as PAUSED does"
+    );
+}
+
+#[test]
 fn toasts_clear_the_panel_and_its_orders_dock() {
     let viewport = vec2(640.0, 400.0);
     let panel_top = 128.0;

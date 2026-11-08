@@ -1653,8 +1653,8 @@ pub(crate) struct TopBarLayout {
     alert: Option<String>,
     status: String,
     paused: bool,
-    /// In pad mode, whose buttons the badges and the paused status name;
-    /// the menu button then stays undrawn, Menu standing in for it.
+    /// In pad mode, whose buttons the badges and the status name; the menu
+    /// button then stays undrawn, Menu standing in for it.
     pad: Option<aftermine_protocol::PadFamily>,
 }
 
@@ -1672,8 +1672,8 @@ impl TopBarLayout {
 
 /// Lays out the top bar: the bank, income, unit count, idle and alert
 /// badges, and the clock with the pause and menu buttons. In pad mode
-/// (`pad`) the badges and the paused status name the controller's
-/// buttons instead of keys, each icon taking room beside its words.
+/// (`pad`) the badges and the status name the controller's buttons
+/// instead of keys, each icon taking room beside its words.
 pub(super) fn top_bar_layout(
     game: &crate::game::Scene<'_>,
     bindings: &crate::action::BindingMap,
@@ -1741,11 +1741,7 @@ pub(super) fn top_bar_layout(
             alert: alert
                 .as_deref()
                 .map(|text| with_icon(Face::Body, text, body)),
-            status: if game.clock.paused {
-                with_icon(Face::Display, &status, small)
-            } else {
-                measure(Face::Display, &status, small)
-            },
+            status: with_icon(Face::Display, &status, small),
         },
     );
     TopBarLayout {
@@ -1848,16 +1844,15 @@ fn draw_top_bar(top: &TopBarLayout, sprites: &Sprites, s: f32) {
     draw_pause_button(bar.pause_button, *paused, s);
     let small = crate::theme::Type::Small.at(s);
     crate::typography::draw(status, bar.status_x, 26.0 * s, small, TEXT_PRIMARY);
-    if *paused {
-        let measured = crate::typography::measure(status, small).width;
-        icon_after(
-            bar.status_x,
-            small,
-            measured,
-            PadButton::Select,
-            TEXT_PRIMARY,
-        );
-    }
+    // View pauses and resumes, so it follows the clock as well as PAUSED.
+    let measured = crate::typography::measure(status, small).width;
+    icon_after(
+        bar.status_x,
+        small,
+        measured,
+        PadButton::Select,
+        TEXT_PRIMARY,
+    );
 }
 
 /// Draws the HUD the layout pass placed: the top bar, the queue flag, the
