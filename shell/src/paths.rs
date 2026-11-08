@@ -254,7 +254,7 @@ pub fn mirror_manifest() -> Option<PathBuf> {
 /// Whether the system may remove record files on its own: Apple TV keeps
 /// them in its cache.
 pub fn records_purgeable() -> bool {
-    PLATFORM == Platform::Tv
+    crate::platform::PLATFORM == crate::platform::Platform::Tv
 }
 
 /// Where downloaded records wait before they move into place.
