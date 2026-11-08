@@ -144,7 +144,6 @@ pub(crate) fn layout(
     let queue_toggle =
         chrome::queue_toggle_shown(game, input, crate::platform::PLATFORM.touch_only())
             .then(|| chrome::queue_toggle_rect(env.viewport, env.ui, &panel_regions));
-    let queue_flag = chrome::queue_flag_layout(game, input, env, measure);
     let ghost_controls = crate::input::ghost_footprint(game, input).map(|footprint| {
         let bottom_chrome = [
             panel_regions[0],
@@ -171,6 +170,15 @@ pub(crate) fn layout(
             measure,
         )
     });
+    let queue_flag = chrome::queue_flag_layout(
+        game,
+        input,
+        env,
+        performance
+            .as_ref()
+            .map_or(zero, super::performance::PerformanceLayout::panel),
+        measure,
+    );
     let mut group_slots = [None; crate::action::CONTROL_GROUPS];
     if let Some(column) = &group_column {
         for (published, (rect, slot, _)) in group_slots.iter_mut().zip(column.slots) {
@@ -214,6 +222,9 @@ pub(crate) fn layout(
             .and_then(|ribbon| ribbon.salvo)
             .map_or(zero, |steppers| steppers.more),
         queue_toggle: queue_toggle.unwrap_or(zero),
+        queue_flag: queue_flag
+            .as_ref()
+            .map_or(zero, chrome::QueueFlagLayout::tab),
         ghost_confirm: ghost_controls.map_or(zero, |controls| controls.confirm),
         ghost_cancel: ghost_controls.map_or(zero, |controls| controls.cancel),
         ghost_handle: ghost_controls.map_or(zero, |controls| controls.handle),

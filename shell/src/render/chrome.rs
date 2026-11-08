@@ -798,6 +798,7 @@ pub(super) fn queue_flag_layout(
     game: &crate::game::Scene<'_>,
     input: &InputState,
     env: super::hud::HudEnv,
+    performance: Rect,
     measure: super::hud::Measure<'_>,
 ) -> Option<QueueFlagLayout> {
     use crate::input::QueueToggle;
@@ -830,20 +831,42 @@ pub(super) fn queue_flag_layout(
         rule.y + rule.h
     };
     // A lesson or tip card holds the corner under the bar and draws over
-    // the HUD; the tab keeps right of it, short of the window's edge.
-    let centered = ((viewport.x - width) * 0.5).round();
-    let x = game.corner_card.map_or(centered, |card| {
-        centered
-            .max((card.right(env) + 8.0 * s).round())
-            .min((viewport.x - width - 12.0 * s).round())
-    });
-    let tab = Rect::new(x, y, width, QUEUE_TAB_H * s);
+    // the HUD, and the performance readout may hold the other corner; the
+    // tab keeps between them, or hangs under the readout when no room is
+    // left between.
+    let h = QUEUE_TAB_H * s;
+    let left = game
+        .corner_card
+        .map_or(0.0, |card| (card.right(env) + 8.0 * s).round());
+    let readout = (performance.w > 0.0 && performance.y < y + h && performance.bottom() > y)
+        .then_some(performance);
+    let right = readout.map_or(viewport.x - 12.0 * s, |panel| panel.x - 8.0 * s);
+    let x = ((viewport.x - width) * 0.5)
+        .round()
+        .max(left)
+        .min((right - width).round());
+    let tab = match readout {
+        Some(panel) if x < left => Rect::new(
+            (panel.right() - width).round(),
+            panel.bottom() + 4.0 * s,
+            width,
+            h,
+        ),
+        _ => Rect::new(x, y, width, h),
+    };
     Some(QueueFlagLayout {
         rule,
         tab,
         span,
         label_w,
     })
+}
+
+impl QueueFlagLayout {
+    /// The tab, which owns its pixels against presses.
+    pub(crate) fn tab(&self) -> Rect {
+        self.tab
+    }
 }
 
 /// Draws the queue flag: solid amber while orders keep queuing, the rule

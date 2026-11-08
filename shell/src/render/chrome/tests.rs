@@ -300,7 +300,7 @@ fn the_queue_flag_shows_while_orders_queue_for_own_units() {
         ui: 1.0,
     };
     let flag = |game: &crate::game::Game, input: &InputState| {
-        queue_flag_layout(&game.view(), input, env, &measure)
+        queue_flag_layout(&game.view(), input, env, Rect::default(), &measure)
     };
     let feed = |game: &mut crate::game::Game, input: &mut InputState, event: RawEvent| {
         crate::input::apply_events(game, input, &bindings, &[event], |_, _| {});
@@ -404,11 +404,12 @@ fn the_queue_tab_keeps_clear_of_a_lesson_or_tip_card() {
             ui,
         };
         let mut view = game.view();
-        let open = queue_flag_layout(&view, &input, env, &measure).expect("QUEUE is on");
+        let open =
+            queue_flag_layout(&view, &input, env, Rect::default(), &measure).expect("QUEUE is on");
         assert!((open.tab.center().x - w * 0.5).abs() <= 1.0, "centred");
         for card in [CornerCard::Lesson, CornerCard::Tip] {
             view.corner_card = Some(card);
-            let tab = queue_flag_layout(&view, &input, env, &measure)
+            let tab = queue_flag_layout(&view, &input, env, Rect::default(), &measure)
                 .expect("QUEUE is on")
                 .tab;
             assert!(
@@ -417,4 +418,43 @@ fn the_queue_tab_keeps_clear_of_a_lesson_or_tip_card() {
             );
         }
     }
+}
+
+#[test]
+fn the_queue_tab_keeps_clear_of_the_performance_readout() {
+    use crate::render::tutorial_card::CornerCard;
+    let game =
+        crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1133.0, 744.0))
+            .unwrap();
+    let mut input = InputState::new();
+    input.queue_toggle = crate::input::QueueToggle::Locked;
+    let measure = |_: super::super::hud::Face, text: &str, size: f32| {
+        text.chars().count() as f32 * size * 0.5
+    };
+    let mut view = game.view();
+    // Room between the centre and a readout: the tab stays centred.
+    let env = super::super::hud::HudEnv {
+        viewport: vec2(1133.0, 744.0),
+        ui: 1.0,
+    };
+    let readout = Rect::new(881.0, 46.0, 240.0, 120.0);
+    let tab = queue_flag_layout(&view, &input, env, readout, &measure)
+        .expect("QUEUE is on")
+        .tab;
+    assert!((tab.center().x - 566.5).abs() <= 1.0, "centred: {tab:?}");
+    // A lesson card at 150% leaves no room beside the readout: the tab
+    // hangs under it instead of hiding behind it.
+    let env = super::super::hud::HudEnv {
+        viewport: vec2(1133.0, 744.0),
+        ui: 1.5,
+    };
+    view.corner_card = Some(CornerCard::Lesson);
+    let readout = Rect::new(755.0, 69.0, 360.0, 180.0);
+    let tab = queue_flag_layout(&view, &input, env, readout, &measure)
+        .expect("QUEUE is on")
+        .tab;
+    assert!(
+        tab.y >= readout.bottom() && tab.x >= readout.x && tab.right() <= readout.right(),
+        "{tab:?} under {readout:?}"
+    );
 }
