@@ -383,15 +383,76 @@ fn rt_forgets_its_group_once_the_selection_changes_otherwise() {
     );
 }
 
+/// Publishes the panel as the HUD's layout pass does before input, so RT
+/// reads the All button the frame shows.
+fn publish(game: &Game, input: &InputState) {
+    *game.presentation.panel_model.borrow_mut() =
+        crate::panel::build_for_input(&game.view(), &BindingMap::classic(), input);
+}
+
 #[test]
-fn rt_has_nothing_to_narrow_in_one_kind() {
+fn rt_widens_one_kind_to_every_one_of_it_as_the_all_button_does() {
+    let mut game = scene(
+        &[
+            (0, SENTINEL, 30, 20),
+            (0, SENTINEL, 31, 20),
+            (0, SENTINEL, 60, 36),
+            (0, LANCER, 32, 20),
+            (1, SENTINEL, 40, 30),
+        ],
+        &[],
+    );
+    let mut input = pad_input(&mut game);
+    game.presentation.selection.units = vec![unit_at(&game, 30, 20), unit_at(&game, 31, 20)];
+    publish(&game, &input);
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    assert_eq!(
+        game.presentation.selection.units,
+        units_of(&game, 0, SENTINEL),
+        "every own Sentinel, the far one too, and no enemy"
+    );
+    assert!(!denied(&game));
+}
+
+#[test]
+fn rt_refuses_one_kind_once_every_one_is_selected() {
     let mut game = scene(&[(0, SENTINEL, 30, 20), (0, SENTINEL, 31, 20)], &[]);
     let mut input = pad_input(&mut game);
     let both = units_of(&game, 0, SENTINEL);
     game.presentation.selection.units = both.clone();
+    publish(&game, &input);
     press(&mut game, &mut input, PadButton::RightTrigger);
     assert!(denied(&game));
     assert_eq!(game.presentation.selection.units, both);
+}
+
+#[test]
+fn rt_walks_structure_kinds_in_roster_order_then_widens_one_kind() {
+    let mut game = scene(
+        &[],
+        &[
+            (0, BuildingKind::Turret, 26, 16),
+            (0, BuildingKind::Array, 30, 16),
+            (0, BuildingKind::Turret, 36, 16),
+        ],
+    );
+    let mut input = pad_input(&mut game);
+    let turret = building_at(&game, 26, 16);
+    let array = building_at(&game, 30, 16);
+    let other = building_at(&game, 36, 16);
+    let mut mixed = vec![turret, array];
+    mixed.sort_unstable();
+    game.presentation.selection.buildings = mixed.clone();
+    for step in [vec![array], vec![turret], mixed] {
+        press(&mut game, &mut input, PadButton::RightTrigger);
+        assert_eq!(game.presentation.selection.buildings, step);
+    }
+    game.presentation.selection.buildings = vec![turret];
+    publish(&game, &input);
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    let mut turrets = vec![turret, other];
+    turrets.sort_unstable();
+    assert_eq!(game.presentation.selection.buildings, turrets);
 }
 
 #[test]

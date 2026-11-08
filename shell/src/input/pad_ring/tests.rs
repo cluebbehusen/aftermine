@@ -809,3 +809,127 @@ fn a_spectator_has_no_group_ring() {
     assert!(input.ring.is_none());
     assert!(denied(&game));
 }
+
+/// One Lattice, selected, with its ring open.
+fn lattice() -> (Game, InputState) {
+    let mut game = scene(&[], &[(0, BuildingKind::Lattice, 30, 18)]);
+    let mut input = pad_input(&mut game);
+    game.presentation.selection.buildings = game.state.buildings().iter().map(|b| b.id).collect();
+    frame(&mut game, &mut input);
+    tap(&mut game, &mut input, PadButton::North);
+    frame(&mut game, &mut input);
+    (game, input)
+}
+
+#[test]
+fn x_on_a_slice_with_nothing_to_cancel_does_what_a_right_click_does() {
+    let (mut game, mut input) = harvester();
+    let worker = units_of(&game, 0, UnitKind::Harvester);
+    aim(&mut game, &mut input, "Repair");
+    tap(&mut game, &mut input, PadButton::West);
+    assert!(
+        game.pending.iter().any(|command| matches!(
+            &command.command,
+            Command::SetIdleWeld { units, .. } if *units == worker
+        )),
+        "X switches auto-repair, as a right-click on the Repair card does"
+    );
+    // Order with nothing on order fills every empty slot, as its right-click
+    // does; with rounds on order, X cancels one first.
+    let (mut game, mut input) = lattice();
+    aim(&mut game, &mut input, "Order");
+    tap(&mut game, &mut input, PadButton::West);
+    frame(&mut game, &mut input);
+    assert_eq!(count(&game, &input, "Order"), 2);
+    tap(&mut game, &mut input, PadButton::West);
+    frame(&mut game, &mut input);
+    assert_eq!(count(&game, &input, "Order"), 1);
+}
+
+#[test]
+fn a_held_left_trigger_turns_order_into_fill_under_the_stick() {
+    let (mut game, mut input) = lattice();
+    aim(&mut game, &mut input, "Order");
+    feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
+    frame(&mut game, &mut input);
+    assert_eq!(
+        pointed(&game, &input).as_deref(),
+        Some("Fill 2"),
+        "the stick still points at the slice LT turned into Fill"
+    );
+    tap(&mut game, &mut input, PadButton::South);
+    feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
+    frame(&mut game, &mut input);
+    assert_eq!(count(&game, &input, "Order"), 2, "one A filled both slots");
+}
+
+/// A sandbox holding one own `unit` or one built own `building`, with a
+/// derelict Extractor frame at (40, 10) where an Extractor stands.
+fn lone(unit: Option<UnitKind>, building: Option<BuildingKind>) -> Game {
+    let mut map = vec![".".repeat(64); 40];
+    map[10].replace_range(40..41, "E");
+    let anchor = if building == Some(BuildingKind::Extractor) {
+        (40, 10)
+    } else {
+        (30, 18)
+    };
+    let scenario = aftermine_sim::Scenario::from_json(
+        &serde_json::json!({
+            "name": "Lone kind",
+            "mode": "sandbox",
+            "players": [{"name": "You", "scrap": 1000, "bot": false}],
+            "map": map,
+            "units": unit
+                .map(|kind| vec![serde_json::json!({"player": 0, "kind": kind, "x": 30, "y": 24})])
+                .unwrap_or_default(),
+            "buildings": building
+                .map(|kind| vec![serde_json::json!({"player": 0, "kind": kind, "x": anchor.0, "y": anchor.1})])
+                .unwrap_or_default(),
+        })
+        .to_string(),
+    )
+    .expect("the scene parses");
+    Game::with_viewport(scenario, macroquad::prelude::vec2(1280.0, 800.0))
+        .unwrap_or_else(|error| panic!("{unit:?} {building:?} stands alone: {error:#}"))
+}
+
+#[test]
+fn a_ring_for_one_kind_never_needs_more() {
+    use crate::radial::{Branch, MAX_SLICES, Pick};
+    let scenes = UnitKind::ALL
+        .iter()
+        .map(|kind| (format!("{kind:?}"), lone(Some(*kind), None)))
+        .chain(
+            BuildingKind::ALL
+                .iter()
+                // A scenario cannot start with a cradle: one exists only
+                // while an experimental assembles.
+                .filter(|kind| !matches!(kind, BuildingKind::MawCradle | BuildingKind::RocCradle))
+                .map(|kind| (format!("{kind:?}"), lone(None, Some(*kind)))),
+        );
+    for (name, mut game) in scenes {
+        let mut input = pad_input(&mut game);
+        let selection = &mut game.presentation.selection;
+        selection.units = game.state.units().iter().map(|u| u.id).collect();
+        selection.buildings = game.state.buildings().iter().map(|b| b.id).collect();
+        frame(&mut game, &mut input);
+        tap(&mut game, &mut input, PadButton::North);
+        frame(&mut game, &mut input);
+        let Some(ring) = current(&game.view(), &input) else {
+            continue;
+        };
+        let titles: Vec<&str> = ring
+            .slices
+            .iter()
+            .map(|slice| slice.card.title.as_str())
+            .collect();
+        assert!(
+            ring.slices.len() <= MAX_SLICES
+                && ring
+                    .slices
+                    .iter()
+                    .all(|slice| slice.pick != Pick::Open(Branch::More)),
+            "a lone {name} spills into More: {titles:?}"
+        );
+    }
+}
