@@ -177,8 +177,8 @@ center is the controller's pointer. Every screen records the sticks, so a stick
 let go under a menu cannot keep the camera moving, and hover and hit tests read
 the reticle through the same `LayoutModel` as the mouse. A pad's presses act at
 the reticle through the same selection, order, placement and targeting paths as
-clicks, and the buttons a pad holds drop with the rest of held input on every
-transition.
+clicks. Menu opens the pause menu and View pauses, as the top bar's buttons do.
+The buttons a pad holds drop with the rest of held input on every transition.
 
 The controller's command ring (`radial`) is built from the panel model the
 layout pass published, so a ring never offers what the panel would refuse, and a
@@ -188,8 +188,8 @@ selection of one kind never spills into More. Its build rings step the same
 construction state the build keys do. The group ring is read from the control
 groups and recalls and assigns through the same actions as the group keys. While
 a ring is open it owns the pad's buttons and left stick, except the queueing
-trigger; a button whose press it took, it also takes up, and a stick still
-pushed when it closes moves the camera only once let go.
+trigger, Menu and View; a button whose press it took, it also takes up, and a
+stick still pushed when it closes moves the camera only once let go.
 
 The HUD lays out in a pure pass (`render::hud`) that measures text through a
 supplied function, so it runs headless. Each frame lays it out before input,

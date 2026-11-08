@@ -909,3 +909,38 @@ fn a_double_tap_on_a_structure_keeps_to_its_kind_beside_a_unit() {
         vec![building_at(&game, 30, 20), building_at(&game, 36, 20)]
     );
 }
+
+#[test]
+fn menu_asks_for_the_pause_menu_and_view_pauses_and_resumes() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    assert!(!game.clock.paused);
+    press(&mut game, &mut input, PadButton::Start);
+    assert!(input.take_menu_request(), "Menu asks for the pause menu");
+    assert!(!game.clock.paused, "and leaves pausing to the menu");
+    press(&mut game, &mut input, PadButton::Select);
+    assert!(game.clock.paused, "View pauses");
+    assert!(!input.take_menu_request(), "and asks for no menu");
+    press(&mut game, &mut input, PadButton::Select);
+    assert!(!game.clock.paused, "and View again resumes");
+}
+
+#[test]
+fn menu_and_view_reach_past_an_open_ring_and_a_held_a() {
+    let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
+    let mut input = pad_input(&mut game);
+    press(&mut game, &mut input, PadButton::DpadRight);
+    assert!(input.ring.is_some(), "the group ring is open");
+    press(&mut game, &mut input, PadButton::Select);
+    assert!(game.clock.paused, "View pauses past the ring");
+    press(&mut game, &mut input, PadButton::Start);
+    assert!(input.take_menu_request(), "Menu asks past the ring");
+    assert!(input.ring.is_some(), "and neither closes it");
+    press(&mut game, &mut input, PadButton::DpadRight);
+    assert!(input.ring.is_none());
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    assert!(input.pad_press.is_some(), "A is held");
+    press(&mut game, &mut input, PadButton::Select);
+    assert!(!game.clock.paused, "View resumes");
+    assert!(input.pad_press.is_some(), "and the held A carries on");
+}
