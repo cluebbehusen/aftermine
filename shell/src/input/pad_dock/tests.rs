@@ -78,6 +78,17 @@ fn staged(game: &Game) -> Vec<Command> {
     game.pending.iter().map(|pc| pc.command.clone()).collect()
 }
 
+/// Walks the open strip up to Stop, which tops the dock.
+fn to_stop(game: &mut Game, input: &mut InputState) {
+    for _ in 0..published(game).len() {
+        if lit(input).row == CardRow::Stop {
+            return;
+        }
+        tap(game, input, PadButton::DpadUp);
+    }
+    assert_eq!(lit(input).row, CardRow::Stop, "Stop tops the dock");
+}
+
 #[test]
 fn the_left_stick_click_lights_the_chip_nearest_the_band_and_a_cancels_it() {
     let (mut game, mut input, foundry) = foundry();
@@ -105,7 +116,7 @@ fn the_left_stick_click_lights_the_chip_nearest_the_band_and_a_cancels_it() {
 }
 
 #[test]
-fn the_dpad_walks_the_column_and_wraps_at_its_ends() {
+fn the_dpad_walks_the_column_and_stops_at_its_ends() {
     let (mut game, mut input, _) = foundry();
     let dock: Vec<CardHit> = published(&game).iter().map(|entry| entry.hit).collect();
     tap(&mut game, &mut input, PadButton::LeftStick);
@@ -114,20 +125,82 @@ fn the_dpad_walks_the_column_and_wraps_at_its_ends() {
         assert_eq!(lit(&input), *expected);
     }
     assert_eq!(lit(&input).row, CardRow::Stop, "Stop tops the dock");
+    assert!(!denied(&game));
     tap(&mut game, &mut input, PadButton::DpadUp);
-    assert_eq!(lit(&input), dock[dock.len() - 1], "up from the top wraps");
+    assert!(denied(&game), "nothing lies above Stop");
+    assert_eq!(lit(&input).row, CardRow::Stop);
     tap(&mut game, &mut input, PadButton::DpadDown);
-    assert_eq!(lit(&input), dock[0], "and down from the bottom");
+    assert_eq!(lit(&input), dock[1], "down from Stop lights the top chip");
     tap(&mut game, &mut input, PadButton::DpadRight);
-    assert!(denied(&game), "with no drone column there is nothing right");
+    assert_eq!(
+        lit(&input),
+        dock[1],
+        "with no drone column nothing lies right"
+    );
+}
+
+/// A dock as `queue_grid` wraps five chips into two columns, Stop above
+/// them and a drone column of two beside them: 44 px chips, 4 px gaps.
+fn wrapped() -> LayoutModel {
+    let mut layout = LayoutModel::default();
+    for index in 0..5u8 {
+        let (row, column) = (f32::from(index / 2), f32::from(index % 2));
+        layout.queue_slots[usize::from(index)] = (
+            Rect::new(8.0 + column * 48.0, 600.0 + row * 48.0, 44.0, 44.0),
+            CardAction::CancelQueue(BuildingId(1), index),
+        );
+    }
+    layout.queue_count = 5;
+    layout.queue_stop = (Rect::new(8.0, 530.0, 92.0, 44.0), CardAction::ClearQueues);
+    for index in 0..2u8 {
+        layout.drone_slots[usize::from(index)] = (
+            Rect::new(120.0, 648.0 + f32::from(index) * 48.0, 44.0, 44.0),
+            CardAction::CancelDrone(UnitId(9), index),
+        );
+    }
+    layout.drone_count = 2;
+    layout
+}
+
+#[test]
+fn the_dpad_moves_as_the_chips_are_drawn_when_the_queue_wraps_into_columns() {
+    let entries = entries(&wrapped());
+    let go = |from: CardHit, nav: Nav| toward(&entries, from.rect, nav).map(|at| entries[at].hit);
+    let find = |row: CardRow, index: usize| {
+        entries
+            .iter()
+            .map(|entry| entry.hit)
+            .find(|hit| (hit.row, hit.index) == (row, index))
+            .expect("published")
+    };
+    let chip = |index| find(CardRow::Queue, index);
+    let drone = |index| find(CardRow::Drones, index);
+    let stop = find(CardRow::Stop, 0);
+
+    assert_eq!(go(chip(0), Nav::Right), Some(chip(1)), "across a row");
+    assert_eq!(go(chip(1), Nav::Left), Some(chip(0)));
+    assert_eq!(go(chip(0), Nav::Down), Some(chip(2)), "down a column");
+    assert_eq!(go(chip(3), Nav::Up), Some(chip(1)));
+    assert_eq!(
+        go(chip(3), Nav::Down),
+        Some(chip(4)),
+        "onto a short last row"
+    );
+    assert_eq!(go(chip(0), Nav::Up), Some(stop));
+    assert_eq!(go(chip(1), Nav::Up), Some(stop));
+    assert_eq!(go(stop, Nav::Down), Some(chip(0)));
+    assert_eq!(go(chip(3), Nav::Right), Some(drone(0)), "out to the drones");
+    assert_eq!(go(drone(1), Nav::Left), Some(chip(4)));
+    assert_eq!(go(chip(0), Nav::Left), None, "and none past an edge");
+    assert_eq!(go(chip(4), Nav::Down), None);
+    assert_eq!(go(stop, Nav::Up), None);
 }
 
 #[test]
 fn stop_clears_every_queue_of_the_selected_producers() {
     let (mut game, mut input, foundry) = foundry();
     tap(&mut game, &mut input, PadButton::LeftStick);
-    tap(&mut game, &mut input, PadButton::DpadDown);
-    assert_eq!(lit(&input).row, CardRow::Stop);
+    to_stop(&mut game, &mut input);
     tap(&mut game, &mut input, PadButton::South);
     let cancelled = staged(&game)
         .iter()
@@ -207,7 +280,7 @@ fn it_closes_when_the_dock_empties_the_selection_changes_or_another_hand_takes_o
 
     let (mut game, mut input, _) = foundry();
     tap(&mut game, &mut input, PadButton::LeftStick);
-    tap(&mut game, &mut input, PadButton::DpadDown);
+    to_stop(&mut game, &mut input);
     tap(&mut game, &mut input, PadButton::South);
     game.do_tick();
     frame(&mut game, &mut input);

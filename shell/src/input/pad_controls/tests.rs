@@ -332,6 +332,11 @@ fn the_bumpers_select_the_army_and_the_army_in_view() {
 
 /// Two Harvesters, a Lancer and two Sentinels, all selected.
 fn mixed() -> (Game, InputState) {
+    mixed_beside(&[])
+}
+
+/// The mixed group, all selected, beside `buildings`.
+fn mixed_beside(buildings: &[(u8, BuildingKind, i32, i32)]) -> (Game, InputState) {
     let mut game = scene(
         &[
             (0, SENTINEL, 30, 20),
@@ -340,7 +345,7 @@ fn mixed() -> (Game, InputState) {
             (0, SENTINEL, 33, 20),
             (0, HARVESTER, 34, 20),
         ],
-        &[],
+        buildings,
     );
     let input = pad_input(&mut game);
     let mut all: Vec<UnitId> = game.state.units().iter().map(|u| u.id).collect();
@@ -380,6 +385,40 @@ fn rt_forgets_its_group_once_the_selection_changes_otherwise() {
     assert_eq!(
         game.presentation.selection.units,
         units_of(&game, 0, LANCER)
+    );
+}
+
+#[test]
+fn rt_moves_on_from_a_kind_whose_last_member_is_gone() {
+    let (mut game, mut input) = mixed_beside(&[(0, BuildingKind::Crucible, 32, 23)]);
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    let harvesters = units_of(&game, 0, HARVESTER);
+    assert_eq!(game.presentation.selection.units, harvesters);
+    game.issue(Command::Retire {
+        units: harvesters.clone(),
+        queue: false,
+    });
+    for _ in 0..2000 {
+        if harvesters.iter().all(|id| game.state.unit(*id).is_none()) {
+            break;
+        }
+        game.do_tick();
+    }
+    assert!(
+        game.presentation.selection.units.is_empty(),
+        "the Crucible took the Harvesters and the selection with them"
+    );
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    assert!(!denied(&game));
+    assert_eq!(
+        game.presentation.selection.units,
+        units_of(&game, 0, LANCER),
+        "the walk goes on to the kind after the one that left"
+    );
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    assert_eq!(
+        game.presentation.selection.units,
+        units_of(&game, 0, SENTINEL)
     );
 }
 
