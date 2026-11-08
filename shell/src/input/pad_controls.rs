@@ -193,12 +193,14 @@ enum Cycle<Id, Kind> {
 /// Steps RT's cycle over the live `selection`. `narrowed` is the group RT
 /// left last, with its dead members gone, and the kind it left; it counts
 /// only while the selection is still exactly that kind of it. `kinds`
-/// lists a group's kinds in the roster tiles' order.
+/// lists a group's kinds, and the kind RT left, in the roster tiles'
+/// order: a kind whose last member died keeps its place, so the walk
+/// moves on to the kind after it.
 fn cycle<Id: Copy + PartialEq, Kind: Copy + PartialEq>(
     selection: Vec<Id>,
     narrowed: Option<(Vec<Id>, Kind)>,
     kind_of: impl Fn(Id) -> Option<Kind>,
-    kinds: impl Fn(&[Id]) -> Vec<Kind>,
+    kinds: impl Fn(&[Id], Option<Kind>) -> Vec<Kind>,
 ) -> Cycle<Id, Kind> {
     let of_kind = |ids: &[Id], kind: Kind| -> Vec<Id> {
         ids.iter()
@@ -210,7 +212,7 @@ fn cycle<Id: Copy + PartialEq, Kind: Copy + PartialEq>(
         Some((group, kind)) if of_kind(&group, kind) == selection => (group, Some(kind)),
         _ => (selection, None),
     };
-    let kinds = kinds(&group);
+    let kinds = kinds(&group, last);
     if kinds.len() < 2 {
         return Cycle::OneKind;
     }
@@ -239,29 +241,11 @@ fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
     let last = input.narrowed.take();
     let state = &game.state;
     let selection = &game.presentation.selection;
-    if selection.units.is_empty() {
-        let alive = |ids: &[BuildingId]| -> Vec<BuildingId> {
-            ids.iter()
-                .copied()
-                .filter(|id| state.building(*id).is_some())
-                .collect()
-        };
-        let last = match last {
-            Some(Narrowed::Buildings { group, kind }) => Some((alive(&group), kind)),
-            _ => None,
-        };
-        let kind_of = |id| state.building(id).map(|b| b.kind);
-        match cycle(alive(&selection.buildings), last, kind_of, |ids| {
-            crate::panel::building_kinds(ids.iter().filter_map(|id| kind_of(*id)))
-        }) {
-            Cycle::OneKind => select_all(game, input, bindings),
-            Cycle::Narrow { group, kind, ids } => {
-                game.presentation.selection.buildings = ids;
-                input.narrowed = Some(Narrowed::Buildings { group, kind });
-            }
-            Cycle::Whole(group) => game.presentation.selection.buildings = group,
-        }
-    } else {
+    // Units RT narrowed to that all died leave nothing selected; the walk
+    // goes on over their group.
+    let on_units = !selection.units.is_empty()
+        || (selection.buildings.is_empty() && matches!(last, Some(Narrowed::Units { .. })));
+    if on_units {
         let alive = |ids: &[UnitId]| -> Vec<UnitId> {
             ids.iter()
                 .copied()
@@ -273,8 +257,8 @@ fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
             _ => None,
         };
         let kind_of = |id| state.unit(id).map(|unit| unit.kind);
-        match cycle(alive(&selection.units), last, kind_of, |ids| {
-            crate::panel::kind_counts(ids.iter().filter_map(|id| kind_of(*id)))
+        match cycle(alive(&selection.units), last, kind_of, |ids, left| {
+            crate::panel::kind_counts(ids.iter().filter_map(|id| kind_of(*id)).chain(left))
                 .into_iter()
                 .map(|(kind, _)| kind)
                 .collect()
@@ -285,6 +269,28 @@ fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
                 input.narrowed = Some(Narrowed::Units { group, kind });
             }
             Cycle::Whole(group) => game.presentation.selection.units = group,
+        }
+    } else {
+        let alive = |ids: &[BuildingId]| -> Vec<BuildingId> {
+            ids.iter()
+                .copied()
+                .filter(|id| state.building(*id).is_some())
+                .collect()
+        };
+        let last = match last {
+            Some(Narrowed::Buildings { group, kind }) => Some((alive(&group), kind)),
+            _ => None,
+        };
+        let kind_of = |id| state.building(id).map(|b| b.kind);
+        match cycle(alive(&selection.buildings), last, kind_of, |ids, left| {
+            crate::panel::building_kinds(ids.iter().filter_map(|id| kind_of(*id)).chain(left))
+        }) {
+            Cycle::OneKind => select_all(game, input, bindings),
+            Cycle::Narrow { group, kind, ids } => {
+                game.presentation.selection.buildings = ids;
+                input.narrowed = Some(Narrowed::Buildings { group, kind });
+            }
+            Cycle::Whole(group) => game.presentation.selection.buildings = group,
         }
     }
 }
