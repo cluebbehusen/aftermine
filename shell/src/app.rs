@@ -128,8 +128,13 @@ struct App {
     catalog_delete: Option<std::path::PathBuf>,
     /// When to scan again for records still downloading from iCloud.
     catalog_rescan: Option<std::time::Duration>,
-    /// The iCloud folder changes the last catalog scan began after.
+    /// The record changes the last catalog scan began after: iCloud Drive
+    /// folder changes plus mirror passes that changed local records.
     catalog_cloud: u64,
+    /// When Home or the shelf next asks the mirror for records other
+    /// devices changed through CloudKit; `None` when records never mirror,
+    /// as in a workspace or automation run.
+    mirror_at: Option<std::time::Duration>,
     /// Autosave slots of abandoned matches, deleted once no save can still
     /// be writing them.
     discarded: Vec<crate::autosave::SaveSlot>,
@@ -220,6 +225,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     let mut config = config::Config::load();
     // A packaged copy's settings follow the player through iCloud, like its
     // saves; workspace and automation runs keep theirs to themselves.
+    let mirror = crate::paths::bundled() && !args.automation;
+    if mirror {
+        crate::cloud_mirror::start();
+    }
     let (settings_sync, synced) =
         config::sync::SettingsSync::open(crate::paths::bundled() && !args.automation, &mut config);
     // The install ID picks the default name, which must stay the same from
@@ -373,6 +382,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         catalog_delete: None,
         catalog_rescan: None,
         catalog_cloud: 0,
+        mirror_at: mirror.then_some(std::time::Duration::ZERO),
         discarded: Vec::new(),
         performance: crate::performance::Performance::default(),
         live_streak: 0,

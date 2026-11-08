@@ -325,6 +325,41 @@ starts downloading files iCloud holds but the device does not, and the shelf
 scans again while any are on their way. With iCloud on, the shelf still lists
 records kept on the device.
 
+Every record file also mirrors through CloudKit's private database, one record
+per file named by its folder and file name, so Apple TV shares records with iPad
+and Mac. iPad and Mac mirror their iCloud Drive folder and Apple TV its cache;
+workspace and automation runs never mirror. Passes run on a thread of their own,
+never the worker, so CloudKit's waits never hold up a save. A full pass runs the
+first time Home opens, on return to the foreground and then at most every 30
+seconds while Home or the shelf is open, and after every save a pass sends this
+device's changes without fetching. Files arrive only while Home or the shelf is
+open or a load is waiting for them, never during a match. A load waits at most
+five seconds for a full pass under way, so a match does not resume from an older
+copy and then save over the newer one. A pass that changes local records makes
+the shelf scan again.
+
+Each record has a version: how far its match has been played, in ticks, or, once
+deleted, a delete record one tick past the save it deleted. The most ticks wins
+on every device and CloudKit refuses anything behind what it holds, so devices
+agree whatever order changes reach them in, and a device's clock decides only a
+tie. At the same tick a file beats a delete record. Each device keeps a manifest
+of what it last agreed with CloudKit beside its own records, to tell what
+changed here. Named saves carry their save time in their file name, so two
+devices never use one name for different saves.
+
+Only a player deletes from CloudKit: in the game, or by answering Home. The
+iCloud Drive folder is a copy iCloud fills in on its own schedule, so a device
+cannot tell a file deleted there from one not back yet, and a synced file
+missing from it changes nothing elsewhere. Home asks about a missing save or
+replay, whether to delete it everywhere or bring it back, and a file that
+arrives first needs no answer. An autosave or finished match, which the game
+cleans up on its own, just stays gone from that device. On Apple TV a missing
+file is simply fetched again, and a cleared cache takes the manifest with it, so
+the TV downloads its records again. CloudKit lacking a record deletes nothing. A
+pass cut short, or one with a record that failed to arrive, keeps its place and
+fetches the same changes again; a fetch that has to start over counts every
+local file as new, so anything CloudKit lost goes back up.
+
 Settings that belong to the player, not the device, also travel through iCloud's
 key-value store on iPad, Mac and Apple TV, one key per setting with the newest
 change winning. Settings tied to one device's screen, touch or pointer hardware,

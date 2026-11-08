@@ -226,6 +226,40 @@ impl Records {
     pub fn cloud_folders(&self) -> Vec<PathBuf> {
         self.cloud.iter().flat_map(Folders::all).collect()
     }
+
+    /// The folders new records go to, each with the name it takes in the
+    /// CloudKit mirror, so a record keeps one name on every device.
+    pub fn mirrored(&self) -> Vec<(&'static str, PathBuf)> {
+        let folders = self.writing();
+        [
+            ("autosaves", folders.autosaves.clone()),
+            ("matches", folders.matches.clone()),
+            ("saves", folders.saves.clone()),
+            ("replays", Some(folders.replays.clone())),
+        ]
+        .into_iter()
+        .filter_map(|(name, dir)| dir.map(|dir| (name, dir)))
+        .collect()
+    }
+}
+
+/// What this device last agreed with the CloudKit mirror. It sits beside
+/// the device's own records, so on Apple TV a cleared cache takes it along
+/// and the TV downloads its records again instead of reading their loss as
+/// deletes.
+pub fn mirror_manifest() -> Option<PathBuf> {
+    data_dir().map(|dir| dir.join("cloud-mirror.json"))
+}
+
+/// Whether the system may remove record files on its own: Apple TV keeps
+/// them in its cache.
+pub fn records_purgeable() -> bool {
+    crate::platform::PLATFORM == crate::platform::Platform::Tv
+}
+
+/// Where downloaded records wait before they move into place.
+pub fn mirror_staging() -> Option<PathBuf> {
+    data_dir().map(|dir| dir.join("cloud-staging"))
 }
 
 /// Where records live now. The first iCloud lookup may still be running,

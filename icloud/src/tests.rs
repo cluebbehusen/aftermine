@@ -100,3 +100,16 @@ fn a_path_with_a_nul_byte_is_refused_before_any_access() {
     assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
     assert_eq!(download(path), 0);
 }
+
+#[test]
+fn an_unentitled_process_has_no_cloudkit_account() {
+    // Test binaries carry no bundle or entitlement, like an unsigned build:
+    // the mirror sees no account and every call refuses instead of crashing.
+    assert_eq!(cloudkit::account(), None);
+    let staging = scratch("cloudkit-staging");
+    assert!(cloudkit::fetch(None, &staging).is_err());
+    assert!(cloudkit::delete("saves/save-1.amsave", 1).is_err());
+    let file = staging.join("record.amsave");
+    std::fs::write(&file, b"record").unwrap();
+    assert!(cloudkit::upload("saves/save-1.amsave", &file, 1, 1).is_err());
+}

@@ -17,7 +17,7 @@ pub(super) fn live_rect(screen: &Screen, rect: Rect) -> Option<[f32; 4]> {
 pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
     let (mode_name, menu): (&str, Option<MenuView>) = match screen {
         Screen::ColdOpen(_) => (screen.mode(), None),
-        Screen::Home(home) => (screen.mode(), Some(home.menu.view())),
+        Screen::Home(home) => (screen.mode(), Some(home.view())),
         Screen::Settings { screen: sc, .. } => (screen.mode(), Some(sc.menu.view())),
         Screen::Codex { screen: codex, .. } => (screen.mode(), Some(codex.menu.view())),
         Screen::Lessons { screen: list, .. } => (screen.mode(), Some(list.menu.view())),

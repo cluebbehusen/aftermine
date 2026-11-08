@@ -143,7 +143,9 @@ enum Claim {
     Published(Result<PathBuf, (PathBuf, anyhow::Error)>),
 }
 
-/// Writes a named save to the first free `{prefix}-{tick}` path in `dir`.
+/// Writes a named save to the first free `{prefix}-{tick}-{time}` path in
+/// `dir`. The time keeps two devices saving at one tick from choosing a name
+/// that means different saves.
 /// Each candidate is claimed, written and, on failure, released within one
 /// coordinated access, so iCloud never syncs the claim's marker. Collision
 /// suffixes have no arbitrary cutoff that can bypass the exclusive create.
@@ -154,12 +156,13 @@ fn publish_named(
     write: impl FnOnce(&Path) -> anyhow::Result<()>,
 ) -> Result<PathBuf, SaveError> {
     let mut write = Some(write);
+    let time = now_unix();
     let mut n = 0u64;
     loop {
         let path = if n == 0 {
-            dir.join(format!("{prefix}-{tick:010}.amsave"))
+            dir.join(format!("{prefix}-{tick:010}-{time}.amsave"))
         } else {
-            dir.join(format!("{prefix}-{tick:010}-{n}.amsave"))
+            dir.join(format!("{prefix}-{tick:010}-{time}-{n}.amsave"))
         };
         let claim =
             aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Replace, |granted| {
@@ -286,6 +289,7 @@ fn discard_in(slots: &[SaveSlot], folders: &[PathBuf]) {
 /// Removes a record while iCloud holds off syncing it; a missing file is
 /// already gone.
 pub(crate) fn remove(path: &Path) {
+    crate::cloud_mirror::deleting(path);
     aftermine_icloud::coordinate(path, aftermine_icloud::Access::Delete, |granted| {
         std::fs::remove_file(granted)
     })

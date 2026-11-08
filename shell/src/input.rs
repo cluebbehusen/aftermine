@@ -1825,6 +1825,7 @@ impl macroquad::miniquad::EventHandler for PointerStream {
         WINDOW_ACTIVITY.store(1, std::sync::atomic::Ordering::Relaxed);
         aftermine_kit::diagnostics::minimized(false);
         crate::paths::look_up_cloud();
+        crate::cloud_mirror::request(crate::cloud_mirror::Mode::Full);
     }
     // The collector never runs a frame; it only replays input.
     fn update(&mut self) {}

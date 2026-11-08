@@ -148,6 +148,8 @@ pub(super) struct Busy {
     back: Box<Screen>,
     id: Option<u64>,
     presented: bool,
+    /// When a load began waiting for a sync under way.
+    syncing_since: Option<std::time::Duration>,
     pub(super) menu: crate::menu::Menu<usize>,
     quit_after: bool,
     /// The LAN match ended while this ran: leave it once done.
@@ -185,11 +187,16 @@ impl App {
             self.persistence.cancel();
         }
         let loading = intent.loading();
+        // Another device may have just stopped playing this match.
+        if loading {
+            crate::cloud_mirror::request(crate::cloud_mirror::Mode::Full);
+        }
         Screen::Busy(Box::new(Busy {
             intent,
             back: Box::new(back),
             id: None,
             presented: false,
+            syncing_since: None,
             quit_after: false,
             leave_after: false,
             menu: crate::menu::Menu::list(
@@ -208,6 +215,11 @@ impl App {
     }
 
     pub(super) fn poll_persistence(&mut self, screen: &mut Screen) {
+        crate::cloud_mirror::allow_arrivals(match screen {
+            Screen::Home(_) | Screen::Replays(_) => true,
+            Screen::Busy(busy) => busy.intent.loading() && busy.id.is_none(),
+            _ => false,
+        });
         if !self.discarded.is_empty() && !self.persistence.busy() {
             let slots = std::mem::take(&mut self.discarded);
             if let Err(error) = self.persistence.start(Box::new(move |_| {
@@ -303,6 +315,7 @@ impl App {
                 let line = error.player_line();
                 anyhow::Error::new(error).context(line)
             })?;
+            crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
             Ok(Output::Saved(mark))
         });
         match self.persistence.start(task) {
@@ -374,6 +387,9 @@ impl App {
                 let line = error.player_line();
                 anyhow::Error::new(error).context(line)
             })?;
+            // Sent at once, so a session left on one device can continue
+            // on another.
+            crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
             Ok(Output::Saved(mark))
         });
         match self.persistence.start(task) {
@@ -390,36 +406,56 @@ impl App {
             return;
         }
         let delete = self.catalog_delete.take();
+        let now = self.clock.elapsed();
+        if self.mirror_at.is_some_and(|at| now >= at) {
+            crate::cloud_mirror::request(crate::cloud_mirror::Mode::Full);
+            self.mirror_at = Some(now + crate::cloud_mirror::EVERY);
+        }
         let task: Task = Box::new(move |cancel| {
             if let Some(path) = delete {
+                crate::cloud_mirror::deleting(&path);
                 aftermine_icloud::coordinate(
                     &path,
                     aftermine_icloud::Access::Delete,
                     |granted| std::fs::remove_file(granted),
                 )??;
+                crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
             }
-            let catalog = crate::saves::discover(|| cancel.cancelled());
+            let mut catalog = crate::saves::discover(|| cancel.cancelled());
             anyhow::ensure!(!cancel.cancelled(), "catalog cancelled");
+            catalog.downloading += crate::cloud_mirror::pending();
             Ok(Output::Catalog(catalog))
         });
         match self.persistence.start(task) {
             Ok(id) => {
                 self.catalog_id = Some(id);
                 self.catalog_rescan = None;
-                self.catalog_cloud = crate::paths::cloud_changes();
+                self.catalog_cloud = record_changes();
             }
             Err(error) => self.notify(error.to_string(), true),
         }
     }
 
     /// Whether the last catalog may be out of date: records were still
-    /// downloading from iCloud long enough ago to look again, or the iCloud
-    /// folder changed since its scan began.
+    /// downloading from iCloud long enough ago to look again, the iCloud
+    /// folder or a mirror pass changed records since its scan began, or it
+    /// is time to ask the mirror for records other devices changed.
     pub(super) fn catalog_stale(&self) -> bool {
-        self.catalog_rescan
-            .is_some_and(|at| self.clock.elapsed() >= at)
-            || crate::paths::cloud_changes() != self.catalog_cloud
+        let now = self.clock.elapsed();
+        self.catalog_rescan.is_some_and(|at| now >= at)
+            || record_changes() != self.catalog_cloud
+            || self.mirror_at.is_some_and(|at| now >= at)
     }
+}
+
+/// The longest a load waits for a sync under way.
+const SYNC_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Changes that can leave a catalog out of date: a different iCloud Drive
+/// folder, or a mirror pass that changed local records. Both counts only
+/// grow, so their sum changes whenever either does.
+fn record_changes() -> u64 {
+    crate::paths::cloud_changes().wrapping_add(crate::cloud_mirror::changes())
 }
 
 fn load_candidates(paths: Vec<PathBuf>, cancel: &Cancellation) -> Result<Output> {
@@ -602,6 +638,15 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
         busy.presented = true;
         return Ok(Screen::Busy(busy));
     }
+    // Another device's newer copy of a match should be here before it resumes,
+    // since saving over it from an older one would lose that progress.
+    if busy.id.is_none() && busy.intent.loading() && crate::cloud_mirror::syncing() {
+        let now = app.clock.elapsed();
+        let since = *busy.syncing_since.get_or_insert(now);
+        if now.saturating_sub(since) < SYNC_WAIT {
+            return Ok(Screen::Busy(busy));
+        }
+    }
     if busy.id.is_none() && !app.persistence.busy() {
         let task: Task = match &busy.intent {
             Intent::Named(_) | Intent::Leave(_, _) | Intent::Rematch => {
@@ -628,6 +673,7 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                         let line = error.player_line();
                         anyhow::Error::new(error).context(line)
                     })?;
+                    crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
                     Ok(Output::Saved(mark))
                 })
             }

@@ -20,12 +20,16 @@ sync is the shell's decision, in `shell/src/config/sync.rs`.
   keeps iCloud's choice of copy when two devices changed a file at once.
 - `KeyValueStore` reads and writes strings in iCloud's key-value store and
   counts the changes that reach it from other devices.
+- `cloudkit` mirrors record files through one zone of CloudKit's private
+  database: it names the account, fetches what changed since a token, and saves
+  files and delete records. Every call waits on CloudKit, so callers keep them
+  off the main thread.
 - `defaults` reads and writes strings in the app's user defaults, which stay on
   the device.
 - `src/icloud.m` holds the iCloud Drive calls, `src/key_value.m` the key-value
-  store calls and `src/defaults.m` the user defaults calls. Every iCloud Drive
-  call may wait on iCloud, so callers keep those off the main thread; the
-  key-value store answers from memory.
+  store calls, `src/cloudkit.m` the CloudKit calls and `src/defaults.m` the user
+  defaults calls. Every iCloud Drive call may wait on iCloud, so callers keep
+  those off the main thread; the key-value store answers from memory.
 
 ## Boundaries
 
@@ -33,15 +37,16 @@ This is the only workspace crate that allows `unsafe` code, confined to the
 modules that call into Objective-C. Apple TV has no iCloud Drive, so there, as
 on other platforms, `documents` answers `None`, `coordinate` runs its access
 directly and `download` has nothing to fetch. Off Apple platforms there is no
-key-value store and no user defaults either.
+key-value store, no CloudKit and no user defaults either.
 
 An app needs the iCloud Documents entitlement for its container and the
 `com.apple.developer.ubiquity-kvstore-identifier` entitlement for the key-value
-store; without them, as in tests and unsigned builds, there is no folder and the
-store keeps its values on the device. The iPad, Mac and Apple TV builds must
-carry the same key-value store identifier, `<team ID>.<bundle ID>`
-(`dev.luebbehusen.aftermine` for the maintainer's builds), or their settings
-land in separate stores. Xcode writes it as
+store, and the CloudKit service in the same container for the mirror; without
+them, as in tests and unsigned builds, there is no folder, the store keeps its
+values on the device, and CloudKit answers that there is no account. The iPad,
+Mac and Apple TV builds must carry the same key-value store identifier,
+`<team ID>.<bundle ID>` (`dev.luebbehusen.aftermine` for the maintainer's
+builds), or their settings land in separate stores. Xcode writes it as
 `$(TeamIdentifierPrefix)$(CFBundleIdentifier)`.
 
 ## Development

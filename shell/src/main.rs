@@ -18,6 +18,7 @@ mod building_actions;
 mod button;
 mod camera;
 mod clock_label;
+mod cloud_mirror;
 mod config;
 mod debug_server;
 mod description;

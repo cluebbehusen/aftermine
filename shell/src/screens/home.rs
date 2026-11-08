@@ -4,7 +4,7 @@
 
 use crate::game::SoundKind;
 use crate::menu::{Label, Menu};
-use aftermine_protocol::RawEvent;
+use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::{DrawTextureParams, Vec2, WHITE, draw_text, draw_texture_ex, vec2};
 
 /// What a Home frame decided.
@@ -30,6 +30,56 @@ pub enum Out {
     Settings,
     /// Leave the process.
     Quit,
+    /// Fetch the files found missing from the Aftermine folder again.
+    BringBackMissing,
+    /// Delete the files found missing from the Aftermine folder everywhere.
+    DeleteMissing,
+}
+
+/// The question about files missing from the Aftermine folder.
+struct MissingQuestion {
+    names: Vec<String>,
+    subtitle: String,
+    menu: Menu<bool>,
+    /// How long it has been up, in seconds. It can appear at any moment, so
+    /// presses aimed at Home's rows must not land on its answers.
+    age: f32,
+}
+
+/// How long the question ignores input after it appears, in seconds.
+const QUESTION_GRACE: f32 = 1.0;
+
+impl MissingQuestion {
+    /// Bringing them back sits first and preselected: a mistaken press
+    /// deletes nothing.
+    fn new(names: Vec<String>) -> Self {
+        let (subtitle, back) = if names.len() == 1 {
+            (
+                "1 save is missing from the Aftermine folder".to_owned(),
+                "Bring it back",
+            )
+        } else {
+            (
+                format!(
+                    "{} saves are missing from the Aftermine folder",
+                    names.len()
+                ),
+                "Bring them back",
+            )
+        };
+        Self {
+            names,
+            subtitle,
+            menu: Menu::rows(
+                "DELETE EVERYWHERE?",
+                [
+                    (Label::from(back), false),
+                    (Label::from("Delete everywhere"), true),
+                ],
+            ),
+            age: 0.0,
+        }
+    }
 }
 
 /// The Home screen: its menu and the verb behind each row.
@@ -41,6 +91,7 @@ pub struct HomeScreen {
     pub(crate) catalog_ready: bool,
     /// The row offering a LAN seat back, once its host confirmed it waits.
     rejoin: Option<String>,
+    missing: Option<MissingQuestion>,
 }
 
 impl HomeScreen {
@@ -52,6 +103,7 @@ impl HomeScreen {
     pub(crate) fn set_catalog(&mut self, resumable: bool) {
         let selected = self.menu.value().copied();
         let mut fresh = Self::with_resumable(resumable).with_rejoin(self.rejoin.take());
+        fresh.missing = self.missing.take();
         if let Some(selected) = selected {
             fresh.menu.select_where(|row| *row == selected);
         }
@@ -120,7 +172,52 @@ impl HomeScreen {
             menu,
             catalog_ready: false,
             rejoin: None,
+            missing: None,
         }
+    }
+
+    /// Asks about `names`, the files now missing from the Aftermine folder,
+    /// or stops asking once there are none.
+    pub(crate) fn set_missing(&mut self, names: Vec<String>) {
+        if names.is_empty() {
+            self.missing = None;
+        } else if self
+            .missing
+            .as_ref()
+            .is_none_or(|asked| asked.names != names)
+        {
+            self.missing = Some(MissingQuestion::new(names));
+        }
+    }
+
+    /// Lets `seconds` pass for the question, if it is up.
+    pub(crate) fn age_question(&mut self, seconds: f32) {
+        if let Some(asked) = &mut self.missing {
+            asked.age += seconds;
+        }
+    }
+
+    /// The files the question just answered was about.
+    pub(crate) fn take_missing(&mut self) -> Vec<String> {
+        self.missing
+            .take()
+            .map_or_else(Vec::new, |asked| asked.names)
+    }
+
+    /// The debug protocol's stable mode name.
+    pub(crate) fn mode_name(&self) -> &'static str {
+        if self.missing.is_some() {
+            "confirm_missing"
+        } else {
+            "home"
+        }
+    }
+
+    /// What automation reads: the question while it is up, else the rows.
+    pub(crate) fn view(&self) -> crate::menu::MenuView {
+        self.missing
+            .as_ref()
+            .map_or_else(|| self.menu.view(), |asked| asked.menu.view())
     }
 
     /// The standing subtitle.
@@ -139,6 +236,24 @@ impl HomeScreen {
         mouse: &mut Vec2,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Out {
+        if let Some(asked) = &mut self.missing {
+            if asked.age < QUESTION_GRACE {
+                return Out::Stay;
+            }
+            let escaped = events
+                .iter()
+                .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }));
+            let picked = asked.menu.handle(events, mouse).map(|row| row.value);
+            return if escaped || picked == Some(false) {
+                sounds.push((SoundKind::Click, None));
+                Out::BringBackMissing
+            } else if picked == Some(true) {
+                sounds.push((SoundKind::Click, None));
+                Out::DeleteMissing
+            } else {
+                Out::Stay
+            };
+        }
         self.fit();
         let Some(choice) = self.menu.handle(events, mouse) else {
             return Out::Stay;
@@ -159,6 +274,10 @@ impl HomeScreen {
     /// bug report can quote it, clear of the minimap behind the veil and
     /// below the footer's key help.
     pub fn draw(&mut self, sprites: &crate::assets::Sprites) {
+        if let Some(asked) = &self.missing {
+            asked.menu.draw(sprites, &asked.subtitle);
+            return;
+        }
         self.fit();
         self.menu.draw(sprites, self.subtitle());
         let ui = crate::render::ui_scale();

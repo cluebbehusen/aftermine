@@ -525,6 +525,8 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         app.request_catalog();
     }
     offer_rejoin(app, &mut home);
+    home.set_missing(crate::cloud_mirror::missing());
+    home.age_question(dt);
     let input_scope = app
         .game
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
@@ -542,6 +544,12 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         | screens::home::Out::Tutorial
         | screens::home::Out::Join
         | screens::home::Out::Rejoin => {}
+        screens::home::Out::BringBackMissing => {
+            crate::cloud_mirror::answer_missing(&home.take_missing(), false);
+        }
+        screens::home::Out::DeleteMissing => {
+            crate::cloud_mirror::answer_missing(&home.take_missing(), true);
+        }
         screens::home::Out::Continue => {
             return app.persistence_screen(persistence::Intent::Continue, Screen::Home(home));
         }

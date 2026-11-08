@@ -209,14 +209,18 @@ fn collisions_beyond_one_thousand_remain_exclusively_reserved() {
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
     game.advance_ticks(1);
     let tick = game.state.current_tick();
-    for n in 0..1000 {
-        let extension = "amsave";
-        let path = if n == 0 {
-            dir.join(format!("save-{tick:010}.{extension}"))
-        } else {
-            dir.join(format!("save-{tick:010}-{n}.{extension}"))
-        };
-        std::fs::write(path, b"occupied").expect("create known collision");
+    // The name carries the time, so occupy every name of the next few seconds.
+    let now = now_unix();
+    for time in now..now + 3 {
+        for n in 0..1000 {
+            let extension = "amsave";
+            let path = if n == 0 {
+                dir.join(format!("save-{tick:010}-{time}.{extension}"))
+            } else {
+                dir.join(format!("save-{tick:010}-{time}-{n}.{extension}"))
+            };
+            std::fs::write(path, b"occupied").expect("create known collision");
+        }
     }
 
     let first = write_named(&game, "first beyond the cutoff", &dir, 1)
