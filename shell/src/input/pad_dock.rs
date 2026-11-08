@@ -1,9 +1,10 @@
 //! The queue strip: a controller's way onto the orders dock.
 //!
 //! The left-stick click lights the dock's chip nearest the command band.
-//! The D-pad walks the dock's chips and the Stop button above them, and
-//! steps across to the drone column beside them; A presses the lit one as
-//! a click would, and B or another click leaves. While the strip is open it
+//! The D-pad steps to the nearest entry in its direction as drawn, across
+//! the dock's chips, however many columns they wrap into, the Stop button
+//! above them and the drone column beside them, and stops at the edges; A
+//! presses the lit one as a click would, and B or another click leaves. While the strip is open it
 //! owns the pad's buttons and left stick and the camera holds still; the
 //! left trigger still queues, Menu still opens the pause menu, View still
 //! pauses, and Y leaves it for the command ring. It closes when the dock
@@ -13,7 +14,7 @@ use super::{InputState, deny};
 use crate::action::BindingMap;
 use crate::game::Game;
 use crate::layout::{CardHit, CardRow, LayoutModel};
-use crate::nav::{Axis, Nav};
+use crate::nav::Nav;
 use crate::panel::CardAction;
 use aftermine_protocol::PadButton;
 use aftermine_sim::{BuildingId, UnitId};
@@ -93,13 +94,11 @@ pub(crate) fn entries(layout: &LayoutModel) -> Vec<Entry> {
     all
 }
 
-/// The entry nearest `to` among `entries`, only in the drone column or
-/// only in the dock when `drones` says which.
-fn nearest(entries: &[Entry], to: Vec2, drones: Option<bool>) -> Option<usize> {
+/// The entry nearest `to` among `entries`.
+fn nearest(entries: &[Entry], to: Vec2) -> Option<usize> {
     entries
         .iter()
         .enumerate()
-        .filter(|(_, entry)| drones.is_none_or(|column| entry.drones == column))
         .min_by(|(_, a), (_, b)| {
             let (a, b) = (a.hit.rect.center(), b.hit.rect.center());
             a.distance(to).total_cmp(&b.distance(to))
@@ -114,7 +113,7 @@ fn lit_in(entries: &[Entry], focus: &DockFocus) -> Option<usize> {
     entries
         .iter()
         .position(|entry| (entry.hit.row, entry.hit.index) == (lit.row, lit.index))
-        .or_else(|| nearest(entries, lit.rect.center(), None))
+        .or_else(|| nearest(entries, lit.rect.center()))
 }
 
 /// A controller button pressed during a match. Returns whether the strip
@@ -144,19 +143,19 @@ pub(super) fn press(
                 true
             }
             PadButton::DpadUp => {
-                walk(game, input, Nav::Up);
+                step(game, input, Nav::Up);
                 true
             }
             PadButton::DpadDown => {
-                walk(game, input, Nav::Down);
+                step(game, input, Nav::Down);
                 true
             }
             PadButton::DpadLeft => {
-                cross(game, input, false);
+                step(game, input, Nav::Left);
                 true
             }
             PadButton::DpadRight => {
-                cross(game, input, true);
+                step(game, input, Nav::Right);
                 true
             }
             _ => true,
@@ -252,40 +251,42 @@ fn open(game: &mut Game, input: &mut InputState) {
     });
 }
 
-/// D-pad up or down: the next entry up or down the lit one's column,
-/// wrapping at its ends as every menu does.
-fn walk(game: &Game, input: &mut InputState, nav: Nav) {
+/// A D-pad press: lights the nearest entry in its direction, or refuses
+/// at an edge.
+fn step(game: &mut Game, input: &mut InputState, nav: Nav) {
     let Some(focus) = input.dock.as_mut() else {
         return;
     };
     let entries = entries(&game.presentation.layout.get());
-    let Some(at) = lit_in(&entries, focus) else {
-        return;
-    };
-    let column: Vec<&Entry> = entries
-        .iter()
-        .filter(|entry| entry.drones == entries[at].drones)
-        .collect();
-    let Some(here) = column.iter().position(|entry| entry.hit == entries[at].hit) else {
-        return;
-    };
-    if let Some(next) = crate::nav::step_line(column.len(), here, nav, Axis::Vertical, 1, |_| true)
-    {
-        focus.lit = column[next].hit;
+    match toward(&entries, focus.lit.rect, nav) {
+        Some(at) => focus.lit = entries[at].hit,
+        None => deny(game),
     }
 }
 
-/// D-pad left or right: the entry of the other column nearest the lit
-/// one, the drone column lying right of the dock.
-fn cross(game: &mut Game, input: &mut InputState, right: bool) {
-    let Some(focus) = input.dock.as_mut() else {
-        return;
+/// The entry nearest `from` in `nav`'s direction as drawn: of those whose
+/// centers lie that way, the one with the least distance along it plus
+/// twice the distance across it, so a chip in line beats a nearer one off
+/// to the side. None at an edge.
+fn toward(entries: &[Entry], from: Rect, nav: Nav) -> Option<usize> {
+    let way = match nav {
+        Nav::Up => Vec2::new(0.0, -1.0),
+        Nav::Down => Vec2::new(0.0, 1.0),
+        Nav::Left => Vec2::new(-1.0, 0.0),
+        Nav::Right => Vec2::new(1.0, 0.0),
+        _ => return None,
     };
-    let entries = entries(&game.presentation.layout.get());
-    match nearest(&entries, focus.lit.rect.center(), Some(right)) {
-        Some(at) if entries[at].hit != focus.lit => focus.lit = entries[at].hit,
-        _ => deny(game),
-    }
+    let score = |entry: &Entry| {
+        let offset = entry.hit.rect.center() - from.center();
+        let along = offset.dot(way);
+        (along >= 1.0).then(|| along + 2.0 * offset.perp_dot(way).abs())
+    };
+    entries
+        .iter()
+        .enumerate()
+        .filter_map(|(at, entry)| score(entry).map(|score| (at, score)))
+        .min_by(|(_, a), (_, b)| a.total_cmp(b))
+        .map(|(at, _)| at)
 }
 
 /// A: presses the lit entry as a click on it would.
