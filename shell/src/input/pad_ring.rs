@@ -6,7 +6,8 @@
 //! one ring and closes the first, and the button that opened a ring closes
 //! every ring, as does holding B; the other ring's button opens that ring
 //! in its place. While a ring is open it owns the pad's buttons and left
-//! stick; the left trigger still queues.
+//! stick; the left trigger still queues, Menu still opens the pause menu
+//! and View still pauses.
 //!
 //! A command ring is read off the panel the HUD last published, as every
 //! card press is, a pick presses the card itself, and X cancels one of
@@ -94,8 +95,8 @@ pub(super) fn press(
     let taken = if let Some(open) = input.ring.as_ref() {
         let kind = open.kind;
         match button {
-            // Queueing and the pause menu reach past the ring.
-            PadButton::LeftTrigger | PadButton::Start => false,
+            // Queueing, the pause menu and pausing reach past the ring.
+            PadButton::LeftTrigger | PadButton::Start | PadButton::Select => false,
             PadButton::South => {
                 pick(game, input, bindings);
                 true

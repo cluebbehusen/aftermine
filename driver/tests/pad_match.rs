@@ -1,10 +1,10 @@
-//! Selection, orders, placement and targeted orders on a controller, driven
-//! through the real shell's input funnel with pad events: the same
-//! `InjectEvent` requests `driver live inject-pad`, `inject-pad-down`,
-//! `inject-pad-up` and `inject-pad-stick` send. Until a controller can arm
-//! a placement or a targeted order itself, its key arms it. `#[ignore]`d
-//! because each test spawns a real window; run them explicitly, under Xvfb
-//! where there is no display:
+//! Selection, orders, placement, targeted orders, pausing and the pause
+//! menu on a controller, driven through the real shell's input funnel with
+//! pad events: the same `InjectEvent` requests `driver live inject-pad`,
+//! `inject-pad-down`, `inject-pad-up` and `inject-pad-stick` send. Until a
+//! controller can arm a placement or a targeted order itself, its key arms
+//! it. `#[ignore]`d because each test spawns a real window; run them
+//! explicitly, under Xvfb where there is no display:
 //!
 //! ```sh
 //! xvfb-run -s "-screen 0 1280x800x24" \
@@ -646,6 +646,23 @@ fn the_bumpers_select_the_army_and_the_army_in_view() -> Result<()> {
     assert!(shown.len() < army.len(), "the far Lancer is out of view");
     drill.press(PadButton::RightShoulder)?;
     assert_eq!(obeying(&drill.order_at(OPEN)?), shown);
+    Ok(())
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn view_pauses_and_resumes_and_menu_opens_the_pause_menu() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_323)?;
+    drill.load(&field())?;
+    assert!(drill.client.status()?.paused, "the drill loads paused");
+    drill.press(PadButton::Select)?;
+    assert!(!drill.client.status()?.paused, "View starts the match");
+    drill.press(PadButton::Select)?;
+    assert!(drill.client.status()?.paused, "and View again pauses it");
+    drill.press(PadButton::Start)?;
+    assert_eq!(ui(&mut drill.client)?.mode, "pause_menu");
+    drill.press(PadButton::East)?;
+    assert_eq!(ui(&mut drill.client)?.mode, "playing", "B resumes");
     Ok(())
 }
 
