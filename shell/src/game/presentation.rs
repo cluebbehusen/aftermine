@@ -293,19 +293,19 @@ impl<'a> Scene<'a> {
         self.presentation.draw_hull_heading(self.state, id, alpha)
     }
 
-    /// The decorated selection's programs as the staged commands will leave
-    /// them. Callers drop the borrow before asking again.
+    /// The selection's programs as the staged commands will leave them.
+    /// Callers drop the borrow before asking again.
     pub(crate) fn projection(&self) -> std::cell::Ref<'a, super::projection::Projection> {
-        let units = crate::render::entities::decor_units(self);
+        let units = &self.presentation.selection.units;
         let cache = &self.presentation.projection;
         if !cache
             .borrow()
-            .is_current(self.state.current_tick(), self.pending.len(), &units)
+            .is_current(self.state.current_tick(), self.pending.len(), units)
         {
             cache.replace(super::projection::Projection::capture(
                 self.state,
                 self.pending,
-                units,
+                units.clone(),
             ));
         }
         cache.borrow()

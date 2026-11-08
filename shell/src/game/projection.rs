@@ -41,10 +41,12 @@ struct Captured {
     units: Vec<UnitId>,
 }
 
-/// The programs of the selection's decorated units after the staged
-/// commands, with the sites their Build orders name. It is captured once per
-/// tick, staged-command count and decorated selection: commands are only
-/// ever appended to the staged batch or drained from it along with a tick.
+/// The programs of the selected units after the staged commands, with the
+/// sites their Build orders name. It covers the whole selection, not just
+/// the units that draw decor, because selection-wide facts such as a patrol
+/// read it. It is captured once per tick, staged-command count and
+/// selection: commands are only ever appended to the staged batch or drained
+/// from it along with a tick.
 #[derive(Debug, Default)]
 pub(crate) struct Projection {
     captured: Option<Captured>,
@@ -91,12 +93,12 @@ impl Projection {
         }
     }
 
-    /// A decorated unit's projected program.
+    /// A selected unit's projected program.
     pub(crate) fn program(&self, id: UnitId) -> Option<&Program> {
         self.programs
-            .iter()
-            .find(|(unit, _)| *unit == id)
-            .map(|(_, program)| program)
+            .binary_search_by_key(&id, |(unit, _)| *unit)
+            .ok()
+            .map(|index| &self.programs[index].1)
     }
 
     /// A building as the staged commands leave it, so a site a staged Build
@@ -109,11 +111,17 @@ impl Projection {
     }
 }
 
+/// The programs of `ids` in id order, so a selection-wide read looks each
+/// up without scanning.
 fn programs<'u>(
     ids: &[UnitId],
     unit: impl Fn(UnitId) -> Option<&'u Unit>,
 ) -> Vec<(UnitId, Program)> {
-    ids.iter()
+    let mut programs: Vec<_> = ids
+        .iter()
         .filter_map(|&id| Some((id, Program::of(unit(id)?))))
-        .collect()
+        .collect();
+    programs.sort_unstable_by_key(|(id, _)| *id);
+    programs.dedup_by_key(|(id, _)| *id);
+    programs
 }

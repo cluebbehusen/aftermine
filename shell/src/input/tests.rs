@@ -1538,6 +1538,77 @@ fn patrol_stops_a_patrolling_selection_and_arms_any_other() {
 }
 
 #[test]
+fn patrol_reads_the_whole_selection_past_the_decor_cap() {
+    // More fighters than draw decor: a staged patrol must still light the
+    // card for every one of them, so the next press stops them all.
+    let units: Vec<_> = (0..14)
+        .map(|i| serde_json::json!({"player": 0, "kind": "sentinel", "x": 2 + i, "y": 2}))
+        .collect();
+    let scenario = aftermine_sim::Scenario::from_json(
+        &serde_json::json!({
+            "name": "Crowd",
+            "players": [
+                {"name": "Mass", "scrap": 0, "bot": false},
+                {"name": "Idle", "scrap": 0, "bot": true}
+            ],
+            "map": [
+                "######################",
+                "#....................#",
+                "#....................#",
+                "#....................#",
+                "#....................#",
+                "#....................#",
+                "#1.................2.#",
+                "#....................#",
+                "######################"
+            ],
+            "units": units
+        })
+        .to_string(),
+    )
+    .expect("crowd parses");
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
+    let mut input = InputState::new();
+    let fighters: Vec<_> = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == game.presentation.human)
+        .map(|u| u.id)
+        .collect();
+    game.presentation.selection.units = fighters.clone();
+    assert!(
+        crate::render::entities::decor_units(&game.view()).len() < fighters.len(),
+        "premise: some fighters draw no decor"
+    );
+    dispatch_action(&mut game, &mut input, Action::Patrol);
+    tap_world(&mut game, &mut input, vec2(5.5, 5.5));
+    tap_world(&mut game, &mut input, vec2(14.5, 5.5));
+    dispatch_action(&mut game, &mut input, Action::Patrol);
+    assert!(
+        matches!(
+            game.pending.last().map(|c| &c.command),
+            Some(Command::Patrol { units, .. }) if units == &fighters
+        ),
+        "premise: {:?}",
+        game.pending
+    );
+    assert!(
+        crate::panel::selection_patrols(&game.view()),
+        "the staged patrol counts for every fighter"
+    );
+    dispatch_action(&mut game, &mut input, Action::Patrol);
+    assert!(
+        matches!(
+            game.pending.last().map(|c| &c.command),
+            Some(Command::Stop { units }) if units == &fighters
+        ),
+        "{:?}",
+        game.pending
+    );
+}
+
+#[test]
 fn a_lit_queue_turns_off_with_a_tap_so_the_next_ground_tap_clears() {
     let mut game = headless_game();
     let mut input = InputState::new();
