@@ -91,10 +91,10 @@ On iPad:
 
 ## Saves and replays
 
-Continue resumes the latest autosave, and named saves restore a match exactly
-where it stopped, paused. Finished matches are kept as replays you can watch and
-scrub from the Replays shelf. A save keeps the match's command history, so a
-resumed match still records its whole replay.
+Continue resumes the latest autosave or named save, and a save restores a match
+exactly where it stopped, paused. Finished matches are kept as replays you can
+watch and scrub from the Replays shelf. A save keeps the match's command
+history, so a resumed match still records its whole replay.
 
 Restart, Rematch, loading a save and watching a replay keep each opponent's
 difficulty, stance and personality. New Match picks new personalities.

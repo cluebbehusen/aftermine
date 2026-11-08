@@ -209,7 +209,8 @@ fn now_unix() -> u64 {
 /// One match's place among the autosaves. Its autosave, LAN autosave and
 /// finished record share the id, so each write replaces the last instead of
 /// adding a file, and rotation keeps whole matches. The finished record
-/// lands in the matches folder and removes the slot's autosaves.
+/// lands in the matches folder and removes the slot's autosaves, as a local
+/// match's named save does from the saves folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SaveSlot(String);
 
@@ -266,7 +267,8 @@ impl SaveSlot {
     }
 
     /// Removes this slot's autosaves from `dir`, for a match its player
-    /// abandoned or one whose autosave moved to another folder.
+    /// abandoned or saved by name, or one whose autosave moved to another
+    /// folder.
     fn discard(&self, dir: &Path) {
         self.clear_autosaves(dir, "");
     }
@@ -310,7 +312,7 @@ impl SaveKey {
     }
 }
 
-/// An unnamed save's slot and the content it wrote there.
+/// A match's slot and the content a save of it holds.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SaveMark {
     pub(crate) slot: SaveSlot,
@@ -361,7 +363,7 @@ fn rotate_prefix(dir: &Path, prefix: &str, keep: usize) {
     }
 }
 
-/// Header-eligible autosaves Continue may resume, newest first. Loading
+/// Header-eligible records Continue may resume, newest first. Loading
 /// must still validate the payload.
 pub(crate) fn candidates() -> Vec<PathBuf> {
     crate::saves::discover(|| false)
@@ -399,8 +401,9 @@ pub(crate) struct SaveJob {
     data: Option<SaveData>,
     meta: chassis::replay::ReplayMeta,
     folder: Folder,
-    /// Where an unnamed save lands and what it holds; a named save gets a
-    /// fresh file in the saves folder instead.
+    /// The match's slot and what this save holds. An unnamed save lands in
+    /// the slot; a named save gets a fresh file in the saves folder and
+    /// removes the slot's autosaves if it has a mark.
     mark: Option<SaveMark>,
     already_saved: bool,
 }
@@ -464,7 +467,9 @@ impl SaveJob {
             } else {
                 Folder::Autosaves
             },
-            mark: (!named).then(|| SaveMark {
+            // A named save stands in for the match's autosave, but not for
+            // the recording a decided or LAN match still owes.
+            mark: (!(named && recording)).then(|| SaveMark {
                 slot: game.slot.clone(),
                 key: game.save_key(),
             }),
@@ -501,7 +506,7 @@ impl SaveJob {
         }
     }
 
-    /// The slot and content an unnamed save leaves behind.
+    /// The slot and content the match counts as saved once this lands.
     pub(crate) fn mark(&self) -> Option<SaveMark> {
         self.mark.clone()
     }
@@ -541,23 +546,32 @@ impl SaveJob {
                         .map_err(Into::into)
                 }
             };
-            let path = if let Some(mark) = &self.mark {
-                let path = dir.join(mark.slot.file(kind));
-                replace(&path, write).map_err(|source| SaveError::Write {
-                    path: path.clone(),
-                    source,
-                })?;
-                for folder in autosaves {
-                    if *folder == dir {
-                        mark.slot.clear_autosaves(folder, kind);
-                    } else {
-                        mark.slot.discard(folder);
+            let path = match &self.mark {
+                Some(mark) if self.folder != Folder::Saves => {
+                    let path = dir.join(mark.slot.file(kind));
+                    replace(&path, write).map_err(|source| SaveError::Write {
+                        path: path.clone(),
+                        source,
+                    })?;
+                    for folder in autosaves {
+                        if *folder == dir {
+                            mark.slot.clear_autosaves(folder, kind);
+                        } else {
+                            mark.slot.discard(folder);
+                        }
                     }
+                    rotate(&dir);
+                    path
                 }
-                rotate(&dir);
-                path
-            } else {
-                publish_named(&dir, kind, self.meta.ticks.unwrap(), write)?
+                mark => {
+                    let path = publish_named(&dir, kind, self.meta.ticks.unwrap(), write)?;
+                    if let Some(mark) = mark {
+                        for folder in autosaves {
+                            mark.slot.discard(folder);
+                        }
+                    }
+                    path
+                }
             };
             SaveOutcome::Wrote(path)
         } else if self.already_saved {

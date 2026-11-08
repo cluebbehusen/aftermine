@@ -95,7 +95,7 @@ pub struct HomeScreen {
 }
 
 impl HomeScreen {
-    /// Builds the door, checking for a resumable autosave.
+    /// Builds the door, checking for a match Continue can resume.
     pub fn open() -> Self {
         Self::with_resumable(false)
     }

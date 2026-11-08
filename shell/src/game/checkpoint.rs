@@ -410,7 +410,6 @@ impl RestoredGame {
             .state
             .result()
             .map(|_| live_stats.snapshot(&core.state));
-        let adopted = slot.is_some();
         let mut game = Game {
             scenario: core.scenario,
             state: ReadOnlyState(Arc::new(core.state)),
@@ -439,11 +438,8 @@ impl RestoredGame {
             net: None,
             outbox: Vec::new(),
         };
-        // A continued autosave already holds this content, and a decided
-        // match was recorded when it ended.
-        if adopted || game.state.result().is_some() {
-            game.saved = Some(game.save_key());
-        }
+        // The record this came from already holds its content.
+        game.saved = Some(game.save_key());
         game.refresh_fog_lift();
         game
     }

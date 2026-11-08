@@ -1194,6 +1194,36 @@ fn a_delete_of_an_old_copy_cannot_remove_a_longer_session() {
 }
 
 #[test]
+fn an_autosave_written_again_after_its_deletion_goes_up() {
+    // A named save removes the match's autosave, and playing on writes it again.
+    let cloud = FakeCloud::signed_in();
+    let ipad = device("ipad");
+    let mac = device("mac");
+    let name = "autosaves/autosave-1.amsave";
+    let on_ipad = ipad.path(name).unwrap();
+    let on_mac = mac.path(name).unwrap();
+    write_save(&on_ipad, 100, 1_000);
+    sync(&cloud, &ipad);
+    sync(&cloud, &mac);
+    game_delete(&cloud, &ipad, &on_ipad);
+    sync(&cloud, &mac);
+    assert!(!on_mac.exists(), "the deletion reaches the other device");
+    write_save(&on_ipad, 101, 2_000);
+    sync(&cloud, &ipad);
+    assert_eq!(cloud.file(name), Some(2_000), "it ties the delete and wins");
+    sync(&cloud, &mac);
+    assert_eq!(read_ticks(&on_mac), 101);
+    // Written again before the deletion ever went up, it still goes up.
+    let game = Game::default();
+    game.deleted.borrow_mut().push(on_ipad.clone());
+    std::fs::remove_file(&on_ipad).unwrap();
+    write_save(&on_ipad, 200, 3_000);
+    pass(&cloud, &ipad, Mode::Full, &game).unwrap();
+    assert_eq!(read_ticks(&on_ipad), 200);
+    assert_eq!(cloud.file(name), Some(3_000));
+}
+
+#[test]
 fn a_refused_delete_finds_what_cloudkit_holds_instead_of_retrying_for_ever() {
     let cloud = FakeCloud::signed_in();
     let tv = tv();
