@@ -144,9 +144,10 @@ pub(super) fn dispatch_action(
         }
         Action::OrderRound => {
             let bays = crate::unit_bays::SelectedBays::inspect(&game.view());
-            // Shift fills every empty slot, as the card shows while it is held.
+            // Shift, or a pad's LT, fills every empty slot, as the card shows
+            // while it is held.
             if bays.is_empty()
-                && input.resolver.shift_held()
+                && input.queue_keys_held()
                 && crate::building_actions::SelectedBuildings::inspect(&game.view())
                     .fill()
                     .is_some_and(|fill| fill.wanted > 1)

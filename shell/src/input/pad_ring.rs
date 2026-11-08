@@ -11,10 +11,11 @@
 //!
 //! A command ring is read off the panel the HUD last published, as every
 //! card press is, a pick presses the card itself, and X cancels one of
-//! what a slice queues. The build rings step the same construction state
-//! the build keys do, so the panel shows the palette beneath them. The
-//! group ring recalls a group with A and saves the selection to it with
-//! X, through the actions the group keys dispatch.
+//! what a slice queues or else does what a right-click on its card does.
+//! The build rings step the same construction state the build keys do, so
+//! the panel shows the palette beneath them. The group ring recalls a
+//! group with A and saves the selection to it with X, through the actions
+//! the group keys dispatch.
 
 use super::{InputState, deny};
 use crate::action::{Action, BindingMap};
@@ -319,13 +320,14 @@ fn enter(game: &mut Game, input: &mut InputState, bindings: &BindingMap, branch:
 
 /// X: saves the selection to the pointed group, as the group keys do,
 /// and closes the ring; on a command, cancels one of what the slice
-/// queues, as the dock's own chip does.
+/// queues, as the dock's own chip does, or else does what a right-click
+/// on its card does.
 fn second(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
     let Some(slice) = pointed(game, input) else {
         deny(game);
         return;
     };
-    match (slice.pick, slice.cancel) {
+    match (slice.pick, slice.second()) {
         (Pick::Group(group), _) => {
             super::dispatch_action(game, input, bindings, Action::AssignGroup(group));
             close(input);

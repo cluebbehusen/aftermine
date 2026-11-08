@@ -416,6 +416,19 @@ pub(crate) fn kind_counts(kinds: impl IntoIterator<Item = UnitKind>) -> Vec<(Uni
     counts
 }
 
+/// Each structure kind among `kinds` once, in the order the roster lays
+/// its tiles: by name. A controller's narrowing walks the same order.
+pub(crate) fn building_kinds(kinds: impl IntoIterator<Item = BuildingKind>) -> Vec<BuildingKind> {
+    let mut unique: Vec<BuildingKind> = Vec::new();
+    for kind in kinds {
+        if !unique.contains(&kind) {
+            unique.push(kind);
+        }
+    }
+    unique.sort_by_key(|kind| kind.name());
+    unique
+}
+
 /// The selection's subject: the unit whose program the dock, the
 /// portrait, and the full-opacity breadcrumbs all describe, so those
 /// surfaces agree. Majority kind first (a mixed army reads as its bulk,
@@ -1282,9 +1295,9 @@ pub(crate) fn build_for_input(
             };
         }
     }
-    // Held Shift turns the Order card into the Fill a Shift-click buys, so
-    // the total shows before the press.
-    if input.resolver.shift_held()
+    // Held Shift, or a pad's held LT, turns the Order card into the Fill a
+    // Shift-click buys, so the total shows before the press.
+    if input.queue_keys_held()
         && !game.presentation.selection.buildings.is_empty()
         && let Some(fill) = crate::building_actions::SelectedBuildings::inspect(game).fill_card()
         && let Some(card) = panel

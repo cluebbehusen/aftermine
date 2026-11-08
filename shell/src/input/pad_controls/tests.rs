@@ -332,6 +332,11 @@ fn the_bumpers_select_the_army_and_the_army_in_view() {
 
 /// Two Harvesters, a Lancer and two Sentinels, all selected.
 fn mixed() -> (Game, InputState) {
+    mixed_beside(&[])
+}
+
+/// The mixed group, all selected, beside `buildings`.
+fn mixed_beside(buildings: &[(u8, BuildingKind, i32, i32)]) -> (Game, InputState) {
     let mut game = scene(
         &[
             (0, SENTINEL, 30, 20),
@@ -340,7 +345,7 @@ fn mixed() -> (Game, InputState) {
             (0, SENTINEL, 33, 20),
             (0, HARVESTER, 34, 20),
         ],
-        &[],
+        buildings,
     );
     let input = pad_input(&mut game);
     let mut all: Vec<UnitId> = game.state.units().iter().map(|u| u.id).collect();
@@ -384,14 +389,109 @@ fn rt_forgets_its_group_once_the_selection_changes_otherwise() {
 }
 
 #[test]
-fn rt_has_nothing_to_narrow_in_one_kind() {
+fn rt_moves_on_from_a_kind_whose_last_member_is_gone() {
+    let (mut game, mut input) = mixed_beside(&[(0, BuildingKind::Crucible, 32, 23)]);
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    let harvesters = units_of(&game, 0, HARVESTER);
+    assert_eq!(game.presentation.selection.units, harvesters);
+    game.issue(Command::Retire {
+        units: harvesters.clone(),
+        queue: false,
+    });
+    for _ in 0..2000 {
+        if harvesters.iter().all(|id| game.state.unit(*id).is_none()) {
+            break;
+        }
+        game.do_tick();
+    }
+    assert!(
+        game.presentation.selection.units.is_empty(),
+        "the Crucible took the Harvesters and the selection with them"
+    );
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    assert!(!denied(&game));
+    assert_eq!(
+        game.presentation.selection.units,
+        units_of(&game, 0, LANCER),
+        "the walk goes on to the kind after the one that left"
+    );
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    assert_eq!(
+        game.presentation.selection.units,
+        units_of(&game, 0, SENTINEL)
+    );
+}
+
+/// Publishes the panel as the HUD's layout pass does before input, so RT
+/// reads the All button the frame shows.
+fn publish(game: &Game, input: &InputState) {
+    *game.presentation.panel_model.borrow_mut() =
+        crate::panel::build_for_input(&game.view(), &BindingMap::classic(), input);
+}
+
+#[test]
+fn rt_widens_one_kind_to_every_one_of_it_as_the_all_button_does() {
+    let mut game = scene(
+        &[
+            (0, SENTINEL, 30, 20),
+            (0, SENTINEL, 31, 20),
+            (0, SENTINEL, 60, 36),
+            (0, LANCER, 32, 20),
+            (1, SENTINEL, 40, 30),
+        ],
+        &[],
+    );
+    let mut input = pad_input(&mut game);
+    game.presentation.selection.units = vec![unit_at(&game, 30, 20), unit_at(&game, 31, 20)];
+    publish(&game, &input);
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    assert_eq!(
+        game.presentation.selection.units,
+        units_of(&game, 0, SENTINEL),
+        "every own Sentinel, the far one too, and no enemy"
+    );
+    assert!(!denied(&game));
+}
+
+#[test]
+fn rt_refuses_one_kind_once_every_one_is_selected() {
     let mut game = scene(&[(0, SENTINEL, 30, 20), (0, SENTINEL, 31, 20)], &[]);
     let mut input = pad_input(&mut game);
     let both = units_of(&game, 0, SENTINEL);
     game.presentation.selection.units = both.clone();
+    publish(&game, &input);
     press(&mut game, &mut input, PadButton::RightTrigger);
     assert!(denied(&game));
     assert_eq!(game.presentation.selection.units, both);
+}
+
+#[test]
+fn rt_walks_structure_kinds_in_roster_order_then_widens_one_kind() {
+    let mut game = scene(
+        &[],
+        &[
+            (0, BuildingKind::Turret, 26, 16),
+            (0, BuildingKind::Array, 30, 16),
+            (0, BuildingKind::Turret, 36, 16),
+        ],
+    );
+    let mut input = pad_input(&mut game);
+    let turret = building_at(&game, 26, 16);
+    let array = building_at(&game, 30, 16);
+    let other = building_at(&game, 36, 16);
+    let mut mixed = vec![turret, array];
+    mixed.sort_unstable();
+    game.presentation.selection.buildings = mixed.clone();
+    for step in [vec![array], vec![turret], mixed] {
+        press(&mut game, &mut input, PadButton::RightTrigger);
+        assert_eq!(game.presentation.selection.buildings, step);
+    }
+    game.presentation.selection.buildings = vec![turret];
+    publish(&game, &input);
+    press(&mut game, &mut input, PadButton::RightTrigger);
+    let mut turrets = vec![turret, other];
+    turrets.sort_unstable();
+    assert_eq!(game.presentation.selection.buildings, turrets);
 }
 
 #[test]
