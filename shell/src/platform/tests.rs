@@ -30,8 +30,18 @@ fn only_a_desktop_starts_with_a_cursor_and_keys() {
             !hands.keys,
             "{platform:?} names no keys before one is pressed"
         );
-        assert_eq!(hands.pad, None);
     }
+}
+
+#[test]
+fn a_tv_names_its_remote_before_any_input_and_nothing_else_names_a_pad() {
+    assert_eq!(Hands::at_launch(Platform::Desktop).pad, None);
+    assert_eq!(Hands::at_launch(Platform::Touch).pad, None);
+    assert_eq!(
+        Hands::at_launch(Platform::Tv).pad,
+        Some(PadFamily::Remote),
+        "every Apple TV has a remote, and nothing on it taps"
+    );
 }
 
 #[test]

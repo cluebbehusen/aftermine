@@ -21,7 +21,9 @@ crate is a binary, and this README is also its crate-level rustdoc.
   Key bindings live only in the settings.
 - `pad` reads game controllers into that funnel: gilrs on Windows and Linux,
   Steam Deck included, and Apple's GameController through the miniquad fork on
-  Mac and iPad. `menu_stick` turns the left stick into menu arrows.
+  Mac, iPad and Apple TV, where the Siri Remote reads as a pad too: its center
+  clicks and its ring and swipes are the D-pad. `menu_stick` turns the left
+  stick into menu arrows.
 - `screens` holds the menus, match setup (`screens/wizard`), the lobby, playback
   and results. `tutorial` holds the lessons and `tips` the match tips.
 - `home_backdrop` plays a bundled recording behind Home.

@@ -194,3 +194,276 @@ fn a_viewer_middle_drag_pans_against_the_pointer() {
         "dragging left by 100px pans right by 100px of world, then release stops it"
     );
 }
+
+fn remote_pads() -> ViewerPads {
+    ViewerPads {
+        remotes: vec![9],
+        ..ViewerPads::default()
+    }
+}
+
+fn press(pad: u64, button: PadButton) -> RawEvent {
+    RawEvent::PadDown { pad, button }
+}
+
+#[test]
+fn a_remote_click_cycles_its_modes_and_goes_no_further() {
+    let mut camera = camera();
+    let mut remote = RemoteCamera::with_control();
+    let click = [press(9, crate::pad::CONFIRM)];
+    for mode in [RemoteMode::Pan, RemoteMode::Zoom, RemoteMode::Control] {
+        assert!(
+            remote
+                .route(&click, &mut camera, &remote_pads(), 0.0)
+                .is_empty()
+        );
+        assert_eq!(remote.mode(), mode);
+    }
+    let mut no_controls = RemoteCamera::default();
+    assert_eq!(no_controls.mode(), RemoteMode::Pan);
+    assert_eq!(no_controls.modes(), [RemoteMode::Pan, RemoteMode::Zoom]);
+    assert_eq!(no_controls.mode_index(), 0);
+    no_controls.route(&click, &mut camera, &remote_pads(), 0.0);
+    assert_eq!(no_controls.mode(), RemoteMode::Zoom);
+    assert_eq!(no_controls.mode_index(), 1);
+}
+
+fn release(pad: u64, button: PadButton) -> RawEvent {
+    RawEvent::PadUp { pad, button }
+}
+
+#[test]
+fn a_held_remote_ring_pans_in_pan_until_let_go() {
+    let mut camera = camera();
+    let start = camera.center;
+    let mut pads = remote_pads();
+    pads.prefs.stick_speed = 1.0;
+    let mut remote = RemoteCamera::default();
+    remote.route(&[press(9, PadButton::DpadRight)], &mut camera, &pads, 0.5);
+    let expected = crate::input::PAN_PX_PER_SEC * 0.5 / camera.zoom;
+    assert!((camera.center.x - start.x - expected).abs() < 1e-3);
+    assert_eq!(camera.center.y, start.y);
+
+    remote.route(&[], &mut camera, &pads, 0.5);
+    assert!(
+        (camera.center.x - start.x - 2.0 * expected).abs() < 1e-3,
+        "it keeps panning while held"
+    );
+    let held = camera.center;
+    remote.route(&[release(9, PadButton::DpadRight)], &mut camera, &pads, 0.5);
+    assert_eq!(camera.center, held, "and stops once let go");
+}
+
+#[test]
+fn a_swipes_tap_in_one_batch_is_no_hold() {
+    let mut camera = camera();
+    let start = camera.center;
+    let mut remote = RemoteCamera::default();
+    let tap = [
+        press(9, PadButton::DpadRight),
+        release(9, PadButton::DpadRight),
+    ];
+    remote.route(&tap, &mut camera, &remote_pads(), 0.5);
+    assert_eq!(camera.center, start);
+}
+
+#[test]
+fn a_held_remote_ring_keeps_zooming_in_zoom() {
+    let settle = |camera: &mut Camera| {
+        for _ in 0..240 {
+            camera.update(1.0 / 60.0);
+        }
+    };
+    let click = [press(9, crate::pad::CONFIRM)];
+    let zoomed = |seconds: f32| {
+        let mut camera = camera();
+        let mut remote = RemoteCamera::default();
+        remote.route(&click, &mut camera, &remote_pads(), 0.0);
+        remote.route(
+            &[press(9, PadButton::DpadUp)],
+            &mut camera,
+            &remote_pads(),
+            0.0,
+        );
+        remote.route(&[], &mut camera, &remote_pads(), seconds);
+        settle(&mut camera);
+        camera.zoom
+    };
+    assert!(zoomed(0.0) > camera().zoom, "a press zooms a notch");
+    assert!(zoomed(0.5) > zoomed(0.0), "and holding keeps going");
+}
+
+#[test]
+fn changing_mode_lets_go_of_a_held_ring() {
+    let mut camera = camera();
+    let mut remote = RemoteCamera::default();
+    remote.route(
+        &[press(9, PadButton::DpadUp)],
+        &mut camera,
+        &remote_pads(),
+        0.0,
+    );
+    remote.route(
+        &[press(9, crate::pad::CONFIRM)],
+        &mut camera,
+        &remote_pads(),
+        0.0,
+    );
+    remote.route(&[], &mut camera, &remote_pads(), 0.5);
+    for _ in 0..240 {
+        camera.update(1.0 / 60.0);
+    }
+    assert_eq!(camera.zoom, self::camera().zoom, "zoom never saw the press");
+}
+
+#[test]
+fn a_disconnected_remote_stops_panning() {
+    let mut camera = camera();
+    let mut remote = RemoteCamera::default();
+    remote.route(
+        &[press(9, PadButton::DpadRight)],
+        &mut camera,
+        &remote_pads(),
+        0.0,
+    );
+    let held = camera.center;
+    remote.route(
+        &[RawEvent::PadDisconnected { pad: 9 }],
+        &mut camera,
+        &remote_pads(),
+        0.5,
+    );
+    assert_eq!(camera.center, held);
+}
+
+#[test]
+fn another_pad_disconnecting_leaves_a_held_ring_held() {
+    let mut camera = camera();
+    let mut remote = RemoteCamera::default();
+    let mut pads = remote_pads();
+    pads.prefs.stick_speed = 1.0;
+    remote.route(&[press(9, PadButton::DpadRight)], &mut camera, &pads, 0.0);
+    let held = camera.center;
+    remote.route(
+        &[RawEvent::PadDisconnected { pad: 1 }],
+        &mut camera,
+        &pads,
+        0.5,
+    );
+    assert!(camera.center.x > held.x, "the remote is still holding");
+}
+
+#[test]
+fn the_ring_belongs_to_the_viewer_in_its_own_controls() {
+    let mut camera = camera();
+    let start = camera.center;
+    let mut remote = RemoteCamera::with_control();
+    let events = [press(9, PadButton::DpadRight)];
+    assert_eq!(
+        remote.route(&events, &mut camera, &remote_pads(), 0.5),
+        events
+    );
+    assert_eq!(camera.center, start);
+}
+
+#[test]
+fn a_remote_swipe_drags_the_map_only_in_pan() {
+    let mut camera = camera();
+    let before = camera.center;
+    let swipe = [RawEvent::PadSwipe {
+        pad: 9,
+        x: 0.5,
+        y: -0.25,
+    }];
+    let mut remote = RemoteCamera::with_control();
+    assert!(
+        remote
+            .route(&swipe, &mut camera, &remote_pads(), 0.0)
+            .is_empty()
+    );
+    assert_eq!(camera.center, before, "control mode leaves the camera");
+
+    let mut remote = RemoteCamera::default();
+    remote.route(&swipe, &mut camera, &remote_pads(), 0.0);
+    let moved = camera.center - before;
+    assert!(moved.x < 0.0, "a swipe right drags the map right");
+    assert!(moved.y > 0.0, "a swipe up drags the map up");
+    let zoom = camera.zoom;
+    assert!((moved.x + 0.5 * SWIPE_PAN_PX / zoom).abs() < 1e-3);
+}
+
+#[test]
+fn a_remote_swipe_zooms_only_up_and_down_in_zoom_and_honors_the_flip() {
+    let settle = |camera: &mut Camera| {
+        for _ in 0..240 {
+            camera.update(1.0 / 60.0);
+        }
+    };
+    let mut pads = remote_pads();
+    let click = [press(9, crate::pad::CONFIRM)];
+    for (flip, button, zooms_in) in [
+        (false, PadButton::DpadUp, true),
+        (false, PadButton::DpadDown, false),
+        (true, PadButton::DpadUp, false),
+    ] {
+        pads.prefs.zoom_inverted = flip;
+        let mut camera = camera();
+        let mut remote = RemoteCamera::default();
+        remote.route(&click, &mut camera, &pads, 0.0);
+        assert_eq!(remote.mode(), RemoteMode::Zoom);
+        let before = camera.zoom;
+        assert!(
+            remote
+                .route(&[press(9, button)], &mut camera, &pads, 0.0)
+                .is_empty()
+        );
+        settle(&mut camera);
+        assert_eq!(camera.zoom > before, zooms_in, "{flip} {button:?}");
+        let held = camera.zoom;
+        let center = camera.center;
+        remote.route(&[press(9, PadButton::DpadRight)], &mut camera, &pads, 0.0);
+        settle(&mut camera);
+        assert_eq!((camera.zoom, camera.center), (held, center));
+    }
+}
+
+#[test]
+fn a_remote_leaves_the_viewer_its_own_presses_and_other_controllers_all_of_theirs() {
+    let mut camera = camera();
+    let mut remote = RemoteCamera::with_control();
+    let events = [
+        press(9, PadButton::DpadRight),
+        press(9, PadButton::PlayPause),
+        press(9, crate::pad::BACK),
+        press(1, crate::pad::CONFIRM),
+        RawEvent::PadSwipe {
+            pad: 1,
+            x: 1.0,
+            y: 0.0,
+        },
+    ];
+    assert_eq!(
+        remote.route(&events, &mut camera, &remote_pads(), 0.0),
+        events
+    );
+    assert_eq!(remote.mode(), RemoteMode::Control, "another pad's A");
+}
+
+#[test]
+fn sticks_pan_and_zoom_any_viewer_at_the_players_speed() {
+    let mut camera = camera();
+    let before = (camera.center, camera.zoom);
+    let mut pads = ViewerPads {
+        left: vec2(1.0, 0.0),
+        right: vec2(0.0, -1.0),
+        ..ViewerPads::default()
+    };
+    pads.prefs.stick_speed = 1.0;
+    RemoteCamera::default().route(&[], &mut camera, &pads, 0.5);
+    let expected = crate::input::PAN_PX_PER_SEC * 0.5 / before.1;
+    assert!((camera.center.x - before.0.x - expected).abs() < 1e-3);
+    for _ in 0..240 {
+        camera.update(1.0 / 60.0);
+    }
+    assert!(camera.zoom > before.1, "a right stick pushed up zooms in");
+}

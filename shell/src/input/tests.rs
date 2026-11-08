@@ -4642,6 +4642,52 @@ fn the_hud_stands_in_pad_mode_while_a_controller_is_in_use_and_always_on_a_tv() 
 }
 
 #[test]
+fn a_short_swipe_puts_the_remote_in_use() {
+    use aftermine_protocol::{PadButton, PadFamily};
+    let mut input = InputState::new();
+    let connect = |pad, family| RawEvent::PadConnected { pad, family };
+    track_hands(&mut input, &connect(1, PadFamily::Xbox), false);
+    track_hands(&mut input, &connect(2, PadFamily::Remote), false);
+    track_hands(
+        &mut input,
+        &RawEvent::PadDown {
+            pad: 1,
+            button: PadButton::South,
+        },
+        false,
+    );
+    let swipe = |x| RawEvent::PadSwipe { pad: 2, x, y: 0.0 };
+    track_hands(&mut input, &swipe(0.0), false);
+    assert_eq!(input.pad_family_in_use(), Some(PadFamily::Xbox));
+    track_hands(&mut input, &swipe(0.1), false);
+    assert_eq!(input.pad_family_in_use(), Some(PadFamily::Remote));
+}
+
+#[test]
+fn pad_mode_never_names_the_remotes_buttons() {
+    use aftermine_protocol::{PadButton, PadFamily};
+    let mut input = InputState::new();
+    let connect = |pad, family| RawEvent::PadConnected { pad, family };
+    track_hands(&mut input, &connect(1, PadFamily::Remote), false);
+    track_hands(
+        &mut input,
+        &RawEvent::PadDown {
+            pad: 1,
+            button: PadButton::East,
+        },
+        false,
+    );
+    input.settle_hud();
+    assert_eq!(
+        input.hud_pad_family(),
+        Some(PadFamily::Xbox),
+        "a common pad's stands in with no controller connected"
+    );
+    track_hands(&mut input, &connect(2, PadFamily::Switch), false);
+    assert_eq!(input.hud_pad_family(), Some(PadFamily::Switch));
+}
+
+#[test]
 fn a_controller_taking_over_lets_go_of_the_touch_queue_toggle_pad_mode_hides() {
     use aftermine_protocol::{PadButton, PadFamily, Stick};
     let connect = RawEvent::PadConnected {
@@ -9061,5 +9107,27 @@ fn a_roc_s_bay_keys_work_with_a_worker_in_the_selection() {
     assert_eq!(
         bindings.resolve_in(order.key, order.ctrl, order.shift, context),
         Some(Action::OrderRound)
+    );
+}
+
+#[test]
+fn copy_names_the_family_in_use_except_a_remote_in_a_match() {
+    use aftermine_protocol::PadFamily::{Remote, Xbox};
+    let named = |in_use, connected: &[_], playing| {
+        pad_family_named(in_use, connected.iter().copied(), playing)
+    };
+    assert_eq!(named(Some(Remote), &[Remote], false), Some(Remote));
+    assert_eq!(named(Some(Remote), &[Remote, Xbox], false), Some(Remote));
+    assert_eq!(
+        named(Some(Remote), &[Remote, Xbox], true),
+        Some(Xbox),
+        "a match names the controller that can play it"
+    );
+    assert_eq!(named(Some(Remote), &[Remote], true), None);
+    assert_eq!(named(Some(Xbox), &[Remote, Xbox], true), Some(Xbox));
+    assert_eq!(
+        named(None, &[Xbox], true),
+        None,
+        "a controller nobody pressed stays quiet off the TV"
     );
 }

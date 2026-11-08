@@ -20,12 +20,6 @@ use crate::game::Game;
 use aftermine_protocol::PadButton;
 use macroquad::prelude::Vec2;
 
-/// How sharply pan speed rises with stick travel: speed follows travel to
-/// this power, so a light push aims finely and a full push matches the pan
-/// keys while both speeds are at their defaults.
-const PAN_CURVE: f32 = 2.0;
-/// Zoom steps per second at full right-stick travel, in wheel notches.
-const ZOOM_NOTCHES_PER_SEC: f32 = 6.0;
 /// Logical pixels an off-center reticle keeps from the window's edge.
 const EDGE_MARGIN: f32 = 32.0;
 /// An offset under this many logical pixels is rounding: the reticle is
@@ -133,11 +127,12 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec
             } else {
                 1.0
             };
-            let speed = super::PAN_PX_PER_SEC
-                * prefs.stick_speed
-                * left.length().powf(PAN_CURVE)
-                * friction;
-            travel += left.normalize() * speed * dt / camera.zoom;
+            travel += crate::camera::controls::stick_travel(
+                camera,
+                left,
+                prefs.stick_speed * friction,
+                dt,
+            );
         }
         if travel != Vec2::ZERO {
             reticle.aim = Some(reticle.ground(camera) + travel);
@@ -149,17 +144,13 @@ pub(super) fn update(game: &mut Game, input: &mut InputState, dt: f32, keys: Vec
         }
     }
     reticle.settle(camera, ui);
-    if pad && right.y != 0.0 {
-        // Up zooms in, as the wheel rolled away does, unless the player
-        // flipped the stick; the wheel's own setting leaves it alone.
-        let notches = -right.y * ZOOM_NOTCHES_PER_SEC * dt;
-        camera.zoom_at(
+    if pad {
+        crate::camera::controls::stick_zoom(
+            camera,
             reticle.point,
-            if prefs.zoom_inverted {
-                -notches
-            } else {
-                notches
-            },
+            right.y,
+            prefs.zoom_inverted,
+            dt,
         );
     }
     input.reticle.snap = (pad && snaps)

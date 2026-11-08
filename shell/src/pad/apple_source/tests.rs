@@ -54,3 +54,104 @@ fn apples_center_buttons_land_on_their_positions_and_home_stays_with_the_system(
     assert_eq!(mapped.len(), count, "two buttons share a name");
     assert_eq!(count, Button::ALL.len() - 1, "only Home is left out");
 }
+
+fn remote_readings(state: &RemoteState, swipe: &mut Swipe) -> Vec<Reading> {
+    let mut readings = Vec::new();
+    restate_remote(5, state, swipe, &mut readings);
+    readings
+}
+
+#[test]
+fn a_remote_reads_as_the_remote_family_with_click_and_back_by_position() {
+    let readings = remote_readings(
+        &RemoteState {
+            surface: true,
+            held: vec![PadButton::South],
+            ..RemoteState::default()
+        },
+        &mut Swipe::default(),
+    );
+    assert_eq!(
+        readings[..4],
+        [
+            Reading::Connected {
+                pad: 5,
+                family: PadFamily::Remote,
+            },
+            Reading::Button {
+                pad: 5,
+                button: PadButton::South,
+                down: true,
+            },
+            Reading::Button {
+                pad: 5,
+                button: PadButton::PlayPause,
+                down: false,
+            },
+            Reading::Button {
+                pad: 5,
+                button: PadButton::East,
+                down: false,
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_remotes_ring_holds_a_dpad_direction_and_clicks_nothing() {
+    let mut swipe = Swipe::default();
+    let press = RemoteState {
+        touch: vec2(-0.8, 0.0),
+        surface: true,
+        held: vec![PadButton::DpadLeft],
+    };
+    remote_readings(&press, &mut swipe);
+    let readings = remote_readings(&press, &mut swipe);
+    let down = |button| {
+        readings
+            .iter()
+            .filter(|reading| {
+                matches!(reading, Reading::Button { button: at, down: true, .. } if *at == button)
+            })
+            .count()
+    };
+    assert_eq!(down(PadButton::DpadLeft), 1, "it stays held");
+    assert_eq!(down(PadButton::South), 0, "the ring is not a click");
+    assert!(
+        readings
+            .iter()
+            .all(|reading| !matches!(reading, Reading::Swipe { .. })),
+        "a finger shifting as it presses is no swipe"
+    );
+}
+
+#[test]
+fn a_remotes_swipe_presses_and_releases_a_dpad_direction_in_one_read() {
+    let mut swipe = Swipe::default();
+    let at = |x, y| RemoteState {
+        touch: vec2(x, y),
+        ..RemoteState::default()
+    };
+    remote_readings(&at(0.1, 0.1), &mut swipe);
+    let readings = remote_readings(&at(0.1, 0.6), &mut swipe);
+    assert_eq!(
+        readings[8..],
+        [
+            Reading::Swipe {
+                pad: 5,
+                x: 0.0,
+                y: 0.5,
+            },
+            Reading::Button {
+                pad: 5,
+                button: PadButton::DpadDown,
+                down: true,
+            },
+            Reading::Button {
+                pad: 5,
+                button: PadButton::DpadDown,
+                down: false,
+            },
+        ]
+    );
+}

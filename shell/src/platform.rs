@@ -68,8 +68,8 @@ impl Hands {
 
     /// What `platform` assumes before any input: a mouse and keyboard on
     /// the desktop, a finger alone on a touch device. A TV has neither a
-    /// keyboard nor a cursor, so it starts as touch does: nothing hovers
-    /// and copy names no keys.
+    /// keyboard nor a cursor, so nothing hovers and copy names no keys, and
+    /// every TV has its remote, so copy names that.
     pub const fn at_launch(platform: Platform) -> Self {
         match platform {
             Platform::Desktop => Self {
@@ -77,10 +77,15 @@ impl Hands {
                 keys: true,
                 pad: None,
             },
-            Platform::Touch | Platform::Tv => Self {
+            Platform::Touch => Self {
                 pointer: Pointer::Touch,
                 keys: false,
                 pad: None,
+            },
+            Platform::Tv => Self {
+                pointer: Pointer::Touch,
+                keys: false,
+                pad: Some(PadFamily::Remote),
             },
         }
     }
@@ -219,6 +224,7 @@ pub(crate) fn pad_hands() -> impl Iterator<Item = Hands> {
         PadFamily::Switch,
         PadFamily::SteamDeck,
         PadFamily::Other,
+        PadFamily::Remote,
     ]
     .into_iter()
     .flat_map(|family| {
@@ -238,7 +244,11 @@ pub(crate) fn assert_pad_copy(hands: Hands, template: &str) -> String {
     set_hands(hands);
     let text = crate::menu::binding_hint(template);
     set_hands(Hands::BUILD);
-    assert_touch_copy(&text);
+    // The remote's click is a button's name, not a mouse action.
+    assert_touch_copy(&text.replace(
+        crate::pad::button_name(PadFamily::Remote, crate::pad::CONFIRM),
+        "",
+    ));
     let names = [crate::pad::CONFIRM, crate::pad::BACK]
         .map(|button| crate::pad::button_name(family, button));
     assert!(

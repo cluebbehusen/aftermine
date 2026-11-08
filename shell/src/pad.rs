@@ -10,9 +10,9 @@
 //! restate every control each frame; both produce the same events.
 //!
 //! gilrs is the source on Windows and Linux, Steam Deck included, and
-//! Apple's GameController, through the miniquad fork, on Mac and iPad. Each
-//! platform API gets one source module here, and a platform without one
-//! reads no pads.
+//! Apple's GameController, through the miniquad fork, on Mac, iPad and Apple
+//! TV. Each platform API gets one source module here, and a platform without
+//! one reads no pads.
 
 use aftermine_protocol::{Key, PadButton, PadFamily, RawEvent, Stick};
 use macroquad::prelude::Vec2;
@@ -23,9 +23,9 @@ mod gilrs_source;
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 use gilrs_source::Source;
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 mod apple_source;
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 use apple_source::Source;
 
 /// Stick travel, as a share of full deflection, that still reads as
@@ -58,12 +58,13 @@ pub(crate) const DELETE: PadButton = PadButton::West;
 /// cursor, the bumpers press the tab keys, the triggers page and the left
 /// face button presses the delete key. Key bindings never move this
 /// layout.
-const MENU_KEYS: [(PadButton, Key); 11] = [
+const MENU_KEYS: [(PadButton, Key); 12] = [
     (PadButton::DpadUp, Key::Up),
     (PadButton::DpadDown, Key::Down),
     (PadButton::DpadLeft, Key::Left),
     (PadButton::DpadRight, Key::Right),
     (CONFIRM, Key::Enter),
+    (PadButton::PlayPause, Key::Enter),
     (BACK, Key::Escape),
     (DELETE, Key::X),
     (TABS.0, Key::Q),
@@ -270,12 +271,36 @@ pub(crate) fn button_icon(family: PadFamily, button: PadButton) -> PadIcon {
         (_, B::RightStick) => I::Rs,
         (_, B::Select) => I::View,
         (_, B::Start) => I::Menu,
+        // Only the remote has it, and the remote's buttons go by words.
+        (_, B::PlayPause) => I::Menu,
     }
 }
 
 /// What a family calls a button: the name of the icon it prints there.
 pub(crate) fn button_name(family: PadFamily, button: PadButton) -> &'static str {
-    button_icon(family, button).name()
+    remote_name(family, button).unwrap_or_else(|| button_icon(family, button).name())
+}
+
+/// The word for a button the Siri Remote has: copy spells these out rather
+/// than drawing an icon, since the remote prints no labels to match. Hints
+/// for the remote never offer a button it lacks.
+pub(crate) fn remote_name(family: PadFamily, button: PadButton) -> Option<&'static str> {
+    if family != PadFamily::Remote {
+        return None;
+    }
+    match button {
+        CONFIRM => Some("Click"),
+        BACK => Some("Back"),
+        PadButton::DpadUp | PadButton::DpadDown | PadButton::DpadLeft | PadButton::DpadRight => {
+            Some("Swipe")
+        }
+        _ => None,
+    }
+}
+
+/// What copy calls moving a cursor on `family`.
+pub(crate) fn dpad_name(family: PadFamily) -> &'static str {
+    remote_name(family, PadButton::DpadUp).unwrap_or_else(|| PadIcon::DpadUpDown.name())
 }
 
 /// One thing a platform's pad API reported.
@@ -286,7 +311,8 @@ pub(crate) fn button_name(family: PadFamily, button: PadButton) -> &'static str 
         target_os = "windows",
         target_os = "linux",
         target_os = "macos",
-        target_os = "ios"
+        target_os = "ios",
+        target_os = "tvos"
     )),
     allow(dead_code)
 )]
@@ -302,6 +328,10 @@ pub(crate) enum Reading {
         button: PadButton,
         down: bool,
     },
+    /// A finger's travel across a touch surface since the last read. Only
+    /// Apple's source reports one.
+    #[cfg(any(target_vendor = "apple", test))]
+    Swipe { pad: u64, x: f32, y: f32 },
     /// One axis of a stick, from -1 to 1: x to the right, y down.
     Axis {
         pad: u64,
@@ -318,7 +348,8 @@ pub(crate) enum Reading {
         target_os = "windows",
         target_os = "linux",
         target_os = "macos",
-        target_os = "ios"
+        target_os = "ios",
+        target_os = "tvos"
     )),
     allow(dead_code)
 )]
@@ -333,6 +364,16 @@ pub(crate) struct Pads {
     source: Option<Source>,
     adapter: Adapter,
     readings: Vec<Reading>,
+    /// What the system last heard about acting on controller presses.
+    system_receives_presses: bool,
+}
+
+/// Whether the system may act on controller presses this frame: on Apple TV
+/// it sends Back on the top screen home, as tvOS expects. A Back that brought
+/// the player to the top screen is still down, so the system waits for it to
+/// come up and never sees half of that press.
+fn system_receives_presses(top_screen: bool, back_held: bool) -> bool {
+    top_screen && !back_held
 }
 
 impl Pads {
@@ -343,6 +384,18 @@ impl Pads {
             source: Source::open(),
             adapter: Adapter::default(),
             readings: Vec::new(),
+            system_receives_presses: false,
+        }
+    }
+
+    /// Tells the system whether this frame shows the top screen, where it may
+    /// act on controller presses.
+    pub(crate) fn offer_presses_to_system(&mut self, top_screen: bool) {
+        let receives = system_receives_presses(top_screen, self.adapter.holds(BACK));
+        if receives != self.system_receives_presses {
+            self.system_receives_presses = receives;
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+            macroquad::miniquad::gamepad::set_system_receives_presses(receives);
         }
     }
 
@@ -362,7 +415,8 @@ impl Pads {
     target_os = "windows",
     target_os = "linux",
     target_os = "macos",
-    target_os = "ios"
+    target_os = "ios",
+    target_os = "tvos"
 )))]
 enum Source {}
 
@@ -370,7 +424,8 @@ enum Source {}
     target_os = "windows",
     target_os = "linux",
     target_os = "macos",
-    target_os = "ios"
+    target_os = "ios",
+    target_os = "tvos"
 )))]
 impl Source {
     fn open() -> Option<Self> {
@@ -414,6 +469,11 @@ struct StickState {
 }
 
 impl Adapter {
+    /// Whether any pad holds `button`.
+    fn holds(&self, button: PadButton) -> bool {
+        self.pads.values().any(|state| state.held.contains(&button))
+    }
+
     fn feed(&mut self, reading: Reading, events: &mut Vec<RawEvent>) {
         match reading {
             Reading::Connected { pad, family } => {
@@ -458,6 +518,12 @@ impl Adapter {
                         events.push(RawEvent::PadUp { pad, button });
                     }
                     _ => {}
+                }
+            }
+            #[cfg(any(target_vendor = "apple", test))]
+            Reading::Swipe { pad, x, y } => {
+                if self.pads.contains_key(&pad) {
+                    events.push(RawEvent::PadSwipe { pad, x, y });
                 }
             }
             Reading::Axis {

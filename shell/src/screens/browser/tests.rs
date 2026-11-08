@@ -437,6 +437,21 @@ fn a_free_for_all_gets_its_own_section_after_the_team_format_of_its_size() {
 fn the_map_hint_names_a_controllers_buttons_while_one_is_in_use() {
     for hands in crate::platform::pad_hands() {
         let hint = crate::platform::assert_pad_copy(hands, browser_hint(hands));
-        assert!(hint.starts_with("D-pad select"), "{hint}");
+        let family = hands.pad.expect("pad hands");
+        let move_cursor = crate::pad::dpad_name(family);
+        assert!(hint.starts_with(move_cursor), "{hint}");
+        assert!(hint.contains(" select - "), "{hint}");
     }
+}
+
+#[test]
+fn the_map_hint_offers_a_remote_no_paging() {
+    let hands = crate::platform::Hands {
+        pad: Some(aftermine_protocol::PadFamily::Remote),
+        ..crate::platform::ALL_HANDS[3]
+    };
+    assert_eq!(
+        crate::platform::assert_pad_copy(hands, browser_hint(hands)),
+        "Swipe to select - Click to play - Back to leave"
+    );
 }

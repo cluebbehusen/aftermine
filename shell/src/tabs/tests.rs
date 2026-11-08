@@ -86,3 +86,118 @@ fn a_press_released_on_another_tab_picks_nothing() {
     ];
     assert_eq!(strip.route(&events, 4).0, None);
 }
+
+fn key(key: Key) -> RawEvent {
+    RawEvent::KeyDown { key }
+}
+
+#[test]
+fn only_the_remote_moves_onto_a_strip() {
+    let mut strip = TabStrip::default();
+    let events = [key(Key::Up), key(Key::Right)];
+    assert_eq!(
+        strip.route_keys(&events, true, false),
+        (None, events.to_vec()),
+        "other hands keep their arrows and their wrap at the top row"
+    );
+    assert!(!strip.focused());
+}
+
+#[test]
+fn up_reaches_the_strip_only_from_the_top() {
+    let mut strip = TabStrip::default();
+    let up = [key(Key::Up)];
+    assert_eq!(
+        strip.route_keys(&up, false, true),
+        (None, up.to_vec()),
+        "further down the list, Up moves the row cursor"
+    );
+    assert!(!strip.focused());
+    assert_eq!(strip.route_keys(&up, true, true), (None, Vec::new()));
+    assert!(strip.focused());
+}
+
+#[test]
+fn on_the_strip_left_and_right_step_and_up_goes_no_further() {
+    let mut strip = TabStrip::default();
+    strip.route_keys(&[key(Key::Up)], true, true);
+    assert_eq!(
+        strip.route_keys(&[key(Key::Right)], true, true),
+        (Some(1), Vec::new())
+    );
+    assert_eq!(
+        strip.route_keys(&[key(Key::Left)], true, true),
+        (Some(-1), Vec::new())
+    );
+    assert_eq!(
+        strip.route_keys(&[key(Key::Up)], true, true),
+        (None, Vec::new())
+    );
+    assert!(strip.focused());
+}
+
+#[test]
+fn down_or_a_click_returns_to_the_list_without_reaching_it() {
+    for leave in [Key::Down, Key::Enter] {
+        let mut strip = TabStrip::default();
+        strip.route_keys(&[key(Key::Up)], true, true);
+        assert_eq!(
+            strip.route_keys(&[key(leave)], true, true),
+            (None, Vec::new()),
+            "{leave:?} moves the cursor and nothing else"
+        );
+        assert!(!strip.focused());
+    }
+}
+
+#[test]
+fn back_passes_through_the_strip_to_the_screen() {
+    let mut strip = TabStrip::default();
+    strip.route_keys(&[key(Key::Up)], true, true);
+    let back = [key(Key::Escape)];
+    assert_eq!(strip.route_keys(&back, true, true), (None, back.to_vec()));
+}
+
+#[test]
+fn another_controller_takes_the_cursor_back_to_the_list() {
+    let mut strip = TabStrip::default();
+    strip.route_keys(&[key(Key::Up)], true, true);
+    strip.route_keys(&[], true, false);
+    assert!(!strip.focused());
+}
+
+#[test]
+fn a_strip_above_a_menu_hides_the_row_cursor_while_it_has_it() {
+    let hands = crate::platform::Hands {
+        pad: Some(PadFamily::Remote),
+        ..crate::platform::ALL_HANDS[3]
+    };
+    crate::platform::set_hands(hands);
+    let mut strip = TabStrip::default();
+    let mut menu = crate::menu::Menu::rows("TEST", [("One".into(), 1), ("Two".into(), 2)]);
+    strip.route_remote_above(&[key(Key::Up)], &mut menu);
+    assert!(strip.focused() && menu.cursor_hidden);
+    strip.route_remote_above(&[key(Key::Down)], &mut menu);
+    assert!(!strip.focused() && !menu.cursor_hidden);
+
+    menu.select(1);
+    let (_, rest) = strip.route_remote_above(&[key(Key::Up)], &mut menu);
+    assert_eq!(rest, [key(Key::Up)], "the second row's Up is the list's");
+    assert!(!strip.focused());
+
+    let mut empty = crate::menu::Menu::<i32>::new("EMPTY", Vec::new());
+    strip.route_remote_above(&[key(Key::Up)], &mut empty);
+    assert!(strip.focused(), "an empty tab can't trap the remote");
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}
+
+#[test]
+fn a_remote_draws_no_key_chips_beside_a_strip() {
+    crate::platform::set_hands(crate::platform::Hands {
+        pad: Some(PadFamily::Remote),
+        ..crate::platform::ALL_HANDS[3]
+    });
+    assert!(keys().is_none());
+    assert!(shown_keys().is_none());
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}

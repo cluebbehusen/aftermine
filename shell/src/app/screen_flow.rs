@@ -286,7 +286,9 @@ pub(super) fn update_and_draw(
     crate::platform::set_hands(crate::platform::Hands {
         pointer: app.input.last_pointer,
         keys: app.input.keys_seen,
-        pad: app.input.pad_family_in_use(),
+        pad: app
+            .input
+            .pad_family_named(screen.kind() == ScreenKind::Playing),
     });
     // Controls capture and text editing keep their conventional recovery keys.
     let fixed_editor = matches!(&screen, Screen::Settings { screen, .. } if screen.edits_bindings())
@@ -943,6 +945,12 @@ fn playing_frame(
                     app.input.context(&app.game),
                 ) == Some(crate::action::Action::Back);
             }
+            // A controller opens Pause with its menu button. The remote has
+            // only Back, so it walks outward as Escape does.
+            RawEvent::PadDown {
+                pad,
+                button: crate::pad::BACK,
+            } => return app.input.pad_is_remote(*pad),
             _ => {}
         }
         false
@@ -1132,9 +1140,11 @@ fn playback_frame(
         &app.config.bindings,
         Some(app.performance.view()),
     );
+    let pads = app.input.viewer_pads(app.config.pad);
+    let events = pb.route_pads(events, &pads, time.presentation);
     let leave = pb.apply_input(
         &app.config.bindings,
-        events,
+        &events,
         time.presentation,
         vec2(screen_width(), screen_height()),
         app.config.camera,
@@ -1184,9 +1194,11 @@ fn final_map_frame(
         &app.config.bindings,
         Some(app.performance.view()),
     );
+    let pads = app.input.viewer_pads(app.config.pad);
+    let events = final_map.route_pads(events, &pads, dt, &mut app.game);
     let leave = final_map.update(
         &app.config.bindings,
-        events,
+        &events,
         dt,
         app.config.camera,
         &mut app.input.mouse,
@@ -1200,7 +1212,7 @@ fn final_map_frame(
         &app.config.bindings,
         Some(app.performance.view()),
     );
-    FinalMapScreen::draw_hud(&app.sprites, &app.config.bindings, app.input.mouse);
+    final_map.draw_hud(&app.sprites, &app.config.bindings, app.input.mouse);
     if leave {
         *rerun = true;
         Screen::Results(ResultsScreen::open(app.game.net_role().is_some()))

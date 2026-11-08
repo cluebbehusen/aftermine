@@ -5,6 +5,7 @@
 use crate::game::SoundKind;
 use crate::menu::Menu;
 use crate::numeric;
+use crate::platform::{PLATFORM, Platform};
 use crate::press::{Fed, Press};
 use crate::render::prim::stroke_rect;
 use crate::theme::{
@@ -180,6 +181,29 @@ pub fn layout(view: Vec2, s: f32, weights: &[f32], labeled: bool, cancel: bool) 
     }
 }
 
+/// What a frame should do with the on-screen keyboard: open it, close it,
+/// or leave it. `wanted` says a text field is on screen, `was` that one was
+/// last frame, and `asked` that the player asked for the keyboard. It follows
+/// the field on a touch device. A TV's fills the screen and would hide the
+/// form, so it opens only when asked for.
+pub(crate) fn keyboard_change(
+    platform: Platform,
+    wanted: bool,
+    was: bool,
+    asked: bool,
+) -> Option<bool> {
+    if !wanted {
+        return was.then_some(false);
+    }
+    (asked || (!was && platform == Platform::Touch)).then_some(true)
+}
+
+/// Whether a TV's on-screen keyboard needs to hear `text`, having last heard
+/// `sent`. It has to hear even an empty field first, to clear its placeholder.
+pub(crate) fn keyboard_text_is_stale(sent: Option<&str>, text: &str) -> bool {
+    sent != Some(text)
+}
+
 /// What a frame did with the form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edit {
@@ -206,6 +230,19 @@ pub struct Form {
     keyboard_request: bool,
     /// Whether the form draws its own Cancel button.
     cancel: bool,
+    /// A TV's cursor, where a TV's rules apply: nothing types until the
+    /// player clicks a field, so a click can't also move on, and the confirm
+    /// button takes the cursor instead.
+    tv: Option<TvCursor>,
+}
+
+/// Where a TV's cursor is, beyond the field a form has focused.
+#[derive(Debug, Clone, Copy, Default)]
+struct TvCursor {
+    /// It is on the confirm button, not a field.
+    on_confirm: bool,
+    /// It is on the page beyond the form.
+    away: bool,
 }
 
 impl Form {
@@ -227,7 +264,73 @@ impl Form {
             press: Press::default(),
             keyboard_request: false,
             cancel: true,
+            tv: (PLATFORM == Platform::Tv).then(TvCursor::default),
         }
+    }
+
+    /// On a TV, starts the cursor on the confirm button if nothing still has
+    /// to be typed.
+    pub fn starting_on_confirm(mut self) -> Self {
+        self.set_on_confirm(self.first_invalid().is_none());
+        self
+    }
+
+    /// Says whether the cursor has left the form for the rest of the page.
+    pub fn set_cursor_away(&mut self, away: bool) {
+        if let Some(cursor) = &mut self.tv {
+            cursor.away = away;
+        }
+    }
+
+    fn on_confirm(&self) -> bool {
+        self.tv.is_some_and(|cursor| cursor.on_confirm)
+    }
+
+    fn set_on_confirm(&mut self, on_confirm: bool) {
+        if let Some(cursor) = &mut self.tv {
+            cursor.on_confirm = on_confirm;
+        }
+    }
+
+    /// Whether Down leaves the form for what lies below it.
+    pub fn at_bottom(&self) -> bool {
+        if self.tv.is_some() {
+            self.on_confirm()
+        } else {
+            self.focus + 1 == self.fields.len()
+        }
+    }
+
+    /// The focused field's text, for the keyboard's own line.
+    pub fn keyboard_text(&self) -> &str {
+        &self.fields[self.focus].value
+    }
+
+    /// The coaching line for a controller on a TV, where what a click does
+    /// follows the cursor.
+    pub fn tv_pad_hint(&self) -> Option<String> {
+        (self.tv.is_some() && crate::platform::hands().pad.is_some()).then(|| {
+            if self.on_confirm() {
+                let verb = self.confirm.to_lowercase();
+                format!("{{confirm}} to {verb} | {{back}} to cancel")
+            } else {
+                "{confirm} to type | {back} to cancel".to_string()
+            }
+        })
+    }
+
+    /// Moves a TV's cursor for one key. Returns whether the key commits.
+    fn tv_key(&mut self, key: Key) -> bool {
+        match (self.on_confirm(), key) {
+            (true, Key::Up) => self.set_on_confirm(false),
+            (true, Key::Enter) => return true,
+            (false, Key::Down | Key::Tab) => self.set_on_confirm(true),
+            (false, Key::Left) => self.focus = self.focus.saturating_sub(1),
+            (false, Key::Right) => self.focus = (self.focus + 1).min(self.fields.len() - 1),
+            (false, Key::Enter) => self.keyboard_request = true,
+            _ => {}
+        }
+        false
     }
 
     /// Leaves out the Cancel button, for a page whose corner Back leaves
@@ -246,6 +349,7 @@ impl Form {
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) {
         self.focus = field.min(self.fields.len() - 1);
+        self.set_on_confirm(false);
         self.error = Some(reason);
         sounds.push((SoundKind::Denied, None));
     }
@@ -258,11 +362,6 @@ impl Form {
     /// The keyboard the focused field asks for.
     pub fn keyboard(&self) -> Keyboard {
         self.fields[self.focus].keyboard
-    }
-
-    /// Whether the focused field is the last.
-    pub fn on_last_field(&self) -> bool {
-        self.focus + 1 == self.fields.len()
     }
 
     /// Consumes a request to raise the on-screen keyboard again.
@@ -300,7 +399,9 @@ impl Form {
     /// on and Up back, a tap focuses a field, Enter advances to the next
     /// field or commits from the last, the confirm button commits, and
     /// Escape or Cancel abandons. A commit with an invalid field plays
-    /// Denied, shows why, and focuses that field instead.
+    /// Denied, shows why, and focuses that field instead. On a TV the arrows
+    /// move a cursor over the fields and confirm button, and Enter opens the
+    /// keyboard on a field or commits on the button.
     pub fn update(
         &mut self,
         events: &[RawEvent],
@@ -334,6 +435,7 @@ impl Form {
                     self.fields[self.focus].value.pop();
                     self.error = None;
                 }
+                RawEvent::KeyDown { key } if self.tv.is_some() => enter |= self.tv_key(key),
                 RawEvent::KeyDown {
                     key: Key::Tab | Key::Down,
                 } => self.focus = (self.focus + 1) % self.fields.len(),
@@ -344,12 +446,13 @@ impl Form {
                 _ => {}
             }
         }
-        if enter && self.focus < last {
+        if enter && self.tv.is_none() && self.focus < last {
             self.focus += 1;
         } else if enter || pressed == Some(Zone::Confirm) {
             match self.first_invalid() {
                 Some((index, reason)) => {
                     self.focus = index;
+                    self.set_on_confirm(false);
                     self.error = Some(reason);
                     sounds.push((SoundKind::Denied, None));
                 }
@@ -406,8 +509,12 @@ impl Form {
                 icon_color,
             ),
         }
+        let away = self.tv.is_some_and(|cursor| cursor.away);
+        let on_confirm = self.on_confirm();
+        let field_lit = !on_confirm && !away;
         for (index, (field, rect)) in self.fields.iter().zip(&layout.fields).enumerate() {
-            draw_field(field, *rect, index == self.focus, layout.label_y, s);
+            let focused = field_lit && index == self.focus;
+            draw_field(field, *rect, focused, layout.label_y, s);
         }
         if let Some(cancel) = layout.cancel {
             let lit = crate::platform::hovers(cancel, mouse);
@@ -416,7 +523,7 @@ impl Form {
         crate::button::draw(
             layout.confirm,
             self.confirm,
-            crate::platform::hovers(layout.confirm, mouse),
+            crate::platform::hovers(layout.confirm, mouse) || (on_confirm && !away),
             s,
         );
     }

@@ -104,16 +104,20 @@ impl ReplayEntry {
 /// and delete it by key or button. A finger or a pointer alone deletes
 /// with the row's own Delete button, which says so itself.
 fn entry_hint(action: Option<(&str, &str)>, hands: crate::platform::Hands) -> String {
+    let remote = hands.pad == Some(aftermine_protocol::PadFamily::Remote);
     let by_key = hands.pad.is_some() || (hands.keys && !hands.touch());
     let verb = if hands.touch() { "tap" } else { "click" };
     let activate = action.map(|(key_action, action)| {
-        if by_key {
+        if remote {
+            format!("{{confirm}} to {action}")
+        } else if by_key {
             format!("{{confirm}} {key_action}")
         } else {
             format!("{verb} to {action}")
         }
     });
-    let delete = (hands.pad.is_some() || hands.keys).then(|| "{delete} deletes".to_string());
+    let deletes = !remote && (hands.pad.is_some() || hands.keys);
+    let delete = deletes.then(|| "{delete} deletes".to_string());
     activate
         .into_iter()
         .chain(delete)

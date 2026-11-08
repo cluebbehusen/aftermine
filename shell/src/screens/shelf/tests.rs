@@ -131,6 +131,49 @@ fn a_record_says_how_to_act_only_as_coaching() {
 }
 
 #[test]
+fn a_catalog_refresh_keeps_the_row_cursor_hidden_while_the_remote_is_on_the_tabs() {
+    crate::platform::set_hands(crate::platform::Hands {
+        pad: Some(aftermine_protocol::PadFamily::Remote),
+        ..crate::platform::ALL_HANDS[3]
+    });
+    let record = |name| {
+        entry(
+            name,
+            true,
+            RecordKind::Match,
+            format!("/nowhere/{name}").into(),
+        )
+    };
+    let mut shelf = Shelf::from_entries(vec![record("a")]);
+    drive(&mut shelf, Key::Up);
+    let focused = shelf.tabs.focused();
+    shelf.set_catalog(vec![record("a"), record("b")], 0);
+    let hidden = shelf.menu.cursor_hidden;
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+    assert!(focused, "up from the top row reaches the tabs");
+    assert!(hidden);
+}
+
+#[test]
+fn a_remote_always_hears_how_to_reach_the_tabs() {
+    crate::platform::set_hands(crate::platform::Hands {
+        pad: Some(aftermine_protocol::PadFamily::Remote),
+        ..crate::platform::ALL_HANDS[3]
+    });
+    let record = entry("done", true, RecordKind::Match, "/nowhere/m.json".into());
+    let mut shelf = Shelf::from_entries(vec![record]);
+    let coaching = shelf.coaching();
+    shelf.set_catalog(Vec::new(), 0);
+    let empty = shelf.coaching();
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+    assert_eq!(
+        coaching.as_deref(),
+        Some("{confirm} to watch | Swipe up for tabs")
+    );
+    assert_eq!(empty.as_deref(), Some("Swipe up for tabs"));
+}
+
+#[test]
 fn each_tab_lists_only_its_own_records() {
     let mut shelf = Shelf::from_entries(mixed());
     assert_eq!(shelf.tab(), Tab::Saves);
@@ -284,14 +327,13 @@ fn the_shelf_says_it_is_looking_until_the_catalog_lands() {
         "an unscanned shelf is not an empty one: {}",
         shelf.status()
     );
+    assert_eq!(shelf.empty_message(), None);
     shelf.set_catalog(Vec::new(), 0);
-    assert_eq!(shelf.status(), Tab::Saves.empty());
+    assert_eq!(shelf.status(), "");
+    assert_eq!(shelf.empty_message(), Some("No saves yet"));
     drive(&mut shelf, Key::E);
-    assert_eq!(
-        shelf.status(),
-        Tab::Replays.empty(),
-        "each empty tab says how to fill it"
-    );
+    assert_eq!(shelf.status(), "");
+    assert_eq!(shelf.empty_message(), Some("No replays yet"));
 }
 
 #[test]
@@ -303,13 +345,14 @@ fn the_shelf_counts_records_still_coming_from_icloud() {
         "Downloading 3 files from iCloud",
         "an empty tab is waiting, not empty"
     );
+    assert_eq!(shelf.empty_message(), None);
     shelf.set_catalog(Vec::new(), 2);
     assert_eq!(shelf.status(), "Downloading 2 files from iCloud");
     let record = entry("done", true, RecordKind::Match, "/nowhere/m.json".into());
     shelf.set_catalog(vec![record], 1);
     assert_eq!(shelf.status(), "Downloading 1 file from iCloud");
     shelf.set_catalog(Vec::new(), 0);
-    assert_eq!(shelf.status(), Tab::Saves.empty());
+    assert_eq!(shelf.empty_message(), Some("No saves yet"));
 }
 
 #[test]

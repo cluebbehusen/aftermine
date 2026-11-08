@@ -1,18 +1,31 @@
-//! Mac and iPad pads, read through Apple's GameController framework in the
-//! miniquad fork.
+//! Mac, iPad and Apple TV pads, read through Apple's GameController framework
+//! in the miniquad fork.
 //!
 //! GameController reports each frame's pads whole, so this source restates
 //! every connected pad each read and lets the adapter send only what
-//! changed. A pad missing from a read has disconnected. Micro gamepads such
-//! as the Siri Remote are left out.
+//! changed. A pad missing from a read has disconnected. On Apple TV the Siri
+//! Remote, a micro gamepad, reads as a pad of the remote family: its center
+//! clicks, the ring around it is a D-pad, and swipes tap the D-pad too. A
+//! remote with no ring clicks with its whole surface. Elsewhere micro gamepads
+//! are left out.
 
 use super::{Axis, Reading};
+use crate::platform::{PLATFORM, Platform};
 use aftermine_protocol::{PadButton, PadFamily, Stick};
-use macroquad::miniquad::gamepad::{self, Button, ControllerId, Family, Gamepad};
+use macroquad::miniquad::gamepad::{
+    self, Button, ControllerId, Family, Gamepad, MicroButton, MicroGamepad,
+};
+use macroquad::prelude::{Vec2, vec2};
+use std::collections::BTreeMap;
+
+mod swipe;
+use swipe::Swipe;
 
 /// The pads the last read listed.
 pub(super) struct Source {
     listing: Listing<ControllerId>,
+    /// Each listed remote's touch in progress.
+    swipes: BTreeMap<ControllerId, Swipe>,
 }
 
 impl Source {
@@ -24,18 +37,67 @@ impl Source {
     pub(super) fn open() -> Option<Self> {
         Some(Self {
             listing: Listing::default(),
+            swipes: BTreeMap::new(),
         })
     }
 
     /// Restates every connected gamepad. Call it on the main thread, as
     /// the frame loop does.
     pub(super) fn read(&mut self, readings: &mut Vec<Reading>) {
-        let gamepads = gamepad::controllers().gamepads;
-        let ids: Vec<ControllerId> = gamepads.iter().map(|gamepad| gamepad.id).collect();
+        let controllers = gamepad::controllers();
+        let remotes: &[MicroGamepad] = if PLATFORM == Platform::Tv {
+            &controllers.micro_gamepads
+        } else {
+            &[]
+        };
+        let ids: Vec<ControllerId> = controllers
+            .gamepads
+            .iter()
+            .map(|gamepad| gamepad.id)
+            .chain(remotes.iter().map(|remote| remote.id))
+            .collect();
         let pads = self.listing.update(&ids, readings);
-        for (pad, gamepad) in pads.into_iter().zip(&gamepads) {
-            restate(pad, gamepad, readings);
+        let (gamepad_pads, remote_pads) = pads.split_at(controllers.gamepads.len());
+        for (pad, gamepad) in gamepad_pads.iter().zip(&controllers.gamepads) {
+            restate(*pad, gamepad, readings);
         }
+        self.swipes
+            .retain(|id, _| remotes.iter().any(|remote| remote.id == *id));
+        for (pad, remote) in remote_pads.iter().zip(remotes) {
+            restate_remote(
+                *pad,
+                &remote_state(remote),
+                self.swipes.entry(remote.id).or_default(),
+                readings,
+            );
+        }
+    }
+}
+
+/// What a remote's buttons and touch mean. A remote that can tell its center
+/// from its ring clicks with the center alone.
+fn remote_state(remote: &MicroGamepad) -> RemoteState {
+    let click = if remote.has(MicroButton::Center) {
+        MicroButton::Center
+    } else {
+        MicroButton::Select
+    };
+    RemoteState {
+        touch: vec2(remote.touch.x, -remote.touch.y),
+        surface: remote.is_pressed(MicroButton::Select),
+        held: [
+            (click, super::CONFIRM),
+            (MicroButton::PlayPause, PadButton::PlayPause),
+            (MicroButton::Menu, super::BACK),
+            (MicroButton::Up, PadButton::DpadUp),
+            (MicroButton::Down, PadButton::DpadDown),
+            (MicroButton::Left, PadButton::DpadLeft),
+            (MicroButton::Right, PadButton::DpadRight),
+        ]
+        .into_iter()
+        .filter(|(button, _)| remote.is_pressed(*button))
+        .map(|(_, pad_button)| pad_button)
+        .collect(),
     }
 }
 
@@ -112,6 +174,57 @@ fn restate(pad: u64, gamepad: &Gamepad, readings: &mut Vec<Reading>) {
                 axis,
                 value,
             });
+        }
+    }
+}
+
+/// What a Siri Remote is doing at one read.
+#[derive(Debug, Clone, Default)]
+struct RemoteState {
+    /// Where the touch is, x to the right and y down; zero with no touch.
+    touch: Vec2,
+    /// A press anywhere on the surface, which no swipe travels through.
+    surface: bool,
+    /// The buttons down, as the pad buttons they stand for.
+    held: Vec<PadButton>,
+}
+
+/// Every pad button a remote can hold.
+const REMOTE_BUTTONS: [PadButton; 7] = [
+    super::CONFIRM,
+    PadButton::PlayPause,
+    super::BACK,
+    PadButton::DpadUp,
+    PadButton::DpadDown,
+    PadButton::DpadLeft,
+    PadButton::DpadRight,
+];
+
+/// One remote's whole state as readings: its connection, its buttons, and
+/// any swipe travel since the last read, raw and as a D-pad tap.
+fn restate_remote(pad: u64, state: &RemoteState, swipe: &mut Swipe, readings: &mut Vec<Reading>) {
+    readings.push(Reading::Connected {
+        pad,
+        family: PadFamily::Remote,
+    });
+    for button in REMOTE_BUTTONS {
+        readings.push(Reading::Button {
+            pad,
+            button,
+            down: state.held.contains(&button),
+        });
+    }
+    let (tap, travel) = swipe.feed(state.touch, state.surface);
+    if travel != Vec2::ZERO {
+        readings.push(Reading::Swipe {
+            pad,
+            x: travel.x,
+            y: travel.y,
+        });
+    }
+    if let Some(button) = tap {
+        for down in [true, false] {
+            readings.push(Reading::Button { pad, button, down });
         }
     }
 }

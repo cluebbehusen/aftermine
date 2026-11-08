@@ -144,6 +144,16 @@ pub enum RawEvent {
         /// Downward deflection.
         y: f32,
     },
+    /// A finger's travel across the Siri Remote's touch surface since the
+    /// last one, which spans 2 across, x to the right and y down.
+    PadSwipe {
+        /// The pad's id.
+        pad: u64,
+        /// Rightward travel.
+        x: f32,
+        /// Downward travel.
+        y: f32,
+    },
 }
 
 #[cfg(test)]
@@ -200,6 +210,8 @@ pub enum PadButton {
     Select,
     /// Right center button (Menu, Options, Plus).
     Start,
+    /// The Siri Remote's play/pause button.
+    PlayPause,
 }
 
 /// A controller's analog stick.
@@ -229,6 +241,11 @@ pub enum PadFamily {
     SteamDeck,
     /// A pad of unknown make; it is named like an Xbox pad.
     Other,
+    /// The Siri Remote: it clicks as [`PadButton::South`], goes back as
+    /// [`PadButton::East`] and swipes as D-pad presses and
+    /// [`RawEvent::PadSwipe`]s. It adds [`PadButton::PlayPause`], has no
+    /// other button and no sticks, and it can't play a match.
+    Remote,
 }
 
 /// The keys the shell maps; extend alongside the input mapper. The shell's

@@ -58,12 +58,12 @@ similar_names = "allow"
 # has not taken yet, starting with OpenGL drawing: master's switch to
 # CADisplayLink-driven draws (39fdef68) redraws only Metal views and leaves
 # the OpenGL view the shell renders with blank on iOS. It also reads game
-# controllers on Apple platforms through GameController, which no miniquad
-# release does, and it links for tvOS: releases use objc-rs 0.2, which falls
-# back to the GNUstep runtime there. Drop the patch once releases carry these
-# changes.
+# controllers on Apple platforms through GameController, the Siri Remote
+# included, which no miniquad release does, and it links for tvOS: releases use
+# objc-rs 0.2, which falls back to the GNUstep runtime there. Drop the patch
+# once releases carry these changes.
 [patch.crates-io]
-miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "1c156906f23fc229d58d883125e3511fddc0d7de" }
+miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "32804d66b00601fb7137c3237b8e4f8438d813f1" }
 
 # quad-snd, macroquad's audio library, has no backend for tvOS, and on iOS and
 # tvOS it leaves the audio session in its default category, which stops other

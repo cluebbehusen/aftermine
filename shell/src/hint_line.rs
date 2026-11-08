@@ -5,6 +5,7 @@ use crate::assets::Sprites;
 use crate::numeric;
 use crate::pad::PadIcon;
 use crate::theme::Type;
+use aftermine_protocol::{PadButton, PadFamily};
 use macroquad::prelude::*;
 
 /// An icon's height as a share of the text size: a little taller than
@@ -41,6 +42,15 @@ impl HintLine {
     pub(crate) fn pad(mut self, icon: PadIcon) -> Self {
         self.segments.push(Segment::Pad(icon));
         self
+    }
+
+    /// Appends a button as `family` shows it: an icon, or the Siri Remote's
+    /// word.
+    pub(crate) fn button(self, family: PadFamily, button: PadButton) -> Self {
+        match crate::pad::remote_name(family, button) {
+            Some(word) => self.text(word),
+            None => self.pad(crate::pad::button_icon(family, button)),
+        }
     }
 
     /// The line with its opening copy sentence-cased. A line that opens on

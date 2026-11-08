@@ -62,3 +62,16 @@ fn only_opening_copy_is_sentence_cased() {
         "an icon opens the line"
     );
 }
+
+#[test]
+fn a_button_is_an_icon_on_a_full_pad_and_a_word_on_the_remote() {
+    use aftermine_protocol::{PadButton, PadFamily};
+    assert_eq!(
+        HintLine::default().button(PadFamily::PlayStation, PadButton::South),
+        HintLine::default().pad(PadIcon::Cross)
+    );
+    assert_eq!(
+        HintLine::default().button(PadFamily::Remote, PadButton::South),
+        HintLine::default().text("Click")
+    );
+}

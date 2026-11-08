@@ -420,12 +420,27 @@ fn shelf_hints_name_the_controllers_buttons_while_one_is_in_use() {
     for hands in crate::platform::pad_hands() {
         for (key_action, action) in [("watches", "watch"), ("loads paused", "load paused")] {
             let hint = entry_hint(Some((key_action, action)), hands);
-            assert_eq!(
-                hint,
-                format!("{{confirm}} {key_action} | {{delete}} deletes")
-            );
+            if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
+                assert_eq!(hint, format!("{{confirm}} to {action}"));
+            } else {
+                assert_eq!(
+                    hint,
+                    format!("{{confirm}} {key_action} | {{delete}} deletes")
+                );
+            }
             crate::platform::assert_pad_copy(hands, &hint);
         }
-        assert_eq!(entry_hint(None, hands), "{delete} deletes");
+    }
+}
+
+#[test]
+fn only_a_remote_has_no_delete_to_offer() {
+    for hands in crate::platform::pad_hands() {
+        let expected = if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
+            ""
+        } else {
+            "{delete} deletes"
+        };
+        assert_eq!(entry_hint(None, hands), expected);
     }
 }

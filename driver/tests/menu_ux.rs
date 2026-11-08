@@ -675,3 +675,113 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
     assert_eq!(after, stopped);
     Ok(())
 }
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_remote_walks_the_menus_and_swipes_up_onto_the_tabs() -> Result<()> {
+    let (_guard, mut client) = spawn(4160)?;
+    assert_mode(&mut client, "home", "boot")?;
+    connect_pad(&mut client, PadFamily::Remote)?;
+    let before = ui(&mut client)?.selected;
+    press_pad(&mut client, PadButton::DpadDown)?;
+    assert_ne!(
+        ui(&mut client)?.selected,
+        before,
+        "a swipe moves the cursor"
+    );
+
+    activate_labeled_by_pad(&mut client, "settings")?;
+    assert_mode(&mut client, "settings", "Home > Settings by remote")?;
+    let general = ui(&mut client)?.items;
+    press_pad(&mut client, PadButton::DpadUp)?;
+    press_pad(&mut client, PadButton::DpadRight)?;
+    let next = ui(&mut client)?.items;
+    assert_ne!(next, general, "swiping up then right changes the tab");
+    press_pad(&mut client, PadButton::DpadLeft)?;
+    assert_eq!(ui(&mut client)?.items, general, "swiping left comes back");
+    press_pad(&mut client, PadButton::DpadDown)?;
+    press_pad(&mut client, PadButton::DpadRight)?;
+    assert_eq!(
+        ui(&mut client)?.items,
+        general,
+        "back on the list, sideways changes a value and never the tab"
+    );
+    press_pad(&mut client, PadButton::East)?;
+    assert_mode(&mut client, "home", "Settings > Back")?;
+    Ok(())
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_remote_finds_a_replay_on_the_other_tab_and_watches_it() -> Result<()> {
+    let recording =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets/home/crossroads.amreplay");
+    let (_guard, mut client) = spawn_prepared(4161, |home| {
+        let replays = home.join("replays");
+        std::fs::create_dir_all(&replays)?;
+        std::fs::copy(&recording, replays.join("crossroads.amreplay"))?;
+        Ok(())
+    })?;
+    assert_mode(&mut client, "home", "boot")?;
+    connect_pad(&mut client, PadFamily::Remote)?;
+    activate_labeled_by_pad(&mut client, "saves & replays")?;
+    wait_for_listed(&mut client)?;
+    press_pad(&mut client, PadButton::DpadUp)?;
+    press_pad(&mut client, PadButton::DpadRight)?;
+    assert_mode(&mut client, "saves", "up then right reaches the other tab")?;
+    press_pad(&mut client, PadButton::DpadLeft)?;
+    assert_mode(&mut client, "replays", "left steps back")?;
+    press_pad(&mut client, PadButton::South)?;
+    assert_mode(&mut client, "replays", "a click returns to the list")?;
+    // The only record, so the cursor is already on it.
+    press_pad(&mut client, PadButton::South)?;
+    wait_for_mode(
+        &mut client,
+        "playback",
+        &["replays", "loading"],
+        "a click watches",
+    )?;
+
+    press_pad(&mut client, PadButton::PlayPause)?;
+    let paused = wait_for_status(&mut client, "Play/Pause pauses", |s| s.paused)?;
+    press_pad(&mut client, PadButton::DpadRight)?;
+    wait_for_status(&mut client, "a swipe right seeks forward", |s| {
+        s.tick == paused.tick + 500
+    })?;
+    press_pad(&mut client, PadButton::DpadLeft)?;
+    wait_for_status(&mut client, "a swipe left seeks back", |s| {
+        s.tick == paused.tick
+    })?;
+    press_pad(&mut client, PadButton::DpadUp)?;
+    wait_for_status(&mut client, "a swipe up speeds up", |s| {
+        (s.speed - 2.0).abs() < f64::EPSILON
+    })?;
+    press_pad(&mut client, PadButton::DpadDown)?;
+    press_pad(&mut client, PadButton::DpadDown)?;
+    wait_for_status(&mut client, "a swipe down slows down", |s| {
+        (s.speed - 0.5).abs() < f64::EPSILON
+    })?;
+    // In pan, swipes leave the replay's own controls alone.
+    press_pad(&mut client, PadButton::South)?;
+    let before = client.status()?;
+    press_pad(&mut client, PadButton::DpadRight)?;
+    press_pad(&mut client, PadButton::DpadUp)?;
+    inject(
+        &mut client,
+        RawEvent::PadSwipe {
+            pad: INJECTED_PAD,
+            x: 0.5,
+            y: 0.0,
+        },
+    )?;
+    let after = client.status()?;
+    assert_eq!(after.tick, before.tick, "a swipe in pan seeks nothing");
+    assert!(
+        (after.speed - before.speed).abs() < f64::EPSILON,
+        "a swipe in pan changes no speed"
+    );
+    assert!(after.paused, "a click only changes mode");
+    press_pad(&mut client, PadButton::East)?;
+    wait_for_mode(&mut client, "home", &["playback"], "Back leaves the replay")?;
+    Ok(())
+}

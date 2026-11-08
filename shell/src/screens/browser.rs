@@ -191,8 +191,11 @@ fn on_shelf(card: Rect, grid: GridMetrics) -> bool {
 
 /// The map grid's coaching line.
 fn browser_hint(hands: crate::platform::Hands) -> &'static str {
+    if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
+        return "{dpad} to select - {confirm} to play - {back} to leave";
+    }
     if hands.pad.is_some() {
-        return "D-pad select - {page_up}/{page_down} page - {confirm} plays - {back} back";
+        return "{dpad} select - {page_up}/{page_down} page - {confirm} plays - {back} back";
     }
     match (hands.touch(), hands.keys) {
         (false, true) => {

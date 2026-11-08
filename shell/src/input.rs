@@ -212,6 +212,27 @@ fn hud_in_pad_mode(platform: crate::platform::Platform, pad_in_use: bool) -> boo
     pad_in_use || platform == crate::platform::Platform::Tv
 }
 
+/// The family copy names, from the one in use or assumed. A remote can't play
+/// a match, so there copy names a connected controller instead, or none.
+fn pad_family_named(
+    in_use: Option<aftermine_protocol::PadFamily>,
+    mut connected: impl Iterator<Item = aftermine_protocol::PadFamily>,
+    playing: bool,
+) -> Option<aftermine_protocol::PadFamily> {
+    use aftermine_protocol::PadFamily::Remote;
+    if playing && in_use == Some(Remote) {
+        connected.find(|family| *family != Remote)
+    } else {
+        in_use
+    }
+}
+
+/// Whether a controller button acts in a match. The Siri Remote can't play
+/// one, so its only press there is Back.
+fn plays_in_match(remote: bool, button: aftermine_protocol::PadButton) -> bool {
+    !remote || button == crate::pad::BACK
+}
+
 /// Notes the hands behind one event, whatever the screen: the pointer in
 /// use, whether a hardware key has been pressed, and whether a controller
 /// is in use. A key pressed while a text field has focus doesn't count,
@@ -258,6 +279,8 @@ pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
                 take_pad(input, pad);
             }
         }
+        // A short swipe moves a viewer's camera before it taps any direction.
+        RawEvent::PadSwipe { pad, x, y } if (x, y) != (0.0, 0.0) => take_pad(input, pad),
         _ => {}
     }
 }
@@ -1268,10 +1291,11 @@ impl InputState {
     }
 
     /// Whose buttons the HUD names while it stands in pad mode: the
-    /// controller in use, or a common pad's before any is pressed.
+    /// controller in use, or a common pad's before any is pressed. A remote
+    /// can't play a match, so its buttons are never the ones named.
     pub(crate) fn hud_pad_family(&self) -> Option<aftermine_protocol::PadFamily> {
         self.hud_pad.then(|| {
-            self.pad_family_in_use()
+            self.pad_family_named(true)
                 .unwrap_or(aftermine_protocol::PadFamily::Xbox)
         })
     }
@@ -1321,6 +1345,44 @@ impl InputState {
     /// The family of the controller in use, if one is.
     pub(crate) fn pad_family_in_use(&self) -> Option<aftermine_protocol::PadFamily> {
         self.pad_in_use.map(|(_, family)| family)
+    }
+
+    /// The family copy should name this frame, with the pad in use or else
+    /// the one the build assumes.
+    pub(crate) fn pad_family_named(&self, playing: bool) -> Option<aftermine_protocol::PadFamily> {
+        let assumed = crate::platform::Hands::BUILD
+            .pad
+            .filter(|_| !self.keys_seen);
+        pad_family_named(
+            self.pad_family_in_use().or(assumed),
+            self.pads.values().copied(),
+            playing,
+        )
+    }
+
+    /// What a read-only viewer's camera needs to know about the controllers,
+    /// which go by `prefs`.
+    pub(crate) fn viewer_pads(
+        &self,
+        prefs: crate::config::PadPrefs,
+    ) -> crate::camera::controls::ViewerPads {
+        let (left, right) = self.sticks();
+        crate::camera::controls::ViewerPads {
+            remotes: self
+                .pads
+                .iter()
+                .filter(|(_, family)| **family == aftermine_protocol::PadFamily::Remote)
+                .map(|(pad, _)| *pad)
+                .collect(),
+            left,
+            right,
+            prefs,
+        }
+    }
+
+    /// Whether a pad is the Siri Remote.
+    pub(crate) fn pad_is_remote(&self, pad: u64) -> bool {
+        self.pad_family(pad) == aftermine_protocol::PadFamily::Remote
     }
 
     /// Whose layout a pad follows. A pad that never announced itself, as an
@@ -2453,8 +2515,9 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                 input.last_pointer = crate::platform::Hands::BUILD.pointer;
             }
         }
-        RawEvent::PadConnected { .. } | RawEvent::PadStick { .. } => {
+        RawEvent::PadConnected { .. } | RawEvent::PadStick { .. } | RawEvent::PadSwipe { .. } => {
             // `track_hands` keeps the sticks; `update_held` pans by them.
+            // A swipe's travel moves only the read-only viewers' cameras.
         }
     }
     if input.construction_open()
@@ -2476,8 +2539,12 @@ fn pad_down(
     pad: u64,
     button: aftermine_protocol::PadButton,
 ) {
-    input.pad_points();
-    if !pad_dock::press(game, input, bindings, pad, button)
+    let remote = input.pad_is_remote(pad);
+    if !remote {
+        input.pad_points();
+    }
+    if plays_in_match(remote, button)
+        && !pad_dock::press(game, input, bindings, pad, button)
         && !pad_ring::press(game, input, bindings, pad, button)
     {
         pad_controls::press(game, input, bindings, pad, button);
@@ -2493,7 +2560,10 @@ fn pad_up(
     pad: u64,
     button: aftermine_protocol::PadButton,
 ) {
-    if !pad_dock::release(input, pad, button) && !pad_ring::release(input, pad, button) {
+    if plays_in_match(input.pad_is_remote(pad), button)
+        && !pad_dock::release(input, pad, button)
+        && !pad_ring::release(input, pad, button)
+    {
         pad_controls::release(game, input, pad, button);
     }
 }

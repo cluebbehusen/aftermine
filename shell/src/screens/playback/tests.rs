@@ -1,4 +1,5 @@
 use super::*;
+use crate::camera::controls::RemoteMode;
 use crate::game::Game;
 use macroquad::prelude::vec2;
 
@@ -836,14 +837,18 @@ fn long_seeks_are_budgeted_and_a_new_transport_command_replaces_them() {
         crate::config::CameraPrefs::default(),
         &mut mouse,
     );
-    assert_eq!(pb.engine.position(), 1_500);
+    assert_eq!(
+        pb.engine.position(),
+        4_500,
+        "it measures from where the seek in flight would land"
+    );
     assert_eq!(pb.seeking, None, "the replacement target settled");
 
     pb.seeking = Some(5_000);
     pb.clock.accum = game::TICK_DT * 0.75;
     let advanced = DebugSession::advance(&mut pb, 10);
     assert_eq!(advanced.ticks, 10);
-    assert_eq!(pb.engine.position(), 1_510);
+    assert_eq!(pb.engine.position(), 4_510);
     assert_eq!(pb.seeking, None, "driven input cancels stale UI seeks");
     assert_eq!(pb.clock.accum, 0.0, "driven input drops wall-clock debt");
 }
@@ -967,14 +972,147 @@ fn a_controller_pauses_seeks_steps_the_speed_and_leaves() {
 }
 
 #[test]
-fn the_caption_names_the_controllers_transport_while_one_is_in_use() {
+fn the_hint_names_the_controllers_transport_while_one_is_in_use() {
     use aftermine_protocol::PadFamily;
     assert_eq!(
-        pad_caption("0:00 / 1:00", PadFamily::Xbox).copy(),
-        "0:00 / 1:00 | A pause | LB/RB seek | LT/RT speed | B leave"
+        pad_hint(PadFamily::Xbox, false).copy(),
+        "A pause | LB/RB seek | LT/RT speed | B leave"
+    );
+    assert_eq!(
+        pad_hint(PadFamily::Xbox, true).copy(),
+        "A pause | LB/RB seek | LT/RT speed | LS pan | RS zoom | B leave"
     );
     for hands in crate::platform::pad_hands() {
         let family = hands.pad.expect("pad hands");
-        crate::platform::assert_pad_copy(hands, &pad_caption("0:00", family).copy());
+        if family != PadFamily::Remote {
+            for sticks in [false, true] {
+                crate::platform::assert_pad_copy(hands, &pad_hint(family, sticks).copy());
+            }
+        }
     }
+}
+
+#[test]
+fn the_dpad_seeks_and_steps_the_speed_so_a_remotes_swipes_can() {
+    let pad = |button| {
+        [
+            RawEvent::PadDown { pad: 0, button },
+            RawEvent::PadUp { pad: 0, button },
+        ]
+    };
+    let mut pb = long_session(2_000);
+    assert!(!feed(&mut pb, &pad(PadButton::DpadUp)));
+    assert!((pb.clock.speed - 2.0).abs() < f64::EPSILON, "up speeds up");
+    assert!(!feed(&mut pb, &pad(PadButton::DpadDown)));
+    assert!(!feed(&mut pb, &pad(PadButton::DpadDown)));
+    assert!(
+        (pb.clock.speed - 0.5).abs() < f64::EPSILON,
+        "down slows down"
+    );
+    assert!(!feed(&mut pb, &pad(PadButton::DpadRight)));
+    assert_eq!(pb.seeking, Some(500), "right seeks forward 25 seconds");
+    pb.seek_to(1_200);
+    pb.engine.seek_step(1_200, u64::MAX);
+    pb.seeking = None;
+    assert!(!feed(&mut pb, &pad(PadButton::DpadLeft)));
+    assert_eq!(pb.seeking, Some(700), "left seeks back 25 seconds");
+}
+
+#[test]
+fn a_seek_press_measures_from_where_the_seek_in_flight_lands() {
+    let pad = |button| {
+        [
+            RawEvent::PadDown { pad: 0, button },
+            RawEvent::PadUp { pad: 0, button },
+        ]
+    };
+    let mut pb = long_session(4_000);
+    pb.engine.seek_step(2_000, u64::MAX);
+    feed(&mut pb, &pad(PadButton::DpadLeft));
+    assert_eq!(pb.seeking, Some(1_500));
+    pb.engine.seek_step(100, u64::MAX);
+    feed(&mut pb, &pad(PadButton::DpadLeft));
+    assert_eq!(
+        pb.seeking,
+        Some(1_000),
+        "however far back the seek restored from"
+    );
+    feed(&mut pb, &pad(PadButton::DpadRight));
+    assert_eq!(pb.seeking, Some(1_500));
+
+    let twice = [pad(PadButton::DpadRight), pad(PadButton::DpadRight)].concat();
+    feed(&mut pb, &twice);
+    assert_eq!(pb.seeking, Some(2_500), "two in one frame count twice");
+}
+
+#[test]
+fn the_remotes_hint_falls_back_to_what_its_swipes_do() {
+    let lines = |remote: RemoteCamera| (remote_hint(remote).copy(), remote.swipe_hint().to_owned());
+    let (full, short) = lines(RemoteCamera::with_control());
+    assert!(full.starts_with(&short), "{full}");
+    assert!(full.len() > short.len());
+}
+
+#[test]
+fn the_hint_says_what_a_remotes_swipes_do_and_what_a_click_changes_them_to() {
+    let mut pb = long_session(2_000);
+    let pads = ViewerPads {
+        remotes: vec![0],
+        ..ViewerPads::default()
+    };
+    let hint = |pb: &PlaybackSession| remote_hint(pb.remote).copy();
+    let click = [RawEvent::PadDown {
+        pad: 0,
+        button: crate::pad::CONFIRM,
+    }];
+    assert_eq!(
+        hint(&pb),
+        "Swipe to seek or change speed | Click to change mode"
+    );
+    pb.route_pads(&click, &pads, 0.0);
+    assert_eq!(
+        hint(&pb),
+        "Swipe or hold a direction to pan | Click to change mode"
+    );
+    pb.route_pads(&click, &pads, 0.0);
+    assert_eq!(
+        hint(&pb),
+        "Swipe up or down, or hold, to zoom | Click to change mode"
+    );
+    pb.route_pads(&click, &pads, 0.0);
+    assert_eq!(pb.remote.mode(), RemoteMode::Control);
+    crate::platform::assert_pad_copy(
+        crate::platform::Hands {
+            pad: Some(aftermine_protocol::PadFamily::Remote),
+            ..crate::platform::ALL_HANDS[3]
+        },
+        &hint(&pb),
+    );
+}
+
+#[test]
+fn a_remote_pauses_with_play_pause_and_its_click_only_changes_mode() {
+    let mut pb = long_session(2_000);
+    let pads = ViewerPads {
+        remotes: vec![7],
+        ..ViewerPads::default()
+    };
+    let press = |pad, button| [RawEvent::PadDown { pad, button }];
+    let run = |pb: &mut PlaybackSession, events: &[RawEvent]| {
+        let rest = pb.route_pads(events, &pads, 0.0);
+        feed(pb, &rest)
+    };
+    assert!(!run(&mut pb, &press(7, crate::pad::CONFIRM)));
+    assert!(!pb.clock.paused, "a click moves to pan");
+    assert_eq!(pb.remote.mode(), RemoteMode::Pan);
+    assert!(!run(&mut pb, &press(7, PadButton::PlayPause)));
+    assert!(pb.clock.paused, "Play/Pause pauses in every mode");
+    assert!(!run(&mut pb, &press(7, PadButton::DpadRight)));
+    assert_eq!(pb.seeking, None, "in pan, a swipe seeks nothing");
+    assert!(!run(&mut pb, &press(0, crate::pad::CONFIRM)));
+    assert!(
+        !pb.clock.paused,
+        "another controller's A still pauses and plays"
+    );
+    assert!(run(&mut pb, &press(7, crate::pad::BACK)), "Back leaves");
 }

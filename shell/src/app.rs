@@ -143,6 +143,9 @@ struct App {
     live_streak: u8,
     /// The on-screen keyboard this app last asked for, if any.
     soft_keyboard: Option<crate::text_field::Keyboard>,
+    /// The line of text the on-screen keyboard last heard, on a TV: none
+    /// before the first, when it still shows the fork's placeholder.
+    keyboard_text: Option<String>,
     /// The running LAN match's link, pumped every frame while a screen
     /// holds the match, so menus sit over a running match.
     net: Option<crate::netplay::Link>,
@@ -387,6 +390,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         performance: crate::performance::Performance::default(),
         live_streak: 0,
         soft_keyboard: None,
+        keyboard_text: None,
         net: None,
         lingering: None,
         net_waiting: false,
@@ -651,10 +655,25 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             {
                 macroquad::miniquad::window::set_keyboard_type(kind.native());
             }
-            if wanted.is_some() != app.soft_keyboard.is_some() || (wanted.is_some() && refocus) {
-                macroquad::miniquad::window::show_keyboard(wanted.is_some());
+            if crate::platform::PLATFORM == crate::platform::Platform::Tv
+                && let Some(text) = screen.keyboard_text()
+                && crate::text_field::keyboard_text_is_stale(app.keyboard_text.as_deref(), text)
+            {
+                macroquad::miniquad::window::set_keyboard_text(text);
+                app.keyboard_text = Some(text.to_owned());
+            }
+            if let Some(show) = crate::text_field::keyboard_change(
+                crate::platform::PLATFORM,
+                wanted.is_some(),
+                app.soft_keyboard.is_some(),
+                refocus,
+            ) {
+                macroquad::miniquad::window::show_keyboard(show);
             }
             app.soft_keyboard = wanted;
+        }
+        if let Some(pads) = &mut app.pads {
+            pads.offer_presses_to_system(matches!(screen, Screen::Home(_)));
         }
         ui_view = ui_view::capture_ui(&screen, &app);
         audio::frame(&mut app, &mut screen, time.presentation);
