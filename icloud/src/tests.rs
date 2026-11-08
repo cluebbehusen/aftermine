@@ -108,8 +108,8 @@ fn an_unentitled_process_has_no_cloudkit_account() {
     assert_eq!(cloudkit::account(), None);
     let staging = scratch("cloudkit-staging");
     assert!(cloudkit::fetch(None, &staging).is_err());
-    assert!(cloudkit::delete("saves/save-1.amsave").is_err());
+    assert!(cloudkit::delete("saves/save-1.amsave", 1).is_err());
     let file = staging.join("record.amsave");
     std::fs::write(&file, b"record").unwrap();
-    assert!(cloudkit::upload("saves/save-1.amsave", &file, 1, 6).is_err());
+    assert!(cloudkit::upload("saves/save-1.amsave", &file, 1, 1).is_err());
 }

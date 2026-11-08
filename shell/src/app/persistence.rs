@@ -148,6 +148,8 @@ pub(super) struct Busy {
     back: Box<Screen>,
     id: Option<u64>,
     presented: bool,
+    /// When a load began waiting for a sync under way.
+    syncing_since: Option<std::time::Duration>,
     pub(super) menu: crate::menu::Menu<usize>,
     quit_after: bool,
     /// The LAN match ended while this ran: leave it once done.
@@ -185,11 +187,16 @@ impl App {
             self.persistence.cancel();
         }
         let loading = intent.loading();
+        // Another device may have just stopped playing this match.
+        if loading {
+            crate::cloud_mirror::request(crate::cloud_mirror::Mode::Full);
+        }
         Screen::Busy(Box::new(Busy {
             intent,
             back: Box::new(back),
             id: None,
             presented: false,
+            syncing_since: None,
             quit_after: false,
             leave_after: false,
             menu: crate::menu::Menu::list(
@@ -208,6 +215,11 @@ impl App {
     }
 
     pub(super) fn poll_persistence(&mut self, screen: &mut Screen) {
+        crate::cloud_mirror::allow_arrivals(match screen {
+            Screen::Home(_) | Screen::Replays(_) => true,
+            Screen::Busy(busy) => busy.intent.loading() && busy.id.is_none(),
+            _ => false,
+        });
         if !self.discarded.is_empty() && !self.persistence.busy() {
             let slots = std::mem::take(&mut self.discarded);
             if let Err(error) = self.persistence.start(Box::new(move |_| {
@@ -407,6 +419,7 @@ impl App {
                     aftermine_icloud::Access::Delete,
                     |granted| std::fs::remove_file(granted),
                 )??;
+                crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
             }
             let mut catalog = crate::saves::discover(|| cancel.cancelled());
             anyhow::ensure!(!cancel.cancelled(), "catalog cancelled");
@@ -434,6 +447,9 @@ impl App {
             || self.mirror_at.is_some_and(|at| now >= at)
     }
 }
+
+/// The longest a load waits for a sync under way.
+const SYNC_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Changes that can leave a catalog out of date: a different iCloud Drive
 /// folder, or a mirror pass that changed local records. Both counts only
@@ -622,6 +638,15 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
         busy.presented = true;
         return Ok(Screen::Busy(busy));
     }
+    // Another device's newer copy of a match should be here before it resumes,
+    // since saving over it from an older one would lose that progress.
+    if busy.id.is_none() && busy.intent.loading() && crate::cloud_mirror::syncing() {
+        let now = app.clock.elapsed();
+        let since = *busy.syncing_since.get_or_insert(now);
+        if now.saturating_sub(since) < SYNC_WAIT {
+            return Ok(Screen::Busy(busy));
+        }
+    }
     if busy.id.is_none() && !app.persistence.busy() {
         let task: Task = match &busy.intent {
             Intent::Named(_) | Intent::Leave(_, _) | Intent::Rematch => {
@@ -648,6 +673,7 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                         let line = error.player_line();
                         anyhow::Error::new(error).context(line)
                     })?;
+                    crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
                     Ok(Output::Saved(mark))
                 })
             }

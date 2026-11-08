@@ -382,7 +382,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         catalog_delete: None,
         catalog_rescan: None,
         catalog_cloud: 0,
-        mirror_at: mirror.then_some(crate::cloud_mirror::EVERY),
+        mirror_at: mirror.then_some(std::time::Duration::ZERO),
         discarded: Vec::new(),
         performance: crate::performance::Performance::default(),
         live_streak: 0,

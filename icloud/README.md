@@ -21,9 +21,9 @@ sync is the shell's decision, in `shell/src/config/sync.rs`.
 - `KeyValueStore` reads and writes strings in iCloud's key-value store and
   counts the changes that reach it from other devices.
 - `cloudkit` mirrors record files through one zone of CloudKit's private
-  database: it names the account, fetches what changed since a token, and
-  uploads and deletes records. Every call waits on CloudKit, so callers keep
-  them off the main thread.
+  database: it names the account, fetches what changed since a token, and saves
+  files and delete records. Every call waits on CloudKit, so callers keep them
+  off the main thread.
 - `defaults` reads and writes strings in the app's user defaults, which stay on
   the device.
 - `src/icloud.m` holds the iCloud Drive calls, `src/key_value.m` the key-value

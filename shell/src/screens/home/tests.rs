@@ -95,3 +95,57 @@ fn home_grows_only_on_windows_larger_than_its_layout() {
     assert!((1.3..1.4).contains(&large), "{large}");
     assert_eq!(growth(vec2(9000.0, 9000.0)), 1.6);
 }
+
+fn press(home: &mut HomeScreen, key: Key) -> Out {
+    let mut mouse = vec2(0.0, 0.0);
+    let mut sounds = Vec::new();
+    home.update(
+        &[RawEvent::KeyDown { key }, RawEvent::KeyUp { key }],
+        &mut mouse,
+        &mut sounds,
+    )
+}
+
+#[test]
+fn a_mistaken_press_on_the_missing_files_question_deletes_nothing() {
+    let mut home = HomeScreen::with_resumable(true);
+    home.set_missing(vec![
+        "saves/a.amsave".to_owned(),
+        "saves/b.amsave".to_owned(),
+    ]);
+    assert_eq!(home.mode_name(), "confirm_missing");
+    home.age_question(2.0);
+    assert_eq!(press(&mut home, Key::Enter), Out::BringBackMissing);
+    assert_eq!(press(&mut home, Key::Escape), Out::BringBackMissing);
+    assert_eq!(home.take_missing().len(), 2);
+    assert_eq!(home.mode_name(), "home");
+}
+
+#[test]
+fn deleting_missing_files_takes_a_deliberate_choice() {
+    let mut home = HomeScreen::with_resumable(true);
+    home.set_missing(vec!["saves/a.amsave".to_owned()]);
+    home.age_question(2.0);
+    assert_eq!(press(&mut home, Key::Down), Out::Stay);
+    assert_eq!(press(&mut home, Key::Enter), Out::DeleteMissing);
+}
+
+#[test]
+fn the_question_goes_away_once_nothing_is_missing_and_survives_a_rescan() {
+    let mut home = HomeScreen::with_resumable(true);
+    home.set_missing(vec!["saves/a.amsave".to_owned()]);
+    home.set_catalog(true);
+    assert_eq!(home.mode_name(), "confirm_missing");
+    home.set_missing(Vec::new());
+    assert_eq!(home.mode_name(), "home");
+}
+
+#[test]
+fn presses_aimed_at_home_never_land_on_the_question() {
+    let mut home = HomeScreen::with_resumable(true);
+    home.set_missing(vec!["saves/a.amsave".to_owned()]);
+    assert_eq!(press(&mut home, Key::Down), Out::Stay);
+    assert_eq!(press(&mut home, Key::Enter), Out::Stay);
+    home.age_question(2.0);
+    assert_eq!(press(&mut home, Key::Enter), Out::BringBackMissing);
+}

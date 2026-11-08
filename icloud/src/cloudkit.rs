@@ -6,15 +6,20 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// A record another device changed, its file copied to this device.
+/// A record another device changed: a file, copied to this device, or a
+/// delete record.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct Changed {
     /// The record's name: the file's path under the records root.
     pub name: String,
-    /// When the file was saved, in Unix seconds.
+    /// How far the save was played, or the delete record's tick.
+    pub ticks: u64,
+    /// When the file was saved, in Unix seconds; nothing for a delete record.
     pub saved_at: u64,
-    /// The copy of the file, in the staging folder the fetch was given.
-    pub staged: PathBuf,
+    /// The copy of the file, in the staging folder the fetch was given;
+    /// `None` for a delete record.
+    #[serde(default)]
+    pub staged: Option<PathBuf>,
 }
 
 /// What changed in the zone since a token.
@@ -22,8 +27,6 @@ pub struct Changed {
 pub struct Changes {
     /// Records added or replaced.
     pub changed: Vec<Changed>,
-    /// Names of records deleted.
-    pub deleted: Vec<String>,
     /// Where the next fetch resumes, once these changes are applied.
     pub token: Option<String>,
     /// Whether more changes wait beyond this batch.
@@ -32,6 +35,11 @@ pub struct Changes {
     /// failed, the token must not advance, or they are never fetched again.
     #[serde(default)]
     pub failed: usize,
+    /// Whether these changes start from the beginning because CloudKit no
+    /// longer knew the token or lost the zone: what the caller last agreed
+    /// with it no longer holds.
+    #[serde(default)]
+    pub restarted: bool,
 }
 
 /// The iCloud account CloudKit would act for: its user record name, or
@@ -63,29 +71,32 @@ pub fn fetch(token: Option<&str>, staging: &Path) -> io::Result<Changes> {
     }
 }
 
-/// Saves the file at `path` as the record `name`, replacing any record of
-/// that name.
-pub fn upload(name: &str, path: &Path, saved_at: u64, size: u64) -> io::Result<()> {
+/// Saves the file at `path` as the record `name`. Fails if CloudKit holds a
+/// version further along, which the next fetch reports.
+pub fn upload(name: &str, path: &Path, ticks: u64, saved_at: u64) -> io::Result<()> {
     #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos"))]
     {
-        bridge::upload(name, path, saved_at, size)
+        bridge::upload(name, path, ticks, saved_at)
     }
     #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "tvos")))]
     {
-        let _ = (name, path, saved_at, size);
+        let _ = (name, path, ticks, saved_at);
         Err(unsupported())
     }
 }
 
-/// Deletes the record `name`. A record already gone counts as deleted.
-pub fn delete(name: &str) -> io::Result<()> {
+/// Replaces the record `name` with a delete record of tick `ticks`, which
+/// other devices weigh against their copies as they would any save.
+/// Fails with [`io::ErrorKind::AlreadyExists`] if CloudKit holds a version
+/// further along.
+pub fn delete(name: &str, ticks: u64) -> io::Result<()> {
     #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos"))]
     {
-        bridge::delete(name)
+        bridge::delete(name, ticks)
     }
     #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "tvos")))]
     {
-        let _ = name;
+        let _ = (name, ticks);
         Err(unsupported())
     }
 }
@@ -116,10 +127,10 @@ mod bridge {
         fn aftermine_icloud_cloudkit_upload(
             name: *const c_char,
             path: *const c_char,
+            ticks: c_longlong,
             saved_at: c_longlong,
-            size: c_longlong,
         ) -> *mut c_char;
-        fn aftermine_icloud_cloudkit_delete(name: *const c_char) -> *mut c_char;
+        fn aftermine_icloud_cloudkit_delete(name: *const c_char, ticks: c_longlong) -> *mut c_char;
     }
 
     #[derive(serde::Deserialize)]
@@ -131,13 +142,24 @@ mod bridge {
     #[derive(serde::Deserialize)]
     struct Failure {
         error: Option<String>,
+        #[serde(default)]
+        behind: bool,
     }
 
     /// The bridge's JSON reply as `T`, or the error it names.
     pub(super) fn answer<T: serde::de::DeserializeOwned>(text: Option<Vec<u8>>) -> io::Result<T> {
         let text = text.ok_or_else(|| io::Error::other("CloudKit gave no answer"))?;
-        if let Ok(Failure { error: Some(error) }) = serde_json::from_slice::<Failure>(&text) {
-            return Err(io::Error::other(error));
+        if let Ok(Failure {
+            error: Some(error),
+            behind,
+        }) = serde_json::from_slice::<Failure>(&text)
+        {
+            let kind = if behind {
+                io::ErrorKind::AlreadyExists
+            } else {
+                io::ErrorKind::Other
+            };
+            return Err(io::Error::new(kind, error));
         }
         serde_json::from_slice(&text).map_err(io::Error::other)
     }
@@ -172,7 +194,7 @@ mod bridge {
         answer(reply)
     }
 
-    pub(super) fn upload(name: &str, file: &Path, saved_at: u64, size: u64) -> io::Result<()> {
+    pub(super) fn upload(name: &str, file: &Path, ticks: u64, saved_at: u64) -> io::Result<()> {
         let name = text(name)?;
         let file = path(file)?;
         // SAFETY: both strings are NUL-terminated and outlive the call.
@@ -180,17 +202,22 @@ mod bridge {
             aftermine_icloud_cloudkit_upload(
                 name.as_ptr(),
                 file.as_ptr(),
+                c_longlong::try_from(ticks).unwrap_or(c_longlong::MAX),
                 c_longlong::try_from(saved_at).unwrap_or(c_longlong::MAX),
-                c_longlong::try_from(size).unwrap_or(c_longlong::MAX),
             )
         });
         answer::<serde_json::Value>(reply).map(|_| ())
     }
 
-    pub(super) fn delete(name: &str) -> io::Result<()> {
+    pub(super) fn delete(name: &str, ticks: u64) -> io::Result<()> {
         let name = text(name)?;
         // SAFETY: `name` is NUL-terminated and outlives the call.
-        let reply = crate::objc::take(unsafe { aftermine_icloud_cloudkit_delete(name.as_ptr()) });
+        let reply = crate::objc::take(unsafe {
+            aftermine_icloud_cloudkit_delete(
+                name.as_ptr(),
+                c_longlong::try_from(ticks).unwrap_or(c_longlong::MAX),
+            )
+        });
         answer::<serde_json::Value>(reply).map(|_| ())
     }
 }

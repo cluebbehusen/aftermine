@@ -381,7 +381,7 @@ impl Screen {
     pub(super) fn mode(&self) -> &'static str {
         match self {
             Self::ColdOpen(_) => "cold_open",
-            Self::Home(_) => "home",
+            Self::Home(home) => home.mode_name(),
             Self::Settings { screen, .. } => screen.mode_name(),
             Self::Codex { screen, .. } => screen.mode_name(),
             Self::Lessons { screen, .. } => screen.mode_name(),

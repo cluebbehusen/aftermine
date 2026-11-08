@@ -15,8 +15,13 @@
 static NSString *const ZONE = @"Records";
 static NSString *const RECORD_TYPE = @"Record";
 static NSString *const FILE_KEY = @"file";
+static NSString *const TICKS_KEY = @"ticks";
 static NSString *const SAVED_AT_KEY = @"saved_at";
+static NSString *const DELETED_KEY = @"deleted";
 static const int64_t WAIT_SECONDS = 120;
+// A fetch waits for every file in its batch, so a small batch keeps a slow
+// link making progress.
+static const NSUInteger BATCH_RECORDS = 8;
 
 // The entitlements blob in a code signature `size` bytes long: the XML
 // after the header of the embedded-entitlements blob the signature's index
@@ -153,6 +158,19 @@ static BOOL wait_for(dispatch_semaphore_t done) {
                                    WAIT_SECONDS * (int64_t)NSEC_PER_SEC)) == 0;
 }
 
+// Runs an operation at a priority the system does not defer, and waits for it.
+// One that does not answer in time is cancelled.
+static BOOL perform(CKDatabase *database, CKDatabaseOperation *operation,
+                    dispatch_semaphore_t done) {
+    operation.qualityOfService = NSQualityOfServiceUserInitiated;
+    [database addOperation:operation];
+    if (wait_for(done)) {
+        return YES;
+    }
+    [operation cancel];
+    return NO;
+}
+
 static NSDictionary *timed_out(void) {
     return @{@"error" : @"CloudKit did not answer in time", @"code" : @(-1)};
 }
@@ -208,8 +226,7 @@ static NSError *ensure_zone(CKDatabase *database) {
           failed = error;
           dispatch_semaphore_signal(done);
         };
-    [database addOperation:operation];
-    if (!wait_for(done)) {
+    if (!perform(database, operation, done)) {
         return [NSError errorWithDomain:CKErrorDomain
                                    code:CKErrorNetworkFailure
                                userInfo:nil];
@@ -220,41 +237,39 @@ static NSError *ensure_zone(CKDatabase *database) {
 
 // {"account": "<user record name>"} while an iCloud account can use
 // CloudKit, otherwise {"unavailable": "<reason>"}.
-char *aftermine_icloud_cloudkit_account(void) {
-    @autoreleasepool {
-        CKContainer *app = container();
-        if (app == nil) {
-            return json(@{@"unavailable" : @"no CloudKit container"});
-        }
-        __block NSDictionary *answer = nil;
-        dispatch_semaphore_t done = dispatch_semaphore_create(0);
-        [app accountStatusWithCompletionHandler:^(CKAccountStatus status,
-                                                  NSError *error) {
-          if (status != CKAccountStatusAvailable) {
-              answer = @{
-                  @"unavailable" : error.localizedDescription
-                      ?: [NSString stringWithFormat:@"account status %ld",
-                                                    (long)status]
-              };
-              dispatch_semaphore_signal(done);
-              return;
-          }
-          [app fetchUserRecordIDWithCompletionHandler:^(CKRecordID *record,
-                                                        NSError *failed) {
-            answer = record != nil
-                         ? @{@"account" : record.recordName}
-                         : @{
-                               @"unavailable" : failed.localizedDescription
-                                   ?: @"no user record"
-                           };
-            dispatch_semaphore_signal(done);
-          }];
-        }];
-        if (!wait_for(done)) {
-            return json(@{@"unavailable" : @"CloudKit did not answer in time"});
-        }
-        return json(answer);
+static char *current_account(void) {
+    CKContainer *app = container();
+    if (app == nil) {
+        return json(@{@"unavailable" : @"no CloudKit container"});
     }
+    __block NSDictionary *answer = nil;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    [app accountStatusWithCompletionHandler:^(CKAccountStatus status,
+                                              NSError *error) {
+      if (status != CKAccountStatusAvailable) {
+          answer = @{
+              @"unavailable" : error.localizedDescription
+                  ?: [NSString stringWithFormat:@"account status %ld",
+                                                (long)status]
+          };
+          dispatch_semaphore_signal(done);
+          return;
+      }
+      [app fetchUserRecordIDWithCompletionHandler:^(CKRecordID *record,
+                                                    NSError *failed) {
+        answer = record != nil
+                     ? @{@"account" : record.recordName}
+                     : @{
+                           @"unavailable" : failed.localizedDescription
+                               ?: @"no user record"
+                       };
+        dispatch_semaphore_signal(done);
+      }];
+    }];
+    if (!wait_for(done)) {
+        return json(@{@"unavailable" : @"CloudKit did not answer in time"});
+    }
+    return json(answer);
 }
 
 // One fetch of the zone's changes since `previous`, each changed record's
@@ -264,7 +279,6 @@ static NSDictionary *fetch_once(CKDatabase *database,
                                 CKServerChangeToken *previous,
                                 NSString *folder, NSError **failed_out) {
     NSMutableArray *changed = [NSMutableArray array];
-    NSMutableArray *deleted = [NSMutableArray array];
     __block NSUInteger missed = 0;
     __block NSString *next = nil;
     __block BOOL more = NO;
@@ -272,6 +286,7 @@ static NSDictionary *fetch_once(CKDatabase *database,
     CKFetchRecordZoneChangesConfiguration *configuration =
         [[CKFetchRecordZoneChangesConfiguration alloc] init];
     configuration.previousServerChangeToken = previous;
+    configuration.resultsLimit = BATCH_RECORDS;
     CKFetchRecordZoneChangesOperation *operation =
         [[CKFetchRecordZoneChangesOperation alloc]
             initWithRecordZoneIDs:@[ zone_id() ]
@@ -285,8 +300,19 @@ static NSDictionary *fetch_once(CKDatabase *database,
           missed++;
           return;
       }
-      CKAsset *asset = record[FILE_KEY];
+      NSNumber *ticks = record[TICKS_KEY];
       NSNumber *saved_at = record[SAVED_AT_KEY];
+      NSNumber *is_deleted = record[DELETED_KEY];
+      if (is_deleted.boolValue) {
+          [changed addObject:@{
+              @"name" : record_id.recordName,
+              @"ticks" : ticks ?: @0,
+              @"saved_at" : saved_at ?: @0,
+          }];
+          return;
+      }
+      // A record with neither a file nor a delete mark is nothing to apply.
+      CKAsset *asset = record[FILE_KEY];
       if (![asset isKindOfClass:CKAsset.class] || asset.fileURL == nil) {
           return;
       }
@@ -301,15 +327,11 @@ static NSDictionary *fetch_once(CKDatabase *database,
       }
       [changed addObject:@{
           @"name" : record_id.recordName,
+          @"ticks" : ticks ?: @0,
           @"saved_at" : saved_at ?: @0,
           @"staged" : copy,
       }];
     };
-    operation.recordWithIDWasDeletedBlock =
-        ^(CKRecordID *record_id, CKRecordType type) {
-          (void)type;
-          [deleted addObject:record_id.recordName];
-        };
     operation.recordZoneFetchCompletionBlock =
         ^(CKRecordZoneID *zone_id, CKServerChangeToken *server,
           NSData *client, BOOL more_coming, NSError *error) {
@@ -335,8 +357,7 @@ static NSDictionary *fetch_once(CKDatabase *database,
       }
       dispatch_semaphore_signal(done);
     };
-    [database addOperation:operation];
-    if (!wait_for(done)) {
+    if (!perform(database, operation, done)) {
         return nil;
     }
     if (failed != nil) {
@@ -345,76 +366,132 @@ static NSDictionary *fetch_once(CKDatabase *database,
     }
     return @{
         @"changed" : changed,
-        @"deleted" : deleted,
         @"token" : next ?: NSNull.null,
         @"more" : @(more),
         @"failed" : @(missed),
     };
 }
 
-// Every change to the zone since `token` (base64, or NULL for all of it).
-// Each changed record's file is copied into `staging`, since CloudKit may
-// delete its own copy at any time.
-char *aftermine_icloud_cloudkit_fetch(const char *token, const char *staging) {
+char *aftermine_icloud_cloudkit_account(void) {
     @autoreleasepool {
-        CKContainer *app = container();
-        if (app == nil) {
-            return json(@{@"error" : @"no CloudKit container", @"code" : @(-2)});
-        }
-        CKDatabase *database = app.privateCloudDatabase;
-        CKServerChangeToken *previous = nil;
-        if (token != NULL) {
-            NSData *data = [[NSData alloc]
-                initWithBase64EncodedString:[NSString
-                                                stringWithUTF8String:token]
-                                    options:0];
-            if (data != nil) {
-                previous = [NSKeyedUnarchiver
-                    unarchivedObjectOfClass:CKServerChangeToken.class
-                                   fromData:data
-                                      error:nil];
-            }
-        }
-        NSString *folder = [NSString stringWithUTF8String:staging];
-        BOOL remade = NO;
-        for (;;) {
-            NSError *zone = ensure_zone(database);
-            if (zone != nil) {
-                return json(failure(zone));
-            }
-            NSError *failed = nil;
-            NSDictionary *answer =
-                fetch_once(database, previous, folder, &failed);
-            if (answer != nil) {
-                return json(answer);
-            }
-            if (zone_missing(failed) && !remade) {
-                zone_ready = NO;
-                remade = YES;
-                continue;
-            }
-            // A token CloudKit no longer honors starts the fetch over.
-            if (has_code(failed, CKErrorChangeTokenExpired) && previous != nil) {
-                previous = nil;
-                continue;
-            }
-            return json(failed != nil ? failure(failed) : timed_out());
+        @try {
+            return current_account();
+        } @catch (NSException *exception) {
+            return json(@{@"unavailable" : exception.reason ?: @"CloudKit failed"});
         }
     }
 }
 
-// One save or delete: nil once it is done, or the error, or a timeout.
-static NSError *modify_once(CKDatabase *database, NSArray<CKRecord *> *save,
-                            NSArray<CKRecordID *> *remove) {
+// Every change to the zone since `token` (base64, or NULL for all of it).
+// Each changed record's file is copied into `staging`, since CloudKit may
+// delete its own copy at any time.
+static char *fetch_changes(const char *token, const char *staging) {
+    CKContainer *app = container();
+    if (app == nil) {
+        return json(@{@"error" : @"no CloudKit container", @"code" : @(-2)});
+    }
+    CKDatabase *database = app.privateCloudDatabase;
+    CKServerChangeToken *previous = nil;
+    if (token != NULL) {
+        NSData *data = [[NSData alloc]
+            initWithBase64EncodedString:[NSString
+                                            stringWithUTF8String:token]
+                                options:0];
+        if (data != nil) {
+            previous = [NSKeyedUnarchiver
+                unarchivedObjectOfClass:CKServerChangeToken.class
+                               fromData:data
+                                  error:nil];
+        }
+    }
+    NSString *folder = [NSString stringWithUTF8String:staging];
+    BOOL restarted = token != NULL && previous == nil;
+    BOOL remade = NO;
+    for (;;) {
+        NSError *zone = ensure_zone(database);
+        if (zone != nil) {
+            return json(failure(zone));
+        }
+        NSError *failed = nil;
+        NSDictionary *answer =
+            fetch_once(database, previous, folder, &failed);
+        if (answer != nil) {
+            NSMutableDictionary *reply = [answer mutableCopy];
+            reply[@"restarted"] = @(restarted);
+            return json(reply);
+        }
+        // A zone that is gone is made again, empty, so nothing the
+        // caller last agreed with it still holds.
+        if (zone_missing(failed) && !remade) {
+            zone_ready = NO;
+            remade = YES;
+            restarted = restarted || previous != nil;
+            previous = nil;
+            continue;
+        }
+        // A token CloudKit no longer honors starts the fetch over.
+        if (has_code(failed, CKErrorChangeTokenExpired) && previous != nil) {
+            restarted = YES;
+            previous = nil;
+            continue;
+        }
+        return json(failed != nil ? failure(failed) : timed_out());
+    }
+}
+
+char *aftermine_icloud_cloudkit_fetch(const char *token, const char *staging) {
+    @autoreleasepool {
+        @try {
+            return fetch_changes(token, staging);
+        } @catch (NSException *exception) {
+            return json(@{@"error" : exception.reason ?: @"CloudKit failed"});
+        }
+    }
+}
+
+static NSError *no_answer(void) {
+    return [NSError errorWithDomain:CKErrorDomain
+                               code:CKErrorNetworkFailure
+                           userInfo:@{
+                               NSLocalizedDescriptionKey :
+                                   @"CloudKit did not answer in time"
+                           }];
+}
+
+// The record CloudKit holds under `record_id`, without its file, or nil with
+// `*failed` set unless there simply is none.
+static CKRecord *current_record(CKDatabase *database, CKRecordID *record_id,
+                                NSError **failed_out) {
+    __block CKRecord *found = nil;
+    __block NSError *failed = nil;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    CKFetchRecordsOperation *operation =
+        [[CKFetchRecordsOperation alloc] initWithRecordIDs:@[ record_id ]];
+    operation.desiredKeys = @[ TICKS_KEY, SAVED_AT_KEY, DELETED_KEY ];
+    operation.fetchRecordsCompletionBlock =
+        ^(NSDictionary<CKRecordID *, CKRecord *> *records, NSError *error) {
+          found = records[record_id];
+          if (found == nil && !has_code(error, CKErrorUnknownItem)) {
+              failed = error;
+          }
+          dispatch_semaphore_signal(done);
+        };
+    if (!perform(database, operation, done)) {
+        *failed_out = no_answer();
+        return nil;
+    }
+    *failed_out = failed;
+    return found;
+}
+
+// One save: nil once it is done, or the error, or a timeout. The default
+// save policy refuses it if the record changed since it was fetched.
+static NSError *save_once(CKDatabase *database, CKRecord *record) {
     __block NSError *failed = nil;
     dispatch_semaphore_t done = dispatch_semaphore_create(0);
     CKModifyRecordsOperation *operation =
-        [[CKModifyRecordsOperation alloc] initWithRecordsToSave:save
-                                              recordIDsToDelete:remove];
-    // The mirror decides which copy wins before it uploads, so the upload
-    // replaces whatever the server holds; a device that later finds an
-    // older copy over its own sends its copy again.
-    operation.savePolicy = CKRecordSaveAllKeys;
+        [[CKModifyRecordsOperation alloc] initWithRecordsToSave:@[ record ]
+                                              recordIDsToDelete:nil];
     operation.modifyRecordsCompletionBlock =
         ^(NSArray<CKRecord *> *saved, NSArray<CKRecordID *> *deleted,
           NSError *error) {
@@ -423,75 +500,111 @@ static NSError *modify_once(CKDatabase *database, NSArray<CKRecord *> *save,
           failed = error;
           dispatch_semaphore_signal(done);
         };
-    [database addOperation:operation];
-    if (!wait_for(done)) {
-        return [NSError errorWithDomain:CKErrorDomain
-                                   code:CKErrorNetworkFailure
-                               userInfo:@{
-                                   NSLocalizedDescriptionKey :
-                                       @"CloudKit did not answer in time"
-                               }];
-    }
-    // Deleting a record that is already gone is a success.
-    if (failed != nil && failed.code == CKErrorPartialFailure) {
-        NSDictionary *partial = failed.userInfo[CKPartialErrorsByItemIDKey];
-        BOOL only_missing = partial.count > 0;
-        for (NSError *each in partial.allValues) {
-            only_missing = only_missing && each.code == CKErrorUnknownItem;
-        }
-        if (only_missing) {
-            failed = nil;
-        }
-    }
-    return failed;
+    return perform(database, operation, done) ? failed : no_answer();
 }
 
-static char *modify(NSArray<CKRecord *> *save, NSArray<CKRecordID *> *remove) {
+// Orders two versions as the mirror does: most ticks, then a file over a
+// delete record, then the later save.
+static int compare_versions(long long left_ticks, BOOL left_live,
+                            long long left_saved, long long right_ticks,
+                            BOOL right_live, long long right_saved) {
+    if (left_ticks != right_ticks) {
+        return left_ticks > right_ticks ? 1 : -1;
+    }
+    if (left_live != right_live) {
+        return left_live ? 1 : -1;
+    }
+    if (left_saved != right_saved) {
+        return left_saved > right_saved ? 1 : -1;
+    }
+    return 0;
+}
+
+// Saves a version of the record `name`: the file at `path`, or with no path
+// a delete record. CloudKit only ever moves forward: a version behind the one
+// it holds is refused, however late it arrives, and the device learns of the
+// one further along on its next fetch.
+static char *save_version(const char *name, long long ticks,
+                          long long saved_at, NSURL *file) {
     CKContainer *app = container();
     if (app == nil) {
         return json(@{@"error" : @"no CloudKit container", @"code" : @(-2)});
     }
     CKDatabase *database = app.privateCloudDatabase;
+    CKRecordID *record_id = [[CKRecordID alloc]
+        initWithRecordName:[NSString stringWithUTF8String:name]
+                    zoneID:zone_id()];
+    BOOL live = file != nil;
     BOOL remade = NO;
     for (;;) {
         NSError *zone = ensure_zone(database);
         if (zone != nil) {
             return json(failure(zone));
         }
-        NSError *failed = modify_once(database, save, remove);
+        NSError *failed = nil;
+        CKRecord *record = current_record(database, record_id, &failed);
+        if (failed == nil && record != nil) {
+            int order = compare_versions(
+                [record[TICKS_KEY] longLongValue],
+                ![record[DELETED_KEY] boolValue],
+                [record[SAVED_AT_KEY] longLongValue], ticks, live, saved_at);
+            if (order == 0) {
+                return json(@{});
+            }
+            if (order > 0) {
+                return json(@{
+                    @"error" : @"CloudKit holds a version further along",
+                    @"behind" : @YES,
+                });
+            }
+        }
+        if (failed == nil) {
+            if (record == nil) {
+                record = [[CKRecord alloc] initWithRecordType:RECORD_TYPE
+                                                     recordID:record_id];
+            }
+            record[TICKS_KEY] = @(ticks);
+            record[SAVED_AT_KEY] = @(saved_at);
+            record[DELETED_KEY] = @(!live);
+            record[FILE_KEY] =
+                live ? [[CKAsset alloc] initWithFileURL:file] : nil;
+            failed = save_once(database, record);
+        }
+        if (failed == nil) {
+            return json(@{});
+        }
         if (zone_missing(failed) && !remade) {
             zone_ready = NO;
             remade = YES;
             continue;
         }
-        return failed != nil ? json(failure(failed)) : json(@{});
+        return json(failure(failed));
     }
 }
 
 // Saves the file at `path` as the record `name`.
 char *aftermine_icloud_cloudkit_upload(const char *name, const char *path,
-                                       long long saved_at, long long size) {
+                                       long long ticks, long long saved_at) {
     @autoreleasepool {
-        CKRecordID *record_id = [[CKRecordID alloc]
-            initWithRecordName:[NSString stringWithUTF8String:name]
-                        zoneID:zone_id()];
-        CKRecord *record = [[CKRecord alloc] initWithRecordType:RECORD_TYPE
-                                                       recordID:record_id];
-        record[FILE_KEY] = [[CKAsset alloc]
-            initWithFileURL:[NSURL fileURLWithPath:
-                                       [NSString stringWithUTF8String:path]]];
-        record[SAVED_AT_KEY] = @(saved_at);
-        record[@"size"] = @(size);
-        return modify(@[ record ], nil);
+        @try {
+            NSURL *file =
+                [NSURL fileURLWithPath:[NSString stringWithUTF8String:path]];
+            return save_version(name, ticks, saved_at, file);
+        } @catch (NSException *exception) {
+            return json(@{@"error" : exception.reason ?: @"CloudKit failed"});
+        }
     }
 }
 
-// Deletes the record `name`; one already gone counts as deleted.
-char *aftermine_icloud_cloudkit_delete(const char *name) {
+// Replaces the record `name` with a delete record of tick `ticks`: a record
+// rather than an absence, so every device can weigh it against the copy it
+// holds, and one that fetches from the start still learns of it.
+char *aftermine_icloud_cloudkit_delete(const char *name, long long ticks) {
     @autoreleasepool {
-        CKRecordID *record_id = [[CKRecordID alloc]
-            initWithRecordName:[NSString stringWithUTF8String:name]
-                        zoneID:zone_id()];
-        return modify(nil, @[ record_id ]);
+        @try {
+            return save_version(name, ticks, 0, nil);
+        } @catch (NSException *exception) {
+            return json(@{@"error" : exception.reason ?: @"CloudKit failed"});
+        }
     }
 }
