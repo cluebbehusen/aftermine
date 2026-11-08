@@ -279,6 +279,8 @@ pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
                 take_pad(input, pad);
             }
         }
+        // A short swipe moves a viewer's camera before it taps any direction.
+        RawEvent::PadSwipe { pad, x, y } if (x, y) != (0.0, 0.0) => take_pad(input, pad),
         _ => {}
     }
 }

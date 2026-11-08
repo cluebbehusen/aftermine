@@ -159,6 +159,9 @@ pub(crate) struct RemoteCamera {
     modes: &'static [RemoteMode],
     at: usize,
     held: HeldRing,
+    /// The remote that last pressed the ring. Its leaving lets go, since a
+    /// pad that disconnects may never report its release.
+    held_by: Option<u64>,
 }
 
 impl Default for RemoteCamera {
@@ -168,6 +171,7 @@ impl Default for RemoteCamera {
             modes: &[RemoteMode::Pan, RemoteMode::Zoom],
             at: 0,
             held: HeldRing::default(),
+            held_by: None,
         }
     }
 }
@@ -179,6 +183,7 @@ impl RemoteCamera {
             modes: &[RemoteMode::Control, RemoteMode::Pan, RemoteMode::Zoom],
             at: 0,
             held: HeldRing::default(),
+            held_by: None,
         }
     }
 
@@ -225,13 +230,15 @@ impl RemoteCamera {
         for event in events {
             match *event {
                 RawEvent::PadDown { pad, button }
-                    if remote(pad) && self.press(button, camera, pads.prefs) => {}
+                    if remote(pad) && self.press(pad, button, camera, pads.prefs) => {}
                 RawEvent::PadUp { pad, button } if remote(pad) => {
                     self.held.set(button, false);
                     rest.push(*event);
                 }
-                RawEvent::PadDisconnected { .. } => {
-                    self.held = HeldRing::default();
+                RawEvent::PadDisconnected { pad } => {
+                    if self.held_by == Some(pad) {
+                        self.held = HeldRing::default();
+                    }
                     rest.push(*event);
                 }
                 RawEvent::PadSwipe { pad, x, y } if remote(pad) => {
@@ -257,7 +264,7 @@ impl RemoteCamera {
     }
 
     /// One remote press. Returns whether the camera took it.
-    fn press(&mut self, button: PadButton, camera: &mut Camera, prefs: PadPrefs) -> bool {
+    fn press(&mut self, pad: u64, button: PadButton, camera: &mut Camera, prefs: PadPrefs) -> bool {
         let center = camera.viewport() * 0.5;
         let flip = if prefs.zoom_inverted { -1.0 } else { 1.0 };
         match (self.mode(), button) {
@@ -266,11 +273,11 @@ impl RemoteCamera {
                 self.held = HeldRing::default();
             }
             (RemoteMode::Zoom, PadButton::DpadUp) => {
-                self.held.set(button, true);
+                self.hold(pad, button);
                 camera.zoom_at(center, SWIPE_ZOOM_NOTCHES * flip);
             }
             (RemoteMode::Zoom, PadButton::DpadDown) => {
-                self.held.set(button, true);
+                self.hold(pad, button);
                 camera.zoom_at(center, -SWIPE_ZOOM_NOTCHES * flip);
             }
             (
@@ -279,10 +286,15 @@ impl RemoteCamera {
                 | PadButton::DpadDown
                 | PadButton::DpadLeft
                 | PadButton::DpadRight,
-            ) => self.held.set(button, true),
+            ) => self.hold(pad, button),
             _ => return false,
         }
         true
+    }
+
+    fn hold(&mut self, pad: u64, button: PadButton) {
+        self.held.set(button, true);
+        self.held_by = Some(pad);
     }
 }
 

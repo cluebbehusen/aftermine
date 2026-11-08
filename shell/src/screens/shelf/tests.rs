@@ -131,6 +131,30 @@ fn a_record_says_how_to_act_only_as_coaching() {
 }
 
 #[test]
+fn a_catalog_refresh_keeps_the_row_cursor_hidden_while_the_remote_is_on_the_tabs() {
+    crate::platform::set_hands(crate::platform::Hands {
+        pad: Some(aftermine_protocol::PadFamily::Remote),
+        ..crate::platform::ALL_HANDS[3]
+    });
+    let record = |name| {
+        entry(
+            name,
+            true,
+            RecordKind::Match,
+            format!("/nowhere/{name}").into(),
+        )
+    };
+    let mut shelf = Shelf::from_entries(vec![record("a")]);
+    drive(&mut shelf, Key::Up);
+    let focused = shelf.tabs.focused();
+    shelf.set_catalog(vec![record("a"), record("b")], 0);
+    let hidden = shelf.menu.cursor_hidden;
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+    assert!(focused, "up from the top row reaches the tabs");
+    assert!(hidden);
+}
+
+#[test]
 fn a_remote_always_hears_how_to_reach_the_tabs() {
     crate::platform::set_hands(crate::platform::Hands {
         pad: Some(aftermine_protocol::PadFamily::Remote),

@@ -337,6 +337,23 @@ fn a_disconnected_remote_stops_panning() {
 }
 
 #[test]
+fn another_pad_disconnecting_leaves_a_held_ring_held() {
+    let mut camera = camera();
+    let mut remote = RemoteCamera::default();
+    let mut pads = remote_pads();
+    pads.prefs.stick_speed = 1.0;
+    remote.route(&[press(9, PadButton::DpadRight)], &mut camera, &pads, 0.0);
+    let held = camera.center;
+    remote.route(
+        &[RawEvent::PadDisconnected { pad: 1 }],
+        &mut camera,
+        &pads,
+        0.5,
+    );
+    assert!(camera.center.x > held.x, "the remote is still holding");
+}
+
+#[test]
 fn the_ring_belongs_to_the_viewer_in_its_own_controls() {
     let mut camera = camera();
     let start = camera.center;

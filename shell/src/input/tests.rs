@@ -4642,6 +4642,28 @@ fn the_hud_stands_in_pad_mode_while_a_controller_is_in_use_and_always_on_a_tv() 
 }
 
 #[test]
+fn a_short_swipe_puts_the_remote_in_use() {
+    use aftermine_protocol::{PadButton, PadFamily};
+    let mut input = InputState::new();
+    let connect = |pad, family| RawEvent::PadConnected { pad, family };
+    track_hands(&mut input, &connect(1, PadFamily::Xbox), false);
+    track_hands(&mut input, &connect(2, PadFamily::Remote), false);
+    track_hands(
+        &mut input,
+        &RawEvent::PadDown {
+            pad: 1,
+            button: PadButton::South,
+        },
+        false,
+    );
+    let swipe = |x| RawEvent::PadSwipe { pad: 2, x, y: 0.0 };
+    track_hands(&mut input, &swipe(0.0), false);
+    assert_eq!(input.pad_family_in_use(), Some(PadFamily::Xbox));
+    track_hands(&mut input, &swipe(0.1), false);
+    assert_eq!(input.pad_family_in_use(), Some(PadFamily::Remote));
+}
+
+#[test]
 fn pad_mode_never_names_the_remotes_buttons() {
     use aftermine_protocol::{PadButton, PadFamily};
     let mut input = InputState::new();

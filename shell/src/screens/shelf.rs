@@ -172,6 +172,7 @@ impl Shelf {
         // gesture.
         fresh.back = std::mem::take(&mut self.back);
         fresh.tabs = std::mem::take(&mut self.tabs);
+        fresh.menu.cursor_hidden = fresh.tabs.focused();
         *self = fresh;
     }
 
