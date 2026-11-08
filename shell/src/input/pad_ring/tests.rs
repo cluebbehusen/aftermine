@@ -308,7 +308,20 @@ fn another_hand_or_a_lost_controller_closes_the_ring() {
         &mut input,
         &[RawEvent::MouseMove { x: 5.0, y: 5.0 }],
     );
-    assert!(input.ring.is_none());
+    assert!(
+        input.ring.is_some(),
+        "a mouse that only moves leaves it open"
+    );
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::MouseDown {
+            button: aftermine_protocol::MouseButton::Left,
+            x: 5.0,
+            y: 5.0,
+        }],
+    );
+    assert!(input.ring.is_none(), "a click closes it");
     tap(&mut game, &mut input, PadButton::North);
     feed(
         &mut game,

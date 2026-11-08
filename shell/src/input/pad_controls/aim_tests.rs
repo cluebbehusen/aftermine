@@ -171,7 +171,8 @@ fn b_drops_a_held_row_then_walks_out_of_placement() {
 
 #[test]
 fn another_pointer_a_second_pad_or_a_disconnect_leaves_no_stray_row() {
-    // The mouse taking over ends the row unbuilt.
+    // A mouse that only moves leaves the row be; one that clicks takes
+    // over and ends the row unbuilt.
     let (mut game, mut input) = placing(BARRICADE);
     rest_on(&mut game, &mut input, vec2(28.5, 20.5));
     feed(&mut game, &mut input, &[down(PadButton::South)]);
@@ -179,6 +180,19 @@ fn another_pointer_a_second_pad_or_a_disconnect_leaves_no_stray_row() {
         &mut game,
         &mut input,
         &[RawEvent::MouseMove { x: 5.0, y: 5.0 }],
+    );
+    assert!(
+        input.stroke_by().is_some(),
+        "a nudged mouse changes nothing"
+    );
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::MouseDown {
+            button: aftermine_protocol::MouseButton::Left,
+            x: 5.0,
+            y: 5.0,
+        }],
     );
     assert_eq!(input.stroke_by(), None);
     assert_eq!(input.placing_kind(), Some(BARRICADE));

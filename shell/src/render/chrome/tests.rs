@@ -37,6 +37,13 @@ fn hud_copy_names_keys_only_on_desktop() {
             crate::platform::assert_mouseless_copy(hint);
         }
     }
+    // A controller names its own Menu button, since pad mode hides the
+    // top bar's.
+    for hands in crate::platform::pad_hands() {
+        let hint = concede_hint(hands);
+        assert!(hint.contains("{menu}"), "{hint}");
+        crate::platform::assert_touch_copy(&hint.replace("{menu}", "Menu"));
+    }
 }
 
 #[test]
@@ -182,6 +189,7 @@ fn the_top_bar_shows_income_before_anything_earns() {
             ui: 1.0,
         },
         &measure,
+        None,
     );
     assert_eq!(top.passive, "+0/min income");
 }

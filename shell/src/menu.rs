@@ -94,8 +94,9 @@ pub(crate) fn binding_hint(template: &str) -> String {
 
 /// The coaching tokens a controller's fixed menu layout has buttons for.
 /// Pad copy names the D-pad itself rather than one token per arrow.
-const PAD_TOKENS: [(&str, aftermine_protocol::PadButton); 7] = [
+const PAD_TOKENS: [(&str, aftermine_protocol::PadButton); 8] = [
     ("{confirm}", crate::pad::CONFIRM),
+    ("{menu}", aftermine_protocol::PadButton::Start),
     ("{back}", crate::pad::BACK),
     ("{delete}", crate::pad::DELETE),
     ("{prev_tab}", crate::pad::TABS.0),

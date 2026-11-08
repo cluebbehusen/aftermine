@@ -768,8 +768,7 @@ fn the_left_handed_preset_moves_the_verbs_and_reset_walks_home() {
 #[test]
 fn a_controllers_delete_button_never_unbinds_a_key() {
     // The controller's delete button presses X in other menus, but
-    // remapping takes a keyboard, even when the mouse moves in the same
-    // frame and the hands no longer read as a controller's.
+    // remapping takes a keyboard, whatever else the frame holds.
     let mut config = Config::default();
     let mut s = on(Tab::Controls, &config);
     focus(&mut s, Item::Binding(Action::Patrol));

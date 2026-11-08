@@ -679,3 +679,145 @@ fn a_ring_fits_between_the_top_bar_and_the_panel_wherever_it_opens() {
         }
     }
 }
+
+/// The skirmish with the human's first structure, a Foundry, selected.
+fn foundry_selected() -> (Game, aftermine_sim::BuildingId) {
+    let mut game = skirmish();
+    let human = game.presentation.human;
+    let foundry = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.player == human)
+        .unwrap()
+        .id;
+    game.presentation.selection.buildings.push(foundry);
+    (game, foundry)
+}
+
+#[test]
+fn pad_mode_leaves_out_what_buttons_do_and_moves_nothing_that_stays() {
+    let (game, _) = foundry_selected();
+    let mut pad = InputState::new();
+    pad.hud_pad = true;
+    let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
+    for (w, h) in [(1133.0, 744.0), (1280.0, 800.0)] {
+        let lay = |input: &InputState| {
+            layout(
+                &game.view(),
+                input,
+                &BindingMap::classic(),
+                env(w, h),
+                None,
+                &fixed,
+            )
+        };
+        let mouse = lay(&InputState::new()).layout;
+        let shown = lay(&pad);
+        let padded = shown.layout;
+        assert!(
+            mouse.card_count > 0 && mouse.army_strip.w > 0.0 && mouse.menu_button.w > 0.0,
+            "premise at {w}x{h}"
+        );
+        // Left out: the ring, the bumpers and Menu stand in for them.
+        assert_eq!(padded.card_count, 0);
+        assert_eq!(padded.panel_regions[1], zero);
+        assert_eq!(padded.army_strip, zero);
+        assert_eq!(padded.army_buttons, [None; 2]);
+        assert_eq!(padded.menu_button, zero);
+        assert_eq!(padded.queue_toggle, zero);
+        assert!(shown.geometry.army_strip.is_none());
+        // Everything that stays keeps its place.
+        assert_eq!(padded.panel_regions[0], mouse.panel_regions[0]);
+        assert_eq!(padded.panel_top, mouse.panel_top);
+        assert_eq!(padded.orders, mouse.orders);
+        assert_eq!(padded.queue_slots, mouse.queue_slots);
+        assert_eq!(padded.select_all, mouse.select_all);
+        assert_eq!(padded.roster_slots, mouse.roster_slots);
+        assert_eq!(padded.minimap, mouse.minimap);
+        assert_eq!(padded.group_column, mouse.group_column);
+        assert_eq!(padded.group_slots, mouse.group_slots);
+        assert_eq!(padded.pause_button, mouse.pause_button);
+        assert_eq!(padded.mode_ribbon, mouse.mode_ribbon);
+        // What stays, such as the toasts, places itself by the layout
+        // before anything was left out.
+        assert_eq!(shown.geometry.laid_out.panel_regions, mouse.panel_regions);
+        assert_eq!(shown.geometry.laid_out.army_strip, mouse.army_strip);
+    }
+}
+
+#[test]
+fn the_click_that_ends_pad_mode_lands_on_the_hud_pad_mode_drew() {
+    use aftermine_protocol::{MouseButton, RawEvent};
+    let (mut game, foundry) = foundry_selected();
+    let mouse = layout(
+        &game.view(),
+        &InputState::new(),
+        &BindingMap::classic(),
+        env(1280.0, 800.0),
+        None,
+        &fixed,
+    )
+    .layout;
+    let train = mouse.cards[..mouse.card_count]
+        .iter()
+        .find(|(_, action)| {
+            matches!(
+                action,
+                crate::panel::CardAction::Dispatch(crate::action::Action::TrainSlot(_))
+            )
+        })
+        .expect("the Foundry trains")
+        .0
+        .center();
+    let relayout = |game: &Game, input: &InputState| {
+        refresh(
+            &game.view(),
+            input,
+            &BindingMap::classic(),
+            env(1280.0, 800.0),
+            None,
+            &fixed,
+        );
+    };
+    let click = [
+        RawEvent::MouseDown {
+            button: MouseButton::Left,
+            x: train.x,
+            y: train.y,
+        },
+        RawEvent::MouseUp {
+            button: MouseButton::Left,
+            x: train.x,
+            y: train.y,
+        },
+    ];
+    let mut input = InputState::new();
+    input.hud_pad = true;
+    relayout(&game, &input);
+    crate::input::apply_events(
+        &mut game,
+        &mut input,
+        &BindingMap::classic(),
+        &click,
+        relayout,
+    );
+    assert!(game.pending.is_empty(), "no hidden card took the click");
+    input.settle_hud();
+    assert!(!input.hud_pad, "the click ended pad mode");
+    game.presentation.selection.buildings = vec![foundry];
+    relayout(&game, &input);
+    crate::input::apply_events(
+        &mut game,
+        &mut input,
+        &BindingMap::classic(),
+        &click,
+        relayout,
+    );
+    assert!(
+        game.pending
+            .iter()
+            .any(|pending| matches!(pending.command, aftermine_sim::Command::Train { .. })),
+        "the next click finds the card the mouse HUD draws"
+    );
+}

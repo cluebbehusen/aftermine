@@ -65,6 +65,9 @@ pub(crate) struct HudGeometry {
     pub(super) queue_flag: Option<chrome::QueueFlagLayout>,
     pub(super) performance: Option<performance::PerformanceLayout>,
     pub(super) ring: Option<radial::RingLayout>,
+    /// The hit regions as laid out before pad mode left any out; what
+    /// stays, such as the toasts, keeps its place by them.
+    pub(super) laid_out: LayoutModel,
 }
 
 /// Lays out the HUD for the scene as it stands, before anything draws.
@@ -77,11 +80,13 @@ pub(crate) fn layout(
     measure: Measure<'_>,
 ) -> Hud {
     let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
+    // In pad mode the HUD names the buttons of the controller in use.
+    let pad = input.hud_pad_family();
     // A spectator commands nothing: no bank, unit count, or idle badge;
     // the viewer's transport bar is its own chrome. The minimap stays
     // clickable.
     let top_bar = (!game.presentation.spectating())
-        .then(|| chrome::top_bar_layout(game, bindings, env, measure));
+        .then(|| chrome::top_bar_layout(game, bindings, env, measure, pad));
     let panel = crate::panel::build_for_input(game, bindings, input);
     let panel_layout = panel
         .as_ref()
@@ -185,7 +190,7 @@ pub(crate) fn layout(
             *published = Some((rect, slot));
         }
     }
-    let layout = LayoutModel {
+    let laid_out = LayoutModel {
         performance: performance
             .as_ref()
             .map_or(zero, super::performance::PerformanceLayout::panel),
@@ -248,20 +253,42 @@ pub(crate) fn layout(
         drone_slots: geometry.drone_slots,
         drone_count: geometry.drone_count,
     };
+    let shown = pad.is_none();
     Hud {
-        layout,
+        layout: if shown { laid_out } else { pad_mode(&laid_out) },
         panel,
         geometry: HudGeometry {
             top_bar,
             panel: panel_layout,
             group_column,
-            army_strip,
+            army_strip: army_strip.filter(|_| shown),
             ribbon,
-            queue_toggle,
+            queue_toggle: queue_toggle.filter(|_| shown),
             queue_flag,
             performance,
             ring,
+            laid_out,
         },
+    }
+}
+
+/// The hit regions pad mode publishes: the controls a controller's buttons
+/// stand in for are left out, namely the command cards and the build
+/// palette (the ring), the army strip (the bumpers), the menu button
+/// (Menu) and the QUEUE toggle (the left trigger). Everything else stands
+/// where it was laid out.
+fn pad_mode(layout: &LayoutModel) -> LayoutModel {
+    let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
+    let [info, _] = layout.panel_regions;
+    LayoutModel {
+        panel_regions: [info, zero],
+        cards: [(zero, crate::panel::CardAction::None); crate::panel::MAX_CARDS],
+        card_count: 0,
+        army_strip: zero,
+        army_buttons: [None; 2],
+        menu_button: zero,
+        queue_toggle: zero,
+        ..*layout
     }
 }
 

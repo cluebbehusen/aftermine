@@ -47,6 +47,11 @@ fn idle_badge_text(idle: usize, key: &str, keyless: bool) -> String {
 
 /// The concede banner's way to the menu.
 fn concede_hint(hands: crate::platform::Hands) -> &'static str {
+    // A controller opens the menu with its own Menu button; pad mode
+    // hides the top bar's.
+    if hands.pad.is_some() {
+        return "your team fights on | {menu} menu";
+    }
     match (hands.touch(), hands.keys) {
         (false, true) => "your team fights on | {back} menu",
         (false, false) => "your team fights on | click the menu button",
@@ -1440,7 +1445,7 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
         );
     }
     if let Some(steppers) = salvo {
-        draw_salvo_steppers(steppers, input, s);
+        draw_salvo_steppers(sprites, steppers, input, s);
     }
     if let Some(buttons) = patrol {
         draw_patrol_buttons(buttons, input, s);
@@ -1512,9 +1517,11 @@ fn draw_patrol_buttons(buttons: &PatrolButtons, input: &InputState, s: f32) {
     line_between(c + vec2(-arm, arm), c + vec2(arm, -arm), 2.5 * s, TEXT_BODY);
 }
 
-/// The salvo's minus and plus, faint where the size can go no further.
-fn draw_salvo_steppers(steppers: &SalvoSteppers, input: &InputState, s: f32) {
+/// The salvo's minus and plus, faint where the size can go no further. In
+/// pad mode the bumpers that step it stand in for the glyphs.
+fn draw_salvo_steppers(sprites: &Sprites, steppers: &SalvoSteppers, input: &InputState, s: f32) {
     let hover = hover_point(input);
+    let pad = input.hud_pad_family();
     for (rect, enabled, plus) in [
         (steppers.less, steppers.less_enabled, false),
         (steppers.more, steppers.more_enabled, true),
@@ -1545,6 +1552,20 @@ fn draw_salvo_steppers(steppers: &SalvoSteppers, input: &InputState, s: f32) {
             crate::theme::TEXT_DISABLED
         };
         let (c, arm) = (rect.center(), 7.0 * s);
+        if let Some(family) = pad {
+            use aftermine_protocol::PadButton;
+            let button = if plus {
+                PadButton::RightShoulder
+            } else {
+                PadButton::LeftShoulder
+            };
+            let size = crate::theme::Type::Body.at(s);
+            let icon = crate::hint_line::icon_width(size);
+            let baseline = c.y + size * 0.35;
+            let icon_at = crate::pad::button_icon(family, button);
+            crate::hint_line::draw_icon(sprites, icon_at, c.x - icon * 0.5, baseline, size, ink);
+            continue;
+        }
         line_between(c - vec2(arm, 0.0), c + vec2(arm, 0.0), 2.5 * s, ink);
         if plus {
             line_between(c - vec2(0.0, arm), c + vec2(0.0, arm), 2.5 * s, ink);
@@ -1632,6 +1653,9 @@ pub(crate) struct TopBarLayout {
     alert: Option<String>,
     status: String,
     paused: bool,
+    /// In pad mode, whose buttons the badges and the paused status name;
+    /// the menu button then stays undrawn, Menu standing in for it.
+    pad: Option<aftermine_protocol::PadFamily>,
 }
 
 impl TopBarLayout {
@@ -1647,12 +1671,15 @@ impl TopBarLayout {
 }
 
 /// Lays out the top bar: the bank, income, unit count, idle and alert
-/// badges, and the clock with the pause and menu buttons.
+/// badges, and the clock with the pause and menu buttons. In pad mode
+/// (`pad`) the badges and the paused status name the controller's
+/// buttons instead of keys, each icon taking room beside its words.
 pub(super) fn top_bar_layout(
     game: &crate::game::Scene<'_>,
     bindings: &crate::action::BindingMap,
     env: super::hud::HudEnv,
     measure: super::hud::Measure<'_>,
+    pad: Option<aftermine_protocol::PadFamily>,
 ) -> TopBarLayout {
     use super::hud::Face;
     use crate::action::{Action, BindingMap};
@@ -1673,7 +1700,7 @@ pub(super) fn top_bar_layout(
         .count();
     let scrap = scrap.to_string();
     let units = my_units.to_string();
-    let keyless = !crate::platform::hands().keys;
+    let keyless = pad.is_some() || !crate::platform::hands().keys;
     let idle = crate::input::idle_harvesters(game).len();
     let idle = (idle > 0).then(|| idle_badge_text(idle, &label(Action::CycleIdleWorker), keyless));
     // Alerts age out in a few seconds and hold while paused, so the
@@ -1692,22 +1719,33 @@ pub(super) fn top_bar_layout(
     } else {
         crate::clock_label::ticks(game.state.current_tick())
     };
+    // In pad mode a badge's words are followed by a space and its icon.
+    let with_icon = |face, text: &str, size: f32| match pad {
+        Some(_) => measure(face, &format!("{text} "), size) + crate::hint_line::icon_width(size),
+        None => measure(face, text, size),
+    };
+    let body = crate::theme::Type::Body.at(s);
+    let small = crate::theme::Type::Small.at(s);
     let bar = crate::layout::top_bar(
         env.viewport.x,
         s,
         crate::platform::PLATFORM.touch_only(),
         crate::layout::TopBarText {
             scrap: measure(Face::Display, &scrap, crate::theme::Type::Heading.at(s)),
-            passive: measure(Face::Body, &passive, crate::theme::Type::Body.at(s)),
-            units_label: measure(Face::Display, "UNITS", crate::theme::Type::Small.at(s)),
+            passive: measure(Face::Body, &passive, body),
+            units_label: measure(Face::Display, "UNITS", small),
             units: measure(Face::Display, &units, crate::theme::Type::Heading.at(s)),
             idle: idle
                 .as_deref()
-                .map(|text| measure(Face::Body, text, crate::theme::Type::Body.at(s))),
+                .map(|text| with_icon(Face::Body, text, body)),
             alert: alert
                 .as_deref()
-                .map(|text| measure(Face::Body, text, crate::theme::Type::Body.at(s))),
-            status: measure(Face::Display, &status, crate::theme::Type::Small.at(s)),
+                .map(|text| with_icon(Face::Body, text, body)),
+            status: if game.clock.paused {
+                with_icon(Face::Display, &status, small)
+            } else {
+                measure(Face::Display, &status, small)
+            },
         },
     );
     TopBarLayout {
@@ -1720,10 +1758,12 @@ pub(super) fn top_bar_layout(
         alert,
         status,
         paused: game.clock.paused,
+        pad,
     }
 }
 
-fn draw_top_bar(top: &TopBarLayout, s: f32) {
+fn draw_top_bar(top: &TopBarLayout, sprites: &Sprites, s: f32) {
+    use aftermine_protocol::PadButton;
     let TopBarLayout {
         bar,
         width,
@@ -1734,7 +1774,23 @@ fn draw_top_bar(top: &TopBarLayout, s: f32) {
         alert,
         status,
         paused,
+        pad,
     } = top;
+    // In pad mode, the button that does what a badge does follows its
+    // words.
+    let icon_after = |x: f32, size: f32, measured: f32, button, tint| {
+        if let Some(family) = pad {
+            let x = x + measured + measure_text(" ", None, numeric::font_size(size), 1.0).width;
+            crate::hint_line::draw_icon(
+                sprites,
+                crate::pad::button_icon(*family, button),
+                x,
+                26.0 * s,
+                size,
+                tint,
+            );
+        }
+    };
     draw_rectangle(0.0, 0.0, *width, crate::layout::TOP_BAR_H * s, PANEL);
     crate::typography::draw(
         "SCRAP",
@@ -1771,35 +1827,37 @@ fn draw_top_bar(top: &TopBarLayout, s: f32) {
         crate::theme::Type::Heading.at(s),
         TEXT_PRIMARY,
     );
+    let body = crate::theme::Type::Body.at(s);
+    let body_width = |text: &str| measure_text(text, None, numeric::font_size(body), 1.0).width;
     if let Some(text) = idle {
         fill_rect(bar.idle_badge, crate::theme::BADGE);
-        draw_text(
-            text,
-            bar.idle_badge.x + 9.0 * s,
-            26.0 * s,
-            crate::theme::Type::Body.at(s),
-            SCRAP_COLOR,
-        );
+        let x = bar.idle_badge.x + 9.0 * s;
+        draw_text(text, x, 26.0 * s, body, SCRAP_COLOR);
+        icon_after(x, body, body_width(text), PadButton::DpadDown, SCRAP_COLOR);
     }
     if let Some(text) = alert {
         fill_rect(bar.alert_badge, crate::theme::BADGE);
-        draw_text(
-            text,
-            bar.alert_badge.x + 9.0 * s,
-            26.0 * s,
-            crate::theme::Type::Body.at(s),
-            crate::theme::TEXT_DANGER,
+        let x = bar.alert_badge.x + 9.0 * s;
+        draw_text(text, x, 26.0 * s, body, crate::theme::TEXT_DANGER);
+        let tint = crate::theme::TEXT_DANGER;
+        icon_after(x, body, body_width(text), PadButton::DpadLeft, tint);
+    }
+    if pad.is_none() {
+        draw_menu_button(bar.menu_button, s);
+    }
+    draw_pause_button(bar.pause_button, *paused, s);
+    let small = crate::theme::Type::Small.at(s);
+    crate::typography::draw(status, bar.status_x, 26.0 * s, small, TEXT_PRIMARY);
+    if *paused {
+        let measured = crate::typography::measure(status, small).width;
+        icon_after(
+            bar.status_x,
+            small,
+            measured,
+            PadButton::Select,
+            TEXT_PRIMARY,
         );
     }
-    draw_menu_button(bar.menu_button, s);
-    draw_pause_button(bar.pause_button, *paused, s);
-    crate::typography::draw(
-        status,
-        bar.status_x,
-        26.0 * s,
-        crate::theme::Type::Small.at(s),
-        TEXT_PRIMARY,
-    );
 }
 
 /// Draws the HUD the layout pass placed: the top bar, the queue flag, the
@@ -1815,7 +1873,7 @@ pub(crate) fn draw_hud(
 ) {
     let s = ui_scale();
     if let Some(top_bar) = &hud.top_bar {
-        draw_top_bar(top_bar, s);
+        draw_top_bar(top_bar, sprites, s);
     }
     if let Some(flag) = &hud.queue_flag {
         draw_queue_flag(flag, s);
@@ -1841,7 +1899,8 @@ pub(crate) fn draw_hud(
     if let (Some(view), Some(layout)) = (performance, &hud.performance) {
         super::performance::draw(view, layout);
     }
-    let layout = game.presentation.layout.get();
+    // Toasts keep their places whatever pad mode leaves out.
+    let layout = hud.laid_out;
     let panel_regions = layout.panel_regions;
     let orders_dock = layout.orders;
     let queue_toggle = layout.queue_toggle;

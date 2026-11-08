@@ -254,7 +254,11 @@ fn chrome_over_the_reticle_hides_the_ground_it_would_paint() {
 #[test]
 fn another_pointer_or_a_lost_pad_ends_the_sweep() {
     for ending in [
-        RawEvent::MouseMove { x: 5.0, y: 5.0 },
+        RawEvent::MouseDown {
+            button: aftermine_protocol::MouseButton::Left,
+            x: 5.0,
+            y: 5.0,
+        },
         RawEvent::PadDisconnected { pad: PAD },
     ] {
         let mut game = row_scene();

@@ -226,7 +226,20 @@ fn it_closes_when_the_dock_empties_the_selection_changes_or_another_hand_takes_o
         &mut input,
         &[RawEvent::MouseMove { x: 10.0, y: 10.0 }],
     );
-    assert!(input.dock.is_none(), "the mouse took over");
+    assert!(
+        input.dock.is_some(),
+        "a mouse that only moves leaves it open"
+    );
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::MouseDown {
+            button: aftermine_protocol::MouseButton::Left,
+            x: 10.0,
+            y: 10.0,
+        }],
+    );
+    assert!(input.dock.is_none(), "a click took over");
 }
 
 #[test]

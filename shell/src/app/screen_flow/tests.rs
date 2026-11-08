@@ -2,6 +2,11 @@ use super::*;
 
 /// A finished lesson's card, laid out headless at 1280x800.
 fn finished_card() -> CardLayout {
+    finished_card_for(None)
+}
+
+/// A finished lesson's card, in pad mode while `pad` names a controller.
+fn finished_card_for(pad: Option<aftermine_protocol::PadFamily>) -> CardLayout {
     let game = Tutorial::begin_at(Lesson::Command, vec2(1280.0, 800.0)).unwrap();
     let tutorial = game
         .tutorial
@@ -21,7 +26,36 @@ fn finished_card() -> CardLayout {
             ui: 1.0,
         },
         &|_, text, size| text.chars().count() as f32 * size * 0.5,
+        pad,
     )
+}
+
+#[test]
+fn in_pad_mode_a_and_b_press_a_finished_lessons_buttons_and_nothing_else() {
+    use aftermine_protocol::{PadButton, PadFamily};
+    let down = |button| RawEvent::PadDown { pad: 0, button };
+    let up = |button| RawEvent::PadUp { pad: 0, button };
+    let card = finished_card_for(Some(PadFamily::Xbox));
+    let mut events = vec![
+        down(PadButton::North),
+        down(PadButton::East),
+        up(PadButton::East),
+        down(PadButton::South),
+        up(PadButton::North),
+    ];
+    assert_eq!(
+        filter_card_pad(&mut events, &card),
+        Some(CardButton::Lessons),
+        "the first press names the button"
+    );
+    assert_eq!(
+        events,
+        [down(PadButton::North), up(PadButton::North)],
+        "A and B and their releases never reach the match"
+    );
+    let mut events = vec![down(PadButton::South), up(PadButton::South)];
+    assert_eq!(filter_card_pad(&mut events, &finished_card()), None);
+    assert_eq!(events.len(), 2, "outside pad mode the match keeps A");
 }
 
 #[test]
@@ -151,6 +185,7 @@ fn the_tip_card_closes_by_mouse_and_by_finger_and_keeps_its_other_presses() {
             ui: 1.0,
         },
         &|_, text, size| text.chars().count() as f32 * size * 0.5,
+        None,
     );
     let close = card.buttons[0].0;
     let mouse = |at: Vec2| {
