@@ -224,7 +224,7 @@ pub(crate) fn layout(
         queue_toggle: queue_toggle.unwrap_or(zero),
         queue_flag: queue_flag
             .as_ref()
-            .map_or(zero, chrome::QueueFlagLayout::tab),
+            .map_or([zero; 2], chrome::QueueFlagLayout::regions),
         ghost_confirm: ghost_controls.map_or(zero, |controls| controls.confirm),
         ghost_cancel: ghost_controls.map_or(zero, |controls| controls.cancel),
         ghost_handle: ghost_controls.map_or(zero, |controls| controls.handle),

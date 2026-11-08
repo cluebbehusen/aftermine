@@ -863,9 +863,9 @@ pub(super) fn queue_flag_layout(
 }
 
 impl QueueFlagLayout {
-    /// The tab, which owns its pixels against presses.
-    pub(crate) fn tab(&self) -> Rect {
-        self.tab
+    /// The rule and the tab, which own their pixels against presses.
+    pub(crate) fn regions(&self) -> [Rect; 2] {
+        [self.rule, self.tab]
     }
 }
 

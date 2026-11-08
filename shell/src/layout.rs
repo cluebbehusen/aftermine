@@ -61,9 +61,10 @@ pub struct LayoutModel {
     pub salvo_more: Rect,
     /// The QUEUE toggle beside the ribbon, on touch-only builds.
     pub queue_toggle: Rect,
-    /// The queue flag's tab under the top bar while orders queue. It takes
-    /// no press, but swallows one so nothing lands on the world it hides.
-    pub queue_flag: Rect,
+    /// The queue flag under the top bar while orders queue: its rule and
+    /// its tab. They take no press, but swallow one so nothing lands on the
+    /// world they hide.
+    pub queue_flag: [Rect; 2],
     /// The touch ghost's check mark, which builds it; zero-sized without
     /// a ghost.
     pub ghost_confirm: Rect,
@@ -121,7 +122,7 @@ impl Default for LayoutModel {
             salvo_less: Rect::new(0.0, 0.0, 0.0, 0.0),
             salvo_more: Rect::new(0.0, 0.0, 0.0, 0.0),
             queue_toggle: Rect::new(0.0, 0.0, 0.0, 0.0),
-            queue_flag: Rect::new(0.0, 0.0, 0.0, 0.0),
+            queue_flag: [Rect::new(0.0, 0.0, 0.0, 0.0); 2],
             ghost_confirm: Rect::new(0.0, 0.0, 0.0, 0.0),
             ghost_cancel: Rect::new(0.0, 0.0, 0.0, 0.0),
             ghost_handle: Rect::new(0.0, 0.0, 0.0, 0.0),
@@ -533,7 +534,10 @@ impl LayoutModel {
             || (self.drones.w > 0.0 && self.drones.contains(p))
             || (self.mode_ribbon.w > 0.0 && self.mode_ribbon.contains(p))
             || (self.queue_toggle.w > 0.0 && self.queue_toggle.contains(p))
-            || (self.queue_flag.w > 0.0 && self.queue_flag.contains(p))
+            || self
+                .queue_flag
+                .iter()
+                .any(|rect| rect.w > 0.0 && rect.contains(p))
             || [self.ghost_confirm, self.ghost_cancel, self.ghost_handle]
                 .iter()
                 .any(|rect| rect.w > 0.0 && rect.contains(p))

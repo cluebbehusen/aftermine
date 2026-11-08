@@ -150,11 +150,16 @@ fn an_armed_mode_ribbon_owns_its_world_pixels() {
         m.chrome_owns(m.queue_toggle.center()),
         "QUEUE is chrome too"
     );
-    m.queue_flag = Rect::new(530.0, 43.0, 130.0, 28.0);
-    assert!(
-        m.chrome_owns(m.queue_flag.center()),
-        "so is the queue flag's tab, over the world it hides"
-    );
+    m.queue_flag = [
+        Rect::new(0.0, 40.0, 1280.0, 3.0),
+        Rect::new(530.0, 43.0, 130.0, 28.0),
+    ];
+    for rect in m.queue_flag {
+        assert!(
+            m.chrome_owns(rect.center()),
+            "so is the queue flag, over the world it hides"
+        );
+    }
     assert!(
         !m.chrome_owns(vec2(219.0, 660.0)),
         "beside the ribbon remains battlefield"
