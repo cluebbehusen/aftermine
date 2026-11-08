@@ -4642,6 +4642,36 @@ fn the_hud_stands_in_pad_mode_while_a_controller_is_in_use_and_always_on_a_tv() 
 }
 
 #[test]
+fn a_controller_taking_over_lets_go_of_the_touch_queue_toggle_pad_mode_hides() {
+    use aftermine_protocol::{PadButton, PadFamily, Stick};
+    let connect = RawEvent::PadConnected {
+        pad: 1,
+        family: PadFamily::Xbox,
+    };
+    let takeovers = [
+        RawEvent::PadDown {
+            pad: 1,
+            button: PadButton::South,
+        },
+        RawEvent::PadStick {
+            pad: 1,
+            stick: Stick::Left,
+            x: 0.5,
+            y: 0.0,
+        },
+    ];
+    for takeover in takeovers {
+        let mut input = InputState::new();
+        track_hands(&mut input, &connect, false);
+        input.queue_toggle = QueueToggle::Locked;
+        assert!(input.queue_held());
+        track_hands(&mut input, &takeover, false);
+        assert_eq!(input.queue_toggle, QueueToggle::Off, "{takeover:?}");
+        assert!(!input.queue_held(), "{takeover:?}");
+    }
+}
+
+#[test]
 fn a_controller_is_the_hands_in_use_from_its_press_until_a_key_click_or_tap() {
     use aftermine_protocol::{PadButton, PadFamily, Stick};
     let mut input = InputState::new();

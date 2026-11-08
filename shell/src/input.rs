@@ -244,7 +244,7 @@ pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
                 input.pad_in_use = None;
             }
         }
-        RawEvent::PadDown { pad, .. } => input.pad_in_use = Some((pad, input.pad_family(pad))),
+        RawEvent::PadDown { pad, .. } => take_pad(input, pad),
         RawEvent::PadStick { pad, stick, x, y } => {
             let held = input.sticks.entry(pad).or_default();
             match stick {
@@ -255,11 +255,19 @@ pub fn track_hands(input: &mut InputState, event: &RawEvent, text_entry: bool) {
                 input.sticks.remove(&pad);
             }
             if (x, y) != (0.0, 0.0) {
-                input.pad_in_use = Some((pad, input.pad_family(pad)));
+                take_pad(input, pad);
             }
         }
         _ => {}
     }
+}
+
+/// A controller press or push: the controller is the hands in use. Pad
+/// mode hides the touch QUEUE toggle, so a toggle left latched or locked
+/// lets go rather than queue every press with no way to turn it off.
+fn take_pad(input: &mut InputState, pad: u64) {
+    input.pad_in_use = Some((pad, input.pad_family(pad)));
+    input.queue_toggle = QueueToggle::Off;
 }
 
 /// Where a touch placement's ghost sits until a tap on it confirms.
