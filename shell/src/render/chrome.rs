@@ -1729,7 +1729,7 @@ pub(super) fn top_bar_layout(
     let bar = crate::layout::top_bar(
         env.viewport.x,
         s,
-        crate::platform::PLATFORM.touch_only(),
+        crate::platform::PLATFORM,
         crate::layout::TopBarText {
             scrap: measure(Face::Display, &scrap, crate::theme::Type::Heading.at(s)),
             passive: measure(Face::Body, &passive, body),
