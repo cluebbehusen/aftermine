@@ -1,5 +1,6 @@
 use super::*;
 use crate::saves::{RecordKind, Unavailable};
+use aftermine_protocol::PadButton;
 use macroquad::prelude::vec2;
 
 fn entry(name: &str, compatible: bool, kind: RecordKind, path: std::path::PathBuf) -> ReplayEntry {
@@ -168,9 +169,60 @@ fn a_remote_always_hears_how_to_reach_the_tabs() {
     crate::platform::set_hands(crate::platform::Hands::BUILD);
     assert_eq!(
         coaching.as_deref(),
-        Some("{confirm} to watch | Swipe up for tabs")
+        Some("{confirm} to watch | Swipe right to delete | Swipe up for tabs")
     );
     assert_eq!(empty.as_deref(), Some("Swipe up for tabs"));
+}
+
+#[test]
+fn a_remote_swipes_right_onto_a_rows_delete_and_a_click_asks() {
+    crate::platform::set_hands(crate::platform::Hands {
+        pad: Some(aftermine_protocol::PadFamily::Remote),
+        ..crate::platform::ALL_HANDS[3]
+    });
+    let pad = |button| {
+        crate::pad::menu_keys(
+            &[
+                RawEvent::PadDown { pad: 0, button },
+                RawEvent::PadUp { pad: 0, button },
+            ],
+            true,
+        )
+    };
+    let record = |name: &str| {
+        entry(
+            name,
+            true,
+            RecordKind::Match,
+            format!("/nowhere/{name}.json").into(),
+        )
+    };
+    let mut shelf = Shelf::from_entries(vec![record("a"), record("b")]);
+    drive_events(&mut shelf, &pad(PadButton::DpadRight));
+    let on_delete = (shelf.menu.on_action(), shelf.coaching());
+    drive_events(&mut shelf, &pad(PadButton::DpadLeft));
+    let back_on_row = shelf.menu.on_action();
+    let watched = drive_events(&mut shelf, &pad(crate::pad::CONFIRM));
+    drive_events(&mut shelf, &pad(PadButton::DpadRight));
+    drive_events(&mut shelf, &pad(PadButton::DpadDown));
+    let moved = (shelf.menu.on_action(), shelf.menu.selected);
+    drive_events(&mut shelf, &pad(PadButton::DpadRight));
+    let asked = drive_events(&mut shelf, &pad(crate::pad::CONFIRM));
+    let question = shelf.view();
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+    assert_eq!(
+        on_delete,
+        (
+            true,
+            Some("{confirm} to delete | Swipe up for tabs".to_string())
+        )
+    );
+    assert!(!back_on_row, "left goes back to the row");
+    assert_eq!(watched, Out::Watch("/nowhere/a.json".into()));
+    assert_eq!(moved, (false, 1), "down moves to the next row itself");
+    assert_eq!(asked, Out::Stay, "a click on Delete only asks");
+    assert_eq!(question.title, "DELETE THIS REPLAY?");
+    assert_eq!(question.selected, 0, "Cancel waits under the cursor");
 }
 
 #[test]

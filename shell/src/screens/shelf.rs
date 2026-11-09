@@ -354,7 +354,7 @@ impl Shelf {
             .menu
             .value()
             .and_then(|i| self.entries.get(*i))
-            .map(|entry| entry.hint(hands))
+            .map(|entry| entry.hint(hands, self.menu.on_action()))
             .filter(|hint| !hint.is_empty());
         if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
             // An empty tab or a damaged record still leaves the tabs to reach.

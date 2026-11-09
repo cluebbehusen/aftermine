@@ -5,17 +5,17 @@ use crate::game::GameReplay;
 fn shelf_hints_offer_only_the_gestures_the_hands_in_use_have() {
     use crate::platform::{ALL_HANDS, assert_copy_fits};
     assert_eq!(
-        entry_hint(Some(("watches", "watch")), ALL_HANDS[0]),
+        entry_hint(Some(("watches", "watch")), ALL_HANDS[0], false),
         "{confirm} watches | {delete} deletes"
     );
     for hands in ALL_HANDS {
         for action in [("watches", "watch"), ("loads paused", "load paused")] {
-            let hint = entry_hint(Some(action), hands);
+            let hint = entry_hint(Some(action), hands, false);
             assert_copy_fits(hands, &hint);
             // Without a key, the row's own Delete button says it.
             assert_eq!(hint.contains("{delete}"), hands.keys, "{hint}");
         }
-        let hint = entry_hint(None, hands);
+        let hint = entry_hint(None, hands, false);
         assert_eq!(hint.is_empty(), !hands.keys, "{hint}");
     }
 }
@@ -419,9 +419,12 @@ fn a_chip_names_only_the_kinds_its_tab_does_not_imply() {
 fn shelf_hints_name_the_controllers_buttons_while_one_is_in_use() {
     for hands in crate::platform::pad_hands() {
         for (key_action, action) in [("watches", "watch"), ("loads paused", "load paused")] {
-            let hint = entry_hint(Some((key_action, action)), hands);
+            let hint = entry_hint(Some((key_action, action)), hands, false);
             if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
-                assert_eq!(hint, format!("{{confirm}} to {action}"));
+                assert_eq!(
+                    hint,
+                    format!("{{confirm}} to {action} | Swipe right to delete")
+                );
             } else {
                 assert_eq!(
                     hint,
@@ -434,13 +437,45 @@ fn shelf_hints_name_the_controllers_buttons_while_one_is_in_use() {
 }
 
 #[test]
-fn only_a_remote_has_no_delete_to_offer() {
+fn a_remote_swipes_onto_a_rows_delete_where_a_controller_presses_its_own() {
     for hands in crate::platform::pad_hands() {
         let expected = if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
-            ""
+            "Swipe right to delete"
         } else {
             "{delete} deletes"
         };
-        assert_eq!(entry_hint(None, hands), expected);
+        assert_eq!(entry_hint(None, hands, false), expected);
+    }
+}
+
+#[test]
+fn on_a_rows_delete_the_hint_says_confirming_deletes() {
+    let entry = |problem| ReplayEntry {
+        path: PathBuf::from("record.json"),
+        title: "Long Neck".to_string(),
+        map: None,
+        format: "1v1".to_string(),
+        clock: "12:00".to_string(),
+        saved_secs: 0,
+        problem,
+        kind: RecordKind::Save,
+    };
+    for hands in crate::platform::ALL_HANDS
+        .into_iter()
+        .chain(crate::platform::pad_hands())
+    {
+        for problem in [None, Some(Unavailable::Unreadable)] {
+            let hint = entry(problem).hint(hands, true);
+            let expected = if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
+                "{confirm} to delete"
+            } else if hands.pad.is_some() || (hands.keys && !hands.touch()) {
+                "{confirm} deletes"
+            } else if hands.touch() {
+                "tap to delete"
+            } else {
+                "click to delete"
+            };
+            assert_eq!(hint, expected, "{hands:?}");
+        }
     }
 }
