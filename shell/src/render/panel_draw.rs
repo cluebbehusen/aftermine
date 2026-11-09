@@ -324,8 +324,8 @@ fn card_title_lines(title: &str, measure: impl Fn(&str) -> f32, width: f32) -> V
 }
 
 /// The title row's select-all button, framed like a strip chip. In pad
-/// mode (`pad`) the controller's RT stands in for its word, so the count
-/// reads beside the button that presses it, inside the same rect.
+/// mode (`pad`) the controller's RT leads its words, so they read beside
+/// the button that presses it, inside the same rect.
 fn draw_select_all(
     sprites: &Sprites,
     all: &crate::panel::SelectAll,
@@ -358,12 +358,12 @@ fn draw_select_all(
         draw_text(&label, x, baseline, size, TEXT_PRIMARY);
         return;
     };
-    let count = format!(" {}", all.owned);
-    let width = crate::hint_line::icon_width(size) + measure(&count);
+    let label = format!(" {}", all.label());
+    let width = crate::hint_line::icon_width(size) + measure(&label);
     let x = rect.x + (rect.w - width) * 0.5;
     let icon = crate::pad::button_icon(family, aftermine_protocol::PadButton::RightTrigger);
     let x = x + crate::hint_line::draw_icon(sprites, icon, x, baseline, size, TEXT_PRIMARY);
-    draw_text(&count, x, baseline, size, TEXT_PRIMARY);
+    draw_text(&label, x, baseline, size, TEXT_PRIMARY);
 }
 
 /// Packs every visible queue chip above the command band: a single

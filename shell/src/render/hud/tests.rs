@@ -716,17 +716,23 @@ fn pad_mode_leaves_out_what_buttons_do_and_moves_nothing_that_stays() {
         let shown = lay(&pad);
         let padded = shown.layout;
         assert!(
-            mouse.card_count > 0 && mouse.army_strip.w > 0.0 && mouse.menu_button.w > 0.0,
+            mouse.card_count > 0
+                && mouse.army_strip.w > 0.0
+                && mouse.group_column.w > 0.0
+                && mouse.menu_button.w > 0.0,
             "premise at {w}x{h}"
         );
-        // Left out: the ring, the bumpers and Menu stand in for them.
+        // Left out: the rings, the bumpers and Menu stand in for them.
         assert_eq!(padded.card_count, 0);
         assert_eq!(padded.panel_regions[1], zero);
         assert_eq!(padded.army_strip, zero);
         assert_eq!(padded.army_buttons, [None; 2]);
+        assert_eq!(padded.group_column, zero);
+        assert_eq!(padded.group_slots, [None; crate::action::CONTROL_GROUPS]);
         assert_eq!(padded.menu_button, zero);
         assert_eq!(padded.queue_toggle, zero);
         assert!(shown.geometry.army_strip.is_none());
+        assert!(shown.geometry.group_column.is_none());
         // Everything that stays keeps its place.
         assert_eq!(padded.panel_regions[0], mouse.panel_regions[0]);
         assert_eq!(padded.panel_top, mouse.panel_top);
@@ -735,14 +741,13 @@ fn pad_mode_leaves_out_what_buttons_do_and_moves_nothing_that_stays() {
         assert_eq!(padded.select_all, mouse.select_all);
         assert_eq!(padded.roster_slots, mouse.roster_slots);
         assert_eq!(padded.minimap, mouse.minimap);
-        assert_eq!(padded.group_column, mouse.group_column);
-        assert_eq!(padded.group_slots, mouse.group_slots);
         assert_eq!(padded.pause_button, mouse.pause_button);
         assert_eq!(padded.mode_ribbon, mouse.mode_ribbon);
         // What stays, such as the toasts, places itself by the layout
         // before anything was left out.
         assert_eq!(shown.geometry.laid_out.panel_regions, mouse.panel_regions);
         assert_eq!(shown.geometry.laid_out.army_strip, mouse.army_strip);
+        assert_eq!(shown.geometry.laid_out.group_column, mouse.group_column);
     }
 }
 
