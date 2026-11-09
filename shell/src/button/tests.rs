@@ -34,6 +34,36 @@ fn the_back_button_claims_its_presses_and_passes_the_rest() {
 }
 
 #[test]
+fn the_back_button_takes_no_press_in_pad_mode() {
+    let mut back = BackButton::default();
+    let p = corner_slot(0, crate::render::ui_scale()).center();
+    let down = RawEvent::TouchDown {
+        id: 1,
+        x: p.x,
+        y: p.y,
+    };
+    let up = RawEvent::TouchUp {
+        id: 1,
+        x: p.x,
+        y: p.y,
+    };
+    assert_eq!(back.route(&[down]), (false, Vec::new()), "armed");
+    for hands in crate::platform::pad_hands() {
+        crate::platform::set_hands(hands);
+        for touch in [false, true] {
+            let press = press_back(touch);
+            assert_eq!(back.route(&press), (false, press.clone()), "{hands:?}");
+        }
+    }
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+    assert_eq!(
+        back.route(&[up]),
+        (false, vec![up]),
+        "pad mode disarmed the press made before it"
+    );
+}
+
+#[test]
 fn corner_slots_are_fingertip_sized_and_never_overlap() {
     for s in [0.75, 1.0, 1.5] {
         let first = corner_slot(0, s);

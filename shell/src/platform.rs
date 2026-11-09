@@ -101,6 +101,15 @@ impl Hands {
     pub fn hover_shown(self) -> bool {
         self.pad.is_none()
     }
+
+    /// Whether screens on `platform` stand in pad mode, leaving out the
+    /// buttons only a pointer can press because a controller's buttons do
+    /// what they do: while a controller is in use, and always on a TV,
+    /// which has no pointer. A click, tap or key leaves it; a mouse that
+    /// only moves does not.
+    pub fn pad_mode(self, platform: Platform) -> bool {
+        self.pad.is_some() || platform == Platform::Tv
+    }
 }
 
 thread_local! {
@@ -117,6 +126,11 @@ pub(crate) fn set_hands(hands: Hands) {
 /// This frame's hands.
 pub(crate) fn hands() -> Hands {
     HANDS.with(Cell::get)
+}
+
+/// Whether this frame's screens stand in pad mode; see [`Hands::pad_mode`].
+pub(crate) fn pad_mode() -> bool {
+    hands().pad_mode(PLATFORM)
 }
 
 /// Whether `rect` is lit as hovered by the pointer at `mouse` this frame.
