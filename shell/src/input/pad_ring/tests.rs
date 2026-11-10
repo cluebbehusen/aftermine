@@ -994,6 +994,9 @@ fn a_ring_for_one_kind_never_needs_more() {
     use crate::radial::{Branch, MAX_SLICES, Pick};
     let scenes = UnitKind::ALL
         .iter()
+        // A scenario cannot start with a drone: one exists only with the
+        // carrier it docks on.
+        .filter(|kind| !kind.stats().docks())
         .map(|kind| (format!("{kind:?}"), lone(Some(*kind), None)))
         .chain(
             BuildingKind::ALL

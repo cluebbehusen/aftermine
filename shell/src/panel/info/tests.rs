@@ -18,7 +18,12 @@ fn selected(kind: UnitKind, foreign: bool) -> Panel {
 
 #[test]
 fn every_unit_exposes_health_sight_and_its_weapon_reload() {
-    for kind in UnitKind::ALL {
+    // A scenario cannot start with a drone: one exists only with the carrier
+    // it docks on.
+    for kind in UnitKind::ALL
+        .into_iter()
+        .filter(|kind| !kind.stats().docks())
+    {
         let panel = selected(kind, false);
         assert_eq!(
             panel.info.health.map(|health| (health.hp, health.max_hp)),

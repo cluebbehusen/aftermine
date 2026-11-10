@@ -355,8 +355,9 @@ pub enum ScenarioError {
     /// A Foundry footprint hangs off the map or covers rock/scrap.
     #[error("player {0}'s foundry at {1} does not fit on open ground")]
     BadFootprint(PlayerId, TilePos),
-    /// A starting unit is misplaced or mis-owned.
-    #[error("starting unit #{0} is invalid (owner in range? tile passable?)")]
+    /// A starting unit is misplaced, mis-owned, or a drone, which exists
+    /// only with the carrier it docks on.
+    #[error("starting unit #{0} is invalid (owner in range? tile passable? not a drone?)")]
     BadUnit(usize),
     /// A pre-built structure is misplaced, mis-owned, or an assembly cradle,
     /// which exists only while workers raise it.
@@ -505,7 +506,7 @@ impl Scenario {
                 }
                 crate::stats::Domain::Air => state.passable_for(stats.domain, tile),
             };
-            if (spec.player as usize) >= self.players.len() || !standable {
+            if (spec.player as usize) >= self.players.len() || !standable || stats.docks() {
                 return Err(ScenarioError::BadUnit(index));
             }
             state.spawn_unit(PlayerId(spec.player), spec.kind, tile.center());
