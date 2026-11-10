@@ -741,6 +741,34 @@ fn escorts_follow_the_escorted_unit_aboard_a_transport() {
 }
 
 #[test]
+fn a_skyhook_escort_keeps_a_motion_the_validator_accepts() {
+    // A Skyhook's escort steps can overshoot its speed on one axis by a raw
+    // unit or two, which a save would then refuse.
+    let mut state = build(
+        vec![
+            unit(0, UnitKind::Sentinel, 6, 10),
+            unit(0, UnitKind::Skyhook, 8, 12),
+        ],
+        0,
+    );
+    let [lead, sling] = ids(&state)[..] else {
+        unreachable!()
+    };
+    state.tick(&[cmd(0, accompany(vec![sling], lead, false))]);
+    let mut refused = 0;
+    for leg in 0..24 {
+        let (x, y) = [(34, 4), (5, 16), (34, 16), (5, 4)][leg % 4];
+        state.tick(&[cmd(0, run_to(vec![lead], x, y))]);
+        for _ in 0..250 {
+            state.tick(&[]);
+            refused += usize::from(state.validate_invariants().is_err());
+        }
+    }
+    assert!(escorting(&state, sling, lead));
+    assert_eq!(refused, 0, "ticks whose state a save would refuse");
+}
+
+#[test]
 fn a_transport_carrying_the_unit_it_escorts_holds_still() {
     // Eight flyers ahead of the sling in rank push its slot two tiles out,
     // past the arrival tolerance, so only the carrier rule keeps it from
