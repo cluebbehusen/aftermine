@@ -1453,8 +1453,7 @@ pub(crate) fn draw_panel(
     // nothing else moves. Where they stood, a legend names the buttons
     // that open the rings.
     let legend = pad_legend(panel, pad)
-        .filter(|_| action_rect.w > 0.0)
-        .map(|legend| (legend, action_rect));
+        .map(|legend| (legend, pad_legend_band(action_rect, cards_x, info_rect)));
     let (action_rect, card_rects): (Rect, &[Rect]) = if pad.is_some() {
         (Rect::new(0.0, 0.0, 0.0, 0.0), &[])
     } else {
@@ -2095,6 +2094,17 @@ pub(crate) fn pad_legend(
             .button(family, PadButton::DpadRight)
             .text(" Groups")
     })
+}
+
+/// The band pad mode's legend stands in: the card plate it vacated or, for
+/// a selection with no cards to lay one out, such as a structure whose
+/// only command is Stop, the stretch just right of the info plate.
+fn pad_legend_band(plate: Rect, cards_x: f32, info: Rect) -> Rect {
+    if plate.w > 0.0 {
+        plate
+    } else {
+        Rect::new(cards_x, info.y, 0.0, info.h)
+    }
 }
 
 /// Where pad mode's legend starts: centered on the vacated card plate, but

@@ -895,7 +895,7 @@ fn the_pad_legend_starts_clear_of_the_info_plate() {
     let bindings = crate::action::BindingMap::classic();
     let build =
         || crate::panel::build_for_palette(&game.view(), &bindings, false).expect("own panel");
-    for count in [1, build().cards.len()] {
+    for count in [0, 1, build().cards.len()] {
         let mut panel = build();
         panel.cards.truncate(count);
         for (viewport, scale) in [(vec2(1133.0, 744.0), 1.0), (vec2(1920.0, 1200.0), 1.5)] {
@@ -909,8 +909,16 @@ fn the_pad_legend_starts_clear_of_the_info_plate() {
             );
             let (left, _, _, _) = card_metrics(viewport, scale);
             let (_, right) = command_card_geometry(viewport, scale, packing, &panel.cards);
-            let vacated = action_panel_rect(packing, left, right, true);
-            let info = selection_info_rect(viewport, left, 60.0 * scale, vacated);
+            let plate = action_panel_rect(packing, left, right, count > 0);
+            let info = selection_info_rect(viewport, left, 60.0 * scale, plate);
+            let vacated = pad_legend_band(plate, left, info);
+            if count == 0 {
+                assert_eq!(
+                    (vacated.y, vacated.h),
+                    (info.y, info.h),
+                    "with no plate, the legend sits level with the info plate"
+                );
+            }
             for width in [40.0, 150.0, 400.0].map(|w| w * scale) {
                 let x = pad_legend_x(vacated, width, scale);
                 assert!(x >= info.right(), "{count} cards, {width} wide at {scale}");
