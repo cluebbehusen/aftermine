@@ -84,13 +84,13 @@ TV_ICON_STACKS = (
     ("App Icon - App Store", (1280, 768), (1,)),
 )
 # Each Top Shelf image: its file name, role, size in points, and where the
-# wordmark's left edge sits, in points. tvOS enlarges the focused app's banner
-# and crops about a tenth off each side, so the wordmark sits well inside that.
-# The standard image is the wide one's middle, so both put the wordmark at the
-# same spot in the scene.
+# wordmark's left edge sits, in points. tvOS shows the focused app's banner
+# enlarged about 9% around its centre, which crops its sides, so the wordmark
+# sits well inside the crop. The standard image is the wide one's middle, so
+# both put the wordmark at the same spot in the scene.
 TOP_SHELF_IMAGES = (
-    ("Top Shelf Image", "top-shelf-image", (1920, 720), 220),
-    ("Top Shelf Image Wide", "top-shelf-image-wide", (2320, 720), 420),
+    ("Top Shelf Image", "top-shelf-image", (1920, 720), 180),
+    ("Top Shelf Image Wide", "top-shelf-image-wide", (2320, 720), 380),
 )
 WORDMARK_WIDTH = 660
 # How dark the scene gets at the left edge, behind the wordmark, fading out
