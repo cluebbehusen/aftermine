@@ -936,7 +936,13 @@ fn crucible_smelter(state: &mut State) {
     let crucibles: Vec<crate::ids::BuildingId> = state
         .buildings
         .iter()
-        .filter(|b| b.built() && b.hp > 0 && b.kind == BuildingKind::Crucible)
+        // A surrendered seat earns nothing, so its Crucible eats no wreck.
+        .filter(|b| {
+            b.built()
+                && b.hp > 0
+                && b.kind == BuildingKind::Crucible
+                && !state.player(b.player).resigned
+        })
         .map(|b| b.id)
         .collect();
     let radius = crate::stats::CRUCIBLE_SMELT_RADIUS;

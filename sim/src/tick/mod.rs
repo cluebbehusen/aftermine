@@ -294,9 +294,14 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
         };
         // Saturating, like a delivery: the event reports what was actually
         // credited, cargo first, which differs from the raw amounts only at
-        // the bank's ceiling.
+        // the bank's ceiling. A surrendered seat's cargo credits nothing, as
+        // a delivery does; the refund is a refund, not income.
         let seat = state.player_mut(player);
-        let cargo = seat.scrap.saturating_add(cargo) - seat.scrap;
+        let cargo = if seat.resigned {
+            0
+        } else {
+            seat.scrap.saturating_add(cargo) - seat.scrap
+        };
         seat.scrap += cargo;
         let refund = seat
             .scrap

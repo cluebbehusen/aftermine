@@ -434,6 +434,28 @@ fn a_retirement_reports_only_the_scrap_the_bank_took() {
 }
 
 #[test]
+fn a_surrendered_seat_s_retiring_harvester_banks_its_refund_but_not_its_cargo() {
+    let mut state = build(
+        vec![unit(0, UnitKind::Harvester, 14, 9)],
+        vec![crucible(0, 16, 9)],
+        0,
+    );
+    let hauler = state.units()[0].id;
+    edit(&mut state, |d| {
+        unit_row(d, hauler)["worker"]["carrying"] = json!(5);
+    });
+    state.tick(&[cmd(0, retire(vec![hauler]))]);
+    state.tick(&[cmd(0, Command::Surrender)]);
+    let events = run_until(&mut state, 600, |_, events| {
+        retired(events, hauler).is_some()
+    });
+    let (refund, cargo) = retired(&events, hauler).unwrap();
+    assert!(refund > 0, "the refund is a refund, not income");
+    assert_eq!(cargo, 0, "a surrendered seat's cargo credits nothing");
+    assert_eq!(state.player(PlayerId(0)).scrap, refund);
+}
+
+#[test]
 fn a_loaded_transport_sets_its_riders_down_then_retires() {
     let mut state = build(
         vec![

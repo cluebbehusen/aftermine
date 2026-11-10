@@ -356,6 +356,18 @@ fn passive_income_matches_the_bank() {
 }
 
 #[test]
+fn a_surrendered_seat_s_reclaimers_earn_nothing_in_the_ledger() {
+    let mut scenario = field(0, &[], &[(0, BuildingKind::Reclaimer, 6, 6)]);
+    scenario.mode = ScenarioMode::Sandbox;
+    let (_, ledgers) = play(
+        scenario.build().unwrap(),
+        3_000,
+        vec![order(0, Command::Surrender)],
+    );
+    assert_eq!(built(&ledgers, 0, "reclaimer").passive, 0);
+}
+
+#[test]
 fn spending_is_recorded_by_category_and_phase() {
     let scenario = field(
         1_000,

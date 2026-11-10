@@ -78,6 +78,7 @@ pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
                     && b.hp > 0
                     && b.kind == crate::stats::BuildingKind::Reclaimer
                     && b.tier == tier
+                    && !state.player(b.player).resigned
             })
             .map(|b| b.player)
             .collect();

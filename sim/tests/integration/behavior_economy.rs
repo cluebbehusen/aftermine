@@ -967,3 +967,68 @@ fn cancel_train_refunds_and_resets_the_head() {
         "a phantom queue slot is refused"
     );
 }
+
+#[test]
+fn a_surrendered_seat_s_crucible_smelts_no_wreck() {
+    let mut scenario = arena(Vec::new());
+    scenario.mode = aftermine_sim::scenario::ScenarioMode::Sandbox;
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Crucible, 2, 5));
+    let state = scenario.build().unwrap();
+    let heap = TilePos::new(7, 7);
+    let mut doc = serde_json::to_value(&state).unwrap();
+    let width = usize::try_from(state.map().width()).unwrap();
+    doc["map"]["grid"]["cells"][7 * width + 7]["wreck"] = json!(40);
+    let mut state: State = serde_json::from_value(doc).unwrap();
+    state.validate_invariants().unwrap();
+    let from = state.current_tick();
+    state.tick(&[cmd(0, Command::Surrender)]);
+    let bank = state.player(PlayerId(0)).scrap;
+    run(&mut state, aftermine_sim::stats::CRUCIBLE_SMELT_PERIOD * 4);
+    assert_eq!(state.player(PlayerId(0)).scrap, bank);
+    let decays = (from..state.current_tick())
+        .filter(|t| t.is_multiple_of(aftermine_sim::stats::WRECK_DECAY_TICKS))
+        .count();
+    assert_eq!(
+        state.map().wreck_at(heap),
+        40 - u32::try_from(decays).unwrap(),
+        "only decay wears the wreck; it stays for others"
+    );
+}
+
+#[test]
+fn a_surrendered_seat_earns_nothing_from_reclaimers_or_deliveries() {
+    // A sandbox, so the surrender ends no match and the economy runs on.
+    let mut scenario = arena(vec![unit(0, UnitKind::Harvester, 6, 2)]);
+    scenario.mode = aftermine_sim::scenario::ScenarioMode::Sandbox;
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Reclaimer, 3, 6));
+    let mut state = scenario.build().unwrap();
+    let worker = state.units()[0].id;
+    state.tick(&[
+        cmd(
+            0,
+            Command::Harvest {
+                units: vec![worker],
+                node: TilePos::new(11, 4),
+                queue: false,
+            },
+        ),
+        cmd(0, Command::Surrender),
+    ]);
+    let bank = state.player(PlayerId(0)).scrap;
+    let events = run(&mut state, 900);
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            Event::ScrapDeposited {
+                player: PlayerId(0),
+                ..
+            }
+        )),
+        "premise: the Harvester kept its loop"
+    );
+    assert_eq!(state.player(PlayerId(0)).scrap, bank);
+}

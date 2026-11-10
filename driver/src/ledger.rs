@@ -1529,10 +1529,10 @@ impl ImpactLedger {
             }
             let resigned = state.players()[usize::from(body.owner)].resigned;
             let credit = match kind {
-                BuildingKind::Reclaimer if tier == 0 => now
+                BuildingKind::Reclaimer if tier == 0 && !resigned => now
                     .is_multiple_of(RECLAIMER_PERIOD)
                     .then_some(IncomeSource::Reclaimer),
-                BuildingKind::Reclaimer if tier == 1 => now
+                BuildingKind::Reclaimer if tier == 1 && !resigned => now
                     .is_multiple_of(REFINERY_PERIOD)
                     .then_some(IncomeSource::Refinery),
                 BuildingKind::Foundry
