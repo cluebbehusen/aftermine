@@ -516,6 +516,25 @@ fn holding_b_closes_every_ring() {
 }
 
 #[test]
+fn holding_b_out_of_a_placement_closes_every_ring() {
+    let (mut game, mut input) = harvester();
+    pick(&mut game, &mut input, "Build");
+    pick(&mut game, &mut input, "Defense");
+    pick(&mut game, &mut input, "Barricade");
+    assert!(input.placing.is_some());
+    feed(&mut game, &mut input, &[down(PadButton::East)]);
+    frame(&mut game, &mut input);
+    assert_eq!(heading(&game, &input).as_deref(), Some("DEFENSE"));
+    for _ in 0..40 {
+        frame(&mut game, &mut input);
+    }
+    assert!(input.ring.is_none());
+    assert!(!input.construction_open());
+    feed(&mut game, &mut input, &[up(PadButton::East)]);
+    assert!(input.ring_held.is_empty());
+}
+
+#[test]
 fn a_structure_ring_trains_counts_and_cancels_one() {
     let (mut game, mut input) = foundry();
     assert_eq!(

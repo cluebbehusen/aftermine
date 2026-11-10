@@ -240,11 +240,14 @@ fn swap(game: &mut Game, input: &mut InputState, kind: RingKind) {
 }
 
 /// B out of a controller's placement: the command ring opens on the build
-/// ring the structure was picked from. With nothing there to offer,
+/// ring the structure was picked from, and `pad` keeping B down may close
+/// every ring, as a B pressed in a ring may. With nothing there to offer,
 /// construction closes instead.
-pub(super) fn reopen_build(game: &Game, input: &mut InputState) {
+pub(super) fn reopen_build(game: &Game, input: &mut InputState, pad: u64) {
     if !show(game, input, RingKind::Commands) {
         input.close_construction();
+    } else if let Some(open) = input.ring.as_mut() {
+        open.back_held = Some((pad, input.now));
     }
 }
 

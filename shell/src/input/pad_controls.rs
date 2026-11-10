@@ -45,7 +45,7 @@ pub(super) fn press(
     match button {
         PadButton::South => press_select(game, input, bindings, pad),
         PadButton::West => order(game, input, bindings, pad),
-        PadButton::East => back(game, input, bindings),
+        PadButton::East => back(game, input, bindings, pad),
         // Launch takes the bumpers over, as the strike ribbon's steppers.
         PadButton::LeftShoulder | PadButton::RightShoulder if input.striking.is_some() => {
             super::step_salvo(&game.view(), input, button == PadButton::RightShoulder);
@@ -189,14 +189,14 @@ fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u6
 /// walks out of, the selection last. Out of a placement it goes back to the
 /// build ring the structure was picked from, where Back goes back to the
 /// palette pad mode doesn't draw.
-fn back(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
+fn back(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u64) {
     if paint::abandon(input) {
         return;
     }
     let placing = input.placing.is_some();
     super::dispatch_action(game, input, bindings, Action::Back);
     if placing && input.placing.is_none() {
-        super::pad_ring::reopen_build(game, input);
+        super::pad_ring::reopen_build(game, input, pad);
     }
 }
 
