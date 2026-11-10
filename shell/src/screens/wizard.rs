@@ -566,13 +566,12 @@ pub fn seat_display_order(scenario: &Scenario) -> Vec<usize> {
 }
 
 /// The setup screen's frame geometry, a pure function of the map and
-/// window: seat cards on the left grouped under team headings, the
-/// Start button beneath them, the preview panel filling the right.
+/// window: seat cards on the left, each carrying the team chip that decides
+/// its side, the Start button beneath them, the preview panel filling the
+/// right.
 pub struct SetupLayout {
     /// The LOCAL | LAN switch above the cards: its two halves.
     pub switch: [Rect; 2],
-    /// Team headings and their text rects.
-    pub headings: Vec<(String, Rect)>,
     /// One card per DISPLAY position (see [`seat_display_order`]);
     /// `None` while the card sits on another compact page.
     pub cards: Vec<Option<CardRects>>,
@@ -709,17 +708,6 @@ pub(crate) fn setup_layout_page(
 ) -> SetupLayout {
     let order = seat_display_order(scenario);
     let n = order.len();
-    let keys = seat_team_keys(scenario);
-    let teams: Vec<u16> = {
-        let mut seen = Vec::new();
-        for &s in &order {
-            let t = keys[s];
-            if !seen.contains(&t) {
-                seen.push(t);
-            }
-        }
-        seen
-    };
     let left_x = 56.0 * ui;
     let left_w = (view.x * 0.42).min(520.0 * ui);
     // Margins yield before content: small windows compress the title
@@ -727,20 +715,14 @@ pub(crate) fn setup_layout_page(
     // target switch to the paginated compact layout below.
     let (switch, top) = switch_rects(left_x, (132.0 * ui).min(view.y * 0.22), ui);
     let bottom = view.y - (44.0 * ui).min(view.y * 0.08);
-    // Headings take rows only when a team actually groups seats; a duel
-    // or an FFA would otherwise show one heading per lone seat.
-    let grouped = teams.len() < n;
-    let heading_rows = if grouped { teams.len() as f32 } else { 0.0 };
-    let mut heading_h = 26.0 * ui;
     let mut start_h = 46.0 * ui;
     let mut gap = 6.0 * ui;
-    let mut avail = bottom - top - heading_rows * heading_h - start_h - 24.0 * ui;
+    let mut avail = bottom - top - start_h - 24.0 * ui;
     let mut card_h = ((avail / n.max(1) as f32) - gap).clamp(34.0 * ui, 56.0 * ui);
     if n as f32 * (card_h + gap) > avail {
-        heading_h *= 0.7;
         start_h *= 0.75;
         gap *= 0.5;
-        avail = bottom - top - heading_rows * heading_h - start_h - 24.0 * ui;
+        avail = bottom - top - start_h - 24.0 * ui;
         card_h = ((avail / n.max(1) as f32) - gap).max(18.0 * ui);
         // When even the ui-scaled floor overflows, the floor goes
         // physical; such cards fall below a touch target, so the compact
@@ -754,21 +736,9 @@ pub(crate) fn setup_layout_page(
         return compact_setup_layout(scenario, seat_choice, open, view, ui, page);
     }
 
-    let mut headings = Vec::new();
     let mut cards = Vec::with_capacity(n);
     let mut y = top;
-    let mut last_team: Option<u16> = None;
     for &seat in &order {
-        let team = keys[seat];
-        if grouped && last_team != Some(team) {
-            let label = format!(
-                "TEAM {}",
-                teams.iter().position(|t| *t == team).unwrap() + 1
-            );
-            headings.push((label, Rect::new(left_x, y, left_w, heading_h)));
-            last_team = Some(team);
-            y += heading_h;
-        }
         let card = Rect::new(left_x, y, left_w, card_h);
         let wide = open.get(seat).copied().unwrap_or(false);
         cards.push(Some(setup_card_controls(card, seat, seat_choice, wide, ui)));
@@ -779,7 +749,6 @@ pub(crate) fn setup_layout_page(
     let preview = Rect::new(px, top, view.x - px - 40.0 * ui, bottom - top - 20.0 * ui);
     SetupLayout {
         switch,
-        headings,
         cards,
         start: Some(start),
         preview,
@@ -926,7 +895,6 @@ fn compact_setup_layout(
     );
     SetupLayout {
         switch,
-        headings: Vec::new(),
         cards,
         start,
         preview,
@@ -1145,27 +1113,6 @@ pub fn draw_seat_markers(
             py + 4.5 * ui,
             Type::Small.at(ui),
             SURFACE_PLATE,
-        );
-    }
-}
-
-/// Draws the setup layout's team headings, each with a rule to its right.
-pub(crate) fn draw_team_headings(layout: &SetupLayout, ui: f32) {
-    for (label, rect) in &layout.headings {
-        draw_text(
-            label,
-            rect.x,
-            rect.y + rect.h * 0.7,
-            Type::Body.at(ui),
-            TEXT_TITLE,
-        );
-        let dims = measure_text(label, None, numeric::font_size(Type::Body.at(ui)), 1.0);
-        draw_rectangle(
-            rect.x + dims.width + 12.0 * ui,
-            rect.y + rect.h * 0.55,
-            rect.w - dims.width - 12.0 * ui,
-            Stroke::Hairline.at(ui),
-            BORDER_FAINT,
         );
     }
 }
@@ -1915,7 +1862,6 @@ impl Wizard {
                 TEXT_SECONDARY,
             );
         }
-        draw_team_headings(&layout, ui);
         let styles = draft_styles(scenario, draft);
         for (pos, card) in layout.cards.iter().enumerate() {
             let Some(card) = card else {

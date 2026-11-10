@@ -272,7 +272,7 @@ fn walk(client: &mut Client, bless: bool, dir: &Path, threshold: f64) -> Result<
     suite.shot("match-setup", "match_setup")?;
     auto::press_key(suite.client, Key::Escape)?;
     // Back on the grid, return to the first 1v1: the same setup
-    // screen, duel-shaped (seat cards without team headings).
+    // screen, duel-shaped (two seat cards).
     auto::press_key(suite.client, Key::Home)?;
     auto::press_key(suite.client, Key::Enter)?;
     suite.shot("wizard-duel-setup", "match_setup")?;
