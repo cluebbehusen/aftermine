@@ -1450,7 +1450,10 @@ pub(crate) fn draw_panel(
     let top = info_rect.y;
     // Pad mode leaves the command cards to the ring: their plate, the
     // rally mark over them and the cards themselves stay undrawn, and
-    // nothing else moves.
+    // nothing else moves. Where they stood, a legend names the buttons
+    // that open the rings.
+    let legend = pad_legend(panel, pad)
+        .map(|legend| (legend, pad_legend_band(action_rect, cards_x, info_rect)));
     let (action_rect, card_rects): (Rect, &[Rect]) = if pad.is_some() {
         (Rect::new(0.0, 0.0, 0.0, 0.0), &[])
     } else {
@@ -1463,6 +1466,12 @@ pub(crate) fn draw_panel(
         }
         fill_rect(rect, crate::theme::SURFACE_BAND);
         draw_rectangle(rect.x, rect.y, rect.w, s, crate::theme::EDGE_WARM);
+    }
+    if let Some((legend, vacated)) = legend {
+        let size = crate::theme::Type::Body.at(s);
+        let x = pad_legend_x(vacated, legend.width(size), s);
+        let baseline = vacated.y + vacated.h * 0.5 + size * 0.35;
+        legend.draw_at(sprites, x, baseline, size, TEXT_SECONDARY, TEXT_PRIMARY);
     }
     let header = top + measured.header_pad;
     draw_icon(
@@ -2067,6 +2076,43 @@ fn draw_dock(
 /// Whether the mouse hovers `rect`, only while it is the pointer in use.
 fn hovers(input: &InputState, rect: Rect) -> bool {
     super::chrome::hover_point(input).is_some_and(|p| rect.contains(p))
+}
+
+/// What pad mode shows where a selection's command cards were: the
+/// buttons that open the command ring and the group ring. A selection
+/// whose ring would be empty, such as an enemy's or an ally's, shows none.
+pub(crate) fn pad_legend(
+    panel: &crate::panel::Panel,
+    pad: Option<aftermine_protocol::PadFamily>,
+) -> Option<crate::hint_line::HintLine> {
+    use aftermine_protocol::PadButton;
+    let family = pad?;
+    crate::radial::offers_commands(panel).then(|| {
+        crate::hint_line::HintLine::default()
+            .button(family, PadButton::North)
+            .text(" Commands    ")
+            .button(family, PadButton::DpadRight)
+            .text(" Groups")
+    })
+}
+
+/// The band pad mode's legend stands in: the card plate it vacated or, for
+/// a selection with no cards to lay one out, such as a structure whose
+/// only command is Stop, the stretch just right of the info plate.
+fn pad_legend_band(plate: Rect, cards_x: f32, info: Rect) -> Rect {
+    if plate.w > 0.0 {
+        plate
+    } else {
+        Rect::new(cards_x, info.y, 0.0, info.h)
+    }
+}
+
+/// Where pad mode's legend starts: centered on the vacated card plate, but
+/// never left of its inset, where the info plate would cover the first
+/// button. A plate too narrow for the line lets it run on to the right,
+/// where nothing draws in pad mode.
+fn pad_legend_x(vacated: Rect, width: f32, s: f32) -> f32 {
+    (vacated.x + (vacated.w - width) * 0.5).max(vacated.x + 12.0 * s)
 }
 
 /// The hover tooltip for panel cards, drawn over everything: name,

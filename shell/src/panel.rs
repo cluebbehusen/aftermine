@@ -1363,14 +1363,21 @@ pub(crate) fn selection_patrols(game: &Scene<'_>) -> bool {
         })
 }
 
-/// How the Patrol card collects and starts its route.
-fn patrol_desc(hands: Hands) -> &'static str {
+/// How the Patrol card collects and starts its route. A controller marks
+/// points with the order button and starts the loop by picking Patrol on
+/// the ring again.
+fn patrol_desc(hands: Hands) -> String {
+    if let Some(family) = hands.pad {
+        let mark = crate::pad::button_name(family, aftermine_protocol::PadButton::West);
+        return format!("Mark points with {mark}, then pick Patrol again to loop them.");
+    }
     match (hands.touch(), hands.keys) {
         (false, true) => "Click points, then press again or click Start to loop them.",
         (false, false) => "Click points, then click Start to loop them.",
         (true, true) => "Tap points, then press again or tap Start to loop them.",
         (true, false) => "Tap points, then tap Start to loop them.",
     }
+    .to_string()
 }
 
 /// The lit Patrol card's line: a press stops the patrol.
@@ -1886,7 +1893,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             if panel.patrolling {
                 patrolling_desc(hands)
             } else {
-                patrol_desc(hands).into()
+                patrol_desc(hands)
             },
             patrol_engagement(
                 armed,
