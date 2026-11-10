@@ -226,3 +226,49 @@ fn a_mouse_placement_leaves_the_palette_up() {
         "the drawn palette stays for the next pick"
     );
 }
+
+#[test]
+fn a_mouse_placement_under_a_held_left_trigger_leaves_the_palette_up() {
+    use aftermine_protocol::{PadButton, PadFamily};
+    let (mut game, mut input) = funded_builder();
+    let a = at(&game, 7, 3);
+    let pad = 1;
+    let feed = |game: &mut Game, input: &mut InputState, events: &[RawEvent]| {
+        for event in events {
+            track_hands(input, event, false);
+        }
+        apply_events(game, input, events);
+        input.settle_hud();
+    };
+    feed(
+        &mut game,
+        &mut input,
+        &[
+            RawEvent::PadConnected {
+                pad,
+                family: PadFamily::Xbox,
+            },
+            RawEvent::PadDown {
+                pad,
+                button: PadButton::LeftTrigger,
+            },
+        ],
+    );
+    feed(&mut game, &mut input, &[left_down(a), left_up(a)]);
+    assert_eq!(builds(&game), [(TilePos::new(7, 3), true)]);
+    assert!(input.placing.is_some(), "the held trigger keeps placing");
+    assert!(!input.hud_pad, "the click handed the HUD to the mouse");
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::PadUp {
+            pad,
+            button: PadButton::LeftTrigger,
+        }],
+    );
+    assert!(input.placing.is_none(), "letting go ends the chain");
+    assert!(
+        input.construction_open(),
+        "the drawn palette stays for the next pick"
+    );
+}
