@@ -19,7 +19,7 @@ mod ground;
 mod hulls;
 pub(in crate::tick) mod march;
 
-pub(in crate::tick) use hulls::{make_way, round_standing_hulls};
+pub(in crate::tick) use hulls::{make_way, round_standing_hulls, route_round_hulls};
 
 use super::flight;
 use crate::map::Map;

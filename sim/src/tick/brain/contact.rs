@@ -222,14 +222,12 @@ pub(in crate::tick) fn route(
     from: Vec2Fx,
     goal: TilePos,
 ) -> Option<Vec<TilePos>> {
-    crate::tick::route_for_position(state, unit.kind, from, goal)
-        .map(|waypoints| crate::tick::movement::round_standing_hulls(state, unit, from, waypoints))
-        .or_else(|| {
-            (square_cutter(unit.kind)
-                && matches!(unit.order, Order::Hunt { .. } | Order::Attack { .. }))
-            .then(|| plough_route(state, unit, TilePos::containing(from), goal, false))
-            .flatten()
-        })
+    crate::tick::movement::route_round_hulls(state, unit, from, goal).or_else(|| {
+        (square_cutter(unit.kind)
+            && matches!(unit.order, Order::Hunt { .. } | Order::Attack { .. }))
+        .then(|| plough_route(state, unit, TilePos::containing(from), goal, false))
+        .flatten()
+    })
 }
 
 /// A wide cutter's route over open ground and through the buildings it

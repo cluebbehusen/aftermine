@@ -607,7 +607,9 @@ pub(super) fn approach_patient(state: &mut State, id: UnitId, patient: UnitId) -
                 .final_point = Some(point);
             return true;
         }
-        if let Some(waypoints) = route_for(state, kind, from, goal) {
+        if let Some(waypoints) =
+            crate::tick::movement::route_round_hulls(state, unit, from.center(), goal)
+        {
             let mut path = work_position_path(goal, waypoints);
             path.final_point = Some(point);
             state.unit_mut(id).expect("caller checked").path = Some(path);
@@ -847,6 +849,25 @@ pub(super) fn keep_flagged_route(
     }
 }
 
+/// Whether the rest of `path` runs under a friendly hull standing in the
+/// way that `passable`, the rule its planner routes by, now steps round: a
+/// route planned before the hull stopped, which a replan goes round. The
+/// movement pass cannot judge that rule, so a worker or scout must not keep
+/// such a route; one it keeps under a hull has no way round.
+pub(super) fn round_hull_now(
+    state: &State,
+    id: UnitId,
+    path: &PathFollow,
+    passable: impl Fn(TilePos) -> bool,
+) -> bool {
+    let unit = state.unit(id).expect("caller checked");
+    let Some(rest) = path.waypoints.get(path.next as usize..) else {
+        return false;
+    };
+    crate::tick::movement::round_standing_hulls(state, unit, unit.pos, rest.to_vec(), passable)
+        != rest
+}
+
 /// Index (relative to the walker's next waypoint) of the first
 /// lookahead tile `safe` rejects, or `None` for a clear near segment.
 /// The scan touches at most [`crate::stats::HARVEST_DANGER_LOOKAHEAD`] tiles however
@@ -1037,6 +1058,10 @@ fn approach_source(
             && keep_flagged_route(state, id, path, |waypoint| {
                 danger.route_safe_from(from, waypoint)
             })
+            && !round_hull_now(state, id, path, |tile| {
+                known_ground_passable(state, danger, unit.player, tile)
+                    && danger.route_safe_from(from, tile)
+            })
     });
     if keep {
         return true;
@@ -1066,10 +1091,11 @@ fn approach_authoritative_source(
     let from = unit.tile();
     let goal_matches = |goal: TilePos| tile_adjacent_to_rect(goal, source.pos, (1, 1));
     if let Some(path) = unit.path.as_ref().filter(|path| goal_matches(path.goal)) {
-        let near_route_is_clear = keep_flagged_route(state, id, path, |waypoint| {
-            known_ground_passable(state, danger, player, waypoint)
-                && danger.route_safe_from(from, waypoint)
-        });
+        let open = |tile| {
+            known_ground_passable(state, danger, player, tile) && danger.route_safe_from(from, tile)
+        };
+        let near_route_is_clear =
+            keep_flagged_route(state, id, path, open) && !round_hull_now(state, id, path, open);
         if near_route_is_clear
             && (from.chebyshev(path.goal) > 1
                 || path
@@ -1159,11 +1185,22 @@ fn source_route_avoiding_danger(
     let unit = state.unit(id).expect("caller checked");
     let from = unit.tile();
     let player = unit.player;
+    let open = |tile, goal| {
+        known_ground_passable(state, danger, player, tile)
+            && ((allow_dangerous_goal && tile == goal) || danger.route_safe_from(from, tile))
+    };
     let safe_route = |goal| {
-        danger.find_route(from, goal, |tile| {
-            known_ground_passable(state, danger, player, tile)
-                && ((allow_dangerous_goal && tile == goal) || danger.route_safe_from(from, tile))
-        })
+        danger
+            .find_route(from, goal, |tile| open(tile, goal))
+            .map(|waypoints| {
+                crate::tick::movement::round_standing_hulls(
+                    state,
+                    unit,
+                    unit.pos,
+                    waypoints,
+                    |tile| open(tile, goal),
+                )
+            })
     };
     let frame = crate::tick::rect_approach_origin(state, player, from, source.pos, (1, 1));
     let mut candidates: Vec<_> = crate::geometry::work_positions(
@@ -1355,6 +1392,10 @@ fn try_drop_offs(
                     known_ground_passable(state, danger, player, waypoint)
                         && danger.route_safe_from(from, waypoint)
                 })
+                && !round_hull_now(state, id, path, |tile| {
+                    known_ground_passable(state, danger, player, tile)
+                        && danger.route_safe_from(from, tile)
+                })
             {
                 state
                     .unit_mut(id)
@@ -1493,9 +1534,12 @@ fn known_rect_route(
             {
                 return None;
             }
-            let route = danger.find_route(from, goal, |tile| {
+            let open = |tile| {
                 known_ground_passable(state, danger, player, tile)
                     && (!avoid_danger || danger.route_safe_from(from, tile))
+            };
+            let route = danger.find_route(from, goal, open).map(|waypoints| {
+                crate::tick::movement::round_standing_hulls(state, unit, unit.pos, waypoints, open)
             });
             if route.is_none() {
                 if safe_shortcut {

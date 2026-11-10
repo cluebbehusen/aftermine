@@ -16,6 +16,7 @@ pub(super) use mounts::{
 use super::super::fire::{Fire, Landing, ShotEnd, blast_reaches, clear_line, levels_allow};
 use super::super::flight;
 use super::super::landing;
+use super::super::movement::route_round_hulls;
 use super::super::route_for;
 use super::PendingHit;
 use super::locomotion::{approach_rect, walk};
@@ -1240,7 +1241,7 @@ fn route_to_stand(
     {
         return true;
     }
-    let (from, from_tile, kind, player) = (unit.pos, unit.tile(), unit.kind, unit.player);
+    let (from, from_tile, player) = (unit.pos, unit.tile(), unit.player);
     let frame = crate::tick::rect_approach_origin(state, player, from_tile, anchor, size);
     let (width, height) = size;
     let mut candidates = Vec::new();
@@ -1263,7 +1264,7 @@ fn route_to_stand(
         )
     });
     let path = candidates.into_iter().find_map(|goal| {
-        route_for(state, kind, from_tile, goal).map(|waypoints| PathFollow {
+        route_round_hulls(state, unit, from_tile.center(), goal).map(|waypoints| PathFollow {
             final_point: None,
             goal,
             waypoints,
@@ -2033,8 +2034,9 @@ fn sapper_attack(
     if !stale {
         return;
     }
+    let sapper = state.unit(id).expect("caller checked");
     let routed = if state.passable_for(Domain::Ground, target_tile) {
-        route_for(state, kind, tile, target_tile).map(|w| (target_tile, w))
+        route_round_hulls(state, sapper, tile.center(), target_tile).map(|w| (target_tile, w))
     } else if let Target::Building(_) = target {
         // A building's tiles are closed ground: press to the nearest open
         // doorstep that routes, equally near ones ranked in the Sapper's
@@ -2051,7 +2053,7 @@ fn sapper_attack(
         });
         doorsteps
             .into_iter()
-            .find_map(|t| route_for(state, kind, tile, t).map(|w| (t, w)))
+            .find_map(|t| route_round_hulls(state, sapper, tile.center(), t).map(|w| (t, w)))
     } else {
         None
     };
@@ -3009,7 +3011,7 @@ fn approach_firing_area(
 ) -> bool {
     let unit = state.unit(id).expect("attacker");
     let b = state.building(building).expect("visible building");
-    let (from, kind, player, pos) = (unit.tile(), unit.kind, unit.player, unit.pos);
+    let (from, player, pos) = (unit.tile(), unit.player, unit.pos);
     let domain = unit.domain();
     let legal = |point: Vec2Fx| {
         let aim = b.closest_point_to(point);
@@ -3080,7 +3082,7 @@ fn approach_firing_area(
         candidates,
         b.center(),
         |tile| state.passable_for(domain, tile),
-        |goal| super::super::route_for_position(state, kind, pos, goal),
+        |goal| route_round_hulls(state, unit, pos, goal),
     );
     let reachable = path.is_some();
     state.unit_mut(id).expect("attacker").path = path;

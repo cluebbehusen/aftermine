@@ -534,7 +534,12 @@ pub(in crate::tick::brain) fn attack_known(
         .is_some_and(|p| p.goal == goal)
     {
         true
-    } else if let Some(waypoints) = route_for(state, kind, tile, goal) {
+    } else if let Some(waypoints) = crate::tick::movement::route_round_hulls(
+        state,
+        state.unit(id).expect("live unit"),
+        tile.center(),
+        goal,
+    ) {
         state.unit_mut(id).expect("live unit").path = Some(PathFollow {
             final_point: None,
             goal,

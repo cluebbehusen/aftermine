@@ -8,7 +8,6 @@
 //! stale, so board and unload only buffer intent here, like damage;
 //! [`resolve`] mutates the list after the last brain has decided.
 
-use super::super::route_for;
 use crate::event::{Event, StallReason};
 use crate::ids::UnitId;
 use crate::state::{Order, PathFollow, Rider, State, Unit};
@@ -71,12 +70,7 @@ pub(super) fn board(
     events: &mut Vec<Event>,
 ) {
     let unit = state.unit(id).expect("caller checked");
-    let (pos, kind, player, my_size) = (
-        unit.pos,
-        unit.kind,
-        unit.player,
-        unit.kind.stats().transport_size,
-    );
+    let (pos, player, my_size) = (unit.pos, unit.player, unit.kind.stats().transport_size);
     // A transport on its way to be dismantled takes no more riders.
     let Some(carrier) = state
         .unit(transport)
@@ -122,7 +116,8 @@ pub(super) fn board(
     if !stale {
         return;
     }
-    if let Some((goal, waypoints)) = boarding_route(state, kind, pos, (carrier_pos, reach)) {
+    let rider = state.unit(id).expect("caller checked");
+    if let Some((goal, waypoints)) = boarding_route(state, rider, (carrier_pos, reach)) {
         let unit = state.unit_mut(id).expect("caller checked");
         unit.path = Some(PathFollow {
             final_point: None,
@@ -155,10 +150,10 @@ pub(super) fn board(
 /// A truly sealed carrier still reports `NoRoute` through the caller.
 fn boarding_route(
     state: &State,
-    kind: crate::stats::UnitKind,
-    rider_pos: chassis::fx::Vec2Fx,
+    rider: &crate::state::Unit,
     carrier: (chassis::fx::Vec2Fx, chassis::fx::Fx),
 ) -> Option<(TilePos, Vec<TilePos>)> {
+    let rider_pos = rider.pos;
     let (carrier_pos, reach) = carrier;
     let from = TilePos::containing(rider_pos);
     let center = TilePos::containing(carrier_pos);
@@ -173,7 +168,8 @@ fn boarding_route(
         .flat_map(|y| (center.x - span..=center.x + span).map(move |x| TilePos::new(x, y)))
         .filter(|goal| state.passable(*goal) && goal.center().dist_sq(carrier_pos) <= reach_sq)
         .filter_map(|goal| {
-            let waypoints = route_for(state, kind, from, goal)?;
+            let waypoints =
+                crate::tick::movement::route_round_hulls(state, rider, from.center(), goal)?;
             (!waypoints.is_empty()).then_some((goal, waypoints))
         })
         .min_by_key(|(goal, waypoints)| {
