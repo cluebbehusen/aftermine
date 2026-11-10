@@ -218,10 +218,6 @@ fn artillery_arcs_break_on_the_ridge() {
     let mut state = ridge(
         false,
         vec![
-            // At x=7 the west foundry's footprint sits outside the
-            // bombard's aggro ring; at x=6 a stalled gun auto-acquires
-            // it (closest-point distance 4.95) and the test measures
-            // the wrong war.
             unit(0, UnitKind::Bombard, 7, 5),
             // Spotter: sees the victim (vision 7 at range 4) so the
             // attack command validates — sight is radius-based and
@@ -246,10 +242,22 @@ fn artillery_arcs_break_on_the_ridge() {
         .events;
     events.extend(run(&mut state, 300));
     assert!(
-        !events
-            .iter()
-            .any(|e| matches!(e, Event::ShellLaunched { .. })),
+        events.iter().any(|e| matches!(e,
+            Event::OrderStalled { unit, reason: aftermine_sim::StallReason::NoRoute, .. }
+                if *unit == bombard)),
+        "the ordered attack across the ridge is refused"
+    );
+    // Refused, the gun picks a fight it can have on its own side and shells
+    // the west Foundry; nothing it fires crosses the ridge.
+    assert!(
+        !events.iter().any(|e| matches!(e,
+            Event::ShellLaunched { to, .. } if to.x >= Fx::from_num(12))),
         "no shell arcs over a mountain"
+    );
+    assert!(
+        events.iter().any(|e| matches!(e,
+            Event::ShellLaunched { to, .. } if to.x < Fx::from_num(12))),
+        "refused, the gun shells the west Foundry instead of wedging on the Scuttler"
     );
     assert_eq!(state.unit(victim).unwrap().hp, hp);
 }

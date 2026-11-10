@@ -54,9 +54,11 @@ fn automatic_radar_uses_a_secondary_solution_without_pursuit() {
     let mut events = Vec::new();
     let mut hits = Vec::new();
     let mut launches = Vec::new();
+    let mut reach = super::super::super::super::reach::Reach::new(&state);
     assert!(automatic_radar(
         &mut state,
         &index,
+        &mut reach,
         gun,
         false,
         &mut events,

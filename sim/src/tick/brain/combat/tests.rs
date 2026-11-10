@@ -135,7 +135,8 @@ fn indexed_acquisition_matches_the_scan_at_north_and_south_rows() {
         index.rebuild(&state.units);
         index.survey(&state);
 
-        let indexed = acquire_target(&state, &index, attacker);
+        let indexed =
+            acquire_target_from(&state, &index, attacker, state.unit(attacker).unwrap().pos);
         assert_eq!(indexed, expected);
         assert_eq!(indexed, linear_acquire(&state, attacker));
     }
@@ -239,7 +240,8 @@ fn indexed_acquisition_matches_the_linear_scan() {
             if unit.hp == 0 {
                 continue;
             }
-            let indexed = acquire_target(&state, &index, unit.id);
+            let indexed =
+                acquire_target_from(&state, &index, unit.id, state.unit(unit.id).unwrap().pos);
             assert_eq!(
                 indexed,
                 linear_acquire(&state, unit.id),
@@ -556,7 +558,10 @@ fn a_victim_in_range_but_out_of_sight_is_never_acquired() {
     let mut index = UnitIndex::new();
     index.rebuild(&state.units);
     index.survey(&state);
-    assert_eq!(acquire_target(&state, &index, breaker), None);
+    assert_eq!(
+        acquire_target_from(&state, &index, breaker, state.unit(breaker).unwrap().pos),
+        None
+    );
     assert_eq!(linear_acquire(&state, breaker), None);
 
     let start = state.units[0].pos;
@@ -713,7 +718,7 @@ fn a_victim_overhanging_blocked_ground_is_acquired_by_a_contact_weapon() {
     index.rebuild(&state.units);
     index.survey(&state);
     assert_eq!(
-        acquire_target(&state, &index, scuttler),
+        acquire_target_from(&state, &index, scuttler, state.unit(scuttler).unwrap().pos),
         Some(Target::Unit(avalanche))
     );
 }

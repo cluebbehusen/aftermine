@@ -261,6 +261,7 @@ fn fire_unit(
 pub(in crate::tick::brain) fn automatic_radar(
     state: &mut State,
     index: &super::super::super::spatial::UnitIndex,
+    reach: &mut super::super::super::reach::Reach,
     id: UnitId,
     moving: bool,
     events: &mut Vec<Event>,
@@ -276,7 +277,7 @@ pub(in crate::tick::brain) fn automatic_radar(
         || stats.weapons.is_empty()
         || (moving && stats.brace.is_some())
         || {
-            let target = acquire_target(state, index, id);
+            let target = super::acquire_reachable_target(state, index, reach, id, &[]);
             *acquired = Some(target);
             target.is_some()
         }

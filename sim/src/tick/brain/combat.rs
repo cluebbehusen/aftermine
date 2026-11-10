@@ -1278,26 +1278,18 @@ fn route_to_stand(
 }
 
 /// The nearest enemy this unit's weapons can cover, in its autonomous
-/// acquisition range: units before buildings, ties to the lowest id.
-/// `None` for unarmed units, empty horizons, and everything outside the
-/// weapon masks.
+/// acquisition range, that it can fire on now or reach: units before
+/// buildings, ties to the lowest id. `None` for unarmed units, empty
+/// horizons, and everything outside the weapon masks.
 ///
 /// Unit candidates come from the phase's spatial `index`: everything within
 /// that range of `pos` stands within `floor(range) + 1` tiles Chebyshev of
 /// its tile (the extra tile covers both bodies' sub-tile offsets), and the
 /// pick is a `min` over a complete [`Pick`], so window visit order cannot
 /// move it.
-pub(super) fn acquire_target(
-    state: &State,
-    index: &super::super::spatial::UnitIndex,
-    id: UnitId,
-) -> Option<Target> {
-    let pos = state.unit(id).expect("caller checked").pos;
-    acquire_target_from(state, index, id, pos)
-}
-
-/// [`acquire_target`] for a unit that sets out after what it picks, passing
-/// over every victim the `volley` buffered this tick already kills. A
+///
+/// It passes over every victim the `volley` buffered this tick already
+/// kills. A
 /// contact weapon passes over a structure it has no reachable stance to
 /// meet: it could only set out, find no stance, give the fight up, and pick
 /// the same structure again the next tick.
@@ -1309,17 +1301,101 @@ pub(super) fn acquire_reachable_target(
     volley: &[PendingHit],
 ) -> Option<Target> {
     let unit = state.unit(id).expect("caller checked");
-    let contact = unit.kind.stats().contact_reach.is_some();
-    acquire_target_within(state, index, id, unit.pos, None, |target| {
+    let (kind, pos) = (unit.kind, unit.pos);
+    let contact = kind.stats().contact_reach.is_some();
+    acquire_target_within(state, index, id, pos, None, |target| {
         !volley_kills(state, volley, target)
             && match target {
                 Target::Building(b) if contact => state.building(b).is_some_and(|b| {
                     !contact::passes(unit, b)
                         && reach.reaches(state, id, contact::stance_goals(state, unit, b))
                 }),
-                _ => true,
+                // A victim it can neither fire on now nor reach is passed
+                // over: chasing it could only end the fight, and a program
+                // the player gave is not lost to a pick the unit made.
+                _ => {
+                    fires_on_now(state, kind, pos, target)
+                        || route_reaches(state, reach, id, target)
+                }
             }
     })
+}
+
+/// Whether some route brings unit `id` where it can fight `target`: onto the
+/// victim's tile, onto a firing stand around a victim over ground it cannot
+/// stand on, or beside a structure.
+fn route_reaches(
+    state: &State,
+    reach: &mut super::super::reach::Reach,
+    id: UnitId,
+    target: Target,
+) -> bool {
+    let unit = state.unit(id).expect("caller checked");
+    let (kind, domain) = (unit.kind, unit.kind.stats().domain);
+    match target {
+        Target::Unit(u) => state.unit(u).is_some_and(|victim| {
+            let tile = victim.tile();
+            if state.passable_for(domain, tile) {
+                return reach.reaches(state, id, [tile]);
+            }
+            let Some(weapon) = kind
+                .stats()
+                .weapons
+                .iter()
+                .find(|weapon| weapon.targets.covers(victim.domain()))
+            else {
+                return false;
+            };
+            let range = unit_weapon_reach(state, kind, Some(target), weapon);
+            let stands = chase_stand_ins(state, domain, tile, victim.pos, range);
+            reach.reaches(state, id, stands)
+        }),
+        Target::Building(b) => state.building(b).is_some_and(|b| {
+            let (w, h) = b.kind.size();
+            let ranged = kind
+                .stats()
+                .contact_reach
+                .is_none()
+                .then(|| {
+                    kind.stats()
+                        .weapons
+                        .iter()
+                        .find(|weapon| weapon.targets.covers(Domain::Ground))
+                })
+                .flatten();
+            let Some(weapon) = ranged else {
+                // Contact work, and a unit with no gun for a structure,
+                // meets it from beside it.
+                let ring = (-1..=w).flat_map(move |dx| (-1..=h).map(move |dy| (dx, dy)));
+                return reach.reaches(state, id, ring.map(|(dx, dy)| b.anchor.offset(dx, dy)));
+            };
+            // A gun fights a structure from any stand in reach with a clear
+            // line, across a pit or over a wall, as `approach_firing_area`
+            // routes it: the same half-tile stands, the cheap tests first.
+            let r = weapon.range.ceil().to_num::<i32>();
+            let (width, height) = (state.map.width(), state.map.height());
+            ((b.anchor.y - r).max(0) * 2..(b.anchor.y + h + r).min(height) * 2).any(|y| {
+                ((b.anchor.x - r).max(0) * 2..(b.anchor.x + w + r).min(width) * 2).any(|x| {
+                    let point = Vec2Fx::new(
+                        Fx::from_num(x) / 2 + const { Fx::lit("0.25") },
+                        Fx::from_num(y) / 2 + const { Fx::lit("0.25") },
+                    );
+                    let tile = TilePos::containing(point);
+                    let aim = b.closest_point_to(point);
+                    state.passable_for(domain, tile)
+                        && within_weapon_reach(weapon, point.dist_sq(aim), Fx::ZERO)
+                        && reach.reaches(state, id, [tile])
+                        && clear_line(
+                            state,
+                            Fire::of(weapon),
+                            ShotEnd::new(point, domain),
+                            ShotEnd::new(aim, Domain::Ground).on(b.anchor),
+                            Landing::Checked,
+                        )
+                })
+            })
+        }),
+    }
 }
 
 /// What the unit `id`, fighting for its `resume` program, would pick afresh:
@@ -1342,9 +1418,10 @@ fn repick(
     }
 }
 
-/// The same pick judged as if the unit stood at `pos`: what a landing
-/// aircraft would find in reach once parked on its tile, not what it
-/// happens to pass on the way there.
+/// The nearest enemy this unit's weapons cover within its aggro range,
+/// judged as if it stood at `pos`, reach unchecked: what a landing aircraft
+/// would find in reach once parked on its tile, not what it happens to pass
+/// on the way there.
 pub(super) fn acquire_target_from(
     state: &State,
     index: &super::super::spatial::UnitIndex,
@@ -1373,40 +1450,14 @@ pub(super) fn acquire_escort_target(
     volley: &[PendingHit],
 ) -> Option<Target> {
     let unit = state.unit(id).expect("caller checked");
-    let (kind, pos, domain) = (unit.kind, unit.pos, unit.kind.stats().domain);
+    let (kind, pos) = (unit.kind, unit.pos);
     let live = |target: Target| !volley_kills(state, volley, target);
-    let in_reach_now =
-        |target: Target| live(target) && in_weapon_reach_from(state, kind, pos, target);
+    // In reach behind rock is no fight from here: an escort that took it
+    // would turn back to its slot and pick it again every tick.
+    let in_reach_now = |target: Target| live(target) && fires_on_now(state, kind, pos, target);
     let cap = Some(crate::stats::ESCORT_ENGAGE_RADIUS);
     let near = acquire_target_within(state, index, id, center, cap, |target| {
-        in_reach_now(target)
-            || live(target)
-                && match target {
-                    Target::Unit(u) => state.unit(u).is_some_and(|victim| {
-                        let tile = victim.tile();
-                        if state.passable_for(domain, tile) {
-                            return reach.reaches(state, id, [tile]);
-                        }
-                        // A victim over ground the escort cannot stand on is a
-                        // fight only if a firing stand around it can be reached.
-                        let Some(weapon) = kind
-                            .stats()
-                            .weapons
-                            .iter()
-                            .find(|weapon| weapon.targets.covers(victim.domain()))
-                        else {
-                            return false;
-                        };
-                        let range = unit_weapon_reach(state, kind, Some(target), weapon);
-                        let stands = chase_stand_ins(state, domain, tile, victim.pos, range);
-                        reach.reaches(state, id, stands)
-                    }),
-                    Target::Building(b) => state.building(b).is_some_and(|b| {
-                        let (w, h) = b.kind.size();
-                        let ring = (-1..=w).flat_map(move |dx| (-1..=h).map(move |dy| (dx, dy)));
-                        reach.reaches(state, id, ring.map(|(dx, dy)| b.anchor.offset(dx, dy)))
-                    }),
-                }
+        in_reach_now(target) || live(target) && route_reaches(state, reach, id, target)
     });
     let engage = crate::stats::ESCORT_ENGAGE_RADIUS;
     near.or_else(|| {
@@ -1419,6 +1470,22 @@ pub(super) fn acquire_escort_target(
 /// Whether a `kind` machine standing at `pos` has a weapon that reaches
 /// `target` now, on a level that weapon may fire at.
 fn in_weapon_reach_from(state: &State, kind: crate::UnitKind, pos: Vec2Fx, target: Target) -> bool {
+    weapon_reaches_from(state, kind, pos, target, false)
+}
+
+/// [`in_weapon_reach_from`] with a clear line too: whether `kind` at `pos`
+/// could fire on `target` this moment.
+fn fires_on_now(state: &State, kind: crate::UnitKind, pos: Vec2Fx, target: Target) -> bool {
+    weapon_reaches_from(state, kind, pos, target, true)
+}
+
+fn weapon_reaches_from(
+    state: &State,
+    kind: crate::UnitKind,
+    pos: Vec2Fx,
+    target: Target,
+    clear: bool,
+) -> bool {
     let victim = target_domain(state, target);
     let aim = match target {
         Target::Unit(u) => state.unit(u).map(|u| ShotEnd::new(u.pos, victim)),
@@ -1432,6 +1499,7 @@ fn in_weapon_reach_from(state: &State, kind: crate::UnitKind, pos: Vec2Fx, targe
             weapon.targets.covers(victim)
                 && within_unit_weapon_reach(state, kind, target, weapon, pos.dist_sq(aim.at))
                 && levels_allow(state, Fire::of(weapon), shooter, aim)
+                && (!clear || clear_line(state, Fire::of(weapon), shooter, aim, Landing::Checked))
         })
     })
 }
@@ -1796,11 +1864,11 @@ pub(super) fn advance(
         return;
     }
     let (pos, home, me, kind) = (unit.pos, unit.tile(), unit.player, unit.kind);
-    let reach = weapon.range.floor().to_num::<i32>() + 1 + index.wide_reach();
+    let window = weapon.range.floor().to_num::<i32>() + 1 + index.wide_reach();
 
     let mut unit_target: Option<((chassis::fx::Fx, u8, UnitId), Vec2Fx)> = None;
-    for dy in -reach..=reach {
-        for &(_, slot) in index.row_span(home.y + dy, home.x - reach, home.x + reach) {
+    for dy in -window..=window {
+        for &(_, slot) in index.row_span(home.y + dy, home.x - window, home.x + window) {
             let target = &state.units[slot];
             let domain = target.domain();
             if target.hp == 0
@@ -1863,7 +1931,9 @@ pub(super) fn advance(
                 .map(|(_, bid, aim, _)| (Target::Building(bid), aim))
         });
     let Some((target, aim)) = target else {
-        automatic_radar(state, index, id, true, events, hits, launches, &mut None);
+        automatic_radar(
+            state, index, reach, id, true, events, hits, launches, &mut None,
+        );
         return;
     };
 
@@ -2731,18 +2801,18 @@ fn stall_attack(
     events: &mut Vec<Event>,
 ) {
     let unit = state.unit_mut(id).expect("caller checked");
-    // A fight escort duty picked for itself is dropped as quietly: the
-    // escort goes back to its slot, and acquisition never picks a victim it
-    // can neither shoot nor reach.
-    if let Some(Resume::Accompany(_)) = resume {
+    // A fight a hunt, a patrol leg or escort duty picked for itself is
+    // dropped quietly: the march or the escort goes on, and acquisition
+    // never picks a victim it can neither fire on now nor reach. A chase
+    // with no program to resume, ordered or taken up while idle, is judged
+    // below.
+    if resume.is_some() {
         unit.complete_attack(resume);
         return;
     }
     // A tethered chase that cannot route breaks off home quietly: it
     // abandons its own acquisition, not a player order, so no stall event.
-    if resume.is_none()
-        && let Some(leash) = unit.leash
-    {
+    if let Some(leash) = unit.leash {
         unit.order = Order::Run {
             goal: leash.anchor.into(),
         };
