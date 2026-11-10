@@ -425,8 +425,9 @@ impl SaveJob {
             && (named
                 || (!already_saved
                     && (game.state.current_tick() != 0 || !game.pending.is_empty())));
-        // A LAN match cannot resume on one machine, so it keeps the
-        // watch-only record a decided match keeps.
+        // A LAN match resumes only through its host's LAN save
+        // (`SaveJob::lan`), so any other save of one keeps the watch-only
+        // record a decided match keeps.
         let recording = game.state.result().is_some() || game.net_role().is_some();
         let mut meta = game.recorder.meta.clone();
         meta.ticks = Some(game.state.current_tick());
@@ -525,7 +526,11 @@ impl SaveJob {
 
     /// Writes the record into `dir`, replacing the match's autosaves in
     /// every `autosaves` folder.
-    fn run_in(self, dir: Option<PathBuf>, autosaves: &[PathBuf]) -> Result<SaveOutcome, SaveError> {
+    pub(crate) fn run_in(
+        self,
+        dir: Option<PathBuf>,
+        autosaves: &[PathBuf],
+    ) -> Result<SaveOutcome, SaveError> {
         let outcome = if let Some(data) = self.data {
             let dir = dir.ok_or(SaveError::NoDataDir)?;
             std::fs::create_dir_all(&dir).map_err(|source| SaveError::CreateDir {

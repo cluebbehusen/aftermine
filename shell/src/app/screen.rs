@@ -263,9 +263,9 @@ impl Screen {
     }
 
     /// Whether closing the window would abandon a live match behind this
-    /// screen. This decides whether Cancel on a failed quit-save can return
-    /// to that match or must return to the front door, and whether a LAN
-    /// match keeps its link. A save or load in flight keeps the match.
+    /// screen. Only then does a quit save the match before exiting (see
+    /// `persistence::Intent::quit`), and a LAN match keeps its link. A save
+    /// or load in flight keeps the match.
     pub(super) fn holds_live_match(&self) -> bool {
         match self {
             Self::Playing

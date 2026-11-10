@@ -710,19 +710,16 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             // autosave swallows the quit (prevent_quit is in force) and
             // raises the failure dialog instead of exiting over data loss.
             app.save_settings().ok();
-            // The dialog's home-vs-match classification must see through
-            // screens opened from Pause: a quit while Settings or Playback
-            // sits over a paused match still has an unsaved match behind
-            // it, and a Home-classified Cancel would strand it.
-            let over_a_match = screen.holds_live_match();
+            // Screens opened from Pause still hold the paused match behind
+            // them, so a quit there saves it; a front-door screen holds
+            // none, and saving the match left behind it would replace that
+            // match's resumable save.
+            let intent = persistence::Intent::quit(screen.holds_live_match());
             if let Screen::Busy(busy) = &mut screen {
                 busy.request_quit();
             } else {
                 let before = screen.kind();
-                screen = app.persistence_screen(
-                    persistence::Intent::Leave(screens::pause::LeaveVerb::Quit, !over_a_match),
-                    screen,
-                );
+                screen = app.persistence_screen(intent, screen);
                 screen_flow::settle(&mut app, before, &screen);
             }
         }
@@ -948,7 +945,7 @@ impl App {
             return Screen::Busy(busy);
         }
         self.persistence_screen(
-            persistence::Intent::Leave(screens::pause::LeaveVerb::MainMenu, false),
+            persistence::Intent::Leave(screens::pause::LeaveVerb::MainMenu),
             screen,
         )
     }

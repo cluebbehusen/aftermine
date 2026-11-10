@@ -113,7 +113,7 @@ fn frame_context_follows_playback_speed_instead_of_the_hidden_live_clock() {
 }
 
 #[test]
-fn failed_quit_dialogs_return_to_every_hidden_live_match() {
+fn quits_save_every_hidden_live_match() {
     let home = || Screen::Home(HomeScreen::with_resumable(false));
     let pause = || Screen::Pause(PauseScreen::open(false, true));
 

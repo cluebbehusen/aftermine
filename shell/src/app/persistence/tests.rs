@@ -115,3 +115,77 @@ fn a_replaced_match_retires_on_the_worker_when_it_is_free() {
     assert!(matches!(result, Ok(Output::Retired)));
     assert!(!worker.busy());
 }
+
+#[test]
+fn quitting_from_home_keeps_a_left_lan_matchs_resumable_save() {
+    let dir = std::env::temp_dir().join(format!(
+        "aftermine-home-quit-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut duel = Scenario::skirmish();
+    for player in &mut duel.players {
+        player.bot = false;
+        player.bot_config = None;
+    }
+    let mut game = Game::networked(
+        duel,
+        aftermine_sim::PlayerId(0),
+        crate::game::network::NetRole::Host,
+        macroquad::prelude::vec2(1280.0, 800.0),
+    )
+    .unwrap();
+    for _ in 0..12 {
+        game.run_batch(&[]);
+    }
+    let manifest =
+        crate::game::checkpoint::LanManifest::new(&game.scenario, game.presentation.human, &[]);
+    let job = autosave::SaveJob::lan(
+        &game,
+        game.capture_save().for_lan(Vec::new(), manifest),
+        None,
+    );
+    let mark = job.mark().unwrap();
+    job.run_in(Some(dir.clone()), std::slice::from_ref(&dir))
+        .unwrap();
+    game.mark_saved(&mark);
+    // The host left with Main menu; the match ran on past that save, and
+    // its link is gone.
+    for _ in 0..3 {
+        game.run_batch(&[]);
+    }
+    assert!(!game.is_saved());
+    let before: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(before.len(), 1);
+
+    let intent = Intent::quit(Screen::Home(HomeScreen::open()).holds_live_match());
+    if let Some(job) = save_job(&intent, &game, None) {
+        job.run_in(Some(dir.clone()), std::slice::from_ref(&dir))
+            .unwrap();
+    }
+    let after: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(
+        after, before,
+        "the LAN autosave stays and no match record is written"
+    );
+
+    assert!(
+        save_job(
+            &Intent::quit(Screen::Playing.holds_live_match()),
+            &game,
+            None
+        )
+        .is_some(),
+        "a quit over a live match still saves it"
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
