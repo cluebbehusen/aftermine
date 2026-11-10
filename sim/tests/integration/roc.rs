@@ -450,6 +450,60 @@ fn half_turned_rocs_fight_half_turned_targets_alike() {
     assert_eq!(wh.wrapping_add(128), eh);
 }
 
+#[test]
+fn half_turned_rocs_hunt_the_half_turned_one_of_two_equally_near_machines() {
+    // Each Roc meets two Breakers equally far from its centre, either side of
+    // its nose. The Breakers spawn in an order that does not mirror, so only a
+    // tie broken by bearing turns the two hulls alike.
+    let width = i32::try_from(WIDTH).unwrap();
+    let height = i32::try_from(HEIGHT).unwrap();
+    let mirror = |x: i32, y: i32| (width - 1 - x, height - 1 - y);
+    let ((rx, ry), (sx, sy), (px, py)) = (mirror(8, 10), mirror(11, 12), mirror(11, 8));
+    let mut state = staged(vec![
+        unit(0, UnitKind::Roc, 8, 10),
+        unit(1, UnitKind::Breaker, 11, 12),
+        unit(1, UnitKind::Breaker, 11, 8),
+        unit(1, UnitKind::Roc, rx, ry),
+        unit(0, UnitKind::Breaker, px, py),
+        unit(0, UnitKind::Breaker, sx, sy),
+    ]);
+    let west = ids(&state, 0, UnitKind::Roc)[0];
+    let east = ids(&state, 1, UnitKind::Roc)[0];
+    let pos = state.unit(west).unwrap().pos;
+    facing(&mut state, west, pos + dir(0) * Fx::from_num(4));
+    let pos = state.unit(east).unwrap().pos;
+    facing(&mut state, east, pos + dir(128) * Fx::from_num(4));
+    let (goal, turned) = (TilePos::new(26, 10), mirror(26, 10));
+    state.tick(&[
+        cmd(
+            0,
+            Command::Hunt {
+                units: vec![west],
+                goal,
+                queue: false,
+            },
+        ),
+        cmd(
+            1,
+            Command::Hunt {
+                units: vec![east],
+                goal: TilePos::new(turned.0, turned.1),
+                queue: false,
+            },
+        ),
+    ]);
+    run(&mut state, 3);
+    let (wh, eh) = (
+        state.unit(west).unwrap().heading,
+        state.unit(east).unwrap().heading,
+    );
+    assert!(
+        wh.cast_signed() > 0,
+        "premise: the west Roc turned toward a Breaker: {wh}"
+    );
+    assert_eq!(wh.wrapping_add(128), eh);
+}
+
 fn load(state: &mut State, riders: Vec<UnitId>, transport: UnitId) {
     state.tick(&[cmd(
         0,

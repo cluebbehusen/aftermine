@@ -115,15 +115,23 @@ impl Sight {
         Self { candidates }
     }
 
-    /// The candidates in the order a gun at `pivot` ranks them.
-    fn ranked(&self, state: &State, pivot: Vec2Fx) -> Vec<(Candidate, Vec2Fx)> {
+    /// The candidates in the order a gun at `pivot` on a hull facing
+    /// `heading` ranks them: equally near ones by bearing from the nose.
+    fn ranked(&self, state: &State, pivot: Vec2Fx, heading: u8) -> Vec<(Candidate, Vec2Fx)> {
         let mut ranked: Vec<_> = self
             .candidates
             .iter()
             .map(|candidate| (*candidate, aim_point(state, candidate.target, pivot)))
             .collect();
-        ranked.sort_by_key(|(candidate, aim)| {
-            (candidate.tier, pivot.dist_sq(*aim), candidate.target)
+        // The bearing is costly, so it is reached only on an exact tie.
+        ranked.sort_by(|(a, aim_a), (b, aim_b)| {
+            a.tier
+                .cmp(&b.tier)
+                .then_with(|| pivot.dist_sq(*aim_a).cmp(&pivot.dist_sq(*aim_b)))
+                .then_with(|| {
+                    bearing_from(pivot, heading, *aim_a).cmp(&bearing_from(pivot, heading, *aim_b))
+                })
+                .then_with(|| a.target.cmp(&b.target))
         });
         ranked
     }
@@ -219,7 +227,7 @@ pub(in crate::tick::brain) fn fire(
     let mut picks = [None; crate::stats::MAX_WEAPONS];
     for (slot, (mount, weapon)) in guns.mounts.iter().zip(stats.weapons).enumerate() {
         let pivot = mount.pivot(pos, heading);
-        let ranked = sight.ranked(state, pivot);
+        let ranked = sight.ranked(state, pivot, heading);
         let seen = |target: Target, excess: Fx| {
             let aim = aim_point(state, target, pivot);
             (mount.covers(relative(pivot, aim, heading))
@@ -415,7 +423,7 @@ pub(in crate::tick::brain) fn hunt(
     let stats = unit.kind.stats();
     let guns = stats.mounts.expect("a mounted hull");
     let lead = sight
-        .ranked(state, pos)
+        .ranked(state, pos, heading)
         .into_iter()
         .filter(|(candidate, centre_aim)| {
             feedable(guns, pos, *centre_aim)
@@ -491,12 +499,15 @@ pub(in crate::tick::brain) fn face_idle(
         .find(|(slot, (mount, weapon))| {
             picks[*slot].is_none() && {
                 let pivot = mount.pivot(pos, heading);
-                sight.ranked(state, pivot).iter().any(|(candidate, aim)| {
-                    !mount.covers(relative(pivot, *aim, heading))
-                        && in_reach(weapon, pivot, *aim, candidate.excess)
-                        && feedable(guns, pos, aim_point(state, candidate.target, pos))
-                        && clear(state, pivot, *aim)
-                })
+                sight
+                    .ranked(state, pivot, heading)
+                    .iter()
+                    .any(|(candidate, aim)| {
+                        !mount.covers(relative(pivot, *aim, heading))
+                            && in_reach(weapon, pivot, *aim, candidate.excess)
+                            && feedable(guns, pos, aim_point(state, candidate.target, pos))
+                            && clear(state, pivot, *aim)
+                    })
             }
         })
         .map(|(_, (mount, _))| mount);
