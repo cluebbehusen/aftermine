@@ -626,6 +626,11 @@ pub(crate) struct LatchProbe {
 struct HeldStroke {
     by: Presser,
     plan: PlacingStroke,
+    /// The world point the stroke has covered up to: the press's, then each
+    /// move's. The next move plans from here, so however many moves a frame
+    /// brings and however far each jumps, the row covers all the ground the
+    /// pointer crossed, in order, even if the camera moved meanwhile.
+    reached: Vec2,
 }
 
 /// A live drag-to-place stroke: the row it plans, staged only when the
@@ -1504,6 +1509,24 @@ impl InputState {
     }
 
     /// The previewed plan's stamps.
+    /// A held stroke's presser and the world point it has covered up to.
+    pub(super) fn stroke_reached(&self) -> Option<(Presser, Vec2)> {
+        let held = self.placing.as_ref()?.stroke.as_ref()?;
+        Some((held.by, held.reached))
+    }
+
+    /// Moves a held stroke on to `world` without planning the ground
+    /// between, as after a camera jump, which crosses none.
+    pub(super) fn restart_stroke_at(&mut self, world: Vec2) {
+        if let Some(held) = self
+            .placing
+            .as_mut()
+            .and_then(|placement| placement.stroke.as_mut())
+        {
+            held.reached = world;
+        }
+    }
+
     pub(crate) fn planned_stamps(&self) -> &[TilePos] {
         self.active_plan()
             .map_or(&[], |plan| plan.stamps.as_slice())
@@ -2254,7 +2277,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
     }
     match *event {
         RawEvent::MouseMove { x, y } => {
-            let from = std::mem::replace(&mut input.mouse, vec2(x, y));
+            input.mouse = vec2(x, y);
             // A held minimap press keeps steering: clamp the cursor
             // into the minimap so sliding off its edge doesn't stall
             // the pan mid-gesture.
@@ -2279,9 +2302,8 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // stamps before it: a wall in one stroke. Nothing stages
             // until the release, so a careless stroke costs nothing.
             // Refused cells skip silently (the ghost tells that story).
-            let camera = &game.presentation.camera;
-            let (a, b) = (camera.to_world(from), camera.to_world(vec2(x, y)));
-            extend_stroke(game, input, Presser::Mouse, a, b);
+            let to = game.presentation.camera.to_world(vec2(x, y));
+            extend_stroke(game, input, Presser::Mouse, to);
             if input.handle_drag {
                 pull_row(&game.view(), input, vec2(x, y));
             }
@@ -2371,16 +2393,15 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             x,
             y,
         } => {
-            let from = std::mem::replace(&mut input.mouse, vec2(x, y));
+            input.mouse = vec2(x, y);
             input.minimap_drag = false;
             if std::mem::take(&mut input.handle_drag) {
                 return;
             }
             // The placement stroke ends at release, taking the ground
             // up to the release point.
-            let camera = &game.presentation.camera;
-            let (a, b) = (camera.to_world(from), camera.to_world(vec2(x, y)));
-            extend_stroke(game, input, Presser::Mouse, a, b);
+            let to = game.presentation.camera.to_world(vec2(x, y));
+            extend_stroke(game, input, Presser::Mouse, to);
             finish_stroke(game, input, Presser::Mouse);
             if let Some(origin) = input.drag_origin.take() {
                 let release = vec2(x, y);
@@ -2787,6 +2808,7 @@ fn armed_click(
                         queue,
                         stamps: vec![anchor],
                     },
+                    reached: world,
                 });
             }
         }
@@ -3360,10 +3382,11 @@ fn finish_stroke(game: &mut Game, input: &mut InputState, by: Presser) -> bool {
     true
 }
 
-/// Plans the stamps the ground from `a` to `b` (world points) crosses while
-/// `by` lays a stroke, sampled finely enough that a fast move leaves no
-/// footprint out. Samples under chrome or the minimap plan nothing.
-fn extend_stroke(game: &Game, input: &mut InputState, by: Presser, a: Vec2, b: Vec2) {
+/// Plans the stamps the ground crosses from the stroke's reached point to
+/// `to` (world points) while `by` lays it, then moves the reached point to
+/// `to`. Sampled finely enough that a fast move leaves no footprint out;
+/// samples under chrome or the minimap plan nothing.
+fn extend_stroke(game: &Game, input: &mut InputState, by: Presser, to: Vec2) {
     let Some(Placement {
         kind,
         stroke: Some(held),
@@ -3375,6 +3398,7 @@ fn extend_stroke(game: &Game, input: &mut InputState, by: Presser, a: Vec2, b: V
     if held.by != by {
         return;
     }
+    let (a, b) = (std::mem::replace(&mut held.reached, to), to);
     let stroke = &mut held.plan;
     let kind = *kind;
     let camera = &game.presentation.camera;
@@ -3955,7 +3979,7 @@ pub fn update_held(game: &mut Game, input: &mut InputState, dt: f32) {
     paint::sweep(game, input, before);
     if let Some(by @ Presser::Pad(_)) = input.stroke_by() {
         let after = input.reticle.ground(&game.presentation.camera);
-        extend_stroke(game, input, by, before, after);
+        extend_stroke(game, input, by, after);
     }
 }
 

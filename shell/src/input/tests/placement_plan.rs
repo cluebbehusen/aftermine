@@ -147,6 +147,97 @@ fn one_long_move_or_a_bare_release_fills_every_cell_between() {
     assert_eq!(staged_builds(&game), 4, "the release point counts too");
 }
 
+/// Applies `batches` as the frame loop does: its pointer pre-pass moves
+/// `input.mouse` to each frame's last pointer before the frame's events
+/// apply.
+fn frames(game: &mut Game, input: &mut InputState, batches: &[Vec<RawEvent>]) {
+    for batch in batches {
+        if let Some(last) = batch.iter().rev().find_map(|event| match *event {
+            RawEvent::MouseMove { x, y }
+            | RawEvent::MouseDown { x, y, .. }
+            | RawEvent::MouseUp { x, y, .. } => Some(vec2(x, y)),
+            _ => None,
+        }) {
+            input.mouse = last;
+        }
+        apply_events(game, input, batch);
+    }
+}
+
+#[test]
+fn a_fast_drag_through_the_frame_loop_lays_a_gapless_row_in_order() {
+    for moves_a_frame in [1, 3] {
+        let (mut game, mut input) = planning(10_000);
+        input.arm_placement(aftermine_sim::BuildingKind::Barricade);
+        // Two tiles a move: fast enough to skip a cell each move.
+        let points: Vec<Vec2> = (4..=12).step_by(2).map(|x| at(&game, x)).collect();
+        let mut batches = vec![vec![left_down(points[0])]];
+        for frame in points[1..].chunks(moves_a_frame) {
+            batches.push(frame.iter().map(|p| mouse_move(*p)).collect());
+        }
+        batches.push(vec![left_up(points[points.len() - 1])]);
+        frames(&mut game, &mut input, &batches);
+        let row: Vec<i32> = game
+            .pending
+            .iter()
+            .filter_map(|pc| match pc.command {
+                Command::Build { anchor, .. } => Some(anchor.x),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            row,
+            (4..=12).collect::<Vec<_>>(),
+            "{moves_a_frame} moves a frame: every cell crossed, in order"
+        );
+    }
+}
+
+#[test]
+fn a_camera_jump_mid_drag_lays_nothing_between_the_two_views() {
+    let (mut game, mut input) = planning(10_000);
+    input.arm_placement(aftermine_sim::BuildingKind::Barricade);
+    // Close enough that the map outgrows the window, so a jump moves it.
+    let camera = &mut game.presentation.camera;
+    camera.glide_to(camera.to_screen(vec2(5.5, 2.5)), 128.0);
+    for _ in 0..100 {
+        camera.update(1.0);
+    }
+    assert!(!camera.zooming());
+    let (a, b) = (at(&game, 4), at(&game, 6));
+    frames(
+        &mut game,
+        &mut input,
+        &[vec![left_down(a)], vec![mouse_move(b)]],
+    );
+    assert_eq!(
+        input.planned_stamps(),
+        [4, 5, 6].map(|x| TilePos::new(x, 2))
+    );
+    super::super::reticle::look_at(&mut game, &mut input, vec2(16.5, 7.5));
+    assert!(
+        game.presentation
+            .camera
+            .to_world(b)
+            .distance(vec2(6.5, 2.5))
+            > 4.0,
+        "premise: the jump moved the view"
+    );
+    let c = b + vec2(1.0, 0.0);
+    frames(&mut game, &mut input, &[vec![mouse_move(c)]]);
+    let world = game.presentation.camera.to_world(c);
+    let under = TilePos::new(
+        crate::numeric::to_i32(world.x.floor()),
+        crate::numeric::to_i32(world.y.floor()),
+    );
+    for stamp in input.planned_stamps() {
+        assert!(
+            (stamp.y == 2 && (4..=6).contains(&stamp.x)) || *stamp == under,
+            "{stamp:?} lies between the views"
+        );
+    }
+}
+
 #[test]
 fn the_first_stamp_that_stages_opens_the_row() {
     let scenario = aftermine_sim::Scenario::from_json(

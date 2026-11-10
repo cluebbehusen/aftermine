@@ -190,10 +190,22 @@ pub(super) fn press(
 /// match goes through here.
 pub(super) fn look_at(game: &mut Game, input: &mut InputState, world: Vec2) {
     let camera = &mut game.presentation.camera;
+    let stroke = input
+        .stroke_reached()
+        .map(|(by, reached)| (by, camera.to_screen(reached)));
     camera.center = world;
     camera.pan(Vec2::ZERO); // re-clamp
     input.reticle.aim = Some(world);
     input.reticle.settle(camera, input.ui);
+    // A jump crosses no ground, so a held stroke goes on from the reticle,
+    // or from the same spot on the screen, never across the map.
+    if let Some((by, screen)) = stroke {
+        let from = match by {
+            super::Presser::Pad(_) => input.reticle.ground(camera),
+            _ => camera.to_world(screen),
+        };
+        input.restart_stroke_at(from);
+    }
 }
 
 fn selection_center(game: &Game) -> Option<Vec2> {
