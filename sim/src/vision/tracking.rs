@@ -33,6 +33,25 @@ pub struct ContactTrack {
 }
 
 impl ContactTrack {
+    /// The direction this track's equal choices go round: the way it has
+    /// moved, or for a still track the way out from the map centre. Both
+    /// turn with a half turn of the map, so mirrored tracks break mirrored
+    /// ties.
+    fn tie_frame(&self, (width, height): (i32, i32)) -> TieFrame {
+        let moved = match (self.history.first(), self.history.last()) {
+            (Some(first), Some(last)) => (
+                i64::from(last.tile.x - first.tile.x),
+                i64::from(last.tile.y - first.tile.y),
+            ),
+            _ => (0, 0),
+        };
+        if moved == (0, 0) {
+            TieFrame::outward(self.tile, (width, height))
+        } else {
+            TieFrame(moved)
+        }
+    }
+
     /// Fixed-point velocity estimated exclusively from reported movement.
     pub fn velocity(&self) -> Vec2Fx {
         let Some(first) = self.history.first() else {
@@ -51,6 +70,30 @@ impl ContactTrack {
         } else {
             velocity
         }
+    }
+}
+
+/// A direction for breaking ties between tiles around a query.
+#[derive(Clone, Copy)]
+pub(crate) struct TieFrame((i64, i64));
+
+impl TieFrame {
+    /// Out through `tile` from the centre of a map `width` by `height`;
+    /// empty for the map's centre tile.
+    pub(crate) fn outward(tile: TilePos, (width, height): (i32, i32)) -> Self {
+        Self((
+            i64::from(tile.x) * 2 + 1 - i64::from(width),
+            i64::from(tile.y) * 2 + 1 - i64::from(height),
+        ))
+    }
+
+    /// Ranks `tile` as seen from `from`: furthest along the frame first, then
+    /// by the side of it. A half turn negates the frame and every offset
+    /// alike, which keeps both terms.
+    pub(crate) fn rank(self, from: TilePos, tile: TilePos) -> (std::cmp::Reverse<i64>, i64) {
+        let (fx, fy) = self.0;
+        let (dx, dy) = (i64::from(tile.x - from.x), i64::from(tile.y - from.y));
+        (std::cmp::Reverse(fx * dx + fy * dy), fx * dy - fy * dx)
     }
 }
 
@@ -134,12 +177,14 @@ impl Tracking {
                 }
             }
         }
+        let map = (state.map().width(), state.map().height());
         let mut candidates = Vec::new();
         for (old, track) in self.tracks.iter().enumerate() {
             if used[old] || !live(track) {
                 continue;
             }
             let predicted = track.tile.center() + track.velocity();
+            let frame = track.tie_frame(map);
             for dy in -1..=1 {
                 for new in span(track.tile.y + dy, track.tile.x - 1, track.tile.x + 1) {
                     if matches[new].is_some() {
@@ -153,13 +198,14 @@ impl Tracking {
                     if !identified && track.domain != domain {
                         continue;
                     }
+                    let (rank, turn) = frame.rank(track.tile, tile);
                     candidates.push((
                         !identified,
                         predicted.dist_sq(tile.center()),
                         track.tile.center().dist_sq(tile.center()),
+                        rank,
+                        turn,
                         track.id,
-                        tile.y,
-                        tile.x,
                         visible,
                         old,
                         new,

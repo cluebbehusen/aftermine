@@ -33,6 +33,7 @@ fn sorted_refresh(this: &mut Tracking, view: &Vision, state: &State, player: Pla
             continue;
         }
         let predicted = track.tile.center() + track.velocity();
+        let frame = track.tie_frame((state.map().width(), state.map().height()));
         for dy in -1..=1 {
             for new in span(track.tile.y + dy, track.tile.x - 1, track.tile.x + 1) {
                 let (tile, domain, visible) = observations[new];
@@ -43,13 +44,14 @@ fn sorted_refresh(this: &mut Tracking, view: &Vision, state: &State, player: Pla
                 if !identified && track.domain != domain {
                     continue;
                 }
+                let (rank, turn) = frame.rank(track.tile, tile);
                 candidates.push((
                     !identified,
                     predicted.dist_sq(tile.center()),
                     track.tile.center().dist_sq(tile.center()),
+                    rank,
+                    turn,
                     track.id,
-                    tile.y,
-                    tile.x,
                     visible,
                     old,
                     new,
@@ -299,4 +301,29 @@ fn detection_order_does_not_change_association() {
     state.tick -= 1;
     observe(&mut right, &mut state, &[(10, 9), (9, 8)]);
     assert_eq!(left, right);
+}
+
+#[test]
+fn a_contact_that_splits_keeps_its_track_on_the_mirrored_side() {
+    // A still contact becomes two equally near ones. After a half turn its
+    // track must follow the half-turned one, which a row-order tie would
+    // not.
+    let mut state = crate::Scenario::skirmish().build().unwrap();
+    let (width, height) = (state.map().width(), state.map().height());
+    let followed = |state: &mut State, turn: &dyn Fn((i32, i32)) -> (i32, i32)| {
+        let mut tracks = Tracking::default();
+        observe(&mut tracks, state, &[turn((8, 8))]);
+        observe(&mut tracks, state, &[turn((7, 8)), turn((9, 8))]);
+        state.tick -= 2;
+        tracks
+            .tracks
+            .iter()
+            .find(|track| track.id == ContactId(0))
+            .unwrap()
+            .tile
+    };
+    let half_turn = |(x, y): (i32, i32)| (width - 1 - x, height - 1 - y);
+    let kept = followed(&mut state, &|tile| tile);
+    let turned = followed(&mut state, &half_turn);
+    assert_eq!(half_turn((kept.x, kept.y)), (turned.x, turned.y));
 }

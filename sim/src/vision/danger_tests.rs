@@ -251,7 +251,7 @@ fn incident_memory_coalesces_and_evicts_deterministically() {
     assert_eq!(
         incidents[0].tile,
         TilePos::new(1, 3),
-        "equal-expiry overflow evicts the row-major first site"
+        "equal-expiry overflow evicts the site farthest from the newcomer"
     );
     assert!(
         incidents
@@ -636,4 +636,40 @@ fn indexed_charges_agree_with_a_walk_over_every_charge() {
             }
         }
     }
+}
+
+#[test]
+fn a_full_incident_memory_evicts_the_mirrored_site_after_a_half_turn() {
+    // Sixty-two incidents crowd the newcomer at (11, 5), and two more lie
+    // five tiles either side of it, all expiring together. The half-turned
+    // memory must drop the half-turned one of the two.
+    let (width, height) = (24, 11);
+    let newcomer = TilePos::new(11, 5);
+    let near: Vec<TilePos> = (0..height)
+        .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
+        .filter(|&tile| tile != newcomer && tile.center().dist_sq(newcomer.center()) < 25)
+        .take(crate::stats::HARVEST_INCIDENT_CAP - 2)
+        .collect();
+    assert_eq!(near.len(), crate::stats::HARVEST_INCIDENT_CAP - 2);
+    let far = [newcomer.offset(-5, 0), newcomer.offset(5, 0)];
+    let survivors = |turn: &dyn Fn(TilePos) -> TilePos| {
+        let mut view = Vision::new(width, height);
+        for &tile in near.iter().chain(&far).chain([&newcomer]) {
+            view.remember_salvage_incident(turn(tile), 100);
+        }
+        view.salvage_incidents()
+            .iter()
+            .map(|incident| incident.tile)
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let half_turn = |tile: TilePos| TilePos::new(width - 1 - tile.x, height - 1 - tile.y);
+    let kept = survivors(&|tile| tile);
+    assert!(kept.contains(&newcomer));
+    assert_eq!(
+        kept.iter()
+            .copied()
+            .map(half_turn)
+            .collect::<std::collections::BTreeSet<_>>(),
+        survivors(&half_turn)
+    );
 }

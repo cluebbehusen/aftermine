@@ -1046,7 +1046,9 @@ pub(super) fn turret_fire(
         } else if let Some((target, position)) = building_victim {
             (Target::Building(target), position)
         } else {
-            if let Some(view) = blind::radar_in_range(state, me, center, Domain::Ground, atk) {
+            if let Some(view) =
+                blind::radar_in_range(state, me, (center, gun.heading), Domain::Ground, atk)
+            {
                 blind::fire_building(state, id, view, events, hits, launches);
             } else if gun.reload == 0 {
                 rest_gun(state, id);
