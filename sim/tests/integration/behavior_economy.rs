@@ -1032,3 +1032,52 @@ fn a_surrendered_seat_earns_nothing_from_reclaimers_or_deliveries() {
     );
     assert_eq!(state.player(PlayerId(0)).scrap, bank);
 }
+
+#[test]
+fn a_factory_trains_onto_open_ground_past_a_doorstep_sealed_in_rock() {
+    let train = |state: &mut State| {
+        let foundry = state
+            .buildings()
+            .iter()
+            .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+            .unwrap()
+            .id;
+        state.tick(&[cmd(
+            0,
+            Command::Train {
+                building: foundry,
+                kind: UnitKind::Harvester,
+            },
+        )]);
+        let mut born = None;
+        run_until(state, 600, |s, events| {
+            born = events.iter().find_map(|e| match e {
+                Event::UnitTrained { unit, .. } => Some(s.unit(*unit).unwrap().tile()),
+                _ => None,
+            });
+            born.is_some()
+        });
+        born.unwrap()
+    };
+    // Where the Foundry sets a newborn down on open ground.
+    let first = train(&mut arena(Vec::new()).build().unwrap());
+    // Ring that doorstep in rock, leaving it a pocket of one tile.
+    let mut scenario = arena(Vec::new());
+    let (w, h) = BuildingKind::Foundry.size();
+    for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+        let (x, y) = (first.x + dx, first.y + dy);
+        if (1..1 + w).contains(&x) && (1..1 + h).contains(&y) {
+            continue;
+        }
+        let row = &mut scenario.map[usize::try_from(y).unwrap()];
+        let x = usize::try_from(x).unwrap();
+        if row.as_bytes()[x] == b'.' {
+            row.replace_range(x..=x, "#");
+        }
+    }
+    let second = train(&mut scenario.build().unwrap());
+    assert_ne!(
+        second, first,
+        "the newborn never lands in the sealed pocket"
+    );
+}
