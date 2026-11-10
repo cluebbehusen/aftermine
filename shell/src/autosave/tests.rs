@@ -180,32 +180,28 @@ fn an_unwritable_dir_reports_instead_of_lying() {
 }
 
 #[test]
-fn a_failed_publication_removes_only_its_uncommitted_reservation() {
-    let dir = scratch("failed-reservation");
+fn a_named_save_skips_a_taken_name_and_a_failed_one_leaves_nothing() {
+    let dir = scratch("named-names");
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("save-0000000001.amsave");
-    let held = reserve(&path).unwrap().expect("a free path");
-    assert!(reserve(&path).unwrap().is_none(), "a held path is taken");
-    assert!(held.publish(|_| Err::<(), _>("write refused")).is_err());
-    assert!(!path.exists());
-    let held = reserve(&path).unwrap().expect("a released path");
-    assert!(
-        held.publish(|path| {
-            chassis::fsx::write_atomic(path, |writer| {
-                writer.write_all(b"published")?;
-                Ok::<_, std::io::Error>(())
-            })
-            .unwrap();
-            Err::<(), _>("late durability failure")
-        })
-        .is_err()
-    );
-    assert_eq!(std::fs::read(path).unwrap(), b"published");
+    let write = |body: &'static [u8]| {
+        move |path: &Path| -> anyhow::Result<()> {
+            std::fs::write(path, body)?;
+            Ok(())
+        }
+    };
+    let first = publish_named(&dir, "save", 7, write(b"first")).unwrap();
+    let second = publish_named(&dir, "save", 7, write(b"second")).unwrap();
+    assert_ne!(first, second, "a taken name is skipped, never replaced");
+    assert_eq!(std::fs::read(&first).unwrap(), b"first");
+    assert_eq!(std::fs::read(&second).unwrap(), b"second");
+    let failed = publish_named(&dir, "save", 7, |_| Err(anyhow::anyhow!("disk full")));
+    assert!(matches!(failed, Err(SaveError::Write { .. })));
+    assert_eq!(files(&dir).len(), 2, "a failed save leaves no file behind");
     std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
-fn collisions_beyond_one_thousand_remain_exclusively_reserved() {
+fn collisions_beyond_one_thousand_still_find_a_free_name() {
     let dir = scratch("many-collisions");
     std::fs::create_dir_all(&dir).unwrap();
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
