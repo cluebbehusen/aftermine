@@ -525,7 +525,7 @@ pub(in crate::tick::brain) fn attack_known(
     }
     state.unit_mut(id).expect("live unit").retract_braces();
     let aim = view.aim_from(pos);
-    let goal = TilePos::containing(view.position);
+    let goal = view.goal_from(pos, state.unit(id).expect("live unit").heading);
     let inside_dead_zone = primary.is_some_and(|i| {
         pos.dist_sq(aim) < stats.weapons[i].minimum_range * stats.weapons[i].minimum_range
     });

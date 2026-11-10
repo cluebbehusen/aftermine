@@ -382,7 +382,7 @@ pub(super) fn attack(
     let goal = if reaches {
         TilePos::containing(pos + chassis::compass::dir(heading) * Fx::from_num(2))
     } else {
-        TilePos::containing(view.position)
+        view.goal_from(pos, heading)
     };
     if state
         .unit(id)
