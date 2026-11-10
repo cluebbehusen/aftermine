@@ -78,7 +78,7 @@ fn a_lan_menu_keeps_its_rows_through_every_dialog() {
     }
     let mut p = PauseScreen::open(false, true)
         .for_lan_match(false)
-        .with_save_failed("x".to_string(), LeaveVerb::MainMenu, false);
+        .with_save_failed("x".to_string(), LeaveVerb::MainMenu);
     assert_eq!(drive(&mut p, Key::Escape), Out::Stay);
     lan_rows(&p);
     assert_eq!(p.menu.view().items[p.menu.selected], "Main menu");
@@ -223,7 +223,6 @@ fn the_save_failure_dialog_preselects_cancel_and_returns_to_the_verb() {
     let mut p = PauseScreen::open(false, true).with_save_failed(
         "could not save: unable to write the save file".to_string(),
         LeaveVerb::Quit,
-        false,
     );
     assert!(p.saving_failed());
     assert!(p.subtitle("map").is_ascii(), "the menu font is Latin-1");
@@ -240,14 +239,11 @@ fn the_save_failure_dialog_preselects_cancel_and_returns_to_the_verb() {
 
 #[test]
 fn retry_and_leave_unsaved_carry_the_pending_verb() {
-    let mut p = PauseScreen::open(false, true).with_save_failed(
-        "x".to_string(),
-        LeaveVerb::MainMenu,
-        false,
-    );
+    let mut p =
+        PauseScreen::open(false, true).with_save_failed("x".to_string(), LeaveVerb::MainMenu);
     assert_eq!(
         activate(&mut p, "Retry"),
-        Out::RetrySave(LeaveVerb::MainMenu, false)
+        Out::RetrySave(LeaveVerb::MainMenu)
     );
     assert!(p.saving_failed(), "the dialog waits on the retry's verdict");
     assert_eq!(
@@ -259,15 +255,9 @@ fn retry_and_leave_unsaved_carry_the_pending_verb() {
 
 #[test]
 fn escape_cancels_the_save_failure_dialog_never_the_leave() {
-    let mut p =
-        PauseScreen::open(false, true).with_save_failed("x".to_string(), LeaveVerb::Quit, false);
+    let mut p = PauseScreen::open(false, true).with_save_failed("x".to_string(), LeaveVerb::Quit);
     assert_eq!(drive(&mut p, Key::Escape), Out::Stay);
     assert!(!p.saving_failed());
-    // A Home-origin dialog cancels back to the front door instead
-    // of a pause menu the player never opened.
-    let mut p =
-        PauseScreen::open(false, true).with_save_failed("x".to_string(), LeaveVerb::Quit, true);
-    assert_eq!(drive(&mut p, Key::Escape), Out::Home);
 }
 
 fn type_text(p: &mut PauseScreen, text: &str) {

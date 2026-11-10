@@ -135,12 +135,26 @@ pub(super) enum Intent {
     Load(PathBuf),
     Continue,
     Named(String),
-    Leave(screens::pause::LeaveVerb, bool),
+    Leave(screens::pause::LeaveVerb),
     Rematch,
+    /// Quits once the worker is idle, saving nothing: no live match is
+    /// held, so the one behind the screen was saved on the way out or left
+    /// unsaved on purpose.
+    Exit,
 }
 impl Intent {
     fn loading(&self) -> bool {
         matches!(self, Self::Load(_) | Self::Continue)
+    }
+
+    /// What a quit asks for: a live match is saved first; anything else
+    /// has nothing to save.
+    pub(super) fn quit(holds_live_match: bool) -> Self {
+        if holds_live_match {
+            Self::Leave(screens::pause::LeaveVerb::Quit)
+        } else {
+            Self::Exit
+        }
     }
 }
 pub(super) struct Busy {
@@ -537,19 +551,16 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                 app.install(loaded.install(), Install::local(true));
                 if busy.quit_after {
                     return Ok(app.persistence_screen(
-                        Intent::Leave(screens::pause::LeaveVerb::Quit, false),
+                        Intent::Leave(screens::pause::LeaveVerb::Quit),
                         Screen::Playing,
                     ));
                 }
                 return Ok(Screen::Playing);
             }
             Ok(Output::LanSave(save)) => {
-                // Nothing was installed, so quitting leaves as Home would.
+                // Nothing was installed, so quitting saves nothing.
                 if busy.quit_after {
-                    return Ok(app.persistence_screen(
-                        Intent::Leave(screens::pause::LeaveVerb::Quit, true),
-                        *busy.back,
-                    ));
+                    return Ok(app.persistence_screen(Intent::Exit, *busy.back));
                 }
                 // The lobby opens at once, under the player's name.
                 app.draft.player_name = Some(app.config.name());
@@ -564,13 +575,13 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                 }
                 if busy.quit_after {
                     return Ok(app.persistence_screen(
-                        Intent::Leave(screens::pause::LeaveVerb::Quit, false),
+                        Intent::Leave(screens::pause::LeaveVerb::Quit),
                         *busy.back,
                     ));
                 }
                 if busy.leaving_after() {
                     return Ok(app.persistence_screen(
-                        Intent::Leave(screens::pause::LeaveVerb::MainMenu, false),
+                        Intent::Leave(screens::pause::LeaveVerb::MainMenu),
                         *busy.back,
                     ));
                 }
@@ -581,8 +592,12 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                         }
                         *busy.back
                     }
-                    Intent::Leave(screens::pause::LeaveVerb::Quit, _) => std::process::exit(0),
-                    Intent::Leave(_, _) => Screen::Home(HomeScreen::open()),
+                    Intent::Leave(screens::pause::LeaveVerb::Quit) => {
+                        app.persistence_screen(Intent::Exit, *busy.back)
+                    }
+                    Intent::Leave(screens::pause::LeaveVerb::MainMenu) => {
+                        Screen::Home(HomeScreen::open())
+                    }
                     Intent::Rematch => {
                         let fresh = super::screen_flow::rebuild_match(&app.game)?;
                         app.install(fresh, Install::local(app.args.paused));
@@ -596,26 +611,27 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                     "{} failed: {error:#}",
                     if loading { "Load" } else { "Save" }
                 );
+                // A failed load installed nothing, so quitting saves nothing.
+                if busy.quit_after && loading {
+                    return Ok(app.persistence_screen(Intent::Exit, *busy.back));
+                }
                 if busy.quit_after {
                     return Ok(Screen::Pause(pause_menu(&app.game).with_save_failed(
                         error.to_string(),
                         screens::pause::LeaveVerb::Quit,
-                        false,
                     )));
                 }
                 if busy.leaving_after() {
                     app.notify(error.to_string(), true);
                     return Ok(app.persistence_screen(
-                        Intent::Leave(screens::pause::LeaveVerb::MainMenu, false),
+                        Intent::Leave(screens::pause::LeaveVerb::MainMenu),
                         *busy.back,
                     ));
                 }
-                if let Intent::Leave(verb, home) = busy.intent {
-                    return Ok(Screen::Pause(pause_menu(&app.game).with_save_failed(
-                        error.to_string(),
-                        verb,
-                        home,
-                    )));
+                if let Intent::Leave(verb) = busy.intent {
+                    return Ok(Screen::Pause(
+                        pause_menu(&app.game).with_save_failed(error.to_string(), verb),
+                    ));
                 }
                 app.notify(
                     if loading {
@@ -634,7 +650,8 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
             Ok(Output::Catalog(_) | Output::Retired | Output::Discarded) => unreachable!(),
         }
     }
-    if !busy.presented {
+    // An exit draws nothing worth a frame before it quits.
+    if !busy.presented && !matches!(busy.intent, Intent::Exit) {
         busy.presented = true;
         return Ok(Screen::Busy(busy));
     }
@@ -649,23 +666,19 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
     }
     if busy.id.is_none() && !app.persistence.busy() {
         let task: Task = match &busy.intent {
-            Intent::Named(_) | Intent::Leave(_, _) | Intent::Rematch => {
-                let name = if let Intent::Named(name) = &busy.intent {
-                    Some(name.as_str())
-                } else {
-                    None
+            Intent::Load(_) | Intent::Continue => {
+                let paths = match &busy.intent {
+                    Intent::Load(path) => Some(vec![path.clone()]),
+                    _ => None,
                 };
-                // A LAN host keeps an undecided match resumable, and a
-                // match it names is always a LAN save, decided or not;
-                // everyone else keeps what a local or decided match keeps.
-                let lan = app
-                    .net
-                    .as_ref()
-                    .filter(|_| name.is_some() || app.game.state.result().is_none())
-                    .and_then(|link| link.capture_lan_save(&app.game));
-                let job = match lan {
-                    Some(capture) => autosave::SaveJob::lan(&app.game, capture, name),
-                    None => autosave::SaveJob::capture(&app.game, name),
+                Box::new(move |cancel| {
+                    load_candidates(paths.unwrap_or_else(autosave::candidates), cancel)
+                })
+            }
+            intent => {
+                let Some(job) = save_job(intent, &app.game, app.net.as_ref()) else {
+                    // Nothing to save, and the worker is idle.
+                    std::process::exit(0)
                 };
                 let mark = job.mark();
                 Box::new(move |_| {
@@ -677,15 +690,6 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                     Ok(Output::Saved(mark))
                 })
             }
-            Intent::Load(_) | Intent::Continue => {
-                let paths = match &busy.intent {
-                    Intent::Load(path) => Some(vec![path.clone()]),
-                    _ => None,
-                };
-                Box::new(move |cancel| {
-                    load_candidates(paths.unwrap_or_else(autosave::candidates), cancel)
-                })
-            }
         };
         match app.persistence.start(task) {
             Ok(id) => busy.id = Some(id),
@@ -693,6 +697,29 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
         }
     }
     Ok(Screen::Busy(busy))
+}
+
+/// The save `intent` owes before it completes, if any. A LAN host keeps
+/// an undecided match resumable, and a match it names is always a LAN
+/// save, decided or not; everyone else keeps what a local or decided match
+/// keeps.
+fn save_job(
+    intent: &Intent,
+    game: &crate::game::Game,
+    net: Option<&crate::netplay::Link>,
+) -> Option<autosave::SaveJob> {
+    let name = match intent {
+        Intent::Named(name) => Some(name.as_str()),
+        Intent::Leave(_) | Intent::Rematch => None,
+        Intent::Load(_) | Intent::Continue | Intent::Exit => return None,
+    };
+    let lan = net
+        .filter(|_| name.is_some() || game.state.result().is_none())
+        .and_then(|link| link.capture_lan_save(game));
+    Some(match lan {
+        Some(capture) => autosave::SaveJob::lan(game, capture, name),
+        None => autosave::SaveJob::capture(game, name),
+    })
 }
 
 #[cfg(test)]

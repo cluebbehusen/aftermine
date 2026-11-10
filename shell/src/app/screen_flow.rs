@@ -562,10 +562,7 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
             next = Some(Screen::Replays(Shelf::open()));
         }
         screens::home::Out::Quit => {
-            return app.persistence_screen(
-                persistence::Intent::Leave(screens::pause::LeaveVerb::Quit, true),
-                Screen::Home(home),
-            );
+            return app.persistence_screen(persistence::Intent::Exit, Screen::Home(home));
         }
     }
     home_backdrop(app, dt);
@@ -1266,7 +1263,7 @@ fn results_frame(
             Screen::FinalMap(FinalMapScreen::open())
         }
         screens::results::Out::Home => app.persistence_screen(
-            persistence::Intent::Leave(screens::pause::LeaveVerb::MainMenu, false),
+            persistence::Intent::Leave(screens::pause::LeaveVerb::MainMenu),
             Screen::Results(results),
         ),
     }
@@ -1459,22 +1456,22 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
             Screen::Playing
         }
         screens::pause::Out::MainMenu => app.persistence_screen(
-            persistence::Intent::Leave(screens::pause::LeaveVerb::MainMenu, false),
+            persistence::Intent::Leave(screens::pause::LeaveVerb::MainMenu),
             Screen::Pause(ps),
         ),
         screens::pause::Out::Quit => app.persistence_screen(
-            persistence::Intent::Leave(screens::pause::LeaveVerb::Quit, false),
+            persistence::Intent::Leave(screens::pause::LeaveVerb::Quit),
             Screen::Pause(ps),
         ),
-        screens::pause::Out::RetrySave(verb, cancel_home) => app.persistence_screen(
-            persistence::Intent::Leave(verb, cancel_home),
-            Screen::Pause(ps),
-        ),
+        screens::pause::Out::RetrySave(verb) => {
+            app.persistence_screen(persistence::Intent::Leave(verb), Screen::Pause(ps))
+        }
         screens::pause::Out::LeaveUnsaved(verb) => match verb {
             screens::pause::LeaveVerb::MainMenu => Screen::Home(HomeScreen::open()),
-            screens::pause::LeaveVerb::Quit => std::process::exit(0),
+            screens::pause::LeaveVerb::Quit => {
+                app.persistence_screen(persistence::Intent::Exit, Screen::Pause(ps))
+            }
         },
-        screens::pause::Out::Home => Screen::Home(HomeScreen::open()),
     })
 }
 

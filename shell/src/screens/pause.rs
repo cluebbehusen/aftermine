@@ -218,12 +218,10 @@ pub enum Out {
     /// Confirmed: leave the process.
     Quit,
     /// Try the failed save again, then perform the verb if it lands.
-    RetrySave(LeaveVerb, bool),
+    RetrySave(LeaveVerb),
     /// Perform the verb without a save — the row that guarantees a
     /// player on a permanently full disk can always leave.
     LeaveUnsaved(LeaveVerb),
-    /// Back to the front door (a Home-origin failure dialog cancelled).
-    Home,
 }
 
 /// Which face of the pause screen is up.
@@ -264,10 +262,6 @@ struct SaveFailed {
     verb: LeaveVerb,
     /// The player-facing failure sentence (the dialog's subtitle).
     line: String,
-    /// Whether Cancel returns to the front door (the dialog was raised
-    /// from Home or a window close outside a match) instead of the
-    /// pause rows.
-    cancel_home: bool,
 }
 
 fn pause_menu(rows: &[Row], lan: bool) -> Menu<Choice> {
@@ -422,7 +416,7 @@ impl PauseScreen {
     /// autosave refused, and exiting silently would be data loss. The
     /// safe Cancel row sits preselected; Leave without saving is always
     /// reachable, so a full disk can never trap the player in the game.
-    pub fn with_save_failed(mut self, line: String, verb: LeaveVerb, cancel_home: bool) -> Self {
+    pub fn with_save_failed(mut self, line: String, verb: LeaveVerb) -> Self {
         let mut menu = Menu::rows(
             "COULD NOT SAVE",
             [
@@ -433,11 +427,7 @@ impl PauseScreen {
         );
         menu.select(1);
         self.menu = menu;
-        self.face = Face::SaveFailed(SaveFailed {
-            verb,
-            line,
-            cancel_home,
-        });
+        self.face = Face::SaveFailed(SaveFailed { verb, line });
         self
     }
 
@@ -500,21 +490,16 @@ impl PauseScreen {
         let picked = self.menu.handle(events, mouse).map(|picked| picked.value);
         match &self.face {
             Face::SaveFailed(dialog) => {
-                let (verb, cancel_home) = (dialog.verb, dialog.cancel_home);
+                let verb = dialog.verb;
                 match picked {
-                    Some(Choice::Retry) => return Out::RetrySave(verb, cancel_home),
+                    Some(Choice::Retry) => return Out::RetrySave(verb),
                     Some(Choice::LeaveUnsaved) => return Out::LeaveUnsaved(verb),
                     Some(_) => {}
                     None if escaped => {}
                     None => return Out::Stay,
                 }
                 // Cancel (or Escape — never the leave verb): back to the
-                // rows, cursor on the verb that raised the dialog, or back
-                // to the front door that asked.
-                if cancel_home {
-                    self.face = Face::Rows;
-                    return Out::Home;
-                }
+                // rows, cursor on the verb that raised the dialog.
                 self.back_to_rows(match verb {
                     LeaveVerb::MainMenu => Row::MainMenu,
                     LeaveVerb::Quit => Row::Quit,
