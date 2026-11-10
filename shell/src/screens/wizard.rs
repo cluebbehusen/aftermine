@@ -1820,9 +1820,20 @@ impl Wizard {
                 return Some(Out::Launch);
             }
             SetupZone::Card { row, cell } => {
+                let seat = order[row];
+                // A resume fixes every seat but the reserved ones. Keys
+                // and pads can carry a picked-up player over any card, so
+                // a drop on a fixed one is refused and the player stays
+                // picked up.
+                if cell == Cell::Seat
+                    && self.moving.is_some_and(|from| from != seat)
+                    && !movable[seat]
+                {
+                    sounds.push((SoundKind::Denied, None));
+                    return None;
+                }
                 sounds.push((SoundKind::Click, None));
                 self.notice = None;
-                let seat = order[row];
                 let member = self.members().get(seat).copied().flatten();
                 let plan = &mut draft.seats[seat];
                 match cell {
