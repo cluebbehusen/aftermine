@@ -486,6 +486,16 @@ fn thin_samples(stats: &mut MatchStats, every: u64) {
 /// Re-executes a replay, sampling every `every` ticks. The same replay
 /// yields the same report.
 pub fn compute(replay: &GameReplay, every: u64) -> Result<MatchStats> {
+    compute_unless(replay, every, || false)
+}
+
+/// [`compute`], giving up with an error once `stop` answers true. It asks
+/// before every tick, so a caller can call off a long record at once.
+pub fn compute_unless(
+    replay: &GameReplay,
+    every: u64,
+    stop: impl Fn() -> bool,
+) -> Result<MatchStats> {
     // Untrusted input: an out-of-order or cross-version record would
     // otherwise produce a plausible, wrong report instead of an error.
     replay
@@ -503,6 +513,7 @@ pub fn compute(replay: &GameReplay, every: u64) -> Result<MatchStats> {
     let start = state.current_tick();
     sample(&state, &mut stats, &mut sample_ticks);
     for _ in start..total {
+        anyhow::ensure!(!stop(), "statistics called off");
         let report = playback.step(&mut state);
         accumulate_events(&state, &mut stats, &mut moments, &report.events);
         if (state.current_tick() - start).is_multiple_of(every) {
