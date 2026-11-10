@@ -9,7 +9,9 @@
 use super::super::movement::half_turn_reversed;
 use super::super::reach::Reach;
 use super::super::spatial::UnitIndex;
-use super::economy::{first_flagged_waypoint, keep_flagged_route, known_ground_passable};
+use super::economy::{
+    first_flagged_waypoint, keep_flagged_route, known_ground_passable, round_hull_now,
+};
 use crate::event::{Event, StallReason};
 use crate::ids::{PlayerId, UnitId};
 use crate::state::{PathFollow, State};
@@ -59,6 +61,7 @@ pub(super) fn scout(
         eligible(path.goal)
             && (endangered || sees(path.goal, target, vision))
             && keep_flagged_route(state, id, path, step)
+            && !round_hull_now(state, id, path, step)
     });
     let cautious = endangered || flagged;
     if keep {
@@ -78,6 +81,7 @@ pub(super) fn scout(
         let planned = plan(
             state,
             danger,
+            unit,
             Origin {
                 player,
                 tile,
@@ -130,6 +134,7 @@ enum Route {
 fn plan(
     state: &State,
     danger: &GroundSalvageDanger,
+    scout: &crate::state::Unit,
     origin: Origin,
     target: TilePos,
     vision: i32,
@@ -147,7 +152,7 @@ fn plan(
         let reverse = half_turn_reversed(state, from, heading);
         let refuges = super::super::goals::ring_scan(from, SCOUT_RETREAT_RADIUS, reverse)
             .filter(|&at| eligible(at));
-        return route_first(state, danger, player, from, refuges);
+        return route_first(state, danger, scout, from, refuges);
     }
     let frame = crate::tick::rect_approach_origin(state, player, from, target, (1, 1));
     let mut views: Vec<TilePos> = (-vision..=vision)
@@ -163,7 +168,7 @@ fn plan(
     // Standing on a view already, the scout settles there when the better
     // ones before it cannot be searched out.
     let standing = views.contains(&from);
-    let found = route_first(state, danger, player, from, views);
+    let found = route_first(state, danger, scout, from, views);
     if standing {
         return found.or(Some(Route::Here));
     }
@@ -177,10 +182,11 @@ fn plan(
 fn route_first(
     state: &State,
     danger: &GroundSalvageDanger,
-    player: PlayerId,
+    scout: &crate::state::Unit,
     from: TilePos,
     candidates: impl IntoIterator<Item = TilePos>,
 ) -> Option<Route> {
+    let player = scout.player;
     let step = |at: TilePos| {
         known_ground_passable(state, danger, player, at) && danger.scout_route_safe_from(from, at)
     };
@@ -200,6 +206,9 @@ fn route_first(
             continue;
         }
         if let Some(waypoints) = danger.find_route(from, candidate, step) {
+            let waypoints = crate::tick::movement::round_standing_hulls(
+                state, scout, scout.pos, waypoints, step,
+            );
             return Some(Route::Path(PathFollow {
                 final_point: None,
                 goal: candidate,

@@ -84,14 +84,17 @@ fn stands_in_the_way(state: &State, mover: &Unit, hull: &Unit) -> bool {
 
 /// `waypoints`, a route for `mover` from `from`, with each stretch that runs
 /// under a friendly structural hull standing still replaced by a way round
-/// it, when one exists within the hull's own width of it. A stretch with no
-/// such way stays as it was. Only a small ground body reroutes; a hull as
-/// wide shoves the standing one instead.
+/// it, when one exists within the hull's own width of it. The way round
+/// keeps to `passable`, the rule the route itself was planned by, so a
+/// worker's detour knows no more of the map than its route does. A stretch
+/// with no such way stays as it was. Only a small ground body reroutes; a
+/// hull as wide shoves the standing one instead.
 pub(in crate::tick) fn round_standing_hulls(
     state: &State,
     mover: &Unit,
     from: Vec2Fx,
     mut waypoints: Vec<TilePos>,
+    passable: impl Fn(TilePos) -> bool,
 ) -> Vec<TilePos> {
     if mover.domain() != Domain::Ground || hull_excess(mover.kind.stats().radius) > Fx::ZERO {
         return waypoints;
@@ -133,7 +136,7 @@ pub(in crate::tick) fn round_standing_hulls(
             state.map.height(),
             entry,
             exit,
-            |t| window.covers(t) && !hulls.iter().any(|h| h.covers(t)) && state.passable(t),
+            |t| window.covers(t) && !hulls.iter().any(|h| h.covers(t)) && passable(t),
             window.area(),
         );
         match detour {
@@ -146,6 +149,18 @@ pub(in crate::tick) fn round_standing_hulls(
         }
     }
     waypoints
+}
+
+/// `mover`'s route from `from` to `goal` over open ground, round any
+/// friendly hull standing in it where there is room beside it.
+pub(in crate::tick) fn route_round_hulls(
+    state: &State,
+    mover: &Unit,
+    from: Vec2Fx,
+    goal: TilePos,
+) -> Option<Vec<TilePos>> {
+    crate::tick::route_for_position(state, mover.kind, from, goal)
+        .map(|waypoints| round_standing_hulls(state, mover, from, waypoints, |t| state.passable(t)))
 }
 
 /// Movement pre-pass: a structural hull parked with no orders pulls aside
@@ -248,7 +263,12 @@ fn way_aside(state: &State, slot: usize) -> Option<PathFollow> {
 
 /// The rest of `mover`'s route, when the friendly body presses on `hull`
 /// with that route ending under it, or running under it with no way round
-/// close beside it.
+/// close beside it. A body planning over open ground finds that way round
+/// itself, after a stall if it planned before the hull stopped. A body on
+/// `Harvest`, `ReturnCargo` or `Scout` plans by what its team knows and fears,
+/// which this pass cannot judge; its planner gives up a route a way round
+/// would now fix (`brain::economy::round_hull_now`), so a route it still
+/// holds under the hull has none.
 fn blocked_route<'a>(
     state: &State,
     hull: &Unit,
@@ -271,8 +291,15 @@ fn blocked_route<'a>(
     if !rest.iter().any(|&t| footprint.covers(t)) {
         return None;
     }
-    round_standing_hulls(state, mover, mover.pos, rest.to_vec())
+    let plans_by_knowledge = matches!(
+        mover.order,
+        Order::Harvest { .. } | Order::ReturnCargo { .. } | Order::Scout { .. }
+    );
+    (plans_by_knowledge
+        || round_standing_hulls(state, mover, mover.pos, rest.to_vec(), |t| {
+            state.passable(t)
+        })
         .iter()
-        .any(|&t| footprint.covers(t))
-        .then_some(rest)
+        .any(|&t| footprint.covers(t)))
+    .then_some(rest)
 }
