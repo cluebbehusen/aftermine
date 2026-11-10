@@ -51,12 +51,16 @@ pub(super) fn measure_info(
     let line_h = if compact { 18.0 } else { 22.0 } * scale;
     let inner = width - 24.0 * scale;
     // The select-all button shares the title row, which grows a little so
-    // the button clears both the box's top edge and the Health line.
+    // the button clears both the box's top edge and the Health line. It
+    // keeps room for pad mode's trigger icon either way, so switching
+    // between a controller and a mouse or finger never resizes it.
     let select_all = panel.select_all.as_ref().map(|all| {
+        let size = Type::Small.at(scale);
         select_all_size(
             touch,
             scale,
-            measure(Face::Body, &all.label(), Type::Small.at(scale)),
+            crate::hint_line::icon_width(size)
+                + measure(Face::Body, &format!(" {}", all.label()), size),
         )
     });
     let header_pad = if select_all.is_some() {

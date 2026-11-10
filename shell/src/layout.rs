@@ -49,8 +49,9 @@ pub struct LayoutModel {
     /// The menu button at the top bar's right edge; it opens the pause
     /// menu. Zero-sized while spectating.
     pub menu_button: Rect,
-    /// The pause button left of the menu button; it toggles pause like
-    /// the pause key. Zero-sized while spectating.
+    /// The pause button left of the menu button, or in its place on Apple
+    /// TV; it toggles pause like the pause key. Zero-sized while
+    /// spectating.
     pub pause_button: Rect,
     /// Persistent armed-command ribbon. It is chrome even away from
     /// the command band, and a press anywhere on it cancels the mode,
@@ -267,8 +268,10 @@ pub(crate) struct TopBar {
     pub count_x: f32,
     pub idle_badge: Rect,
     pub alert_badge: Rect,
+    /// The menu button; zero-sized on Apple TV, which never shows it.
     pub menu_button: Rect,
-    /// The menu button's twin to its left, which pauses and plays.
+    /// The menu button's twin to its left, which pauses and plays. On
+    /// Apple TV it takes the menu button's place at the right edge.
     pub pause_button: Rect,
     pub status_x: f32,
     /// The span the FPS readout may use: from the left group's end to
@@ -279,8 +282,17 @@ pub(crate) struct TopBar {
 /// Lays out the top bar from measured text: the bank, income, and unit
 /// count run left to right from fixed minimums, the idle and alert badges
 /// follow them, and the status hangs off the pause button, which sits
-/// beside the menu button at the right.
-pub(crate) fn top_bar(viewport_w: f32, ui: f32, touch_only: bool, text: TopBarText) -> TopBar {
+/// beside the menu button at the right. Apple TV's HUD always stands in pad
+/// mode, which hides the menu button, so there the pause button takes its
+/// place. Elsewhere the pause button keeps its own, so switching between a
+/// controller and a mouse or finger moves nothing.
+pub(crate) fn top_bar(
+    viewport_w: f32,
+    ui: f32,
+    platform: crate::platform::Platform,
+    text: TopBarText,
+) -> TopBar {
+    let touch_only = platform.touch_only();
     let inset = if touch_only { TOUCH_LEFT_INSET } else { 0.0 } * ui;
     let scrap_label_x = 12.0 * ui + inset;
     let scrap_x = 70.0 * ui + inset;
@@ -300,16 +312,16 @@ pub(crate) fn top_bar(viewport_w: f32, ui: f32, touch_only: bool, text: TopBarTe
     let alert_badge = text
         .alert
         .map_or(Rect::new(0.0, 0.0, 0.0, 0.0), |width| badge(alert_x, width));
-    let menu_button = menu_button_rect(viewport_w, ui, touch_only);
-    // Far enough apart that the two fingertip targets meet without
-    // overlapping.
-    let gap = (MIN_TOUCH_TARGET * ui - menu_button.w).max(8.0 * ui);
-    let pause_button = Rect::new(
-        menu_button.x - gap - menu_button.w,
-        menu_button.y,
-        menu_button.w,
-        menu_button.h,
-    );
+    let corner = menu_button_rect(viewport_w, ui, touch_only);
+    let (menu_button, pause_button) = if platform == crate::platform::Platform::Tv {
+        (Rect::new(0.0, 0.0, 0.0, 0.0), corner)
+    } else {
+        // Far enough apart that the two fingertip targets meet without
+        // overlapping.
+        let gap = (MIN_TOUCH_TARGET * ui - corner.w).max(8.0 * ui);
+        let pause = Rect::new(corner.x - gap - corner.w, corner.y, corner.w, corner.h);
+        (corner, pause)
+    };
     let status_x = pause_button.x - 12.0 * ui - text.status;
     let occupied_right = (count_x + text.units)
         .max(idle_badge.x + idle_badge.w)

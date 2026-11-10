@@ -793,10 +793,11 @@ fn the_select_all_button_widens_the_title_row_and_grows_for_fingertips() {
     };
     let desk = measure(false, &panel);
     let touch = measure(true, &panel);
-    // "All 3" measures 32.5 here: 11 to either side on a desk, and a
+    // Pad mode's RT icon and " All 3" measure 16.25 and 39 here, and the
+    // button keeps that room in every mode: 11 to either side, past a
     // fingertip's floor on touch.
-    assert_eq!(desk.select_all, Some(vec2(54.5, 26.0)));
-    assert_eq!(touch.select_all, Some(vec2(60.0, 36.0)));
+    assert_eq!(desk.select_all, Some(vec2(77.25, 26.0)));
+    assert_eq!(touch.select_all, Some(vec2(77.25, 36.0)));
     panel.select_all = None;
     let bare = measure(false, &panel);
     assert_eq!(bare.header_pad, 0.0);

@@ -1,4 +1,5 @@
 use super::*;
+use crate::platform::Platform;
 use macroquad::prelude::vec2;
 
 #[test]
@@ -209,7 +210,7 @@ fn sample_text(ui: f32) -> TopBarText {
 
 #[test]
 fn the_desktop_top_bar_keeps_its_legacy_positions() {
-    let bar = top_bar(1280.0, 1.0, false, sample_text(1.0));
+    let bar = top_bar(1280.0, 1.0, Platform::Desktop, sample_text(1.0));
     assert_eq!((bar.scrap_label_x, bar.scrap_x), (12.0, 70.0));
     assert_eq!(bar.passive_x, 151.0, "a short bank keeps the minimum");
     assert_eq!(
@@ -229,7 +230,7 @@ fn the_desktop_top_bar_keeps_its_legacy_positions() {
         bar.status_space,
         (bar.idle_badge.x + bar.idle_badge.w, bar.status_x)
     );
-    let touch = top_bar(1280.0, 1.0, true, sample_text(1.0));
+    let touch = top_bar(1280.0, 1.0, Platform::Touch, sample_text(1.0));
     assert_eq!(
         touch.scrap_label_x, 18.0,
         "touch holds the bank off the corner"
@@ -238,7 +239,7 @@ fn the_desktop_top_bar_keeps_its_legacy_positions() {
     let no_idle = top_bar(
         1280.0,
         1.0,
-        false,
+        Platform::Desktop,
         TopBarText {
             idle: None,
             ..sample_text(1.0)
@@ -246,6 +247,23 @@ fn the_desktop_top_bar_keeps_its_legacy_positions() {
     );
     assert_eq!(no_idle.idle_badge, Rect::new(0.0, 0.0, 0.0, 0.0));
     assert_eq!(no_idle.status_space.0, no_idle.count_x + 24.0);
+}
+
+#[test]
+fn apple_tv_puts_the_pause_button_where_the_menu_button_stands_elsewhere() {
+    let desktop = top_bar(1280.0, 1.0, Platform::Desktop, sample_text(1.0));
+    let tv = top_bar(1280.0, 1.0, Platform::Tv, sample_text(1.0));
+    assert_eq!(tv.pause_button, desktop.menu_button);
+    assert_eq!(tv.menu_button, Rect::new(0.0, 0.0, 0.0, 0.0));
+    assert_eq!(
+        tv.status_x - desktop.status_x,
+        desktop.menu_button.x - desktop.pause_button.x,
+        "the clock follows the pause button"
+    );
+    assert_eq!(
+        tv.status_space.0, desktop.status_space.0,
+        "the left group stays"
+    );
 }
 
 #[test]
@@ -299,12 +317,17 @@ fn the_alert_badge_follows_the_idle_badge_or_takes_its_place() {
         alert: Some(90.0),
         ..sample_text(1.0)
     };
-    let bar = top_bar(1280.0, 1.0, false, text);
+    let bar = top_bar(1280.0, 1.0, Platform::Desktop, text);
     assert_eq!(bar.alert_badge.x, bar.idle_badge.x + bar.idle_badge.w + 8.0);
     assert_eq!(bar.alert_badge.w, 108.0);
-    let alone = top_bar(1280.0, 1.0, false, TopBarText { idle: None, ..text });
+    let alone = top_bar(
+        1280.0,
+        1.0,
+        Platform::Desktop,
+        TopBarText { idle: None, ..text },
+    );
     assert_eq!(alone.alert_badge.x, bar.idle_badge.x, "no idle, same slot");
-    let quiet = top_bar(1280.0, 1.0, false, sample_text(1.0));
+    let quiet = top_bar(1280.0, 1.0, Platform::Desktop, sample_text(1.0));
     assert_eq!(quiet.alert_badge, Rect::new(0.0, 0.0, 0.0, 0.0));
     assert_eq!(
         quiet.idle_badge, bar.idle_badge,
@@ -316,8 +339,8 @@ fn the_alert_badge_follows_the_idle_badge_or_takes_its_place() {
 fn the_top_bar_keeps_its_groups_in_order_and_on_screen() {
     for ui in [0.75, 1.0, 1.25, 1.5] {
         for width in [640.0, 1024.0, 1133.0, 1194.0, 1280.0, 1920.0] {
-            for touch_only in [false, true] {
-                let bar = top_bar(width, ui, touch_only, sample_text(ui));
+            for platform in [Platform::Desktop, Platform::Touch] {
+                let bar = top_bar(width, ui, platform, sample_text(ui));
                 assert!(bar.scrap_label_x < bar.scrap_x);
                 assert!(bar.scrap_x < bar.passive_x && bar.passive_x < bar.units_x);
                 assert!(bar.units_x < bar.count_x && bar.count_x < bar.idle_badge.x);
@@ -330,7 +353,7 @@ fn the_top_bar_keeps_its_groups_in_order_and_on_screen() {
                 );
                 assert_eq!(bar.pause_button.size(), bar.menu_button.size());
                 assert_eq!(bar.pause_button.y, bar.menu_button.y);
-                assert!(pad.x + pad.w <= width, "{width}px @{ui} touch {touch_only}");
+                assert!(pad.x + pad.w <= width, "{width}px @{ui} {platform:?}");
             }
         }
     }

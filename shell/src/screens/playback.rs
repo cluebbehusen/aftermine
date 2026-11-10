@@ -227,8 +227,8 @@ const SEEK_STEP: u64 = 500;
 enum Zone {
     Button(Transport),
     /// The transport row between and around its buttons: the readout and
-    /// the gaps. It claims a near miss, so a finger landing there never
-    /// drags or pinches the camera.
+    /// the gaps, or all of it in pad mode. It claims a near miss, so a
+    /// finger landing there never drags or pinches the camera.
     Row,
 }
 
@@ -277,14 +277,31 @@ fn transport_row(viewport: Vec2, s: f32, touch_only: bool) -> TransportRow {
     }
 }
 
-fn transport_buttons(viewport: Vec2, s: f32) -> [(macroquad::prelude::Rect, Transport); 4] {
+/// The viewer's drawn buttons, which only a pointer presses. In pad mode
+/// there are none: a controller's buttons and the Siri Remote do all they
+/// do, and the transport row shows [`transport_readout`] instead.
+fn transport_buttons(
+    viewport: Vec2,
+    s: f32,
+    pad_mode: bool,
+) -> Vec<(macroquad::prelude::Rect, Transport)> {
+    if pad_mode {
+        return Vec::new();
+    }
     let row = transport_row(viewport, s, crate::platform::PLATFORM.touch_only());
-    [
+    vec![
         (crate::button::corner_slot(0, s), Transport::Back),
         (row.play, Transport::PlayPause),
         (row.slower, Transport::Slower),
         (row.faster, Transport::Faster),
     ]
+}
+
+/// What the transport row says in pad mode: whether the replay plays, and
+/// how fast.
+fn transport_readout(paused: bool, speed: f64) -> String {
+    let state = if paused { "Paused" } else { "Playing" };
+    format!("{state} \u{b7} {speed}x")
 }
 
 /// The steps of the replay speed ladder, shared by the speed keys and the
@@ -418,7 +435,8 @@ pub fn playback_hud(
 ) {
     let s = render::ui_scale();
     let size = crate::theme::Type::Label.at(s);
-    for (rect, button) in transport_buttons(viewport, s) {
+    let pad_mode = crate::platform::pad_mode();
+    for (rect, button) in transport_buttons(viewport, s, pad_mode) {
         let label = match button {
             Transport::Back => "Back",
             Transport::PlayPause if pb.clock.paused => "Play",
@@ -428,14 +446,23 @@ pub fn playback_hud(
         };
         crate::button::draw(rect, label, crate::platform::hovers(rect, mouse), s);
     }
-    let readout = transport_row(viewport, s, crate::platform::PLATFORM.touch_only()).readout;
+    let row = transport_row(viewport, s, crate::platform::PLATFORM.touch_only());
+    // In pad mode the readout spans the whole row, so the timeline
+    // never moves.
+    let (readout, text) = if pad_mode {
+        (
+            row.bounds(),
+            transport_readout(pb.clock.paused, pb.clock.speed),
+        )
+    } else {
+        (row.readout, format!("{}x", pb.clock.speed))
+    };
     fill_rect(readout, theme::SURFACE_CAPTION);
-    let speed = format!("{}x", pb.clock.speed);
     let body = crate::theme::Type::Body.at(s);
-    let speed_w = measure_text(&speed, None, numeric::font_size(body), 1.0).width;
+    let text_w = measure_text(&text, None, numeric::font_size(body), 1.0).width;
     draw_text(
-        &speed,
-        readout.center().x - speed_w * 0.5,
+        &text,
+        readout.center().x - text_w * 0.5,
         readout.y + readout.h * 0.62,
         body,
         crate::theme::TEXT_PRIMARY,
@@ -690,7 +717,7 @@ impl PlaybackSession {
         let mut seek_to: Option<u64> = None;
         let mut leave = false;
         let ui = render::ui_scale();
-        let buttons = transport_buttons(viewport, ui);
+        let buttons = transport_buttons(viewport, ui, crate::platform::pad_mode());
         let row = transport_row(viewport, ui, crate::platform::PLATFORM.touch_only()).bounds();
         for e in events {
             match e {

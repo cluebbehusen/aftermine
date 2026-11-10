@@ -260,7 +260,7 @@ pub(crate) fn layout(
         geometry: HudGeometry {
             top_bar,
             panel: panel_layout,
-            group_column,
+            group_column: group_column.filter(|_| shown),
             army_strip: army_strip.filter(|_| shown),
             ribbon,
             queue_toggle: queue_toggle.filter(|_| shown),
@@ -274,9 +274,10 @@ pub(crate) fn layout(
 
 /// The hit regions pad mode publishes: the controls a controller's buttons
 /// stand in for are left out, namely the command cards and the build
-/// palette (the ring), the army strip (the bumpers), the menu button
-/// (Menu) and the QUEUE toggle (the left trigger). Everything else stands
-/// where it was laid out.
+/// palette (the ring), the army strip (the bumpers), the control group
+/// column (the D-pad's group ring), the menu button (Menu) and the QUEUE
+/// toggle (the left trigger). Everything else stands where it was laid
+/// out.
 fn pad_mode(layout: &LayoutModel) -> LayoutModel {
     let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
     let [info, _] = layout.panel_regions;
@@ -284,6 +285,8 @@ fn pad_mode(layout: &LayoutModel) -> LayoutModel {
         panel_regions: [info, zero],
         cards: [(zero, crate::panel::CardAction::None); crate::panel::MAX_CARDS],
         card_count: 0,
+        group_column: zero,
+        group_slots: [None; crate::action::CONTROL_GROUPS],
         army_strip: zero,
         army_buttons: [None; 2],
         menu_button: zero,

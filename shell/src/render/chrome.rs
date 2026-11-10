@@ -1729,7 +1729,7 @@ pub(super) fn top_bar_layout(
     let bar = crate::layout::top_bar(
         env.viewport.x,
         s,
-        crate::platform::PLATFORM.touch_only(),
+        crate::platform::PLATFORM,
         crate::layout::TopBarText {
             scrap: measure(Face::Display, &scrap, crate::theme::Type::Heading.at(s)),
             passive: measure(Face::Body, &passive, body),
@@ -1838,7 +1838,9 @@ fn draw_top_bar(top: &TopBarLayout, sprites: &Sprites, s: f32) {
         let tint = crate::theme::TEXT_DANGER;
         icon_after(x, body, body_width(text), PadButton::DpadLeft, tint);
     }
-    if pad.is_none() {
+    // An Apple TV lays out no menu button, and its HUD can draw a frame
+    // before pad mode settles, so the bars mustn't hang off an empty rect.
+    if pad.is_none() && bar.menu_button.w > 0.0 {
         draw_menu_button(bar.menu_button, s);
     }
     draw_pause_button(bar.pause_button, *paused, s);

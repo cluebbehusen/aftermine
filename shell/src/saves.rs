@@ -90,20 +90,31 @@ impl ReplayEntry {
     }
 
     /// How to act on the row, for the hands the player is using.
-    pub fn hint(&self, hands: crate::platform::Hands) -> String {
-        let action = match (self.problem, self.kind.resumable()) {
-            (Some(_), _) => None,
-            (None, true) => Some(("loads paused", "load paused")),
-            (None, false) => Some(("watches", "watch")),
+    /// `on_delete` says the menu cursor stands on the row's Delete button.
+    pub fn hint(&self, hands: crate::platform::Hands, on_delete: bool) -> String {
+        let action = if on_delete {
+            Some(("deletes", "delete"))
+        } else {
+            match (self.problem, self.kind.resumable()) {
+                (Some(_), _) => None,
+                (None, true) => Some(("loads paused", "load paused")),
+                (None, false) => Some(("watches", "watch")),
+            }
         };
-        entry_hint(action, hands)
+        entry_hint(action, hands, on_delete)
     }
 }
 
 /// How to act on a shelf row: activate it, where it can be activated,
 /// and delete it by key or button. A finger or a pointer alone deletes
-/// with the row's own Delete button, which says so itself.
-fn entry_hint(action: Option<(&str, &str)>, hands: crate::platform::Hands) -> String {
+/// with the row's own Delete button, which says so itself. The Siri Remote
+/// has no delete button, so it swipes right onto the row's. Once the cursor
+/// stands there, `action` is the delete itself.
+fn entry_hint(
+    action: Option<(&str, &str)>,
+    hands: crate::platform::Hands,
+    on_delete: bool,
+) -> String {
     let remote = hands.pad == Some(aftermine_protocol::PadFamily::Remote);
     let by_key = hands.pad.is_some() || (hands.keys && !hands.touch());
     let verb = if hands.touch() { "tap" } else { "click" };
@@ -116,8 +127,13 @@ fn entry_hint(action: Option<(&str, &str)>, hands: crate::platform::Hands) -> St
             format!("{verb} to {action}")
         }
     });
-    let deletes = !remote && (hands.pad.is_some() || hands.keys);
-    let delete = deletes.then(|| "{delete} deletes".to_string());
+    let delete = if on_delete {
+        None
+    } else if remote {
+        Some("Swipe right to delete".to_string())
+    } else {
+        (hands.pad.is_some() || hands.keys).then(|| "{delete} deletes".to_string())
+    };
     activate
         .into_iter()
         .chain(delete)

@@ -62,3 +62,17 @@ fn a_controller_in_use_leaves_its_cursor_the_only_highlight() {
     }
     set_hands(Hands::BUILD);
 }
+
+#[test]
+fn pad_mode_holds_while_a_controller_is_in_use_and_always_on_a_tv() {
+    for hands in ALL_HANDS {
+        assert!(!hands.pad_mode(Platform::Desktop));
+        assert!(!hands.pad_mode(Platform::Touch));
+        assert!(hands.pad_mode(Platform::Tv), "a TV has no pointer");
+    }
+    for hands in pad_hands() {
+        for platform in [Platform::Desktop, Platform::Touch, Platform::Tv] {
+            assert!(hands.pad_mode(platform), "{hands:?} on {platform:?}");
+        }
+    }
+}

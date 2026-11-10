@@ -259,10 +259,22 @@ fn widest_record_values<R>(lines: &[Line<R>], measure: impl Fn(&str) -> f32) -> 
     })
 }
 
+/// What lights a record row's action button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActionCue {
+    None,
+    /// The pointer is over it.
+    Hover,
+    /// The keyboard or controller cursor stands on it.
+    Cursor,
+}
+
 /// Draws a record row's action button inside its target `area` at UI
-/// scale `s`: a chip smaller than the row, in the danger color while `lit`
-/// under the pointer.
-fn draw_row_action(label: &str, area: Rect, s: f32, lit: bool, busy: bool) {
+/// scale `s`: a chip smaller than the row, in the danger color while
+/// `cue` lights it, and wearing the cursor's outline while the cursor
+/// stands on it.
+fn draw_row_action(label: &str, area: Rect, s: f32, cue: ActionCue, busy: bool) {
+    let lit = cue != ActionCue::None;
     let size = crate::theme::Type::Body.at(s);
     let text = measure_text(label, None, numeric::font_size(size), 1.0).width;
     let inset = 14.0 * s;
@@ -275,9 +287,13 @@ fn draw_row_action(label: &str, area: Rect, s: f32, lit: bool, busy: bool) {
         height,
     );
     draw_rectangle(chip.x, chip.y, chip.w, chip.h, CHIP);
+    let stroke = match cue {
+        ActionCue::Cursor => crate::platform::cursor_stroke(),
+        ActionCue::None | ActionCue::Hover => Stroke::Hairline,
+    };
     stroke_rect(
         chip,
-        Stroke::Hairline.at(s),
+        stroke.at(s),
         if lit { TEXT_DANGER } else { EDGE_CHIP },
     );
     let color = match (busy, lit) {
@@ -657,6 +673,10 @@ pub struct Menu<R> {
     /// Where the pointer behind `hover` was, so a row's action button
     /// lights only while the pointer is over it.
     pointer: Vec2,
+    /// The row whose action button the cursor stands on, moved there by
+    /// Right and back by Left. It counts only while that row stays
+    /// selected, so whatever moves the selection leaves the button.
+    on_action: Option<usize>,
 }
 
 fn view_w() -> f32 {
@@ -710,6 +730,7 @@ impl<R: Clone> Menu<R> {
             heading: Heading::Dialog,
             row_action: None,
             pointer: Vec2::ZERO,
+            on_action: None,
         };
         menu.selected = menu.settle(0, false);
         menu
@@ -752,6 +773,7 @@ impl<R: Clone> Menu<R> {
     /// stays under the cursor.
     pub fn set_lines(&mut self, lines: Vec<Line<R>>) {
         self.lines = lines;
+        self.on_action = None;
         self.selected = self.settle(self.selected.min(self.lines.len().saturating_sub(1)), false);
     }
 
@@ -801,6 +823,7 @@ impl<R: Clone> Menu<R> {
     /// Moves the keyboard cursor and scrolls just enough to show it —
     /// the only coupling between selection and the scroll window.
     pub fn select(&mut self, index: usize) {
+        self.on_action = None;
         self.selected = self.settle(index.min(self.lines.len().saturating_sub(1)), false);
         self.ensure_visible();
     }
@@ -874,14 +897,27 @@ impl<R: Clone> Menu<R> {
             .flatten()
     }
 
+    /// Whether `row` carries the menu's action button: every record row
+    /// does, when the menu gives them one.
+    fn has_action(&self, row: usize) -> bool {
+        self.row_action.is_some()
+            && matches!(
+                self.lines.get(row),
+                Some(Line::Row(Label::Record { .. }, _))
+            )
+    }
+
+    /// Whether the keyboard or controller cursor stands on the selected
+    /// row's action button rather than the row, so confirming presses the
+    /// button.
+    pub(crate) fn on_action(&self) -> bool {
+        self.on_action == Some(self.selected) && self.has_action(self.selected)
+    }
+
     /// A visible record row's action button, when the menu gives record
     /// rows one: the full height of the row's right end.
     pub(crate) fn action_rect(&self, row: usize) -> Option<Rect> {
-        self.row_action?;
-        if !matches!(
-            self.lines.get(row),
-            Some(Line::Row(Label::Record { .. }, _))
-        ) {
+        if !self.has_action(row) {
             return None;
         }
         let rect = self.item_rect(row)?;
@@ -1003,6 +1039,7 @@ impl<R: Clone> Menu<R> {
                     if let Some(p) = point {
                         *mouse = p;
                     }
+                    self.on_action = None;
                     self.selected = row;
                     let column = point.and_then(|p| self.column_at(row, p));
                     return self.activation(row, column);
@@ -1045,8 +1082,17 @@ impl<R: Clone> Menu<R> {
                 }
                 RawEvent::KeyDown { .. } => match crate::nav::Nav::decode(event) {
                     Some(crate::nav::Nav::Confirm) if !self.is_header(self.selected) => {
-                        return self.activation(self.selected, None);
+                        let column = self.on_action().then_some(ROW_ACTION);
+                        return self.activation(self.selected, column);
                     }
+                    // Right steps from a record row onto its action button,
+                    // the only way a remote's swipes reach it; Left steps
+                    // back.
+                    Some(crate::nav::Nav::Right) if self.has_action(self.selected) => {
+                        self.hover = None;
+                        self.on_action = Some(self.selected);
+                    }
+                    Some(crate::nav::Nav::Left) => self.on_action = None,
                     Some(nav) => {
                         let visible = self.window().visible;
                         if let Some(row) = crate::nav::step_line(
@@ -1058,6 +1104,7 @@ impl<R: Clone> Menu<R> {
                             |row| !self.is_header(row),
                         ) {
                             self.hover = None;
+                            self.on_action = None;
                             self.selected = row;
                             self.ensure_visible();
                         }
@@ -1183,14 +1230,22 @@ impl<R: Clone> Menu<R> {
                 Line::Row(label, _) => label,
             };
             let selected = index == self.selected && !busy && !self.cursor_hidden;
+            // On the action button the cursor's outline moves there, and
+            // the row keeps its fill to show whose button it is.
+            let on_action = selected && self.on_action();
             let hovered =
                 self.hover == Some(index) && !busy && crate::platform::hands().hover_shown();
             if selected {
                 draw_rectangle(rect.x, rect.y, rect.w, rect.h, SURFACE_MENU);
+                let (stroke, edge) = if on_action {
+                    (Stroke::Hairline, TEXT_SECONDARY)
+                } else {
+                    (crate::platform::cursor_stroke(), TEXT_TITLE)
+                };
                 stroke_rect(
                     Rect::new(rect.x, rect.y, rect.w, rect.h),
-                    crate::platform::cursor_stroke().at(s),
-                    TEXT_TITLE,
+                    stroke.at(s),
+                    edge,
                 );
             } else if hovered {
                 stroke_rect(
@@ -1267,8 +1322,14 @@ impl<R: Clone> Menu<R> {
                     let columns = RecordColumns::fit(cells, s, record_widest);
                     draw_record(label, columns, s, text_size, color, busy);
                     if let (Some(text), Some(action)) = (self.row_action, action) {
-                        let lit = hovered && action.contains(self.pointer);
-                        draw_row_action(text, action, s, lit, busy);
+                        let cue = if on_action {
+                            ActionCue::Cursor
+                        } else if hovered && action.contains(self.pointer) {
+                            ActionCue::Hover
+                        } else {
+                            ActionCue::None
+                        };
+                        draw_row_action(text, action, s, cue, busy);
                     }
                 }
                 Label::Text(text) => {

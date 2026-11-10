@@ -263,7 +263,36 @@ fn click(p: Vec2) -> [RawEvent; 2] {
 
 /// The transport buttons at the viewport `feed` drives.
 fn buttons() -> [(macroquad::prelude::Rect, Transport); 4] {
-    transport_buttons(vec2(1280.0, 800.0), render::ui_scale())
+    transport_buttons(vec2(1280.0, 800.0), render::ui_scale(), false)
+        .try_into()
+        .expect("four buttons outside pad mode")
+}
+
+#[test]
+fn pad_mode_leaves_the_transport_buttons_to_the_controller() {
+    let viewport = vec2(1280.0, 800.0);
+    assert!(transport_buttons(viewport, render::ui_scale(), true).is_empty());
+    let [back, play, slower, faster] = buttons().map(|(rect, _)| rect.center());
+    for hands in crate::platform::pad_hands() {
+        crate::platform::set_hands(hands);
+        let mut pb = session();
+        let before = pb.presentation.camera.center;
+        for (id, at) in (1..).zip([back, play, slower, faster]) {
+            assert!(!feed(&mut pb, &tap(id, at)), "{hands:?}: no Back to tap");
+            assert!(!feed(&mut pb, &click(at)));
+        }
+        assert!(!pb.clock.paused, "{hands:?}: the row is inert");
+        assert!((pb.clock.speed - 1.0).abs() < f64::EPSILON);
+        assert_eq!(pb.presentation.camera.center, before, "and never pans");
+    }
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}
+
+#[test]
+fn the_pad_mode_readout_says_whether_it_plays_and_how_fast() {
+    assert_eq!(transport_readout(true, 2.0), "Paused \u{b7} 2x");
+    assert_eq!(transport_readout(false, 0.5), "Playing \u{b7} 0.5x");
+    assert_eq!(transport_readout(false, 64.0), "Playing \u{b7} 64x");
 }
 
 #[test]
@@ -369,7 +398,7 @@ fn the_transport_row_sits_bottom_left_clear_of_the_timeline() {
     for viewport in [vec2(640.0, 400.0), vec2(1280.0, 800.0)] {
         let bar = scrub_rect(&pb.view(), viewport);
         let pad = crate::layout::touch_pad(bar, ui);
-        for (rect, button) in transport_buttons(viewport, ui) {
+        for (rect, button) in transport_buttons(viewport, ui, false) {
             assert!(
                 !pad.overlaps(&rect),
                 "{viewport}: the scrub band meets {button:?}"
