@@ -324,6 +324,48 @@ fn a_queued_join_is_judged_when_its_turn_comes() {
 }
 
 #[test]
+fn a_worker_moved_on_from_one_full_cradle_to_another_leaves_no_crew_over_its_cap() {
+    // A slow worker queued on two full cradles: refused by the later one,
+    // it moves on to the earlier one, already held to its cap this tick.
+    let second = TilePos::new(16, 8);
+    let mut units = workers(0, UnitKind::Excavator, 4, 12);
+    units.extend((0..4).map(|i| unit(0, UnitKind::Excavator, 16 + i, 14)));
+    units.push(unit(0, UnitKind::Harvester, 10, 16));
+    let mut state = yard(units, vec![]);
+    let excavators = ids(&state, 0, UnitKind::Excavator);
+    let hauler = ids(&state, 0, UnitKind::Harvester)[0];
+    state.tick(&[raise(&excavators[..4], CRADLE, false)]);
+    state.tick(&[
+        raise(&excavators[4..], second, false),
+        cmd(
+            0,
+            Command::Run {
+                units: vec![hauler],
+                goal: TilePos::new(10, 14),
+                queue: false,
+            },
+        ),
+    ]);
+    assert_eq!(
+        rejected(&state.tick(&[raise(&[hauler], second, true)])),
+        None
+    );
+    assert_eq!(
+        rejected(&state.tick(&[raise(&[hauler], CRADLE, true)])),
+        None
+    );
+    run_until(&mut state, 400, |state, _| {
+        state
+            .validate_invariants()
+            .expect("every crew within its cap");
+        !matches!(state.unit(hauler).unwrap().order, Order::Run { .. })
+    });
+    run(&mut state, 5);
+    state.validate_invariants().unwrap();
+    assert!(!holds(&state, hauler), "both crews were full");
+}
+
+#[test]
 fn every_seat_watches_a_started_cradle_and_forgets_it_when_cancelled() {
     let mut state = yard(workers(0, UnitKind::Excavator, 2, 12), vec![]);
     let crew = ids(&state, 0, UnitKind::Excavator);
