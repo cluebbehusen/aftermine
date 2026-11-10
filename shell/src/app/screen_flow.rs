@@ -1112,7 +1112,7 @@ fn relayout_hud(
 }
 
 /// The one way into a replay viewer: leaving it restores `back` wholesale.
-fn open_playback(session: PlaybackSession, back: Screen) -> Screen {
+pub(super) fn open_playback(session: PlaybackSession, back: Screen) -> Screen {
     Screen::Playback {
         session: Box::new(session),
         back: Box::new(back),
@@ -1287,23 +1287,10 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
             *rerun = true;
             leave = Some(Screen::Home(home));
         }
-        screens::shelf::Out::Watch(path) => match PlaybackSession::open(&path.to_string_lossy()) {
-            Ok(session) => {
-                render::draw(
-                    &app.game.view(),
-                    &app.sprites,
-                    &app.input,
-                    &app.config.bindings,
-                );
-                *rerun = true;
-                // The shelf is a front-door browser: leaving the viewer
-                // lands on Home, as a cold `--watch` launch does.
-                leave = Some(open_playback(session, Screen::Home(HomeScreen::open())));
-            }
-            Err(_) => {
-                app.ui_sounds.push((SoundKind::Denied, None));
-            }
-        },
+        screens::shelf::Out::Watch(path) => {
+            return app
+                .persistence_screen(persistence::Intent::Watch(path), Screen::Replays(shelf));
+        }
         screens::shelf::Out::Load(path) => {
             return app.persistence_screen(persistence::Intent::Load(path), Screen::Replays(shelf));
         }

@@ -94,6 +94,43 @@ fn continue_skips_a_corrupt_newest_payload_and_reuses_the_restored_older_save() 
 }
 
 #[test]
+fn a_shelf_replay_opens_on_the_worker_and_a_bad_one_says_so() {
+    let dir = std::env::temp_dir().join(format!("aftermine-watch-worker-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut game = Game::new(Scenario::skirmish()).unwrap();
+    game.advance_ticks(60);
+    let good = dir.join("match.amreplay");
+    aftermine_kit::save_recording(
+        &good,
+        &game.recorder,
+        &aftermine_kit::keyframes::Keyframes::default(),
+    )
+    .unwrap();
+    let Output::Recording(recording) = open_recording(&good, &Cancellation::default()).unwrap()
+    else {
+        panic!("a recording opens")
+    };
+    assert!(screens::playback::PlaybackSession::watch(*recording).is_ok());
+
+    let bad = dir.join("broken.amreplay");
+    std::fs::write(&bad, b"not a replay").unwrap();
+    let Err(error) = open_recording(&bad, &Cancellation::default()) else {
+        panic!("a broken file opens nothing")
+    };
+    assert_eq!(
+        failure_line(&Intent::Watch(bad), &error),
+        "Could not open the replay"
+    );
+    let cancelled = Cancellation::default();
+    assert!(cancelled.cancel());
+    assert!(
+        open_recording(&good, &cancelled).is_err(),
+        "a cancelled open delivers nothing"
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn a_replaced_match_retires_on_the_worker_when_it_is_free() {
     let mut worker = Worker::new().expect("worker");
     worker.retire(Game::new(aftermine_sim::Scenario::skirmish()).expect("game"));

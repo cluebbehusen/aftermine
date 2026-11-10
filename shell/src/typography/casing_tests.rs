@@ -19,6 +19,7 @@ const TITLES: &[&str] = &[
     "LAN MATCH",
     "LEFT-HANDED BINDINGS?",
     "LOADING MATCH",
+    "LOADING REPLAY",
     "MAPS",
     "MATCH RESULT",
     "MATCH SETUP",

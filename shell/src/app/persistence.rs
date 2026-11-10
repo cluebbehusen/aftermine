@@ -41,6 +41,8 @@ pub(super) enum Output {
     Loaded(Box<crate::game::checkpoint::RestoredGame>),
     /// A saved LAN match, for Match Setup to resume with its players.
     LanSave(Box<crate::game::checkpoint::LanSave>),
+    /// A replay from Saves & Replays, for the viewer to open.
+    Recording(Box<aftermine_kit::Recording>),
     /// A save finished, with the slot and content the match counts as saved.
     Saved(Option<autosave::SaveMark>),
     Retired,
@@ -134,6 +136,8 @@ impl Worker {
 pub(super) enum Intent {
     Load(PathBuf),
     Continue,
+    /// Opens the replay at this path in the viewer.
+    Watch(PathBuf),
     Named(String),
     Leave(screens::pause::LeaveVerb),
     Rematch,
@@ -144,6 +148,12 @@ pub(super) enum Intent {
 }
 impl Intent {
     fn loading(&self) -> bool {
+        matches!(self, Self::Load(_) | Self::Continue | Self::Watch(_))
+    }
+
+    /// Whether this resumes a match, which another device may have played
+    /// on since: a replay is a finished record and has no newer copy.
+    fn resumes(&self) -> bool {
         matches!(self, Self::Load(_) | Self::Continue)
     }
 
@@ -202,9 +212,16 @@ impl App {
         }
         let loading = intent.loading();
         // Another device may have just stopped playing this match.
-        if loading {
+        if intent.resumes() {
             crate::cloud_mirror::request(crate::cloud_mirror::Mode::Full);
         }
+        let title = if matches!(intent, Intent::Watch(_)) {
+            "LOADING REPLAY"
+        } else if loading {
+            "LOADING MATCH"
+        } else {
+            "SAVING MATCH"
+        };
         Screen::Busy(Box::new(Busy {
             intent,
             back: Box::new(back),
@@ -214,11 +231,7 @@ impl App {
             quit_after: false,
             leave_after: false,
             menu: crate::menu::Menu::list(
-                if loading {
-                    "LOADING MATCH"
-                } else {
-                    "SAVING MATCH"
-                },
+                title,
                 if loading {
                     vec!["Cancel".into()]
                 } else {
@@ -472,6 +485,28 @@ fn record_changes() -> u64 {
     crate::paths::cloud_changes().wrapping_add(crate::cloud_mirror::changes())
 }
 
+/// Reads the replay at `path` under a coordinated read, which waits for a
+/// file still downloading from iCloud.
+fn open_recording(path: &std::path::Path, cancel: &Cancellation) -> Result<Output> {
+    let recording = aftermine_icloud::coordinate(path, aftermine_icloud::Access::Read, |granted| {
+        aftermine_kit::load_recording(granted)
+    })
+    .map_err(anyhow::Error::from)
+    .and_then(|loaded| loaded.map_err(anyhow::Error::from))
+    .with_context(|| format!("loading replay {}", path.display()))?;
+    cancel.commit()?;
+    Ok(Output::Recording(Box::new(recording)))
+}
+
+/// What the notice strip says when `intent` fails with `error`.
+fn failure_line(intent: &Intent, error: &anyhow::Error) -> String {
+    match intent {
+        Intent::Watch(_) => "Could not open the replay".to_string(),
+        Intent::Load(_) | Intent::Continue => "Could not load that save".to_string(),
+        _ => error.to_string(),
+    }
+}
+
 fn load_candidates(paths: Vec<PathBuf>, cancel: &Cancellation) -> Result<Output> {
     let mut last_error = anyhow::anyhow!("no loadable save is available");
     for path in paths {
@@ -520,7 +555,9 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
             &app.sprites,
             &format!(
                 "{}{}",
-                if loading {
+                if matches!(busy.intent, Intent::Watch(_)) {
+                    "Loading replay"
+                } else if loading {
                     "Loading game"
                 } else {
                     "Saving game"
@@ -568,6 +605,29 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                     *save,
                     &mut app.draft,
                 )));
+            }
+            Ok(Output::Recording(recording)) => {
+                // Nothing was installed, so quitting saves nothing.
+                if busy.quit_after {
+                    return Ok(app.persistence_screen(Intent::Exit, *busy.back));
+                }
+                return Ok(
+                    match screens::playback::PlaybackSession::watch(*recording) {
+                        // Saves & Replays is a front-door browser: leaving the
+                        // viewer lands on Home, as a cold `--watch` launch does.
+                        Ok(session) => super::screen_flow::open_playback(
+                            session,
+                            Screen::Home(HomeScreen::open()),
+                        ),
+                        Err(error) => {
+                            app.notify_failure(
+                                "Could not open the replay",
+                                format_args!("{error:#}"),
+                            );
+                            *busy.back
+                        }
+                    },
+                );
             }
             Ok(Output::Saved(mark)) => {
                 if let Some(mark) = mark {
@@ -633,15 +693,7 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                         pause_menu(&app.game).with_save_failed(error.to_string(), verb),
                     ));
                 }
-                app.notify(
-                    if loading {
-                        eprintln!("Load failed: {error}");
-                        "Could not load that save".to_string()
-                    } else {
-                        error.to_string()
-                    },
-                    true,
-                );
+                app.notify(failure_line(&busy.intent, &error), true);
                 if let Screen::Pause(ref mut pause) = *busy.back {
                     pause.end_naming(error.to_string());
                 }
@@ -657,7 +709,7 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
     }
     // Another device's newer copy of a match should be here before it resumes,
     // since saving over it from an older one would lose that progress.
-    if busy.id.is_none() && busy.intent.loading() && crate::cloud_mirror::syncing() {
+    if busy.id.is_none() && busy.intent.resumes() && crate::cloud_mirror::syncing() {
         let now = app.clock.elapsed();
         let since = *busy.syncing_since.get_or_insert(now);
         if now.saturating_sub(since) < SYNC_WAIT {
@@ -674,6 +726,10 @@ pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> 
                 Box::new(move |cancel| {
                     load_candidates(paths.unwrap_or_else(autosave::candidates), cancel)
                 })
+            }
+            Intent::Watch(path) => {
+                let path = path.clone();
+                Box::new(move |cancel| open_recording(&path, cancel))
             }
             intent => {
                 let Some(job) = save_job(intent, &app.game, app.net.as_ref()) else {
@@ -711,7 +767,7 @@ fn save_job(
     let name = match intent {
         Intent::Named(name) => Some(name.as_str()),
         Intent::Leave(_) | Intent::Rematch => None,
-        Intent::Load(_) | Intent::Continue | Intent::Exit => return None,
+        Intent::Load(_) | Intent::Continue | Intent::Watch(_) | Intent::Exit => return None,
     };
     let lan = net
         .filter(|_| name.is_some() || game.state.result().is_none())
