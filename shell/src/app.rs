@@ -165,9 +165,8 @@ struct App {
     next_probe: std::time::Duration,
     /// The seat Home offers back, as its host confirmed.
     offer: Option<crate::rejoin_ticket::Ticket>,
-    /// The app's own save of the running match, while it runs, with the
-    /// slot it writes.
-    autosave_id: Option<(u64, crate::autosave::SaveSlot)>,
+    /// The app's own save of the running match, while it runs.
+    autosave_id: Option<persistence::BackgroundJob>,
     /// When the app next saves the running match on its own.
     background: background_save::Schedule,
     /// When the host tries again after its own save failed.
@@ -713,8 +712,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             // Screens opened from Pause still hold the paused match behind
             // them, so a quit there saves it; a front-door screen holds
             // none, and saving the match left behind it would replace that
-            // match's resumable save.
-            let intent = persistence::Intent::quit(screen.holds_live_match());
+            // match's resumable save, unless that match finished and still
+            // owes its record.
+            let intent =
+                persistence::Intent::quit(screen.holds_live_match() || app.owes_finished_record());
             if let Screen::Busy(busy) = &mut screen {
                 busy.request_quit();
             } else {

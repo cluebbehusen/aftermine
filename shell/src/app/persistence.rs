@@ -32,6 +32,49 @@ struct Work {
     cancel: Cancellation,
     task: Task,
 }
+/// A save the app started on its own, while the worker runs it.
+pub(super) struct BackgroundJob {
+    id: u64,
+    /// The match it saves.
+    slot: autosave::SaveSlot,
+    /// Whether it captured the match decided, so it writes the finished
+    /// record any later save of that match would only repeat.
+    decided: bool,
+}
+
+impl BackgroundJob {
+    fn of(id: u64, game: &Game) -> Self {
+        Self {
+            id,
+            slot: game.slot.clone(),
+            decided: game.state.result().is_some(),
+        }
+    }
+}
+
+/// Whether `intent` can leave at once: Main menu while the worker is still
+/// writing `slot`'s finished record, which leaving would otherwise wait
+/// behind only to write again. That save finishes on the worker. Should it
+/// fail, Home retries it while the match stays the app's, a Quit from there
+/// saves it first, and a match started meanwhile still hears of the failure.
+/// Quit waits, since it ends the process, and Rematch replaces the match the
+/// save reports against.
+fn leaves_at_once(
+    intent: &Intent,
+    running: Option<&BackgroundJob>,
+    slot: &autosave::SaveSlot,
+) -> bool {
+    matches!(intent, Intent::Leave(screens::pause::LeaveVerb::MainMenu))
+        && running.is_some_and(|job| job.decided && job.slot == *slot)
+}
+
+/// Whether a failed background save must reach the player even though the
+/// app has moved on to another match: a finished record has no later save
+/// to stand in for it once its match is gone.
+fn failure_outlives_its_match(job: &BackgroundJob, slot: &autosave::SaveSlot) -> bool {
+    job.decided && job.slot != *slot
+}
+
 /// How long the shelf waits before looking again for records still
 /// downloading from iCloud.
 const RESCAN: std::time::Duration = std::time::Duration::from_secs(2);
@@ -249,9 +292,9 @@ impl App {
         let Some((id, result)) = self.persistence.poll() else {
             return;
         };
-        if let Some((_, slot)) = self.autosave_id.take_if(|(job, _)| *job == id) {
+        if let Some(job) = self.autosave_id.take_if(|job| job.id == id) {
             // A replaced match's save no longer counts toward this one.
-            let current = slot == self.game.slot;
+            let current = job.slot == self.game.slot;
             match result {
                 Ok(Output::Saved(mark)) => {
                     if let Some(mark) = &mark {
@@ -265,7 +308,12 @@ impl App {
                 Err(error) => {
                     eprintln!("Autosave failed: {error:#}");
                     let now = self.clock.elapsed();
-                    if current && self.background.failed(now) {
+                    let tell = if current {
+                        self.background.failed(now)
+                    } else {
+                        failure_outlives_its_match(&job, &self.game.slot)
+                    };
+                    if tell {
                         self.notify(error.to_string(), true);
                     }
                     // A wait freezes the tick the timed LAN save counts, so
@@ -333,7 +381,7 @@ impl App {
             Ok(Output::Saved(mark))
         });
         match self.persistence.start(task) {
-            Ok(id) => self.autosave_id = Some((id, self.game.slot.clone())),
+            Ok(id) => self.autosave_id = Some(BackgroundJob::of(id, &self.game)),
             Err(error) => self.notify(error.to_string(), true),
         }
     }
@@ -382,7 +430,7 @@ impl App {
         if self.persistence.busy() || matches!(screen, Screen::Busy(_)) {
             return;
         }
-        let decided = !undecided && self.game.end_stats.is_some() && unsaved;
+        let decided = self.owes_finished_record();
         if self
             .background
             .due(
@@ -408,11 +456,17 @@ impl App {
         });
         match self.persistence.start(task) {
             Ok(id) => {
-                self.autosave_id = Some((id, self.game.slot.clone()));
+                self.autosave_id = Some(BackgroundJob::of(id, &self.game));
                 self.background.started();
             }
             Err(error) => self.notify(error.to_string(), true),
         }
+    }
+
+    /// Whether the app's match is decided and its finished record not yet
+    /// written, so even a front-door screen's Quit saves it first.
+    pub(super) fn owes_finished_record(&self) -> bool {
+        self.game.state.result().is_some() && self.game.end_stats.is_some() && !self.game.is_saved()
     }
 
     pub(super) fn request_catalog(&mut self) {
@@ -500,7 +554,17 @@ fn load_candidates(paths: Vec<PathBuf>, cancel: &Cancellation) -> Result<Output>
     Err(last_error)
 }
 
-pub(super) fn frame(app: &mut App, mut busy: Box<Busy>, events: &[RawEvent]) -> Result<Screen> {
+pub(super) fn frame(
+    app: &mut App,
+    mut busy: Box<Busy>,
+    events: &[RawEvent],
+    rerun: &mut bool,
+) -> Result<Screen> {
+    if busy.id.is_none() && leaves_at_once(&busy.intent, app.autosave_id.as_ref(), &app.game.slot) {
+        // Home draws this frame, so none goes by blank.
+        *rerun = true;
+        return Ok(Screen::Home(HomeScreen::open()));
+    }
     let loading = busy.intent.loading();
     if loading {
         page_backdrop();

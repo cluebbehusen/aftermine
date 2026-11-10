@@ -388,7 +388,7 @@ pub(super) fn update_and_draw(
         Screen::Replays(shelf) => replays_frame(app, shelf, &events, &mut rerun),
         Screen::Pause(ps) => pause_frame(app, ps, &events)?,
         Screen::Waiting(waiting) => waiting_frame(app, waiting, &events, &mut rerun),
-        Screen::Busy(busy) => persistence::frame(app, busy, &events)?,
+        Screen::Busy(busy) => persistence::frame(app, busy, &events, &mut rerun)?,
     };
 
     Ok(ScreenFrame {
@@ -562,7 +562,8 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
             next = Some(Screen::Replays(Shelf::open()));
         }
         screens::home::Out::Quit => {
-            return app.persistence_screen(persistence::Intent::Exit, Screen::Home(home));
+            let intent = persistence::Intent::quit(app.owes_finished_record());
+            return app.persistence_screen(intent, Screen::Home(home));
         }
     }
     home_backdrop(app, dt);

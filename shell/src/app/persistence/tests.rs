@@ -94,6 +94,48 @@ fn continue_skips_a_corrupt_newest_payload_and_reuses_the_restored_older_save() 
 }
 
 #[test]
+fn main_menu_leaves_at_once_while_the_finished_record_saves() {
+    let mut game = Game::new(Scenario::skirmish()).unwrap();
+    let undecided = BackgroundJob::of(1, &game);
+    game.issue(aftermine_sim::Command::Surrender);
+    game.advance_ticks(1);
+    assert!(
+        game.state.result().is_some(),
+        "premise: the match is decided"
+    );
+    let finished = BackgroundJob::of(2, &game);
+    let main_menu = Intent::Leave(screens::pause::LeaveVerb::MainMenu);
+    assert!(leaves_at_once(&main_menu, Some(&finished), &game.slot));
+    assert!(
+        !leaves_at_once(&main_menu, Some(&undecided), &game.slot),
+        "an autosave from before the end leaves the finished record owed"
+    );
+    assert!(!leaves_at_once(&main_menu, None, &game.slot));
+    let other = Game::new(Scenario::skirmish()).unwrap();
+    assert!(
+        !leaves_at_once(&main_menu, Some(&finished), &other.slot),
+        "another match's save"
+    );
+    for intent in [
+        Intent::Leave(screens::pause::LeaveVerb::Quit),
+        Intent::Rematch,
+    ] {
+        assert!(!leaves_at_once(&intent, Some(&finished), &game.slot));
+    }
+
+    // A match started from Home before that save lands still hears it fail.
+    assert!(failure_outlives_its_match(&finished, &other.slot));
+    assert!(
+        !failure_outlives_its_match(&finished, &game.slot),
+        "while its match stays, Home retries it instead"
+    );
+    assert!(
+        !failure_outlives_its_match(&undecided, &other.slot),
+        "a replaced match's autosave has nothing left to save"
+    );
+}
+
+#[test]
 fn a_replaced_match_retires_on_the_worker_when_it_is_free() {
     let mut worker = Worker::new().expect("worker");
     worker.retire(Game::new(aftermine_sim::Scenario::skirmish()).expect("game"));
