@@ -7,10 +7,25 @@ fn heading_of_rounds_to_the_nearest_compass_step() {
     assert_eq!(heading_of(Vec2Fx::new(Fx::lit("1"), Fx::lit("1"))), 32);
 }
 
-fn exhaustive_heading(v: Vec2Fx) -> u8 {
-    let mut best = 0;
-    let mut best_dot = v.x;
-    for k in 1..=255 {
+/// The step a turn toward +y from the start of `v`'s quadrant meets first.
+fn quadrant_start(v: Vec2Fx) -> u8 {
+    if v.y >= Fx::ZERO {
+        if v.x >= Fx::ZERO { 0 } else { 64 }
+    } else if v.x > Fx::ZERO {
+        192
+    } else {
+        128
+    }
+}
+
+/// The first of `offsets` steps on from `v`'s quadrant start with the
+/// greatest fixed-point dot product with `v`.
+fn first_best(v: Vec2Fx, offsets: std::ops::RangeInclusive<u8>) -> u8 {
+    let first = quadrant_start(v);
+    let mut best = first;
+    let mut best_dot = v.x * dir(first).x + v.y * dir(first).y;
+    for offset in offsets {
+        let k = first.wrapping_add(offset);
         let d = dir(k);
         let dot = d.x * v.x + d.y * v.y;
         if dot > best_dot {
@@ -19,6 +34,11 @@ fn exhaustive_heading(v: Vec2Fx) -> u8 {
         }
     }
     best
+}
+
+/// Every step, the quadrant's own first.
+fn exhaustive_heading(v: Vec2Fx) -> u8 {
+    first_best(v, 1..=255)
 }
 
 #[test]
@@ -60,24 +80,7 @@ fn quadrant_search_preserves_fixed_point_rounding_and_first_ties() {
 
 /// The quadrant scan [`heading_of`] narrows to the two steps around `v`.
 fn scanned_heading(v: Vec2Fx) -> u8 {
-    let first: u8 = if v.y >= Fx::ZERO {
-        if v.x >= Fx::ZERO { 0 } else { 64 }
-    } else if v.x > Fx::ZERO {
-        192
-    } else {
-        128
-    };
-    let mut best = 0;
-    let mut best_dot = v.x;
-    for k in first..=first.saturating_add(64) {
-        let d = dir(k);
-        let dot = d.x * v.x + d.y * v.y;
-        if dot > best_dot {
-            best = k;
-            best_dot = dot;
-        }
-    }
-    best
+    first_best(v, 1..=64)
 }
 
 fn raw(v: Vec2Fx) -> (i128, i128) {
@@ -217,4 +220,60 @@ fn adjacent_steps_stay_adjacent() {
         let dot = a.x * b.x + a.y * b.y;
         assert!(dot > Fx::lit("0.999"), "step {k} breaks continuity");
     }
+}
+
+/// A vector exactly between headings 255 and 0, just below the +x axis.
+fn seam_tie() -> Vec2Fx {
+    Vec2Fx::new(Fx::ONE, Fx::from_bits(-52_709_835))
+}
+
+#[test]
+fn a_tie_at_the_positive_x_seam_breaks_as_its_half_turn_does() {
+    let v = seam_tie();
+    let dot = |k: u8, v: Vec2Fx| dir(k).x * v.x + dir(k).y * v.y;
+    assert_eq!(dot(255, v), dot(0, v), "premise: an exact tie");
+    assert_eq!(
+        dot(127, -v),
+        dot(128, -v),
+        "premise: its half turn ties too"
+    );
+    assert_eq!(heading_of(-v), 127);
+    assert_eq!(heading_of(v), 255);
+}
+
+#[test]
+fn every_heading_turns_half_round_with_its_vector() {
+    let check = |v: Vec2Fx| {
+        if v != Vec2Fx::ZERO {
+            assert_eq!(heading_of(-v), heading_of(v).wrapping_add(128), "{v:?}");
+        }
+    };
+    for x in -64..=64 {
+        for y in -64..=64 {
+            check(Vec2Fx::new(Fx::from_bits(x), Fx::from_bits(y)));
+        }
+    }
+    // Midway between each pair of steps, where ties live, at several scales
+    // and an ulp either way.
+    for k in 0..=u8::MAX {
+        let boundary = dir(k) + dir(k.wrapping_add(1));
+        for scale in [Fx::from_bits(1), Fx::lit("0.01"), Fx::ONE, Fx::lit("8192")] {
+            for dx in [-1, 0, 1] {
+                for dy in [-1, 0, 1] {
+                    check(Vec2Fx::new(
+                        boundary.x * scale + Fx::from_bits(dx),
+                        boundary.y * scale + Fx::from_bits(dy),
+                    ));
+                }
+            }
+        }
+    }
+    let mut rng = crate::rng::Pcg32::new(0x7e57, 5);
+    for _ in 0..20_000 {
+        check(Vec2Fx::new(
+            Fx::from_bits(i64::from(rng.next_u32().cast_signed()) << 13),
+            Fx::from_bits(i64::from(rng.next_u32().cast_signed()) << 13),
+        ));
+    }
+    check(seam_tie());
 }
