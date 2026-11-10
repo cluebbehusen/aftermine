@@ -90,27 +90,28 @@ impl Parties {
     }
 }
 
-/// The slot scan's frame for every party `owner` fields: its earliest
-/// standing Foundry's side of the map, then seat parity. Fixed per owner
-/// rather than per approach, so slots never reshuffle as escorts cross the
-/// escorted unit's row, while mirrored seats still take mirrored slots.
+/// The slot scan's frame for every party `owner` fields: the side of the
+/// map its earliest standing Foundry's centre lies on, then seat parity.
+/// Fixed per owner rather than per approach, so slots never reshuffle as
+/// escorts cross the escorted unit's row, while mirrored seats still take
+/// mirrored slots.
 fn slot_frame(state: &State, owner: PlayerId) -> bool {
-    let map = (state.map.width(), state.map.height());
+    let parity = owner.0 % 2 == 1;
     state
         .buildings()
         .iter()
         .find(|b| {
             b.player == owner && !b.provisional() && b.kind == crate::stats::BuildingKind::Foundry
         })
-        .map_or(owner.0 % 2 == 1, |home| {
+        .map_or(parity, |home| {
             let (w, h) = home.kind.size();
-            crate::geometry::group_spread_scan_reversed(
-                home.anchor.offset(w / 2, h / 2),
-                [],
-                None,
-                map,
-                owner,
-            )
+            let dx = i64::from(home.anchor.x) * 2 + i64::from(w) - i64::from(state.map.width());
+            let dy = i64::from(home.anchor.y) * 2 + i64::from(h) - i64::from(state.map.height());
+            if (dx, dy) == (0, 0) {
+                parity
+            } else {
+                dy < 0 || (dy == 0 && dx < 0)
+            }
         })
 }
 
