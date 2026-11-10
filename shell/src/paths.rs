@@ -251,6 +251,27 @@ pub fn mirror_manifest() -> Option<PathBuf> {
     data_dir().map(|dir| dir.join("cloud-mirror.json"))
 }
 
+/// Whether `path` is a file iCloud Drive has not brought down to this
+/// device. macOS keeps such a file under its real name with no content
+/// (`SF_DATALESS`), and reading it waits on the download, or fails offline.
+pub(crate) fn dataless(path: &Path) -> bool {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        #[cfg(target_os = "ios")]
+        use std::os::ios::fs::MetadataExt;
+        #[cfg(target_os = "macos")]
+        use std::os::macos::fs::MetadataExt;
+        /// `SF_DATALESS` in the SDK's `sys/stat.h`.
+        const SF_DATALESS: u32 = 0x4000_0000;
+        std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.st_flags() & SF_DATALESS != 0)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    {
+        let _ = path;
+        false
+    }
+}
+
 /// Whether the system may remove record files on its own: Apple TV keeps
 /// them in its cache.
 pub fn records_purgeable() -> bool {

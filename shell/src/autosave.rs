@@ -280,7 +280,7 @@ fn rotate_prefix(dir: &Path, prefix: &str, keep: usize) {
 /// Header-eligible records Continue may resume, newest first. Loading
 /// must still validate the payload.
 pub(crate) fn candidates() -> Vec<PathBuf> {
-    crate::saves::discover(|| false)
+    crate::saves::discover_arrived(|| false)
         .continuable()
         .map(|entry| entry.path.clone())
         .collect()

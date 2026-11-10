@@ -201,12 +201,17 @@ struct RecordTime {
 
 #[cfg(test)]
 fn scan(dir: &std::path::Path, out: &mut Vec<(RecordTime, ReplayEntry)>) {
-    scan_cancellable(dir, out, &|| false);
+    scan_cancellable(dir, out, &|_| false, &|| false);
 }
 
+/// Lists the records in `dir`, leaving out any file `dataless` says iCloud
+/// has not brought down yet: reading one would wait on its download, and
+/// offline the read fails. [`aftermine_icloud::download`] counts those as
+/// on their way.
 fn scan_cancellable(
     dir: &std::path::Path,
     out: &mut Vec<(RecordTime, ReplayEntry)>,
+    dataless: &impl Fn(&std::path::Path) -> bool,
     cancelled: &impl Fn() -> bool,
 ) {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -222,7 +227,8 @@ fn scan_cancellable(
         if !matches!(
             path.extension().and_then(|e| e.to_str()),
             Some("json" | "amreplay" | "amsave")
-        ) {
+        ) || dataless(&path)
+        {
             continue;
         }
         let Ok(replay) = crate::saved_game::inspect(&path) else {
@@ -289,9 +295,24 @@ impl Catalog {
 }
 
 /// Every known record, newest first, after starting downloads of the ones
-/// iCloud holds but this device does not. Waits on the first iCloud
-/// lookup, so only the save worker runs it.
+/// iCloud holds but this device does not, which it leaves out and counts as
+/// downloading. Waits on the first iCloud lookup, so only the save worker
+/// runs it.
 pub fn discover(cancelled: impl Fn() -> bool) -> Catalog {
+    discover_with(&crate::paths::dataless, cancelled)
+}
+
+/// [`discover`] for Continue, which also reads the records iCloud has not
+/// brought down yet, waiting on their downloads, so it never resumes an
+/// older session past a newer one still on its way.
+pub(crate) fn discover_arrived(cancelled: impl Fn() -> bool) -> Catalog {
+    discover_with(&|_| false, cancelled)
+}
+
+fn discover_with(
+    dataless: &impl Fn(&std::path::Path) -> bool,
+    cancelled: impl Fn() -> bool,
+) -> Catalog {
     let records = crate::paths::records();
     let downloading = records
         .cloud_folders()
@@ -300,7 +321,7 @@ pub fn discover(cancelled: impl Fn() -> bool) -> Catalog {
         .sum();
     let mut found = Vec::new();
     for dir in records.listed() {
-        scan_cancellable(&dir, &mut found, &cancelled);
+        scan_cancellable(&dir, &mut found, dataless, &cancelled);
     }
     Catalog {
         entries: newest_first(found),

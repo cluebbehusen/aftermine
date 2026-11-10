@@ -21,6 +21,54 @@ fn shelf_hints_offer_only_the_gestures_the_hands_in_use_have() {
 }
 
 #[test]
+fn a_record_icloud_has_not_brought_down_is_left_off_unopened() {
+    let dir = std::env::temp_dir().join(format!(
+        "aftermine-shelf-dataless-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let record: GameReplay =
+        chassis::replay::Replay::new(SIM_VERSION, "test", aftermine_sim::Scenario::skirmish());
+    record.save(dir.join("here.json")).unwrap();
+    record.save(dir.join("away.json")).unwrap();
+    std::fs::write(dir.join("broken.json"), b"not a record").unwrap();
+    let asked = std::cell::RefCell::new(Vec::new());
+    let mut out = Vec::new();
+    scan_cancellable(
+        &dir,
+        &mut out,
+        &|path: &std::path::Path| {
+            asked
+                .borrow_mut()
+                .push(path.file_name().unwrap().to_owned());
+            path.ends_with("away.json")
+        },
+        &|| false,
+    );
+    let mut asked = asked.into_inner();
+    asked.sort();
+    assert_eq!(
+        asked,
+        ["away.json", "broken.json", "here.json"],
+        "every record is asked about before it is opened"
+    );
+    let listed: Vec<_> = out
+        .iter()
+        .map(|(_, entry)| entry.path.file_name().unwrap().to_owned())
+        .collect();
+    assert_eq!(listed, ["here.json"]);
+    assert!(
+        !crate::paths::dataless(&dir.join("here.json")),
+        "a file on this device has its content"
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn the_shelf_tells_another_version_from_damage() {
     let dir = std::env::temp_dir().join(format!(
         "aftermine-shelf-test-{}-{}",
