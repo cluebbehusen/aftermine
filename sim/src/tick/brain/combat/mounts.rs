@@ -150,9 +150,7 @@ fn relative(pivot: Vec2Fx, aim: Vec2Fx, heading: u8) -> u8 {
 }
 
 /// Whether a gun at `pivot` has a clear shot at `aim`: only peaks block the
-/// fire of an aircraft. The trace skips its end tile, but a building's
-/// closest point can sit on its footprint's outer edge and so fall in the
-/// tile beside it, which flush against a peak is the peak itself.
+/// fire of an aircraft.
 fn clear(state: &State, pivot: Vec2Fx, aim: Vec2Fx) -> bool {
     clear_line(
         state,

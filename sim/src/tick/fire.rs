@@ -72,9 +72,7 @@ impl ShotEnd {
 /// Whether the tile a shot lands on must be open as well as its line.
 ///
 /// The line trace skips both end tiles. A unit's aim point is its own
-/// standable tile, but a building's closest-footprint aim is an exact edge
-/// coordinate that can floor into the tile beside it, which flush against a
-/// peak is the mountain itself.
+/// standable tile; an aim on a tile seam lands in the tile past it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tick) enum Landing {
     Checked,
@@ -144,8 +142,10 @@ pub(in crate::tick) fn clear_line(
     };
     let full = traces_terrain(fire, from.domain, to.domain);
     let open = |t: TilePos| crosses(state, t, full, ceiling);
-    (landing == Landing::Unchecked || open(TilePos::containing(to.at)))
-        && !chassis::path::line_blocked(from.at, to.at, open)
+    match landing {
+        Landing::Checked => !chassis::path::line_or_end_blocked(from.at, to.at, open),
+        Landing::Unchecked => !chassis::path::line_blocked(from.at, to.at, open),
+    }
 }
 
 /// Whether a blast bursting at `at`, standing at the level of `footing`,
