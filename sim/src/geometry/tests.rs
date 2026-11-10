@@ -1,4 +1,7 @@
-use super::{body_tiles, footprint_distance, foundry_supports, hull_open, work_tile};
+use super::{
+    body_tiles, footprint_distance, foundry_supports, hull_open, rect_approach_origin_for_map,
+    stance_rank, work_tile,
+};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 
@@ -24,6 +27,59 @@ fn a_worker_on_a_work_position_s_edge_takes_a_mirrored_tile() {
             TilePos::new(width - 1 - tile.x, height - 1 - tile.y),
             "{entry:?} from {from:?}"
         );
+    }
+}
+
+#[test]
+fn the_best_stance_turns_with_the_field() {
+    // Bodies at tile centres around footprints of each parity rank the same
+    // quarter-tile stances. Stances in one tile at one distance tie on all
+    // but their side of the body's line to the footprint.
+    let (width, height) = (24, 16);
+    let turn = |point: Vec2Fx| Vec2Fx::new(Fx::from_num(width), Fx::from_num(height)) - point;
+    let turn_tile = |tile: TilePos| TilePos::new(width - 1 - tile.x, height - 1 - tile.y);
+    let stances: Vec<Vec2Fx> = (0..2 * height)
+        .flat_map(|y| (0..2 * width).map(move |x| (x, y)))
+        .map(|(x, y)| {
+            Vec2Fx::new(
+                Fx::from_num(x) / 2 + Fx::lit("0.25"),
+                Fx::from_num(y) / 2 + Fx::lit("0.25"),
+            )
+        })
+        .collect();
+    for size in [(1, 1), (2, 2), (3, 3), (2, 3)] {
+        let anchor = TilePos::new(10, 6);
+        let turned = TilePos::new(width - size.0 - anchor.x, height - size.1 - anchor.y);
+        for from in (4..12).flat_map(|y| (8..16).map(move |x| TilePos::new(x, y))) {
+            let best = |from: TilePos, anchor: TilePos, player| {
+                let frame = rect_approach_origin_for_map(
+                    (width, height),
+                    crate::PlayerId(player),
+                    from,
+                    anchor,
+                    size,
+                    None,
+                );
+                stances
+                    .iter()
+                    .copied()
+                    .filter(|stance| stance.dist_sq(from.center()) <= Fx::from_num(9))
+                    .min_by_key(|&stance| {
+                        stance_rank(
+                            from.center(),
+                            (from, frame),
+                            (anchor, size),
+                            (TilePos::containing(stance), stance),
+                        )
+                    })
+                    .unwrap()
+            };
+            assert_eq!(
+                turn(best(from, anchor, 0)),
+                best(turn_tile(from), turned, 1),
+                "{size:?} from {from:?}"
+            );
+        }
     }
 }
 

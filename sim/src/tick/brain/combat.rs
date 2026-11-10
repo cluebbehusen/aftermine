@@ -3145,17 +3145,11 @@ fn approach_firing_area(
         }
     }
     points.sort_by_key(|&point| {
-        (
-            pos.dist_sq(point),
-            crate::geometry::rect_approach_key_from(
-                from,
-                frame,
-                b.anchor,
-                (w, h),
-                TilePos::containing(point),
-            ),
-            (point.x - pos.x) * (frame.center().y - pos.y)
-                - (point.y - pos.y) * (frame.center().x - pos.x),
+        crate::geometry::stance_rank(
+            pos,
+            (from, frame),
+            (b.anchor, (w, h)),
+            (TilePos::containing(point), point),
         )
     });
     let candidates = points

@@ -107,6 +107,34 @@ pub fn rect_approach_key_from(
     (candidate.chebyshev(from), std::cmp::Reverse(dot), cross)
 }
 
+/// Ranks a stance for a body at `pos` meeting the footprint of `size` at
+/// `anchor`: nearer first, then its tile `goal` in the approach frame of
+/// `from` and `frame` (see [`rect_approach_key_from`]), then which side of
+/// the body's line to the footprint's centre `point` lies on, then how far
+/// along that line. Two stances in one tile can tie on everything but the
+/// side. A body on an odd footprint's centre has no line to it and looks
+/// toward the frame tile instead.
+pub fn stance_rank(
+    pos: chassis::fx::Vec2Fx,
+    (from, frame): (TilePos, TilePos),
+    (anchor, size): (TilePos, (i32, i32)),
+    (goal, point): (TilePos, chassis::fx::Vec2Fx),
+) -> impl Ord {
+    let toward = footprint_center(anchor, size) - pos;
+    let toward = if toward == chassis::fx::Vec2Fx::ZERO {
+        frame.center() - pos
+    } else {
+        toward
+    };
+    let offset = point - pos;
+    (
+        pos.dist_sq(point),
+        rect_approach_key_from(from, frame, anchor, size, goal),
+        offset.x * toward.y - offset.y * toward.x,
+        std::cmp::Reverse(offset.x * toward.x + offset.y * toward.y),
+    )
+}
+
 /// The command approach frame from immutable map and ownership facts. Command
 /// previews use this same tie frame without needing authoritative `State`.
 pub fn rect_approach_origin_for_map(

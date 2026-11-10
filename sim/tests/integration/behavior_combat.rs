@@ -616,6 +616,52 @@ fn avalanche_backs_out_of_its_dead_zone_before_firing() {
 }
 
 #[test]
+fn mirrored_avalanches_back_out_to_mirrored_stands() {
+    // Backing away from a Reclaimer inside its dead zone, the Avalanche has
+    // two equally near stands in one tile, either side of its line to the
+    // Reclaimer. After a half turn it must choose the half-turned one.
+    let (width, height) = (30, 22);
+    let stand = |rotated: bool| {
+        let (me, them) = if rotated { (1, 0) } else { (0, 1) };
+        let at = |x: i32, y: i32| {
+            if rotated {
+                (width - 1 - x, height - 1 - y)
+            } else {
+                (x, y)
+            }
+        };
+        let (ux, uy) = at(10, 10);
+        let (bx, by) = at(12, 10);
+        let mut scenario = open_arena(30, 22, vec![unit(me, UnitKind::Avalanche, ux, uy)]);
+        scenario.buildings = vec![common::building(them, BuildingKind::Reclaimer, bx, by)];
+        let mut state = scenario.build().unwrap();
+        let avalanche = state.units()[0].id;
+        let target = state
+            .buildings()
+            .iter()
+            .find(|b| b.kind == BuildingKind::Reclaimer)
+            .unwrap()
+            .id;
+        state.tick(&[cmd(
+            me,
+            Command::Attack {
+                units: vec![avalanche],
+                target: Target::Building(target).into(),
+                queue: false,
+            },
+        )]);
+        let path = state.unit(avalanche).unwrap().path.clone();
+        path.and_then(|path| path.final_point)
+            .expect("it set out for a firing stand")
+    };
+    let centre = chassis::fx::Vec2Fx::new(
+        chassis::fx::Fx::from_num(width),
+        chassis::fx::Fx::from_num(height),
+    );
+    assert_eq!(stand(true), centre - stand(false));
+}
+
+#[test]
 fn hunt_engages_on_the_way_then_resumes() {
     // A wider arena than `arena()`: the enemy Foundry must sit outside
     // aggro range of the march route, or the marcher will (correctly)

@@ -1229,17 +1229,11 @@ fn source_route_avoiding_danger(
     })
     .collect();
     candidates.sort_by_key(|candidate| {
-        (
-            unit.pos.dist_sq(candidate.point),
-            crate::geometry::rect_approach_key_from(
-                from,
-                frame,
-                source.pos,
-                (1, 1),
-                candidate.goal,
-            ),
-            (candidate.point.x - unit.pos.x) * (frame.center().y - unit.pos.y)
-                - (candidate.point.y - unit.pos.y) * (frame.center().x - unit.pos.x),
+        crate::geometry::stance_rank(
+            unit.pos,
+            (from, frame),
+            (source.pos, (1, 1)),
+            (candidate.goal, candidate.point),
         )
     });
     // Every candidate, including those crowding moves outward, shares one
@@ -1498,11 +1492,11 @@ fn known_rect_route(
     .filter(|candidate| !avoid_danger || !danger.contains(candidate.goal))
     .collect();
     candidates.sort_by_key(|candidate| {
-        (
-            unit.pos.dist_sq(candidate.point),
-            crate::geometry::rect_approach_key_from(from, frame, anchor, size, candidate.goal),
-            (candidate.point.x - unit.pos.x) * (frame.center().y - unit.pos.y)
-                - (candidate.point.y - unit.pos.y) * (frame.center().x - unit.pos.x),
+        crate::geometry::stance_rank(
+            unit.pos,
+            (from, frame),
+            (anchor, size),
+            (candidate.goal, candidate.point),
         )
     });
     // The passability predicate is candidate-independent, so one failed
