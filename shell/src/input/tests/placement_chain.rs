@@ -213,3 +213,16 @@ fn a_fully_refused_release_after_letting_go_of_shift_ends_the_chain() {
         "nothing staged, but the released queue still ends the chain"
     );
 }
+
+#[test]
+fn a_mouse_placement_leaves_the_palette_up() {
+    let (mut game, mut input) = funded_builder();
+    let a = at(&game, 7, 3);
+    apply_events(&mut game, &mut input, &[left_down(a), left_up(a)]);
+    assert_eq!(builds(&game), [(TilePos::new(7, 3), false)]);
+    assert!(input.placing.is_none(), "one placement ends the mode");
+    assert!(
+        input.build_menu,
+        "the drawn palette stays for the next pick"
+    );
+}

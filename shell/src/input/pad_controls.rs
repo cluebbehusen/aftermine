@@ -73,7 +73,9 @@ pub(super) fn press(
 pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button: PadButton) {
     match button {
         PadButton::South => {
+            let placing = input.placing.is_some();
             if super::finish_stroke(game, input, Presser::Pad(pad)) {
+                placed(input, placing);
                 return;
             }
             if let Release::Tap(ground, picked) = paint::release(game, input, pad) {
@@ -82,8 +84,23 @@ pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button:
         }
         PadButton::LeftTrigger => {
             input.queue_pads.remove(&pad);
+            if !input.queue_held() {
+                let placing = input.placing.is_some();
+                input.queue_released();
+                placed(input, placing);
+            }
         }
         _ => {}
+    }
+}
+
+/// A placement a controller ended returns to the selection. Pad mode
+/// draws no palette, so one left open would blank the panel and turn Y
+/// into the build ring. An open build ring keeps it, as LT let go over
+/// one leaves it: that ring closes construction as it closes.
+fn placed(input: &mut InputState, placing: bool) {
+    if placing && input.placing.is_none() && !super::pad_ring::building(input.ring.as_ref()) {
+        input.close_construction();
     }
 }
 
@@ -155,8 +172,10 @@ fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u6
         return;
     }
     if input.armed_mode().is_some() {
+        let placing = input.placing.is_some();
         super::armed_click(game, input, bindings, point, Presser::Pad(pad));
         super::finish_stroke(game, input, Presser::Pad(pad));
+        placed(input, placing);
         return;
     }
     if super::stand_down_for_order(input) {
@@ -167,12 +186,18 @@ fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u6
 }
 
 /// B: a held A goes first, leaving the selection as it was; then what Back
-/// walks out of, the selection last.
+/// walks out of, the selection last. Out of a placement it goes back to the
+/// build ring the structure was picked from, where Back goes back to the
+/// palette pad mode doesn't draw.
 fn back(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
     if paint::abandon(input) {
         return;
     }
+    let placing = input.placing.is_some();
     super::dispatch_action(game, input, bindings, Action::Back);
+    if placing && input.placing.is_none() {
+        super::pad_ring::reopen_build(game, input);
+    }
 }
 
 /// One RT press over a selection: the next kind of the group RT narrowed
