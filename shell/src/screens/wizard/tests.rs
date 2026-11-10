@@ -1565,3 +1565,17 @@ fn the_setup_hints_name_a_controllers_buttons_while_one_is_in_use() {
         }
     }
 }
+
+#[test]
+fn setup_warns_of_a_missing_controller_unless_start_is_refused_anyway() {
+    assert_eq!(
+        controller_warning(false, true),
+        Some("Connect a controller to play")
+    );
+    assert_eq!(
+        controller_warning(true, true),
+        None,
+        "nobody to fight is the warning that stands"
+    );
+    assert_eq!(controller_warning(false, false), None);
+}

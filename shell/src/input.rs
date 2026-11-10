@@ -212,6 +212,50 @@ fn hud_in_pad_mode(platform: crate::platform::Platform, pad_in_use: bool) -> boo
     pad_in_use || platform == crate::platform::Platform::Tv
 }
 
+/// Whether no controller can play a match: on a TV, or wherever a Siri
+/// Remote is connected, while no pad but a remote is.
+fn lacks_controller(
+    platform: crate::platform::Platform,
+    connected: impl Iterator<Item = aftermine_protocol::PadFamily>,
+) -> bool {
+    let mut remote = platform == crate::platform::Platform::Tv;
+    for family in connected {
+        if family != aftermine_protocol::PadFamily::Remote {
+            return false;
+        }
+        remote = true;
+    }
+    remote
+}
+
+/// How the match HUD stands for the hands in use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HudHands {
+    /// Pointer chrome, drawn and hit-tested.
+    Pointer,
+    /// Pad mode: the controls a controller's buttons stand in for stay
+    /// hidden, and the rest name the buttons of `names`, or none while no
+    /// controller is connected.
+    Pad {
+        names: Option<aftermine_protocol::PadFamily>,
+    },
+}
+
+impl HudHands {
+    /// Whether the HUD stands in pad mode.
+    pub(crate) fn pad_mode(self) -> bool {
+        matches!(self, Self::Pad { .. })
+    }
+
+    /// Whose buttons the HUD names, if any.
+    pub(crate) fn names(self) -> Option<aftermine_protocol::PadFamily> {
+        match self {
+            Self::Pointer => None,
+            Self::Pad { names } => names,
+        }
+    }
+}
+
 /// The family copy names, from the one in use or assumed. A remote can't play
 /// a match, so there copy names a connected controller instead, or none.
 fn pad_family_named(
@@ -1290,14 +1334,27 @@ impl InputState {
         self.hud_pad = hud_in_pad_mode(crate::platform::PLATFORM, self.pad_in_use.is_some());
     }
 
-    /// Whose buttons the HUD names while it stands in pad mode: the
-    /// controller in use, or a common pad's before any is pressed. A remote
+    /// How the HUD stands this frame. In pad mode it names the controller
+    /// in use, else a connected one, and no buttons while none is: a remote
     /// can't play a match, so its buttons are never the ones named.
-    pub(crate) fn hud_pad_family(&self) -> Option<aftermine_protocol::PadFamily> {
-        self.hud_pad.then(|| {
-            self.pad_family_named(true)
-                .unwrap_or(aftermine_protocol::PadFamily::Xbox)
-        })
+    pub(crate) fn hud_hands(&self) -> HudHands {
+        if !self.hud_pad {
+            return HudHands::Pointer;
+        }
+        HudHands::Pad {
+            names: self.pad_family_named(true).or_else(|| {
+                self.pads
+                    .values()
+                    .copied()
+                    .find(|family| *family != aftermine_protocol::PadFamily::Remote)
+            }),
+        }
+    }
+
+    /// Whether no controller can play a match: only the Siri Remote, or
+    /// nothing at all on a TV, is connected.
+    pub(crate) fn lacks_controller(&self) -> bool {
+        lacks_controller(crate::platform::PLATFORM, self.pads.values().copied())
     }
 
     /// Where the HUD reads its hover: the queue strip's lit entry while
@@ -2543,8 +2600,11 @@ fn pad_down(
     if !remote {
         input.pad_points();
     }
-    if plays_in_match(remote, button)
-        && !pad_dock::press(game, input, bindings, pad, button)
+    if !plays_in_match(remote, button) {
+        deny(game);
+        return;
+    }
+    if !pad_dock::press(game, input, bindings, pad, button)
         && !pad_ring::press(game, input, bindings, pad, button)
     {
         pad_controls::press(game, input, bindings, pad, button);

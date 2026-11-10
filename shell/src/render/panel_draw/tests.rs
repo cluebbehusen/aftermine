@@ -849,7 +849,10 @@ fn pad_mode_names_the_ring_buttons_where_the_ring_has_commands() {
             );
         }
     }
-    assert!(pad_legend(&panel, None).is_none(), "no legend off pad mode");
+    assert!(
+        pad_legend(&panel, None).is_none(),
+        "no legend off pad mode or with no controller to name"
+    );
 
     // An ally's structure shows a display chip, which no ring slice takes.
     let mut allied = allied;

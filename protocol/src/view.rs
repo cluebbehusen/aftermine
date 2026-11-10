@@ -519,6 +519,16 @@ pub struct UiView {
     /// presses, so it is chrome, not world. Absent outside live play.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub army_strip: Option<[f32; 4]>,
+    /// The line under the notice that stands over a live match no
+    /// controller can play. Absent while a controller is connected and
+    /// outside live play.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller_notice: Option<String>,
+    /// Whose buttons the live HUD names in pad mode. Absent outside pad
+    /// mode, while it names none because no controller is connected, and
+    /// outside live play.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hud_buttons: Option<crate::PadFamily>,
 }
 
 impl StateView {

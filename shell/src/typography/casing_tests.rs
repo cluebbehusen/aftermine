@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 const TITLES: &[&str] = &[
     "AFTERMINE",
     "CLOSE THE LOBBY?",
+    "CONNECT A CONTROLLER",
     "COULD NOT SAVE",
     "DEFEAT",
     "DELETE THIS REPLAY?",

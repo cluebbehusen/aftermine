@@ -24,7 +24,11 @@ pub(super) fn frame(app: &mut App, screen: &mut Screen, dt: f32) {
             session.view(),
             !session.clock.paused && session.seeking.is_none(),
         ),
-        Screen::Playing => (app.game.view(), !app.game.clock.paused),
+        Screen::Playing => (
+            app.game.view(),
+            !app.game.clock.paused
+                && !super::screen_flow::held_for_controller(&app.game, &app.input),
+        ),
         _ => (app.game.view(), false),
     };
     app.mixer.rocket_loops.update(

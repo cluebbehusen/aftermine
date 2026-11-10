@@ -365,6 +365,13 @@ fn seat_cell_live(
     }
 }
 
+/// The warning setup shows while no controller can play the match it
+/// starts, unless the seats leave nobody to fight, which Start refuses
+/// outright.
+fn controller_warning(one_team: bool, lacks_controller: bool) -> Option<&'static str> {
+    (lacks_controller && !one_team).then_some("Connect a controller to play")
+}
+
 /// The coaching line while an occupant is picked up.
 fn moving_hint(hands: crate::platform::Hands) -> &'static str {
     if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
@@ -1863,6 +1870,7 @@ impl Wizard {
         sprites: &crate::assets::Sprites,
         draft: &NewMatchDraft,
         previews: &mut PreviewCache,
+        lacks_controller: bool,
     ) {
         let Some(scenario) = draft.scenario.as_deref() else {
             return;
@@ -2048,12 +2056,16 @@ impl Wizard {
             draw_seat_markers(scenario, &styles, drawn, draft.seat_choice, focus, ui);
         }
 
-        if !compact || self.notice.is_some() {
+        let controller_warning =
+            controller_warning(one_team, lacks_controller).filter(|_| self.moving.is_none());
+        if !compact || self.notice.is_some() || controller_warning.is_some() {
             let hands = crate::platform::hands();
             let (hint, warning) = if let Some(notice) = &self.notice {
                 (crate::hint_line::HintLine::from(notice.clone()), true)
             } else if self.moving.is_some() {
                 (crate::menu::hint_line(moving_hint(hands)), false)
+            } else if let Some(warning) = controller_warning {
+                (crate::menu::hint_line(warning), true)
             } else {
                 let press = self.cursor_press(draft, &open, &order);
                 (
