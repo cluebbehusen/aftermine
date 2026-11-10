@@ -2379,23 +2379,6 @@ pub(super) fn attack(
         unit.path.is_some(),
     );
 
-    // A hunter attacking a building stays alert: an enemy unit wandering
-    // into aggro takes priority (acquisition prefers units), so marching
-    // armies fight back.
-    if resume.is_some()
-        && matches!(target, Target::Building(_))
-        && let Some(better @ Target::Unit(_)) = acquire_target(state, index, id)
-    {
-        let unit = state.unit_mut(id).expect("caller checked");
-        unit.order = Order::Attack {
-            pursue: false,
-            target: better.into(),
-            resume,
-        };
-        unit.path = None;
-        return;
-    }
-
     // A wide cutter whose way to its target runs through hostile buildings
     // turns to cut the first of them out of its way, unless its drum already
     // presses on the target.

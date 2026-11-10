@@ -186,6 +186,47 @@ fn an_escort_fights_a_threat_near_the_escorted_unit_then_returns() {
 }
 
 #[test]
+fn an_escort_on_a_structure_is_not_held_by_a_unit_beyond_its_reach_and_the_break_radius() {
+    // The escort shells a structure beside its unit while an idle hostile
+    // stands inside its aggro range but out of reach, and farther from the
+    // escorted unit than the break radius allows.
+    let mut scenario = open_arena(
+        40,
+        20,
+        vec![
+            unit(0, UnitKind::Harvester, 10, 10),
+            unit(0, UnitKind::Sentinel, 20, 10),
+            unit(1, UnitKind::Harvester, 21, 12),
+        ],
+    );
+    scenario.buildings.push(common::building(
+        1,
+        aftermine_sim::BuildingKind::Barricade,
+        16,
+        10,
+    ));
+    let mut state = scenario.build().unwrap();
+    let [lead, guard, _idler] = ids(&state)[..] else {
+        unreachable!()
+    };
+    let wall = state
+        .buildings()
+        .iter()
+        .find(|b| b.player.0 == 1 && b.kind == aftermine_sim::BuildingKind::Barricade)
+        .unwrap()
+        .id;
+    let full = state.building(wall).unwrap().hp;
+    state.tick(&[cmd(0, accompany(vec![guard], lead, false))]);
+    let events = run(&mut state, 400);
+    let shots = events
+        .iter()
+        .filter(|e| matches!(e, Event::AttackHit { attacker, .. } if *attacker == guard))
+        .count();
+    assert!(shots > 0, "the escort fires");
+    assert!(state.building(wall).is_none_or(|b| b.hp < full));
+}
+
+#[test]
 fn an_escort_breaks_off_a_victim_that_strays_past_the_break_radius() {
     // The scout keeps the runner in sight the whole way, so only the break
     // radius can end the chase.
