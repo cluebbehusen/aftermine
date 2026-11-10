@@ -2149,6 +2149,33 @@ fn sapper_attack(
     }
 }
 
+/// The tether on a stationed guard's own chase, judged at `pos`. It
+/// measures the guard's own distance from its anchor, never the target's: a
+/// stationed machine travels at most the radius from its post plus the
+/// patience window, independent of weapon range or speed. Inside the radius
+/// the guard hunts freely; beyond it every chase tick spends patience, and an
+/// empty window sends the guard home, leash kept so the homecoming arms the
+/// post cooldown. Returns whether the chase goes on.
+fn tether_holds(state: &mut State, id: UnitId, pos: Vec2Fx, resume: Option<Resume>) -> bool {
+    if resume.is_none()
+        && let Some(leash) = state.unit(id).expect("caller checked").leash
+    {
+        let radius_sq = crate::stats::LEASH_RADIUS * crate::stats::LEASH_RADIUS;
+        if leash.anchor.center().dist_sq(pos) > radius_sq {
+            let unit = state.unit_mut(id).expect("caller checked");
+            if leash.patience == 0 {
+                unit.order = Order::Run {
+                    goal: leash.anchor.into(),
+                };
+                unit.path = None;
+                return false;
+            }
+            unit.leash.as_mut().expect("just seen").patience -= 1;
+        }
+    }
+    true
+}
+
 /// The attack run: a turn-limited flier never takes a firing stance. It
 /// keeps a live route on its victim, steers there on a bounded arc, and
 /// releases only when the bay is cold, the victim is inside release range,
@@ -2273,6 +2300,13 @@ fn bomber_attack(
             next: 0,
             clearing: false,
         });
+        // A bomb away refreshes the leash patience, as a ground guard's
+        // reaching its firing stance does.
+        if resume.is_none()
+            && let Some(leash) = unit.leash.as_mut()
+        {
+            leash.patience = crate::stats::LEASH_PATIENCE;
+        }
         return;
     }
 
@@ -2319,6 +2353,31 @@ fn bomber_attack(
             clearing: false,
         });
         return;
+    }
+
+    // The leash binds a bomber's chase as it does a ground guard's, but only
+    // one that follows its victim out past the radius: every pass carries a
+    // bomber an egress and a turn past its victim, so its own distance cannot
+    // tell a chase from a run on a victim near its post.
+    let leash = state.unit(id).expect("caller checked").leash;
+    let radius_sq = crate::stats::LEASH_RADIUS * crate::stats::LEASH_RADIUS;
+    match leash {
+        Some(leash)
+            if resume.is_none() && leash.anchor.center().dist_sq(aim_point) <= radius_sq =>
+        {
+            state
+                .unit_mut(id)
+                .expect("caller checked")
+                .leash
+                .as_mut()
+                .expect("just seen")
+                .patience = crate::stats::LEASH_PATIENCE;
+        }
+        _ => {
+            if !tether_holds(state, id, pos, resume) {
+                return;
+            }
+        }
     }
 
     // Chase: keep a live route on the victim, repathing when it drifts.
@@ -2660,33 +2719,8 @@ pub(super) fn attack(
     }
 
     // The tether binds the chase, not the trigger or the firing stand above.
-    // It measures the guard's own distance from its anchor, never the
-    // target's: a stationed machine travels at most the radius from its post
-    // plus the patience window, independent of weapon range or speed.
-    // Inside the radius the guard hunts freely; beyond it every chase tick
-    // spends patience, and an empty window sends the guard walking home,
-    // leash kept so the homecoming arms the post cooldown.
-    if resume.is_none()
-        && let Some(leash) = state.unit(id).expect("caller checked").leash
-    {
-        let radius_sq = crate::stats::LEASH_RADIUS * crate::stats::LEASH_RADIUS;
-        if leash.anchor.center().dist_sq(pos) > radius_sq {
-            if leash.patience == 0 {
-                let unit = state.unit_mut(id).expect("caller checked");
-                unit.order = Order::Run {
-                    goal: leash.anchor.into(),
-                };
-                unit.path = None;
-                return;
-            }
-            state
-                .unit_mut(id)
-                .expect("caller checked")
-                .leash
-                .as_mut()
-                .expect("just seen")
-                .patience -= 1;
-        }
+    if !tether_holds(state, id, pos, resume) {
+        return;
     }
 
     // Out of range (or blind, or blocked): chase.
