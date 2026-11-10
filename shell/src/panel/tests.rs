@@ -41,10 +41,21 @@ fn card_copy_names_only_what_the_hands_in_use_have() {
         for line in &roster {
             assert_copy_fits(hands, line);
         }
-        assert_copy_fits(hands, patrol_desc(hands));
+        assert_copy_fits(hands, &patrol_desc(hands));
         assert_copy_fits(hands, &patrolling_desc(hands));
         assert_copy_fits(hands, unload_queue_desc(hands));
         assert_copy_fits(hands, transport_load_desc(hands.touch()));
+    }
+    // A controller marks points with its order button and starts the loop
+    // from the ring, never the ribbon's Start.
+    for hands in crate::platform::pad_hands() {
+        let patrol = patrol_desc(hands);
+        assert_copy_fits(hands, &patrol);
+        let mark = crate::pad::button_name(hands.pad.unwrap(), aftermine_protocol::PadButton::West);
+        assert!(
+            patrol.contains(mark) && !patrol.contains("Start"),
+            "{patrol}"
+        );
     }
     let patrols: std::collections::BTreeSet<_> = ALL_HANDS.map(patrol_desc).into();
     assert_eq!(

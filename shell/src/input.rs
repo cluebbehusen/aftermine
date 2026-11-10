@@ -3718,6 +3718,10 @@ pub(super) fn start_patrol(game: &mut Game, input: &mut InputState) {
 
 /// The toast when the route has no room for another waypoint.
 fn patrol_full_toast(key: &str, hands: crate::platform::Hands) -> String {
+    if let Some(family) = hands.pad {
+        let ring = crate::pad::button_name(family, aftermine_protocol::PadButton::North);
+        return format!("Patrol is full: open {ring} and pick Patrol again to start it");
+    }
     match (hands.touch(), hands.keys) {
         (false, true) => format!("Patrol is full: press {key} or click Start"),
         (false, false) => "Patrol is full: click Start".to_string(),

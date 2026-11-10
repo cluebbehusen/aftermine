@@ -4033,11 +4033,19 @@ fn patrol_is_exclusive_with_the_other_armed_verbs() {
 
 #[test]
 fn the_patrol_full_toast_names_only_what_the_hands_in_use_have() {
-    use crate::platform::{ALL_HANDS, assert_copy_fits};
+    use crate::platform::{ALL_HANDS, assert_copy_fits, pad_hands};
     for hands in ALL_HANDS {
         let full = patrol_full_toast("R", hands);
         assert_copy_fits(hands, &full);
         assert_eq!(full.contains(" R "), hands.keys, "{full}");
+    }
+    // No pad press reaches the ribbon's Start; the ring's Patrol does.
+    for hands in pad_hands() {
+        let full = patrol_full_toast("R", hands);
+        assert_copy_fits(hands, &full);
+        let ring =
+            crate::pad::button_name(hands.pad.unwrap(), aftermine_protocol::PadButton::North);
+        assert!(full.contains(ring) && !full.contains("Start"), "{full}");
     }
 }
 

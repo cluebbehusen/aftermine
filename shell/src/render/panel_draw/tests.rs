@@ -809,3 +809,119 @@ fn the_select_all_button_widens_the_title_row_and_grows_for_fingertips() {
     assert_eq!(touch.height - bare.height, 12.0);
     assert_eq!(desk.health_y - bare.health_y, 10.0);
 }
+
+#[test]
+fn pad_mode_names_the_ring_buttons_where_the_ring_has_commands() {
+    use aftermine_protocol::{PadButton, PadFamily};
+    let bindings = crate::action::BindingMap::classic();
+    let teams = aftermine_sim::Scenario::from_json(include_str!(
+        "../../../../scenarios/compass-grand.json"
+    ))
+    .expect("Compass Grand parses");
+    let allied = Game::with_viewport(teams, macroquad::prelude::vec2(1280.0, 800.0))
+        .expect("Compass Grand builds");
+    let mut game = Game::with_viewport(
+        aftermine_sim::Scenario::skirmish(),
+        macroquad::prelude::vec2(1280.0, 800.0),
+    )
+    .expect("skirmish builds");
+    assert!(
+        crate::panel::build_for_palette(&game.view(), &bindings, false).is_none(),
+        "nothing selected: no panel, so no legend"
+    );
+    let own = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human)
+        .expect("an own unit")
+        .id;
+    game.presentation.selection.units = vec![own];
+    let panel = crate::panel::build_for_palette(&game.view(), &bindings, false).expect("own panel");
+    for family in [PadFamily::Xbox, PadFamily::PlayStation, PadFamily::Switch] {
+        let legend = pad_legend(&panel, Some(family))
+            .expect("an own selection has commands")
+            .copy();
+        for button in [PadButton::North, PadButton::DpadRight] {
+            assert!(
+                legend.contains(crate::pad::button_name(family, button)),
+                "{legend}"
+            );
+        }
+    }
+    assert!(pad_legend(&panel, None).is_none(), "no legend off pad mode");
+
+    // An ally's structure shows a display chip, which no ring slice takes.
+    let mut allied = allied;
+    let ally = allied
+        .state
+        .buildings()
+        .iter()
+        .find(|b| {
+            b.player != allied.presentation.human
+                && !allied.state.hostile(allied.presentation.human, b.player)
+        })
+        .expect("an ally Foundry")
+        .id;
+    allied.presentation.selection.buildings = vec![ally];
+    let chip =
+        crate::panel::build_for_palette(&allied.view(), &bindings, false).expect("ally panel");
+    assert!(!chip.cards.is_empty());
+    for (game, panel) in [(&game, &panel), (&allied, &chip)] {
+        assert_eq!(
+            pad_legend(panel, Some(PadFamily::Xbox)).is_some(),
+            crate::radial::ring(&game.view(), panel, &[]).is_some(),
+            "the legend names Y only where Y opens a ring"
+        );
+    }
+    assert!(pad_legend(&chip, Some(PadFamily::Xbox)).is_none());
+}
+
+#[test]
+fn the_pad_legend_starts_clear_of_the_info_plate() {
+    let mut game = Game::with_viewport(
+        aftermine_sim::Scenario::skirmish(),
+        macroquad::prelude::vec2(1280.0, 800.0),
+    )
+    .expect("skirmish builds");
+    let own = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human)
+        .expect("an own unit")
+        .id;
+    game.presentation.selection.units = vec![own];
+    let bindings = crate::action::BindingMap::classic();
+    let build =
+        || crate::panel::build_for_palette(&game.view(), &bindings, false).expect("own panel");
+    for count in [1, build().cards.len()] {
+        let mut panel = build();
+        panel.cards.truncate(count);
+        for (viewport, scale) in [(vec2(1133.0, 744.0), 1.0), (vec2(1920.0, 1200.0), 1.5)] {
+            let minimap = minimap_rect_scaled(40, 24, viewport, scale);
+            let packing = panel_packing(
+                viewport,
+                minimap,
+                scale,
+                panel.cards.len(),
+                rally_card_count(&panel.cards),
+            );
+            let (left, _, _, _) = card_metrics(viewport, scale);
+            let (_, right) = command_card_geometry(viewport, scale, packing, &panel.cards);
+            let vacated = action_panel_rect(packing, left, right, true);
+            let info = selection_info_rect(viewport, left, 60.0 * scale, vacated);
+            for width in [40.0, 150.0, 400.0].map(|w| w * scale) {
+                let x = pad_legend_x(vacated, width, scale);
+                assert!(x >= info.right(), "{count} cards, {width} wide at {scale}");
+                if width <= vacated.w - 24.0 * scale {
+                    assert_eq!(
+                        x + width * 0.5,
+                        vacated.center().x,
+                        "a fitting line centers"
+                    );
+                }
+            }
+        }
+    }
+}

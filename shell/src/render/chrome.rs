@@ -1448,7 +1448,7 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
         draw_salvo_steppers(sprites, steppers, input, s);
     }
     if let Some(buttons) = patrol {
-        draw_patrol_buttons(buttons, input, s);
+        draw_patrol_buttons(sprites, buttons, input, s);
     }
     if let Some(status) = status {
         let size = crate::theme::Type::Small.at(s);
@@ -1467,8 +1467,10 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
 }
 
 /// The patrol ribbon's Start, lit amber once there is a point to loop,
-/// and its cross.
-fn draw_patrol_buttons(buttons: &PatrolButtons, input: &InputState, s: f32) {
+/// and its cross. In pad mode the buttons that do the same stand in for
+/// the word and the glyph: the command ring's button, since picking
+/// Patrol there again starts the loop, and Back, which drops the route.
+fn draw_patrol_buttons(sprites: &Sprites, buttons: &PatrolButtons, input: &InputState, s: f32) {
     use crate::theme::{BORDER_FAINT, CARD_ARMED, CARD_HOVER, CARD_IDLE, EDGE_CARD, EDGE_FOCUS};
     let hover = hover_point(input);
     let (start, ready) = (buttons.start, buttons.ready);
@@ -1480,19 +1482,32 @@ fn draw_patrol_buttons(buttons: &PatrolButtons, input: &InputState, s: f32) {
         (true, true) => (crate::theme::Stroke::Heavy, EDGE_FOCUS),
     };
     stroke_rect(start, stroke.at(s), edge);
+    let pad = input.hud_pad_family();
+    let start_ink = if ready {
+        TEXT_ACCENT
+    } else {
+        crate::theme::TEXT_DISABLED
+    };
     let size = crate::theme::Type::Label.at(s);
-    let word_w = measure_text(PATROL_START, None, numeric::font_size(size), 1.0).width;
-    draw_text(
-        PATROL_START,
-        start.x + (start.w - word_w) * 0.5,
-        start.y + start.h * 0.66,
-        size,
-        if ready {
-            TEXT_ACCENT
-        } else {
-            crate::theme::TEXT_DISABLED
-        },
-    );
+    if let Some(family) = pad {
+        draw_centered_button(
+            sprites,
+            family,
+            aftermine_protocol::PadButton::North,
+            start,
+            s,
+            start_ink,
+        );
+    } else {
+        let word_w = measure_text(PATROL_START, None, numeric::font_size(size), 1.0).width;
+        draw_text(
+            PATROL_START,
+            start.x + (start.w - word_w) * 0.5,
+            start.y + start.h * 0.66,
+            size,
+            start_ink,
+        );
+    }
     let cancel = buttons.cancel;
     let cancel_hovered = hover.is_some_and(|p| cancel.contains(p));
     fill_rect(
@@ -1512,9 +1527,29 @@ fn draw_patrol_buttons(buttons: &PatrolButtons, input: &InputState, s: f32) {
             EDGE_CARD
         },
     );
+    if let Some(family) = pad {
+        draw_centered_button(sprites, family, crate::pad::BACK, cancel, s, TEXT_BODY);
+        return;
+    }
     let (c, arm) = (cancel.center(), 7.0 * s);
     line_between(c - vec2(arm, arm), c + vec2(arm, arm), 2.5 * s, TEXT_BODY);
     line_between(c + vec2(-arm, arm), c + vec2(arm, -arm), 2.5 * s, TEXT_BODY);
+}
+
+/// A controller button's icon at body size, centered in `rect`.
+fn draw_centered_button(
+    sprites: &Sprites,
+    family: aftermine_protocol::PadFamily,
+    button: aftermine_protocol::PadButton,
+    rect: Rect,
+    s: f32,
+    ink: Color,
+) {
+    let size = crate::theme::Type::Body.at(s);
+    let icon = crate::hint_line::icon_width(size);
+    let c = rect.center();
+    let at = crate::pad::button_icon(family, button);
+    crate::hint_line::draw_icon(sprites, at, c.x - icon * 0.5, c.y + size * 0.35, size, ink);
 }
 
 /// The salvo's minus and plus, faint where the size can go no further. In
@@ -1559,11 +1594,7 @@ fn draw_salvo_steppers(sprites: &Sprites, steppers: &SalvoSteppers, input: &Inpu
             } else {
                 PadButton::LeftShoulder
             };
-            let size = crate::theme::Type::Body.at(s);
-            let icon = crate::hint_line::icon_width(size);
-            let baseline = c.y + size * 0.35;
-            let icon_at = crate::pad::button_icon(family, button);
-            crate::hint_line::draw_icon(sprites, icon_at, c.x - icon * 0.5, baseline, size, ink);
+            draw_centered_button(sprites, family, button, rect, s, ink);
             continue;
         }
         line_between(c - vec2(arm, 0.0), c + vec2(arm, 0.0), 2.5 * s, ink);

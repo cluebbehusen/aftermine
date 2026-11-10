@@ -338,6 +338,12 @@ fn offered(card: &Card) -> bool {
     }
 }
 
+/// Whether the selection's command ring has a slice to show, by the
+/// cards `first_ring` takes.
+pub(crate) fn offers_commands(panel: &Panel) -> bool {
+    panel.cards.iter().any(offered) || !panel.absent.is_empty() || panel.stop.iter().any(offered)
+}
+
 /// The selection's first ring: its command cards in panel order, then
 /// Stop. Return cargo and Stop keep their places while they do not apply,
 /// so nothing moves as they come and go. A mixed selection's Harvesters
