@@ -33,12 +33,16 @@ pub struct SessionHistory {
 impl SessionHistory {
     /// What `recorder` holds at `tick`, when it records from its scenario's
     /// start. A record that starts at a world has no history to save, and
-    /// one past the replay tick limit has none [`Self::recording`] accepts.
+    /// one past the replay tick or command limit has none
+    /// [`Self::recording`] accepts.
     pub fn capture(recorder: &GameReplay, tick: u64) -> Option<Self> {
-        (recorder.origin.is_none() && tick <= crate::MAX_REPLAY_TICKS).then(|| Self {
-            players: recorder.setup.players.clone(),
-            commands: recorder.commands.clone(),
-        })
+        (recorder.origin.is_none()
+            && tick <= crate::MAX_REPLAY_TICKS
+            && recorder.commands.len() <= chassis::replay::MAX_REPLAY_COMMANDS)
+            .then(|| Self {
+                players: recorder.setup.players.clone(),
+                commands: recorder.commands.clone(),
+            })
     }
 
     /// The record a match resumed at `saved` keeps writing onto, checked

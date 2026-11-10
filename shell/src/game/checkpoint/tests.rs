@@ -14,6 +14,37 @@ fn a_save_capture_leaves_the_live_world_free_to_tick() {
 }
 
 #[test]
+fn a_match_past_the_command_limit_resumes_on_a_record_from_its_save() {
+    let mut game = Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 720.0)).unwrap();
+    game.advance_ticks(10);
+    let surrender = chassis::replay::TimedCommand {
+        tick: 0,
+        command: aftermine_sim::PlayerCommand {
+            player: aftermine_sim::PlayerId(0),
+            command: aftermine_sim::Command::Surrender,
+        },
+    };
+    game.recorder.commands.splice(
+        0..0,
+        std::iter::repeat_n(surrender, chassis::replay::MAX_REPLAY_COMMANDS + 1),
+    );
+    let restored = game
+        .capture_save()
+        .checkpoint()
+        .unwrap()
+        .restore()
+        .expect("the save loads")
+        .install();
+    assert!(restored.history.is_none(), "it saved no history to check");
+    assert_eq!(
+        restored.recorder.start_tick(),
+        10,
+        "it records from the save"
+    );
+    assert!(restored.recorder.commands.is_empty());
+}
+
+#[test]
 fn a_resumed_match_rebuilds_the_keyframes_before_its_save() {
     use aftermine_kit::keyframes::KEYFRAME_EVERY;
     let mut game = Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 720.0)).unwrap();
