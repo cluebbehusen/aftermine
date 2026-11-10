@@ -25,7 +25,7 @@ fn factories(scrap: u32) -> Game {
 }
 
 #[test]
-fn provisional_foundry_does_not_keep_production_or_the_home_target_alive() {
+fn a_paid_foundry_blueprint_keeps_the_seat_commanding_but_is_no_home_target() {
     let mut game = factories(500);
     let home = game.view().own_foundries().next().unwrap().clone();
     let worker = game
@@ -64,7 +64,7 @@ fn provisional_foundry_does_not_keep_production_or_the_home_target_alive() {
     assert!(game.state.result().is_none());
     assert!(!game.state.player(game.presentation.human).resigned);
     assert!(game.view().own_foundries().next().is_none());
-    assert!(!Production::inspect(&game.view()).selected.accepts);
+    assert!(Production::inspect(&game.view()).selected.accepts);
 }
 
 #[test]

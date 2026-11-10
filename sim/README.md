@@ -32,9 +32,10 @@ as the tick phase order, the trust boundary and the symmetry rules, are in
 ## Development
 
 Scenarios default to `mode: "match"`, which needs a Foundry per seat and
-eliminates a seat that loses its last one. `mode: "sandbox"` makes Foundries
-optional and never declares a winner, while keeping ordinary costs, ownership
-and command rules. The sandbox-matches skill shows how to stage one.
+eliminates a seat left with no Foundry, Foundry site or paid Foundry blueprint.
+`mode: "sandbox"` makes Foundries optional and never declares a winner, while
+keeping ordinary costs, ownership and command rules. The sandbox-matches skill
+shows how to stage one.
 
 Run commands from the workspace root:
 

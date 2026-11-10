@@ -1815,7 +1815,6 @@ impl State {
             && (self.mode == crate::scenario::ScenarioMode::Sandbox
                 || self.buildings.iter().any(|building| {
                     building.player == player
-                        && !building.provisional()
                         && building.kind == crate::stats::BuildingKind::Foundry
                 }))
     }

@@ -431,7 +431,10 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
 /// Declares the result once at least one team has been eliminated.
 ///
 /// Elimination is Foundry-based: a team lives while any of its seats holds a
-/// Foundry; other standing buildings do not keep it in the game. A resigned
+/// Foundry, a Foundry site or a paid Foundry blueprint on its way; other
+/// standing buildings do not keep it in the game. A blueprint refunded
+/// because its worker died or its ground turned out blocked leaves the seat
+/// out on that tick. A resigned
 /// seat's Foundries stop counting the tick it concedes, so a fully resigned
 /// team is eliminated immediately. The command gate in `commands::apply` stays
 /// player-scoped: a Foundry-less or resigned seat on a living team spectates
@@ -441,19 +444,18 @@ fn victory(state: &mut State, events: &mut Vec<Event>) {
         return;
     }
     // Stamp each seat's first tick out of the match: resigned, or holding no
-    // Foundry (sites count). Recorded once and never cleared; it is the FFA
-    // scoreboard's placement key.
+    // Foundry (sites and paid blueprints count). Recorded once and never
+    // cleared; it is the FFA scoreboard's placement key.
     for index in 0..state.players.len() {
         if state.players[index].eliminated_at.is_some() {
             continue;
         }
         let seat = crate::ids::PlayerId::from_index(index);
         let out = state.players[index].resigned
-            || !state.buildings.iter().any(|b| {
-                b.player == seat
-                    && !b.provisional()
-                    && b.kind == crate::stats::BuildingKind::Foundry
-            });
+            || !state
+                .buildings
+                .iter()
+                .any(|b| b.player == seat && b.kind == crate::stats::BuildingKind::Foundry);
         if out {
             state.players[index].eliminated_at = Some(state.tick);
         }
@@ -464,10 +466,7 @@ fn victory(state: &mut State, events: &mut Vec<Event>) {
     let alive = |team: u8| {
         state.buildings.iter().any(|b| {
             let owner = &state.players[b.player.0 as usize];
-            !b.provisional()
-                && b.kind == crate::stats::BuildingKind::Foundry
-                && owner.team == team
-                && !owner.resigned
+            b.kind == crate::stats::BuildingKind::Foundry && owner.team == team && !owner.resigned
         })
     };
     let survivors: Vec<u8> = teams.iter().copied().filter(|&t| alive(t)).collect();
