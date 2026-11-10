@@ -451,3 +451,45 @@ fn a_resume_without_a_player_who_was_out_still_saves_them() {
         "the next save still lists the player who was out"
     );
 }
+
+fn sounds_of(w: &mut Wizard, draft: &mut NewMatchDraft, key: Key) -> Vec<SoundKind> {
+    let mut sounds = Vec::new();
+    w.update(&press(key), &mut vec2(0.0, 0.0), draft, &mut sounds)
+        .expect("update");
+    sounds.into_iter().map(|(sound, _)| sound).collect()
+}
+
+#[test]
+fn a_picked_up_player_cannot_be_dropped_on_a_fixed_seat() {
+    // Rows run in display order: the host, Alex, Sam, then the bot.
+    for (fixed, what) in [(3, "the bot's seat"), (0, "the host's seat")] {
+        let (mut w, mut draft) = resuming();
+        let mut clients = vec![join(&w, "Sam", SAM), join(&w, "Alex", ALEX)];
+        settle(&mut w, &mut draft, &mut clients, |w, _| {
+            member_at(w, 1).is_some() && member_at(w, 2).is_some()
+        });
+        let sam = member_at(&w, 1);
+        w.setup_sel = 2;
+        w.setup_cell = Cell::Seat;
+        drive(&mut w, &mut draft, Key::Enter);
+        assert_eq!(w.moving, Some(1), "Sam is picked up");
+
+        w.setup_sel = fixed;
+        assert!(
+            sounds_of(&mut w, &mut draft, Key::Enter).contains(&SoundKind::Denied),
+            "{what} refuses Sam"
+        );
+        assert_eq!(w.moving, Some(1), "Sam stays picked up over {what}");
+        assert_eq!(member_at(&w, 1), sam);
+
+        // Put back on his own seat, he starts there.
+        w.setup_sel = 2;
+        drive(&mut w, &mut draft, Key::Enter);
+        assert!(w.moving.is_none());
+        w.setup_sel = 4;
+        assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Launch);
+        w.start_resume(&draft, Duration::ZERO).unwrap();
+        let machines = run_start(&mut w, &mut draft, &mut clients);
+        assert_eq!(machines[1].0.presentation.human, PlayerId(1));
+    }
+}
