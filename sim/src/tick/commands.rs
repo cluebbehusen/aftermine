@@ -1522,11 +1522,9 @@ fn purge_opposing_verb(
     for unit in state.units.iter_mut().filter(|u| u.player == player) {
         unit.queue.retain(|o| !conflicts(o));
         if conflicts(&unit.order) {
-            // A looping program rotates the finished order to the back of
-            // the queue just cleaned; strip it again, or a patrolling welder
-            // brings the evicted job around forever.
-            unit.advance_queue();
-            unit.queue.retain(|o| !conflicts(o));
+            // Dropped, not finished: a looping program would rotate a
+            // finished order to its back and bring the evicted job around.
+            unit.drop_active_order();
         }
     }
 }
