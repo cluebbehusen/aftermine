@@ -13,8 +13,9 @@ again.
   Apple TV icon is a 5:3 band of them.
 - `top_shelf_scene.png`: the Top Shelf scene without text, a real frame of a bot
   match on Old Workings captured from the Mac shell in a 2400 by 1200 window
-  (4800 pixels wide), the camera centred on tile (29.5, 37) at zoom 48.7, just
-  before the warhead reaches the island.
+  (4800 pixels wide), the camera centred on tile (27.5, 37) at zoom 42.3, just
+  before the warhead reaches the island. It keeps the capture's rows 475 to
+  1965, clear of the HUD.
 - `top_shelf_scene.json`: that match as a replay, including the commands that
   staged the scene. Replays reproduce only on the build that recorded them, so
   check out the commit in its `meta.build` in a worktree before changing it.
