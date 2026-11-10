@@ -366,7 +366,10 @@ fn a_harvester_builds_through_the_build_rings() {
         ])
     );
     pick(&mut game, &mut input, "Build");
-    assert!(input.build_menu, "the panel shows the palette beneath");
+    assert!(
+        input.build_menu,
+        "the palette's cards judge the build rings"
+    );
     assert_eq!(heading(&game, &input).as_deref(), Some("BUILD"));
     assert_eq!(
         titles(&game, &input),
@@ -412,6 +415,67 @@ fn a_harvester_builds_through_the_build_rings() {
 }
 
 #[test]
+fn a_placement_from_the_build_rings_hands_y_back_to_the_commands() {
+    let (mut game, mut input) = harvester();
+    pick(&mut game, &mut input, "Build");
+    pick(&mut game, &mut input, "Defense");
+    pick(&mut game, &mut input, "Barricade");
+    assert_eq!(
+        input.armed_mode(),
+        Some(ArmedMode::Build(BuildingKind::Barricade))
+    );
+    super::super::tests::pad_scene::rest_on(
+        &mut game,
+        &mut input,
+        macroquad::prelude::vec2(26.5, 20.5),
+    );
+    tap(&mut game, &mut input, PadButton::South);
+    assert!(
+        game.pending
+            .iter()
+            .any(|pc| matches!(pc.command, Command::Build { .. })),
+        "A placed the Barricade"
+    );
+    assert!(!input.construction_open(), "nothing hidden stays open");
+    tap(&mut game, &mut input, PadButton::North);
+    frame(&mut game, &mut input);
+    assert_eq!(heading(&game, &input).as_deref(), Some("COMMANDS"));
+}
+
+#[test]
+fn letting_go_of_lt_under_an_open_build_ring_keeps_its_category() {
+    let (mut game, mut input) = harvester();
+    pick(&mut game, &mut input, "Build");
+    pick(&mut game, &mut input, "Defense");
+    pick(&mut game, &mut input, "Barricade");
+    feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
+    super::super::tests::pad_scene::rest_on(
+        &mut game,
+        &mut input,
+        macroquad::prelude::vec2(26.5, 20.5),
+    );
+    tap(&mut game, &mut input, PadButton::South);
+    assert!(input.placing.is_some(), "a held LT keeps placing");
+    tap(&mut game, &mut input, PadButton::North);
+    frame(&mut game, &mut input);
+    assert_eq!(heading(&game, &input).as_deref(), Some("DEFENSE"));
+    feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
+    frame(&mut game, &mut input);
+    assert!(input.placing.is_none(), "letting go ends the chain");
+    assert_eq!(
+        heading(&game, &input).as_deref(),
+        Some("DEFENSE"),
+        "the ring stays where the player was picking"
+    );
+    tap(&mut game, &mut input, PadButton::North);
+    assert!(input.ring.is_none());
+    assert!(
+        !input.construction_open(),
+        "and closes construction with it"
+    );
+}
+
+#[test]
 fn closing_the_build_rings_closes_the_palette_they_opened() {
     let (mut game, mut input) = harvester();
     pick(&mut game, &mut input, "Build");
@@ -447,6 +511,25 @@ fn holding_b_closes_every_ring() {
     }
     assert!(input.ring.is_none());
     assert!(!input.build_menu);
+    feed(&mut game, &mut input, &[up(PadButton::East)]);
+    assert!(input.ring_held.is_empty());
+}
+
+#[test]
+fn holding_b_out_of_a_placement_closes_every_ring() {
+    let (mut game, mut input) = harvester();
+    pick(&mut game, &mut input, "Build");
+    pick(&mut game, &mut input, "Defense");
+    pick(&mut game, &mut input, "Barricade");
+    assert!(input.placing.is_some());
+    feed(&mut game, &mut input, &[down(PadButton::East)]);
+    frame(&mut game, &mut input);
+    assert_eq!(heading(&game, &input).as_deref(), Some("DEFENSE"));
+    for _ in 0..40 {
+        frame(&mut game, &mut input);
+    }
+    assert!(input.ring.is_none());
+    assert!(!input.construction_open());
     feed(&mut game, &mut input, &[up(PadButton::East)]);
     assert!(input.ring_held.is_empty());
 }

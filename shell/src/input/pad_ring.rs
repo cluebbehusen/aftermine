@@ -13,7 +13,9 @@
 //! card press is, a pick presses the card itself, and X cancels one of
 //! what a slice queues or else does what a right-click on its card does.
 //! The build rings step the same construction state the build keys do, so
-//! the panel shows the palette beneath them. The group ring recalls a
+//! the palette's cards judge what they offer, though pad mode draws none of
+//! it. A controller's placement closes that state, and B out of one opens
+//! the build ring it was picked from. The group ring recalls a
 //! group with A and saves the selection to it with X, through the actions
 //! the group keys dispatch.
 
@@ -237,6 +239,18 @@ fn swap(game: &mut Game, input: &mut InputState, kind: RingKind) {
     }
 }
 
+/// B out of a controller's placement: the command ring opens on the build
+/// ring the structure was picked from, and `pad` keeping B down may close
+/// every ring, as a B pressed in a ring may. With nothing there to offer,
+/// construction closes instead.
+pub(super) fn reopen_build(game: &Game, input: &mut InputState, pad: u64) {
+    if !show(game, input, RingKind::Commands) {
+        input.close_construction();
+    } else if let Some(open) = input.ring.as_mut() {
+        open.back_held = Some((pad, input.now));
+    }
+}
+
 /// Shows `kind`'s first ring in place of any open one, as its button
 /// opens it: over an open palette, the command ring opens on the build
 /// ring the palette shows. Returns false, leaving any open ring as it
@@ -387,7 +401,7 @@ fn dismiss(input: &mut InputState) {
 
 /// Whether `open` stands in the build rings, whose palette closes with
 /// them.
-fn building(open: Option<&PadRing>) -> bool {
+pub(super) fn building(open: Option<&PadRing>) -> bool {
     open.is_some_and(|open| open.path.contains(&Branch::Build))
 }
 

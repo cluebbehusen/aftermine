@@ -63,6 +63,10 @@ fn a_places_a_structure_centered_on_the_reticle_where_the_ghost_shows() {
     press(&mut game, &mut input, PadButton::South);
     assert_eq!(builds(&game), [(spot.anchor, false)]);
     assert!(input.placing.is_none(), "one placement ends the mode");
+    assert!(
+        !input.construction_open(),
+        "and closes the palette pad mode doesn't draw"
+    );
     assert_eq!(
         game.presentation.selection.units,
         vec![unit_at(&game, 32, 23)],
@@ -94,6 +98,7 @@ fn a_held_a_drags_a_row_that_skips_a_refused_cell_and_stages_on_release() {
         ]
     );
     assert!(input.placing.is_none());
+    assert!(!input.construction_open());
 }
 
 #[test]
@@ -109,8 +114,10 @@ fn a_held_left_trigger_keeps_placing_until_it_is_let_go() {
         [(TilePos::new(28, 18), true), (TilePos::new(30, 18), true)]
     );
     assert!(input.placing.is_some(), "a held LT keeps placing");
+    assert!(input.build_menu);
     feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
     assert!(input.placing.is_none(), "letting go ends the chain");
+    assert!(!input.construction_open(), "and closes construction");
 }
 
 #[test]
@@ -121,6 +128,7 @@ fn a_on_a_refused_spot_is_denied_and_placement_stands() {
     assert!(denied(&game));
     assert!(game.pending.is_empty());
     assert_eq!(input.placing_kind(), Some(BARRICADE));
+    assert!(input.build_menu, "nothing placed, so construction stays");
     rest_on(&mut game, &mut input, vec2(29.5, 20.5));
     press(&mut game, &mut input, PadButton::South);
     assert_eq!(builds(&game), [(TilePos::new(29, 20), false)]);
@@ -133,6 +141,7 @@ fn x_places_one_structure_but_waits_while_a_lays_a_row() {
     press(&mut game, &mut input, PadButton::West);
     assert_eq!(builds(&game), [(TilePos::new(29, 20), false)]);
     assert!(input.placing.is_none(), "X is a tap of A");
+    assert!(!input.construction_open());
 
     let (mut game, mut input) = placing(BARRICADE);
     rest_on(&mut game, &mut input, vec2(29.5, 20.5));
@@ -157,16 +166,44 @@ fn b_drops_a_held_row_then_walks_out_of_placement() {
     feed(&mut game, &mut input, &[up(PadButton::South)]);
     assert!(game.pending.is_empty(), "the release builds nothing");
 
+    // Out of placement, B goes back to the build ring the structure came
+    // from, as Esc goes back to the palette, then walks back ring by ring.
+    let heading = |game: &Game, input: &InputState| {
+        publish(game, input);
+        super::super::pad_ring::current(&game.view(), input).map(|ring| ring.heading)
+    };
+    publish(&game, &input);
     press(&mut game, &mut input, PadButton::East);
     assert!(input.placing.is_none());
-    assert!(input.build_menu, "back to the palette, as Esc goes");
+    assert!(input.build_menu);
+    assert_eq!(heading(&game, &input).as_deref(), Some("DEFENSE"));
     press(&mut game, &mut input, PadButton::East);
     assert_eq!(input.build_category, None);
+    assert_eq!(heading(&game, &input).as_deref(), Some("BUILD"));
     press(&mut game, &mut input, PadButton::East);
     assert!(!input.construction_open());
+    assert_eq!(heading(&game, &input).as_deref(), Some("COMMANDS"));
+    press(&mut game, &mut input, PadButton::East);
+    assert!(input.ring.is_none());
     assert_eq!(game.presentation.selection.units.len(), 1);
     press(&mut game, &mut input, PadButton::East);
     assert!(game.presentation.selection.units.is_empty());
+}
+
+#[test]
+fn b_out_of_a_placement_with_no_build_ring_left_closes_construction() {
+    // Nothing published a panel, so no ring has a card to show.
+    let (mut game, mut input) = placing(BARRICADE);
+    press(&mut game, &mut input, PadButton::East);
+    assert!(input.ring.is_none());
+    assert!(!input.construction_open());
+    assert_eq!(game.presentation.selection.units.len(), 1);
+}
+
+/// Publishes the panel as the HUD's layout pass does before input.
+fn publish(game: &Game, input: &InputState) {
+    *game.presentation.panel_model.borrow_mut() =
+        crate::panel::build_for_input(&game.view(), &BindingMap::classic(), input);
 }
 
 #[test]
