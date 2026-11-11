@@ -7,7 +7,9 @@
 This script is the source of truth for the game's art: edit here, run
 `uv run tools/gen_sprites.py`, and commit the PNGs together with the script.
 Output is deterministic (fixed seeds, no timestamps in the pixels) so a
-regenerated sprite only differs when the code does.
+regenerated sprite only differs when the code does. The default run rewrites
+only the files whose pixels or metadata changed, since PNG encoder bytes are
+not part of that contract.
 
 Pass --out DIRECTORY to write a complete alternate bank for review without
 touching the checked-in assets.
@@ -20,6 +22,7 @@ them toward their heading.
 import json
 import math
 import random
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -1267,6 +1270,24 @@ def _sprite_asset_differences(
     return missing, extra, changed
 
 
+def update_committed(committed: Path) -> None:
+    """Regenerates out of tree, then writes only the missing or changed
+    files into `committed` and removes the ones no longer generated."""
+    committed.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="aftermine-sprite-update-") as temp:
+        generated = Path(temp) / "sprites"
+        generate(generated)
+        missing, extra, changed = _sprite_asset_differences(generated, committed)
+        for name in missing + changed:
+            shutil.copyfile(generated / name, committed / name)
+    for name in extra:
+        (committed / name).unlink()
+    print(
+        f"updated {committed}: {len(missing)} added, {len(changed)} changed, "
+        f"{len(extra)} removed"
+    )
+
+
 def check_reproducible() -> None:
     """Regenerates out of tree and compares committed pixels and metadata."""
     committed = Path(__file__).resolve().parent.parent / "assets" / "sprites"
@@ -1302,12 +1323,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.check:
         check_reproducible()
+    elif args.out is not None:
+        generate(args.out)
     else:
-        generate(
-            args.out
-            if args.out is not None
-            else Path(__file__).resolve().parent.parent / "assets" / "sprites"
-        )
+        update_committed(Path(__file__).resolve().parent.parent / "assets" / "sprites")
 
 
 if __name__ == "__main__":

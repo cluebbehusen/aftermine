@@ -151,6 +151,36 @@ class SpriteReproducibilityTests(unittest.TestCase):
             ([], [], ["atlas.json"]),
         )
 
+    def test_an_update_rewrites_only_changed_pixels_and_metadata(self) -> None:
+        committed = self.expected
+        same = Image.new("RGBA", (2, 2), (35, 35, 41, 255))
+        same.save(committed / "same.png", compress_level=0)
+        Image.new("RGBA", (2, 2)).save(committed / "changed.png")
+        (committed / "atlas.json").write_bytes(b'{"same":[0,0,2,2]}\n')
+        (committed / "retired.png").write_bytes(b"stale")
+        committed_same = (committed / "same.png").read_bytes()
+
+        def generate(output: Path) -> None:
+            output.mkdir(parents=True)
+            same.save(output / "same.png", compress_level=9)
+            Image.new("RGBA", (2, 2), (196, 87, 59, 255)).save(output / "changed.png")
+            (output / "atlas.json").write_bytes(b'{"same":[0,0,2,2]}\n')
+            Image.new("RGBA", (1, 1)).save(output / "new.png")
+
+        with (
+            patch.object(gen_sprites, "generate", generate),
+            patch("builtins.print"),
+        ):
+            gen_sprites.update_committed(committed)
+
+        self.assertEqual((committed / "same.png").read_bytes(), committed_same)
+        self.assertEqual(
+            sorted(path.name for path in committed.iterdir()),
+            ["atlas.json", "changed.png", "new.png", "same.png"],
+        )
+        with Image.open(committed / "changed.png") as changed:
+            self.assertEqual(changed.getpixel((0, 0)), (196, 87, 59, 255))
+
 
 if __name__ == "__main__":
     unittest.main()
