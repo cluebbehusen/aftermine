@@ -875,10 +875,10 @@ impl Missions {
     /// carriers home together and frees them, sends landed riders at the
     /// target, brings back carriers still loaded when time runs out, and
     /// fights once no one is aboard and every emptied carrier is on its way
-    /// home. Carriers waiting at home on the lift's gunships follow once one
-    /// is over the landing, and unload where they wait if every gunship is
-    /// lost; emptied gunships stay over the landing to fight with the
-    /// riders.
+    /// home. Carriers waiting on the lift's gunships, at home or on the
+    /// ground they loaded at, follow once one is over the landing, and unload
+    /// where they wait if every gunship is lost. Emptied gunships stay over
+    /// the landing to fight with the riders.
     fn fly(&mut self, flight: &Flight<'_>, lifting: &Lifting<'_>, ledger: &mut Ledger) {
         let map = lifting.map;
         let island = map.component(flight.target.anchor);
@@ -902,11 +902,21 @@ impl Missions {
         let arrived = leading
             .iter()
             .any(|u| u.tile.chebyshev(flight.landing) <= SPREAD);
-        let (following, stranded): (Vec<&UnitObs>, Vec<&UnitObs>) = home
+        let (mut following, mut stranded): (Vec<&UnitObs>, Vec<&UnitObs>) = home
             .iter()
             .copied()
             .filter(|u| u.idle)
             .partition(|u| led && !gunship(u.kind));
+        // Off home ground too, a carrier waiting where it loaded follows the
+        // lift's gunships, or sets its riders down there once they are lost.
+        let (waiting, away): (Vec<&UnitObs>, Vec<&UnitObs>) = away.iter().partition(|u| {
+            !late && u.idle && !gunship(u.kind) && u.tile.chebyshev(flight.landing) > SPREAD
+        });
+        if led {
+            following.extend(waiting);
+        } else {
+            stranded.extend(waiting);
+        }
         for carrier in stranded {
             ledger.order(unload(carrier.id, carrier.tile, false));
         }
