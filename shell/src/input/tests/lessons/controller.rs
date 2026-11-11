@@ -130,7 +130,7 @@ fn command(game: &mut Game, input: &mut InputState, path: &[&str]) {
 /// Selects a Harvester, picks `kind` through Build, and places it at
 /// `spot` with A.
 fn place(game: &mut Game, input: &mut InputState, path: &[&str], kind: BuildingKind, spot: Vec2) {
-    let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
+    let cost = kind.base_stats().construction.cost;
     run_until(game, input, "the bank covering the building", |game| {
         game.state.player(game.presentation.human).scrap >= cost
     });
