@@ -624,6 +624,12 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             }
             app.soft_keyboard = wanted;
         }
+        // The system counts only touches as activity, so a match or replay
+        // played with a controller would dim and sleep.
+        let held = screen_flow::held_for_controller(&app.game, &app.input);
+        aftermine_icloud::application::keep_screen_awake(
+            screen.keeps_screen_awake(&app.game, held),
+        );
         if let Some(pads) = &mut app.pads {
             pads.offer_presses_to_system(matches!(screen, Screen::Home(_)));
         }

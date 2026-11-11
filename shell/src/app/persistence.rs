@@ -105,10 +105,13 @@ impl Worker {
             .name("save-loader".into())
             .spawn(move || {
                 while let Ok(work) = jobs.recv() {
+                    // Leaving the app mid-save must not cut the file short.
+                    let background = aftermine_icloud::application::BackgroundTask::begin();
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         (work.task)(&work.cancel)
                     }))
                     .unwrap_or_else(|_| Err(anyhow::anyhow!("Could not finish saving")));
+                    drop(background);
                     if results.send((work.id, result)).is_err() {
                         break;
                     }

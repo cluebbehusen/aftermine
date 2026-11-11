@@ -3,7 +3,7 @@ name = "aftermine-icloud"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
-description = "iCloud Drive folder lookup, file coordination, downloads, the key-value store, a CloudKit record mirror and user defaults for Apple builds"
+description = "iCloud Drive folder lookup, file coordination, downloads, the key-value store, a CloudKit record mirror, user defaults, the idle timer and background time for Apple builds"
 
 [dependencies]
 serde = { workspace = true }

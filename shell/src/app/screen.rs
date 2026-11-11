@@ -284,6 +284,36 @@ impl Screen {
         }
     }
 
+    /// Whether the screen should stay on: a local match or a replay
+    /// playing, or an undecided LAN match, which runs under every screen
+    /// that holds it and whose other seats would wait on a sleeping device.
+    /// A local match `held` for want of a controller runs nothing. Menus over
+    /// a local match, a paused one and the front door leave dimming and
+    /// sleep to the system.
+    pub(super) fn keeps_screen_awake(&self, live: &Game, held: bool) -> bool {
+        let lan = live.net_role().is_some() && live.state.result().is_none();
+        match self {
+            Self::Playing => lan || (!live.clock.paused && !held),
+            Self::Playback { session, back } => {
+                (!session.clock.paused && !session.engine.at_end())
+                    || (lan && back.holds_live_match())
+            }
+            Self::Pause(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => lan,
+            Self::Settings { .. } | Self::Codex { .. } | Self::Lessons { .. } => {
+                lan && self.over_pause()
+            }
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Wizard(_)
+            | Self::Replays(_)
+            | Self::Lobby { .. } => false,
+        }
+    }
+
     /// The keyboard a text field on screen asks for: the save-name field,
     /// the player-name field, or the Join form.
     pub(super) fn keyboard(&self) -> Option<Keyboard> {

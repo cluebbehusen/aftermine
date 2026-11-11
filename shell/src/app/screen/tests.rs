@@ -157,3 +157,58 @@ fn the_waiting_screen_holds_the_lan_match() {
     assert_eq!(waiting.mode(), "waiting");
     assert_eq!(waiting.profile_mode(), "waiting");
 }
+
+#[test]
+fn only_a_match_or_replay_playing_keeps_the_screen_on() {
+    let home = || Screen::Home(HomeScreen::open());
+    let pause = || Screen::Pause(PauseScreen::open(false, true));
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
+    game.advance_ticks(20);
+    game.clock.paused = false;
+    assert!(Screen::Playing.keeps_screen_awake(&game, false));
+    assert!(
+        !Screen::Playing.keeps_screen_awake(&game, true),
+        "a match held for a controller runs nothing"
+    );
+    assert!(!pause().keeps_screen_awake(&game, false));
+    assert!(!home().keeps_screen_awake(&game, false));
+
+    let mut playing = super::super::live_playback(&game).expect("viewer");
+    playing.clock.paused = false;
+    assert!(viewer(playing, home()).keeps_screen_awake(&game, false));
+    let mut stopped = super::super::live_playback(&game).expect("viewer");
+    stopped.clock.paused = true;
+    assert!(!viewer(stopped, home()).keeps_screen_awake(&game, false));
+    let unplayed = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
+    let mut ended = super::super::live_playback(&unplayed).expect("viewer");
+    ended.clock.paused = false;
+    assert!(
+        !viewer(ended, home()).keeps_screen_awake(&game, false),
+        "a replay at its end plays nothing"
+    );
+
+    game.clock.paused = true;
+    assert!(!Screen::Playing.keeps_screen_awake(&game, false));
+}
+
+#[test]
+fn an_undecided_lan_match_keeps_the_screen_on_under_its_menus() {
+    let lan = Game::networked(
+        aftermine_sim::Scenario::skirmish(),
+        aftermine_sim::PlayerId(0),
+        crate::game::network::NetRole::Client,
+        macroquad::math::vec2(1280.0, 800.0),
+    )
+    .expect("lan match");
+    let pause = || Screen::Pause(PauseScreen::open(false, true));
+    assert!(Screen::Playing.keeps_screen_awake(&lan, true));
+    assert!(pause().keeps_screen_awake(&lan, false));
+    assert!(
+        Screen::Codex {
+            screen: CodexScreen::open(),
+            back: Box::new(pause()),
+        }
+        .keeps_screen_awake(&lan, false)
+    );
+    assert!(!Screen::Home(HomeScreen::open()).keeps_screen_awake(&lan, false));
+}

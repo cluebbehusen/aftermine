@@ -535,6 +535,10 @@ struct Queue {
     answers: Vec<Answer>,
     /// Files the last pass found missing from an iCloud Drive folder.
     missing: Vec<String>,
+    /// Time asked of the system, from a pass being asked for until no pass
+    /// is wanted or under way, so leaving the app does not cut a push short.
+    /// Every request asks afresh: the system may have ended the time already.
+    background: Option<aftermine_icloud::application::BackgroundTask>,
 }
 
 impl Queue {
@@ -567,6 +571,7 @@ impl Shared {
         if mode == Mode::Push {
             queue.unsent = true;
         }
+        queue.background = Some(aftermine_icloud::application::BackgroundTask::begin());
         self.wake.notify_one();
     }
 }
@@ -753,6 +758,9 @@ fn serve_one(shared: &Shared, remote: &impl Remote, places: impl FnOnce() -> Opt
             None => false,
         };
         queue.end_pass(again);
+        if !again && queue.wanted.is_none() {
+            queue.background = None;
+        }
         again
     };
     if again {

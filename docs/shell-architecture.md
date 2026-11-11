@@ -279,16 +279,19 @@ ribbon already names.
 on tvOS. Platform facts branch on the constant and pure helpers take it, or the
 fact they need, as a parameter, so every variant compiles and tests on every
 platform. Only a desktop build offers Quit, reads its command line and opens
-folders; elsewhere the player types through the system keyboard. Only a touch
-build sizes controls for fingertips. Copy follows the hands in use instead: each
-frame publishes the last pointer, whether a hardware key has been pressed, and
-the controller pressed since the last key, click or tap as `platform::Hands`; a
-mouse that only moves leaves a controller in use. Hints name keys only once one
-has been pressed, and name a controller's buttons while it is in use. A TV names
-its remote until something else is used. Lesson and tip cards follow the HUD
-instead: in pad mode they name the controller it names, and an Xbox pad's
-buttons while none is connected. Outside pad mode, every screen offers a pointer
-path for what Escape does.
+folders; elsewhere the player types through the system keyboard. On iPad and
+Apple TV a match or replay playing keeps the screen on, as does an undecided LAN
+match under its menus, since the system counts only touches as activity, and
+every save and iCloud pass holds background time so leaving the app does not cut
+it short. Only a touch build sizes controls for fingertips. Copy follows the
+hands in use instead: each frame publishes the last pointer, whether a hardware
+key has been pressed, and the controller pressed since the last key, click or
+tap as `platform::Hands`; a mouse that only moves leaves a controller in use.
+Hints name keys only once one has been pressed, and name a controller's buttons
+while it is in use. A TV names its remote until something else is used. Lesson
+and tip cards follow the HUD instead: in pad mode they name the controller it
+names, and an Xbox pad's buttons while none is connected. Outside pad mode,
+every screen offers a pointer path for what Escape does.
 
 While a controller is in use, and always on a TV, the match HUD, the menus and
 the replay viewer stand in pad mode: they leave out the controls a controller's
