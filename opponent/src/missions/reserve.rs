@@ -132,22 +132,15 @@ pub(super) fn need(
     })
 }
 
-/// Value of the armed enemy units of `domain` the seat remembers that could
-/// come at home: aircraft anywhere, ground units only on ground connected to
-/// its start.
-pub(crate) fn threat(
-    map: &MapModel,
-    memory: &Memory,
-    me: PlayerId,
-    now: u64,
-    domain: Domain,
-) -> u64 {
+/// Value of the armed enemy ground units the seat remembers that could come
+/// at home: those on ground connected to its start.
+pub(crate) fn threat(map: &MapModel, memory: &Memory, me: PlayerId, now: u64) -> u64 {
     memory
         .units()
         .iter()
         .filter(|unit| unit.kind.stats().can_fight())
-        .filter(|unit| unit.kind.stats().domain == domain)
-        .filter(|unit| domain == Domain::Air || map.distance(me, unit.tile) != UNREACHABLE)
+        .filter(|unit| unit.kind.stats().domain == Domain::Ground)
+        .filter(|unit| map.distance(me, unit.tile) != UNREACHABLE)
         .map(|unit| unit.value(now))
         .sum()
 }
