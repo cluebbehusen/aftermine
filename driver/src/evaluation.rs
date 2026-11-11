@@ -2,8 +2,7 @@
 //! families, match modes, fully seated plans, and publishing rows.
 
 use crate::bot_eval::{
-    EvaluationController, EvaluationGeometry, EvaluationLeg, EvaluationPlan, EvidenceBatch,
-    preflight_destinations,
+    EvaluationController, EvaluationLeg, EvaluationPlan, EvidenceBatch, preflight_destinations,
 };
 use aftermine_sim::Scenario;
 use aftermine_sim::scenario::BotConfig;
@@ -159,7 +158,6 @@ pub fn seated_plan(
         controllers: seats
             .map(|config| Some(EvaluationController::configured(config)))
             .collect(),
-        geometry: EvaluationGeometry::Authored,
     }
 }
 

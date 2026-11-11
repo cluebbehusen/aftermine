@@ -96,51 +96,16 @@ impl EvaluationController {
     }
 }
 
-/// Map-end transform applied to a controlled evaluation cell.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EvaluationGeometry {
-    /// Use the scenario exactly as authored.
-    Authored,
-    /// Rotate every spatial scenario field by 180 degrees.
-    Rot180,
-}
-
-impl std::str::FromStr for EvaluationGeometry {
-    type Err = String;
-
-    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
-        match value {
-            "authored" => Ok(Self::Authored),
-            "rot180" => Ok(Self::Rot180),
-            _ => Err(format!(
-                "unknown evaluation geometry {value:?}; expected authored or rot180"
-            )),
-        }
-    }
-}
-
-impl EvaluationGeometry {
-    fn apply(self, scenario: &Scenario) -> Result<Scenario> {
-        match self {
-            Self::Authored => Ok(scenario.clone()),
-            Self::Rot180 => crate::rotation::rotate_180(scenario),
-        }
-    }
-}
-
 /// One exact evaluation leg, including command sources that are intentionally
 /// not serializable into an ordinary match setup.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EvaluationPlan {
     /// Seat-pair leg.
     pub leg: EvaluationLeg,
-    /// Fully transformed scenario used to build the state and replay.
+    /// Scenario used to build the state and replay.
     pub scenario: Scenario,
     /// Exact evaluation-only controller per seat; `None` is an empty chair.
     pub controllers: Vec<Option<EvaluationController>>,
-    /// Spatial transform applied to the source scenario.
-    pub geometry: EvaluationGeometry,
 }
 
 impl EvaluationPlan {
@@ -160,7 +125,6 @@ impl EvaluationPlan {
             leg,
             scenario,
             controllers,
-            geometry: EvaluationGeometry::Authored,
         }
     }
 
@@ -420,12 +384,12 @@ pub struct EvaluationRow {
     pub scenario: String,
     /// Stable digest of the complete configured scenario.
     pub scenario_fingerprint: String,
-    /// Stable digest of the scenario, transforms, controller identities, and
-    /// exact player-facing configuration for this leg.
+    /// Stable digest of the scenario, leg, controller identities, and exact
+    /// player-facing configuration for this leg.
     pub evaluation_fingerprint: String,
-    /// Stable digest of only the transformed scenario and exact controllers.
-    /// Axis labels and leg names are excluded so aliased matrix cells can be
-    /// detected before execution.
+    /// Stable digest of only the scenario and exact controllers. The leg name
+    /// is excluded so legs that would run the same match are detected before
+    /// execution.
     pub execution_fingerprint: String,
     /// Requested simulation tick ceiling.
     pub tick_limit: u64,
@@ -434,8 +398,6 @@ pub struct EvaluationRow {
     pub stall_loop_limit: Option<u64>,
     /// Seat-pair leg.
     pub leg: EvaluationLeg,
-    /// Map-end transform applied to the source scenario.
-    pub geometry: EvaluationGeometry,
     /// Exact player-facing controller configuration by seat.
     pub seats: Vec<SeatConfiguration>,
     /// Whether the match decided before the ceiling.
@@ -604,9 +566,8 @@ fn evaluate_plan_artifact_impl(
     let controllers = serde_json::to_string(&plan.controllers)
         .context("serializing replay controller provenance")?;
     replay.meta.description = Some(format!(
-        "bot-eval candidate={candidate}; scenario={scenario_fingerprint}; evaluation={evaluation_fingerprint}; execution={execution_fingerprint}; tick_limit={tick_limit}; leg={}; geometry={:?}; controllers={controllers}",
+        "bot-eval candidate={candidate}; scenario={scenario_fingerprint}; evaluation={evaluation_fingerprint}; execution={execution_fingerprint}; tick_limit={tick_limit}; leg={}; controllers={controllers}",
         plan.leg.name(),
-        plan.geometry,
     ));
     let mut evidence: Vec<SeatEvidence> =
         (0..scenario.players.len()).map(SeatEvidence::new).collect();
@@ -720,7 +681,6 @@ fn evaluate_plan_artifact_impl(
         tick_limit,
         stall_loop_limit,
         leg: plan.leg,
-        geometry: plan.geometry,
         seats: plan
             .controllers
             .iter()
@@ -827,39 +787,6 @@ pub fn configured_matchup_legs(
         (EvaluationLeg::Forward, forward),
         (EvaluationLeg::Swapped, swapped),
     ])
-}
-
-/// Builds a geometry cell's legs from complete controller profiles.
-/// Paired legs exchange the profiles while preserving the physical map and rosters.
-pub fn configured_matchup_plans(
-    source: &Scenario,
-    matchup: ProfileMatchup,
-    personality_seed_base: u64,
-    paired: bool,
-    geometry: EvaluationGeometry,
-) -> Result<Vec<EvaluationPlan>> {
-    ensure!(
-        source.players.len() == 2,
-        "controlled evaluation axes require exactly two seats, got {}",
-        source.players.len()
-    );
-    ensure!(
-        source.players[0].team.is_none() || source.players[0].team != source.players[1].team,
-        "controlled evaluation axes require two opposing teams"
-    );
-    let scenario = geometry.apply(source)?;
-    configured_matchup_legs(&scenario, matchup, personality_seed_base, paired)?
-        .into_iter()
-        .map(|(leg, scenario)| {
-            let mut plan = EvaluationPlan::from_scenario(scenario, leg);
-            for player in &mut plan.scenario.players {
-                player.bot = false;
-                player.bot_config = None;
-            }
-            plan.geometry = geometry;
-            Ok(plan)
-        })
-        .collect()
 }
 
 /// Atomically writes compact evaluation records as one JSON object per line.
@@ -1174,7 +1101,7 @@ pub fn scenario_fingerprint(scenario: &Scenario) -> Result<String> {
     ))
 }
 
-/// Stable digest of the transformed matchup, including evaluation-only
+/// Stable digest of the matchup, including evaluation-only
 /// command sources that are intentionally absent from an ordinary scenario.
 pub fn evaluation_fingerprint(plan: &EvaluationPlan) -> Result<String> {
     plan.validate()?;
@@ -1187,9 +1114,9 @@ pub fn evaluation_fingerprint(plan: &EvaluationPlan) -> Result<String> {
 
 /// Stable digest of the exact world and controller identities that execute.
 ///
-/// Unlike [`evaluation_fingerprint`], this deliberately excludes matrix axis
-/// labels and the leg name. Two nominal cells with this same digest would run
-/// the same match and must not be counted as independent evidence.
+/// Unlike [`evaluation_fingerprint`], this deliberately excludes the leg name.
+/// Two plans with this same digest would run the same match and must not be
+/// counted as independent evidence.
 pub fn execution_fingerprint(plan: &EvaluationPlan) -> Result<String> {
     let configured = execution_identity_bytes(plan)?;
     Ok(format!(
@@ -1198,19 +1125,14 @@ pub fn execution_fingerprint(plan: &EvaluationPlan) -> Result<String> {
     ))
 }
 
-/// Rejects nominal matrix cells that resolve to the same executable matchup.
+/// Rejects plans that resolve to the same executable matchup.
 pub fn ensure_unique_execution_plans<'a>(
     plans: impl IntoIterator<Item = &'a EvaluationPlan>,
 ) -> Result<()> {
     let mut seen = BTreeMap::new();
     for plan in plans {
         let identity = execution_identity_bytes(plan)?;
-        let label = format!(
-            "scenario {:?} {:?}/{}",
-            plan.scenario.name,
-            plan.geometry,
-            plan.leg.name()
-        );
+        let label = format!("scenario {:?} {}", plan.scenario.name, plan.leg.name());
         if let Some(first) = seen.insert(identity, label.clone()) {
             anyhow::bail!(
                 "bot evaluation matrix contains duplicate executable cells: {first} and {label}"

@@ -1,119 +1,7 @@
 //! End-to-end contract coverage for `aftermine-driver bot-eval`.
 
 use serde_json::Value;
-use std::collections::BTreeSet;
 use std::process::Command;
-
-#[test]
-fn controlled_matrix_keeps_controller_and_geometry_provenance_separate() {
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "1",
-            "--opponent-difficulty",
-            "veteran",
-            "--paired",
-            "--personality-seeds",
-            "40",
-            "--difficulty",
-            "prime",
-            "--stance",
-            "aggressive",
-            "--geometries",
-            "authored,rot180",
-        ])
-        .output()
-        .expect("run controlled current-controller evaluation matrix");
-    assert!(
-        output.status.success(),
-        "bot-eval failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stdout = String::from_utf8(output.stdout).expect("JSONL is UTF-8");
-    let rows: Vec<Value> = stdout
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("each line is one JSON object"))
-        .collect();
-    assert_eq!(rows.len(), 4, "two geometries x two legs");
-
-    let mut cells = BTreeSet::new();
-    let (paired_cells, remainder) = rows.as_chunks::<2>();
-    assert!(remainder.is_empty());
-    for legs in paired_cells {
-        assert_eq!(legs[0]["leg"], "forward");
-        assert_eq!(legs[1]["leg"], "swapped");
-        assert_eq!(legs[0]["geometry"], legs[1]["geometry"]);
-        assert_eq!(
-            legs[0]["scenario_fingerprint"], legs[1]["scenario_fingerprint"],
-            "controller exchange must not alter the transformed scenario"
-        );
-        assert_ne!(
-            legs[0]["evaluation_fingerprint"], legs[1]["evaluation_fingerprint"],
-            "controller seat is part of evaluation provenance"
-        );
-
-        let geometry = legs[0]["geometry"].as_str().unwrap();
-        cells.insert(geometry.to_string());
-
-        for (row, first_seat) in [(&legs[0], 0), (&legs[1], 1)] {
-            let second_seat = 1 - first_seat;
-            assert_eq!(row["seats"][first_seat]["config"]["personality_seed"], 40);
-            assert_eq!(row["seats"][first_seat]["config"]["difficulty"], "prime");
-            assert_eq!(row["seats"][first_seat]["config"]["stance"], "aggressive");
-            assert!(row["seats"][first_seat]["profile"].is_object());
-            assert_eq!(row["seats"][second_seat]["config"]["difficulty"], "veteran");
-            assert!(row["seats"][second_seat]["profile"].is_object());
-            assert_eq!(row["seats"][second_seat]["config"]["personality_seed"], 41);
-        }
-    }
-
-    assert_eq!(
-        cells,
-        BTreeSet::from(["authored".to_string(), "rot180".to_string()])
-    );
-}
-
-#[test]
-fn controlled_personality_seed_lists_run_one_cell_each() {
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "1",
-            "--personality-seeds",
-            "40,42,44",
-        ])
-        .output()
-        .expect("run explicit current-controller seed matrix");
-    assert!(
-        output.status.success(),
-        "bot-eval failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stdout = String::from_utf8(output.stdout).expect("JSONL is UTF-8");
-    let rows: Vec<Value> = stdout
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("each line is one JSON object"))
-        .collect();
-    assert_eq!(rows.len(), 3, "one cell per personality seed");
-
-    let observed: BTreeSet<u64> = rows
-        .iter()
-        .map(|row| {
-            assert_eq!(row["leg"], "single");
-            assert_eq!(row["geometry"], "authored");
-            row["seats"][0]["config"]["personality_seed"]
-                .as_u64()
-                .unwrap()
-        })
-        .collect();
-    assert_eq!(observed, BTreeSet::from([40, 42, 44]));
-}
 
 #[test]
 fn retired_controller_flags_are_rejected() {
@@ -125,43 +13,6 @@ fn retired_controller_flags_are_rejected() {
     ] {
         assert_skirmish_bot_eval_refuses(&[flag], &["unexpected argument", flag]);
     }
-}
-
-#[test]
-fn controlled_exact_seed_lists_refuse_bases() {
-    assert_skirmish_bot_eval_refuses(
-        &["--personality-seeds", "40", "--personality-seed-base", "44"],
-        &[
-            "--personality-seeds",
-            "--personality-seed-base",
-            "cannot be used with",
-        ],
-    );
-    assert_skirmish_bot_eval_refuses(
-        &["--personality-seeds", "40", "--runs", "2"],
-        &["--personality-seeds", "--runs", "cannot be used with"],
-    );
-}
-
-#[test]
-fn controlled_axes_refuse_duplicate_cells() {
-    for (args, option) in [
-        (&["--personality-seeds", "40,40"][..], "--personality-seeds"),
-        (&["--geometries", "authored,authored"][..], "--geometries"),
-    ] {
-        assert_skirmish_bot_eval_refuses(args, &[option, "contains a duplicate value"]);
-    }
-}
-
-#[test]
-fn controlled_matrix_refuses_nominal_cells_that_execute_identically() {
-    assert_skirmish_bot_eval_refuses(
-        &["skirmish", "--geometries", "authored"],
-        &[
-            "duplicate executable cells",
-            "\"Skirmish Basin\" Authored/single",
-        ],
-    );
 }
 
 #[test]
@@ -191,7 +42,7 @@ fn replay_evidence_requires_its_jsonl_sidecar() {
 }
 
 #[test]
-fn controlled_mode_supports_a_severed_ground_map() {
+fn bot_eval_supports_a_severed_ground_map() {
     let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
         .args([
             "bot-eval",
@@ -230,25 +81,6 @@ fn a_zero_stall_loop_limit_disables_the_early_stop() {
     let row: Value = serde_json::from_str(stdout.lines().next().expect("one row")).unwrap();
     assert_eq!(row["stall_loop_limit"], Value::Null);
     assert_eq!(row["termination"], "tick_limit");
-}
-
-#[test]
-fn controlled_mode_refuses_a_non_two_seat_scenario() {
-    let scenario =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios/compass-grand.json");
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .arg("bot-eval")
-        .arg(scenario)
-        .args(["--ticks", "1", "--personality-seeds", "40"])
-        .output()
-        .expect("run invalid multiseat current-controller evaluation");
-    assert!(!output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("controlled evaluation axes require exactly two seats"),
-        "multiseat refusal was unclear: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 fn assert_skirmish_bot_eval_refuses(args: &[&str], expected: &[&str]) {
@@ -494,71 +326,6 @@ fn every_persisted_row_replays_to_its_reported_terminal_state() {
 }
 
 #[test]
-fn controlled_replay_and_sidecar_preserve_exact_controller_identity() {
-    let dir = scratch("configured-provenance");
-    let replay_dir = dir.join("replays");
-    let out = dir.join("rows.jsonl");
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "1",
-            "--opponent-difficulty",
-            "veteran",
-            "--personality-seeds",
-            "40",
-            "--candidate",
-            "candidate-a",
-            "--out",
-        ])
-        .arg(&out)
-        .arg("--replay-dir")
-        .arg(&replay_dir)
-        .output()
-        .expect("run persisted current-controller evaluation");
-    assert!(
-        output.status.success(),
-        "bot-eval failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let row: Value = serde_json::from_slice(
-        String::from_utf8(std::fs::read(&out).unwrap())
-            .unwrap()
-            .lines()
-            .next()
-            .unwrap()
-            .as_bytes(),
-    )
-    .unwrap();
-    assert_eq!(row["seats"][1]["config"]["difficulty"], "veteran");
-    assert!(
-        row["execution_fingerprint"]
-            .as_str()
-            .unwrap()
-            .starts_with("fnv1a64:")
-    );
-    assert!(
-        row["command_hash"]
-            .as_str()
-            .unwrap()
-            .starts_with("fnv1a64:")
-    );
-
-    let replay_path = std::path::PathBuf::from(row["replay"].as_str().unwrap());
-    let replay = aftermine_kit::load_replay(&replay_path).unwrap();
-    let description = replay.meta.description.as_deref().unwrap();
-    assert!(description.contains("\"difficulty\":\"veteran\""));
-    assert_eq!(
-        aftermine_driver::bot_eval::command_hash(&replay).unwrap(),
-        row["command_hash"]
-    );
-
-    std::fs::remove_dir_all(dir).unwrap();
-}
-
-#[test]
 fn opponent_override_refuses_an_ambiguous_multiseat_scenario() {
     let scenario =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios/compass-grand.json");
@@ -791,7 +558,7 @@ fn decision_trace_is_deterministic_opt_in_evidence_for_both_seats() {
                 "--ticks",
                 "25",
                 "--paired",
-                "--personality-seeds",
+                "--personality-seed-base",
                 "40",
                 "--candidate",
                 "candidate-a",
@@ -828,7 +595,7 @@ fn decision_trace_is_deterministic_opt_in_evidence_for_both_seats() {
             "--ticks",
             "25",
             "--paired",
-            "--personality-seeds",
+            "--personality-seed-base",
             "40",
             "--candidate",
             "candidate-a",

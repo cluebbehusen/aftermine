@@ -15,14 +15,15 @@ fn plans(dir: &Path) -> Vec<(EvaluationPlan, Option<PathBuf>)> {
     [8100, 8200]
         .into_iter()
         .flat_map(|personality_seed| {
-            configured_matchup_plans(
+            configured_matchup_legs(
                 &Scenario::skirmish(),
                 ProfileMatchup::uniform(BotDifficulty::Standard, BotStance::Balanced),
                 personality_seed,
                 true,
-                EvaluationGeometry::Authored,
             )
             .unwrap()
+            .into_iter()
+            .map(|(leg, scenario)| EvaluationPlan::from_scenario(scenario, leg))
         })
         .enumerate()
         .map(|(i, plan)| (plan, Some(dir.join(format!("{i}.json")))))

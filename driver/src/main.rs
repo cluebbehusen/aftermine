@@ -70,21 +70,13 @@ enum Cmd {
         stall_loop_limit: u64,
         /// Consecutive seed cells per scenario for player-facing profile
         /// comparisons.
-        #[arg(
-            long,
-            default_value_t = 1,
-            value_parser = clap::value_parser!(u64).range(1..),
-            conflicts_with_all = ["personality_seeds", "geometries"]
-        )]
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
         runs: u64,
         /// First personality seed. Seats and subsequent runs receive
         /// deterministic seeds; use `--same-personality-seed` to consume one
         /// shared seed per two-seat run.
-        #[arg(long, conflicts_with = "personality_seeds")]
+        #[arg(long)]
         personality_seed_base: Option<u64>,
-        /// Exact player-facing personality seeds for a controlled comparison.
-        #[arg(long, value_delimiter = ',', conflicts_with = "personality_seed_base")]
-        personality_seeds: Vec<u64>,
         /// Player-facing skill rung.
         #[arg(long, default_value_t = aftermine_sim::scenario::BotDifficulty::Standard)]
         difficulty: aftermine_sim::scenario::BotDifficulty,
@@ -103,9 +95,6 @@ enum Cmd {
         /// when both stances match and requires a two-seat scenario.
         #[arg(long)]
         same_personality_seed: bool,
-        /// Map-end geometry cells for a controlled comparison.
-        #[arg(long, value_delimiter = ',')]
-        geometries: Vec<aftermine_driver::bot_eval::EvaluationGeometry>,
         /// On a two-seat scenario, run a second leg with the two complete
         /// controller configurations exchanged between seats.
         #[arg(long)]
@@ -578,15 +567,6 @@ fn latency_summary(samples_ns: &[u64]) -> String {
     )
 }
 
-fn ensure_distinct<T: PartialEq>(values: &[T], label: &str) -> Result<()> {
-    for (index, value) in values.iter().enumerate() {
-        if values[..index].contains(value) {
-            bail!("{label} contains a duplicate value");
-        }
-    }
-    Ok(())
-}
-
 /// The build's version and revision, marked dirty when the tree was.
 fn default_candidate() -> String {
     let build = build_identity();
@@ -662,13 +642,11 @@ fn main() -> Result<()> {
             stall_loop_limit,
             runs,
             personality_seed_base,
-            personality_seeds,
             difficulty,
             stance,
             opponent_difficulty,
             opponent_stance,
             same_personality_seed,
-            geometries,
             paired,
             candidate,
             out,
@@ -692,97 +670,45 @@ fn main() -> Result<()> {
                 opponent_stance,
                 same_personality_seed,
             };
-            ensure_distinct(&personality_seeds, "--personality-seeds")?;
-            ensure_distinct(&geometries, "--geometries")?;
             let mut plans = Vec::new();
             for (scenario_index, scenario_name) in scenarios.iter().enumerate() {
                 let source = runner::load_scenario(scenario_name)?;
-                if !personality_seeds.is_empty() || !geometries.is_empty() {
-                    let personality_seed_values = if personality_seeds.is_empty() {
-                        vec![personality_seed_base.unwrap_or(0)]
-                    } else {
-                        personality_seeds.clone()
-                    };
-                    let geometries = if geometries.is_empty() {
-                        vec![aftermine_driver::bot_eval::EvaluationGeometry::Authored]
-                    } else {
-                        geometries.clone()
-                    };
-
-                    let mut seed_cell = 0_u64;
-                    for &personality_seed in &personality_seed_values {
-                        for &geometry in &geometries {
-                            for plan in aftermine_driver::bot_eval::configured_matchup_plans(
-                                &source,
-                                matchup,
-                                personality_seed,
-                                paired,
-                                geometry,
-                            )? {
-                                let replay_path = replay_dir
-                                    .as_ref()
-                                    .map(|dir| {
-                                        aftermine_driver::bot_eval::evaluation_replay_filename(
-                                            scenario_index,
-                                            seed_cell,
-                                            ticks,
-                                            &candidate,
-                                            &plan,
-                                        )
-                                        .map(|filename| dir.join(filename))
-                                    })
-                                    .transpose()?;
-                                plan.scenario.build().with_context(|| {
-                                        format!(
-                                            "prevalidating bot evaluation scenario {scenario_name} seed cell {seed_cell} {}",
-                                            plan.leg.name()
-                                        )
-                                    })?;
-                                plans.push((plan, replay_path));
-                            }
-                        }
-                        seed_cell = seed_cell
-                            .checked_add(1)
-                            .context("evaluation seed-cell index overflows u64")?;
-                    }
-                } else {
-                    let personality_seed_base = personality_seed_base.unwrap_or(0);
-                    for run in 0..runs {
-                        let profile_base = matchup.personality_seed_base_for_run(
-                            personality_seed_base,
-                            run,
-                            source.players.len(),
-                        )?;
-                        for (leg, scenario) in aftermine_driver::bot_eval::configured_matchup_legs(
-                            &source,
-                            matchup,
-                            profile_base,
-                            paired,
-                        )? {
-                            let plan = aftermine_driver::bot_eval::EvaluationPlan::from_scenario(
-                                scenario, leg,
-                            );
-                            let replay_path = replay_dir
-                                .as_ref()
-                                .map(|dir| {
-                                    aftermine_driver::bot_eval::evaluation_replay_filename(
-                                        scenario_index,
-                                        run,
-                                        ticks,
-                                        &candidate,
-                                        &plan,
-                                    )
-                                    .map(|filename| dir.join(filename))
-                                })
-                                .transpose()?;
-                            plan.scenario.build().with_context(|| {
-                                format!(
-                                    "prevalidating bot evaluation scenario {scenario_name} run {run} {}",
-                                    plan.leg.name()
+                let personality_seed_base = personality_seed_base.unwrap_or(0);
+                for run in 0..runs {
+                    let profile_base = matchup.personality_seed_base_for_run(
+                        personality_seed_base,
+                        run,
+                        source.players.len(),
+                    )?;
+                    for (leg, scenario) in aftermine_driver::bot_eval::configured_matchup_legs(
+                        &source,
+                        matchup,
+                        profile_base,
+                        paired,
+                    )? {
+                        let plan = aftermine_driver::bot_eval::EvaluationPlan::from_scenario(
+                            scenario, leg,
+                        );
+                        let replay_path = replay_dir
+                            .as_ref()
+                            .map(|dir| {
+                                aftermine_driver::bot_eval::evaluation_replay_filename(
+                                    scenario_index,
+                                    run,
+                                    ticks,
+                                    &candidate,
+                                    &plan,
                                 )
-                            })?;
-                            plans.push((plan, replay_path));
-                        }
+                                .map(|filename| dir.join(filename))
+                            })
+                            .transpose()?;
+                        plan.scenario.build().with_context(|| {
+                            format!(
+                                "prevalidating bot evaluation scenario {scenario_name} run {run} {}",
+                                plan.leg.name()
+                            )
+                        })?;
+                        plans.push((plan, replay_path));
                     }
                 }
             }

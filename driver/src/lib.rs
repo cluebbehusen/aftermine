@@ -19,7 +19,6 @@ pub mod profile_graphics;
 pub mod replay_inspect;
 pub mod replay_ledger;
 pub mod replay_summary;
-pub mod rotation;
 pub mod seat_summary;
 pub mod session;
 pub mod shots;
