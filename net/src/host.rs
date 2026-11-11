@@ -677,15 +677,31 @@ impl HostSession {
                     *since = (*since + gap).min(now);
                 }
             }
+            if matches!(
+                client.standing,
+                Standing::Playing(Presence::Live | Presence::Quiet)
+            ) && now.saturating_sub(link.heard) >= SILENCE_TIMEOUT
+            {
+                link.blocked_since = None;
+                client.standing = Standing::Playing(Presence::Away { since: now });
+            }
+        }
+        // A seat gone silent holds play from now, so no other seat's
+        // progress clock may run out on this same poll.
+        if self.waiting() {
+            self.unblock();
+        }
+        for client in &mut self.clients {
+            let Some(link) = &mut client.link else {
+                continue;
+            };
             let silence = now.saturating_sub(link.heard);
             let stalled = link
                 .blocked_since
                 .is_some_and(|since| now.saturating_sub(since) >= PROGRESS_TIMEOUT);
             let caught_up = self.next_tick < link.acked + LEAD_CAP;
             match client.standing {
-                Standing::Playing(Presence::Live | Presence::Quiet)
-                    if silence >= SILENCE_TIMEOUT || stalled =>
-                {
+                Standing::Playing(Presence::Live | Presence::Quiet) if stalled => {
                     link.blocked_since = None;
                     client.standing = Standing::Playing(Presence::Away { since: now });
                 }

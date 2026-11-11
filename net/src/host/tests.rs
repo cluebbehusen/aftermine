@@ -253,6 +253,30 @@ fn a_client_held_at_the_lead_cap_stays_live_while_the_match_waits_for_another() 
 }
 
 #[test]
+fn a_seat_gone_silent_stops_the_progress_clock_of_one_stalling_in_the_same_poll() {
+    // A stops acknowledging and holds play from the start while it keeps
+    // heartbeating; B falls silent then, so both deadlines fall on one poll.
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    let mut b_acked = 0;
+    while step(&mut host, secs(0), 0).is_some() {
+        let published = host.tick();
+        ack_through(&mut host, B, b_acked + 1, published, secs(0));
+        b_acked = published;
+    }
+    for second in 1..=SILENCE_TIMEOUT.as_secs() {
+        host.receive(A, &ClientMessage::Heartbeat.encode(), secs(second));
+        assert!(step(&mut host, secs(second), 0).is_none());
+        host.poll(secs(second));
+    }
+    let waiting: Vec<PlayerId> = host
+        .seats(secs(10))
+        .iter()
+        .map(|notice| notice.seat)
+        .collect();
+    assert_eq!(waiting, [B], "A waits on B, not B on A");
+}
+
+#[test]
 fn time_spent_paused_never_counts_toward_the_progress_timeout() {
     let mut host = HostSession::new(HOST, &[A], secs(0));
     for _ in 0..LEAD_CAP {
