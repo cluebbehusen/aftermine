@@ -1516,6 +1516,22 @@ fn panel_copy_uses_only_supported_font_glyphs() {
 }
 
 #[test]
+fn a_one_tile_sight_reads_in_the_singular() {
+    let (mut game, harvester) = builder_game_with(&[aftermine_sim::scenario::BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Fabricator,
+        x: 12,
+        y: 3,
+    }]);
+    let barricade = place(&mut game, harvester, BuildingKind::Barricade, false);
+    game.presentation.selection.units.clear();
+    game.presentation.selection.buildings = vec![barricade];
+    let panel =
+        build_for_palette(&game.view(), &BindingMap::classic(), false).expect("Barricade panel");
+    assert_eq!(stat(&panel, "Sight").value, "1 tile");
+}
+
+#[test]
 fn a_selected_bastion_shows_its_minimum_and_maximum_range() {
     let (mut game, harvester) = builder_game_with(&[aftermine_sim::scenario::BuildingSpec {
         player: 0,
