@@ -322,19 +322,9 @@ fn new_match_seed_window_advances_once_only_after_a_successful_launch() {
     let first_base = personality_seeds.match_base();
     let draft = configured_new_match_draft();
 
-    assert!(resolve_new_match(WizardOut::Stay, &draft, &mut personality_seeds).is_none());
-    assert_eq!(personality_seeds.match_base(), first_base);
-    assert!(resolve_new_match(WizardOut::Home, &draft, &mut personality_seeds).is_none());
-    assert_eq!(
-        personality_seeds.match_base(),
-        first_base,
-        "backing out cannot consume an opponent identity"
-    );
-
     let mut invalid = configured_new_match_draft();
     invalid.seats.pop();
-    let failed = resolve_new_match(WizardOut::Launch, &invalid, &mut personality_seeds)
-        .expect("launch outcome has a result");
+    let failed = resolve_new_match(&invalid, &mut personality_seeds);
     assert!(failed.is_err());
     assert_eq!(
         personality_seeds.match_base(),
@@ -342,8 +332,7 @@ fn new_match_seed_window_advances_once_only_after_a_successful_launch() {
         "a launch refusal must leave the same seed window available for retry"
     );
 
-    let launched = resolve_new_match(WizardOut::Launch, &draft, &mut personality_seeds)
-        .expect("launch outcome has a result");
+    let launched = resolve_new_match(&draft, &mut personality_seeds);
     let Ok(game) = launched else {
         panic!("a valid draft launches locally");
     };
@@ -358,6 +347,29 @@ fn new_match_seed_window_advances_once_only_after_a_successful_launch() {
         personality_seeds.match_base(),
         first_base.wrapping_add(crate::screens::wizard::launch::BOT_PERSONALITY_WINDOW),
         "one successful match consumes exactly one complete roster window"
+    );
+}
+
+#[test]
+fn start_launches_by_its_lobby_and_only_a_new_hosted_arrival_spends_seeds() {
+    // (lobby holds players, resuming, how Start launches)
+    let rows = [
+        (false, false, Start::Local),
+        (true, false, Start::Hosted),
+        (true, true, Start::HostedResume),
+        (false, true, Start::ResumeAlone),
+    ];
+    for (players, resuming, start) in rows {
+        assert_eq!(
+            Start::of(players, resuming),
+            start,
+            "players {players}, resuming {resuming}"
+        );
+    }
+    assert!(Start::hosted(false).arrival_spends_seeds());
+    assert!(
+        !Start::hosted(true).arrival_spends_seeds(),
+        "a resumed match keeps the personalities it saved"
     );
 }
 
@@ -428,8 +440,7 @@ fn tips_show_in_the_first_match_and_elsewhere_only_when_turned_on() {
 fn restart_and_rematch_rebuild_the_exact_opponents_without_rerolling() {
     let mut personality_seeds = PersonalitySeedSource::from_seed(41);
     let draft = configured_new_match_draft();
-    let launched = resolve_new_match(WizardOut::Launch, &draft, &mut personality_seeds)
-        .expect("launch outcome has a result");
+    let launched = resolve_new_match(&draft, &mut personality_seeds);
     let Ok(game) = launched else {
         panic!("a valid draft launches locally");
     };
