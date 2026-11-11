@@ -2715,7 +2715,7 @@ pub(super) fn attack(
     if pos.dist_sq(aim_point) < weapon.minimum_range * weapon.minimum_range {
         match target {
             Target::Building(building) => {
-                approach_firing_area(state, id, building, weapon);
+                approach_firing_area(state, index, id, building, weapon);
             }
             Target::Unit(victim) => {
                 retreat_to_firing_stand(state, id, victim, victim_domain, weapon);
@@ -2814,12 +2814,12 @@ pub(super) fn attack(
             let approached = if stats.contact_reach.is_some() {
                 // A building in the way that the cutter cannot reach leaves
                 // the way to the building it was sent for.
-                contact::approach(state, id, bid)
+                contact::approach(state, index, id, bid)
                     || matches!(ordered, Target::Building(sent) if sent != bid
                         && state.building(sent).is_some_and(|b| b.hp > 0)
-                        && contact::approach(state, id, sent))
+                        && contact::approach(state, index, id, sent))
             } else {
-                approach_firing_area(state, id, bid, weapon)
+                approach_firing_area(state, index, id, bid, weapon)
             };
             if approached {
                 Ok(())
@@ -3097,6 +3097,7 @@ pub(super) fn target_standing(state: &State, target: Target) -> bool {
 
 fn approach_firing_area(
     state: &mut State,
+    index: &super::super::spatial::UnitIndex,
     id: UnitId,
     building: crate::BuildingId,
     weapon: &WeaponStats,
@@ -3120,7 +3121,7 @@ fn approach_firing_area(
     };
     if unit.path.as_ref().is_some_and(|path| {
         let point = path.final_point.unwrap_or(path.goal.center());
-        legal(point) && !crate::tick::crowding::claimed(state, id, point, true)
+        legal(point) && !crate::tick::crowding::claimed(state, index, id, point, true)
     }) {
         return true;
     }
@@ -3164,6 +3165,7 @@ fn approach_firing_area(
         .collect();
     let path = crate::tick::crowding::choose(
         state,
+        index,
         id,
         candidates,
         b.center(),

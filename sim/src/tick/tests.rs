@@ -1438,6 +1438,61 @@ fn a_wide_hull_routes_only_through_ground_that_holds_it() {
 }
 
 #[test]
+fn remembered_air_routes_match_fresh_searches() {
+    let mut rows = mirrored_field(24, 16);
+    for (y, row) in rows.iter_mut().enumerate().skip(3).take(9) {
+        let peaks = if y == 7 { "^^^^^^^.^^^" } else { "^^^^^^^^^^^" };
+        row.replace_range(7..18, peaks);
+    }
+    let state = crate::Scenario {
+        levels: Vec::new(),
+        mode: ScenarioMode::Match,
+        name: "peaks".into(),
+        map: rows,
+        players: crate::Scenario::skirmish().players,
+        units: Vec::new(),
+        buildings: Vec::new(),
+        meta: None,
+    }
+    .build()
+    .expect("peaks build");
+    let kind = crate::UnitKind::Kestrel;
+    let starts = [
+        Vec2Fx::new(Fx::lit("3.5"), Fx::lit("7.5")),
+        Vec2Fx::new(Fx::lit("6.9"), Fx::lit("5.2")),
+        Vec2Fx::new(Fx::lit("20.5"), Fx::lit("12.5")),
+        Vec2Fx::new(Fx::lit("14.5"), Fx::lit("7.5")),
+    ];
+    let goals: Vec<TilePos> = (0..16).map(|y| TilePos::new(y + 4, y)).collect();
+    let mut remembered = 0;
+    for &from in &starts {
+        for round in 0..3 {
+            for &to in &goals {
+                let fresh = route_for_position(&state.clone(), kind, from, to);
+                assert_eq!(
+                    route_for_position(&state, kind, from, to),
+                    fresh,
+                    "round {round} from {from:?} to {to:?}"
+                );
+                // A route of more than one waypoint went round the peaks, so
+                // a later round must have it from the memo, keyed by its goal.
+                if round > 0
+                    && let Some(route) = fresh.as_ref().filter(|route| route.len() > 1)
+                {
+                    let goal = *route.last().expect("a route ends at its goal");
+                    let kept = state.air_routes.route(TilePos::containing(from), goal, || {
+                        panic!("from {from:?} to {to:?} was not remembered")
+                    });
+                    assert_eq!(kept.as_ref(), Some(route));
+                    remembered += 1;
+                }
+            }
+        }
+    }
+    assert!(remembered > 0, "no remembered route went round the peaks");
+}
+
+#[test]
 fn a_dock_queued_before_the_tick_s_hits_waits_for_them() {
     let mut scenario = crate::Scenario::skirmish();
     scenario.units = vec![crate::scenario::UnitSpec {

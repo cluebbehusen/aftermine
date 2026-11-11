@@ -400,7 +400,8 @@ fn left_on_claimed_ground(state: &State, unit: &crate::state::Unit) -> bool {
     {
         return false;
     }
-    !(super::brain::contact::surface_for(state, unit).is_some_and(|s| {
+    let drop_offs = super::brain::DropOffs::standing(state);
+    !(super::brain::contact::surface_for(state, &drop_offs, unit).is_some_and(|s| {
         s.clear(
             unit.pos,
             unit.pos,
@@ -589,10 +590,11 @@ pub(super) fn forget_stalls_without_routes(state: &mut State) {
 /// carried the body across the onward plane, so a unit does not turn back
 /// toward a center it already passed. Final waypoints are landed exactly.
 pub(super) fn run(state: &mut State) -> (Vec<Vec2Fx>, Vec<bool>) {
+    let drop_offs = super::brain::DropOffs::standing(state);
     let contacts: Vec<_> = state
         .units
         .iter()
-        .map(|unit| super::brain::contact::surface_for(state, unit))
+        .map(|unit| super::brain::contact::surface_for(state, &drop_offs, unit))
         .collect();
     let outlines: Vec<_> = state
         .units
@@ -920,9 +922,14 @@ fn envelope_bound(state: &State, domain: crate::stats::Domain, to: Vec2Fx) -> Ve
     }
 }
 
-fn contact_push_open(state: &State, slot: usize, to: Vec2Fx) -> bool {
+fn contact_push_open(
+    state: &State,
+    drop_offs: &super::brain::DropOffs,
+    slot: usize,
+    to: Vec2Fx,
+) -> bool {
     let unit = &state.units[slot];
-    if let Some(surface) = super::brain::contact::surface_for(state, unit) {
+    if let Some(surface) = super::brain::contact::surface_for(state, drop_offs, unit) {
         let outlines = super::brain::contact::cut_outlines(state, unit, unit.pos);
         return state
             .ground_terrain()
@@ -1040,9 +1047,18 @@ pub(super) fn resolve_collisions(
         return;
     };
     let productive = productive_posts(state, &pairs);
+    let drop_offs = super::brain::DropOffs::standing(state);
     let mut spent = vec![Fx::ZERO; state.units.len()];
     for _ in 0..COLLISION_ITERATIONS {
-        if !relaxation_pass(state, travel, &owner_ranks, &productive, &mut spent, &pairs) {
+        if !relaxation_pass(
+            state,
+            &drop_offs,
+            travel,
+            &owner_ranks,
+            &productive,
+            &mut spent,
+            &pairs,
+        ) {
             break;
         }
     }
@@ -1437,6 +1453,7 @@ fn push_shares(
 /// its removal tick.
 fn relaxation_pass(
     state: &mut State,
+    drop_offs: &super::brain::DropOffs,
     travel: &[Vec2Fx],
     owner_ranks: &[usize],
     productive: &[bool],
@@ -1538,7 +1555,7 @@ fn relaxation_pass(
         if step_j > Fx::ZERO {
             for cand in dirs_j.into_iter().flatten() {
                 let to = envelope_bound(state, dom_j, pos_j + cand * step_j);
-                if contact_push_open(state, j, to) {
+                if contact_push_open(state, drop_offs, j, to) {
                     state.units[j].pos = to;
                     spent[j] += step_j;
                     break;
@@ -1549,7 +1566,7 @@ fn relaxation_pass(
         if step_i > Fx::ZERO {
             for cand in dirs_i.into_iter().flatten() {
                 let to = envelope_bound(state, dom_i, pos_i + cand * step_i);
-                if contact_push_open(state, i, to) {
+                if contact_push_open(state, drop_offs, i, to) {
                     state.units[i].pos = to;
                     spent[i] += step_i;
                     break;

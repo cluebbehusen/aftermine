@@ -589,14 +589,16 @@ pub(crate) fn route_for_position(
             if !chassis::path::line_blocked(from, to.center(), sky_open) {
                 return Some(vec![to]);
             }
-            astar(
-                state.map.width(),
-                state.map.height(),
-                from_tile,
-                to,
-                |p| state.passable_for(crate::stats::Domain::Air, p),
-                PATH_EXPANSION_CAP,
-            )
+            state.air_routes.route(from_tile, to, || {
+                astar(
+                    state.map.width(),
+                    state.map.height(),
+                    from_tile,
+                    to,
+                    |p| state.passable_for(crate::stats::Domain::Air, p),
+                    PATH_EXPANSION_CAP,
+                )
+            })
         }
     }
 }

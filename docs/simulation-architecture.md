@@ -156,8 +156,11 @@ scaffolds produce no notification.
 
 Once a result exists, later ticks ignore commands and skip world phases, but the
 tick counter still advances so external timelines stay aligned. Per-tick
-acceleration structures, such as the unit spatial index and reachability labels,
-are scratch: rebuilt where they are used, never serialized or hashed.
+acceleration structures, such as the unit spatial index and ground reachability
+labels, are scratch: rebuilt where they are used, never serialized or hashed.
+The sky never changes in a match, so its reachability labels are built on
+assembly and load and kept on the state, as is a memo of recent air routes;
+neither is serialized or hashed.
 
 A destroyed airborne Condor, Skyhook or Roc leaves a pending crash whose contact
 point is fixed at death. Pending crashes resolve in death-tick and unit-id order

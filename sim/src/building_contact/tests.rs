@@ -17,6 +17,38 @@ fn every_outline() -> Vec<(BuildingKind, Outline)> {
     all
 }
 
+#[test]
+fn edges_join_each_corner_to_the_next_and_close_the_outline() {
+    for (kind, outline) in every_outline() {
+        for anchor in [
+            TilePos::new(0, 0),
+            TilePos::new(10, 20),
+            TilePos::new(-3, 7),
+        ] {
+            let surface = Surface {
+                outline,
+                anchor,
+                size: kind.size(),
+            };
+            let corners: Vec<Vec2Fx> = outline
+                .iter()
+                .map(|&(x, y)| {
+                    Vec2Fx::new(
+                        Fx::from_num(anchor.x) + Fx::from_num(x * kind.size().0) / 128,
+                        Fx::from_num(anchor.y) + Fx::from_num(y * kind.size().1) / 128,
+                    )
+                })
+                .collect();
+            let expected: Vec<_> = corners
+                .iter()
+                .copied()
+                .zip(corners.iter().copied().cycle().skip(1))
+                .collect();
+            assert_eq!(surface.edges().collect::<Vec<_>>(), expected, "{kind:?}");
+        }
+    }
+}
+
 /// Above this many vertices an outline costs every contact query more than
 /// its art's detail is worth.
 const MAX_VERTICES: usize = 24;
@@ -207,7 +239,7 @@ fn sides_hull_each_outline_and_face_outward() {
         assert!(sides.len() >= 3, "{kind:?}");
         for &(a, b) in &sides {
             let outward = outward(a, b);
-            for v in surface.vertices() {
+            for (v, _) in surface.edges() {
                 assert!(
                     dot(v - a, outward) <= ROUNDING_MARGIN,
                     "{kind:?} {a:?} {b:?}"

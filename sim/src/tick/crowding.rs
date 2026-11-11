@@ -1,4 +1,5 @@
 //! Occupied work and firing positions share admission and yielding.
+use super::spatial::UnitIndex;
 use crate::{State, Unit, UnitId};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::{CARDINALS, TilePos};
@@ -12,8 +13,16 @@ pub(crate) fn spacing(a: &Unit, b: &Unit) -> Fx {
         distance
     }
 }
-pub(crate) fn claimed(state: &State, id: UnitId, point: Vec2Fx, retained: bool) -> bool {
-    let pressure = Pressure::new(state, id, point, Fx::ZERO);
+/// Whether another body works or arrives at `point` before `id` may.
+/// `index` holds the bodies as they stand now.
+pub(in crate::tick) fn claimed(
+    state: &State,
+    index: &UnitIndex,
+    id: UnitId,
+    point: Vec2Fx,
+    retained: bool,
+) -> bool {
+    let pressure = Pressure::new(state, index, id, point, Fx::ZERO);
     let (occupied, _, arriving) = pressure.rank(point, retained);
     occupied > 0 || arriving > 0
 }
@@ -39,13 +48,25 @@ impl Pressure {
     /// a destination closer to the point than their spacing, and a counted
     /// destination lies within [`crate::stats::ARRIVAL_WINDOW`] of its body, so a body
     /// farther than `reach` plus both from `center` never counts.
-    fn new(state: &State, id: UnitId, center: Vec2Fx, reach: Fx) -> Self {
+    ///
+    /// `index` must hold the bodies where they stand now. Only the tiles
+    /// within that distance of `center`, for the widest body, are walked,
+    /// in the index's order: [`rank`](Self::rank) only counts, so the order
+    /// of the neighbors never matters.
+    fn new(state: &State, index: &UnitIndex, id: UnitId, center: Vec2Fx, reach: Fx) -> Self {
         let unit = state.unit(id).expect("position owner");
+        let window = reach
+            + unit.kind.stats().radius
+            + index.widest()
+            + crate::stats::ARRIVAL_WINDOW
+            + const { Fx::lit("0.125") };
+        let low = TilePos::containing(center - Vec2Fx::new(window, window));
+        let high = TilePos::containing(center + Vec2Fx::new(window, window));
         Self {
             origin: unit.pos,
-            neighbors: state
-                .units()
-                .iter()
+            neighbors: (low.y..=high.y)
+                .flat_map(|y| index.row_span(y, low.x, high.x))
+                .map(|&(_, slot)| &state.units()[slot])
                 .filter(|other| {
                     other.id != id
                         && other.hp > 0
@@ -116,29 +137,58 @@ pub(crate) struct Position {
 }
 
 /// Callers supply legal candidates in their geometric tie order and their own route predicate.
-pub(crate) fn choose(
+pub(in crate::tick) fn choose(
     state: &State,
+    index: &UnitIndex,
+    id: UnitId,
+    candidates: Vec<Position>,
+    center: Vec2Fx,
+    open: impl Fn(chassis::grid::TilePos) -> bool,
+    route: impl FnMut(chassis::grid::TilePos) -> Option<Vec<chassis::grid::TilePos>>,
+) -> Option<crate::state::PathFollow> {
+    choose_admitted(state, index, id, candidates, center, open, |_| true, route)
+}
+
+/// [`choose`] among the `candidates` that `admit` accepts, for an
+/// admission test too costly to run on every candidate: it runs in the
+/// chooser's order on those it reaches, and on all of them before any
+/// waiting position is derived. Ranks and their order are those of the
+/// admitted candidates alone, since ranking is pure and the sorts keep ties
+/// in order.
+#[allow(clippy::too_many_arguments)]
+pub(in crate::tick) fn choose_admitted(
+    state: &State,
+    index: &UnitIndex,
     id: UnitId,
     mut candidates: Vec<Position>,
     center: Vec2Fx,
     open: impl Fn(chassis::grid::TilePos) -> bool,
+    admit: impl Fn(&Position) -> bool,
     mut route: impl FnMut(chassis::grid::TilePos) -> Option<Vec<chassis::grid::TilePos>>,
 ) -> Option<crate::state::PathFollow> {
     let unit = state.unit(id).expect("position owner");
     let push = unit.kind.stats().radius * 2 + crate::stats::WAITING_CLEARANCE;
-    // Waiting positions sit at most `push` beyond the candidates.
+    // Waiting positions sit at most `push` beyond the candidates. A reach
+    // that also covers candidates later refused ranks every point alike.
     let reach = candidates
         .iter()
         .map(|candidate| (candidate.point - center).length())
         .max()
         .unwrap_or(Fx::ZERO)
         + push;
-    let pressure = Pressure::new(state, id, center, reach);
+    let pressure = Pressure::new(state, index, id, center, reach);
     candidates.sort_by_cached_key(|candidate| pressure.rank(candidate.point, false));
+    let first = candidates.iter().position(&admit);
+    candidates.drain(..first.unwrap_or(candidates.len()));
+    // Every candidate after the first still awaits admission.
+    let mut pending = true;
     if candidates
         .first()
         .is_some_and(|candidate| pressure.rank(candidate.point, false).0 > 0)
     {
+        let mut first = true;
+        candidates.retain(|candidate| std::mem::take(&mut first) || admit(candidate));
+        pending = false;
         let mut waiting = candidates.clone();
         for candidate in &mut waiting {
             let outward = candidate.point - center;
@@ -162,7 +212,10 @@ pub(crate) fn choose(
     }
     let mut failed = BTreeSet::new();
     let mut reachable = None;
-    for candidate in candidates {
+    for (at, candidate) in candidates.into_iter().enumerate() {
+        if pending && at > 0 && !admit(&candidate) {
+            continue;
+        }
         if failed.contains(&candidate.goal) {
             continue;
         }

@@ -200,7 +200,7 @@ pub(super) fn tend(
                 weld_building(state, id, building, builds);
                 return;
             }
-            if contact::approach_worker(state, id, building) {
+            if contact::approach_worker(state, index, id, building) {
                 return;
             }
             set_weld(state, id, None);

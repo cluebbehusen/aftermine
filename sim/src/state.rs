@@ -15,6 +15,7 @@
 mod goal;
 mod order_key;
 mod placement;
+pub(crate) mod sky;
 mod targeting;
 pub use goal::{Aim, Goal};
 pub use order_key::OrderKey;
@@ -1566,6 +1567,13 @@ pub struct State {
     /// ask whether a tile is blocked thousands of times per tick.
     #[serde(skip)]
     pub(crate) building_occupancy: Vec<u8>,
+    /// Derived: recent air route searches. Never serialized or hashed.
+    #[serde(skip)]
+    pub(crate) air_routes: sky::AirRoutes,
+    /// Derived: the sky's components, built on assembly and load. Never
+    /// serialized or hashed.
+    #[serde(skip)]
+    pub(crate) sky_labels: sky::SkyLabels,
 }
 
 /// Map tiles under friendly ground bodies standing still, one bit per tile
@@ -1756,7 +1764,7 @@ impl State {
             .iter()
             .map(|_| crate::vision::Vision::new(map.width(), map.height()))
             .collect();
-        Self {
+        let mut state = Self {
             mode: crate::scenario::ScenarioMode::Match,
             tick: 0,
             map,
@@ -1773,7 +1781,11 @@ impl State {
             next_warhead_id: 0,
             next_march_id: 0,
             building_occupancy: vec![0; cell_count(map_width, map_height)],
-        }
+            air_routes: sky::AirRoutes::default(),
+            sky_labels: sky::SkyLabels::default(),
+        };
+        state.sky_labels = sky::SkyLabels::of(&state);
+        state
     }
 
     /// Canonical fingerprint of the entire state. Two states with equal
@@ -2127,6 +2139,8 @@ impl State {
             next_warhead_id,
             next_march_id,
             building_occupancy: _,
+            air_routes: _,
+            sky_labels: _,
         } = self;
 
         self.validate_players()?;
@@ -4509,6 +4523,8 @@ impl From<StateWire> for State {
         State {
             mode,
             building_occupancy: Vec::new(),
+            air_routes: sky::AirRoutes::default(),
+            sky_labels: sky::SkyLabels::default(),
             tick,
             map,
             players,
@@ -4534,6 +4550,9 @@ impl<'de> Deserialize<'de> for State {
         state
             .validate_invariants()
             .map_err(serde::de::Error::custom)?;
+        // Built once the map is known sound: a forged grid must fail
+        // validation before anything floods it.
+        state.sky_labels = sky::SkyLabels::of(&state);
         Ok(state)
     }
 }

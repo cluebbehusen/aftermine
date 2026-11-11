@@ -3,10 +3,16 @@ use super::locomotion::approach_rect;
 use super::*;
 use crate::stats::Domain;
 use crate::tick::crowding;
+use crate::tick::spatial::UnitIndex;
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::{TilePos, as_index, cell_count};
 
-pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> bool {
+pub(super) fn approach(
+    state: &mut State,
+    index: &UnitIndex,
+    id: UnitId,
+    building: BuildingId,
+) -> bool {
     let b = state.building(building).expect("live target");
     let (anchor, size) = (b.anchor, b.kind.size());
     let unit = state.unit(id).expect("contact unit");
@@ -22,7 +28,7 @@ pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> b
     // unable to land there. A crew holds only a pad.
     if unit.path.as_ref().is_some_and(|path| {
         path.final_point.is_some_and(|point| {
-            !crowding::claimed(state, id, point, true)
+            !crowding::claimed(state, index, id, point, true)
                 && admissible(state, unit, b, path.goal, point)
                 && pads.as_ref().is_none_or(|pads| {
                     pads.iter().any(|&entry| {
@@ -50,17 +56,19 @@ pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> b
                 (candidate.goal, candidate.point),
             )
         });
-        crowding::choose(
+        crowding::choose_admitted(
             state,
+            index,
             id,
             candidates,
             anchor.center()
                 + Vec2Fx::new(Fx::from_num(size.0 - 1), Fx::from_num(size.1 - 1)) / Fx::from_num(2),
             |tile| state.passable(tile),
+            |position| admits(state, unit, b, position),
             |goal| stance_route(state, unit, b, &worked, from.center(), goal),
         )
     };
-    let mut stances = ordinary_stances(state, unit, b, pads);
+    let mut stances = stance_positions(state, unit, b, pads);
     stances.retain(|stance| !worked.contains(&stance.goal));
     let path = choose(stances);
     let reachable = path.is_some();
@@ -68,9 +76,11 @@ pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> b
     reachable
 }
 
-/// The positions from which `unit` may meet `b`: its crew pads, or work
-/// positions around the footprint.
-fn ordinary_stances(
+/// The positions from which `unit` may meet `b`, its crew pads or work
+/// positions around the footprint, that set out from open ground. Whether
+/// the motor can then land on one is [`admits`]'s question, costly enough
+/// to ask only of the positions a choice reaches.
+fn stance_positions(
     state: &State,
     unit: &crate::Unit,
     b: &crate::Building,
@@ -87,10 +97,11 @@ fn ordinary_stances(
     })
     .into_iter()
     .filter_map(|entry| {
-        let point = surface.stance(entry, clearance(unit));
         let goal = crate::geometry::work_tile(entry, unit.pos, b.center());
-        (state.passable(goal) && admissible(state, unit, b, goal, point))
-            .then_some(crowding::Position { goal, point })
+        state.passable(goal).then(|| crowding::Position {
+            goal,
+            point: surface.stance(entry, clearance(unit)),
+        })
     })
     .collect()
 }
@@ -99,8 +110,9 @@ fn ordinary_stances(
 /// route or crowd is weighed.
 pub(super) fn stance_goals(state: &State, unit: &crate::Unit, b: &crate::Building) -> Vec<TilePos> {
     let pads = crew_pad_entries(state, unit, b);
-    ordinary_stances(state, unit, b, pads)
+    stance_positions(state, unit, b, pads)
         .into_iter()
+        .filter(|position| admits(state, unit, b, position))
         .map(|position| position.goal)
         .collect()
 }
@@ -444,23 +456,14 @@ pub(in crate::tick) fn clearance(unit: &crate::Unit) -> Fx {
     )
 }
 
-pub(in crate::tick) fn endpoint(
+/// Whether `unit` can finish its approach to `b` at `position`.
+pub(in crate::tick) fn admits(
     state: &State,
-    id: UnitId,
-    building: BuildingId,
-    entry: Vec2Fx,
-) -> Option<Vec2Fx> {
-    let unit = state.unit(id)?;
-    let b = state.building(building)?;
-    let point = state.contact_surface(b).stance(entry, clearance(unit));
-    admissible(
-        state,
-        unit,
-        b,
-        crate::geometry::work_tile(entry, unit.pos, b.center()),
-        point,
-    )
-    .then_some(point)
+    unit: &crate::Unit,
+    b: &crate::Building,
+    position: &crowding::Position,
+) -> bool {
+    admissible(state, unit, b, position.goal, position.point)
 }
 
 /// Whether a contact position can be driven to straight from its goal
@@ -516,8 +519,11 @@ pub(in crate::tick) fn collision_radius(unit: &crate::Unit) -> Fx {
         .min(clearance(unit) - const { Fx::lit("0.002") })
 }
 
+/// The surface bounding `unit`'s motion, if any. `drop_offs` are the
+/// standing drop-offs of this moment.
 pub(in crate::tick) fn surface_for(
     state: &State,
+    drop_offs: &economy::DropOffs,
     unit: &crate::Unit,
 ) -> Option<crate::building_contact::Surface> {
     if unit.domain() != Domain::Ground {
@@ -539,7 +545,7 @@ pub(in crate::tick) fn surface_for(
         } => Some(building),
         Order::ReturnCargo { foundry, .. } => Some(foundry),
         Order::Harvest { withdrawing, .. } if unit.carrying() > 0 => {
-            delivery_drop_off(state, unit, withdrawing)
+            delivery_drop_off(state, drop_offs, unit, withdrawing)
         }
         _ => None,
     };
@@ -565,20 +571,19 @@ pub(in crate::tick) fn surface_for(
 
 /// The drop-off whose surface bounds a loaded Harvest worker, if it is unloading,
 /// routing to one, or stopping beside one.
-fn delivery_drop_off(state: &State, unit: &crate::Unit, withdrawing: bool) -> Option<BuildingId> {
+fn delivery_drop_off(
+    state: &State,
+    drop_offs: &economy::DropOffs,
+    unit: &crate::Unit,
+    withdrawing: bool,
+) -> Option<BuildingId> {
     if let Some(release) = unit.unloading() {
         return Some(release.foundry);
     }
     if let Some(path) = &unit.path {
-        return state
-            .buildings()
-            .iter()
-            .find(|b| {
-                b.hp > 0
-                    && b.player == unit.player
-                    && b.kind.is_drop_off()
-                    && crate::tick::tile_adjacent_to_rect(path.goal, b.anchor, b.kind.size())
-            })
+        return drop_offs
+            .of(state, unit.player)
+            .find(|b| crate::tick::tile_adjacent_to_rect(path.goal, b.anchor, b.kind.size()))
             .map(|b| b.id);
     }
     // A delivery gives up its route on coming into reach, still rolling. A hull
@@ -590,7 +595,7 @@ fn delivery_drop_off(state: &State, unit: &crate::Unit, withdrawing: bool) -> Op
         .harvest
         .is_some_and(|h| unit.carrying() >= h.capacity);
     if withdrawing || full {
-        economy::drop_off_in_reach(state, unit)
+        economy::drop_off_in_reach(state, drop_offs, unit)
     } else {
         None
     }
@@ -601,7 +606,12 @@ fn delivery_drop_off(state: &State, unit: &crate::Unit, withdrawing: bool) -> Op
 /// land on never keeps it from working. A crew member stops only on the pad
 /// it set out for: one passing over another pad on its way would leave its
 /// own empty and crowd the crewmate bound for that one.
-pub(super) fn approach_worker(state: &mut State, id: UnitId, building: BuildingId) -> bool {
+pub(super) fn approach_worker(
+    state: &mut State,
+    index: &UnitIndex,
+    id: UnitId,
+    building: BuildingId,
+) -> bool {
     let unit = state.unit(id).expect("contact unit");
     let passing = unit
         .path
@@ -614,5 +624,5 @@ pub(super) fn approach_worker(state: &mut State, id: UnitId, building: BuildingI
         state.unit_mut(id).expect("contact unit").path = None;
         return true;
     }
-    approach(state, id, building)
+    approach(state, index, id, building)
 }

@@ -3,6 +3,13 @@ use crate::state::PathFollow;
 use crate::{PlayerId, Scenario, UnitKind};
 use chassis::grid::TilePos;
 
+/// The bodies as they stand now, as the brain phase indexes them.
+fn indexed(state: &State) -> UnitIndex {
+    let mut index = UnitIndex::new();
+    index.rebuild(state.units());
+    index
+}
+
 #[test]
 fn allied_arrivals_claim_positions_with_full_cross_owner_spacing() {
     let mut state = Scenario::skirmish().build().unwrap();
@@ -22,19 +29,19 @@ fn allied_arrivals_claim_positions_with_full_cross_owner_spacing() {
         next: 0,
         clearing: false,
     });
-    assert!(claimed(&state, id, point, false));
+    assert!(claimed(&state, &indexed(&state), id, point, false));
     assert!(
-        !claimed(&state, id, point, true),
+        !claimed(&state, &indexed(&state), id, point, true),
         "the nearer body keeps a contested position"
     );
     state.unit_mut(id).unwrap().path = state.unit(ally).unwrap().path.clone();
-    assert!(claimed(&state, ally, point, true));
+    assert!(claimed(&state, &indexed(&state), ally, point, true));
     assert_eq!(
-        Pressure::new(&state, id, point, Fx::ZERO).neighbors[0].spacing,
+        Pressure::new(&state, &indexed(&state), id, point, Fx::ZERO).neighbors[0].spacing,
         UnitKind::Harvester.stats().radius * 2
     );
     state.players[1].team = state.players[0].team.wrapping_add(1);
-    assert!(!claimed(&state, id, point, false));
+    assert!(!claimed(&state, &indexed(&state), id, point, false));
 }
 
 /// Two workers of one seat and one of an allied seat converge on one
@@ -65,7 +72,7 @@ fn exactly_the_nearest_of_mixed_allied_arrivals_keeps_a_position() {
     }
     let keeps: Vec<_> = [farthest, nearest, middle]
         .into_iter()
-        .filter(|&id| !claimed(&state, id, point, true))
+        .filter(|&id| !claimed(&state, &indexed(&state), id, point, true))
         .collect();
     assert_eq!(keeps, [nearest]);
 }
@@ -88,7 +95,7 @@ fn a_destination_claims_its_point_from_across_the_arrival_window() {
         next: 0,
         clearing: false,
     });
-    assert!(claimed(&state, id, point, false));
+    assert!(claimed(&state, &indexed(&state), id, point, false));
 }
 
 /// Two workers bound for overlapping positions after their paths
@@ -119,8 +126,8 @@ fn crossed_arrivals_to_overlapping_positions_keep_exactly_one() {
             clearing: false,
         });
     }
-    assert!(claimed(&state, farther, mine, true));
-    assert!(!claimed(&state, nearer, theirs, true));
+    assert!(claimed(&state, &indexed(&state), farther, mine, true));
+    assert!(!claimed(&state, &indexed(&state), nearer, theirs, true));
 }
 
 #[test]
@@ -147,8 +154,8 @@ fn same_owner_precedence_is_unchanged_by_enemy_id_interleaving() {
                 clearing: false,
             });
         }
-        assert!(!claimed(&state, first, point, true));
-        assert!(claimed(&state, second, point, true));
+        assert!(!claimed(&state, &indexed(&state), first, point, true));
+        assert!(claimed(&state, &indexed(&state), second, point, true));
     }
 }
 
@@ -174,17 +181,17 @@ fn only_nearby_arrivals_claim_a_position_across_body_sizes() {
             clearing: false,
         });
         assert!(
-            !claimed(&state, id, point, false),
+            !claimed(&state, &indexed(&state), id, point, false),
             "distant {kind:?} reserved the destination"
         );
         state.unit_mut(other).unwrap().pos = point - Vec2Fx::new(Fx::lit("0.5"), Fx::ZERO);
         assert!(
-            claimed(&state, id, point, false),
+            claimed(&state, &indexed(&state), id, point, false),
             "nearby {kind:?} lost its arrival claim"
         );
         state.unit_mut(other).unwrap().path = None;
         assert!(
-            !claimed(&state, id, point, true),
+            !claimed(&state, &indexed(&state), id, point, true),
             "idle traffic cancelled an admitted route"
         );
     }
@@ -211,6 +218,7 @@ fn chooser_finds_a_farther_reachable_position_after_four_sealed_candidates() {
     let mut searches = 0;
     let path = choose(
         &state,
+        &indexed(&state),
         id,
         candidates,
         TilePos::new(10, 5).center(),
@@ -243,6 +251,7 @@ fn chooser_prefers_free_space_and_still_accepts_an_occupied_fallback() {
     };
     let path = choose(
         &state,
+        &indexed(&state),
         id,
         vec![position(busy), position(free)],
         TilePos::new(17, 8).center(),
@@ -253,6 +262,7 @@ fn chooser_prefers_free_space_and_still_accepts_an_occupied_fallback() {
     assert_eq!(path.final_point, Some(free));
     let path = choose(
         &state,
+        &indexed(&state),
         id,
         vec![position(busy)],
         TilePos::new(17, 8).center(),
@@ -276,8 +286,8 @@ fn pressure_ranks_ignore_only_neighbors_beyond_reach() {
     for unit in state.units().iter().filter(|unit| unit.hp > 0) {
         for reach in [Fx::ZERO, Fx::lit("1.5"), Fx::from_num(3)] {
             let center = unit.pos;
-            let near = Pressure::new(&state, unit.id, center, reach);
-            let all = Pressure::new(&state, unit.id, center, everywhere);
+            let near = Pressure::new(&state, &indexed(&state), unit.id, center, reach);
+            let all = Pressure::new(&state, &indexed(&state), unit.id, center, everywhere);
             for dy in -4..=4 {
                 for dx in -4..=4 {
                     let offset =
@@ -296,4 +306,219 @@ fn pressure_ranks_ignore_only_neighbors_beyond_reach() {
         }
     }
     assert!(claims > 0, "no neighbor ever pressed a probe");
+}
+
+/// What [`Pressure::new`] keeps of a neighbor, comparably.
+type Kept = (UnitId, Option<Vec2Fx>, Fx, bool, Option<bool>);
+
+/// Sorted by unit: the order of the neighbors never matters.
+fn kept(pressure: &Pressure, state: &State) -> Vec<Kept> {
+    let mut kept: Vec<Kept> = pressure
+        .neighbors
+        .iter()
+        .map(|n| {
+            let id = state
+                .units()
+                .iter()
+                .find(|u| u.pos == n.pos)
+                .expect("a neighbor stands where a unit does")
+                .id;
+            (id, n.destination, n.spacing, n.productive, n.earlier)
+        })
+        .collect();
+    kept.sort_unstable();
+    kept
+}
+
+/// The neighbors a walk over every unit keeps, as `Pressure::new` kept
+/// them before it walked a window of the unit index.
+fn scanned(state: &State, id: UnitId, center: Vec2Fx, reach: Fx) -> Vec<Kept> {
+    let unit = state.unit(id).expect("position owner");
+    state
+        .units()
+        .iter()
+        .filter(|other| {
+            other.id != id
+                && other.hp > 0
+                && !state.hostile(other.player, unit.player)
+                && other.domain() == unit.domain()
+        })
+        .filter(|other| {
+            let bound = reach
+                + spacing(unit, other)
+                + crate::stats::ARRIVAL_WINDOW
+                + const { Fx::lit("0.0625") };
+            other.pos.dist_sq(center) < bound * bound
+        })
+        .map(|other| {
+            let destination = other
+                .path
+                .as_ref()
+                .map(|path| path.final_point.unwrap_or(path.goal.center()))
+                .filter(|&point| {
+                    other.pos.dist_sq(point)
+                        <= crate::stats::ARRIVAL_WINDOW * crate::stats::ARRIVAL_WINDOW
+                });
+            (
+                other.id,
+                destination,
+                spacing(unit, other),
+                productive(state, other),
+                (other.player == unit.player).then_some(other.id < id),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn indexed_pressure_keeps_exactly_the_neighbors_a_walk_over_every_unit_keeps() {
+    let mut state = Scenario::skirmish().build().unwrap();
+    state.units.clear();
+    state.players[1].team = state.players[0].team;
+    let kinds = [
+        UnitKind::Harvester,
+        UnitKind::Sentinel,
+        UnitKind::Maw,
+        UnitKind::Excavator,
+        UnitKind::Kestrel,
+        UnitKind::Roc,
+    ];
+    let mut rng = chassis::rng::Pcg32::new(7, 3);
+    let mut coordinate = |low: i32, span: u32| {
+        Fx::from_num(low) + Fx::from_bits(i64::from(rng.next_below(span << 16)) << 16)
+    };
+    let mut placed = Vec::new();
+    for i in 0..60 {
+        let pos = Vec2Fx::new(coordinate(8, 14), coordinate(3, 10));
+        placed.push((pos, kinds[i % kinds.len()], PlayerId::from_index(i % 3 % 2)));
+    }
+    for (i, &(pos, kind, player)) in placed.iter().enumerate() {
+        let id = state.spawn_unit(player, kind, pos);
+        if i % 4 == 0 {
+            let goal = TilePos::containing(pos).offset(1, 0);
+            state.unit_mut(id).unwrap().path = Some(PathFollow {
+                goal,
+                final_point: Some(pos + Vec2Fx::new(Fx::lit("0.9"), Fx::lit("0.3"))),
+                waypoints: vec![goal],
+                next: 0,
+                clearing: false,
+            });
+        }
+    }
+    state.players[1].team = state.players[0].team.wrapping_add(1);
+    let index = indexed(&state);
+    let mut compared = 0;
+    for unit in state.units() {
+        for reach in [Fx::ZERO, Fx::lit("1.5"), Fx::lit("4.25")] {
+            for (dx, dy) in [(0, 0), (3, -2), (-5, 1), (2, 6)] {
+                let center = unit.pos + Vec2Fx::new(Fx::from_num(dx) / 2, Fx::from_num(dy) / 2);
+                let pressure = Pressure::new(&state, &index, unit.id, center, reach);
+                let reference = scanned(&state, unit.id, center, reach);
+                assert_eq!(
+                    kept(&pressure, &state),
+                    reference,
+                    "{:?} at {center:?}",
+                    unit.id
+                );
+                compared += reference.len();
+            }
+        }
+    }
+    assert!(compared > 1000, "too few neighbors compared: {compared}");
+}
+
+/// Lazy admission must choose what the chooser picks among the admitted
+/// candidates alone, searching the same routes in the same order, while
+/// asking about fewer candidates when the first admitted one is free.
+#[test]
+fn lazily_admitted_choices_match_choices_among_admitted_candidates() {
+    let mut state = Scenario::skirmish().build().unwrap();
+    state.units.clear();
+    let site = state.place_site(
+        PlayerId(0),
+        crate::stats::BuildingKind::Fabricator,
+        TilePos::new(15, 7),
+    );
+    let asker = state.spawn_unit(
+        PlayerId(0),
+        UnitKind::Harvester,
+        TilePos::new(10, 8).center(),
+    );
+    let b = state.building(site).unwrap().clone();
+    let unit = state.unit(asker).unwrap().clone();
+    let clearance = crate::tick::brain::contact::clearance(&unit);
+    let surface = state.contact_surface(&b);
+    let positions: Vec<Position> = crate::geometry::work_positions(
+        b.anchor,
+        b.kind.size(),
+        clearance,
+        unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
+    )
+    .into_iter()
+    .map(|entry| Position {
+        goal: crate::geometry::work_tile(entry, unit.pos, b.center()),
+        point: surface.stance(entry, clearance),
+    })
+    .collect();
+    for position in &positions[..3] {
+        let builder = state.spawn_unit(PlayerId(0), UnitKind::Harvester, position.point);
+        state.unit_mut(builder).unwrap().order = crate::Order::Build { site };
+    }
+    let index = indexed(&state);
+    let center = b.center();
+    let slot = |p: &Position| {
+        positions
+            .iter()
+            .position(|q| q.goal == p.goal && q.point == p.point)
+            .expect("a listed position")
+    };
+    let route = |goal: TilePos| (goal.x + goal.y % 3 != 17).then(|| vec![goal]);
+    let mut rng = chassis::rng::Pcg32::new(11, 5);
+    let mut masks = vec![0, 0b1, 0b1010_1010, !0b111, !0, !0 >> 30];
+    masks.extend((0..40).map(|_| rng.next_u64()));
+    let mut waited = 0;
+    for mask in masks {
+        let admit = |p: &Position| mask >> slot(p) & 1 == 0;
+        let mut eager_routes = Vec::new();
+        let eager = choose(
+            &state,
+            &index,
+            asker,
+            positions.iter().copied().filter(admit).collect(),
+            center,
+            |tile| state.passable(tile),
+            |goal| {
+                eager_routes.push(goal);
+                route(goal)
+            },
+        );
+        let mut lazy_routes = Vec::new();
+        let asked = std::cell::Cell::new(0);
+        let lazy = choose_admitted(
+            &state,
+            &index,
+            asker,
+            positions.clone(),
+            center,
+            |tile| state.passable(tile),
+            |p| {
+                asked.set(asked.get() + 1);
+                admit(p)
+            },
+            |goal| {
+                lazy_routes.push(goal);
+                route(goal)
+            },
+        );
+        assert_eq!(lazy, eager, "mask {mask:#x}");
+        assert_eq!(lazy_routes, eager_routes, "mask {mask:#x}");
+        waited += usize::from(
+            lazy.as_ref()
+                .is_some_and(|path| !positions.iter().any(|p| Some(p.point) == path.final_point)),
+        );
+        if mask == 0 {
+            assert!(asked.get() < positions.len() / 2, "asked {}", asked.get());
+        }
+    }
+    assert!(waited > 0, "no choice fell back to a waiting position");
 }
