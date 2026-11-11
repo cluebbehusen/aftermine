@@ -1154,8 +1154,8 @@ impl Unit {
     }
 
     /// Abandons the whole program. Overrides use it, and so do the stalls a
-    /// queued program must not outlive: a refused chase, an empty bank, or
-    /// a full sling.
+    /// queued program must not outlive: a refused chase the player ordered,
+    /// an empty bank, or a full sling.
     pub(crate) fn clear_program(&mut self) {
         self.order = Order::Idle;
         self.queue.clear();

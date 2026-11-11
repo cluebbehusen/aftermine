@@ -8,9 +8,9 @@
 
 use super::goals::ring;
 use super::spatial::UnitIndex;
-use crate::ids::{PlayerId, UnitId};
+use crate::ids::{BuildingId, PlayerId, UnitId};
 use crate::state::{Order, State};
-use crate::stats::Domain;
+use crate::stats::{Domain, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::{CARDINALS, TilePos};
 use std::collections::BTreeMap;
@@ -45,6 +45,9 @@ pub(super) struct Reach {
     /// Movement layer and owner of each unit slot that is parked for crowd
     /// purposes.
     parked: Vec<Option<(Domain, PlayerId)>>,
+    /// Whether a unit of a kind, on ground labelled so, reaches a stand to
+    /// fight a structure from.
+    stands: BTreeMap<(BuildingId, UnitKind, LabelSet), bool>,
 }
 
 fn domain_key(domain: Domain) -> u8 {
@@ -106,6 +109,7 @@ impl Reach {
             endpoints: BTreeMap::new(),
             crowds: BTreeMap::new(),
             parked,
+            stands: BTreeMap::new(),
         }
     }
 
@@ -116,6 +120,41 @@ impl Reach {
         self.wide.clear();
         self.endpoints
             .retain(|&(layer, ..), _| layer == Layer::Air.key());
+        self.stands.clear();
+    }
+
+    /// Whether unit `id` reaches a stand to fight `building` from, as `scan`
+    /// finds; every unit of its kind on its ground shares the answer for the
+    /// phase, so a formation scans once.
+    pub(super) fn reaches_stand(
+        &mut self,
+        state: &State,
+        id: UnitId,
+        building: BuildingId,
+        scan: impl FnOnce(&mut Self) -> bool,
+    ) -> bool {
+        let Some(unit) = state.unit(id) else {
+            return false;
+        };
+        let (kind, from) = (unit.kind, unit.tile());
+        let labels = layer_labels(
+            &mut self.ground,
+            &mut self.air,
+            &mut self.wide,
+            state,
+            Layer::of(unit),
+        );
+        let (width, height) = (state.map.width(), state.map.height());
+        if from.x < 0 || from.y < 0 || from.x >= width || from.y >= height {
+            return false;
+        }
+        let set = label_set(&|tile| label_at(labels, width, height, tile), from);
+        if let Some(&known) = self.stands.get(&(building, kind, set)) {
+            return known;
+        }
+        let found = scan(self);
+        self.stands.insert((building, kind, set), found);
+        found
     }
 
     /// The tile unit `id` should route to for `target`: the target itself

@@ -183,7 +183,11 @@ one active `Order`, a bounded FIFO queue and a `looping` flag:
   it, reports `OrderStalled { NoRoute }` once unless the program loops, and the
   program continues;
 - any other order that cannot be routed drops only itself, except that a refused
-  chase, an empty bank or a full sling clears the whole program;
+  chase the player ordered, an empty bank or a full sling clears the whole
+  program;
+- a unit passes over a victim it would pick for itself when it can neither fire
+  on it now nor route to it, and a fight its hunt, patrol or escort picked that
+  stops reaching ends quietly, the march, patrol or escort going on;
 - `CancelOrder` removes one order, named by its `OrderKey` and counted from the
   end of each unit's program, so legs finished while the command is in flight
   never change which order goes. An unstarted site whose last Build order goes

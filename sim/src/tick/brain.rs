@@ -198,22 +198,15 @@ pub(super) fn run(
         if super::movement::clear_occupied_ground(state, id) {
             continue;
         }
-        let mounted = state
-            .unit(id)
-            .expect("live unit")
-            .kind
-            .stats()
-            .mounts
-            .is_some();
-        let automatic = matches!(
-            state.unit(id).expect("live unit").order,
-            Order::Idle | Order::Hunt { .. }
-        );
+        let unit = state.unit(id).expect("live unit");
+        let mounted = unit.kind.stats().mounts.is_some();
+        let automatic = matches!(unit.order, Order::Idle | Order::Hunt { .. });
         let mut acquired = None;
         if automatic
             && combat::automatic_radar(
                 state,
                 index,
+                &mut reach,
                 id,
                 false,
                 events,

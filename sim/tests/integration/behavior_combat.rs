@@ -1940,3 +1940,154 @@ fn an_advancing_gun_breaks_a_distance_tie_by_bearing_not_id() {
         );
     }
 }
+
+/// An open field where a hostile Harvester at (20, 6) stands inside a ring
+/// of rock `ring` tiles out: nothing outside can reach it, and rock blocks
+/// every ground shot.
+fn sealed_victim(
+    ring: i32,
+    units: Vec<aftermine_sim::scenario::UnitSpec>,
+) -> (aftermine_sim::State, UnitId) {
+    let mut units = units;
+    units.push(unit(1, UnitKind::Harvester, 20, 6));
+    let mut state = open_arena_with(40, 20, units, |rows| {
+        for y in 6 - ring..=6 + ring {
+            for x in 20 - ring..=20 + ring {
+                if (x - 20).abs() == ring || (y - 6).abs() == ring {
+                    rows[usize::try_from(y).unwrap()][usize::try_from(x).unwrap()] = '#';
+                }
+            }
+        }
+    })
+    .build()
+    .unwrap();
+    let sealed = state.units().last().unwrap().id;
+    state.tick(&[]);
+    (state, sealed)
+}
+
+#[test]
+fn a_hunt_passes_over_a_victim_it_can_neither_shoot_nor_reach_and_keeps_its_program() {
+    // At y = 10 the march passes out of reach; at y = 8 it passes 2 tiles
+    // off, in reach but with rock across the line.
+    for row in [10, 8] {
+        let (mut state, sealed) = sealed_victim(1, vec![unit(0, UnitKind::Sentinel, 5, row)]);
+        let hunter = state.units()[0].id;
+        let full = state.unit(sealed).unwrap().hp;
+        state.tick(&[
+            cmd(
+                0,
+                Command::Hunt {
+                    units: vec![hunter],
+                    goal: TilePos::new(34, row),
+                    queue: false,
+                },
+            ),
+            cmd(
+                0,
+                Command::Run {
+                    units: vec![hunter],
+                    goal: TilePos::new(34, 15),
+                    queue: true,
+                },
+            ),
+        ]);
+        let events = run_until(&mut state, 1200, |s, _| {
+            s.unit(hunter).unwrap().tile() == TilePos::new(34, 15)
+        });
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::OrderStalled { unit, .. } if *unit == hunter)),
+            "row {row}: the march and its queued Run carried on"
+        );
+        assert_eq!(state.unit(sealed).unwrap().hp, full);
+    }
+}
+
+#[test]
+fn an_ordered_attack_on_a_victim_no_route_reaches_still_refuses() {
+    // Every stand within the Sentinel's reach lies inside the ring; the
+    // Kestrel spots the victim so the order validates.
+    let (mut state, sealed) = sealed_victim(
+        4,
+        vec![
+            unit(0, UnitKind::Sentinel, 20, 13),
+            unit(0, UnitKind::Kestrel, 20, 8),
+        ],
+    );
+    let hunter = state.units()[0].id;
+    // The refusal can come on the command's own tick.
+    let mut events = state
+        .tick(&[cmd(
+            0,
+            Command::Attack {
+                units: vec![hunter],
+                target: Target::Unit(sealed).into(),
+                queue: false,
+            },
+        )])
+        .events;
+    events.extend(run(&mut state, 100));
+    assert!(
+        events.iter().any(|e| {
+            matches!(e, Event::OrderStalled { unit, reason: aftermine_sim::StallReason::NoRoute, .. }
+                if *unit == hunter)
+        }),
+        "Can't reach that"
+    );
+}
+
+#[test]
+fn an_escort_beside_a_victim_behind_rock_keeps_its_slot() {
+    let (mut state, _) = sealed_victim(
+        1,
+        vec![
+            unit(0, UnitKind::Harvester, 20, 9),
+            unit(0, UnitKind::Sentinel, 20, 8),
+        ],
+    );
+    let (lead, guard) = (state.units()[0].id, state.units()[1].id);
+    state.tick(&[cmd(
+        0,
+        Command::Accompany {
+            units: vec![guard],
+            target: lead,
+            queue: false,
+        },
+    )]);
+    run(&mut state, 30);
+    for _ in 0..300 {
+        state.tick(&[]);
+        assert!(
+            matches!(state.unit(guard).unwrap().order, Order::Accompany { unit, .. } if unit == lead),
+            "the escort never takes up a fight it cannot have"
+        );
+    }
+}
+
+#[test]
+fn a_gun_still_takes_on_a_structure_it_can_shell_from_across_a_pit() {
+    // Pits stop feet, not fire: the Breaker walks to the rim and shells the
+    // Fabricator on the far bank.
+    let mut scenario = open_arena_with(40, 20, vec![unit(0, UnitKind::Breaker, 8, 6)], |rows| {
+        for row in rows.iter_mut().take(19).skip(1) {
+            row[12] = '~';
+            row[13] = '~';
+        }
+    });
+    scenario
+        .buildings
+        .push(common::building(1, BuildingKind::Fabricator, 14, 6));
+    let mut state = scenario.build().unwrap();
+    let fabricator = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Fabricator)
+        .unwrap()
+        .id;
+    let full = state.building(fabricator).unwrap().hp;
+    run_until(&mut state, 600, |s, _| {
+        s.building(fabricator).is_none_or(|b| b.hp < full)
+    });
+}
