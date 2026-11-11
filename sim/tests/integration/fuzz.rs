@@ -2,8 +2,9 @@
 //! it must survive hostile input (garbage ids, repeated ids, out-of-range
 //! players, coordinates at the integer extremes, queues driven past their
 //! caps) without panicking, while every state it reaches along the way
-//! still satisfies [`aftermine_sim::State::validate_invariants`], and the same
-//! seeded garbage must produce the same bits on every run.
+//! still satisfies [`aftermine_sim::State::validate_invariants`], a tick
+//! that refuses every command leaves the world where an idle tick would,
+//! and the same seeded garbage must produce the same bits on every run.
 //!
 //! Two properties of how the garbage is made are load-bearing. The
 //! generator is exhaustive over [`Command`]: a new verb stops this file
@@ -13,9 +14,9 @@
 //!
 //! Budget: [`SEEDS`] seeds x [`TICKS`] ticks, each seed run twice for the
 //! reproducibility comparison and fanned across threads like the map
-//! sweeps, with the checklist sampled every [`SAMPLE`] ticks. `FUZZ_SEEDS`
-//! raises the seed count for a soak run without renumbering the default
-//! set.
+//! sweeps, with the checklist sampled every [`SAMPLE`] ticks and refusals
+//! every [`REFUSAL_SAMPLE`]. `FUZZ_SEEDS` raises the seed count for a soak
+//! run without renumbering the default set.
 
 use crate::common;
 
@@ -36,91 +37,57 @@ const SEEDS: u64 = 32;
 /// How often the integrity checklist runs. Cheap (entities, not tiles),
 /// but not free across a third of a million ticks.
 const SAMPLE: u64 = 50;
+/// How often a tick is checked against an idle tick, which costs a clone
+/// and a second tick.
+const REFUSAL_SAMPLE: u64 = 10;
 /// The seed the whole sweep is derived from.
 const BASE_SEED: u64 = 0xF022_DEC0DE;
 /// A bank no real match approaches; a `u32` refund that wrapped would land
 /// three orders of magnitude past it.
 const SCRAP_CEILING: u32 = 1 << 24;
 
-/// Every [`Command`] variant, as a value the generator can draw.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CommandTag {
-    Run,
-    Attack,
-    Hunt,
-    Harvest,
-    Patrol,
-    Stop,
-    Train,
-    Build,
-    Cancel,
-    Repair,
-    Salvage,
-    CancelTrain,
-    SetRally,
-    Surrender,
-    RepairUnit,
-    Advance,
-    FocusFire,
-    CancelFound,
-    UpgradeBuilding,
-    Load,
-    Unload,
-    ClearFocus,
-    ReturnCargo,
-    CancelOrder,
-    Accompany,
-    Retire,
-    Scout,
-    OrderRound,
-    CancelRound,
-    SetAutofill,
-    Launch,
-    OrderDrone,
-    CancelDrone,
-    SetDroneAutofill,
-    SetIdleWeld,
+chassis::listed_enum! {
+    /// Every [`Command`] variant, as a value the generator can draw. `ALL`
+    /// is the draw pool, so no tag can be left out of it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum CommandTag {
+        Run,
+        Attack,
+        Hunt,
+        Harvest,
+        Patrol,
+        Stop,
+        Train,
+        Build,
+        Cancel,
+        Repair,
+        Salvage,
+        CancelTrain,
+        SetRally,
+        Surrender,
+        RepairUnit,
+        Advance,
+        FocusFire,
+        CancelFound,
+        UpgradeBuilding,
+        Load,
+        Unload,
+        ClearFocus,
+        ReturnCargo,
+        CancelOrder,
+        Accompany,
+        Retire,
+        Scout,
+        OrderRound,
+        CancelRound,
+        SetAutofill,
+        Launch,
+        OrderDrone,
+        CancelDrone,
+        SetDroneAutofill,
+        SetIdleWeld,
+    }
 }
-
-/// The draw pool. Paired with the exhaustive matches below, the array and
-/// the variant list cannot drift apart, so no verb silently goes unfuzzed.
-const COMMAND_TAGS: [CommandTag; 35] = [
-    CommandTag::Run,
-    CommandTag::Attack,
-    CommandTag::Hunt,
-    CommandTag::Harvest,
-    CommandTag::Patrol,
-    CommandTag::Stop,
-    CommandTag::Train,
-    CommandTag::Build,
-    CommandTag::Cancel,
-    CommandTag::Repair,
-    CommandTag::Salvage,
-    CommandTag::CancelTrain,
-    CommandTag::SetRally,
-    CommandTag::Surrender,
-    CommandTag::RepairUnit,
-    CommandTag::Advance,
-    CommandTag::FocusFire,
-    CommandTag::CancelFound,
-    CommandTag::UpgradeBuilding,
-    CommandTag::Load,
-    CommandTag::Unload,
-    CommandTag::ClearFocus,
-    CommandTag::ReturnCargo,
-    CommandTag::CancelOrder,
-    CommandTag::Accompany,
-    CommandTag::Retire,
-    CommandTag::Scout,
-    CommandTag::OrderRound,
-    CommandTag::CancelRound,
-    CommandTag::SetAutofill,
-    CommandTag::Launch,
-    CommandTag::OrderDrone,
-    CommandTag::CancelDrone,
-    CommandTag::SetDroneAutofill,
-    CommandTag::SetIdleWeld,
-];
 
 /// How rarely a drawn [`CommandTag::Surrender`] is kept: one landed
 /// surrender from a real seat freezes the rest of that seed's run
@@ -130,49 +97,6 @@ const COMMAND_TAGS: [CommandTag; 35] = [
 /// budget while the sweep still exercises concession and the frozen
 /// world behind it.
 const SURRENDER_KEEP_ODDS: u32 = 2_048;
-
-/// Contiguous indices, one arm per tag — the other half of the forcing
-/// chain: a tag [`COMMAND_TAGS`] forgot fails the coverage test instead of
-/// quietly never being drawn.
-fn tag_index(tag: CommandTag) -> usize {
-    match tag {
-        CommandTag::Run => 0,
-        CommandTag::Attack => 1,
-        CommandTag::Hunt => 2,
-        CommandTag::Harvest => 3,
-        CommandTag::Patrol => 4,
-        CommandTag::Stop => 5,
-        CommandTag::Train => 6,
-        CommandTag::Build => 7,
-        CommandTag::Cancel => 8,
-        CommandTag::Repair => 9,
-        CommandTag::Salvage => 10,
-        CommandTag::CancelTrain => 11,
-        CommandTag::SetRally => 12,
-        CommandTag::Surrender => 13,
-        CommandTag::RepairUnit => 14,
-        CommandTag::Advance => 15,
-        CommandTag::FocusFire => 16,
-        CommandTag::CancelFound => 17,
-        CommandTag::UpgradeBuilding => 18,
-        CommandTag::Load => 19,
-        CommandTag::Unload => 20,
-        CommandTag::ClearFocus => 21,
-        CommandTag::ReturnCargo => 22,
-        CommandTag::CancelOrder => 23,
-        CommandTag::Accompany => 24,
-        CommandTag::Retire => 25,
-        CommandTag::Scout => 26,
-        CommandTag::OrderRound => 27,
-        CommandTag::CancelRound => 28,
-        CommandTag::SetAutofill => 29,
-        CommandTag::Launch => 30,
-        CommandTag::OrderDrone => 31,
-        CommandTag::CancelDrone => 32,
-        CommandTag::SetDroneAutofill => 33,
-        CommandTag::SetIdleWeld => 34,
-    }
-}
 
 /// One arm per [`Command`] variant: adding a verb breaks the build here.
 fn tag_of(command: &Command) -> CommandTag {
@@ -212,104 +136,6 @@ fn tag_of(command: &Command) -> CommandTag {
         Command::CancelDrone { .. } => CommandTag::CancelDrone,
         Command::SetDroneAutofill { .. } => CommandTag::SetDroneAutofill,
         Command::SetIdleWeld { .. } => CommandTag::SetIdleWeld,
-    }
-}
-
-/// The whole roster — `apply_train` owes every one of them a verdict.
-/// Exhaustive by the same rule as the verbs.
-const UNIT_KINDS: [UnitKind; 22] = [
-    UnitKind::Harvester,
-    UnitKind::Sentinel,
-    UnitKind::Scuttler,
-    UnitKind::Lancer,
-    UnitKind::Bombard,
-    UnitKind::Flakhound,
-    UnitKind::Buzzard,
-    UnitKind::Talon,
-    UnitKind::Warden,
-    UnitKind::Excavator,
-    UnitKind::Kestrel,
-    UnitKind::Condor,
-    UnitKind::Breaker,
-    UnitKind::Avalanche,
-    UnitKind::Skyhook,
-    UnitKind::Sapper,
-    UnitKind::Mantle,
-    UnitKind::Piledriver,
-    UnitKind::Surveyor,
-    UnitKind::Maw,
-    UnitKind::Roc,
-    UnitKind::Drone,
-];
-
-fn unit_kind_index(kind: UnitKind) -> usize {
-    match kind {
-        UnitKind::Harvester => 0,
-        UnitKind::Sentinel => 1,
-        UnitKind::Scuttler => 2,
-        UnitKind::Lancer => 3,
-        UnitKind::Bombard => 4,
-        UnitKind::Flakhound => 5,
-        UnitKind::Buzzard => 6,
-        UnitKind::Talon => 7,
-        UnitKind::Warden => 8,
-        UnitKind::Excavator => 9,
-        UnitKind::Kestrel => 10,
-        UnitKind::Condor => 11,
-        UnitKind::Breaker => 12,
-        UnitKind::Avalanche => 13,
-        UnitKind::Skyhook => 14,
-        UnitKind::Sapper => 15,
-        UnitKind::Mantle => 16,
-        UnitKind::Piledriver => 17,
-        UnitKind::Surveyor => 18,
-        UnitKind::Maw => 19,
-        UnitKind::Roc => 20,
-        UnitKind::Drone => 21,
-    }
-}
-
-/// Every building kind, frame-bound and tech-gated ones included —
-/// hostile input must aim at all of them.
-const BUILDING_KINDS: [BuildingKind; 17] = [
-    BuildingKind::Foundry,
-    BuildingKind::Turret,
-    BuildingKind::Fabricator,
-    BuildingKind::FlakTurret,
-    BuildingKind::Bastion,
-    BuildingKind::Array,
-    BuildingKind::Reclaimer,
-    BuildingKind::RepairBay,
-    BuildingKind::Extractor,
-    BuildingKind::Airworks,
-    BuildingKind::Crucible,
-    BuildingKind::Barricade,
-    BuildingKind::ScuttleCharge,
-    BuildingKind::Spire,
-    BuildingKind::Lattice,
-    BuildingKind::MawCradle,
-    BuildingKind::RocCradle,
-];
-
-fn building_kind_index(kind: BuildingKind) -> usize {
-    match kind {
-        BuildingKind::Foundry => 0,
-        BuildingKind::Turret => 1,
-        BuildingKind::Fabricator => 2,
-        BuildingKind::FlakTurret => 3,
-        BuildingKind::Bastion => 4,
-        BuildingKind::Array => 5,
-        BuildingKind::Reclaimer => 6,
-        BuildingKind::RepairBay => 7,
-        BuildingKind::Extractor => 8,
-        BuildingKind::Airworks => 9,
-        BuildingKind::Crucible => 10,
-        BuildingKind::Barricade => 11,
-        BuildingKind::ScuttleCharge => 12,
-        BuildingKind::Spire => 13,
-        BuildingKind::Lattice => 14,
-        BuildingKind::MawCradle => 15,
-        BuildingKind::RocCradle => 16,
     }
 }
 
@@ -592,11 +418,11 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
         },
         CommandTag::Train => Command::Train {
             building: building_id(rng, state),
-            kind: UNIT_KINDS[rng.next_index(UNIT_KINDS.len())],
+            kind: UnitKind::ALL[rng.next_index(UnitKind::ALL.len())],
         },
         CommandTag::Build => Command::Build {
             units: units(rng, state),
-            kind: BUILDING_KINDS[rng.next_index(BUILDING_KINDS.len())],
+            kind: BuildingKind::ALL[rng.next_index(BuildingKind::ALL.len())],
             anchor: anchor(rng, state),
             queue: queue(rng),
             defer: false,
@@ -640,7 +466,7 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
             target: target(rng, state),
         },
         CommandTag::CancelFound => Command::CancelFound {
-            kind: BUILDING_KINDS[rng.next_index(BUILDING_KINDS.len())],
+            kind: BuildingKind::ALL[rng.next_index(BuildingKind::ALL.len())],
             anchor: anchor(rng, state),
         },
         CommandTag::UpgradeBuilding => Command::UpgradeBuilding {
@@ -731,14 +557,14 @@ fn generate(tag: CommandTag, rng: &mut Pcg32, state: &State) -> Command {
     }
 }
 
-/// One count per verb, indexed like [`COMMAND_TAGS`]. A newtype only so
+/// One count per verb, indexed like [`CommandTag::ALL`]. A newtype only so
 /// it has a default past the 32 entries arrays implement it for.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Drawn([u64; COMMAND_TAGS.len()]);
+struct Drawn([u64; CommandTag::ALL.len()]);
 
 impl Default for Drawn {
     fn default() -> Self {
-        Self([0; COMMAND_TAGS.len()])
+        Self([0; CommandTag::ALL.len()])
     }
 }
 
@@ -752,6 +578,9 @@ struct Reach {
     sent: u64,
     /// Commands it refused.
     rejected: u64,
+    /// Sampled ticks that refused every command, each compared with an
+    /// idle tick.
+    refusals_checked: u64,
     /// Verbs the generator actually drew.
     drawn: Drawn,
     attack_targets: [u64; 4],
@@ -794,6 +623,7 @@ impl Reach {
     fn absorb(&mut self, other: &Reach) {
         self.sent += other.sent;
         self.rejected += other.rejected;
+        self.refusals_checked += other.refusals_checked;
         for (a, b) in self.drawn.0.iter_mut().zip(other.drawn.0) {
             *a += b;
         }
@@ -1419,8 +1249,8 @@ fn fuzz_run(seed: u64) -> Run {
         let commands: Vec<PlayerCommand> = (0..rng.next_below(4))
             .map(|_| {
                 let drawn = loop {
-                    let d = rng.next_index(COMMAND_TAGS.len());
-                    if COMMAND_TAGS[d] != CommandTag::Surrender
+                    let d = rng.next_index(CommandTag::ALL.len());
+                    if CommandTag::ALL[d] != CommandTag::Surrender
                         || rng.next_below(SURRENDER_KEEP_ODDS) == 0
                     {
                         break d;
@@ -1431,7 +1261,7 @@ fn fuzz_run(seed: u64) -> Run {
                     // Players 0-3 on a two-player map: half the issuers
                     // don't exist.
                     player: PlayerId(u8::try_from(rng.next_below(4)).unwrap()),
-                    command: generate(COMMAND_TAGS[drawn], &mut rng, &state),
+                    command: generate(CommandTag::ALL[drawn], &mut rng, &state),
                 }
             })
             .collect();
@@ -1452,16 +1282,37 @@ fn fuzz_run(seed: u64) -> Run {
 
         let frozen = state.result().is_some();
         let seats = state.players().len();
+        let seated = commands
+            .iter()
+            .filter(|command| usize::from(command.player.0) < seats)
+            .count();
+        let idle =
+            (!frozen && seated > 0 && tick.is_multiple_of(REFUSAL_SAMPLE)).then(|| state.clone());
         let report = state.tick(&commands);
+        // A seated command earns at most one refusal and an unseated one
+        // none, so as many refusals as seated commands means all of them
+        // were refused, and the world must stand where an idle tick leaves
+        // it.
+        let refused = report
+            .events
+            .iter()
+            .filter(|event| matches!(event, Event::CommandRejected { .. }))
+            .count();
+        if let Some(mut idle) = idle
+            && refused == seated
+        {
+            idle.tick(&[]);
+            assert_eq!(
+                state.hash(),
+                idle.hash(),
+                "seed {seed:#x}: tick {tick} refused every command yet changed the world"
+            );
+            reach.refusals_checked += 1;
+        }
         // A refusal does not name its command, so only a tick that refused
         // nothing proves which cancellations landed. Out-of-range issuers
         // and a decided match drop commands without a refusal.
-        if !frozen
-            && !report
-                .events
-                .iter()
-                .any(|event| matches!(event, Event::CommandRejected { .. }))
-        {
+        if !frozen && refused == 0 {
             reach.cancelled_order += commands
                 .iter()
                 .filter(|command| {
@@ -1658,6 +1509,10 @@ fn seeded_garbage_never_panics_and_reproduces() {
         reach.sent
     );
     assert!(
+        reach.refusals_checked > 0,
+        "the sweep must compare a fully refused tick with an idle one"
+    );
+    assert!(
         reach.drawn.0.iter().all(|n| *n > 0),
         "a verb was never drawn: {:?}",
         reach.drawn
@@ -1748,14 +1603,14 @@ fn tiered_garbage_never_panics_and_reproduces() {
             let commands: Vec<PlayerCommand> = (0..rng.next_below(4))
                 .map(|_| {
                     let drawn = loop {
-                        let d = rng.next_index(COMMAND_TAGS.len());
-                        if COMMAND_TAGS[d] != CommandTag::Surrender {
+                        let d = rng.next_index(CommandTag::ALL.len());
+                        if CommandTag::ALL[d] != CommandTag::Surrender {
                             break d;
                         }
                     };
                     PlayerCommand {
                         player: PlayerId(u8::try_from(rng.next_below(2)).unwrap()),
-                        command: generate(COMMAND_TAGS[drawn], &mut rng, &state),
+                        command: generate(CommandTag::ALL[drawn], &mut rng, &state),
                     }
                 })
                 .collect();
@@ -1777,43 +1632,18 @@ fn tiered_garbage_never_panics_and_reproduces() {
     }
 }
 
-/// The forcing chain, stated as a test: the draw pool is the whole tag
-/// list, and every tag generates the verb it names. A new [`Command`]
-/// variant stops `tag_of` compiling; its tag stops `tag_index` compiling;
-/// a tag missing from [`COMMAND_TAGS`] fails here.
+/// Every tag generates the verb it names. A new [`Command`] variant stops
+/// `tag_of` compiling until it has a tag, and its tag stops `generate`
+/// compiling until it is fuzzed.
 #[test]
 fn every_command_variant_is_generated() {
-    let mut covered: Vec<usize> = COMMAND_TAGS.into_iter().map(tag_index).collect();
-    covered.sort_unstable();
-    assert_eq!(
-        covered,
-        (0..COMMAND_TAGS.len()).collect::<Vec<_>>(),
-        "the draw pool is not the tag list"
-    );
-
     let state = arena();
     let mut rng = Pcg32::new(BASE_SEED, 7);
-    for tag in COMMAND_TAGS {
+    for tag in CommandTag::ALL {
         assert_eq!(
             tag_of(&generate(tag, &mut rng, &state)),
             tag,
             "{tag:?} generates a different verb"
         );
     }
-}
-
-/// The roster lists carry the same obligation as the verb list: a new
-/// unit or building kind stops this file compiling until the fuzzer
-/// offers it.
-#[test]
-fn every_kind_is_offered() {
-    let mut units: Vec<usize> = UNIT_KINDS.into_iter().map(unit_kind_index).collect();
-    units.sort_unstable();
-    assert_eq!(units, (0..UNIT_KINDS.len()).collect::<Vec<_>>());
-    let mut buildings: Vec<usize> = BUILDING_KINDS
-        .into_iter()
-        .map(building_kind_index)
-        .collect();
-    buildings.sort_unstable();
-    assert_eq!(buildings, (0..BUILDING_KINDS.len()).collect::<Vec<_>>());
 }

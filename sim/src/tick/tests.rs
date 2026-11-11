@@ -740,57 +740,16 @@ fn pair_new_calibration_units(state: &State, unit_pairs: &mut Vec<(crate::UnitId
     }
 }
 
-fn run_calibration_open_tick(
+/// Ticks `state` and holds the mirrored seats to each other once it ends.
+fn tick_mirrored(
     state: &mut State,
     commands_for_tick: &[PlayerCommand],
     unit_pairs: &mut Vec<(crate::UnitId, crate::UnitId)>,
 ) {
     let tick = state.tick;
-    let mut events = Vec::new();
-    let mut index = spatial::UnitIndex::new();
-    let stage = |phase| format!("tick {tick} {phase}");
-
-    production::capture_recovery_entitlements(state);
-    commands::apply(state, commands_for_tick, &mut events);
-    assert_calibration_open_symmetry(&stage("commands"), state, unit_pairs);
-    production::run(state, &mut events);
+    state.tick(commands_for_tick);
     pair_new_calibration_units(state, unit_pairs);
-    assert_calibration_open_symmetry(&stage("production"), state, unit_pairs);
-    charges::cancel_discovered(state, &mut events);
-    production::decay_abandoned_sites(state);
-    let brain::BrainOutcome {
-        boardings: pending,
-        salvaged,
-        assembled,
-        docks,
-    } = brain::run(state, &mut index, &mut events);
-    assert_calibration_open_symmetry(&stage("brains"), state, unit_pairs);
-    brain::logistics::resolve(state, pending, &mut events);
-    assembly::stand_up(state, &assembled, &mut events);
-    drones::resolve(state, &docks, &mut events);
-    assert_calibration_open_symmetry(&stage("logistics"), state, unit_pairs);
-    movement::evict_claimed_ground(state);
-    let air_positions = aircraft_crashes::capture_positions(state);
-    let (travel, _) = movement::run(state);
-    assert_calibration_open_symmetry(&stage("movement"), state, unit_pairs);
-    movement::resolve_collisions(state, &travel, &mut index);
-    assert_calibration_open_symmetry(&stage("collisions"), state, unit_pairs);
-    aircraft_crashes::remember_motion(state, &air_positions);
-    aircraft_crashes::land(state, &mut events);
-    charges::detonate_under_units(state, &mut events);
-    cleanup(state, &salvaged, &mut events);
-    if state.tick.is_multiple_of(crate::stats::WRECK_DECAY_TICKS) {
-        state.map.decay_wrecks();
-    }
-    state.refresh_vision();
-    if charges::cancel_discovered(state, &mut events) {
-        state.reconcile_attack_knowledge();
-    }
-    goals::expose(state);
-    assert_calibration_open_symmetry(&stage("exposure"), state, unit_pairs);
-    victory(state, &mut events);
-    assert_calibration_open_symmetry(&stage("cleanup"), state, unit_pairs);
-    state.tick += 1;
+    assert_calibration_open_symmetry(&format!("tick {tick}"), state, unit_pairs);
 }
 
 #[test]
@@ -1155,7 +1114,7 @@ fn mirrored_six_unit_hunt_spreads_in_each_armys_local_frame() {
     ];
 
     assert_calibration_open_symmetry("before group order", &state, &unit_pairs);
-    run_calibration_open_tick(&mut state, &commands, &mut unit_pairs);
+    tick_mirrored(&mut state, &commands, &mut unit_pairs);
 }
 
 #[test]
@@ -1237,7 +1196,7 @@ fn mirrored_groups_sent_beyond_sight_take_mirrored_slots_on_exposure() {
         other => panic!("unit {id} left its march: {other:?}"),
     };
 
-    run_calibration_open_tick(&mut state, &commands, &mut unit_pairs);
+    tick_mirrored(&mut state, &commands, &mut unit_pairs);
     for (rank, id) in groups[0].into_iter().enumerate() {
         let goal = goal(&state, id).expect("marching");
         assert_eq!(goal.target(), clicked, "every member heads for the click");
@@ -1246,7 +1205,7 @@ fn mirrored_groups_sent_beyond_sight_take_mirrored_slots_on_exposure() {
 
     let mut exposed = None;
     for _ in 0..400 {
-        run_calibration_open_tick(&mut state, &[], &mut unit_pairs);
+        tick_mirrored(&mut state, &[], &mut unit_pairs);
         let goals: Vec<_> = groups[0].iter().map(|&id| goal(&state, id)).collect();
         if exposed.is_none() && goals.iter().flatten().all(|goal| !goal.is_pending()) {
             exposed = Some(goals);

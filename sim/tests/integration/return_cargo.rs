@@ -1,12 +1,13 @@
 //! Explicit deliveries replace work and finish at the chosen Foundry.
 use crate::common;
 
+use aftermine_sim::command::RejectReason;
 use aftermine_sim::{
     BuildingId, BuildingKind, Command, Event, Order, PlayerId, State, UnitId, UnitKind,
 };
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use common::{cmd, open_arena, open_arena_with, run_until, unit};
+use common::{assert_refused, cmd, open_arena, open_arena_with, run_until, unit};
 use serde_json::json;
 
 fn loaded(kind: UnitKind) -> (State, UnitId, BuildingId) {
@@ -171,23 +172,22 @@ fn return_cargo_refusals_preserve_the_existing_program_and_cargo() {
         .find(|b| b.player == PlayerId(1))
         .unwrap()
         .id;
-    for command in [
-        delivery(worker, Some(foreign), false),
-        delivery(worker, Some(BuildingId(u32::MAX)), false),
-        delivery(worker, None, true),
-        delivery(UnitId(u32::MAX), Some(own), false),
+    for (command, reason) in [
+        (
+            delivery(worker, Some(foreign), false),
+            RejectReason::NotYourBuilding,
+        ),
+        (
+            delivery(worker, Some(BuildingId(u32::MAX)), false),
+            RejectReason::NotYourBuilding,
+        ),
+        (delivery(worker, None, true), RejectReason::InvalidTarget),
+        (
+            delivery(UnitId(u32::MAX), Some(own), false),
+            RejectReason::NoValidUnits,
+        ),
     ] {
-        let mut rejected = state.clone();
-        let mut control = state.clone();
-        let report = rejected.tick(&[cmd(0, command)]);
-        assert!(
-            report
-                .events
-                .iter()
-                .any(|e| matches!(e, Event::CommandRejected { .. }))
-        );
-        control.tick(&[]);
-        assert_eq!(control.hash(), rejected.hash());
+        assert_refused(&mut state, cmd(0, command), reason);
     }
 }
 
@@ -221,17 +221,11 @@ fn return_cargo_skips_a_sealed_near_foundry_and_honors_explicit_destinations() {
     let mut data = serde_json::to_value(&state).unwrap();
     data["units"][0]["worker"]["carrying"] = json!(5);
     let mut state: State = serde_json::from_value(data).unwrap();
-    let mut control = state.clone();
-    let report = state.tick(&[cmd(0, delivery(worker, Some(near), false))]);
-    assert!(report.events.iter().any(|e| matches!(
-        e,
-        Event::CommandRejected {
-            reason: aftermine_sim::command::RejectReason::UnreachableGoal,
-            ..
-        }
-    )));
-    control.tick(&[]);
-    assert_eq!(control.hash(), state.hash());
+    assert_refused(
+        &mut state,
+        cmd(0, delivery(worker, Some(near), false)),
+        RejectReason::UnreachableGoal,
+    );
     accepted(&state.tick(&[cmd(0, delivery(worker, None, false))]).events);
     assert!(
         matches!(state.unit(worker).unwrap().order, Order::ReturnCargo { foundry, .. } if foundry == far)
@@ -399,7 +393,10 @@ fn return_cargo_honors_a_far_explicit_foundry_and_saturates_the_bank() {
 
 #[test]
 fn return_cargo_refuses_empty_workers_and_unfinished_foundries_without_changing_work() {
-    for empty in [false, true] {
+    for (empty, reason) in [
+        (false, RejectReason::UnreachableGoal),
+        (true, RejectReason::NoValidUnits),
+    ] {
         let (state, worker, _) = loaded(UnitKind::Harvester);
         let mut data = serde_json::to_value(&state).unwrap();
         if empty {
@@ -409,16 +406,7 @@ fn return_cargo_refuses_empty_workers_and_unfinished_foundries_without_changing_
             data["buildings"][0]["hp"] = json!(1);
         }
         let mut state: State = serde_json::from_value(data).unwrap();
-        let mut control = state.clone();
-        let report = state.tick(&[cmd(0, delivery(worker, None, false))]);
-        assert!(
-            report
-                .events
-                .iter()
-                .any(|e| matches!(e, Event::CommandRejected { .. }))
-        );
-        control.tick(&[]);
-        assert_eq!(state.hash(), control.hash());
+        assert_refused(&mut state, cmd(0, delivery(worker, None, false)), reason);
     }
 }
 

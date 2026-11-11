@@ -5,7 +5,7 @@
 //! that no other job is ever interrupted.
 
 use crate::common;
-use common::{cmd, open_arena, open_arena_with, run, run_until, unit};
+use common::{assert_refused, cmd, open_arena, open_arena_with, run, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::UnitSpec;
@@ -215,17 +215,8 @@ fn the_idle_switch_refuses_a_selection_with_any_foreign_or_unfit_unit() {
         (vec![worker, foreign], RejectReason::NoValidUnits),
         (vec![worker, sentinel], RejectReason::InvalidTarget),
     ] {
-        let mut quiet = state.clone();
-        quiet.tick(&[]);
-        let events = state.tick(&[cmd(0, idle_weld(units, false))]).events;
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, Event::CommandRejected { reason: r, .. } if *r == reason)),
-            "{reason:?}"
-        );
+        assert_refused(&mut state, cmd(0, idle_weld(units, false)), reason);
         assert!(state.unit(worker).unwrap().idle_weld(), "all or none");
-        assert_eq!(state.hash(), quiet.hash(), "a refusal changes nothing");
     }
 }
 

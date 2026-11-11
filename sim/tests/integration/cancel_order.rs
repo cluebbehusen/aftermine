@@ -3,7 +3,7 @@
 //! while the command is in flight never change which order goes.
 
 use crate::common;
-use common::{arena, cmd, run_until, unit};
+use common::{arena, assert_refused, cmd, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
@@ -95,23 +95,6 @@ fn cancel(unit: UnitId, key: OrderKey, from_end: u8, units: &[UnitId]) -> Player
             units: units.to_vec(),
         },
     )
-}
-
-fn rejection(events: &[Event]) -> Option<RejectReason> {
-    events.iter().find_map(|event| match event {
-        Event::CommandRejected { reason, .. } => Some(*reason),
-        _ => None,
-    })
-}
-
-/// Ticks `state` with `command`, asserting the refusal and that the world
-/// ends exactly where an empty tick leaves it.
-fn assert_refused(state: &mut State, command: PlayerCommand, reason: RejectReason) {
-    let mut control = state.clone();
-    control.tick(&[]);
-    let report = state.tick(&[command]);
-    assert_eq!(rejection(&report.events), Some(reason));
-    assert_eq!(state.hash(), control.hash(), "a refusal changes nothing");
 }
 
 #[test]
