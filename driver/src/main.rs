@@ -70,21 +70,13 @@ enum Cmd {
         stall_loop_limit: u64,
         /// Consecutive seed cells per scenario for player-facing profile
         /// comparisons.
-        #[arg(
-            long,
-            default_value_t = 1,
-            value_parser = clap::value_parser!(u64).range(1..),
-            conflicts_with_all = ["personality_seeds", "geometries"]
-        )]
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u64).range(1..))]
         runs: u64,
         /// First personality seed. Seats and subsequent runs receive
         /// deterministic seeds; use `--same-personality-seed` to consume one
         /// shared seed per two-seat run.
-        #[arg(long, conflicts_with = "personality_seeds")]
+        #[arg(long)]
         personality_seed_base: Option<u64>,
-        /// Exact player-facing personality seeds for a controlled comparison.
-        #[arg(long, value_delimiter = ',', conflicts_with = "personality_seed_base")]
-        personality_seeds: Vec<u64>,
         /// Player-facing skill rung.
         #[arg(long, default_value_t = aftermine_sim::scenario::BotDifficulty::Standard)]
         difficulty: aftermine_sim::scenario::BotDifficulty,
@@ -103,9 +95,6 @@ enum Cmd {
         /// when both stances match and requires a two-seat scenario.
         #[arg(long)]
         same_personality_seed: bool,
-        /// Map-end geometry cells for a controlled comparison.
-        #[arg(long, value_delimiter = ',')]
-        geometries: Vec<aftermine_driver::bot_eval::EvaluationGeometry>,
         /// On a two-seat scenario, run a second leg with the two complete
         /// controller configurations exchanged between seats.
         #[arg(long)]
@@ -179,23 +168,6 @@ enum Cmd {
         #[arg(required = true)]
         replays: Vec<PathBuf>,
         /// Print each game's ledgers as JSON instead of the pooled report.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Late-game health over recorded games: income by source per minute,
-    /// the share of matches reaching 30 minutes, wreck left on the map,
-    /// army variety from minute 15, and whether winning a battle destroyed
-    /// production, took income or held the ground over the next minute.
-    /// Accepts replays, match recordings and directories of them, such as a
-    /// `bot-eval --replay-dir`; not player saves.
-    ReplayHealth {
-        /// Replay or match recording paths, or directories of them.
-        #[arg(required = true)]
-        paths: Vec<PathBuf>,
-        /// Maximum recordings re-executed at once; bounded by available CPUs.
-        #[arg(long, default_value = "4")]
-        jobs: std::num::NonZeroUsize,
-        /// Print each match's row and the pooled summary as JSON.
         #[arg(long)]
         json: bool,
     },
@@ -405,64 +377,6 @@ enum Cmd {
         #[arg(long, requires = "scenario")]
         personality_seed: Option<u64>,
     },
-    /// Equal-scrap duels between unit kinds, every pairing on every layout,
-    /// formation and seat: a matrix of value kept, with kinds that win or
-    /// lose everything, kinds that play alike, and tier margins flagged.
-    /// Staged scenarios with no controller, so every run is identical.
-    DuelLab {
-        /// Scrap each side spends; counts round to the nearest whole body.
-        #[arg(long, default_value_t = 1_800)]
-        budget: u32,
-        /// Unit kinds to include, comma-separated (default: every armed kind).
-        #[arg(long, value_delimiter = ',', value_parser = parse::parse_unit_kind)]
-        kinds: Vec<aftermine_sim::UnitKind>,
-        /// Also send each kind against a line of each defense.
-        #[arg(long)]
-        defenses: bool,
-        /// Tick cap per duel. The slowest pairings (three Condors or
-        /// Avalanches grinding through 21 Turrets) need about 6,000.
-        #[arg(long, default_value_t = 8_000, value_parser = clap::value_parser!(u32).range(1..))]
-        ticks: u32,
-        /// Maximum simultaneous duels.
-        #[arg(long, default_value = "8")]
-        jobs: std::num::NonZeroUsize,
-        /// Write the full report, every leg included, as JSON.
-        #[arg(long)]
-        json: Option<PathBuf>,
-        /// Spot for an army whose guns outrange its sight with a Surveyor
-        /// parked outside the enemy's reach, radar up, instead of a Kestrel.
-        #[arg(long)]
-        surveyor_spotter: bool,
-    },
-    /// Search mixes of up to three unit kinds at equal scrap for a
-    /// composition nobody beats: grows a pool of strong mixes and the blend
-    /// of them no challenger improves on, at each budget. Built on the duel
-    /// lab's staged fights, so every run is identical.
-    CompositionSearch {
-        /// Scrap each side spends, comma-separated; each budget is searched
-        /// separately.
-        #[arg(long, value_delimiter = ',', default_value = "600,1800,5000")]
-        budgets: Vec<u32>,
-        /// Unit kinds to mix, comma-separated (default: every armed kind).
-        #[arg(long, value_delimiter = ',', value_parser = parse::parse_unit_kind)]
-        kinds: Vec<aftermine_sim::UnitKind>,
-        /// Most kinds in one mix.
-        #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=3))]
-        max_kinds: u8,
-        /// Also search splits where one kind takes a double share. About four
-        /// times the candidates, so several times the run time.
-        #[arg(long)]
-        skewed: bool,
-        /// Tick cap per duel.
-        #[arg(long, default_value_t = 8_000, value_parser = clap::value_parser!(u32).range(1..))]
-        ticks: u32,
-        /// Maximum simultaneous duels.
-        #[arg(long, default_value = "8")]
-        jobs: std::num::NonZeroUsize,
-        /// Write every budget's outcome as JSON.
-        #[arg(long)]
-        json: Option<PathBuf>,
-    },
     /// Measure a map: room per seat, route lengths by domain, resources,
     /// artillery pressure, spawn spacing.
     MapAudit {
@@ -653,15 +567,6 @@ fn latency_summary(samples_ns: &[u64]) -> String {
     )
 }
 
-fn ensure_distinct<T: PartialEq>(values: &[T], label: &str) -> Result<()> {
-    for (index, value) in values.iter().enumerate() {
-        if values[..index].contains(value) {
-            bail!("{label} contains a duplicate value");
-        }
-    }
-    Ok(())
-}
-
 /// The build's version and revision, marked dirty when the tree was.
 fn default_candidate() -> String {
     let build = build_identity();
@@ -690,41 +595,6 @@ fn print_summary(rows: &[PathBuf], json: bool) -> Result<()> {
         print!("{}", report.render());
     }
     Ok(())
-}
-
-fn duel_lab_support(kind: aftermine_sim::UnitKind) -> bool {
-    aftermine_driver::duel_lab::support_units().contains(&kind)
-}
-
-/// Refuse requested unit kinds a tool cannot field, naming them, rather than
-/// quietly running on a smaller roster than was asked for.
-fn refuse_unusable(
-    requested: &[aftermine_sim::UnitKind],
-    usable: &[aftermine_sim::UnitKind],
-    tool: &str,
-) -> Result<()> {
-    let refused: Vec<&str> = requested
-        .iter()
-        .filter(|kind| !usable.contains(kind))
-        .map(|kind| kind.name())
-        .collect();
-    if refused.is_empty() {
-        return Ok(());
-    }
-    bail!(
-        "{tool} cannot field {}: they carry no weapon for these fights{}",
-        refused.join(", "),
-        if refused.contains(&"sapper") {
-            " (Sappers fight only defenses, with --defenses in the duel lab)"
-        } else if requested
-            .iter()
-            .any(|kind| duel_lab_support(*kind) && !usable.contains(kind))
-        {
-            " (support units join mixes in the composition search)"
-        } else {
-            ""
-        }
-    )
 }
 
 #[expect(clippy::too_many_lines, reason = "one arm per subcommand")]
@@ -772,13 +642,11 @@ fn main() -> Result<()> {
             stall_loop_limit,
             runs,
             personality_seed_base,
-            personality_seeds,
             difficulty,
             stance,
             opponent_difficulty,
             opponent_stance,
             same_personality_seed,
-            geometries,
             paired,
             candidate,
             out,
@@ -802,97 +670,45 @@ fn main() -> Result<()> {
                 opponent_stance,
                 same_personality_seed,
             };
-            ensure_distinct(&personality_seeds, "--personality-seeds")?;
-            ensure_distinct(&geometries, "--geometries")?;
             let mut plans = Vec::new();
             for (scenario_index, scenario_name) in scenarios.iter().enumerate() {
                 let source = runner::load_scenario(scenario_name)?;
-                if !personality_seeds.is_empty() || !geometries.is_empty() {
-                    let personality_seed_values = if personality_seeds.is_empty() {
-                        vec![personality_seed_base.unwrap_or(0)]
-                    } else {
-                        personality_seeds.clone()
-                    };
-                    let geometries = if geometries.is_empty() {
-                        vec![aftermine_driver::bot_eval::EvaluationGeometry::Authored]
-                    } else {
-                        geometries.clone()
-                    };
-
-                    let mut seed_cell = 0_u64;
-                    for &personality_seed in &personality_seed_values {
-                        for &geometry in &geometries {
-                            for plan in aftermine_driver::bot_eval::configured_matchup_plans(
-                                &source,
-                                matchup,
-                                personality_seed,
-                                paired,
-                                geometry,
-                            )? {
-                                let replay_path = replay_dir
-                                    .as_ref()
-                                    .map(|dir| {
-                                        aftermine_driver::bot_eval::evaluation_replay_filename(
-                                            scenario_index,
-                                            seed_cell,
-                                            ticks,
-                                            &candidate,
-                                            &plan,
-                                        )
-                                        .map(|filename| dir.join(filename))
-                                    })
-                                    .transpose()?;
-                                plan.scenario.build().with_context(|| {
-                                        format!(
-                                            "prevalidating bot evaluation scenario {scenario_name} seed cell {seed_cell} {}",
-                                            plan.leg.name()
-                                        )
-                                    })?;
-                                plans.push((plan, replay_path));
-                            }
-                        }
-                        seed_cell = seed_cell
-                            .checked_add(1)
-                            .context("evaluation seed-cell index overflows u64")?;
-                    }
-                } else {
-                    let personality_seed_base = personality_seed_base.unwrap_or(0);
-                    for run in 0..runs {
-                        let profile_base = matchup.personality_seed_base_for_run(
-                            personality_seed_base,
-                            run,
-                            source.players.len(),
-                        )?;
-                        for (leg, scenario) in aftermine_driver::bot_eval::configured_matchup_legs(
-                            &source,
-                            matchup,
-                            profile_base,
-                            paired,
-                        )? {
-                            let plan = aftermine_driver::bot_eval::EvaluationPlan::from_scenario(
-                                scenario, leg,
-                            );
-                            let replay_path = replay_dir
-                                .as_ref()
-                                .map(|dir| {
-                                    aftermine_driver::bot_eval::evaluation_replay_filename(
-                                        scenario_index,
-                                        run,
-                                        ticks,
-                                        &candidate,
-                                        &plan,
-                                    )
-                                    .map(|filename| dir.join(filename))
-                                })
-                                .transpose()?;
-                            plan.scenario.build().with_context(|| {
-                                format!(
-                                    "prevalidating bot evaluation scenario {scenario_name} run {run} {}",
-                                    plan.leg.name()
+                let personality_seed_base = personality_seed_base.unwrap_or(0);
+                for run in 0..runs {
+                    let profile_base = matchup.personality_seed_base_for_run(
+                        personality_seed_base,
+                        run,
+                        source.players.len(),
+                    )?;
+                    for (leg, scenario) in aftermine_driver::bot_eval::configured_matchup_legs(
+                        &source,
+                        matchup,
+                        profile_base,
+                        paired,
+                    )? {
+                        let plan = aftermine_driver::bot_eval::EvaluationPlan::from_scenario(
+                            scenario, leg,
+                        );
+                        let replay_path = replay_dir
+                            .as_ref()
+                            .map(|dir| {
+                                aftermine_driver::bot_eval::evaluation_replay_filename(
+                                    scenario_index,
+                                    run,
+                                    ticks,
+                                    &candidate,
+                                    &plan,
                                 )
-                            })?;
-                            plans.push((plan, replay_path));
-                        }
+                                .map(|filename| dir.join(filename))
+                            })
+                            .transpose()?;
+                        plan.scenario.build().with_context(|| {
+                            format!(
+                                "prevalidating bot evaluation scenario {scenario_name} run {run} {}",
+                                plan.leg.name()
+                            )
+                        })?;
+                        plans.push((plan, replay_path));
                     }
                 }
             }
@@ -974,20 +790,6 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&games)?);
             } else {
                 print!("{}", aftermine_driver::replay_ledger::render(&games));
-            }
-        }
-        Cmd::ReplayHealth { paths, jobs, json } => {
-            use aftermine_driver::replay_health;
-            let matches = replay_health::measure(&paths, jobs)?;
-            let summary = replay_health::summarize(&matches);
-            if json {
-                let report = replay_health::HealthReport {
-                    matches: &matches,
-                    summary: &summary,
-                };
-                println!("{}", serde_json::to_string_pretty(&report)?);
-            } else {
-                print!("{}", replay_health::render(&matches, &summary));
             }
         }
         Cmd::BotPressure {
@@ -1296,108 +1098,6 @@ fn main() -> Result<()> {
                 state.hash(),
             );
             println!("bench-latency: whole tick {}", latency_summary(&tick_ns));
-        }
-        Cmd::DuelLab {
-            budget,
-            kinds,
-            defenses,
-            ticks,
-            jobs,
-            json,
-            surveyor_spotter,
-        } => {
-            use aftermine_driver::duel_lab;
-            let usable: Vec<_> = if defenses {
-                duel_lab::defense_attackers()
-            } else {
-                duel_lab::armed_units()
-            };
-            refuse_unusable(&kinds, &usable, "the duel lab")?;
-            let chosen = |all: Vec<aftermine_sim::UnitKind>| {
-                if kinds.is_empty() {
-                    all
-                } else {
-                    all.into_iter()
-                        .filter(|kind| kinds.contains(kind))
-                        .collect()
-                }
-            };
-            let plan = duel_lab::Plan {
-                budget,
-                units: chosen(duel_lab::armed_units()),
-                attackers: if defenses {
-                    chosen(duel_lab::defense_attackers())
-                } else {
-                    Vec::new()
-                },
-                defenses: if defenses {
-                    duel_lab::armed_defenses()
-                } else {
-                    Vec::new()
-                },
-                tick_limit: ticks,
-                surveyor_spotter,
-            };
-            let start = std::time::Instant::now();
-            let outcomes = duel_lab::run_plan(&plan, jobs)?;
-            let report = duel_lab::report(&plan, outcomes);
-            print!("{}", duel_lab::render(&report));
-            eprintln!("ran in {:.1}s", start.elapsed().as_secs_f64());
-            if let Some(path) = json {
-                std::fs::write(&path, serde_json::to_string_pretty(&report)?)
-                    .with_context(|| format!("writing {}", path.display()))?;
-                eprintln!("wrote {}", path.display());
-            }
-        }
-        Cmd::CompositionSearch {
-            budgets,
-            kinds,
-            max_kinds,
-            skewed,
-            ticks,
-            jobs,
-            json,
-        } => {
-            use aftermine_driver::{composition_search, duel_lab};
-            let roster: Vec<_> = duel_lab::armed_units()
-                .into_iter()
-                .chain(duel_lab::support_units())
-                .collect();
-            refuse_unusable(&kinds, &roster, "the composition search")?;
-            let kinds = if kinds.is_empty() {
-                roster
-            } else {
-                roster
-                    .into_iter()
-                    .filter(|kind| kinds.contains(kind))
-                    .collect()
-            };
-            let mut outcomes = Vec::new();
-            for budget in budgets {
-                let start = std::time::Instant::now();
-                let outcome = composition_search::run(
-                    &kinds,
-                    usize::from(max_kinds),
-                    budget,
-                    skewed,
-                    ticks,
-                    jobs,
-                )?;
-                print!(
-                    "{}",
-                    composition_search::render(std::slice::from_ref(&outcome))
-                );
-                eprintln!(
-                    "{budget} scrap searched in {:.1}s",
-                    start.elapsed().as_secs_f64()
-                );
-                outcomes.push(outcome);
-            }
-            if let Some(path) = json {
-                std::fs::write(&path, serde_json::to_string_pretty(&outcomes)?)
-                    .with_context(|| format!("writing {}", path.display()))?;
-                eprintln!("wrote {}", path.display());
-            }
         }
         Cmd::MapAudit { scenario, json } => {
             let scenario = runner::load_scenario(&scenario)?;

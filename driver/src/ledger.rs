@@ -285,90 +285,6 @@ pub struct SeatLedger {
     pub final_worth: u64,
 }
 
-/// Where a seat's income came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IncomeSource {
-    /// Worker deliveries of scrap dug from scrap fields.
-    FieldHarvest,
-    /// Worker deliveries of scrap stripped from wrecks.
-    WreckSalvage,
-    /// A Reclaimer's trickle.
-    Reclaimer,
-    /// A Reclaimer upgraded to a Refinery.
-    Refinery,
-    /// An Extractor's yield.
-    Extractor,
-    /// An Extractor upgraded to a Deep Bore.
-    DeepBore,
-    /// The Foundry drip.
-    FoundryDrip,
-    /// A Crucible smelting wreck.
-    Smelting,
-}
-
-impl IncomeSource {
-    /// Every source, in report order.
-    pub const ALL: [IncomeSource; 8] = [
-        IncomeSource::FieldHarvest,
-        IncomeSource::WreckSalvage,
-        IncomeSource::Reclaimer,
-        IncomeSource::Refinery,
-        IncomeSource::Extractor,
-        IncomeSource::DeepBore,
-        IncomeSource::FoundryDrip,
-        IncomeSource::Smelting,
-    ];
-
-    /// The source's report name.
-    pub const fn name(self) -> &'static str {
-        match self {
-            IncomeSource::FieldHarvest => "field harvest",
-            IncomeSource::WreckSalvage => "wreck salvage",
-            IncomeSource::Reclaimer => "reclaimer",
-            IncomeSource::Refinery => "refinery",
-            IncomeSource::Extractor => "extractor",
-            IncomeSource::DeepBore => "deep bore",
-            IncomeSource::FoundryDrip => "foundry drip",
-            IncomeSource::Smelting => "smelting",
-        }
-    }
-}
-
-/// Scrap a seat earned in the last observed tick from one source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Credit {
-    /// The earning seat.
-    pub seat: u8,
-    /// Where it came from.
-    pub source: IncomeSource,
-    /// Scrap earned.
-    pub scrap: u64,
-}
-
-/// Health a body lost in the last observed tick and the hostile bodies
-/// credited with it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Hit {
-    /// The body that lost health.
-    pub victim: Target,
-    /// Each credited body and its team.
-    pub sources: Vec<(Target, u8)>,
-}
-
-/// Scrap a worker carries, by where it picked it up.
-#[derive(Debug, Clone, Copy, Default)]
-struct Cargo {
-    field: u32,
-    wreck: u32,
-}
-
-impl Cargo {
-    fn total(self) -> u32 {
-        self.field + self.wreck
-    }
-}
-
 /// A shell in flight, waiting to land.
 #[derive(Debug, Clone, Copy)]
 struct Shell {
@@ -413,12 +329,8 @@ pub struct ImpactLedger {
     hearths: Hearths,
     /// Extractor payouts as the coming tick begins.
     payouts: Vec<Payout>,
-    /// Income credited in the last observed tick.
-    credits: Vec<Credit>,
-    /// Losses attributed in the last observed tick.
-    hits: Vec<Hit>,
-    /// Each worker's cargo by origin, kept while it rides a transport.
-    cargo: BTreeMap<UnitId, Cargo>,
+    /// Scrap each worker holds, kept while it rides a transport.
+    cargo: BTreeMap<UnitId, u32>,
     /// The tile each harvesting worker was working, as the last observed
     /// tick left it.
     working: BTreeMap<UnitId, TilePos>,
@@ -618,7 +530,6 @@ fn smelters(
 struct Payout {
     key: Key,
     owner: u8,
-    source: IncomeSource,
     amount: u64,
     period: u64,
 }
@@ -633,11 +544,6 @@ fn payouts(state: &State) -> Vec<Payout> {
             Some(Payout {
                 key: Key::Building(building.id),
                 owner: building.player.0,
-                source: if income.tier() == 0 {
-                    IncomeSource::Extractor
-                } else {
-                    IncomeSource::DeepBore
-                },
                 amount: u64::from(amount),
                 period,
             })
@@ -672,7 +578,6 @@ impl ImpactLedger {
             records.insert(body.key, record);
         }
         let seats = state.players().len();
-        // Cargo held before the ledger began counts as field scrap.
         let cargo = state
             .units()
             .iter()
@@ -681,15 +586,6 @@ impl ImpactLedger {
                     .chain(unit.cargo.iter().map(|rider| (rider.id, rider.carrying)))
             })
             .filter(|(_, carrying)| *carrying > 0)
-            .map(|(id, carrying)| {
-                (
-                    id,
-                    Cargo {
-                        field: carrying,
-                        wreck: 0,
-                    },
-                )
-            })
             .collect();
         let mut ledger = Self {
             start,
@@ -709,8 +605,6 @@ impl ImpactLedger {
                 Hearths::default()
             },
             payouts: payouts(state),
-            credits: Vec::new(),
-            hits: Vec::new(),
             cargo,
             working: BTreeMap::new(),
             field_scrap: BTreeMap::new(),
@@ -729,21 +623,6 @@ impl ImpactLedger {
         ledger
     }
 
-    /// Income credited in the last observed tick, by seat and source. A
-    /// delivery splits between field harvest and wreck salvage by where its
-    /// worker picked each piece up: a piece is field scrap when field scrap
-    /// left the tile the worker was working that tick, and workers sharing a
-    /// tile take the field scrap that left it first.
-    pub fn credits(&self) -> &[Credit] {
-        &self.credits
-    }
-
-    /// Losses attributed to hostile bodies in the last observed tick. A loss
-    /// no hit accounts for is absent.
-    pub fn hits(&self) -> &[Hit] {
-        &self.hits
-    }
-
     /// Value of the damage unit `id` has dealt and taken so far, in
     /// thousandths of a scrap.
     pub fn totals(&self, id: UnitId) -> (u64, u64) {
@@ -755,11 +634,9 @@ impl ImpactLedger {
     /// Accounts for the tick `report` describes, which left `state`.
     pub fn observe(&mut self, state: &State, report: &TickReport) {
         let now = report.tick;
-        self.credits.clear();
-        self.hits.clear();
         let after = snapshot(state);
         let sources = self.events(report);
-        let stripped = self.load(state, now);
+        let stripped = self.load(state);
         self.spending(&after, now);
         self.damage(&after, &sources, now);
         self.passive(state, now, &stripped);
@@ -939,10 +816,10 @@ impl ImpactLedger {
                 Event::ScrapDeposited {
                     unit,
                     foundry,
-                    player,
                     amount,
+                    ..
                 } => {
-                    self.delivered(player.0, *unit, *amount);
+                    self.delivered(*unit, *amount);
                     if let Some(record) = self.records.get_mut(&Key::Building(*foundry)) {
                         record.received += u64::from(*amount);
                     }
@@ -961,7 +838,7 @@ impl ImpactLedger {
                 } => {
                     sources.retired.insert(Key::Unit(*unit), *hp);
                     self.retired[usize::from(player.0)] += u64::from(*refund);
-                    self.delivered(player.0, *unit, *cargo);
+                    self.delivered(*unit, *cargo);
                     if let Some(record) = self.records.get_mut(&Key::Building(*crucible)) {
                         record.received += u64::from(*cargo);
                     }
@@ -1135,17 +1012,17 @@ impl ImpactLedger {
         sources
     }
 
-    /// Splits what each worker picked up in tick `now` between field scrap
-    /// and wreck, by how much field scrap left the tile it was working, and
-    /// returns the wreck stripped from each tile.
-    fn load(&mut self, state: &State, now: u64) -> BTreeMap<TilePos, u32> {
+    /// Notes what each worker picked up in tick `now` and returns the wreck
+    /// stripped from each tile: what its workers picked up beyond the field
+    /// scrap that left it.
+    fn load(&mut self, state: &State) -> BTreeMap<TilePos, u32> {
         let mut picked: BTreeMap<Option<TilePos>, Vec<(UnitId, u32)>> = BTreeMap::new();
         for unit in state.units() {
             if unit.kind.stats().harvest.is_none() {
                 continue;
             }
             // Only a delivery empties a load, and it settles the cargo.
-            let held = self.cargo.get(&unit.id).map_or(0, |cargo| cargo.total());
+            let held = self.cargo.get(&unit.id).copied().unwrap_or(0);
             if unit.carrying() > held {
                 picked
                     .entry(self.working.get(&unit.id).copied())
@@ -1154,28 +1031,23 @@ impl ImpactLedger {
             }
         }
         let mut stripped: BTreeMap<TilePos, u32> = BTreeMap::new();
-        for (tile, mut workers) in picked {
-            // Workers act in id order on even ticks and in reverse on odd
-            // ones, so the first to act takes a tile's last field scrap.
-            if now % 2 == 1 {
-                workers.reverse();
+        for (tile, workers) in picked {
+            let mut total = 0;
+            for (id, gained) in workers {
+                *self.cargo.entry(id).or_default() += gained;
+                total += gained;
             }
             // A worker with no tile on record picked up field scrap.
-            let mut field = tile.map_or(u32::MAX, |tile| {
-                self.field_scrap
+            if let Some(tile) = tile {
+                let field = self
+                    .field_scrap
                     .get(&tile)
                     .copied()
                     .unwrap_or(0)
-                    .saturating_sub(state.map().scrap_at(tile))
-            });
-            for (id, gained) in workers {
-                let from_field = gained.min(field);
-                field -= from_field;
-                let cargo = self.cargo.entry(id).or_default();
-                cargo.field += from_field;
-                cargo.wreck += gained - from_field;
-                if let Some(tile) = tile {
-                    *stripped.entry(tile).or_default() += gained - from_field;
+                    .saturating_sub(state.map().scrap_at(tile));
+                let wreck = total - total.min(field);
+                if wreck > 0 {
+                    *stripped.entry(tile).or_default() += wreck;
                 }
             }
         }
@@ -1207,23 +1079,9 @@ impl ImpactLedger {
         }
     }
 
-    /// Credits `amount` of `unit`'s cargo to `seat` as harvest income, split
-    /// by how much of the load was wreck.
-    fn delivered(&mut self, seat: u8, unit: UnitId, amount: u32) {
-        let cargo = self.cargo.remove(&unit).unwrap_or_default();
-        let wreck = cargo.wreck.min(amount);
-        for (source, scrap) in [
-            (IncomeSource::FieldHarvest, amount - wreck),
-            (IncomeSource::WreckSalvage, wreck),
-        ] {
-            if scrap > 0 {
-                self.credits.push(Credit {
-                    seat,
-                    source,
-                    scrap: u64::from(scrap),
-                });
-            }
-        }
+    /// Credits `amount` of `unit`'s cargo to it as harvest, settling its load.
+    fn delivered(&mut self, unit: UnitId, amount: u32) {
+        self.cargo.remove(&unit);
         if let Some(record) = self.records.get_mut(&Key::Unit(unit)) {
             record.harvested += u64::from(amount);
         }
@@ -1441,13 +1299,6 @@ impl ImpactLedger {
         if let Some(record) = self.records.get_mut(&pre.key) {
             record.taken += value;
         }
-        self.hits.push(Hit {
-            victim: target(pre.key),
-            sources: from
-                .iter()
-                .map(|source| (target(source.key), source.team))
-                .collect(),
-        });
         let share = value / from.len() as u64;
         for source in &from {
             let place = place(before, source.owner, pre.owner, pre.tile);
@@ -1517,7 +1368,7 @@ impl ImpactLedger {
     /// `stripped` from it.
     fn passive(&mut self, state: &State, now: u64, stripped: &BTreeMap<TilePos, u32>) {
         let completed = now + 1;
-        let mut credits: Vec<(Key, IncomeSource, u64)> = Vec::new();
+        let mut credits: Vec<(Key, u64)> = Vec::new();
         for body in &self.bodies {
             let Some((kind, tier, true)) = body.building else {
                 continue;
@@ -1534,23 +1385,21 @@ impl ImpactLedger {
             }
             let resigned = state.players()[usize::from(body.owner)].resigned;
             let credit = match kind {
-                BuildingKind::Reclaimer if tier == 0 && !resigned => now
-                    .is_multiple_of(RECLAIMER_PERIOD)
-                    .then_some(IncomeSource::Reclaimer),
-                BuildingKind::Reclaimer if tier == 1 && !resigned => now
-                    .is_multiple_of(REFINERY_PERIOD)
-                    .then_some(IncomeSource::Refinery),
-                BuildingKind::Foundry
-                    if !resigned
-                        && completed >= FOUNDRY_DRIP_START_TICK
-                        && completed.is_multiple_of(FOUNDRY_DRIP_PERIOD) =>
-                {
-                    Some(IncomeSource::FoundryDrip)
+                BuildingKind::Reclaimer if tier == 0 && !resigned => {
+                    now.is_multiple_of(RECLAIMER_PERIOD)
                 }
-                _ => None,
+                BuildingKind::Reclaimer if tier == 1 && !resigned => {
+                    now.is_multiple_of(REFINERY_PERIOD)
+                }
+                BuildingKind::Foundry => {
+                    !resigned
+                        && completed >= FOUNDRY_DRIP_START_TICK
+                        && completed.is_multiple_of(FOUNDRY_DRIP_PERIOD)
+                }
+                _ => false,
             };
-            if let Some(source) = credit {
-                credits.push((body.key, source, 1));
+            if credit {
+                credits.push((body.key, 1));
             }
         }
         // A resignation is a command, applied before the tick's income, and
@@ -1564,7 +1413,7 @@ impl ImpactLedger {
                         && !matches!(payout.key, Key::Building(id)
                             if state.building(id).is_some_and(|building| !building.built()))
                 })
-                .map(|payout| (payout.key, payout.source, payout.amount)),
+                .map(|payout| (payout.key, payout.amount)),
         );
         // A resignation also stops a Crucible from that tick's smelt on.
         if now.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
@@ -1573,17 +1422,12 @@ impl ImpactLedger {
                     state.player(crucible.player).resigned
                 })
                 .into_iter()
-                .map(|key| (key, IncomeSource::Smelting, 1)),
+                .map(|key| (key, 1)),
             );
         }
-        for (key, source, scrap) in credits {
+        for (key, scrap) in credits {
             if let Some(record) = self.records.get_mut(&key) {
                 record.passive += scrap;
-                self.credits.push(Credit {
-                    seat: record.owner,
-                    source,
-                    scrap,
-                });
             }
         }
     }
@@ -1727,13 +1571,6 @@ fn category(kind: BuildingKind) -> &'static str {
         | BuildingKind::ScuttleCharge
         | BuildingKind::Lattice => "defense",
         _ => "tech",
-    }
-}
-
-fn target(key: Key) -> Target {
-    match key {
-        Key::Unit(id) => Target::Unit(id),
-        Key::Building(id) => Target::Building(id),
     }
 }
 

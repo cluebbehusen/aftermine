@@ -431,8 +431,6 @@ pub(crate) struct Loss {
     pub(crate) value: u64,
     /// What it was.
     pub(crate) kind: LossKind,
-    /// The body lost.
-    pub(crate) victim: Target,
 }
 
 /// The loss `event` reports, if it reports one: a unit at its cost, and a
@@ -444,11 +442,7 @@ pub(crate) fn loss(
 ) -> Option<Loss> {
     match event {
         Event::UnitDied {
-            unit,
-            kind,
-            player,
-            pos,
-            ..
+            kind, player, pos, ..
         } => {
             let stats = kind.stats();
             Some(Loss {
@@ -462,7 +456,6 @@ pub(crate) fn loss(
                 } else {
                     LossKind::Worker
                 },
-                victim: Target::Unit(*unit),
             })
         }
         Event::BuildingDestroyed {
@@ -482,7 +475,6 @@ pub(crate) fn loss(
                 } else {
                     LossKind::Site
                 },
-                victim: Target::Building(*building),
             })
         }
         _ => None,
@@ -505,7 +497,6 @@ struct BattleCluster {
     /// Tiles of every other loss.
     other_tiles: Vec<TilePos>,
     losses: BTreeMap<u8, SeatLoss>,
-    victims: Vec<Target>,
 }
 
 impl BattleCluster {
@@ -534,8 +525,6 @@ pub(crate) struct Battle {
     /// An instantaneous cluster of transports and the riders that died
     /// with them: nothing landed.
     pub(crate) shootdown: bool,
-    /// Every body lost, in loss order.
-    pub(crate) victims: Vec<Target>,
 }
 
 /// Streaming space-time clusterer over loss events. Pure integer math and
@@ -549,12 +538,6 @@ pub(crate) struct BattleClusterer {
 }
 
 impl BattleClusterer {
-    /// Battles closed so far, in closing order until [`Self::finish`]
-    /// sorts them.
-    pub(crate) fn battles(&self) -> &[Battle] {
-        &self.battles
-    }
-
     /// Adds `loss` at `tick` to the first open battle whose first loss lies
     /// within the space gate, or opens a new battle.
     pub(crate) fn note_loss(&mut self, tick: u64, loss: Loss) {
@@ -563,7 +546,6 @@ impl BattleClusterer {
             tile,
             value,
             kind,
-            victim,
         } = loss;
         self.expire(tick);
         let x = i64::from(tile.x);
@@ -587,7 +569,6 @@ impl BattleClusterer {
                 transport_tiles: Vec::new(),
                 other_tiles: Vec::new(),
                 losses: BTreeMap::new(),
-                victims: Vec::new(),
             });
             self.active.last_mut().expect("just pushed")
         };
@@ -595,7 +576,6 @@ impl BattleClusterer {
         cluster.sum_y += y;
         cluster.n += 1;
         cluster.last_loss_tick = tick;
-        cluster.victims.push(victim);
         if kind == LossKind::Transport {
             cluster.transport_tiles.push(tile);
         } else {
@@ -676,7 +656,6 @@ impl BattleClusterer {
                         .other_tiles
                         .iter()
                         .all(|tile| cluster.transport_tiles.contains(tile)),
-                victims: cluster.victims,
             });
         } else {
             self.skirmishes.push(cluster.last_loss_tick);

@@ -6,6 +6,21 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_REPLAY_ID: AtomicU64 = AtomicU64::new(0);
 
+/// Plans for a configured matchup's legs, as `bot-eval` builds them.
+fn matchup_plans(
+    source: &Scenario,
+    matchup: ProfileMatchup,
+    personality_seed_base: u64,
+    paired: bool,
+) -> anyhow::Result<Vec<EvaluationPlan>> {
+    Ok(
+        configured_matchup_legs(source, matchup, personality_seed_base, paired)?
+            .into_iter()
+            .map(|(leg, scenario)| EvaluationPlan::from_scenario(scenario, leg))
+            .collect(),
+    )
+}
+
 fn firing_squad() -> Scenario {
     let ground = ".".repeat(16);
     let mut anchored: Vec<char> = ground.chars().collect();
@@ -83,12 +98,11 @@ fn opponent_controller() -> EvaluationController {
 }
 
 fn one_evaluation_trace() -> EvaluationTraceRow {
-    let plan = configured_matchup_plans(
+    let plan = matchup_plans(
         &Scenario::skirmish(),
         prime_matchup(),
         prime_config().personality_seed,
         false,
-        EvaluationGeometry::Authored,
     )
     .unwrap()
     .remove(0);
@@ -104,88 +118,12 @@ fn one_evaluation_trace() -> EvaluationTraceRow {
 }
 
 #[test]
-fn profile_pair_swaps_only_controllers_on_one_transformed_scenario() {
-    let source = Scenario::skirmish();
-    let plans = configured_matchup_plans(
-        &source,
-        prime_matchup(),
-        prime_config().personality_seed,
-        true,
-        EvaluationGeometry::Rot180,
-    )
-    .unwrap();
-
-    assert_eq!(plans.len(), 2);
-    let (forward, swapped) = (&plans[0], &plans[1]);
-    assert_eq!(forward.leg, EvaluationLeg::Forward);
-    assert_eq!(swapped.leg, EvaluationLeg::Swapped);
-    assert_eq!(forward.geometry, EvaluationGeometry::Rot180);
-    assert_eq!(swapped.geometry, EvaluationGeometry::Rot180);
-    assert_eq!(forward.scenario, swapped.scenario);
-    assert!(
-        forward
-            .scenario
-            .players
-            .iter()
-            .all(|player| !player.bot && player.bot_config.is_none())
-    );
-    assert_eq!(
-        forward.controllers,
-        [
-            Some(EvaluationController::configured(prime_config())),
-            Some(opponent_controller()),
-        ]
-    );
-    assert_eq!(
-        swapped.controllers,
-        [
-            Some(opponent_controller()),
-            Some(EvaluationController::configured(prime_config())),
-        ]
-    );
-    assert_eq!(source, Scenario::skirmish(), "planning mutated the source");
-}
-
-#[test]
-fn controlled_geometry_records_and_applies_the_exact_half_turn() {
-    let source = Scenario::skirmish();
-    let authored = configured_matchup_plans(
-        &source,
-        prime_matchup(),
-        prime_config().personality_seed,
-        false,
-        EvaluationGeometry::Authored,
-    )
-    .unwrap()
-    .remove(0);
-    let rotated = configured_matchup_plans(
-        &source,
-        prime_matchup(),
-        prime_config().personality_seed,
-        false,
-        EvaluationGeometry::Rot180,
-    )
-    .unwrap()
-    .remove(0);
-
-    assert_eq!(authored.geometry, EvaluationGeometry::Authored);
-    assert_eq!(rotated.geometry, EvaluationGeometry::Rot180);
-    assert_ne!(authored.scenario.units, rotated.scenario.units);
-    assert_eq!(
-        crate::rotation::rotate_180(&rotated.scenario).unwrap(),
-        authored.scenario,
-        "the recorded rot180 cell must be the exact involutive transform"
-    );
-}
-
-#[test]
 fn configured_evaluation_records_exact_controller_provenance() {
-    let plans = configured_matchup_plans(
+    let plans = matchup_plans(
         &Scenario::skirmish(),
         prime_matchup(),
         prime_config().personality_seed,
         true,
-        EvaluationGeometry::Authored,
     )
     .unwrap();
 
@@ -198,7 +136,6 @@ fn configured_evaluation_records_exact_controller_provenance() {
         };
 
         assert_eq!(row.leg, plan.leg);
-        assert_eq!(row.geometry, EvaluationGeometry::Authored);
         assert_eq!(
             row.scenario_fingerprint,
             scenario_fingerprint(&plan.scenario).unwrap()
@@ -226,12 +163,11 @@ fn configured_evaluation_records_exact_controller_provenance() {
 
 #[test]
 fn traced_evaluation_is_deterministic_and_does_not_change_authoritative_evidence() {
-    let plan = configured_matchup_plans(
+    let plan = matchup_plans(
         &Scenario::skirmish(),
         prime_matchup(),
         prime_config().personality_seed,
         false,
-        EvaluationGeometry::Authored,
     )
     .unwrap()
     .remove(0);
@@ -287,21 +223,19 @@ fn traced_evaluation_is_deterministic_and_does_not_change_authoritative_evidence
 #[test]
 fn nominal_axis_aliases_share_one_execution_identity_and_are_refused() {
     let source = Scenario::skirmish();
-    let single = configured_matchup_plans(
+    let single = matchup_plans(
         &source,
         prime_matchup(),
         prime_config().personality_seed,
         false,
-        EvaluationGeometry::Authored,
     )
     .unwrap()
     .remove(0);
-    let forward = configured_matchup_plans(
+    let forward = matchup_plans(
         &source,
         prime_matchup(),
         prime_config().personality_seed,
         true,
-        EvaluationGeometry::Authored,
     )
     .unwrap()
     .remove(0);
@@ -352,34 +286,6 @@ fn command_hash_ignores_setup_but_covers_ticks_and_commands() {
 }
 
 #[test]
-fn controller_swaps_have_one_scenario_but_distinct_evidence_identities() {
-    let plans = configured_matchup_plans(
-        &Scenario::skirmish(),
-        prime_matchup(),
-        prime_config().personality_seed,
-        true,
-        EvaluationGeometry::Rot180,
-    )
-    .unwrap();
-    let (forward, swapped) = (&plans[0], &plans[1]);
-
-    assert_eq!(forward.scenario, swapped.scenario);
-    assert_eq!(
-        scenario_fingerprint(&forward.scenario).unwrap(),
-        scenario_fingerprint(&swapped.scenario).unwrap()
-    );
-    assert_ne!(
-        evaluation_fingerprint(forward).unwrap(),
-        evaluation_fingerprint(swapped).unwrap()
-    );
-    let forward_name = evaluation_replay_filename(0, 0, 60_000, "candidate-a", forward).unwrap();
-    let swapped_name = evaluation_replay_filename(0, 0, 60_000, "candidate-a", swapped).unwrap();
-    assert_ne!(forward_name, swapped_name);
-    assert!(forward_name.contains("-forward-"));
-    assert!(swapped_name.contains("-swapped-"));
-}
-
-#[test]
 fn evaluation_plan_refuses_missing_or_excess_controller_slots() {
     let scenario = firing_squad();
     for controllers in [
@@ -394,7 +300,6 @@ fn evaluation_plan_refuses_missing_or_excess_controller_slots() {
             leg: EvaluationLeg::Single,
             scenario: scenario.clone(),
             controllers,
-            geometry: EvaluationGeometry::Authored,
         };
 
         let fingerprint_error = evaluation_fingerprint(&plan).unwrap_err();
@@ -412,49 +317,6 @@ fn evaluation_plan_refuses_missing_or_excess_controller_slots() {
             "invalid execution should fail before building: {evaluation_error:#}"
         );
     }
-}
-
-#[test]
-fn controlled_plans_refuse_non_duel_scenarios_before_transforming_them() {
-    let mut too_few = firing_squad();
-    too_few.players.pop();
-    let mut too_many = firing_squad();
-    too_many.players.push(too_many.players[0].clone());
-
-    for scenario in [&too_few, &too_many] {
-        let error = configured_matchup_plans(
-            scenario,
-            prime_matchup(),
-            prime_config().personality_seed,
-            true,
-            EvaluationGeometry::Authored,
-        )
-        .unwrap_err();
-        assert!(
-            error.to_string().contains("exactly two seats"),
-            "non-duel refusal should name the controller shape: {error:#}"
-        );
-    }
-}
-
-#[test]
-fn controlled_plans_refuse_two_seats_on_the_same_team() {
-    let mut allied = firing_squad();
-    allied.players[0].team = Some(4);
-    allied.players[1].team = Some(4);
-
-    let error = configured_matchup_plans(
-        &allied,
-        prime_matchup(),
-        prime_config().personality_seed,
-        true,
-        EvaluationGeometry::Authored,
-    )
-    .unwrap_err();
-    assert!(
-        error.to_string().contains("two opposing teams"),
-        "allied-seat refusal should explain the competitive invariant: {error:#}"
-    );
 }
 
 #[test]
@@ -514,12 +376,11 @@ fn rows_record_teams_eliminations_detectors_income_and_provenance() {
         0
     );
 
-    let plan = configured_matchup_plans(
+    let plan = matchup_plans(
         &Scenario::skirmish(),
         ProfileMatchup::uniform(BotDifficulty::Standard, BotStance::Balanced),
         8_100,
         false,
-        EvaluationGeometry::Authored,
     )
     .unwrap()
     .remove(0);
@@ -730,12 +591,11 @@ fn a_trace_publication_collision_rolls_back_the_compact_index() {
     std::fs::create_dir_all(&dir).unwrap();
     let index_path = dir.join("rows.jsonl");
     let trace_path = dir.join("trace.jsonl");
-    let plan = configured_matchup_plans(
+    let plan = matchup_plans(
         &Scenario::skirmish(),
         prime_matchup(),
         prime_config().personality_seed,
         false,
-        EvaluationGeometry::Authored,
     )
     .unwrap()
     .remove(0);

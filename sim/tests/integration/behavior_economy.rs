@@ -998,6 +998,32 @@ fn a_surrendered_seat_s_crucible_smelts_no_wreck() {
 }
 
 #[test]
+fn every_scrap_a_crucible_smelts_is_reported_as_income() {
+    let mut scenario = arena(Vec::new());
+    scenario.mode = aftermine_sim::scenario::ScenarioMode::Sandbox;
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Crucible, 2, 5));
+    let state = scenario.build().unwrap();
+    let mut doc = serde_json::to_value(&state).unwrap();
+    let width = usize::try_from(state.map().width()).unwrap();
+    doc["map"]["grid"]["cells"][7 * width + 7]["wreck"] = json!(40);
+    let mut state: State = serde_json::from_value(doc).unwrap();
+    state.validate_invariants().unwrap();
+    let bank = state.player(PlayerId(0)).scrap;
+    let events = run(&mut state, aftermine_sim::stats::CRUCIBLE_SMELT_PERIOD * 4);
+    let credited: u32 = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::ScrapCredited { player, amount } if *player == PlayerId(0) => Some(*amount),
+            _ => None,
+        })
+        .sum();
+    assert!(credited > 0, "premise: the Crucible smelted");
+    assert_eq!(state.player(PlayerId(0)).scrap - bank, credited);
+}
+
+#[test]
 fn a_surrendered_seat_earns_nothing_from_reclaimers_or_deliveries() {
     // A sandbox, so the surrender ends no match and the economy runs on.
     let mut scenario = arena(vec![unit(0, UnitKind::Harvester, 6, 2)]);
