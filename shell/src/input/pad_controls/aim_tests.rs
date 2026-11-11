@@ -102,6 +102,25 @@ fn a_held_a_drags_a_row_that_skips_a_refused_cell_and_stages_on_release() {
 }
 
 #[test]
+fn a_camera_jump_under_a_held_a_lays_nothing_on_the_way() {
+    let (mut game, mut input) = placing(BARRICADE);
+    rest_on(&mut game, &mut input, vec2(28.5, 20.5));
+    feed(&mut game, &mut input, &[down(PadButton::South)]);
+    push_until(&mut game, &mut input, (0.6, 0.0), FRAME, |g| g.x >= 30.5);
+    assert_eq!(
+        input.planned_stamps(),
+        [28, 29, 30].map(|x| TilePos::new(x, 20))
+    );
+    rest_on(&mut game, &mut input, vec2(10.5, 10.5));
+    for stamp in input.planned_stamps() {
+        assert!(
+            (stamp.y == 20 && (28..=30).contains(&stamp.x)) || *stamp == TilePos::new(10, 10),
+            "{stamp:?} lies on the way"
+        );
+    }
+}
+
+#[test]
 fn a_held_left_trigger_keeps_placing_until_it_is_let_go() {
     let (mut game, mut input) = placing(BARRICADE);
     feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
