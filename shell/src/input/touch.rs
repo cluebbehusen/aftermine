@@ -39,7 +39,8 @@ pub(crate) struct TouchPoint {
     /// drag, never a tap or a long-press.
     pub moved: bool,
     /// Whether it already did its one job: its long-press fired, or it
-    /// outlived its pair. A spent finger never taps or long-presses.
+    /// was a battlefield finger that outlived its pair. A spent finger
+    /// never taps or long-presses.
     pub spent: bool,
     /// The card it landed on, as it stood then.
     pub card: Option<PressedCard>,
@@ -139,24 +140,40 @@ fn world_hold(input: &InputState) -> Option<TouchPoint> {
     (finger.born == TouchBorn::World && finger.still() && !claimed).then_some(*finger)
 }
 
-/// A lone finger resting on a control-group slot: the one chrome hold
-/// that fires, saving the selection to that group.
-fn group_hold(input: &InputState) -> Option<(TouchPoint, crate::layout::GroupSlot)> {
-    let [(_, finger)] = input.touches.as_slice() else {
-        return None;
-    };
-    let slot = finger.group?;
-    (finger.born == TouchBorn::Chrome && finger.still()).then_some((*finger, slot))
+/// The first still chrome-born finger that `serves` finds a hold for, with
+/// its index in `touches`. Another finger down never stops a chrome hold:
+/// the hand resting on the battlefield is not the one pressing.
+fn chrome_hold<T>(
+    input: &InputState,
+    serves: impl Fn(&TouchPoint) -> Option<T>,
+) -> Option<(usize, TouchPoint, T)> {
+    input
+        .touches
+        .iter()
+        .enumerate()
+        .find_map(|(index, (_, finger))| {
+            if finger.born != TouchBorn::Chrome || !finger.still() {
+                return None;
+            }
+            serves(finger).map(|hold| (index, *finger, hold))
+        })
 }
 
-/// A lone finger resting on a card with a second act: a hold that fires
-/// it, switching the card's automatic mode or doing what Shift-click does.
-fn card_hold(input: &InputState) -> Option<(TouchPoint, crate::panel::CardAction)> {
-    let [(_, finger)] = input.touches.as_slice() else {
-        return None;
-    };
-    let act = finger.card?.second_act?;
-    (finger.born == TouchBorn::Chrome && finger.still()).then_some((*finger, act))
+/// A finger resting on a control-group slot: one chrome hold that fires,
+/// saving the selection to that group.
+fn group_hold(input: &InputState) -> Option<(usize, TouchPoint, crate::layout::GroupSlot)> {
+    chrome_hold(input, |finger| finger.group)
+}
+
+/// A finger resting on a card with a second act: a hold that fires it,
+/// switching the card's automatic mode or doing what Shift-click does.
+fn card_hold(input: &InputState) -> Option<(usize, TouchPoint, crate::panel::CardAction)> {
+    chrome_hold(input, |finger| finger.card?.second_act)
+}
+
+/// Whether `finger` has been down for the whole long-press window.
+fn held_long(input: &InputState, finger: &TouchPoint) -> bool {
+    (input.now - finger.down_at) * 1000.0 >= f64::from(input.touch_prefs.long_press_ms)
 }
 
 /// Whether an armed mode takes a minimap tap as its target (a rally
@@ -219,13 +236,13 @@ pub(crate) fn long_press_progress(input: &InputState) -> Option<(Vec2, f32)> {
 
 /// Where a control-group slot's long-press is charging, and how far.
 pub(crate) fn group_press_progress(input: &InputState) -> Option<(Vec2, f32)> {
-    charge(input, &group_hold(input)?.0)
+    charge(input, &group_hold(input)?.1)
 }
 
 /// Where a long-press on a card with a second act is charging, and how
 /// far.
 pub(crate) fn card_press_progress(input: &InputState) -> Option<(Vec2, f32)> {
-    charge(input, &card_hold(input)?.0)
+    charge(input, &card_hold(input)?.1)
 }
 
 /// A held finger's charge: nothing while it may still be a tap, then
@@ -394,12 +411,14 @@ pub(super) fn up(
             if input.pair.is_some_and(|pair| pair.state == PairState::Box) {
                 box_select(game, survivor.at, p, input.queue_held());
             }
-            // The survivor is spent EITHER way: after a box
-            // or a pinch, its own still release must not
-            // read as a tap and select whatever sits under
-            // the resting finger.
-            input.touches[0].1.spent = true;
-            input.pair = None;
+            partner_left(input);
+            // A still finger that landed on chrome presses what it lifts on,
+            // as a lone finger would, except that it never names an armed
+            // mode's target, steers from the minimap or selects on the
+            // battlefield.
+            if lifted.born == TouchBorn::Chrome && lifted.still() {
+                tap(game, input, bindings, &lifted, p, Company::Partnered);
+            }
         }
         0 => {
             input.pair = None;
@@ -417,94 +436,120 @@ pub(super) fn up(
                     (input.now - t) * 1000.0 < f64::from(input.touch_prefs.double_tap_ms)
                         && (at - p).length() < click_slop(input.ui) * 2.0
                 });
-                // Armed modes first, as with the mouse: the tap
-                // that follows an armed Build or Salvage card
-                // completes the command instead of selecting under
-                // it. A tap is an atomic click with no drag to
-                // follow, so the stroke closes here and Shift
-                // decides the mode, as on MouseUp.
-                // A ghost button presses only for the finger that landed
-                // on it, and a finger that landed on one presses nothing
-                // else: the cross and check mark sit closer than a still
-                // finger may wander, and a lift just off them must not
-                // move the ghost.
-                let control = super::ghost_control_at(&game.presentation.layout.get(), p);
-                if control != lifted.control {
-                    input.last_tap = None;
-                    return;
-                }
-                if super::ribbon_row_press(game, input, p, super::Pointer::Touch)
-                    || armed_click(game, input, bindings, p, super::Presser::Touch)
-                {
-                    input.last_tap = None;
-                    return;
-                }
-                // The minimap owns its taps (jump the camera),
-                // and HUD chrome swallows the rest, in the same
-                // ownership order as clicks, so a tap on chrome
-                // never selects the world ground under it.
-                if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-                    super::reticle::look_at(game, input, world);
-                    return;
-                }
-                // Chrome next, through the touch pad, so a
-                // fingertip gets the minimum touch target even
-                // where the drawn card is smaller. A finger that
-                // landed on another card activates nothing.
-                let layout = game.presentation.layout.get();
-                let card = pressed_card(game, p, input.ui);
-                let badge = layout.idle_badge;
-                if let Some(card) = card {
-                    if lift_presses(input, &lifted, card) {
-                        press_card(game, input, bindings, card.hit);
-                    }
-                } else if badge.w > 0.0 && crate::layout::touch_pad(badge, input.ui).contains(p) {
-                    // The idle badge cycles workers by
-                    // fingertip too — it sits in the top
-                    // bar, which the bare-chrome swallow
-                    // below would otherwise eat.
-                    cycle_idle_worker(game, input);
-                } else if let Some(reach) = lifted.army.filter(|reach| {
-                    crate::layout::army_button_under(&layout, p, Some(input.ui)) == Some(*reach)
-                }) {
-                    // Like a group slot, a button acts only for a finger
-                    // that lifts on the one it landed on.
-                    dispatch_action(game, input, bindings, reach.action());
-                } else if let Some(slot) = lifted.group.filter(|slot| {
-                    crate::layout::group_slot_under(&layout, p, Some(input.ui)) == Some(*slot)
-                }) {
-                    // A slot acts only if the finger lifts on the same
-                    // slot it landed on, as it stood then.
-                    super::press_group_slot(game, input, bindings, slot, false);
-                } else if layout.alert_badge.w > 0.0
-                    && crate::layout::touch_pad(layout.alert_badge, input.ui).contains(p)
-                {
-                    dispatch_action(game, input, bindings, Action::JumpToLastAlert);
-                } else if layout.menu_button.w > 0.0
-                    && crate::layout::touch_pad(layout.menu_button, input.ui).contains(p)
-                {
-                    // Checked before the pause button so
-                    // the menu wins where the padded
-                    // targets overlap.
-                    input.menu_requested = true;
-                } else if layout.pause_button.w > 0.0
-                    && crate::layout::touch_pad(layout.pause_button, input.ui).contains(p)
-                {
-                    dispatch_action(game, input, bindings, Action::TogglePause);
-                } else if click_on_hud(game, p) {
-                    // Bare chrome: the tap is swallowed.
-                } else {
-                    world_tap(game, input, p, double);
-                }
+                tap(game, input, bindings, &lifted, p, Company::Alone { double });
             }
         }
         _ => {}
     }
 }
 
+/// Whether a tapping finger had the screen to itself as it lifted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Company {
+    /// It was the last finger up; `double` when it closely followed a
+    /// tap at the same spot.
+    Alone { double: bool },
+    /// Another finger stays down, so only the chrome the finger landed on
+    /// answers: an armed mode's target, the minimap and the battlefield
+    /// take only a lone finger's tap.
+    Partnered,
+}
+
+/// A still finger lifted at `p`: it presses what it landed on, in the same
+/// ownership order as clicks.
+fn tap(
+    game: &mut Game,
+    input: &mut InputState,
+    bindings: &crate::action::BindingMap,
+    lifted: &TouchPoint,
+    p: Vec2,
+    company: Company,
+) {
+    let alone = matches!(company, Company::Alone { .. });
+    // Armed modes first, as with the mouse: the tap
+    // that follows an armed Build or Salvage card
+    // completes the command instead of selecting under
+    // it. A tap is an atomic click with no drag to
+    // follow, so the stroke closes here and Shift
+    // decides the mode, as on MouseUp.
+    // A ghost button presses only for the finger that landed
+    // on it, and a finger that landed on one presses nothing
+    // else: the cross and check mark sit closer than a still
+    // finger may wander, and a lift just off them must not
+    // move the ghost.
+    let control = super::ghost_control_at(&game.presentation.layout.get(), p);
+    if control != lifted.control
+        || super::ribbon_row_press(game, input, p, super::Pointer::Touch)
+        || (alone && armed_click(game, input, bindings, p, super::Presser::Touch))
+    {
+        input.last_tap = None;
+        return;
+    }
+    // The minimap owns its taps (jump the camera),
+    // and HUD chrome swallows the rest, in the same
+    // ownership order as clicks, so a tap on chrome
+    // never selects the world ground under it.
+    if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
+        if alone {
+            super::reticle::look_at(game, input, world);
+        }
+        return;
+    }
+    // Chrome next, through the touch pad, so a
+    // fingertip gets the minimum touch target even
+    // where the drawn card is smaller. A finger that
+    // landed on another card activates nothing.
+    let layout = game.presentation.layout.get();
+    let card = pressed_card(game, p, input.ui);
+    let badge = layout.idle_badge;
+    if let Some(card) = card {
+        if lift_presses(input, lifted, card) {
+            press_card(game, input, bindings, card.hit);
+        }
+    } else if badge.w > 0.0 && crate::layout::touch_pad(badge, input.ui).contains(p) {
+        // The idle badge cycles workers by
+        // fingertip too — it sits in the top
+        // bar, which the bare-chrome swallow
+        // below would otherwise eat.
+        cycle_idle_worker(game, input);
+    } else if let Some(reach) = lifted.army.filter(|reach| {
+        crate::layout::army_button_under(&layout, p, Some(input.ui)) == Some(*reach)
+    }) {
+        // Like a group slot, a button acts only for a finger
+        // that lifts on the one it landed on.
+        dispatch_action(game, input, bindings, reach.action());
+    } else if let Some(slot) = lifted
+        .group
+        .filter(|slot| crate::layout::group_slot_under(&layout, p, Some(input.ui)) == Some(*slot))
+    {
+        // A slot acts only if the finger lifts on the same
+        // slot it landed on, as it stood then.
+        super::press_group_slot(game, input, bindings, slot, false);
+    } else if layout.alert_badge.w > 0.0
+        && crate::layout::touch_pad(layout.alert_badge, input.ui).contains(p)
+    {
+        dispatch_action(game, input, bindings, Action::JumpToLastAlert);
+    } else if layout.menu_button.w > 0.0
+        && crate::layout::touch_pad(layout.menu_button, input.ui).contains(p)
+    {
+        // Checked before the pause button so
+        // the menu wins where the padded
+        // targets overlap.
+        input.menu_requested = true;
+    } else if layout.pause_button.w > 0.0
+        && crate::layout::touch_pad(layout.pause_button, input.ui).contains(p)
+    {
+        dispatch_action(game, input, bindings, Action::TogglePause);
+    } else if click_on_hud(game, p) {
+        // Bare chrome: the tap is swallowed.
+    } else if let Company::Alone { double } = company {
+        world_tap(game, input, p, double);
+    }
+}
+
 /// The platform took a finger away. Nothing it started completes: no
-/// tap, box, row, or card press. A pair partner left down is spent, as
-/// when its partner lifts.
+/// tap, box, row, or card press. A finger left down is treated as when
+/// its partner lifts.
 pub(super) fn cancel(input: &mut InputState, id: u64) {
     let Some(pos) = input.touches.iter().position(|(tid, _)| *tid == id) else {
         return;
@@ -513,7 +558,18 @@ pub(super) fn cancel(input: &mut InputState, id: u64) {
     if finger.born == TouchBorn::Handle {
         super::drop_row(input);
     }
-    if let [(_, survivor)] = input.touches.as_mut_slice() {
+    partner_left(input);
+}
+
+/// A pair's finger left the screen, ending the pair. A survivor born on the
+/// battlefield is spent, whether the pair boxed, pinched or did neither: its
+/// own still release must not read as a tap and select whatever sits under
+/// it, nor charge a long-press. A survivor born anywhere else keeps its job,
+/// so a finger resting on a card still presses it when it lifts.
+fn partner_left(input: &mut InputState) {
+    if let [(_, survivor)] = input.touches.as_mut_slice()
+        && survivor.born == TouchBorn::World
+    {
         survivor.spent = true;
     }
     input.pair = None;
@@ -524,8 +580,7 @@ pub(super) fn cancel(input: &mut InputState, id: u64) {
 /// past the long-press threshold on such a chip was reading its preview, and
 /// lifting must not cost the order, site, or production slot it names.
 fn lift_presses(input: &InputState, finger: &TouchPoint, card: PressedCard) -> bool {
-    let held = (input.now - finger.down_at) * 1000.0 >= f64::from(input.touch_prefs.long_press_ms);
-    finger.card == Some(card) && !(held && card.hit.action.discards_work())
+    finger.card == Some(card) && !(held_long(input, finger) && card.hit.action.discards_work())
 }
 
 /// A still tap on the battlefield selects, and a quick second tap on a
@@ -573,18 +628,18 @@ fn held_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action:
     // A control-group slot is one chrome a long-press serves: it saves
     // the selection there. Spending the finger keeps its lift from also
     // recalling.
-    if let Some((finger, slot)) = group_hold(input) {
-        if (input.now - finger.down_at) * 1000.0 >= f64::from(input.touch_prefs.long_press_ms) {
-            input.touches[0].1.spent = true;
+    if let Some((index, finger, slot)) = group_hold(input) {
+        if held_long(input, &finger) {
+            input.touches[index].1.spent = true;
             super::press_group_slot(game, input, bindings, slot, true);
         }
         return;
     }
     // A card with a second act is the other: the hold performs it, and the
     // spent finger's lift presses nothing.
-    if let Some((finger, act)) = card_hold(input) {
-        if (input.now - finger.down_at) * 1000.0 >= f64::from(input.touch_prefs.long_press_ms) {
-            input.touches[0].1.spent = true;
+    if let Some((index, finger, act)) = card_hold(input) {
+        if held_long(input, &finger) {
+            input.touches[index].1.spent = true;
             super::activate_card(game, input, bindings, act);
         }
         return;
@@ -597,7 +652,7 @@ fn held_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action:
     let Some(tp) = world_hold(input) else {
         return;
     };
-    if (input.now - tp.down_at) * 1000.0 < f64::from(input.touch_prefs.long_press_ms) {
+    if !held_long(input, &tp) {
         return;
     }
     input.touches[0].1.spent = true;
