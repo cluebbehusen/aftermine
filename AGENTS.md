@@ -209,7 +209,9 @@ is opt-in. Compact controller contracts run under combined coverage.
 Both floors measure production code. A module's unit tests live in a child
 `tests.rs` or `*_tests.rs` file, never an inline `mod tests { … }`;
 cargo-llvm-cov's default filter skips those files and everything under `tests/`.
-A driver test fails on an inline or counted test module.
+A driver test fails on an inline or counted test module, and on any other
+test-only item in a production file, imports aside, that its list of seams does
+not name.
 
 The `aftermine-sim` integration suite compiles into one test binary: modules of
 `tests/integration/main.rs`, whose guard test fails on an undeclared file. Add
