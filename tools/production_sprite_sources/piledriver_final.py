@@ -5,9 +5,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from tools import gen_sprites as gen
-from tools.production_sprite_sources.installed_defenses_final import bolt, plate
-from tools.production_sprite_sources.specialists_final import (
+from tools import sprite_kit as kit
+from tools.sprite_kit import (
     BRASS,
     DARK,
     DEEP,
@@ -15,12 +14,14 @@ from tools.production_sprite_sources.specialists_final import (
     IRON,
     STEEL,
     VOID,
+    bolt,
     box,
     canvas,
-    circle,
+    disk,
     finish,
     line,
     panel,
+    plate,
     poly,
     strut,
     vent,
@@ -45,10 +46,6 @@ def span(t, a, b):
 
 def lerp(a, b, t):
     return a + (b - a) * t
-
-
-def disk(d, x, y, r, c):
-    circle(d, (x - r, y - r, x + r, y + r), c)
 
 
 def hydraulic(d, a, b, width=5):
@@ -328,8 +325,8 @@ def render_gun(variant: str, age: float | None = None):
 
 
 def install_piledriver(registry: dict[str, Image.Image], out: Path) -> None:
-    for variant in gen.PALETTES:
-        tag = gen.variant_tag(variant)
+    for variant in kit.PALETTES:
+        tag = kit.variant_tag(variant)
         frames = {}
         gun = render_gun(variant)
         for move in range(3):
@@ -348,5 +345,5 @@ def install_piledriver(registry: dict[str, Image.Image], out: Path) -> None:
                 variant, step / ANCHOR_STEPS
             ).crop(ANCHOR_CROP)
         for key, image in frames.items():
-            gen.save_sprite(image, out, key)
+            kit.save_sprite(image, out, key)
             registry[key] = image

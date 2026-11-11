@@ -812,7 +812,7 @@ fn train(game: &mut Game, kind: UnitKind) {
 /// free ground (a free frame, for an Extractor) once the bank covers it.
 fn build(game: &mut Game, kind: BuildingKind, count: usize) {
     let seat = Seat::of(game);
-    let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
+    let cost = kind.base_stats().construction.cost;
     let placed: Vec<&aftermine_sim::Building> = seat.own_buildings(kind).collect();
     let idle_worker = seat.workers().find(|u| spare(u)).map(|u| u.id);
     let site = placed.iter().find(|b| !b.built()).map(|b| b.anchor);
@@ -1193,10 +1193,7 @@ fn meddle(game: &mut Game, rng: &mut Pcg32) -> Vec<Command> {
                 queue: false,
             },
             4 => {
-                let kinds: Vec<BuildingKind> = BuildingKind::ALL
-                    .into_iter()
-                    .filter(|kind| kind.base_stats().construction.is_some())
-                    .collect();
+                let kinds = BuildingKind::ALL;
                 Command::Build {
                     units: some_unit(rng),
                     kind: kinds[rng.next_index(kinds.len())],

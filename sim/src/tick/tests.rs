@@ -15,11 +15,7 @@ fn command_phase_inspection_is_pure_and_stops_before_the_tick() {
         .id;
     let kind = crate::BuildingKind::Turret;
     let anchor = TilePos::new(10, 4);
-    let cost = kind
-        .base_stats()
-        .construction
-        .expect("turret is constructible")
-        .cost;
+    let cost = kind.base_stats().construction.cost;
     let command = PlayerCommand {
         player: crate::PlayerId(0),
         command: crate::Command::Build {
@@ -84,6 +80,15 @@ fn command_phase_inspection_honors_a_frozen_result() {
         }],
         |projected| {
             assert!(!projected.accepts_commands(crate::PlayerId(0)));
+            assert_eq!(
+                projected.place_intent_refusal(
+                    crate::PlayerId(0),
+                    crate::BuildingKind::Turret,
+                    TilePos::new(1, 1),
+                    &[],
+                ),
+                Some(crate::PlaceRefusal::OutOfPlay)
+            );
             assert_eq!(
                 projected.scrap(crate::PlayerId(0)),
                 Some(state.player(crate::PlayerId(0)).scrap)

@@ -582,7 +582,6 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 aftermine_sim::BuildingKind::MawCradle
                     .base_stats()
                     .construction
-                    .unwrap()
                     .requires,
             )
         {

@@ -490,9 +490,8 @@ fn worth_shares_average_each_pair_before_pooling() {
             ..SeatLedger::default()
         },
     ];
-    let refs: Vec<Option<&SeatLedger>> = ledgers.iter().map(Some).collect();
-    assert_eq!(team_shares(&refs, &[0, 1], 0).unwrap()[0], Some(750));
-    assert_eq!(team_shares(&[Some(&ledgers[0]), None], &[0, 1], 0), None);
+    let refs: Vec<&SeatLedger> = ledgers.iter().collect();
+    assert_eq!(team_shares(&refs, &[0, 1], 0)[0], Some(750));
 }
 
 /// `scenario` built, with `edit` applied to its JSON form.
@@ -1301,7 +1300,7 @@ fn a_warhead_is_credited_to_its_spire_and_a_stop_to_its_lattice() {
     let spire = built(&open, 0, "spire");
     assert_eq!((spire.fired, spire.landed), (1, 1));
     assert!(spire.dealt.buildings > 0, "the burst is the Spire's damage");
-    let cost = |kind: BuildingKind| u64::from(kind.base_stats().construction.unwrap().cost);
+    let cost = |kind: BuildingKind| u64::from(kind.base_stats().construction.cost);
     let round = u64::from(BuildingKind::Spire.magazine().unwrap().round_cost);
     assert_eq!(
         spire.paid,

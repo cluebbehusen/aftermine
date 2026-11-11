@@ -990,11 +990,7 @@ fn fill<'a>(
 /// distance, a hundred added to the distance so near targets do not swamp
 /// the rest.
 fn distant_worth(building: BuildingKind, distance: u64) -> u64 {
-    let cost = building
-        .base_stats()
-        .construction
-        .as_ref()
-        .map_or(0, |construction| construction.cost);
+    let cost = building.base_stats().construction.cost;
     u64::from(cost) * 1_000 / (100 + distance)
 }
 

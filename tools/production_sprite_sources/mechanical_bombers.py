@@ -4,7 +4,14 @@ from dataclasses import dataclass
 
 from PIL import Image, ImageDraw
 
-from tools import gen_sprites as gen
+from tools import sprite_kit as kit
+from tools.sprite_kit import (
+    IRON,
+    IRON_DARK,
+    IRON_LIGHT,
+    SS,
+    mirror,
+)
 
 
 @dataclass(frozen=True)
@@ -20,13 +27,9 @@ PALETTES = {
 
 BLACK = (11, 11, 15)
 IRON_DEEP = (24, 25, 31)
-IRON_DARK = gen.IRON_DARK
-IRON = gen.IRON
-IRON_LIGHT = gen.IRON_LIGHT
 EDGE = (115, 114, 123)
 CONDOR_SIZE = 128
 CONDOR_STATES = ("idle", "crack", "open", "release", "recover")
-SS = 4
 
 
 class ScaledDraw:
@@ -56,35 +59,25 @@ def _canvas(size=128):
     return image, ScaledDraw(image)
 
 
-def _finish(image):
-    return gen.rim_light(image.resize((128, 128), Image.Resampling.LANCZOS))
-
-
-def _mirror(points, side):
-    return [(64 + side * x, y) for x, y in points]
-
-
 def _column(x, half, y0, y1):
     return (x - half, y0, x + half, y1)
 
 
 def condor_wing(draw, side, paint):
+    draw.polygon(mirror(((5, 26), (41, 62), (22, 66), (7, 54)), side), fill=_rgba(IRON))
+    draw.line(mirror(((8, 26), (39, 58)), side), fill=_rgba(EDGE), width=1)
+    draw.line(mirror(((26, 46), (30, 64)), side), fill=_rgba(IRON_DEEP), width=1)
     draw.polygon(
-        _mirror(((5, 26), (41, 62), (22, 66), (7, 54)), side), fill=_rgba(IRON)
-    )
-    draw.line(_mirror(((8, 26), (39, 58)), side), fill=_rgba(EDGE), width=1)
-    draw.line(_mirror(((26, 46), (30, 64)), side), fill=_rgba(IRON_DEEP), width=1)
-    draw.polygon(
-        _mirror(((26, 63), (45, 67), (44, 76), (26, 72)), side), fill=_rgba(BLACK)
+        mirror(((26, 63), (45, 67), (44, 76), (26, 72)), side), fill=_rgba(BLACK)
     )
     draw.polygon(
-        _mirror(((28, 65), (43, 69), (42, 74), (28, 70)), side), fill=_rgba(paint)
+        mirror(((28, 65), (43, 69), (42, 74), (28, 70)), side), fill=_rgba(paint)
     )
-    draw.line(_mirror(((28, 65), (43, 69)), side), fill=_rgba(EDGE), width=1)
+    draw.line(mirror(((28, 65), (43, 69)), side), fill=_rgba(EDGE), width=1)
     draw.polygon(
-        _mirror(((9, 72), (24, 73), (14, 85), (9, 80)), side), fill=_rgba(IRON_DARK)
+        mirror(((9, 72), (24, 73), (14, 85), (9, 80)), side), fill=_rgba(IRON_DARK)
     )
-    draw.line(_mirror(((9, 72), (24, 73)), side), fill=_rgba(IRON), width=1)
+    draw.line(mirror(((9, 72), (24, 73)), side), fill=_rgba(IRON), width=1)
 
 
 def condor_engine(draw, side):
@@ -187,4 +180,4 @@ def render_condor(variant: str, state: str = "idle") -> Image.Image:
         condor_engine(draw, side)
     condor_spine(draw, palette.dark)
     nose_bay(image, draw, state, palette.dark)
-    return _finish(image)
+    return kit.finish(image)

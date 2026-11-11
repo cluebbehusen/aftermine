@@ -139,11 +139,7 @@ fn lift_cost(observation: &ObservationData) -> u32 {
 }
 
 fn construction_cost(kind: BuildingKind) -> u32 {
-    kind.base_stats()
-        .construction
-        .as_ref()
-        .expect("expansion buildings and their prerequisites are constructible")
-        .cost
+    kind.base_stats().construction.cost
 }
 
 /// The site's anchors, best first: those the seat's ground reaches before
@@ -336,8 +332,7 @@ fn danger(observation: &ObservationData, memory: &Memory, anchor: TilePos) -> u6
             !building.kind.base_stats().weapons.is_empty()
                 && gap(anchor, WORKS, building.anchor, building.kind.size()) <= DANGER_REACH
         })
-        .filter_map(|building| building.kind.base_stats().construction.as_ref())
-        .map(|construction| u64::from(construction.cost))
+        .map(|building| u64::from(building.kind.base_stats().construction.cost))
         .sum();
     units + buildings
 }

@@ -154,18 +154,10 @@ fn stat_tables_satisfy_the_runtime_math_preconditions() {
             );
             assert!(stats.vision > 0, "{owner} has no sight");
             check_weapons(&owner, stats.weapons);
-            if let Some(construction) = stats.construction {
-                assert!(
-                    construction.cost > 0 && construction.build_ticks > 0,
-                    "{owner} has inoperable construction math"
-                );
-            }
-            if tier > 0 {
-                assert!(
-                    stats.construction.is_some(),
-                    "{owner} cannot define its automatic upgrade"
-                );
-            }
+            assert!(
+                stats.construction.cost > 0 && stats.construction.build_ticks > 0,
+                "{owner} has inoperable construction math"
+            );
         }
     }
 }

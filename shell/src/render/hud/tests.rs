@@ -376,7 +376,6 @@ fn a_planned_row_counts_itself_in_the_ribbon() {
     let cost = aftermine_sim::BuildingKind::Barricade
         .base_stats()
         .construction
-        .unwrap()
         .cost;
     assert_eq!(ribbon.label, "Barricade \u{d7}3");
     assert_eq!(ribbon.cost, Some((3 * cost).to_string()));

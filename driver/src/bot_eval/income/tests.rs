@@ -166,13 +166,12 @@ fn passive_rates_follow_reclaimer_tiers_extractors_and_the_drip() {
 #[test]
 fn checkpoints_compare_the_last_minute_with_the_estimate() {
     let mut state = Scenario::skirmish().build().unwrap();
-    let mut tracker = IncomeTracker::new(&state, vec![true, false]);
+    let mut tracker = IncomeTracker::new(&state);
     while state.current_tick() < INCOME_CHECKPOINTS[0] {
         let report = state.tick(&[]);
         tracker.observe(&state, &report.events, 12);
     }
     let samples = tracker.finish();
-    assert!(samples[1].is_empty(), "seat one is unwatched");
     let [sample] = samples[0].as_slice() else {
         panic!("one checkpoint was reached: {samples:?}");
     };
@@ -192,7 +191,7 @@ fn checkpoints_compare_the_last_minute_with_the_estimate() {
 fn a_seat_out_of_a_team_match_stops_sampling() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios/broad-front.json");
     let mut state = Scenario::load(&path).unwrap().build().unwrap();
-    let mut tracker = IncomeTracker::new(&state, vec![true; 4]);
+    let mut tracker = IncomeTracker::new(&state);
     let surrender = PlayerCommand {
         player: PlayerId(1),
         command: Command::Surrender,

@@ -1,8 +1,8 @@
 """Independent gun carriage on the accepted Buzzard quadcopter chassis."""
 
-from tools import gen_sprites as gen
-from tools.production_sprite_sources.mechanical_aircraft import FLASH, fan, panel, strut
-from tools.production_sprite_sources.mechanical_ground import (
+from tools import sprite_kit as kit
+from tools.production_sprite_sources.mechanical_aircraft import FLASH, fan
+from tools.sprite_kit import (
     DARK,
     DEEP,
     EDGE,
@@ -14,14 +14,16 @@ from tools.production_sprite_sources.mechanical_ground import (
     circle,
     finish,
     line,
+    panel,
     poly,
+    strut,
     vent,
 )
 
 
 def hull(variant, move=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     for x, y in ((25, 40), (103, 40), (25, 94), (103, 94)):
         strut(d, (64, 64 if y < 64 else 84), (x, y), 7)
         fan(d, x, y, 20, move, paint)
@@ -56,7 +58,7 @@ def hull(variant, move=0):
 
 def mount(variant, action=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     poly(
         d,
         [

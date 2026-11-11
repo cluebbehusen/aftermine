@@ -1182,9 +1182,9 @@ pub(super) fn ribbon_layout(
     } else {
         mode.label()
     };
-    let cost = building
-        .and_then(|kind| kind.base_stats().construction)
-        .map(|construction| (construction.cost * planned.max(1).fit::<u32>()).to_string());
+    let cost = building.map(|kind| {
+        (kind.base_stats().construction.cost * planned.max(1).fit::<u32>()).to_string()
+    });
     let icon_w = if building.is_some() { 40.0 * s } else { 0.0 };
     let label_size = crate::theme::Type::Label.at(s);
     let label_w = measure(Face::Body, &label, label_size);
@@ -1348,7 +1348,7 @@ fn widest_placement_status(
     measure: &dyn Fn(&str) -> f32,
 ) -> f32 {
     use aftermine_sim::PlaceRefusal;
-    let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
+    let cost = kind.base_stats().construction.cost;
     // A builder holds at most the cap's worth of queue behind its order.
     let most = aftermine_sim::stats::ORDER_QUEUE_CAP + 1;
     let detail = [
@@ -1367,7 +1367,7 @@ fn widest_placement_status(
         PlaceRefusal::Terrain,
         PlaceRefusal::Building,
         PlaceRefusal::Unit,
-        PlaceRefusal::NotConstructible,
+        PlaceRefusal::OutOfPlay,
         PlaceRefusal::Prerequisite,
         PlaceRefusal::FrameRequired,
         PlaceRefusal::FrameBlocked,

@@ -80,7 +80,7 @@ fn greed_trades_a_safe_field_for_a_richer_contested_one() {
     let scenario = frontier(0);
     let model = map(&scenario);
     let state = scenario.build().unwrap();
-    let observation = ObservationData::omniscient(&state, PlayerId(0));
+    let observation = mapped(&state, PlayerId(0));
     let memory = Memory::default();
     let (_, safe) = site_with(&model, TilePos::new(12, 10));
     let (_, rich) = site_with(&model, TilePos::new(26, 10));
@@ -95,7 +95,7 @@ fn a_site_that_failed_at_every_anchor_is_skipped() {
     let scenario = frontier(0);
     let model = map(&scenario);
     let state = scenario.build().unwrap();
-    let observation = ObservationData::omniscient(&state, PlayerId(0));
+    let observation = mapped(&state, PlayerId(0));
     let (_, safe) = site_with(&model, TilePos::new(12, 10));
     let mut memory = Memory::default();
     for anchor in &safe.anchors[1..] {
@@ -228,7 +228,7 @@ fn only_frames_the_seat_has_seen_add_to_a_site() {
     let state = scenario.build().unwrap();
     let (_, safe) = site_with(&model, TilePos::new(12, 10));
     assert!(safe.frames.contains(&TilePos::new(16, 9)), "premise");
-    let mut observation = ObservationData::omniscient(&state, PlayerId(0));
+    let mut observation = mapped(&state, PlayerId(0));
     let memory = Memory::default();
     let seen = expansion::value(&observation, &model, &memory, safe, 50).unwrap();
     observation.known_frames.clear();
@@ -246,7 +246,7 @@ fn a_site_keeps_anchors_on_its_resources_ground_and_can_be_reached_by_lift() {
         (PlayerId(0), TilePos::new(30, 21)),
         (PlayerId(1), TilePos::new(33, 22)),
     ] {
-        let observation = ObservationData::omniscient(&state, player);
+        let observation = mapped(&state, player);
         let (index, site) = site_with(&model, node);
         let ground = model.component(node);
         let reachable = expansion::anchors(&model, player, site);

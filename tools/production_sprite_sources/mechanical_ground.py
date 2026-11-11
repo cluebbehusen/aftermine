@@ -1,76 +1,29 @@
 """Ground-combat calibration using the accepted machine materials."""
 
-from PIL import Image, ImageDraw
+from tools import sprite_kit as kit
+from tools.sprite_kit import (
+    DARK,
+    DEEP,
+    EDGE,
+    IRON,
+    STEEL,
+    VOID,
+    box,
+    canvas,
+    circle,
+    finish,
+    line,
+    poly,
+    track,
+    vent,
+)
 
-from tools import gen_sprites as gen
-
-SS = 4
-SIZE = 128
-VOID = (11, 11, 15)
-DEEP = (24, 25, 31)
-DARK = gen.IRON_DARK
-IRON = gen.IRON
-LIGHT = gen.IRON_LIGHT
-EDGE = (112, 111, 119)
-STEEL = (143, 140, 135)
-
-
-def canvas():
-    image = Image.new("RGBA", (SIZE * SS, SIZE * SS))
-    return image, ImageDraw.Draw(image)
-
-
-def box(d, bounds, color, radius=0):
-    d.rounded_rectangle(
-        tuple(round(v * SS) for v in bounds),
-        radius=round(radius * SS),
-        fill=(*color, 255),
-    )
-
-
-def line(d, points, color, width=1):
-    d.line(
-        [(round(x * SS), round(y * SS)) for x, y in points],
-        fill=(*color, 255),
-        width=round(width * SS),
-    )
-
-
-def poly(d, points, color):
-    d.polygon([(round(x * SS), round(y * SS)) for x, y in points], fill=(*color, 255))
-
-
-def circle(d, bounds, color):
-    d.ellipse(tuple(round(v * SS) for v in bounds), fill=(*color, 255))
-
-
-def finish(image, rim=True):
-    image = image.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
-    return gen.rim_light(image) if rim else image
-
-
-def track(d, bounds, phase, paint):
-    x0, y0, x1, y1 = bounds
-    box(d, bounds, VOID, 5)
-    box(d, (x0 + 2, y0 + 2, x1 - 2, y1 - 2), DARK, 3)
-    box(d, (x0 + 5, y0 + 4, x1 - 5, y1 - 4), DEEP, 2)
-    for y in range(round(y0 + 5), round(y1 - 5), 9):
-        offset = (phase * 3) % 9
-        if y + offset + 3 < y1 - 3:
-            box(d, (x0 + 3, y + offset, x1 - 3, y + offset + 3), IRON, 1)
-    line(d, [(x0 + 2, y0 + 6), (x0 + 2, y1 - 7)], EDGE)
-    box(d, (x0 + 5, y0 + 6, x1 - 5, y0 + 11), paint, 1)
-
-
-def vent(d, x, y, width=16):
-    box(d, (x, y, x + width, y + 14), VOID, 2)
-    for yy in (y + 3, y + 7, y + 11):
-        line(d, [(x + 3, yy), (x + width - 3, yy)], IRON)
+LIGHT = kit.IRON_LIGHT
 
 
 def hull(kind, variant, move=0):
     image, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     if kind == "sentinel":
         for bounds in ((15, 40, 36, 116), (92, 40, 113, 116)):
             track(d, bounds, move, paint)
@@ -163,7 +116,7 @@ def hull(kind, variant, move=0):
 
 def mount(kind, variant, action=0):
     image, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     if kind == "sentinel":
         recoil = (0, 0, 7, 4, 1)[action]
         poly(d, [(47, 48), (55, 41), (73, 41), (81, 48), (78, 79), (50, 79)], VOID)
@@ -220,7 +173,7 @@ def mount(kind, variant, action=0):
             [(60, tip), (64, tip - 7), (68, tip), (65, tip + 3), (63, tip + 3)],
             (193, 170, 122),
         )
-        line(d, [(64, tip - 3), (64, tip + 2)], gen.BONE, 2)
+        line(d, [(64, tip - 3), (64, tip + 2)], kit.BONE, 2)
     return finish(image, rim=False)
 
 
@@ -232,7 +185,7 @@ def render(kind, variant, move=0, action=0):
 
 def render_breaker(variant, move=0, action=0):
     image, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     # Continuous running gear carries a fixed, braced gun cradle.
     for bounds in ((20, 29, 41, 112), (87, 29, 108, 112)):
         track(d, bounds, move, paint)
@@ -285,6 +238,6 @@ def render_breaker(variant, move=0, action=0):
         circle(d, (x - 1, y + recoil - 1, x + 1, y + recoil + 1), LIGHT)
     if action == 2:
         poly(d, [(59, 18), (64, 10), (69, 18), (65, 22), (63, 22)], (193, 170, 122))
-        line(d, [(64, 15), (64, 19)], gen.BONE, 2)
+        line(d, [(64, 15), (64, 19)], kit.BONE, 2)
     chassis.alpha_composite(finish(image, rim=False))
     return chassis

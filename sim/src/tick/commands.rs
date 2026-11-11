@@ -954,11 +954,7 @@ fn apply_build_inner(
         {
             return Err(RejectReason::BadSite);
         }
-        let cost = kind
-            .base_stats()
-            .construction
-            .ok_or(RejectReason::BadSite)?
-            .cost;
+        let cost = kind.base_stats().construction.cost;
         if state.player(player).scrap < cost {
             return Err(RejectReason::NotEnoughScrap);
         }
@@ -1014,11 +1010,7 @@ fn found_site(
     anchor: TilePos,
     commit_builder: impl FnOnce(&mut State, crate::ids::BuildingId) -> bool,
 ) -> Result<crate::ids::BuildingId, RejectReason> {
-    let cost = kind
-        .base_stats()
-        .construction
-        .ok_or(RejectReason::BadSite)?
-        .cost;
+    let cost = kind.base_stats().construction.cost;
     if state.player(player).scrap < cost {
         return Err(RejectReason::NotEnoughScrap);
     }
@@ -1070,7 +1062,7 @@ fn apply_cancel(
             return Err(RejectReason::InvalidTarget);
         }
         let stats = b.stats();
-        let cost = stats.construction.expect("sites are buildable kinds").cost;
+        let cost = stats.construction.cost;
         if b.unstarted() {
             cost
         } else {

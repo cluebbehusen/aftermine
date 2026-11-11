@@ -454,7 +454,7 @@ pub(crate) struct BuildingAnimationFacts {
     tier: u8,
     built: bool,
     progress: u32,
-    construction_total: Option<u32>,
+    construction_total: u32,
     construction_stage: usize,
     construction_active: bool,
     production: Option<(UnitKind, u32, u32)>,
@@ -474,7 +474,7 @@ impl BuildingAnimationFacts {
         // The active tier's clock: a committed upgrade rebuilds on the
         // new tier's labor budget, and a base denominator would show the
         // scaffold complete early.
-        let construction_total = building.stats().construction.map(|stats| stats.build_ticks);
+        let construction_total = building.stats().construction.build_ticks;
         Self {
             id: building.id,
             kind: building.kind,
@@ -1034,7 +1034,7 @@ impl AnimationController {
         options: AnimationOptions,
     ) -> BuildingAnimationState {
         let construction = (!facts.built).then(|| {
-            let total = facts.construction_total.unwrap_or(1);
+            let total = facts.construction_total;
             ConstructionState {
                 progress: ratio(facts.progress, total),
                 stage: facts.construction_stage,

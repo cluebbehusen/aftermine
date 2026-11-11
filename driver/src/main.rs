@@ -675,7 +675,7 @@ fn main() -> Result<()> {
                     )? {
                         let plan = aftermine_driver::bot_eval::EvaluationPlan::from_scenario(
                             scenario, leg,
-                        );
+                        )?;
                         let replay_path = replay_dir
                             .as_ref()
                             .map(|dir| {

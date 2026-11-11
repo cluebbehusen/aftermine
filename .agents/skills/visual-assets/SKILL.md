@@ -4,9 +4,9 @@ description:
   Generate, modify, review, animate, and productionize Aftermine visual assets.
   Use for sprites, action animations, projectiles, construction states,
   environment props, scenery, decals, rocks, debris, terrain, quarry boundaries,
-  UI icons, or changes to tools/gen_sprites.py, tools/production_sprite_sources,
-  and assets/sprites. This skill keeps role readability and explicit approvals
-  ahead of visual novelty.
+  UI icons, or changes to tools/gen_sprites.py, tools/sprite_kit.py,
+  tools/production_sprite_sources, and assets/sprites. This skill keeps role
+  readability and explicit approvals ahead of visual novelty.
 ---
 
 # Aftermine visual assets
@@ -228,9 +228,10 @@ exception: it draws its treads from its own rig frames.
    numbered options with the exact control included. Include animation only for
    assets whose role actually moves.
 2. Promote only those approved bytes or their exact code-native source through
-   `tools/gen_sprites.py` and, where used, `tools/production_sprite_sources/`.
-   Assert that regenerated production bytes match the approved source. Do not
-   promote an entire review batch because one item was approved.
+   `tools/gen_sprites.py` and, where used, `tools/sprite_kit.py` and
+   `tools/production_sprite_sources/`. Assert that regenerated production bytes
+   match the approved source. Do not promote an entire review batch because one
+   item was approved.
 3. Keep the production generator, atlas outputs, runtime wiring, and tests in
    one reviewable change. Commit them together only when the user has explicitly
    authorized a commit. Leave every experiment in place and uncommitted until a

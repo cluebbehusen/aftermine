@@ -22,7 +22,7 @@ fn rungs(leg: &LadderLeg) -> Vec<(BotDifficulty, BotStance, u64)> {
         .controllers
         .iter()
         .map(|controller| {
-            let config = controller.unwrap().config();
+            let config = controller.config();
             (config.difficulty, config.stance, config.personality_seed)
         })
         .collect()
@@ -176,10 +176,10 @@ fn row(run: u64, leg: EvaluationLeg, won: Option<BotDifficulty>) -> ScoredLadder
             .enumerate()
             .map(|(seat, &difficulty)| LadderSeat {
                 seat: u8::try_from(seat).unwrap(),
-                config: Some(BotConfig::new(difficulty, BotStance::Balanced, 9000)),
+                config: BotConfig::new(difficulty, BotStance::Balanced, 9000),
             })
             .collect(),
-        evidence: Vec::new(),
+        evidence: vec![SeatEvidence::default(); 2],
     }
 }
 
@@ -323,12 +323,11 @@ fn worth_shares_follow_the_higher_rung_and_ledgers_pool_by_rung() {
         let higher = usize::from(row.leg == EvaluationLeg::Swapped);
         let mut evidence: Vec<SeatEvidence> = (0..2)
             .map(|_| SeatEvidence {
-                ledger: Some(ledger(300)),
+                ledger: ledger(300),
                 ..SeatEvidence::default()
             })
             .collect();
-        evidence[higher].ledger = Some(ledger(700));
-        evidence[higher].attacks = Some(crate::bot_eval::AttackCalibration::default());
+        evidence[higher].ledger = ledger(700);
         row.evidence = evidence;
     }
     rows.extend(pair(1, Some(Standard), None));
@@ -339,24 +338,14 @@ fn worth_shares_follow_the_higher_rung_and_ledgers_pool_by_rung() {
         shares
             .iter()
             .all(|share| share.pairs == 1 && (share.mean - 0.7).abs() < 1e-9),
-        "rows without a ledger add no pair: {shares:?}"
+        "ledgers with no worth samples add no pair: {shares:?}"
     );
-    let rungs: Vec<(BotDifficulty, u64, bool)> = report
+    let rungs: Vec<(BotDifficulty, u64)> = report
         .rungs
         .iter()
-        .map(|rung| {
-            (
-                rung.rung,
-                rung.summary.ledger.seats,
-                rung.summary.attacks.is_some(),
-            )
-        })
+        .map(|rung| (rung.rung, rung.summary.ledger.seats))
         .collect();
-    assert_eq!(
-        rungs,
-        [(Standard, 2, false), (Prime, 2, true)],
-        "lowest rung first"
-    );
+    assert_eq!(rungs, [(Standard, 4), (Prime, 4)], "lowest rung first");
     assert!(report.render().contains("prime share of net worth"));
 }
 

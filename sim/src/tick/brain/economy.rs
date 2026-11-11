@@ -48,10 +48,7 @@ pub(super) fn advance_upgrades(state: &mut State, builds: &mut Vec<PendingHpGain
         let building = state.building(site).expect("upgrade id came from state");
         let (player, kind) = (building.player, building.kind);
         let stats = building.stats();
-        let build_ticks = stats
-            .construction
-            .expect("an upgrade tier is constructible")
-            .build_ticks;
+        let build_ticks = stats.construction.build_ticks;
         let start_hp = stats.max_hp / 5;
         let ramp = stats.max_hp - start_hp;
         let (progress, advanced) = state
@@ -101,10 +98,7 @@ pub(super) fn build(
     let (anchor, kind) = (b.anchor, b.kind);
     let stats = b.stats();
     let size = kind.size();
-    let build_ticks = stats
-        .construction
-        .expect("sites only exist for buildable kinds")
-        .build_ticks;
+    let build_ticks = stats.construction.build_ticks;
     let unit = state.unit(id).expect("caller checked");
     if !b.provisional() && unit.work_stopped() && state.in_building_work_reach(unit, site) {
         let start_hp = stats.max_hp / 5;
@@ -273,9 +267,7 @@ impl BuildingWeld {
         let ramp_ticks = if kind == crate::stats::BuildingKind::Foundry {
             crate::stats::FOUNDRY_REPAIR_TICKS
         } else {
-            stats
-                .construction
-                .map_or(crate::stats::FOUNDRY_REPAIR_TICKS, |c| c.build_ticks)
+            stats.construction.build_ticks
         };
         let basis = kind.repair_basis(tier);
         let start_hp = stats.max_hp / 5;
@@ -691,10 +683,7 @@ pub(super) fn salvage(
     // Strip on the active tier's construction clock: dismantling a
     // Refinery is undoing the Refinery's build, not the Reclaimer's.
     let stats = kind.tier_stats(tier);
-    let ramp_ticks = stats
-        .construction
-        .expect("non-Foundry salvage targets are buildable")
-        .build_ticks;
+    let ramp_ticks = stats.construction.build_ticks;
     let unit = state.unit(id).expect("caller checked");
     if unit.work_stopped() && state.in_building_work_reach(unit, building) {
         let start_hp = stats.max_hp / 5;

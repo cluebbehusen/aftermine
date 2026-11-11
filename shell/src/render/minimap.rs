@@ -373,11 +373,7 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
             );
             // A cradle fills from the bottom as its crew raises it.
             if let Some(progress) = public.progress {
-                let build = public
-                    .kind
-                    .base_stats()
-                    .construction
-                    .map_or(1, |c| c.build_ticks.max(1));
+                let build = public.kind.base_stats().construction.build_ticks.max(1);
                 let filled = h as f32 * scale * progress.min(build) as f32 / build as f32;
                 draw_rectangle(
                     rect.x + public.anchor.x as f32 * scale,

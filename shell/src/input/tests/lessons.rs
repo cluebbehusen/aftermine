@@ -927,7 +927,7 @@ fn select_at(game: &mut Game, input: &mut InputState, world: Vec2, touch: bool) 
 /// at `spot` with a click, or with a drag of the outline and the check
 /// mark.
 fn place(game: &mut Game, input: &mut InputState, kind: BuildingKind, spot: Vec2, touch: bool) {
-    let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
+    let cost = kind.base_stats().construction.cost;
     run_until(game, input, "the bank covering the building", |game| {
         game.state.player(game.presentation.human).scrap >= cost
     });

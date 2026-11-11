@@ -135,7 +135,7 @@ fn a_site_or_upgrade_passes_its_stages_at_equal_shares_of_its_rung_labor() {
     let upgrade: fn(u32) -> BuildingPhase = |progress| BuildingPhase::Upgrading { progress };
     for (tier, phase) in [(0, site), (1, upgrade)] {
         building.tier = tier;
-        let total = building.stats().construction.unwrap().build_ticks;
+        let total = building.stats().construction.build_ticks;
         let stages = u32::from(crate::stats::CONSTRUCTION_STAGES);
         let stage = |building: &mut Building, progress| {
             building.phase = phase(progress);
