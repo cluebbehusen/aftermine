@@ -260,7 +260,10 @@ fn the_host_moves_players_kicks_them_and_starts_only_with_every_chair_filled() {
     // An empty open chair holds Start.
     w.setup_sel = 4;
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Stay);
-    assert_eq!(w.notice.as_deref(), Some("Seat 4 is still open"));
+    assert_eq!(
+        w.notice.map(|notice| notice.to_string()).as_deref(),
+        Some("Seat 4 is still open")
+    );
     drive(&mut w, &mut draft, Key::Enter);
 
     // Removing Alex asks first, with Cancel preselected.
@@ -280,6 +283,36 @@ fn the_host_moves_players_kicks_them_and_starts_only_with_every_chair_filled() {
     });
     let (_, _, reason) = clients[0].failure().unwrap();
     assert_eq!(reason, "The host removed you from the lobby");
+}
+
+#[test]
+fn an_open_seat_notice_lasts_only_until_the_seats_change() {
+    let (mut w, mut draft) = hosting();
+    let shown = |w: &Wizard| w.notice.map(|notice| notice.to_string());
+    let held_start = |w: &mut Wizard, draft: &mut NewMatchDraft| {
+        w.setup_sel = 4;
+        assert_eq!(drive(w, draft, Key::Enter), Out::Stay);
+    };
+    held_start(&mut w, &mut draft);
+    assert_eq!(shown(&w).as_deref(), Some("Seat 3 is still open"));
+
+    let mut clients = vec![join(&w, "Alex")];
+    settle(&mut w, &mut draft, &mut clients, |w, _, _| {
+        member_at(w, 2).is_some()
+    });
+    assert_eq!(shown(&w), None, "a joiner filled a seat");
+
+    held_start(&mut w, &mut draft);
+    assert_eq!(shown(&w).as_deref(), Some("Seat 2 is still open"));
+    drop(clients);
+    settle(&mut w, &mut draft, &mut [], |w, _, _| {
+        member_at(w, 2).is_none()
+    });
+    assert_eq!(shown(&w), None, "a player left a seat");
+
+    held_start(&mut w, &mut draft);
+    w.close_lan(&mut draft);
+    assert_eq!(shown(&w), None, "the lobby closed");
 }
 
 #[test]
@@ -399,7 +432,10 @@ fn a_failed_start_frees_its_culprits_chairs_before_anything_can_start_again() {
         assert!(w.poll_lan(&mut draft, Duration::ZERO).is_none());
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
-    assert_eq!(w.notice.as_deref(), Some("A player is out of sync"));
+    assert_eq!(
+        w.notice.map(|notice| notice.to_string()).as_deref(),
+        Some("A player is out of sync")
+    );
     assert_eq!(
         member_at(&w, 2),
         None,
@@ -418,7 +454,10 @@ fn a_map_without_seats_cannot_host() {
     w.lan_bind = "127.0.0.1:0".to_owned();
     w.open_lan(&mut draft);
     assert!(w.lan.is_none());
-    assert_eq!(w.notice.as_deref(), Some("This map has no seats"));
+    assert_eq!(
+        w.notice.map(|notice| notice.to_string()).as_deref(),
+        Some("This map has no seats")
+    );
 }
 
 #[test]
@@ -502,6 +541,13 @@ fn a_taken_port_keeps_the_setup_local_and_says_why() {
         draft.seats.iter().all(|plan| !plan.open),
         "a lobby that never opened opens no chairs"
     );
-    assert!(other.notice.as_deref().unwrap().starts_with("Cannot host"));
+    assert!(
+        other
+            .notice
+            .map(|notice| notice.to_string())
+            .as_deref()
+            .unwrap()
+            .starts_with("Cannot host")
+    );
     w.close_lan(&mut draft);
 }

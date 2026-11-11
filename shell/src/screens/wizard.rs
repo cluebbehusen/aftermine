@@ -439,8 +439,7 @@ pub struct Wizard {
     moving: Option<usize>,
     /// A confirmation over the setup screen.
     overlay: Option<Overlay>,
-    /// Why hosting or a start failed, until the next change.
-    notice: Option<String>,
+    notice: Option<Notice>,
     /// Where a lobby listens.
     pub(crate) lan_bind: String,
     /// The saved LAN match this setup screen resumes, if it resumes one.
@@ -1012,6 +1011,32 @@ fn draft_seating(draft: &NewMatchDraft, members: &[Option<MemberId>]) -> Seating
             })
             .collect(),
     )
+}
+
+/// A line setup shows in place of its hint, until the next change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Notice {
+    /// Start found this seat open with nobody in it; true only until the
+    /// lobby's seats change.
+    SeatOpen(usize),
+    /// Why hosting or a start failed, or why Start is refused.
+    Text(&'static str),
+}
+
+impl std::fmt::Display for Notice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SeatOpen(seat) => write!(f, "Seat {} is still open", seat + 1),
+            Self::Text(text) => f.write_str(text),
+        }
+    }
+}
+
+/// Drops a notice about an open seat once the seats it spoke of change.
+fn reseated(notice: &mut Option<Notice>) {
+    if matches!(notice, Some(Notice::SeatOpen(_))) {
+        *notice = None;
+    }
 }
 
 /// Something over the setup screen that takes its input.
@@ -1763,7 +1788,7 @@ impl Wizard {
                 }
                 if resuming && self.lan.is_none() {
                     sounds.push((SoundKind::Denied, None));
-                    self.notice = Some("Switch to LAN to resume this match".to_owned());
+                    self.notice = Some(Notice::Text("Switch to LAN to resume this match"));
                     return None;
                 }
                 if let Some(lan) = &self.lan {
@@ -1773,7 +1798,7 @@ impl Wizard {
                         .find(|&seat| open[seat] && lan.members[seat].is_none());
                     if let Some(seat) = waiting {
                         sounds.push((SoundKind::Denied, None));
-                        self.notice = Some(format!("Seat {} is still open", seat + 1));
+                        self.notice = Some(Notice::SeatOpen(seat));
                         return None;
                     }
                     if !lan.has_members() {
@@ -2017,7 +2042,7 @@ impl Wizard {
         if !compact || self.notice.is_some() || controller_warning.is_some() {
             let hands = crate::platform::hands();
             let (hint, warning) = if let Some(notice) = &self.notice {
-                (crate::hint_line::HintLine::from(notice.clone()), true)
+                (crate::hint_line::HintLine::from(notice.to_string()), true)
             } else if self.moving.is_some() {
                 (crate::menu::hint_line(moving_hint(hands)), false)
             } else if let Some(warning) = controller_warning {
@@ -2408,7 +2433,7 @@ impl Wizard {
             return;
         };
         if scenario.players.is_empty() {
-            self.notice = Some("This map has no seats".to_owned());
+            self.notice = Some(Notice::Text("This map has no seats"));
             return;
         }
         match HostLobby::open(&self.lan_bind, &crate::build_identity().revision, scenario) {
@@ -2427,7 +2452,7 @@ impl Wizard {
             }
             Err(error) => {
                 eprintln!("Cannot host: {error:#}");
-                self.notice = Some("Cannot host on this network".to_owned());
+                self.notice = Some(Notice::Text("Cannot host on this network"));
             }
         }
     }
@@ -2437,6 +2462,7 @@ impl Wizard {
     fn close_lan(&mut self, draft: &mut NewMatchDraft) {
         self.lan = None;
         self.moving = None;
+        reseated(&mut self.notice);
         for plan in &mut draft.seats {
             plan.open = false;
         }
@@ -2482,6 +2508,7 @@ impl Wizard {
                             Some(seat) => {
                                 draft.seats[seat].open = true;
                                 lan.members[seat] = Some(member);
+                                reseated(&mut self.notice);
                             }
                             None => lan.lobby.refuse(member),
                         }
@@ -2490,6 +2517,7 @@ impl Wizard {
                         for slot in &mut lan.members {
                             if *slot == Some(member) {
                                 *slot = None;
+                                reseated(&mut self.notice);
                             }
                         }
                     }
@@ -2519,7 +2547,7 @@ impl Wizard {
                 // now, before anything can start again this frame.
                 StartPoll::Failed(failed) => {
                     lan.starting = None;
-                    self.notice = Some(start_failed_notice(failed).to_owned());
+                    self.notice = Some(Notice::Text(start_failed_notice(failed)));
                 }
             }
         }
@@ -2668,6 +2696,7 @@ impl Wizard {
                         }
                     }
                 }
+                reseated(&mut self.notice);
             }
             Confirm::Close { .. } if self.resume.is_some() => self.leaving = true,
             Confirm::Close { to_map } => {

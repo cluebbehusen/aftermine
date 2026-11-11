@@ -360,8 +360,7 @@ fn a_missing_player_can_go_to_a_bot_and_the_host_can_resume_alone() {
     drive(&mut w, &mut draft, Key::Enter);
     assert!(
         w.notice
-            .as_deref()
-            .is_some_and(|notice| notice.contains("still open"))
+            .is_some_and(|notice| notice.to_string().contains("still open"))
     );
     w.setup_sel = 2;
     w.setup_cell = Cell::Difficulty;
@@ -399,15 +398,14 @@ fn the_saved_players_keep_their_seats_while_the_lobby_cannot_open() {
     assert!(w.lan.is_none());
     assert!(
         w.notice
-            .as_deref()
-            .is_some_and(|notice| notice.starts_with("Cannot host"))
+            .is_some_and(|notice| notice.to_string().starts_with("Cannot host"))
     );
     let rows = w.ui_surface(&draft).1;
     assert!(rows[1].contains("(was Alex)"), "{rows:?}");
     w.setup_sel = 4;
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Stay);
     assert_eq!(
-        w.notice.as_deref(),
+        w.notice.map(|notice| notice.to_string()).as_deref(),
         Some("Switch to LAN to resume this match"),
         "nobody is handed to a bot behind the host's back"
     );
