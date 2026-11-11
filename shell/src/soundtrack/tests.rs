@@ -128,6 +128,6 @@ fn soundtrack_context_tracks_pause_victory_and_surrender() {
     assert_eq!(
         match_scene(&lost.view(), false),
         Scene::Defeat,
-        "a resigned human never hears a teammate's eventual win as their victory"
+        "a surrender that loses the match scores as a defeat"
     );
 }

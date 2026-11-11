@@ -3,7 +3,7 @@
 //! overlay on the pause menu.
 
 use crate::bot_label::{BotLabelStyle, bot_label};
-use crate::game::{Game, SoundKind};
+use crate::game::{Game, SoundKind, Verdict};
 use crate::nav::{Axis, Nav, step_line};
 use crate::numeric;
 use crate::numeric::Fit;
@@ -13,7 +13,7 @@ use crate::theme::Type;
 use crate::typography::{clip_chars, elide_to_width};
 use crate::{render, theme};
 use aftermine_protocol::{Key, RawEvent};
-use aftermine_sim::{GameResult, PlayerId};
+use aftermine_sim::PlayerId;
 use macroquad::prelude::*;
 
 mod built;
@@ -812,25 +812,23 @@ fn seats_share_a_team(game: &Game) -> bool {
 
 fn verdict(game: &Game) -> (&'static str, Color, String) {
     let winners = game.state.winners();
-    match game.state.result() {
-        Some(GameResult::Victory { .. }) if winners.contains(&game.presentation.human) => (
+    match Verdict::of(&game.state, game.presentation.human) {
+        Some(Verdict::Victory) => (
             "VICTORY",
             theme::TEXT_ACCENT,
             winner_subtitle(game, &winners),
         ),
-        Some(GameResult::Victory { .. }) if game.state.player(game.presentation.human).resigned => {
-            (
-                "SURRENDERED",
-                theme::TEXT_DANGER,
-                winner_subtitle(game, &winners),
-            )
-        }
-        Some(GameResult::Victory { .. }) => (
+        Some(Verdict::Surrendered) => (
+            "SURRENDERED",
+            theme::TEXT_DANGER,
+            winner_subtitle(game, &winners),
+        ),
+        Some(Verdict::Defeat) => (
             "DEFEAT",
             theme::TEXT_DANGER,
             winner_subtitle(game, &winners),
         ),
-        Some(GameResult::Draw) | None => (
+        Some(Verdict::Draw) | None => (
             "MUTUAL DESTRUCTION",
             theme::TEXT_BODY,
             "no Foundry survived".to_string(),
