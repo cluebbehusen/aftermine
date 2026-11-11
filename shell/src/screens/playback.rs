@@ -51,11 +51,75 @@ pub struct PlaybackSession {
     remote: RemoteCamera,
     /// The composition timeline overlay is showing.
     pub show_stats: bool,
-    /// Match statistics, computed from the record on first toggle —
-    /// one deterministic re-execution, paid only when asked for.
-    pub stats: Option<aftermine_kit::stats::MatchStats>,
-    /// The pristine record, kept for that deferred computation.
-    replay: GameReplay,
+    /// Match statistics for that overlay.
+    stats: Stats,
+    /// The pristine record, shared with the statistics pass.
+    replay: std::sync::Arc<GameReplay>,
+}
+
+/// The composition overlay's statistics: one deterministic re-execution of
+/// the record, paid only when first asked for and run on its own thread, so
+/// the viewer plays on while a long record takes seconds.
+enum Stats {
+    Unasked,
+    /// Building; dropping the pass calls it off.
+    Building(StatsPass),
+    Ready(aftermine_kit::stats::MatchStats),
+    /// The record could not produce them.
+    Failed,
+}
+
+/// A statistics pass on its own thread, called off when dropped. Nothing
+/// waits for the thread: one called off stops before its next tick.
+struct StatsPass {
+    result: std::sync::mpsc::Receiver<Result<aftermine_kit::stats::MatchStats>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for StatsPass {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl Stats {
+    /// Starts a pass over `replay`, sampling every `every` ticks.
+    fn build(replay: std::sync::Arc<GameReplay>, every: u64) -> Self {
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (sender, result) = std::sync::mpsc::sync_channel(1);
+        let called_off = std::sync::Arc::clone(&stop);
+        let spawned = std::thread::Builder::new()
+            .name("replay-stats".into())
+            .spawn(move || {
+                let stats = aftermine_kit::stats::compute_unless(&replay, every, || {
+                    called_off.load(std::sync::atomic::Ordering::Relaxed)
+                });
+                sender.send(stats).ok();
+            });
+        match spawned {
+            Ok(_) => Self::Building(StatsPass { result, stop }),
+            Err(_) => Self::Failed,
+        }
+    }
+
+    /// Takes a finished pass's answer.
+    fn poll(&mut self) {
+        let Self::Building(pass) = self else {
+            return;
+        };
+        match pass.result.try_recv() {
+            Ok(Ok(stats)) => *self = Self::Ready(stats),
+            Ok(Err(_)) | Err(std::sync::mpsc::TryRecvError::Disconnected) => *self = Self::Failed,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+        }
+    }
+
+    fn ready(&self) -> Option<&aftermine_kit::stats::MatchStats> {
+        match self {
+            Self::Ready(stats) => Some(stats),
+            _ => None,
+        }
+    }
 }
 
 impl PlaybackSession {
@@ -114,7 +178,7 @@ impl PlaybackSession {
     }
 
     fn from_recording(recording: aftermine_kit::Recording) -> Result<Self> {
-        let record = recording.replay.clone();
+        let record = std::sync::Arc::new(recording.replay.clone());
         let engine = aftermine_kit::playback::Playback::open(recording)?;
         // The spectator door: an all-bot record (driver benchmark,
         // bot-vs-bot spectacle) is a perfectly watchable replay.
@@ -145,7 +209,7 @@ impl PlaybackSession {
             hands: ViewerHands::default(),
             remote: RemoteCamera::with_control(),
             show_stats: false,
-            stats: None,
+            stats: Stats::Unasked,
             replay: record,
         })
     }
@@ -156,14 +220,14 @@ impl PlaybackSession {
         self.clock.accum = 0.0;
     }
 
-    /// Toggles the composition overlay, computing the sampled series
-    /// from the record on first use. Sampling stride targets ~240
-    /// columns so the band chart stays legible at any match length.
+    /// Toggles the composition overlay, starting the sampled series'
+    /// pass on first use. Sampling stride targets ~240 columns so the band
+    /// chart stays legible at any match length.
     fn toggle_stats(&mut self) {
         self.show_stats = !self.show_stats;
-        if self.show_stats && self.stats.is_none() {
+        if self.show_stats && matches!(self.stats, Stats::Unasked) {
             let every = ((self.engine.total() - self.engine.start()) / 240).max(50);
-            self.stats = aftermine_kit::stats::compute(&self.replay, every).ok();
+            self.stats = Stats::build(std::sync::Arc::clone(&self.replay), every);
         }
     }
 
@@ -392,6 +456,8 @@ const STATS_BAND_RISE: f32 = 96.0;
 const STATS_LEGEND: f32 = 20.0;
 /// How far above whatever it rests on a hint's baseline sits.
 const HINT_RISE: f32 = 16.0;
+/// What the overlay says while its statistics build.
+const STATS_PENDING: &str = "Building stats...";
 /// The gap between the top of the hint and the remote's strip of modes.
 const MODES_GAP: f32 = 8.0;
 
@@ -491,17 +557,25 @@ pub fn playback_hud(
         );
     }
     stroke_rect(bar, theme::Stroke::Edge.at(s), theme::EDGE_CHIP);
-    if pb.show_stats
-        && let Some(stats) = &pb.stats
-    {
+    let stats = pb.stats.ready().filter(|_| pb.show_stats);
+    if let Some(stats) = stats {
         composition_band(pb, stats, bar, s);
     }
     // Hints stand above the timeline, so the clock under it never moves.
-    let rests_on = if pb.show_stats && pb.stats.is_some() {
+    let mut rests_on = if stats.is_some() {
         bar.y - (STATS_BAND_RISE + STATS_LEGEND) * s
     } else {
         bar.y
     };
+    // Statistics still building say so where the band will stand, and the
+    // hints wait above them.
+    if pb.show_stats && matches!(pb.stats, Stats::Building(_)) {
+        let pending = HintLine::default().text(STATS_PENDING);
+        let baseline = rests_on - HINT_RISE * s;
+        let x = bar.center().x - pending.width(size) * 0.5;
+        draw_plate(sprites, &pending, x, baseline, size, s);
+        rests_on = baseline - size - MODES_GAP * s;
+    }
     let hint_baseline = rests_on - HINT_RISE * s;
     if let Some(line) = hint_lines(pb, bindings)
         .iter()
@@ -887,6 +961,7 @@ impl PlaybackSession {
     /// catch-up; effects and the camera follow the clamped time, like
     /// live play.
     pub fn advance_frame(&mut self, time: FrameTime, viewport: Vec2) {
+        self.stats.poll();
         if let Some(target) = self.seeking {
             // Budgeted by time, since a tick late in a big match costs many
             // times one in an opening: slices run until the frame's share
