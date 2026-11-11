@@ -80,6 +80,7 @@ fn layout() -> ChartLayout {
         plot: PLOT,
         body: PLOT,
         axis_label: None,
+        label_size: crate::theme::Type::Body.px(),
     }
 }
 

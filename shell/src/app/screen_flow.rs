@@ -1275,7 +1275,7 @@ fn results_frame(
     );
     drop(input_scope);
     render::draw_world(&app.game.view(), &app.sprites, &app.input);
-    results.draw(&app.game, &app.sprites);
+    results.draw(&app.game, &app.sprites, app.input.mouse);
     match out {
         screens::results::Out::Stay => Screen::Results(results),
         screens::results::Out::Rematch => {
