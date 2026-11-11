@@ -416,7 +416,7 @@ fn parity_world() -> aftermine_sim::State {
     }
     let state = scenario.build().unwrap();
     // Seat 0 also remembers East's Extractor as a Deep Bore, so a remembered
-    // tier is compared.
+    // tier is compared, and a wreck on dark ground the map no longer holds.
     let mut value = serde_json::to_value(&state).unwrap();
     assert_eq!(value["vision"][0]["ghosts"], serde_json::json!([]));
     value["vision"][0]["ghosts"] = serde_json::json!([{
@@ -426,6 +426,11 @@ fn parity_world() -> aftermine_sim::State {
         "hp": aftermine_sim::BuildingKind::Extractor.tier_stats(1).max_hp,
         "tier": 1,
     }]);
+    let wreck = TilePos::new(20, 20);
+    assert_eq!(state.map().tile(wreck).unwrap().wreck, 0);
+    let cell = as_index(wreck.y * state.map().width() + wreck.x);
+    value["vision"][0]["explored"]["cells"][cell] = serde_json::json!(true);
+    value["vision"][0]["remembered_wreck"]["cells"][cell] = serde_json::json!(7);
     let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
     // Only West raids, so East meets hostiles at home while West's cradle
     // stays out of its sight.
@@ -541,6 +546,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     let mut compared_hostile_assembly = false;
     let mut compared_shells = false;
     let mut compared_hostile_works = false;
+    let mut compared_wreck = false;
     let mut cradle_ordered = false;
     for tick in 0..1_500 {
         if tick % 25 == 0 {
@@ -630,6 +636,35 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .flat_map(|row| row.chars().map(|c| c == '*'))
                     .collect();
                 assert_eq!(fog_visible, obs.visible, "tick {tick} seat {seat:?} sight");
+                let fog_explored: Vec<bool> = fog
+                    .mask
+                    .iter()
+                    .flat_map(|row| row.chars().map(|c| c != ' '))
+                    .collect();
+                assert_eq!(
+                    fog_explored, obs.explored,
+                    "tick {tick} seat {seat:?} explored"
+                );
+                let remembered = |tiles: &[RememberedTileView]| -> Vec<_> {
+                    tiles
+                        .iter()
+                        .map(|t| (TilePos::new(t.tile[0], t.tile[1]), t.amount))
+                        .collect()
+                };
+                assert_eq!(
+                    remembered(&fog.scrap),
+                    obs.known_scrap,
+                    "tick {tick} seat {seat:?} scrap"
+                );
+                assert_eq!(
+                    remembered(&fog.wrecks),
+                    obs.known_wrecks,
+                    "tick {tick} seat {seat:?} wrecks"
+                );
+                compared_wreck |= obs
+                    .known_wrecks
+                    .iter()
+                    .any(|&(tile, _)| !state.vision(seat).visible(tile));
                 assert_eq!(
                     fog.contacts, obs.blips,
                     "tick {tick} seat {seat:?} contacts"
@@ -726,6 +761,10 @@ fn the_fog_view_and_the_bot_observation_agree() {
     assert!(
         compared_hostile_works,
         "a hostile producer at work was compared"
+    );
+    assert!(
+        compared_wreck,
+        "a wreck remembered out of sight was compared"
     );
 }
 
