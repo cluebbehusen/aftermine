@@ -116,6 +116,13 @@ fn map(scenario: &Scenario) -> Arc<MapModel> {
     Arc::new(MapModel::from_scenario(scenario).unwrap())
 }
 
+/// A Balanced seat's defense stakes.
+fn stakes() -> crate::defenses::Stakes {
+    crate::defenses::Stakes {
+        minimum: crate::missions::minimum(BotStance::Balanced),
+    }
+}
+
 fn seat(scenario: &Scenario, player: u8) -> Opponent {
     seat_with(scenario, player, config())
 }
@@ -179,7 +186,7 @@ fn calm<'a>(
         depletion: 0,
         pull: Vec::new(),
         exposed: false,
-        stakes: crate::defenses::Stakes::default(),
+        stakes: stakes(),
         severed: false,
         wanted: Vec::new(),
         units: Vec::new(),
@@ -664,7 +671,7 @@ fn a_staged_foundry_spreads_its_harvesters_and_trains_its_army_first() {
     let mut state = scenario.build().unwrap();
     let mut opponent = seat(&scenario, 0);
     assert_eq!(opponent.player(), PlayerId(0));
-    assert_eq!(opponent.profile(), &ResolvedProfile::resolve(config()));
+    assert_eq!(opponent.profile, ResolvedProfile::resolve(config()));
 
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     let mut harvesters: Vec<UnitId> = state
@@ -1090,7 +1097,7 @@ fn checkpoints_round_trip_and_restore_only_opponent_seats() {
     assert_eq!(decoded, checkpoint);
     let mut restored = Opponent::restore(&decoded, &scenario, &state, map(&scenario)).unwrap();
     assert_eq!(restored.player(), opponent.player());
-    assert_eq!(restored.profile(), opponent.profile());
+    assert_eq!(restored.profile, opponent.profile);
     assert_eq!(
         restored.act(&state, &mut OwnEvents::default()),
         opponent.clone().act(&state, &mut OwnEvents::default())

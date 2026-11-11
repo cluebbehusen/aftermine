@@ -62,7 +62,7 @@ fn wanted_by(
         state,
         memory,
         fortification,
-        defenses::Stakes::default(),
+        stakes(),
     )
 }
 
@@ -297,7 +297,7 @@ fn a_quiet_approach_draws_more_guns_the_larger_the_stance_minimum() {
         }
         panic!("the guns never hold the stance minimum off");
     };
-    let minimum = defenses::Stakes::default().minimum;
+    let minimum = stakes().minimum;
     let (small, large) = (guns(minimum / 2), guns(minimum * 2));
     assert!(small > 0, "premise");
     assert!(large > small, "{large} against {small}");
@@ -960,8 +960,8 @@ fn a_minefield_grows_with_the_threat_along_the_way_in() {
         "{turtle:?} against {aggressive:?}"
     );
 
-    let quiet = minefield(defenses::Stakes::default(), &Memory::default());
-    let massed = minefield(defenses::Stakes::default(), &remembered("sentinel", 12));
+    let quiet = minefield(stakes(), &Memory::default());
+    let massed = minefield(stakes(), &remembered("sentinel", 12));
     assert!(massed.len() > quiet.len(), "{massed:?} against {quiet:?}");
 }
 
@@ -993,7 +993,7 @@ fn remembered(kind: &str, count: usize) -> Memory {
 fn a_light_unit_takes_a_whole_blast() {
     // Equal health in all: six Sentinels at a blast each, nine Scuttlers at
     // two thirds of one.
-    let stakes = defenses::Stakes::default();
+    let stakes = stakes();
     let sentinels = minefield(stakes, &remembered("sentinel", 6));
     let scuttlers = minefield(stakes, &remembered("scuttler", 9));
     assert!(
@@ -1033,7 +1033,7 @@ fn guns_holding_the_way_in_leave_less_for_charges_to_mine() {
 
 #[test]
 fn every_charge_a_field_still_needs_is_worth_saving_for() {
-    let laid = minefield_scored(defenses::Stakes::default(), &remembered("sentinel", 12));
+    let laid = minefield_scored(stakes(), &remembered("sentinel", 12));
     let (_, first) = laid[0];
     assert!(
         first >= ADOPT,
@@ -1047,7 +1047,7 @@ fn every_charge_a_field_still_needs_is_worth_saving_for() {
 
 #[test]
 fn a_minefield_fills_from_the_foundry_out_toward_the_threat() {
-    let laid = minefield(defenses::Stakes::default(), &Memory::default());
+    let laid = minefield(stakes(), &Memory::default());
     assert!(laid.len() > 2, "premise: more than the old ring: {laid:?}");
     let lanes = map(&settled(0));
     for (index, charge) in laid.iter().enumerate() {

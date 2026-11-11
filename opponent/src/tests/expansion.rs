@@ -311,7 +311,7 @@ fn a_half_explored_footprint_is_still_scouted() {
         &observation,
         &[],
         &model,
-        opponent.profile(),
+        &opponent.profile,
         &mut persistent,
     );
     assert!(

@@ -88,11 +88,6 @@ impl Opponent {
         self.player
     }
 
-    /// The resolved difficulty, stance and personality.
-    pub fn profile(&self) -> &ResolvedProfile {
-        &self.profile
-    }
-
     /// Whether this seat decides at the state's tick. A due seat can still
     /// produce no commands.
     pub fn decision_due(&self, state: &State) -> bool {

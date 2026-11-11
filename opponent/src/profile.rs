@@ -81,20 +81,6 @@ pub struct PersonalityTraits {
     pub guile: u8,
 }
 
-impl PersonalityTraits {
-    /// Returns one preference by its strategic axis.
-    pub const fn get(self, specialty: Specialty) -> u8 {
-        match specialty {
-            Specialty::Air => self.air,
-            Specialty::Siege => self.siege,
-            Specialty::Support => self.support,
-            Specialty::Fortification => self.fortification,
-            Specialty::Greed => self.greed,
-            Specialty::Guile => self.guile,
-        }
-    }
-}
-
 /// A complete, deterministic personality resolved before a match begins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct ResolvedProfile {

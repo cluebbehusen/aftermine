@@ -84,12 +84,6 @@ pub(crate) struct Staffing {
 }
 
 impl Staffing {
-    /// The worked nodes with the Harvesters each wants.
-    #[cfg(test)]
-    pub(crate) fn crews(&self) -> &[(TilePos, usize)] {
-        &self.worked
-    }
-
     fn wanted(&self) -> usize {
         self.worked.iter().map(|(_, crew)| crew).sum()
     }
@@ -1231,3 +1225,6 @@ fn octile_tenths(a: (i64, i64), b: (i64, i64)) -> i64 {
     let doubled = 10 * dx.max(dy) + 4 * dx.min(dy);
     doubled / 2
 }
+
+#[cfg(test)]
+mod tests;

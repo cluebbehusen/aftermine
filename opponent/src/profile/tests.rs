@@ -1,5 +1,17 @@
 use super::*;
 
+/// One preference by its strategic axis.
+fn preference(traits: PersonalityTraits, specialty: Specialty) -> u8 {
+    match specialty {
+        Specialty::Air => traits.air,
+        Specialty::Siege => traits.siege,
+        Specialty::Support => traits.support,
+        Specialty::Fortification => traits.fortification,
+        Specialty::Greed => traits.greed,
+        Specialty::Guile => traits.guile,
+    }
+}
+
 #[test]
 fn resolution_is_repeatable_and_difficulty_does_not_change_personality() {
     let config = BotConfig::new(BotDifficulty::Prime, BotStance::Aggressive, 0xC0_FF_EE);
@@ -30,7 +42,7 @@ fn every_profile_has_two_distinct_specialties_inside_its_stance_envelope() {
                 ResolvedProfile::resolve(BotConfig::new(BotDifficulty::Standard, stance, seed));
             assert_ne!(profile.primary, profile.secondary);
             for specialty in Specialty::ALL {
-                let value = profile.traits.get(specialty);
+                let value = preference(profile.traits, specialty);
                 let bound = bounds[specialty.index()];
                 assert!(
                     (bound.min..=bound.max).contains(&value),
@@ -91,17 +103,19 @@ fn profiles_have_a_fixed_budget_and_truthful_ranked_specialties() {
                 ResolvedProfile::resolve(BotConfig::new(BotDifficulty::Prime, stance, seed));
             let total: u16 = Specialty::ALL
                 .iter()
-                .map(|specialty| u16::from(profile.traits.get(*specialty)))
+                .map(|specialty| u16::from(preference(profile.traits, *specialty)))
                 .sum();
             assert_eq!(total, TRAIT_BUDGET as u16, "{stance:?} seed {seed}");
             assert!(
-                profile.traits.get(profile.primary) >= profile.traits.get(profile.secondary),
+                preference(profile.traits, profile.primary)
+                    >= preference(profile.traits, profile.secondary),
                 "{stance:?} seed {seed} mislabeled its primary"
             );
             for specialty in Specialty::ALL {
                 if specialty != profile.primary && specialty != profile.secondary {
                     assert!(
-                        profile.traits.get(profile.secondary) >= profile.traits.get(specialty),
+                        preference(profile.traits, profile.secondary)
+                            >= preference(profile.traits, specialty),
                         "{stance:?} seed {seed} mislabeled its secondary"
                     );
                 }

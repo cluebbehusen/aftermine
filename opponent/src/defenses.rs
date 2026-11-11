@@ -76,16 +76,6 @@ impl Stakes {
     }
 }
 
-#[cfg(test)]
-impl Default for Stakes {
-    /// A Balanced seat's.
-    fn default() -> Self {
-        Stakes {
-            minimum: crate::missions::minimum(aftermine_sim::scenario::BotStance::Balanced),
-        }
-    }
-}
-
 /// Tiles from a building inside which visible attackers call for an
 /// emergency defense.
 const EMERGENCY_TILES: i64 = 12;
