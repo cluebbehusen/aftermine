@@ -2686,10 +2686,10 @@ pub(super) fn world_order(
     }
 }
 
-/// A press on the ribbon row: QUEUE toggles, and the ribbon cancels its
-/// mode but keeps the selection. A patrol's ribbon is the exception: its
-/// Start and cross act, and its words do nothing, so a press meant for
-/// Start never throws the route away. It runs before every other target,
+/// A press on the ribbon row: QUEUE toggles, the ribbon's cross cancels its
+/// mode but keeps the selection, and its steppers and Start act. Its words
+/// do nothing, so a press meant for a button never throws the mode away,
+/// and it reaches nothing under them. It runs before every other target,
 /// for mouse and touch alike.
 pub(super) fn ribbon_row_press(
     game: &mut Game,
@@ -2726,19 +2726,14 @@ pub(super) fn ribbon_row_press(
                 .sounds_pending
                 .push((crate::game::SoundKind::Click, None));
         }
-    } else if hits(layout.patrol_cancel) {
-        input.patrol_route = None;
-        game.presentation
-            .sounds_pending
-            .push((crate::game::SoundKind::Click, None));
-    } else if input.patrol_route.is_some() && hits(layout.mode_ribbon) {
-        // The words of a patrol's ribbon only name the route.
-    } else if hits(layout.mode_ribbon) {
+    } else if hits(layout.ribbon_cancel) {
         if input.cancel_armed_mode() {
             game.presentation
                 .sounds_pending
                 .push((crate::game::SoundKind::Click, None));
         }
+    } else if hits(layout.mode_ribbon) {
+        // The ribbon's words only name the mode.
     } else {
         return false;
     }

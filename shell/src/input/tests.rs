@@ -1436,7 +1436,7 @@ fn the_rally_card_arms_a_touchable_world_target() {
 }
 
 #[test]
-fn a_ribbon_tap_cancels_the_mode_and_keeps_the_selection() {
+fn a_ribbon_s_cross_cancels_the_mode_and_its_words_do_nothing() {
     let mut game = headless_game();
     let mut input = InputState::new();
     let fighter = game
@@ -1449,10 +1449,26 @@ fn a_ribbon_tap_cancels_the_mode_and_keeps_the_selection() {
     game.presentation.selection.units = vec![fighter];
     input.click_verb = Some(ClickVerb::Hunt);
     let ribbon = macroquad::math::Rect::new(220.0, 620.0, 280.0, 44.0);
+    let cancel = macroquad::math::Rect::new(460.0, 624.0, 36.0, 36.0);
     let mut layout = bare_layout(f32::INFINITY, 0.0);
     layout.mode_ribbon = ribbon;
+    layout.ribbon_cancel = cancel;
     game.presentation.layout.set(layout);
-    tap(&mut game, &mut input, ribbon.center());
+    let words = vec2(ribbon.x + 20.0, ribbon.center().y);
+    tap(&mut game, &mut input, words);
+    apply_events(&mut game, &mut input, &click(words.x, words.y));
+    assert_eq!(
+        input.armed_mode(),
+        Some(ArmedMode::Hunt),
+        "the words keep it"
+    );
+    assert!(
+        game.pending.is_empty(),
+        "and nothing reaches the world under them"
+    );
+    assert_eq!(game.presentation.selection.units, vec![fighter]);
+
+    tap(&mut game, &mut input, cancel.center());
     assert_eq!(input.armed_mode(), None);
     assert_eq!(game.presentation.selection.units, vec![fighter]);
     assert!(game.pending.is_empty(), "cancel emits no gameplay command");
@@ -1461,7 +1477,7 @@ fn a_ribbon_tap_cancels_the_mode_and_keeps_the_selection() {
     apply_events(
         &mut game,
         &mut input,
-        &click(ribbon.x + 20.0, ribbon.center().y),
+        &click(cancel.center().x, cancel.center().y),
     );
     assert_eq!(input.armed_mode(), None, "a click cancels too");
 }
@@ -1475,7 +1491,7 @@ fn a_patrol_ribbon_acts_only_through_start_and_the_cross() {
     let mut layout = bare_layout(f32::INFINITY, 0.0);
     layout.mode_ribbon = ribbon;
     layout.patrol_start = start;
-    layout.patrol_cancel = cancel;
+    layout.ribbon_cancel = cancel;
     game.presentation.layout.set(layout);
     let words = vec2(ribbon.x + 20.0, ribbon.center().y);
 

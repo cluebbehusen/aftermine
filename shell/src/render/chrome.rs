@@ -1114,14 +1114,15 @@ pub(crate) struct RibbonLayout {
     pub(super) status: Option<RibbonStatus>,
     pub(super) salvo: Option<SalvoSteppers>,
     pub(super) patrol: Option<PatrolButtons>,
+    /// The cross at the ribbon's right end, which cancels the mode. The
+    /// rest of the ribbon only names it.
+    pub(super) cancel: Rect,
 }
 
-/// A patrol ribbon's buttons: Start, lit once the route has a point, and
-/// the cross that drops the route.
+/// A patrol ribbon's Start, lit once the route has a point.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PatrolButtons {
     pub(crate) start: Rect,
-    pub(crate) cancel: Rect,
     pub(crate) ready: bool,
 }
 
@@ -1203,7 +1204,8 @@ pub(super) fn ribbon_layout(
         label_w
     };
     let start_w = measure(Face::Body, PATROL_START, label_size) + 36.0 * s;
-    let patrol_w = patrol.map_or(0.0, |_| 16.0 * s + start_w + 6.0 * s + STEPPER * s);
+    let patrol_w = patrol.map_or(0.0, |_| 16.0 * s + start_w);
+    let cancel_w = 6.0 * s + STEPPER * s;
     let cost_w = cost.as_deref().map_or(0.0, |cost| {
         12.0 * s + measure(Face::Body, cost, crate::theme::Type::Body.at(s))
     });
@@ -1232,7 +1234,7 @@ pub(super) fn ribbon_layout(
         );
         (widest - label_w).max(0.0) + 8.0 * s + 2.0 * STEPPER * s + 4.0 * s
     });
-    let content = icon_w + (words_w + cost_w).max(status_w) + steppers_w + patrol_w;
+    let content = icon_w + (words_w + cost_w).max(status_w) + steppers_w + patrol_w + cancel_w;
     let size = (
         ribbon_width(viewport, s, content),
         ribbon_height(s, status.is_some()),
@@ -1245,6 +1247,9 @@ pub(super) fn ribbon_layout(
         .map(|r| r.y)
         .fold(f32::INFINITY, f32::min);
     let rect = ribbon_geometry(viewport, s, panel_top, size, minimap);
+    let side = STEPPER * s;
+    let button_y = rect.y + (crate::theme::MIN_TOUCH_TARGET * s - side) * 0.5;
+    let cancel = Rect::new(rect.x + rect.w - 4.0 * s - side, button_y, side, side);
     Some(RibbonLayout {
         rect,
         label,
@@ -1254,26 +1259,19 @@ pub(super) fn ribbon_layout(
         icon_w,
         status,
         salvo: salvo.map(|(fires, ready)| {
-            let side = STEPPER * s;
-            let y = rect.y + (crate::theme::MIN_TOUCH_TARGET * s - side) * 0.5;
-            let more = Rect::new(rect.x + rect.w - 4.0 * s - side, y, side, side);
+            let more = Rect::new(cancel.x - 6.0 * s - side, button_y, side, side);
             SalvoSteppers {
-                less: Rect::new(more.x - 4.0 * s - side, y, side, side),
+                less: Rect::new(more.x - 4.0 * s - side, button_y, side, side),
                 more,
                 less_enabled: fires > 1,
                 more_enabled: fires < ready,
             }
         }),
-        patrol: patrol.map(|ready| {
-            let side = STEPPER * s;
-            let y = rect.y + (crate::theme::MIN_TOUCH_TARGET * s - side) * 0.5;
-            let cancel = Rect::new(rect.x + rect.w - 4.0 * s - side, y, side, side);
-            PatrolButtons {
-                start: Rect::new(cancel.x - 6.0 * s - start_w, y, start_w, side),
-                cancel,
-                ready,
-            }
+        patrol: patrol.map(|ready| PatrolButtons {
+            start: Rect::new(cancel.x - 6.0 * s - start_w, button_y, start_w, side),
+            ready,
         }),
+        cancel,
     })
 }
 
@@ -1398,6 +1396,7 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
         status,
         salvo,
         patrol,
+        cancel,
     } = layout;
     let (ribbon, building, label_w, icon_w) = (*ribbon, *building, *label_w, *icon_w);
     // The label keeps the touch-target row; a status row hangs under it.
@@ -1441,8 +1440,9 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
         draw_salvo_steppers(sprites, steppers, input, s);
     }
     if let Some(buttons) = patrol {
-        draw_patrol_buttons(sprites, buttons, input, s);
+        draw_patrol_start(sprites, buttons, input, s);
     }
+    draw_ribbon_cancel(sprites, *cancel, input, s);
     if let Some(status) = status {
         let size = crate::theme::Type::Small.at(s);
         let baseline = ribbon.y + ribbon.h - 8.0 * s;
@@ -1459,12 +1459,11 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
     }
 }
 
-/// The patrol ribbon's Start, lit amber once there is a point to loop,
-/// and its cross. In pad mode the buttons that do the same stand in for
-/// the word and the glyph: the command ring's button, since picking
-/// Patrol there again starts the loop, and Back, which drops the route.
-fn draw_patrol_buttons(sprites: &Sprites, buttons: &PatrolButtons, input: &InputState, s: f32) {
-    use crate::theme::{BORDER_FAINT, CARD_ARMED, CARD_HOVER, CARD_IDLE, EDGE_CARD, EDGE_FOCUS};
+/// The patrol ribbon's Start, lit amber once there is a point to loop. In
+/// pad mode the command ring's button stands in for the word, since
+/// picking Patrol there again starts the loop.
+fn draw_patrol_start(sprites: &Sprites, buttons: &PatrolButtons, input: &InputState, s: f32) {
+    use crate::theme::{BORDER_FAINT, CARD_ARMED, CARD_IDLE, EDGE_FOCUS};
     let hover = input.chrome_hover_point();
     let (start, ready) = (buttons.start, buttons.ready);
     let start_hovered = ready && hover.is_some_and(|p| start.contains(p));
@@ -1501,8 +1500,15 @@ fn draw_patrol_buttons(sprites: &Sprites, buttons: &PatrolButtons, input: &Input
             start_ink,
         );
     }
-    let cancel = buttons.cancel;
-    let cancel_hovered = hover.is_some_and(|p| cancel.contains(p));
+}
+
+/// The ribbon's cross, which cancels the mode; in pad mode the button
+/// that cancels stands in for the glyph.
+fn draw_ribbon_cancel(sprites: &Sprites, cancel: Rect, input: &InputState, s: f32) {
+    use crate::theme::{CARD_HOVER, CARD_IDLE, EDGE_CARD, EDGE_FOCUS};
+    let cancel_hovered = input
+        .chrome_hover_point()
+        .is_some_and(|p| cancel.contains(p));
     fill_rect(
         cancel,
         if cancel_hovered {
@@ -1520,7 +1526,7 @@ fn draw_patrol_buttons(sprites: &Sprites, buttons: &PatrolButtons, input: &Input
             EDGE_CARD
         },
     );
-    if let Some(family) = pad {
+    if let Some(family) = input.hud_hands().names() {
         draw_centered_button(sprites, family, crate::pad::BACK, cancel, s, TEXT_BODY);
         return;
     }

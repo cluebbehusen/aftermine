@@ -245,6 +245,56 @@ fn the_placement_ribbon_says_what_a_click_would_do_and_holds_still() {
 }
 
 #[test]
+fn every_armed_ribbon_ends_in_a_cross_clear_of_its_words() {
+    let mut game = skirmish();
+    let human = game.presentation.human;
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
+        .unwrap()
+        .id;
+    game.presentation.selection.units.push(harvester);
+    let arms: [fn(&mut InputState); 3] = [
+        |input| input.click_verb = Some(crate::input::ClickVerb::Hunt),
+        |input| {
+            input.build_menu = true;
+            input.arm_placement(aftermine_sim::BuildingKind::Turret);
+        },
+        |input| input.patrol_route = Some(Vec::new()),
+    ];
+    for arm in arms {
+        let mut input = InputState::new();
+        arm(&mut input);
+        let hud = layout(
+            &game.view(),
+            &input,
+            &BindingMap::classic(),
+            env(1133.0, 744.0),
+            None,
+            &fixed,
+        );
+        let ribbon = hud.geometry.ribbon.expect("an armed mode shows its ribbon");
+        let cancel = ribbon.cancel;
+        assert_eq!(hud.layout.ribbon_cancel, cancel);
+        assert!(
+            ribbon.rect.contains(cancel.center()) && cancel.right() <= ribbon.rect.right(),
+            "{cancel:?} in {:?}",
+            ribbon.rect
+        );
+        let words = ribbon.rect.x
+            + 10.0
+            + fixed(Face::Body, &ribbon.label, crate::theme::Type::Label.at(1.0));
+        assert!(
+            words <= cancel.x,
+            "{}: {words} runs into {cancel:?}",
+            ribbon.label
+        );
+    }
+}
+
+#[test]
 fn the_patrol_ribbon_holds_still_and_lights_start_once_it_has_a_point() {
     let game = skirmish();
     let mut input = InputState::new();
@@ -261,26 +311,26 @@ fn the_patrol_ribbon_holds_still_and_lights_start_once_it_has_a_point() {
         assert_eq!(hud.layout.mode_ribbon, ribbon.rect);
         let buttons = ribbon.patrol.expect("patrol buttons");
         assert_eq!(hud.layout.patrol_start, buttons.start);
-        assert_eq!(hud.layout.patrol_cancel, buttons.cancel);
-        (ribbon.rect, buttons)
+        assert_eq!(hud.layout.ribbon_cancel, ribbon.cancel);
+        (ribbon.rect, buttons, ribbon.cancel)
     };
     input.patrol_route = Some(Vec::new());
-    let (empty, waiting) = ribbon(&input);
+    let (empty, waiting, cancel) = ribbon(&input);
     assert!(!waiting.ready, "Start waits for a point");
-    for button in [waiting.start, waiting.cancel] {
+    for button in [waiting.start, cancel] {
         assert!(empty.contains(button.center()), "{button:?} in {empty:?}");
         assert!(button.h <= empty.h);
     }
-    assert!(waiting.start.right() < waiting.cancel.x);
+    assert!(waiting.start.right() < cancel.x);
 
     input.patrol_route = Some(vec![chassis::grid::TilePos::new(3, 3)]);
-    let (one, ready) = ribbon(&input);
+    let (one, ready, _) = ribbon(&input);
     assert!(ready.ready);
     input.patrol_route = Some(vec![
         chassis::grid::TilePos::new(3, 3);
         aftermine_sim::stats::ORDER_QUEUE_CAP
     ]);
-    let (full, _) = ribbon(&input);
+    let (full, _, _) = ribbon(&input);
     assert_eq!(one, empty, "the ribbon holds still");
     assert_eq!(full, empty);
 }
