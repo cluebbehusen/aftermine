@@ -3556,24 +3556,8 @@ fn armed_verb_click(
             reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
-            let patient = game
-                .state
-                .units()
-                .iter()
-                .filter(|u| {
-                    u.player == game.presentation.human
-                        && u.hp > 0
-                        && u.hp < u.kind.stats().max_hp
-                        && u.kind.stats().repairable()
-                        && u.domain() == aftermine_sim::stats::Domain::Ground
-                })
-                .map(|u| {
-                    let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-                    (at.distance(world), u.id, u.kind)
-                })
-                .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
-                .min_by(|a, b| a.0.total_cmp(&b.0));
-            let Some((_, target, _)) = patient else {
+            let patient = reach.unit_at(game, world, |u| orders::weldable(game, u));
+            let Some(target) = patient.map(|u| u.id) else {
                 game.presentation.toast("Can't repair that");
                 game.presentation
                     .sounds_pending
@@ -3615,18 +3599,8 @@ fn armed_verb_click(
             reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
-            let picked = game
-                .state
-                .units()
-                .iter()
-                .filter(|u| u.player == game.presentation.human && u.hp > 0)
-                .map(|u| {
-                    let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-                    (at.distance(world), u.id, u.kind)
-                })
-                .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
-                .min_by(|a, b| a.0.total_cmp(&b.0));
-            let Some((_, target, _)) = picked else {
+            let picked = reach.unit_at(game, world, |u| orders::own_body(game, u));
+            let Some(target) = picked.map(|u| u.id) else {
                 game.presentation.toast("Pick one of your units");
                 game.presentation
                     .sounds_pending
