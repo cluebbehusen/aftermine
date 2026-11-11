@@ -1400,6 +1400,7 @@ fn waiting_frame(
 }
 
 fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Result<Screen> {
+    ps.observe(super::standing(&app.game));
     let input_scope = app
         .game
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);

@@ -730,12 +730,23 @@ fn can_surrender(game: &Game) -> bool {
     game.state.accepts_commands(game.presentation.human)
 }
 
+/// Where the local seat stands, for the pause menu to follow.
+fn standing(game: &Game) -> screens::pause::Standing {
+    if game.state.result().is_some() {
+        screens::pause::Standing::Decided
+    } else if can_surrender(game) {
+        screens::pause::Standing::Playing
+    } else {
+        screens::pause::Standing::Out
+    }
+}
+
 /// The pause rows for the live match; a LAN match keeps running under
 /// its menu and offers no save or restart.
 fn pause_menu(game: &Game) -> PauseScreen {
     let pause = PauseScreen::open(game.state.result().is_some(), can_surrender(game));
     if let Some(role) = game.net_role() {
-        pause.for_lan_match(role == crate::game::network::NetRole::Host)
+        pause.for_lan_match(role)
     } else if game.tutorial.is_some() {
         pause.for_lesson()
     } else {

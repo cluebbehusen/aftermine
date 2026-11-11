@@ -9,7 +9,7 @@ fn confirming(p: &PauseScreen) -> bool {
 
 #[test]
 fn a_lan_host_saves_from_its_menu_but_cannot_restart() {
-    let host = PauseScreen::open(false, true).for_lan_match(true);
+    let host = PauseScreen::open(false, true).for_lan_match(NetRole::Host);
     assert!(host.rows.contains(&Row::SaveGame));
     assert!(!host.rows.contains(&Row::Restart));
     assert_eq!(host.rows.len(), host.menu.view().items.len());
@@ -17,7 +17,7 @@ fn a_lan_host_saves_from_its_menu_but_cannot_restart() {
 
 #[test]
 fn a_lan_match_menu_offers_no_save_or_restart() {
-    let lan = PauseScreen::open(false, true).for_lan_match(false);
+    let lan = PauseScreen::open(false, true).for_lan_match(NetRole::Client);
     assert_eq!(lan.menu.title, "MENU");
     assert!(!lan.rows.contains(&Row::SaveGame));
     assert!(!lan.rows.contains(&Row::Restart));
@@ -69,7 +69,7 @@ fn a_lan_menu_keeps_its_rows_through_every_dialog() {
         assert_eq!(p.menu.view().items.len(), p.rows.len());
     };
     for label in ["Surrender", "Main menu", "Quit"] {
-        let mut p = PauseScreen::open(false, true).for_lan_match(false);
+        let mut p = PauseScreen::open(false, true).for_lan_match(NetRole::Client);
         activate(&mut p, label);
         assert!(confirming(&p));
         drive(&mut p, Key::Enter);
@@ -78,11 +78,60 @@ fn a_lan_menu_keeps_its_rows_through_every_dialog() {
         assert_eq!(activate(&mut p, "Settings"), Out::Settings);
     }
     let mut p = PauseScreen::open(false, true)
-        .for_lan_match(false)
+        .for_lan_match(NetRole::Client)
         .with_save_failed("x".to_string(), LeaveVerb::MainMenu);
     assert_eq!(drive(&mut p, Key::Escape), Out::Stay);
     lan_rows(&p);
     assert_eq!(p.menu.view().items[p.menu.selected], "Main menu");
+}
+
+#[test]
+fn leaving_a_lan_match_names_what_it_does_to_the_other_players() {
+    for (decided, in_play, role, consequence) in [
+        (
+            false,
+            true,
+            NetRole::Host,
+            "The match ends for every player",
+        ),
+        (
+            false,
+            false,
+            NetRole::Host,
+            "The match ends for every player",
+        ),
+        (false, true, NetRole::Client, "You surrender your seat"),
+        (false, false, NetRole::Client, "You leave the match"),
+        (true, false, NetRole::Host, "You leave the match"),
+        (true, false, NetRole::Client, "You leave the match"),
+    ] {
+        for label in ["Main menu", "Quit"] {
+            let mut p = PauseScreen::open(decided, in_play).for_lan_match(role);
+            activate(&mut p, label);
+            assert_eq!(
+                p.subtitle("map"),
+                consequence,
+                "{label}: decided {decided}, in play {in_play}, {role:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_lan_leave_line_follows_the_seat_as_the_match_plays_on_under_the_menu() {
+    let mut client = PauseScreen::open(false, true).for_lan_match(NetRole::Client);
+    activate(&mut client, "Main menu");
+    assert_eq!(client.subtitle("map"), "You surrender your seat");
+    client.observe(Standing::Out);
+    assert_eq!(
+        client.subtitle("map"),
+        "You leave the match",
+        "a seat eliminated while the menu is up has nothing left to surrender"
+    );
+    let mut host = PauseScreen::open(false, true).for_lan_match(NetRole::Host);
+    activate(&mut host, "Quit");
+    host.observe(Standing::Decided);
+    assert_eq!(host.subtitle("map"), "You leave the match");
 }
 
 fn drive(p: &mut PauseScreen, key: Key) -> Out {
@@ -519,7 +568,7 @@ fn every_confirmable_verb_asks_then_acts_or_returns_to_its_row() {
         );
         assert_eq!(drive(&mut p, Key::Enter), Out::Stay);
         assert_eq!(p.mode_name(), "confirm_pause");
-        assert_eq!(p.subtitle("map"), verb.consequence(false, false));
+        assert_eq!(p.subtitle("map"), p.consequence(verb));
         assert_eq!(drive(&mut p, Key::Escape), Out::Stay);
         assert_eq!(p.menu.value(), Some(&Choice::Row(verb.row())));
         drive(&mut p, Key::Enter);
