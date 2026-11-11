@@ -1064,34 +1064,35 @@ impl Sprites {
     /// Loads the atlas up front; a missing or incomplete atlas is a
     /// startup error, not a mid-game pop.
     pub fn load() -> Result<Self> {
-        let texture = Texture2D::from_image(
-            &load_resource_image("assets/sprites/atlas.png")
-                .context("loading assets/sprites/atlas.png (run from the workspace root)")?,
-        );
+        let first = load_resource_image("assets/sprites/atlas.png")
+            .context("loading assets/sprites/atlas.png (run from the workspace root)")?;
         let manifest = String::from_utf8(read_resource(
             &resource_root().join("assets/sprites/atlas.json"),
         )?)
         .context("loading assets/sprites/atlas.json")?;
         let rects = Manifest::parse(&manifest).context("parsing atlas manifest")?;
-        let page_height = texture.height();
+        let page_height = f32::from(first.height);
         let page_count = rects
             .rects
             .values()
             .map(|row| atlas_page(Rect::new(row[0], row[1], row[2], row[3]), page_height).0 + 1)
             .max()
             .unwrap_or(1);
-        texture.set_filter(FilterMode::Nearest);
-        let mut textures = vec![texture];
+        let mut pages = vec![first];
         for page in 1..page_count {
             let name = format!("assets/sprites/atlas_{page}.png");
-            let texture = Texture2D::from_image(
-                &load_resource_image(&name).with_context(|| format!("loading {name}"))?,
-            );
-            texture.set_filter(FilterMode::Nearest);
-            textures.push(texture);
+            pages.push(load_resource_image(&name).with_context(|| format!("loading {name}"))?);
         }
+        let textures = pages
+            .iter()
+            .map(|page| {
+                let texture = Texture2D::from_image(page);
+                texture.set_filter(FilterMode::Nearest);
+                texture
+            })
+            .collect();
 
-        let entity_lod = crate::entity_lod::EntityLod::load(&rects.rects, page_height)?;
+        let entity_lod = crate::entity_lod::EntityLod::load(&rects.rects, &pages, page_height)?;
         let ground_blend = crate::render::GroundBlend::load()?;
         let wordmark = Texture2D::from_image(
             &load_resource_image("assets/wordmark.png").context("loading assets/wordmark.png")?,

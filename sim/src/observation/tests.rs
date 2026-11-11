@@ -297,6 +297,91 @@ fn hostile_training_progress_never_enters_an_observation() {
 }
 
 #[test]
+fn a_producer_shows_only_that_it_trains_and_an_airworks_its_bay() {
+    let state = Scenario::skirmish()
+        .build()
+        .expect("the skirmish scenario builds");
+    let mut foundry = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Foundry)
+        .expect("a Foundry stands")
+        .clone();
+    let built = |training| crate::state::BuildingPhase::Built { training };
+    foundry.queue.clear();
+    assert_eq!(Works::of(&foundry), None, "an empty queue idles");
+    foundry
+        .queue
+        .extend([UnitKind::Sentinel, UnitKind::Harvester]);
+    let total = UnitKind::Sentinel.stats().train_ticks;
+    for training in [0, total / 2, total - 1] {
+        foundry.phase = built(training);
+        assert_eq!(Works::of(&foundry), Some(Works::Training));
+    }
+    foundry.phase = built(total);
+    assert_eq!(
+        Works::of(&foundry),
+        None,
+        "a finished unit waiting to leave"
+    );
+    foundry.phase = crate::state::BuildingPhase::Upgrading { progress: 1 };
+    assert_eq!(Works::of(&foundry), None, "works under refit stand still");
+
+    let mut airworks = foundry;
+    airworks.kind = BuildingKind::Airworks;
+    airworks.queue = [UnitKind::Buzzard].into();
+    let total = UnitKind::Buzzard.stats().train_ticks;
+    for (left, works) in [
+        (AIRWORKS_BAY_TICKS + 1, Works::Training),
+        (AIRWORKS_BAY_TICKS, Works::BayOpening),
+        (AIRWORKS_BAY_TICKS / 2 + 1, Works::BayOpening),
+        (AIRWORKS_BAY_TICKS / 2, Works::BayOpen),
+        (1, Works::BayOpen),
+    ] {
+        airworks.phase = built(total - left);
+        assert_eq!(Works::of(&airworks), Some(works), "{left} ticks left");
+    }
+}
+
+#[test]
+fn a_seen_hostile_producer_shows_its_works_and_nothing_of_its_queue() {
+    let mut scenario = Scenario::skirmish();
+    scenario.units.push(UnitSpec {
+        player: 0,
+        kind: UnitKind::Surveyor,
+        x: 31,
+        y: 19,
+    });
+    let state = scenario.build().expect("the skirmish scenario builds");
+    let producer = state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(1) && building.kind == BuildingKind::Foundry)
+        .expect("player one has a Foundry")
+        .id;
+    let training = |queue: &[UnitKind], training: u32| {
+        let mut state = state.clone();
+        let foundry = state.building_mut(producer).expect("the Foundry stands");
+        foundry.queue.extend(queue);
+        foundry.phase = crate::state::BuildingPhase::Built { training };
+        ObservationData::fog_honest(&state, PlayerId(0))
+    };
+    let seen = training(&[UnitKind::Harvester], 31);
+    assert!(
+        seen.enemy_buildings
+            .iter()
+            .any(|building| building.id == producer),
+        "premise: the Foundry is in sight"
+    );
+    assert_eq!(seen.works, [(producer, Works::Training)]);
+    assert_eq!(
+        training(&[UnitKind::Sentinel; 3], 5),
+        seen,
+        "neither the unit, its progress nor the queue's length shows"
+    );
+}
+
+#[test]
 fn owner_observation_reports_exact_sling_occupancy_without_leaking_the_manifest() {
     let mut state = transport_scenario()
         .build()

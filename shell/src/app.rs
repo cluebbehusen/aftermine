@@ -51,6 +51,8 @@ struct App {
     config: config::Config,
     /// The settings this device shares with the player's others.
     settings_sync: config::sync::SettingsSync,
+    /// Keeps this device's copy of the settings off the frame thread.
+    settings_writer: config::writer::Writer,
     /// The live (or backdrop) game session.
     game: Game,
     /// The wizard's remembered choices. Lives here, not in the wizard, so
@@ -323,6 +325,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         args,
         config,
         settings_sync,
+        settings_writer: config::writer::Writer::open(),
         game,
         draft,
         personality_seeds,
@@ -370,7 +373,6 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         autosave_retry: None,
         clock: std::time::Instant::now(),
     };
-    let mut ui_view = ui_view::capture_ui(&screen, &app);
     // A rerun pass re-enters the loop inside the same presented frame;
     // the frame's starting screen is the one recorded before it.
     let mut rerun_pass = false;
@@ -389,6 +391,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                 app.notify(text, danger);
             }
         }
+        app.report_settings();
         let visible = screen.visible(&app.game);
         aftermine_kit::diagnostics::frame(aftermine_kit::diagnostics::FrameContext {
             screen: screen.profile_mode(),
@@ -417,7 +420,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                 // until the event has actually been felt.
                 let holds_queries = matches!(incoming.request, Request::InjectEvent { .. });
                 let before = screen.kind();
-                debug::handle_request(incoming, &mut app, &mut screen, &ui_view);
+                debug::handle_request(incoming, &mut app, &mut screen);
                 screen_flow::settle(&mut app, before, &screen);
                 if holds_queries {
                     break;
@@ -633,7 +636,6 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         if let Some(pads) = &mut app.pads {
             pads.offer_presses_to_system(matches!(screen, Screen::Home(_)));
         }
-        ui_view = ui_view::capture_ui(&screen, &app);
         audio::frame(&mut app, &mut screen, time.presentation);
 
         screenshot::serve(&mut app);
@@ -650,9 +652,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                 Some((size, since)) if size == live => {
                     if get_time() - since > 1.0 {
                         app.config.window = live;
-                        if let Err(err) = app.save_settings() {
-                            app.notify_failure("Could not save settings", err);
-                        }
+                        app.save_settings();
                         app.pending_size = None;
                     }
                 }
@@ -667,7 +667,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             // window size, and the live session as an autosave. A failed
             // autosave swallows the quit (prevent_quit is in force) and
             // raises the failure dialog instead of exiting over data loss.
-            app.save_settings().ok();
+            app.save_settings();
             // Screens opened from Pause still hold the paused match behind
             // them, so a quit there saves it; a front-door screen holds
             // none, and saving the match left behind it would replace that
@@ -850,9 +850,17 @@ impl App {
 
     /// Saves the settings, sending the ones that follow the player to
     /// iCloud first, so a failed write here still reaches the other devices.
-    fn save_settings(&mut self) -> std::io::Result<()> {
+    /// A failed write reaches the player through [`Self::report_settings`].
+    fn save_settings(&mut self) {
         self.settings_sync.push(&self.config);
-        self.config.save()
+        self.settings_writer.save(&self.config);
+    }
+
+    /// Tells the player a settings write failed, once per failure.
+    fn report_settings(&mut self) {
+        if let Some(error) = self.settings_writer.failure() {
+            self.notify_failure("Could not save settings", error);
+        }
     }
 
     /// Takes in settings changed on the player's other devices. Only Home
@@ -860,9 +868,7 @@ impl App {
     fn pull_settings(&mut self) {
         if self.settings_sync.pull(&mut self.config) {
             apply_presentation(&self.config);
-            if let Err(err) = self.config.save() {
-                self.notify_failure("Could not save settings", err);
-            }
+            self.settings_writer.save(&self.config);
         }
     }
 

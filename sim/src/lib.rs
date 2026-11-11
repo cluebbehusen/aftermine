@@ -29,7 +29,7 @@ pub use state::{
     StateIntegrityError, Unit, Unloading, Worker,
 };
 pub use stats::{BuildingKind, ProjectileKind, UnitKind};
-pub use tick::CommandPhaseView;
+pub use tick::{CommandPhase, CommandPhaseView};
 pub use vision::{GhostBuilding, PublicBuilding, RadarContact, Vision};
 
 /// Version stamped into replays, saves and checkpoints; a replay is only

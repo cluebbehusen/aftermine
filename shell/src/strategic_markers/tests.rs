@@ -151,3 +151,33 @@ fn strategic_markers_obey_player_sight_and_explicit_debug_visibility() {
     let game = crate::game::Game::with_viewport(nearby, vec2(1280.0, 800.0)).unwrap();
     assert!(visible(&game.view(), &game.state.units()[4]));
 }
+
+#[test]
+fn selected_markers_draw_after_the_rest_in_unit_order() {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units.clear();
+    for x in [6, 8, 10, 12] {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
+            player: 0,
+            kind: aftermine_sim::UnitKind::Sentinel,
+            x,
+            y: 8,
+        });
+    }
+    let mut game = crate::game::Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let ids: Vec<_> = game.state.units().iter().map(|unit| unit.id).collect();
+    game.presentation.selection.units = vec![ids[0], ids[2]];
+    let shown: Vec<_> = shown_units(&game.view(), 1.0)
+        .into_iter()
+        .map(|(unit, _, selected)| (unit.id, selected))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (ids[1], false),
+            (ids[3], false),
+            (ids[0], true),
+            (ids[2], true)
+        ]
+    );
+}

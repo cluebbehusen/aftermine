@@ -278,12 +278,12 @@ struct Fill {
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
+/// Only asks the worker to stop. It holds its own share of what it touches
+/// and checks the flag every tick, so joining it would only hold up the frame
+/// that leaves the viewer.
 impl Drop for Fill {
     fn drop(&mut self) {
         self.shared.cancelled.store(true, Ordering::Relaxed);
-        if let Some(worker) = self.worker.take() {
-            worker.join().ok();
-        }
     }
 }
 

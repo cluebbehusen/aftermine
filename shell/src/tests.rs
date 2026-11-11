@@ -93,3 +93,19 @@ fn hosting_needs_a_scenario_and_joining_takes_none() {
         assert!(parse(invalid).is_err(), "accepted {invalid:?}");
     }
 }
+
+#[test]
+fn a_draw_call_has_index_room_for_every_quad_its_vertex_room_holds() {
+    let conf = batched(Conf::default());
+    let stock = macroquad::conf::Conf::from(Conf::default());
+    assert_eq!(
+        conf.draw_call_index_capacity / 6,
+        conf.draw_call_vertex_capacity / 4
+    );
+    assert_eq!(
+        conf.draw_call_vertex_capacity,
+        stock.draw_call_vertex_capacity
+    );
+    assert_eq!(conf.default_filter_mode, stock.default_filter_mode);
+    assert!(conf.update_on.is_none() && stock.update_on.is_none());
+}

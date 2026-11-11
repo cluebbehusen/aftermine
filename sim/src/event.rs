@@ -220,11 +220,6 @@ pub enum Event {
         /// Hp actually accepted from this pulse.
         amount: u32,
     },
-    /// A scrap node ran out.
-    NodeDepleted {
-        /// The now-empty tile.
-        pos: TilePos,
-    },
     /// A turret fired (positions carried for presentation, like
     /// [`Event::AttackHit`]).
     TurretFired {

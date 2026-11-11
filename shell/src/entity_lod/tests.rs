@@ -383,3 +383,20 @@ fn a_packed_area_draws_where_it_lies_in_the_whole_flipped_and_turned_sprite() {
         );
     }
 }
+
+#[test]
+fn the_bank_derives_from_the_pages_it_is_handed() {
+    let manifest = HashMap::from([("foundry".to_owned(), [0.0, 64.0, 64.0, 64.0])]);
+    let pages = [
+        Image::gen_image_color(64, 64, BLANK),
+        painted(16, 48, 8, 24),
+    ];
+    let baked = EntityLod::bake(&manifest, &pages, 64.0).unwrap();
+    let bounds = baked.bounds[&[0, 64, 64, 64]];
+    assert_eq!(
+        [bounds.x, bounds.y, bounds.w, bounds.h],
+        [0.25, 0.125, 0.5, 0.25]
+    );
+    assert!(baked.contacts.contains_key(&[0, 64, 64, 64]));
+    assert!(EntityLod::bake(&manifest, &pages[..1], 64.0).is_err());
+}

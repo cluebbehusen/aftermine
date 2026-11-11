@@ -12,11 +12,7 @@ const FOG_FEATHER: f32 = 0.45;
 /// Fog of war from the local player's perspective: unexplored is void,
 /// explored-but-unseen is dimmed.
 pub(super) fn draw_fog(game: &crate::game::Scene<'_>, view: &GroundView) {
-    FOG_VEIL.with_borrow_mut(|veil| veil.draw(game, view));
-}
-
-thread_local! {
-    static FOG_VEIL: std::cell::RefCell<FogVeil> = std::cell::RefCell::new(FogVeil::default());
+    game.presentation.fog_veil.borrow_mut().draw(game, view);
 }
 
 /// Most distinct feathers kept before the memo starts over. A frame's fog
@@ -24,111 +20,278 @@ thread_local! {
 /// collecting every step count of every pattern.
 const FEATHER_MEMO: usize = 4096;
 
-/// The fog veil's working memory. A tile's feather depends only on its
-/// fog neighborhood and its grid size, and the same few neighborhoods
-/// recur all along a fog edge, so their alphas are kept rather than
-/// recomputed every frame.
-struct FogVeil {
+/// Most a veil mesh holds: well inside one macroquad draw call, whose
+/// `geometry` clamps anything larger.
+const MESH_VERTICES: usize = 4096;
+const MESH_INDICES: usize = 6144;
+
+/// The most grid steps a feather band takes.
+const MAX_STEPS: usize = 8;
+
+/// What a scan of the fog read: fog changes only with a tick, and only the
+/// viewer's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Scanned {
+    tick: aftermine_sim::Tick,
+    viewer: aftermine_sim::PlayerId,
+    /// The tiles scanned, `[lo, hi)`.
+    lo: TilePos,
+    hi: TilePos,
+}
+
+/// A row's run of equal fog that covers its ground.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Run {
+    y: i32,
+    /// The run's tiles, `[from, to)`.
+    from: i32,
+    to: i32,
+    fog: Fog,
+}
+
+/// A known tile beside more fogged ground, which feathers into it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Edge {
+    tile: TilePos,
+    neighborhood: [[Fog; 3]; 3],
+}
+
+/// The fog veil's working memory, owned by a presentation. Its runs and
+/// feathered tiles are kept in tile space until the tick, viewer or tiles in
+/// view change, and its meshes in screen space until the view moves. Only
+/// the map and the boundary fog's margin can hold anything but unexplored
+/// ground, so the scan stops there and the rest of the view is covered by a
+/// few opaque rects. A tile's feather depends only on its fog neighborhood
+/// and its grid size, and the same few neighborhoods recur all along a fog
+/// edge, so their alphas are kept too.
+pub(crate) struct FogVeil {
+    scanned: Option<Scanned>,
+    /// Counts scans, so a projection knows which one it drew.
+    scans: u64,
     states: Vec<Fog>,
+    runs: Vec<Run>,
+    edges: Vec<Edge>,
+    projected: Option<(u64, GroundView)>,
     feathers: std::collections::HashMap<u32, Box<[f32]>>,
-    /// One tile's feather, its indices a triangle list over a
-    /// `side`×`side` grid of vertices.
-    mesh: Mesh,
-    side: usize,
+    /// Each step count's triangle list over its `side`×`side` vertex grid.
+    indices: [Vec<u16>; MAX_STEPS],
+    meshes: Vec<Mesh>,
+    /// The meshes the projection fills, in drawing order.
+    filled: usize,
 }
 
 impl Default for FogVeil {
     fn default() -> Self {
         Self {
+            scanned: None,
+            scans: 0,
             states: Vec::new(),
+            runs: Vec::new(),
+            edges: Vec::new(),
+            projected: None,
             feathers: std::collections::HashMap::new(),
-            mesh: Mesh {
-                vertices: Vec::new(),
-                indices: Vec::new(),
-                texture: None,
-            },
-            side: 0,
+            indices: std::array::from_fn(|_| Vec::new()),
+            meshes: Vec::new(),
+            filled: 0,
         }
     }
 }
 
 impl FogVeil {
+    /// Drops the scan, for a world replaced at a tick it may have scanned.
+    pub(crate) fn forget(&mut self) {
+        self.scanned = None;
+    }
+
     fn draw(&mut self, game: &crate::game::Scene<'_>, view: &GroundView) {
-        let (lo, hi) = view.world_rect();
-        let min = numeric::tile_at(lo);
-        let max = TilePos::new(numeric::to_i32(hi.x.ceil()), numeric::to_i32(hi.y.ceil()));
-        // One extra ring so every drawn tile sees all eight neighbors.
-        let stride = as_index(max.x - min.x + 2);
+        let (min, max) = view_tiles(view);
+        let map = game.state.map();
+        let reach = crate::boundary_fog::PAD;
+        let scanned = Scanned {
+            tick: game.state.current_tick(),
+            viewer: game.presentation.human,
+            lo: TilePos::new(min.x.max(-reach), min.y.max(-reach)),
+            hi: TilePos::new(
+                max.x.min(map.width() + reach),
+                max.y.min(map.height() + reach),
+            ),
+        };
+        self.scan(scanned, |tile| tile_fog(game, tile));
+        self.project(view);
+        for mesh in &self.meshes[..self.filled] {
+            draw_mesh(mesh);
+        }
+    }
+
+    /// Reads the fog over `scanned`'s tiles unless they are what the last
+    /// scan read.
+    fn scan(&mut self, scanned: Scanned, fog: impl Fn(TilePos) -> Fog) {
+        if self.scanned == Some(scanned) {
+            return;
+        }
+        self.scanned = Some(scanned);
+        self.scans += 1;
+        self.runs.clear();
+        self.edges.clear();
+        let Scanned { lo, hi, .. } = scanned;
+        if lo.x >= hi.x || lo.y >= hi.y {
+            return;
+        }
+        // One extra ring so every scanned tile sees all eight neighbors.
+        let stride = as_index(hi.x - lo.x + 2);
         self.states.clear();
-        self.states
-            .extend((min.y - 1..=max.y).flat_map(|y| {
-                (min.x - 1..=max.x).map(move |x| tile_fog(game, TilePos::new(x, y)))
-            }));
-        let states = std::mem::take(&mut self.states);
-        let fog =
-            |x: i32, y: i32| states[as_index(y - min.y + 1) * stride + as_index(x - min.x + 1)];
-        // One rect per run of equal fog along a row: zoomed out, the view
-        // holds thousands of tiles, most of them off the map.
-        for y in min.y..max.y {
-            let mut x = min.x;
-            while x < max.x {
-                let state = fog(x, y);
-                let start = x;
-                while x < max.x && fog(x, y) == state {
+        let fog = &fog;
+        self.states.extend(
+            (lo.y - 1..=hi.y).flat_map(|y| (lo.x - 1..=hi.x).map(move |x| fog(TilePos::new(x, y)))),
+        );
+        let states = &self.states;
+        let at = |x: i32, y: i32| states[as_index(y - lo.y + 1) * stride + as_index(x - lo.x + 1)];
+        // One run per stretch of equal fog along a row: zoomed out, the view
+        // holds thousands of tiles.
+        for y in lo.y..hi.y {
+            let mut x = lo.x;
+            while x < hi.x {
+                let fog = at(x, y);
+                let from = x;
+                while x < hi.x && at(x, y) == fog {
                     x += 1;
                 }
-                let alpha = state.alpha();
-                if alpha == 0.0 {
-                    continue;
+                if fog.alpha() != 0.0 {
+                    self.runs.push(Run {
+                        y,
+                        from,
+                        to: x,
+                        fog,
+                    });
                 }
-                let cover = Color::new(FOG_UNEXPLORED.r, FOG_UNEXPLORED.g, FOG_UNEXPLORED.b, alpha);
-                // Exact shared edges: translucent rects that overlap draw
-                // double-dark seams, so each run ends where the next begins.
-                let a = view.to_screen(vec2(start as f32, y as f32)).floor();
-                let b = view.to_screen(vec2(x as f32, (y + 1) as f32)).floor();
-                draw_rectangle(a.x, a.y, b.x - a.x, b.y - a.y, cover);
             }
         }
         // Feather inward into known ground. Unknown tiles retain their opaque veil.
-        for y in min.y..max.y {
-            for x in min.x..max.x {
-                let neighborhood: [[Fog; 3]; 3] = std::array::from_fn(|row| {
-                    std::array::from_fn(|col| {
-                        fog(x + col.fit::<i32>() - 1, y + row.fit::<i32>() - 1)
-                    })
-                });
-                let current = neighborhood[1][1];
-                if current == Fog::Unexplored
-                    || neighborhood.iter().flatten().all(|&state| state <= current)
-                {
+        for y in lo.y..hi.y {
+            for x in lo.x..hi.x {
+                let current = at(x, y);
+                if current == Fog::Unexplored {
                     continue;
                 }
-                let a = view.to_screen(vec2(x as f32, y as f32)).floor();
-                let b = view.to_screen(vec2((x + 1) as f32, (y + 1) as f32)).floor();
-                self.draw_feather(a, b, &neighborhood);
+                let neighborhood: [[Fog; 3]; 3] = std::array::from_fn(|row| {
+                    std::array::from_fn(|col| {
+                        at(x + col.fit::<i32>() - 1, y + row.fit::<i32>() - 1)
+                    })
+                });
+                if neighborhood.iter().flatten().all(|&state| state <= current) {
+                    continue;
+                }
+                self.edges.push(Edge {
+                    tile: TilePos::new(x, y),
+                    neighborhood,
+                });
             }
         }
-        self.states = states;
+    }
+
+    /// Lays the scan out on screen unless `view` and the scan are what the
+    /// meshes already show.
+    fn project(&mut self, view: &GroundView) {
+        if self
+            .projected
+            .as_ref()
+            .is_some_and(|(scans, shown)| *scans == self.scans && shown == view)
+        {
+            return;
+        }
+        self.projected = Some((self.scans, view.clone()));
+        self.filled = 0;
+        let (min, max) = view_tiles(view);
+        let unexplored = Fog::Unexplored.cover();
+        // Exact shared edges: translucent rects that overlap draw double-dark
+        // seams, so each rect ends where the next begins.
+        let screen = |x: i32, y: i32| view.to_screen(vec2(x as f32, y as f32)).floor();
+        let rect = |veil: &mut Self, from: TilePos, to: TilePos, color: Color| {
+            if from.x < to.x && from.y < to.y {
+                veil.quad(screen(from.x, from.y), screen(to.x, to.y), color);
+            }
+        };
+        for (from, to) in beyond(min, max, self.scanned) {
+            rect(self, from, to, unexplored);
+        }
+        for index in 0..self.runs.len() {
+            let Run { y, from, to, fog } = self.runs[index];
+            rect(
+                self,
+                TilePos::new(from, y),
+                TilePos::new(to, y + 1),
+                fog.cover(),
+            );
+        }
+        for index in 0..self.edges.len() {
+            let Edge { tile, neighborhood } = self.edges[index];
+            let a = screen(tile.x, tile.y);
+            let b = screen(tile.x + 1, tile.y + 1);
+            self.feather(a, b, &neighborhood);
+        }
+    }
+
+    /// A mesh with room for `vertices` and `indices` more, after those
+    /// already filled.
+    fn room(&mut self, vertices: usize, indices: usize) -> &mut Mesh {
+        let fits = self.filled > 0 && {
+            let mesh = &self.meshes[self.filled - 1];
+            mesh.vertices.len() + vertices <= MESH_VERTICES
+                && mesh.indices.len() + indices <= MESH_INDICES
+        };
+        if !fits {
+            if self.filled == self.meshes.len() {
+                self.meshes.push(Mesh {
+                    vertices: Vec::new(),
+                    indices: Vec::new(),
+                    texture: None,
+                });
+            }
+            let mesh = &mut self.meshes[self.filled];
+            mesh.vertices.clear();
+            mesh.indices.clear();
+            self.filled += 1;
+        }
+        &mut self.meshes[self.filled - 1]
+    }
+
+    /// The quad `draw_rectangle` queues over the screen rect from `a` to `b`.
+    fn quad(&mut self, a: Vec2, b: Vec2, color: Color) {
+        let (x, y, w, h) = (a.x, a.y, b.x - a.x, b.y - a.y);
+        let mesh = self.room(4, 6);
+        let base = mesh.vertices.len().fit::<u16>();
+        mesh.vertices.extend([
+            Vertex::new(x, y, 0., 0.0, 0.0, color),
+            Vertex::new(x + w, y, 0., 1.0, 0.0, color),
+            Vertex::new(x + w, y + h, 0., 1.0, 1.0, color),
+            Vertex::new(x, y + h, 0., 0.0, 1.0, color),
+        ]);
+        mesh.indices
+            .extend([0, 1, 2, 0, 2, 3].map(|index| base + index));
     }
 
     /// Samples [`fog_feather_alpha`] on a grid over one tile's screen rect.
-    fn draw_feather(&mut self, a: Vec2, b: Vec2, neighborhood: &[[Fog; 3]; 3]) {
+    fn feather(&mut self, a: Vec2, b: Vec2, neighborhood: &[[Fog; 3]; 3]) {
         let band = (b - a).max_element() * FOG_FEATHER;
-        let steps = numeric::to_usize((band / 6.0).ceil().clamp(1.0, 8.0));
+        let steps = numeric::to_usize((band / 6.0).ceil().clamp(1.0, MAX_STEPS as f32));
         let side = 2 * (steps + 1);
-        if self.side != side {
-            self.side = side;
-            self.mesh.indices = feather_indices(side);
+        if self.indices[steps - 1].is_empty() {
+            self.indices[steps - 1] = feather_indices(side);
         }
         if self.feathers.len() >= FEATHER_MEMO {
             self.feathers.clear();
         }
-        let alphas: &[f32] = self
-            .feathers
-            .entry(feather_key(neighborhood, steps))
+        let key = feather_key(neighborhood, steps);
+        self.feathers
+            .entry(key)
             .or_insert_with(|| feather_alphas(neighborhood, steps));
-        self.mesh.vertices.clear();
-        self.mesh.vertices.extend((0..side).flat_map(|row| {
+        let count = self.indices[steps - 1].len();
+        self.room(side * side, count);
+        let alphas = &self.feathers[&key];
+        let indices = &self.indices[steps - 1];
+        let mesh = &mut self.meshes[self.filled - 1];
+        let base = mesh.vertices.len().fit::<u16>();
+        mesh.vertices.extend((0..side).flat_map(|row| {
             (0..side).map(move |col| {
                 let p = a + (b - a) * vec2(feather_coord(col, steps), feather_coord(row, steps));
                 let alpha = alphas[row * side + col];
@@ -136,8 +299,33 @@ impl FogVeil {
                 Vertex::new(p.x, p.y, 0.0, 0.0, 0.0, color)
             })
         }));
-        draw_mesh(&self.mesh);
+        mesh.indices
+            .extend(indices.iter().map(|index| base + index));
     }
+}
+
+/// The parts of the view's tiles `[min, max)` that `scanned` left out, each
+/// `[from, to)`: unexplored ground, every one of them.
+fn beyond(min: TilePos, max: TilePos, scanned: Option<Scanned>) -> [(TilePos, TilePos); 4] {
+    let none = (min, min);
+    match scanned {
+        Some(Scanned { lo, hi, .. }) if lo.x < hi.x && lo.y < hi.y => [
+            (min, TilePos::new(max.x, lo.y)),
+            (TilePos::new(min.x, hi.y), max),
+            (TilePos::new(min.x, lo.y), TilePos::new(lo.x, hi.y)),
+            (TilePos::new(hi.x, lo.y), TilePos::new(max.x, hi.y)),
+        ],
+        _ => [(min, max), none, none, none],
+    }
+}
+
+/// The tiles `view` covers, `[min, max)`, on the map or off it.
+fn view_tiles(view: &GroundView) -> (TilePos, TilePos) {
+    let (lo, hi) = view.world_rect();
+    (
+        numeric::tile_at(lo),
+        TilePos::new(numeric::to_i32(hi.x.ceil()), numeric::to_i32(hi.y.ceil())),
+    )
 }
 
 /// Where grid line `index` of a feather with `steps` steps per band sits
@@ -252,6 +440,16 @@ impl Fog {
             Fog::Explored => FOG_EXPLORED.a,
             Fog::Unexplored => 1.0,
         }
+    }
+
+    /// The veil over a tile of this fog.
+    fn cover(self) -> Color {
+        Color::new(
+            FOG_UNEXPLORED.r,
+            FOG_UNEXPLORED.g,
+            FOG_UNEXPLORED.b,
+            self.alpha(),
+        )
     }
 }
 

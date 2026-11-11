@@ -785,13 +785,13 @@ fn magazine_queue(
     queue: &mut Vec<Card>,
 ) -> Option<String> {
     let stats = building.kind.magazine()?;
-    let magazine = game
+    let known = game
         .state
         .known_magazines(game.presentation.human)
         .into_iter()
-        .find(|known| known.building == building.id)?
-        .detail
-        .filter(|detail| detail.ordered > 0)?;
+        .find(|known| known.building == building.id)?;
+    let magazine = known.detail.filter(|detail| detail.ordered > 0)?;
+    let progress = known.assembly.unwrap_or(0);
     let own = building.player == game.presentation.human;
     let round_ticks = stats.round_ticks.max(1);
     let title =
@@ -810,14 +810,13 @@ fn magazine_queue(
             enabled: true,
             why: None,
             desc: if own { refund_chip_desc() } else { Vec::new() },
-            progress: (index == 0)
-                .then(|| (magazine.progress as f32 / round_ticks as f32).clamp(0.0, 1.0)),
+            progress: (index == 0).then(|| (progress as f32 / round_ticks as f32).clamp(0.0, 1.0)),
             autocast: None,
             hold: None,
         });
     }
     Some(tick_time_label(
-        u32::from(magazine.ordered) * round_ticks - magazine.progress.min(round_ticks),
+        u32::from(magazine.ordered) * round_ticks - progress.min(round_ticks),
     ))
 }
 

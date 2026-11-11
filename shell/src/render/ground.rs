@@ -41,7 +41,7 @@ const REACH: f32 = 1.0;
 /// of the cache. While the zoom holds still, world `(0, 0)` lands on a whole
 /// pixel, so ground drawn straight to the screen floors to the same pixels as a
 /// chunk baked at the same zoom and moved into place.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct GroundView {
     zoom: f32,
     /// Where world `(0, 0)` lands.

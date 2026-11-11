@@ -1172,10 +1172,12 @@ fn a_site_chip_takes_the_selection_off_a_site_other_workers_hold() {
             .any(|line| line.contains("take the selection off this site"))
     };
     // In play only a tick drains the staged batch, and the cached projection
-    // keys on its length, so dropping the batch here drops the cache too.
+    // and staged command phase key on its length, so dropping the batch here
+    // drops both caches too.
     let unstage = |game: &mut Game| {
         game.pending.clear();
         game.presentation.projection.take();
+        game.presentation.staged.get_mut().take();
     };
 
     game.state.tick(&[PlayerCommand {

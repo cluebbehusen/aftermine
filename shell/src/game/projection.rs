@@ -6,9 +6,36 @@
 //! command will actually edit.
 
 use aftermine_sim::{
-    Building, BuildingId, CommandPhaseView, Order, PlayerCommand, PlayerId, State, Tick, Unit,
-    UnitId,
+    Building, BuildingId, CommandPhase, CommandPhaseView, Order, PlayerCommand, PlayerId, State,
+    Tick, Unit, UnitId,
 };
+
+/// The world as the staged commands leave it, shared by every read of it
+/// until a tick or another staged command: the staged batch only grows, or
+/// drains along with a tick, so its length tells its versions apart.
+pub(crate) struct StagedPhase {
+    tick: Tick,
+    pending: usize,
+    phase: CommandPhase,
+}
+
+impl StagedPhase {
+    pub(super) fn capture(state: &State, pending: &[PlayerCommand]) -> Self {
+        Self {
+            tick: state.current_tick(),
+            pending: pending.len(),
+            phase: state.command_phase(pending),
+        }
+    }
+
+    pub(super) fn is_current(&self, tick: Tick, pending: usize) -> bool {
+        self.tick == tick && self.pending == pending
+    }
+
+    pub(super) fn view(&self) -> CommandPhaseView<'_> {
+        self.phase.view()
+    }
+}
 
 /// One unit's order program, active order first.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,28 +94,51 @@ impl Projection {
         })
     }
 
-    /// Projects `units` through `pending`. With nothing staged the command
-    /// phase reads the world itself.
-    pub(super) fn capture(state: &State, pending: &[PlayerCommand], units: Vec<UnitId>) -> Self {
-        let (programs, sites, shared) = state.inspect_command_phase(pending, |view| {
-            let programs = programs(&units, |id| view.unit(id));
-            let sites = view
-                .buildings()
-                .iter()
-                .filter(|site| {
-                    programs.iter().any(|(_, program)| {
-                        program.orders.contains(&Order::Build { site: site.id })
+    /// Projects `units` through the `pending` commands, whose command phase
+    /// `staged` reads. Only a staged batch needs it; otherwise the programs
+    /// are the world's own.
+    pub(super) fn capture(
+        state: &State,
+        pending: usize,
+        staged: Option<CommandPhaseView<'_>>,
+        units: Vec<UnitId>,
+    ) -> Self {
+        let (programs, sites, shared) = match staged {
+            None => {
+                let programs = programs(&units, |id| state.unit(id));
+                let shared = shared_sites(
+                    &programs,
+                    |id| state.unit(id),
+                    state.buildings(),
+                    |site| state.site_crew(site),
+                );
+                (programs, Vec::new(), shared)
+            }
+            Some(view) => {
+                let programs = programs(&units, |id| view.unit(id));
+                let sites = view
+                    .buildings()
+                    .iter()
+                    .filter(|site| {
+                        programs.iter().any(|(_, program)| {
+                            program.orders.contains(&Order::Build { site: site.id })
+                        })
                     })
-                })
-                .cloned()
-                .collect();
-            let shared = shared_sites(&view, &programs);
-            (programs, sites, shared)
-        });
+                    .cloned()
+                    .collect();
+                let shared = shared_sites(
+                    &programs,
+                    |id| view.unit(id),
+                    view.buildings(),
+                    |site| view.site_crew(site),
+                );
+                (programs, sites, shared)
+            }
+        };
         Self {
             captured: Some(Captured {
                 tick: state.current_tick(),
-                pending: pending.len(),
+                pending,
                 units,
             }),
             programs,
@@ -123,9 +173,11 @@ impl Projection {
 
 /// The Build and Found orders in `programs`, with their owners, whose site a
 /// worker outside `programs` also holds.
-fn shared_sites(
-    view: &CommandPhaseView<'_>,
+fn shared_sites<'w, C: Iterator<Item = UnitId>>(
     programs: &[(UnitId, Program)],
+    unit_of: impl Fn(UnitId) -> Option<&'w Unit>,
+    buildings: &'w [Building],
+    crew: impl Fn(BuildingId) -> C,
 ) -> Vec<(PlayerId, Order)> {
     let selected = |id: UnitId| {
         programs
@@ -135,7 +187,7 @@ fn shared_sites(
     let mut seen = Vec::new();
     let mut shared = Vec::new();
     for (unit, program) in programs {
-        let Some(player) = view.unit(*unit).map(|unit| unit.player) else {
+        let Some(player) = unit_of(*unit).map(|unit| unit.player) else {
             continue;
         };
         for &order in &program.orders {
@@ -145,7 +197,7 @@ fn shared_sites(
                 continue;
             }
             seen.push((player, order));
-            let site = view.buildings().iter().find(|site| match order {
+            let site = buildings.iter().find(|site| match order {
                 Order::Build { site: id } => site.id == id,
                 Order::Found { kind, anchor } => {
                     site.player == player
@@ -155,7 +207,7 @@ fn shared_sites(
                 }
                 _ => false,
             });
-            if site.is_some_and(|site| view.site_crew(site.id).any(|id| !selected(id))) {
+            if site.is_some_and(|site| crew(site.id).any(|id| !selected(id))) {
                 shared.push((player, order));
             }
         }
@@ -177,3 +229,6 @@ fn programs<'u>(
     programs.dedup_by_key(|(id, _)| *id);
     programs
 }
+
+#[cfg(test)]
+mod tests;

@@ -49,6 +49,19 @@ pub struct CommandPhaseView<'a> {
     state: &'a State,
 }
 
+/// An owned command phase from [`State::command_phase`], read only through
+/// its [`CommandPhaseView`].
+pub struct CommandPhase {
+    state: State,
+}
+
+impl CommandPhase {
+    /// The projected world's prediction-safe queries.
+    pub fn view(&self) -> CommandPhaseView<'_> {
+        CommandPhaseView { state: &self.state }
+    }
+}
+
 impl CommandPhaseView<'_> {
     /// Projected tick, unchanged because later phases never ran.
     pub fn current_tick(&self) -> crate::Tick {
@@ -129,12 +142,19 @@ impl State {
         if commands.is_empty() {
             return inspect(CommandPhaseView { state: self });
         }
+        inspect(self.command_phase(commands).view())
+    }
+
+    /// The command phase [`State::inspect_command_phase`] shows, kept for a
+    /// caller that reads it again and again while the commands stay the same.
+    /// It always copies the receiver, even with no commands.
+    pub fn command_phase(&self, commands: &[PlayerCommand]) -> CommandPhase {
         let mut projected = self.clone();
         if projected.result.is_none() {
             let mut events = Vec::new();
             commands::apply(&mut projected, commands, &mut events);
         }
-        inspect(CommandPhaseView { state: &projected })
+        CommandPhase { state: projected }
     }
 
     /// Advances the world by one fixed timestep, applying `commands` (all

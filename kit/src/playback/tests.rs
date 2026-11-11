@@ -293,3 +293,23 @@ fn filling_reports_a_running_fill_until_it_finishes() {
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }
+
+#[test]
+fn leaving_the_viewer_never_waits_for_its_fill() {
+    let mut playback = Playback::load(recorded_match()).unwrap();
+    playback.start_fill();
+    let shared = Arc::clone(&playback.fill.as_ref().unwrap().shared);
+    // Holding the kept worlds stops the worker at the first one it keeps,
+    // which it reaches well within the pause.
+    let held = shared.frames();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let (left, gone) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        drop(playback);
+        left.send(()).ok();
+    });
+    let leaving = gone.recv_timeout(std::time::Duration::from_secs(10));
+    drop(held);
+    assert!(leaving.is_ok(), "leaving the viewer waited for its fill");
+    assert!(shared.cancelled.load(Ordering::Relaxed));
+}
