@@ -301,14 +301,16 @@ static char *current_account(void) {
           dispatch_semaphore_signal(done);
           return;
       }
-      // Signed out, restricted, or waiting on the player to sign in again.
+      // Signed out or restricted needs the player; an account only
+      // temporarily unavailable is signed in but not ready for CloudKit yet,
+      // so it is a failure that passes.
       if (status != CKAccountStatusAvailable) {
-          answer = @{
-              @"error" : error.localizedDescription
-                  ?: [NSString stringWithFormat:@"account status %ld",
-                                                (long)status],
-              @"trouble" : @"no_account",
-          };
+          NSString *why = error.localizedDescription
+              ?: [NSString stringWithFormat:@"account status %ld", (long)status];
+          BOOL signed_out = status == CKAccountStatusNoAccount ||
+                            status == CKAccountStatusRestricted;
+          answer = signed_out ? @{@"error" : why, @"trouble" : @"no_account"}
+                              : @{@"error" : why};
           dispatch_semaphore_signal(done);
           return;
       }
