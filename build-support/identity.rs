@@ -32,9 +32,9 @@ fn inputs(host: &str) -> Vec<String> {
     .map(str::to_owned)
     .collect();
     paths.extend(["chassis", "sim", "opponent", "protocol", "kit", host].map(str::to_owned));
-    // Only the shell links the multiplayer crate.
+    // Only the shell links the multiplayer crate and the Apple bridge.
     if host == "shell" {
-        paths.push("net".to_owned());
+        paths.extend(["net", "apple-bridge"].map(str::to_owned));
     }
     paths
 }
