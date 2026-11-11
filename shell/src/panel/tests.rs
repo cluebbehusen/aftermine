@@ -109,6 +109,34 @@ fn stripping_hotkeys_clears_every_card_row() {
     assert_eq!(panel.stop.map(|stop| stop.hotkey), Some(String::new()));
 }
 
+#[test]
+fn the_all_button_names_its_key_only_while_a_keyboard_is_in_use() {
+    let mut game = game();
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
+        .expect("a harvester")
+        .id;
+    game.presentation.selection.units = vec![harvester];
+    let input = crate::input::InputState::new();
+    for hands in crate::platform::tests::ALL_HANDS
+        .into_iter()
+        .chain(crate::platform::tests::pad_hands())
+    {
+        crate::platform::set_hands(hands);
+        let panel = build_for_input(&game.view(), &BindingMap::classic(), &input).expect("a panel");
+        let all = panel.select_all.expect("more Harvesters to gather");
+        assert_eq!(
+            all.card.hotkey,
+            if hands.keys { "I" } else { "" },
+            "{hands:?}"
+        );
+    }
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}
+
 fn stat<'a>(panel: &'a Panel, label: &str) -> &'a info::StatRow {
     panel
         .info

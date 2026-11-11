@@ -29,6 +29,7 @@
       {"chord": {"key": "u", "ctrl": false, "shift": false}, "action": "Unload"},
       {"chord": {"key": "u", "ctrl": false, "shift": false}, "action": "ReturnCargo"},
       {"chord": {"key": "e", "ctrl": false, "shift": false}, "action": "Accompany"},
+      {"chord": {"key": "i", "ctrl": false, "shift": false}, "action": "SelectAllOfKind"},
       {"chord": {"key": "m", "ctrl": false, "shift": false}, "action": "Launch"},
       {"chord": {"key": "o", "ctrl": false, "shift": false}, "action": "OrderRound"},
       {"chord": {"key": "space", "ctrl": false, "shift": false}, "action": "ReplayPause"},

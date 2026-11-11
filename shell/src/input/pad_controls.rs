@@ -291,7 +291,9 @@ fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
                 .map(|(kind, _)| kind)
                 .collect()
         }) {
-            Cycle::OneKind => select_all(game, input, bindings),
+            Cycle::OneKind => {
+                super::dispatch_action(game, input, bindings, Action::SelectAllOfKind);
+            }
             Cycle::Narrow { group, kind, ids } => {
                 game.presentation.selection.units = ids;
                 input.narrowed = Some(Narrowed::Units { group, kind });
@@ -313,30 +315,15 @@ fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
         match cycle(alive(&selection.buildings), last, kind_of, |ids, left| {
             crate::panel::building_kinds(ids.iter().filter_map(|id| kind_of(*id)).chain(left))
         }) {
-            Cycle::OneKind => select_all(game, input, bindings),
+            Cycle::OneKind => {
+                super::dispatch_action(game, input, bindings, Action::SelectAllOfKind);
+            }
             Cycle::Narrow { group, kind, ids } => {
                 game.presentation.selection.buildings = ids;
                 input.narrowed = Some(Narrowed::Buildings { group, kind });
             }
             Cycle::Whole(group) => game.presentation.selection.buildings = group,
         }
-    }
-}
-
-/// Presses the panel's All button for a selection of one kind, through the
-/// card it published; with no such offer, as when every one is already
-/// selected, the press is refused.
-fn select_all(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
-    let offer = game
-        .presentation
-        .panel_model
-        .borrow()
-        .as_ref()
-        .and_then(|panel| panel.select_all.as_ref())
-        .map(|all| all.card.action);
-    match offer {
-        Some(action) => super::activate_card(game, input, bindings, action),
-        None => super::deny(game),
     }
 }
 

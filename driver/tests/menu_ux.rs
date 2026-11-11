@@ -585,10 +585,10 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
     select_labeled(&mut client, "pan up:")?;
     press_key(&mut client, Key::Right)?;
     press_key(&mut client, Key::Enter)?;
-    press_key(&mut client, Key::I)?;
+    press_key(&mut client, Key::L)?;
     let rows = ui(&mut client)?.items;
     assert!(
-        rows.iter().any(|row| row.contains("Pan up: W | [I]")),
+        rows.iter().any(|row| row.contains("Pan up: W | [L]")),
         "{rows:?}"
     );
     drop(client);
@@ -606,7 +606,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
         ui(&mut client)?
             .items
             .iter()
-            .any(|row| row.contains("Pan up: [W] | I"))
+            .any(|row| row.contains("Pan up: [W] | L"))
     );
     let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.players[0].scrap = 10000;
@@ -639,7 +639,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
         Ok(camera.center)
     };
     let before = camera(&mut client)?;
-    for key in [Key::W, Key::I] {
+    for key in [Key::W, Key::L] {
         client.call(Request::InjectEvent {
             event: RawEvent::KeyDown { key },
         })?;
@@ -651,7 +651,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
     let halfway = camera(&mut client)?;
     std::thread::sleep(std::time::Duration::from_millis(120));
     client.call(Request::InjectEvent {
-        event: RawEvent::KeyUp { key: Key::I },
+        event: RawEvent::KeyUp { key: Key::L },
     })?;
     let after = camera(&mut client)?;
     assert!(
