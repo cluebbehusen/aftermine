@@ -71,21 +71,81 @@ fn a_customized_map_survives_the_round_trip() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-#[test]
-fn an_explicit_unbinding_survives_the_restart() {
-    let dir = std::env::temp_dir().join(format!("aftermine-config-unbind-{}", std::process::id()));
-    let path = dir.join("config.json");
+/// Default settings whose binding list never names `missing`, as a file
+/// saved before the action existed.
+fn saved_without(missing: crate::action::Action) -> Config {
     let mut config = Config::default();
+    config.bindings.unbind_slot(missing, 0);
+    config.bindings.unbind_slot(missing, 1);
     config
-        .bindings
-        .unbind_slot(crate::action::Action::Patrol, 0);
-    config.save_to(&path).expect("save");
-    let loaded = Config::load_from(Some(path));
+}
+
+#[test]
+fn an_action_the_saved_list_never_names_loads_with_its_default_key() {
+    use crate::action::{Action, Chord};
+    use aftermine_protocol::Key;
+    let mut saved = saved_without(Action::SelectArmy);
+    assert!(saved.bindings.rebind(Action::Patrol, Chord::bare(Key::J)));
+    let loaded = Config::from_text(Some(&saved.text()));
     assert_eq!(
-        loaded.bindings.chord_for(crate::action::Action::Patrol),
-        None,
-        "the deliberate unbinding persisted"
+        loaded.bindings.chord_for(Action::SelectArmy),
+        Some(Chord::ctrl(Key::A))
     );
+    assert_eq!(
+        loaded.bindings.chord_for(Action::Patrol),
+        Some(Chord::bare(Key::J)),
+        "the player's own rebind stays"
+    );
+
+    // A pan takes both of its keys.
+    let loaded = Config::from_text(Some(&saved_without(Action::PanLeft).text()));
+    assert_eq!(
+        [0, 1].map(|slot| loaded.bindings.chord_at(Action::PanLeft, slot)),
+        [Some(Chord::bare(Key::A)), Some(Chord::bare(Key::Left))]
+    );
+}
+
+#[test]
+fn an_unnamed_action_whose_default_key_the_list_holds_stays_unbound() {
+    use crate::action::{Action, Chord};
+    use aftermine_protocol::Key;
+    let mut saved = saved_without(Action::SelectArmy);
+    assert!(
+        saved
+            .bindings
+            .rebind(Action::CycleIdleWorker, Chord::ctrl(Key::A))
+    );
+    let loaded = Config::from_text(Some(&saved.text()));
+    assert_eq!(loaded.bindings.chord_for(Action::SelectArmy), None);
+    assert_eq!(
+        loaded.bindings.chord_for(Action::CycleIdleWorker),
+        Some(Chord::ctrl(Key::A)),
+        "the player's binding keeps the key"
+    );
+    assert_eq!(loaded.bindings, saved.bindings);
+}
+
+#[test]
+fn a_rebind_after_the_load_saves_the_whole_list() {
+    use crate::action::{Action, Chord};
+    use aftermine_protocol::Key;
+    let dir = std::env::temp_dir().join(format!("aftermine-config-fill-{}", std::process::id()));
+    let path = dir.join("config.json");
+    saved_without(Action::SelectArmy).save_to(&path).unwrap();
+    let mut config = Config::load_from(Some(path.clone()));
+    // What Settings > Controls does with a captured chord.
+    assert!(
+        config
+            .bindings
+            .rebind_slot(Action::Patrol, 0, Chord::bare(Key::J))
+    );
+    config.save_to(&path).unwrap();
+    let written: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        written.bindings.chord_for(Action::SelectArmy),
+        Some(Chord::ctrl(Key::A))
+    );
+    assert_eq!(written.bindings, config.bindings);
     std::fs::remove_dir_all(&dir).ok();
 }
 

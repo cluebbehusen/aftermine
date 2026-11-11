@@ -276,6 +276,90 @@ fn a_value_the_load_checks_would_reject_is_ignored() {
 }
 
 #[test]
+fn a_binding_list_that_misses_an_action_arrives_with_its_default_key() {
+    use crate::action::{Action, BindingMap, Chord};
+    use aftermine_protocol::Key;
+    let mut older = BindingMap::classic();
+    older.unbind_slot(Action::SelectArmy, 0);
+    assert!(older.rebind(Action::Patrol, Chord::bare(Key::J)));
+    let text = serde_json::to_string(&older).unwrap();
+    let arrived = |config: &Config| {
+        assert_eq!(
+            config.bindings.chord_for(Action::Patrol),
+            Some(Chord::bare(Key::J)),
+            "the other device's rebind arrives"
+        );
+        assert_eq!(
+            config.bindings.chord_for(Action::SelectArmy),
+            Some(Chord::ctrl(Key::A))
+        );
+    };
+
+    let mut cloud = Cloud::new();
+    cloud.insert(key(SyncedField::Bindings), text.clone());
+    arrived(&Device::launch(Config::default(), &mut cloud).config);
+
+    let mut cloud = Cloud::new();
+    let mut device = Device::launch(Config::default(), &mut cloud);
+    cloud.insert(key(SyncedField::Bindings), text);
+    assert!(device.catch_up(&mut cloud));
+    arrived(&device.config);
+}
+
+#[test]
+fn defaults_a_read_binding_list_gains_never_go_up_over_a_newer_rebind() {
+    use crate::action::{Action, BindingMap, Chord};
+    use aftermine_protocol::Key;
+    let mut older = BindingMap::classic();
+    older.unbind_slot(Action::SelectArmy, 0);
+    let mut cloud = Cloud::new();
+    cloud.insert(
+        key(SyncedField::Bindings),
+        serde_json::to_string(&older).unwrap(),
+    );
+    let mut mac = Device::launch(Config::default(), &mut cloud);
+    let mut ipad = Device::launch(Config::default(), &mut cloud);
+    let launched = cloud.clone();
+    mac.save(&mut cloud);
+    ipad.save(&mut cloud);
+    assert_eq!(
+        cloud, launched,
+        "the defaults read in are no change to send"
+    );
+
+    assert!(
+        mac.config
+            .bindings
+            .rebind(Action::Patrol, Chord::bare(Key::J))
+    );
+    mac.save(&mut cloud);
+    let rebound = cloud[&key(SyncedField::Bindings)].clone();
+    ipad.config.reduced_motion = true;
+    ipad.save(&mut cloud);
+    assert!(ipad.catch_up(&mut cloud));
+    ipad.config.volumes.music = 0.25;
+    ipad.save(&mut cloud);
+    mac.catch_up(&mut cloud);
+
+    assert_eq!(
+        cloud[&key(SyncedField::Bindings)],
+        rebound,
+        "the store keeps the Mac's list"
+    );
+    for device in [&mac, &ipad] {
+        assert_eq!(
+            device.config.bindings.chord_for(Action::Patrol),
+            Some(Chord::bare(Key::J))
+        );
+        assert_eq!(
+            device.config.bindings.chord_for(Action::SelectArmy),
+            Some(Chord::ctrl(Key::A))
+        );
+    }
+    assert!(mac.config.reduced_motion && mac.config.volumes.music == 0.25);
+}
+
+#[test]
 fn equal_settings_written_differently_go_back_at_most_once() {
     let mut cloud = Cloud::new();
     let mut device = Device::launch(Config::default(), &mut cloud);

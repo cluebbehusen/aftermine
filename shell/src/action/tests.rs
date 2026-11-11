@@ -365,3 +365,20 @@ fn controller_buttons_reach_menus_as_the_canonical_keys_whatever_the_bindings() 
         "key bindings pass controller buttons through untouched"
     );
 }
+
+#[test]
+fn an_unnamed_action_shares_a_default_key_held_only_where_it_does_not_act() {
+    let roc = Action::Build(BuildingKind::RocCradle);
+    let experimental = Action::BuildCategory(5);
+    let mut map = BindingMap::classic();
+    map.unbind_slot(roc, 0);
+    map.unbind_slot(experimental, 0);
+    map.bind_unmentioned_defaults();
+    // E also steps tabs and trains, and X also stops, elsewhere.
+    assert_eq!(map.chord_for(roc), Some(Chord::bare(Key::E)));
+    assert_eq!(map.chord_for(experimental), Some(Chord::bare(Key::X)));
+    assert!(map.valid());
+    let once = map.clone();
+    map.bind_unmentioned_defaults();
+    assert_eq!(map, once, "a second pass adds nothing");
+}

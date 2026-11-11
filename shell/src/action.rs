@@ -474,6 +474,19 @@ impl BindingMap {
             rows.retain(|b| b.action.offered_in(packaged));
         }
     }
+    /// Gives each action this map does not mention its classic chords,
+    /// except a chord Controls would refuse because another action here
+    /// already holds it. A map saved before an action existed never names
+    /// it. Rows already here never change.
+    pub fn bind_unmentioned_defaults(&mut self) {
+        let classic = Self::classic();
+        let mentioned: Vec<Action> = self.rows().map(|b| b.action).collect();
+        for (slot, rows) in [(0, &classic.bindings), (1, &classic.secondary)] {
+            for b in rows.iter().filter(|b| !mentioned.contains(&b.action)) {
+                self.rebind_slot(b.action, slot, b.chord);
+            }
+        }
+    }
     pub fn left_handed() -> Self {
         let mut map = Self::classic();
         // A permutation preserves all contextual conflicts and both binding slots.
