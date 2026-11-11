@@ -426,3 +426,99 @@ fn indexed_pressure_keeps_exactly_the_neighbors_a_walk_over_every_unit_keeps() {
     }
     assert!(compared > 1000, "too few neighbors compared: {compared}");
 }
+
+/// Lazy admission must choose what the chooser picks among the admitted
+/// candidates alone, searching the same routes in the same order, while
+/// asking about fewer candidates when the first admitted one is free.
+#[test]
+fn lazily_admitted_choices_match_choices_among_admitted_candidates() {
+    let mut state = Scenario::skirmish().build().unwrap();
+    state.units.clear();
+    let site = state.place_site(
+        PlayerId(0),
+        crate::stats::BuildingKind::Fabricator,
+        TilePos::new(15, 7),
+    );
+    let asker = state.spawn_unit(
+        PlayerId(0),
+        UnitKind::Harvester,
+        TilePos::new(10, 8).center(),
+    );
+    let b = state.building(site).unwrap().clone();
+    let unit = state.unit(asker).unwrap().clone();
+    let clearance = crate::tick::brain::contact::clearance(&unit);
+    let surface = state.contact_surface(&b);
+    let positions: Vec<Position> = crate::geometry::work_positions(
+        b.anchor,
+        b.kind.size(),
+        clearance,
+        unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
+    )
+    .into_iter()
+    .map(|entry| Position {
+        goal: crate::geometry::work_tile(entry, unit.pos, b.center()),
+        point: surface.stance(entry, clearance),
+    })
+    .collect();
+    for position in &positions[..3] {
+        let builder = state.spawn_unit(PlayerId(0), UnitKind::Harvester, position.point);
+        state.unit_mut(builder).unwrap().order = crate::Order::Build { site };
+    }
+    let index = indexed(&state);
+    let center = b.center();
+    let slot = |p: &Position| {
+        positions
+            .iter()
+            .position(|q| q.goal == p.goal && q.point == p.point)
+            .expect("a listed position")
+    };
+    let route = |goal: TilePos| (goal.x + goal.y % 3 != 17).then(|| vec![goal]);
+    let mut rng = chassis::rng::Pcg32::new(11, 5);
+    let mut masks = vec![0, 0b1, 0b1010_1010, !0b111, !0, !0 >> 30];
+    masks.extend((0..40).map(|_| rng.next_u64()));
+    let mut waited = 0;
+    for mask in masks {
+        let admit = |p: &Position| mask >> slot(p) & 1 == 0;
+        let mut eager_routes = Vec::new();
+        let eager = choose(
+            &state,
+            &index,
+            asker,
+            positions.iter().copied().filter(admit).collect(),
+            center,
+            |tile| state.passable(tile),
+            |goal| {
+                eager_routes.push(goal);
+                route(goal)
+            },
+        );
+        let mut lazy_routes = Vec::new();
+        let asked = std::cell::Cell::new(0);
+        let lazy = choose_admitted(
+            &state,
+            &index,
+            asker,
+            positions.clone(),
+            center,
+            |tile| state.passable(tile),
+            |p| {
+                asked.set(asked.get() + 1);
+                admit(p)
+            },
+            |goal| {
+                lazy_routes.push(goal);
+                route(goal)
+            },
+        );
+        assert_eq!(lazy, eager, "mask {mask:#x}");
+        assert_eq!(lazy_routes, eager_routes, "mask {mask:#x}");
+        waited += usize::from(
+            lazy.as_ref()
+                .is_some_and(|path| !positions.iter().any(|p| Some(p.point) == path.final_point)),
+        );
+        if mask == 0 {
+            assert!(asked.get() < positions.len() / 2, "asked {}", asked.get());
+        }
+    }
+    assert!(waited > 0, "no choice fell back to a waiting position");
+}

@@ -1499,6 +1499,7 @@ fn known_rect_route(
         .buildings()
         .iter()
         .find(|b| b.anchor == anchor && b.kind.size() == size && b.player == player);
+    let surface = building.map(|b| state.contact_surface(b));
     let mut candidates: Vec<_> = crate::geometry::work_positions(
         anchor,
         size,
@@ -1507,16 +1508,19 @@ fn known_rect_route(
     )
     .into_iter()
     .filter_map(|entry| {
+        let surface = surface?;
         let goal = crate::geometry::work_tile(
             entry,
             unit.pos,
             crate::geometry::footprint_center(anchor, size),
         );
-        let point = building.and_then(|b| contact::endpoint(state, id, b.id, entry))?;
-        Some(crowding::Position { goal, point })
+        (known_ground_passable(state, danger, player, goal)
+            && (!avoid_danger || !danger.contains(goal)))
+        .then(|| crowding::Position {
+            goal,
+            point: surface.stance(entry, contact::clearance(unit)),
+        })
     })
-    .filter(|candidate| known_ground_passable(state, danger, player, candidate.goal))
-    .filter(|candidate| !avoid_danger || !danger.contains(candidate.goal))
     .collect();
     candidates.sort_by_key(|candidate| {
         crate::geometry::stance_rank(
@@ -1534,7 +1538,7 @@ fn known_rect_route(
     // None without re-flooding to the cap.
     let mut proven = scan.as_deref().is_some_and(|scan| scan.flood_exhausted);
     let safe_shortcut = avoid_danger && danger.outside_every_envelope(from);
-    crowding::choose(
+    crowding::choose_admitted(
         state,
         index,
         id,
@@ -1545,6 +1549,7 @@ fn known_rect_route(
             known_ground_passable(state, danger, player, tile)
                 && (!avoid_danger || !danger.contains(tile))
         },
+        |position| building.is_some_and(|b| contact::admits(state, unit, b, position)),
         |goal| {
             if safe_shortcut && safe_route_impossible(state, danger, from, goal, false) {
                 return None;

@@ -49,7 +49,7 @@ pub(super) fn approach(
                 (candidate.goal, candidate.point),
             )
         });
-        crowding::choose(
+        crowding::choose_admitted(
             state,
             index,
             id,
@@ -57,11 +57,12 @@ pub(super) fn approach(
             anchor.center()
                 + Vec2Fx::new(Fx::from_num(size.0 - 1), Fx::from_num(size.1 - 1)) / Fx::from_num(2),
             |tile| state.passable(tile),
+            |position| admits(state, unit, b, position),
             |goal| stance_route(state, unit, b, from.center(), goal),
         )
     };
     let crew = pads.is_some();
-    let mut stances = ordinary_stances(state, unit, b, pads);
+    let mut stances = stance_positions(state, unit, b, pads);
     if crew {
         // Squeezing onto a pad a crewmate already works from can leave a
         // body pressing on it for good, planning again every tick.
@@ -74,9 +75,11 @@ pub(super) fn approach(
     reachable
 }
 
-/// The positions from which `unit` may meet `b`: its crew pads, or work
-/// positions around the footprint.
-fn ordinary_stances(
+/// The positions from which `unit` may meet `b`, its crew pads or work
+/// positions around the footprint, that set out from open ground. Whether
+/// the motor can then land on one is [`admits`]'s question, costly enough
+/// to ask only of the positions a choice reaches.
+fn stance_positions(
     state: &State,
     unit: &crate::Unit,
     b: &crate::Building,
@@ -93,10 +96,11 @@ fn ordinary_stances(
     })
     .into_iter()
     .filter_map(|entry| {
-        let point = surface.stance(entry, clearance(unit));
         let goal = crate::geometry::work_tile(entry, unit.pos, b.center());
-        (state.passable(goal) && admissible(state, unit, b, goal, point))
-            .then_some(crowding::Position { goal, point })
+        state.passable(goal).then(|| crowding::Position {
+            goal,
+            point: surface.stance(entry, clearance(unit)),
+        })
     })
     .collect()
 }
@@ -105,8 +109,9 @@ fn ordinary_stances(
 /// route or crowd is weighed.
 pub(super) fn stance_goals(state: &State, unit: &crate::Unit, b: &crate::Building) -> Vec<TilePos> {
     let pads = crew_pad_entries(state, unit, b);
-    ordinary_stances(state, unit, b, pads)
+    stance_positions(state, unit, b, pads)
         .into_iter()
+        .filter(|position| admits(state, unit, b, position))
         .map(|position| position.goal)
         .collect()
 }
@@ -444,23 +449,14 @@ pub(in crate::tick) fn clearance(unit: &crate::Unit) -> Fx {
     )
 }
 
-pub(in crate::tick) fn endpoint(
+/// Whether `unit` can finish its approach to `b` at `position`.
+pub(in crate::tick) fn admits(
     state: &State,
-    id: UnitId,
-    building: BuildingId,
-    entry: Vec2Fx,
-) -> Option<Vec2Fx> {
-    let unit = state.unit(id)?;
-    let b = state.building(building)?;
-    let point = state.contact_surface(b).stance(entry, clearance(unit));
-    admissible(
-        state,
-        unit,
-        b,
-        crate::geometry::work_tile(entry, unit.pos, b.center()),
-        point,
-    )
-    .then_some(point)
+    unit: &crate::Unit,
+    b: &crate::Building,
+    position: &crowding::Position,
+) -> bool {
+    admissible(state, unit, b, position.goal, position.point)
 }
 
 /// Whether a contact position can be driven to straight from its goal

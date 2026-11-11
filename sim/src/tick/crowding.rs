@@ -141,14 +141,35 @@ pub(in crate::tick) fn choose(
     state: &State,
     index: &UnitIndex,
     id: UnitId,
+    candidates: Vec<Position>,
+    center: Vec2Fx,
+    open: impl Fn(chassis::grid::TilePos) -> bool,
+    route: impl FnMut(chassis::grid::TilePos) -> Option<Vec<chassis::grid::TilePos>>,
+) -> Option<crate::state::PathFollow> {
+    choose_admitted(state, index, id, candidates, center, open, |_| true, route)
+}
+
+/// [`choose`] among the `candidates` that `admit` accepts, for an
+/// admission test too costly to run on every candidate: it runs in the
+/// chooser's order on those it reaches, and on all of them before any
+/// waiting position is derived. Ranks and their order are those of the
+/// admitted candidates alone, since ranking is pure and the sorts keep ties
+/// in order.
+#[allow(clippy::too_many_arguments)]
+pub(in crate::tick) fn choose_admitted(
+    state: &State,
+    index: &UnitIndex,
+    id: UnitId,
     mut candidates: Vec<Position>,
     center: Vec2Fx,
     open: impl Fn(chassis::grid::TilePos) -> bool,
+    admit: impl Fn(&Position) -> bool,
     mut route: impl FnMut(chassis::grid::TilePos) -> Option<Vec<chassis::grid::TilePos>>,
 ) -> Option<crate::state::PathFollow> {
     let unit = state.unit(id).expect("position owner");
     let push = unit.kind.stats().radius * 2 + crate::stats::WAITING_CLEARANCE;
-    // Waiting positions sit at most `push` beyond the candidates.
+    // Waiting positions sit at most `push` beyond the candidates. A reach
+    // that also covers candidates later refused ranks every point alike.
     let reach = candidates
         .iter()
         .map(|candidate| (candidate.point - center).length())
@@ -157,10 +178,17 @@ pub(in crate::tick) fn choose(
         + push;
     let pressure = Pressure::new(state, index, id, center, reach);
     candidates.sort_by_cached_key(|candidate| pressure.rank(candidate.point, false));
+    let first = candidates.iter().position(&admit);
+    candidates.drain(..first.unwrap_or(candidates.len()));
+    // Every candidate after the first still awaits admission.
+    let mut pending = true;
     if candidates
         .first()
         .is_some_and(|candidate| pressure.rank(candidate.point, false).0 > 0)
     {
+        let mut first = true;
+        candidates.retain(|candidate| std::mem::take(&mut first) || admit(candidate));
+        pending = false;
         let mut waiting = candidates.clone();
         for candidate in &mut waiting {
             let outward = candidate.point - center;
@@ -184,7 +212,10 @@ pub(in crate::tick) fn choose(
     }
     let mut failed = BTreeSet::new();
     let mut reachable = None;
-    for candidate in candidates {
+    for (at, candidate) in candidates.into_iter().enumerate() {
+        if pending && at > 0 && !admit(&candidate) {
+            continue;
+        }
         if failed.contains(&candidate.goal) {
             continue;
         }

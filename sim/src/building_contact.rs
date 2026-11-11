@@ -596,18 +596,24 @@ impl Surface {
         }
     }
 
-    fn vertices(self) -> impl Iterator<Item = Vec2Fx> + Clone {
-        self.outline.iter().map(move |&(x, y)| {
-            Vec2Fx::new(
-                Fx::from_num(self.anchor.x) + Fx::from_num(x * self.size.0) / 128,
-                Fx::from_num(self.anchor.y) + Fx::from_num(y * self.size.1) / 128,
-            )
-        })
+    fn vertex(self, (x, y): (i32, i32)) -> Vec2Fx {
+        Vec2Fx::new(
+            Fx::from_num(self.anchor.x) + Fx::from_num(x * self.size.0) / 128,
+            Fx::from_num(self.anchor.y) + Fx::from_num(y * self.size.1) / 128,
+        )
     }
 
+    /// The outline's edges in winding order, closing back to the first
+    /// corner. Each corner is placed once and carried to the next edge:
+    /// every contact query walks these.
     fn edges(self) -> impl Iterator<Item = (Vec2Fx, Vec2Fx)> {
-        let vertices = self.vertices();
-        vertices.clone().zip(vertices.cycle().skip(1))
+        let first = self.vertex(self.outline[0]);
+        let mut from = first;
+        self.outline[1..]
+            .iter()
+            .map(move |&corner| self.vertex(corner))
+            .chain(std::iter::once(first))
+            .map(move |to| (std::mem::replace(&mut from, to), to))
     }
 
     /// Nearest coarse surface, with ties relative to the incoming direction.
