@@ -368,6 +368,21 @@ fn a_surrendered_seat_s_reclaimers_earn_nothing_in_the_ledger() {
 }
 
 #[test]
+fn a_crucible_smelts_nothing_in_the_ledger_from_the_tick_its_seat_concedes() {
+    let mut scenario = field(0, &[], &[(0, BuildingKind::Crucible, 6, 6)]);
+    scenario.mode = ScenarioMode::Sandbox;
+    let state = staged(&scenario, |value| {
+        let width = value["map"]["grid"]["width"].as_i64().unwrap();
+        let cell = usize::try_from(8 * width + 9).unwrap();
+        value["map"]["grid"]["cells"][cell]["wreck"] = serde_json::json!(40);
+    });
+    let (state, ledgers) = play(state, 400, vec![order(0, Command::Surrender)]);
+    // Decay alone wears the wreck, at ticks 0 and 300.
+    assert_eq!(state.map().wreck_at(TilePos::new(9, 8)), 40 - 2);
+    assert_eq!(built(&ledgers, 0, "crucible").passive, 0);
+}
+
+#[test]
 fn spending_is_recorded_by_category_and_phase() {
     let scenario = field(
         1_000,
@@ -921,7 +936,7 @@ fn crucibles_sharing_a_last_unit_of_wreck_do_not_both_smelt_it() {
         value["map"]["grid"]["cells"][cell]["wreck"] = serde_json::json!(1);
     });
     assert_eq!(state.map().wreck_at(TilePos::new(13, 8)), 1);
-    let smelting = smelters(&hearths(&state), &BTreeMap::new());
+    let smelting = smelters(&hearths(&state), &BTreeMap::new(), |_| false);
     assert_eq!(smelting.len(), 1, "{smelting:?}");
 }
 
