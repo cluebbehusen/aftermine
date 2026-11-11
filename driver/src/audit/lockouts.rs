@@ -16,6 +16,7 @@
 //! longest artillery reach. Terrain alone decides routes and Foundry
 //! sites, since scrap and buildings clear in play.
 
+use super::grid::Grid;
 use super::longest_reach;
 use aftermine_sim::geometry::foundry_supports;
 use aftermine_sim::map::{Map, Terrain};
@@ -24,8 +25,7 @@ use aftermine_sim::{PlayerId, State};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::{TilePos, as_index};
 use serde::Serialize;
-use std::cmp::Reverse;
-use std::collections::{BTreeSet, BinaryHeap, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 
 /// Frames a prize holds before it can lock a match. Above three, the first
 /// seat to arrive out-earns everyone else for the rest of the match.
@@ -92,78 +92,55 @@ enum Domain {
 }
 
 /// Terrain-only routes: walkable or flyable tiles, ramps included, joined
-/// by the sim's steps (8-connected, no corner cutting).
+/// by the sim's steps.
 struct Ground<'a> {
     map: &'a Map,
-    width: i32,
-    height: i32,
+    /// Ground terrain, scrap or not: scrap is mined out in play.
+    walk: Grid,
+    /// Terrain a flyer crosses.
+    fly: Grid,
 }
 
-impl Ground<'_> {
+impl<'a> Ground<'a> {
+    fn new(map: &'a Map) -> Self {
+        let terrain = |blocks: fn(Terrain) -> bool| {
+            Grid::new(map.width(), map.height(), move |t| {
+                map.tile(t).is_some_and(|tile| !blocks(tile.terrain))
+            })
+        };
+        Self {
+            map,
+            walk: terrain(Terrain::blocks_ground),
+            fly: terrain(Terrain::blocks_air),
+        }
+    }
+
     fn cells(&self) -> usize {
-        as_index(self.width * self.height)
+        self.walk.cells()
     }
 
     fn index(&self, t: TilePos) -> usize {
-        as_index(t.y * self.width + t.x)
+        self.walk.index(t)
     }
 
     fn tile(&self, i: usize) -> TilePos {
-        let i = i32::try_from(i).expect("map cells fit in i32");
-        TilePos::new(i % self.width, i / self.width)
+        self.walk.tile(i)
     }
 
-    /// Ground terrain, scrap or not: scrap is mined out in play.
     fn open(&self, t: TilePos) -> bool {
-        self.passes(t, Domain::Ground)
+        self.walk.open(t)
     }
 
-    fn passes(&self, t: TilePos, domain: Domain) -> bool {
-        self.map.tile(t).is_some_and(|tile| match domain {
-            Domain::Ground => !tile.terrain.blocks_ground(),
-            Domain::Air => !tile.terrain.blocks_air(),
-        })
-    }
-
-    /// Steps out of `t` with their costs in tenths.
-    fn steps(&self, t: TilePos, domain: Domain) -> impl Iterator<Item = (TilePos, u32)> + '_ {
-        (-1..=1).flat_map(move |dy| {
-            (-1..=1).filter_map(move |dx| {
-                let n = t.offset(dx, dy);
-                let diagonal = dx != 0 && dy != 0;
-                let legal = (dx, dy) != (0, 0)
-                    && self.passes(n, domain)
-                    && (!diagonal
-                        || (self.passes(t.offset(dx, 0), domain)
-                            && self.passes(t.offset(0, dy), domain)));
-                legal.then_some((n, if diagonal { 14 } else { 10 }))
-            })
-        })
+    fn grid(&self, domain: Domain) -> &Grid {
+        match domain {
+            Domain::Ground => &self.walk,
+            Domain::Air => &self.fly,
+        }
     }
 
     /// Distances in tenths from a source set.
     fn distances(&self, sources: &[TilePos], domain: Domain) -> Vec<u32> {
-        let mut dist = vec![u32::MAX; self.cells()];
-        let mut heap = BinaryHeap::new();
-        for &s in sources {
-            if self.passes(s, domain) {
-                dist[self.index(s)] = 0;
-                heap.push(Reverse((0, s.y, s.x)));
-            }
-        }
-        while let Some(Reverse((d, y, x))) = heap.pop() {
-            let t = TilePos::new(x, y);
-            if d > dist[self.index(t)] {
-                continue;
-            }
-            for (n, cost) in self.steps(t, domain) {
-                if d + cost < dist[self.index(n)] {
-                    dist[self.index(n)] = d + cost;
-                    heap.push(Reverse((d + cost, n.y, n.x)));
-                }
-            }
-        }
-        dist
+        self.grid(domain).distances(sources)
     }
 
     /// The level a body standing on `t` fires from: a ramp's upper level.
@@ -195,30 +172,11 @@ fn footprint(anchor: TilePos, (w, h): (i32, i32)) -> impl Iterator<Item = TilePo
     (0..h).flat_map(move |dy| (0..w).map(move |dx| anchor.offset(dx, dy)))
 }
 
-/// Ground ringing a footprint, where traffic enters it.
-fn ring(ground: &Ground, anchor: TilePos, (w, h): (i32, i32)) -> Vec<TilePos> {
-    let mut out = Vec::new();
-    for dy in -1..=h {
-        for dx in -1..=w {
-            let inside = (0..w).contains(&dx) && (0..h).contains(&dy);
-            let t = anchor.offset(dx, dy);
-            if !inside && ground.open(t) {
-                out.push(t);
-            }
-        }
-    }
-    out
-}
-
 /// Every prize on the map, islands first and then by seed, each pocket
 /// once.
 pub fn prizes(state: &State) -> Vec<Prize> {
     let map = state.map();
-    let ground = Ground {
-        map,
-        width: map.width(),
-        height: map.height(),
-    };
+    let ground = Ground::new(map);
     let frame = BuildingKind::Extractor.size();
     let foundry = BuildingKind::Foundry.size();
     let starts: Vec<(PlayerId, TilePos)> = state
@@ -233,7 +191,7 @@ pub fn prizes(state: &State) -> Vec<Prize> {
         .collect();
     let doorsteps: Vec<TilePos> = starts
         .iter()
-        .flat_map(|&(_, s)| ring(&ground, s, foundry))
+        .flat_map(|&(_, s)| ground.walk.ring(s, foundry))
         .collect();
     let home = ground.distances(&doorsteps, Domain::Ground);
     let reach = Reach {
@@ -241,7 +199,7 @@ pub fn prizes(state: &State) -> Vec<Prize> {
         starts: &starts,
         walks: starts
             .iter()
-            .map(|&(_, s)| ground.distances(&ring(&ground, s, foundry), Domain::Ground))
+            .map(|&(_, s)| ground.distances(&ground.walk.ring(s, foundry), Domain::Ground))
             .collect(),
         flights: starts
             .iter()
@@ -277,8 +235,8 @@ pub fn prizes(state: &State) -> Vec<Prize> {
     // supports two or more. A seed inside a larger one still gets its own
     // pocket, since a holder can leave the extra frames outside the door.
     let mut seeds: BTreeSet<Vec<usize>> = BTreeSet::new();
-    for y in 0..ground.height - 1 {
-        for x in 0..ground.width - 1 {
+    for y in 0..ground.walk.height - 1 {
+        for x in 0..ground.walk.width - 1 {
             let site = TilePos::new(x, y);
             let clear = ground.footing(site, foundry).is_some()
                 && footprint(site, foundry).all(|t| {
@@ -324,18 +282,7 @@ pub fn prizes(state: &State) -> Vec<Prize> {
 /// Marks the ground component holding `start` with `mark` and returns its
 /// tiles in index order.
 fn flood(ground: &Ground, start: TilePos, marks: &mut [usize], mark: usize) -> Vec<usize> {
-    let mut queue = VecDeque::from([start]);
-    marks[ground.index(start)] = mark;
-    let mut tiles = Vec::new();
-    while let Some(t) = queue.pop_front() {
-        tiles.push(ground.index(t));
-        for (n, _) in ground.steps(t, Domain::Ground) {
-            if marks[ground.index(n)] == usize::MAX {
-                marks[ground.index(n)] = mark;
-                queue.push_back(n);
-            }
-        }
-    }
+    let mut tiles = ground.walk.flood(&[start], marks, mark);
     tiles.sort_unstable();
     tiles
 }
