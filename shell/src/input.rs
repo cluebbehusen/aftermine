@@ -3977,9 +3977,19 @@ pub fn update_held(game: &mut Game, input: &mut InputState, dt: f32) {
     pad_ring::update(game, input);
     reticle::update(game, input, dt, keys);
     paint::sweep(game, input, before);
-    if let Some(by @ Presser::Pad(_)) = input.stroke_by() {
-        let after = input.reticle.ground(&game.presentation.camera);
-        extend_stroke(game, input, by, after);
+    match input.stroke_by() {
+        Some(by @ Presser::Pad(_)) => {
+            let after = input.reticle.ground(&game.presentation.camera);
+            extend_stroke(game, input, by, after);
+        }
+        // A pan moves the ground under a still cursor; taking it a frame at
+        // a time judges each step under that frame's chrome, so ground the
+        // view carries beneath the HUD plans nothing.
+        Some(Presser::Mouse) => {
+            let under = game.presentation.camera.to_world(input.mouse);
+            extend_stroke(game, input, Presser::Mouse, under);
+        }
+        _ => {}
     }
 }
 

@@ -375,3 +375,57 @@ fn a_stamp_whose_ground_falls_into_fog_is_judged_as_fog() {
         "the projection judges it from memory, never against what fog hides"
     );
 }
+
+#[test]
+fn ground_a_pan_carries_under_chrome_mid_drag_plans_nothing() {
+    let (mut game, mut input) = planning(10_000);
+    input.arm_placement(aftermine_sim::BuildingKind::Barricade);
+    let camera = &mut game.presentation.camera;
+    camera.glide_to(camera.to_screen(vec2(5.5, 2.5)), 128.0);
+    for _ in 0..100 {
+        camera.update(1.0);
+    }
+    let measure = |_: crate::render::hud::Face, text: &str, size: f32| {
+        text.chars().count() as f32 * size * 0.5
+    };
+    crate::render::hud::refresh(
+        &game.view(),
+        &input,
+        &classic(),
+        crate::render::hud::HudEnv {
+            viewport: vec2(1280.0, 800.0),
+            ui: 1.0,
+        },
+        None,
+        &measure,
+    );
+    let viewport = game.presentation.camera.viewport();
+    let chrome = vec2(viewport.x / 2.0, viewport.y - 2.0);
+    assert!(
+        click_on_hud(&game, chrome),
+        "premise: the bottom edge is chrome"
+    );
+    let (a, b) = (at(&game, 4), at(&game, 6));
+    frames(
+        &mut game,
+        &mut input,
+        &[
+            vec![left_down(a)],
+            vec![mouse_move(b)],
+            vec![mouse_move(chrome)],
+        ],
+    );
+    let planned = input.planned_stamps().len();
+    input.camera_prefs.edge_pan = true;
+    input.last_pointer = Pointer::Mouse;
+    let before = game.presentation.camera.center;
+    for _ in 0..60 {
+        update_held(&mut game, &mut input, 1.0 / 60.0);
+    }
+    assert!(
+        game.presentation.camera.center.distance(before) > 1.0,
+        "premise: the edge panned the view"
+    );
+    frames(&mut game, &mut input, &[vec![left_up(chrome)]]);
+    assert_eq!(staged_builds(&game), planned);
+}
