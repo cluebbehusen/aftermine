@@ -682,7 +682,6 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
     let (map_width, map_height) = (map.width(), map.height());
     // Quarry props vary by map, not by anything in play.
     let quarry_salt = chassis::hash::fnv1a(ground.scenario.name.as_bytes());
-    let quarry = sprites.quarry_dressing(0).is_some();
     let levels = ground.layout.levels.as_ref();
     let paint = ground_paint(ground);
     for_each_tile(map, view, |spot| {
@@ -749,18 +748,17 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
         } else {
             symmetric_theme_prop(theme, pos, map_width, map_height)
         };
-        let placement = quarry
-            .then(|| quarry_dressing(pos, map_width, map_height, quarry_salt))
-            .flatten()
-            .filter(|_| {
-                tile.cosmetic != 1
-                    && dressed
-                    && symmetric_safe_theme_prop_tile(&ground.scenario.map, pos)
-            });
+        let placement = quarry_dressing(pos, map_width, map_height, quarry_salt).filter(|_| {
+            tile.cosmetic != 1
+                && dressed
+                && symmetric_safe_theme_prop_tile(&ground.scenario.map, pos)
+        });
         let dressing = if let Some(placement) = placement {
-            sprites
-                .quarry_dressing(placement.variant)
-                .map(|source| (source, placement.rotation, tint))
+            Some((
+                sprites.quarry_dressing(placement.variant),
+                placement.rotation,
+                tint,
+            ))
         } else if tile.cosmetic == 1 {
             Some((sprites.wreck_decal(), 0.0, tint))
         } else if let Some(placement) = prop_candidate {

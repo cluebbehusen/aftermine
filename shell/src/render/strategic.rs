@@ -120,14 +120,11 @@ pub(super) fn draw_spire(
     dest: Vec2,
     accent: Color,
 ) -> bool {
-    let (Some(rigs), Some(magazine), Some(launcher), Some(stats)) = (
-        sprites.strategic_rigs(),
-        b.magazine,
-        b.launcher,
-        b.kind.magazine(),
-    ) else {
+    let (Some(magazine), Some(launcher), Some(stats)) = (b.magazine, b.launcher, b.kind.magazine())
+    else {
         return false;
     };
+    let rigs = sprites.strategic_rigs();
     let rig: &SpireRig = &rigs.spire;
     let zoom = game.presentation.camera.zoom;
     let pivot = screen + dest * 0.5;
@@ -223,11 +220,10 @@ pub(super) fn draw_lattice(
     dest: Vec2,
     accent: Color,
 ) -> bool {
-    let (Some(rigs), Some(magazine), Some(stats)) =
-        (sprites.strategic_rigs(), b.magazine, b.kind.magazine())
-    else {
+    let (Some(magazine), Some(stats)) = (b.magazine, b.kind.magazine()) else {
         return false;
     };
+    let rigs = sprites.strategic_rigs();
     let rig: &LatticeRig = &rigs.lattice;
     let zoom = game.presentation.camera.zoom;
     let mut layers = Vec::new();
@@ -471,10 +467,7 @@ fn draw_flight(
         );
     }
     let rotation = heading.y.atan2(heading.x) + std::f32::consts::FRAC_PI_2;
-    let Some(rows) = sprites.strategic_rigs().map(|rigs| &rigs.spire.warhead) else {
-        fill_circle(body, 0.25 * zoom, tint);
-        return;
-    };
+    let rows = &sprites.strategic_rigs().spire.warhead;
     // Under power through the boost and cruise, coasting in the dive.
     let row = if p > 0.86 || rows.len() < 2 {
         rows[0]
@@ -785,10 +778,7 @@ fn draw_interceptor(
         0.12,
     );
     let body = camera.to_screen(at);
-    let Some(rows) = sprites.strategic_rigs().map(|rigs| &rigs.lattice.launch) else {
-        fill_circle(body, 0.15 * zoom, WHITE);
-        return;
-    };
+    let rows = &sprites.strategic_rigs().lattice.launch;
     let rotation = heading.y.atan2(heading.x) + std::f32::consts::FRAC_PI_2;
     let flicker = numeric::to_usize((game.presentation.fx_time() * 30.0).floor());
     let row = rows[1 + flicker % (rows.len() - 1).max(1)];

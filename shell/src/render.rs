@@ -1094,7 +1094,8 @@ fn draw_piledriver_anchors(
             game.presentation.tick_fraction(),
         ),
     );
-    if let Some((anchor, accent)) = sprites.piledriver_anchors(deployment) {
+    {
+        let (anchor, accent) = sprites.piledriver_anchors(deployment);
         for (source, tint) in [
             (anchor, WHITE),
             (accent, seat_identity_color(game, unit.player)),
@@ -1195,9 +1196,7 @@ fn draw_unit_body(
     (draw_scale, alpha): (f32, f32),
 ) {
     let zoom = game.presentation.camera.zoom;
-    let maw_rig = (unit.kind == aftermine_sim::UnitKind::Maw)
-        .then(|| sprites.maw_rigs())
-        .flatten();
+    let maw_rig = (unit.kind == aftermine_sim::UnitKind::Maw).then(|| sprites.maw_rigs());
     if let Some(rigs) = maw_rig {
         let treads = game
             .presentation
@@ -1410,9 +1409,7 @@ fn draw_unit_pass(
             ..
         } = unit_body_pose(game, sprites, unit, alpha);
         let rig = sprites.unit_rig(unit.kind);
-        let roc_rig = (unit.kind == aftermine_sim::UnitKind::Roc)
-            .then(|| sprites.roc_rig())
-            .flatten();
+        let roc_rig = (unit.kind == aftermine_sim::UnitKind::Roc).then(|| sprites.roc_rig());
         if airborne {
             let body_lift = air_presentation(unit.kind, zoom).2;
             draw_air_shadow(
@@ -1451,9 +1448,8 @@ fn draw_unit_pass(
             }
         }
         let body_size = vec2(dest, dest);
-        if unit.kind == aftermine_sim::UnitKind::Bombard
-            && let Some(source) = sprites.bombard_spades(unit.braces())
-        {
+        if unit.kind == aftermine_sim::UnitKind::Bombard {
+            let source = sprites.bombard_spades(unit.braces());
             sprites.draw_unit(
                 body.x - body_size.x * 0.5,
                 body.y - body_size.y * 0.5,
@@ -1508,8 +1504,8 @@ fn draw_unit_pass(
         }
         if unit.kind == aftermine_sim::UnitKind::Kestrel
             && let Some(cycle) = animation.scanner
-            && let Some(source) = sprites.scout_radar()
         {
+            let source = sprites.scout_radar();
             let mount_y = 47.0;
             let offset = (mount_y - 64.0) / 128.0 * body_size.y;
             let center = body + vec2(-body_rotation.sin(), body_rotation.cos()) * offset;

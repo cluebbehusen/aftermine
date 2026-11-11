@@ -513,7 +513,6 @@ pub(super) fn draw_terraces(
     map: &Map,
     view: &GroundView,
     terraces: &Terraces,
-    fractured: bool,
     grade: super::grade::Grade,
 ) {
     let layers = LAYERS.map(|layer| grade.layer(layer));
@@ -566,7 +565,7 @@ pub(super) fn draw_terraces(
                     ys[y],
                     xs[x + 1] - xs[x],
                     ys[y + 1] - ys[y],
-                    quarry_color(c, m, fractured),
+                    quarry_color(c, m),
                 );
             }
         }
@@ -607,8 +606,8 @@ pub(super) fn draw_terraces(
             draw_rebar(rect, cell, zoom);
         }
     }
-    // A lip crowns each riser along the bench above it; fractured quarries
-    // also score the riser face.
+    // A lip crowns each riser along the bench above it and scores the riser
+    // face.
     let lip = (zoom * 0.055).max(1.0);
     for &pos in &tiles {
         let (xs, ys) = cell_edges(view, pos);
@@ -633,16 +632,14 @@ pub(super) fn draw_terraces(
                         continue;
                     }
                     draw_lip(rect, (dx, dy), lip, layers[level].lip);
-                    if fractured {
-                        let face = Rect::new(
-                            rect.x + dx as f32 * rect.w,
-                            rect.y + dy as f32 * rect.h,
-                            rect.w,
-                            rect.h,
-                        );
-                        let (ix, iy) = frame.inner(cx + dx, cy + dy);
-                        draw_strata(face, (-dx, -dy), layers[level], hash(ix, iy, SALT + 607));
-                    }
+                    let face = Rect::new(
+                        rect.x + dx as f32 * rect.w,
+                        rect.y + dy as f32 * rect.h,
+                        rect.w,
+                        rect.h,
+                    );
+                    let (ix, iy) = frame.inner(cx + dx, cy + dy);
+                    draw_strata(face, (-dx, -dy), layers[level], hash(ix, iy, SALT + 607));
                 }
             }
         }

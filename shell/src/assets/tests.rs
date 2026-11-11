@@ -418,7 +418,7 @@ fn extractor_loops_visit_every_pose_in_order_and_use_their_own_scaffolds() {
 #[test]
 fn array_layers_require_both_tiers_and_every_allegiance_mask() {
     let mut atlas = Manifest::default();
-    assert!(array_rig(&atlas).unwrap().is_none());
+    assert!(array_rig(&atlas).is_err());
     for tier in 0..2 {
         for (part_index, part) in ["base", "rotor"].into_iter().enumerate() {
             for (variant_index, variant) in ["", "_accent"].into_iter().enumerate() {
@@ -434,7 +434,7 @@ fn array_layers_require_both_tiers_and_every_allegiance_mask() {
             }
         }
     }
-    let rig = array_rig(&atlas).unwrap().unwrap();
+    let rig = array_rig(&atlas).unwrap();
     let layers = rig.layers(1);
     assert_eq!(layers[0].0, Rect::new(1.0, 0.0, 128.0, 128.0));
     assert_eq!(layers[1].1, Rect::new(1.0, 1.0, 129.0, 128.0));
@@ -492,21 +492,21 @@ fn articulated_unit_bank_is_optional_but_must_be_complete() {
 #[test]
 fn harvester_body_layers_require_every_cargo_and_its_accent_mask() {
     let mut atlas = Manifest::new();
-    assert!(harvester_body_rows(&atlas).unwrap().is_none());
+    assert!(harvester_body_rows(&atlas).is_err());
     for cargo in 0..6 {
         for key in variant_keys("rig_harvester_body", &format!("_cargo{cargo}")) {
             atlas.insert(key, [1., 1., 128., 128.]);
         }
     }
-    assert!(harvester_body_rows(&atlas).unwrap().is_some());
+    assert!(harvester_body_rows(&atlas).is_ok());
     atlas.remove("rig_harvester_body_accent_cargo5");
     assert!(harvester_body_rows(&atlas).is_err());
 }
 
 #[test]
-fn quarry_dressing_is_optional_but_partial_banks_are_rejected() {
+fn quarry_dressing_requires_all_twelve_variants() {
     let mut atlas = Manifest::new();
-    assert!(quarry_dressing_rows(&atlas).unwrap().is_none());
+    assert!(quarry_dressing_rows(&atlas).is_err());
     atlas.insert("quarry_dressing_0".into(), [0.0, 0.0, 64.0, 64.0]);
     assert!(quarry_dressing_rows(&atlas).is_err());
     for index in 1..12 {
@@ -515,13 +515,13 @@ fn quarry_dressing_is_optional_but_partial_banks_are_rejected() {
             [index as f32 * 66.0, 0.0, 64.0, 64.0],
         );
     }
-    assert_eq!(quarry_dressing_rows(&atlas).unwrap().unwrap().len(), 12);
+    assert_eq!(quarry_dressing_rows(&atlas).unwrap().len(), 12);
 }
 
 #[test]
-fn optional_bombard_spades_require_every_deployment_pose() {
+fn bombard_spades_require_every_deployment_pose() {
     let mut atlas = Manifest::new();
-    assert!(bombard_spade_rows(&atlas).unwrap().is_none());
+    assert!(bombard_spade_rows(&atlas).is_err());
     atlas.insert("bombard_spades_0".into(), [0.0, 0.0, 128.0, 128.0]);
     assert!(bombard_spade_rows(&atlas).is_err());
     for phase in 1..5 {
@@ -530,7 +530,7 @@ fn optional_bombard_spades_require_every_deployment_pose() {
             [phase as f32, 0.0, 128.0, 128.0],
         );
     }
-    assert_eq!(bombard_spade_rows(&atlas).unwrap().unwrap()[4].x, 4.0);
+    assert_eq!(bombard_spade_rows(&atlas).unwrap()[4].x, 4.0);
 }
 
 #[test]

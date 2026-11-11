@@ -69,13 +69,13 @@ fn slots(atlas: &Manifest) -> Vec<Slot> {
             if kind.assembles().is_none() {
                 let frames = match kind {
                     BuildingKind::Array => {
-                        vec![array.as_ref().expect("the Array's rig ships").layers(tier)[0].0]
+                        vec![array.layers(tier)[0].0]
                     }
                     BuildingKind::Spire => {
-                        vec![strategic.as_ref().expect("rigs ship").spire.foundation[0]]
+                        vec![strategic.spire.foundation[0]]
                     }
                     BuildingKind::Lattice => {
-                        vec![strategic.as_ref().expect("rigs ship").lattice.base]
+                        vec![strategic.lattice.base]
                     }
                     _ => std::iter::once(rung.hull[0])
                         .chain(rung.work.iter().map(|row| row[0]))
