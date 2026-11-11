@@ -617,6 +617,25 @@ fn category_label(
     }
 }
 
+/// A category's header as `category_label` words it, without its keys
+/// where `fits` refuses them: Caption is the smallest type, and the cells
+/// and their tooltips name the keys too.
+fn category_heading(
+    label: &str,
+    open: bool,
+    key: &str,
+    palette_key: Option<&str>,
+    keyless: bool,
+    fits: impl Fn(&str) -> bool,
+) -> String {
+    let heading = category_label(label, open, key, palette_key, keyless);
+    if fits(&heading) {
+        heading
+    } else {
+        category_label(label, open, key, palette_key, true)
+    }
+}
+
 /// What pressing a drawn card does: its own action while enabled, an
 /// explanation while disabled.
 fn published_action(card: &crate::panel::Card) -> crate::panel::CardAction {
@@ -654,7 +673,10 @@ fn draw_catalog(
             first += kinds.len();
             let key = bindings.label(crate::action::Action::BuildCategory(category.fit::<u8>()));
             let palette_key = bindings.label(crate::action::Action::ToggleBuildPalette);
-            let label = category_label(
+            let x = cells[0].x + 5.0 * s;
+            let right = cells.iter().map(Rect::right).fold(x, f32::max);
+            let caption = crate::theme::Type::Caption.at(s);
+            let label = category_heading(
                 &name.to_uppercase(),
                 input.build_category == Some(category.fit::<u8>()),
                 &key,
@@ -663,22 +685,9 @@ fn draw_catalog(
                     .is_some()
                     .then_some(palette_key.as_str()),
                 !crate::platform::hands().keys,
+                |label| crate::typography::measure(label, caption).width <= right - x - 2.0 * s,
             );
-            let x = cells[0].x + 5.0 * s;
-            let right = cells.iter().map(Rect::right).fold(x, f32::max);
-            let caption = crate::theme::Type::Caption.at(s);
-            crate::typography::draw(
-                &label,
-                x,
-                band.y + 20.0 * s,
-                crate::typography::fit(
-                    &label,
-                    caption,
-                    right - x - 2.0 * s,
-                    crate::theme::Type::Caption,
-                ),
-                TEXT_SECONDARY,
-            );
+            crate::typography::draw(&label, x, band.y + 20.0 * s, caption, TEXT_SECONDARY);
         }
     }
     let hovered = slots.iter().position(|rect| hovers(input, *rect));

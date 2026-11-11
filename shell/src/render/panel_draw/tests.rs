@@ -24,6 +24,25 @@ fn category_labels_name_keys_only_where_keys_exist() {
 }
 
 #[test]
+fn a_category_heading_drops_its_keys_where_they_would_not_fit() {
+    let roomy = |_: &str| true;
+    let narrow = |heading: &str| heading.len() <= "EXPERIMENTAL *".len();
+    assert_eq!(
+        category_heading("ECONOMY", false, "Q", Some("B"), false, roomy),
+        "ECONOMY [B > Q]"
+    );
+    assert_eq!(
+        category_heading("EXPERIMENTAL", false, "X", Some("B"), false, narrow),
+        "EXPERIMENTAL"
+    );
+    assert_eq!(
+        category_heading("EXPERIMENTAL", true, "X", Some("B"), false, narrow),
+        "EXPERIMENTAL *",
+        "the open marker stays"
+    );
+}
+
+#[test]
 fn collective_queue_keeps_every_kind_visible_in_narrow_windows() {
     for scale in [1.0, 1.5, 2.0] {
         for (width, top) in [(640.0, 110.0), (800.0, 190.0), (1280.0, 650.0)] {
