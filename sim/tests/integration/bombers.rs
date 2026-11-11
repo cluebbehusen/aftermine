@@ -877,9 +877,11 @@ fn chase_from_pad(ticks: u32) -> (chassis::fx::Fx, chassis::fx::Fx) {
 
 #[test]
 fn a_parked_condor_breaks_off_a_chase_past_its_leash_and_flies_home() {
+    // Past the 10-tile radius by little more than a turn: bait that came
+    // near the pad and ran grants no patience to chase it out with.
     let (farthest, end) = chase_from_pad(1500);
     assert!(
-        farthest < chassis::fx::Fx::from_num(30),
+        farthest < chassis::fx::Fx::from_num(14),
         "the chase ran {farthest} tiles from the pad"
     );
     assert!(
