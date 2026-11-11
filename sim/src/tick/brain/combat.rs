@@ -1046,7 +1046,9 @@ pub(super) fn turret_fire(
         } else if let Some((target, position)) = building_victim {
             (Target::Building(target), position)
         } else {
-            if let Some(view) = blind::radar_in_range(state, me, center, Domain::Ground, atk) {
+            if let Some(view) =
+                blind::radar_in_range(state, me, (center, gun.heading), Domain::Ground, atk)
+            {
                 blind::fire_building(state, id, view, events, hits, launches);
             } else if gun.reload == 0 {
                 rest_gun(state, id);
@@ -2214,23 +2216,28 @@ fn bomber_attack(
         unit.cooldowns,
     );
 
-    // Vanished or uncoverable target: same hand-back as the ground arm.
-    let target_info: Option<(Vec2Fx, TilePos)> = match target {
+    // Vanished or uncoverable target: same hand-back as the ground arm. A
+    // building stands at its anchor's level, and the run heads for a tile
+    // of its footprint chosen as half-turned runs choose.
+    let target_info: Option<(Vec2Fx, TilePos, TilePos)> = match target {
         Target::Unit(uid) => state
             .unit(uid)
             .filter(|t| t.hp > 0)
-            .map(|t| (t.pos, t.tile())),
-        Target::Building(bid) => state
-            .building(bid)
-            .filter(|b| b.hp > 0)
-            .map(|b| (b.closest_point_to(pos), b.anchor)),
+            .map(|t| (t.pos, t.tile(), t.tile())),
+        Target::Building(bid) => state.building(bid).filter(|b| b.hp > 0).map(|b| {
+            (
+                b.closest_point_to(pos),
+                b.anchor,
+                crate::tick::footprint_goal(b.anchor, b.kind.size(), pos, heading),
+            )
+        }),
     };
     let victim_domain = target_domain(state, target);
     let primary = stats
         .weapons
         .iter()
         .position(|w| w.targets.covers(victim_domain));
-    let (Some((aim_point, target_tile)), Some(pi)) = (target_info, primary) else {
+    let (Some((aim_point, footing, target_tile)), Some(pi)) = (target_info, primary) else {
         state
             .unit_mut(id)
             .expect("caller checked")
@@ -2261,7 +2268,7 @@ fn bomber_attack(
             state,
             Fire::of(weapon),
             ShotEnd::new(pos, stats.domain),
-            ShotEnd::new(aim_point, victim_domain).on(target_tile),
+            ShotEnd::new(aim_point, victim_domain).on(footing),
             Landing::Checked,
         )
     {
@@ -3154,17 +3161,11 @@ fn approach_firing_area(
         }
     }
     points.sort_by_key(|&point| {
-        (
-            pos.dist_sq(point),
-            crate::geometry::rect_approach_key_from(
-                from,
-                frame,
-                b.anchor,
-                (w, h),
-                TilePos::containing(point),
-            ),
-            (point.x - pos.x) * (frame.center().y - pos.y)
-                - (point.y - pos.y) * (frame.center().x - pos.x),
+        crate::geometry::stance_rank(
+            pos,
+            (from, frame),
+            (b.anchor, (w, h)),
+            (TilePos::containing(point), point),
         )
     });
     let candidates = points

@@ -110,6 +110,25 @@ fn rect_ring_has_expected_size_and_order() {
 }
 
 #[test]
+fn an_attacker_over_a_footprint_centre_heads_for_a_mirrored_tile() {
+    let (map_width, map_height) = (24, 16);
+    let (anchor, size) = (TilePos::new(10, 6), (2, 2));
+    let turned = TilePos::new(
+        map_width - size.0 - anchor.x,
+        map_height - size.1 - anchor.y,
+    );
+    let centre = |anchor| crate::geometry::footprint_center(anchor, size);
+    for heading in 0..=u8::MAX {
+        let goal = footprint_goal(anchor, size, centre(anchor), heading);
+        assert_eq!(
+            TilePos::new(map_width - 1 - goal.x, map_height - 1 - goal.y),
+            footprint_goal(turned, size, centre(turned), heading.wrapping_add(128)),
+            "heading {heading}"
+        );
+    }
+}
+
+#[test]
 fn footprint_incident_tiles_are_half_turn_equivariant() {
     use chassis::fx::{Fx, Vec2Fx};
 

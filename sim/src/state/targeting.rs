@@ -49,6 +49,16 @@ impl AttackView {
             .map_or_else(|| TilePos::containing(self.position), |(anchor, _)| anchor)
     }
 
+    /// The tile an attacker at `from` facing `heading` heads for: see
+    /// [`footprint_goal`](crate::tick::footprint_goal) for a known
+    /// footprint, or the tile of the reported position.
+    pub(crate) fn goal_from(self, from: Vec2Fx, heading: u8) -> TilePos {
+        self.footprint.map_or_else(
+            || TilePos::containing(self.position),
+            |(anchor, size)| crate::tick::footprint_goal(anchor, size, from, heading),
+        )
+    }
+
     /// Closest point on a known footprint, or the reported contact position.
     pub fn aim_from(self, from: Vec2Fx) -> Vec2Fx {
         match self.footprint {

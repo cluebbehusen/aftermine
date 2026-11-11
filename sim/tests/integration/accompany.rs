@@ -958,3 +958,83 @@ fn mirrored_escorts_take_mirrored_slots() {
         assert!(escorting(&state, escort, west_ids[0]));
     }
 }
+
+#[test]
+fn escorts_of_foundries_on_the_middle_row_take_mirrored_slots() {
+    // Each seat's Foundry straddles the map's middle row, so the side of
+    // the map it sits on is told only by its footprint's centre.
+    let (width, height) = (36, 18);
+    let map: Vec<String> = (0..height)
+        .map(|y| {
+            (0..width)
+                .map(|x| {
+                    if x == 0 || y == 0 || x == width - 1 || y == height - 1 {
+                        '#'
+                    } else {
+                        '.'
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    let mirror = |tile: TilePos| TilePos::new(width - 1 - tile.x, height - 1 - tile.y);
+    let west = [
+        (UnitKind::Lancer, TilePos::new(9, 8)),
+        (UnitKind::Sentinel, TilePos::new(7, 5)),
+        (UnitKind::Scuttler, TilePos::new(7, 12)),
+        (UnitKind::Talon, TilePos::new(8, 3)),
+    ];
+    let units = west
+        .iter()
+        .flat_map(|&(kind, at)| {
+            let away = mirror(at);
+            [unit(0, kind, at.x, at.y), unit(1, kind, away.x, away.y)]
+        })
+        .collect();
+    let mut players = common::players(0);
+    for player in &mut players {
+        player.team = Some(0);
+    }
+    let (w, h) = aftermine_sim::BuildingKind::Foundry.size();
+    let foundry = |player, x: i32| {
+        common::building(
+            player,
+            aftermine_sim::BuildingKind::Foundry,
+            x,
+            (height - h) / 2,
+        )
+    };
+    let mut state = Scenario {
+        levels: Vec::new(),
+        mode: ScenarioMode::Sandbox,
+        name: "escort-middle-row".into(),
+        map,
+        players,
+        units,
+        buildings: vec![foundry(0, 2), foundry(1, width - w - 2)],
+        meta: None,
+    }
+    .build()
+    .unwrap();
+    let pairs: Vec<(UnitId, UnitId)> = state
+        .units()
+        .chunks(2)
+        .map(|pair| (pair[0].id, pair[1].id))
+        .collect();
+    let (west_ids, east_ids): (Vec<UnitId>, Vec<UnitId>) = pairs.iter().copied().unzip();
+    state.tick(&[
+        cmd(0, accompany(west_ids[1..].to_vec(), west_ids[0], false)),
+        cmd(1, accompany(east_ids[1..].to_vec(), east_ids[0], false)),
+    ]);
+    for tick in 0..60 {
+        for &(w, e) in &pairs[1..] {
+            let (a, b) = (state.unit(w).unwrap(), state.unit(e).unwrap());
+            assert_eq!(
+                a.path.as_ref().map(|path| mirror(path.goal)),
+                b.path.as_ref().map(|path| path.goal),
+                "tick {tick}: {w:?} route"
+            );
+        }
+        state.tick(&[]);
+    }
+}

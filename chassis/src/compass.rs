@@ -284,7 +284,10 @@ const BRACKETED_FROM: u64 = 1 << 18;
 const BRACKETED_BELOW: u64 = 1 << 61;
 
 /// The compass step maximizing the fixed-point dot product with `v`.
-/// Ties choose the lowest heading; the zero vector returns zero.
+/// Ties choose the step a turn toward +y reaches first from the start of
+/// `v`'s quadrant, so just below the +x axis heading 255 beats heading 0.
+/// Each tie then breaks as its half turn does: for nonzero `v`,
+/// `heading_of(-v)` is `heading_of(v) + 128`. The zero vector returns zero.
 pub fn heading_of(v: Vec2Fx) -> u8 {
     let first: u8 = if v.y >= Fx::ZERO {
         if v.x >= Fx::ZERO { 0 } else { 64 }
@@ -294,15 +297,18 @@ pub fn heading_of(v: Vec2Fx) -> u8 {
         128
     };
     // Reflecting either nonzero component into v's quadrant strictly improves
-    // a mismatched sign, even after fixed-point rounding. Include both axes,
-    // and keep heading zero as the earliest possible tied winner.
-    let last = first.saturating_add(64);
+    // a mismatched sign, even after fixed-point rounding. Include both axes:
+    // each quadrant's last step is the next one's first, and quadrant four
+    // ends on heading zero.
+    let steps = |offsets: std::ops::RangeInclusive<u8>| {
+        offsets.map(move |offset| first.wrapping_add(offset))
+    };
     let span =
         v.x.to_bits()
             .unsigned_abs()
             .max(v.y.to_bits().unsigned_abs());
     if !(BRACKETED_FROM..BRACKETED_BELOW).contains(&span) {
-        return best_step(v, first..=last);
+        return best_step(v, steps(0..=64));
     }
     // Each step of the quadrant turns further toward +y than the last, so
     // `v` lies on or past every step up to the one that brackets it, and
@@ -316,20 +322,20 @@ pub fn heading_of(v: Vec2Fx) -> u8 {
             high = mid - 1;
         }
     }
-    best_step(
-        v,
-        (low..=(low + 1).min(last - first)).map(|offset| first.wrapping_add(offset)),
-    )
+    best_step(v, steps(low..=(low + 1).min(64)))
 }
 
-/// The first of `steps` with the greatest fixed-point dot product with `v`,
-/// or heading zero unless one beats it.
+/// The first of `steps` with the greatest fixed-point dot product with `v`.
 fn best_step(v: Vec2Fx, steps: impl IntoIterator<Item = u8>) -> u8 {
-    let mut best = 0;
-    let mut best_dot = v.x;
-    for k in steps {
+    let dot = |k: u8| {
         let d = dir(k);
-        let dot = d.x * v.x + d.y * v.y;
+        d.x * v.x + d.y * v.y
+    };
+    let mut steps = steps.into_iter();
+    let mut best = steps.next().expect("a quadrant has steps");
+    let mut best_dot = dot(best);
+    for k in steps {
+        let dot = dot(k);
         if dot > best_dot {
             best = k;
             best_dot = dot;

@@ -29,10 +29,13 @@ pub(super) fn solution(
         )
 }
 
+/// The nearest radar contact `weapon` has a solution on from `from`, on a
+/// gun facing `heading`. Contact ids count in map row order, so equally near
+/// contacts go by bearing from the gun, then domain, before id.
 pub(super) fn radar_in_range(
     state: &State,
     player: PlayerId,
-    from: Vec2Fx,
+    (from, heading): (Vec2Fx, u8),
     domain: Domain,
     weapon: &WeaponStats,
 ) -> Option<AttackView> {
@@ -45,7 +48,14 @@ pub(super) fn radar_in_range(
         .filter(|track| track.visible_unit.is_none())
         .map(|track| (track.id, AttackView::still_blip(track)))
         .filter(|(_, view)| solution(state, from, domain, *view, weapon))
-        .min_by_key(|(id, view)| (from.dist_sq(view.position), *id))?;
+        .min_by_key(|(id, view)| {
+            (
+                from.dist_sq(view.position),
+                bearing_from(from, heading, view.position),
+                view.domain,
+                *id,
+            )
+        })?;
     state.attack_view(player, AttackTarget::Contact(chosen))
 }
 
@@ -285,7 +295,8 @@ pub(in crate::tick::brain) fn automatic_radar(
         return false;
     }
     let Some((slot, view)) = stats.weapons.iter().enumerate().find_map(|(slot, weapon)| {
-        radar_in_range(state, u.player, u.pos, stats.domain, weapon).map(|view| (slot, view))
+        radar_in_range(state, u.player, (u.pos, u.heading), stats.domain, weapon)
+            .map(|view| (slot, view))
     }) else {
         return false;
     };
@@ -315,7 +326,8 @@ pub(super) fn sidearm_radar(
     let unit = state.unit(id).expect("live unit");
     let (player, pos, kind) = (unit.player, unit.pos, unit.kind);
     let weapon = &kind.stats().weapons[slot];
-    let Some(view) = radar_in_range(state, player, pos, unit.domain(), weapon) else {
+    let Some(view) = radar_in_range(state, player, (pos, unit.heading), unit.domain(), weapon)
+    else {
         return;
     };
     if !super::super::super::movement::ground_weapon_aligned(unit, view.position - pos) {
@@ -513,7 +525,7 @@ pub(in crate::tick::brain) fn attack_known(
     }
     state.unit_mut(id).expect("live unit").retract_braces();
     let aim = view.aim_from(pos);
-    let goal = TilePos::containing(view.position);
+    let goal = view.goal_from(pos, state.unit(id).expect("live unit").heading);
     let inside_dead_zone = primary.is_some_and(|i| {
         pos.dist_sq(aim) < stats.weapons[i].minimum_range * stats.weapons[i].minimum_range
     });

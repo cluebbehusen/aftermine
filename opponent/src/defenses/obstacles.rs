@@ -3,7 +3,7 @@
 
 use super::approaches::health;
 use super::guns::{first_placeable, sites_at};
-use super::{ATTACKER_MARGIN, Guard, distance2};
+use super::{ATTACKER_MARGIN, Guard};
 use crate::frame::{doubled, footprint_centre, gap};
 use crate::map::Gate;
 use aftermine_sim::BuildingKind;
@@ -51,7 +51,7 @@ impl Guard<'_> {
                 .iter()
                 .filter_map(|asset| Some((asset, asset.approach(Domain::Ground)?)))
                 .filter(|(_, approach)| self.usable(approach))
-                .min_by_key(|(asset, _)| (distance2(asset.centre, centre), asset.centre))
+                .min_by_key(|(asset, _)| self.frame.rank(centre, asset.centre))
             else {
                 continue;
             };

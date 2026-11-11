@@ -658,6 +658,25 @@ pub(crate) fn footprint_incident_tile(
         .expect("positive footprint contains a tile")
 }
 
+/// The tile of the footprint at `anchor` an attacker at `from` facing
+/// `heading` heads for: its centre tile, or for an even side the central
+/// tile its approach ranks first. Only an aircraft can be right over the
+/// centre, and it approaches along its heading.
+pub(crate) fn footprint_goal(
+    anchor: TilePos,
+    size: (i32, i32),
+    from: chassis::fx::Vec2Fx,
+    heading: u8,
+) -> TilePos {
+    let centre = crate::geometry::footprint_center(anchor, size);
+    let approach = if from == centre {
+        chassis::compass::dir(heading)
+    } else {
+        centre - from
+    };
+    footprint_incident_tile(anchor, size, centre, approach)
+}
+
 /// Whether `tile` touches (including diagonally) but does not overlap the
 /// rectangle at `anchor`.
 pub(crate) fn tile_adjacent_to_rect(tile: TilePos, anchor: TilePos, size: (i32, i32)) -> bool {

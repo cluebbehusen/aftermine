@@ -17,94 +17,133 @@ use std::collections::BinaryHeap;
 
 /// Whether the open segment between `a` and `b` crosses a tile that fails
 /// `passable`. The endpoints' own tiles are never tested — a shooter fires
-/// *from* its tile and a wall-mounted target is hit *on* its tile.
+/// *from* its tile and a wall-mounted target is hit *on* its tile. An
+/// endpoint on a tile seam belongs to the tile the segment does not enter,
+/// behind its start or past its end, so every tile the segment passes
+/// through is tested.
 ///
-/// Deterministic supercover traversal (Amanatides–Woo in fixed point):
-/// every tile the segment passes through is visited; an exact corner
-/// crossing conservatively visits both adjacent tiles, so a diagonal shot
-/// cannot slip between two blockers, mirroring [`astar`]'s no-corner-cut
-/// rule.
-///
-/// Direction symmetry is not guaranteed: a segment that grazes a tile
-/// corner exactly can round to opposite sides of it depending on which
-/// end the walk starts from (e.g. a 1/7 slope, whose reciprocal is inexact
-/// in binary). Seat fairness relies on mirror symmetry instead: a
-/// 180°-rotated segment over 180°-rotated terrain gets the identical
-/// verdict, because every quantity here is sign-symmetric.
-pub fn line_blocked(a: Vec2Fx, b: Vec2Fx, mut passable: impl FnMut(TilePos) -> bool) -> bool {
-    let start = TilePos::containing(a);
-    let end = TilePos::containing(b);
-    if start == end {
-        return false;
-    }
-    let delta = b - a;
-    let step = |axis: Fx| -> i32 {
-        match axis.cmp(&Fx::ZERO) {
-            std::cmp::Ordering::Greater => 1,
-            std::cmp::Ordering::Less => -1,
-            std::cmp::Ordering::Equal => 0,
-        }
-    };
-    let step_x = step(delta.x);
-    let step_y = step(delta.y);
-    // Parametric distance (0..1 along the segment) to the next x/y tile
-    // boundary, and per-tile increments, in saturating Q32.32. A delta
-    // component can be one ulp, and 1/ulp = 2^32 exceeds the type's range.
-    // A t_max of MAX means "this axis crosses no more boundaries within the
-    // segment", matching the zero-delta arm; non-degenerate segments get
-    // the same values as plain arithmetic. Both operands are non-negative,
-    // so saturation lands on MAX, never on MIN (whose abs would panic).
-    let (mut t_max_x, t_delta_x) = if step_x == 0 {
-        (Fx::MAX, Fx::MAX)
-    } else {
-        let next_boundary = Fx::from_num(if step_x > 0 { start.x + 1 } else { start.x });
-        (
-            (next_boundary - a.x).abs().saturating_div(delta.x.abs()),
-            Fx::ONE.saturating_div(delta.x.abs()),
-        )
-    };
-    let (mut t_max_y, t_delta_y) = if step_y == 0 {
-        (Fx::MAX, Fx::MAX)
-    } else {
-        let next_boundary = Fx::from_num(if step_y > 0 { start.y + 1 } else { start.y });
-        (
-            (next_boundary - a.y).abs().saturating_div(delta.y.abs()),
-            Fx::ONE.saturating_div(delta.y.abs()),
-        )
-    };
+/// Supercover traversal: an exact corner crossing, an endpoint's included,
+/// conservatively visits both adjacent tiles, so a diagonal shot cannot slip
+/// between two blockers, mirroring [`astar`]'s no-corner-cut rule, and a
+/// segment running along a tile seam visits the tiles on both sides of it.
+/// Crossings are counted and ordered exactly, so the verdict is the same in
+/// both directions and for a half-turned segment over half-turned terrain.
+pub fn line_blocked(a: Vec2Fx, b: Vec2Fx, passable: impl FnMut(TilePos) -> bool) -> bool {
+    trace(a, b, false, passable)
+}
 
-    let mut tile = start;
-    // Bounded by the tile-space extent of the segment, corner visits incl.
-    let max_steps = (end.x - start.x).abs() + (end.y - start.y).abs() + 2;
-    for _ in 0..max_steps {
-        if t_max_x == t_max_y && step_x != 0 && step_y != 0 {
-            // Exact corner crossing: check both tiles flanking the corner.
-            let side_a = tile.offset(step_x, 0);
-            let side_b = tile.offset(0, step_y);
-            if side_a != end && !passable(side_a) {
-                return true;
-            }
-            if side_b != end && !passable(side_b) {
-                return true;
-            }
-            tile = tile.offset(step_x, step_y);
-            t_max_x = t_max_x.saturating_add(t_delta_x);
-            t_max_y = t_max_y.saturating_add(t_delta_y);
-        } else if t_max_x < t_max_y {
-            tile = tile.offset(step_x, 0);
-            t_max_x = t_max_x.saturating_add(t_delta_x);
+/// Whether [`line_blocked`] holds or the tile the segment ends in fails
+/// `passable`: for an end on a tile seam, the tile past it; for an end on a
+/// seam the segment runs along, both tiles beside it.
+pub fn line_or_end_blocked(a: Vec2Fx, b: Vec2Fx, passable: impl FnMut(TilePos) -> bool) -> bool {
+    trace(a, b, true, passable)
+}
+
+fn trace(a: Vec2Fx, b: Vec2Fx, end_too: bool, mut passable: impl FnMut(TilePos) -> bool) -> bool {
+    let (x, x_lanes) = Axis::of(a.x, b.x);
+    let (y, y_lanes) = Axis::of(a.y, b.y);
+    (0..x_lanes).any(|dx| {
+        (0..y_lanes).any(|dy| walk((a, b), x.shifted(dx), y.shifted(dy), end_too, &mut passable))
+    })
+}
+
+/// The tiles a segment occupies along one axis: the one it starts in, the
+/// one it ends in, and the way it steps between them.
+#[derive(Clone, Copy)]
+struct Axis {
+    from: i32,
+    to: i32,
+    step: i32,
+}
+
+impl Axis {
+    /// The axis of a segment from `start` to `end`, and how many lanes run
+    /// along it: two when the segment runs along a tile seam, one otherwise.
+    fn of(start: Fx, end: Fx) -> (Self, i32) {
+        let tile = |at: Fx| at.floor().to_num::<i32>();
+        let below = |at: Fx| tile(at) - i32::from(at.frac() == Fx::ZERO);
+        match end.cmp(&start) {
+            std::cmp::Ordering::Greater => (
+                Self {
+                    from: below(start),
+                    to: tile(end),
+                    step: 1,
+                },
+                1,
+            ),
+            std::cmp::Ordering::Less => (
+                Self {
+                    from: tile(start),
+                    to: below(end),
+                    step: -1,
+                },
+                1,
+            ),
+            std::cmp::Ordering::Equal => (
+                Self {
+                    from: below(start),
+                    to: below(start),
+                    step: 0,
+                },
+                1 + i32::from(start.frac() == Fx::ZERO),
+            ),
+        }
+    }
+
+    fn shifted(self, by: i32) -> Self {
+        Self {
+            from: self.from + by,
+            to: self.to + by,
+            ..self
+        }
+    }
+
+    /// Raw distance from `start` to the seam this axis crosses leaving `tile`.
+    fn gap(self, tile: i32, start: Fx) -> u128 {
+        let seam = (i128::from(tile) + i128::from(self.step > 0)) << 32;
+        (seam - i128::from(start.to_bits())).unsigned_abs()
+    }
+}
+
+/// One lane of [`trace`]. A crossing's parameter along the segment is its
+/// gap over the axis extent, so cross-multiplying orders two crossings
+/// exactly; every product stays below 2^128.
+fn walk(
+    (a, b): (Vec2Fx, Vec2Fx),
+    x: Axis,
+    y: Axis,
+    end_too: bool,
+    passable: &mut impl FnMut(TilePos) -> bool,
+) -> bool {
+    let extent =
+        |from: Fx, to: Fx| (i128::from(to.to_bits()) - i128::from(from.to_bits())).unsigned_abs();
+    let (span_x, span_y) = (extent(a.x, b.x), extent(a.y, b.y));
+    let end = TilePos::new(x.to, y.to);
+    let mut tile = TilePos::new(x.from, y.from);
+    while tile != end {
+        let order = if tile.x == x.to {
+            std::cmp::Ordering::Greater
+        } else if tile.y == y.to {
+            std::cmp::Ordering::Less
         } else {
-            tile = tile.offset(0, step_y);
-            t_max_y = t_max_y.saturating_add(t_delta_y);
-        }
-        if tile == end {
-            return false;
-        }
-        if !passable(tile) {
+            (x.gap(tile.x, a.x) * span_y).cmp(&(y.gap(tile.y, a.y) * span_x))
+        };
+        tile = match order {
+            std::cmp::Ordering::Less => tile.offset(x.step, 0),
+            std::cmp::Ordering::Greater => tile.offset(0, y.step),
+            std::cmp::Ordering::Equal => {
+                let flanks = [tile.offset(x.step, 0), tile.offset(0, y.step)];
+                if flanks.into_iter().any(|flank| !passable(flank)) {
+                    return true;
+                }
+                tile.offset(x.step, y.step)
+            }
+        };
+        if tile != end && !passable(tile) {
             return true;
         }
     }
-    false // step budget exhausted without hitting a blocker
+    end_too && !passable(end)
 }
 
 /// Whether a body of `radius` sweeping the segment from `a` to `b` crosses a

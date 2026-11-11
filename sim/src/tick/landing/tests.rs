@@ -152,3 +152,41 @@ fn a_landing_mirrors_exactly_under_a_map_half_turn() {
     }
     assert!(landed_at.is_some(), "neither aircraft landed");
 }
+
+#[test]
+fn pads_on_one_bearing_go_nearest_first_after_a_half_turn() {
+    // Seen from straight up the column of an occupied goal, the pads either
+    // side of it lie on one bearing, dead ahead.
+    let state = arena();
+    let condor = &state.units[0];
+    let pick = |around: TilePos, pos: chassis::fx::Vec2Fx, heading: u8| {
+        super::nearest_landable(
+            &state,
+            condor.kind.stats(),
+            condor.id,
+            around,
+            pos,
+            heading,
+            3,
+            Some(around),
+            super::Pick::Nearest,
+            None,
+        )
+        .expect("open ground surrounds the goal")
+    };
+    let half_turn = |p: chassis::fx::Vec2Fx| {
+        chassis::fx::Vec2Fx::new(Fx::from_num(24) - p.x, Fx::from_num(16) - p.y)
+    };
+    let around = TilePos::new(12, 10);
+    let pos = around.center() - chassis::fx::Vec2Fx::new(Fx::ZERO, Fx::from_num(6));
+    let pad = pick(around, pos, 64);
+    assert_eq!(pad, TilePos::new(12, 9), "the nearer pad dead ahead");
+    assert_eq!(
+        pick(
+            TilePos::new(23 - around.x, 15 - around.y),
+            half_turn(pos),
+            192
+        ),
+        TilePos::new(23 - pad.x, 15 - pad.y)
+    );
+}
