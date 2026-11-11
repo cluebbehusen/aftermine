@@ -6,9 +6,11 @@ half-written save, and starts downloads for files another device wrote. On iPad,
 Mac and Apple TV it reads and writes iCloud's key-value store, which carries the
 settings that follow the player. It also reads and writes the app's user
 defaults, the only local storage Apple TV never clears, which is where the shell
-keeps its settings on Apple TV. Saves stay ordinary files; which folder each one
-lives in is the shell's decision, in `shell/src/paths.rs`, and which settings
-sync is the shell's decision, in `shell/src/config/sync.rs`.
+keeps its settings on Apple TV. On iPad and Apple TV it keeps the screen on
+while the shell asks and holds background time, so a save or an iCloud pass
+finishes after the player leaves the app. Saves stay ordinary files; which
+folder each one lives in is the shell's decision, in `shell/src/paths.rs`, and
+which settings sync is the shell's decision, in `shell/src/config/sync.rs`.
 
 ## Main pieces
 
@@ -26,10 +28,14 @@ sync is the shell's decision, in `shell/src/config/sync.rs`.
   off the main thread.
 - `defaults` reads and writes strings in the app's user defaults, which stay on
   the device.
+- `application` turns the idle timer off and on, and `BackgroundTask` holds
+  background time until dropped; the system takes the time back first if it runs
+  out.
 - `src/icloud.m` holds the iCloud Drive calls, `src/key_value.m` the key-value
-  store calls, `src/cloudkit.m` the CloudKit calls and `src/defaults.m` the user
-  defaults calls. Every iCloud Drive call may wait on iCloud, so callers keep
-  those off the main thread; the key-value store answers from memory.
+  store calls, `src/cloudkit.m` the CloudKit calls, `src/defaults.m` the user
+  defaults calls and `src/application.m` the `UIApplication` calls. Every iCloud
+  Drive call may wait on iCloud, so callers keep those off the main thread; the
+  key-value store answers from memory.
 
 ## Boundaries
 
@@ -37,7 +43,8 @@ This is the only workspace crate that allows `unsafe` code, confined to the
 modules that call into Objective-C. Apple TV has no iCloud Drive, so there, as
 on other platforms, `documents` answers `None`, `coordinate` runs its access
 directly and `download` has nothing to fetch. Off Apple platforms there is no
-key-value store, no CloudKit and no user defaults either.
+key-value store, no CloudKit and no user defaults either. Only iPad and Apple TV
+have an idle timer and background time; elsewhere `application` does nothing.
 
 An app needs the iCloud Documents entitlement for its container and the
 `com.apple.developer.ubiquity-kvstore-identifier` entitlement for the key-value

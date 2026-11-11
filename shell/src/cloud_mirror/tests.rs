@@ -1601,3 +1601,48 @@ fn a_push_is_sent_once_a_pass_has_taken_it_up_and_run() {
     });
     assert!(shared.sent());
 }
+
+#[test]
+fn background_time_spans_every_pass_asked_for_and_ends_once_none_is_left() {
+    let shared = Shared::default();
+    assert!(shared.queue().background.is_none());
+    shared.want(Mode::Full);
+    assert!(
+        shared.queue().background.is_some(),
+        "leaving the app now must not cut the pass short"
+    );
+    let (release, gate) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let pass = scope.spawn(|| {
+            let held = Held {
+                cloud: FakeCloud::signed_in(),
+                gate,
+            };
+            serve_one(&shared, &held, || Some(device("background")));
+        });
+        while shared.queue().running.is_none() {
+            std::thread::yield_now();
+        }
+        shared.want(Mode::Push);
+        release.send(()).unwrap();
+        pass.join().unwrap();
+    });
+    assert!(
+        shared.queue().background.is_some(),
+        "a push asked for meanwhile keeps the time"
+    );
+    let (release, gate) = std::sync::mpsc::channel();
+    release.send(()).unwrap();
+    serve_one(
+        &shared,
+        &Held {
+            cloud: FakeCloud::signed_in(),
+            gate,
+        },
+        || Some(device("background")),
+    );
+    assert!(
+        shared.queue().background.is_none(),
+        "nothing left to run gives the time back"
+    );
+}

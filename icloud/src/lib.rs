@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod application;
 pub mod cloudkit;
 pub mod defaults;
 mod key_value;

@@ -535,6 +535,10 @@ struct Queue {
     answers: Vec<Answer>,
     /// Files the last pass found missing from an iCloud Drive folder.
     missing: Vec<String>,
+    /// Time asked of the system, from a pass being asked for until no pass
+    /// is wanted or under way, so leaving the app does not cut a push short.
+    /// Every request asks afresh: the system may have ended the time already.
+    background: Option<aftermine_icloud::application::BackgroundTask>,
 }
 
 impl Shared {
@@ -556,6 +560,7 @@ impl Shared {
         if mode == Mode::Push {
             queue.unsent = true;
         }
+        queue.background = Some(aftermine_icloud::application::BackgroundTask::begin());
         self.wake.notify_one();
     }
 }
@@ -714,7 +719,7 @@ fn serve_one(shared: &Shared, remote: &impl Remote, places: impl FnOnce() -> Opt
         let mut queue = shared.queue();
         queue.running = None;
         queue.sending = false;
-        match outcome {
+        let again = match outcome {
             Some(outcome) => {
                 // A push has not looked at CloudKit, and a question answered
                 // while this pass ran stays answered.
@@ -742,7 +747,11 @@ fn serve_one(shared: &Shared, remote: &impl Remote, places: impl FnOnce() -> Opt
                 outcome.again
             }
             None => false,
+        };
+        if !again && queue.wanted.is_none() {
+            queue.background = None;
         }
+        again
     };
     if again {
         shared.want(Mode::Full);
