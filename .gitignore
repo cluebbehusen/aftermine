@@ -7,22 +7,17 @@ __pycache__/
 
 # Local product-direction workspace. Production approvals live in docs/.
 /art-direction-archive/
-/roadmap-0.14.0-0.15.0.md
-/bot-retraining-deadlock-report.md
-/plan-0.15.0.md
 /review-*/
 /map-review/
+/map-drafts/
 
 # Runtime output — never commit; test fixtures live in driver/tests/.
 /screenshots/
 /replays/
-dist/
 /shots/
 .claude/*
 !.claude/skills/
 !.claude/skills/**
-origin-0.15.0.md
-todo-0.15.0.md
 
 # Local Apple signing team and Xcode per-user state.
 /apple/Local.xcconfig
