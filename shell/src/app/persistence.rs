@@ -670,23 +670,9 @@ pub(super) fn frame(
                 if busy.quit_after {
                     return Ok(app.persistence_screen(Intent::Exit, *busy.back));
                 }
-                return Ok(
-                    match screens::playback::PlaybackSession::watch(*recording) {
-                        // Saves & Replays is a front-door browser: leaving the
-                        // viewer lands on Home, as a cold `--watch` launch does.
-                        Ok(session) => super::screen_flow::open_playback(
-                            session,
-                            Screen::Home(HomeScreen::open()),
-                        ),
-                        Err(error) => {
-                            app.notify_failure(
-                                "Could not open the replay",
-                                format_args!("{error:#}"),
-                            );
-                            *busy.back
-                        }
-                    },
-                );
+                return Ok(watch(*recording, *busy.back, |error| {
+                    app.notify_failure("Could not open the replay", format_args!("{error:#}"));
+                }));
             }
             Ok(Output::Saved(mark)) => {
                 if let Some(mark) = mark {
@@ -818,6 +804,23 @@ pub(super) fn frame(
         }
     }
     Ok(Screen::Busy(busy))
+}
+
+/// The viewer over a recording the worker opened. Leaving it lands back on
+/// `back`, the shelf that asked, its tab and cursor where they were; a
+/// recording that will not play stays there and says so through `failed`.
+fn watch(
+    recording: aftermine_kit::Recording,
+    back: Screen,
+    failed: impl FnOnce(anyhow::Error),
+) -> Screen {
+    match screens::playback::PlaybackSession::watch(recording) {
+        Ok(session) => super::screen_flow::open_playback(session, back),
+        Err(error) => {
+            failed(error);
+            back
+        }
+    }
 }
 
 /// How long a quit waits for what is still going out: a LAN goodbye, the
