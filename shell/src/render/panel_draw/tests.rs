@@ -936,3 +936,104 @@ fn the_pad_legend_starts_clear_of_the_info_plate() {
         }
     }
 }
+
+/// A 1133x744 skirmish whose first own Harvester, selected, has `orders`
+/// queued walks.
+fn harvester_with_orders(orders: usize) -> Game {
+    let mut game =
+        Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1133.0, 744.0)).unwrap();
+    let human = game.presentation.human;
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == human && u.kind == aftermine_sim::UnitKind::Harvester)
+        .expect("a starting Harvester")
+        .id;
+    let here = game.state.unit(harvester).unwrap().tile();
+    let walks: Vec<_> = (0..orders)
+        .map(|step| aftermine_sim::PlayerCommand {
+            player: human,
+            command: aftermine_sim::Command::Hunt {
+                units: vec![harvester],
+                goal: chassis::grid::TilePos::new(
+                    here.x + 2 + i32::try_from(step % 4).unwrap(),
+                    here.y - 3 + i32::try_from(step / 4).unwrap(),
+                ),
+                queue: true,
+            },
+        })
+        .collect();
+    game.state.tick(&walks);
+    game.presentation.selection.units = vec![harvester];
+    game
+}
+
+#[test]
+fn a_long_program_fills_two_columns_under_the_top_bar_and_counts_the_rest() {
+    let fixed = |_: super::super::hud::Face, text: &str, size: f32| {
+        text.chars().count() as f32 * size * 0.5
+    };
+    for (orders, shown) in [(12, 12), (16, 16), (20, DOCK_SLOTS)] {
+        let game = harvester_with_orders(orders);
+        super::super::hud::refresh(
+            &game.view(),
+            &InputState::new(),
+            &crate::action::BindingMap::classic(),
+            super::super::hud::HudEnv {
+                viewport: vec2(1133.0, 744.0),
+                ui: 1.0,
+            },
+            None,
+            &fixed,
+        );
+        let layout = game.presentation.layout.get();
+        assert_eq!(layout.queue_count, shown, "{orders} orders");
+        let slots: Vec<Rect> = layout.queue_slots[..shown]
+            .iter()
+            .map(|(rect, _)| *rect)
+            .collect();
+        let columns: std::collections::BTreeSet<i32> = slots
+            .iter()
+            .map(|slot| crate::numeric::to_i32(slot.x))
+            .collect();
+        assert_eq!(
+            columns.len(),
+            2,
+            "{orders} orders: two columns of {}",
+            shown / 2
+        );
+        let top_bar = crate::layout::TOP_BAR_H;
+        assert!(layout.orders.y >= top_bar, "{orders}: {:?}", layout.orders);
+        assert!(layout.queue_stop.0.y >= top_bar);
+        assert!(slots.iter().all(|slot| slot.y >= top_bar));
+    }
+}
+
+#[test]
+fn the_hidden_count_sits_above_a_touch_build_s_queue_toggle() {
+    let game = harvester_with_orders(20);
+    let panel =
+        crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
+            .unwrap();
+    let (viewport, top) = (vec2(1133.0, 744.0), 600.0);
+    let dock = layout_dock(true, &panel, viewport, 1.0, top, &|_, text: &str, size| {
+        text.chars().count() as f32 * size * 0.5
+    });
+    assert_eq!(dock.chips.len(), DOCK_SLOTS);
+    assert_eq!(dock.hidden, 20 - DOCK_SLOTS);
+    let toggle = super::super::chrome::queue_toggle_rect(
+        viewport,
+        1.0,
+        &[
+            Rect::new(0.0, top, 300.0, viewport.y - top),
+            Rect::default(),
+        ],
+    );
+    let chips_bottom = dock.chips.iter().map(Rect::bottom).fold(0.0, f32::max);
+    assert!(
+        dock.more_baseline <= toggle.y && dock.more_baseline > chips_bottom,
+        "+N at {} between the chips ({chips_bottom}) and the toggle ({toggle:?})",
+        dock.more_baseline
+    );
+}

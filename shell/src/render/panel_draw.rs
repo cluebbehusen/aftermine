@@ -3,6 +3,7 @@
 //! `LayoutModel`; the pure card model lives in `crate::panel`.
 
 use super::*;
+use crate::layout::DOCK_SLOTS;
 use crate::numeric;
 use crate::numeric::Fit;
 use crate::render::prim::{fill_rect, stroke_rect};
@@ -375,12 +376,14 @@ fn queue_grid(
     panel_top: f32,
     scale: f32,
     header: f32,
-) -> (Rect, [Rect; 8], usize) {
+) -> (Rect, [Rect; DOCK_SLOTS], usize) {
     queue_grid_with_width(queue_len, panel_top, scale, 44.0, header)
 }
 
 /// The Stop button's own plate above the dock: the button and its inset.
 const STOP_PLATE: f32 = 60.0;
+/// The row under a full dock's chips that counts the entries past them.
+const MORE_ROW: f32 = 16.0;
 /// The gap between the Stop plate and the dock beneath it.
 const STOP_GAP: f32 = 6.0;
 
@@ -391,9 +394,9 @@ fn queue_grid_with_width(
     scale: f32,
     width: f32,
     header: f32,
-) -> (Rect, [Rect; 8], usize) {
+) -> (Rect, [Rect; DOCK_SLOTS], usize) {
     let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
-    let mut slots = [zero; 8];
+    let mut slots = [zero; DOCK_SLOTS];
     let count = queue_len.min(slots.len());
     if count == 0 {
         return (zero, slots, 0);
@@ -401,8 +404,14 @@ fn queue_grid_with_width(
     let (size, gap) = (44.0 * scale, 4.0 * scale);
     let label_h = 24.0 * scale;
     let header = header * scale;
+    let more = if queue_len > count {
+        MORE_ROW * scale
+    } else {
+        0.0
+    };
     let available =
-        (panel_top - crate::layout::TOP_BAR_H * scale - header - label_h - 2.0 * scale).max(size);
+        (panel_top - crate::layout::TOP_BAR_H * scale - header - label_h - more - 2.0 * scale)
+            .max(size);
     let max_rows = numeric::to_usize(((available + gap) / (size + gap)).floor()).max(1);
     let columns = count.div_ceil(max_rows).max(1);
     let rows = count.div_ceil(columns);
@@ -430,7 +439,7 @@ fn collective_queue_grid(
     scale: f32,
     viewport_width: f32,
     header: f32,
-) -> (Rect, [Rect; 8], usize) {
+) -> (Rect, [Rect; DOCK_SLOTS], usize) {
     if viewport_width / scale < 800.0 {
         return queue_grid_with_width(count, top, scale, 64.0, header);
     }
@@ -947,6 +956,9 @@ pub(crate) struct DockLayout {
     stop: Option<(Rect, Rect)>,
     chips: Vec<Rect>,
     hidden: usize,
+    /// Where the count of hidden entries sits: the foot of the chips' own
+    /// rows, above the QUEUE toggle a touch build stretches the plate over.
+    more_baseline: f32,
 }
 
 /// The drone column: its plate and the chips it shows.
@@ -993,8 +1005,20 @@ pub(crate) fn layout_panel(
             panel.cards.len(),
             crate::platform::PLATFORM.touch_only(),
         );
-        let dock = (!panel.queue.is_empty() || panel.stop.is_some())
-            .then(|| layout_dock(game, input, panel, viewport, s, band.y, measure));
+        let dock = (!panel.queue.is_empty() || panel.stop.is_some()).then(|| {
+            layout_dock(
+                super::chrome::queue_toggle_shown(
+                    game,
+                    input,
+                    crate::platform::PLATFORM.touch_only(),
+                ),
+                panel,
+                viewport,
+                s,
+                band.y,
+                measure,
+            )
+        });
         return PanelLayout::Catalog {
             band,
             slots,
@@ -1047,8 +1071,16 @@ pub(crate) fn layout_panel(
             )
         })
         .collect();
-    let dock = (!panel.queue.is_empty() || panel.stop.is_some())
-        .then(|| layout_dock(game, input, panel, viewport, s, top, measure));
+    let dock = (!panel.queue.is_empty() || panel.stop.is_some()).then(|| {
+        layout_dock(
+            super::chrome::queue_toggle_shown(game, input, crate::platform::PLATFORM.touch_only()),
+            panel,
+            viewport,
+            s,
+            top,
+            measure,
+        )
+    });
     let drones = panel
         .drones
         .as_ref()
@@ -1111,9 +1143,9 @@ fn layout_drone_column(
 
 /// Production ghosts or order chips, stacked above the band's left
 /// corner so the band itself stays short.
+/// `toggle_below` lifts it clear of the QUEUE toggle.
 fn layout_dock(
-    game: &crate::game::Scene<'_>,
-    input: &InputState,
+    toggle_below: bool,
     panel: &crate::panel::Panel,
     viewport: Vec2,
     s: f32,
@@ -1121,8 +1153,6 @@ fn layout_dock(
     measure: super::hud::Measure<'_>,
 ) -> DockLayout {
     let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
-    let toggle_below =
-        super::chrome::queue_toggle_shown(game, input, crate::platform::PLATFORM.touch_only());
     let floor = if toggle_below {
         top - super::chrome::queue_dock_lift(s)
     } else {
@@ -1136,7 +1166,11 @@ fn layout_dock(
     let (mut grid_dock, grid_slots, n) = if panel.queue.is_empty() {
         // A lone Stop plate: some other selected unit is busy.
         let side = STOP_PLATE * s;
-        (Rect::new(0.0, floor - side, side, side), [zero; 8], 0)
+        (
+            Rect::new(0.0, floor - side, side, side),
+            [zero; DOCK_SLOTS],
+            0,
+        )
     } else if panel.queue_groups.is_empty() {
         queue_grid(panel.queue.len(), floor, s, header)
     } else {
@@ -1154,11 +1188,12 @@ fn layout_dock(
     }
     let mut dock = grid_dock;
     let hidden = panel.queue.len().saturating_sub(n);
-    let more_h = if hidden > 0 { 16.0 * s } else { 0.0 };
+    let more_h = if hidden > 0 { MORE_ROW * s } else { 0.0 };
     if more_h > 0.0 {
         dock.y -= more_h;
         dock.h += more_h;
     }
+    let more_baseline = dock.bottom() - 8.0 * s;
     // The dock borders only its open top and right, resting on the
     // band. With the QUEUE toggle beneath it, the plate runs down to
     // the band so the toggle sits inside one closed column.
@@ -1186,6 +1221,7 @@ fn layout_dock(
         stop,
         chips,
         hidden,
+        more_baseline,
     }
 }
 
@@ -1920,11 +1956,12 @@ fn draw_dock(
 ) {
     use crate::panel::CardIcon;
     let DockLayout {
-        dock,
+        dock: _,
         list,
         stop,
         chips,
         hidden,
+        more_baseline,
     } = layout;
     if list.h > 0.0 {
         draw_dock_plate(*list, false, s);
@@ -2069,7 +2106,7 @@ fn draw_dock(
         draw_text(
             format!("+{hidden}"),
             12.0 * s,
-            dock.y + dock.h - 8.0 * s,
+            *more_baseline,
             crate::theme::Type::Small.at(s),
             TEXT_SECONDARY,
         );

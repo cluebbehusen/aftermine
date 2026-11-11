@@ -92,7 +92,7 @@ pub struct LayoutModel {
     /// How many cards are live this frame.
     pub card_count: usize,
     /// Queue thumbnails (production or orders), same contract.
-    pub queue_slots: [(Rect, CardAction); 8],
+    pub queue_slots: [(Rect, CardAction); DOCK_SLOTS],
     /// How many queue slots are live this frame.
     pub queue_count: usize,
     /// The Stop button above the dock; zero-sized while there is none.
@@ -101,7 +101,7 @@ pub struct LayoutModel {
     /// is none.
     pub drones: Rect,
     /// Its chips, same contract as the queue's.
-    pub drone_slots: [(Rect, CardAction); 8],
+    pub drone_slots: [(Rect, CardAction); DOCK_SLOTS],
     /// How many drone chips are live this frame.
     pub drone_count: usize,
 }
@@ -140,15 +140,19 @@ impl Default for LayoutModel {
             roster_count: 0,
             cards: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); crate::panel::MAX_CARDS],
             card_count: 0,
-            queue_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 8],
+            queue_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); DOCK_SLOTS],
             queue_count: 0,
             queue_stop: (Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None),
             drones: Rect::new(0.0, 0.0, 0.0, 0.0),
-            drone_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 8],
+            drone_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); DOCK_SLOTS],
             drone_count: 0,
         }
     }
 }
+
+/// The most entries the orders dock and the drone column show; the
+/// dock counts the rest under its chips.
+pub(crate) const DOCK_SLOTS: usize = 16;
 
 /// Top-bar height in logical px at 1x scale, read by both hit-testing
 /// and drawing.

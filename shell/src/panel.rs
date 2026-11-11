@@ -2138,7 +2138,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         .program(first.id)
         .filter(|program| !program.is_idle())
     {
-        for index in 0..program.orders.len().min(8) {
+        for index in 0..program.orders.len() {
             panel
                 .queue
                 .push(own_order_card(game, first.id, program, index, &projection));

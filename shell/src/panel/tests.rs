@@ -1028,6 +1028,47 @@ fn build_chips_wear_the_works_they_are_raising() {
 }
 
 #[test]
+fn the_orders_dock_offers_every_order_past_its_visible_slots() {
+    let (mut game, harvester) = builder_game();
+    game.presentation.selection.units = vec![harvester];
+    let here = game.state.unit(harvester).expect("harvester").tile();
+    let goals: Vec<_> = (0..12)
+        .map(|step| chassis::grid::TilePos::new(here.x + 2 + step % 2, here.y - 3 + step / 2))
+        .collect();
+    game.state.tick(
+        &goals
+            .iter()
+            .map(|&goal| PlayerCommand {
+                player: game.presentation.human,
+                command: Command::Hunt {
+                    units: vec![harvester],
+                    goal,
+                    queue: true,
+                },
+            })
+            .collect::<Vec<_>>(),
+    );
+    let orders = game
+        .view()
+        .projection()
+        .program(harvester)
+        .expect("a program")
+        .orders
+        .len();
+    assert_eq!(orders, 12, "every queued walk stands");
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
+    assert_eq!(
+        panel.queue.len(),
+        orders,
+        "the dock shows what fits and counts the rest"
+    );
+    assert!(matches!(
+        panel.queue.last().map(|card| card.action),
+        Some(CardAction::CancelOrder { unit, from_end: 0, .. }) if unit == harvester
+    ));
+}
+
+#[test]
 fn deferred_build_chips_cancel_their_logical_sites() {
     use chassis::grid::TilePos;
 
