@@ -121,7 +121,7 @@ fn a_camera_jump_under_a_held_a_lays_nothing_on_the_way() {
 }
 
 #[test]
-fn a_held_left_trigger_keeps_placing_until_it_is_let_go() {
+fn a_held_left_trigger_queues_and_a_plain_a_after_it_ends_placement() {
     let (mut game, mut input) = placing(BARRICADE);
     feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
     rest_on(&mut game, &mut input, vec2(28.5, 18.5));
@@ -135,7 +135,13 @@ fn a_held_left_trigger_keeps_placing_until_it_is_let_go() {
     assert!(input.placing.is_some(), "a held LT keeps placing");
     assert!(input.build_menu);
     feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
-    assert!(input.placing.is_none(), "letting go ends the chain");
+    assert!(input.placing.is_some(), "letting go keeps placing");
+    assert!(input.build_menu);
+
+    rest_on(&mut game, &mut input, vec2(26.5, 18.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(builds(&game)[2..], [(TilePos::new(26, 18), false)]);
+    assert!(input.placing.is_none(), "a plain A ends placement");
     assert!(!input.construction_open(), "and closes construction");
 }
 
@@ -207,6 +213,26 @@ fn b_drops_a_held_row_then_walks_out_of_placement() {
     assert_eq!(game.presentation.selection.units.len(), 1);
     press(&mut game, &mut input, PadButton::East);
     assert!(game.presentation.selection.units.is_empty());
+}
+
+#[test]
+fn b_out_of_a_queued_chain_returns_to_the_selection() {
+    let (mut game, mut input) = placing(BARRICADE);
+    feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
+    rest_on(&mut game, &mut input, vec2(28.5, 18.5));
+    press(&mut game, &mut input, PadButton::South);
+    feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
+    assert_eq!(builds(&game), [(TilePos::new(28, 18), true)]);
+    assert!(input.placing.is_some(), "premise: still placing");
+
+    // The build ring has a card to show, yet B leaves it shut.
+    publish(&game, &input);
+    press(&mut game, &mut input, PadButton::East);
+    assert!(input.placing.is_none());
+    assert!(input.ring.is_none(), "no build ring opens");
+    assert!(!input.construction_open(), "construction closes");
+    assert_eq!(game.presentation.selection.units.len(), 1);
+    assert_eq!(builds(&game).len(), 1, "and the chain stands");
 }
 
 #[test]

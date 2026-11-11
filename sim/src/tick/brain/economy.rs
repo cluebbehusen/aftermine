@@ -711,7 +711,8 @@ pub(super) fn salvage(
 
 /// The harvest loop: work one safe remembered source inside a fixed local
 /// zone, haul to a Foundry, and return to that same zone. Both nodes and
-/// wrecks are worked from a position beside the source.
+/// wrecks are worked from a position beside the source. Returns whether
+/// it emptied the node, which opens the node's tile to ground routes.
 pub(super) fn harvest(
     state: &mut State,
     danger: &GroundSalvageDanger,
@@ -720,20 +721,20 @@ pub(super) fn harvest(
     anchor: TilePos,
     withdrawing: bool,
     events: &mut Vec<Event>,
-) {
+) -> bool {
     let unit = state.unit(id).expect("caller checked");
     let Some(hstats) = unit.kind.stats().harvest else {
         // Only harvesters ever get this order; be defensive anyway.
         state.unit_mut(id).expect("caller checked").clear_program();
-        return;
+        return false;
     };
     if unit.unloading().is_some() {
         deliver(state, danger, id, events, withdrawing);
-        return;
+        return false;
     }
     if withdrawing {
         withdraw(state, danger, id, events);
-        return;
+        return false;
     }
 
     let (tile, carrying) = (unit.tile(), unit.carrying());
@@ -747,7 +748,7 @@ pub(super) fn harvest(
     if current.is_none() {
         if let Some(next) = replacement_source(state, danger, id, anchor, Some(node)) {
             switch_source(state, id, next.pos, anchor);
-            return;
+            return false;
         }
         begin_withdrawal(state, id, node, anchor);
         if carrying > 0 {
@@ -755,12 +756,12 @@ pub(super) fn harvest(
         } else {
             withdraw(state, danger, id, events);
         }
-        return;
+        return false;
     }
 
     if carrying >= hstats.capacity {
         deliver(state, danger, id, events, false);
-        return;
+        return false;
     }
 
     let current = current.expect("the dry branch returned");
@@ -775,7 +776,7 @@ pub(super) fn harvest(
         worker.path = None;
         worker.clear_danger_hold();
         if !worker.work_stopped() {
-            return;
+            return false;
         }
     }
     let authoritative = node == anchor;
@@ -785,12 +786,13 @@ pub(super) fn harvest(
         && (authoritative || !danger.contains(tile))
     {
         match current.kind {
-            SourceKind::Scrap => extract(state, id, node, hstats.ticks_per_scrap, events),
+            SourceKind::Scrap => return extract(state, id, node, hstats.ticks_per_scrap),
             SourceKind::Wreck => extract_wreck(state, id, node, hstats.ticks_per_scrap),
         }
     } else if !approach_source(state, danger, id, current, authoritative) {
         source_route_failed(state, danger, id, node, anchor, events);
     }
+    false
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1602,25 +1604,18 @@ fn extract_wreck(state: &mut State, id: UnitId, node: TilePos, ticks_per_scrap: 
     }
 }
 
-/// Stand at the node and chip scrap off it.
-fn extract(
-    state: &mut State,
-    id: UnitId,
-    node: TilePos,
-    ticks_per_scrap: u32,
-    events: &mut Vec<Event>,
-) {
+/// Stand at the node and chip scrap off it. Returns whether that took its
+/// last piece.
+fn extract(state: &mut State, id: UnitId, node: TilePos, ticks_per_scrap: u32) -> bool {
     let unit = state.unit_mut(id).expect("caller checked");
     unit.path = None;
     unit.progress += 1;
     if unit.progress < ticks_per_scrap {
-        return;
+        return false;
     }
     unit.progress = 0;
     unit.worker_mut().carrying += 1;
-    if state.map.extract_scrap(node) == Some(0) {
-        events.push(Event::NodeDepleted { pos: node });
-    }
+    state.map.extract_scrap(node) == Some(0)
 }
 
 /// Advances only stationary, uninterrupted work; the whole load releases

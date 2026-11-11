@@ -76,11 +76,12 @@ elimination stamps or a final result, and session checkpoints require matching
 scenario and world modes.
 
 All `State` fields are crate-private. Other crates get narrow immutable
-accessors and change the world only by passing commands to `tick`.
-`inspect_command_phase` is the one exception, for prediction. It clones the
-state, applies only command validation and command-phase effects, shows a
-restricted read-only view to a callback, and discards the clone. It never
-advances or installs authoritative state.
+accessors and change the world only by passing commands to `tick`. Prediction is
+the one exception. `command_phase` clones the state, applies only command
+validation and command-phase effects, and returns an owned `CommandPhase` a
+caller may keep but read only through the restricted `CommandPhaseView`;
+`inspect_command_phase` lends the same view to a callback. Neither advances or
+installs authoritative state.
 
 Deserialization goes through a private mirror type and then
 `State::validate_invariants`; there is no unchecked path. Validation covers,
@@ -260,7 +261,8 @@ the footprint, it crosses friendly footprints to the nearest ground that holds
 it while its order waits. Hostile footprints stay solid. A body on open ground
 that new footprints seal in stays there: walling in a unit is legal play.
 
-Routes ignore bodies. A ground follower's lookahead never passes through a
+Routes ignore bodies, except that a small body steps round a friendly Maw
+standing in its way. A ground follower's lookahead never passes through a
 friendly ground body standing still, and a body whose progress is cancelled by
 contact for `STALL_REPLAN_TICKS` plans again. Only friendly bodies count,
 because steering around an unseen enemy would reveal it; hostile bodies meet
@@ -274,10 +276,18 @@ Workers and contact weapons route to perimeter tiles, then make a short,
 collision-checked approach to the building's contact outline. Each kind has an
 outline per tier and per construction stage, traced from its art, and a shell
 test keeps every outline close to its art. Outlines never change tile
-passability. Work, melee and ranged attacks on buildings share one crowd-aware
-position chooser. When two claims overlap, the unit nearer its own position
-keeps its claim whatever its seat, so allied crowds cannot all yield to each
-other; an exact tie goes to the earlier unit of one seat.
+passability. Routes run between tile centres, so a body pushed off its tile's
+centre whose straight leg would scrape an outline returns to that centre first.
+Work, melee and ranged attacks on buildings share one crowd-aware position
+chooser. When two claims overlap, the unit nearer its own position keeps its
+claim whatever its seat, so allied crowds cannot all yield to each other; an
+exact tie goes to the earlier unit of one seat.
+
+A cradle crew member routes to its pad round the cradle's other pads, by the far
+side of the cradle if need be, and keeps its ordinary route only when there is
+no such way and that route crosses no pad a crewmate already works from. It
+stops only on the pad it set out for, never sets out for or through a pad a
+crewmate already works from, and reports `NoRoute` when it can reach no other.
 
 Ground motor speed is serialized and validated. A pathless ground unit can still
 be braking, so group arrival and anchored collision priority require a motor

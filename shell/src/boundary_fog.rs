@@ -4,7 +4,7 @@ use aftermine_sim::{PlayerId, State};
 use chassis::grid::{Grid, TilePos};
 
 // The terraces and their vignette extend at most six tiles from the floor.
-const PAD: i32 = 8;
+pub(crate) const PAD: i32 = 8;
 const EXPLORED: u8 = 1;
 const VISIBLE: u8 = 2;
 

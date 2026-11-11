@@ -25,7 +25,7 @@ pub(crate) fn stroke_rect(rect: Rect, thickness: f32, color: Color) {
 
 /// The fills that outline `rect`: each edge on whole device pixels and at
 /// least one wide, or the whole rect where the edges would meet.
-fn outline_bands(rect: Rect, thickness: f32, dpi: f32) -> [Option<Rect>; 4] {
+pub(crate) fn outline_bands(rect: Rect, thickness: f32, dpi: f32) -> [Option<Rect>; 4] {
     let snap = |v: f32| (v * dpi).round() / dpi;
     let (left, top) = (snap(rect.x), snap(rect.y));
     let (right, bottom) = (snap(rect.x + rect.w), snap(rect.y + rect.h));

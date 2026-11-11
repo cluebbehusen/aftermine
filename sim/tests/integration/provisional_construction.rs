@@ -270,6 +270,7 @@ fn a_provisional_site_cannot_shield_a_physical_building_from_blind_fire() {
             ghost["anchor"]["y"].as_i64(),
             ghost["anchor"]["x"].as_i64(),
             ghost["owner"].as_u64(),
+            serde_json::from_value::<BuildingKind>(ghost["kind"].clone()).unwrap(),
         )
     });
     for include_provisional in [false, true] {

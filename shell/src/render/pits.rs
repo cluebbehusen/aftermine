@@ -17,7 +17,7 @@ use super::environment::{
     Layer, Material, UNLIT, WAVE_LIFTS, draw_fracture, draw_lip, draw_missing_slab, draw_rebar,
     draw_strata, faces_light, hash, mixed, quarry_color, rgba, shifted,
 };
-use super::ground::GroundView;
+use super::ground::{Flush, GroundView};
 use super::levels::riser_tone;
 use super::stretches::{Place, Shapes};
 use super::tall_faces::TallFaces;
@@ -426,6 +426,7 @@ pub(super) fn draw_pits(
     view: &GroundView,
     field: &PitField,
     grade: super::grade::Grade,
+    flush: &mut Flush,
 ) {
     let (min, max) = view.tiles(map);
     if min.x >= max.x || min.y >= max.y {
@@ -445,9 +446,11 @@ pub(super) fn draw_pits(
     // be buried under the neighbor's fill.
     for pos in &pit_tiles {
         draw_fill(view, field, *pos, zoom, &drops, tall_tones);
+        flush.tile();
     }
     for pos in &pit_tiles {
         draw_relief(view, field, *pos, zoom, &drops);
+        flush.tile();
     }
 }
 

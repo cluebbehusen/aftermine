@@ -309,6 +309,42 @@ fn every_building_inherits_single_and_group_actions_from_capabilities() {
 }
 
 #[test]
+fn the_scrap_card_counts_its_sites_and_names_x_only_where_x_scraps() {
+    let game = fixture(BuildingKind::Turret, &[0, 0, 0], 10000);
+    let factory = *BuildingKind::ALL
+        .iter()
+        .find(|kind| !kind.base_stats().produces.is_empty())
+        .expect("a kind that trains");
+    let mut selected = SelectedBuildings::inspect(&game.view());
+    selected.tech = BuildingKind::ALL.iter().map(|kind| (*kind, 0)).collect();
+    for b in &mut selected.buildings {
+        b.kind = factory;
+    }
+    selected.buildings[1].phase = aftermine_sim::BuildingPhase::Site { progress: 0 };
+    let scrap = |selected: &SelectedBuildings| {
+        selected
+            .cards(&BindingMap::classic())
+            .into_iter()
+            .find(|card| card.action == CardAction::ScrapSites)
+            .expect("a Scrap card")
+    };
+    let card = scrap(&selected);
+    assert_eq!(card.title, "Scrap site");
+    assert!(
+        !Action::StopOrScrap.available(crate::action::Context::Production),
+        "premise: a selection with a producer reads keys as production"
+    );
+    assert_eq!(card.hotkey, "", "X does nothing beside a factory");
+
+    for b in &mut selected.buildings {
+        b.phase = aftermine_sim::BuildingPhase::Site { progress: 0 };
+    }
+    let card = scrap(&selected);
+    assert_eq!(card.title, "Scrap 3 sites");
+    assert_eq!(card.hotkey, "X");
+}
+
+#[test]
 fn a_deep_bore_waits_for_a_foundry_in_reach() {
     let game = fixture(BuildingKind::Extractor, &[0], 1_000);
     let mut selected = SelectedBuildings::inspect(&game.view());

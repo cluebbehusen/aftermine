@@ -6,7 +6,10 @@
 //! merge compares the local value, the base and the store's value:
 //!
 //! - local differs from the base: the player changed it here, so it is
-//!   uploaded, the newest write;
+//!   uploaded, the newest write. A binding list read here gives the actions
+//!   it never names their default keys, which the player did not choose
+//!   here, so a local list that matches the base read that way has not
+//!   changed;
 //! - otherwise a store value that differs from the base came from another
 //!   device, and is adopted if it passes the same checks as a loaded
 //!   `config.json`; one that does not is ignored;
@@ -110,6 +113,21 @@ impl SyncedField {
         text.expect("settings serialize")
     }
 
+    /// Whether `local` is a change the player made on this device since it
+    /// agreed `base` with the store: it differs from `base` and, for a
+    /// binding list, from `base` as this build reads it, which fills in the
+    /// actions it never names.
+    fn changed_since(self, base: &str, local: &str) -> bool {
+        if base == local {
+            return false;
+        }
+        if self != Self::Bindings {
+            return true;
+        }
+        let mut read = Config::default();
+        !(self.read(&mut read, base) && self.json(&read) == local)
+    }
+
     /// Sets the setting from `text`; whether it parsed.
     fn read(self, config: &mut Config, text: &str) -> bool {
         fn into<T: DeserializeOwned>(field: &mut T, text: &str) -> bool {
@@ -119,7 +137,13 @@ impl SyncedField {
         }
         let markers = &mut config.markers;
         match self {
-            Self::Bindings => into(&mut config.bindings, text),
+            // Filled as at load, so a list saved before an action existed
+            // passes the load checks.
+            Self::Bindings => {
+                let parsed = into(&mut config.bindings, text);
+                config.bindings.bind_unmentioned_defaults();
+                parsed
+            }
             Self::MasterVolume => into(&mut config.volumes.master, text),
             Self::EffectsVolume => into(&mut config.volumes.effects, text),
             Self::InterfaceVolume => into(&mut config.volumes.ui, text),
@@ -172,7 +196,7 @@ fn merge(
         let local = field.json(config);
         match bases.get(&field).cloned() {
             // Changed here since the last agreement: the newest write.
-            Some(base) if base != local => {
+            Some(base) if field.changed_since(&base, &local) => {
                 bases.insert(field, local.clone());
                 merge.uploads.push((field, local));
             }
@@ -212,7 +236,7 @@ fn changed_here(config: &Config, bases: &mut Bases) -> Vec<(SyncedField, String)
     let mut uploads = Vec::new();
     for (&field, base) in bases.iter_mut() {
         let local = field.json(config);
-        if *base != local {
+        if field.changed_since(base, &local) {
             base.clone_from(&local);
             uploads.push((field, local));
         }

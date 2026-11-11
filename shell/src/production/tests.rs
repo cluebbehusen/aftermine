@@ -3,16 +3,23 @@ use aftermine_sim::{BuildingKind, PlayerCommand, Scenario};
 use macroquad::prelude::vec2;
 
 fn factories(scrap: u32) -> Game {
+    foundries(scrap, 1)
+}
+
+/// The home Foundry plus `extra` more, all selected.
+fn foundries(scrap: u32, extra: usize) -> Game {
     let mut scenario = Scenario::skirmish();
     scenario.players[0].scrap = scrap;
-    scenario
-        .buildings
-        .push(aftermine_sim::scenario::BuildingSpec {
-            player: 0,
-            kind: BuildingKind::Foundry,
-            x: 9,
-            y: 3,
-        });
+    for (x, y) in [(9, 3), (13, 1), (16, 1)].into_iter().take(extra) {
+        scenario
+            .buildings
+            .push(aftermine_sim::scenario::BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Foundry,
+                x,
+                y,
+            });
+    }
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     game.presentation.selection.buildings = game
         .state
@@ -67,15 +74,33 @@ fn a_paid_foundry_blueprint_keeps_the_seat_commanding_but_is_no_home_target() {
     assert!(Production::inspect(&game.view()).selected.accepts);
 }
 
+fn slot(kind: UnitKind) -> usize {
+    BuildingKind::Foundry
+        .base_stats()
+        .produces
+        .iter()
+        .position(|k| *k == kind)
+        .unwrap()
+}
+
+fn stage_train(game: &mut Game, building: BuildingId, kinds: &[UnitKind]) {
+    for &kind in kinds {
+        game.issue(Command::Train { building, kind });
+    }
+}
+
 #[test]
-fn grouped_production_spends_once_per_factory_in_id_order_and_projects_pending_commands() {
-    let mut game = factories(150);
+fn grouped_training_queues_one_each_and_funds_the_shortest_staged_queue_when_short() {
+    let harvester = UnitKind::Harvester.stats().cost;
+    let sentinel = UnitKind::Sentinel.stats().cost;
+    let mut game = factories(3 * harvester + sentinel);
     let ids = game.presentation.selection.buildings.clone();
     game.presentation.selection.buildings = vec![ids[1], ids[0], ids[1]];
     let before = game.state.hash();
-    train(&mut game, 0);
-    train(&mut game, 0);
-    train(&mut game, 0);
+    train(&mut game, slot(UnitKind::Harvester));
+    train(&mut game, slot(UnitKind::Sentinel));
+    train(&mut game, slot(UnitKind::Harvester));
+    train(&mut game, slot(UnitKind::Harvester));
     assert_eq!(
         game.state.hash(),
         before,
@@ -85,11 +110,21 @@ fn grouped_production_spends_once_per_factory_in_id_order_and_projects_pending_c
         .pending
         .iter()
         .map(|pc| match pc.command {
-            Command::Train { building, .. } => building,
+            Command::Train { building, kind } => (building, kind),
             _ => panic!("ordinary train only"),
         })
         .collect();
-    assert_eq!(targets, vec![ids[0], ids[1], ids[0]]);
+    assert_eq!(
+        targets,
+        vec![
+            (ids[0], UnitKind::Harvester),
+            (ids[1], UnitKind::Harvester),
+            (ids[0], UnitKind::Sentinel),
+            (ids[1], UnitKind::Harvester),
+        ],
+        "a covering bank queues one at each; a short one goes to the queue \
+         that empties first, counting presses staged while paused"
+    );
     assert!(
         game.presentation
             .toasts
@@ -105,8 +140,95 @@ fn grouped_production_spends_once_per_factory_in_id_order_and_projects_pending_c
             .iter()
             .any(|e| matches!(e, aftermine_sim::Event::CommandRejected { .. }))
     );
-    assert_eq!(game.state.building(ids[0]).unwrap().queue.len(), 2);
-    assert_eq!(game.state.building(ids[1]).unwrap().queue.len(), 1);
+    for id in ids {
+        assert_eq!(game.state.building(id).unwrap().queue.len(), 2);
+    }
+}
+
+#[test]
+fn a_short_bank_funds_an_idle_producer_over_a_busy_lower_id() {
+    let mut game = factories(UnitKind::Sentinel.stats().cost + UnitKind::Harvester.stats().cost);
+    let ids = game.presentation.selection.buildings.clone();
+    stage_train(&mut game, ids[0], &[UnitKind::Sentinel]);
+    let batch = Production::inspect(&game.view())
+        .batch(slot(UnitKind::Harvester))
+        .unwrap();
+    assert_eq!(batch.recipients, vec![ids[1]]);
+    assert_eq!(batch.reason.as_deref(), Some("not enough scrap"));
+}
+
+#[test]
+fn grouped_training_ranks_remaining_time_before_queue_length() {
+    let mut game = factories(
+        UnitKind::Sentinel.stats().cost
+            + 2 * UnitKind::Surveyor.stats().cost
+            + UnitKind::Harvester.stats().cost,
+    );
+    let ids = game.presentation.selection.buildings.clone();
+    stage_train(&mut game, ids[0], &[UnitKind::Sentinel]);
+    stage_train(&mut game, ids[1], &[UnitKind::Surveyor, UnitKind::Surveyor]);
+    assert!(
+        2 * UnitKind::Surveyor.stats().train_ticks < UnitKind::Sentinel.stats().train_ticks,
+        "two Surveyors finish before one Sentinel"
+    );
+    let batch = Production::inspect(&game.view())
+        .batch(slot(UnitKind::Harvester))
+        .unwrap();
+    assert_eq!(batch.recipients, vec![ids[1]]);
+    assert_eq!(batch.reason.as_deref(), Some("not enough scrap"));
+}
+
+#[test]
+fn grouped_training_breaks_an_equal_queue_by_head_progress() {
+    let cost = UnitKind::Harvester.stats().cost;
+    let mut game = factories(3 * cost);
+    let ids = game.presentation.selection.buildings.clone();
+    stage_train(&mut game, ids[1], &[UnitKind::Harvester]);
+    for _ in 0..3 {
+        game.do_tick();
+    }
+    assert!(game.state.building(ids[1]).unwrap().training_progress() > 0);
+    stage_train(&mut game, ids[0], &[UnitKind::Harvester]);
+    let production = Production::inspect(&game.view());
+    assert_eq!(production.selected.scrap, cost);
+    assert_eq!(
+        production
+            .batch(slot(UnitKind::Harvester))
+            .unwrap()
+            .recipients,
+        vec![ids[1]]
+    );
+}
+
+#[test]
+fn grouped_training_skips_full_and_upgrading_producers_before_ranking() {
+    let cost = UnitKind::Harvester.stats().cost;
+    let mut game = foundries(
+        aftermine_sim::stats::QUEUE_CAP.fit::<u32>() * UnitKind::Surveyor.stats().cost
+            + 4 * UnitKind::Sentinel.stats().cost
+            + cost,
+        2,
+    );
+    let ids = game.presentation.selection.buildings.clone();
+    stage_train(
+        &mut game,
+        ids[1],
+        &[UnitKind::Surveyor; aftermine_sim::stats::QUEUE_CAP],
+    );
+    stage_train(&mut game, ids[2], &[UnitKind::Sentinel; 4]);
+    let mut selected = SelectedBuildings::inspect(&game.view());
+    assert!(
+        queue_ticks(&selected.buildings[1]) < queue_ticks(&selected.buildings[2]),
+        "the full queue would otherwise rank first"
+    );
+    // No producing kind has an upgrade rung, so only a forged snapshot
+    // holds a producer mid-upgrade.
+    selected.buildings[0].phase = aftermine_sim::BuildingPhase::Upgrading { progress: 0 };
+    let batch = Production::from_selected(selected)
+        .batch(slot(UnitKind::Harvester))
+        .unwrap();
+    assert_eq!(batch.recipients, vec![ids[2]]);
+    assert_eq!(batch.reason.as_deref(), Some("1 queue full, 1 offline"));
 }
 
 #[test]
@@ -254,14 +376,10 @@ fn grouped_production_honors_foreign_ownership_tech_and_pending_elimination() {
     train(&mut game, 0);
     assert!(game.pending.is_empty());
     game.presentation.selection.buildings = ids;
-    // Excavators require an Array.
-    let slot = BuildingKind::Foundry
-        .base_stats()
-        .produces
-        .iter()
-        .position(|k| *k == UnitKind::Excavator)
+    // Excavators need a standing Fabricator.
+    let batch = Production::inspect(&game.view())
+        .batch(slot(UnitKind::Excavator))
         .unwrap();
-    let batch = Production::inspect(&game.view()).batch(slot).unwrap();
     assert!(batch.recipients.is_empty());
     assert!(batch.reason.unwrap().contains("standing"));
     game.issue(Command::Surrender);

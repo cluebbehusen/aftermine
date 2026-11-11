@@ -267,6 +267,15 @@ fn group_action(game: &mut Game, input: &mut InputState, slot: usize) {
     input.last_recall = Some((slot, now));
 }
 
+/// Whether every unit in `units` scouts: such a selection scouts wherever
+/// it is sent, enemy or ground, and Run is the deliberate way to send one
+/// into danger.
+pub(super) fn all_scout(game: &Game, units: &[aftermine_sim::UnitId]) -> bool {
+    units
+        .iter()
+        .all(|id| game.state.unit(*id).is_some_and(|u| u.kind.stats().scouts))
+}
+
 /// Right-click: order the selection by what's under the cursor — enemy →
 /// attack, scrap → harvest, ground → advance. A controller's X gives the
 /// same order with the reticle's `reach`. The sim re-validates everything;
@@ -437,12 +446,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: O
             return;
         }
     }
-    // A selection of scouts scouts wherever it is sent, enemy or ground;
-    // Run is the deliberate way to send one into danger.
-    if units
-        .iter()
-        .all(|id| game.state.unit(*id).is_some_and(|u| u.kind.stats().scouts))
-    {
+    if all_scout(game, &units) {
         let goal = ground_tile(&game.state, world);
         game.issue(Command::Scout { units, goal, queue });
         game.presentation

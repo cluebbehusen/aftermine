@@ -642,9 +642,7 @@ pub(crate) struct Placement {
     stroke: Option<HeldStroke>,
     /// The touch placement's ghost, once a tap has dropped one.
     ghost: Option<PlacementGhost>,
-    /// The last site this placement staged, once one has. Letting go of
-    /// queue then ends it: the next plain build would replace the chain just
-    /// queued.
+    /// The last site this placement staged, once one has.
     chain: Option<Chain>,
 }
 
@@ -762,7 +760,7 @@ pub(crate) fn available_construction_scrap(
                     .construction_refund(game.presentation.human, replaced),
             );
     }
-    game.state.inspect_command_phase(game.pending, |view| {
+    game.with_staged(|view| {
         view.scrap(game.presentation.human)
             .unwrap_or(0)
             .saturating_add(view.construction_refund(game.presentation.human, replaced))
@@ -1533,6 +1531,13 @@ impl InputState {
         self.placing.as_ref().map(|placement| placement.kind)
     }
 
+    /// Whether the armed placement has staged a site.
+    fn placement_staged(&self) -> bool {
+        self.placing
+            .as_ref()
+            .is_some_and(|placement| placement.chain.is_some())
+    }
+
     /// The plan placement is previewing: a live mouse stroke, else the
     /// touch ghost's row.
     fn active_plan(&self) -> Option<&PlacingStroke> {
@@ -1587,20 +1592,15 @@ impl InputState {
     }
 
     /// Throws a live stroke's plan, or a touch ghost's row, away, keeping
-    /// placement armed unless queue was let go during the stroke after a
-    /// chain had staged. Returns whether there was one.
+    /// placement armed. Returns whether there was one.
     pub(crate) fn drop_stroke(&mut self) -> bool {
-        let dropped = self.placing.as_mut().is_some_and(|placement| {
+        self.placing.as_mut().is_some_and(|placement| {
             placement.stroke.take().is_some()
                 || placement
                     .ghost
                     .as_mut()
                     .is_some_and(|ghost| ghost.row.take().is_some())
-        });
-        if dropped && !self.queue_held() {
-            self.queue_released();
-        }
-        dropped
+        })
     }
 
     /// The touch ghost's anchor, while placement is armed.
@@ -1610,20 +1610,6 @@ impl InputState {
             .ghost
             .as_ref()
             .map(|ghost| ghost.anchor)
-    }
-
-    /// Queue was let go (Shift up, or QUEUE off). A placement that already
-    /// staged a build ends, as releasing Shift ends a chain in other RTS
-    /// games: the next plain build would replace everything just queued. A
-    /// live stroke is left to its release, which decides the same way.
-    fn queue_released(&mut self) {
-        if self
-            .placing
-            .as_ref()
-            .is_some_and(|placement| placement.chain.is_some() && placement.stroke.is_none())
-        {
-            self.stop_placing();
-        }
     }
 
     /// Whether `verb` is the armed click verb.
@@ -2219,19 +2205,22 @@ pub(crate) mod pad_ring;
 mod paint;
 pub(crate) use paint::{painting, preview as paint_preview};
 pub(crate) use select::Kept;
+#[cfg(test)]
+mod funnel_tests;
 pub(crate) mod reticle;
 mod select;
+
 #[cfg(test)]
 mod tests;
 mod touch;
 
 use dispatch::dispatch_action;
 use orders::{OrderReach, context_order, rally_at, rally_producers, rally_selected_producers};
-pub(crate) use select::army_units;
 pub use select::idle_harvesters;
 use select::{
     Reach, box_select, click_on_hud, click_select, cycle_idle_worker, select_all_of_kind_on_screen,
 };
+pub(crate) use select::{army_units, boxed_own_units};
 pub use touch::update_touch;
 pub(crate) use touch::{
     Pair, TOUCH_REST_MS, TouchBorn, TouchPoint, card_press_progress, group_press_progress,
@@ -2298,13 +2287,9 @@ pub fn apply_events(
         if press && index > 0 {
             relayout(game, input);
         }
-        let queued = input.queue_held();
         let probe = input.latch_probe(game);
         apply_event(game, input, bindings, event);
         input.settle_latch(game, probe.as_ref());
-        if queued && !input.queue_held() {
-            input.queue_released();
-        }
     }
     let selection = &mut game.presentation.selection;
     if !selection.units.is_empty() || !selection.buildings.is_empty() {
@@ -2509,11 +2494,19 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                     // applies: an inspected ally or enemy takes no
                     // orders from the minimap either.
                     if !units.is_empty() && game.selection_commandable() {
-                        game.issue(Command::Advance {
-                            units,
-                            goal: tile,
-                            queue,
-                        });
+                        if orders::all_scout(game, &units) {
+                            game.issue(Command::Scout {
+                                units,
+                                goal: tile,
+                                queue,
+                            });
+                        } else {
+                            game.issue(Command::Advance {
+                                units,
+                                goal: tile,
+                                queue,
+                            });
+                        }
                         game.presentation
                             .ping_order(tile_center(tile), PingKind::Move, queue);
                     } else if units.is_empty() {
@@ -2678,10 +2671,10 @@ pub(super) fn world_order(
     }
 }
 
-/// A press on the ribbon row: QUEUE toggles, and the ribbon cancels its
-/// mode but keeps the selection. A patrol's ribbon is the exception: its
-/// Start and cross act, and its words do nothing, so a press meant for
-/// Start never throws the route away. It runs before every other target,
+/// A press on the ribbon row: QUEUE toggles, the ribbon's cross cancels its
+/// mode but keeps the selection, and its steppers and Start act. Its words
+/// do nothing, so a press meant for a button never throws the mode away,
+/// and it reaches nothing under them. It runs before every other target,
 /// for mouse and touch alike.
 pub(super) fn ribbon_row_press(
     game: &mut Game,
@@ -2718,19 +2711,14 @@ pub(super) fn ribbon_row_press(
                 .sounds_pending
                 .push((crate::game::SoundKind::Click, None));
         }
-    } else if hits(layout.patrol_cancel) {
-        input.patrol_route = None;
-        game.presentation
-            .sounds_pending
-            .push((crate::game::SoundKind::Click, None));
-    } else if input.patrol_route.is_some() && hits(layout.mode_ribbon) {
-        // The words of a patrol's ribbon only name the route.
-    } else if hits(layout.mode_ribbon) {
+    } else if hits(layout.ribbon_cancel) {
         if input.cancel_armed_mode() {
             game.presentation
                 .sounds_pending
                 .push((crate::game::SoundKind::Click, None));
         }
+    } else if hits(layout.mode_ribbon) {
+        // The ribbon's words only name the mode.
     } else {
         return false;
     }
@@ -2846,8 +2834,8 @@ fn armed_click(
             let anchor = anchor_under(&game.view(), kind, world, by.pointer());
             // The press plans the stroke's first stamp; dragging plans
             // more of the same kind, queued, and the release stages
-            // them. Whether the MODE survives the release is still
-            // Shift's call, decided at the release.
+            // them. Queue held at the press or the release keeps the
+            // mode armed past it.
             let queue = input.queue_held();
             let verdict = placement_verdict(&game.view(), kind, anchor, queue);
             if !matches!(
@@ -3418,9 +3406,10 @@ fn commit_stroke(
     !staged.is_empty()
 }
 
-/// Ends the stroke `by` lays, staging its plan, and lets queue decide
-/// whether placement stays armed, as letting go of it mid-stroke would
-/// have. Returns whether `by` was laying one.
+/// Ends the stroke `by` lays, staging its plan. A plain stroke, made with
+/// queue up both as it began and as it ended, ends placement once it
+/// stages; queue held at either end keeps placing. Returns whether `by`
+/// was laying one.
 fn finish_stroke(game: &mut Game, input: &mut InputState, by: Presser) -> bool {
     let Some(placement) = input.placing.as_mut() else {
         return false;
@@ -3429,9 +3418,9 @@ fn finish_stroke(game: &mut Game, input: &mut InputState, by: Presser) -> bool {
         return false;
     };
     let kind = placement.kind;
-    commit_stroke(game, input, kind, &held.plan, None);
-    if !input.queue_held() {
-        input.queue_released();
+    let staged = commit_stroke(game, input, kind, &held.plan, None);
+    if staged && !held.plan.queue && !input.queue_held() {
+        input.stop_placing();
     }
     true
 }

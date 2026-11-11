@@ -401,19 +401,6 @@ impl ViewerHands {
     }
 }
 
-/// The screen point a pointer event carries, if any.
-pub(crate) fn event_point(event: &RawEvent) -> Option<Vec2> {
-    match *event {
-        RawEvent::MouseMove { x, y }
-        | RawEvent::MouseDown { x, y, .. }
-        | RawEvent::MouseUp { x, y, .. }
-        | RawEvent::TouchDown { x, y, .. }
-        | RawEvent::TouchMove { x, y, .. }
-        | RawEvent::TouchUp { x, y, .. } => Some(vec2(x, y)),
-        _ => None,
-    }
-}
-
 fn jump(camera: &mut Camera, world: Vec2) {
     camera.center = world;
     camera.pan(Vec2::ZERO);

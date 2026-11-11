@@ -268,16 +268,5 @@ pub(super) fn hash(x: i32, y: i32, salt: u32) -> u32 {
     value
 }
 
-pub(super) fn draw_backdrop() {
-    // Boundary sight extends off-map, so the void must match opaque fog.
-    draw_rectangle(
-        0.0,
-        0.0,
-        screen_width(),
-        screen_height(),
-        super::FOG_UNEXPLORED,
-    );
-}
-
 #[cfg(test)]
 mod tests;

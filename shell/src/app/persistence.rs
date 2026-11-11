@@ -756,7 +756,10 @@ pub(super) fn frame(
         match departure(app.net.is_some(), flushing, waited) {
             Departure::Leave => super::screen_flow::leave_network(app),
             Departure::Wait => {}
-            Departure::Exit => std::process::exit(0),
+            Departure::Exit => {
+                app.settings_writer.flush();
+                std::process::exit(0)
+            }
         }
         return Ok(Screen::Busy(busy));
     }

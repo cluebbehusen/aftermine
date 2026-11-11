@@ -267,6 +267,8 @@ pub(super) struct ChartLayout {
     pub(super) body: Rect,
     /// Where the scale's unit starts, if it fits.
     pub(super) axis_label: Option<Vec2>,
+    /// The scale labels' size, which the plot's gutter fits.
+    pub(super) label_size: f32,
 }
 
 /// Lays out the panel. `strip_height` is a fingertip wherever fingers can
@@ -305,6 +307,7 @@ pub(super) fn chart_layout(panel: Rect, strip_height: f32, label_size: f32, s: f
         plot,
         body,
         axis_label,
+        label_size,
     }
 }
 
@@ -408,15 +411,15 @@ impl Chart {
         (None, rest)
     }
 
-    /// Draws the panel.
+    /// Draws the panel, lighting the tab under `mouse`.
     pub(super) fn draw(
         &self,
         game: &Game,
         sprites: &crate::assets::Sprites,
         report: &MatchStats,
         layout: &ChartLayout,
+        mouse: Vec2,
         s: f32,
-        label_size: f32,
     ) {
         let panel = layout.panel;
         draw_rectangle(panel.x, panel.y, panel.w, panel.h, theme::SURFACE_PANEL);
@@ -427,7 +430,6 @@ impl Chart {
         );
         let labels = ChartView::ALL.map(ChartView::label);
         let keys = strip_keys();
-        let mouse: Vec2 = mouse_position().into();
         crate::tabs::draw_in(
             sprites,
             &layout.strip,
@@ -449,7 +451,7 @@ impl Chart {
                     theme::TEXT_SECONDARY,
                 );
             }
-            draw_plot(game, report, self.view(), layout.plot, s, label_size);
+            draw_plot(game, report, self.view(), layout.plot, s, layout.label_size);
             if let Some(pointer) = self.pointer {
                 draw_readout(game, report, self.view(), layout.plot, pointer, s);
             }

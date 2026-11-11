@@ -119,6 +119,9 @@ pub enum Action {
     SelectArmy,
     /// Select the army units inside the camera's view.
     SelectArmyInView,
+    /// Press the selection panel's All button: select every own one of a
+    /// one-kind selection's kind.
+    SelectAllOfKind,
     JumpToLastAlert,
     Salvage,
     Run,
@@ -187,6 +190,7 @@ impl Action {
             Self::CycleIdleWorker => "Next idle Harvester".into(),
             Self::SelectArmy => "Select army".into(),
             Self::SelectArmyInView => "Select army in view".into(),
+            Self::SelectAllOfKind => "Select all of kind".into(),
             Self::JumpToLastAlert => "Jump to last alert".into(),
             Self::Salvage => "Salvage structure".into(),
             Self::Run => "Run".into(),
@@ -238,6 +242,7 @@ impl Action {
             // A selected machine's drone bay takes them too.
             Self::OrderRound | Self::CancelRound | Self::ToggleAutofill => 4 | 8 | UNITS,
             Self::StopOrScrap => UNITS | 4,
+            Self::SelectAllOfKind => UNITS | 4 | 8,
             Self::Patrol | Self::Accompany | Self::Retire => UNITS,
             Self::Salvage | Self::Run | Self::Hunt | Self::Scout | Self::RepairUnit => {
                 UNITS | CATEGORIES
@@ -327,12 +332,34 @@ pub struct Binding {
     pub chord: Chord,
     pub action: Action,
 }
+/// The default keys a binding map started from, which also fill in any
+/// action the map never mentions.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Layout {
+    #[default]
+    Classic,
+    LeftHanded,
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BindingMap {
     bindings: Vec<Binding>,
     secondary: Vec<Binding>,
+    /// Actions the player cleared every key of, so their defaults never
+    /// fill back in.
+    #[serde(default)]
+    unbound: Vec<Action>,
+    #[serde(default)]
+    layout: Layout,
 }
 impl BindingMap {
+    fn empty(layout: Layout) -> Self {
+        Self {
+            bindings: Vec::new(),
+            secondary: Vec::new(),
+            unbound: Vec::new(),
+            layout,
+        }
+    }
     pub fn classic() -> Self {
         use Action::{
             Accompany, AssignGroup, Back, Build, BuildCategory, ClearRally, Confirm,
@@ -340,15 +367,12 @@ impl BindingMap {
             MenuEnd, MenuHome, MenuLeft, MenuPageDown, MenuPageUp, MenuRight, MenuUp, NextTab,
             OrderRound, PanDown, PanLeft, PanRight, PanUp, Patrol, PrevTab, RecallBookmark,
             RepairUnit, ReplayBack, ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed,
-            ReplayStart, ReplayStats, ReturnCargo, Run, Salvage, Scout, SelectArmy,
-            SelectArmyInView, SetBookmark, SetRally, Slot, StopOrScrap, ToggleAutofill,
+            ReplayStart, ReplayStats, ReturnCargo, Run, Salvage, Scout, SelectAllOfKind,
+            SelectArmy, SelectArmyInView, SetBookmark, SetRally, Slot, StopOrScrap, ToggleAutofill,
             ToggleBuildPalette, ToggleIdleWeld, ToggleOverlay, TogglePause, TrainSlot, Unload,
             Upgrade,
         };
-        let mut map = Self {
-            bindings: Vec::new(),
-            secondary: Vec::new(),
-        };
+        let mut map = Self::empty(Layout::Classic);
         let defaults = [
             (PanUp, Key::W),
             (PanLeft, Key::A),
@@ -375,6 +399,7 @@ impl BindingMap {
             (Unload, Key::U),
             (ReturnCargo, Key::U),
             (Accompany, Key::E),
+            (SelectAllOfKind, Key::I),
             (Launch, Key::M),
             (OrderRound, Key::O),
             (ReplayPause, Key::Space),
@@ -474,6 +499,26 @@ impl BindingMap {
             rows.retain(|b| b.action.offered_in(packaged));
         }
     }
+    /// Gives each action this map neither binds nor records as cleared its
+    /// layout's chords, except a chord Controls would refuse because
+    /// another action here already holds it. A map saved before an action
+    /// existed never mentions it. Rows already here never change.
+    pub fn bind_unmentioned_defaults(&mut self) {
+        let defaults = match self.layout {
+            Layout::Classic => Self::classic(),
+            Layout::LeftHanded => Self::left_handed(),
+        };
+        let mentioned: Vec<Action> = self
+            .rows()
+            .map(|b| b.action)
+            .chain(self.unbound.iter().copied())
+            .collect();
+        for (slot, rows) in [(0, &defaults.bindings), (1, &defaults.secondary)] {
+            for b in rows.iter().filter(|b| !mentioned.contains(&b.action)) {
+                self.rebind_slot(b.action, slot, b.chord);
+            }
+        }
+    }
     pub fn left_handed() -> Self {
         let mut map = Self::classic();
         // A permutation preserves all contextual conflicts and both binding slots.
@@ -513,6 +558,7 @@ impl BindingMap {
                 other => other,
             };
         }
+        map.layout = Layout::LeftHanded;
         map
     }
     fn rows(&self) -> impl Iterator<Item = &Binding> {
@@ -662,6 +708,9 @@ impl BindingMap {
             &mut self.secondary
         };
         rows.retain(|b| b.action != action);
+        if self.chord_for(action).is_none() && !self.unbound.contains(&action) {
+            self.unbound.push(action);
+        }
     }
     pub fn conflict(&self, action: Action, slot: usize, chord: Chord) -> Option<Action> {
         self.rows()
@@ -688,13 +737,19 @@ impl BindingMap {
             Some(b) => b.chord = chord,
             None => rows.push(Binding { chord, action }),
         }
+        self.unbound.retain(|a| *a != action);
         true
     }
     pub fn valid(&self) -> bool {
-        let mut seen = Self {
-            bindings: Vec::new(),
-            secondary: Vec::new(),
-        };
+        let cleared = self.unbound.iter().enumerate().all(|(index, action)| {
+            action.sane()
+                && self.chord_for(*action).is_none()
+                && !self.unbound[..index].contains(action)
+        });
+        if !cleared {
+            return false;
+        }
+        let mut seen = Self::empty(self.layout);
         for (slot, rows) in [(0, &self.bindings), (1, &self.secondary)] {
             for b in rows {
                 if !b.action.sane()

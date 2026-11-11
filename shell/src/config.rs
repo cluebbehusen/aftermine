@@ -420,6 +420,7 @@ impl Config {
             self.bindings = BindingMap::classic();
         }
         self.bindings.keep_offered();
+        self.bindings.bind_unmentioned_defaults();
         self.window = Self::sane_window(self.window);
         self.ui_scale = Self::sane_ui_scale(self.ui_scale);
         self.touch = self.touch.clamped();
@@ -535,6 +536,7 @@ fn in_course_order(done: &[crate::tutorial::Lesson]) -> Vec<crate::tutorial::Les
 }
 
 pub mod sync;
+pub(crate) mod writer;
 
 #[cfg(test)]
 mod tests;
