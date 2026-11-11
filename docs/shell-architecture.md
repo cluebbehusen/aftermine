@@ -254,7 +254,11 @@ cancels. A purchase staged while paused therefore cannot be bought twice. The
 orders dock and waypoint chain show programs with staged commands applied,
 through a cached `inspect_command_phase` that reruns only when the staged batch
 changes. Grouped building controls derive from capabilities rather than a list
-of building kinds, and spend available scrap in building id order.
+of building kinds. Grouped upgrades spend available scrap in building id order.
+Grouped training queues one unit at each selected producer; when scrap cannot
+pay for them all, the producers with the least training time left in their
+queues get the units first, then those with fewer units queued, then the lowest
+ids.
 
 Ground orders name whole tiles clamped onto the map. Entity lookups keep the
 unclamped tile, so a click in the camera's edge slack never binds to whatever
