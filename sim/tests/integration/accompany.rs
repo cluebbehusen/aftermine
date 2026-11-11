@@ -186,6 +186,47 @@ fn an_escort_fights_a_threat_near_the_escorted_unit_then_returns() {
 }
 
 #[test]
+fn an_escort_on_a_structure_is_not_held_by_a_unit_beyond_its_reach_and_the_break_radius() {
+    // The escort shells a structure beside its unit while an idle hostile
+    // stands inside its aggro range but out of reach, and farther from the
+    // escorted unit than the break radius allows.
+    let mut scenario = open_arena(
+        40,
+        20,
+        vec![
+            unit(0, UnitKind::Harvester, 10, 10),
+            unit(0, UnitKind::Sentinel, 20, 10),
+            unit(1, UnitKind::Harvester, 21, 12),
+        ],
+    );
+    scenario.buildings.push(common::building(
+        1,
+        aftermine_sim::BuildingKind::Barricade,
+        16,
+        10,
+    ));
+    let mut state = scenario.build().unwrap();
+    let [lead, guard, _idler] = ids(&state)[..] else {
+        unreachable!()
+    };
+    let wall = state
+        .buildings()
+        .iter()
+        .find(|b| b.player.0 == 1 && b.kind == aftermine_sim::BuildingKind::Barricade)
+        .unwrap()
+        .id;
+    let full = state.building(wall).unwrap().hp;
+    state.tick(&[cmd(0, accompany(vec![guard], lead, false))]);
+    let events = run(&mut state, 400);
+    let shots = events
+        .iter()
+        .filter(|e| matches!(e, Event::AttackHit { attacker, .. } if *attacker == guard))
+        .count();
+    assert!(shots > 0, "the escort fires");
+    assert!(state.building(wall).is_none_or(|b| b.hp < full));
+}
+
+#[test]
 fn an_escort_breaks_off_a_victim_that_strays_past_the_break_radius() {
     // The scout keeps the runner in sight the whole way, so only the break
     // radius can end the chase.
@@ -697,6 +738,34 @@ fn escorts_follow_the_escorted_unit_aboard_a_transport() {
     run(&mut state, 150);
     assert!(escorting(&state, escort, lead));
     assert!(apart(&state, escort, lead) <= 2, "the escort kept up");
+}
+
+#[test]
+fn a_skyhook_escort_keeps_a_motion_the_validator_accepts() {
+    // A Skyhook's escort steps can overshoot its speed on one axis by a raw
+    // unit or two, which a save would then refuse.
+    let mut state = build(
+        vec![
+            unit(0, UnitKind::Sentinel, 6, 10),
+            unit(0, UnitKind::Skyhook, 8, 12),
+        ],
+        0,
+    );
+    let [lead, sling] = ids(&state)[..] else {
+        unreachable!()
+    };
+    state.tick(&[cmd(0, accompany(vec![sling], lead, false))]);
+    let mut refused = 0;
+    for leg in 0..24 {
+        let (x, y) = [(34, 4), (5, 16), (34, 16), (5, 4)][leg % 4];
+        state.tick(&[cmd(0, run_to(vec![lead], x, y))]);
+        for _ in 0..250 {
+            state.tick(&[]);
+            refused += usize::from(state.validate_invariants().is_err());
+        }
+    }
+    assert!(escorting(&state, sling, lead));
+    assert_eq!(refused, 0, "ticks whose state a save would refuse");
 }
 
 #[test]

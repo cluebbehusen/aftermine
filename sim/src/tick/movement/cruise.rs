@@ -56,6 +56,12 @@ pub(super) fn advance(unit: &mut Unit, map: &Map, cap: Option<Fx>) {
         let speed = top.min(distance * Fx::from_num(rate) / 64);
         let next = if aligned && distance <= top {
             center
+        } else if aligned {
+            // Aligned means within firing tolerance of the waypoint's
+            // compass bearing, so the nose can stand a few steps off the
+            // true line, and a step along it can clip a Peak corner the line
+            // clears: step along the line itself.
+            unit.pos.move_toward(center, speed)
         } else {
             unit.pos + dir(unit.heading) * speed
         };
