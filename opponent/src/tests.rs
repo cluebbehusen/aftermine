@@ -568,19 +568,21 @@ fn mirror(state: &State, commands: Vec<PlayerCommand>) -> Vec<PlayerCommand> {
     };
     let (width, height) = (state.map().width(), state.map().height());
     let rotate = |tile: TilePos| TilePos::new(width - 1 - tile.x, height - 1 - tile.y);
-    // A building's counterpart: the east building of its kind at its rank.
+    // A building's counterpart: the other seat's building of its kind at its
+    // rank.
     let counterpart = |building: BuildingId| {
-        let kind = state.building(building).unwrap().kind;
+        let building = state.building(building).unwrap();
         let of = |player: u8| -> Vec<BuildingId> {
             state
                 .buildings()
                 .iter()
-                .filter(|b| b.player == PlayerId(player) && b.kind == kind)
+                .filter(|b| b.player == PlayerId(player) && b.kind == building.kind)
                 .map(|b| b.id)
                 .collect()
         };
-        let index = of(0).iter().position(|id| *id == building).unwrap();
-        of(1)[index]
+        let seat = building.player.0;
+        let index = of(seat).iter().position(|id| *id == building.id).unwrap();
+        of(1 - seat)[index]
     };
     commands
         .into_iter()
@@ -641,6 +643,15 @@ fn mirror(state: &State, commands: Vec<PlayerCommand>) -> Vec<PlayerCommand> {
                     target: AttackTarget::Unit(
                         west_units[east_units.iter().position(|id| *id == enemy).unwrap()],
                     ),
+                    queue,
+                },
+                Command::Attack {
+                    units: sent,
+                    target: AttackTarget::Building(building),
+                    queue,
+                } => Command::Attack {
+                    units: units(sent),
+                    target: AttackTarget::Building(counterpart(building)),
                     queue,
                 },
                 Command::Load {
