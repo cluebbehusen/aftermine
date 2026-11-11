@@ -183,3 +183,70 @@ fn the_last_section_is_structures() {
             .any(|line| matches!(line, crate::menu::Line::Header(title) if title == "STRUCTURES"))
     );
 }
+
+/// A stand-in for the body font: wider than its average glyph, so a page
+/// that fits here fits the real face.
+fn measure(text: &str, size: f32) -> f32 {
+    text.chars().count() as f32 * size * 0.55
+}
+
+/// Every page set for `viewport` at the user scale `user`, with the room
+/// it had.
+fn set_pages(viewport: Vec2, user: f32) -> Vec<(Entry, PageBody, f32)> {
+    crate::render::set_viewport(viewport.x, viewport.y);
+    crate::render::set_user_scale(user);
+    let s = crate::render::ui_scale();
+    let frame = PageFrame::at(s);
+    let pages = pages(&CodexScreen::open())
+        .into_iter()
+        .map(|entry| {
+            let body = page_body(entry, frame.body_width(), frame.body_room(), s, &measure);
+            (entry, body, frame.body_room())
+        })
+        .collect();
+    crate::render::set_viewport(1280.0, 800.0);
+    crate::render::set_user_scale(1.0);
+    pages
+}
+
+#[test]
+fn every_page_shows_all_its_lines_at_the_largest_scale_and_the_floor_size() {
+    for (viewport, user) in [(vec2(1280.0, 800.0), 1.5), (vec2(1133.0, 744.0), 1.0)] {
+        for (entry, body, room) in set_pages(viewport, user) {
+            assert!(
+                body.lines.len() as f32 * body.line_h <= room,
+                "{entry:?} at {viewport} and {user}x runs past its box"
+            );
+            assert!(
+                body.lines.iter().all(|(line, _)| !line.ends_with("...")),
+                "{entry:?} at {viewport} and {user}x lost lines"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_long_page_steps_down_the_type_scale_rather_than_dropping_lines() {
+    let turret = set_pages(vec2(1280.0, 800.0), 1.5)
+        .into_iter()
+        .find(|(entry, _, _)| *entry == Entry::Building(BuildingKind::Turret))
+        .expect("the Turret has a page");
+    assert!(
+        turret.1.size < crate::theme::Type::Body.at(1.5),
+        "the Turret's page is too long for body type at 150%"
+    );
+}
+
+#[test]
+fn a_page_too_long_for_the_smallest_type_says_it_goes_on() {
+    let body = page_body(
+        Entry::Building(BuildingKind::Turret),
+        300.0,
+        60.0,
+        1.0,
+        &measure,
+    );
+    assert!(body.lines.len() as f32 * body.line_h <= 60.0);
+    let (last, _) = body.lines.last().expect("a line fits");
+    assert!(last.ends_with("..."), "{last}");
+}
