@@ -180,6 +180,18 @@ fn route_target(
             }
             path.next += 1;
         }
+        // Routes run between tile centres. A body shoved into the contact
+        // band off its tile's centre, near a corner of the surface, can
+        // find its straight leg grazing that corner, and a route planned
+        // again from the same tile asks for the same leg. It steps back to
+        // its tile's centre first.
+        if terrain.open(here)
+            && terrain.at_contact(unit.pos, contact_radius)
+            && !terrain.contact_clear(unit.pos, point, contact_radius)
+            && terrain.contact_clear(unit.pos, here.center(), contact_radius)
+        {
+            point = here.center();
+        }
         let final_point = path.waypoints.len() == target + 1 && point == path_point(path, target);
         return Some((point, target, final_point));
     }

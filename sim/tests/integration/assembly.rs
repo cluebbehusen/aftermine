@@ -1795,3 +1795,43 @@ fn a_maw_passes_over_a_structure_it_cannot_reach() {
         );
     }
 }
+
+/// Where West raises a cradle for a crew that comes at it from the west.
+const WEST_CRADLE: TilePos = TilePos::new(16, 10);
+
+fn progress(state: &State) -> u32 {
+    cradle(state).unwrap().construction_progress().unwrap_or(0)
+}
+
+#[test]
+fn a_worker_shoved_against_a_cradle_corner_steps_back_to_reach_its_pad() {
+    // Off its tile's centre and against the corner, the straight way to
+    // the pad would scrape it; a route planned again from the same tile
+    // asks for the same way.
+    let corner = WEST_CRADLE.offset(-1, -1);
+    let mut doc = serde_json::to_value(yard(
+        vec![unit(0, UnitKind::Excavator, corner.x, corner.y)],
+        vec![],
+    ))
+    .unwrap();
+    let shoved = Vec2Fx::new(
+        Fx::from_num(corner.x) + Fx::lit("0.61"),
+        Fx::from_num(corner.y) + Fx::lit("0.92"),
+    );
+    doc["units"][0]["pos"] = serde_json::to_value(shoved).unwrap();
+    let mut state: State = serde_json::from_value(doc).unwrap();
+    let worker = ids(&state, 0, UnitKind::Excavator)[0];
+    assert_eq!(state.unit(worker).unwrap().tile(), corner);
+    let report = state.tick(&[raise(&[worker], WEST_CRADLE, false)]);
+    assert_eq!(rejected(&report), None);
+    run_until(&mut state, 60, |state, _| {
+        let unit = state.unit(worker).unwrap();
+        unit.work_stopped() && unit.tile() == WEST_CRADLE.offset(0, -1)
+    });
+    let before = progress(&state);
+    state.tick(&[]);
+    assert_eq!(
+        progress(&state) - before,
+        UnitKind::Excavator.stats().build_rate
+    );
+}

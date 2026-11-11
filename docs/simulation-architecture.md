@@ -274,10 +274,12 @@ Workers and contact weapons route to perimeter tiles, then make a short,
 collision-checked approach to the building's contact outline. Each kind has an
 outline per tier and per construction stage, traced from its art, and a shell
 test keeps every outline close to its art. Outlines never change tile
-passability. Work, melee and ranged attacks on buildings share one crowd-aware
-position chooser. When two claims overlap, the unit nearer its own position
-keeps its claim whatever its seat, so allied crowds cannot all yield to each
-other; an exact tie goes to the earlier unit of one seat.
+passability. Routes run between tile centres, so a body pushed off its tile's
+centre whose straight leg would scrape an outline returns to that centre first.
+Work, melee and ranged attacks on buildings share one crowd-aware position
+chooser. When two claims overlap, the unit nearer its own position keeps its
+claim whatever its seat, so allied crowds cannot all yield to each other; an
+exact tie goes to the earlier unit of one seat.
 
 Ground motor speed is serialized and validated. A pathless ground unit can still
 be braking, so group arrival and anchored collision priority require a motor
