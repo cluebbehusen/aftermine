@@ -2967,15 +2967,11 @@ impl State {
                 return Err(E::GhostHpOutOfRange(seat));
             }
         }
-        // The real sort key carries the owner; two seats can hold footprints
-        // a memory records under the same corner. Equal keys are reachable:
-        // a buried charge's memory can outlive its unseen anchor while its
-        // owner builds over the spot.
-        let ghost_key = |g: &crate::vision::GhostBuilding| (g.anchor.y, g.anchor.x, g.owner);
+        // No two memories share a key, so the order is strict.
         if !v
             .ghosts()
             .windows(2)
-            .all(|a| ghost_key(&a[0]) <= ghost_key(&a[1]))
+            .all(|a| a[0].sort_key() < a[1].sort_key())
         {
             return Err(E::UnsortedGhosts(seat));
         }

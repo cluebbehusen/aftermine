@@ -2219,8 +2219,11 @@ pub(crate) mod pad_ring;
 mod paint;
 pub(crate) use paint::{painting, preview as paint_preview};
 pub(crate) use select::Kept;
+#[cfg(test)]
+mod funnel_tests;
 pub(crate) mod reticle;
 mod select;
+
 #[cfg(test)]
 mod tests;
 mod touch;

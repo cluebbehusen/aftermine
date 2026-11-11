@@ -2480,7 +2480,7 @@ fn every_checklist_row_refuses_its_forgery() {
 #[test]
 fn the_ghost_sort_key_carries_the_owner() {
     // Two hostile seats can leave memories under the same corner, which
-    // is exactly why the canonical key is (y, x, owner) and not (y, x).
+    // is why the canonical key (y, x, owner, kind) carries the owner.
     let mut scenario = arena();
     scenario.map[1] = "#1...............3.#".into();
     let mut third = scenario.players[1].clone();
@@ -2493,6 +2493,37 @@ fn the_ghost_sort_key_carries_the_owner() {
     assert!(
         refusal(base).contains("out of canonical order"),
         "the owner is part of the key, so reversing it breaks the order"
+    );
+}
+
+#[test]
+fn the_ghost_sort_key_carries_the_kind_and_admits_no_tie() {
+    // One seat can leave two memories under one corner too: a buried
+    // charge's and the wider structure built from that corner.
+    let mut base = doc(&arena().build().unwrap());
+    let memory = |kind: BuildingKind| {
+        json!({
+            "kind": kind,
+            "owner": 1,
+            "anchor": {"x": 6, "y": 6},
+            "hp": kind.base_stats().max_hp,
+        })
+    };
+    let (fabricator, charge) = (
+        memory(BuildingKind::Fabricator),
+        memory(BuildingKind::ScuttleCharge),
+    );
+    base["vision"][0]["ghosts"] = json!([fabricator, charge]);
+    serde_json::from_value::<State>(base.clone()).expect("kind-ordered memories are canonical");
+    base["vision"][0]["ghosts"] = json!([charge, fabricator]);
+    assert!(
+        refusal(base.clone()).contains("out of canonical order"),
+        "the kind is part of the key, so reversing it breaks the order"
+    );
+    base["vision"][0]["ghosts"] = json!([charge, charge]);
+    assert!(
+        refusal(base).contains("out of canonical order"),
+        "a repeated memory has no place in a total order"
     );
 }
 
