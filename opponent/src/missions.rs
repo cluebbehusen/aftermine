@@ -14,7 +14,7 @@ use crate::frame::{HomeFrame, doubled, ring};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::Memory;
 use crate::profile::PersonalityTraits;
-use aftermine_sim::observation::{ObservationData, UnitObs};
+use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use aftermine_sim::stats::Domain;
 use aftermine_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId, UnitKind};
@@ -44,6 +44,7 @@ pub(crate) use attack::{building_value, margin, minimum};
 pub(crate) use defense::Shortfall;
 pub(crate) use lift::{carrier, payload};
 pub(crate) use repair::{Meal, feeds, treating};
+use scouting::seen_lately;
 pub(crate) use scouting::{look, points};
 pub(crate) use settlement::Settlement;
 pub(crate) use strike::strike_need;
@@ -1157,13 +1158,17 @@ fn objectives(observation: &ObservationData, map: &MapModel) -> Vec<Objective> {
 /// Whether `target` may still stand: it is known, or its ground is out of
 /// sight.
 fn standing(observation: &ObservationData, target: Objective) -> bool {
-    let known = observation.enemy_buildings.iter().any(|building| {
-        (building.player, building.kind, building.anchor)
-            == (target.owner, target.building, target.anchor)
-    });
     let seen = crate::frame::tiles_of(target.anchor, target.building.size())
         .any(|tile| observation.visible(tile));
-    known || !seen
+    known(observation, target).is_some() || !seen
+}
+
+/// The enemy building the seat knows of as `target`.
+fn known(observation: &ObservationData, target: Objective) -> Option<&BuildingObs> {
+    observation.enemy_buildings.iter().find(|building| {
+        (building.player, building.kind, building.anchor)
+            == (target.owner, target.building, target.anchor)
+    })
 }
 
 fn run(units: Vec<UnitId>, goal: TilePos) -> Command {

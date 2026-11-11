@@ -11,7 +11,8 @@ use super::defense::{artillery, battery, lobs};
 use super::raid::{aim, blast};
 use super::{
     AttackPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, against_buildings,
-    approach, breacher, distant_worth, hits, hunt, insert, mine, run, standing, value,
+    approach, breacher, distant_worth, hits, hunt, insert, known, mine, run, seen_lately, standing,
+    value,
 };
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
@@ -460,8 +461,10 @@ impl Missions {
 
         let current = plan.target(owner, building, anchor);
         let target = if regrouping {
-            let current =
-                current.filter(|_| !plan.memory.abandoned(building, anchor, observation.tick));
+            let current = current.filter(|current| {
+                plan.present(current.objective())
+                    && !plan.memory.abandoned(building, anchor, observation.tick)
+            });
             match (current, plan.best(None)) {
                 (Some(current), Some(best)) if best.score * 4 < current.score * 5 => Some(current),
                 // A seat that fell back holds its target while the best
@@ -745,25 +748,20 @@ fn engage_on(
     // a line in front of a base, goes on to the target it still knows of
     // instead of counting the attack as failed. The fight's time still
     // bounds it.
-    if all_idle && standing && age < ENGAGE_TICKS {
-        let objective = target.objective();
-        let building = observation.enemy_buildings.iter().find(|building| {
-            (building.player, building.kind, building.anchor)
-                == (objective.owner, objective.building, objective.anchor)
-        });
-        if let Some(building) = building {
-            let shooters: Vec<UnitId> = members
-                .iter()
-                .filter(|unit| {
-                    unit.kind != UnitKind::Sapper
-                        && !breacher(unit.kind)
-                        && hits(unit, Domain::Ground)
-                })
-                .map(|unit| unit.id)
-                .collect();
-            if !shooters.is_empty() && ledger.order(blast(shooters, aim(building))) {
-                return None;
-            }
+    if all_idle
+        && standing
+        && age < ENGAGE_TICKS
+        && let Some(building) = known(observation, target.objective())
+    {
+        let shooters: Vec<UnitId> = members
+            .iter()
+            .filter(|unit| {
+                unit.kind != UnitKind::Sapper && !breacher(unit.kind) && hits(unit, Domain::Ground)
+            })
+            .map(|unit| unit.id)
+            .collect();
+        if !shooters.is_empty() && ledger.order(blast(shooters, aim(building))) {
+            return None;
         }
     }
     let next = plan.best(Some(target)).filter(|next| {
@@ -1232,17 +1230,12 @@ impl<'a> Plan<'a> {
                     building.id,
                 )
             })
-            .or_else(|| {
-                self.observation.enemy_buildings.iter().find(|building| {
-                    (building.player, building.kind, building.anchor)
-                        == (target.owner, target.building, target.anchor)
-                })
-            })
+            .or_else(|| known(self.observation, target.objective()))
     }
 
     /// The best target other than `skip`, or `None`. Known enemy buildings
-    /// come first; with none, hostile starts are presumed held. With several
-    /// enemies, the rival's targets come first.
+    /// come first; with none, hostile starts are presumed held unless seen
+    /// empty lately. With several enemies, the rival's targets come first.
     fn best(&self, skip: Option<Target>) -> Option<Target> {
         let now = self.observation.tick;
         let differs = |target: &Target| {
@@ -1288,6 +1281,7 @@ impl<'a> Plan<'a> {
                 let anchor = self.map.start(owner)?;
                 self.target(owner, BuildingKind::Foundry, anchor)
             })
+            .filter(|target| self.presumed(target.objective()))
             .collect();
         let rival = |targets: &[Target]| -> Vec<Target> {
             targets
@@ -1322,6 +1316,37 @@ impl<'a> Plan<'a> {
             approach,
             score,
         })
+    }
+
+    /// Whether `objective` is still there to go after: a known enemy
+    /// building, or a hostile start presumed held. A site out of sight
+    /// reads as standing whether or not anything stands there.
+    fn present(&self, objective: Objective) -> bool {
+        if self.start(objective) {
+            self.presumed(objective)
+        } else {
+            known(self.observation, objective).is_some()
+        }
+    }
+
+    /// Whether the hostile start `objective` is presumed held: the seat knows
+    /// the Foundry there, or has not seen the start lately. One seen empty
+    /// stays cleared out of sight until it is worth another look.
+    fn presumed(&self, objective: Objective) -> bool {
+        known(self.observation, objective).is_some()
+            || !seen_lately(
+                self.map,
+                self.memory,
+                self.observation.me,
+                objective.owner,
+                self.observation.tick,
+            )
+    }
+
+    /// Whether `objective` is the Foundry presumed at its owner's start.
+    fn start(&self, objective: Objective) -> bool {
+        objective.building == BuildingKind::Foundry
+            && self.map.start(objective.owner) == Some(objective.anchor)
     }
 
     /// Army value the attack on `target` needs: the known army it would

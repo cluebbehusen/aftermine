@@ -57,6 +57,27 @@ pub(crate) fn points(map: &MapModel, me: PlayerId) -> Vec<Point> {
     starts.chain(sites).collect()
 }
 
+/// Whether the seat saw `owner`'s start lately enough that its scouting
+/// point is not yet worth another look.
+pub(crate) fn seen_lately(
+    map: &MapModel,
+    memory: &Memory,
+    me: PlayerId,
+    owner: PlayerId,
+    now: u64,
+) -> bool {
+    // Hostile starts lead `points` in this order.
+    let Some(point) = map
+        .hostiles(me)
+        .filter(|hostile| map.start(*hostile).is_some())
+        .position(|hostile| hostile == owner)
+    else {
+        return false;
+    };
+    let seen = memory.seen(point);
+    seen > 0 && now - seen < STALE_TICKS
+}
+
 impl Missions {
     /// Keeps a scout looking at each stale place, no two at one place.
     /// Returns how many stale places no scout holds that the scout

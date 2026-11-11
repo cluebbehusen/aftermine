@@ -530,6 +530,18 @@ fn wounded(state: &State, unit: UnitId, hp: u32) -> State {
     serde_json::from_value(value).unwrap()
 }
 
+/// `state` with `building` at `hp`.
+fn damaged(state: &State, building: BuildingId, hp: u32) -> State {
+    let mut value = serde_json::to_value(state).unwrap();
+    let buildings = value["buildings"].as_array_mut().unwrap();
+    let entry = buildings
+        .iter_mut()
+        .find(|entry| entry["id"] == building.0)
+        .unwrap();
+    entry["hp"] = hp.into();
+    serde_json::from_value(value).unwrap()
+}
+
 /// The east seat's counterpart of west `commands` on a half-turn-symmetric
 /// staging: units by their rank among the seat's units, buildings by rank
 /// among its buildings of the same kind, and tiles rotated.

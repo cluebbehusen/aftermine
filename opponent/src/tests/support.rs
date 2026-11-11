@@ -7,18 +7,6 @@ use crate::memory::Memory;
 use aftermine_sim::Target;
 use aftermine_sim::observation::ObservationData;
 
-/// `state` with `building` at `hp`.
-fn damaged(state: &State, building: BuildingId, hp: u32) -> State {
-    let mut value = serde_json::to_value(state).unwrap();
-    let buildings = value["buildings"].as_array_mut().unwrap();
-    let entry = buildings
-        .iter_mut()
-        .find(|entry| entry["id"] == building.0)
-        .unwrap();
-    entry["hp"] = hp.into();
-    serde_json::from_value(value).unwrap()
-}
-
 /// `state` with each of `units` at `hp`.
 fn all_wounded(state: &State, units: &[UnitId], hp: u32) -> State {
     units

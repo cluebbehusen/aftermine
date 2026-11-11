@@ -1015,6 +1015,145 @@ fn a_target_out_of_reach_gives_way_to_one_the_army_can_beat() {
 }
 
 #[test]
+fn a_regrouping_attack_whose_target_fell_goes_after_another_it_knows() {
+    // The Fabricator the attack went after is gone; another, about as far
+    // from home, stands in the Kestrel's sight.
+    let open = TilePos::new(26, 17);
+    let scenario = targets(&[(BuildingKind::Fabricator, open.x, open.y)], &[]);
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 12, &[]);
+    let mut members: Vec<UnitId> = WEST.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    members.sort_unstable();
+    let missions = serde_json::json!({
+        "next": 1,
+        "list": [{
+            "id": 0,
+            "task": {
+                "task": "attack",
+                "target": {"owner": 1, "building": "fabricator", "anchor": {"x": 24, "y": 2}},
+                "phase": "recover",
+            },
+            "since": 0,
+            "units": members,
+            "goal": {"x": 9, "y": 11},
+        }],
+    });
+    let mut opponent = restaged(&scenario, &state, missions);
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let mission = attack(&trace.unwrap().missions).expect("the attack goes on");
+    assert_eq!(
+        mission.kind,
+        MissionKind::Attack {
+            owner: PlayerId(1),
+            building: BuildingKind::Fabricator,
+            anchor: open,
+        }
+    );
+    assert_eq!(mission.phase, Phase::Travel);
+    assert!(
+        hunts(&commands).contains(&(members, mission.goal)),
+        "the army sets out for it: {commands:?}"
+    );
+}
+
+/// The field with West's garrison and army at home, two West Sentinels
+/// beside East's start Foundry, worn to its last point of health, and East's
+/// other Foundry out of West's sight; with the start Foundry and the two
+/// Sentinels.
+fn worn_start() -> (Scenario, State, BuildingId, Vec<UnitId>) {
+    let mut scenario = armed(8, &[]);
+    for y in [11, 12] {
+        scenario.units.push(unit(0, UnitKind::Sentinel, 41, y));
+    }
+    scenario
+        .buildings
+        .push(building(1, BuildingKind::Foundry, 30, 20));
+    let state = scenario.build().unwrap();
+    let start = state
+        .buildings()
+        .iter()
+        .find(|building| building.anchor == TilePos::new(43, 11))
+        .unwrap()
+        .id;
+    let state = damaged(&state, start, 1);
+    let killers = vec![at(&state, 41, 11), at(&state, 41, 12)];
+    (scenario, state, start, killers)
+}
+
+#[test]
+fn no_attack_sets_out_for_a_start_seen_cleared() {
+    let (scenario, mut state, start, killers) = worn_start();
+    let raze = PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Attack {
+            units: killers,
+            target: AttackTarget::Building(start),
+            queue: false,
+        },
+    };
+    advance_to(&mut state, 24, &[raze]);
+    assert_eq!(
+        foundries(&state, PlayerId(1)).len(),
+        1,
+        "premise: East's start Foundry fell"
+    );
+    let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
+    assert_eq!(attack(&trace.unwrap().missions), None, "{commands:?}");
+}
+
+#[test]
+fn an_attack_that_razes_a_start_does_not_go_back_to_it() {
+    let (scenario, mut state, _, killers) = worn_start();
+    advance_to(&mut state, 12, &[]);
+    let missions = serde_json::json!({
+        "next": 1,
+        "list": [{
+            "id": 0,
+            "task": {
+                "task": "attack",
+                "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                "phase": {"engage": {"focus": null}},
+            },
+            "since": state.current_tick(),
+            "units": killers,
+            "goal": {"x": 42, "y": 11},
+        }],
+    });
+    let mut opponent = restaged(&scenario, &state, missions);
+    let until = state.current_tick() + 1_200;
+    let traces = play(&mut opponent, &mut state, until, &[]);
+    assert_eq!(
+        foundries(&state, PlayerId(1)).len(),
+        1,
+        "premise: the attack razed East's start Foundry"
+    );
+    let home = traces
+        .iter()
+        .position(|trace| {
+            attack(&trace.missions).is_some_and(|mission| {
+                (mission.kind, mission.phase) == (east_start(), Phase::Recover)
+            })
+        })
+        .expect("the attack turns home");
+    // Out of sight, the cleared start would read as held again.
+    for trace in &traces[home..] {
+        if let Some(mission) = attack(&trace.missions) {
+            assert!(
+                mission.kind != east_start() || mission.phase == Phase::Recover,
+                "tick {}: {mission:?}",
+                trace.tick
+            );
+        }
+    }
+    let json = serde_json::to_value(opponent.checkpoint()).unwrap();
+    assert_eq!(
+        json["memory"]["abandoned"],
+        serde_json::json!([]),
+        "razing a start gives nothing up"
+    );
+}
+
+#[test]
 fn the_lowest_rung_sometimes_attacks_into_an_army_it_cannot_beat() {
     // Four East Sentinels in West's sight, out of reach, outweigh West's
     // seven by Standard's margin.
