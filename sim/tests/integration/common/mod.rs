@@ -1,6 +1,7 @@
 //! Shared scaffolding used by the focused behavior suites.
 #![allow(dead_code)]
 
+use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
 use aftermine_sim::{
     BuildingKind, Command, Event, Goal, Order, PlayerCommand, PlayerId, Scenario, State, UnitKind,
@@ -130,6 +131,27 @@ pub fn cmd(player: u8, command: Command) -> PlayerCommand {
         player: PlayerId(player),
         command,
     }
+}
+
+/// Every refusal in `events`, in order.
+pub fn rejected(events: &[Event]) -> Vec<RejectReason> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            Event::CommandRejected { reason, .. } => Some(*reason),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Ticks `state` with `command`, asserting that it is refused for `reason`
+/// and that the world ends exactly where an idle tick leaves it.
+pub fn assert_refused(state: &mut State, command: PlayerCommand, reason: RejectReason) {
+    let mut control = state.clone();
+    control.tick(&[]);
+    let report = state.tick(&[command]);
+    assert_eq!(rejected(&report.events), [reason]);
+    assert_eq!(state.hash(), control.hash(), "a refusal changes nothing");
 }
 
 /// `order` with every walking goal reduced to its commanded tile, so a test

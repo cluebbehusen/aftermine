@@ -3,7 +3,7 @@
 //! waits or gives up when it cannot.
 
 use crate::common;
-use common::{building, cmd, open_arena, run_until, unit};
+use common::{assert_refused, building, cmd, open_arena, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
@@ -399,32 +399,21 @@ fn only_scouts_take_the_order_and_refusals_change_nothing() {
     .unwrap();
     let (sentinel, scout) = (state.units()[0].id, state.units()[1].id);
     let goal = TilePos::new(20, 8);
-    let refused = |state: &mut State, command: Command, reason: RejectReason| {
-        let mut probe = state.clone();
-        let report = probe.tick(&[cmd(0, command)]);
-        assert!(
-            report.events.iter().any(
-                |event| matches!(event, Event::CommandRejected { reason: r, .. } if *r == reason)
-            ),
-            "{reason:?}: {:?}",
-            report.events
-        );
-        let mut idle = state.clone();
-        idle.tick(&[]);
-        assert_eq!(probe.hash(), idle.hash(), "{reason:?} changed the world");
-    };
-    refused(
+    assert_refused(
         &mut state,
-        Command::Scout {
-            units: vec![sentinel],
-            goal,
-            queue: false,
-        },
+        cmd(
+            0,
+            Command::Scout {
+                units: vec![sentinel],
+                goal,
+                queue: false,
+            },
+        ),
         RejectReason::NoValidUnits,
     );
-    refused(
+    assert_refused(
         &mut state,
-        scout_order(scout, TilePos::new(-1, 8), false),
+        cmd(0, scout_order(scout, TilePos::new(-1, 8), false)),
         RejectReason::OutOfBounds,
     );
     state.tick(&[cmd(

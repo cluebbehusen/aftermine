@@ -660,20 +660,17 @@ fn a_repeated_cancellation_subject_edits_once() {
     };
     // A foreign subject refuses the whole command, however often the list
     // names a unit that holds the order.
-    let mut control = state.clone();
-    control.tick(&[]);
-    let report = state.tick(&[cmd(
-        0,
-        Command::CancelOrder {
-            unit: foreign,
-            key: OrderKey::Walk { tile: a },
-            from_end: 0,
-            units: vec![subject, other, subject, other],
-        },
-    )]);
-    assert!(report.events.contains(&Event::CommandRejected {
-        player: PlayerId(0),
-        reason: RejectReason::NoValidUnits,
-    }));
-    assert_eq!(state.hash(), control.hash());
+    common::assert_refused(
+        &mut state,
+        cmd(
+            0,
+            Command::CancelOrder {
+                unit: foreign,
+                key: OrderKey::Walk { tile: a },
+                from_end: 0,
+                units: vec![subject, other, subject, other],
+            },
+        ),
+        RejectReason::NoValidUnits,
+    );
 }

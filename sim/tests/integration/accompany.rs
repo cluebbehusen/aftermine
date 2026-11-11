@@ -5,7 +5,7 @@
 //! slots.
 
 use crate::common;
-use common::{cmd, open_arena, run, run_until, unit};
+use common::{assert_refused, cmd, open_arena, rejected, run, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{ScenarioMode, UnitSpec};
@@ -53,16 +53,6 @@ fn fighting_for(state: &State, escort: UnitId, escorted: UnitId) -> bool {
     state.unit(escort).is_some_and(|u| {
         matches!(u.order, Order::Attack { resume: Some(Resume::Accompany(unit)), .. } if unit == escorted)
     })
-}
-
-fn rejected(events: &[Event]) -> Vec<RejectReason> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            Event::CommandRejected { reason, .. } => Some(*reason),
-            _ => None,
-        })
-        .collect()
 }
 
 fn set_hp(state: &mut State, id: UnitId, hp: u32) {
@@ -823,12 +813,7 @@ fn escort_loops_are_refused_at_dispatch() {
     ]);
     assert!(rejected(&report.events).is_empty());
     let refuse = |state: &mut State, command: Command| {
-        let before = state.clone();
-        let report = state.tick(&[cmd(0, command)]);
-        assert_eq!(rejected(&report.events), [RejectReason::NoValidUnits]);
-        let mut idle = before;
-        idle.tick(&[]);
-        assert_eq!(state.hash(), idle.hash(), "a refusal changes nothing");
+        assert_refused(state, cmd(0, command), RejectReason::NoValidUnits);
     };
     // Directly, and through the chain a -> b -> d.
     refuse(&mut state, accompany(vec![b], a, false));
@@ -857,12 +842,11 @@ fn accompany_refuses_foreign_and_absent_targets() {
         (UnitId(999), RejectReason::InvalidTarget),
         (own, RejectReason::NoValidUnits),
     ] {
-        let before = state.clone();
-        let report = state.tick(&[cmd(0, accompany(vec![own], target, false))]);
-        assert_eq!(rejected(&report.events), [reason]);
-        let mut idle = before;
-        idle.tick(&[]);
-        assert_eq!(state.hash(), idle.hash());
+        assert_refused(
+            &mut state,
+            cmd(0, accompany(vec![own], target, false)),
+            reason,
+        );
     }
     // The target never escorts itself; the rest of the list does.
     let report = state.tick(&[cmd(0, accompany(vec![own, mate], own, false))]);

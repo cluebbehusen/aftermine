@@ -3,7 +3,9 @@
 //! up at the cradle's centre, and the breacher's own rules (buildings first,
 //! no pursuit, structure damage, healing only by its kiln).
 
-use crate::common::{building, cmd, face_toward, open_arena_with, players, run, run_until, unit};
+use crate::common::{
+    assert_refused, building, cmd, face_toward, open_arena_with, players, run, run_until, unit,
+};
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::observation::ObservationData;
 use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
@@ -251,11 +253,11 @@ fn a_worker_no_faster_than_the_crew_is_refused_and_keeps_its_program() {
         ),
     ]);
     let program = state.unit(crew[4]).unwrap().order;
-    let mut idle = state.clone();
-    idle.tick(&[]);
-    let report = state.tick(&[raise(&[crew[4], hauler], CRADLE, false)]);
-    assert_eq!(rejected(&report), Some(RejectReason::CrewFull));
-    assert_eq!(state.hash(), idle.hash(), "a full crew changes nothing");
+    assert_refused(
+        &mut state,
+        raise(&[crew[4], hauler], CRADLE, false),
+        RejectReason::CrewFull,
+    );
     assert_eq!(state.unit(crew[4]).unwrap().order, program);
 }
 
