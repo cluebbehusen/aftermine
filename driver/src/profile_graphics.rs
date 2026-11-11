@@ -1,9 +1,11 @@
 //! Named native frame workloads: where a frame's time goes on each screen, map
 //! size, view and camera motion.
 
-use crate::auto::{ShellGuard, build_shell_executable_for, isolate_home, write_home_config};
+use crate::auto::{
+    ShellGuard, build_shell_executable_for, isolate_home, launch, write_home_config,
+};
 use crate::client::Client;
-use crate::profile::{ProfileWorkspace, connect_within, expect_ok, expect_performance};
+use crate::profile::{ProfileWorkspace, expect_ok, expect_performance};
 use aftermine_kit::runner;
 use aftermine_protocol::{
     CameraMotion, FrameProbes, FrameProfileView, FrameScript, Request, StateFilter, StateView,
@@ -478,10 +480,8 @@ impl ProfiledShell {
             }
         }
         isolate_home(&mut command, &workspace.directory);
-        let child = command.spawn().context("spawning profiled shell")?;
-        keep_display_awake(child.id());
-        let guard = ShellGuard::new(child);
-        let mut client = connect_within(options.port, LOAD_TIMEOUT)?;
+        let (guard, mut client) = launch(command, options.port, LOAD_TIMEOUT)?;
+        keep_display_awake(guard.id());
 
         let mut units = 0;
         let mut structures = 0;

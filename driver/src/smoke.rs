@@ -54,43 +54,12 @@ impl Drop for ScratchHome {
 /// Runs the smoke sequence against `addr`, optionally spawning a shell
 /// first (killed on exit, pass or fail).
 pub fn run(addr: &str, spawn: bool) -> Result<()> {
-    let scratch_home = spawn.then(ScratchHome::new).transpose()?;
-    let guard = if spawn {
-        // Spawn on the port we'll actually connect to, not the default.
-        let port = addr
-            .rsplit(':')
-            .next()
-            .context("addr must look like host:port")?;
-        let executable = crate::auto::build_shell_executable()?;
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let mut command = std::process::Command::new(executable);
-        command
-            .args([
-                "--debug-server",
-                "--automation",
-                "--paused",
-                // Pin the window size: a large enough window clamps the
-                // camera immovable on the smoke's map, which would defeat
-                // the minimap-jump check.
-                "--window",
-                "1280x800",
-                "--port",
-                port,
-            ])
-            .env("AFTERMINE_RESOURCE_ROOT", &root);
-        crate::auto::isolate_home(
-            &mut command,
-            &scratch_home.as_ref().expect("created when spawning").0,
-        );
-        command.current_dir(&scratch_home.as_ref().expect("created when spawning").0);
-        Some(crate::auto::ShellGuard::new(
-            command.spawn().context("spawning built Aftermine shell")?,
-        ))
+    let outcome = if spawn {
+        run_spawned(addr)
     } else {
-        None
+        println!("smoke: connecting to {addr}");
+        connect_with_retry(addr).and_then(|mut client| execute(&mut client, false))
     };
-    let outcome = execute(addr, spawn);
-    drop(guard);
     // A passing smoke removes its replay and screenshot, which would
     // otherwise accumulate in replays/ where the shell's shelf lists them.
     // A failing smoke keeps both for inspection.
@@ -103,6 +72,40 @@ pub fn run(addr: &str, spawn: bool) -> Result<()> {
         std::fs::remove_file(cwd.join(format!("screenshots/smoke-{pid}.png"))).ok();
     }
     outcome
+}
+
+/// Builds and spawns an isolated shell on `addr`'s port and runs the
+/// smoke sequence against it.
+fn run_spawned(addr: &str) -> Result<()> {
+    let port: u16 = addr
+        .rsplit(':')
+        .next()
+        .and_then(|port| port.parse().ok())
+        .context("addr must look like host:port")?;
+    let home = ScratchHome::new()?;
+    let executable = crate::auto::build_shell_executable()?;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut command = std::process::Command::new(executable);
+    command
+        .args([
+            "--debug-server",
+            "--automation",
+            "--paused",
+            // Pin the window size: a large enough window clamps the
+            // camera immovable on the smoke's map, which would defeat
+            // the minimap-jump check.
+            "--window",
+            "1280x800",
+            "--port",
+            &port.to_string(),
+        ])
+        .env("AFTERMINE_RESOURCE_ROOT", &root);
+    crate::auto::isolate_home(&mut command, &home.0);
+    command.current_dir(&home.0);
+    println!("smoke: spawning a shell on port {port}");
+    // Declared after the scratch HOME, so the shell is gone before it is.
+    let (_shell, mut client) = crate::auto::launch(command, port, Duration::from_secs(120))?;
+    execute(&mut client, true)
 }
 
 struct Checks {
@@ -123,9 +126,9 @@ impl Checks {
     }
 }
 
-fn connect_with_retry(addr: &str, attempts: u32) -> Result<Client> {
+fn connect_with_retry(addr: &str) -> Result<Client> {
     let mut last_err = None;
-    for _ in 0..attempts {
+    for _ in 0..6 {
         match Client::connect(addr) {
             Ok(client) => return Ok(client),
             Err(err) => {
@@ -137,11 +140,8 @@ fn connect_with_retry(addr: &str, attempts: u32) -> Result<Client> {
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("no attempts made")))
 }
 
-fn execute(addr: &str, patient: bool) -> Result<()> {
-    println!("smoke: connecting to {addr}");
-    // A spawned native window may need a moment to create its frame loop.
-    let mut client = connect_with_retry(addr, if patient { 240 } else { 6 })?;
-    if patient {
+fn execute(client: &mut Client, spawned: bool) -> Result<()> {
+    if spawned {
         // Automation intentionally starts at Home and ignores hardware
         // input. Load the smoke fixture through the same public protocol
         // an agent uses, while retaining the shell's driven-clock flag.
@@ -172,7 +172,7 @@ fn execute(addr: &str, patient: bool) -> Result<()> {
     client.call(Request::Pause)?;
     // The checks bail on protocol surprises; the shell's clock must be
     // restored even then, or a failing smoke leaves a paused session.
-    let outcome = run_checks(&mut client, &mut checks);
+    let outcome = run_checks(client, &mut checks);
     if was_running {
         client.call(Request::Resume).ok();
     }
