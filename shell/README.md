@@ -25,7 +25,8 @@ crate is a binary, and this README is also its crate-level rustdoc.
   clicks and its ring and swipes are the D-pad. `menu_stick` turns the left
   stick into menu arrows.
 - `screens` holds the menus, match setup (`screens/wizard`), the lobby, playback
-  and results. `tutorial` holds the lessons and `tips` the match tips.
+  and results. `tutorial` holds the lessons and `tips` the match tips; `wording`
+  words their how-to copy for the hands in use.
 - `home_backdrop` plays a bundled recording behind Home.
 - `render`, `panel` and `layout` draw the world and HUD and share hit-test
   geometry. `look` declares how each unit and defense is drawn.

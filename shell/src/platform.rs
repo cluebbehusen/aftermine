@@ -249,6 +249,65 @@ pub(crate) fn pad_hands() -> impl Iterator<Item = Hands> {
     })
 }
 
+/// Every pointer and keyboard pairing as the HUD's cards word their copy in
+/// pad mode: for each family the HUD can name, and for none.
+#[cfg(test)]
+pub(crate) fn card_pad_hands() -> impl Iterator<Item = Hands> {
+    [
+        Some(PadFamily::Xbox),
+        Some(PadFamily::PlayStation),
+        Some(PadFamily::Switch),
+        Some(PadFamily::SteamDeck),
+        Some(PadFamily::Other),
+        None,
+    ]
+    .into_iter()
+    .flat_map(|names| {
+        ALL_HANDS.map(|hands| crate::input::HudHands::Pad { names }.copy_hands(hands))
+    })
+}
+
+/// Fails when copy for a controller names a mouse action, a finger's
+/// gesture or a key, or leaves a token or a key span unfilled.
+#[cfg(test)]
+pub(crate) fn assert_pad_wording(text: &str) {
+    let lower = text.to_ascii_lowercase();
+    let words: Vec<&str> = lower
+        .split(|c: char| !c.is_ascii_alphabetic() && c != '-')
+        .collect();
+    for word in [
+        "click",
+        "right-click",
+        "double-click",
+        "shift-click",
+        "hover",
+        "wheel",
+        "tap",
+        "double-tap",
+        "finger",
+        "fingers",
+        "long-press",
+        "pinch",
+        "drag",
+        "shift",
+        "ctrl",
+        "enter",
+        "esc",
+    ] {
+        assert!(
+            !words.contains(&word),
+            "controller copy {text:?} says {word:?}"
+        );
+    }
+    for mark in ['{', '}', '[', ']', '|'] {
+        assert!(
+            !text.contains(mark),
+            "controller copy {text:?} leaves {mark:?} unfilled"
+        );
+    }
+    assert!(text.is_ascii(), "copy {text:?} is not ASCII");
+}
+
 /// Fills `template` as a player with `hands` sees it and fails unless it
 /// names the controller's confirm or back button and nothing a controller
 /// player may lack: no key, no mouse action, no unfilled token.

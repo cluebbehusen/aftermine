@@ -82,6 +82,73 @@ fn every_step_names_real_bindings_for_every_pair_of_hands() {
     }
 }
 
+/// The HUD in pad mode, naming each family it can and none.
+fn pad_huds() -> impl Iterator<Item = crate::input::HudHands> {
+    use aftermine_protocol::PadFamily;
+    [
+        Some(PadFamily::Xbox),
+        Some(PadFamily::PlayStation),
+        Some(PadFamily::Switch),
+        Some(PadFamily::SteamDeck),
+        Some(PadFamily::Other),
+        None,
+    ]
+    .into_iter()
+    .map(|names| crate::input::HudHands::Pad { names })
+}
+
+#[test]
+fn in_pad_mode_every_card_names_the_controllers_buttons_and_keeps_inside_itself() {
+    use aftermine_protocol::{PadButton, PadFamily};
+    for hud in pad_huds() {
+        // A TV's remote, the last pad pressed, never decides the names.
+        let named = hud.names().unwrap_or(PadFamily::Other);
+        let select = crate::pad::button_name(named, PadButton::South);
+        let mut cards = Vec::new();
+        for lesson_kind in Lesson::ALL {
+            for at in 0..lesson_kind.steps().len() {
+                let card = layout(
+                    &lesson(lesson_kind, at),
+                    Some(&CoachLine::Recovery),
+                    &BindingMap::classic(),
+                    Hands::at_launch(crate::platform::Platform::Tv),
+                    env(1133.0),
+                    &fixed,
+                    hud,
+                );
+                cards.push(card);
+            }
+        }
+        for tip in Tip::ALL {
+            cards.push(tip_layout(
+                tip,
+                1.0,
+                &BindingMap::classic(),
+                MOUSE,
+                env(1133.0),
+                &fixed,
+                hud,
+            ));
+        }
+        let mut names_select = false;
+        for card in &cards {
+            for line in &card.lines {
+                if line.face == Face::Body {
+                    crate::platform::assert_pad_wording(&line.text);
+                }
+                let width = fixed(line.face, &line.text, line.size);
+                assert!(
+                    line.x >= card.rect.x && line.x + width <= card.rect.right(),
+                    "{} spills past the card",
+                    line.text
+                );
+                names_select |= line.text.contains(&format!("press {select}"));
+            }
+        }
+        assert!(names_select, "{hud:?}: no card names {select}");
+    }
+}
+
 #[test]
 fn a_folded_card_keeps_its_heading_and_the_way_to_open_it() {
     let open = lay(&lesson(Lesson::Scrap, 2), None, MOUSE, 1280.0);
@@ -104,14 +171,19 @@ fn a_stuck_step_offers_a_retry_and_a_finished_lesson_the_next() {
         1280.0,
     );
     assert_eq!(actions(&stuck), [CardButton::Fold, CardButton::Retry]);
-    assert!(stuck.text().join(" ").contains(CoachLine::Stuck.text()));
+    assert!(
+        stuck
+            .text()
+            .join(" ")
+            .contains(&CoachLine::Stuck.text(MOUSE))
+    );
 
     let status = CoachLine::Status(
         "A Harvester costs 50 scrap. You have 0, and 1 Harvester is collecting.".into(),
     );
     let paying = lay(&lesson(Lesson::Scrap, 1), Some(&status), MOUSE, 1280.0);
     assert_eq!(actions(&paying), [CardButton::Fold]);
-    assert!(paying.text().join(" ").contains(status.text()));
+    assert!(paying.text().join(" ").contains(&status.text(MOUSE)));
 
     let done = lay(&lesson(Lesson::Command, 5), None, MOUSE, 1280.0);
     assert_eq!(
@@ -297,6 +369,14 @@ fn in_pad_mode_a_finished_lesson_takes_a_and_b_and_nothing_else_offers_a_button(
     let stuck = lay_pad(&lesson(Lesson::Command, 4), Some(&CoachLine::Stuck));
     assert!(actions(&stuck).is_empty());
     assert_eq!(stuck.pad_press(PadButton::South), None);
+    assert!(
+        stuck
+            .text()
+            .join(" ")
+            .contains("Press Menu and choose Restart."),
+        "{:?}",
+        stuck.text()
+    );
     assert!(actions(&lay_pad(&lesson(Lesson::Scrap, 2), None)).is_empty());
 
     // A controller cannot fold the card, so it stands open.
@@ -304,7 +384,7 @@ fn in_pad_mode_a_finished_lesson_takes_a_and_b_and_nothing_else_offers_a_button(
     folded.toggle_collapsed();
     assert_eq!(
         lay_pad(&folded, None).text(),
-        lay(&lesson(Lesson::Scrap, 2), None, MOUSE, 1280.0).text()
+        lay_pad(&lesson(Lesson::Scrap, 2), None).text()
     );
 
     // A tip closes itself in time, so it offers no close button.

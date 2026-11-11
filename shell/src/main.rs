@@ -77,6 +77,7 @@ mod tutorial;
 mod typography;
 mod unit_bays;
 mod viewer_touch;
+mod wording;
 
 use crate::numeric::Fit;
 use clap::Parser;

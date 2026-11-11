@@ -511,3 +511,16 @@ fn tips_stay_away_when_turned_off_and_during_lessons() {
     let mut game = Tutorial::begin_at(Lesson::Scrap, vec2(1280.0, 800.0)).unwrap();
     assert_eq!(run(&mut game, OPENING + GAP, false), []);
 }
+
+#[test]
+fn every_tip_names_only_what_the_hands_in_use_have() {
+    use crate::platform::{ALL_HANDS, assert_copy_fits, assert_pad_wording, card_pad_hands};
+    for tip in Tip::ALL {
+        for hands in ALL_HANDS {
+            assert_copy_fits(hands, &tip.body(hands));
+        }
+        for hands in card_pad_hands() {
+            assert_pad_wording(&tip.body(hands));
+        }
+    }
+}
