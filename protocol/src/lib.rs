@@ -380,9 +380,6 @@ pub struct PassTimingView {
 /// Bounded timing snapshot collected by a real GPU-backed shell window.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FrameProfileView {
-    /// Always `"gpu"`; the field prevents accidental comparison with the
-    /// headless session's schematic CPU renderer.
-    pub renderer: String,
     /// Completed frames represented by the summary.
     pub frames: usize,
     /// First visible tick in the sample window.
@@ -460,12 +457,7 @@ pub struct ScreenshotView {
     /// Which renderer produced the pixels: `"gpu"` is the shell's real
     /// frame, `"cpu"` the headless session's schematic tiny-skia render.
     /// An agent judging visual polish must know which one it is reading.
-    #[serde(default = "gpu_renderer")]
     pub renderer: String,
-}
-
-fn gpu_renderer() -> String {
-    "gpu".to_string()
 }
 
 /// Overlay toggle result.

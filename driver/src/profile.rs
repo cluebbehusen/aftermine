@@ -200,10 +200,6 @@ pub fn run(options: &ProfileOptions<'_>) -> Result<ProfileReport> {
 }
 
 fn validate_profile_result(frames: &FrameProfileView, from: u64, to: u64) -> Result<f64> {
-    ensure!(
-        frames.renderer == "gpu",
-        "shell reported a non-GPU renderer"
-    );
     ensure!(frames.frames > 0, "shell returned an empty frame profile");
     let window = frames
         .window

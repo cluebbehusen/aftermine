@@ -506,7 +506,6 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
             ]),
         }),
         Reply::Performance(FrameProfileView {
-            renderer: "gpu".into(),
             frames: 3,
             tick_start: 100,
             tick_end: 108,
