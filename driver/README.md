@@ -35,8 +35,6 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
 - `bot_cost` (`bot-cost`) times bot decisions on fixed workloads.
 - `home_replays` (`home-replays`) records the matches behind Home into
   `assets/home`, each with a checkpoint at its fiercest fight.
-- `duel_lab` (`duel-lab`) and `composition_search` (`composition-search`) fight
-  unit kinds and mixes against each other at equal scrap for balance work.
 - `tick_profile` (`tick-profile`) and `tick-scan` show where simulation time
   goes in a replay. `tick-profile` needs macOS.
 - `audit` (`map-audit`) measures map geometry and derives each map's size and
