@@ -14,6 +14,30 @@ use crate::state::{BuildingPhase, Order, Recovery, State};
 use crate::stats::{BuildingKind, Domain};
 use chassis::grid::TilePos;
 
+/// How much ground a producer's doorstep opens onto, counted up to
+/// [`DOORSTEP_ROOM`] tiles: a pocket sealed off by rock or structures counts
+/// its few tiles, open ground the cap. The cap bounds the work done for every
+/// unit trained.
+fn doorstep_room(state: &State, domain: Domain, from: TilePos) -> usize {
+    let mut seen = std::collections::BTreeSet::from([from]);
+    let mut open = std::collections::VecDeque::from([from]);
+    while let Some(tile) = open.pop_front() {
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            if seen.len() >= DOORSTEP_ROOM {
+                return DOORSTEP_ROOM;
+            }
+            let next = tile.offset(dx, dy);
+            if state.passable_for(domain, next) && seen.insert(next) {
+                open.push_back(next);
+            }
+        }
+    }
+    seen.len()
+}
+
+/// Tiles of ground past which a doorstep counts as open.
+const DOORSTEP_ROOM: usize = 64;
+
 /// Arms each newly stranded seat from the state that existed at the tick
 /// boundary. Commands run afterward, so spending or reshaping a queue on
 /// the first recovery tick cannot enlarge the captured entitlement.
@@ -78,6 +102,7 @@ pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
                     && b.hp > 0
                     && b.kind == crate::stats::BuildingKind::Reclaimer
                     && b.tier == tier
+                    && !state.player(b.player).resigned
             })
             .map(|b| b.player)
             .collect();
@@ -218,9 +243,17 @@ pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
         let spawn = if producer == BuildingKind::Airworks && domain == Domain::Air {
             Some(center)
         } else {
+            // Open ground first, so a doorstep into a sealed pocket never
+            // takes the unit; the room counted survives a half-turn, so
+            // mirrored producers still pick mirrored doorsteps.
             rect_adjacent_tiles(anchor, size)
                 .filter(|&tile| state.passable_for(domain, tile))
-                .min_by_key(|&tile| spawn_doorstep_key(map_size, anchor, size, tile))
+                .min_by_key(|&tile| {
+                    (
+                        std::cmp::Reverse(doorstep_room(state, domain, tile)),
+                        spawn_doorstep_key(map_size, anchor, size, tile),
+                    )
+                })
                 .map(TilePos::center)
         };
         let Some(spawn) = spawn else {

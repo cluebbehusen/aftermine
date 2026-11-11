@@ -402,7 +402,7 @@ fn labels<'a>(
 pub(super) const CONTACT_SLACK: Fx = Fx::lit("0.05");
 
 /// Whether two bodies are in contact, with the slack the arrival wave uses.
-fn touching(a: &crate::state::Unit, b: &crate::state::Unit) -> bool {
+pub(super) fn touching(a: &crate::state::Unit, b: &crate::state::Unit) -> bool {
     a.pos.dist(b.pos) <= a.kind.stats().radius + b.kind.stats().radius + CONTACT_SLACK
 }
 

@@ -358,3 +358,82 @@ fn abandoned_sites_rust_away_and_attended_sites_do_not() {
     }
     assert!(destroyed, "a scaffold nobody returns to eventually falls");
 }
+
+#[test]
+fn a_paid_foundry_blueprint_keeps_its_seat_in_until_it_is_refunded() {
+    let mut scenario = common::open_arena(
+        40,
+        20,
+        vec![
+            common::unit(0, UnitKind::Harvester, 28, 10),
+            common::unit(1, UnitKind::Sentinel, 5, 2),
+        ],
+    );
+    scenario.players[0].scrap = 1_000;
+    scenario
+        .buildings
+        .push(common::building(0, BuildingKind::Fabricator, 6, 14));
+    let mut state = scenario.build().unwrap();
+    let builder = state.units()[0].id;
+    let spot = TilePos::new(30, 9);
+    // Walk off so the spot is remembered but out of sight, and the Foundry
+    // is only a blueprint until the builder gets back.
+    state.tick(&[cmd(
+        0,
+        Command::Run {
+            units: vec![builder],
+            goal: TilePos::new(10, 10),
+            queue: false,
+        },
+    )]);
+    common::run_until(&mut state, 400, |s, _| !s.can_see(PlayerId(0), spot));
+    state.tick(&[cmd(
+        0,
+        Command::Build {
+            units: vec![builder],
+            kind: BuildingKind::Foundry,
+            anchor: spot,
+            queue: false,
+            defer: true,
+        },
+    )]);
+    let blueprint = |s: &State| {
+        s.buildings()
+            .iter()
+            .any(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry && b.provisional())
+    };
+    assert!(blueprint(&state), "premise: a paid blueprint is on its way");
+    // The raider at the gate finishes the home Foundry.
+    let mut value = serde_json::to_value(&state).unwrap();
+    for b in value["buildings"].as_array_mut().unwrap() {
+        if b["player"] == serde_json::json!(0)
+            && b["kind"] == serde_json::json!("foundry")
+            && b["phase"]["phase"] == serde_json::json!("built")
+        {
+            b["hp"] = serde_json::json!(1);
+        }
+    }
+    let mut state: State = serde_json::from_value(value).unwrap();
+    state.validate_invariants().unwrap();
+    common::run_until(&mut state, 200, |s, _| {
+        !s.buildings()
+            .iter()
+            .any(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry && !b.provisional())
+    });
+    assert!(blueprint(&state));
+    assert_eq!(state.player(PlayerId(0)).eliminated_at, None, "still in");
+    assert!(state.result().is_none());
+    assert!(state.accepts_commands(PlayerId(0)));
+
+    // Stopping the builder refunds the blueprint, and with it the seat is out.
+    state.tick(&[cmd(
+        0,
+        Command::Stop {
+            units: vec![builder],
+        },
+    )]);
+    common::run(&mut state, 3);
+    assert!(!blueprint(&state));
+    assert!(state.player(PlayerId(0)).eliminated_at.is_some());
+    assert!(state.result().is_some());
+}

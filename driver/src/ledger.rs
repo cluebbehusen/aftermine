@@ -575,12 +575,17 @@ fn hearths(state: &State) -> Hearths {
 /// order, each takes one unit of salvage from the nearest wreck, the richer
 /// on a tie, so two sharing a last unit do not both smelt it. Exact ties
 /// fall to row order here, where the simulation mirrors the order for half
-/// the map; that matters only when two Crucibles contest a last unit.
-fn smelters(hearths: &Hearths, stripped: &BTreeMap<TilePos, u32>) -> Vec<Key> {
+/// the map; that matters only when two Crucibles contest a last unit. A
+/// surrendered seat's Crucible, which `out` names, smelts nothing.
+fn smelters(
+    hearths: &Hearths,
+    stripped: &BTreeMap<TilePos, u32>,
+    out: impl Fn(&Building) -> bool,
+) -> Vec<Key> {
     let radius = CRUCIBLE_SMELT_RADIUS * CRUCIBLE_SMELT_RADIUS;
     let mut taken: BTreeMap<TilePos, u32> = stripped.clone();
     let mut smelting = Vec::new();
-    for building in &hearths.crucibles {
+    for building in hearths.crucibles.iter().filter(|building| !out(building)) {
         let mut fuel = None;
         for tile in reach_box(building) {
             let left = hearths
@@ -1529,10 +1534,10 @@ impl ImpactLedger {
             }
             let resigned = state.players()[usize::from(body.owner)].resigned;
             let credit = match kind {
-                BuildingKind::Reclaimer if tier == 0 => now
+                BuildingKind::Reclaimer if tier == 0 && !resigned => now
                     .is_multiple_of(RECLAIMER_PERIOD)
                     .then_some(IncomeSource::Reclaimer),
-                BuildingKind::Reclaimer if tier == 1 => now
+                BuildingKind::Reclaimer if tier == 1 && !resigned => now
                     .is_multiple_of(REFINERY_PERIOD)
                     .then_some(IncomeSource::Refinery),
                 BuildingKind::Foundry
@@ -1561,11 +1566,14 @@ impl ImpactLedger {
                 })
                 .map(|payout| (payout.key, payout.source, payout.amount)),
         );
+        // A resignation also stops a Crucible from that tick's smelt on.
         if now.is_multiple_of(CRUCIBLE_SMELT_PERIOD) {
             credits.extend(
-                smelters(&self.hearths, stripped)
-                    .into_iter()
-                    .map(|key| (key, IncomeSource::Smelting, 1)),
+                smelters(&self.hearths, stripped, |crucible| {
+                    state.player(crucible.player).resigned
+                })
+                .into_iter()
+                .map(|key| (key, IncomeSource::Smelting, 1)),
             );
         }
         for (key, source, scrap) in credits {

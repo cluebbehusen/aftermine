@@ -1683,7 +1683,13 @@ fn deposit_cargo(state: &mut State, id: UnitId, foundry: BuildingId, events: &mu
     // The event reports what was actually credited, not what was
     // carried — at the ceiling those differ.
     let seat = state.player_mut(me);
-    let credited = seat.scrap.saturating_add(carrying) - seat.scrap;
+    // A surrendered seat earns nothing: its Harvesters may keep their
+    // loops, but what they bring in credits no scrap.
+    let credited = if seat.resigned {
+        0
+    } else {
+        seat.scrap.saturating_add(carrying) - seat.scrap
+    };
     seat.scrap += credited;
     if credited > 0 {
         seat.recovery = crate::state::Recovery::Ready;

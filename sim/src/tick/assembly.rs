@@ -160,12 +160,28 @@ pub(super) fn settle_crews(state: &mut State, before: &CrewSnapshot, events: &mu
         .filter(|b| b.kind.assembles().is_some() && b.under_construction())
         .map(|b| b.id)
         .collect();
-    for id in cradles {
+    // A worker moved on from one cradle can come up on another already
+    // settled, so passes repeat until none is over its cap. Each released
+    // worker has dropped its orders for the cradle that released it, so the
+    // passes end.
+    while settle_pass(state, &cradles, before, events) {}
+}
+
+/// One pass of [`settle_crews`] over `cradles`; whether it released anyone.
+fn settle_pass(
+    state: &mut State,
+    cradles: &[BuildingId],
+    before: &CrewSnapshot,
+    events: &mut Vec<Event>,
+) -> bool {
+    let mut released = false;
+    for &id in cradles {
         let cradle = state.building(id).expect("collected cradle");
         let holders = crew(state, cradle);
         if holders.len() <= ASSEMBLY_CREW_CAP {
             continue;
         }
+        released = true;
         let earlier: &[UnitId] = before
             .0
             .iter()
@@ -194,6 +210,7 @@ pub(super) fn settle_crews(state: &mut State, before: &CrewSnapshot, events: &mu
             }
         }
     }
+    released
 }
 
 /// Turns every finished cradle into its machine: the cradle leaves the
