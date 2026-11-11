@@ -733,9 +733,6 @@ def install_maw(registry: Registry, out: Path) -> None:
     for variant in kit.PALETTES:
         tag = kit.variant_tag(variant)
         _save(registry, out, f"maw{tag}", render_maw(variant))
-        for move in (1, 2):
-            phase = float(-2 * move)
-            _save(registry, out, f"maw{tag}_move{move}", render_maw(variant, (phase, phase)))
         _save(registry, out, f"rig_maw_hull{tag}", render_hull(variant))
         for frame in range(DRUM_FRAMES):
             _save(registry, out, f"rig_maw_drum{tag}_{frame + 1}", render_drum(variant, frame))

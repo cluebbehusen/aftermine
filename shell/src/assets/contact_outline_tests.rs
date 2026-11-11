@@ -114,7 +114,7 @@ fn rect_key(rect: Rect) -> [u32; 4] {
 /// identical images once.
 fn names(atlas: &Manifest) -> HashMap<[u32; 4], Vec<String>> {
     let mut names: HashMap<[u32; 4], Vec<String>> = HashMap::new();
-    for (name, row) in atlas {
+    for (name, row) in &atlas.rects {
         if !name.contains("_accent") {
             names
                 .entry(row.map(numeric::to_u32))

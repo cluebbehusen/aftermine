@@ -995,9 +995,7 @@ def install_roc(registry: Registry, out: Path) -> None:
     yokes never do."""
     for variant in kit.PALETTES:
         tag = kit.variant_tag(variant)
-        roc = render_roc(variant)
-        for suffix in ("", "_move1", "_move2"):
-            _save(registry, out, f"roc{tag}{suffix}", roc)
+        _save(registry, out, f"roc{tag}", render_roc(variant))
         hull = render_hull(variant)
         # The fans turn on their own layers, so the hull's motion rows
         # repeat its rest frame.
@@ -1015,8 +1013,8 @@ def install_roc(registry: Registry, out: Path) -> None:
         _save(registry, out, f"rig_roc_mount{tag}", render_gun(variant))
         for frame, age in enumerate(RECOIL_AGES):
             _save(registry, out, f"rig_roc_mount{tag}_action{frame + 1}", render_gun(variant, age))
+        _save(registry, out, f"drone{tag}", render_drone(variant, 0))
         for move, suffix in enumerate(("", "_move1", "_move2")):
-            _save(registry, out, f"drone{tag}{suffix}", render_drone(variant, move * ROTOR_STEP))
             _save(
                 registry,
                 out,
