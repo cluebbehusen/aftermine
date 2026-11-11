@@ -45,8 +45,8 @@ ordinary `PlayerCommand`s. It uses no floating point.
 `aftermine-kit` hosts one controller per bot seat, so live, headless, saved and
 resumed sessions build it from the same scenario. The host records each seat's
 own events after every tick and passes them with the next decision. The bot
-stays silent once the match is decided, after its seat surrenders, or while it
-has no built Foundry.
+stays silent once the match is decided, after its seat surrenders, while it has
+no built Foundry, or on a map that authors no start for its seat.
 
 A `Checkpoint` holds only what the specification lists as persistent state. The
 profile, decision interval and map model rebuild from the bound scenario on

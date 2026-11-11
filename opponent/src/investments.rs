@@ -109,6 +109,8 @@ pub(crate) struct Candidate {
 pub(crate) struct Situation<'a> {
     pub(crate) observation: &'a ObservationData,
     pub(crate) map: &'a MapModel,
+    /// The seat's frame, which breaks ties between equal investments.
+    pub(crate) frame: HomeFrame,
     pub(crate) memory: &'a Memory,
     pub(crate) traits: PersonalityTraits,
     /// Harvesters as a per-mille share of those wanted.
@@ -202,6 +204,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     list.extend(crate::warheads::investments(
         observation,
         situation.map,
+        situation.frame,
         traits,
         situation.income,
     ));
@@ -273,7 +276,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         // mirrored seats deepen mirrored frames. Its Deep Bore is wanted
         // before the Crucible stands, so its worth pulls the Crucible
         // forward as the first step.
-        let frame = HomeFrame::of(observation, situation.map);
+        let frame = situation.frame;
         let bore = observation
             .my_buildings
             .iter()
@@ -285,7 +288,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             })
             .min_by_key(|building| {
                 let centre = footprint_centre(BuildingKind::Extractor, building.anchor);
-                frame.map(|frame| frame.rank(frame.home, centre))
+                frame.rank(frame.home, centre)
             });
         if let Some(extractor) = bore {
             let deep_bore = Investment::Upgrade {
@@ -393,16 +396,12 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         .collect();
     // Equal scores go to the investment nearest home in the seat's frame, so
     // mirrored seats pick mirrored sites and frames.
-    let frame = HomeFrame::of(observation, situation.map);
+    let frame = situation.frame;
     list.sort_by_key(|candidate| {
-        let rank = frame.zip(location(
-            situation.map,
-            observation.me,
-            candidate.investment,
-        ));
+        let centre = location(situation.map, observation.me, candidate.investment);
         (
             Reverse(candidate.score),
-            rank.map(|(frame, centre)| frame.rank(frame.home, centre)),
+            centre.map(|centre| frame.rank(frame.home, centre)),
         )
     });
     list
@@ -432,10 +431,10 @@ fn location(map: &MapModel, me: PlayerId, investment: Investment) -> Option<(i64
 /// prerequisite is still being built or the investment is gone.
 pub(crate) fn step(
     observation: &ObservationData,
-    map: &MapModel,
+    frame: HomeFrame,
     investment: Investment,
 ) -> Option<(Step, u32)> {
-    let build = |kind| build_step(observation, map, kind, 3);
+    let build = |kind| build_step(observation, frame, kind, 3);
     match investment {
         Investment::Tech(kind) | Investment::Capacity(kind) => build(kind),
         Investment::Reclaimer => build(BuildingKind::Reclaimer),
@@ -462,7 +461,7 @@ pub(crate) fn step(
                 .find(|required| !met(observation, **required))
             {
                 None => Some((Step::Upgrade(building.id), upgrade.cost)),
-                Some(missing) => requirement_step(observation, map, *missing, 2),
+                Some(missing) => requirement_step(observation, frame, *missing, 2),
             }
         }
     }
@@ -569,7 +568,7 @@ fn foundries(map: &MapModel, observation: &ObservationData) -> Vec<TilePos> {
 
 fn build_step(
     observation: &ObservationData,
-    map: &MapModel,
+    frame: HomeFrame,
     kind: BuildingKind,
     depth: u8,
 ) -> Option<(Step, u32)> {
@@ -580,7 +579,7 @@ fn build_step(
         .find(|required| !met(observation, **required))
     {
         None => Some((Step::Build(kind), construction.cost)),
-        Some(missing) => requirement_step(observation, map, *missing, depth),
+        Some(missing) => requirement_step(observation, frame, *missing, depth),
     }
 }
 
@@ -591,7 +590,7 @@ fn build_step(
 /// is waited for too.
 fn requirement_step(
     observation: &ObservationData,
-    map: &MapModel,
+    frame: HomeFrame,
     missing: Prerequisite,
     depth: u8,
 ) -> Option<(Step, u32)> {
@@ -599,7 +598,6 @@ fn requirement_step(
         return None;
     }
     if missing.tier > 0 {
-        let frame = HomeFrame::of(observation, map);
         let building = observation
             .my_buildings
             .iter()
@@ -612,7 +610,7 @@ fn requirement_step(
             })
             .min_by_key(|building| {
                 let centre = footprint_centre(building.kind, building.anchor);
-                frame.map(|frame| frame.rank(frame.home, centre))
+                frame.rank(frame.home, centre)
             })?;
         let upgrade = building.kind.upgrade_from(building.tier)?;
         return match upgrade
@@ -621,13 +619,13 @@ fn requirement_step(
             .find(|required| !met(observation, **required))
         {
             None => Some((Step::Upgrade(building.id), upgrade.cost)),
-            Some(further) => requirement_step(observation, map, *further, depth - 1),
+            Some(further) => requirement_step(observation, frame, *further, depth - 1),
         };
     }
     if owned(observation, missing.kind) > 0 {
         return None;
     }
-    build_step(observation, map, missing.kind, depth - 1)
+    build_step(observation, frame, missing.kind, depth - 1)
 }
 
 /// Built own producers that can train `kind` for the seat now.

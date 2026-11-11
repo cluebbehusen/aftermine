@@ -16,24 +16,18 @@ use aftermine_sim::{BuildingKind, UnitId, UnitKind};
 use chassis::grid::TilePos;
 use std::cmp::Reverse;
 
-impl Missions {
-    /// Keeps the free wounded already in a calm own Repair Bay's reach there,
-    /// and sends the idle free wounded to the nearest calm Bay with room, the
-    /// most missing value first: ground units drive beside it and aircraft
-    /// fly over it, where an idle Condor sets down on its own. No other
-    /// mission or welder
-    /// takes them this decision. A Bay bills its heals from the bank as
-    /// income arrives, so scrap spent elsewhere this decision holds no one
-    /// back.
-    pub(crate) fn repair(
-        &self,
-        observation: &ObservationData,
-        map: &MapModel,
-        scratch: &Scratch,
-        ledger: &mut Ledger,
-    ) {
-        let size = BuildingKind::RepairBay.size();
-        let frame = scratch.frame;
+/// The seat's standing Repair Bays, and which of its bodies each treats where
+/// they stand.
+struct Ward<'a> {
+    observation: &'a ObservationData,
+    scratch: &'a Scratch,
+    bays: Vec<&'a BuildingObs>,
+    units: Vec<&'a UnitObs>,
+    treated: Vec<Option<usize>>,
+}
+
+impl<'a> Ward<'a> {
+    fn of(observation: &'a ObservationData, scratch: &'a Scratch) -> Self {
         let bays: Vec<&BuildingObs> = observation
             .my_buildings
             .iter()
@@ -41,35 +35,70 @@ impl Missions {
                 building.kind == BuildingKind::RepairBay && building.built && building.hp > 0
             })
             .collect();
-        if bays.is_empty() {
-            return;
-        }
-        // A unit that heals on the ground must be safe from ground fire there,
-        // and one that flies in from fire against aircraft; a Condor needs
-        // both.
-        let calm_for = |bay: &BuildingObs, kind: UnitKind| {
-            let stats = kind.stats();
-            let centre = footprint_centre(BuildingKind::RepairBay, bay.anchor);
-            let clear = |hazards: &[Hazard]| calm(observation, hazards, bay.anchor, size, centre);
-            let rests = stats.domain == Domain::Ground || stats.can_land();
-            let flies = stats.domain == Domain::Air;
-            (!rests || clear(&scratch.ground)) && (!flies || clear(&scratch.air))
-        };
         // Every own body a Bay treats where it stands takes one of that Bay's
         // slots, whoever commands it.
         let anchors: Vec<TilePos> = bays.iter().map(|bay| bay.anchor).collect();
         let units: Vec<&UnitObs> = observation.my_units.iter().collect();
         let treated = treating(&anchors, &units);
-        let mut room = vec![REPAIR_BAY_PATIENTS; bays.len()];
-        for index in treated.iter().flatten() {
-            room[*index] -= 1;
+        Self {
+            observation,
+            scratch,
+            bays,
+            units,
+            treated,
         }
-        let treated_by = |unit: &UnitObs| {
-            let at = units.binary_search_by_key(&unit.id, |unit| unit.id).ok()?;
-            treated[at]
-        };
-        let mut wounded: Vec<(u64, &UnitObs)> = self
-            .free(observation, ledger)
+    }
+
+    /// Whether the Bay at `index` is calm for a unit of `kind`: one that
+    /// heals on the ground must be safe from ground fire there, and one that
+    /// flies in from fire against aircraft; a Condor needs both.
+    fn calm_for(&self, index: usize, kind: UnitKind) -> bool {
+        let bay = self.bays[index];
+        let stats = kind.stats();
+        let size = BuildingKind::RepairBay.size();
+        let centre = footprint_centre(BuildingKind::RepairBay, bay.anchor);
+        let clear = |hazards: &[Hazard]| calm(self.observation, hazards, bay.anchor, size, centre);
+        let rests = stats.domain == Domain::Ground || stats.can_land();
+        let flies = stats.domain == Domain::Air;
+        (!rests || clear(&self.scratch.ground)) && (!flies || clear(&self.scratch.air))
+    }
+
+    /// Whether a calm Bay treats `unit` where it stands.
+    fn heals(&self, unit: &UnitObs) -> bool {
+        self.units
+            .binary_search_by_key(&unit.id, |unit| unit.id)
+            .ok()
+            .and_then(|at| self.treated[at])
+            .is_some_and(|index| self.calm_for(index, unit.kind))
+    }
+}
+
+impl Missions {
+    /// The free wounded units a calm own Repair Bay already treats where they
+    /// stand. They stay there, out of every mission and weld, while they
+    /// heal.
+    pub(crate) fn healing(
+        &self,
+        observation: &ObservationData,
+        scratch: &Scratch,
+        ledger: &Ledger,
+    ) -> Vec<UnitId> {
+        let ward = Ward::of(observation, scratch);
+        self.wounded(observation, ledger)
+            .into_iter()
+            .filter(|(_, unit)| ward.heals(unit))
+            .map(|(_, unit)| unit.id)
+            .collect()
+    }
+
+    /// The free armed units wounded enough to go to a Repair Bay, with the
+    /// scrap of health each misses.
+    fn wounded<'a>(
+        &self,
+        observation: &'a ObservationData,
+        ledger: &Ledger,
+    ) -> Vec<(u64, &'a UnitObs)> {
+        self.free(observation, ledger)
             .into_iter()
             .filter_map(|id| mine(observation, id))
             .filter(|unit| {
@@ -77,7 +106,34 @@ impl Missions {
                 stats.can_fight() && stats.repairable() && !worker(unit.kind) && unit.cargo == 0
             })
             .filter_map(|unit| wound(unit).map(|missing| (missing, unit)))
-            .collect();
+            .collect()
+    }
+
+    /// Keeps the free wounded already in a calm own Repair Bay's reach there,
+    /// and sends the idle free wounded to the nearest calm Bay with room, the
+    /// most missing value first: ground units drive beside it and aircraft
+    /// fly over it, where an idle Condor sets down on its own. No other
+    /// mission or welder takes them this decision. A Bay bills its heals from
+    /// the bank as income arrives, so scrap spent elsewhere this decision
+    /// holds no one back.
+    pub(crate) fn repair(
+        &self,
+        observation: &ObservationData,
+        map: &MapModel,
+        scratch: &Scratch,
+        ledger: &mut Ledger,
+    ) {
+        let frame = scratch.frame;
+        let ward = Ward::of(observation, scratch);
+        let bays = &ward.bays;
+        if bays.is_empty() {
+            return;
+        }
+        let mut room = vec![REPAIR_BAY_PATIENTS; bays.len()];
+        for index in ward.treated.iter().flatten() {
+            room[*index] -= 1;
+        }
+        let mut wounded = self.wounded(observation, ledger);
         wounded.sort_by_key(|(missing, unit)| {
             (
                 Reverse(*missing),
@@ -90,7 +146,7 @@ impl Missions {
         let mut groups: Vec<(usize, Domain, Option<TilePos>, Vec<&UnitObs>)> = Vec::new();
         for (_, unit) in wounded {
             let domain = unit.kind.stats().domain;
-            if treated_by(unit).is_some_and(|index| calm_for(bays[index], unit.kind)) {
+            if ward.heals(unit) {
                 ledger.dock(unit.id);
                 continue;
             }
@@ -99,7 +155,7 @@ impl Missions {
             }
             let ground = map.component(unit.tile);
             let Some(index) = (0..bays.len())
-                .filter(|index| room[*index] > 0 && calm_for(bays[*index], unit.kind))
+                .filter(|index| room[*index] > 0 && ward.calm_for(*index, unit.kind))
                 .filter(|index| {
                     domain == Domain::Air || map.component(bays[*index].anchor) == ground
                 })

@@ -41,7 +41,9 @@ fn clear(missions: &[MissionStatus]) -> Option<MissionStatus> {
 #[test]
 fn splash_bombers_go_together_at_the_anti_air_around_the_lift_target() {
     let scenario = with_bombers(strait());
-    let (state, mut opponent) = bombing(&scenario, &around_the_start(3));
+    // Enough anti-air to call for both bombers.
+    let flak = around_the_start(4);
+    let (state, mut opponent) = bombing(&scenario, &flak);
     let condors: Vec<UnitId> = BOMBERS.iter().map(|(x, y)| at(&state, *x, *y)).collect();
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     let mission = clear(&trace.unwrap().missions).expect("a clearance forms");
@@ -49,7 +51,7 @@ fn splash_bombers_go_together_at_the_anti_air_around_the_lift_target() {
         unreachable!();
     };
     assert!(
-        (31..34).contains(&aim.x) && aim.y == 9,
+        flak.contains(&(aim.x, aim.y)),
         "at the remembered anti-air: {aim:?}"
     );
     let sent: Vec<(Vec<UnitId>, TilePos)> = runs(&commands)
@@ -62,6 +64,39 @@ fn splash_bombers_go_together_at_the_anti_air_around_the_lift_target() {
     let mut units = units.clone();
     units.sort_unstable();
     assert_eq!(units, condors, "both bombers, in one order");
+}
+
+#[test]
+fn a_clearance_takes_only_the_bombers_the_anti_air_calls_for() {
+    let mut scenario = with_bombers(strait());
+    for (x, y) in [(12, 4), (12, 19), (11, 2), (11, 21)] {
+        scenario.units.push(unit(0, UnitKind::Condor, x, y));
+    }
+    let sent = |flak: i32| {
+        let (state, mut opponent) = bombing(&scenario, &around_the_start(flak));
+        let condors: Vec<UnitId> = state
+            .units()
+            .iter()
+            .filter(|unit| unit.kind == UnitKind::Condor)
+            .map(|unit| unit.id)
+            .collect();
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        let groups: Vec<Vec<UnitId>> = runs(&commands)
+            .into_iter()
+            .map(|(units, _)| units)
+            .filter(|units| units.iter().any(|id| condors.contains(id)))
+            .collect();
+        let [units] = &groups[..] else {
+            panic!("one clearance order: {commands:?}");
+        };
+        (units.len(), condors.len())
+    };
+    let (light, all) = sent(3);
+    let (heavy, _) = sent(4);
+    assert!(
+        light < heavy && heavy < all,
+        "{light} then {heavy} of {all}"
+    );
 }
 
 #[test]
@@ -298,6 +333,37 @@ fn a_roc_outweighed_by_the_anti_air_around_the_target_stays_for_the_lift() {
 }
 
 #[test]
+fn a_roc_the_anti_air_does_not_call_for_carries_the_lift() {
+    let mut scenario = with_roc(strait());
+    scenario.units.push(unit(0, UnitKind::Roc, 11, 14));
+    // More riders than the Skyhooks hold.
+    for x in 2..10 {
+        scenario.units.push(unit(0, UnitKind::Sentinel, x, 16));
+    }
+    let (mut state, mut opponent) = bombing(&scenario, &around_the_start(3));
+    let rocs = [at(&state, ROC_HOME.0, ROC_HOME.1), at(&state, 11, 14)];
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert!(clear(&trace.unwrap().missions).is_some(), "premise");
+    let cleared: Vec<UnitId> = runs(&commands)
+        .into_iter()
+        .flat_map(|(units, _)| units)
+        .filter(|id| rocs.contains(id))
+        .collect();
+    let [cleared] = cleared[..] else {
+        panic!("one Roc outweighs the anti-air: {commands:?}");
+    };
+    let other = rocs.into_iter().find(|roc| *roc != cleared).unwrap();
+    let mut carried = false;
+    state.tick(&commands);
+    while state.current_tick() < 120 && !carried {
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        carried = boards(&commands, other);
+        state.tick(&commands);
+    }
+    assert!(carried, "the other Roc carries riders");
+}
+
+#[test]
 fn a_roc_going_to_clear_leaves_the_seat_training_carriers_for_its_riders() {
     let mut scenario = with_roc(strait());
     scenario.units.retain(|unit| unit.kind != UnitKind::Skyhook);
@@ -500,4 +566,193 @@ fn a_clearance_goes_at_a_known_flak_turret_around_the_target() {
             aim: TilePos::new(30, 4)
         }
     );
+}
+
+/// West's Condors at tick 1,200, still busy, in a clearance at the East Flak
+/// Turret beside the lift's target, fighting since tick 0, whose fight last
+/// knew of East's buildings `tally` more health than West knows now.
+fn clearing_on(tally: Option<i64>) -> (Scenario, State, Opponent, Vec<UnitId>) {
+    let mut scenario = with_bombers(strait());
+    scenario
+        .buildings
+        .push(building(1, BuildingKind::FlakTurret, 30, 4));
+    scenario.units.push(unit(0, UnitKind::Kestrel, 31, 6));
+    let mut state = scenario.build().unwrap();
+    let condors: Vec<UnitId> = BOMBERS.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    advance_to(&mut state, 1_188, &[]);
+    advance_to(&mut state, 1_200, &[run(0, condors.clone(), 6, 12)]);
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let buildings: i64 = observation
+        .enemy_buildings
+        .iter()
+        .map(|building| i64::from(building.hp))
+        .sum();
+    assert!(buildings > 0, "premise: the Flak Turret is known");
+    let tally = tally.map_or(
+        serde_json::Value::Null,
+        |more| serde_json::json!({"buildings": buildings + more, "units": 0}),
+    );
+    let missions = serde_json::json!({
+        "next": 1,
+        "list": [{
+            "id": 0,
+            "task": {
+                "task": "clear",
+                "aim": {"x": 30, "y": 4},
+                "phase": {"engage": {"focus": null, "tally": tally, "progressed": 0}},
+            },
+            "since": 0,
+            "units": condors,
+            "goal": {"x": 30, "y": 6},
+        }],
+    });
+    let opponent = super::attack::restaged(&scenario, &state, missions);
+    (scenario, state, opponent, condors)
+}
+
+#[test]
+fn a_clearance_fights_on_past_its_time_only_while_it_makes_progress() {
+    for (tally, goes_on, why) in [
+        (Some(1), true, "a building lost health"),
+        (Some(0), false, "nothing lost"),
+        (None, false, "the fight's first reading"),
+    ] {
+        let (_, state, mut opponent, condors) = clearing_on(tally);
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let phase = clear(&trace.unwrap().missions).map(|mission| mission.phase);
+        let sent = runs(&commands)
+            .into_iter()
+            .any(|(units, _)| units.iter().any(|id| condors.contains(id)));
+        if goes_on {
+            assert_eq!(phase, Some(Phase::Engage), "{why}");
+            assert!(!sent, "{why}: {commands:?}");
+        } else {
+            assert_ne!(phase, Some(Phase::Engage), "{why}: the fight ends");
+            assert!(sent, "{why}: the Condors move on: {commands:?}");
+        }
+    }
+}
+
+#[test]
+fn a_clearance_fight_keeps_what_it_knew_and_resumes_identically() {
+    let (scenario, mut state, mut opponent, _) = clearing_on(Some(1));
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let json = serde_json::to_value(opponent.checkpoint()).unwrap();
+    let fight = &json["missions"]["list"][0]["task"]["phase"]["engage"];
+    assert!(fight["tally"].is_object(), "{json}");
+    assert_eq!(fight["progressed"], state.current_tick(), "{json}");
+    state.tick(&commands);
+    resumes_identically(&mut opponent, &scenario, &mut state, 600);
+}
+
+/// Three islands in a row, West's start on the first, Mid's on the second and
+/// East's on the third, with West's Condors at home, an East Flak Turret
+/// beside East's start, West Kestrels over both enemy starts, and a Mid
+/// Fabricator when `stocked`.
+fn three_islands(stocked: bool) -> Scenario {
+    let map: Vec<String> = (0..11)
+        .map(|row| {
+            let mut tiles: Vec<char> = ".".repeat(40).chars().collect();
+            for x in [13, 14, 26, 27] {
+                tiles[x] = '~';
+            }
+            if row == 4 {
+                tiles[2] = '1';
+                tiles[19] = '2';
+                tiles[34] = '3';
+            }
+            tiles.into_iter().collect()
+        })
+        .collect();
+    let mut scenario = match_on(
+        map,
+        &["West", "Mid", "East"],
+        &[
+            (0, UnitKind::Condor, 5, 2),
+            (0, UnitKind::Condor, 5, 8),
+            (0, UnitKind::Kestrel, 20, 6),
+            (0, UnitKind::Kestrel, 33, 6),
+        ],
+    );
+    scenario.players[0].bot = true;
+    scenario.players[0].bot_config = Some(config());
+    scenario
+        .buildings
+        .push(building(2, BuildingKind::FlakTurret, 34, 7));
+    if stocked {
+        scenario
+            .buildings
+            .push(building(1, BuildingKind::Fabricator, 21, 6));
+    }
+    scenario
+}
+
+/// West's Condors at tick 1,200, still busy, in a clearance at East's Flak
+/// Turret fighting since tick 0, whose fight last knew of East's buildings
+/// `more` health than West knows now, with a Mid Fabricator when `stocked`.
+fn clearing_east(stocked: bool, more: i64) -> (State, Opponent, Vec<UnitId>) {
+    let scenario = three_islands(stocked);
+    let mut state = scenario.build().unwrap();
+    let condors: Vec<UnitId> = [(5, 2), (5, 8)]
+        .iter()
+        .map(|(x, y)| at(&state, *x, *y))
+        .collect();
+    advance_to(&mut state, 1_188, &[]);
+    advance_to(&mut state, 1_200, &[run(0, condors.clone(), 4, 6)]);
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let known = |owner: u8| -> i64 {
+        observation
+            .enemy_buildings
+            .iter()
+            .filter(|building| building.player == PlayerId(owner))
+            .map(|building| i64::from(building.hp))
+            .sum()
+    };
+    let (mid, east) = (known(1), known(2));
+    assert!(
+        mid > 0 && east > 0 && (mid < east) != stocked,
+        "premise: both enemies known, Mid holding {} than East",
+        if stocked { "more" } else { "less" }
+    );
+    let missions = serde_json::json!({
+        "next": 1,
+        "list": [{
+            "id": 0,
+            "task": {
+                "task": "clear",
+                "aim": {"x": 34, "y": 7},
+                "phase": {"engage": {
+                    "focus": null,
+                    "tally": {"buildings": east + more, "units": 0},
+                    "progressed": 0,
+                }},
+            },
+            "since": 0,
+            "units": condors,
+            "goal": {"x": 34, "y": 9},
+        }],
+    });
+    let opponent = super::attack::restaged(&scenario, &state, missions);
+    (state, opponent, condors)
+}
+
+#[test]
+fn a_clearance_weighs_the_anti_air_it_sweeps_whoever_the_lift_goes_after() {
+    // The lift goes after Mid, nearer home, while the clearance sweeps East's
+    // flak. Mid holding less than East would read as progress, and Mid
+    // holding more would hide East's losses.
+    for (stocked, more, goes_on, why) in [
+        (false, 0, false, "nothing of East's lost"),
+        (true, 1, true, "East's buildings lost health"),
+    ] {
+        let (state, mut opponent, condors) = clearing_east(stocked, more);
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let phase = clear(&trace.unwrap().missions).map(|mission| mission.phase);
+        let sent = runs(&commands)
+            .into_iter()
+            .chain(hunts(&commands))
+            .any(|(units, _)| units.iter().any(|id| condors.contains(id)));
+        assert_eq!(phase == Some(Phase::Engage), goes_on, "{why}: {phase:?}");
+        assert_eq!(sent, !goes_on, "{why}: {commands:?}");
+    }
 }

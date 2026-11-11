@@ -459,6 +459,146 @@ fn an_air_escort_brings_ground_attack_and_anti_air_without_loading_them() {
 }
 
 #[test]
+fn an_escort_leaves_a_unit_healing_at_a_bay() {
+    // Known enemies on the island call for an escort; the wounded Buzzard
+    // beside the source Foundry is the nearest that could go.
+    let escorted = |with_bay: bool| {
+        let mut scenario = island();
+        scenario.units.extend((25..35).flat_map(|x| {
+            [
+                unit(0, UnitKind::Buzzard, x, 8),
+                unit(0, UnitKind::Talon, x, 9),
+            ]
+        }));
+        scenario.units.push(unit(0, UnitKind::Buzzard, 4, 9));
+        scenario.units.extend([
+            unit(1, UnitKind::Sentinel, 43, 30),
+            unit(1, UnitKind::Buzzard, 43, 31),
+        ]);
+        if with_bay {
+            scenario
+                .buildings
+                .push(building(0, BuildingKind::RepairBay, 2, 8));
+        }
+        let state = scenario.build().unwrap();
+        let patient = at(&state, 4, 9);
+        let state = wounded(&state, patient, 10);
+        let mut bot = restored_with(
+            &seat_with(&scenario, 0, thrifty()),
+            &scenario,
+            &state,
+            |json| {
+                json["memory"]["units"] = remembered(
+                    state
+                        .units()
+                        .iter()
+                        .filter(|u| u.player == PlayerId(1))
+                        .map(|u| (u.id.0, u.kind, u.tile(), 0)),
+                );
+            },
+        );
+        bot.act(&state, &mut OwnEvents::default());
+        let checkpoint = serde_json::to_value(bot.checkpoint()).unwrap();
+        let settlement = checkpoint["missions"]["list"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["task"]["task"] == "settle")
+            .cloned()
+            .expect("a settlement starts");
+        let units: Vec<u32> = serde_json::from_value(settlement["units"].clone()).unwrap();
+        (units, patient)
+    };
+    let (without, patient) = escorted(false);
+    assert!(without.contains(&patient.0), "premise: {without:?}");
+    let (with, patient) = escorted(true);
+    assert!(!with.contains(&patient.0), "{with:?}");
+}
+
+/// West's first decision on the island with one Skyhook, a second Foundry
+/// out east where the settlement starts, a Breaker at 80% beside it, healing
+/// at a Repair Bay when `bay` holds or left out when `breaker` does not, and
+/// an East Sentinel by the site, with its next purchase, whether it trained
+/// a Skyhook and the units a settlement took.
+fn escort_carriers(breaker: bool, bay: bool) -> (Option<Step>, bool, Option<u32>) {
+    let mut scenario = island();
+    let mut hooks = 0;
+    scenario.units.retain(|u| {
+        hooks += u32::from(u.kind == UnitKind::Skyhook);
+        u.kind != UnitKind::Skyhook || hooks == 1
+    });
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Foundry, 40, 8));
+    if breaker {
+        scenario.units.push(unit(0, UnitKind::Breaker, 39, 5));
+    }
+    if bay {
+        scenario
+            .buildings
+            .push(building(0, BuildingKind::RepairBay, 36, 5));
+    }
+    scenario.units.push(unit(1, UnitKind::Sentinel, 43, 30));
+    let state = scenario.build().unwrap();
+    let state = if breaker {
+        let hp = UnitKind::Breaker.stats().max_hp * 4 / 5;
+        wounded(&state, at(&state, 39, 5), hp)
+    } else {
+        state
+    };
+    let mut bot = restored_with(
+        &seat_with(&scenario, 0, thrifty()),
+        &scenario,
+        &state,
+        |json| {
+            json["memory"]["units"] = remembered(
+                state
+                    .units()
+                    .iter()
+                    .filter(|u| u.player == PlayerId(1))
+                    .map(|u| (u.id.0, u.kind, u.tile(), 0)),
+            );
+        },
+    );
+    let (commands, trace) = bot.act_traced(&state, &mut OwnEvents::default());
+    let trace = trace.unwrap();
+    let next = trace
+        .target
+        .and_then(|target| target.next)
+        .map(|next| next.step);
+    let skyhook = trains(&commands)
+        .iter()
+        .any(|(_, kind)| *kind == UnitKind::Skyhook);
+    let settled = trace
+        .missions
+        .iter()
+        .find(|m| matches!(m.kind, MissionKind::Settle { .. }))
+        .map(|m| m.units);
+    (next, skyhook, settled)
+}
+
+#[test]
+fn a_settlement_counts_no_carrier_seats_for_a_unit_healing_at_a_bay() {
+    let free = escort_carriers(true, false);
+    assert_eq!(
+        (free.0, free.1),
+        (Some(Step::Train(UnitKind::Skyhook)), true),
+        "premise: the Breaker escorts and needs a second carrier"
+    );
+    let without = escort_carriers(false, false);
+    assert_eq!(without.0, Some(Step::Build(BuildingKind::Foundry)));
+    assert!(
+        without.2.is_some(),
+        "premise: a Sentinel escorts the builder"
+    );
+    assert_eq!(
+        escort_carriers(true, true),
+        without,
+        "the healing Breaker neither escorts nor wants a carrier"
+    );
+}
+
+#[test]
 fn low_attention_can_deliver_a_crew_across_several_decisions() {
     let scenario = island();
     let mut state = scenario.build().unwrap();

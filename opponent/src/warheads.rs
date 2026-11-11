@@ -590,12 +590,13 @@ fn needed(aims: &[Aim], marks: &[Mark], have: u64) -> Option<(u64, u64)> {
 /// Spires, a round for every empty Spire, and another Spire when those the
 /// seat has are all stocked or rising and fewer than a known strike needs.
 /// Each needs a standing Crucible and a strike worth its rounds and the
-/// Spires still lacking. Units move on, so only buildings justify buying
-/// toward a strike. Siege weighs them and income scales them, as it does the
-/// Crucible.
+/// Spires still lacking, and a Spire a Deep Bore standing or one it could
+/// refit. Units move on, so only buildings justify buying toward a strike.
+/// Siege weighs them and income scales them, as it does the Crucible.
 pub(crate) fn investments(
     observation: &ObservationData,
     map: &MapModel,
+    frame: HomeFrame,
     traits: PersonalityTraits,
     income: u32,
 ) -> Vec<(Investment, u32)> {
@@ -603,9 +604,6 @@ pub(crate) fn investments(
         .my_buildings
         .iter()
         .any(|building| building.kind == BuildingKind::Crucible && building.built);
-    let Some(frame) = HomeFrame::of(observation, map) else {
-        return Vec::new();
-    };
     if !crucible {
         return Vec::new();
     }
@@ -636,12 +634,15 @@ pub(crate) fn investments(
     let score = crate::investments::capped(u64::from(base), worth, bar);
     let scored = u32::try_from(score).unwrap_or(u32::MAX);
     let mut list = Vec::new();
+    let bore = crate::expansion::bore_within_reach(observation);
     if spires.is_empty() {
-        list.push((Investment::Tech(BuildingKind::Spire), scored));
+        if bore {
+            list.push((Investment::Tech(BuildingKind::Spire), scored));
+        }
         return list;
     }
     let busy = spires.iter().all(|spire| !spire.built || stocked(spire));
-    if busy && (spires.len() as u64) < need {
+    if bore && busy && (spires.len() as u64) < need {
         list.push((Investment::Capacity(BuildingKind::Spire), scored));
     }
     // A volley spends its rounds at once, so every empty Spire loads toward

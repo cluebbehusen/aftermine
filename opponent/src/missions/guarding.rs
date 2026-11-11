@@ -143,9 +143,8 @@ impl Missions {
             };
             let members = index.map_or(&[][..], |i| self.list[i].units.as_slice());
             let free: Vec<_> = self
-                .available(observation, None)
+                .free(observation, ledger)
                 .into_iter()
-                .filter(|id| !ledger.stuck(*id))
                 .filter_map(|id| mine(observation, id))
                 .filter(|u| reaches(u, map, ground))
                 .collect();

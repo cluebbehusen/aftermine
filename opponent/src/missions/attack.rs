@@ -8,6 +8,7 @@
 
 use super::Scratch;
 use super::defense::{artillery, battery, lobs};
+use super::fight::Fight;
 use super::raid::{aim, blast};
 use super::{
     AttackPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, against_buildings,
@@ -27,12 +28,11 @@ use aftermine_sim::{BuildingKind, PlayerId, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
 use chassis::rng::Pcg32;
-use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Reverse;
 
 /// Tiles between a member and an enemy that make contact.
-const CONTACT_TILES: i32 = 8;
+pub(super) const CONTACT_TILES: i32 = 8;
 
 /// Tiles around a target inside which known enemies defend it.
 const DEFENSE_TILES: i32 = 10;
@@ -74,6 +74,7 @@ pub(super) const FIT: u32 = 500;
 
 const GATHER_TICKS: u64 = 1_200;
 const TRAVEL_TICKS: u64 = 3_600;
+/// Ticks an attack's fight goes on without progress before it ends.
 const ENGAGE_TICKS: u64 = 3_600;
 const WITHDRAW_TICKS: u64 = 1_200;
 const RECOVER_TICKS: u64 = 1_200;
@@ -653,10 +654,7 @@ fn travel_on(
         .iter()
         .any(|unit| unit.tile.chebyshev(target.approach) <= CONTACT_TILES);
     if arrived || contact(observation, members) {
-        let engage = AttackPhase::Engage {
-            focus: None,
-            tally: None,
-        };
+        let engage = AttackPhase::Engage(Fight::new(now));
         mission.attack_phase(target, engage, now, None);
         return None;
     }
@@ -734,25 +732,23 @@ fn engage_on(
     if peel(mission, &outflown, rally, ledger) {
         return None;
     }
-    // A fight ends once it has gone its time without progress, not after a
-    // fixed time.
-    if let Task::Attack {
-        phase: AttackPhase::Engage { tally, .. },
-        ..
-    } = &mut mission.task
-        && Tally::update(tally, observation, members, target.objective().owner)
-    {
-        mission.since = now;
-    }
-    let age = now - mission.since;
-    if !all_idle && age < ENGAGE_TICKS {
+    let Some(fight) = mission.task.fight_mut() else {
+        unreachable!("an engaged attack's fight");
+    };
+    let going = fight.advance(
+        observation,
+        members,
+        Some(target.objective().owner),
+        ENGAGE_TICKS,
+    );
+    if !all_idle && going {
         return None;
     }
     // A fight still being won goes on past its time; with no
     // armed enemy left around the army, it is over.
     if presses(plan.difficulty) && !all_idle && strength >= opposition && plan.armed(members).any()
     {
-        mission.since = now;
+        fight.press(now);
         return None;
     }
     let standing = standing(observation, target.objective());
@@ -762,7 +758,7 @@ fn engage_on(
     // bounds it.
     if all_idle
         && standing
-        && age < ENGAGE_TICKS
+        && going
         && let Some(building) = known(observation, target.objective())
     {
         let shooters: Vec<UnitId> = members
@@ -794,70 +790,6 @@ fn engage_on(
         }
     }
     None
-}
-
-/// What a fight knows of the enemy it fights: the health of the target
-/// owner's known buildings at its last decision, and the least health of
-/// the armed enemy units in sight around the army at any of its decisions.
-/// Buildings stay where they stand, so any loss of their health is progress;
-/// units step in and out of sight, so only a new low is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Tally {
-    buildings: u64,
-    units: u64,
-}
-
-impl Tally {
-    /// Updates `last`, what a fight against `owner` knew of the enemy, with
-    /// the enemy around `members` now. Returns whether the fight made
-    /// progress since.
-    pub(super) fn update(
-        last: &mut Option<Self>,
-        observation: &ObservationData,
-        members: &[&UnitObs],
-        owner: PlayerId,
-    ) -> bool {
-        let now = Self::of(observation, members, owner);
-        let progress = last.is_some_and(|last| now.progresses(last));
-        *last = Some(last.map_or(now, |last| now.since(last)));
-        progress
-    }
-
-    /// The enemy around `members` now, in a fight against `owner`.
-    fn of(observation: &ObservationData, members: &[&UnitObs], owner: PlayerId) -> Self {
-        let buildings = observation
-            .enemy_buildings
-            .iter()
-            .filter(|building| building.player == owner)
-            .map(|building| u64::from(building.hp))
-            .sum();
-        let units = observation
-            .enemy_units
-            .iter()
-            .filter(|enemy| {
-                enemy.kind.stats().can_fight()
-                    && members
-                        .iter()
-                        .any(|unit| unit.tile.chebyshev(enemy.tile) <= CONTACT_TILES)
-            })
-            .map(|enemy| u64::from(enemy.hp))
-            .sum();
-        Self { buildings, units }
-    }
-
-    /// Whether the fight made progress since `last`.
-    fn progresses(self, last: Self) -> bool {
-        self.buildings < last.buildings || self.units < last.units
-    }
-
-    /// What the fight knows after this decision, having known `last`.
-    fn since(self, last: Self) -> Self {
-        Self {
-            buildings: self.buildings,
-            units: self.units.min(last.units),
-        }
-    }
 }
 
 /// Whether an attack in `phase` has left home: on its way, staging or

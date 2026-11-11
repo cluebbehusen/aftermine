@@ -23,6 +23,7 @@ use chassis::grid::TilePos;
 
 const GATHER_TICKS: u64 = 600;
 const TRAVEL_TICKS: u64 = 1_800;
+/// Ticks a strike's fight goes on without progress before it ends.
 const ENGAGE_TICKS: u64 = 2_400;
 const WITHDRAW_TICKS: u64 = 1_200;
 

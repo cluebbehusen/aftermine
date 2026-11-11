@@ -17,9 +17,10 @@ impl Guard<'_> {
     /// The best spot for a Repair Bay beside a guarded building: where its
     /// aura reaches the most missing value among the seat's idle units wounded
     /// enough to go to a Bay and damaged buildings that no Repair Bay treats
-    /// yet, as its anchor and that value. A Bay treats the buildings it reaches and as many of the
-    /// most wounded units in reach as it has patient slots, after earlier
-    /// Bays took theirs.
+    /// yet, a building's at the repair bill the simulation charges, as its
+    /// anchor and that value. A Bay treats the buildings it reaches and as
+    /// many of the most wounded units in reach as it has patient slots, after
+    /// earlier Bays took theirs.
     pub(super) fn bay(&self) -> Option<(TilePos, u64)> {
         let observation = self.observation;
         let size = BuildingKind::RepairBay.size();
@@ -33,15 +34,18 @@ impl Guard<'_> {
             .iter()
             .map(|anchor| Span::of(size, *anchor))
             .collect();
-        // Only units resting with wounds deep enough to send them to a Bay
-        // call for one: a Bay placed by units passing through stands empty
-        // once they move on.
+        // Only units a Bay heals, resting with wounds deep enough to send
+        // them to one, call for one: a Bay placed by units passing through
+        // stands empty once they move on.
         let hurt: Vec<&UnitObs> = observation
             .my_units
             .iter()
             .filter(|unit| {
-                let max = u64::from(unit.kind.stats().max_hp);
-                unit.idle && u64::from(unit.hp) * 1_000 <= max * (1_000 - workers::UNIT_WELD_DAMAGE)
+                let stats = unit.kind.stats();
+                let max = u64::from(stats.max_hp);
+                unit.idle
+                    && stats.repairable()
+                    && u64::from(unit.hp) * 1_000 <= max * (1_000 - workers::UNIT_WELD_DAMAGE)
             })
             .collect();
         let treated = crate::missions::treating(&anchors, &hurt);
@@ -59,7 +63,7 @@ impl Guard<'_> {
             .filter(|building| building.built && building.kind != BuildingKind::RepairBay)
             .map(|building| {
                 let stats = building.kind.tier_stats(building.tier);
-                let price = building.kind.base_stats().construction.cost;
+                let price = building.kind.repair_basis(building.tier);
                 let span = Span::of(building.kind.size(), building.anchor);
                 (span, price, building.hp, stats.max_hp)
             })

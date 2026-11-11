@@ -22,17 +22,9 @@ pub(crate) struct HomeFrame {
 }
 
 impl HomeFrame {
-    /// The frame around the seat's authored start or, on a map without one,
-    /// its earliest built Foundry.
+    /// The frame around the seat's authored start, if it has one.
     pub(crate) fn of(observation: &ObservationData, map: &MapModel) -> Option<Self> {
-        let anchor = map.start(observation.me).or_else(|| {
-            observation
-                .my_buildings
-                .iter()
-                .filter(|building| building.kind == BuildingKind::Foundry && building.built)
-                .min_by_key(|building| building.id)
-                .map(|building| building.anchor)
-        })?;
+        let anchor = map.start(observation.me)?;
         Some(Self::at(
             anchor,
             observation.map_width,

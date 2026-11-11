@@ -146,12 +146,16 @@ impl Opponent {
             return None;
         }
         let mut observation = ObservationData::fog_honest(state, self.player);
+        // A seat without an authored start, as a sandbox may stage one, has
+        // no frame to break its ties in.
+        let frame = frame::HomeFrame::of(&observation, &self.map)?;
         public::merge(&mut observation);
         let events = events.take();
         let mut decision = decision::decide(
             &observation,
             &events,
             &self.map,
+            frame,
             &self.profile,
             &mut self.persistent,
         );

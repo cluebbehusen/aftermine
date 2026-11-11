@@ -150,6 +150,11 @@ fn mapped(state: &State, me: PlayerId) -> ObservationData {
     observation
 }
 
+/// The frame `observation`'s seat decides in on `map`.
+fn home_frame(observation: &ObservationData, map: &MapModel) -> crate::frame::HomeFrame {
+    crate::frame::HomeFrame::of(observation, map).unwrap()
+}
+
 fn seat(scenario: &Scenario, player: u8) -> Opponent {
     seat_with(scenario, player, config())
 }
@@ -206,6 +211,7 @@ fn calm<'a>(
     crate::investments::Situation {
         observation,
         map,
+        frame: home_frame(observation, map),
         memory,
         traits: middling(),
         saturation: 1_000,
@@ -962,11 +968,42 @@ fn a_surrendered_or_foundry_less_seat_stays_silent() {
             .is_empty()
     );
 
+    // West's Foundry falls; its authored start stays.
+    assert!(map(&scenario).start(PlayerId(0)).is_some(), "premise");
+    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    value["buildings"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|building| !(building["player"] == 0 && building["kind"] == "foundry"));
+    let state: State = serde_json::from_value(value).unwrap();
+    assert!(foundries(&state, PlayerId(0)).is_empty());
+    assert_eq!(
+        seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default()),
+        (Vec::new(), None)
+    );
+}
+
+#[test]
+fn a_sandbox_seat_without_an_authored_start_stays_silent() {
+    let mut scenario = arena(200);
+    scenario.mode = ScenarioMode::Sandbox;
+    let state = scenario.build().unwrap();
+    assert!(
+        !seat(&scenario, 0)
+            .act(&state, &mut OwnEvents::default())
+            .is_empty(),
+        "premise: the seat decides from its start"
+    );
+    // The same Foundry, placed as a sandbox building instead.
+    let start = map(&scenario).start(PlayerId(0)).unwrap();
     for row in &mut scenario.map {
         *row = row.replace('1', ".");
     }
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Foundry, start.x, start.y));
     let state = scenario.build().unwrap();
-    assert!(foundries(&state, PlayerId(0)).is_empty());
+    assert_eq!(foundries(&state, PlayerId(0)).len(), 1, "premise");
     assert_eq!(
         seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default()),
         (Vec::new(), None)

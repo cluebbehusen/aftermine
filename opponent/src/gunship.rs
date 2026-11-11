@@ -57,7 +57,7 @@ pub(crate) fn investments(
         .my_buildings
         .iter()
         .any(|building| building.kind == BuildingKind::Crucible && building.built);
-    if !crucible || !bore_within_reach(observation) {
+    if !crucible || !crate::expansion::bore_within_reach(observation) {
         return Vec::new();
     }
     let me = observation.me;
@@ -81,15 +81,4 @@ pub(crate) fn investments(
     });
     let base = u64::from(weighed(traits.air, income));
     cradles(observation, gunship, shortfall, lost, base)
-}
-
-/// Whether the seat holds a Deep Bore or an Extractor it could refit into one.
-/// With neither, a cradle's prerequisites have no next step and saving for one
-/// would hold the seat's scrap for nothing.
-fn bore_within_reach(observation: &ObservationData) -> bool {
-    observation.my_buildings.iter().any(|building| {
-        building.kind == BuildingKind::Extractor
-            && building.built
-            && (building.tier > 0 || crate::expansion::supported(observation, building.anchor))
-    })
 }

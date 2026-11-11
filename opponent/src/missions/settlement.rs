@@ -194,8 +194,14 @@ impl<'a> Settlement<'a> {
     /// enough carriers for the builder and its ground escort; while a
     /// settlement flies, the building itself stays next so the saving keeps
     /// its scrap.
-    pub(crate) fn next(&self, missions: &Missions, investment: Investment) -> Option<(Step, u32)> {
-        let basic = investments::step(self.observation, self.map, investment)?;
+    pub(crate) fn next(
+        &self,
+        missions: &Missions,
+        investment: Investment,
+        ledger: &Ledger,
+    ) -> Option<(Step, u32)> {
+        let frame = self.scratch.frame;
+        let basic = investments::step(self.observation, frame, investment)?;
         let Some(target) = self.target(missions, investment) else {
             return Some(basic);
         };
@@ -223,7 +229,7 @@ impl<'a> Settlement<'a> {
         {
             return investments::step(
                 self.observation,
-                self.map,
+                frame,
                 Investment::Tech(BuildingKind::Airworks),
             );
         }
@@ -238,7 +244,7 @@ impl<'a> Settlement<'a> {
             .max()
             .expect("the source's ground is manned");
         let escort: usize = self
-            .escorts(missions, target, source)
+            .escorts(missions, target, source, ledger)
             .into_iter()
             .filter_map(|id| mine(self.observation, id))
             .filter(|u| u.kind.stats().domain == Domain::Ground)
@@ -274,15 +280,21 @@ impl<'a> Settlement<'a> {
 
     /// Free armed units that would meet `target`'s escort need beyond what
     /// its settlement already holds: aircraft first when the escort must fly,
-    /// then the nearest to `source`, never what home keeps in reserve.
-    fn escorts(&self, missions: &Missions, target: Target, source: TilePos) -> Vec<UnitId> {
+    /// then the nearest to `source`, never what home keeps in reserve nor a
+    /// unit healing at a Repair Bay.
+    fn escorts(
+        &self,
+        missions: &Missions,
+        target: Target,
+        source: TilePos,
+        ledger: &Ledger,
+    ) -> Vec<UnitId> {
         let need = self.need(target);
         if need == [0, 0] {
             return Vec::new();
         }
-        let stuck = self.memory.stuck();
         let units: Vec<_> = missions
-            .available(self.observation, None)
+            .free(self.observation, ledger)
             .into_iter()
             .filter_map(|id| mine(self.observation, id))
             .filter(|u| !carrier(u.kind) && !workers::worker(u.kind) && u.kind.stats().can_fight())
@@ -290,7 +302,6 @@ impl<'a> Settlement<'a> {
                 u.kind.stats().domain == Domain::Air
                     || self.map.component(u.tile) == self.map.component(source)
             })
-            .filter(|u| !stuck.contains(&u.id))
             .collect();
         let mut units = missions
             .spare(self.observation, self.map, self.scratch.reserve)
@@ -314,12 +325,13 @@ impl<'a> Settlement<'a> {
         &self,
         missions: &Missions,
         investment: Investment,
+        ledger: &Ledger,
     ) -> Option<([u64; 2], bool)> {
         let target = self.target(missions, investment)?;
         let source = self.source(target)?;
         let by_air = self.by_air(source, target);
         let escorts = self
-            .escorts(missions, target, source)
+            .escorts(missions, target, source, ledger)
             .into_iter()
             .filter(|id| {
                 !by_air
@@ -430,9 +442,11 @@ impl Missions {
         };
         if self.settling(investment).is_some()
             || self.list.len() >= MISSION_CAP
-            || !context.next(self, investment).is_some_and(|(step, price)| {
-                step == Step::Build(target.kind()) && ledger.available() >= price
-            })
+            || !context
+                .next(self, investment, ledger)
+                .is_some_and(|(step, price)| {
+                    step == Step::Build(target.kind()) && ledger.available() >= price
+                })
         {
             return;
         }
@@ -460,7 +474,7 @@ impl Missions {
         };
         // Only escorts that already exist are taken: a site whose need the
         // free army cannot meet waits for production instead of a promise.
-        let escorts = context.escorts(self, target, source);
+        let escorts = context.escorts(self, target, source, ledger);
         let need = context.need(target);
         let have = strength(context.observation, escorts.iter().copied());
         if have[0] < need[0] || have[1] < need[1] {
@@ -653,7 +667,7 @@ impl Missions {
             .or_else(|| context.source(target));
         if let Some(source) = source {
             let (mut payload, air): (Vec<_>, Vec<_>) = context
-                .escorts(self, target, source)
+                .escorts(self, target, source, ledger)
                 .into_iter()
                 .partition(|id| {
                     mine(observation, *id).is_some_and(|u| u.kind.stats().domain == Domain::Ground)

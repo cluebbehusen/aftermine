@@ -165,6 +165,16 @@ fn an_army_with_its_line_wants_siege_behind_it() {
 }
 
 #[test]
+fn piledrivers_count_toward_the_army_that_wants_siege_behind_it() {
+    let mut scenario = armed(&[], &[]);
+    scenario
+        .units
+        .extend((3..=5).map(|x| unit(0, UnitKind::Piledriver, x, 10)));
+    let kinds = fabricator_trains(&scenario);
+    assert!(kinds.first().is_some_and(|kind| siege(*kind)), "{kinds:?}");
+}
+
+#[test]
 fn raiders_are_never_line_units() {
     for kind in UnitKind::ALL {
         if composition::role(kind) == Some(composition::Role::Line) {

@@ -1749,16 +1749,16 @@ fn twelve_riders_board_one_roc() {
     assert_eq!(boarding[0].1.len(), 12);
 }
 
-#[test]
-fn a_roc_leads_the_lift_and_the_skyhooks_follow_to_land_no_sooner() {
-    let mut scenario = crowded(&[]);
-    scenario.units.push(unit(0, UnitKind::Roc, 11, 11));
-    let model = map(&scenario);
+/// Plays West's lift on `scenario`, led by its Roc, until every carrier has
+/// set riders down on East's island. Asserts that only the Roc takes off at
+/// first and that no Skyhook sets riders down there before it.
+fn roc_leads(scenario: &Scenario) {
+    let model = map(scenario);
     let island = model.component(EAST_START);
     let mut state = scenario.build().unwrap();
     let roc = roc(&state);
     let hooks: Vec<UnitId> = skyhooks(&state, 0).iter().map(|unit| unit.id).collect();
-    let mut opponent = seat(&scenario, 0);
+    let mut opponent = seat(scenario, 0);
     let mut took_off = false;
     let mut landed: Vec<(UnitId, u64)> = Vec::new();
     while state.current_tick() < 4_000 && landed.len() < 3 {
@@ -1797,6 +1797,103 @@ fn a_roc_leads_the_lift_and_the_skyhooks_follow_to_land_no_sooner() {
         let followed = when(hook).expect("each Skyhook sets its riders down");
         assert!(followed >= led, "a Skyhook landed before the Roc");
     }
+}
+
+#[test]
+fn a_roc_leads_the_lift_and_the_skyhooks_follow_to_land_no_sooner() {
+    let mut scenario = crowded(&[]);
+    scenario.units.push(unit(0, UnitKind::Roc, 11, 11));
+    roc_leads(&scenario);
+}
+
+/// The isles with West's army and its Roc on the islet, more riders than
+/// the Roc holds, so the Skyhooks load there too.
+fn islet_lift() -> Scenario {
+    let mut scenario = isles();
+    for unit in &mut scenario.units {
+        if unit.kind == UnitKind::Sentinel {
+            unit.x += 12;
+        }
+    }
+    for x in 18..22 {
+        for y in [7, 8, 15, 16] {
+            scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
+        }
+    }
+    scenario.units.push(unit(0, UnitKind::Roc, 19, 4));
+    scenario
+}
+
+#[test]
+fn skyhooks_loaded_off_home_ground_follow_the_roc_too() {
+    roc_leads(&islet_lift());
+}
+
+#[test]
+fn skyhooks_waiting_off_home_ground_unload_there_once_the_roc_is_lost() {
+    let scenario = islet_lift();
+    let model = map(&scenario);
+    let island = model.component(EAST_START);
+    let mut state = scenario.build().unwrap();
+    let roc = roc(&state);
+    let hooks: Vec<UnitId> = skyhooks(&state, 0).iter().map(|unit| unit.id).collect();
+    let mut opponent = seat(&scenario, 0);
+    let mut flight = None;
+    while flight.is_none() {
+        assert!(state.current_tick() < 2_000, "premise: the Roc takes off");
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        flight = trace
+            .and_then(|trace| lift(&trace.missions))
+            .filter(|mission| mission.phase == Phase::Fly)
+            .map(|mission| mission.id);
+        state.tick(&commands);
+    }
+    assert!(
+        skyhooks(&state, 0)
+            .iter()
+            .all(|hook| !hook.cargo.is_empty() && model.component(hook.tile()) != island),
+        "premise: the Skyhooks wait loaded off the target's island"
+    );
+    // The Roc is shot down with its riders.
+    let mut value = serde_json::to_value(&state).unwrap();
+    value["units"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|unit| unit["id"] != roc.0);
+    let mut state: State = serde_json::from_value(value).unwrap();
+    let until = state.current_tick() + 4_000;
+    let mut unloaded: Vec<UnitId> = Vec::new();
+    loop {
+        assert!(state.current_tick() < until, "the lift never ended");
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let Some(trace) = trace else {
+            state.tick(&commands);
+            continue;
+        };
+        if !trace
+            .missions
+            .iter()
+            .any(|mission| Some(mission.id) == flight)
+        {
+            break;
+        }
+        for (units, goal) in runs(&commands) {
+            assert!(
+                !units.iter().any(|id| hooks.contains(id)) || model.component(goal) != island,
+                "a Skyhook heads for the landing: {commands:?}"
+            );
+        }
+        for (carrier, at, _) in unloads(&commands) {
+            if hooks.contains(&carrier) {
+                assert_ne!(model.component(at), island, "{commands:?}");
+                unloaded.push(carrier);
+            }
+        }
+        state.tick(&commands);
+    }
+    unloaded.sort_unstable();
+    unloaded.dedup();
+    assert_eq!(unloaded, hooks, "each sets its riders down where it waits");
 }
 
 #[test]
@@ -1947,7 +2044,7 @@ fn landed(riders: &[UnitId], since: u64, tally: &serde_json::Value) -> serde_jso
             "task": {
                 "task": "lift",
                 "target": {"owner": 1, "building": "foundry", "anchor": {"x": 35, "y": 11}},
-                "phase": {"fight": {"focus": null, "tally": tally}},
+                "phase": {"fight": {"focus": null, "tally": tally, "progressed": since}},
             },
             "since": since,
             "units": riders,

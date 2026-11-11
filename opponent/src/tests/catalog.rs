@@ -32,6 +32,7 @@ fn offered_lifting(
     let situation = Situation {
         observation: &observation,
         map: &model,
+        frame: home_frame(&observation, &model),
         memory: &memory,
         traits: PersonalityTraits {
             air: 100,

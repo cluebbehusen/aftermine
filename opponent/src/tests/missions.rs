@@ -793,7 +793,7 @@ fn a_bastion_is_left_alone_while_the_army_that_could_beat_it_is_away_fighting() 
                 "task": {
                     "task": "attack",
                     "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
-                    "phase": {"engage": {"focus": null}},
+                    "phase": {"engage": {"focus": null, "progressed": state.current_tick()}},
                 },
                 "since": state.current_tick(),
                 "units": garrison,

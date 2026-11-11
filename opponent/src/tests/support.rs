@@ -163,6 +163,57 @@ fn each_damaged_building_gets_its_own_welder() {
     assert_eq!(patients, own);
 }
 
+/// The building West's one free worker welds on its first decision in the
+/// arena with a Fabricator and a Turret beside home, each building of the
+/// `cut` kinds at the given tier and half its health.
+fn welded_first(cut: &[(BuildingKind, u8)]) -> Vec<BuildingKind> {
+    let mut scenario = arena(200);
+    scenario
+        .units
+        .retain(|unit| !(unit.player == 0 && unit.x == 6));
+    scenario.buildings.extend([
+        building(0, BuildingKind::Fabricator, 3, 1),
+        building(0, BuildingKind::Turret, 10, 7),
+    ]);
+    let state = scenario.build().unwrap();
+    let mut value = serde_json::to_value(&state).unwrap();
+    for entry in value["buildings"].as_array_mut().unwrap() {
+        let kind: BuildingKind = serde_json::from_value(entry["kind"].clone()).unwrap();
+        if let Some((_, tier)) = cut.iter().find(|(cut, _)| *cut == kind) {
+            entry["tier"] = (*tier).into();
+            entry["hp"] = (kind.tier_stats(*tier).max_hp / 2).into();
+        }
+    }
+    let state: State = serde_json::from_value(value).unwrap();
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    repairs(&commands)
+        .into_iter()
+        .map(|(_, patient)| {
+            state
+                .buildings()
+                .iter()
+                .find(|building| building.id == patient)
+                .unwrap()
+                .kind
+        })
+        .collect()
+}
+
+#[test]
+fn welders_rank_buildings_by_the_repair_bill_the_simulation_charges() {
+    // Half a Foundry bills less than half a Fabricator, which bills less
+    // than half a heavy turret: the Foundry's weld has its own price and an
+    // upgraded building's is its tier's.
+    assert_eq!(
+        welded_first(&[(BuildingKind::Foundry, 0), (BuildingKind::Fabricator, 0)]),
+        [BuildingKind::Fabricator]
+    );
+    assert_eq!(
+        welded_first(&[(BuildingKind::Fabricator, 0), (BuildingKind::Turret, 1)]),
+        [BuildingKind::Turret]
+    );
+}
+
 #[test]
 fn idle_workers_keep_off_a_node_in_known_danger() {
     let nodes = |raider: bool| {
@@ -607,6 +658,68 @@ fn a_repair_bay_goes_up_where_the_wounded_gather() {
         second.is_none_or(|second| gap(anchor, (2, 2), second, (2, 2)) > 3),
         "a second Bay only for wounded the first cannot reach: {second:?}"
     );
+}
+
+/// What West builds on its first decision in the arena with 600 scrap and
+/// a fair income, its `kind` units at `spots` beside home at a quarter of
+/// their health.
+fn built_for_wounded(kind: UnitKind, spots: &[(i32, i32)]) -> Vec<(BuildingKind, TilePos)> {
+    let mut scenario = arena(600);
+    for (x, y) in spots {
+        scenario.units.push(unit(0, kind, *x, *y));
+    }
+    let state = scenario.build().unwrap();
+    let ids: Vec<UnitId> = spots.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    let state = all_wounded(&state, &ids, kind.stats().max_hp / 4);
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["income"] = serde_json::json!({"previous": null, "per_minute": 2_000});
+    });
+    builds(&opponent.act(&state, &mut OwnEvents::default()))
+}
+
+#[test]
+fn a_wounded_maw_buys_no_repair_bay_that_cannot_heal_it() {
+    let bay = |built: &[(BuildingKind, TilePos)]| {
+        built
+            .iter()
+            .any(|(kind, _)| *kind == BuildingKind::RepairBay)
+    };
+    let breakers = built_for_wounded(UnitKind::Breaker, &SQUAD);
+    assert!(bay(&breakers), "premise: wounded Breakers want a Bay");
+    let maw = built_for_wounded(UnitKind::Maw, &[(4, 9)]);
+    assert!(!bay(&maw), "{maw:?}");
+}
+
+#[test]
+fn a_repair_bay_weighs_damaged_buildings_at_the_repair_bill_the_simulation_charges() {
+    // Beside a Fabricator at half health, a Foundry or a Bulwark at one
+    // health: the Foundry's weld has its own price, below its build cost,
+    // and the Bulwark's is its tier's, above a Turret's.
+    let wanted = |felled: BuildingKind, tier: u8| {
+        let mut scenario = arena(0);
+        scenario.buildings.extend([
+            building(0, BuildingKind::Fabricator, 3, 1),
+            building(0, BuildingKind::Turret, 6, 3),
+        ]);
+        let state = scenario.build().unwrap();
+        let mut value = serde_json::to_value(&state).unwrap();
+        for entry in value["buildings"].as_array_mut().unwrap() {
+            let kind: BuildingKind = serde_json::from_value(entry["kind"].clone()).unwrap();
+            if entry["player"] != 0 {
+                continue;
+            }
+            if kind == felled {
+                entry["tier"] = tier.into();
+                entry["hp"] = 1.into();
+            } else if kind == BuildingKind::Fabricator {
+                entry["hp"] = (kind.base_stats().max_hp / 2).into();
+            }
+        }
+        let state: State = serde_json::from_value(value).unwrap();
+        bay(&scenario, &state)
+    };
+    assert_eq!(wanted(BuildingKind::Foundry, 0), None);
+    assert!(wanted(BuildingKind::Turret, 2).is_some());
 }
 
 #[test]
