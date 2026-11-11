@@ -303,8 +303,9 @@ pub fn discover(cancelled: impl Fn() -> bool) -> Catalog {
 }
 
 /// [`discover`] for Continue, which also reads the records iCloud has not
-/// brought down yet, waiting on their downloads, so it never resumes an
-/// older session past a newer one still on its way.
+/// brought down yet, waiting on their downloads, so a newer session on its
+/// way is found before an older one resumes. A download that cannot finish,
+/// as when the device is offline, leaves its record out.
 pub(crate) fn discover_arrived(cancelled: impl Fn() -> bool) -> Catalog {
     discover_with(&|_| false, cancelled)
 }
