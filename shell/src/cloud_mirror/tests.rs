@@ -1601,3 +1601,24 @@ fn a_push_is_sent_once_a_pass_has_taken_it_up_and_run() {
     });
     assert!(shared.sent());
 }
+
+#[test]
+fn a_push_cut_short_stays_unsent_until_the_pass_after_it() {
+    let shared = Shared::default();
+    shared.want(Mode::Push);
+    {
+        let mut queue = shared.queue();
+        queue.wanted = None;
+        queue.running = Some(Mode::Push);
+        queue.sending = std::mem::take(&mut queue.unsent);
+        queue.end_pass(true);
+    }
+    assert!(!shared.sent(), "records the push skipped have not gone up");
+    {
+        let mut queue = shared.queue();
+        queue.running = Some(Mode::Full);
+        queue.sending = std::mem::take(&mut queue.unsent);
+        queue.end_pass(false);
+    }
+    assert!(shared.sent());
+}

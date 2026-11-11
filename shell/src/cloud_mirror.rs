@@ -537,6 +537,17 @@ struct Queue {
     missing: Vec<String>,
 }
 
+impl Queue {
+    /// Marks the pass under way done. A pass cut short leaves the push it
+    /// took up to the pass that follows it.
+    fn end_pass(&mut self, again: bool) {
+        self.running = None;
+        if std::mem::take(&mut self.sending) && again {
+            self.unsent = true;
+        }
+    }
+}
+
 impl Shared {
     fn queue(&self) -> MutexGuard<'_, Queue> {
         self.queue.lock().unwrap_or_else(PoisonError::into_inner)
@@ -712,9 +723,7 @@ fn serve_one(shared: &Shared, remote: &impl Remote, places: impl FnOnce() -> Opt
     };
     let again = {
         let mut queue = shared.queue();
-        queue.running = None;
-        queue.sending = false;
-        match outcome {
+        let again = match outcome {
             Some(outcome) => {
                 // A push has not looked at CloudKit, and a question answered
                 // while this pass ran stays answered.
@@ -742,7 +751,9 @@ fn serve_one(shared: &Shared, remote: &impl Remote, places: impl FnOnce() -> Opt
                 outcome.again
             }
             None => false,
-        }
+        };
+        queue.end_pass(again);
+        again
     };
     if again {
         shared.want(Mode::Full);
