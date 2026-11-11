@@ -41,7 +41,9 @@ fn clear(missions: &[MissionStatus]) -> Option<MissionStatus> {
 #[test]
 fn splash_bombers_go_together_at_the_anti_air_around_the_lift_target() {
     let scenario = with_bombers(strait());
-    let (state, mut opponent) = bombing(&scenario, &around_the_start(3));
+    // Enough anti-air to call for both bombers.
+    let flak = around_the_start(4);
+    let (state, mut opponent) = bombing(&scenario, &flak);
     let condors: Vec<UnitId> = BOMBERS.iter().map(|(x, y)| at(&state, *x, *y)).collect();
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     let mission = clear(&trace.unwrap().missions).expect("a clearance forms");
@@ -49,7 +51,7 @@ fn splash_bombers_go_together_at_the_anti_air_around_the_lift_target() {
         unreachable!();
     };
     assert!(
-        (31..34).contains(&aim.x) && aim.y == 9,
+        flak.contains(&(aim.x, aim.y)),
         "at the remembered anti-air: {aim:?}"
     );
     let sent: Vec<(Vec<UnitId>, TilePos)> = runs(&commands)
@@ -62,6 +64,39 @@ fn splash_bombers_go_together_at_the_anti_air_around_the_lift_target() {
     let mut units = units.clone();
     units.sort_unstable();
     assert_eq!(units, condors, "both bombers, in one order");
+}
+
+#[test]
+fn a_clearance_takes_only_the_bombers_the_anti_air_calls_for() {
+    let mut scenario = with_bombers(strait());
+    for (x, y) in [(12, 4), (12, 19), (11, 2), (11, 21)] {
+        scenario.units.push(unit(0, UnitKind::Condor, x, y));
+    }
+    let sent = |flak: i32| {
+        let (state, mut opponent) = bombing(&scenario, &around_the_start(flak));
+        let condors: Vec<UnitId> = state
+            .units()
+            .iter()
+            .filter(|unit| unit.kind == UnitKind::Condor)
+            .map(|unit| unit.id)
+            .collect();
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        let groups: Vec<Vec<UnitId>> = runs(&commands)
+            .into_iter()
+            .map(|(units, _)| units)
+            .filter(|units| units.iter().any(|id| condors.contains(id)))
+            .collect();
+        let [units] = &groups[..] else {
+            panic!("one clearance order: {commands:?}");
+        };
+        (units.len(), condors.len())
+    };
+    let (light, all) = sent(3);
+    let (heavy, _) = sent(4);
+    assert!(
+        light < heavy && heavy < all,
+        "{light} then {heavy} of {all}"
+    );
 }
 
 #[test]
@@ -295,6 +330,37 @@ fn a_roc_outweighed_by_the_anti_air_around_the_target_stays_for_the_lift() {
             .any(|(units, _)| units.contains(&roc)),
         "it stays free: {commands:?}"
     );
+}
+
+#[test]
+fn a_roc_the_anti_air_does_not_call_for_carries_the_lift() {
+    let mut scenario = with_roc(strait());
+    scenario.units.push(unit(0, UnitKind::Roc, 11, 14));
+    // More riders than the Skyhooks hold.
+    for x in 2..10 {
+        scenario.units.push(unit(0, UnitKind::Sentinel, x, 16));
+    }
+    let (mut state, mut opponent) = bombing(&scenario, &around_the_start(3));
+    let rocs = [at(&state, ROC_HOME.0, ROC_HOME.1), at(&state, 11, 14)];
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert!(clear(&trace.unwrap().missions).is_some(), "premise");
+    let cleared: Vec<UnitId> = runs(&commands)
+        .into_iter()
+        .flat_map(|(units, _)| units)
+        .filter(|id| rocs.contains(id))
+        .collect();
+    let [cleared] = cleared[..] else {
+        panic!("one Roc outweighs the anti-air: {commands:?}");
+    };
+    let other = rocs.into_iter().find(|roc| *roc != cleared).unwrap();
+    let mut carried = false;
+    state.tick(&commands);
+    while state.current_tick() < 120 && !carried {
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        carried = boards(&commands, other);
+        state.tick(&commands);
+    }
+    assert!(carried, "the other Roc carries riders");
 }
 
 #[test]

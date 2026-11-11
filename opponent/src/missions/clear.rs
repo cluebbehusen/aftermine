@@ -1,8 +1,8 @@
-//! The clear mission: a seat whose ground reaches no enemy sends its free
-//! splash bombers together ahead of its lifts, at the enemy anti-air around
-//! the building a lift goes after, or the next lift would. It goes at the
-//! known anti-air there, units or buildings, whose known cover it outweighs
-//! most easily, sweeps it and moves on to the next, then sweeps the
+//! The clear mission: a seat whose ground reaches no enemy sends free splash
+//! bombers together ahead of its lifts, as many as the enemy anti-air around
+//! the building a lift goes after, or the next lift would, calls for. It goes
+//! at the known anti-air there, units or buildings, whose known cover it
+//! outweighs most easily, sweeps it and moves on to the next, then sweeps the
 //! building's surroundings, holding the defenders' attention while the
 //! carriers land, and withdraws when the anti-air around it outweighs it.
 //!
@@ -73,8 +73,9 @@ pub(super) struct Sweep<'a> {
 
 impl Missions {
     /// Advances every clearance under way, then, while the seat's ground
-    /// reaches no enemy, sends the free splash bombers beyond the home
-    /// reserve at enemy anti-air they outweigh.
+    /// reaches no enemy, sends free splash bombers beyond the home reserve at
+    /// enemy anti-air they outweigh, as many as the anti-air around the
+    /// lift's target calls for.
     pub(crate) fn clear_anti_air(
         &mut self,
         observation: &ObservationData,
@@ -108,8 +109,9 @@ impl Missions {
     }
 
     /// Whether the free empty gunships fit to go can clear the known
-    /// anti-air around the next lift's target, and so go at it rather than
-    /// carry the lift: never while none is known or they could not take it.
+    /// anti-air around the next lift's target where no gunship clearance is
+    /// aimed yet, and so go at it rather than carry the lift: never while
+    /// none is known or they could not take it.
     pub(crate) fn gunships_clear(
         &self,
         observation: &ObservationData,
@@ -118,9 +120,10 @@ impl Missions {
         memory: &Memory,
         scratch: &Scratch,
     ) -> bool {
-        let Some(sweep) = self.lift_sweep(observation, map, profile, memory, scratch) else {
+        let Some(mut sweep) = self.lift_sweep(observation, map, profile, memory, scratch) else {
             return false;
         };
+        sweep.held = self.aims(observation, None, true);
         let strength: u64 = self
             .available(observation, None)
             .into_iter()
@@ -269,7 +272,7 @@ impl Missions {
             .collect()
     }
 
-    /// Sends every free splash bomber beyond the reserve at the anti-air they
+    /// Sends free splash bombers beyond the reserve at the anti-air they
     /// outweigh most easily. Returns whether a clearance formed.
     fn form_clear(&mut self, sweep: &Sweep<'_>, ledger: &mut Ledger) -> bool {
         let observation = sweep.observation;
@@ -287,8 +290,8 @@ impl Missions {
         self.launch_clear(sweep, &fit, ledger)
     }
 
-    /// Sends every free idle empty gunship fit to go at the anti-air it
-    /// outweighs most easily. A seat whose ground reaches no enemy keeps no
+    /// Sends free idle empty gunships fit to go at the anti-air they
+    /// outweigh most easily. A seat whose ground reaches no enemy keeps no
     /// gunship back for the reserve: walkers can reach nothing at home that
     /// it would have to answer. Returns whether a clearance formed.
     fn form_gunship_clear(&mut self, sweep: &Sweep<'_>, ledger: &mut Ledger) -> bool {
@@ -302,8 +305,9 @@ impl Missions {
         self.launch_clear(sweep, &fit, ledger)
     }
 
-    /// Gathers `fit` to go at the anti-air it outweighs most easily, when it
-    /// outweighs all of it around the target. Returns whether it formed.
+    /// Gathers those of `fit` nearest the rally that outweigh all the
+    /// anti-air around the target to go at the anti-air they outweigh most
+    /// easily. Returns whether it formed.
     fn launch_clear(&mut self, sweep: &Sweep<'_>, fit: &[&UnitObs], ledger: &mut Ledger) -> bool {
         let observation = sweep.observation;
         if self.list.len() >= MISSION_CAP {
@@ -319,7 +323,7 @@ impl Missions {
         let Some(rally) = air::pad(observation, sweep.map, sweep.frame, doubled(aim)) else {
             return false;
         };
-        let recruits = recruit(sweep.frame, fit, rally, u64::MAX, UNIT_CAP);
+        let recruits = recruit(sweep.frame, fit, rally, sweep.guard(), UNIT_CAP);
         if recruits.is_empty() || !ledger.order(run(recruits.clone(), rally)) {
             return false;
         }
