@@ -443,7 +443,7 @@ fn a_placement_from_the_build_rings_hands_y_back_to_the_commands() {
 }
 
 #[test]
-fn letting_go_of_lt_under_an_open_build_ring_keeps_its_category() {
+fn letting_go_of_lt_under_an_open_build_ring_keeps_placing_and_its_category() {
     let (mut game, mut input) = harvester();
     pick(&mut game, &mut input, "Build");
     pick(&mut game, &mut input, "Defense");
@@ -461,7 +461,7 @@ fn letting_go_of_lt_under_an_open_build_ring_keeps_its_category() {
     assert_eq!(heading(&game, &input).as_deref(), Some("DEFENSE"));
     feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
     frame(&mut game, &mut input);
-    assert!(input.placing.is_none(), "letting go ends the chain");
+    assert!(input.placing.is_some(), "letting go keeps placing");
     assert_eq!(
         heading(&game, &input).as_deref(),
         Some("DEFENSE"),
@@ -469,10 +469,24 @@ fn letting_go_of_lt_under_an_open_build_ring_keeps_its_category() {
     );
     tap(&mut game, &mut input, PadButton::North);
     assert!(input.ring.is_none());
-    assert!(
-        !input.construction_open(),
-        "and closes construction with it"
+    assert!(input.placing.is_some(), "closing the ring keeps placing");
+
+    // LT is up, so A is a plain placement, which ends the mode.
+    super::super::tests::pad_scene::rest_on(
+        &mut game,
+        &mut input,
+        macroquad::prelude::vec2(28.5, 20.5),
     );
+    tap(&mut game, &mut input, PadButton::South);
+    assert!(
+        game.pending
+            .iter()
+            .any(|pc| matches!(pc.command, Command::Build { queue: false, .. })),
+        "A placed a plain Barricade: {:?}",
+        game.pending
+    );
+    assert!(input.placing.is_none(), "and ended placement");
+    assert!(!input.construction_open(), "closing construction with it");
 }
 
 #[test]

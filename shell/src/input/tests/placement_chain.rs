@@ -1,6 +1,7 @@
 use super::*;
 
-/// One harvester with scrap for a row of turrets on open, visible ground.
+/// A selected Harvester with scrap for a row of turrets on open, visible
+/// ground, and a second one standing by.
 fn funded_builder() -> (Game, InputState) {
     let scenario = aftermine_sim::Scenario::from_json(
         &serde_json::json!({
@@ -19,7 +20,8 @@ fn funded_builder() -> (Game, InputState) {
                 "################"
             ],
             "units": [
-                {"player": 0, "kind": "harvester", "x": 5, "y": 3}
+                {"player": 0, "kind": "harvester", "x": 5, "y": 3},
+                {"player": 0, "kind": "harvester", "x": 3, "y": 5}
             ]
         })
         .to_string(),
@@ -49,34 +51,46 @@ fn builds(game: &Game) -> Vec<(TilePos, bool)> {
         .collect()
 }
 
-#[test]
-fn letting_go_of_shift_after_a_queued_placement_ends_the_chain() {
-    let (mut game, mut input) = funded_builder();
-    let (a, b, c) = (at(&game, 7, 3), at(&game, 9, 3), at(&game, 11, 3));
+/// Shift-clicks two turrets, then lets go of Shift.
+fn shift_chain(game: &mut Game, input: &mut InputState) {
+    let (a, b) = (at(game, 7, 3), at(game, 9, 3));
     apply_events(
-        &mut game,
-        &mut input,
+        game,
+        input,
         &[
             key_down(Key::Shift),
             left_down(a),
             left_up(a),
             left_down(b),
             left_up(b),
+            key_up(Key::Shift),
         ],
     );
-    assert_eq!(builds(&game).len(), 2, "premise: Shift chains");
-    assert!(input.placing.is_some(), "and keeps placing while held");
+}
 
-    apply_events(&mut game, &mut input, &[key_up(Key::Shift)]);
-    assert!(input.placing.is_none(), "letting go ends the chain");
+const CHAIN: [(TilePos, bool); 2] = [(TilePos::new(7, 3), true), (TilePos::new(9, 3), true)];
 
-    // The next click selects; it must not build a plain site that would
-    // replace the two just queued.
-    apply_events(&mut game, &mut input, &[left_down(c), left_up(c)]);
-    assert_eq!(
-        builds(&game),
-        [(TilePos::new(7, 3), true), (TilePos::new(9, 3), true)]
+#[test]
+fn letting_go_of_shift_mid_chain_keeps_placing_until_a_plain_click() {
+    let (mut game, mut input) = funded_builder();
+    shift_chain(&mut game, &mut input);
+    assert_eq!(builds(&game), CHAIN, "premise: Shift chains");
+    assert!(input.placing.is_some(), "letting go of Shift keeps placing");
+
+    apply_events(
+        &mut game,
+        &mut input,
+        &[key_down(Key::Shift), key_up(Key::Shift)],
     );
+    assert!(input.placing.is_some(), "and so does a bare Shift tap");
+
+    // Shift is up, so the click is a plain build: it replaces the
+    // builder's orders, the chain included, and ends placement.
+    let c = at(&game, 11, 3);
+    apply_events(&mut game, &mut input, &[left_down(c), left_up(c)]);
+    assert_eq!(builds(&game)[2..], [(TilePos::new(11, 3), false)]);
+    assert!(input.placing.is_none(), "a plain placement ends the mode");
+    assert!(input.build_menu, "and the palette stays for the next pick");
 }
 
 #[test]
@@ -106,7 +120,41 @@ fn letting_go_of_shift_before_anything_is_placed_keeps_placement_armed() {
 }
 
 #[test]
-fn letting_go_of_shift_mid_stroke_leaves_the_decision_to_the_release() {
+fn escape_after_a_chain_leaves_placement_and_keeps_the_chain() {
+    let (mut game, mut input) = funded_builder();
+    shift_chain(&mut game, &mut input);
+    apply_events(
+        &mut game,
+        &mut input,
+        &[key_down(Key::Escape), key_up(Key::Escape)],
+    );
+    assert!(input.placing.is_none(), "Esc leaves placement");
+    assert!(input.build_menu, "back to the palette");
+    assert_eq!(builds(&game), CHAIN, "without placing or undoing a site");
+}
+
+#[test]
+fn the_ribbon_s_cross_after_a_chain_leaves_placement_and_keeps_the_chain() {
+    let (mut game, mut input) = funded_builder();
+    let cross = macroquad::math::Rect::new(460.0, 624.0, 36.0, 36.0);
+    let mut layout = bare_layout(f32::INFINITY, 0.0);
+    layout.mode_ribbon = macroquad::math::Rect::new(220.0, 620.0, 280.0, 44.0);
+    layout.ribbon_cancel = cross;
+    game.presentation.layout.set(layout);
+    shift_chain(&mut game, &mut input);
+    assert!(input.placing.is_some(), "premise: still placing");
+
+    apply_events(
+        &mut game,
+        &mut input,
+        &click(cross.center().x, cross.center().y),
+    );
+    assert!(input.placing.is_none(), "the cross ends placement");
+    assert_eq!(builds(&game), CHAIN, "and places nothing");
+}
+
+#[test]
+fn letting_go_of_shift_mid_stroke_keeps_placing() {
     let (mut game, mut input) = funded_builder();
     let (a, b, c) = (at(&game, 7, 3), at(&game, 8, 3), at(&game, 9, 3));
     apply_events(
@@ -124,15 +172,20 @@ fn letting_go_of_shift_mid_stroke_leaves_the_decision_to_the_release() {
         "the stroke outlives the Shift release"
     );
     apply_events(&mut game, &mut input, &[mouse_move(c), left_up(c)]);
-    assert_eq!(builds(&game).len(), 3, "the stroke kept stamping");
+    let staged = builds(&game);
+    assert_eq!(staged.len(), 3, "the stroke kept stamping");
     assert!(
-        input.placing.is_none(),
-        "and a release without Shift ends placement"
+        staged.iter().all(|(_, queue)| *queue),
+        "queued, as the press was: {staged:?}"
+    );
+    assert!(
+        input.placing.is_some(),
+        "a stroke begun under Shift keeps placing"
     );
 }
 
 #[test]
-fn turning_queue_off_after_a_queued_confirm_ends_touch_placement() {
+fn turning_queue_off_after_a_queued_confirm_keeps_touch_placement() {
     let (mut game, mut input) = funded_builder();
     let chip = macroquad::math::Rect::new(160.0, 620.0, 96.0, 44.0);
     let mut layout = bare_layout(f32::INFINITY, 0.0);
@@ -140,25 +193,29 @@ fn turning_queue_off_after_a_queued_confirm_ends_touch_placement() {
     game.presentation.layout.set(layout);
     let ground = vec2(7.5, 3.5);
 
-    // QUEUE off with a ghost down but nothing placed keeps placing.
     input.queue_toggle = QueueToggle::Locked;
     tap_world(&mut game, &mut input, ground);
-    tap(&mut game, &mut input, chip.center());
-    assert!(input.placing.is_some(), "nothing was placed yet");
-    assert!(input.ghost_anchor().is_some(), "and the ghost stays down");
-
-    tap(&mut game, &mut input, chip.center());
     tap_check(&mut game, &mut input);
     assert_eq!(builds(&game).len(), 1, "premise: the queued confirm built");
-    assert!(input.placing.is_some(), "QUEUE keeps placing");
+    let next = input.ghost_anchor().expect("the ghost moves on");
 
     tap(&mut game, &mut input, chip.center());
     assert_eq!(input.queue_toggle, QueueToggle::Off);
-    assert!(input.placing.is_none(), "turning QUEUE off ends the chain");
+    assert!(input.placing.is_some(), "turning QUEUE off keeps placing");
+    assert_eq!(
+        input.ghost_anchor(),
+        Some(next),
+        "with the ghost where it was"
+    );
+
+    // QUEUE is off, so the check mark is a plain build that ends placement.
+    tap_check(&mut game, &mut input);
+    assert_eq!(builds(&game)[1..], [(next, false)]);
+    assert!(input.placing.is_none(), "a plain confirm ends the mode");
 }
 
 #[test]
-fn letting_go_of_shift_mid_stroke_then_dropping_it_ends_the_chain() {
+fn dropping_a_stroke_after_letting_go_of_shift_keeps_placing() {
     let (mut game, mut input) = funded_builder();
     let (a, b, c) = (at(&game, 7, 3), at(&game, 9, 3), at(&game, 10, 3));
     apply_events(
@@ -172,45 +229,58 @@ fn letting_go_of_shift_mid_stroke_then_dropping_it_ends_the_chain() {
         &mut input,
         &[left_down(b), mouse_move(c), key_up(Key::Shift)],
     );
-    assert!(
-        input.placing.is_some(),
-        "the live stroke defers the release"
-    );
     apply_events(
         &mut game,
         &mut input,
         &[key_down(Key::Escape), key_up(Key::Escape)],
     );
-    assert!(
-        input.placing.is_none(),
-        "dropping the stroke settles the released queue"
-    );
+    assert!(input.planned_stamps().is_empty(), "Esc drops the stroke");
+    assert!(input.placing.is_some(), "and keeps placing");
     assert_eq!(builds(&game).len(), 1);
 }
 
 #[test]
-fn a_fully_refused_release_after_letting_go_of_shift_ends_the_chain() {
+fn a_fully_refused_plain_release_after_a_chain_keeps_placing() {
     let (mut game, mut input) = funded_builder();
     let (a, b) = (at(&game, 7, 3), at(&game, 9, 3));
     apply_events(
         &mut game,
         &mut input,
-        &[key_down(Key::Shift), left_down(a), left_up(a)],
+        &[
+            key_down(Key::Shift),
+            left_down(a),
+            left_up(a),
+            key_up(Key::Shift),
+        ],
     );
-    apply_events(&mut game, &mut input, &[left_down(b), key_up(Key::Shift)]);
-    // Something else takes the planned ground before the release.
+    apply_events(&mut game, &mut input, &[left_down(b)]);
+    // The other Harvester founds a site on the planned ground before the
+    // release. The builder's own would go with the orders a plain build
+    // replaces.
     let builder = game.presentation.selection.units[0];
+    let other = game
+        .state
+        .units()
+        .iter()
+        .map(|unit| unit.id)
+        .find(|id| *id != builder)
+        .expect("a second Harvester");
     game.issue(Command::Build {
-        units: vec![builder],
+        units: vec![other],
         kind: aftermine_sim::BuildingKind::Barricade,
         anchor: TilePos::new(9, 3),
         queue: true,
         defer: false,
     });
+    game.advance_ticks(1);
     apply_events(&mut game, &mut input, &[left_up(b)]);
     assert!(
-        input.placing.is_none(),
-        "nothing staged, but the released queue still ends the chain"
+        builds(&game).is_empty(),
+        "premise: the release staged nothing"
+    );
+    assert!(
+        input.placing.is_some(),
+        "nothing staged, so the refusal keeps placing"
     );
 }
 
@@ -266,7 +336,11 @@ fn a_mouse_placement_under_a_held_left_trigger_leaves_the_palette_up() {
             button: PadButton::LeftTrigger,
         }],
     );
-    assert!(input.placing.is_none(), "letting go ends the chain");
+    assert!(input.placing.is_some(), "letting go keeps placing");
+    let b = at(&game, 9, 3);
+    feed(&mut game, &mut input, &[left_down(b), left_up(b)]);
+    assert_eq!(builds(&game)[1..], [(TilePos::new(9, 3), false)]);
+    assert!(input.placing.is_none(), "a plain click ends the mode");
     assert!(
         input.construction_open(),
         "the drawn palette stays for the next pick"
