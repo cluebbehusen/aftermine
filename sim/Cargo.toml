@@ -2,7 +2,6 @@
 name = "aftermine-sim"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 publish.workspace = true
 description = "Aftermine game rules: pure, deterministic, headless"
 
