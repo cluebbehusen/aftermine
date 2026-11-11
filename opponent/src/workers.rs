@@ -420,8 +420,9 @@ fn refuge(
 }
 
 /// Sends the nearest free worker to weld each damaged own building nobody
-/// welds yet, most missing value first, while no armed enemy in sight stands
-/// near it, no known enemy weapon reaches it, and the seat has scrap to pay.
+/// welds yet, the largest repair bill first, while no armed enemy in sight
+/// stands near it, no known enemy weapon reaches it, and the seat has scrap
+/// to pay.
 fn weld(
     observation: &ObservationData,
     map: &MapModel,
@@ -461,7 +462,7 @@ fn weld(
             if room(observation, map, building.anchor, size, ground) == 0 {
                 return None;
             }
-            let price = building.kind.base_stats().construction.cost;
+            let price = building.kind.repair_basis(building.tier);
             let missing = u64::from(price) * (max - hp) / max;
             Some((missing, centre, building))
         })

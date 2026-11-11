@@ -17,9 +17,10 @@ impl Guard<'_> {
     /// The best spot for a Repair Bay beside a guarded building: where its
     /// aura reaches the most missing value among the seat's idle units wounded
     /// enough to go to a Bay and damaged buildings that no Repair Bay treats
-    /// yet, as its anchor and that value. A Bay treats the buildings it reaches and as many of the
-    /// most wounded units in reach as it has patient slots, after earlier
-    /// Bays took theirs.
+    /// yet, a building's at the repair bill the simulation charges, as its
+    /// anchor and that value. A Bay treats the buildings it reaches and as
+    /// many of the most wounded units in reach as it has patient slots, after
+    /// earlier Bays took theirs.
     pub(super) fn bay(&self) -> Option<(TilePos, u64)> {
         let observation = self.observation;
         let size = BuildingKind::RepairBay.size();
@@ -62,7 +63,7 @@ impl Guard<'_> {
             .filter(|building| building.built && building.kind != BuildingKind::RepairBay)
             .map(|building| {
                 let stats = building.kind.tier_stats(building.tier);
-                let price = building.kind.base_stats().construction.cost;
+                let price = building.kind.repair_basis(building.tier);
                 let span = Span::of(building.kind.size(), building.anchor);
                 (span, price, building.hp, stats.max_hp)
             })
