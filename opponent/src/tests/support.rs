@@ -574,7 +574,7 @@ fn bay(scenario: &Scenario, state: &State) -> Option<TilePos> {
         middling(),
         true,
         false,
-        defenses::Stakes::default(),
+        stakes(),
     )
     .into_iter()
     .find_map(|(investment, _)| match investment {

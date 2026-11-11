@@ -1,5 +1,12 @@
 use super::*;
 
+impl Memory {
+    /// Remembers the enemy units in sight with none treated as stranded.
+    pub(crate) fn observe(&mut self, observation: &ObservationData) {
+        self.observe_stranded(observation, |_| false);
+    }
+}
+
 #[test]
 fn failures_expire_and_the_oldest_leaves_first() {
     let mut memory = Memory::default();

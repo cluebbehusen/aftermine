@@ -405,15 +405,14 @@ struct Lifting<'a> {
     gunships_clear: bool,
     /// What offense leaves at home.
     reserve: [u64; 2],
-    /// Targets another lift holds or this decision gave up on.
-    held: Vec<Objective>,
+    /// The target this decision gave up on.
+    given_up: Option<Objective>,
 }
 
 impl Missions {
-    /// Advances every lift under way, then forms another while ground
-    /// reaches no enemy target and the free carriers and payload at home can
-    /// carry enough to a landing no lift holds. Returns the targets given up
-    /// on.
+    /// Advances the lift under way, if any, then forms one while none is,
+    /// ground reaches no enemy target, and the free carriers and payload at
+    /// home can carry enough to a landing. Returns the target given up on.
     pub(crate) fn lift(
         &mut self,
         observation: &ObservationData,
@@ -422,21 +421,13 @@ impl Missions {
         memory: &Memory,
         scratch: &Scratch,
         ledger: &mut Ledger,
-    ) -> Vec<(BuildingKind, TilePos)> {
-        let Some(mut lifting) = Lifting::new(observation, map, profile, memory, scratch) else {
-            return Vec::new();
-        };
-        let lifting_kind: fn(&Task) -> bool = |task| matches!(task, Task::Lift { .. });
-        let mut given_up: Vec<Objective> = Vec::new();
-        for id in self.ids(lifting_kind) {
-            let Some(index) = self.index_of(id) else {
-                continue;
-            };
-            lifting.held = self.held(lifting_kind, Some(id), &given_up);
-            if let Some(target) = self.advance_lift(index, &lifting, ledger) {
-                given_up.push(target);
-            }
-        }
+    ) -> Option<(BuildingKind, TilePos)> {
+        let mut lifting = Lifting::new(observation, map, profile, memory, scratch)?;
+        let given_up = self
+            .list
+            .iter()
+            .position(|mission| matches!(mission.task, Task::Lift { .. }))
+            .and_then(|index| self.advance_lift(index, &lifting, ledger));
         let loading = self.list.iter().any(|mission| {
             matches!(
                 mission.task,
@@ -449,16 +440,9 @@ impl Missions {
         if lifting.severed || loading {
             self.clear(&lifting, ledger);
         }
-        loop {
-            lifting.held = self.held(lifting_kind, None, &given_up);
-            if !self.form(&lifting, ledger) {
-                break;
-            }
-        }
-        given_up
-            .into_iter()
-            .map(|target| (target.building, target.anchor))
-            .collect()
+        lifting.given_up = given_up;
+        self.form(&lifting, ledger);
+        given_up.map(|target| (target.building, target.anchor))
     }
 
     /// Moves free carriers hovering where no rider could reach them, such as
@@ -497,34 +481,34 @@ impl Missions {
     /// clearing the way, can meet the need of the best landing, sending every
     /// load this decision's orders allow; the rest board on later decisions.
     /// One landing of everything beats several that each meet the island's
-    /// defenders alone. Returns whether one formed.
-    fn form(&mut self, lifting: &Lifting<'_>, ledger: &mut Ledger) -> bool {
+    /// defenders alone.
+    fn form(&mut self, lifting: &Lifting<'_>, ledger: &mut Ledger) {
         let observation = lifting.observation;
         let lifting_now = self
             .list
             .iter()
             .any(|mission| matches!(mission.task, Task::Lift { .. }));
         if lifting_now || self.list.len() >= MISSION_CAP || !lifting.severed {
-            return false;
+            return;
         }
         let Some((source, loads)) = self.loads(lifting, None, &[], ledger) else {
-            return false;
+            return;
         };
         let value = loads.iter().map(|(_, _, value)| value).sum::<u64>();
         if loads.is_empty() || value < minimum(lifting.profile.stance) {
-            return false;
+            return;
         }
         let Some(drop) = lifting.best_drop() else {
-            return false;
+            return;
         };
         let need = lifting.need(drop.target, drop.landing);
         let cover = lifting.cover(self.cover(observation, drop.target.anchor));
         if value + cover < need || !lifting.looked(drop.target) {
-            return false;
+            return;
         }
         let mut units = lifting.load(source, &loads, UNIT_CAP, ledger);
         if units.is_empty() {
-            return false;
+            return;
         }
         units.sort_unstable();
         self.list.push(Mission {
@@ -539,7 +523,6 @@ impl Missions {
         });
         self.next += 1;
         self.waiting = None;
-        true
     }
 
     /// The loads a lift could take on at `ground`, or else on the source
@@ -700,8 +683,7 @@ impl Missions {
         scratch: &Scratch,
         holds: &[u8],
     ) -> Option<bool> {
-        let mut lifting = Lifting::new(observation, map, profile, memory, scratch)?;
-        lifting.held = self.held(|task| matches!(task, Task::Lift { .. }), None, &[]);
+        let lifting = Lifting::new(observation, map, profile, memory, scratch)?;
         let units: Vec<&UnitObs> = self
             .available(observation, None)
             .into_iter()
@@ -1064,7 +1046,7 @@ impl Missions {
             .objectives
             .iter()
             .copied()
-            .filter(|objective| *objective != target && !lifting.held.contains(objective))
+            .filter(|objective| *objective != target)
             .filter(|objective| island.is_some() && map.component(objective.anchor) == island)
             .filter(|objective| {
                 !lifting
@@ -1183,12 +1165,13 @@ impl<'a> Lifting<'a> {
             severed: scratch.severed,
             gunships_clear: scratch.gunships_clear,
             reserve: scratch.reserve,
-            held: Vec::new(),
+            given_up: None,
         })
     }
 
-    /// The best target no ground route reaches and no other lift holds that
-    /// has a landing, by value for its distance from home.
+    /// The best target no ground route reaches, other than the one this
+    /// decision gave up on, that has a landing, by value for its distance
+    /// from home.
     fn best_drop(&self) -> Option<Drop> {
         targets(
             self.objectives,
@@ -1199,7 +1182,7 @@ impl<'a> Lifting<'a> {
             self.rival,
         )
         .into_iter()
-        .filter(|target| !self.held.contains(target))
+        .filter(|target| Some(*target) != self.given_up)
         .find_map(|target| {
             Some(Drop {
                 target,
