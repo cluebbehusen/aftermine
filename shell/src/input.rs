@@ -2509,11 +2509,19 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                     // applies: an inspected ally or enemy takes no
                     // orders from the minimap either.
                     if !units.is_empty() && game.selection_commandable() {
-                        game.issue(Command::Advance {
-                            units,
-                            goal: tile,
-                            queue,
-                        });
+                        if orders::all_scout(game, &units) {
+                            game.issue(Command::Scout {
+                                units,
+                                goal: tile,
+                                queue,
+                            });
+                        } else {
+                            game.issue(Command::Advance {
+                                units,
+                                goal: tile,
+                                queue,
+                            });
+                        }
                         game.presentation
                             .ping_order(tile_center(tile), PingKind::Move, queue);
                     } else if units.is_empty() {

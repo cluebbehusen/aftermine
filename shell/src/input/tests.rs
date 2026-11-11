@@ -1081,6 +1081,39 @@ fn a_minimap_order_pings_at_the_tile_centre() {
 }
 
 #[test]
+fn a_minimap_right_click_scouts_as_the_battlefield_does() {
+    let (mut game, scout, sentinel) = scout_game();
+    let mut input = InputState::new();
+    let minimap = publish_minimap(&game);
+    let screen = vec2(minimap.x + 97.0, minimap.y + 61.0);
+    let world = crate::render::minimap_world_at(&game.view(), screen).expect("inside the minimap");
+    let tile = numeric::tile_at(world);
+
+    game.presentation.selection.units = vec![scout];
+    apply_events(&mut game, &mut input, &[right_down(screen)]);
+    assert!(
+        matches!(
+            game.pending.as_slice(),
+            [PlayerCommand { command: Command::Scout { goal, .. }, .. }] if *goal == tile
+        ),
+        "{:?}",
+        game.pending
+    );
+
+    game.pending.clear();
+    game.presentation.selection.units = vec![scout, sentinel];
+    apply_events(&mut game, &mut input, &[right_down(screen)]);
+    assert!(
+        matches!(
+            game.pending.as_slice(),
+            [PlayerCommand { command: Command::Advance { goal, .. }, .. }] if *goal == tile
+        ),
+        "a mixed selection advances together: {:?}",
+        game.pending
+    );
+}
+
+#[test]
 fn a_rally_click_on_an_own_unit_rallies_onto_it() {
     let mut game = multi_producer_game();
     let producers: Vec<_> = game
