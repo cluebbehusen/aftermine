@@ -72,12 +72,7 @@ impl Session {
         );
         let scenario = replay.setup.clone();
         let mut state = scenario.build().context("building replay setup")?;
-        let total = replay.meta.ticks.unwrap_or_else(|| {
-            replay
-                .commands
-                .last()
-                .map_or(0, |c| c.tick.saturating_add(1))
-        });
+        let total = aftermine_kit::replay_duration(&replay);
         // The shell's load bound: a structurally valid file can still
         // claim an absurd duration.
         anyhow::ensure!(

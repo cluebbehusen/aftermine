@@ -8,10 +8,8 @@
 
 use crate::GameReplay;
 use crate::keyframes::{Encoding, Keyframe, Keyframes};
-use aftermine_sim::{PlayerCommand, Scenario};
-use chassis::replay::{
-    MAX_REPLAY_BYTES, MAX_REPLAY_COMMANDS, Replay, ReplayError, ReplayMeta, TimedCommand,
-};
+use aftermine_sim::PlayerCommand;
+use chassis::replay::{MAX_REPLAY_BYTES, MAX_REPLAY_COMMANDS, ReplayError};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::Path;
@@ -27,35 +25,6 @@ const MAX_RECORDING_BYTES: u64 = 256 << 20;
 /// tenth of a second on a half-hour eight-seat match and saves a third over
 /// the fastest one; higher levels cost several times more for little.
 const RECORD_LEVEL: i32 = 15;
-
-/// The replay envelope, strict about unknown fields; [`Scenario`] is strict
-/// about its own.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ReplayWire {
-    meta: ReplayMeta,
-    setup: Scenario,
-    commands: Vec<TimedCommand<PlayerCommand>>,
-    #[serde(default)]
-    origin: Option<crate::recording::WorldOrigin>,
-}
-
-impl From<ReplayWire> for GameReplay {
-    fn from(wire: ReplayWire) -> Self {
-        let ReplayWire {
-            meta,
-            setup,
-            commands,
-            origin,
-        } = wire;
-        Replay {
-            meta,
-            setup,
-            commands,
-            origin,
-        }
-    }
-}
 
 /// Absolute end tick of a replay: its recorded duration, or one past its last
 /// command when the metadata omits it.
@@ -220,15 +189,21 @@ pub fn save_recording(
 }
 
 /// Loads a replay from disk with any keyframes it carries. JSON replays
-/// carry none.
+/// carry none. Every writer records the duration, so a file without one is
+/// refused.
 pub fn load_recording(path: impl AsRef<Path>) -> Result<Recording, ReplayError> {
-    let path = path.as_ref();
+    let recording = read_file(path.as_ref())?;
+    if recording.replay.meta.ticks.is_none() {
+        return Err(invalid("replay records no duration"));
+    }
+    Ok(recording)
+}
+
+fn read_file(path: &Path) -> Result<Recording, ReplayError> {
     let mut file = std::fs::File::open(path)?;
     let mut magic = [0; 8];
     if file.read_exact(&mut magic).is_err() || &magic != MAGIC {
-        let replay = GameReplay::load_with_decoder(path, |bytes| {
-            Ok(serde_json::from_slice::<ReplayWire>(bytes)?.into())
-        })?;
+        let replay = GameReplay::load(path)?;
         return Ok(Recording {
             replay,
             keyframes: Keyframes::default(),
@@ -275,7 +250,7 @@ fn read_recording(reader: &mut impl Read, mut remaining: u64) -> anyhow::Result<
         MAX_REPLAY_BYTES as u64,
         None,
     )?;
-    let replay: GameReplay = serde_json::from_slice::<ReplayWire>(&json)?.into();
+    let replay: GameReplay = serde_json::from_slice(&json)?;
     ensure!(
         replay.commands.len() <= MAX_REPLAY_COMMANDS,
         "replay has too many commands"

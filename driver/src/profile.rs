@@ -78,12 +78,7 @@ pub fn run(options: &ProfileOptions<'_>) -> Result<ProfileReport> {
     // CLI error.
     let record = aftermine_kit::load_replay(&replay)
         .with_context(|| format!("loading replay {}", replay.display()))?;
-    let total = record.meta.ticks.unwrap_or_else(|| {
-        record
-            .commands
-            .last()
-            .map_or(0, |command| command.tick.saturating_add(1))
-    });
+    let total = aftermine_kit::replay_duration(&record);
     anyhow::ensure!(
         record.origin.is_none(),
         "live profiling requires a session checkpoint for this replay origin"

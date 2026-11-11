@@ -31,8 +31,9 @@ fn a_record_icloud_has_not_brought_down_is_left_off_unopened() {
             .as_nanos()
     ));
     std::fs::create_dir_all(&dir).unwrap();
-    let record: GameReplay =
+    let mut record: GameReplay =
         chassis::replay::Replay::new(SIM_VERSION, "test", aftermine_sim::Scenario::skirmish());
+    record.meta.ticks = Some(0);
     record.save(dir.join("here.json")).unwrap();
     record.save(dir.join("away.json")).unwrap();
     std::fs::write(dir.join("broken.json"), b"not a record").unwrap();
@@ -80,13 +81,16 @@ fn the_shelf_tells_another_version_from_damage() {
     ));
     std::fs::create_dir_all(&dir).unwrap();
     let scenario = aftermine_sim::Scenario::skirmish();
-    let ours: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario.clone());
+    let mut ours: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario.clone());
+    ours.meta.ticks = Some(0);
     ours.save(dir.join("ours.json")).unwrap();
     let mut foreign: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario);
+    foreign.meta.ticks = Some(0);
     foreign.meta.sim_version = SIM_VERSION + 1;
     foreign.save(dir.join("foreign.json")).unwrap();
     let mut damaged: GameReplay =
         chassis::replay::Replay::new(SIM_VERSION, "test", aftermine_sim::Scenario::skirmish());
+    damaged.meta.ticks = Some(0);
     damaged.record(
         42,
         aftermine_sim::PlayerCommand {
@@ -129,10 +133,12 @@ fn kinds_read_the_metadata_tag() {
     let scenario = aftermine_sim::Scenario::skirmish();
     // A tagged save under a neutral filename: the tag wins.
     let mut named: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario.clone());
+    named.meta.ticks = Some(0);
     named.meta.kind = Some("save".to_string());
     named.meta.description = Some("before the push".to_string());
     named.save(dir.join("anything.json")).unwrap();
-    let finished: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario);
+    let mut finished: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario);
+    finished.meta.ticks = Some(0);
     finished.save(dir.join("match-0000000099.json")).unwrap();
 
     let mut out = Vec::new();
@@ -179,8 +185,9 @@ fn shelf_skips_oversized_records_without_hiding_valid_neighbors() {
             .as_nanos()
     ));
     std::fs::create_dir_all(&dir).unwrap();
-    let valid: GameReplay =
+    let mut valid: GameReplay =
         chassis::replay::Replay::new(SIM_VERSION, "test", aftermine_sim::Scenario::skirmish());
+    valid.meta.ticks = Some(0);
     valid.save(dir.join("valid.json")).unwrap();
     std::fs::File::create(dir.join("oversized.json"))
         .unwrap()
@@ -377,6 +384,7 @@ fn scan_uses_record_metadata_without_trusting_malformed_neighbors() {
     std::fs::create_dir_all(&dir).expect("temp directory");
     let scenario = aftermine_sim::Scenario::skirmish();
     let mut save: GameReplay = chassis::replay::Replay::new(SIM_VERSION, "test", scenario);
+    save.meta.ticks = Some(43);
     save.meta.kind = Some("save".to_string());
     save.meta.description = Some("before the push".to_string());
     save.meta.sim_version = SIM_VERSION + 1;
@@ -399,7 +407,7 @@ fn scan_uses_record_metadata_without_trusting_malformed_neighbors() {
     assert_eq!(entry.kind, RecordKind::Save, "the metadata tag wins");
     assert_eq!(entry.problem, Some(Unavailable::OtherVersion));
     assert_eq!(entry.title, "before the push");
-    assert_eq!(entry.clock, "0:02", "duration comes from the command tail");
+    assert_eq!(entry.clock, "0:02", "duration comes from the metadata");
     assert_ne!(
         out[0].0.saved_at,
         std::time::UNIX_EPOCH,
@@ -411,8 +419,9 @@ fn scan_uses_record_metadata_without_trusting_malformed_neighbors() {
 
 #[test]
 fn lan_saves_are_their_own_kinds_and_resume_rather_than_play_back() {
-    let replay: GameReplay =
+    let mut replay: GameReplay =
         chassis::replay::Replay::new(SIM_VERSION, "test", aftermine_sim::Scenario::skirmish());
+    replay.meta.ticks = Some(0);
     let mut meta = replay.meta;
     for (tag, kind) in [
         ("lan", RecordKind::LanSave),

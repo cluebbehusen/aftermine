@@ -1,5 +1,6 @@
 use super::*;
 use aftermine_sim::SIM_VERSION;
+use aftermine_sim::Scenario;
 use aftermine_sim::scenario::ScenarioMode;
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -26,8 +27,9 @@ fn write_fixture(bytes: &[u8]) -> TempReplay {
 }
 
 fn current_document() -> Value {
-    serde_json::to_value(GameReplay::new(SIM_VERSION, "test", Scenario::skirmish()))
-        .expect("current replay serializes")
+    let mut replay = GameReplay::new(SIM_VERSION, "test", Scenario::skirmish());
+    replay.meta.ticks = Some(0);
+    serde_json::to_value(replay).expect("current replay serializes")
 }
 
 #[test]
@@ -57,6 +59,15 @@ fn current_replay_round_trips_through_the_strict_wire() {
     assert_eq!(loaded.meta.sim_version, SIM_VERSION);
     assert_eq!(loaded.setup, Scenario::skirmish());
     assert!(loaded.commands.is_empty());
+}
+
+#[test]
+fn a_replay_without_a_recorded_duration_is_refused() {
+    let mut document = current_document();
+    document["meta"]["ticks"] = Value::Null;
+    let fixture = write_fixture(&serde_json::to_vec(&document).expect("fixture serializes"));
+    let error = load_replay(&fixture.0).expect_err("no duration");
+    assert!(error.to_string().contains("no duration"), "{error}");
 }
 
 #[test]
@@ -90,8 +101,7 @@ fn current_replay_rejects_unknown_fields_at_strict_setup_boundaries() {
 
 #[test]
 fn current_replay_rejects_duplicate_bot_config_fields() {
-    let json = serde_json::to_string(&GameReplay::new(SIM_VERSION, "test", Scenario::skirmish()))
-        .expect("current replay serializes");
+    let json = serde_json::to_string(&current_document()).expect("current replay serializes");
     let needle = r#""bot_config":{}"#;
     let replacement = concat!(r#""bot_config":{},"#, r#""bot_config":{}"#);
     let duplicate = json.replacen(needle, replacement, 1);

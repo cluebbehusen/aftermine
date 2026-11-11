@@ -362,12 +362,7 @@ impl Game {
         );
         let scenario = replay.setup.clone();
         let mut state = scenario.build()?;
-        let total = replay.meta.ticks.unwrap_or_else(|| {
-            replay
-                .commands
-                .last()
-                .map_or(0, |c| c.tick.saturating_add(1))
-        });
+        let total = aftermine_kit::replay_duration(&replay);
         anyhow::ensure!(
             total <= MAX_LOAD_TICKS,
             "replay spans {total} ticks, beyond the {MAX_LOAD_TICKS}-tick interactive load limit \

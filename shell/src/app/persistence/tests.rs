@@ -100,9 +100,11 @@ fn a_shelf_replay_opens_on_the_worker_and_a_bad_one_says_so() {
     let mut game = Game::new(Scenario::skirmish()).unwrap();
     game.advance_ticks(60);
     let good = dir.join("match.amreplay");
+    let mut record = game.recorder.clone();
+    record.meta.ticks = Some(game.state.current_tick());
     aftermine_kit::save_recording(
         &good,
-        &game.recorder,
+        &record,
         &aftermine_kit::keyframes::Keyframes::default(),
     )
     .unwrap();
