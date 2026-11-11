@@ -1142,8 +1142,7 @@ fn draw_bomber_bombs(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         let launch = crate::game::world_vec(shell.launch);
         let (impact, _) = payload_contact(game, sprites, index);
         let total = payload_flight_ticks(game, index);
-        let t = (crate::audio_timeline::projectile_elapsed_ticks(now, shell.arrival, total)
-            / total)
+        let t = (crate::game::projectile_elapsed_ticks(now, shell.arrival, total) / total)
             .clamp(0.0, 1.0);
         let (position, direction) = condor_bomb_pose(launch, impact, release.heading, t);
         if game.state.hostile(game.presentation.human, shell.player)
@@ -1315,7 +1314,7 @@ pub(crate) fn missile_travel_progress(progress: f32, total_ticks: f32, distance:
     if distance <= f32::EPSILON {
         return progress;
     }
-    let ejection_ticks = crate::audio_timeline::missile_ejection_ticks(total_ticks);
+    let ejection_ticks = crate::game::missile_ejection_ticks(total_ticks);
     let ejection_distance = 0.45_f32.min(distance * 0.12);
     let ejection_speed = ejection_distance / ejection_ticks;
     let elapsed = progress * total_ticks;
@@ -1338,7 +1337,7 @@ pub(crate) fn missile_travel_progress(progress: f32, total_ticks: f32, distance:
 }
 
 fn missile_motor_strength(progress: f32, total_ticks: f32) -> f32 {
-    let ejection_ticks = crate::audio_timeline::missile_ejection_ticks(total_ticks);
+    let ejection_ticks = crate::game::missile_ejection_ticks(total_ticks);
     let ramp_ticks = 2.0_f32.min((total_ticks - ejection_ticks) * 0.25);
     ((progress * total_ticks - ejection_ticks) / ramp_ticks).clamp(0.0, 1.0)
 }
@@ -1507,7 +1506,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         // Reconstruct flight length the way the launch computed it, so
         // the shell lands exactly when the sim resolves the hit.
         let total = payload_flight_ticks(game, index);
-        let elapsed = crate::audio_timeline::projectile_elapsed_ticks(now, shell.arrival, total);
+        let elapsed = crate::game::projectile_elapsed_ticks(now, shell.arrival, total);
         let flight_progress = (elapsed / total).clamp(0.0, 1.0);
         let t = if shell.kind == aftermine_sim::ProjectileKind::Missile {
             missile_travel_progress(flight_progress, total, from.distance(to))

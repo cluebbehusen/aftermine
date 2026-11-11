@@ -1742,10 +1742,7 @@ impl Presentation {
                 } => {
                     // What the blast hurts alerts through its own
                     // `DamageTaken`; a near miss raises nothing.
-                    let impact_sound = self.audio_timeline.landed(*player, *at);
                     let world = world_vec(*at);
-                    let hostile_shell = state.hostile(self.human, *player);
-                    self.queue_blast(impact_sound, world, !hostile_shell || sees(self, *at));
                     let arrived = self
                         .fx_previous
                         .shells
@@ -1770,6 +1767,13 @@ impl Presentation {
                         .map_or(aftermine_sim::ProjectileKind::Shell, |(shell, _)| {
                             shell.kind
                         });
+                    let impact_sound = if payload == aftermine_sim::ProjectileKind::Missile {
+                        SoundKind::RocketImpact
+                    } else {
+                        SoundKind::Artillery
+                    };
+                    let hostile_shell = state.hostile(self.human, *player);
+                    self.queue_blast(impact_sound, world, !hostile_shell || sees(self, *at));
                     let from = arrived
                         .as_ref()
                         .map_or(world, |(shell, _)| world_vec(shell.launch));

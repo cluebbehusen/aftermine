@@ -76,8 +76,6 @@ pub struct Presentation {
     pub(super) fx_previous: fx::PreviousEffects,
     /// Live effects.
     pub fx: Vec<Effect>,
-    /// Retains projectile identity across the impact tick.
-    pub(crate) audio_timeline: crate::audio_timeline::AudioTimeline,
     /// Clips queued by this frame's ticks; the main loop drains and plays.
     pub sounds_pending: Vec<(SoundKind, Option<Vec2>)>,
     /// Blasts this frame's ticks set off where this seat did not witness them.
@@ -415,7 +413,6 @@ impl Presentation {
             projectile_releases: projectiles::ProjectileReleases::default(),
             fx_previous: fx::PreviousEffects::default(),
             fx: Vec::new(),
-            audio_timeline: crate::audio_timeline::AudioTimeline::default(),
             sounds_pending: Vec::new(),
             fogged_blasts: Vec::new(),
             last_seen: std::cell::RefCell::new(HashMap::new()),
@@ -711,7 +708,6 @@ impl Presentation {
         self.animations.reset_workers(state);
         self.animations.observe_radars(state);
         self.animations.observe_braces(state);
-        self.audio_timeline.clear();
         self.track_motion.clear();
         self.maw_motion.clear();
         self.dock_motion.clear();
@@ -985,7 +981,6 @@ impl Presentation {
     /// airframes were parked for the death effect's fall-or-scatter
     /// choice.
     pub(crate) fn remember_previous_tick(&mut self, state: &State) {
-        self.audio_timeline.remember_arrivals(state);
         self.fx_previous = fx::PreviousEffects::capture(self, state);
         self.prev_heading = state
             .units()

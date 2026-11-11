@@ -5,6 +5,19 @@ use aftermine_sim::{Event, ProjectileKind, State, Target, UnitKind};
 use macroquad::prelude::{Vec2, vec2};
 use std::collections::HashMap;
 
+/// How many ticks a missile coasts out of its tube before its motor
+/// lights: a quarter of its flight, at most three.
+pub(crate) fn missile_ejection_ticks(total: f32) -> f32 {
+    3.0_f32.min(total * 0.25)
+}
+
+/// How far into its `total`-tick flight a projectile arriving at tick
+/// `arrival` stands at render time `now`. Tick reports are read after the
+/// launch tick has completed, so the flight starts a tick after launch.
+pub(crate) fn projectile_elapsed_ticks(now: f32, arrival: u64, total: f32) -> f32 {
+    total - (arrival as f32 + 1.0 - now)
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct ProjectileReleases {
     releases: HashMap<(Target, u64), Vec<Flight>>,

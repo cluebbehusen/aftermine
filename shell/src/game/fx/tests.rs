@@ -3197,3 +3197,61 @@ fn a_replay_gives_none_of_its_seats_private_feedback() {
     assert!(sounds.is_empty(), "{sounds:?}");
     assert_eq!((alerts, pings), (0, 0));
 }
+
+#[test]
+fn coincident_impacts_each_sound_their_own_payload() {
+    use aftermine_sim::{PlayerId, ProjectileKind};
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    for seat in &mut scenario.players {
+        seat.bot_config = None;
+    }
+    for (player, kind, x) in [(0, UnitKind::Bombard, 8), (1, UnitKind::Avalanche, 28)] {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
+            player,
+            kind,
+            x,
+            y: 16,
+        });
+    }
+    let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
+    let at = chassis::grid::TilePos::new(5, 5).center();
+    let shells: Vec<_> = [
+        (PlayerId(0), UnitKind::Bombard, ProjectileKind::Shell),
+        (PlayerId(1), UnitKind::Avalanche, ProjectileKind::Missile),
+    ]
+    .into_iter()
+    .map(|(player, shooter, kind)| {
+        let shooter = game
+            .state
+            .units()
+            .iter()
+            .find(|unit| unit.player == player && unit.kind == shooter)
+            .unwrap();
+        aftermine_sim::state::Shell {
+            kind,
+            player,
+            shooter: Target::Unit(shooter.id),
+            launch: shooter.pos,
+            impact: at,
+            launched_at: 0,
+            arrival: 0,
+            damage: 1,
+            targets: aftermine_sim::stats::DomainMask::GROUND,
+            splash: None,
+        }
+    })
+    .collect();
+    let mut wire = serde_json::to_value(&*game.state).unwrap();
+    wire["shells"] = serde_json::json!(shells);
+    game.replace_state_after_jump(&serde_json::from_value(wire).unwrap());
+    game.present_ticks(1);
+    assert!(game.my_vision().visible(chassis::grid::TilePos::new(5, 5)));
+    let heard: Vec<_> = game
+        .presentation
+        .sounds_pending
+        .iter()
+        .filter(|(_, pos)| *pos == Some(world_vec(at)))
+        .map(|(kind, _)| *kind)
+        .collect();
+    assert_eq!(heard, [SoundKind::Artillery, SoundKind::RocketImpact]);
+}

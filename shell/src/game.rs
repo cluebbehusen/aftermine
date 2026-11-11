@@ -83,7 +83,7 @@ pub(crate) mod checkpoint;
 pub(crate) mod network;
 mod projectiles;
 pub(crate) mod projection;
-pub(crate) use projectiles::LaunchPose;
+pub(crate) use projectiles::{LaunchPose, missile_ejection_ticks, projectile_elapsed_ticks};
 
 pub(crate) use fx::{
     BuildingHit, HitSurface, INTERCEPT_OVERLAP_TICKS, InterceptFlight, UnitBody, UnitHit,

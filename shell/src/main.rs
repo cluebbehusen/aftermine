@@ -10,7 +10,6 @@ mod action;
 mod app;
 mod assets;
 mod audio_mix;
-mod audio_timeline;
 mod autosave;
 mod bot_label;
 mod boundary_fog;
