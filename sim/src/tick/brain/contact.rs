@@ -50,10 +50,18 @@ pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> b
             anchor.center()
                 + Vec2Fx::new(Fx::from_num(size.0 - 1), Fx::from_num(size.1 - 1)) / Fx::from_num(2),
             |tile| state.passable(tile),
-            |goal| route(state, unit, from.center(), goal),
+            |goal| stance_route(state, unit, b, from.center(), goal),
         )
     };
-    let path = choose(ordinary_stances(state, unit, b, pads));
+    let crew = pads.is_some();
+    let mut stances = ordinary_stances(state, unit, b, pads);
+    if crew {
+        // Squeezing onto a pad a crewmate already works from can leave a
+        // body pressing on it for good, planning again every tick.
+        let worked = pads_at_work(state, unit, b);
+        stances.retain(|stance| !worked.contains(&stance.goal));
+    }
+    let path = choose(stances);
     let reachable = path.is_some();
     state.unit_mut(id).expect("contact unit").path = path;
     reachable
@@ -118,6 +126,89 @@ fn crew_pad_entries(
             })
             .collect(),
     )
+}
+
+/// The pads of `site` where `unit`'s own crewmates already work. Only its
+/// own seat's bodies count.
+fn pads_at_work(state: &State, unit: &crate::Unit, site: &crate::Building) -> Vec<TilePos> {
+    state
+        .units()
+        .iter()
+        .filter(|other| {
+            other.id != unit.id
+                && other.hp > 0
+                && other.player == unit.player
+                && other.order == (Order::Build { site: site.id })
+                && crowding::productive(state, other)
+        })
+        .map(crate::Unit::tile)
+        .collect()
+}
+
+/// `unit`'s route from `from` to `goal`. A crew member's route to its pad
+/// goes round the cradle's other pads, where crewmates work or will, when
+/// [`round_pads`] finds a way; with none it keeps the ordinary route.
+fn stance_route(
+    state: &State,
+    unit: &crate::Unit,
+    site: &crate::Building,
+    from: Vec2Fx,
+    goal: TilePos,
+) -> Option<Vec<TilePos>> {
+    let waypoints = route(state, unit, from, goal)?;
+    let Some(pads) = state.crew_pads_for(unit, site) else {
+        return Some(waypoints);
+    };
+    if !waypoints
+        .iter()
+        .any(|&tile| tile != goal && pads.contains(&tile))
+    {
+        return Some(waypoints);
+    }
+    Some(round_pads(state, unit, site, &pads, from, goal).unwrap_or(waypoints))
+}
+
+/// A way from `from` to `goal`, one of `site`'s `pads`, that keeps off the
+/// others, by the far side of the cradle if need be. A crewmate at work
+/// fills its pad, and in a one-tile alley a body cannot pass one. The way
+/// keeps to open ground, the rule the route itself was planned by. It is
+/// sought first within the cradle's own width of its footprint, which
+/// bounds the usual search, and then anywhere: walls running on past the
+/// cradle can leave the only way round beyond that.
+fn round_pads(
+    state: &State,
+    unit: &crate::Unit,
+    site: &crate::Building,
+    pads: &[TilePos],
+    from: Vec2Fx,
+    goal: TilePos,
+) -> Option<Vec<TilePos>> {
+    let (w, h) = site.kind.size();
+    let reach = w.max(h);
+    let (low, high) = (
+        site.anchor.offset(-reach, -reach),
+        site.anchor.offset(w - 1 + reach, h - 1 + reach),
+    );
+    let near =
+        |tile: TilePos| (low.x..=high.x).contains(&tile.x) && (low.y..=high.y).contains(&tile.y);
+    let open = |tile: TilePos| state.passable(tile) && (tile == goal || !pads.contains(&tile));
+    let radius = unit.kind.stats().radius;
+    let search = |within: &dyn Fn(TilePos) -> bool, cap: u32| {
+        chassis::path::astar(
+            state.map.width(),
+            state.map.height(),
+            TilePos::containing(from),
+            goal,
+            |tile| crate::geometry::hull_open(tile, radius, |t| within(t) && open(t)),
+            cap,
+        )
+    };
+    let area = u32::try_from((high.x - low.x + 1) * (high.y - low.y + 1)).unwrap_or(0);
+    search(&near, area)
+        .or_else(|| search(&|_| true, crate::stats::PATH_EXPANSION_CAP))
+        .map(|waypoints| {
+            crate::tick::movement::round_standing_hulls(state, unit, from, waypoints, open)
+        })
 }
 
 /// Whether `kind` cuts with a drum across the front of a hull broader than
@@ -500,10 +591,19 @@ fn delivery_drop_off(state: &State, unit: &crate::Unit, withdrawing: bool) -> Op
 
 /// A worker that already reaches the surface stops where it stands instead
 /// of finishing the walk to its chosen position, so a position it cannot
-/// land on never keeps it from working.
+/// land on never keeps it from working. A crew member stops only on the pad
+/// it set out for: one passing over another pad on its way would leave its
+/// own empty and crowd the crewmate bound for that one.
 pub(super) fn approach_worker(state: &mut State, id: UnitId, building: BuildingId) -> bool {
     let unit = state.unit(id).expect("contact unit");
-    if state.in_building_work_reach(unit, building) {
+    let passing = unit
+        .path
+        .as_ref()
+        .is_some_and(|path| path.goal != unit.tile())
+        && state
+            .building(building)
+            .is_some_and(|b| state.crew_pads_for(unit, b).is_some());
+    if !passing && state.in_building_work_reach(unit, building) {
         state.unit_mut(id).expect("contact unit").path = None;
         return true;
     }

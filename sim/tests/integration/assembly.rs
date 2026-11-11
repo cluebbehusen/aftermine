@@ -1799,8 +1799,131 @@ fn a_maw_passes_over_a_structure_it_cannot_reach() {
 /// Where West raises a cradle for a crew that comes at it from the west.
 const WEST_CRADLE: TilePos = TilePos::new(16, 10);
 
+/// The four tiles a crew raising a cradle at `anchor` works from, in row
+/// order.
+fn pads(anchor: TilePos) -> Vec<TilePos> {
+    let mut pads: Vec<TilePos> = BuildingKind::MawCradle
+        .crew_pads()
+        .unwrap()
+        .iter()
+        .map(|&(dx, dy)| anchor.offset(dx, dy))
+        .collect();
+    pads.sort_by_key(|tile| (tile.y, tile.x));
+    pads
+}
+
+/// Barricades a row beyond both of the cradle's pad rows, running `past`
+/// tiles beyond each end, so each pad row is a one-tile alley open at both
+/// ends.
+fn alley(anchor: TilePos, past: i32) -> Vec<BuildingSpec> {
+    let (w, h) = BuildingKind::MawCradle.size();
+    (anchor.x - past..=anchor.x + w - 1 + past)
+        .flat_map(|x| {
+            [
+                building(0, BuildingKind::Barricade, x, anchor.y - 2),
+                building(0, BuildingKind::Barricade, x, anchor.y + h + 1),
+            ]
+        })
+        .collect()
+}
+
+/// West's crew of `kinds` lined up along `row` west of [`WEST_CRADLE`],
+/// among `buildings`, just ordered to raise it, the site placed at once or,
+/// when `defer`, by the first to reach it.
+fn west_crew(
+    kinds: &[UnitKind],
+    row: i32,
+    buildings: Vec<BuildingSpec>,
+    defer: bool,
+) -> (State, Vec<UnitId>) {
+    let units = (10..)
+        .zip(kinds)
+        .map(|(x, &kind)| unit(0, kind, x, row))
+        .collect();
+    let mut state = yard(units, buildings);
+    let crew: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
+    let report = state.tick(&[cmd(
+        0,
+        Command::Build {
+            units: crew.clone(),
+            kind: BuildingKind::MawCradle,
+            anchor: WEST_CRADLE,
+            queue: false,
+            defer,
+        },
+    )]);
+    assert_eq!(rejected(&report), None);
+    (state, crew)
+}
+
+/// The tiles `crew` stands on, in row order.
+fn crew_tiles(state: &State, crew: &[UnitId]) -> Vec<TilePos> {
+    let mut tiles: Vec<TilePos> = crew
+        .iter()
+        .map(|id| state.unit(*id).unwrap().tile())
+        .collect();
+    tiles.sort_by_key(|tile| (tile.y, tile.x));
+    tiles
+}
+
 fn progress(state: &State) -> u32 {
     cradle(state).unwrap().construction_progress().unwrap_or(0)
+}
+
+/// How long a crew lined up west of [`WEST_CRADLE`] may take to stop on
+/// all four pads, by the far side of the cradle if need be.
+const CREW_SETTLES_TICKS: u64 = 400;
+
+#[test]
+fn a_crew_from_the_west_works_from_all_four_pads_past_crewmates_at_work() {
+    // The near pad of each face lies on the way to the far one. A crew
+    // member bound for a far pad goes round a crewmate at work on the
+    // near one, and in a one-tile alley that means round the cradle.
+    use UnitKind::{Excavator, Harvester};
+    for kinds in [
+        [Excavator; 4],
+        [Harvester; 4],
+        [Excavator, Harvester, Excavator, Harvester],
+        [Harvester, Excavator, Harvester, Excavator],
+    ] {
+        let (w, h) = BuildingKind::MawCradle.size();
+        for row in WEST_CRADLE.y..WEST_CRADLE.y + h {
+            for ((ground, buildings), defer) in [
+                ("open ground", vec![]),
+                ("an alley", alley(WEST_CRADLE, 1)),
+                // The way round lies beyond the cradle's own width of it.
+                ("a long alley", alley(WEST_CRADLE, w.max(h) + 1)),
+            ]
+            .into_iter()
+            .flat_map(|scene| [(scene.clone(), false), (scene, true)])
+            {
+                let (mut state, crew) = west_crew(&kinds, row, buildings, defer);
+                let scene = format!("{kinds:?} from row {row} in {ground}, deferred {defer}");
+                let mut ticks = 0;
+                while crew_tiles(&state, &crew) != pads(WEST_CRADLE)
+                    || !crew
+                        .iter()
+                        .all(|id| state.unit(*id).unwrap().work_stopped())
+                {
+                    assert!(
+                        ticks < CREW_SETTLES_TICKS,
+                        "{scene}: the crew stands on {:?}",
+                        crew_tiles(&state, &crew)
+                    );
+                    state.tick(&[]);
+                    ticks += 1;
+                }
+                let rate: u32 = kinds.iter().map(|kind| kind.stats().build_rate).sum();
+                let before = progress(&state);
+                run(&mut state, 20);
+                assert_eq!(
+                    progress(&state) - before,
+                    20 * rate,
+                    "{scene}: every member works"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -1834,4 +1957,67 @@ fn a_worker_shoved_against_a_cradle_corner_steps_back_to_reach_its_pad() {
         progress(&state) - before,
         UnitKind::Excavator.stats().build_rate
     );
+}
+
+#[test]
+fn a_crew_member_that_can_reach_no_free_pad_reports_it_once_and_leaves() {
+    // Barricades ring the south-east pad, so it stays open ground, and the
+    // crew keeps its pads, but nothing can reach it. The member left
+    // without a pad must not squeeze onto a crewmate's pad and push there,
+    // planning again every tick, without a word.
+    let sealed = WEST_CRADLE.offset(2, 3);
+    let ring = [(-1, 0), (1, 0), (1, -1), (-1, 1), (0, 1), (1, 1)]
+        .map(|(dx, dy)| building(0, BuildingKind::Barricade, sealed.x + dx, sealed.y + dy));
+    let open: Vec<TilePos> = pads(WEST_CRADLE)
+        .into_iter()
+        .filter(|&pad| pad != sealed)
+        .collect();
+    for kind in [UnitKind::Excavator, UnitKind::Harvester] {
+        let (mut state, crew) = west_crew(&[kind; 4], WEST_CRADLE.y + 1, ring.to_vec(), false);
+        let mut stalled = Vec::new();
+        run_until(&mut state, CREW_SETTLES_TICKS, |state, events| {
+            stalled.extend(events.iter().filter_map(|event| match event {
+                Event::OrderStalled {
+                    unit,
+                    reason: StallReason::NoRoute,
+                    ..
+                } => Some(*unit),
+                _ => None,
+            }));
+            let working: Vec<UnitId> = crew
+                .iter()
+                .copied()
+                .filter(|id| !stalled.contains(id))
+                .collect();
+            stalled.len() == 1
+                && crew_tiles(state, &working) == open
+                && working
+                    .iter()
+                    .all(|id| state.unit(*id).unwrap().work_stopped())
+        });
+        let left = stalled[0];
+        assert!(crew.contains(&left), "{kind:?}");
+        assert_eq!(state.unit(left).unwrap().order, Order::Idle, "{kind:?}");
+        let before = progress(&state);
+        for _ in 0..50 {
+            let report = state.tick(&[]);
+            assert!(
+                !report
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, Event::OrderStalled { .. })),
+                "{kind:?}"
+            );
+            assert!(
+                crew.iter()
+                    .all(|id| state.unit(*id).unwrap().path.is_none()),
+                "{kind:?}: no one plans again"
+            );
+        }
+        assert_eq!(
+            progress(&state) - before,
+            50 * 3 * kind.stats().build_rate,
+            "{kind:?}: the other three work on"
+        );
+    }
 }
