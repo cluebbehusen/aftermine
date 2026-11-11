@@ -632,30 +632,16 @@ pub(super) fn draw_blockers(
     }
 }
 
-fn theme_code(theme: &str) -> Option<u32> {
-    // Stable layout salts, chosen so each shipped theme exercises its complete
-    // prop row without changing the shared density rule.
-    match theme {
-        "rusted-yard" => Some(1),
-        "cold-circuitry" => Some(2),
-        "quarry-dust" => Some(25),
-        "basalt" => Some(4),
-        "slag" => Some(5),
-        "verdigris" => Some(6),
-        _ => None,
-    }
-}
-
 /// Sparse dressing picked from a coordinate and its 180-degree partner.
 /// Both halves therefore choose the same art; the far half records a half-turn
 /// so rotatable surface marks preserve the shipped maps' visual symmetry.
 fn symmetric_theme_prop(
-    theme: &str,
+    theme: Option<aftermine_sim::scenario::Theme>,
     pos: TilePos,
     width: i32,
     height: i32,
 ) -> Option<ThemePropPlacement> {
-    let theme = theme_code(theme)?;
+    let salt = super::grade::prop_salt(theme?);
     if width <= 0 || height <= 0 {
         return None;
     }
@@ -672,7 +658,7 @@ fn symmetric_theme_prop(
     // Dimensions keep two differently sized maps from laying down the same
     // visible stamp.
     let hash = super::environment::word_hash(&[
-        theme,
+        salt,
         canonical.x.cast_unsigned(),
         canonical.y.cast_unsigned(),
         width.cast_unsigned(),
@@ -860,11 +846,7 @@ pub(super) fn draw_floor(
 ) {
     let zoom = view.zoom();
     let size = zoom.ceil() + 1.0; // slight overlap kills seam hairlines
-    let theme = ground
-        .scenario
-        .meta
-        .as_ref()
-        .map_or("", |m| m.theme.as_str());
+    let theme = ground.scenario.meta.as_ref().and_then(|meta| meta.theme);
     let map = ground.map;
     let (map_width, map_height) = (map.width(), map.height());
     // Quarry props vary by map, not by anything in play.
@@ -954,7 +936,7 @@ pub(super) fn draw_floor(
         } else if let Some(placement) = prop_candidate {
             quiet_mark(placement)
                 .filter(|_| symmetric_safe_theme_prop_tile(&ground.scenario.map, pos))
-                .and_then(|variant| sprites.theme_prop(theme, variant))
+                .and_then(|variant| sprites.theme_prop(theme?, variant))
                 .map(|source| (source, placement.rotation(), WHITE))
         } else {
             None

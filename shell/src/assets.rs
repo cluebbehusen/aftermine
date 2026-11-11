@@ -750,18 +750,6 @@ const THEME_PROP_KEYS: [&str; 18] = [
     "theme_verdigris_2",
 ];
 
-fn theme_prop_row(theme: &str) -> Option<usize> {
-    match theme {
-        "rusted-yard" => Some(0),
-        "cold-circuitry" => Some(1),
-        "quarry-dust" => Some(2),
-        "basalt" => Some(3),
-        "slag" => Some(4),
-        "verdigris" => Some(5),
-        _ => None,
-    }
-}
-
 const DEBRIS_KEYS: [&str; 3] = ["debris_0", "debris_1", "debris_2"];
 
 /// The two whole-body move poses of a kind that draws them.
@@ -1332,10 +1320,14 @@ impl Sprites {
         self.regions.wreck_decal
     }
 
-    /// A flat ground-dressing mark for a shipped map theme; only the first
-    /// three of a theme's marks ship.
-    pub fn theme_prop(&self, theme: &str, variant: usize) -> Option<Rect> {
-        let row = theme_prop_row(theme)?;
+    /// A flat ground-dressing mark for a map theme; only the first three of
+    /// a theme's marks ship.
+    pub fn theme_prop(
+        &self,
+        theme: aftermine_sim::scenario::Theme,
+        variant: usize,
+    ) -> Option<Rect> {
+        let row = crate::render::grade::prop_row(theme);
         (variant < 3).then(|| self.regions.theme_props[row * 3 + variant])
     }
 

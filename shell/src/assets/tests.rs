@@ -779,26 +779,26 @@ fn defense_mounts_preserve_separate_banks_and_a_compact_siege_carriage() {
 
 #[test]
 fn every_theme_prop_row_is_tile_sized_and_ordered_like_the_lookup() {
+    use aftermine_sim::scenario::Theme;
     let atlas = manifest();
     for (row, (theme, stem)) in [
-        ("rusted-yard", "rusted_yard"),
-        ("cold-circuitry", "cold_circuitry"),
-        ("quarry-dust", "quarry_dust"),
-        ("basalt", "basalt"),
-        ("slag", "slag"),
-        ("verdigris", "verdigris"),
+        (Theme::RustedYard, "rusted_yard"),
+        (Theme::ColdCircuitry, "cold_circuitry"),
+        (Theme::QuarryDust, "quarry_dust"),
+        (Theme::Basalt, "basalt"),
+        (Theme::Slag, "slag"),
+        (Theme::Verdigris, "verdigris"),
     ]
     .into_iter()
     .enumerate()
     {
-        assert_eq!(theme_prop_row(theme), Some(row));
+        assert_eq!(crate::render::grade::prop_row(theme), row);
         for variant in 0..3 {
             let key = format!("theme_{stem}_{variant}");
             assert_eq!(THEME_PROP_KEYS[row * 3 + variant], key);
             assert_eq!(atlas.rects[&key][2..], [64.0, 64.0]);
         }
     }
-    assert_eq!(theme_prop_row("unknown"), None);
 }
 
 #[test]

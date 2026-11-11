@@ -531,7 +531,7 @@ impl Browser {
                 rect.h - label_h - 8.0 * ui,
             );
             if let Some(preview) = previews.get(entry, thumb) {
-                preview.draw(thumb, crate::render::theme_tint(&entry.theme));
+                preview.draw(thumb, crate::render::grade::tint(entry.theme));
             }
             let border = if selected {
                 TEXT_TITLE

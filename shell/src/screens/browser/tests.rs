@@ -17,7 +17,7 @@ fn entry(label: &str, seats: usize) -> ScenarioEntry {
         label: label.to_string(),
         blurb: None,
         path: Some(std::path::PathBuf::from(format!("{label}.json"))),
-        theme: String::new(),
+        theme: None,
     }
 }
 

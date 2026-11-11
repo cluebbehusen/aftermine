@@ -90,7 +90,7 @@ mod chrome;
 mod destruction;
 pub(crate) mod entities;
 mod environment;
-mod grade;
+pub(crate) mod grade;
 mod ground;
 pub(crate) use ground::{GroundBlend, GroundCache};
 pub(crate) mod hud;
@@ -658,21 +658,6 @@ impl GroundLayout {
 
 fn visible_tiles(game: &crate::game::Scene<'_>) -> (TilePos, TilePos) {
     ground::GroundView::live(&game.presentation.camera).tiles(game.state.map())
-}
-
-/// Per-theme terrain grading: a subtle multiplier on ground-layer
-/// sprites only. Units, chrome, the minimap, and the golden renderer
-/// stay untinted; grading is atmosphere, never information.
-pub fn theme_tint(theme: &str) -> Color {
-    match theme {
-        "rusted-yard" => Color::new(1.0, 0.95, 0.88, 1.0),
-        "cold-circuitry" => Color::new(0.89, 0.95, 1.0, 1.0),
-        "quarry-dust" => Color::new(1.0, 0.97, 0.90, 1.0),
-        "basalt" => Color::new(0.92, 0.91, 1.0, 1.0),
-        "slag" => Color::new(1.0, 0.92, 0.92, 1.0),
-        "verdigris" => Color::new(0.90, 1.0, 0.94, 1.0),
-        _ => WHITE,
-    }
 }
 
 const GHOST_TINT: Color = color_u8!(150, 150, 165, 210);

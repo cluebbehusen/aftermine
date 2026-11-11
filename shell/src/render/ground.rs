@@ -145,9 +145,7 @@ impl<'a> Ground<'a> {
             map: game.state.map(),
             scenario: game.scenario,
             layout: game.ground(),
-            grade: super::grade::Grade::of(
-                game.scenario.meta.as_ref().map_or("", |m| m.theme.as_str()),
-            ),
+            grade: super::grade::Grade::of(game.scenario.meta.as_ref().and_then(|meta| meta.theme)),
         }
     }
 }
