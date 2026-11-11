@@ -340,53 +340,20 @@ impl Game {
         // valid file can still claim a duration long enough to freeze the
         // UI for minutes.
         let _load = aftermine_kit::diagnostics::stage(Stage::ReplayLoad, 0);
-        // Untrusted file: enforce the invariants recording guarantees, and
-        // refuse cross-version saves outright, since resuming one would
-        // keep recording onto a log that can no longer reproduce.
-        replay
-            .validate(Some(SIM_VERSION))
-            .map_err(|err| anyhow::anyhow!("{err}"))?;
-        anyhow::ensure!(
-            replay.origin.is_none(),
-            "live continuation requires a session checkpoint for this replay origin"
-        );
-        let scenario = replay.setup.clone();
-        let mut state = scenario.build()?;
-        let total = aftermine_kit::replay_duration(&replay);
-        anyhow::ensure!(
-            total <= aftermine_kit::MAX_REPLAY_TICKS,
-            "replay spans {total} ticks, beyond the {}-tick interactive load limit \
-             (the headless driver replays without one)",
-            aftermine_kit::MAX_REPLAY_TICKS
-        );
-        // The fast-forward lets bots observe every tick to rebuild controller
-        // memory. Their generated commands are discarded because the record
-        // remains authoritative.
-        let mut bots = seat_controllers(&scenario)?;
-        let mut cursor = replay.cursor();
-        let mut live_stats = aftermine_kit::stats::LiveMatchStats::new(&state);
+        let mut game = Self::new(replay.setup.clone())?;
+        let mut live_stats = aftermine_kit::stats::LiveMatchStats::new(&game.state);
         let mut projectile_releases = projectiles::ProjectileReleases::default();
-        let mut game = Self::new(scenario)?;
         let mut boundary_fog = game.presentation.boundary_fog.clone();
-        for _ in 0..total {
-            aftermine_kit::diagnostics::progress(state.current_tick());
-            let _ = aftermine_kit::bot_execution::commands(&state, &mut bots);
-            let commands: Vec<PlayerCommand> = cursor
-                .take_tick(state.current_tick())
-                .iter()
-                .map(|t| t.command.clone())
-                .collect();
-            let report = state.tick(&commands);
-            aftermine_kit::controller::record_events(&mut bots, &report);
-            game.keyframes.observe(&state);
-            boundary_fog.observe(&state, game.presentation.human);
-            projectile_releases.observe(&state, &report.events);
-            live_stats.observe(&state, &report.events);
-        }
-        anyhow::ensure!(
-            cursor.is_finished(),
-            "replay duration metadata does not cover its own commands"
-        );
+        let human = game.presentation.human;
+        let keyframes = &mut game.keyframes;
+        let aftermine_kit::Resumed { state, bots } =
+            aftermine_kit::resume(&replay, |state, report| {
+                aftermine_kit::diagnostics::progress(state.current_tick());
+                keyframes.observe(state);
+                boundary_fog.observe(state, human);
+                projectile_releases.observe(state, &report.events);
+                live_stats.observe(state, &report.events);
+            })?;
         game.replace_state_after_jump(&state);
         game.presentation.boundary_fog = boundary_fog;
         game.presentation.projectile_releases = projectile_releases;
