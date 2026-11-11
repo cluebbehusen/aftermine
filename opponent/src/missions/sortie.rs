@@ -1,6 +1,7 @@
 //! The flight strikes and clearances share: aircraft gather beside home, fly
-//! at their aim around known anti-air, fight there, then go on to the next
-//! aim they can take or withdraw when the anti-air around them outweighs them.
+//! at their aim around known anti-air, fight there while the fight makes
+//! progress, then go on to the next aim they can take or withdraw when the
+//! anti-air around them outweighs them.
 
 use super::air;
 use super::attack::{FIT, healthy, striking};
@@ -74,12 +75,12 @@ impl<'a> Sortie<'_, 'a> {
         }
     }
 
-    /// The enemy a fight at `aim` goes against: a strike's target's owner.
-    /// A clearance's fight keeps a fixed time.
+    /// The enemy a fight at `aim` goes against: a strike's target's owner,
+    /// or the one whose anti-air a clearance sweeps.
     fn owner(self, aim: Aim) -> Option<PlayerId> {
         match (self, aim) {
             (Self::Strike(_), Aim::Building(target)) => Some(target.owner),
-            (Self::Clear(_), Aim::Tile(_)) => None,
+            (Self::Clear(sweep), Aim::Tile(tile)) => sweep.fought(tile),
             _ => unreachable!("a sortie's aim"),
         }
     }

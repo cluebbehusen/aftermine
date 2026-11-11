@@ -17,14 +17,14 @@ use super::sortie::Sortie;
 use super::{MISSION_CAP, Mission, Missions, StrikePhase, Task, UNIT_CAP, mine, run};
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
-use crate::frame::{HomeFrame, doubled};
+use crate::frame::{HomeFrame, doubled, footprint_centre};
 use crate::gunship::gunship;
 use crate::map::MapModel;
 use crate::memory::Memory;
 use crate::profile::ResolvedProfile;
-use aftermine_sim::UnitId;
-use aftermine_sim::observation::{ObservationData, UnitObs};
+use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::stats::Domain;
+use aftermine_sim::{PlayerId, UnitId};
 use chassis::grid::TilePos;
 
 /// Tiles around another clearance's aim left to it.
@@ -35,6 +35,7 @@ const FOCUS_TILES: i32 = 12;
 
 const GATHER_TICKS: u64 = 600;
 const TRAVEL_TICKS: u64 = 1_800;
+/// Ticks a clearance's fight goes on without progress before it ends.
 const ENGAGE_TICKS: u64 = 1_200;
 const WITHDRAW_TICKS: u64 = 1_200;
 
@@ -69,6 +70,8 @@ pub(super) struct Sweep<'a> {
     held: Vec<TilePos>,
     /// Where the building a lift goes after, or the next lift would, stands.
     focus: Option<TilePos>,
+    /// Who holds that building.
+    owner: Option<PlayerId>,
 }
 
 impl Missions {
@@ -216,6 +219,7 @@ impl Missions {
         memory: &'a Memory,
         scratch: &'a Scratch,
     ) -> Sweep<'a> {
+        let target = self.lift_focus(observation, map, memory, scratch);
         Sweep {
             observation,
             map,
@@ -230,9 +234,8 @@ impl Missions {
                 .and_then(|start| map.component(start)),
             reserve: scratch.reserve,
             held: Vec::new(),
-            focus: self
-                .lift_focus(observation, map, memory, scratch)
-                .map(|target| target.anchor),
+            focus: target.map(|target| target.anchor),
+            owner: target.map(|target| target.owner),
         }
     }
 
@@ -343,23 +346,63 @@ impl Missions {
 }
 
 impl Sweep<'_> {
+    /// The known enemy anti-air buildings: built ones that fire on aircraft.
+    fn anti_air_buildings(&self) -> impl Iterator<Item = &BuildingObs> {
+        self.observation.enemy_buildings.iter().filter(|building| {
+            building.built
+                && building
+                    .kind
+                    .tier_stats(building.tier)
+                    .weapons
+                    .iter()
+                    .any(|weapon| weapon.targets.air)
+        })
+    }
+
     /// Where the known enemy anti-air buildings within reach of `focus`
-    /// stand: built ones that fire on aircraft.
+    /// stand.
     fn flak(&self, focus: TilePos) -> impl Iterator<Item = TilePos> {
-        self.observation
-            .enemy_buildings
-            .iter()
-            .filter(|building| {
-                building.built
-                    && building
-                        .kind
-                        .tier_stats(building.tier)
-                        .weapons
-                        .iter()
-                        .any(|weapon| weapon.targets.air)
-            })
+        self.anti_air_buildings()
             .map(|building| building.anchor)
             .filter(move |anchor| anchor.chebyshev(focus) <= FOCUS_TILES)
+    }
+
+    /// Whose anti-air a clearance at `aim` fights, read from the aim itself
+    /// so the fight weighs the same enemy however the lift's target
+    /// changes: the owner of the known anti-air building or the anti-air
+    /// unit in sight nearest the aim within [`HELD_TILES`], else of the
+    /// known enemy building nearest it, else the lift target's owner.
+    pub(super) fn fought(&self, aim: TilePos) -> Option<PlayerId> {
+        let from = doubled(aim);
+        let near = |tile: TilePos| tile.chebyshev(aim) <= HELD_TILES;
+        let building = |building: &&BuildingObs| {
+            self.frame
+                .rank(from, footprint_centre(building.kind, building.anchor))
+        };
+        self.anti_air_buildings()
+            .filter(|building| near(building.anchor))
+            .min_by_key(building)
+            .map(|building| building.player)
+            .or_else(|| {
+                self.observation
+                    .enemy_units
+                    .iter()
+                    .filter(|unit| {
+                        unit.kind.stats().domain == Domain::Ground
+                            && composition::role(unit.kind) == Some(Role::AntiAir)
+                            && near(unit.tile)
+                    })
+                    .min_by_key(|unit| self.frame.rank(from, doubled(unit.tile)))
+                    .map(|unit| unit.player)
+            })
+            .or_else(|| {
+                self.observation
+                    .enemy_buildings
+                    .iter()
+                    .min_by_key(building)
+                    .map(|building| building.player)
+            })
+            .or(self.owner)
     }
 
     /// Where `strength` goes next around the lift's target: the remembered
