@@ -467,7 +467,7 @@ pub(crate) fn needs(
         kinds[index(kind)] += 1;
     }
     // Point defenders shield the army rather than make it bigger.
-    let army: i64 = own[..Role::Screen as usize].iter().sum();
+    let army: i64 = own.iter().sum::<i64>() - own[Role::Screen as usize];
     let air = i64::try_from(enemy.air).unwrap_or(i64::MAX);
     let ground = i64::try_from(enemy.ground).unwrap_or(i64::MAX);
     let heavy = i64::try_from(enemy.heavy).unwrap_or(i64::MAX);
