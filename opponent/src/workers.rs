@@ -379,7 +379,6 @@ fn flee(
     }
 }
 
-/// The seat's built Foundries.
 /// Whether `tile` lies within [`HOME_TILES`] of one of `foundries`.
 fn at_home(foundries: &[&BuildingObs], tile: TilePos) -> bool {
     let size = BuildingKind::Foundry.size();
@@ -400,6 +399,7 @@ fn free_on(unit: &UnitObs, map: &MapModel, ground: u32, ledger: &Ledger) -> bool
         && !ledger.stuck(unit.id)
 }
 
+/// The seat's built Foundries.
 fn built_foundries(observation: &ObservationData) -> Vec<&BuildingObs> {
     observation
         .my_buildings

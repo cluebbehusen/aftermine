@@ -582,13 +582,13 @@ impl Needs {
         }
     }
 
-    /// Roles with a deficit, most wanted first.
     /// What of its army the seat's personality would have strike from the
     /// air, at its value.
     pub(crate) fn air_share(&self) -> u64 {
         self.air_share
     }
 
+    /// Roles with a deficit, most wanted first.
     pub(crate) fn wanted(&self) -> Vec<Role> {
         let mut wanted: Vec<Role> = ROLES
             .into_iter()

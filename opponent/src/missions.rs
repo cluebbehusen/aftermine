@@ -501,14 +501,6 @@ impl Mission {
         )
     }
 
-    /// Whether the mission keeps its units from a defense. A defense keeps
-    /// them while it fights for one of the seat's own buildings. An attack
-    /// keeps them once it is fighting or staging, or while travelling in
-    /// contact, since it may have met the enemy since the last decision. A
-    /// scout keeps its
-    /// scout, a lift its units once it has left the ground, a settlement
-    /// its units while they fly, and a strike, clear or raid its units once
-    /// they have set out and until they turn back.
     /// Whether a gunship flies in this mission.
     fn flown_by_gunships(&self, observation: &ObservationData) -> bool {
         self.units
@@ -517,6 +509,13 @@ impl Mission {
             .any(|unit| crate::gunship::gunship(unit.kind))
     }
 
+    /// Whether the mission keeps its units from a defense. A defense keeps
+    /// them while it fights for one of the seat's own buildings. An attack
+    /// keeps them once it is fighting or staging, or while travelling in
+    /// contact, since it may have met the enemy since the last decision. A
+    /// scout keeps its scout, a lift its units once it has left the ground, a
+    /// settlement its units while they fly, and a strike, clear or raid its
+    /// units once they have set out and until they turn back.
     fn holds(&self, observation: &ObservationData) -> bool {
         match self.task {
             // An ally's defense lends its units back to the seat's own.
@@ -1108,8 +1107,7 @@ impl Scratch {
             .iter()
             .filter_map(|objective| map.component(objective.anchor))
             .collect();
-        let mut free = missions.available(observation, None);
-        free.sort_unstable();
+        let free = missions.available(observation, None);
         if severed {
             reserve[0] += free
                 .iter()
@@ -1131,13 +1129,7 @@ impl Scratch {
             rival: None,
             reserve,
             payload,
-            invaders: reserve::threat(
-                map,
-                memory,
-                observation.me,
-                observation.tick,
-                Domain::Ground,
-            ),
+            invaders: reserve::threat(map, memory, observation.me, observation.tick),
             gunships_clear: false,
         };
         scratch.rival = missions.rival(&scratch, observation, map, traits);
