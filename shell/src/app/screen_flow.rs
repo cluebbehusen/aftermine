@@ -317,12 +317,11 @@ pub(super) fn update_and_draw(
         app.menu_stick.reset();
     }
     let mut profile_frame_active = false;
-    // Menu backdrops are presentation worlds too. Home, setup, and
-    // the saves and replays shelf animate even when `--paused` reserves the next
-    // match for driven control; Settings inherits its caller, so the
-    // pause-menu path stays frozen. Playing and Playback advance their
-    // own clocks below, while Pause deliberately advances neither.
-    if screen.backdrop_runs() {
+    // Results draws the decided match behind its report, so the match's
+    // effects keep aging there. Menus draw their own backdrops, Playing and
+    // Playback advance their own clocks below, and Pause freezes the
+    // battlefield behind it.
+    if matches!(screen, Screen::Results(_)) {
         app.game.update_fx(time.presentation);
     } else if app.net.is_some() && screen.kind() != ScreenKind::Playing {
         // A LAN match keeps ticking under menus, so its effects age too.
@@ -776,14 +775,12 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     match out {
         WizardOut::Home => {
             // A resumed setup opened from a save, not from Play.
-            let mut home = if w.resuming() {
+            let home = if w.resuming() {
                 HomeScreen::open()
             } else {
                 HomeScreen::returning_to(screens::home::Out::Play)
             };
             w.finish_resume(&mut app.draft);
-            home_backdrop(app, 0.0);
-            home.draw(&app.sprites);
             *rerun = true;
             next = Some(Screen::Home(home));
         }
@@ -791,12 +788,6 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
             None => {}
             Some(Ok(fresh)) => {
                 app.install(fresh, Install::local(app.args.paused));
-                render::draw(
-                    &app.game.view(),
-                    &app.sprites,
-                    &app.input,
-                    &app.config.bindings,
-                );
                 *rerun = true;
                 next = Some(Screen::Playing);
             }
@@ -1308,9 +1299,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
     drop(input_scope);
     match out {
         screens::shelf::Out::Home => {
-            let mut home = HomeScreen::returning_to(screens::home::Out::Replays);
-            home_backdrop(app, 0.0);
-            home.draw(&app.sprites);
+            let home = HomeScreen::returning_to(screens::home::Out::Replays);
             *rerun = true;
             leave = Some(Screen::Home(home));
         }

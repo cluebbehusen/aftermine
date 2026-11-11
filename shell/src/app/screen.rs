@@ -284,28 +284,6 @@ impl Screen {
         }
     }
 
-    /// Whether this screen owns a decorative backdrop whose presentation
-    /// clock should keep moving. A menu opened from Pause is deliberately
-    /// different from the same menu opened from Home: the paused battlefield
-    /// stays frozen behind it, as it does behind a save in flight.
-    pub(super) fn backdrop_runs(&self) -> bool {
-        match self {
-            Self::ColdOpen(_)
-            | Self::Home(_)
-            | Self::Wizard(_)
-            | Self::Replays(_)
-            | Self::Results(_)
-            | Self::Lobby { .. } => true,
-            Self::Settings { .. } | Self::Codex { .. } | Self::Lessons { .. } => !self.over_pause(),
-            Self::Playing
-            | Self::Playback { .. }
-            | Self::FinalMap(_)
-            | Self::Pause(_)
-            | Self::Waiting(_)
-            | Self::Busy(_) => false,
-        }
-    }
-
     /// The keyboard a text field on screen asks for: the save-name field,
     /// the player-name field, or the Join form.
     pub(super) fn keyboard(&self) -> Option<Keyboard> {

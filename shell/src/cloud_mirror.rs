@@ -331,11 +331,8 @@ pub(crate) fn plan(
     changes: &Changes,
     read: &mut impl FnMut(&str) -> Option<Version>,
 ) -> Vec<Action> {
-    let mut times = Times {
-        read,
-        known: BTreeMap::new(),
-    };
-    let standing = |name: &str, times: &mut Times<_>| -> Mine {
+    // Each name stands once: a changed one is handled, and the rest skips it.
+    let standing = |name: &str, read: &mut dyn FnMut(&str) -> Option<Version>| -> Mine {
         let agreed = synced.get(name).copied();
         let noted = here.deleted.contains(name);
         let Some(stamp) = here.listing.found.get(name) else {
@@ -356,7 +353,7 @@ pub(crate) fn plan(
                 Mine::Agreed(entry.version())
             };
         }
-        let Some(version) = times.of(name) else {
+        let Some(version) = read(name) else {
             return Mine::Nothing;
         };
         match agreed {
@@ -394,7 +391,7 @@ pub(crate) fn plan(
             actions.push(Action::Wait(name.clone()));
             continue;
         }
-        let mine = standing(name, &mut times);
+        let mine = standing(name, read);
         let incoming = theirs(change);
         let on_disk = here.listing.found.contains_key(name);
         // Nothing new about a file the player has yet to decide on.
@@ -437,7 +434,7 @@ pub(crate) fn plan(
         .filter(|name| !handled.contains(*name) && !here.waiting(name))
         .collect();
     for name in rest {
-        match standing(name, &mut times) {
+        match standing(name, read) {
             Mine::Touched(version) => actions.push(Action::Adopt(name.clone(), version)),
             Mine::Outdated(version) => {
                 actions.push(Action::DeleteLocal(name.clone(), version.ticks));
@@ -455,23 +452,6 @@ pub(crate) fn plan(
         }
     }
     actions
-}
-
-/// Local file versions, each read at most once per plan.
-struct Times<'a, F> {
-    read: &'a mut F,
-    known: BTreeMap<String, Option<Version>>,
-}
-
-impl<F: FnMut(&str) -> Option<Version>> Times<'_, F> {
-    fn of(&mut self, name: &str) -> Option<Version> {
-        if let Some(known) = self.known.get(name) {
-            return *known;
-        }
-        let read = (self.read)(name);
-        self.known.insert(name.to_owned(), read);
-        read
-    }
 }
 
 /// The CloudKit calls a pass makes, so tests can stand in for iCloud.

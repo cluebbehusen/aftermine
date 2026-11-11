@@ -558,16 +558,6 @@ fn view_height() -> f32 {
     }
 }
 
-/// Draws one frame.
-pub fn draw(
-    game: &crate::game::Scene<'_>,
-    sprites: &Sprites,
-    input: &InputState,
-    bindings: &crate::action::BindingMap,
-) {
-    draw_with_performance(game, sprites, input, bindings, None);
-}
-
 pub(crate) fn draw_with_performance(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
