@@ -363,19 +363,6 @@ enum Cmd {
         /// Ticks to run.
         #[arg(long, default_value_t = 2_000)]
         ticks: u32,
-        /// Bench a scenario with a bot in every seat instead of the synthetic
-        /// mass battle (e.g. "scenarios/compass-grand.json").
-        #[arg(long)]
-        scenario: Option<String>,
-        /// Controller difficulty for a scenario benchmark.
-        #[arg(long, requires = "scenario")]
-        difficulty: Option<aftermine_sim::scenario::BotDifficulty>,
-        /// Controller stance for a scenario benchmark.
-        #[arg(long, requires = "scenario")]
-        stance: Option<aftermine_sim::scenario::BotStance>,
-        /// Fixed personality seed for every scenario seat.
-        #[arg(long, requires = "scenario")]
-        personality_seed: Option<u64>,
     },
     /// Measure a map: room per seat, route lengths by domain, resources,
     /// artillery pressure, spawn spacing.
@@ -988,84 +975,7 @@ fn main() -> Result<()> {
             render::save_png(&outcome.state, &out)?;
             eprintln!("wrote {}", out.display());
         }
-        Cmd::Bench {
-            units,
-            ticks,
-            scenario,
-            difficulty,
-            stance,
-            personality_seed,
-        } => {
-            if let Some(path) = scenario {
-                let config = aftermine_sim::scenario::BotConfig::new(
-                    difficulty.unwrap_or(aftermine_sim::scenario::BotDifficulty::Standard),
-                    stance.unwrap_or(aftermine_sim::scenario::BotStance::Balanced),
-                    personality_seed.unwrap_or(0),
-                );
-                let mut sc = runner::load_scenario(&path)?;
-                aftermine_kit::bench::all_bots_with_config(&mut sc, config);
-                let mut state = sc.build()?;
-                let mut bots = aftermine_kit::controller::seat_controllers(&sc)?;
-                println!(
-                    "controller: {config:?}; sim version {}",
-                    aftermine_sim::SIM_VERSION
-                );
-                // The timed loop stops at the match result: post-victory
-                // ticks have nothing left to decide and would inflate
-                // ticks/s.
-                let start = std::time::Instant::now();
-                let mut ran: u64 = 0;
-                let mut tick_ns: Vec<u64> = Vec::with_capacity(ticks as usize);
-                let mut bot_ns: Vec<u64> = Vec::with_capacity(ticks as usize);
-                let mut sim_ns: Vec<u64> = Vec::with_capacity(ticks as usize);
-                for _ in 0..ticks {
-                    if state.result().is_some() {
-                        break;
-                    }
-                    let tick_start = std::time::Instant::now();
-                    let mut commands = Vec::new();
-                    for bot in &mut bots {
-                        commands.extend(bot.act(&state));
-                    }
-                    let bots_done = std::time::Instant::now();
-                    let report = state.tick(&commands);
-                    aftermine_kit::controller::record_events(&mut bots, &report);
-                    sim_ns.push(
-                        u64::try_from(bots_done.elapsed().as_nanos())
-                            .expect("durations fit in u64 nanoseconds"),
-                    );
-                    bot_ns.push(
-                        u64::try_from((bots_done - tick_start).as_nanos())
-                            .expect("durations fit in u64 nanoseconds"),
-                    );
-                    tick_ns.push(
-                        u64::try_from(tick_start.elapsed().as_nanos())
-                            .expect("durations fit in u64 nanoseconds"),
-                    );
-                    ran += 1;
-                }
-                let secs = start.elapsed().as_secs_f64();
-                let decided = if state.result().is_some() {
-                    format!(" — decided at tick {}", state.current_tick())
-                } else {
-                    String::new()
-                };
-                println!(
-                    "bench: {} ({} bot seats) x {ran} of {ticks} requested ticks in {secs:.2}s \
-                     = {:.0} ticks/s{decided} (hash {:#x})",
-                    sc.name,
-                    bots.len(),
-                    (ran as f64) / secs,
-                    state.hash()
-                );
-                println!(
-                    "bench-latency: whole tick {} | bot phase {} | simulation phase {}",
-                    latency_summary(&tick_ns),
-                    latency_summary(&bot_ns),
-                    latency_summary(&sim_ns),
-                );
-                return Ok(());
-            }
+        Cmd::Bench { units, ticks } => {
             let scenario = aftermine_kit::bench::mass_battle(units);
             let mut state = scenario.build()?;
             aftermine_kit::bench::engage(&mut state);
