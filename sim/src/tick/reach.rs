@@ -23,19 +23,19 @@ type LabelSet = [u32; 4];
 ///
 /// Component labelings match [`chassis::path::astar`] reachability under the
 /// same passability the routes use, so a target outside the unit's labels is
-/// one no route can reach. Labels are built on first use and describe
+/// one no route can reach. Ground labels are built on first use and describe
 /// passability at that moment. The only passability write inside the brain
 /// phase is a scrap node running dry, which a harvester reports with
 /// [`crate::Event::NodeDepleted`]; the owner must call
 /// [`Reach::forget_ground`] after any brain that emitted one. Sky
-/// passability never changes during a match.
+/// passability never changes during a match, so the sky's labels come with
+/// the state.
 ///
 /// Settled crowds are judged against the bodies that stood idle, pathless,
 /// and stopped when the phase began, so the answer never depends on which
 /// brain asked first.
 pub(super) struct Reach {
     ground: Option<Vec<u32>>,
-    air: Option<Vec<u32>>,
     /// Ground a hull wider than a tile can cross, by its radius.
     wide: BTreeMap<i64, Vec<u32>>,
     endpoints: BTreeMap<(i64, LabelSet, TilePos, bool), Option<TilePos>>,
@@ -104,7 +104,6 @@ impl Reach {
             .collect();
         Self {
             ground: None,
-            air: None,
             wide: BTreeMap::new(),
             endpoints: BTreeMap::new(),
             crowds: BTreeMap::new(),
@@ -137,13 +136,7 @@ impl Reach {
             return false;
         };
         let (kind, from) = (unit.kind, unit.tile());
-        let labels = layer_labels(
-            &mut self.ground,
-            &mut self.air,
-            &mut self.wide,
-            state,
-            Layer::of(unit),
-        );
+        let labels = layer_labels(&mut self.ground, &mut self.wide, state, Layer::of(unit));
         let (width, height) = (state.map.width(), state.map.height());
         if from.x < 0 || from.y < 0 || from.x >= width || from.y >= height {
             return false;
@@ -177,13 +170,7 @@ impl Reach {
         let layer = Layer::of(unit);
         let from = unit.tile();
         let player = unit.player;
-        let labels = layer_labels(
-            &mut self.ground,
-            &mut self.air,
-            &mut self.wide,
-            state,
-            layer,
-        );
+        let labels = layer_labels(&mut self.ground, &mut self.wide, state, layer);
         let width = state.map.width();
         let height = state.map.height();
         let label = |tile: TilePos| label_at(labels, width, height, tile);
@@ -239,13 +226,7 @@ impl Reach {
         };
         let layer = Layer::of(unit);
         let from = unit.tile();
-        let labels = layer_labels(
-            &mut self.ground,
-            &mut self.air,
-            &mut self.wide,
-            state,
-            layer,
-        );
+        let labels = layer_labels(&mut self.ground, &mut self.wide, state, layer);
         let width = state.map.width();
         let height = state.map.height();
         let label = |tile: TilePos| label_at(labels, width, height, tile);
@@ -368,34 +349,26 @@ impl Reach {
     }
 }
 
-/// One layer's component labels, built on first use.
-/// The component labels of `layer`, built on first use.
+/// The component labels of `layer`, the ground's built on first use.
 fn layer_labels<'a>(
     ground: &'a mut Option<Vec<u32>>,
-    air: &'a mut Option<Vec<u32>>,
     wide: &'a mut BTreeMap<i64, Vec<u32>>,
-    state: &State,
+    state: &'a State,
     layer: Layer,
 ) -> &'a [u32] {
     match layer {
-        Layer::Ground => labels(ground, state, |t| state.passable(t)),
-        Layer::Air => labels(air, state, |t| state.passable_for(Domain::Air, t)),
+        Layer::Ground => ground.get_or_insert_with(|| {
+            chassis::path::cardinal_components(state.map.width(), state.map.height(), |t| {
+                state.passable(t)
+            })
+        }),
+        Layer::Air => state.sky_labels.labels(),
         Layer::Wide(radius) => wide.entry(radius.to_bits()).or_insert_with(|| {
             chassis::path::cardinal_components(state.map.width(), state.map.height(), |t| {
                 crate::geometry::hull_open(t, radius, |c| state.passable(c))
             })
         }),
     }
-}
-
-fn labels<'a>(
-    slot: &'a mut Option<Vec<u32>>,
-    state: &State,
-    open: impl Fn(TilePos) -> bool,
-) -> &'a [u32] {
-    slot.get_or_insert_with(|| {
-        chassis::path::cardinal_components(state.map.width(), state.map.height(), open)
-    })
 }
 
 /// Gap two bodies may leave and still touch, as the arrival wave counts it.

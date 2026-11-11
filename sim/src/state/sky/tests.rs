@@ -73,3 +73,42 @@ fn a_clone_starts_its_air_routes_afresh() {
     assert_eq!(searches.get(), 2);
     assert_eq!(copy, routes, "derived routes never set two states apart");
 }
+
+fn peaks() -> crate::State {
+    let mut map = vec![".".repeat(20); 12];
+    map[1].replace_range(1..2, "1");
+    map[10].replace_range(18..19, "2");
+    for row in &mut map[2..10] {
+        row.replace_range(9..11, "^^");
+    }
+    map[5].replace_range(4..7, "^^^");
+    crate::Scenario {
+        map,
+        units: Vec::new(),
+        buildings: Vec::new(),
+        ..crate::Scenario::skirmish()
+    }
+    .build()
+    .expect("peaks build")
+}
+
+fn fresh_labels(state: &crate::State) -> Vec<u32> {
+    chassis::path::cardinal_components(state.map.width(), state.map.height(), |tile| {
+        state.passable_for(crate::stats::Domain::Air, tile)
+    })
+}
+
+#[test]
+fn a_state_carries_its_sky_labels_through_assembly_load_and_clone() {
+    let state = peaks();
+    let labels = fresh_labels(&state);
+    assert!(labels.contains(&0), "peaks close the sky");
+    assert_eq!(state.sky_labels.labels(), labels.as_slice());
+
+    let json = serde_json::to_string(&state).expect("state serializes");
+    let loaded: crate::State = serde_json::from_str(&json).expect("state loads");
+    assert_eq!(loaded.sky_labels.labels(), labels.as_slice());
+
+    let copy = state.clone();
+    assert!(Arc::ptr_eq(&copy.sky_labels.0, &state.sky_labels.0));
+}

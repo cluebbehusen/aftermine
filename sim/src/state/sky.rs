@@ -3,7 +3,42 @@
 //! so nothing here is serialized, hashed or compared.
 
 use chassis::grid::TilePos;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+/// The sky's components, labelled as [`chassis::path::cardinal_components`]
+/// labels air passability, so two tiles share a label exactly when an air
+/// route joins them. Built once with the state; clones share them.
+#[derive(Clone, Default)]
+pub(crate) struct SkyLabels(Arc<[u32]>);
+
+impl SkyLabels {
+    /// The labels of `state`'s sky.
+    pub(crate) fn of(state: &super::State) -> Self {
+        Self(
+            chassis::path::cardinal_components(state.map.width(), state.map.height(), |tile| {
+                state.passable_for(crate::stats::Domain::Air, tile)
+            })
+            .into(),
+        )
+    }
+
+    /// One label per map tile, row-major; 0 under a peak.
+    pub(crate) fn labels(&self) -> &[u32] {
+        &self.0
+    }
+}
+
+impl PartialEq for SkyLabels {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for SkyLabels {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SkyLabels").finish_non_exhaustive()
+    }
+}
 
 /// Air routes kept; once full, each new search replaces the oldest.
 const AIR_ROUTES: usize = 16;
