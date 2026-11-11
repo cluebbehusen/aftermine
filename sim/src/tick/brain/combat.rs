@@ -1372,26 +1372,38 @@ fn route_reaches(
             // A gun fights a structure from any stand in reach with a clear
             // line, across a pit or over a wall, as `approach_firing_area`
             // routes it: the same half-tile stands, the cheap tests first.
+            // The scan traces a line from each stand, so a gun looks only on
+            // the shared look ticks and a formation scans once a phase;
+            // otherwise an idle formation facing a structure it can never
+            // shell would repeat it every tick.
+            if !state
+                .current_tick()
+                .is_multiple_of(crate::stats::TARGET_RECHECK_TICKS)
+            {
+                return false;
+            }
             let r = weapon.range.ceil().to_num::<i32>();
             let (width, height) = (state.map.width(), state.map.height());
-            ((b.anchor.y - r).max(0) * 2..(b.anchor.y + h + r).min(height) * 2).any(|y| {
-                ((b.anchor.x - r).max(0) * 2..(b.anchor.x + w + r).min(width) * 2).any(|x| {
-                    let point = Vec2Fx::new(
-                        Fx::from_num(x) / 2 + const { Fx::lit("0.25") },
-                        Fx::from_num(y) / 2 + const { Fx::lit("0.25") },
-                    );
-                    let tile = TilePos::containing(point);
-                    let aim = b.closest_point_to(point);
-                    state.passable_for(domain, tile)
-                        && within_weapon_reach(weapon, point.dist_sq(aim), Fx::ZERO)
-                        && reach.reaches(state, id, [tile])
-                        && clear_line(
-                            state,
-                            Fire::of(weapon),
-                            ShotEnd::new(point, domain),
-                            ShotEnd::new(aim, Domain::Ground).on(b.anchor),
-                            Landing::Checked,
-                        )
+            reach.reaches_stand(state, id, b.id, |reach| {
+                ((b.anchor.y - r).max(0) * 2..(b.anchor.y + h + r).min(height) * 2).any(|y| {
+                    ((b.anchor.x - r).max(0) * 2..(b.anchor.x + w + r).min(width) * 2).any(|x| {
+                        let point = Vec2Fx::new(
+                            Fx::from_num(x) / 2 + const { Fx::lit("0.25") },
+                            Fx::from_num(y) / 2 + const { Fx::lit("0.25") },
+                        );
+                        let tile = TilePos::containing(point);
+                        let aim = b.closest_point_to(point);
+                        state.passable_for(domain, tile)
+                            && within_weapon_reach(weapon, point.dist_sq(aim), Fx::ZERO)
+                            && reach.reaches(state, id, [tile])
+                            && clear_line(
+                                state,
+                                Fire::of(weapon),
+                                ShotEnd::new(point, domain),
+                                ShotEnd::new(aim, Domain::Ground).on(b.anchor),
+                                Landing::Checked,
+                            )
+                    })
                 })
             })
         }),
@@ -2405,6 +2417,13 @@ fn bomber_attack(
                 next: 0,
                 clearing: false,
             });
+        } else if resume.is_some() {
+            // A fight its hunt, patrol or escort picked ends quietly, as
+            // `stall_attack` ends one, and the program goes on.
+            state
+                .unit_mut(id)
+                .expect("caller checked")
+                .complete_attack(resume);
         } else {
             let unit = state.unit_mut(id).expect("caller checked");
             let (player, upos) = (unit.player, unit.pos);
