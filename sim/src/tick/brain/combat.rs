@@ -1174,51 +1174,36 @@ fn chase_stand_ins(
 fn retreat_to_firing_stand(
     state: &mut State,
     id: UnitId,
-    target: Target,
+    victim: UnitId,
     victim_domain: Domain,
     weapon: &WeaponStats,
 ) -> bool {
     let domain = state.unit(id).expect("caller checked").kind.stats().domain;
+    let excess = target_excess(state, Target::Unit(victim));
     let legal = |state: &State, tile: TilePos| {
         if !state.passable_for(domain, tile) {
             return false;
         }
         let position = tile.center();
-        let aim = match target {
-            Target::Unit(target) => state
-                .unit(target)
-                .filter(|unit| unit.hp > 0)
-                .map(|unit| ShotEnd::new(unit.pos, victim_domain)),
-            Target::Building(target) => state
-                .building(target)
-                .filter(|building| building.hp > 0)
-                .map(|building| {
-                    ShotEnd::new(building.closest_point_to(position), victim_domain)
-                        .on(building.anchor)
-                }),
+        let Some(aim) = state
+            .unit(victim)
+            .filter(|unit| unit.hp > 0)
+            .map(|unit| ShotEnd::new(unit.pos, victim_domain))
+        else {
+            return false;
         };
-        let Some(victim) = aim else { return false };
-        let aim = victim.at;
-        let distance_sq = position.dist_sq(aim);
-        if !within_weapon_reach(weapon, distance_sq, target_excess(state, target)) {
+        if !within_weapon_reach(weapon, position.dist_sq(aim.at), excess) {
             return false;
         }
         clear_line(
             state,
             Fire::of(weapon),
             ShotEnd::new(position, domain),
-            victim,
+            aim,
             Landing::Checked,
         )
     };
-
-    let footprint = match target {
-        Target::Unit(target) => (state.unit(target).expect("resolved target").tile(), (1, 1)),
-        Target::Building(target) => {
-            let building = state.building(target).expect("resolved target");
-            (building.anchor, building.kind.size())
-        }
-    };
+    let footprint = (state.unit(victim).expect("resolved target").tile(), (1, 1));
     let reach = weapon.range.ceil().to_num::<i32>();
     route_to_stand(state, id, footprint, reach, legal)
 }
@@ -2728,10 +2713,13 @@ pub(super) fn attack(
     // generic "not in range" chase would close in further. If terrain offers
     // no legal stand, hold and retry instead of making the geometry worse.
     if pos.dist_sq(aim_point) < weapon.minimum_range * weapon.minimum_range {
-        if let Target::Building(building) = target {
-            approach_firing_area(state, id, building, weapon);
-        } else {
-            retreat_to_firing_stand(state, id, target, victim_domain, weapon);
+        match target {
+            Target::Building(building) => {
+                approach_firing_area(state, id, building, weapon);
+            }
+            Target::Unit(victim) => {
+                retreat_to_firing_stand(state, id, victim, victim_domain, weapon);
+            }
         }
         return;
     }
@@ -2964,7 +2952,6 @@ fn fire_sidearms(
         }
         let victim = sidearm_victim(state, index, (pos, heading), me, stats.domain, weapon);
         let Some((_, uid, upos, _)) = victim else {
-            blind::sidearm_radar(state, id, wi, hits, events);
             continue;
         };
         if !super::super::movement::ground_weapon_aligned(

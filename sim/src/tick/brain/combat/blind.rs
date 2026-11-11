@@ -316,36 +316,6 @@ pub(in crate::tick::brain) fn automatic_radar(
     true
 }
 
-pub(super) fn sidearm_radar(
-    state: &mut State,
-    id: UnitId,
-    slot: usize,
-    hits: &mut Vec<PendingHit>,
-    events: &mut Vec<Event>,
-) {
-    let unit = state.unit(id).expect("live unit");
-    let (player, pos, kind) = (unit.player, unit.pos, unit.kind);
-    let weapon = &kind.stats().weapons[slot];
-    let Some(view) = radar_in_range(state, player, (pos, unit.heading), unit.domain(), weapon)
-    else {
-        return;
-    };
-    if !super::super::super::movement::ground_weapon_aligned(unit, view.position - pos) {
-        return;
-    }
-    fire_direct(
-        state,
-        Shot {
-            gunner: Gunner::Unit { id, slot },
-            from: pos,
-            aim: view.position,
-            mark: Mark::Blind(view),
-        },
-        events,
-        hits,
-    );
-}
-
 fn complete(state: &mut State, id: UnitId, resume: Option<Resume>) {
     state
         .unit_mut(id)
@@ -462,16 +432,6 @@ pub(in crate::tick::brain) fn attack_known(
         return;
     }
     if let Some(entity) = view.entity {
-        // A breacher strikes a machine it found itself only while in
-        // contact, and lets it go rather than follow it.
-        if !pursue
-            && matches!(entity, Target::Unit(_))
-            && kind.stats().target_priority == crate::stats::TargetPriority::Buildings
-            && !in_weapon_reach_from(state, kind, pos, entity)
-        {
-            complete(state, id, resume);
-            return;
-        }
         attack(
             state, index, motion, id, entity, resume, events, hits, launches,
         );
