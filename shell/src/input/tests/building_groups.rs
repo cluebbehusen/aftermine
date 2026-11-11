@@ -145,6 +145,70 @@ fn the_all_button_selects_every_one_you_own_by_click_or_tap() {
     assert!(game.pending.is_empty(), "gathering issues no command");
 }
 
+fn press_i() -> [RawEvent; 2] {
+    [key_down(Key::I), key_up(Key::I)]
+}
+
+#[test]
+fn i_gathers_every_one_you_own_as_the_all_button_does() {
+    let mut game = base(3);
+    let turrets = own_buildings(&game, Some(BuildingKind::Turret));
+    let mut input = InputState::new();
+    game.presentation.selection.buildings = vec![turrets[2]];
+    apply_events(&mut game, &mut input, &press_i());
+    assert_eq!(game.presentation.selection.buildings, turrets);
+    assert!(!super::pad_scene::denied(&game));
+    apply_events(&mut game, &mut input, &press_i());
+    assert!(
+        super::pad_scene::denied(&game),
+        "with every one selected there is no button to press"
+    );
+    assert_eq!(game.presentation.selection.buildings, turrets);
+    assert!(game.pending.is_empty(), "gathering issues no command");
+}
+
+#[test]
+fn i_gathers_the_kind_a_key_earlier_in_its_batch_selected() {
+    let scenario = aftermine_sim::Scenario::from_json(
+        r#"{
+        "name":"Select all by key",
+        "players":[{"name":"F","scrap":0,"bot":false},
+                   {"name":"C","scrap":0,"bot":true}],
+        "map":["....................", "..1..............2..", "....................",
+               "....................", "....................", "...................."],
+        "units":[
+          {"player":0,"kind":"sentinel","x":6,"y":4},
+          {"player":0,"kind":"sentinel","x":7,"y":4},
+          {"player":0,"kind":"lancer","x":9,"y":4},
+          {"player":0,"kind":"lancer","x":10,"y":4},
+          {"player":1,"kind":"lancer","x":16,"y":4}]
+    }"#,
+    )
+    .expect("inline scenario parses");
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("game builds");
+    let human = game.presentation.human;
+    let own = |game: &Game, kind| -> Vec<aftermine_sim::UnitId> {
+        game.state
+            .units()
+            .iter()
+            .filter(|u| u.player == human && u.kind == kind)
+            .map(|u| u.id)
+            .collect()
+    };
+    let sentinels = own(&game, UnitKind::Sentinel);
+    let lancers = own(&game, UnitKind::Lancer);
+    let mut input = InputState::new();
+    input.groups[0] = Group::Units(vec![lancers[0]]);
+    game.presentation.selection.units = vec![sentinels[0]];
+    // The frame's panel, laid out before the batch, offers the Sentinels.
+    *game.presentation.panel_model.borrow_mut() =
+        crate::panel::build_for_input(&game.view(), &classic(), &input);
+    let mut batch = vec![key_down(Key::Num1), key_up(Key::Num1)];
+    batch.extend(press_i());
+    apply_events(&mut game, &mut input, &batch);
+    assert_eq!(game.presentation.selection.units, lancers);
+}
+
 #[test]
 fn the_all_button_gathers_units_but_not_the_ones_riding_a_transport() {
     let scenario = aftermine_sim::Scenario::from_json(

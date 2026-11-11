@@ -1025,20 +1025,43 @@ fn every_default_action_is_editable_and_secondary_edit_does_not_replace_primary(
     focus(&mut screen, Item::Binding(Action::PanUp));
     drive(&mut screen, &mut config, &press(Key::Right), false);
     drive(&mut screen, &mut config, &press(Key::Enter), false);
-    assert!(drive(&mut screen, &mut config, &press(Key::I), false).dirty);
+    assert!(drive(&mut screen, &mut config, &press(Key::L), false).dirty);
     assert_eq!(
         config.bindings.chord_at(Action::PanUp, 0),
         Some(Chord::bare(Key::W))
     );
     assert_eq!(
         config.bindings.chord_at(Action::PanUp, 1),
-        Some(Chord::bare(Key::I))
+        Some(Chord::bare(Key::L))
     );
     drive(&mut screen, &mut config, &press(Key::X), false);
     assert_eq!(config.bindings.chord_at(Action::PanUp, 1), None);
     assert_eq!(
         config.bindings.chord_at(Action::PanUp, 0),
         Some(Chord::bare(Key::W))
+    );
+}
+
+#[test]
+fn select_all_of_kind_is_listed_with_the_control_groups_and_rebinds() {
+    let mut config = Config::default();
+    let mut screen = on(Tab::Controls, &config);
+    let item = Item::Binding(Action::SelectAllOfKind);
+    let section = screen.menu.lines()[..index(&screen, item)]
+        .iter()
+        .rev()
+        .find_map(|line| match line {
+            Line::Header(name) => Some(name.as_str()),
+            Line::Row(..) => None,
+        });
+    assert_eq!(section, Some("CONTROL GROUPS"));
+    assert_eq!(label(&screen, item), "Select all of kind: [I] | unbound");
+    focus(&mut screen, item);
+    drive(&mut screen, &mut config, &press(Key::Enter), false);
+    assert!(drive(&mut screen, &mut config, &press(Key::L), false).dirty);
+    assert_eq!(
+        config.bindings.chord_at(Action::SelectAllOfKind, 0),
+        Some(Chord::bare(Key::L))
     );
 }
 
@@ -1090,14 +1113,14 @@ fn clicking_the_secondary_column_selects_it_even_when_release_is_a_later_frame()
         false,
     );
     assert_eq!(screen.binding_slot, 1);
-    assert!(drive(&mut screen, &mut config, &press(Key::I), false).dirty);
+    assert!(drive(&mut screen, &mut config, &press(Key::L), false).dirty);
     assert_eq!(
         config.bindings.chord_at(Action::PanUp, 0),
         Some(Chord::bare(Key::W))
     );
     assert_eq!(
         config.bindings.chord_at(Action::PanUp, 1),
-        Some(Chord::bare(Key::I))
+        Some(Chord::bare(Key::L))
     );
 }
 

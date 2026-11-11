@@ -8286,7 +8286,7 @@ fn upgrade_and_rally_shortcuts_share_the_cards_owner_and_affordability_gates() {
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let mut input = InputState::new();
     let mut bindings = BindingMap::classic();
-    assert!(bindings.rebind(Action::Upgrade, Chord::bare(Key::I)));
+    assert!(bindings.rebind(Action::Upgrade, Chord::bare(Key::L)));
     let turret = game
         .state
         .buildings()
@@ -8295,7 +8295,7 @@ fn upgrade_and_rally_shortcuts_share_the_cards_owner_and_affordability_gates() {
         .unwrap()
         .id;
     game.presentation.selection.buildings = vec![turret];
-    controls_key_with(&mut game, &mut input, &bindings, Key::I);
+    controls_key_with(&mut game, &mut input, &bindings, Key::L);
     assert!(
         matches!(game.pending.last().unwrap().command, Command::UpgradeBuilding { building } if building == turret)
     );
@@ -8308,7 +8308,7 @@ fn upgrade_and_rally_shortcuts_share_the_cards_owner_and_affordability_gates() {
         .unwrap()
         .id;
     game.presentation.selection.buildings = vec![enemy];
-    controls_key_with(&mut game, &mut input, &bindings, Key::I);
+    controls_key_with(&mut game, &mut input, &bindings, Key::L);
     assert!(game.pending.is_empty());
     let foundry = game.view().own_foundries().next().unwrap().id;
     game.presentation.selection.buildings = vec![foundry];
@@ -8339,8 +8339,8 @@ fn remapped_clear_rally_is_disabled_until_a_selected_producer_has_a_rally() {
     let producers = game.presentation.selection.buildings.clone();
     let mut input = InputState::new();
     let mut bindings = crate::action::BindingMap::classic();
-    assert!(bindings.rebind(Action::ClearRally, Chord::bare(Key::I)));
-    controls_key_with(&mut game, &mut input, &bindings, Key::I);
+    assert!(bindings.rebind(Action::ClearRally, Chord::bare(Key::L)));
+    controls_key_with(&mut game, &mut input, &bindings, Key::L);
     assert!(game.pending.is_empty());
 
     game.state.tick(&[PlayerCommand {
@@ -8350,7 +8350,7 @@ fn remapped_clear_rally_is_disabled_until_a_selected_producer_has_a_rally() {
             rally: Some(aftermine_sim::Rally::Tile(TilePos::new(14, 9))),
         },
     }]);
-    controls_key_with(&mut game, &mut input, &bindings, Key::I);
+    controls_key_with(&mut game, &mut input, &bindings, Key::L);
     let expected: Vec<_> = producers
         .iter()
         .map(|id| PlayerCommand {
@@ -8364,7 +8364,7 @@ fn remapped_clear_rally_is_disabled_until_a_selected_producer_has_a_rally() {
     assert_eq!(*game.pending, expected);
     let commands = std::mem::take(&mut game.pending);
     game.state.tick(&commands);
-    controls_key_with(&mut game, &mut input, &bindings, Key::I);
+    controls_key_with(&mut game, &mut input, &bindings, Key::L);
     assert!(game.pending.is_empty());
     assert!(
         producers
@@ -8441,7 +8441,7 @@ fn grouped_upgrade_mouse_touch_and_remapped_keys_share_pending_eligibility() {
         let mut input = InputState::new();
         let mut bindings = BindingMap::classic();
         if mode == 3 {
-            assert!(bindings.rebind(Action::Upgrade, Chord::bare(Key::I)));
+            assert!(bindings.rebind(Action::Upgrade, Chord::bare(Key::L)));
         }
         let panel = crate::panel::build_for_input(&game.view(), &bindings, &input).unwrap();
         let card = panel
@@ -8473,7 +8473,7 @@ fn grouped_upgrade_mouse_touch_and_remapped_keys_share_pending_eligibility() {
                     &mut game,
                     &mut input,
                     &bindings,
-                    if mode == 2 { Key::U } else { Key::I },
+                    if mode == 2 { Key::U } else { Key::L },
                 ),
             }
         }

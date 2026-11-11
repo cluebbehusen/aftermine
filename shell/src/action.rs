@@ -119,6 +119,9 @@ pub enum Action {
     SelectArmy,
     /// Select the army units inside the camera's view.
     SelectArmyInView,
+    /// Press the selection panel's All button: select every own one of a
+    /// one-kind selection's kind.
+    SelectAllOfKind,
     JumpToLastAlert,
     Salvage,
     Run,
@@ -187,6 +190,7 @@ impl Action {
             Self::CycleIdleWorker => "Next idle Harvester".into(),
             Self::SelectArmy => "Select army".into(),
             Self::SelectArmyInView => "Select army in view".into(),
+            Self::SelectAllOfKind => "Select all of kind".into(),
             Self::JumpToLastAlert => "Jump to last alert".into(),
             Self::Salvage => "Salvage structure".into(),
             Self::Run => "Run".into(),
@@ -238,6 +242,7 @@ impl Action {
             // A selected machine's drone bay takes them too.
             Self::OrderRound | Self::CancelRound | Self::ToggleAutofill => 4 | 8 | UNITS,
             Self::StopOrScrap => UNITS | 4,
+            Self::SelectAllOfKind => UNITS | 4 | 8,
             Self::Patrol | Self::Accompany | Self::Retire => UNITS,
             Self::Salvage | Self::Run | Self::Hunt | Self::Scout | Self::RepairUnit => {
                 UNITS | CATEGORIES
@@ -340,8 +345,8 @@ impl BindingMap {
             MenuEnd, MenuHome, MenuLeft, MenuPageDown, MenuPageUp, MenuRight, MenuUp, NextTab,
             OrderRound, PanDown, PanLeft, PanRight, PanUp, Patrol, PrevTab, RecallBookmark,
             RepairUnit, ReplayBack, ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed,
-            ReplayStart, ReplayStats, ReturnCargo, Run, Salvage, Scout, SelectArmy,
-            SelectArmyInView, SetBookmark, SetRally, Slot, StopOrScrap, ToggleAutofill,
+            ReplayStart, ReplayStats, ReturnCargo, Run, Salvage, Scout, SelectAllOfKind,
+            SelectArmy, SelectArmyInView, SetBookmark, SetRally, Slot, StopOrScrap, ToggleAutofill,
             ToggleBuildPalette, ToggleIdleWeld, ToggleOverlay, TogglePause, TrainSlot, Unload,
             Upgrade,
         };
@@ -375,6 +380,7 @@ impl BindingMap {
             (Unload, Key::U),
             (ReturnCargo, Key::U),
             (Accompany, Key::E),
+            (SelectAllOfKind, Key::I),
             (Launch, Key::M),
             (OrderRound, Key::O),
             (ReplayPause, Key::Space),

@@ -269,7 +269,7 @@ fn an_empty_secondary_slot_and_rebound_primary_survive_reload() {
     assert!(
         config
             .bindings
-            .rebind(Action::PanUp, Chord::bare(aftermine_protocol::Key::I))
+            .rebind(Action::PanUp, Chord::bare(aftermine_protocol::Key::L))
     );
     config.save_to(&path).unwrap();
     let loaded = Config::load_from(Some(path));

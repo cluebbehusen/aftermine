@@ -372,6 +372,7 @@ pub struct SelectAll {
 impl SelectAll {
     /// Offers the seat's `owned` of a kind when the selection holds fewer.
     fn offer(
+        bindings: &BindingMap,
         icon: CardIcon,
         name: &str,
         owned: usize,
@@ -384,7 +385,7 @@ impl SelectAll {
                 icon,
                 title: format!("Select all {owned} {}", plural_name(&entity_name(name))),
                 cost: None,
-                hotkey: String::new(),
+                hotkey: chord(bindings, Action::SelectAllOfKind),
                 action,
                 enabled: true,
                 why: None,
@@ -1364,6 +1365,7 @@ fn strip_hotkeys(panel: &mut Panel) {
         .chain(&mut panel.queue)
         .chain(&mut panel.absent)
         .chain(&mut panel.stop)
+        .chain(panel.select_all.iter_mut().map(|all| &mut all.card))
     {
         card.hotkey.clear();
     }
@@ -1533,6 +1535,7 @@ fn building_roster(buildings: &[aftermine_sim::Building]) -> Vec<Card> {
 /// the seat owns, built or not.
 fn building_select_all(
     game: &Scene<'_>,
+    bindings: &BindingMap,
     buildings: &[aftermine_sim::Building],
 ) -> Option<SelectAll> {
     let first = buildings.first()?;
@@ -1546,6 +1549,7 @@ fn building_select_all(
         .filter(|b| b.player == game.presentation.human && b.kind == first.kind)
         .count();
     SelectAll::offer(
+        bindings,
         CardIcon::Building(first.kind, first.tier),
         first.kind.name(),
         owned,
@@ -1681,7 +1685,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         let selected = crate::building_actions::SelectedBuildings::inspect(game);
         panel.cards = selected.cards(bindings);
         panel.roster = building_roster(&selected.buildings);
-        panel.select_all = building_select_all(game, &selected.buildings);
+        panel.select_all = building_select_all(game, bindings, &selected.buildings);
         if plural {
             panel.summary = building_summary(&selected.buildings);
         } else if let Some(building) = selected.buildings.first() {
@@ -1872,6 +1876,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             .filter(|u| u.player == owner && u.kind == first.kind && u.host.is_none())
             .count();
         panel.select_all = SelectAll::offer(
+            bindings,
             CardIcon::Unit(first.kind),
             first.kind.name(),
             owned,
