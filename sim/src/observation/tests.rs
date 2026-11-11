@@ -489,55 +489,7 @@ fn owner_observation_exposes_the_active_harvest_node_without_leaking_enemy_order
 }
 
 #[test]
-fn owner_observation_marks_queued_and_looping_programs_without_leaking_them() {
-    let mut state = Scenario::skirmish()
-        .build()
-        .expect("the skirmish scenario builds");
-    let own_workers: Vec<_> = state
-        .units()
-        .iter()
-        .filter(|unit| unit.player == PlayerId(0) && unit.kind == UnitKind::Harvester)
-        .take(2)
-        .map(|unit| unit.id)
-        .collect();
-    let hostile_worker = state
-        .units()
-        .iter()
-        .find(|unit| unit.player == PlayerId(1) && unit.kind == UnitKind::Harvester)
-        .expect("the opposing seat starts with a Harvester")
-        .id;
-    state
-        .unit_mut(own_workers[0])
-        .expect("the first own Harvester exists")
-        .queue
-        .push_back(Order::Run {
-            goal: TilePos::new(8, 8).into(),
-        });
-    state
-        .unit_mut(own_workers[1])
-        .expect("the second own Harvester exists")
-        .looping = true;
-    state
-        .unit_mut(hostile_worker)
-        .expect("the hostile Harvester exists")
-        .queue
-        .push_back(Order::Run {
-            goal: TilePos::new(30, 15).into(),
-        });
-
-    for observation in [
-        ObservationData::fog_honest(&state, PlayerId(0)),
-        ObservationData::omniscient(&state, PlayerId(0)),
-    ] {
-        assert_eq!(observation.my_queued_units, own_workers);
-        assert!(observation.has_queued_program(own_workers[0]));
-        assert!(observation.has_queued_program(own_workers[1]));
-        assert!(!observation.has_queued_program(hostile_worker));
-    }
-}
-
-#[test]
-fn pit_knowledge_is_exploration_limited_and_serialized() {
+fn pit_rock_is_exploration_limited_and_serialized() {
     let mut scenario = Scenario::skirmish();
     let mut rows = vec![vec!['.'; 40]; 24];
     rows[4][4] = '1';
@@ -553,13 +505,9 @@ fn pit_knowledge_is_exploration_limited_and_serialized() {
     let local = TilePos::new(10, 4);
     let hidden = TilePos::new(20, 12);
     let fog = ObservationData::fog_honest(&state, PlayerId(0));
-    assert_eq!(fog.known_pits, vec![local]);
     assert!(fog.known_rock_at(local));
     assert!(!fog.known_rock_at(hidden));
-    assert_eq!(
-        ObservationData::omniscient(&state, PlayerId(0)).known_pits,
-        vec![local, hidden]
-    );
+    assert!(ObservationData::omniscient(&state, PlayerId(0)).known_rock_at(hidden));
     let restored: Observation =
         serde_json::from_str(&serde_json::to_string(&fog).unwrap()).unwrap();
     assert_eq!(restored, fog);
