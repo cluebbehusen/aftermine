@@ -2,6 +2,12 @@ use super::*;
 use aftermine_protocol::MouseButton;
 use macroquad::prelude::vec2;
 
+/// Computes [`SetupLayout`]. `seat_choice` marks the human card; every
+/// other seat receives direct difficulty and stance controls.
+pub fn setup_layout(scenario: &Scenario, seat_choice: usize, view: Vec2, ui: f32) -> SetupLayout {
+    setup_layout_page(scenario, seat_choice, &[], view, ui, 0)
+}
+
 /// The card at display position `row`, which must be on this page.
 fn card(layout: &SetupLayout, row: usize) -> CardRects {
     layout.cards[row].expect("the card is on this page")
@@ -24,7 +30,7 @@ const EVERY_PRESS: [CursorPress; 12] = [
 
 #[test]
 fn the_setup_hint_names_only_what_the_hands_in_use_have() {
-    use crate::platform::ALL_HANDS;
+    use crate::platform::tests::ALL_HANDS;
     assert_eq!(
         setup_hint(false, CursorPress::Start, ALL_HANDS[0]),
         "{confirm} starts the match - {back} back"
@@ -33,7 +39,7 @@ fn the_setup_hint_names_only_what_the_hands_in_use_have() {
         for one_team in [false, true] {
             for press in EVERY_PRESS {
                 let hint = setup_hint(one_team, press, hands);
-                crate::platform::assert_copy_fits(hands, hint);
+                crate::platform::tests::assert_copy_fits(hands, hint);
                 assert_eq!(hint.contains("{back}"), hands.keys, "{hint}");
             }
         }
@@ -44,9 +50,9 @@ fn the_setup_hint_names_only_what_the_hands_in_use_have() {
 fn the_setup_hints_spell_out_what_the_remotes_buttons_do() {
     let hands = crate::platform::Hands {
         pad: Some(aftermine_protocol::PadFamily::Remote),
-        ..crate::platform::ALL_HANDS[3]
+        ..crate::platform::tests::ALL_HANDS[3]
     };
-    let filled = |template| crate::platform::assert_pad_copy(hands, template);
+    let filled = |template| crate::platform::tests::assert_pad_copy(hands, template);
     assert_eq!(
         filled(setup_hint(true, CursorPress::Start, hands)),
         "Every seat is on one team - Click a TEAM chip to change it - Back to leave"
@@ -1597,11 +1603,11 @@ fn compact_setup_reports_only_the_page_actually_on_screen() {
 
 #[test]
 fn the_setup_hints_name_a_controllers_buttons_while_one_is_in_use() {
-    for hands in crate::platform::pad_hands() {
-        crate::platform::assert_pad_copy(hands, moving_hint(hands));
+    for hands in crate::platform::tests::pad_hands() {
+        crate::platform::tests::assert_pad_copy(hands, moving_hint(hands));
         for one_team in [false, true] {
             for press in EVERY_PRESS {
-                crate::platform::assert_pad_copy(hands, setup_hint(one_team, press, hands));
+                crate::platform::tests::assert_pad_copy(hands, setup_hint(one_team, press, hands));
             }
         }
     }

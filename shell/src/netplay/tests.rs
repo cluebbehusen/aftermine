@@ -7,6 +7,20 @@ use macroquad::prelude::vec2;
 use scenario_host::ScenarioHost;
 use std::time::Instant;
 
+impl HostLobby {
+    /// Announces to `target` instead of the whole network.
+    pub(crate) fn advertise_to(&mut self, target: std::net::SocketAddr) {
+        self.advertiser = Advertiser::with_target(target).ok();
+    }
+}
+
+impl HostLobby {
+    /// How many connections are open, joined or not.
+    pub(crate) fn connection_count(&self) -> usize {
+        self.connections.len()
+    }
+}
+
 const COMMIT: &str = "lan-test";
 const STEP: Duration = Duration::from_millis(50);
 const HOST: PlayerId = PlayerId(0);

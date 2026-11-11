@@ -3,9 +3,9 @@ use aftermine_protocol::MouseButton;
 
 #[test]
 fn the_map_hint_names_only_what_the_hands_in_use_have() {
-    for hands in crate::platform::ALL_HANDS {
+    for hands in crate::platform::tests::ALL_HANDS {
         let hint = browser_hint(hands);
-        crate::platform::assert_copy_fits(hands, hint);
+        crate::platform::tests::assert_copy_fits(hands, hint);
         assert_eq!(hint.contains("{confirm}"), hands.keys, "{hint}");
     }
 }
@@ -435,8 +435,8 @@ fn a_free_for_all_gets_its_own_section_after_the_team_format_of_its_size() {
 
 #[test]
 fn the_map_hint_names_a_controllers_buttons_while_one_is_in_use() {
-    for hands in crate::platform::pad_hands() {
-        let hint = crate::platform::assert_pad_copy(hands, browser_hint(hands));
+    for hands in crate::platform::tests::pad_hands() {
+        let hint = crate::platform::tests::assert_pad_copy(hands, browser_hint(hands));
         let family = hands.pad.expect("pad hands");
         let move_cursor = crate::pad::dpad_name(family);
         assert!(hint.starts_with(move_cursor), "{hint}");
@@ -448,10 +448,10 @@ fn the_map_hint_names_a_controllers_buttons_while_one_is_in_use() {
 fn the_map_hint_offers_a_remote_no_paging() {
     let hands = crate::platform::Hands {
         pad: Some(aftermine_protocol::PadFamily::Remote),
-        ..crate::platform::ALL_HANDS[3]
+        ..crate::platform::tests::ALL_HANDS[3]
     };
     assert_eq!(
-        crate::platform::assert_pad_copy(hands, browser_hint(hands)),
+        crate::platform::tests::assert_pad_copy(hands, browser_hint(hands)),
         "Swipe to select - Click to play - Back to leave"
     );
 }

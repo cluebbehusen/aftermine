@@ -63,18 +63,6 @@ impl HintLine {
         self
     }
 
-    /// The line as copy, each icon spelled as the name it shows.
-    #[cfg(test)]
-    pub(crate) fn copy(&self) -> String {
-        self.segments
-            .iter()
-            .map(|segment| match segment {
-                Segment::Text(text) => text.as_str(),
-                Segment::Pad(icon) => icon.name(),
-            })
-            .collect()
-    }
-
     /// The line's width at text `size`, given how wide `measure` finds a
     /// run of copy at that size.
     fn width_with(&self, size: f32, measure: impl Fn(&str, f32) -> f32) -> f32 {

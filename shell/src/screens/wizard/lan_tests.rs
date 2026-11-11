@@ -457,7 +457,7 @@ fn leaving_or_going_local_with_players_asks_first() {
     drive(&mut w, &mut draft, Key::Escape);
     assert_eq!(w.mode_name(), "match_setup", "Escape keeps the lobby");
     drive(&mut w, &mut draft, Key::Escape);
-    let back = crate::button::press_back(false);
+    let back = crate::button::tests::press_back(false);
     w.update(&back, &mut vec2(0.0, 0.0), &mut draft, &mut Vec::new())
         .unwrap();
     assert_eq!(w.mode_name(), "match_setup", "and so does Back");

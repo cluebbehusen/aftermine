@@ -655,10 +655,6 @@ impl BindingMap {
             .collect::<Vec<_>>()
             .join(" / ")
     }
-    #[cfg(test)]
-    pub fn bindings(&self) -> &[Binding] {
-        &self.bindings
-    }
     pub fn unbind_slot(&mut self, action: Action, slot: usize) {
         let rows = if slot == 0 {
             &mut self.bindings
@@ -693,19 +689,6 @@ impl BindingMap {
             None => rows.push(Binding { chord, action }),
         }
         true
-    }
-    #[cfg(test)]
-    pub(crate) fn conflicts(&self) -> Vec<(Binding, Binding)> {
-        let rows: Vec<_> = self.rows().copied().collect();
-        let mut result = Vec::new();
-        for (i, a) in rows.iter().enumerate() {
-            for b in rows.iter().skip(i + 1) {
-                if a.chord == b.chord && a.action.overlaps(b.action) {
-                    result.push((*a, *b));
-                }
-            }
-        }
-        result
     }
     pub fn valid(&self) -> bool {
         let mut seen = Self {

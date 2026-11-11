@@ -198,16 +198,6 @@ impl PendingHistory {
         }
         outcome
     }
-
-    /// Waits for the check to finish.
-    #[cfg(test)]
-    fn finish(&self) {
-        drop(
-            self.shared
-                .finished
-                .wait_while(self.shared.outcome(), |outcome| outcome.is_none()),
-        );
-    }
 }
 
 struct Rebuild {

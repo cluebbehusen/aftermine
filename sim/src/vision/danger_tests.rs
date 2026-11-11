@@ -2,6 +2,12 @@ use super::*;
 use crate::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
 use crate::{Scenario, UnitKind};
 
+impl GroundSalvageDanger {
+    pub(crate) fn route_search_count(&self) -> usize {
+        self.route_searches.get()
+    }
+}
+
 fn player(name: &str, team: Option<u8>) -> PlayerSpec {
     PlayerSpec {
         name: name.into(),

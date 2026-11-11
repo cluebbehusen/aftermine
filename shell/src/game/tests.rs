@@ -1,6 +1,18 @@
 use super::*;
 use aftermine_sim::scenario::ScenarioMode;
 
+impl std::ops::DerefMut for ReadOnlyState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        Arc::get_mut(&mut self.0).expect("bot decision must finish before world mutation")
+    }
+}
+
+impl std::ops::DerefMut for PendingCommands {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// The watch-back loop replays every re-executed tick through the seat
 /// bots so they rebuild their cross-tick memory. Without it the resume
 /// hash still matches (the recorded commands carry it) and only the

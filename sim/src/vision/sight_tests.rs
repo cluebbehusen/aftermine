@@ -1,6 +1,15 @@
 use super::*;
 use crate::{Scenario, UnitKind};
 
+impl Vision {
+    /// Drops one tile from current sight until the next vision refresh.
+    pub(crate) fn conceal(&mut self, pos: TilePos) {
+        if let Some(visible) = self.visible.get_mut(pos) {
+            *visible = false;
+        }
+    }
+}
+
 #[test]
 fn eyes_sharing_a_tile_see_what_the_widest_sees() {
     let (narrow, wide) = (UnitKind::Bombard, UnitKind::Kestrel);

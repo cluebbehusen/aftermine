@@ -355,7 +355,7 @@ fn a_tv_form_says_what_a_click_does_where_the_cursor_is() {
     assert_eq!(form.tv_pad_hint(), None, "no controller in use");
     crate::platform::set_hands(crate::platform::Hands {
         pad: Some(aftermine_protocol::PadFamily::Remote),
-        ..crate::platform::ALL_HANDS[3]
+        ..crate::platform::tests::ALL_HANDS[3]
     });
     assert_eq!(
         crate::menu::hint_line(&form.tv_pad_hint().unwrap()).copy(),

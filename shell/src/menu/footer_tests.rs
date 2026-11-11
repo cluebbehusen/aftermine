@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn the_footer_names_only_what_the_hands_in_use_have() {
-    use crate::platform::{ALL_HANDS, assert_copy_fits};
+    use crate::platform::tests::{ALL_HANDS, assert_copy_fits};
     assert!(
         menu_footer(ALL_HANDS[0], true)
             .copy()
@@ -33,7 +33,7 @@ fn touch_rows_stay_a_full_fingertip_tall_and_desktop_rows_pack() {
 
 #[test]
 fn a_keyless_footer_offers_a_scroll_only_when_the_list_scrolls() {
-    let [_, mouse, _, touch] = crate::platform::ALL_HANDS;
+    let [_, mouse, _, touch] = crate::platform::tests::ALL_HANDS;
     assert_eq!(menu_footer(touch, false).copy(), "tap to choose");
     assert!(menu_footer(touch, true).copy().ends_with("drag to scroll"));
     assert_eq!(menu_footer(mouse, false).copy(), "click to choose");
@@ -47,7 +47,7 @@ fn a_controller_in_use_shows_its_own_buttons_and_no_keys() {
     use aftermine_protocol::PadFamily;
     let pad = |family| crate::platform::Hands {
         pad: Some(family),
-        ..crate::platform::ALL_HANDS[0]
+        ..crate::platform::tests::ALL_HANDS[0]
     };
     let footer = |confirm| {
         HintLine::default()
@@ -68,7 +68,7 @@ fn a_controller_in_use_shows_its_own_buttons_and_no_keys() {
             footer(confirm),
             "{family:?}"
         );
-        for hands in crate::platform::ALL_HANDS {
+        for hands in crate::platform::tests::ALL_HANDS {
             let line = menu_footer(
                 crate::platform::Hands {
                     pad: Some(family),
@@ -76,7 +76,7 @@ fn a_controller_in_use_shows_its_own_buttons_and_no_keys() {
                 },
                 true,
             );
-            crate::platform::assert_touch_copy(&line.copy());
+            crate::platform::tests::assert_touch_copy(&line.copy());
         }
     }
     assert_eq!(
@@ -95,9 +95,9 @@ fn a_coaching_line_reads_as_its_filled_template_for_every_hand() {
         "{up}/{down} or click select",
         "no tokens at all",
     ];
-    let hands = crate::platform::ALL_HANDS
+    let hands = crate::platform::tests::ALL_HANDS
         .into_iter()
-        .chain(crate::platform::pad_hands());
+        .chain(crate::platform::tests::pad_hands());
     for hands in hands {
         crate::platform::set_hands(hands);
         for template in templates {
@@ -118,7 +118,7 @@ fn a_controller_in_use_sees_its_own_icons_and_keys_only_where_it_has_no_button()
     use aftermine_protocol::PadFamily;
     crate::platform::set_hands(crate::platform::Hands {
         pad: Some(PadFamily::PlayStation),
-        ..crate::platform::ALL_HANDS[0]
+        ..crate::platform::tests::ALL_HANDS[0]
     });
     let line = hint_line(
         "{confirm} watches | {delete} deletes | {up} scrolls | {prev_tab}/{next_tab} tabs",
@@ -142,7 +142,7 @@ fn a_controller_in_use_sees_its_own_icons_and_keys_only_where_it_has_no_button()
 fn remote_hands() -> crate::platform::Hands {
     crate::platform::Hands {
         pad: Some(aftermine_protocol::PadFamily::Remote),
-        ..crate::platform::ALL_HANDS[3]
+        ..crate::platform::tests::ALL_HANDS[3]
     }
 }
 
@@ -175,7 +175,7 @@ fn other_controllers_still_read_d_pad_and_back_back() {
     use aftermine_protocol::PadFamily;
     let hands = crate::platform::Hands {
         pad: Some(PadFamily::Xbox),
-        ..crate::platform::ALL_HANDS[3]
+        ..crate::platform::tests::ALL_HANDS[3]
     };
     crate::platform::set_hands(hands);
     assert_eq!(

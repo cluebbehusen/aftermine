@@ -2391,26 +2391,6 @@ enum BuildingRangeShape {
     FootprintSquare { min: Vec2, max: Vec2, radius: f32 },
 }
 
-impl BuildingRangeShape {
-    #[cfg(test)]
-    fn outer_bounds(self) -> (Vec2, Vec2) {
-        match self {
-            Self::Circle { center, radius } => {
-                let reach = vec2(radius, radius);
-                (center - reach, center + reach)
-            }
-            Self::FootprintOffset { min, max, radius } => {
-                let reach = vec2(radius, radius);
-                (min - reach, max + reach)
-            }
-            Self::FootprintSquare { min, max, radius } => {
-                let reach = vec2(radius, radius);
-                (min - reach, max + reach)
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct BuildingRange {
     kind: BuildingRangeKind,

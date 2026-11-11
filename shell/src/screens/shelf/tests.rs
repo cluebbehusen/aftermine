@@ -112,7 +112,7 @@ fn the_back_button_leaves_even_after_every_record_is_deleted() {
     for touch in [false, true] {
         let mut mouse = vec2(0.0, 0.0);
         let out = shelf.update(
-            &crate::button::press_back(touch),
+            &crate::button::tests::press_back(touch),
             &mut mouse,
             &mut Vec::new(),
         );
@@ -135,7 +135,7 @@ fn a_record_says_how_to_act_only_as_coaching() {
 fn a_catalog_refresh_keeps_the_row_cursor_hidden_while_the_remote_is_on_the_tabs() {
     crate::platform::set_hands(crate::platform::Hands {
         pad: Some(aftermine_protocol::PadFamily::Remote),
-        ..crate::platform::ALL_HANDS[3]
+        ..crate::platform::tests::ALL_HANDS[3]
     });
     let record = |name| {
         entry(
@@ -159,7 +159,7 @@ fn a_catalog_refresh_keeps_the_row_cursor_hidden_while_the_remote_is_on_the_tabs
 fn a_remote_always_hears_how_to_reach_the_tabs() {
     crate::platform::set_hands(crate::platform::Hands {
         pad: Some(aftermine_protocol::PadFamily::Remote),
-        ..crate::platform::ALL_HANDS[3]
+        ..crate::platform::tests::ALL_HANDS[3]
     });
     let record = entry("done", true, RecordKind::Match, "/nowhere/m.json".into());
     let mut shelf = Shelf::from_entries(vec![record]);
@@ -178,7 +178,7 @@ fn a_remote_always_hears_how_to_reach_the_tabs() {
 fn a_remote_swipes_right_onto_a_rows_delete_and_a_click_asks() {
     crate::platform::set_hands(crate::platform::Hands {
         pad: Some(aftermine_protocol::PadFamily::Remote),
-        ..crate::platform::ALL_HANDS[3]
+        ..crate::platform::tests::ALL_HANDS[3]
     });
     let pad = |button| {
         crate::pad::menu_keys(
@@ -474,7 +474,7 @@ fn escape_and_back_keep_the_record_and_the_shelf() {
         drive(&mut shelf, Key::X);
         let mut mouse = vec2(0.0, 0.0);
         let out = shelf.update(
-            &crate::button::press_back(touch),
+            &crate::button::tests::press_back(touch),
             &mut mouse,
             &mut Vec::new(),
         );
@@ -729,7 +729,7 @@ fn a_controller_in_use_hears_its_confirm_delete_and_bumpers() {
     let shelf = Shelf::from_entries(vec![record]);
     crate::platform::set_hands(crate::platform::Hands {
         pad: Some(aftermine_protocol::PadFamily::PlayStation),
-        ..crate::platform::ALL_HANDS[0]
+        ..crate::platform::tests::ALL_HANDS[0]
     });
     let coaching = shelf
         .coaching()

@@ -34,7 +34,7 @@ fn every_dock_chip_that_cancels_work_discards_it_and_nothing_else_does() {
 
 #[test]
 fn card_copy_names_only_what_the_hands_in_use_have() {
-    use crate::platform::{ALL_HANDS, assert_copy_fits};
+    use crate::platform::tests::{ALL_HANDS, assert_copy_fits};
     for hands in ALL_HANDS {
         let roster = roster_filter_desc(hands);
         assert_eq!(roster.len(), 2);
@@ -48,7 +48,7 @@ fn card_copy_names_only_what_the_hands_in_use_have() {
     }
     // A controller marks points with its order button and starts the loop
     // from the ring, never the ribbon's Start.
-    for hands in crate::platform::pad_hands() {
+    for hands in crate::platform::tests::pad_hands() {
         let patrol = patrol_desc(hands);
         assert_copy_fits(hands, &patrol);
         let mark = crate::pad::button_name(hands.pad.unwrap(), aftermine_protocol::PadButton::West);

@@ -1,4 +1,5 @@
 use super::*;
+use aftermine_protocol::Key;
 use aftermine_protocol::MouseButton;
 use aftermine_sim::Scenario;
 
@@ -269,9 +270,9 @@ fn final_map_keeps_the_secondary_camera_hold_after_releasing_a_rebound_primary()
 fn the_camera_line_names_only_what_the_hands_in_use_have() {
     let bindings = BindingMap::classic();
     let back = bindings.label(Action::Back);
-    for hands in crate::platform::ALL_HANDS {
+    for hands in crate::platform::tests::ALL_HANDS {
         let line = FinalMapScreen::open().coaching(&bindings, hands).copy();
-        crate::platform::assert_copy_fits(hands, &line.replace(&back, ""));
+        crate::platform::tests::assert_copy_fits(hands, &line.replace(&back, ""));
         assert_eq!(
             line.ends_with(&format!("{back} back")),
             hands.keys,
@@ -304,9 +305,9 @@ fn the_controller_back_button_returns_to_the_report_and_others_do_nothing() {
 #[test]
 fn the_camera_line_names_a_controllers_back_button_while_one_is_in_use() {
     let bindings = BindingMap::classic();
-    for hands in crate::platform::pad_hands() {
+    for hands in crate::platform::tests::pad_hands() {
         let line = FinalMapScreen::open().coaching(&bindings, hands).copy();
-        crate::platform::assert_pad_copy(hands, &line);
+        crate::platform::tests::assert_pad_copy(hands, &line);
     }
 }
 
@@ -315,7 +316,7 @@ fn the_camera_line_names_a_remotes_mode_and_the_click_that_changes_it() {
     let bindings = BindingMap::classic();
     let hands = crate::platform::Hands {
         pad: Some(aftermine_protocol::PadFamily::Remote),
-        ..crate::platform::ALL_HANDS[3]
+        ..crate::platform::tests::ALL_HANDS[3]
     };
     let viewport = vec2(1280.0, 800.0);
     let mut game = Game::with_viewport(Scenario::skirmish(), viewport).expect("game");

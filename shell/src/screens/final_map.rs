@@ -7,8 +7,6 @@ use crate::camera::controls::{
 use crate::game::Game;
 use crate::hint_line::HintLine;
 use crate::{render, theme};
-#[cfg(test)]
-use aftermine_protocol::Key;
 use aftermine_protocol::RawEvent;
 use macroquad::prelude::*;
 

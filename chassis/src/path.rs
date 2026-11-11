@@ -361,13 +361,6 @@ impl AstarScratch {
             self.generation = 1;
         }
     }
-
-    /// Test-only: fast-forwards the generation counter to exercise the
-    /// wrap-around clearing path without four billion queries.
-    #[cfg(test)]
-    fn force_generation(&mut self, generation: u32) {
-        self.generation = generation;
-    }
 }
 
 thread_local! {

@@ -19,7 +19,7 @@ fn category_labels_name_keys_only_where_keys_exist() {
     }
     for palette_key in [None, Some("B")] {
         let label = category_label("DEFENSE", false, "3", palette_key, true);
-        crate::platform::assert_touch_copy(&label);
+        crate::platform::tests::assert_touch_copy(&label);
     }
 }
 

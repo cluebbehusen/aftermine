@@ -370,14 +370,6 @@ impl Vision {
         unit.body_tiles().any(|t| self.visible(t))
     }
 
-    /// Drops one tile from current sight until the next vision refresh.
-    #[cfg(test)]
-    pub(crate) fn conceal(&mut self, pos: TilePos) {
-        if let Some(visible) = self.visible.get_mut(pos) {
-            *visible = false;
-        }
-    }
-
     /// Whether the player has ever seen `pos`.
     pub fn explored(&self, pos: TilePos) -> bool {
         self.explored.get(pos).copied().unwrap_or(false)
@@ -1097,11 +1089,6 @@ impl GroundSalvageDanger {
                 && CARDINALS
                     .into_iter()
                     .any(|(dx, dy)| reached(goal.offset(dx, dy)))))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn route_search_count(&self) -> usize {
-        self.route_searches.get()
     }
 
     /// Whether the most recent route search explored its start's whole

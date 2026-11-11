@@ -1,5 +1,306 @@
 use super::*;
 
+/// How many `_{label}N` frames the shipped atlas holds under `stem`.
+pub(crate) fn shipped_frames(stem: &str, label: &str) -> usize {
+    static SHIPPED: std::sync::LazyLock<Manifest> = std::sync::LazyLock::new(|| {
+        serde_json::from_str(include_str!("../../../assets/sprites/atlas.json"))
+            .expect("the shipped atlas parses")
+    });
+    numbered_suffixes(&SHIPPED, stem, label)
+        .expect("complete rows")
+        .len()
+}
+
+/// How many action frames a unit kind's shipped atlas bank holds: its rig
+/// mount's for a rigged kind.
+pub(crate) fn unit_action_frames(kind: UnitKind) -> usize {
+    if crate::look::unit(kind).rig {
+        shipped_frames(&rig_mount_stem(kind), "action")
+    } else {
+        shipped_frames(unit_stem(kind), "action")
+    }
+}
+
+/// Every key accepted in the generated production atlas, including legacy
+/// compatibility aliases that remain in the generator output.
+fn atlas_keys(atlas: &Manifest) -> Vec<String> {
+    let mut keys: Vec<String> = SINGLE_KEYS
+        .iter()
+        .chain(VERB_ICON_KEYS.iter())
+        .chain(PAD_ICON_KEYS.iter())
+        .chain(GROUND_KEYS.iter())
+        .chain(GROUND_DETAIL_KEYS.iter())
+        .chain(ROCK_SLAB_KEYS.iter())
+        .chain(["decal_wreck", "scaffold_sparse"].iter())
+        .chain(THEME_PROP_KEYS.iter())
+        .chain(WRECK_PILE_KEYS.iter())
+        .chain(GROUND_BLOCKER_KEYS.iter())
+        .chain(DEBRIS_KEYS.iter())
+        .map(|key| (*key).to_string())
+        .collect();
+    keys.extend((0..5).map(|phase| format!("bombard_spades_{phase}")));
+    if atlas.contains_key("piledriver_anchors") {
+        keys.extend(variant_keys("piledriver_anchors", ""));
+        for suffix in
+            numbered_suffixes(atlas, "piledriver_anchors", "action").expect("complete anchors")
+        {
+            keys.extend(variant_keys("piledriver_anchors", &suffix));
+        }
+    }
+    keys.push("scout_radar".to_owned());
+    if atlas
+        .keys()
+        .any(|key| key.starts_with("rig_harvester_body_"))
+    {
+        for cargo in 0..6 {
+            keys.extend(variant_keys(
+                "rig_harvester_body",
+                &format!("_cargo{cargo}"),
+            ));
+        }
+    }
+    for stem in ["rig_excavator_body", "rig_scuttler_body"] {
+        if atlas.keys().any(|key| key.starts_with(stem)) {
+            for suffix in ["", "_move1", "_move2"] {
+                keys.extend(variant_keys(stem, suffix));
+            }
+        }
+    }
+    keys.extend((0..12).map(|index| format!("quarry_dressing_{index}")));
+    for (stem, action_count) in UnitKind::ALL
+        .into_iter()
+        .filter(|kind| crate::look::unit(*kind).rig)
+        .map(|kind| {
+            let actions =
+                numbered_suffixes(atlas, &rig_mount_stem(kind), "action").expect("complete rows");
+            (unit_stem(kind), actions.len())
+        })
+    {
+        for suffix in ["", "_move1", "_move2"] {
+            keys.extend(variant_keys(&format!("rig_{stem}_hull"), suffix));
+        }
+        keys.extend(variant_keys(&format!("rig_{stem}_mount"), ""));
+        for shadow in [
+            format!("rig_{stem}_shadow"),
+            format!("rig_{stem}_mount_shadow"),
+        ] {
+            if atlas.contains_key(&shadow) {
+                keys.push(shadow);
+            }
+        }
+        for action in 1..=action_count {
+            keys.extend(variant_keys(
+                &format!("rig_{stem}_mount"),
+                &format!("_action{action}"),
+            ));
+        }
+    }
+    for tier in 0..2 {
+        for part in ["base", "rotor"] {
+            keys.extend(variant_keys(&format!("rig_array_t{tier}_{part}"), ""));
+        }
+    }
+    keys.extend(strategic_rig_keys(atlas));
+    keys.extend(maw_rig_keys(atlas));
+    keys.extend(roc_rig_keys(atlas));
+
+    for kind in UnitKind::ALL {
+        let stem = unit_stem(kind);
+        keys.extend(variant_keys(stem, ""));
+        for suffix in unit_move_suffixes(kind) {
+            keys.extend(variant_keys(stem, suffix));
+        }
+        for suffix in numbered_suffixes(atlas, stem, "action").expect("complete rows") {
+            keys.extend(variant_keys(stem, &suffix));
+        }
+    }
+    for suffix in SCOOP_SUFFIXES {
+        keys.extend(variant_keys(unit_stem(UnitKind::Harvester), suffix));
+    }
+    for level in 0..HARVESTER_CARGO_LEVELS {
+        keys.extend(variant_keys("harvester", &format!("_cargo{level}")));
+        for suffix in TREAD_SUFFIXES.into_iter().chain(SCOOP_SUFFIXES) {
+            keys.extend(variant_keys("harvester", &format!("_cargo{level}{suffix}")));
+        }
+    }
+    for frame in 0..MANTLE_CHARGE_FRAMES {
+        keys.push(format!("mantle_charge{frame}"));
+    }
+    for level in 0..EXCAVATOR_CARGO_LEVELS {
+        keys.push(format!("excavator_cargo{level}"));
+    }
+    for kind in BuildingKind::ALL {
+        let defense = crate::look::defense(kind);
+        for tier in 0..kind.tiers().len() {
+            let hull = rung_stem(building_stem(kind), tier);
+            let mut families = vec![(hull.clone(), "work")];
+            if defense.is_some_and(|defense| defense.charge_rack) {
+                families.push((hull.clone(), "action"));
+            }
+            keys.extend(variant_keys(&hull, ""));
+            if let Some(defense) = defense {
+                let mount = rung_stem(defense.mount, tier);
+                keys.extend(variant_keys(&mount, ""));
+                families.push((mount, "action"));
+            }
+            for (stem, label) in families {
+                for suffix in numbered_suffixes(atlas, &stem, label).expect("complete rows") {
+                    keys.extend(variant_keys(&stem, &suffix));
+                }
+            }
+        }
+        let site_tiers = if matches!(kind, BuildingKind::Extractor | BuildingKind::Bastion) {
+            kind.tiers().len()
+        } else {
+            1
+        };
+        for tier in 0..site_tiers {
+            for stage in 0..SITE_STAGES {
+                for phase in 0..SITE_PHASES {
+                    keys.extend(variant_keys(
+                        &construction_stem(kind, tier),
+                        &format!("_site{stage}_{phase}"),
+                    ));
+                }
+            }
+        }
+    }
+    keys
+}
+
+/// The Roc's layers beyond its hull and guns: each fan's and dock's rows
+/// carry paint; the wall and yokes are untinted single rows.
+fn roc_rig_keys(atlas: &Manifest) -> Vec<String> {
+    let mut keys = vec![
+        "rig_roc_wall".to_owned(),
+        "rig_roc_yoke".to_owned(),
+        "rig_roc_glow".to_owned(),
+    ];
+    keys.extend(variant_keys("rig_roc_wreck", ""));
+    keys.extend(variant_keys("rig_roc_ghost", ""));
+    let docks = (1..)
+        .map(|dock| format!("rig_roc_dock{dock}"))
+        .take_while(|stem| atlas.contains_key(&format!("{stem}_1")));
+    for stem in [
+        "rig_roc_fan_left".to_owned(),
+        "rig_roc_fan_right".to_owned(),
+        "rig_roc_hatch".to_owned(),
+    ]
+    .into_iter()
+    .chain(docks)
+    {
+        for suffix in numbered_suffixes(atlas, &stem, "").expect("complete rows") {
+            keys.extend(variant_keys(&stem, &suffix));
+        }
+    }
+    keys
+}
+
+/// The Maw's and its cradle's composition layers. The hull, drum, bridge
+/// and trolley carry paint; the rest are untinted single rows.
+fn maw_rig_keys(atlas: &Manifest) -> Vec<String> {
+    let numbered = |stem: &str| -> Vec<String> {
+        let mut keys = Vec::new();
+        while let key = format!("{stem}_{}", keys.len() + 1)
+            && atlas.contains_key(&key)
+        {
+            keys.push(key);
+        }
+        keys
+    };
+    let mut keys = Vec::new();
+    for stem in ["rig_maw_hull", "rig_cradle_bridge", "rig_cradle_trolley"] {
+        keys.extend(variant_keys(stem, ""));
+    }
+    for stem in ["rig_maw_drum", "rig_cradle_trolley"] {
+        for suffix in numbered_suffixes(atlas, stem, "").expect("complete rows") {
+            keys.extend(variant_keys(stem, &suffix));
+        }
+    }
+    keys.extend(
+        [
+            "rig_maw_kiln",
+            "rig_maw_kiln_glow",
+            "rig_cradle_pad",
+            "rig_cradle_lamp",
+        ]
+        .map(str::to_owned),
+    );
+    for stem in [
+        "rig_maw_tread_left",
+        "rig_maw_tread_right",
+        "rig_maw_slats",
+        "rig_maw_arms",
+        "rig_maw_scrap",
+        "rig_cradle_lamp",
+    ] {
+        keys.extend(numbered(stem));
+    }
+    keys
+}
+
+/// The Spire's and Lattice's composition layers. Rows that carry paint
+/// ship an allegiance mask; the hook, plain sections, locks, clamps, arm,
+/// base and cover are untinted single rows.
+fn strategic_rig_keys(atlas: &Manifest) -> Vec<String> {
+    let numbered = |stem: &str| -> Vec<String> {
+        let mut keys = Vec::new();
+        while let key = format!("{stem}_{}", keys.len() + 1)
+            && atlas.contains_key(&key)
+        {
+            keys.push(key);
+        }
+        keys
+    };
+    let mut keys = Vec::new();
+    for stem in [
+        "rig_spire_foundation",
+        "rig_spire_deck",
+        "rig_spire_cover",
+        "rig_spire_round",
+        "rig_spire_warhead",
+        "rig_lattice_pod",
+        "rig_lattice_interceptor",
+        "rig_lattice_launch",
+    ] {
+        keys.extend(variant_keys(stem, ""));
+    }
+    for stem in [
+        "rig_spire_nose",
+        "rig_spire_warhead",
+        "rig_lattice_launch",
+        "rig_lattice_nose_left",
+        "rig_lattice_nose_right",
+    ] {
+        for suffix in numbered_suffixes(atlas, stem, "").expect("complete rows") {
+            keys.extend(variant_keys(stem, &suffix));
+        }
+    }
+    for stem in [
+        "rig_spire_gantry",
+        "rig_spire_lock_lower",
+        "rig_spire_lock_upper",
+        "rig_lattice_base",
+        "rig_lattice_cover",
+        "rig_lattice_clamp",
+    ] {
+        keys.push(stem.to_owned());
+    }
+    for stem in [
+        "rig_spire_stack",
+        "rig_spire_gantry",
+        "rig_spire_lock_lower",
+        "rig_spire_lock_upper",
+        "rig_lattice_stack",
+        "rig_lattice_clamp",
+        "rig_lattice_arm_left",
+        "rig_lattice_arm_right",
+    ] {
+        keys.extend(numbered(stem));
+    }
+    keys
+}
+
 const SOUND_NAMES: [&str; 55] = [
     "ack",
     "alert",
