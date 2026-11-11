@@ -1,7 +1,8 @@
-# aftermine-icloud
+# aftermine-apple-bridge
 
-`aftermine-icloud` is the shell's one door to iCloud. On iPad and Mac it finds
-the app's iCloud Drive folder, coordinates file access so iCloud never syncs a
+`aftermine-apple-bridge` is the shell's one door to Apple's frameworks: every
+Objective-C call the game makes lives here. On iPad and Mac it finds the app's
+iCloud Drive folder, coordinates file access so iCloud never syncs a
 half-written save, and starts downloads for files another device wrote. On iPad,
 Mac and Apple TV it reads and writes iCloud's key-value store, which carries the
 settings that follow the player. It also reads and writes the app's user
@@ -42,11 +43,13 @@ which settings sync is the shell's decision, in `shell/src/config/sync.rs`.
 ## Boundaries
 
 This is the only workspace crate that allows `unsafe` code, confined to the
-modules that call into Objective-C. Apple TV has no iCloud Drive, so there, as
-on other platforms, `documents` answers `None`, `coordinate` runs its access
-directly and `download` has nothing to fetch. Off Apple platforms there is no
-key-value store, no CloudKit and no user defaults either. Only iPad and Apple TV
-have an idle timer and background time; elsewhere `application` does nothing.
+modules that call into Objective-C. It holds calls into Apple's frameworks and
+nothing else: other `unsafe` code, or another platform's, does not belong here.
+Apple TV has no iCloud Drive, so there, as on other platforms, `documents`
+answers `None`, `coordinate` runs its access directly and `download` has nothing
+to fetch. Off Apple platforms there is no key-value store, no CloudKit and no
+user defaults either. Only iPad and Apple TV have an idle timer and background
+time; elsewhere `application` does nothing.
 
 An app needs the iCloud Documents entitlement for its container and the
 `com.apple.developer.ubiquity-kvstore-identifier` entitlement for the key-value
@@ -61,7 +64,7 @@ builds), or their settings land in separate stores. Xcode writes it as
 ## Development
 
 ```sh
-cargo test -p aftermine-icloud --locked
-cargo clippy -p aftermine-icloud --target aarch64-apple-ios --locked -- -D warnings
-cargo clippy -p aftermine-icloud --target aarch64-apple-tvos --locked -- -D warnings
+cargo test -p aftermine-apple-bridge --locked
+cargo clippy -p aftermine-apple-bridge --target aarch64-apple-ios --locked -- -D warnings
+cargo clippy -p aftermine-apple-bridge --target aarch64-apple-tvos --locked -- -D warnings
 ```

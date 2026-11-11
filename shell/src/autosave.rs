@@ -87,21 +87,22 @@ fn publish_named(
         } else {
             dir.join(format!("{prefix}-{tick:010}-{time}-{n}.amsave"))
         };
-        let published =
-            aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Replace, |granted| {
-                match std::fs::symlink_metadata(granted) {
-                    Ok(_) => None,
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                        let write = write.take().expect("only a free path is written");
-                        Some(write(granted).map(|()| granted.to_owned()))
-                    }
-                    Err(error) => Some(Err(error.into())),
+        let published = aftermine_apple_bridge::coordinate(
+            &path,
+            aftermine_apple_bridge::Access::Replace,
+            |granted| match std::fs::symlink_metadata(granted) {
+                Ok(_) => None,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    let write = write.take().expect("only a free path is written");
+                    Some(write(granted).map(|()| granted.to_owned()))
                 }
-            })
-            .map_err(|source| SaveError::Write {
-                path: path.clone(),
-                source: source.into(),
-            })?;
+                Err(error) => Some(Err(error.into())),
+            },
+        )
+        .map_err(|source| SaveError::Write {
+            path: path.clone(),
+            source: source.into(),
+        })?;
         if let Some(published) = published {
             return published.map_err(|source| SaveError::Write { path, source });
         }
@@ -206,7 +207,7 @@ fn discard_in(slots: &[SaveSlot], folders: &[PathBuf]) {
 /// already gone.
 pub(crate) fn remove(path: &Path) {
     crate::cloud_mirror::deleting(path);
-    aftermine_icloud::coordinate(path, aftermine_icloud::Access::Delete, |granted| {
+    aftermine_apple_bridge::coordinate(path, aftermine_apple_bridge::Access::Delete, |granted| {
         std::fs::remove_file(granted)
     })
     .ok();
@@ -308,7 +309,7 @@ enum Folder {
 
 /// Writes `path` whole while iCloud holds off syncing it.
 fn replace(path: &Path, write: impl FnOnce(&Path) -> anyhow::Result<()>) -> anyhow::Result<()> {
-    aftermine_icloud::coordinate(path, aftermine_icloud::Access::Replace, write)?
+    aftermine_apple_bridge::coordinate(path, aftermine_apple_bridge::Access::Replace, write)?
 }
 
 pub(crate) struct SaveJob {

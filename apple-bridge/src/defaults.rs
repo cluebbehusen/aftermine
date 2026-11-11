@@ -34,15 +34,16 @@ mod bridge {
     use std::ffi::{CString, c_char};
 
     unsafe extern "C" {
-        fn aftermine_icloud_defaults_get(key: *const c_char) -> *mut c_char;
-        fn aftermine_icloud_defaults_set(key: *const c_char, value: *const c_char);
+        fn aftermine_apple_bridge_defaults_get(key: *const c_char) -> *mut c_char;
+        fn aftermine_apple_bridge_defaults_set(key: *const c_char, value: *const c_char);
     }
 
     pub(super) fn get(key: &str) -> Option<String> {
         let key = CString::new(key).ok()?;
         // SAFETY: `key` is NUL-terminated and outlives the call, which
         // returns a string `take` owns.
-        let bytes = crate::objc::take(unsafe { aftermine_icloud_defaults_get(key.as_ptr()) })?;
+        let bytes =
+            crate::objc::take(unsafe { aftermine_apple_bridge_defaults_get(key.as_ptr()) })?;
         String::from_utf8(bytes).ok()
     }
 
@@ -51,6 +52,6 @@ mod bridge {
             return;
         };
         // SAFETY: both strings are NUL-terminated and outlive the call.
-        unsafe { aftermine_icloud_defaults_set(key.as_ptr(), value.as_ptr()) };
+        unsafe { aftermine_apple_bridge_defaults_set(key.as_ptr(), value.as_ptr()) };
     }
 }

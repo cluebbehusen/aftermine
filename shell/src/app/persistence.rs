@@ -106,7 +106,7 @@ impl Worker {
             .spawn(move || {
                 while let Ok(work) = jobs.recv() {
                     // Leaving the app mid-save must not cut the file short.
-                    let background = aftermine_icloud::application::BackgroundTask::begin();
+                    let background = aftermine_apple_bridge::application::BackgroundTask::begin();
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         (work.task)(&work.cancel)
                     }))
@@ -485,9 +485,9 @@ impl App {
         let task: Task = Box::new(move |cancel| {
             if let Some(path) = delete {
                 crate::cloud_mirror::deleting(&path);
-                aftermine_icloud::coordinate(
+                aftermine_apple_bridge::coordinate(
                     &path,
-                    aftermine_icloud::Access::Delete,
+                    aftermine_apple_bridge::Access::Delete,
                     |granted| std::fs::remove_file(granted),
                 )??;
                 crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
@@ -532,12 +532,13 @@ fn record_changes() -> u64 {
 /// Reads the replay at `path` under a coordinated read, which waits for a
 /// file still downloading from iCloud.
 fn open_recording(path: &std::path::Path, cancel: &Cancellation) -> Result<Output> {
-    let recording = aftermine_icloud::coordinate(path, aftermine_icloud::Access::Read, |granted| {
-        aftermine_kit::load_recording(granted)
-    })
-    .map_err(anyhow::Error::from)
-    .and_then(|loaded| loaded.map_err(anyhow::Error::from))
-    .with_context(|| format!("loading replay {}", path.display()))?;
+    let recording =
+        aftermine_apple_bridge::coordinate(path, aftermine_apple_bridge::Access::Read, |granted| {
+            aftermine_kit::load_recording(granted)
+        })
+        .map_err(anyhow::Error::from)
+        .and_then(|loaded| loaded.map_err(anyhow::Error::from))
+        .with_context(|| format!("loading replay {}", path.display()))?;
     cancel.commit()?;
     Ok(Output::Recording(Box::new(recording)))
 }
@@ -557,9 +558,9 @@ fn load_candidates(paths: Vec<PathBuf>, cancel: &Cancellation) -> Result<Output>
         anyhow::ensure!(!cancel.cancelled(), "load cancelled");
         // A coordinated read waits for a file still downloading, or for a
         // newer copy another device is replacing it with.
-        let prepared = aftermine_icloud::coordinate(
+        let prepared = aftermine_apple_bridge::coordinate(
             &path,
-            aftermine_icloud::Access::Read,
+            aftermine_apple_bridge::Access::Read,
             crate::saved_game::prepare,
         )
         .map_err(anyhow::Error::from)

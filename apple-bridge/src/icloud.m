@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef void (*aftermine_icloud_accessor)(void *context, const char *path);
+typedef void (*aftermine_apple_bridge_accessor)(void *context, const char *path);
 
 static char *copy_path(NSURL *url) {
     return strdup(url.fileSystemRepresentation);
@@ -17,7 +17,7 @@ static char *copy_message(NSError *error) {
     return strdup(text != NULL ? text : "iCloud refused access");
 }
 
-char *aftermine_icloud_documents(void) {
+char *aftermine_apple_bridge_documents(void) {
     @autoreleasepool {
         NSURL *container =
             [NSFileManager.defaultManager URLForUbiquityContainerIdentifier:nil];
@@ -33,8 +33,8 @@ char *aftermine_icloud_documents(void) {
 // coordinator grants, which differs from `path` when the file moved meanwhile.
 // Returns whether the accessor ran; when it did not, *error_out holds a
 // message the caller frees.
-bool aftermine_icloud_coordinate(const char *path, int access, void *context,
-                                 aftermine_icloud_accessor accessor,
+bool aftermine_apple_bridge_coordinate(const char *path, int access, void *context,
+                                 aftermine_apple_bridge_accessor accessor,
                                  char **error_out) {
     @autoreleasepool {
         NSURL *url = [NSURL fileURLWithFileSystemRepresentation:path
@@ -88,7 +88,7 @@ static void keep_current_version(NSURL *item) {
                         }];
 }
 
-long aftermine_icloud_download(const char *dir) {
+long aftermine_apple_bridge_download(const char *dir) {
     @autoreleasepool {
         NSFileManager *files = NSFileManager.defaultManager;
         NSURL *folder = [NSURL fileURLWithFileSystemRepresentation:dir

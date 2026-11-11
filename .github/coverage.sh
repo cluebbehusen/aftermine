@@ -26,7 +26,7 @@ gate() {
                   elif . == "protocol" then {rank: 4, name: "aftermine-protocol"}
                   elif . == "kit" then {rank: 5, name: "aftermine-kit"}
                   elif . == "net" then {rank: 6, name: "aftermine-net"}
-                  elif . == "icloud" then {rank: 7, name: "aftermine-icloud"}
+                  elif . == "apple-bridge" then {rank: 7, name: "aftermine-apple-bridge"}
                   elif . == "shell" then {rank: 8, name: "aftermine-shell"}
                   elif . == "driver" then {rank: 9, name: "aftermine-driver"}
                   else {rank: 0, name: .}

@@ -432,7 +432,7 @@ static NSDictionary *fetch_once(CKDatabase *database,
     };
 }
 
-char *aftermine_icloud_cloudkit_account(void) {
+char *aftermine_apple_bridge_cloudkit_account(void) {
     @autoreleasepool {
         @try {
             return current_account();
@@ -499,7 +499,7 @@ static char *fetch_changes(const char *token, const char *staging) {
     }
 }
 
-char *aftermine_icloud_cloudkit_fetch(const char *token, const char *staging) {
+char *aftermine_apple_bridge_cloudkit_fetch(const char *token, const char *staging) {
     @autoreleasepool {
         @try {
             return fetch_changes(token, staging);
@@ -634,7 +634,7 @@ static char *save_version(const char *name, long long ticks,
 }
 
 // Saves the file at `path` as the record `name`.
-char *aftermine_icloud_cloudkit_upload(const char *name, const char *path,
+char *aftermine_apple_bridge_cloudkit_upload(const char *name, const char *path,
                                        long long ticks, long long saved_at) {
     @autoreleasepool {
         @try {
@@ -650,7 +650,7 @@ char *aftermine_icloud_cloudkit_upload(const char *name, const char *path,
 // Replaces the record `name` with a delete record of tick `ticks`: a record
 // rather than an absence, so every device can weigh it against the copy it
 // holds, and one that fetches from the start still learns of it.
-char *aftermine_icloud_cloudkit_delete(const char *name, long long ticks) {
+char *aftermine_apple_bridge_cloudkit_delete(const char *name, long long ticks) {
     @autoreleasepool {
         @try {
             return save_version(name, ticks, 0, nil);

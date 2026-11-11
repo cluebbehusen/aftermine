@@ -1,7 +1,10 @@
 use super::*;
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("aftermine-icloud-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "aftermine-apple-bridge-{name}-{}",
+        std::process::id()
+    ));
     std::fs::remove_dir_all(&dir).ok();
     std::fs::create_dir_all(&dir).unwrap();
     dir

@@ -17,7 +17,7 @@ aftermine-sim = { workspace = true }
 aftermine-protocol = { workspace = true }
 aftermine-kit = { workspace = true }
 aftermine-net = { workspace = true }
-aftermine-icloud = { workspace = true }
+aftermine-apple-bridge = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

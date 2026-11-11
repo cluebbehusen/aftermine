@@ -170,18 +170,21 @@ mod bridge {
     use std::time::Duration;
 
     unsafe extern "C" {
-        fn aftermine_icloud_cloudkit_account() -> *mut c_char;
-        fn aftermine_icloud_cloudkit_fetch(
+        fn aftermine_apple_bridge_cloudkit_account() -> *mut c_char;
+        fn aftermine_apple_bridge_cloudkit_fetch(
             token: *const c_char,
             staging: *const c_char,
         ) -> *mut c_char;
-        fn aftermine_icloud_cloudkit_upload(
+        fn aftermine_apple_bridge_cloudkit_upload(
             name: *const c_char,
             path: *const c_char,
             ticks: c_longlong,
             saved_at: c_longlong,
         ) -> *mut c_char;
-        fn aftermine_icloud_cloudkit_delete(name: *const c_char, ticks: c_longlong) -> *mut c_char;
+        fn aftermine_apple_bridge_cloudkit_delete(
+            name: *const c_char,
+            ticks: c_longlong,
+        ) -> *mut c_char;
     }
 
     #[derive(serde::Deserialize)]
@@ -244,7 +247,7 @@ mod bridge {
 
     pub(super) fn account() -> io::Result<String> {
         // SAFETY: takes no arguments and returns a string `take` owns.
-        let reply = crate::objc::take(unsafe { aftermine_icloud_cloudkit_account() });
+        let reply = crate::objc::take(unsafe { aftermine_apple_bridge_cloudkit_account() });
         answer::<Account>(reply).map(|reply| reply.account)
     }
 
@@ -254,7 +257,7 @@ mod bridge {
         // SAFETY: both strings are NUL-terminated and outlive the call; a
         // missing token passes NULL, which the bridge reads as none.
         let reply = crate::objc::take(unsafe {
-            aftermine_icloud_cloudkit_fetch(
+            aftermine_apple_bridge_cloudkit_fetch(
                 token
                     .as_ref()
                     .map_or(std::ptr::null(), |token| token.as_ptr()),
@@ -269,7 +272,7 @@ mod bridge {
         let file = path(file)?;
         // SAFETY: both strings are NUL-terminated and outlive the call.
         let reply = crate::objc::take(unsafe {
-            aftermine_icloud_cloudkit_upload(
+            aftermine_apple_bridge_cloudkit_upload(
                 name.as_ptr(),
                 file.as_ptr(),
                 c_longlong::try_from(ticks).unwrap_or(c_longlong::MAX),
@@ -283,7 +286,7 @@ mod bridge {
         let name = text(name)?;
         // SAFETY: `name` is NUL-terminated and outlives the call.
         let reply = crate::objc::take(unsafe {
-            aftermine_icloud_cloudkit_delete(
+            aftermine_apple_bridge_cloudkit_delete(
                 name.as_ptr(),
                 c_longlong::try_from(ticks).unwrap_or(c_longlong::MAX),
             )

@@ -20,7 +20,7 @@
 //! not use the store, or a device signed out of iCloud, behaves as before.
 
 use super::{CONFIG_VERSION, Config};
-use aftermine_icloud::KeyValueStore;
+use aftermine_apple_bridge::KeyValueStore;
 use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
 

@@ -372,7 +372,7 @@ impl Config {
     /// Loads the persisted config, or defaults on any trouble at all.
     pub fn load() -> Self {
         if PLATFORM == Platform::Tv {
-            Self::from_text(aftermine_icloud::defaults::get(DEFAULTS_KEY).as_deref())
+            Self::from_text(aftermine_apple_bridge::defaults::get(DEFAULTS_KEY).as_deref())
         } else {
             Self::load_from(config_path())
         }
@@ -507,7 +507,7 @@ impl Config {
     /// file atomically (temp + rename), creating the directory.
     pub fn save(&self) -> std::io::Result<()> {
         if PLATFORM == Platform::Tv {
-            aftermine_icloud::defaults::set(DEFAULTS_KEY, &self.text());
+            aftermine_apple_bridge::defaults::set(DEFAULTS_KEY, &self.text());
             return Ok(());
         }
         let Some(path) = config_path() else {
