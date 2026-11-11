@@ -380,14 +380,9 @@ fn the_overlaid_debug_map_is_a_picture_not_a_parseable_scenario() {
     }
 }
 
-/// Bots read `ObservationData` and agents read [`FogView`]; both are
-/// fog-honest projections of the same vision and must expose exactly the
-/// same world to the same seat.
-#[test]
-fn the_fog_view_and_the_bot_observation_agree() {
-    use aftermine_sim::observation::ObservationData;
-    use std::collections::BTreeSet;
-
+/// A skirmish staged for [`the_fog_view_and_the_bot_observation_agree`],
+/// one tick in.
+fn parity_world() -> aftermine_sim::State {
     // Each seat refits its home Extractor into a Deep Bore at once, and West
     // then starts a Maw cradle, so both public rules are compared as well.
     let mut scenario = aftermine_sim::Scenario::skirmish();
@@ -423,14 +418,6 @@ fn the_fog_view_and_the_bot_observation_agree() {
         "tier": 1,
     }]);
     let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
-    let foundry = |state: &aftermine_sim::State, seat: u8| {
-        state
-            .buildings()
-            .iter()
-            .find(|b| b.player.0 == seat && b.kind == aftermine_sim::BuildingKind::Foundry)
-            .unwrap()
-            .anchor
-    };
     // Only West raids, so East meets hostiles at home while West's cradle
     // stays out of its sight.
     let raids: Vec<aftermine_sim::PlayerCommand> = [0u8]
@@ -460,6 +447,67 @@ fn the_fog_view_and_the_bot_observation_agree() {
         )
         .collect();
     state.tick(&raids);
+    state
+}
+
+/// The anchor of `seat`'s Foundry.
+fn foundry(state: &aftermine_sim::State, seat: u8) -> TilePos {
+    state
+        .buildings()
+        .iter()
+        .find(|b| b.player.0 == seat && b.kind == aftermine_sim::BuildingKind::Foundry)
+        .unwrap()
+        .anchor
+}
+
+/// West's order for a Maw cradle near its Foundry, once its Deep Bore
+/// allows one.
+fn cradle_order(state: &aftermine_sim::State) -> Option<aftermine_sim::PlayerCommand> {
+    if !state.requirements_met(
+        PlayerId(0),
+        aftermine_sim::BuildingKind::MawCradle
+            .base_stats()
+            .construction
+            .requires,
+    ) {
+        return None;
+    }
+    let home = foundry(state, 0);
+    let anchor = (0..12)
+        .flat_map(|dy| (0..12).map(move |dx| home.offset(dx, dy)))
+        .find(|&anchor| {
+            state
+                .place_refusal(PlayerId(0), aftermine_sim::BuildingKind::MawCradle, anchor)
+                .is_none()
+        })
+        .expect("room for a cradle near West's Foundry");
+    let worker = state
+        .units()
+        .iter()
+        .find(|u| u.player.0 == 0 && u.kind.stats().harvest.is_some())
+        .unwrap()
+        .id;
+    Some(aftermine_sim::PlayerCommand {
+        player: PlayerId(0),
+        command: aftermine_sim::Command::Build {
+            units: vec![worker],
+            kind: aftermine_sim::BuildingKind::MawCradle,
+            anchor,
+            queue: false,
+            defer: false,
+        },
+    })
+}
+
+/// Bots read `ObservationData` and agents read [`FogView`]; both are
+/// fog-honest projections of the same vision and must expose exactly the
+/// same world to the same seat.
+#[test]
+fn the_fog_view_and_the_bot_observation_agree() {
+    use aftermine_sim::observation::ObservationData;
+    use std::collections::BTreeSet;
+
+    let mut state = parity_world();
     let mut compared_hostiles = false;
     let mut compared_public = false;
     let mut compared_cradle = false;
@@ -575,43 +623,14 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 });
             }
         }
-        let mut orders = Vec::new();
-        if !cradle_ordered
-            && state.requirements_met(
-                PlayerId(0),
-                aftermine_sim::BuildingKind::MawCradle
-                    .base_stats()
-                    .construction
-                    .requires,
-            )
-        {
-            let home = foundry(&state, 0);
-            let anchor = (0..12)
-                .flat_map(|dy| (0..12).map(move |dx| home.offset(dx, dy)))
-                .find(|&anchor| {
-                    state
-                        .place_refusal(PlayerId(0), aftermine_sim::BuildingKind::MawCradle, anchor)
-                        .is_none()
-                })
-                .expect("room for a cradle near West's Foundry");
-            let worker = state
-                .units()
-                .iter()
-                .find(|u| u.player.0 == 0 && u.kind.stats().harvest.is_some())
-                .unwrap()
-                .id;
-            orders.push(aftermine_sim::PlayerCommand {
-                player: PlayerId(0),
-                command: aftermine_sim::Command::Build {
-                    units: vec![worker],
-                    kind: aftermine_sim::BuildingKind::MawCradle,
-                    anchor,
-                    queue: false,
-                    defer: false,
-                },
-            });
-            cradle_ordered = true;
+        let orders: Vec<_> = if cradle_ordered {
+            None
+        } else {
+            cradle_order(&state)
         }
+        .into_iter()
+        .collect();
+        cradle_ordered |= !orders.is_empty();
         state.tick(&orders);
     }
     assert!(
