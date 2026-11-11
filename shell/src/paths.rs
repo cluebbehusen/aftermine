@@ -296,7 +296,7 @@ pub fn records() -> Records {
 /// workspace run never touches iCloud.
 pub fn look_up_cloud() {
     if bundled() {
-        CLOUD.start(aftermine_icloud::documents);
+        CLOUD.start(aftermine_apple_bridge::documents);
     }
 }
 

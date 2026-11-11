@@ -27,7 +27,7 @@ fn main() {
         build
             .flag("-fobjc-arc")
             .warnings_into_errors(true)
-            .compile("aftermine_icloud");
+            .compile("aftermine_apple_bridge");
         println!("cargo:rustc-link-lib=framework=Foundation");
         println!("cargo:rustc-link-lib=framework=CloudKit");
         if uikit {

@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-void aftermine_icloud_keep_screen_awake(bool awake) {
+void aftermine_apple_bridge_keep_screen_awake(bool awake) {
     UIApplication.sharedApplication.idleTimerDisabled = awake;
 }
 
@@ -20,7 +20,7 @@ static NSMutableSet<NSNumber *> *live_tasks(void) {
     return tasks;
 }
 
-void aftermine_icloud_end_background_task(uintptr_t task) {
+void aftermine_apple_bridge_end_background_task(uintptr_t task) {
     @autoreleasepool {
         NSMutableSet<NSNumber *> *tasks = live_tasks();
         NSNumber *key = @(task);
@@ -37,7 +37,7 @@ void aftermine_icloud_end_background_task(uintptr_t task) {
 
 // The new task, or UIBackgroundTaskInvalid when the system grants none. It is
 // recorded before the lock is let go, so its expiry cannot miss it.
-uintptr_t aftermine_icloud_begin_background_task(void) {
+uintptr_t aftermine_apple_bridge_begin_background_task(void) {
     @autoreleasepool {
         NSMutableSet<NSNumber *> *tasks = live_tasks();
         __block UIBackgroundTaskIdentifier task = UIBackgroundTaskInvalid;
@@ -45,7 +45,7 @@ uintptr_t aftermine_icloud_begin_background_task(void) {
             task = [UIApplication.sharedApplication
                 beginBackgroundTaskWithName:@"Saving"
                           expirationHandler:^{
-                            aftermine_icloud_end_background_task(task);
+                            aftermine_apple_bridge_end_background_task(task);
                           }];
             if (task != UIBackgroundTaskInvalid) {
                 [tasks addObject:@(task)];

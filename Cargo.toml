@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["chassis", "sim", "opponent", "protocol", "kit", "net", "icloud", "shell", "driver"]
+members = ["chassis", "sim", "opponent", "protocol", "kit", "net", "apple-bridge", "shell", "driver"]
 
 [workspace.package]
 version = "0.1.0"
@@ -21,7 +21,7 @@ aftermine-opponent = { path = "opponent" }
 aftermine-protocol = { path = "protocol" }
 aftermine-kit = { path = "kit" }
 aftermine-net = { path = "net" }
-aftermine-icloud = { path = "icloud" }
+aftermine-apple-bridge = { path = "apple-bridge" }
 
 # Members inherit this table whole, since Cargo refuses per-crate additions to
 # it. Crate roots carry their own extra levels: the deterministic crates deny

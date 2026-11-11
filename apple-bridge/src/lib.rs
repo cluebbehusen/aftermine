@@ -107,15 +107,15 @@ mod apple {
     use std::path::{Path, PathBuf};
 
     unsafe extern "C" {
-        fn aftermine_icloud_documents() -> *mut c_char;
-        fn aftermine_icloud_coordinate(
+        fn aftermine_apple_bridge_documents() -> *mut c_char;
+        fn aftermine_apple_bridge_coordinate(
             path: *const c_char,
             access: c_int,
             context: *mut c_void,
             accessor: extern "C" fn(*mut c_void, *const c_char),
             error_out: *mut *mut c_char,
         ) -> bool;
-        fn aftermine_icloud_download(dir: *const c_char) -> c_long;
+        fn aftermine_apple_bridge_download(dir: *const c_char) -> c_long;
     }
 
     fn c_path(path: &Path) -> std::io::Result<CString> {
@@ -125,7 +125,7 @@ mod apple {
 
     pub(super) fn documents() -> Option<PathBuf> {
         // SAFETY: takes no arguments and returns a string `take` owns.
-        let path = take(unsafe { aftermine_icloud_documents() })?;
+        let path = take(unsafe { aftermine_apple_bridge_documents() })?;
         Some(PathBuf::from(std::ffi::OsString::from_vec(path)))
     }
 
@@ -172,7 +172,7 @@ mod apple {
         // the slot's type, and `error` receives at most one string `take`
         // owns.
         unsafe {
-            aftermine_icloud_coordinate(
+            aftermine_apple_bridge_coordinate(
                 c_path.as_ptr(),
                 kind,
                 (&raw mut slot).cast(),
@@ -197,7 +197,7 @@ mod apple {
             return 0;
         };
         // SAFETY: `dir` is a NUL-terminated path that outlives the call.
-        let downloading = unsafe { aftermine_icloud_download(dir.as_ptr()) };
+        let downloading = unsafe { aftermine_apple_bridge_download(dir.as_ptr()) };
         usize::try_from(downloading).unwrap_or(0)
     }
 }

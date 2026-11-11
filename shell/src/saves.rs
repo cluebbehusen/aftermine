@@ -199,7 +199,7 @@ struct RecordTime {
 
 /// Lists the records in `dir`, leaving out any file `dataless` says iCloud
 /// has not brought down yet: reading one would wait on its download, and
-/// offline the read fails. [`aftermine_icloud::download`] counts those as
+/// offline the read fails. [`aftermine_apple_bridge::download`] counts those as
 /// on their way.
 fn scan_cancellable(
     dir: &std::path::Path,
@@ -311,7 +311,7 @@ fn discover_with(
     let downloading = records
         .cloud_folders()
         .iter()
-        .map(|dir| aftermine_icloud::download(dir))
+        .map(|dir| aftermine_apple_bridge::download(dir))
         .sum();
     let mut found = Vec::new();
     for dir in records.listed() {

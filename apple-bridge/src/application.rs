@@ -53,24 +53,24 @@ impl Drop for BackgroundTask {
 #[allow(unsafe_code)]
 mod bridge {
     unsafe extern "C" {
-        fn aftermine_icloud_keep_screen_awake(awake: bool);
-        fn aftermine_icloud_begin_background_task() -> usize;
-        fn aftermine_icloud_end_background_task(task: usize);
+        fn aftermine_apple_bridge_keep_screen_awake(awake: bool);
+        fn aftermine_apple_bridge_begin_background_task() -> usize;
+        fn aftermine_apple_bridge_end_background_task(task: usize);
     }
 
     pub(super) fn keep_screen_awake(awake: bool) {
         // SAFETY: takes a plain value and returns nothing.
-        unsafe { aftermine_icloud_keep_screen_awake(awake) }
+        unsafe { aftermine_apple_bridge_keep_screen_awake(awake) }
     }
 
     pub(super) fn begin_background_task() -> usize {
         // SAFETY: takes nothing and returns a plain value.
-        unsafe { aftermine_icloud_begin_background_task() }
+        unsafe { aftermine_apple_bridge_begin_background_task() }
     }
 
     pub(super) fn end_background_task(task: usize) {
         // SAFETY: takes a plain value; the bridge ignores one already
         // ended or never begun.
-        unsafe { aftermine_icloud_end_background_task(task) }
+        unsafe { aftermine_apple_bridge_end_background_task(task) }
     }
 }

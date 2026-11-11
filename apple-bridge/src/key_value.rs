@@ -77,22 +77,23 @@ mod bridge {
     use std::ffi::{CString, c_char, c_long};
 
     unsafe extern "C" {
-        fn aftermine_icloud_key_value_open();
-        fn aftermine_icloud_key_value_get(key: *const c_char) -> *mut c_char;
-        fn aftermine_icloud_key_value_set(key: *const c_char, value: *const c_char);
-        fn aftermine_icloud_key_value_changes() -> c_long;
+        fn aftermine_apple_bridge_key_value_open();
+        fn aftermine_apple_bridge_key_value_get(key: *const c_char) -> *mut c_char;
+        fn aftermine_apple_bridge_key_value_set(key: *const c_char, value: *const c_char);
+        fn aftermine_apple_bridge_key_value_changes() -> c_long;
     }
 
     pub(super) fn open() {
         // SAFETY: takes no arguments.
-        unsafe { aftermine_icloud_key_value_open() };
+        unsafe { aftermine_apple_bridge_key_value_open() };
     }
 
     pub(super) fn get(key: &str) -> Option<String> {
         let key = CString::new(key).ok()?;
         // SAFETY: `key` is NUL-terminated and outlives the call, which
         // returns a string `take` owns.
-        let bytes = crate::objc::take(unsafe { aftermine_icloud_key_value_get(key.as_ptr()) })?;
+        let bytes =
+            crate::objc::take(unsafe { aftermine_apple_bridge_key_value_get(key.as_ptr()) })?;
         String::from_utf8(bytes).ok()
     }
 
@@ -101,12 +102,12 @@ mod bridge {
             return;
         };
         // SAFETY: both strings are NUL-terminated and outlive the call.
-        unsafe { aftermine_icloud_key_value_set(key.as_ptr(), value.as_ptr()) };
+        unsafe { aftermine_apple_bridge_key_value_set(key.as_ptr(), value.as_ptr()) };
     }
 
     pub(super) fn changes() -> u64 {
         // SAFETY: takes no arguments.
-        let changes = unsafe { aftermine_icloud_key_value_changes() };
+        let changes = unsafe { aftermine_apple_bridge_key_value_changes() };
         u64::try_from(changes).unwrap_or(0)
     }
 }

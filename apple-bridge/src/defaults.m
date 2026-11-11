@@ -8,7 +8,7 @@
 
 // The string stored under `key`, as a copy the caller frees, or NULL when
 // there is none.
-char *aftermine_icloud_defaults_get(const char *key) {
+char *aftermine_apple_bridge_defaults_get(const char *key) {
     @autoreleasepool {
         NSString *name = [NSString stringWithUTF8String:key];
         if (name == nil) {
@@ -21,7 +21,7 @@ char *aftermine_icloud_defaults_get(const char *key) {
     }
 }
 
-void aftermine_icloud_defaults_set(const char *key, const char *value) {
+void aftermine_apple_bridge_defaults_set(const char *key, const char *value) {
     @autoreleasepool {
         NSString *name = [NSString stringWithUTF8String:key];
         NSString *text = [NSString stringWithUTF8String:value];

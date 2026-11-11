@@ -38,7 +38,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use aftermine_icloud::cloudkit::{Changed, Changes, Failure, Trouble};
+use aftermine_apple_bridge::cloudkit::{Changed, Changes, Failure, Trouble};
 
 /// How long one pass may spend moving files before it stops and leaves the
 /// rest to the next one.
@@ -471,16 +471,16 @@ pub(crate) struct CloudKit;
 
 impl Remote for CloudKit {
     fn account(&self) -> io::Result<String> {
-        aftermine_icloud::cloudkit::account()
+        aftermine_apple_bridge::cloudkit::account()
     }
     fn fetch(&self, token: Option<&str>, staging: &Path) -> io::Result<Changes> {
-        aftermine_icloud::cloudkit::fetch(token, staging)
+        aftermine_apple_bridge::cloudkit::fetch(token, staging)
     }
     fn upload(&self, name: &str, path: &Path, ticks: u64, saved_at: u64) -> io::Result<()> {
-        aftermine_icloud::cloudkit::upload(name, path, ticks, saved_at)
+        aftermine_apple_bridge::cloudkit::upload(name, path, ticks, saved_at)
     }
     fn delete(&self, name: &str, ticks: u64) -> io::Result<()> {
-        aftermine_icloud::cloudkit::delete(name, ticks)
+        aftermine_apple_bridge::cloudkit::delete(name, ticks)
     }
 }
 
@@ -553,7 +553,7 @@ struct Queue {
     /// Time asked of the system, from a pass being asked for until no pass
     /// is wanted or under way, so leaving the app does not cut a push short.
     /// Every request asks afresh: the system may have ended the time already.
-    background: Option<aftermine_icloud::application::BackgroundTask>,
+    background: Option<aftermine_apple_bridge::application::BackgroundTask>,
 }
 
 impl Queue {
@@ -601,7 +601,7 @@ impl Shared {
         if mode == Mode::Push {
             queue.unsent = true;
         }
-        queue.background = Some(aftermine_icloud::application::BackgroundTask::begin());
+        queue.background = Some(aftermine_apple_bridge::application::BackgroundTask::begin());
         self.wake.notify_one();
     }
 }
@@ -1223,15 +1223,19 @@ fn upload(
         .staging
         .join(format!("upload-{}", name.replace('/', "-")));
     let vanished = || io::Error::other(format!("{name} vanished"));
-    let stamp = aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Read, |granted| {
-        let stamp = Stamp::of(granted).ok_or_else(vanished)?;
-        std::fs::copy(granted, &copy)?;
-        if Stamp::of(granted) == Some(stamp) {
-            Ok(stamp)
-        } else {
-            Err(io::Error::other(format!("{name} changed while copying")))
-        }
-    })??;
+    let stamp = aftermine_apple_bridge::coordinate(
+        &path,
+        aftermine_apple_bridge::Access::Read,
+        |granted| {
+            let stamp = Stamp::of(granted).ok_or_else(vanished)?;
+            std::fs::copy(granted, &copy)?;
+            if Stamp::of(granted) == Some(stamp) {
+                Ok(stamp)
+            } else {
+                Err(io::Error::other(format!("{name} changed while copying")))
+            }
+        },
+    )??;
     // A file still being written is not a record yet.
     let version = file_version(&copy, stamp.secs)
         .ok_or_else(|| io::Error::other(format!("{name} is not a record yet")))?;
@@ -1275,8 +1279,10 @@ fn download(
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let stamp =
-        aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Replace, |granted| {
+    let stamp = aftermine_apple_bridge::coordinate(
+        &path,
+        aftermine_apple_bridge::Access::Replace,
+        |granted| {
             unchanged_since_scan(&change.name, granted, scanned)?;
             chassis::fsx::write_atomic(granted, |writer| {
                 io::copy(&mut std::fs::File::open(staged)?, writer).map(|_| ())
@@ -1290,7 +1296,8 @@ fn download(
                 .open(granted)?
                 .set_modified(when.min(SystemTime::now()))?;
             Stamp::of(granted).ok_or_else(|| io::Error::other("downloaded file vanished"))
-        })??;
+        },
+    )??;
     std::fs::remove_file(staged).ok();
     manifest.deleted.remove(&change.name);
     manifest
@@ -1301,13 +1308,17 @@ fn download(
 
 fn remove_local(places: &Places, name: &str, scanned: Option<Stamp>) -> io::Result<()> {
     if let Some(path) = places.path(name) {
-        aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Delete, |granted| {
-            unchanged_since_scan(name, granted, scanned)?;
-            match std::fs::remove_file(granted) {
-                Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
-                _ => Ok(()),
-            }
-        })??;
+        aftermine_apple_bridge::coordinate(
+            &path,
+            aftermine_apple_bridge::Access::Delete,
+            |granted| {
+                unchanged_since_scan(name, granted, scanned)?;
+                match std::fs::remove_file(granted) {
+                    Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
+                    _ => Ok(()),
+                }
+            },
+        )??;
     }
     Ok(())
 }

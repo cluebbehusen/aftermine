@@ -8,7 +8,7 @@ use crate::menu::{Heading, Label, Line, Menu};
 use crate::platform::{PLATFORM, Platform};
 use crate::saves::ReplayEntry;
 use crate::tabs::TabStrip;
-use aftermine_icloud::cloudkit::Trouble;
+use aftermine_apple_bridge::cloudkit::Trouble;
 use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::{Vec2, draw_text, measure_text};
 

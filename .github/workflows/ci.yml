@@ -66,7 +66,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       # The iPad and Apple TV builds compile the shell's Apple-only code, the
-      # iCloud crate's Foundation calls and the iOS and tvOS builds of the
+      # Apple bridge's Objective-C calls and the iOS and tvOS builds of the
       # miniquad and quad-snd forks. Linting both device targets here means a
       # shell change or a fork pin bump that no longer compiles for them
       # fails in CI. Linking and the simulator targets are still checked only
@@ -77,8 +77,8 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           rustup target add aarch64-apple-ios aarch64-apple-tvos
-          cargo clippy -p aftermine-shell -p aftermine-icloud --target aarch64-apple-ios --locked -- -D warnings
-          cargo clippy -p aftermine-shell -p aftermine-icloud --target aarch64-apple-tvos --locked -- -D warnings
+          cargo clippy -p aftermine-shell -p aftermine-apple-bridge --target aarch64-apple-ios --locked -- -D warnings
+          cargo clippy -p aftermine-shell -p aftermine-apple-bridge --target aarch64-apple-tvos --locked -- -D warnings
 
       - name: Test
         run: cargo test --workspace --locked
