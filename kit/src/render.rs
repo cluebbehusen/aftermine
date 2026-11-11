@@ -181,16 +181,6 @@ struct Cell {
 }
 
 impl Cell {
-    /// The cell of `pos` at full size.
-    fn full(pos: TilePos) -> Self {
-        Self {
-            x: pos.x as f32 * TILE_PX,
-            y: pos.y as f32 * TILE_PX,
-            w: TILE_PX,
-            h: TILE_PX,
-        }
-    }
-
     fn fill(self, pixmap: &mut Pixmap, color: u32) {
         fill_rect(pixmap, self.x, self.y, self.w, self.h, color);
     }
@@ -418,95 +408,99 @@ fn fill_circle(pixmap: &mut Pixmap, cx: f32, cy: f32, r: f32, color: u32) {
     }
 }
 
-/// Draws `state` to a fresh pixmap at [`TILE_PX`] resolution, each seat in
-/// its own fill.
-pub fn render_state(state: &State) -> Pixmap {
-    render_state_colored(state, seat_color)
+/// How much a render draws beyond the map and its pieces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Detail {
+    /// Health bars and the scrap a Harvester carries too: the full-size
+    /// diagram goldens and the driver's pictures compare.
+    Diagram,
+    /// A map preview's pieces alone; health bars carry nothing there.
+    Preview,
 }
 
-/// Draws `state` like [`render_state`], with `seat_fill` choosing each
-/// seat's fill as `0xRRGGBB`.
-pub fn render_state_colored(state: &State, seat_fill: impl Fn(PlayerId) -> u32) -> Pixmap {
-    let width = u32::try_from(state.map().width()).expect("map extents are positive") * TILE_PIXELS;
-    let height =
-        u32::try_from(state.map().height()).expect("map extents are positive") * TILE_PIXELS;
-    let mut pixmap = Pixmap::new(width, height).expect("nonzero map dimensions");
-    pixmap.fill(rgb(GROUND));
+/// From this many pixels per tile up, tiles keep the one-pixel details of
+/// the full-size diagram: half its scale, where they are still lines.
+const FINE_SCALE: f32 = 6.0;
+
+/// The smallest frame mark: a pixel of rim around a pixel of core, so a
+/// frame stays hollow and never reads as a scrap node.
+const MIN_FRAME: f32 = 3.0;
+
+/// From this unit radius in pixels up, units are discs; below it, a square
+/// of their width.
+const DISC_RADIUS: f32 = 2.0;
+
+/// Draws `state` at `scale` pixels per tile, at most [`TILE_PX`], each seat
+/// in `seat_fill` as `0xRRGGBB`. Tiles land on whole pixels, and every
+/// frame, node, building and unit is one mark of its size at least a pixel
+/// wide, so nothing drops out however small the map is drawn.
+fn draw(state: &State, scale: f32, seat_fill: impl Fn(PlayerId) -> u32, detail: Detail) -> Pixmap {
     let map = state.map();
+    let scale = scale.min(TILE_PX);
+    let mut pixmap = Pixmap::new(
+        whole_pixels(edge(map.width(), scale)),
+        whole_pixels(edge(map.height(), scale)),
+    )
+    .expect("a picture is at least a pixel");
+    pixmap.fill(rgb(GROUND));
     // A tiered map tints each level's ground, brighter above the floor its
     // Foundries stand on and darker below.
     let shading = level_shading(state);
-
+    let fine = scale >= FINE_SCALE;
     for (pos, tile) in map.iter() {
-        let cell = Cell::full(pos);
-        let Cell { x, y, .. } = cell;
-        draw_terrain(&mut pixmap, map, (pos, tile), cell, shading.as_ref(), true);
+        let cell = cell_at(pos, scale);
+        draw_terrain(&mut pixmap, map, (pos, tile), cell, shading.as_ref(), fine);
         match (tile.terrain, tile.scrap) {
             // Wreck salvage: a small dim-amber square, unmistakably not a
             // node (nodes render bigger and brighter below).
             (Terrain::Ground, 0) if tile.wreck > 0 => {
-                let inset = TILE_PX * WRECK_INSET;
-                fill_rect(
-                    &mut pixmap,
-                    x + inset,
-                    y + inset,
-                    TILE_PX - 2.0 * inset,
-                    TILE_PX - 2.0 * inset,
-                    SCRAP_LOW,
-                );
+                draw_inset_mark(&mut pixmap, pos, scale, WRECK_INSET, SCRAP_LOW);
             }
             (Terrain::Ground, scrap) if scrap > 0 => {
                 let (color, inset) = node_look(scrap);
-                let inset = TILE_PX * inset;
-                fill_rect(
-                    &mut pixmap,
-                    x + inset,
-                    y + inset,
-                    TILE_PX - 2.0 * inset,
-                    TILE_PX - 2.0 * inset,
-                    color,
-                );
+                draw_inset_mark(&mut pixmap, pos, scale, inset, color);
             }
             _ => {}
         }
     }
 
     // A rebuilt Extractor covers its frame.
-    for frame in state.map().extractor_frames() {
-        let (x, y) = (frame.x as f32 * TILE_PX, frame.y as f32 * TILE_PX);
-        draw_frame(&mut pixmap, x, y, 2.0 * TILE_PX);
+    let frame = (2.0 * scale).round().max(MIN_FRAME);
+    for &pos in map.extractor_frames() {
+        let (x, y) = mark_origin(centre(pos, 2, scale), frame);
+        draw_frame(&mut pixmap, x, y, frame);
     }
 
     for building in state.buildings() {
-        let color = seat_fill(building.player);
-        let (w, h) = building.kind.size();
-        let (x, y) = (
-            building.anchor.x as f32 * TILE_PX,
-            building.anchor.y as f32 * TILE_PX,
-        );
-        let (pw, ph) = (w as f32 * TILE_PX, h as f32 * TILE_PX);
-        fill_rect(&mut pixmap, x, y, pw, ph, darken(color));
-        // Unfinished sites show only their dark frame — scaffolding.
-        if building.built() {
-            fill_rect(&mut pixmap, x + 2.0, y + 2.0, pw - 4.0, ph - 4.0, color);
+        let (x, y, pw, _) = draw_building(&mut pixmap, building, scale, &seat_fill);
+        if detail == Detail::Diagram {
+            draw_hp_bar(
+                &mut pixmap,
+                x,
+                y - 4.0,
+                pw,
+                building.hp,
+                building.stats().max_hp,
+            );
         }
-        draw_hp_bar(
-            &mut pixmap,
-            x,
-            y - 4.0,
-            pw,
-            building.hp,
-            building.stats().max_hp,
-        );
     }
 
     for unit in state.units() {
         let color = seat_fill(unit.player);
-        let cx = unit.pos.x.to_num::<f32>() * TILE_PX;
-        let cy = unit.pos.y.to_num::<f32>() * TILE_PX;
-        let r = unit.kind.stats().radius.to_num::<f32>() * TILE_PX;
-        fill_circle(&mut pixmap, cx, cy, r + 1.0, darken(color));
-        fill_circle(&mut pixmap, cx, cy, r, color);
+        let (cx, cy) = (
+            unit.pos.x.to_num::<f32>() * scale,
+            unit.pos.y.to_num::<f32>() * scale,
+        );
+        let r = unit.kind.stats().radius.to_num::<f32>() * scale;
+        if r >= DISC_RADIUS {
+            fill_circle(&mut pixmap, cx, cy, r + 1.0, darken(color));
+            fill_circle(&mut pixmap, cx, cy, r, color);
+        } else {
+            draw_mark(&mut pixmap, (cx, cy), (2.0 * r).round().max(1.0), color);
+        }
+        if detail == Detail::Preview {
+            continue;
+        }
         if unit.kind == UnitKind::Harvester && unit.carrying() > 0 {
             fill_circle(&mut pixmap, cx, cy, r * 0.4, SCRAP_FULL);
         }
@@ -516,6 +510,108 @@ pub fn render_state_colored(state: &State, seat_fill: impl Fn(PlayerId) -> u32) 
         }
     }
     pixmap
+}
+
+/// Draws `state` at [`TILE_PX`] resolution, each seat in its own fill.
+pub fn render_state(state: &State) -> Pixmap {
+    draw(state, TILE_PX, seat_color, Detail::Diagram)
+}
+
+/// Draws `state` as a preview that fits inside `width` x `height` pixels,
+/// each seat in `seat_fill`.
+pub fn render_thumbnail(
+    state: &State,
+    width: u32,
+    height: u32,
+    seat_fill: impl Fn(PlayerId) -> u32,
+) -> Pixmap {
+    let map = state.map();
+    let scale = (width as f32 / map.width() as f32).min(height as f32 / map.height() as f32);
+    draw(state, scale, seat_fill, Detail::Preview)
+}
+
+/// A building over the whole pixels of its tiles: a dark frame around the
+/// seat's fill once built, only the frame while it is a site. The frame
+/// keeps a pixel wherever the building is at least four pixels wide.
+/// Returns the pixels it covers as `(x, y, width, height)`.
+fn draw_building(
+    pixmap: &mut Pixmap,
+    building: &aftermine_sim::Building,
+    scale: f32,
+    seat_fill: impl Fn(PlayerId) -> u32,
+) -> (f32, f32, f32, f32) {
+    let color = seat_fill(building.player);
+    let (w, h) = building.kind.size();
+    let (x, pw) = span(building.anchor.x, building.anchor.x + w, scale);
+    let (y, ph) = span(building.anchor.y, building.anchor.y + h, scale);
+    fill_rect(pixmap, x, y, pw, ph, darken(color));
+    if building.built() {
+        let rim = (scale / 6.0)
+            .round()
+            .max(if pw.min(ph) >= 4.0 { 1.0 } else { 0.0 });
+        fill_rect(
+            pixmap,
+            x + rim,
+            y + rim,
+            pw - 2.0 * rim,
+            ph - 2.0 * rim,
+            color,
+        );
+    }
+    (x, y, pw, ph)
+}
+
+/// Where tile edge `index` falls at `scale` pixels per tile.
+fn edge(index: i32, scale: f32) -> f32 {
+    (index as f32 * scale).round()
+}
+
+/// The whole-pixel start and length of tiles `from..to` along one axis.
+fn span(from: i32, to: i32, scale: f32) -> (f32, f32) {
+    let start = edge(from, scale);
+    (start, edge(to, scale) - start)
+}
+
+/// The whole pixels tile `pos` covers.
+fn cell_at(pos: TilePos, scale: f32) -> Cell {
+    let (x, w) = span(pos.x, pos.x + 1, scale);
+    let (y, h) = span(pos.y, pos.y + 1, scale);
+    Cell { x, y, w, h }
+}
+
+/// The pixel centre of the `tiles`-wide square anchored at `pos`.
+fn centre(pos: TilePos, tiles: i32, scale: f32) -> (f32, f32) {
+    let half = tiles as f32 * 0.5;
+    ((pos.x as f32 + half) * scale, (pos.y as f32 + half) * scale)
+}
+
+/// The whole-pixel corner of a `size`-pixel mark centred on `(cx, cy)`.
+fn mark_origin((cx, cy): (f32, f32), size: f32) -> (f32, f32) {
+    ((cx - size * 0.5).round(), (cy - size * 0.5).round())
+}
+
+/// A square set `inset` (a share of the tile) inside tile `pos`, at least a
+/// pixel wide.
+fn draw_inset_mark(pixmap: &mut Pixmap, pos: TilePos, scale: f32, inset: f32, color: u32) {
+    let size = (scale * (1.0 - 2.0 * inset)).round().max(1.0);
+    let x = ((pos.x as f32 + inset) * scale).floor();
+    let y = ((pos.y as f32 + inset) * scale).floor();
+    fill_rect(pixmap, x, y, size, size, color);
+}
+
+/// A solid `size`-pixel square centred on `centre`.
+fn draw_mark(pixmap: &mut Pixmap, centre: (f32, f32), size: f32, color: u32) {
+    let (x, y) = mark_origin(centre, size);
+    fill_rect(pixmap, x, y, size, size, color);
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a picture side is a rounded pixel count no larger than the full-size diagram's"
+)]
+fn whole_pixels(length: f32) -> u32 {
+    length.max(1.0) as u32
 }
 
 fn draw_hp_bar(pixmap: &mut Pixmap, x: f32, y: f32, w: f32, hp: u32, max_hp: u32) {
@@ -540,9 +636,6 @@ pub fn save_png(state: &State, path: &std::path::Path) -> Result<()> {
         .save_png(path)
         .with_context(|| format!("writing {}", path.display()))
 }
-
-mod thumbnail;
-pub use thumbnail::render_thumbnail;
 
 #[cfg(test)]
 mod tests;
