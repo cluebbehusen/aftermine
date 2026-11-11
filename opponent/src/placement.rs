@@ -391,14 +391,8 @@ pub(crate) fn keeps_paths(
     };
     let foundry = BuildingKind::Foundry.size();
     let mut reached = vec![false; chassis::grid::cell_count(width, height)];
-    let foundries: Vec<TilePos> = observation
-        .my_buildings
-        .iter()
-        .filter(|building| {
-            building.kind == BuildingKind::Foundry
-                && building.built
-                && map.component(building.anchor) == Some(ground)
-        })
+    let foundries: Vec<TilePos> = crate::investments::built_foundries(&observation.my_buildings)
+        .filter(|building| map.component(building.anchor) == Some(ground))
         .map(|building| building.anchor)
         .collect();
     // Ground no Foundry stands on has no exits to keep; a Foundry ringed
@@ -462,7 +456,7 @@ pub(crate) fn keeps_paths(
     let producers = observation
         .my_buildings
         .iter()
-        .filter(|building| building.built && !building.kind.base_stats().produces.is_empty())
+        .filter(|building| crate::investments::built_producer(building))
         .filter(|building| on(building.anchor))
         .all(|building| beside(building.anchor, building.kind.size()));
     let nodes = map

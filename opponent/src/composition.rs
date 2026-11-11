@@ -47,13 +47,6 @@ const PULL: u32 = 600;
 /// ratio.
 const PREMIUM_CAP: u64 = 4_000;
 
-/// Enemy buildings that shoot back.
-const DEFENSES: [BuildingKind; 3] = [
-    BuildingKind::Turret,
-    BuildingKind::FlakTurret,
-    BuildingKind::Bastion,
-];
-
 /// The role a unit fills. Harvesters, raiders, scouts and transports
 /// fill none here. Every unit kind is listed, so a new one must be placed
 /// before the bot can field it.
@@ -227,7 +220,7 @@ impl Enemy {
                     }
                 }
             }
-            if DEFENSES.contains(&building.kind) {
+            if building.kind.fires() {
                 enemy.defenses += crate::missions::building_value(building);
             }
             if let Some((_, stats)) = defender
@@ -662,12 +655,7 @@ impl Needs {
     ) -> Vec<(UnitKind, u32)> {
         let producers: Vec<BuildingKind> = BuildingKind::ALL
             .into_iter()
-            .filter(|kind| {
-                observation
-                    .my_buildings
-                    .iter()
-                    .any(|building| building.kind == *kind && building.built)
-            })
+            .filter(|kind| crate::investments::built(observation, *kind))
             .collect();
         let mut premium: Vec<(UnitKind, u32)> = Vec::new();
         for role in self.wanted() {
@@ -723,17 +711,11 @@ impl Needs {
         role: Role,
     ) -> Option<(BuildingKind, u32)> {
         let rank = |kind: UnitKind| self.rank(kind, role);
-        let built = |kind: BuildingKind| {
-            observation
-                .my_buildings
-                .iter()
-                .any(|own| own.kind == kind && own.built)
-        };
         let owned =
             |kind: BuildingKind| observation.my_buildings.iter().any(|own| own.kind == kind);
         let producers: Vec<BuildingKind> = BuildingKind::ALL
             .into_iter()
-            .filter(|kind| built(*kind))
+            .filter(|kind| crate::investments::built(observation, *kind))
             .collect();
         let now = producers
             .iter()
@@ -773,12 +755,7 @@ impl Needs {
         let rank = |kind: UnitKind| self.rank(kind, role);
         let now = BuildingKind::ALL
             .into_iter()
-            .filter(|building| {
-                observation
-                    .my_buildings
-                    .iter()
-                    .any(|own| own.kind == *building && own.built)
-            })
+            .filter(|building| crate::investments::built(observation, *building))
             .flat_map(|building| producible(observation, building))
             .filter(|kind| self::role(*kind) == Some(role))
             .map(rank)

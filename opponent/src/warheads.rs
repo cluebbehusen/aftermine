@@ -660,10 +660,7 @@ pub(crate) fn investments(
     traits: PersonalityTraits,
     income: u32,
 ) -> Vec<(Investment, u32)> {
-    let crucible = observation
-        .my_buildings
-        .iter()
-        .any(|building| building.kind == BuildingKind::Crucible && building.built);
+    let crucible = crate::investments::built(observation, BuildingKind::Crucible);
     if !crucible {
         return Vec::new();
     }

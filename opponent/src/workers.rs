@@ -4,6 +4,7 @@
 
 use crate::decision::{Ledger, Producer};
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
+use crate::investments::built_foundries;
 use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
 use crate::missions::{Hazard, Meal, Scratch};
 use crate::profile::ResolvedProfile;
@@ -323,10 +324,7 @@ pub(crate) fn run(
 /// two Harvesters' slots are open and the seat can pay with scrap to spare,
 /// less to spare the greedier it is.
 fn excavate(observation: &ObservationData, open: usize, greed: u8, ledger: &Ledger) -> bool {
-    let fabricator = observation
-        .my_buildings
-        .iter()
-        .any(|building| building.kind == BuildingKind::Fabricator && building.built);
+    let fabricator = crate::investments::built(observation, BuildingKind::Fabricator);
     let spare = 2 * (100 - u32::from(greed.min(100)));
     fabricator
         && open >= slots(UnitKind::Excavator)
@@ -344,7 +342,7 @@ fn flee(
     hazards: &[Hazard],
     ledger: &mut Ledger,
 ) {
-    let foundries = built_foundries(observation);
+    let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
     if hazards.is_empty() {
         return;
     }
@@ -391,15 +389,6 @@ fn free_on(unit: &UnitObs, map: &MapModel, ground: u32, ledger: &Ledger) -> bool
         && map.component(unit.tile) == Some(ground)
         && !ledger.employs(unit.id)
         && !ledger.stuck(unit.id)
-}
-
-/// The seat's built Foundries.
-fn built_foundries(observation: &ObservationData) -> Vec<&BuildingObs> {
-    observation
-        .my_buildings
-        .iter()
-        .filter(|building| building.kind == BuildingKind::Foundry && building.built)
-        .collect()
 }
 
 /// The tile beside one of `foundries` on the ground of `tile` nearest it.
@@ -524,7 +513,7 @@ fn weld_units(
     per_welder: u64,
     ledger: &mut Ledger,
 ) {
-    let foundries = built_foundries(observation);
+    let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
     let home = |tile: TilePos| at_home(&foundries, tile);
     let mine = |id: &UnitId| {
         let index = observation
@@ -1176,7 +1165,7 @@ fn assign_idle(
             return;
         }
     }
-    let foundries = built_foundries(observation);
+    let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
     // Only a worker with a Foundry on its ground can deliver, and an order
     // in which none can is refused.
     let returning: Vec<UnitId> = loaded
