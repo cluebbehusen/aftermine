@@ -264,6 +264,20 @@ impl<'a> Scene<'a> {
             .and_then(|id| self.state.unit(*id))
             .is_none_or(|u| u.player == self.presentation.human)
     }
+    /// Whether the selection holds one of the human's own units that
+    /// `accepts`.
+    pub(crate) fn selection_has_own(&self, accepts: impl Fn(&aftermine_sim::Unit) -> bool) -> bool {
+        self.presentation.selection.units.iter().any(|id| {
+            self.state
+                .unit(*id)
+                .is_some_and(|unit| unit.player == self.presentation.human && accepts(unit))
+        })
+    }
+    /// Whether the selection holds one of the human's own workers: the
+    /// units that build, harvest, salvage and weld.
+    pub(crate) fn selection_has_worker(&self) -> bool {
+        self.selection_has_own(|unit| unit.kind.stats().harvest.is_some())
+    }
     /// The human's built Foundries, in id order: where Center on Foundry
     /// cycles.
     pub fn own_foundries(&self) -> impl Iterator<Item = &'a Building> + use<'a> {
