@@ -270,20 +270,15 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     let purposeful =
         (args.debug_server && !args.automation) || args.scenario.is_some() || args.replay.is_some();
     let commit = crate::build_identity().revision;
+    let mut draft = NewMatchDraft::default();
     let mut screen = if let Some(address) = &args.host {
-        let lobby = crate::netplay::ScenarioHost::new(
-            address,
+        draft.player_name = Some(config.name());
+        Screen::Wizard(Wizard::host(
             game.scenario.clone(),
-            game.presentation.human,
-            &commit,
-            Some(config.name()),
-        )?;
-        Screen::Lobby {
-            screen: Box::new(LobbyScreen::waiting(crate::netplay::Lobby::Host(Box::new(
-                lobby,
-            )))),
-            back: Box::new(Screen::Home(HomeScreen::open())),
-        }
+            args.scenario.as_ref().map(std::path::PathBuf::from),
+            &mut draft,
+            address,
+        ))
     } else if let Some(typed) = &args.join {
         let name = config.name();
         let screen = match crate::netplay::parse_join_address(typed) {
@@ -340,7 +335,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         config,
         settings_sync,
         game,
-        draft: NewMatchDraft::default(),
+        draft,
         personality_seeds,
         home_backdrop: crate::home_backdrop::HomeMatch::Unloaded,
         input: input::InputState::new(),

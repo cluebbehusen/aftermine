@@ -70,9 +70,10 @@ address (the port defaults to 4200). The host can move or remove players and
 starts once every open seat is filled. Tailscale and other routed networks need
 the typed address.
 
-From the command line, the host passes a scenario whose human seats have
-`"bot": false`. The host takes the first and joining machines fill the rest in
-order:
+From the command line, `--host` opens match setup on a scenario with its LAN
+lobby already listening on that address. The host takes the first seat the
+scenario leaves to a human (`"bot": false`), and presses Start once the others
+have joined:
 
 ```sh
 cargo run -p aftermine-shell --release -- --host 0.0.0.0:4200 --scenario duel.json

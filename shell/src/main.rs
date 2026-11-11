@@ -102,9 +102,9 @@ struct Args {
     #[arg(long, conflicts_with_all = ["scenario", "replay", "automation"])]
     watch: Option<String>,
 
-    /// Host a LAN match on this address (e.g. 0.0.0.0:4200). The
-    /// --scenario file's non-bot seats are the players; the host takes the
-    /// first.
+    /// Open match setup on the --scenario file with its LAN lobby listening
+    /// on this address (e.g. 0.0.0.0:4200). The host takes the first seat the
+    /// scenario leaves to a human.
     #[arg(
         long,
         requires = "scenario",

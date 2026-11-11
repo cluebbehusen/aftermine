@@ -1,5 +1,6 @@
 use super::*;
 use aftermine_net::Gathering;
+use aftermine_sim::scenario::BotConfig;
 use std::time::Duration;
 
 const HOST: PlayerId = PlayerId(0);
@@ -198,4 +199,134 @@ fn unique_names_number_every_repeat() {
         .map(|player| player.name.as_str())
         .collect();
     assert_eq!(names, ["Alex", "Alex 2", "Alex 3", "Alex 4"]);
+}
+
+/// Seating the scenario host the LAN tests drive uses, which the wizard
+/// does not.
+impl Seating {
+    /// The map's seats as its scenario sets them: the host on `host`, bot
+    /// seats keeping their authored bot, and every other human seat open.
+    pub(crate) fn from_scenario(scenario: &Scenario, host: PlayerId) -> Self {
+        let seats = scenario
+            .players
+            .iter()
+            .enumerate()
+            .map(|(seat, player)| {
+                if seat == usize::from(host.0) {
+                    Occupant::Host
+                } else if player.bot {
+                    let bot = player.bot_config.unwrap_or_default();
+                    Occupant::Bot {
+                        difficulty: bot.difficulty,
+                        stance: bot.stance,
+                    }
+                } else {
+                    Occupant::Open
+                }
+            })
+            .collect();
+        Self { seats }
+    }
+
+    /// Every seat's occupant, in seat order.
+    pub(crate) fn seats(&self) -> &[Occupant] {
+        &self.seats
+    }
+
+    /// The host's seat.
+    pub(crate) fn host_seat(&self) -> PlayerId {
+        let seat = self
+            .seats
+            .iter()
+            .position(|occupant| *occupant == Occupant::Host)
+            .expect("one seat always holds the host");
+        PlayerId(seat.fit::<u8>())
+    }
+
+    /// Seats `member` on the first open seat in `order`, or else in place of
+    /// the first bot; `None` when every seat holds a person.
+    pub(crate) fn place(&mut self, member: MemberId, order: &[usize]) -> Option<PlayerId> {
+        let seat = order
+            .iter()
+            .copied()
+            .find(|&seat| self.seats[seat] == Occupant::Open)
+            .or_else(|| {
+                order
+                    .iter()
+                    .copied()
+                    .find(|&seat| matches!(self.seats[seat], Occupant::Bot { .. }))
+            })?;
+        self.seats[seat] = Occupant::Member(member);
+        Some(PlayerId(seat.fit::<u8>()))
+    }
+
+    /// Frees `member`'s seat, which stays open; `None` when it held none.
+    pub(crate) fn vacate(&mut self, member: MemberId) -> Option<PlayerId> {
+        let seat = self.seat_of(member)?;
+        self.seats[usize::from(seat.0)] = Occupant::Open;
+        Some(seat)
+    }
+
+    /// Whether every seat has someone to play it.
+    pub(crate) fn ready(&self) -> bool {
+        !self.seats.contains(&Occupant::Open)
+    }
+
+    /// Every seated member and its seat, in seat order.
+    pub(crate) fn members(&self) -> Vec<(MemberId, PlayerId)> {
+        self.seats
+            .iter()
+            .enumerate()
+            .filter_map(|(seat, occupant)| match occupant {
+                Occupant::Member(member) => Some((*member, PlayerId(seat.fit::<u8>()))),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Writes the seating into `scenario`: people play their seats under
+    /// their names (the host keeps the seat's name without one), and bots
+    /// play theirs. A seat that becomes a bot takes the personality seed
+    /// `seed_base` plus its index; one that already ran the same bot keeps
+    /// its own. Names then stay unique.
+    pub(crate) fn apply(
+        &self,
+        scenario: &mut Scenario,
+        host: Option<&PlayerName>,
+        name_of: impl Fn(MemberId) -> Option<PlayerName>,
+        seed_base: u64,
+    ) {
+        debug_assert_eq!(self.seats.len(), scenario.players.len());
+        for (seat, (occupant, player)) in self.seats.iter().zip(&mut scenario.players).enumerate() {
+            match *occupant {
+                Occupant::Host | Occupant::Member(_) | Occupant::Open => {
+                    player.bot = false;
+                    player.bot_config = None;
+                    let name = match *occupant {
+                        Occupant::Host => host.cloned(),
+                        Occupant::Member(member) => name_of(member),
+                        Occupant::Bot { .. } | Occupant::Open => None,
+                    };
+                    if let Some(name) = name {
+                        player.name = name.to_string();
+                    }
+                }
+                Occupant::Bot { difficulty, stance } => {
+                    let same = player.bot
+                        && player.bot_config.is_some_and(|bot| {
+                            bot.difficulty == difficulty && bot.stance == stance
+                        });
+                    if !same {
+                        player.bot = true;
+                        player.bot_config = Some(BotConfig::new(
+                            difficulty,
+                            stance,
+                            seed_base.wrapping_add(seat as u64),
+                        ));
+                    }
+                }
+            }
+        }
+        unique_names(scenario);
+    }
 }

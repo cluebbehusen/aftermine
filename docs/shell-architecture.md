@@ -80,9 +80,9 @@ prepared work is never saved, and replacing the session or world discards it.
 ### LAN matches
 
 Match setup's LOCAL | LAN switch turns the setup screen into the host's lobby,
-and `--host` hosts a fixed scenario. `App` owns the match's `netplay::Link` and
-pumps it once per loop pass on every screen that holds the match, so menus sit
-over a running match. The host paces ticks at 1x, seals each tick's human
+and `--host` opens it on a scenario file. `App` owns the match's `netplay::Link`
+and pumps it once per loop pass on every screen that holds the match, so menus
+sit over a running match. The host paces ticks at 1x, seals each tick's human
 orders, appends bot commands and runs the published batch. Clients run batches
 as they arrive. Only the host pauses, and speed is fixed.
 

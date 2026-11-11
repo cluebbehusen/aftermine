@@ -1408,6 +1408,28 @@ impl Wizard {
         wizard
     }
 
+    /// Opens setup on `scenario` hosting its LAN lobby on `bind`, the player
+    /// in the first seat its author left to a human.
+    pub(crate) fn host(
+        scenario: Scenario,
+        path: Option<PathBuf>,
+        draft: &mut NewMatchDraft,
+        bind: &str,
+    ) -> Self {
+        let human = scenario
+            .players
+            .iter()
+            .position(|player| !player.bot)
+            .unwrap_or(0);
+        draft.set_scenario(scenario, path);
+        draft.seat_choice = human;
+        let mut wizard = Self::open(draft);
+        bind.clone_into(&mut wizard.lan_bind);
+        wizard.goto(Step::Setup, draft);
+        wizard.open_lan(draft);
+        wizard
+    }
+
     /// Whether this setup screen resumes a saved LAN match.
     pub(crate) fn resuming(&self) -> bool {
         self.resume.is_some()
@@ -1980,21 +2002,20 @@ impl Wizard {
             );
         }
 
-        // A resumed match's map comes from its save, not from a file.
-        let preview = if self.resume.is_some() {
-            previews.get_map(scenario, layout.preview).map(|preview| {
+        // A resumed match's map comes from its save, and a scenario hosted
+        // from the command line may be any file, so both draw from the
+        // scenario itself.
+        let preview = match self.picked_entry(draft).filter(|_| self.resume.is_none()) {
+            Some((_, entry)) => previews
+                .get(entry, layout.preview)
+                .map(|preview| (preview, entry.theme.as_str())),
+            None => previews.get_map(scenario, layout.preview).map(|preview| {
                 let theme = scenario
                     .meta
                     .as_ref()
                     .map_or("", |meta| meta.theme.as_str());
                 (preview, theme)
-            })
-        } else {
-            self.picked_entry(draft).and_then(|(_, entry)| {
-                previews
-                    .get(entry, layout.preview)
-                    .map(|preview| (preview, entry.theme.as_str()))
-            })
+            }),
         };
         if let Some((preview, theme)) = preview {
             let drawn = draw_preview(&preview, theme, layout.preview, ui);

@@ -1,7 +1,10 @@
+mod scenario_host;
+
 use super::*;
 use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use aftermine_sim::{BuildingId, Command, PlayerCommand, UnitKind};
 use macroquad::prelude::vec2;
+use scenario_host::ScenarioHost;
 use std::time::Instant;
 
 const COMMIT: &str = "lan-test";
@@ -76,17 +79,12 @@ fn three_humans() -> Scenario {
     scenario
 }
 
-fn host_lobby(scenario: Scenario) -> Lobby {
-    Lobby::Host(Box::new(
-        ScenarioHost::new("127.0.0.1:0", scenario, HOST, COMMIT, Some(name("Host"))).unwrap(),
-    ))
+fn host_lobby(scenario: Scenario) -> ScenarioHost {
+    ScenarioHost::new("127.0.0.1:0", scenario, HOST, COMMIT, Some(name("Host"))).unwrap()
 }
 
-fn address(lobby: &Lobby) -> String {
-    match lobby {
-        Lobby::Host(host) => host.lobby.address().to_owned(),
-        Lobby::Client(_) | Lobby::Rejoin(_) => unreachable!("a host lobby"),
-    }
+fn address(host: &ScenarioHost) -> String {
+    host.lobby.address().to_owned()
 }
 
 /// Polls `poll` until it yields, failing after ten seconds.
@@ -115,9 +113,8 @@ impl Match {
     }
 
     fn start_as(scenario: Scenario, seat: PlayerId) -> Self {
-        let mut host = Lobby::Host(Box::new(
-            ScenarioHost::new("127.0.0.1:0", scenario, seat, COMMIT, Some(name("Host"))).unwrap(),
-        ));
+        let mut host =
+            ScenarioHost::new("127.0.0.1:0", scenario, seat, COMMIT, Some(name("Host"))).unwrap();
         let mut client = Lobby::Client(ClientLobby::new(
             &address(&host),
             COMMIT,
@@ -756,7 +753,6 @@ fn a_mismatched_build_is_refused_and_its_seat_stays_open() {
     let (joined_as, _, _) = client.failure().unwrap();
     assert_eq!(joined_as, &name("Alex"), "the form gets the name back");
     assert!(host.status().ends_with("1 of 2 players here"));
-    assert!(host.failure().is_none());
 }
 
 #[test]
@@ -769,10 +765,7 @@ fn a_build_refused_in_the_poll_that_accepts_it_still_hears_the_hosts() {
         InstallId::new(1),
     ));
     {
-        let Lobby::Host(scenario_host) = &mut host else {
-            unreachable!("a host lobby")
-        };
-        let lobby = &mut scenario_host.lobby;
+        let lobby = &mut host.lobby;
         // A poll accepts, then reads; the client's Hello can already be
         // waiting by then, so stage it between the two.
         let member = wait(|| {
@@ -862,9 +855,7 @@ fn names_replace_the_seats_names_on_every_machine() {
 
 #[test]
 fn a_silent_connection_is_closed_after_the_greeting_timeout() {
-    let Lobby::Host(mut host) = host_lobby(duel()) else {
-        unreachable!("a host lobby");
-    };
+    let mut host = host_lobby(duel());
     let silent = std::net::TcpStream::connect(host.lobby.address()).unwrap();
     wait(|| {
         assert!(host.poll(Duration::ZERO, viewport()).is_none());
@@ -881,9 +872,7 @@ fn a_silent_connection_is_closed_after_the_greeting_timeout() {
 #[test]
 fn connections_past_the_greeting_cap_wait_to_be_accepted() {
     use std::io::BufRead as _;
-    let Lobby::Host(mut host) = host_lobby(duel()) else {
-        unreachable!("a host lobby");
-    };
+    let mut host = host_lobby(duel());
     let silent: Vec<_> = (0..MAX_GREETING)
         .map(|_| std::net::TcpStream::connect(host.lobby.address()).unwrap())
         .collect();
@@ -1026,9 +1015,7 @@ fn a_wildcard_bind_shows_a_reachable_address() {
 
 #[test]
 fn a_hosted_lobby_announces_itself_with_its_room() {
-    let Lobby::Host(mut host) = host_lobby(three_humans()) else {
-        unreachable!("a host lobby");
-    };
+    let mut host = host_lobby(three_humans());
     let mut scanner = aftermine_net::Scanner::bind_to("127.0.0.1:0", COMMIT).unwrap();
     host.lobby.advertise_to(scanner.local_addr().unwrap());
     let port: u16 = host
