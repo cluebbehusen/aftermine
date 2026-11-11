@@ -776,7 +776,8 @@ fn main() -> Result<()> {
             let games = replays
                 .iter()
                 .map(|path| {
-                    let replay = aftermine_driver::replay_ledger::load(path)?;
+                    let replay = aftermine_kit::load_replay(path)
+                        .with_context(|| format!("loading {}", path.display()))?;
                     aftermine_driver::replay_ledger::ledger(path, &replay)
                 })
                 .collect::<Result<Vec<_>>>()?;

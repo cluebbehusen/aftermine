@@ -2,6 +2,7 @@
 
 use crate::game::checkpoint::{GameCheckpoint, LanSave, RestoredGame, SaveCapture};
 use crate::numeric::Fit;
+use aftermine_kit::checkpoint::SAVE_MAGIC;
 use aftermine_sim::SIM_VERSION;
 use anyhow::{Context, Result, ensure};
 use chassis::replay::ReplayMeta;
@@ -10,7 +11,6 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 const VERSION: u32 = 1;
-const MAGIC: &[u8; 8] = b"AFTERSAV";
 const MAX_HEADER: usize = 64 * 1024;
 const MAX_BYTES: usize = aftermine_kit::checkpoint::MAX_BYTES;
 /// Saves compress on the save worker. Against the fastest level this takes
@@ -93,7 +93,7 @@ pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path)
         "save exceeds byte limit"
     );
     chassis::fsx::write_atomic(path, |writer| {
-        writer.write_all(MAGIC)?;
+        writer.write_all(SAVE_MAGIC)?;
         writer.write_all(&header.len().fit::<u32>().to_le_bytes())?;
         writer.write_all(&header)?;
         writer.write_all(&compressed)?;
@@ -105,7 +105,7 @@ fn read_header(reader: &mut impl Read, file_bytes: u64) -> Result<Header> {
     ensure!(file_bytes <= MAX_BYTES as u64, "save exceeds byte limit");
     let mut magic = [0; 8];
     reader.read_exact(&mut magic)?;
-    ensure!(&magic == MAGIC, "unsupported player save format");
+    ensure!(&magic == SAVE_MAGIC, "unsupported player save format");
     let mut length = [0; 4];
     reader.read_exact(&mut length)?;
     let length = u32::from_le_bytes(length) as usize;
@@ -237,7 +237,7 @@ pub fn inspect(path: &Path) -> Result<RecordInfo> {
 
 fn inspect_reader(path: &Path, file: &mut (impl Read + Seek), len: u64) -> Result<RecordInfo> {
     let mut magic = [0; 8];
-    let compact = file.read_exact(&mut magic).is_ok() && &magic == MAGIC;
+    let compact = file.read_exact(&mut magic).is_ok() && &magic == SAVE_MAGIC;
     if compact {
         file.seek(SeekFrom::Start(0))?;
         let header = read_header(file, len)?;

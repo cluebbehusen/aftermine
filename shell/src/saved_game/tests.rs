@@ -55,7 +55,7 @@ fn save_restores_pending_input_history_and_exact_future() {
     });
     let bank = original.state.player(original.presentation.human).scrap;
     write(&original, meta(&original), &path.0).unwrap();
-    assert!(std::fs::read(&path.0).unwrap().starts_with(MAGIC));
+    assert!(std::fs::read(&path.0).unwrap().starts_with(SAVE_MAGIC));
     let mut restored = load(&path.0).unwrap();
     assert!(restored.clock.paused);
     assert_eq!(restored.state.hash(), original.state.hash());
@@ -254,7 +254,7 @@ fn header_session_mismatch_and_decoding_expansion_are_rejected() {
         let mut changed = header.clone();
         changed[field] = value;
         let bytes = serde_json::to_vec(&changed).unwrap();
-        let mut file = MAGIC.to_vec();
+        let mut file = SAVE_MAGIC.to_vec();
         file.extend(bytes.len().fit::<u32>().to_le_bytes());
         file.extend(bytes);
         file.extend(&original[end..]);

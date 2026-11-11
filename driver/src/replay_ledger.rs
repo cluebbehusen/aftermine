@@ -7,14 +7,11 @@ use crate::ledger::{ImpactLedger, LedgerPool, SeatLedger, WORTH_PERIOD};
 use aftermine_kit::GameReplay;
 use aftermine_sim::SIM_VERSION;
 use aftermine_sim::scenario::BotConfig;
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
-
-/// Magic bytes that open a player save.
-const SAVE_MAGIC: &[u8] = b"AFTERSAV";
 
 /// Ticks per minute.
 const MINUTE: u64 = aftermine_sim::TICKS_PER_SECOND as u64 * 60;
@@ -113,24 +110,6 @@ pub fn seat_players(replay: &GameReplay) -> Vec<SeatPlayer> {
             }
         })
         .collect()
-}
-
-/// Loads `path` as a replay or match recording, refusing a player save.
-pub fn load(path: &Path) -> Result<GameReplay> {
-    let mut head = [0_u8; SAVE_MAGIC.len()];
-    let save = std::fs::File::open(path)
-        .and_then(|mut file| std::io::Read::read(&mut file, &mut head))
-        .with_context(|| format!("reading {}", path.display()))?
-        == head.len()
-        && head == SAVE_MAGIC;
-    if save {
-        bail!(
-            "{} is a player save, not a recording; \
-             use the match recording (match-*.amreplay) instead",
-            path.display()
-        );
-    }
-    aftermine_kit::load_replay(path).with_context(|| format!("loading {}", path.display()))
 }
 
 impl SeatPlayer {
