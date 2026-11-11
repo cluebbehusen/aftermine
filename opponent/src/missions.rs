@@ -20,6 +20,7 @@ use aftermine_sim::stats::Domain;
 use aftermine_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use chassis::grid::TilePos;
 use serde::{Deserialize, Serialize};
+use std::cell::OnceCell;
 
 mod air;
 mod attack;
@@ -1079,6 +1080,9 @@ pub(crate) struct Scratch {
     /// rather than carry the lift. Worked out once per decision, after the
     /// rest, by [`Missions::gunships_clear`].
     pub(crate) gunships_clear: bool,
+    /// The targets attacks could go after, worked out when an attack first
+    /// asks.
+    targets: OnceCell<attack::Targets>,
 }
 
 impl Scratch {
@@ -1141,6 +1145,7 @@ impl Scratch {
             payload,
             invaders: reserve::threat(map, memory, observation.me, observation.tick),
             gunships_clear: false,
+            targets: OnceCell::new(),
         };
         scratch.rival = missions.rival(&scratch, observation, map, traits);
         scratch
