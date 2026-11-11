@@ -1531,6 +1531,13 @@ impl InputState {
         self.placing.as_ref().map(|placement| placement.kind)
     }
 
+    /// Whether the armed placement has staged a site.
+    fn placement_staged(&self) -> bool {
+        self.placing
+            .as_ref()
+            .is_some_and(|placement| placement.chain.is_some())
+    }
+
     /// The plan placement is previewing: a live mouse stroke, else the
     /// touch ghost's row.
     fn active_plan(&self) -> Option<&PlacingStroke> {

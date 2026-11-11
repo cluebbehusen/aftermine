@@ -183,17 +183,23 @@ fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u6
 }
 
 /// B: a held A goes first, leaving the selection as it was; then what Back
-/// walks out of, the selection last. Out of a placement it goes back to the
-/// build ring the structure was picked from, where Back goes back to the
-/// palette pad mode doesn't draw.
+/// walks out of, the selection last. Out of a placement that staged nothing
+/// it goes back to the build ring the structure was picked from, where Back
+/// goes back to the palette pad mode doesn't draw. Out of one that staged a
+/// chain it returns to the selection, as a placement A ends does.
 fn back(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u64) {
     if paint::abandon(input) {
         return;
     }
     let placing = input.placing.is_some();
+    let staged = input.placement_staged();
     super::dispatch_action(game, input, bindings, Action::Back);
     if placing && input.placing.is_none() {
-        super::pad_ring::reopen_build(game, input, pad);
+        if staged {
+            placed(input, placing);
+        } else {
+            super::pad_ring::reopen_build(game, input, pad);
+        }
     }
 }
 
