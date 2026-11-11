@@ -9,6 +9,9 @@ use aftermine_sim::stats::{
     WeaponStats,
 };
 
+/// An Extractor's income rows while it produces nothing.
+const NOT_PRODUCING: &str = "\u{2013}";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StatIcon {
     Capability(CapabilityIcon),
@@ -23,17 +26,28 @@ pub(crate) struct StatRow {
     pub section: bool,
 }
 
-/// A single selection's health and the ownership color its bar wears.
+/// A single selection's health, the ownership color its bar wears, and the
+/// row's label. A passing state such as construction or a parked airframe
+/// names the row instead of taking a status line, so the card keeps its
+/// height when the state ends.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Health {
+    pub label: &'static str,
     pub hp: u32,
     pub max_hp: u32,
     pub color: macroquad::prelude::Color,
 }
 
 impl Health {
-    fn of(game: &Scene<'_>, owner: aftermine_sim::PlayerId, hp: u32, max_hp: u32) -> Self {
+    fn of(
+        game: &Scene<'_>,
+        owner: aftermine_sim::PlayerId,
+        label: &'static str,
+        hp: u32,
+        max_hp: u32,
+    ) -> Self {
         Self {
+            label,
             hp,
             max_hp,
             color: crate::render::seat_identity_color(game, owner),
@@ -41,10 +55,19 @@ impl Health {
     }
 }
 
+/// A status line a kind keeps room for under the others whether or not
+/// anything fills it, so its state coming and going leaves the card's
+/// height alone. It never wraps.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ReservedLine {
+    pub text: Option<String>,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct SelectionInfo {
     pub health: Option<Health>,
     pub status: Vec<String>,
+    pub reserved: Option<ReservedLine>,
     pub rows: Vec<StatRow>,
     pub upgrade: Option<super::upgrade::UpgradeComparison>,
 }
@@ -130,8 +153,9 @@ impl SelectionInfo {
     }
 
     /// Rounds as the viewer may know them, then what they do: a Spire's
-    /// warhead, a Lattice's ring and the hostile warheads falling into it.
-    /// Ordered rounds and their assembly live in the queue dock.
+    /// warhead, a Lattice's ring and the hostile warheads falling into it,
+    /// on a line the Lattice always keeps. Ordered rounds and their
+    /// assembly live in the queue dock.
     fn magazine_rows(&mut self, game: &Scene<'_>, b: &aftermine_sim::Building) {
         let Some(stats) = b.kind.magazine() else {
             return;
@@ -151,9 +175,6 @@ impl SelectionInfo {
                 format!("{}/{}", known.loaded, stats.capacity),
                 Some(StatIcon::Capability(CapabilityIcon::Intercept)),
             );
-            if known.detail.is_some_and(|detail| detail.target.is_some()) {
-                self.status.push("Turning to fire".to_string());
-            }
         }
         if let Some(battery) = b.kind.battery() {
             self.row(
@@ -162,8 +183,9 @@ impl SelectionInfo {
                 Some(StatIcon::Capability(CapabilityIcon::Intercept)),
             );
             let warheads = game.state.known_warheads(game.presentation.human);
-            self.status
-                .extend(incoming_warheads(&warheads, b.center(), battery.ring));
+            self.reserved = Some(ReservedLine {
+                text: incoming_line(&warheads, b.center(), battery.ring),
+            });
         } else {
             let warhead = aftermine_sim::stats::WARHEAD;
             self.row(
@@ -308,18 +330,13 @@ fn weapon_rows(weapon: &WeaponStats, contact: bool) -> Vec<StatRow> {
     rows
 }
 
-/// A machine's radar ring and, for one that unfolds it only at rest, how far
-/// it has.
+/// A machine's radar ring, marked parked for one that unfolds it only at
+/// rest.
 fn radar_facts(info: &mut SelectionInfo, unit: &aftermine_sim::Unit) {
     let Some(radar) = unit.kind.stats().radar else {
         return;
     };
     let parked = if radar.deploy_ticks > 0 {
-        if unit.radar().is_some() {
-            info.status.push("Radar up".into());
-        } else if unit.radar_deploy > 0 {
-            info.status.push("Unfolding radar".into());
-        }
         " (parked)"
     } else {
         ""
@@ -397,37 +414,41 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         if b.player == game.presentation.human && b.built() {
             info.upgrade = super::upgrade::comparison(b.kind, b.tier);
         }
-        info.health = Some(Health::of(game, b.player, b.hp, stats.max_hp));
+        let label = if b.built() {
+            "Health"
+        } else if b.tier > 0 {
+            "Upgrading"
+        } else {
+            "Constructing"
+        };
+        info.health = Some(Health::of(game, b.player, label, b.hp, stats.max_hp));
         info.ownership(game, b.player);
-        if !b.built() {
-            info.status.push(
-                if b.tier > 0 {
-                    "Upgrading"
-                } else {
-                    "Under construction"
-                }
-                .into(),
-            );
-        }
         info.row(
             "Sight",
             format!("{} tiles", stats.vision),
             Some(Cap(CapabilityIcon::Vision)),
         );
         if b.player == game.presentation.human {
-            if let Some(income) = game.state.extractor_income(b.id) {
+            if b.kind == BuildingKind::Extractor {
+                // Both rows stand while it goes up or upgrades too, so the
+                // card keeps its height when it starts producing.
+                let income = game.state.extractor_income(b.id);
                 info.row(
                     "Income",
-                    format!("{} scrap/min", income.scrap_per_minute()),
+                    income.map_or_else(
+                        || NOT_PRODUCING.into(),
+                        |income| format!("{} scrap/min", income.scrap_per_minute()),
+                    ),
                     Some(Verb(VerbIcon::Harvest)),
                 );
                 info.row(
                     "Support",
-                    if income.is_supported() {
-                        "Foundry".to_string()
-                    } else {
-                        "Remote".to_string()
-                    },
+                    match income {
+                        None => NOT_PRODUCING,
+                        Some(income) if income.is_supported() => "Foundry",
+                        Some(_) => "Remote",
+                    }
+                    .into(),
                     Some(Cap(CapabilityIcon::EconomySupport)),
                 );
             } else if matches!(b.kind, BuildingKind::Foundry | BuildingKind::Reclaimer) {
@@ -511,11 +532,9 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
             return info;
         };
         let stats = u.kind.stats();
-        info.health = Some(Health::of(game, u.player, u.hp, stats.max_hp));
+        let label = if u.landed() { "Landed" } else { "Health" };
+        info.health = Some(Health::of(game, u.player, label, u.hp, stats.max_hp));
         info.ownership(game, u.player);
-        if u.landed() {
-            info.status.push("Landed".into());
-        }
         info.row(
             "Speed",
             format!(
@@ -609,40 +628,30 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
     info
 }
 
-/// One line on the hostile warheads a battery's ring should know about:
-/// those landing inside it, how many no battery is forecast to stop, and
-/// contacts still being tracked, whose line and interceptor are unknown.
-fn incoming_warheads(
+/// A Lattice's line on the hostile warheads landing inside its ring, and
+/// how many of them no interceptor is forecast to stop.
+fn incoming_line(
     warheads: &[aftermine_sim::strike::KnownWarhead],
     centre: chassis::fx::Vec2Fx,
     ring: chassis::fx::Fx,
 ) -> Option<String> {
-    let (mut incoming, mut unanswered, mut tracking) = (0, 0, 0);
-    for warhead in warheads.iter().filter(|warhead| warhead.hostile) {
-        match warhead.line {
-            None => tracking += 1,
-            Some(line) if line.impact.dist_sq(centre) > ring * ring => {}
-            Some(_) => {
-                incoming += 1;
-                unanswered += usize::from(warhead.interceptor.is_none());
-            }
-        }
+    let landing = warheads.iter().filter(|warhead| {
+        warhead.hostile
+            && warhead
+                .line
+                .is_some_and(|line| line.impact.dist_sq(centre) <= ring * ring)
+    });
+    let (incoming, unanswered) = landing.fold((0, 0), |(incoming, unanswered), warhead| {
+        (
+            incoming + 1,
+            unanswered + usize::from(warhead.interceptor.is_none()),
+        )
+    });
+    match (incoming, unanswered) {
+        (0, _) => None,
+        (incoming, 0) => Some(format!("{incoming} incoming")),
+        (incoming, unanswered) => Some(format!("{incoming} incoming, {unanswered} unanswered")),
     }
-    let plural = |n: usize| if n == 1 { "" } else { "s" };
-    let mut line = if incoming > 0 {
-        format!("{incoming} incoming warhead{}", plural(incoming))
-    } else if tracking > 0 {
-        return Some(format!("Tracking {tracking} warhead{}", plural(tracking)));
-    } else {
-        return None;
-    };
-    if unanswered > 0 {
-        let _ = write!(line, ", {unanswered} unanswered");
-    }
-    if tracking > 0 {
-        let _ = write!(line, ", tracking {tracking} more");
-    }
-    Some(line)
 }
 
 #[cfg(test)]

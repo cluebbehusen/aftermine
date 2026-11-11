@@ -1137,3 +1137,311 @@ fn a_long_dock_fills_the_room_under_a_corner_card_and_no_further() {
         }
     }
 }
+
+/// Where a 1133x744 window puts the selection's picture, its card and the
+/// orders dock that rests on it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CardFrame {
+    portrait: Rect,
+    info: Rect,
+    orders: Rect,
+}
+
+fn card_frame(game: &Game) -> CardFrame {
+    let measure = |_: super::super::hud::Face, text: &str, size: f32| {
+        text.chars().count() as f32 * size * 0.5
+    };
+    let geometry = super::super::hud::refresh(
+        &game.view(),
+        &InputState::new(),
+        &crate::action::BindingMap::classic(),
+        super::super::hud::HudEnv {
+            viewport: vec2(1133.0, 744.0),
+            ui: 1.0,
+        },
+        None,
+        &measure,
+    );
+    let Some(PanelLayout::Selection(selection)) = &geometry.panel else {
+        panic!("a selection's card");
+    };
+    CardFrame {
+        portrait: selection.portrait,
+        info: selection.info_rect,
+        orders: game.presentation.layout.get().orders,
+    }
+}
+
+fn selection_info(game: &Game) -> crate::panel::info::SelectionInfo {
+    crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
+        .expect("a selection panel")
+        .info
+}
+
+fn health_label(game: &Game) -> &'static str {
+    selection_info(game).health.expect("a health row").label
+}
+
+#[test]
+fn a_structure_keeps_its_picture_still_as_it_finishes_building_and_upgrading() {
+    use aftermine_sim::{BuildingKind, Command, PlayerCommand};
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.players[0].scrap = 5000;
+    // A standing Fabricator lets the Turret upgrade once it is up.
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Fabricator,
+            x: 9,
+            y: 3,
+        });
+    let mut game = Game::with_viewport(scenario, vec2(1133.0, 744.0)).unwrap();
+    let human = game.presentation.human;
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == human && u.kind == aftermine_sim::UnitKind::Harvester)
+        .expect("a starting Harvester")
+        .id;
+    let here = game.state.unit(harvester).unwrap().tile();
+    let anchor = (-5..=5)
+        .flat_map(|dy| (-5..=5).map(move |dx| (dx, dy)))
+        .map(|(dx, dy)| chassis::grid::TilePos::new(here.x + dx, here.y + dy))
+        .find(|&anchor| game.state.can_place(human, BuildingKind::Turret, anchor))
+        .expect("open ground beside the Harvester");
+    game.state.tick(&[PlayerCommand {
+        player: human,
+        command: Command::Build {
+            units: vec![harvester],
+            kind: BuildingKind::Turret,
+            anchor,
+            queue: false,
+            defer: false,
+        },
+    }]);
+    let turret = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.player == human && b.kind == BuildingKind::Turret)
+        .expect("the Turret's site")
+        .id;
+    game.presentation.selection.buildings = vec![turret];
+    let finish = |game: &mut Game, label: &str| {
+        let start = card_frame(game);
+        let mut labels = Vec::new();
+        while !game.state.building(turret).unwrap().built() {
+            assert_eq!(card_frame(game), start, "{label}, tick {}", labels.len());
+            labels.push(health_label(game));
+            game.state.tick(&[]);
+            assert!(labels.len() < 4000, "{label} never finished");
+        }
+        assert_eq!(card_frame(game), start, "done {label}");
+        labels.dedup();
+        assert_eq!(labels, [label]);
+        assert_eq!(health_label(game), "Health");
+        assert!(selection_info(game).status.is_empty());
+    };
+    finish(&mut game, "Constructing");
+    game.state.tick(&[PlayerCommand {
+        player: human,
+        command: Command::UpgradeBuilding { building: turret },
+    }]);
+    finish(&mut game, "Upgrading");
+}
+
+#[test]
+fn an_aircraft_keeps_its_picture_still_as_it_lands() {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units = vec![aftermine_sim::scenario::UnitSpec {
+        player: 0,
+        kind: aftermine_sim::UnitKind::Condor,
+        x: 12,
+        y: 12,
+    }];
+    let mut game = Game::with_viewport(scenario, vec2(1133.0, 744.0)).unwrap();
+    let condor = game.state.units()[0].id;
+    game.presentation.selection.units = vec![condor];
+    assert_eq!(health_label(&game), "Health");
+    let start = card_frame(&game);
+    let mut ticks = 0;
+    while !game.state.unit(condor).unwrap().landed() {
+        let frame = card_frame(&game);
+        assert_eq!(
+            (frame.portrait, frame.info),
+            (start.portrait, start.info),
+            "tick {ticks}"
+        );
+        if frame.orders.h > 0.0 {
+            assert_eq!(frame.orders.bottom(), start.info.y, "the dock rests on it");
+        }
+        game.state.tick(&[]);
+        ticks += 1;
+        assert!(ticks < 2000, "the Condor never set down");
+    }
+    assert_eq!(card_frame(&game), start, "landed");
+    assert_eq!(health_label(&game), "Landed");
+    assert!(selection_info(&game).status.is_empty());
+}
+
+#[test]
+fn a_lattice_keeps_its_picture_and_dock_still_as_warheads_come_and_go() {
+    use aftermine_sim::{BuildingKind, Command, PlayerCommand, PlayerId};
+    let scenario = serde_json::from_value(serde_json::json!({
+        "name": "Lattice watch", "mode": "sandbox", "map": vec![".".repeat(70); 20],
+        "players": [
+            {"name": "East", "scrap": 0, "bot": false},
+            {"name": "West", "scrap": 0, "bot": false}
+        ],
+        "units": [],
+        "buildings": [
+            {"player": 1, "kind": "spire", "x": 4, "y": 8},
+            {"player": 0, "kind": "lattice", "x": 50, "y": 8},
+            {"player": 0, "kind": "array", "x": 30, "y": 2}
+        ]
+    }))
+    .unwrap();
+    let mut game = Game::with_viewport(scenario, vec2(1133.0, 744.0)).unwrap();
+    let mut wire = serde_json::to_value(&*game.state).unwrap();
+    for b in wire["buildings"].as_array_mut().unwrap() {
+        match b["kind"].as_str() {
+            Some("spire") => b["magazine"] = serde_json::json!({"loaded": 1, "autofill": false}),
+            // A round on order keeps the Lattice's dock up throughout.
+            Some("lattice") => {
+                b["magazine"] = serde_json::json!({"loaded": 1, "ordered": 1, "autofill": false});
+            }
+            _ => {}
+        }
+    }
+    let state: aftermine_sim::State = serde_json::from_value(wire).unwrap();
+    game.replace_state_after_jump(&state);
+    let id = |kind| {
+        game.state
+            .buildings()
+            .iter()
+            .find(|b| b.kind == kind)
+            .unwrap()
+            .id
+    };
+    let (spire, lattice) = (id(BuildingKind::Spire), id(BuildingKind::Lattice));
+    game.presentation.selection.buildings = vec![lattice];
+    let line = |game: &Game| selection_info(game).reserved.and_then(|line| line.text);
+    assert_eq!(line(&game), None, "quiet skies leave the line blank");
+    let start = card_frame(&game);
+    assert!(start.orders.h > 0.0, "premise: the ordered round's dock");
+    game.state.tick(&[PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Launch {
+            building: spire,
+            target: chassis::grid::TilePos::new(56, 9),
+        },
+    }]);
+    let mut lines = vec![line(&game)];
+    for tick in 0..600 {
+        assert_eq!(card_frame(&game), start, "tick {tick}, after {lines:?}");
+        let now = line(&game);
+        if lines.last() != Some(&now) {
+            lines.push(now);
+        }
+        if lines.len() > 2 && lines.last() == Some(&None) {
+            break;
+        }
+        game.state.tick(&[]);
+    }
+    assert!(
+        lines
+            .iter()
+            .flatten()
+            .any(|text| text.starts_with("1 incoming")),
+        "the warhead filled the line: {lines:?}"
+    );
+    assert_eq!(lines.last(), Some(&None), "and left it blank: {lines:?}");
+    assert!(
+        selection_info(&game).reserved.is_some(),
+        "the blank line keeps its room"
+    );
+}
+
+#[test]
+fn an_extractor_keeps_its_picture_still_as_it_finishes_building_and_upgrading() {
+    use aftermine_sim::{BuildingKind, Command, PlayerCommand};
+    let mut map = vec![".".repeat(40); 20];
+    map[8].replace_range(20..21, "E");
+    let scenario = serde_json::from_value(serde_json::json!({
+        "name": "Extractor rows", "mode": "sandbox", "map": map,
+        "players": [{"name": "You", "scrap": 5000, "bot": false}],
+        "units": [{"player": 0, "kind": "harvester", "x": 19, "y": 12}],
+        // A Foundry to support it and a Crucible to unlock the Deep Bore.
+        "buildings": [
+            {"player": 0, "kind": "foundry", "x": 14, "y": 4},
+            {"player": 0, "kind": "fabricator", "x": 26, "y": 12},
+            {"player": 0, "kind": "crucible", "x": 28, "y": 4}
+        ]
+    }))
+    .unwrap();
+    let mut game = Game::with_viewport(scenario, vec2(1133.0, 744.0)).unwrap();
+    let human = game.presentation.human;
+    let harvester = game.state.units()[0].id;
+    let anchor = chassis::grid::TilePos::new(20, 8);
+    assert!(game.state.can_place(human, BuildingKind::Extractor, anchor));
+    game.state.tick(&[PlayerCommand {
+        player: human,
+        command: Command::Build {
+            units: vec![harvester],
+            kind: BuildingKind::Extractor,
+            anchor,
+            queue: false,
+            defer: false,
+        },
+    }]);
+    let extractor = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Extractor)
+        .expect("the Extractor's site")
+        .id;
+    game.presentation.selection.buildings = vec![extractor];
+    let rows = |game: &Game| {
+        let info = selection_info(game);
+        ["Income", "Support"].map(|label| {
+            info.rows
+                .iter()
+                .find(|row| row.label == label)
+                .map(|row| row.value.clone())
+        })
+    };
+    let finish = |game: &mut Game| {
+        let start = card_frame(game);
+        let mut unfinished = Vec::new();
+        while !game.state.building(extractor).unwrap().built() {
+            assert_eq!(card_frame(game), start, "tick {}", unfinished.len());
+            unfinished.push(rows(game));
+            game.state.tick(&[]);
+            assert!(unfinished.len() < 4000, "never finished");
+        }
+        assert_eq!(card_frame(game), start, "done");
+        unfinished.dedup();
+        let idle = Some("\u{2013}".to_string());
+        assert_eq!(unfinished, [[idle.clone(), idle]]);
+    };
+    finish(&mut game);
+    let [income, support] = rows(&game);
+    assert!(income.unwrap().ends_with("scrap/min"));
+    assert_eq!(support.as_deref(), Some("Foundry"));
+    game.state.tick(&[PlayerCommand {
+        player: human,
+        command: Command::UpgradeBuilding {
+            building: extractor,
+        },
+    }]);
+    assert_eq!(
+        health_label(&game),
+        "Upgrading",
+        "premise: a Deep Bore going up"
+    );
+    finish(&mut game);
+    assert_eq!(game.state.building(extractor).unwrap().tier, 1);
+}

@@ -959,6 +959,8 @@ pub(crate) struct SelectionLayout {
     cards_x: f32,
     measured: InfoLayout,
     info_rect: Rect,
+    /// The selection's picture beside its title.
+    portrait: Rect,
     action_rect: Rect,
     card_rects: Vec<Rect>,
     rally_count: usize,
@@ -1070,6 +1072,12 @@ pub(crate) fn layout_panel(
     let action_rect = action_panel_rect(packing, cards_x, cards_w, !panel.cards.is_empty());
     let info_rect = selection_info_rect(viewport, cards_x, measured.height, action_rect);
     let top = info_rect.y;
+    let portrait = Rect::new(
+        10.0 * s,
+        top + measured.header_pad + 6.0 * s,
+        32.0 * s,
+        32.0 * s,
+    );
     // The select-all button's right edge lines up with the stat values,
     // its middle with the title's first line.
     let select_all = measured.select_all.map(|size| {
@@ -1113,6 +1121,7 @@ pub(crate) fn layout_panel(
         cards_x,
         measured,
         info_rect,
+        portrait,
         action_rect,
         card_rects,
         rally_count: packing.rally_count,
@@ -1501,6 +1510,7 @@ pub(crate) fn draw_panel(
         cards_x,
         measured,
         info_rect,
+        portrait,
         action_rect,
         card_rects,
         rally_count,
@@ -1538,11 +1548,7 @@ pub(crate) fn draw_panel(
         legend.draw_at(sprites, x, baseline, size, TEXT_SECONDARY, TEXT_PRIMARY);
     }
     let header = top + measured.header_pad;
-    draw_icon(
-        Rect::new(10.0 * s, header + 6.0 * s, 32.0 * s, 32.0 * s),
-        &panel.portrait,
-        WHITE,
-    );
+    draw_icon(*portrait, &panel.portrait, WHITE);
     for (index, title) in measured.title.iter().enumerate() {
         crate::typography::draw(
             title,
@@ -1566,16 +1572,16 @@ pub(crate) fn draw_panel(
             TEXT_SECONDARY,
         );
     }
-    if let Some(crate::panel::info::Health { hp, max_hp, color }) = panel.info.health {
+    if let Some(crate::panel::info::Health {
+        label,
+        hp,
+        max_hp,
+        color,
+    }) = panel.info.health
+    {
         let y = top + measured.health_y;
         let value = format!("{hp}/{max_hp}");
-        draw_text(
-            "Health",
-            12.0 * s,
-            y + 13.0 * s,
-            measured.font,
-            TEXT_SECONDARY,
-        );
+        draw_text(label, 12.0 * s, y + 13.0 * s, measured.font, TEXT_SECONDARY);
         draw_text(
             &value,
             cards_x

@@ -80,6 +80,13 @@ pub(super) fn measure_info(
         .status
         .iter()
         .flat_map(|text| wrap_words(text, |s| measure_body(s, font), inner))
+        .chain(
+            panel
+                .info
+                .reserved
+                .as_ref()
+                .map(|line| line.text.clone().unwrap_or_default()),
+        )
         .collect();
     y += status.len() as f32 * line_h;
     let health_y = y;

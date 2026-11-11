@@ -1648,7 +1648,8 @@ fn panel_copy_uses_only_supported_font_glyphs() {
         BuildingKind::RepairBay,
         BuildingKind::Extractor,
     ];
-    let supported = |text: &str| text.is_ascii();
+    // ChakraPetch also carries the en dash an idle Extractor's rows read.
+    let supported = |text: &str| text.chars().all(|c| c.is_ascii() || c == '\u{2013}');
     let assert_card = |card: &Card| {
         assert!(supported(&card.title), "card title: {}", card.title);
         assert!(supported(&card.hotkey), "card hotkey: {}", card.hotkey);
@@ -1679,6 +1680,12 @@ fn panel_copy_uses_only_supported_font_glyphs() {
         }
         for status in &panel.info.status {
             assert!(supported(status), "panel status: {status}");
+        }
+        if let Some(health) = panel.info.health {
+            assert!(supported(health.label), "health label: {}", health.label);
+        }
+        if let Some(text) = panel.info.reserved.as_ref().and_then(|l| l.text.as_ref()) {
+            assert!(supported(text), "panel status: {text}");
         }
         for card in panel.roster.iter().chain(&panel.cards).chain(&panel.queue) {
             assert_card(card);
@@ -1716,12 +1723,15 @@ fn panel_copy_uses_only_supported_font_glyphs() {
         &build_for_palette(&builder_game.view(), &BindingMap::classic(), false)
             .expect("Harvester panel"),
     );
+    let extractor = place(&mut builder_game, harvester, BuildingKind::Extractor, true);
     builder_game.presentation.selection.units.clear();
-    builder_game.presentation.selection.buildings = vec![site];
-    assert_panel(
-        &build_for_palette(&builder_game.view(), &BindingMap::classic(), false)
-            .expect("site panel"),
-    );
+    for site in [site, extractor] {
+        builder_game.presentation.selection.buildings = vec![site];
+        assert_panel(
+            &build_for_palette(&builder_game.view(), &BindingMap::classic(), false)
+                .expect("site panel"),
+        );
+    }
 }
 
 #[test]
