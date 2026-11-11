@@ -159,7 +159,7 @@ fn a_seat_s_only_known_foundry_carries_all_else_it_is_known_to_hold() {
     ];
     let units: Vec<UnitObs> = serde_json::from_value(serde_json::json!([
         {"id": 1, "player": 1, "kind": "lancer", "tile": {"x": 5, "y": 5}, "hp": 50,
-         "idle": false, "carrying": 0, "site": null, "salvaging": null},
+         "idle": false, "carrying": 0, "site": null},
     ]))
     .unwrap();
     recovery(&mut marks, &units);

@@ -225,7 +225,7 @@ fn placement_reasons_do_not_disclose_frames_in_unexplored_ground() {
             "strict placement says only that the ground is unseen at {anchor:?}"
         );
         assert_eq!(
-            state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, anchor),
+            state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, anchor, &[]),
             Some(aftermine_sim::PlaceRefusal::Fog),
             "deferred placement says only that the ground is unexplored at {anchor:?}"
         );
@@ -236,7 +236,7 @@ fn placement_reasons_do_not_disclose_frames_in_unexplored_ground() {
         "strict placement cannot reveal that a normal footprint overlaps the hidden frame"
     );
     assert_eq!(
-        state.place_intent_refusal(PlayerId(0), BuildingKind::Turret, FOG_FRAME),
+        state.place_intent_refusal(PlayerId(0), BuildingKind::Turret, FOG_FRAME, &[]),
         Some(aftermine_sim::PlaceRefusal::Fog),
         "deferred placement cannot reveal that a normal footprint overlaps the hidden frame"
     );
@@ -281,7 +281,7 @@ fn one_explored_corner_allows_deferred_extractor_construction() {
                 FOG_FRAME
             );
             assert_eq!(
-                state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, FOG_FRAME),
+                state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, FOG_FRAME, &[]),
                 None
             );
             assert_eq!(
@@ -289,7 +289,7 @@ fn one_explored_corner_allows_deferred_extractor_construction() {
                 Some(aftermine_sim::PlaceRefusal::Fog)
             );
             assert_eq!(
-                state.place_intent_refusal(PlayerId(0), BuildingKind::Fabricator, FOG_FRAME),
+                state.place_intent_refusal(PlayerId(0), BuildingKind::Fabricator, FOG_FRAME, &[]),
                 Some(aftermine_sim::PlaceRefusal::Fog)
             );
             let bank = state.player(PlayerId(0)).scrap;
@@ -348,7 +348,7 @@ fn one_visible_corner_discloses_an_enemy_extractor_site() {
     assert!(state.building_apparent(PlayerId(0), site));
     assert!(state.extractor_frame_claim_known(PlayerId(0), FOG_FRAME));
     assert_eq!(
-        state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, FOG_FRAME),
+        state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, FOG_FRAME, &[]),
         Some(aftermine_sim::PlaceRefusal::Building)
     );
     let observer = state.units()[0].id;
@@ -366,7 +366,7 @@ fn one_visible_corner_discloses_an_enemy_extractor_site() {
     assert!(!state.vision(PlayerId(0)).visible(FOG_FRAME));
     assert!(state.extractor_frame_claim_known(PlayerId(0), FOG_FRAME));
     assert_eq!(
-        state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, FOG_FRAME),
+        state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, FOG_FRAME, &[]),
         Some(aftermine_sim::PlaceRefusal::Building)
     );
 }
@@ -382,7 +382,7 @@ fn an_unseen_unit_on_a_discovered_frame_only_blocks_when_revealed() {
         let worker = state.units()[0].id;
         assert!(!state.vision(PlayerId(0)).visible(FOG_FRAME.offset(1, 1)));
         assert_eq!(
-            state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, FOG_FRAME),
+            state.place_intent_refusal(PlayerId(0), BuildingKind::Extractor, FOG_FRAME, &[]),
             None
         );
         state.tick(&[cmd(

@@ -7,10 +7,6 @@ use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::{TilePos, as_index, cell_count};
 
 pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> bool {
-    approach_building(state, id, building)
-}
-
-fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> bool {
     let b = state.building(building).expect("live target");
     let (anchor, size) = (b.anchor, b.kind.size());
     let unit = state.unit(id).expect("contact unit");
@@ -511,5 +507,5 @@ pub(super) fn approach_worker(state: &mut State, id: UnitId, building: BuildingI
         state.unit_mut(id).expect("contact unit").path = None;
         return true;
     }
-    approach_building(state, id, building)
+    approach(state, id, building)
 }

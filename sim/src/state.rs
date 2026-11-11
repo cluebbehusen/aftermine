@@ -468,16 +468,6 @@ pub struct Mounts {
     pub facing: IdleFacing,
 }
 
-impl Mounts {
-    /// Every gun dead ahead.
-    pub(crate) fn resting(_: crate::stats::MountedGuns) -> Self {
-        Self {
-            bearings: [0; crate::stats::MAX_WEAPONS],
-            facing: IdleFacing::Free,
-        }
-    }
-}
-
 /// A host's drone bay: the drones docked out of reach, those paid for and
 /// building, and how long its launched drones stay out.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -871,7 +861,7 @@ impl Unit {
             cargo: Vec::new(),
             radar_deploy: 0,
             point_defense: kind.stats().point_defense.map(PointDefense::full),
-            mounts: kind.stats().mounts.map(Mounts::resting),
+            mounts: kind.stats().mounts.map(|_| Mounts::default()),
             bay: kind.stats().bay.map(DroneBay::empty),
             host: None,
         }

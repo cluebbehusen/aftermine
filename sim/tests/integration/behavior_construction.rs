@@ -2298,7 +2298,7 @@ fn a_deferred_build_founds_on_arrival() {
     );
     assert!(
         state
-            .place_intent_refusal(PlayerId(0), BuildingKind::Turret, spot)
+            .place_intent_refusal(PlayerId(0), BuildingKind::Turret, spot, &[])
             .is_none(),
         "the intent predicate accepts it from memory"
     );
@@ -3316,8 +3316,8 @@ fn intent_verdicts_ignore_what_fog_hides() {
         for x in 0..plain.map().width() {
             let anchor = TilePos::new(x, y);
             for kind in [BuildingKind::Turret, BuildingKind::Fabricator] {
-                let a = plain.place_intent_refusal(PlayerId(0), kind, anchor);
-                let b = ambushed.place_intent_refusal(PlayerId(0), kind, anchor);
+                let a = plain.place_intent_refusal(PlayerId(0), kind, anchor, &[]);
+                let b = ambushed.place_intent_refusal(PlayerId(0), kind, anchor, &[]);
                 assert_eq!(
                     a, b,
                     "verdict for {kind:?} at {anchor:?} leaked hidden enemies"

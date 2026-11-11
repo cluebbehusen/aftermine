@@ -89,17 +89,16 @@ impl CommandPhaseView<'_> {
         self.state.unit(id)
     }
 
-    /// Fog-safe projected placement verdict, excluding claims carried by
-    /// workers whose programs the candidate command will replace.
-    pub fn place_intent_refusal_replacing(
+    /// Fog-safe projected placement verdict, excluding the unstarted sites the
+    /// candidate command refunds by replacing their workers' programs.
+    pub fn place_intent_refusal(
         &self,
         player: crate::ids::PlayerId,
         kind: crate::stats::BuildingKind,
         anchor: TilePos,
         units: &[crate::ids::UnitId],
     ) -> Option<crate::state::PlaceRefusal> {
-        self.state
-            .place_intent_refusal_replacing(player, kind, anchor, units)
+        self.state.place_intent_refusal(player, kind, anchor, units)
     }
 }
 

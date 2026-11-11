@@ -194,13 +194,13 @@ impl Tracking {
                     if track.visible_unit.zip(visible).is_some_and(|(a, b)| a != b) {
                         continue;
                     }
-                    let identified = track.visible_unit.is_some() && track.visible_unit == visible;
-                    if !identified && track.domain != domain {
+                    // The first pass already paired every identified unit in
+                    // reach, so a domain change here breaks the track.
+                    if track.domain != domain {
                         continue;
                     }
                     let (rank, turn) = frame.rank(track.tile, tile);
                     candidates.push((
-                        !identified,
                         predicted.dist_sq(tile.center()),
                         track.tile.center().dist_sq(tile.center()),
                         rank,
@@ -214,7 +214,7 @@ impl Tracking {
             }
         }
         candidates.sort_unstable();
-        for (_, _, _, _, _, _, _, old, new) in candidates {
+        for (_, _, _, _, _, _, old, new) in candidates {
             if !used[old] && matches[new].is_none() {
                 used[old] = true;
                 matches[new] = Some(old);

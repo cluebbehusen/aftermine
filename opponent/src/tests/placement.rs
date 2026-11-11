@@ -128,7 +128,7 @@ fn an_accepted_footprint_is_one_the_simulation_accepts() {
                     *accepted.entry(kind).or_insert(0) += 1;
                     let anchor = TilePos::new(x, y);
                     assert_eq!(
-                        state.place_intent_refusal(PlayerId(0), kind, anchor),
+                        state.place_intent_refusal(PlayerId(0), kind, anchor, &[]),
                         None,
                         "{kind:?} at {anchor:?}"
                     );

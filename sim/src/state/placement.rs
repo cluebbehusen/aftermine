@@ -1,6 +1,6 @@
 //! Building-placement rules and fog-honest placement queries.
 
-use super::{Order, PlaceRefusal, State};
+use super::{PlaceRefusal, State};
 use crate::ids::{PlayerId, UnitId};
 use crate::stats::BuildingKind;
 use chassis::grid::TilePos;
@@ -205,10 +205,9 @@ impl State {
     /// explored-but-unseen tile is judged ONLY on what the issuer
     /// knows — static terrain (immutable after parse), remembered
     /// scrap (conservative: nodes only shrink), remembered enemy
-    /// buildings, public buildings (every seat's facts), live own/allied
-    /// buildings (team-internal facts),
-    /// and the issuer's own pending [`Order::Found`] claims; a
-    /// never-explored tile refuses as [`PlaceRefusal::Fog`], except on an
+    /// buildings, public buildings (every seat's facts) and live own/allied
+    /// buildings (team-internal facts), the provisional sites of pending
+    /// [`crate::Order::Found`] claims among them; a never-explored tile refuses as [`PlaceRefusal::Fog`], except on an
     /// Extractor frame discovered through any footprint tile: its authored
     /// footprint is already known to be clear ground. Live
     /// hostile units and unremembered enemy buildings on unseen ground
@@ -217,20 +216,13 @@ impl State {
     /// can never be a hidden-enemy detector. The arrival re-check
     /// through the strict predicate is what catches the collisions
     /// memory cannot (an allied scaffold on unseen ground included).
+    ///
+    /// A non-queued build replaces the programs of `units`: an unstarted own
+    /// site only workers in `units` are committed to is refunded when the
+    /// command lands, so it does not reserve ground against the replacement.
+    /// A site any other own worker is still committed to, and any started
+    /// site, remains a blocker.
     pub fn place_intent_refusal(
-        &self,
-        player: PlayerId,
-        kind: BuildingKind,
-        anchor: TilePos,
-    ) -> Option<PlaceRefusal> {
-        self.place_intent_refusal_replacing(player, kind, anchor, &[])
-    }
-
-    /// The intent verdict for a non-queued build that replaces the programs
-    /// of `units`. Claims belonging to live own harvesters in that selection
-    /// leave with those programs and therefore do not reserve ground against
-    /// the replacement. Claims from every other unit remain blockers.
-    pub fn place_intent_refusal_replacing(
         &self,
         player: PlayerId,
         kind: BuildingKind,
@@ -321,23 +313,6 @@ impl State {
                     return Some(PlaceRefusal::Building);
                 }
             }
-        }
-        // The issuer's own outstanding claims: two deferred founds may
-        // not promise the same ground (checked over the whole footprint
-        // so a visible/unseen mix cannot slip a double claim through).
-        let claimed = self.units.iter().any(|u| {
-            u.player == player
-                && u.hp > 0
-                && !(u.kind.stats().harvest.is_some() && units.contains(&u.id))
-                && std::iter::once(&u.order).chain(u.queue.iter()).any(|o| {
-                    matches!(o, Order::Found { kind: k, anchor: a }
-                    if (0..h).any(|dy| (0..w).any(|dx| {
-                        covers(*a, k.size(), anchor.offset(dx, dy))
-                    })))
-                })
-        });
-        if claimed {
-            return Some(PlaceRefusal::Building);
         }
         // Hostile machines deny only ground the issuer can see them
         // holding — exactly the strict rule, restricted to visible

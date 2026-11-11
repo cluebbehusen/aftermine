@@ -328,13 +328,6 @@ impl AstarScratch {
         self.last_expansions
     }
 
-    /// Hide reachability evidence without releasing retained search buffers.
-    /// Use when changing passability contexts or supplying a cached success
-    /// without running another search.
-    pub fn clear_search_evidence(&mut self) {
-        self.last_exhausted = false;
-    }
-
     /// Whether the previous query exhausted the complete reachable component
     /// instead of finding its goal or hitting the expansion cap.
     pub fn last_search_exhausted(&self) -> bool {
@@ -434,62 +427,14 @@ pub fn astar_with_scratch(
     max_expansions: u32,
     scratch: &mut AstarScratch,
 ) -> Option<Vec<TilePos>> {
-    astar_inner::<false>(
+    astar_inner(
         (width, height),
         start,
         goal,
         passable,
         max_expansions,
         scratch,
-        &[],
     )
-}
-
-/// Finds the canonical path while pruning detours with exact reverse distances.
-///
-/// `distances` must contain row-major shortest costs to `goal` for this exact
-/// passability graph, using the same 10/14 costs and no corner cutting as [`astar`].
-/// Unreachable cells have cost `u32::MAX`. Queue ordering is unchanged, so tied
-/// paths retain their canonical shape. Pruning is disabled when the expansion
-/// cap could affect the result, the field dimensions differ, or the start is blocked.
-pub fn astar_with_distances(
-    dimensions: (i32, i32),
-    start: TilePos,
-    goal: TilePos,
-    mut passable: impl FnMut(TilePos) -> bool,
-    max_expansions: u32,
-    scratch: &mut AstarScratch,
-    distances: &[u32],
-) -> Option<Vec<TilePos>> {
-    let (width, height) = dimensions;
-    let cells = usize::try_from(width)
-        .ok()
-        .and_then(|w| usize::try_from(height).ok().and_then(|h| w.checked_mul(h)));
-    let bounded = start.x >= 0 && start.y >= 0 && start.x < width && start.y < height;
-    if cells.is_some_and(|n| n == distances.len() && n <= max_expansions as usize)
-        && bounded
-        && passable(start)
-    {
-        astar_inner::<true>(
-            dimensions,
-            start,
-            goal,
-            passable,
-            max_expansions,
-            scratch,
-            distances,
-        )
-    } else {
-        astar_inner::<false>(
-            dimensions,
-            start,
-            goal,
-            passable,
-            max_expansions,
-            scratch,
-            &[],
-        )
-    }
 }
 
 /// Labels every tile with its 4-connected component under `open`.
@@ -539,14 +484,13 @@ pub fn cardinal_components(
     labels
 }
 
-fn astar_inner<const PRUNE: bool>(
+fn astar_inner(
     (width, height): (i32, i32),
     start: TilePos,
     goal: TilePos,
     mut passable: impl FnMut(TilePos) -> bool,
     max_expansions: u32,
     scratch: &mut AstarScratch,
-    distances: &[u32],
 ) -> Option<Vec<TilePos>> {
     scratch.last_width = width.max(0);
     scratch.last_height = height.max(0);
@@ -630,9 +574,6 @@ fn astar_inner<const PRUNE: bool>(
         let mut visit = |next: TilePos, step_cost: u32, open: &mut DialQueue| {
             let next_idx = index(next);
             let tentative = g + step_cost;
-            if PRUNE && tentative.saturating_add(distances[next_idx]) > distances[index(start)] {
-                return;
-            }
             let known = if stamp[next_idx] == generation {
                 best_g[next_idx]
             } else {

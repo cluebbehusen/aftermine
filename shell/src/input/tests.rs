@@ -7355,7 +7355,7 @@ fn a_plain_placement_replaces_the_selected_claim_while_shift_preserves_it() {
     for spot in [old_spot, new_spot] {
         assert!(
             game.state
-                .place_intent_refusal(game.presentation.human, kind, spot)
+                .place_intent_refusal(game.presentation.human, kind, spot, &[])
                 .is_none(),
             "premise: the visible site starts open"
         );

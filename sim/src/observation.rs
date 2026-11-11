@@ -70,13 +70,6 @@ pub struct UnitObs {
     /// The paid construction site this unit is approaching or building,
     /// including provisional scaffolds (own units only).
     pub site: Option<BuildingId>,
-    /// The building this unit is stripping, if any (own units only —
-    /// the repair channel reads it to keep the two verbs off one
-    /// target; enemy work orders stay opaque).
-    pub salvaging: Option<BuildingId>,
-    /// A deferred intent without an associated paid site (own units only).
-    /// Paid provisional construction is reported through `site`.
-    pub founding: Option<(BuildingKind, TilePos)>,
     /// The repair work of the current program, if it is repair work (own
     /// units only; always `None` for allies and enemies).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -204,12 +197,6 @@ pub struct ObservationData {
     /// Current progress of the front training item per own building, aligned
     /// with `my_buildings` and `my_queues`. Empty queues report zero.
     pub my_queue_progress: Vec<u32>,
-    /// Own units whose current order has a queued continuation or loops.
-    /// Sorted by id. The continuation itself stays opaque to policy code;
-    /// this ownership bit is enough to keep autonomous work from replacing a
-    /// player's existing program with a non-queued command.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub my_queued_units: Vec<UnitId>,
     /// Active repair targets of own workers, tending welds included, sorted
     /// by worker id. Allied and hostile programs remain opaque even when
     /// their bodies are visible.
@@ -240,18 +227,10 @@ pub struct ObservationData {
     /// static, so once seen it is known forever). What placement and
     /// staging decisions steer around; sorted by (y, x).
     pub known_rock: Vec<TilePos>,
-    /// Explored pits and cliffs, also in `known_rock`, which block travel
-    /// but not fire. Sorted by (y, x).
-    #[serde(default)]
-    pub known_pits: Vec<TilePos>,
     /// Derelict Extractor frame anchors discovered through any footprint
     /// tile (all of them, omnisciently). Frames are map facts and never move.
     #[serde(default)]
     pub known_frames: Vec<TilePos>,
-    /// Explored peak terrain, also present in `known_rock`. This separate
-    /// subset is what air routing and peak-blocked fire steer around while
-    /// ordinary rock remains open sky. Sorted by (y, x).
-    pub known_peaks: Vec<TilePos>,
     /// Wreck salvage as known: `(tile, amount)` — live under the
     /// omniscient builder, remembered under the fog-honest one. Sorted
     /// by (y, x).
@@ -270,11 +249,6 @@ pub struct ObservationData {
     /// Deep Bores. Sorted by (y, x, owner).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub public_buildings: Vec<crate::vision::PublicBuilding>,
-    /// Team-local contacts usable by ordinary attack commands.
-    #[serde(default)]
-    pub contact_tracks: Vec<crate::vision::ContactTrack>,
-    /// Number of own shells in flight.
-    pub my_shells: usize,
     /// Impact tiles of hostile shells this seat can currently justify
     /// seeing (fog-honest: the impact tile must be visible). Sorted by
     /// (y, x).
@@ -289,12 +263,6 @@ pub struct ObservationData {
 }
 
 impl ObservationData {
-    /// Whether an own unit already has work queued behind its current order or
-    /// is running a looping program.
-    pub fn has_queued_program(&self, unit: UnitId) -> bool {
-        self.my_queued_units.binary_search(&unit).is_ok()
-    }
-
     /// The active own repair program, if the observation contains one.
     pub fn repair_target(&self, unit: UnitId) -> Option<Target> {
         self.my_repair_targets
@@ -379,9 +347,6 @@ impl ObservationData {
                 if let Some(target) = own_repair_target(&u.order) {
                     obs.my_repair_targets.push((u.id, target));
                 }
-                if !u.queue.is_empty() || u.looping {
-                    obs.my_queued_units.push(u.id);
-                }
             } else if !state.hostile(me, u.player) {
                 obs.ally_units.push(enemy_unit(u));
             } else {
@@ -433,20 +398,13 @@ impl ObservationData {
             if tile.terrain.blocks_ground() {
                 obs.known_rock.push(pos);
             }
-            if tile.terrain.blocks_ground() && !tile.terrain.blocks_direct_fire() {
-                obs.known_pits.push(pos);
-            }
             if state.map().is_extractor_frame(pos) {
                 obs.known_frames.push(pos);
-            }
-            if tile.terrain.blocks_air() {
-                obs.known_peaks.push(pos);
             }
         }
         let tile_count = state.map().iter().count();
         obs.visible = vec![true; tile_count];
         obs.explored = vec![true; tile_count];
-        obs.my_shells = state.shells().iter().filter(|s| s.player == me).count();
         obs.incoming_shells = state
             .shells()
             .iter()
@@ -474,9 +432,6 @@ impl ObservationData {
                 obs.observe_own_cargo(u);
                 if let Some(target) = own_repair_target(&u.order) {
                     obs.my_repair_targets.push((u.id, target));
-                }
-                if !u.queue.is_empty() || u.looping {
-                    obs.my_queued_units.push(u.id);
                 }
             } else if !state.hostile(me, u.player) {
                 // Teammates stamp this player's vision, so they are
@@ -569,16 +524,8 @@ impl ObservationData {
                 if wreck > 0 {
                     obs.known_wrecks.push((pos, wreck));
                 }
-                if known {
-                    if tile.terrain.blocks_ground() {
-                        obs.known_rock.push(pos);
-                    }
-                    if tile.terrain.blocks_ground() && !tile.terrain.blocks_direct_fire() {
-                        obs.known_pits.push(pos);
-                    }
-                    if tile.terrain.blocks_air() {
-                        obs.known_peaks.push(pos);
-                    }
+                if known && tile.terrain.blocks_ground() {
+                    obs.known_rock.push(pos);
                 }
             }
         }
@@ -591,8 +538,6 @@ impl ObservationData {
         // Blips carry a tile and a domain only, so they pass through
         // unfiltered.
         obs.blips = vision.contacts().to_vec();
-        obs.contact_tracks = vision.tracks().to_vec();
-        obs.my_shells = state.shells().iter().filter(|s| s.player == me).count();
         obs.incoming_shells = state
             .shells()
             .iter()
@@ -619,7 +564,6 @@ impl ObservationData {
             my_buildings: Vec::new(),
             my_queues: Vec::new(),
             my_queue_progress: Vec::new(),
-            my_queued_units: Vec::new(),
             ally_units: Vec::new(),
             my_repair_targets: Vec::new(),
             ally_buildings: Vec::new(),
@@ -629,9 +573,7 @@ impl ObservationData {
             explored: Vec::new(),
             known_scrap: Vec::new(),
             known_rock: Vec::new(),
-            known_pits: Vec::new(),
             known_frames: Vec::new(),
-            known_peaks: Vec::new(),
             known_wrecks: Vec::new(),
             salvage_incidents: state
                 .vision(me)
@@ -642,8 +584,6 @@ impl ObservationData {
                 .collect(),
             blips: Vec::new(),
             public_buildings: hostile_public_buildings(state, me),
-            contact_tracks: Vec::new(),
-            my_shells: 0,
             incoming_shells: Vec::new(),
             magazines: Vec::new(),
             warheads: Vec::new(),
@@ -708,14 +648,6 @@ fn own_unit(state: &State, u: &crate::state::Unit) -> UnitObs {
         },
         cargo: u.cargo.iter().map(|r| r.kind.stats().transport_size).sum(),
         site,
-        salvaging: match u.order {
-            Order::Salvage { building } => Some(building),
-            _ => None,
-        },
-        founding: match u.order {
-            Order::Found { kind, anchor } if site.is_none() => Some((kind, anchor)),
-            _ => None,
-        },
         repair: if matches!(u.order, Order::Tend { .. }) {
             Some(RepairWork::Tending)
         } else {
@@ -740,8 +672,6 @@ fn enemy_unit(u: &crate::state::Unit) -> UnitObs {
         harvesting: None, // nor their work orders
         cargo: 0,         // a sealed sling shows nothing
         site: None,       // nor their work orders
-        salvaging: None,  // ditto
-        founding: None,   // ditto
         repair: None,
         grounded: u.landed(),
         charges: u.point_defense.map(|held| held.charges),

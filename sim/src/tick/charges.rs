@@ -4,7 +4,7 @@ use super::fire::{ShotEnd, blast_reaches};
 use crate::stats::{
     BuildingKind, CHARGE_BLAST_RADIUS, CHARGE_DAMAGE, CHARGE_TRIGGER_RADIUS, Domain,
 };
-use crate::{BuildingId, Event, Order, PlayerId, State};
+use crate::{BuildingId, Event, PlayerId, State};
 use chassis::fx::Vec2Fx;
 use chassis::grid::TilePos;
 
@@ -23,20 +23,6 @@ pub(super) fn cancel_discovered(state: &mut State, events: &mut Vec<Event>) -> b
     let removed = !sites.is_empty();
     for (site, player, cost) in sites {
         super::commands::cancel_site(state, player, site, cost, events);
-    }
-    let mut claims = Vec::new();
-    for u in state.units.iter().filter(|u| u.hp > 0) {
-        for order in std::iter::once(&u.order).chain(&u.queue) {
-            if let Order::Found { kind, anchor } = *order
-                && known_charge_in(state, u.player, kind, anchor)
-                && !claims.contains(&(u.player, kind, anchor))
-            {
-                claims.push((u.player, kind, anchor));
-            }
-        }
-    }
-    for (player, kind, anchor) in claims {
-        let _ = super::commands::apply_cancel_found(state, player, kind, anchor, events);
     }
     removed
 }

@@ -180,11 +180,6 @@ impl DomainMask {
         ground: false,
         air: true,
     };
-    /// Hits everything.
-    pub const BOTH: DomainMask = DomainMask {
-        ground: true,
-        air: true,
-    };
 
     /// Whether this mask covers the given domain.
     pub const fn covers(self, domain: Domain) -> bool {
@@ -999,22 +994,6 @@ impl UnitKind {
                 .to_num::<u8>()
                 .clamp(4, 10)
         })
-    }
-
-    /// Ticks a ground chassis loses leaving a stop on the opposite bearing,
-    /// against covering the same ground at full speed: the pivot in place
-    /// through a half turn, plus the ramps up to speed and back down to rest.
-    pub fn ground_reversal_ticks(self) -> u64 {
-        let rate = u64::from(self.ground_turn_rate());
-        if rate == 0 {
-            return 0;
-        }
-        let pivot = u64::from(128 - GROUND_ALIGNED_STEPS)
-            .div_ceil(rate)
-            .saturating_sub(1);
-        // A linear ramp over `n` ticks covers the ground of `(n + 1) / 2`.
-        let ramps = u64::from(GROUND_ACCEL_TICKS + GROUND_BRAKE_TICKS - 2).div_ceil(2);
-        pivot + ramps
     }
 
     /// Ground gun mounts whose bearing is independent of the chassis.
@@ -3174,10 +3153,6 @@ pub const ARRIVAL_NEAR: Fx = Fx::lit("1.5");
 /// still end a walk that touches it. Endpoints sit on the edge of reachable
 /// ground, where [`ARRIVAL_NEAR`] alone leaves room for only a few bodies.
 pub const CROWD_CHAIN_REACH: Fx = Fx::lit("16");
-
-/// Collision share taken by an anchored unit (extracting or firing from a
-/// hold); the mover takes the rest. Passers-by flow around workers.
-pub const ANCHORED_PUSH_SHARE: Fx = Fx::lit("0.1");
 
 /// Workers whose labor counts on one assembly cradle at once. Without a
 /// cap a mass of Excavators would finish an experimental before anyone

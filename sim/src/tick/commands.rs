@@ -949,7 +949,7 @@ fn apply_build_inner(
         // validation waits until the entire footprint is visible.
         let replaced_units = if queue { &[][..] } else { crew.as_slice() };
         if state
-            .place_intent_refusal_replacing(player, kind, anchor, replaced_units)
+            .place_intent_refusal(player, kind, anchor, replaced_units)
             .is_some()
         {
             return Err(RejectReason::BadSite);
@@ -1625,7 +1625,7 @@ fn apply_cancel_order(
     Ok(())
 }
 
-pub(super) fn apply_cancel_found(
+fn apply_cancel_found(
     state: &mut State,
     player: PlayerId,
     kind: crate::stats::BuildingKind,
@@ -1648,21 +1648,7 @@ pub(super) fn apply_cancel_found(
         super::construction::refund(state, id, events);
         return Ok(());
     }
-    let matches_site = |order: &Order| {
-        matches!(order, Order::Found { kind: found_kind, anchor: found_anchor }
-            if *found_kind == kind && *found_anchor == anchor)
-    };
-    let mut removed = false;
-    for worker in state.units.iter_mut().filter(|unit| unit.player == player) {
-        let before = worker.queue.len();
-        worker.queue.retain(|order| !matches_site(order));
-        removed |= worker.queue.len() != before;
-        if matches_site(&worker.order) {
-            remove_active_order(worker);
-            removed = true;
-        }
-    }
-    removed.then_some(()).ok_or(RejectReason::InvalidTarget)
+    Err(RejectReason::InvalidTarget)
 }
 
 fn apply_train(

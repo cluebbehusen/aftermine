@@ -394,7 +394,6 @@ fn at_home(foundries: &[&BuildingObs], tile: TilePos) -> bool {
 fn free_on(unit: &UnitObs, map: &MapModel, ground: u32, ledger: &Ledger) -> bool {
     worker(unit.kind)
         && unit.site.is_none()
-        && unit.founding.is_none()
         && unit.repair != Some(RepairWork::Ordered)
         && map.component(unit.tile) == Some(ground)
         && !ledger.employs(unit.id)
@@ -695,9 +694,7 @@ fn crew_cradles(
         let crew = observation
             .my_units
             .iter()
-            .filter(|unit| {
-                unit.site == Some(site.id) || unit.founding == Some((site.kind, site.anchor))
-            })
+            .filter(|unit| unit.site == Some(site.id))
             .count();
         let room = aftermine_sim::stats::ASSEMBLY_CREW_CAP.saturating_sub(crew);
         let Some(ground) = map.component(site.anchor) else {
