@@ -2,8 +2,9 @@
 //! it must survive hostile input (garbage ids, repeated ids, out-of-range
 //! players, coordinates at the integer extremes, queues driven past their
 //! caps) without panicking, while every state it reaches along the way
-//! still satisfies [`aftermine_sim::State::validate_invariants`], and the same
-//! seeded garbage must produce the same bits on every run.
+//! still satisfies [`aftermine_sim::State::validate_invariants`], a tick
+//! that refuses every command leaves the world where an idle tick would,
+//! and the same seeded garbage must produce the same bits on every run.
 //!
 //! Two properties of how the garbage is made are load-bearing. The
 //! generator is exhaustive over [`Command`]: a new verb stops this file
@@ -13,9 +14,9 @@
 //!
 //! Budget: [`SEEDS`] seeds x [`TICKS`] ticks, each seed run twice for the
 //! reproducibility comparison and fanned across threads like the map
-//! sweeps, with the checklist sampled every [`SAMPLE`] ticks. `FUZZ_SEEDS`
-//! raises the seed count for a soak run without renumbering the default
-//! set.
+//! sweeps, with the checklist sampled every [`SAMPLE`] ticks and refusals
+//! every [`REFUSAL_SAMPLE`]. `FUZZ_SEEDS` raises the seed count for a soak
+//! run without renumbering the default set.
 
 use crate::common;
 
@@ -36,6 +37,9 @@ const SEEDS: u64 = 32;
 /// How often the integrity checklist runs. Cheap (entities, not tiles),
 /// but not free across a third of a million ticks.
 const SAMPLE: u64 = 50;
+/// How often a tick is checked against an idle tick, which costs a clone
+/// and a second tick.
+const REFUSAL_SAMPLE: u64 = 10;
 /// The seed the whole sweep is derived from.
 const BASE_SEED: u64 = 0xF022_DEC0DE;
 /// A bank no real match approaches; a `u32` refund that wrapped would land
@@ -574,6 +578,9 @@ struct Reach {
     sent: u64,
     /// Commands it refused.
     rejected: u64,
+    /// Sampled ticks that refused every command, each compared with an
+    /// idle tick.
+    refusals_checked: u64,
     /// Verbs the generator actually drew.
     drawn: Drawn,
     attack_targets: [u64; 4],
@@ -616,6 +623,7 @@ impl Reach {
     fn absorb(&mut self, other: &Reach) {
         self.sent += other.sent;
         self.rejected += other.rejected;
+        self.refusals_checked += other.refusals_checked;
         for (a, b) in self.drawn.0.iter_mut().zip(other.drawn.0) {
             *a += b;
         }
@@ -1274,16 +1282,37 @@ fn fuzz_run(seed: u64) -> Run {
 
         let frozen = state.result().is_some();
         let seats = state.players().len();
+        let seated = commands
+            .iter()
+            .filter(|command| usize::from(command.player.0) < seats)
+            .count();
+        let idle =
+            (!frozen && seated > 0 && tick.is_multiple_of(REFUSAL_SAMPLE)).then(|| state.clone());
         let report = state.tick(&commands);
+        // A seated command earns at most one refusal and an unseated one
+        // none, so as many refusals as seated commands means all of them
+        // were refused, and the world must stand where an idle tick leaves
+        // it.
+        let refused = report
+            .events
+            .iter()
+            .filter(|event| matches!(event, Event::CommandRejected { .. }))
+            .count();
+        if let Some(mut idle) = idle
+            && refused == seated
+        {
+            idle.tick(&[]);
+            assert_eq!(
+                state.hash(),
+                idle.hash(),
+                "seed {seed:#x}: tick {tick} refused every command yet changed the world"
+            );
+            reach.refusals_checked += 1;
+        }
         // A refusal does not name its command, so only a tick that refused
         // nothing proves which cancellations landed. Out-of-range issuers
         // and a decided match drop commands without a refusal.
-        if !frozen
-            && !report
-                .events
-                .iter()
-                .any(|event| matches!(event, Event::CommandRejected { .. }))
-        {
+        if !frozen && refused == 0 {
             reach.cancelled_order += commands
                 .iter()
                 .filter(|command| {
@@ -1478,6 +1507,10 @@ fn seeded_garbage_never_panics_and_reproduces() {
         "the sweep landed nothing ({} of {} refused)",
         reach.rejected,
         reach.sent
+    );
+    assert!(
+        reach.refusals_checked > 0,
+        "the sweep must compare a fully refused tick with an idle one"
     );
     assert!(
         reach.drawn.0.iter().all(|n| *n > 0),
