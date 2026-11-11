@@ -13,9 +13,10 @@ use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::scenario::BotDifficulty;
 use aftermine_sim::stats::{self, WARHEAD};
 use aftermine_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId, UnitKind};
-use chassis::fx::{Fx, Vec2Fx};
+use chassis::fx::{Fx, HALF, Vec2Fx};
 use chassis::grid::TilePos;
 use std::cmp::Reverse;
+use std::sync::LazyLock;
 
 /// A building a warhead could damage, as the seat knows it.
 #[derive(Clone, Copy)]
@@ -74,18 +75,24 @@ impl Mark {
         let low = Vec2Fx::new(Fx::from_num(self.anchor.x), Fx::from_num(self.anchor.y));
         let high = low + Vec2Fx::new(Fx::from_num(width), Fx::from_num(height));
         let closest = Vec2Fx::new(impact.x.clamp(low.x, high.x), impact.y.clamp(low.y, high.y));
-        // Most buildings lie past the blast; the squared test spares them
-        // the square root.
-        if closest.dist_sq(impact) >= WARHEAD.outer_radius * WARHEAD.outer_radius {
-            return 0;
-        }
-        self.kind
-            .warhead_taken(WARHEAD.damage_at(closest.dist(impact)))
+        self.kind.warhead_taken(blast(impact - closest))
     }
 
-    /// The scrap one landing on `impact` takes from it, and its health after.
-    fn struck(&self, impact: Vec2Fx) -> (u64, u32) {
-        let dealt = self.taken(impact).min(self.hp);
+    /// [`taken`](Self::taken) for a warhead landing on `tile`'s centre.
+    fn taken_at(&self, tile: TilePos) -> u32 {
+        let (width, height) = self.kind.size();
+        let (Some(across), Some(down)) = (
+            steps(self.anchor.x, width, tile.x),
+            steps(self.anchor.y, height, tile.y),
+        ) else {
+            return 0;
+        };
+        self.kind.warhead_taken(falloff()[across][down])
+    }
+
+    /// The scrap one landing on `tile` takes from it, and its health after.
+    fn struck(&self, tile: TilePos) -> (u64, u32) {
+        let dealt = self.taken_at(tile).min(self.hp);
         let value = self.paid * u64::from(dealt) / u64::from(self.max_hp.max(1));
         (value, self.hp - dealt)
     }
@@ -103,6 +110,47 @@ impl Mark {
         let bill = |hp| repair(self.basis, self.max_hp, hp);
         loss(self.paid + self.extra, bill, self.hp + unbuilt, after)
     }
+}
+
+/// How far the centre of tile `at` lies on one axis from a footprint
+/// spanning `size` tiles from `anchor`: 0 inside it, else `k` for an edge
+/// `k` tiles less a half away. `None` once that alone puts the footprint
+/// past the blast.
+fn steps(anchor: i32, size: i32, at: i32) -> Option<usize> {
+    let step = if at < anchor {
+        anchor - at
+    } else {
+        (at - anchor - size + 1).max(0)
+    };
+    usize::try_from(step)
+        .ok()
+        .filter(|step| *step < FALLOFF_STEPS)
+}
+
+/// The [`steps`] on one axis within the blast's outer radius.
+const FALLOFF_STEPS: usize = 5;
+
+/// Damage before resistance a warhead deals at `offset` from where it lands.
+fn blast(offset: Vec2Fx) -> u32 {
+    // Most buildings lie past the blast; the squared test spares them the
+    // square root.
+    if offset.length_sq() >= WARHEAD.outer_radius * WARHEAD.outer_radius {
+        return 0;
+    }
+    WARHEAD.damage_at(offset.length())
+}
+
+/// [`blast`] at a footprint's closest point by the [`steps`] to it across
+/// and down from a tile's centre: every such point lies on a half-tile
+/// grid, so a table measured once serves.
+fn falloff() -> &'static [[u32; FALLOFF_STEPS]; FALLOFF_STEPS] {
+    static FALLOFF: LazyLock<[[u32; FALLOFF_STEPS]; FALLOFF_STEPS]> = LazyLock::new(|| {
+        let off = |step: usize| (Fx::from_num(step) - HALF).max(Fx::ZERO);
+        std::array::from_fn(|across| {
+            std::array::from_fn(|down| blast(Vec2Fx::new(off(across), off(down))))
+        })
+    });
+    &FALLOFF
 }
 
 /// What recovering from health falling from `before` to `after` costs, for
@@ -167,15 +215,14 @@ pub(crate) fn volley(marks: &[Mark], tile: TilePos, hits: u64) -> u64 {
     let from = marks.partition_point(|mark| mark.anchor.x < tile.x - BLAST_COLUMNS);
     let to = marks.partition_point(|mark| mark.anchor.x <= tile.x + BLAST_COLUMNS);
     let marks = &marks[from..to.max(from)];
-    let impact = tile.center();
     if hits == 1 {
-        return marks.iter().map(|mark| mark.struck(impact).0).sum();
+        return marks.iter().map(|mark| mark.struck(tile).0).sum();
     }
     let mut hp: Vec<u32> = marks.iter().map(|mark| mark.hp).collect();
     let mut total = 0;
     for _ in 0..hits {
         for (mark, hp) in marks.iter().zip(&mut hp) {
-            let (value, left) = Mark { hp: *hp, ..*mark }.struck(impact);
+            let (value, left) = Mark { hp: *hp, ..*mark }.struck(tile);
             total += value;
             *hp = left;
         }
@@ -201,7 +248,7 @@ fn recovered(marks: &[Mark], bodies: &[Body], tile: TilePos, hits: usize) -> Vec
         .iter()
         .filter(|mark| mark.last)
         .filter_map(|mark| {
-            let taken = mark.taken(impact);
+            let taken = mark.taken_at(tile);
             let felled = usize::try_from(mark.hp.div_ceil(taken.max(1))).ok()?;
             (taken > 0 && felled <= hits).then_some((mark.owner, felled - 1))
         })
@@ -215,7 +262,7 @@ fn recovered(marks: &[Mark], bodies: &[Body], tile: TilePos, hits: usize) -> Vec
     for mark in marks {
         let counted = if mark.last { hits } else { until(mark.owner) };
         let totals = &mut totals[..counted];
-        fall(totals, mark.hp, mark.taken(impact), |hp| mark.lost(hp));
+        fall(totals, mark.hp, mark.taken_at(tile), |hp| mark.lost(hp));
     }
     // A hull is struck from its edge, so the blast reaches the widest one
     // that much further.
@@ -574,17 +621,30 @@ fn most_hits() -> usize {
 fn needed(aims: &[Aim], marks: &[Mark], have: u64) -> Option<(u64, u64)> {
     let spire = u64::from(BuildingKind::Spire.invested_cost(0));
     let most = most_hits();
-    aims.iter()
-        .flat_map(|aim| {
-            recovered(marks, &[], aim.tile, most)
-                .into_iter()
-                .zip(aim.interceptors + 1..)
-                .filter(move |(value, spent)| {
-                    value + aim.drawn >= price(*spent) + spire * spent.saturating_sub(have)
-                })
-                .map(|(value, spent)| (spent, value))
-        })
-        .min_by_key(|(spires, value)| (*spires, Reverse(*value)))
+    let mut best: Option<(u64, u64)> = None;
+    for aim in aims {
+        // A volley spends a round on each interceptor first, so only an
+        // aim's volleys spending no more than the best so far can better it.
+        let hits = best.map_or(most, |(spires, _)| {
+            let within = spires.saturating_sub(aim.interceptors);
+            usize::try_from(within).unwrap_or(usize::MAX).min(most)
+        });
+        if hits == 0 {
+            continue;
+        }
+        let worthy = recovered(marks, &[], aim.tile, hits)
+            .into_iter()
+            .zip(aim.interceptors + 1..)
+            .find(|(value, spent)| {
+                value + aim.drawn >= price(*spent) + spire * spent.saturating_sub(have)
+            });
+        if let Some((value, spent)) = worthy
+            && best.is_none_or(|best| (spent, Reverse(value)) < (best.0, Reverse(best.1)))
+        {
+            best = Some((spent, value));
+        }
+    }
+    best
 }
 
 /// Spires, a round for every empty Spire, and another Spire when those the

@@ -1,7 +1,11 @@
 use super::*;
 use crate::decision::Producer;
 use crate::frame::HomeFrame;
+use crate::missions::Scratch;
 use crate::profile::ResolvedProfile;
+use crate::workers::Routes;
+use aftermine_sim::observation::BuildingObs;
+use aftermine_sim::stats::HARVEST_INCIDENT_DANGER_RADIUS;
 use chassis::grid::as_index;
 
 /// The field with a scrap node beside West's Foundry and another at `far`.
@@ -764,6 +768,94 @@ fn routes_traced_once_per_decision_judge_every_source_as_tracing_it_alone_does()
             assert_eq!(shared, alone);
         }
     }
+}
+
+/// West's view of `scenario`, its map, its frame and its decision's
+/// scratch, for tracing worker routes.
+fn surveyed(scenario: &Scenario) -> (ObservationData, Arc<MapModel>, HomeFrame, Scratch) {
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let model = map(scenario);
+    let frame = HomeFrame::of(&observation, &model).unwrap();
+    let mut memory = crate::memory::Memory::default();
+    memory.observe(&observation);
+    let scratch = Scratch::new(
+        &observation,
+        &model,
+        frame,
+        &memory,
+        BotStance::Turtle,
+        middling(),
+        &crate::missions::Missions::default(),
+    );
+    (observation, model, frame, scratch)
+}
+
+/// The seat's Foundries, whose ground counts as home.
+fn foundries(observation: &ObservationData) -> Vec<&BuildingObs> {
+    observation
+        .my_buildings
+        .iter()
+        .filter(|building| building.kind == BuildingKind::Foundry)
+        .collect()
+}
+
+/// Every tile of `model`.
+fn every_tile(model: &MapModel) -> Vec<TilePos> {
+    let (width, height) = model.size();
+    (0..height)
+        .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
+        .collect()
+}
+
+#[test]
+fn a_route_steps_where_ranking_every_closer_neighbour_would() {
+    for scenario in [walled(true), staggered(true), Scenario::skirmish()] {
+        let (observation, model, frame, scratch) = surveyed(&scenario);
+        let homes = foundries(&observation);
+        let routes = Routes::new(&model, frame, &scratch, &homes);
+        for tile in every_tile(&model) {
+            for source in [false, true] {
+                let [step, ranked] = routes.steps_from(tile, source);
+                assert_eq!(step, ranked, "{tile:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn routes_around_a_loss_judge_every_source_afresh_though_traced_before() {
+    let scenario = walled(false);
+    let (observation, model, frame, scratch) = surveyed(&scenario);
+    let homes = foundries(&observation);
+    let tiles = every_tile(&model);
+    // The gap in the wall every route east passes through.
+    let incidents = [TilePos::new(20, 3)];
+    let fresh: Vec<bool> = tiles
+        .iter()
+        .map(|tile| {
+            Routes::new(&model, frame, &scratch, &homes)
+                .around_incidents(&incidents)
+                .clear(*tile)
+        })
+        .collect();
+    let mut traced = Routes::new(&model, frame, &scratch, &homes);
+    let before: Vec<bool> = tiles.iter().map(|tile| traced.clear(*tile)).collect();
+    assert!(
+        tiles
+            .iter()
+            .zip(before.iter().zip(&fresh))
+            .any(|(tile, (was, is))| {
+                *was && !*is && tile.chebyshev(incidents[0]) > HARVEST_INCIDENT_DANGER_RADIUS + 1
+            }),
+        "premise: the loss cuts routes that pass it"
+    );
+    let mut around = traced.around_incidents(&incidents);
+    let after: Vec<bool> = tiles.iter().map(|tile| around.clear(*tile)).collect();
+    assert_eq!(after, fresh);
+    let mut kept = Routes::new(&model, frame, &scratch, &homes).around_incidents(&[]);
+    let kept: Vec<bool> = tiles.iter().map(|tile| kept.clear(*tile)).collect();
+    assert_eq!(kept, before);
 }
 
 #[test]

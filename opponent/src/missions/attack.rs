@@ -28,7 +28,7 @@ use aftermine_sim::{BuildingKind, PlayerId, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
 use chassis::rng::Pcg32;
-use std::borrow::Cow;
+use std::cell::OnceCell;
 use std::cmp::Reverse;
 
 /// Tiles between a member and an enemy that make contact.
@@ -140,6 +140,17 @@ struct Plan<'a> {
     rival: Option<PlayerId>,
     /// Targets another attack holds or this decision gave up on.
     held: Vec<Objective>,
+    /// Where the decision keeps [`Targets`] once a plan works them out.
+    targets: &'a OnceCell<Targets>,
+}
+
+/// The targets an attack could go after, worked out once a decision for
+/// every plan that asks: the known enemy buildings and the hostile starts
+/// the army can reach. Whether a start is presumed held is asked at each
+/// choice, since scouting later in the decision may see it.
+pub(super) struct Targets {
+    known: Vec<Target>,
+    starts: Vec<Target>,
 }
 
 impl Mission {
@@ -512,7 +523,6 @@ impl Missions {
 
         let given_up = match phase {
             AttackPhase::Gather | AttackPhase::Recover => {
-                let need = plan.need(target, breach);
                 let room = UNIT_CAP - mission.units.len();
                 let fit: Vec<&UnitObs> = fit
                     .iter()
@@ -522,10 +532,15 @@ impl Missions {
                 let striking_strength: u64 = members.iter().map(|unit| striking(unit)).sum();
                 // The whole free army joins while it regroups, or only what
                 // the attack still lacks at a seat that attacks piecemeal.
-                let taken = if concentrates(plan.difficulty) {
-                    u64::MAX
+                let (taken, ready) = if concentrates(plan.difficulty) {
+                    let ready = plan.meets(striking_strength, target, breach, plan.margin);
+                    (u64::MAX, ready)
                 } else {
-                    need.saturating_sub(striking_strength)
+                    let need = plan.need(target, breach);
+                    (
+                        need.saturating_sub(striking_strength),
+                        striking_strength >= need,
+                    )
                 };
                 let recruits = recruit(plan.frame, &fit, rally, taken, room);
                 let joining = plan.with_screens(recruits.clone(), rally, component, room);
@@ -540,7 +555,6 @@ impl Missions {
                 // Recruits still on their way go along once the time to
                 // regroup is up, or a steady stream of new units would hold
                 // the army at home.
-                let ready = striking_strength >= need;
                 if ready && (age >= timeout(phase) || (all_idle && !recruited)) {
                     // A seat that stages stops short of the known
                     // defenses on the way, so the army goes in together
@@ -774,8 +788,12 @@ fn engage_on(
     }
     let next = plan.best(Some(target)).filter(|next| {
         !standing
-            && members.iter().map(|unit| striking(unit)).sum::<u64>()
-                >= plan.need(*next, breaching(observation, &mission.units))
+            && plan.meets(
+                members.iter().map(|unit| striking(unit)).sum(),
+                *next,
+                breaching(observation, &mission.units),
+                plan.margin,
+            )
     });
     if let Some(next) = next {
         if ledger.order(hunt(army, next.approach)) {
@@ -830,7 +848,6 @@ fn stage_on(
             ..
         }
     );
-    let need = plan.need(target, breach);
     let stage = mission.goal;
     let there = |unit: &UnitObs| unit.tile.chebyshev(stage) <= STAGE_TILES;
     // Sappers wait at the staging spot until the fight begins and never
@@ -942,6 +959,7 @@ fn stage_on(
     }
     // What the breachers drew out may leave the army short of what it needs.
     let total: u64 = members.iter().map(|unit| striking(unit)).sum();
+    let enough = plan.meets(total, target, breach, plan.margin);
     // Breachers at the spot go in first, the hull built to take the guns'
     // fire; one that cannot move on holds no one up.
     let leaders: Vec<UnitId> = members
@@ -949,9 +967,9 @@ fn stage_on(
         .filter(|unit| !leading && breacher(unit.kind) && there(unit) && !ledger.stuck(unit.id))
         .map(|unit| unit.id)
         .collect();
-    if total >= need && !leaders.is_empty() && age < TRAVEL_TICKS {
+    if enough && !leaders.is_empty() && age < TRAVEL_TICKS {
         ledger.order(hunt(leaders, target.approach));
-    } else if total >= need {
+    } else if enough {
         push(observation, mission, target, now, ledger);
     } else if ledger.order(run(mission.units.clone(), rally)) {
         mission.attack_phase(target, AttackPhase::Recover, now, Some(rally));
@@ -1097,7 +1115,7 @@ impl<'a> Plan<'a> {
         map: &'a MapModel,
         profile: &ResolvedProfile,
         memory: &'a Memory,
-        scratch: &Scratch,
+        scratch: &'a Scratch,
     ) -> Self {
         Self {
             observation,
@@ -1114,7 +1132,28 @@ impl<'a> Plan<'a> {
             screens: Vec::new(),
             rival: scratch.rival,
             held: Vec::new(),
+            targets: &scratch.targets,
         }
+    }
+
+    /// This decision's [`Targets`].
+    fn targets(&self) -> &'a Targets {
+        self.targets.get_or_init(|| Targets {
+            known: self
+                .observation
+                .enemy_buildings
+                .iter()
+                .filter_map(|building| self.target(building.player, building.kind, building.anchor))
+                .collect(),
+            starts: self
+                .map
+                .hostiles(self.observation.me)
+                .filter_map(|owner| {
+                    let anchor = self.map.start(owner)?;
+                    self.target(owner, BuildingKind::Foundry, anchor)
+                })
+                .collect(),
+        })
     }
 
     /// Those of `units` that can get to a target whose approach lies in
@@ -1220,9 +1259,10 @@ impl<'a> Plan<'a> {
                     != (target.owner, target.building, target.anchor)
             })
         };
-        let pick = |targets: Vec<Target>| {
+        let pick = |targets: &[Target]| {
             let open: Vec<Target> = targets
-                .into_iter()
+                .iter()
+                .copied()
                 .filter(differs)
                 .filter(|target| !self.held.contains(&target.objective()))
                 .filter(|target| !self.memory.abandoned(target.building, target.anchor, now))
@@ -1244,19 +1284,12 @@ impl<'a> Plan<'a> {
                     )
                 })
         };
-        let known: Vec<Target> = self
-            .observation
-            .enemy_buildings
-            .iter()
-            .filter_map(|building| self.target(building.player, building.kind, building.anchor))
-            .collect();
+        let known = &self.targets().known;
         let starts: Vec<Target> = self
-            .map
-            .hostiles(self.observation.me)
-            .filter_map(|owner| {
-                let anchor = self.map.start(owner)?;
-                self.target(owner, BuildingKind::Foundry, anchor)
-            })
+            .targets()
+            .starts
+            .iter()
+            .copied()
             .filter(|target| presumed(self.observation, self.map, self.memory, target.objective()))
             .collect();
         let rival = |targets: &[Target]| -> Vec<Target> {
@@ -1266,10 +1299,10 @@ impl<'a> Plan<'a> {
                 .filter(|target| self.rival.is_none_or(|rival| target.owner == rival))
                 .collect()
         };
-        pick(rival(&known))
-            .or_else(|| pick(rival(&starts)))
+        pick(&rival(known))
+            .or_else(|| pick(&rival(&starts)))
             .or_else(|| pick(known))
-            .or_else(|| pick(starts))
+            .or_else(|| pick(&starts))
     }
 
     /// `building` at `anchor` as a target, if the army can reach it.
@@ -1323,15 +1356,61 @@ impl<'a> Plan<'a> {
 
     /// `need` at `margin` rather than the decision's own.
     fn need_at(&self, target: Target, breach: u64, margin: u64) -> u64 {
-        let (units, mut buildings) =
-            opposed_parts(self.observation, self.map, self.memory, &[target.approach]);
-        if surveys(self.difficulty) {
-            buildings = self
-                .on_the_way(target, None)
+        let (units, sure, beyond) = self.opposing(target);
+        let reached = if beyond.is_empty() {
+            0
+        } else {
+            let way = self.way(target);
+            beyond
                 .into_iter()
+                .filter(|building| covers(building, &way))
                 .map(building_value)
-                .sum();
+                .sum()
+        };
+        self.scaled(units, sure + reached, breach, margin)
+    }
+
+    /// Whether `strength` meets [`need_at`](Self::need_at) `margin`. The
+    /// need lies between counting none and all of the known defenses whose
+    /// fire might reach the way there, so the way is walked only when those
+    /// bounds leave the answer open.
+    fn meets(&self, strength: u64, target: Target, breach: u64, margin: u64) -> bool {
+        if strength < self.minimum {
+            return false;
         }
+        let (units, sure, beyond) = self.opposing(target);
+        if strength < self.scaled(units, sure, breach, margin) {
+            return false;
+        }
+        let most: u64 = beyond.iter().map(|building| building_value(building)).sum();
+        if strength >= self.scaled(units, sure + most, breach, margin) {
+            return true;
+        }
+        strength >= self.need_at(target, breach, margin)
+    }
+
+    /// The known army an attack on `target` would meet, before breachers
+    /// and the margin: the armed units, the buildings that count wherever
+    /// the way runs, and above the lowest rung the other known defenses,
+    /// which count where their fire reaches the way.
+    fn opposing(&self, target: Target) -> (u64, u64, Vec<&'a BuildingObs>) {
+        let (units, buildings) =
+            opposed_parts(self.observation, self.map, self.memory, &[target.approach]);
+        if !surveys(self.difficulty) {
+            return (units, buildings, Vec::new());
+        }
+        let (guarding, beyond) = self.ground_defenses(target);
+        (
+            units,
+            guarding.into_iter().map(building_value).sum(),
+            beyond,
+        )
+    }
+
+    /// The need for `units` and `buildings` of known army, less what
+    /// breachers bring against the buildings, at `margin`, and never under
+    /// the stance minimum.
+    fn scaled(&self, units: u64, buildings: u64, breach: u64, margin: u64) -> u64 {
         ((units + buildings.saturating_sub(breach)) * self.misjudge / 1_000 * margin / 1_000)
             .max(self.minimum)
     }
@@ -1348,7 +1427,12 @@ impl<'a> Plan<'a> {
             .filter_map(|id| mine(self.observation, *id))
             .map(striking)
             .sum();
-        gathered + self.reaching(target, fit) >= self.need(target, breach)
+        self.meets(
+            gathered + self.reaching(target, fit),
+            target,
+            breach,
+            self.margin,
+        )
     }
 
     /// The best open known target other than `skip` whose need at the full
@@ -1360,10 +1444,10 @@ impl<'a> Plan<'a> {
             return None;
         }
         let mut known: Vec<Target> = self
-            .observation
-            .enemy_buildings
+            .targets()
+            .known
             .iter()
-            .filter_map(|building| self.target(building.player, building.kind, building.anchor))
+            .copied()
             .filter(|target| target.objective() != skip.objective())
             .filter(|target| !self.held.contains(&target.objective()))
             .filter(|target| !self.memory.abandoned(target.building, target.anchor, now))
@@ -1379,8 +1463,9 @@ impl<'a> Plan<'a> {
         known.into_iter().find_map(|target| {
             let component = self.map.component(target.approach);
             let breachers = self.breachers(component, UNIT_CAP);
-            let need = self.need_at(target, breaching(self.observation, &breachers), full);
-            (self.reaching(target, fit) >= need).then_some((target, need))
+            let breach = breaching(self.observation, &breachers);
+            self.meets(self.reaching(target, fit), target, breach, full)
+                .then(|| (target, self.need_at(target, breach, full)))
         })
     }
 
@@ -1394,20 +1479,21 @@ impl<'a> Plan<'a> {
     }
 
     /// Known enemy buildings that fire on ground and guard `target`, or whose
-    /// fire reaches a walk there, over `way` when the caller has it.
-    fn on_the_way(&self, target: Target, way: Option<&Grid<u16>>) -> Vec<&'a BuildingObs> {
-        let (mut guarding, beyond): (Vec<&BuildingObs>, Vec<&BuildingObs>) = self
-            .observation
+    /// fire reaches `way` there.
+    fn on_the_way(&self, target: Target, way: &Grid<u16>) -> Vec<&'a BuildingObs> {
+        let (mut guarding, beyond) = self.ground_defenses(target);
+        guarding.extend(beyond.into_iter().filter(|building| covers(building, way)));
+        guarding
+    }
+
+    /// Known enemy buildings that fire on ground: those guarding `target`,
+    /// and the rest.
+    fn ground_defenses(&self, target: Target) -> (Vec<&'a BuildingObs>, Vec<&'a BuildingObs>) {
+        self.observation
             .enemy_buildings
             .iter()
             .filter(|building| ground_reach(building).is_some())
-            .partition(|building| guards(building, target.approach));
-        if beyond.is_empty() {
-            return guarding;
-        }
-        let way = way.map_or_else(|| Cow::Owned(self.way(target)), Cow::Borrowed);
-        guarding.extend(beyond.into_iter().filter(|building| covers(building, &way)));
-        guarding
+            .partition(|building| guards(building, target.approach))
     }
 
     /// The walks from the seat's start to `target` that count as ways there:
@@ -1431,7 +1517,7 @@ impl<'a> Plan<'a> {
         // A site in sight cannot fire; a remembered one may have been
         // finished since it was seen.
         let guns: Vec<(&BuildingObs, i32)> = self
-            .on_the_way(target, Some(&way))
+            .on_the_way(target, &way)
             .into_iter()
             .filter(|building| building.built || !building.seen)
             .filter_map(|building| Some((building, ground_reach(building)?)))

@@ -4,7 +4,7 @@
 
 use crate::decision::{Ledger, Producer};
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
-use crate::map::{MapModel, UNREACHABLE};
+use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
 use crate::missions::{Hazard, Meal, Scratch};
 use crate::profile::ResolvedProfile;
 use aftermine_sim::TICKS_PER_SECOND;
@@ -889,32 +889,27 @@ impl<'a> Routes<'a> {
 
     /// These routes with the ground around each recent allied loss in
     /// `incidents` counted as danger too.
-    pub(crate) fn around_incidents(&self, incidents: &[TilePos]) -> Routes<'_> {
-        let mut danger = self.danger.clone();
+    pub(crate) fn around_incidents(mut self, incidents: &[TilePos]) -> Self {
+        if incidents.is_empty() {
+            return self;
+        }
         let radius = HARVEST_INCIDENT_DANGER_RADIUS;
         for incident in incidents {
             for dy in -radius..=radius {
                 for dx in -radius..=radius {
-                    if let Some(cell) = danger.get_mut(incident.offset(dx, dy)) {
+                    if let Some(cell) = self.danger.get_mut(incident.offset(dx, dy)) {
                         *cell = true;
                     }
                 }
             }
         }
         let (width, height) = self.map.size();
-        Routes {
-            map: self.map,
-            frame: self.frame,
-            homes: self.homes,
-            danger,
-            traced: Grid::new(width, height, None),
-            distances: Cow::Borrowed(self.distances.as_ref()),
-        }
+        self.traced = Grid::new(width, height, None);
+        self
     }
 
     /// Whether the route from home to `source` is clear.
     pub(crate) fn clear(&mut self, source: TilePos) -> bool {
-        let map = self.map;
         let mut tile = source;
         let mut distance = self.distances.get(tile).copied().unwrap_or(UNREACHABLE);
         let mut walked = Vec::new();
@@ -933,28 +928,7 @@ impl<'a> Routes<'a> {
             if self.danger.get(tile) == Some(&true) {
                 break false;
             }
-            let from = doubled(tile);
-            let open = |tile: TilePos| map.component(tile).is_some();
-            // Diagonal steps never cut a corner, as in the distance field. A
-            // worker stands on any tile beside the source, so the first step
-            // may.
-            let legal = |next: &TilePos| {
-                let (dx, dy) = (next.x - tile.x, next.y - tile.y);
-                tile == source
-                    || dx == 0
-                    || dy == 0
-                    || (open(tile.offset(dx, 0)) && open(tile.offset(0, dy)))
-            };
-            let next = ring(tile, (1, 1))
-                .filter(legal)
-                .map(|next| {
-                    (
-                        self.distances.get(next).copied().unwrap_or(UNREACHABLE),
-                        next,
-                    )
-                })
-                .filter(|(closer, _)| *closer < distance)
-                .min_by_key(|(closer, next)| (*closer, self.frame.rank(from, doubled(*next))));
+            let next = self.step(tile, distance, tile == source);
             let Some((closer, next)) = next else {
                 break true;
             };
@@ -967,6 +941,35 @@ impl<'a> Routes<'a> {
             }
         }
         clear
+    }
+
+    /// Where a route steps from `tile`, `distance` from home: the neighbour
+    /// nearest home, and of several as near, the one the frame ranks first.
+    /// Diagonal steps never cut a corner, as in the distance field, but a
+    /// worker stands on any tile beside a `source`, so a first step may.
+    fn step(&self, tile: TilePos, distance: u16, source: bool) -> Option<(u16, TilePos)> {
+        let open = |tile: TilePos| self.map.component(tile).is_some();
+        let from = doubled(tile);
+        NEIGHBOURS
+            .into_iter()
+            .filter_map(|(dx, dy)| {
+                let next = tile.offset(dx, dy);
+                let closer = self.distances.get(next).copied().unwrap_or(UNREACHABLE);
+                let legal = || {
+                    source
+                        || dx == 0
+                        || dy == 0
+                        || (open(tile.offset(dx, 0)) && open(tile.offset(0, dy)))
+                };
+                (closer < distance && legal()).then_some((closer, next))
+            })
+            .min_by(|(closer, next), (other, rival)| {
+                closer.cmp(other).then_with(|| {
+                    self.frame
+                        .rank(from, doubled(*next))
+                        .cmp(&self.frame.rank(from, doubled(*rival)))
+                })
+            })
     }
 }
 

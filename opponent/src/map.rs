@@ -1076,7 +1076,7 @@ fn off_lanes(foundry: TilePos, anchor: TilePos, size: (i32, i32)) -> bool {
 }
 
 /// The steps to a tile's eight neighbours, its sides first.
-const NEIGHBOURS: [(i32, i32); 8] = [
+pub(crate) const NEIGHBOURS: [(i32, i32); 8] = [
     (1, 0),
     (-1, 0),
     (0, 1),
