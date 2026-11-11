@@ -207,7 +207,7 @@ impl Worker {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) enum Intent {
     Load(PathBuf),
     Continue,

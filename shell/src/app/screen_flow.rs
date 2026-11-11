@@ -1424,22 +1424,21 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
     drop(input_scope);
     match_backdrop(app);
     ps.draw(&app.sprites, &app.game.scenario.name, app.input.mouse);
-    Ok(match out {
-        screens::pause::Out::Stay => Screen::Pause(ps),
-        screens::pause::Out::Resume => {
+    let lesson = app.game.tutorial.as_ref().map(Tutorial::lesson);
+    Ok(match after_pause(out, lesson) {
+        AfterPause::Stay => Screen::Pause(ps),
+        AfterPause::Resume => {
             app.game.clock.paused = false;
             Screen::Playing
         }
-        screens::pause::Out::SaveGame => {
+        AfterPause::Name => {
             // Only the session knows its map; the screen just edits
             // the string.
             ps.begin_naming(&app.game.scenario.name);
             Screen::Pause(ps)
         }
-        screens::pause::Out::Save(name) => {
-            app.persistence_screen(persistence::Intent::Named(name), Screen::Pause(ps))
-        }
-        screens::pause::Out::Settings => {
+        AfterPause::Busy(intent) => app.persistence_screen(intent, Screen::Pause(ps)),
+        AfterPause::Settings => {
             // The pause payload rides along intact: leaving
             // Settings lands back on this exact menu, cursor
             // still on the row that opened it. The sim stays
@@ -1450,12 +1449,12 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
                 back: Box::new(Screen::Pause(ps)),
             }
         }
-        screens::pause::Out::Roster => Screen::Codex {
+        AfterPause::Roster => Screen::Codex {
             screen: CodexScreen::open(),
             back: Box::new(Screen::Pause(ps)),
         },
-        screens::pause::Out::Lessons => open_lessons(app, Screen::Pause(ps)),
-        screens::pause::Out::Surrender => {
+        AfterPause::Lessons => open_lessons(app, Screen::Pause(ps)),
+        AfterPause::Surrender => {
             // The command lands on the next tick like any
             // other. A 1v1 decides on the spot and the
             // normal result flow takes over; in a team game
@@ -1465,7 +1464,7 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
             app.game.clock.paused = false;
             Screen::Playing
         }
-        screens::pause::Out::WatchReplay => {
+        AfterPause::Watch => {
             // Leaving the viewer lands back on this exact menu.
             match live_playback(&app.game) {
                 Ok(session) => open_playback(session, Screen::Pause(ps)),
@@ -1475,33 +1474,77 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
                 }
             }
         }
-        screens::pause::Out::Restart => {
-            if let Some(tutorial) = &app.game.tutorial {
-                return start_lesson(app, tutorial.lesson());
-            }
-            let fresh = rebuild_match(&app.game)?;
-            app.discarded.push(app.game.slot.clone());
+        AfterPause::RestartLesson(lesson) => return start_lesson(app, lesson),
+        AfterPause::Restart => {
+            let fresh = restart(&app.game, &mut app.discarded)?;
             app.install(fresh, Install::local(app.args.paused));
             Screen::Playing
         }
-        screens::pause::Out::MainMenu => app.persistence_screen(
-            persistence::Intent::Leave(screens::pause::LeaveVerb::MainMenu),
-            Screen::Pause(ps),
-        ),
-        screens::pause::Out::Quit => app.persistence_screen(
-            persistence::Intent::Leave(screens::pause::LeaveVerb::Quit),
-            Screen::Pause(ps),
-        ),
-        screens::pause::Out::RetrySave(verb) => {
-            app.persistence_screen(persistence::Intent::Leave(verb), Screen::Pause(ps))
-        }
-        screens::pause::Out::LeaveUnsaved(verb) => match verb {
-            screens::pause::LeaveVerb::MainMenu => Screen::Home(HomeScreen::open()),
-            screens::pause::LeaveVerb::Quit => {
-                app.persistence_screen(persistence::Intent::Exit, Screen::Pause(ps))
-            }
-        },
+        AfterPause::Home => Screen::Home(HomeScreen::open()),
     })
+}
+
+/// What a pause menu choice leads to.
+#[derive(Debug, PartialEq, Eq)]
+enum AfterPause {
+    /// The menu stays up.
+    Stay,
+    /// Back to the match, running again.
+    Resume,
+    /// The save-name field.
+    Name,
+    /// The busy screen, saving or quitting as the intent says.
+    Busy(persistence::Intent),
+    /// Settings over the menu.
+    Settings,
+    /// The roster over the menu.
+    Roster,
+    /// The lesson list over the menu.
+    Lessons,
+    /// Concede the seat, then back to the match.
+    Surrender,
+    /// The viewer over the match so far.
+    Watch,
+    /// The lesson afresh.
+    RestartLesson(Lesson),
+    /// The match afresh, its old save abandoned (see [`restart`]).
+    Restart,
+    /// Home, leaving the match unsaved.
+    Home,
+}
+
+/// What the pause menu's `out` leads to, over a match that runs `lesson`
+/// if it is one.
+fn after_pause(out: screens::pause::Out, lesson: Option<Lesson>) -> AfterPause {
+    use persistence::Intent;
+    use screens::pause::{LeaveVerb, Out};
+    match out {
+        Out::Stay => AfterPause::Stay,
+        Out::Resume => AfterPause::Resume,
+        Out::SaveGame => AfterPause::Name,
+        Out::Save(name) => AfterPause::Busy(Intent::Named(name)),
+        Out::Settings => AfterPause::Settings,
+        Out::Roster => AfterPause::Roster,
+        Out::Lessons => AfterPause::Lessons,
+        Out::Surrender => AfterPause::Surrender,
+        Out::WatchReplay => AfterPause::Watch,
+        Out::Restart => lesson.map_or(AfterPause::Restart, AfterPause::RestartLesson),
+        Out::MainMenu => AfterPause::Busy(Intent::Leave(LeaveVerb::MainMenu)),
+        Out::Quit => AfterPause::Busy(Intent::Leave(LeaveVerb::Quit)),
+        Out::RetrySave(verb) => AfterPause::Busy(Intent::Leave(verb)),
+        Out::LeaveUnsaved(LeaveVerb::MainMenu) => AfterPause::Home,
+        // A quit with nothing to save still lets what is going out finish.
+        Out::LeaveUnsaved(LeaveVerb::Quit) => AfterPause::Busy(Intent::Exit),
+    }
+}
+
+/// Rebuilds `game`'s match for Restart and abandons its save to
+/// `discarded`, for the worker to delete: the fresh run saves to a slot of
+/// its own. A rebuild that fails abandons nothing.
+fn restart(game: &Game, discarded: &mut Vec<autosave::SaveSlot>) -> Result<Game> {
+    let fresh = rebuild_match(game)?;
+    discarded.push(game.slot.clone());
+    Ok(fresh)
 }
 
 #[cfg(test)]

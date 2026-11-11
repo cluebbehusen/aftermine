@@ -451,6 +451,82 @@ fn restart_and_rematch_rebuild_the_exact_opponents_without_rerolling() {
 }
 
 #[test]
+fn each_pause_choice_leads_where_it_says() {
+    use persistence::Intent;
+    use screens::pause::LeaveVerb::{MainMenu, Quit};
+    use screens::pause::Out;
+    let lesson = Some(Lesson::Scrap);
+    // (choice, the lesson the match runs, where it leads)
+    let rows = [
+        (Out::Stay, None, AfterPause::Stay),
+        (Out::Resume, None, AfterPause::Resume),
+        (Out::SaveGame, None, AfterPause::Name),
+        (
+            Out::Save("keep".into()),
+            None,
+            AfterPause::Busy(Intent::Named("keep".into())),
+        ),
+        (Out::Settings, None, AfterPause::Settings),
+        (Out::Roster, None, AfterPause::Roster),
+        (Out::Lessons, lesson, AfterPause::Lessons),
+        (Out::Surrender, None, AfterPause::Surrender),
+        (Out::WatchReplay, None, AfterPause::Watch),
+        (Out::Restart, None, AfterPause::Restart),
+        (
+            Out::Restart,
+            lesson,
+            AfterPause::RestartLesson(Lesson::Scrap),
+        ),
+        (
+            Out::MainMenu,
+            None,
+            AfterPause::Busy(Intent::Leave(MainMenu)),
+        ),
+        (Out::Quit, None, AfterPause::Busy(Intent::Leave(Quit))),
+        (
+            Out::RetrySave(MainMenu),
+            None,
+            AfterPause::Busy(Intent::Leave(MainMenu)),
+        ),
+        (
+            Out::RetrySave(Quit),
+            None,
+            AfterPause::Busy(Intent::Leave(Quit)),
+        ),
+        (Out::LeaveUnsaved(MainMenu), None, AfterPause::Home),
+        (
+            Out::LeaveUnsaved(Quit),
+            None,
+            AfterPause::Busy(Intent::Exit),
+        ),
+    ];
+    for (out, lesson, after) in rows {
+        let row = format!("{out:?} over {lesson:?}");
+        assert_eq!(after_pause(out, lesson), after, "{row}");
+    }
+}
+
+#[test]
+fn restart_abandons_the_old_matchs_save_and_plays_the_same_match_afresh() {
+    let mut game = Game::new(Scenario::skirmish()).unwrap();
+    game.advance_ticks(30);
+    let mut discarded = vec![autosave::SaveSlot::fresh()];
+    let earlier = discarded[0].clone();
+    let fresh = restart(&game, &mut discarded).expect("Restart rebuilds the match");
+    assert_eq!(
+        discarded,
+        [earlier, game.slot.clone()],
+        "the old match's save joins those the worker deletes"
+    );
+    assert_ne!(
+        fresh.slot, game.slot,
+        "the fresh run saves to a slot of its own"
+    );
+    assert_eq!(fresh.scenario, game.scenario);
+    assert_eq!(fresh.state.current_tick(), 0);
+}
+
+#[test]
 fn a_viewer_restores_the_exact_screen_that_opened_it() {
     let game = Game::new(Scenario::skirmish()).expect("game");
     let mut pause = PauseScreen::open(false, true);
