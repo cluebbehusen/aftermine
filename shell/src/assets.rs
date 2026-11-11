@@ -1600,7 +1600,8 @@ pub struct Sounds {
     effects: std::collections::HashMap<SoundKind, Sound>,
     /// The zap's lower sibling, alternated per shot.
     pub laser2: Sound,
-    /// Independently loaded buffers, because the backend stops by sound id.
+    /// Loaded once per voice, because the backend stops by sound id; voices
+    /// loaded from one clip share its decoded samples.
     pub rocket_motors: Vec<Sound>,
     /// The same, one per warhead motor voice.
     pub warhead_motors: Vec<Sound>,

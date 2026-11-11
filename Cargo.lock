@@ -916,7 +916,7 @@ checksum = "5a651516ddc9168ebd67b24afd085a718be02f8858fe406591b013d101ce2f40"
 [[package]]
 name = "quad-snd"
 version = "0.2.8"
-source = "git+https://github.com/cluebbehusen/quad-snd?rev=eb2be9bda5a4cd91d6f6047309d088882ba869db#eb2be9bda5a4cd91d6f6047309d088882ba869db"
+source = "git+https://github.com/cluebbehusen/quad-snd?rev=1d33371e4e458f5b2ba1832cde658c41221f6742#1d33371e4e458f5b2ba1832cde658c41221f6742"
 dependencies = [
  "audir-sles",
  "audrey",

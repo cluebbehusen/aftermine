@@ -36,6 +36,11 @@ const BACKGROUND_BAKES_PER_FRAME: usize = 4;
 /// pit relief and wear marks overhang their tile by less than one. Slabs reach
 /// further and pad their own window.
 const REACH: f32 = 1.0;
+/// Tiles the whole-map bake queues before handing them to the GPU: about what
+/// a chunk holds at the widest zoom, so the bake never sets how large
+/// macroquad's batch buffers grow. Each hand-over keeps some graphics driver
+/// memory of its own, so handing over more often costs more than it saves.
+const FLUSH_TILES: u32 = 1024;
 
 /// Where the ground passes draw, in logical pixels: the screen, or one chunk
 /// of the cache. While the zoom holds still, world `(0, 0)` lands on a whole
@@ -147,6 +152,47 @@ impl<'a> Ground<'a> {
     }
 }
 
+/// When a ground pass hands its queued draws to the GPU. macroquad keeps its
+/// batch buffers as large as the most it has queued at once, for the life of
+/// the app, so the whole map drawn as one batch would keep that much memory
+/// for nothing. Handing draws over midway keeps their order, so the pixels do
+/// not change.
+pub(super) struct Flush<'a> {
+    /// Submits what is queued; `None` leaves the batch whole.
+    submit: Option<&'a dyn Fn()>,
+    tiles: u32,
+}
+
+impl<'a> Flush<'a> {
+    /// For a chunk or the screen, no more than a frame queues anyway.
+    pub(super) fn never() -> Self {
+        Self {
+            submit: None,
+            tiles: 0,
+        }
+    }
+
+    /// Submits every [`FLUSH_TILES`] tiles.
+    fn in_pieces(submit: &'a dyn Fn()) -> Self {
+        Self {
+            submit: Some(submit),
+            tiles: 0,
+        }
+    }
+
+    /// Counts a tile or placed piece a pass has drawn.
+    pub(super) fn tile(&mut self) {
+        let Some(submit) = self.submit else {
+            return;
+        };
+        self.tiles += 1;
+        if self.tiles == FLUSH_TILES {
+            self.tiles = 0;
+            submit();
+        }
+    }
+}
+
 /// The two baked layers, in draw order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Layer {
@@ -158,16 +204,16 @@ pub(super) enum Layer {
 
 impl Layer {
     /// Draws this layer's passes into `view`.
-    fn draw(self, ground: &Ground<'_>, view: &GroundView, sprites: &Sprites) {
+    fn draw(self, ground: &Ground<'_>, view: &GroundView, sprites: &Sprites, flush: &mut Flush) {
         match self {
-            Layer::Floor => world::draw_floor(ground, view, sprites),
+            Layer::Floor => world::draw_floor(ground, view, sprites, flush),
             Layer::Raised => {
                 let layout = ground.layout;
                 let grade = ground.grade;
-                world::draw_blockers(view, sprites, &layout.blockers, grade);
-                pits::draw_pits(ground.map, view, &layout.pits, grade);
-                boulders::draw_boulders(view, sprites, &layout.slabs, grade);
-                terraces::draw_terraces(ground.map, view, &layout.terraces, grade);
+                world::draw_blockers(view, sprites, &layout.blockers, grade, flush);
+                pits::draw_pits(ground.map, view, &layout.pits, grade, flush);
+                boulders::draw_boulders(view, sprites, &layout.slabs, grade, flush);
+                terraces::draw_terraces(ground.map, view, &layout.terraces, grade, flush);
             }
         }
     }
@@ -586,7 +632,7 @@ impl GroundCache {
         sprites: &Sprites,
     ) {
         let Some(showing) = &self.showing else {
-            layer.draw(ground, view, sprites);
+            layer.draw(ground, view, sprites, &mut Flush::never());
             return;
         };
         gl_use_material(&sprites.ground_blend().composite);
@@ -662,7 +708,7 @@ impl GroundCache {
                     ..Default::default()
                 });
                 clear_background(BLANK);
-                layer.draw(ground, &view, sprites);
+                layer.draw(ground, &view, sprites, &mut Flush::never());
                 Some(target)
             };
             baked.push((
@@ -692,12 +738,13 @@ fn bake_overview(ground: &Ground<'_>, sprites: &Sprites, dpi: f32) -> Overview {
             numeric::to_u32((size.y * dpi).ceil()),
         );
         target.texture.set_filter(FilterMode::Linear);
-        set_camera(&Camera2D {
+        let camera = Camera2D {
             target: size * 0.5,
             zoom: vec2(2.0 / size.x, 2.0 / size.y),
             render_target: Some(target.clone()),
             ..Default::default()
-        });
+        };
+        set_camera(&camera);
         clear_background(BLANK);
         let view = GroundView {
             zoom,
@@ -705,7 +752,9 @@ fn bake_overview(ground: &Ground<'_>, sprites: &Sprites, dpi: f32) -> Overview {
             lo,
             hi,
         };
-        layer.draw(ground, &view, sprites);
+        // Setting the camera again submits what is queued.
+        let submit = || set_camera(&camera);
+        layer.draw(ground, &view, sprites, &mut Flush::in_pieces(&submit));
         target
     });
     gl_use_default_material();

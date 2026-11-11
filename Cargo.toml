@@ -67,10 +67,11 @@ miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "32804d66b0
 # quad-snd, macroquad's audio library, has no backend for tvOS, and on iOS and
 # tvOS it leaves the audio session in its default category, which stops other
 # apps' audio, such as music, as soon as the game's sound starts. The fork's
-# `aftermine` branch is the 0.2.8 release plus Core Audio on tvOS and the
-# Ambient category, which mixes with other apps' audio. Drop the patch once
+# `aftermine` branch is the 0.2.8 release plus Core Audio on tvOS, the Ambient
+# category, which mixes with other apps' audio, and one decoded copy of a clip
+# shared by every sound loaded from the same bytes. Drop the patch once
 # releases carry these changes.
-quad-snd = { git = "https://github.com/cluebbehusen/quad-snd", rev = "eb2be9bda5a4cd91d6f6047309d088882ba869db" }
+quad-snd = { git = "https://github.com/cluebbehusen/quad-snd", rev = "1d33371e4e458f5b2ba1832cde658c41221f6742" }
 
 # `cargo run` is how the game is played day to day, and an unoptimized
 # `fixed`-point sim ticks ~25x slower than release — big battles would eat

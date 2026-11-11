@@ -1,6 +1,6 @@
 //! Ground layers: terrain tiles, the fog veil over them, and battle scars.
 
-use super::ground::{Ground, GroundView};
+use super::ground::{Flush, Ground, GroundView};
 use super::*;
 use crate::numeric;
 use crate::numeric::Fit;
@@ -612,6 +612,7 @@ pub(super) fn draw_blockers(
     sprites: &Sprites,
     blockers: &Blockers,
     grade: super::grade::Grade,
+    flush: &mut Flush,
 ) {
     let zoom = view.zoom();
     let (lo, hi) = view.world_rect();
@@ -638,6 +639,7 @@ pub(super) fn draw_blockers(
                 ..Default::default()
             },
         );
+        flush.tile();
     }
 }
 
@@ -868,7 +870,12 @@ fn ground_paint<'a>(ground: &Ground<'a>) -> impl Fn(&TileSpot<'_>) -> (Color, f3
 /// macroquad's batch, and macroquad keeps a buffer for every draw a frame has
 /// ever needed: drawn tile by tile, a zoomed-out tiered map took fourteen
 /// thousand draws and exhausted an iPad's memory.
-pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprites) {
+pub(super) fn draw_floor(
+    ground: &Ground<'_>,
+    view: &GroundView,
+    sprites: &Sprites,
+    flush: &mut Flush,
+) {
     let zoom = view.zoom();
     let size = zoom.ceil() + 1.0; // slight overlap kills seam hairlines
     let theme = ground
@@ -883,6 +890,7 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
     let levels = ground.layout.levels.as_ref();
     let paint = ground_paint(ground);
     for_each_tile(map, view, |spot| {
+        flush.tile();
         sprites.draw(
             spot.screen.x.floor(),
             spot.screen.y.floor(),
@@ -903,6 +911,7 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
     }
     if levels.is_some() {
         for_each_tile(map, view, |spot| {
+            flush.tile();
             let wash = paint(&spot).1;
             if wash > 0.0 {
                 draw_rectangle(
@@ -916,6 +925,7 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
         });
     }
     for_each_tile(map, view, |spot| {
+        flush.tile();
         let (x, y) = (spot.pos.x, spot.pos.y);
         let tile = spot.tile;
         let tint = paint(&spot).0;
@@ -1019,6 +1029,7 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
     // frames.
     if let Some(levels) = levels {
         for_each_tile(map, view, |spot| {
+            flush.tile();
             levels.draw_tile(view, spot.pos, ground.grade);
         });
     }
