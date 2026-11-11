@@ -14,7 +14,7 @@ use crate::frame::{HomeFrame, doubled, ring};
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::Memory;
 use crate::profile::PersonalityTraits;
-use aftermine_sim::observation::{ObservationData, UnitObs};
+use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use aftermine_sim::stats::Domain;
 use aftermine_sim::{BuildingId, BuildingKind, Command, PlayerId, UnitId, UnitKind};
@@ -44,6 +44,7 @@ pub(crate) use attack::{building_value, margin, minimum};
 pub(crate) use defense::Shortfall;
 pub(crate) use lift::{carrier, payload};
 pub(crate) use repair::{Meal, feeds, treating};
+use scouting::seen_lately;
 pub(crate) use scouting::{look, points};
 pub(crate) use settlement::Settlement;
 pub(crate) use strike::strike_need;
@@ -157,7 +158,12 @@ enum StrikePhase {
 enum LiftPhase {
     Load,
     Fly,
-    Fight { focus: Option<UnitId> },
+    Fight {
+        focus: Option<UnitId>,
+        /// What the fight last knew of the enemy, to tell whether it still
+        /// makes progress. `None` until its first decision.
+        tally: Option<attack::Tally>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -472,7 +478,7 @@ impl Task {
                 ..
             }
             | Self::Lift {
-                phase: LiftPhase::Fight { focus },
+                phase: LiftPhase::Fight { focus, .. },
                 ..
             }
             | Self::Strike {
@@ -1157,13 +1163,30 @@ fn objectives(observation: &ObservationData, map: &MapModel) -> Vec<Objective> {
 /// Whether `target` may still stand: it is known, or its ground is out of
 /// sight.
 fn standing(observation: &ObservationData, target: Objective) -> bool {
-    let known = observation.enemy_buildings.iter().any(|building| {
-        (building.player, building.kind, building.anchor)
-            == (target.owner, target.building, target.anchor)
-    });
     let seen = crate::frame::tiles_of(target.anchor, target.building.size())
         .any(|tile| observation.visible(tile));
-    known || !seen
+    known(observation, target).is_some() || !seen
+}
+
+/// Whether `target`, a known enemy building or a hostile start, is presumed
+/// held: the seat knows it, or has not seen its owner's start lately. A start
+/// seen empty stays cleared out of sight until it is worth another look.
+fn presumed(
+    observation: &ObservationData,
+    map: &MapModel,
+    memory: &Memory,
+    target: Objective,
+) -> bool {
+    known(observation, target).is_some()
+        || !seen_lately(map, memory, observation.me, target.owner, observation.tick)
+}
+
+/// The enemy building the seat knows of as `target`.
+fn known(observation: &ObservationData, target: Objective) -> Option<&BuildingObs> {
+    observation.enemy_buildings.iter().find(|building| {
+        (building.player, building.kind, building.anchor)
+            == (target.owner, target.building, target.anchor)
+    })
 }
 
 fn run(units: Vec<UnitId>, goal: TilePos) -> Command {

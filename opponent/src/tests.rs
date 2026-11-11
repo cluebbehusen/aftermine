@@ -530,6 +530,18 @@ fn wounded(state: &State, unit: UnitId, hp: u32) -> State {
     serde_json::from_value(value).unwrap()
 }
 
+/// `state` with `building` at `hp`.
+fn damaged(state: &State, building: BuildingId, hp: u32) -> State {
+    let mut value = serde_json::to_value(state).unwrap();
+    let buildings = value["buildings"].as_array_mut().unwrap();
+    let entry = buildings
+        .iter_mut()
+        .find(|entry| entry["id"] == building.0)
+        .unwrap();
+    entry["hp"] = hp.into();
+    serde_json::from_value(value).unwrap()
+}
+
 /// The east seat's counterpart of west `commands` on a half-turn-symmetric
 /// staging: units by their rank among the seat's units, buildings by rank
 /// among its buildings of the same kind, and tiles rotated.
@@ -550,19 +562,21 @@ fn mirror(state: &State, commands: Vec<PlayerCommand>) -> Vec<PlayerCommand> {
     };
     let (width, height) = (state.map().width(), state.map().height());
     let rotate = |tile: TilePos| TilePos::new(width - 1 - tile.x, height - 1 - tile.y);
-    // A building's counterpart: the east building of its kind at its rank.
+    // A building's counterpart: the other seat's building of its kind at its
+    // rank.
     let counterpart = |building: BuildingId| {
-        let kind = state.building(building).unwrap().kind;
+        let building = state.building(building).unwrap();
         let of = |player: u8| -> Vec<BuildingId> {
             state
                 .buildings()
                 .iter()
-                .filter(|b| b.player == PlayerId(player) && b.kind == kind)
+                .filter(|b| b.player == PlayerId(player) && b.kind == building.kind)
                 .map(|b| b.id)
                 .collect()
         };
-        let index = of(0).iter().position(|id| *id == building).unwrap();
-        of(1)[index]
+        let seat = building.player.0;
+        let index = of(seat).iter().position(|id| *id == building.id).unwrap();
+        of(1 - seat)[index]
     };
     commands
         .into_iter()
@@ -623,6 +637,15 @@ fn mirror(state: &State, commands: Vec<PlayerCommand>) -> Vec<PlayerCommand> {
                     target: AttackTarget::Unit(
                         west_units[east_units.iter().position(|id| *id == enemy).unwrap()],
                     ),
+                    queue,
+                },
+                Command::Attack {
+                    units: sent,
+                    target: AttackTarget::Building(building),
+                    queue,
+                } => Command::Attack {
+                    units: units(sent),
+                    target: AttackTarget::Building(counterpart(building)),
                     queue,
                 },
                 Command::Load {

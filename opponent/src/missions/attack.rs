@@ -11,7 +11,8 @@ use super::defense::{artillery, battery, lobs};
 use super::raid::{aim, blast};
 use super::{
     AttackPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, against_buildings,
-    approach, breacher, distant_worth, hits, hunt, insert, mine, run, standing, value,
+    approach, breacher, distant_worth, hits, hunt, insert, known, mine, presumed, run, standing,
+    value,
 };
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
@@ -460,8 +461,10 @@ impl Missions {
 
         let current = plan.target(owner, building, anchor);
         let target = if regrouping {
-            let current =
-                current.filter(|_| !plan.memory.abandoned(building, anchor, observation.tick));
+            let current = current.filter(|current| {
+                plan.present(current.objective())
+                    && !plan.memory.abandoned(building, anchor, observation.tick)
+            });
             match (current, plan.best(None)) {
                 (Some(current), Some(best)) if best.score * 4 < current.score * 5 => Some(current),
                 // A seat that fell back holds its target while the best
@@ -601,11 +604,22 @@ impl Missions {
             } = mission.task
             && held == target.objective()
         {
-            let fit: Vec<&UnitObs> = fit
+            let mut fit: Vec<&UnitObs> = fit
                 .iter()
                 .copied()
                 .filter(|unit| reaches(plan.map, unit, component))
                 .collect();
+            // Aircraft the anti-air around the army outweighs would only be
+            // sent home again.
+            let joined: Vec<&UnitObs> = mission
+                .units
+                .iter()
+                .filter_map(|id| mine(observation, *id))
+                .chain(fit.iter().copied())
+                .collect();
+            if !plan.outflown(&joined).is_empty() {
+                fit.retain(|unit| unit.kind.stats().domain != Domain::Air);
+            }
             let room = UNIT_CAP - mission.units.len();
             let recruits = plan.with_screens(
                 recruit(plan.frame, &fit, target.approach, u64::MAX, room),
@@ -656,8 +670,9 @@ fn travel_on(
 }
 
 /// Moves a fighting attack on: its idle Sappers and breachers cut the
-/// nearest defense; it withdraws from a losing fight, starts the fight's
-/// time again while it makes progress, goes on while it is still winning one
+/// nearest defense; it withdraws from a losing fight, sends home only the
+/// aircraft that anti-air alone outweighs, starts the fight's time again
+/// while it makes progress, goes on while it is still winning one
 /// past its time where its seat presses, pushes on to the next target while
 /// strong enough, and otherwise turns home. Returns the target when it gave
 /// up on it.
@@ -706,25 +721,28 @@ fn engage_on(
         })
         .collect();
     let opposition = plan.opposition(members);
-    if opposition * 1_000 > strength * plan.retreat {
+    let outflown = plan.outflown(members);
+    if opposition * 1_000 > strength * plan.retreat
+        || (!outflown.is_empty() && outflown.len() == members.len())
+    {
         if ledger.order(run(leaving, rally)) {
             mission.attack_phase(target, AttackPhase::Withdraw, now, Some(rally));
             return Some(target.objective());
         }
         return None;
     }
+    if peel(mission, &outflown, rally, ledger) {
+        return None;
+    }
     // A fight ends once it has gone its time without progress, not after a
     // fixed time.
-    let tally = Tally::of(observation, members, target.objective().owner);
     if let Task::Attack {
-        phase: AttackPhase::Engage { tally: last, .. },
+        phase: AttackPhase::Engage { tally, .. },
         ..
     } = &mut mission.task
+        && Tally::update(tally, observation, members, target.objective().owner)
     {
-        if last.is_some_and(|last| tally.progresses(last)) {
-            mission.since = now;
-        }
-        *last = Some(last.map_or(tally, |last| tally.since(last)));
+        mission.since = now;
     }
     let age = now - mission.since;
     if !all_idle && age < ENGAGE_TICKS {
@@ -732,10 +750,7 @@ fn engage_on(
     }
     // A fight still being won goes on past its time; with no
     // armed enemy left around the army, it is over.
-    if presses(plan.difficulty)
-        && !all_idle
-        && strength >= opposition
-        && plan.armed(members) != (0, 0)
+    if presses(plan.difficulty) && !all_idle && strength >= opposition && plan.armed(members).any()
     {
         mission.since = now;
         return None;
@@ -745,25 +760,20 @@ fn engage_on(
     // a line in front of a base, goes on to the target it still knows of
     // instead of counting the attack as failed. The fight's time still
     // bounds it.
-    if all_idle && standing && age < ENGAGE_TICKS {
-        let objective = target.objective();
-        let building = observation.enemy_buildings.iter().find(|building| {
-            (building.player, building.kind, building.anchor)
-                == (objective.owner, objective.building, objective.anchor)
-        });
-        if let Some(building) = building {
-            let shooters: Vec<UnitId> = members
-                .iter()
-                .filter(|unit| {
-                    unit.kind != UnitKind::Sapper
-                        && !breacher(unit.kind)
-                        && hits(unit, Domain::Ground)
-                })
-                .map(|unit| unit.id)
-                .collect();
-            if !shooters.is_empty() && ledger.order(blast(shooters, aim(building))) {
-                return None;
-            }
+    if all_idle
+        && standing
+        && age < ENGAGE_TICKS
+        && let Some(building) = known(observation, target.objective())
+    {
+        let shooters: Vec<UnitId> = members
+            .iter()
+            .filter(|unit| {
+                unit.kind != UnitKind::Sapper && !breacher(unit.kind) && hits(unit, Domain::Ground)
+            })
+            .map(|unit| unit.id)
+            .collect();
+        if !shooters.is_empty() && ledger.order(blast(shooters, aim(building))) {
+            return None;
         }
     }
     let next = plan.best(Some(target)).filter(|next| {
@@ -799,6 +809,21 @@ pub(super) struct Tally {
 }
 
 impl Tally {
+    /// Updates `last`, what a fight against `owner` knew of the enemy, with
+    /// the enemy around `members` now. Returns whether the fight made
+    /// progress since.
+    pub(super) fn update(
+        last: &mut Option<Self>,
+        observation: &ObservationData,
+        members: &[&UnitObs],
+        owner: PlayerId,
+    ) -> bool {
+        let now = Self::of(observation, members, owner);
+        let progress = last.is_some_and(|last| now.progresses(last));
+        *last = Some(last.map_or(now, |last| now.since(last)));
+        progress
+    }
+
     /// The enemy around `members` now, in a fight against `owner`.
     fn of(observation: &ObservationData, members: &[&UnitObs], owner: PlayerId) -> Self {
         let buildings = observation
@@ -850,7 +875,8 @@ fn afield(phase: AttackPhase) -> bool {
 /// Moves a staging attack on: it goes in once enough of it has gathered or
 /// none of the rest is still on its way, with strength enough; falls back
 /// out of reach when shelled where it gathers; withdraws from a losing
-/// fight; and turns home when it cannot reach its staging spot or is too
+/// fight, sending home only the aircraft that anti-air alone outweighs; and
+/// turns home when it cannot reach its staging spot or is too
 /// weak to go in.
 /// Returns the target when it gave up on it.
 fn stage_on(
@@ -883,11 +909,17 @@ fn stage_on(
         .filter(|unit| unit.kind != UnitKind::Sapper && !breacher(unit.kind))
         .collect();
     let opposition = plan.opposition(members);
-    if opposition * 1_000 > strength * plan.retreat {
+    let outflown = plan.outflown(members);
+    if opposition * 1_000 > strength * plan.retreat
+        || (!outflown.is_empty() && outflown.len() == members.len())
+    {
         if ledger.order(run(mission.units.clone(), rally)) {
             mission.attack_phase(target, AttackPhase::Withdraw, now, Some(rally));
             return Some(target.objective());
         }
+        return None;
+    }
+    if peel(mission, &outflown, rally, ledger) {
         return None;
     }
     let share = staging(plan.difficulty).unwrap_or_default();
@@ -1013,6 +1045,16 @@ fn push(
     if ledger.order(hunt(going, target.approach)) {
         mission.attack_phase(target, AttackPhase::Travel, now, Some(target.approach));
     }
+}
+
+/// Sends `aircraft` of the attack home and lets them go, the rest of the
+/// army going on. Returns whether it did.
+fn peel(mission: &mut Mission, aircraft: &[UnitId], rally: TilePos, ledger: &mut Ledger) -> bool {
+    if aircraft.is_empty() || !ledger.order(run(aircraft.to_vec(), rally)) {
+        return false;
+    }
+    mission.units.retain(|id| !aircraft.contains(id));
+    true
 }
 
 /// Hostile shells landing among `members` from guns they are not already
@@ -1232,17 +1274,12 @@ impl<'a> Plan<'a> {
                     building.id,
                 )
             })
-            .or_else(|| {
-                self.observation.enemy_buildings.iter().find(|building| {
-                    (building.player, building.kind, building.anchor)
-                        == (target.owner, target.building, target.anchor)
-                })
-            })
+            .or_else(|| known(self.observation, target.objective()))
     }
 
     /// The best target other than `skip`, or `None`. Known enemy buildings
-    /// come first; with none, hostile starts are presumed held. With several
-    /// enemies, the rival's targets come first.
+    /// come first; with none, hostile starts are presumed held unless seen
+    /// empty lately. With several enemies, the rival's targets come first.
     fn best(&self, skip: Option<Target>) -> Option<Target> {
         let now = self.observation.tick;
         let differs = |target: &Target| {
@@ -1288,6 +1325,7 @@ impl<'a> Plan<'a> {
                 let anchor = self.map.start(owner)?;
                 self.target(owner, BuildingKind::Foundry, anchor)
             })
+            .filter(|target| presumed(self.observation, self.map, self.memory, target.objective()))
             .collect();
         let rival = |targets: &[Target]| -> Vec<Target> {
             targets
@@ -1322,6 +1360,23 @@ impl<'a> Plan<'a> {
             approach,
             score,
         })
+    }
+
+    /// Whether `objective` is still there to go after: a known enemy
+    /// building, or a hostile start presumed held. A site out of sight
+    /// reads as standing whether or not anything stands there.
+    fn present(&self, objective: Objective) -> bool {
+        if self.start(objective) {
+            presumed(self.observation, self.map, self.memory, objective)
+        } else {
+            known(self.observation, objective).is_some()
+        }
+    }
+
+    /// Whether `objective` is the Foundry presumed at its owner's start.
+    fn start(&self, objective: Objective) -> bool {
+        objective.building == BuildingKind::Foundry
+            && self.map.start(objective.owner) == Some(objective.anchor)
     }
 
     /// Army value the attack on `target` needs: the known army it would
@@ -1532,45 +1587,83 @@ impl<'a> Plan<'a> {
         ids
     }
 
-    /// Value of the armed enemies the seat knows of within contact of the
-    /// members: remembered units by confidence, and known armed buildings by
-    /// health.
+    /// Value of the armed enemies the seat knows of that can hit ground and
+    /// a member within contact of them, which the whole army answers:
+    /// remembered units by confidence, and known armed buildings by health.
     fn opposition(&self, members: &[&UnitObs]) -> u64 {
-        let (units, buildings) = self.armed(members);
+        let armed = self.armed(members);
         // Breachers among the members answer the armed buildings first.
         let breach: u64 = members.iter().map(|unit| against_buildings(unit)).sum();
-        (units + buildings.saturating_sub(breach)) * self.misjudge / 1_000
+        (armed.units + armed.buildings.saturating_sub(breach)) * self.misjudge / 1_000
     }
 
-    /// Value of the armed enemy units and armed buildings the seat knows of
-    /// within contact of the members, before any breacher answers them.
-    fn armed(&self, members: &[&UnitObs]) -> (u64, u64) {
+    /// The aircraft among `members` when the known enemies around the army
+    /// that can hit only aircraft outweigh them, by the odds the seat gives
+    /// a fight up at; else none. Launch never counts those guns, since they
+    /// cannot stop the ground army, so they turn back only the aircraft.
+    fn outflown(&self, members: &[&UnitObs]) -> Vec<UnitId> {
+        let aircraft: Vec<&UnitObs> = members
+            .iter()
+            .copied()
+            .filter(|unit| unit.kind.stats().domain == Domain::Air)
+            .collect();
+        let strength: u64 = aircraft
+            .iter()
+            .filter(|unit| !unit.kind.stats().weapons.is_empty())
+            .map(|unit| value(unit))
+            .sum();
+        let anti_air = self.armed(members).aircraft * self.misjudge / 1_000;
+        if anti_air * 1_000 > strength * self.retreat {
+            aircraft.iter().map(|unit| unit.id).collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// The armed enemies the seat knows of within contact of the members,
+    /// before any breacher answers them.
+    fn armed(&self, members: &[&UnitObs]) -> Armed {
         let now = self.observation.tick;
-        let near = |tile: TilePos| {
-            members
-                .iter()
-                .any(|unit| unit.tile.chebyshev(tile) <= CONTACT_TILES)
+        // What an enemy in contact with members by `contact` counts against,
+        // if anything: one that can hit ground once it can hit a member there,
+        // and one that can hit only aircraft wherever the army is.
+        let part = |ground: bool, air: bool, contact: &dyn Fn(&UnitObs) -> bool| {
+            let mut near = members.iter().filter(|member| contact(member));
+            if ground {
+                near.any(|member| member.kind.stats().domain == Domain::Ground || air)
+                    .then_some(Against::Army)
+            } else {
+                (air && near.next().is_some()).then_some(Against::Aircraft)
+            }
         };
-        let units: u64 = self
-            .memory
-            .units()
-            .iter()
-            .filter(|unit| unit.kind.stats().can_fight() && near(unit.tile))
-            .map(|unit| unit.value(now))
-            .sum();
-        let buildings: u64 = self
-            .observation
-            .enemy_buildings
-            .iter()
-            .filter(|building| !building.kind.base_stats().weapons.is_empty())
-            .filter(|building| {
-                members.iter().any(|unit| {
-                    gap(building.anchor, building.kind.size(), unit.tile, (1, 1)) < CONTACT_TILES
-                })
-            })
-            .map(building_value)
-            .sum();
-        (units, buildings)
+        let mut armed = Armed::default();
+        for unit in self.memory.units() {
+            // A Sapper's charge strikes ground without a weapon.
+            let ground = crate::defenses::reach(unit.kind) > Fx::ZERO;
+            let air = unit.kind.stats().can_target(Domain::Air);
+            let contact = |member: &UnitObs| member.tile.chebyshev(unit.tile) <= CONTACT_TILES;
+            match part(ground, air, &contact) {
+                Some(Against::Army) => armed.units += unit.value(now),
+                Some(Against::Aircraft) => armed.aircraft += unit.value(now),
+                None => {}
+            }
+        }
+        for building in &self.observation.enemy_buildings {
+            let weapons = building.kind.base_stats().weapons;
+            let ground = weapons.iter().any(|weapon| weapon.targets.ground);
+            let air = weapons
+                .iter()
+                .any(|weapon| weapon.targets.covers(Domain::Air));
+            let contact = |member: &UnitObs| {
+                gap(building.anchor, building.kind.size(), member.tile, (1, 1)) < CONTACT_TILES
+            };
+            match part(ground, air, &contact) {
+                Some(Against::Army) => armed.buildings += building_value(building),
+                Some(Against::Aircraft) => armed.aircraft += building_value(building),
+                None => {}
+            }
+        }
+        armed
     }
 
     /// Where the army gathers against `owner`: the open tile within reach of
@@ -1595,6 +1688,37 @@ impl<'a> Plan<'a> {
                 )
             })
     }
+}
+
+/// The armed enemies the seat knows of around an attack's members, before
+/// any breacher answers them.
+#[derive(Default)]
+struct Armed {
+    /// Remembered units that can hit ground and a member in contact, by
+    /// confidence.
+    units: u64,
+    /// Known buildings that can hit ground and a member in contact, by
+    /// health.
+    buildings: u64,
+    /// Remembered units by confidence and known buildings by health that
+    /// can hit only aircraft, in contact with any member: where the army's
+    /// aircraft fly.
+    aircraft: u64,
+}
+
+impl Armed {
+    /// Whether any enemy the whole army answers is there.
+    fn any(&self) -> bool {
+        self.units > 0 || self.buildings > 0
+    }
+}
+
+/// Whom an armed enemy around an attack counts against.
+enum Against {
+    /// The whole army: it can hit ground, and a member within its contact.
+    Army,
+    /// The army's aircraft alone: it can hit nothing else.
+    Aircraft,
 }
 
 /// The known ground defense around `tile`: remembered armed enemy units by

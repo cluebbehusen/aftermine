@@ -7,10 +7,11 @@
 use super::Scratch;
 use super::air::{self, Hazard, Legs};
 
-use super::attack::{FIT, healthy, margin, minimum, opposed, striking};
+use super::attack::{FIT, Tally, healthy, margin, minimum, opposed, striking};
+use super::raid::{aim, blast};
 use super::{
     LiftPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, approach, distant_worth,
-    hunt, mine, open, run, standing,
+    hits, hunt, known, mine, open, presumed, run, standing,
 };
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
@@ -31,6 +32,8 @@ pub(super) const LOAD_TICKS: u64 = 1_200;
 /// Ticks a lift or a settlement may spend in flight, out or back: a
 /// computation bound on an attempt that cannot land.
 pub(super) const FLY_TICKS: u64 = 2_400;
+/// Ticks a lift's fight goes on without progress before it ends, as an
+/// attack's fight does.
 const FIGHT_TICKS: u64 = 3_600;
 
 /// Tiles around a target's footprint searched for a landing: a computation
@@ -410,9 +413,10 @@ struct Lifting<'a> {
 }
 
 impl Missions {
-    /// Advances the lift under way, if any, then forms one while none is,
-    /// ground reaches no enemy target, and the free carriers and payload at
-    /// home can carry enough to a landing. Returns the target given up on.
+    /// Advances the lift under way, if any, sends free riders on a target's
+    /// island at a target there, then forms a lift while none is, ground
+    /// reaches no enemy target, and the free carriers and payload at home
+    /// can carry enough to a landing. Returns the target given up on.
     pub(crate) fn lift(
         &mut self,
         observation: &ObservationData,
@@ -441,6 +445,7 @@ impl Missions {
             self.clear(&lifting, ledger);
         }
         lifting.given_up = given_up;
+        self.walk(&lifting, ledger);
         self.form(&lifting, ledger);
         given_up.map(|target| (target.building, target.anchor))
     }
@@ -969,23 +974,30 @@ impl Missions {
             let mission = &mut self.list[flight.index];
             mission.task = Task::Lift {
                 target: flight.target,
-                phase: LiftPhase::Fight { focus: None },
+                phase: LiftPhase::Fight {
+                    focus: None,
+                    tally: None,
+                },
             };
             mission.since = lifting.observation.tick;
             mission.goal = goal;
         }
     }
 
-    /// Landed riders fight the target, then the next target on the same
-    /// ground, and are let go when there is none or time runs out. The lift's
-    /// gunships keep over them and fly home with the riders let go, or alone
-    /// once wounded. Returns a target they stood beside without taking.
+    /// Landed riders fight the target, going at it once they come to rest
+    /// while the seat knows it, then the next target on the same ground, and
+    /// are let go when there is none or the fight goes its time without
+    /// progress. The lift's gunships keep over them and fly home with the
+    /// riders let go, or alone once wounded. Returns a target they stood
+    /// beside without taking.
     fn fight(
         &mut self,
         flight: &Flight<'_>,
         lifting: &Lifting<'_>,
         ledger: &mut Ledger,
     ) -> Option<Objective> {
+        let (map, observation) = (lifting.map, lifting.observation);
+        let now = observation.tick;
         let target = flight.target;
         let (gunships, wounded): (Vec<&UnitObs>, Vec<&UnitObs>) = flight
             .carriers
@@ -1013,17 +1025,35 @@ impl Missions {
                     .filter(|unit| !gone.contains(&unit.id)),
             )
             .collect();
-        if flight.age >= FIGHT_TICKS {
+        let standing = standing(observation, target);
+        // A fight ends once it has gone its time without progress, as an
+        // attack's does, not after a fixed time.
+        let fighting: Vec<&UnitObs> = flight
+            .grounded
+            .iter()
+            .copied()
+            .chain(held.iter().copied())
+            .collect();
+        let mission = &mut self.list[flight.index];
+        if let Task::Lift {
+            phase: LiftPhase::Fight { tally, .. },
+            ..
+        } = &mut mission.task
+            && Tally::update(tally, observation, &fighting, target.owner)
+        {
+            mission.since = now;
+        }
+        let goal = mission.goal;
+        if now - mission.since >= FIGHT_TICKS {
             self.disband(flight, &held, lifting, ledger);
-            return None;
+            return standing.then_some(target);
         }
         // Gunships outliving every rider: a landing whose target still
         // stands went without taking it, as a lift lost whole does.
         if flight.grounded.is_empty() {
             self.disband(flight, &held, lifting, ledger);
-            return standing(lifting.observation, target).then_some(target);
+            return standing.then_some(target);
         }
-        let goal = self.list[flight.index].goal;
         let straying: Vec<UnitId> = gunships
             .iter()
             .filter(|unit| unit.idle && unit.tile.chebyshev(goal) > SPREAD)
@@ -1035,29 +1065,21 @@ impl Missions {
         if !flight.grounded.iter().all(|unit| unit.idle) {
             return None;
         }
-        if standing(lifting.observation, target) {
-            self.disband(flight, &held, lifting, ledger);
-            return Some(target);
+        // Riders at rest short of a target they know of, as an attack's army
+        // that cleared its way, go at it.
+        if let Some(building) = known(observation, target) {
+            let shooters = shooters(&flight.grounded);
+            if !shooters.is_empty() {
+                ledger.order(blast(shooters, aim(building)));
+                return None;
+            }
         }
-        let (map, observation, frame) = (lifting.map, lifting.observation, lifting.frame);
-        let island = map.component(target.anchor);
-        let from = flight.landing;
-        let next = lifting
-            .objectives
-            .iter()
-            .copied()
-            .filter(|objective| *objective != target)
-            .filter(|objective| island.is_some() && map.component(objective.anchor) == island)
-            .filter(|objective| {
-                !lifting
-                    .memory
-                    .abandoned(objective.building, objective.anchor, observation.tick)
-            })
-            .filter_map(|objective| Some((objective, lifting.hunt_tile(objective, from)?)))
-            .min_by_key(|(_, tile)| (tile.chebyshev(from), frame.rank(frame.home, doubled(*tile))));
+        let next = map
+            .component(target.anchor)
+            .and_then(|island| lifting.nearest(island, flight.landing, Some(target)));
         let Some((next, tile)) = next else {
             self.disband(flight, &held, lifting, ledger);
-            return None;
+            return standing.then_some(target);
         };
         let mut riders = ids(&flight.grounded);
         riders.extend(ids(&gunships));
@@ -1066,12 +1088,65 @@ impl Missions {
             let mission = &mut self.list[flight.index];
             mission.task = Task::Lift {
                 target: next,
-                phase: LiftPhase::Fight { focus: None },
+                phase: LiftPhase::Fight {
+                    focus: None,
+                    tally: None,
+                },
             };
-            mission.since = observation.tick;
+            mission.since = now;
             mission.goal = tile;
         }
         None
+    }
+
+    /// Sends free riders at rest on an island other than home where a target
+    /// stands at the nearest target there: no lift loads riders on a
+    /// target's ground, so they walk. They attack a target the seat knows of
+    /// and walk to a start presumed held.
+    fn walk(&self, lifting: &Lifting<'_>, ledger: &mut Ledger) {
+        let (map, observation, frame) = (lifting.map, lifting.observation, lifting.frame);
+        let riders: Vec<(&UnitObs, u32)> = self
+            .free(observation, ledger)
+            .into_iter()
+            .filter_map(|id| mine(observation, id))
+            .filter(|unit| rides(unit.kind) && unit.idle)
+            .filter_map(|unit| Some((unit, map.component(unit.tile)?)))
+            .filter(|(_, island)| {
+                *island != lifting.home && targeted(lifting.objectives, map, *island)
+            })
+            .collect();
+        // Islands go in order of their rider nearest home, not by label, so
+        // mirrored seats serve counterpart islands first when orders run out.
+        let mut ranked = riders.clone();
+        ranked.sort_unstable_by_key(|(unit, _)| {
+            (frame.rank(frame.home, doubled(unit.tile)), unit.id)
+        });
+        let mut walked: Vec<u32> = Vec::new();
+        for (first, island) in ranked {
+            if walked.contains(&island) {
+                continue;
+            }
+            walked.push(island);
+            let on: Vec<&UnitObs> = riders
+                .iter()
+                .filter(|(_, ground)| *ground == island)
+                .map(|(unit, _)| *unit)
+                .collect();
+            let Some((objective, tile)) = lifting.nearest(island, first.tile, None) else {
+                continue;
+            };
+            let command = match known(observation, objective) {
+                Some(building) => {
+                    let shooters = shooters(&on);
+                    if shooters.is_empty() {
+                        continue;
+                    }
+                    blast(shooters, aim(building))
+                }
+                None => hunt(ids(&on), tile),
+            };
+            ledger.order(command);
+        }
     }
 
     /// Ends a lift's fight: lets its riders go and sends its `gunships`
@@ -1296,6 +1371,36 @@ impl<'a> Lifting<'a> {
                 )
             })
     }
+
+    /// The target on `island` presumed held, other than `skip` and not given
+    /// up on, this decision or lately, whose tile beside it lies nearest
+    /// `from`, with that tile.
+    fn nearest(
+        &self,
+        island: u32,
+        from: TilePos,
+        skip: Option<Objective>,
+    ) -> Option<(Objective, TilePos)> {
+        let now = self.observation.tick;
+        self.objectives
+            .iter()
+            .copied()
+            .filter(|objective| Some(*objective) != skip && Some(*objective) != self.given_up)
+            .filter(|objective| self.map.component(objective.anchor) == Some(island))
+            .filter(|objective| {
+                !self
+                    .memory
+                    .abandoned(objective.building, objective.anchor, now)
+            })
+            .filter(|objective| presumed(self.observation, self.map, self.memory, *objective))
+            .filter_map(|objective| Some((objective, self.hunt_tile(objective, from)?)))
+            .min_by_key(|(_, tile)| {
+                (
+                    tile.chebyshev(from),
+                    self.frame.rank(self.frame.home, doubled(*tile)),
+                )
+            })
+    }
 }
 
 /// The targets no ground route reaches and not given up on, the rival's
@@ -1425,6 +1530,15 @@ fn rides(kind: UnitKind) -> bool {
 
 fn ids(units: &[&UnitObs]) -> Vec<UnitId> {
     units.iter().map(|unit| unit.id).collect()
+}
+
+/// Those of `units` that can fire on a building.
+fn shooters(units: &[&UnitObs]) -> Vec<UnitId> {
+    units
+        .iter()
+        .filter(|unit| hits(unit, Domain::Ground))
+        .map(|unit| unit.id)
+        .collect()
 }
 
 fn unload(transport: UnitId, at: TilePos, queue: bool) -> Command {

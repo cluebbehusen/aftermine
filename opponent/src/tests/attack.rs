@@ -1015,6 +1015,145 @@ fn a_target_out_of_reach_gives_way_to_one_the_army_can_beat() {
 }
 
 #[test]
+fn a_regrouping_attack_whose_target_fell_goes_after_another_it_knows() {
+    // The Fabricator the attack went after is gone; another, about as far
+    // from home, stands in the Kestrel's sight.
+    let open = TilePos::new(26, 17);
+    let scenario = targets(&[(BuildingKind::Fabricator, open.x, open.y)], &[]);
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 12, &[]);
+    let mut members: Vec<UnitId> = WEST.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    members.sort_unstable();
+    let missions = serde_json::json!({
+        "next": 1,
+        "list": [{
+            "id": 0,
+            "task": {
+                "task": "attack",
+                "target": {"owner": 1, "building": "fabricator", "anchor": {"x": 24, "y": 2}},
+                "phase": "recover",
+            },
+            "since": 0,
+            "units": members,
+            "goal": {"x": 9, "y": 11},
+        }],
+    });
+    let mut opponent = restaged(&scenario, &state, missions);
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let mission = attack(&trace.unwrap().missions).expect("the attack goes on");
+    assert_eq!(
+        mission.kind,
+        MissionKind::Attack {
+            owner: PlayerId(1),
+            building: BuildingKind::Fabricator,
+            anchor: open,
+        }
+    );
+    assert_eq!(mission.phase, Phase::Travel);
+    assert!(
+        hunts(&commands).contains(&(members, mission.goal)),
+        "the army sets out for it: {commands:?}"
+    );
+}
+
+/// The field with West's garrison and army at home, two West Sentinels
+/// beside East's start Foundry, worn to its last point of health, and East's
+/// other Foundry out of West's sight; with the start Foundry and the two
+/// Sentinels.
+fn worn_start() -> (Scenario, State, BuildingId, Vec<UnitId>) {
+    let mut scenario = armed(8, &[]);
+    for y in [11, 12] {
+        scenario.units.push(unit(0, UnitKind::Sentinel, 41, y));
+    }
+    scenario
+        .buildings
+        .push(building(1, BuildingKind::Foundry, 30, 20));
+    let state = scenario.build().unwrap();
+    let start = state
+        .buildings()
+        .iter()
+        .find(|building| building.anchor == TilePos::new(43, 11))
+        .unwrap()
+        .id;
+    let state = damaged(&state, start, 1);
+    let killers = vec![at(&state, 41, 11), at(&state, 41, 12)];
+    (scenario, state, start, killers)
+}
+
+#[test]
+fn no_attack_sets_out_for_a_start_seen_cleared() {
+    let (scenario, mut state, start, killers) = worn_start();
+    let raze = PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Attack {
+            units: killers,
+            target: AttackTarget::Building(start),
+            queue: false,
+        },
+    };
+    advance_to(&mut state, 24, &[raze]);
+    assert_eq!(
+        foundries(&state, PlayerId(1)).len(),
+        1,
+        "premise: East's start Foundry fell"
+    );
+    let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
+    assert_eq!(attack(&trace.unwrap().missions), None, "{commands:?}");
+}
+
+#[test]
+fn an_attack_that_razes_a_start_does_not_go_back_to_it() {
+    let (scenario, mut state, _, killers) = worn_start();
+    advance_to(&mut state, 12, &[]);
+    let missions = serde_json::json!({
+        "next": 1,
+        "list": [{
+            "id": 0,
+            "task": {
+                "task": "attack",
+                "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                "phase": {"engage": {"focus": null}},
+            },
+            "since": state.current_tick(),
+            "units": killers,
+            "goal": {"x": 42, "y": 11},
+        }],
+    });
+    let mut opponent = restaged(&scenario, &state, missions);
+    let until = state.current_tick() + 1_200;
+    let traces = play(&mut opponent, &mut state, until, &[]);
+    assert_eq!(
+        foundries(&state, PlayerId(1)).len(),
+        1,
+        "premise: the attack razed East's start Foundry"
+    );
+    let home = traces
+        .iter()
+        .position(|trace| {
+            attack(&trace.missions).is_some_and(|mission| {
+                (mission.kind, mission.phase) == (east_start(), Phase::Recover)
+            })
+        })
+        .expect("the attack turns home");
+    // Out of sight, the cleared start would read as held again.
+    for trace in &traces[home..] {
+        if let Some(mission) = attack(&trace.missions) {
+            assert!(
+                mission.kind != east_start() || mission.phase == Phase::Recover,
+                "tick {}: {mission:?}",
+                trace.tick
+            );
+        }
+    }
+    let json = serde_json::to_value(opponent.checkpoint()).unwrap();
+    assert_eq!(
+        json["memory"]["abandoned"],
+        serde_json::json!([]),
+        "razing a start gives nothing up"
+    );
+}
+
+#[test]
 fn the_lowest_rung_sometimes_attacks_into_an_army_it_cannot_beat() {
     // Four East Sentinels in West's sight, out of reach, outweigh West's
     // seven by Standard's margin.
@@ -1367,6 +1506,120 @@ fn the_upper_rungs_hold_a_fight_they_are_only_slightly_outweighed_in() {
             phase == Phase::Withdraw,
             withdraws,
             "{difficulty:?}: {phase:?}"
+        );
+    }
+}
+
+/// Who flies an attack into the guns of [`guns_that_fire_only_at_aircraft_never_turn_a_ground_attack_back`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Flight {
+    Sentinels,
+    WithTalon,
+    TalonAlone,
+}
+
+#[test]
+fn guns_that_fire_only_at_aircraft_never_turn_a_ground_attack_back() {
+    // Twelve East guns in contact with an attack on its way to East's
+    // Foundry, short of their reach, worth more than the attack: Flak
+    // Turrets cannot hit the seven Sentinels but can hit a Talon, and
+    // Turrets can hit the Sentinels.
+    for (kind, flight, difficulty, withdraws) in [
+        (
+            BuildingKind::FlakTurret,
+            Flight::Sentinels,
+            BotDifficulty::Standard,
+            false,
+        ),
+        (
+            BuildingKind::FlakTurret,
+            Flight::WithTalon,
+            BotDifficulty::Standard,
+            false,
+        ),
+        (
+            BuildingKind::FlakTurret,
+            Flight::WithTalon,
+            BotDifficulty::Prime,
+            false,
+        ),
+        (
+            BuildingKind::FlakTurret,
+            Flight::TalonAlone,
+            BotDifficulty::Standard,
+            true,
+        ),
+        (
+            BuildingKind::Turret,
+            Flight::Sentinels,
+            BotDifficulty::Standard,
+            true,
+        ),
+    ] {
+        let why = format!("{kind:?}, {flight:?}, {difficulty:?}");
+        let mut scenario = advanced(difficulty, &[]);
+        for y in 6..18 {
+            scenario.buildings.push(building(1, kind, 30, y));
+        }
+        if flight != Flight::Sentinels {
+            scenario.units.push(unit(0, UnitKind::Talon, 21, 13));
+        }
+        let mut state = scenario.build().unwrap();
+        let (sentinels, mut missions) =
+            under_way(&state, &serde_json::json!({"engage": {"focus": null}}), 0);
+        let talon = (flight != Flight::Sentinels).then(|| at(&state, 21, 13));
+        let mut members = if flight == Flight::TalonAlone {
+            Vec::new()
+        } else {
+            sentinels.clone()
+        };
+        members.extend(talon);
+        members.sort_unstable();
+        missions["list"][0]["units"] = serde_json::json!(members);
+        let on = PlayerCommand {
+            player: PlayerId(0),
+            command: Command::Hunt {
+                units: members.clone(),
+                goal: TilePos::new(42, 11),
+                queue: false,
+            },
+        };
+        advance_to(&mut state, 12, &[on]);
+        let mut opponent = restaged(&scenario, &state, missions);
+        let mut traces = Vec::new();
+        let mut sent = Vec::new();
+        while state.current_tick() < 1_200 {
+            let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+            traces.extend(trace);
+            sent.extend(commands.iter().map(|command| command.command.clone()));
+            state.tick(&commands);
+        }
+        let seen = phases(&traces);
+        assert_eq!(
+            seen.contains(&Phase::Withdraw),
+            withdraws,
+            "{why}: {seen:?}"
+        );
+        if withdraws {
+            continue;
+        }
+        assert!(
+            sentinels
+                .iter()
+                .filter_map(|id| state.units().iter().find(|unit| unit.id == *id))
+                .any(|unit| unit.tile().x > 31),
+            "{why}: the army pressed past the line"
+        );
+        let Some(talon) = talon else {
+            continue;
+        };
+        let homeward = |command: &&Command| matches!(command, Command::Run { units, goal, .. } if *units == [talon] && goal.x < 20);
+        // Sent back while the army stands in the flak, it would only be
+        // sent home again.
+        assert_eq!(
+            sent.iter().filter(homeward).count(),
+            1,
+            "{why}: the Talon is sent home alone, once"
         );
     }
 }

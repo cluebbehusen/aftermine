@@ -247,6 +247,11 @@ impl Memory {
             .is_some_and(|seen| now < seen + UNIT_TICKS)
     }
 
+    /// The tick scouting point `point` was last in sight, zero if never.
+    pub(crate) fn seen(&self, point: usize) -> u64 {
+        self.scouted.get(point).copied().unwrap_or_default()
+    }
+
     /// Counts scouting point `point` as seen at `now`.
     pub(crate) fn saw(&mut self, point: usize, now: u64) {
         if let Some(seen) = self.scouted.get_mut(point) {
