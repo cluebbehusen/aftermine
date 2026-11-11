@@ -385,6 +385,7 @@ fn the_overlaid_debug_map_is_a_picture_not_a_parseable_scenario() {
 fn parity_world() -> aftermine_sim::State {
     // Each seat refits its home Extractor into a Deep Bore at once, and West
     // then starts a Maw cradle, so both public rules are compared as well.
+    // East's Lattice assembles a round where West's raid can see it.
     let mut scenario = aftermine_sim::Scenario::skirmish();
     for player in &mut scenario.players {
         player.scrap = 1_000;
@@ -395,6 +396,7 @@ fn parity_world() -> aftermine_sim::State {
         (1, aftermine_sim::BuildingKind::Extractor, 30, 18),
         (0, aftermine_sim::BuildingKind::Crucible, 1, 1),
         (1, aftermine_sim::BuildingKind::Crucible, 37, 21),
+        (1, aftermine_sim::BuildingKind::Lattice, 35, 15),
     ] {
         scenario
             .buildings
@@ -512,6 +514,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     let mut compared_public = false;
     let mut compared_cradle = false;
     let mut compared_tiered_ghost = false;
+    let mut compared_hostile_assembly = false;
     let mut cradle_ordered = false;
     for tick in 0..1_500 {
         if tick % 25 == 0 {
@@ -609,6 +612,10 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     fog.magazines, obs.magazines,
                     "tick {tick} seat {seat:?} magazines"
                 );
+                compared_hostile_assembly |= obs
+                    .magazines
+                    .iter()
+                    .any(|magazine| magazine.detail.is_none() && magazine.assembly.is_some());
                 assert_eq!(
                     fog.warheads, obs.warheads,
                     "tick {tick} seat {seat:?} warheads"
@@ -649,6 +656,10 @@ fn the_fog_view_and_the_bot_observation_agree() {
     assert!(
         compared_tiered_ghost,
         "an upgraded building out of sight was compared"
+    );
+    assert!(
+        compared_hostile_assembly,
+        "a hostile round in assembly was compared"
     );
 }
 

@@ -252,7 +252,8 @@ pub struct FogView {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub public_buildings: Vec<PublicBuildingView>,
     /// Magazines the seat may know of, in building-id order: its team's in
-    /// full, hostile loaded rounds and silo decks only while in sight.
+    /// full, hostile loaded rounds, rounds in assembly and silo decks only
+    /// while in sight.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub magazines: Vec<aftermine_sim::strike::KnownMagazine>,
     /// Warheads in flight the seat may know of, in id order: its team's in

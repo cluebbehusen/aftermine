@@ -286,7 +286,7 @@ fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
         .state
         .known_magazines(game.presentation.human)
         .into_iter()
-        .filter(|known| known.heading.is_some() && known.loaded > 0)
+        .filter(|known| known.deck.is_some() && known.loaded > 0)
         .map(|known| known.building)
         .collect();
     let mut markers = Vec::new();

@@ -20,8 +20,8 @@ use chassis::Tick;
 use chassis::grid::TilePos;
 use serde::{Deserialize, Serialize};
 
-/// Schema version for serialized observation snapshots. Increment it when
-/// fields or their meaning change so tools can reject incompatible data.
+/// Schema version for serialized observation snapshots. It stays fixed
+/// before launch; `docs/versioning.md` says what it will gate after.
 pub const OBSERVATION_VERSION: u32 = 1;
 
 /// An own passenger that remains alive but is unavailable for new assignments.
@@ -247,7 +247,8 @@ pub struct ObservationData {
     /// (y, x).
     pub incoming_shells: Vec<TilePos>,
     /// Magazines this seat may know of, in building-id order: its team's
-    /// in full, hostile ones' loaded rounds and deck while in sight.
+    /// in full, hostile ones' loaded rounds, round in assembly and deck
+    /// while in sight.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub magazines: Vec<crate::strike::KnownMagazine>,
     /// Warheads in flight this seat may know of, in id order.

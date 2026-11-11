@@ -1073,11 +1073,56 @@ fn a_hostile_magazine_shows_its_rounds_in_sight_and_never_its_orders() {
     let known = seen.known_magazines(east);
     assert_eq!(known.len(), 1);
     assert_eq!(known[0].loaded, 1);
-    assert!(known[0].heading.is_some(), "the deck is in plain sight");
+    assert!(known[0].deck.is_some(), "the deck is in plain sight");
     assert_eq!(known[0].detail, None, "orders and autofill stay hidden");
     assert_eq!(
         aftermine_sim::observation::ObservationData::fog_honest(&seen, east).magazines,
         known
+    );
+}
+
+#[test]
+fn a_hostile_magazine_in_sight_shows_its_round_taking_shape_and_its_locks() {
+    let east = PlayerId(1);
+    let spire_field = |eyes: Vec<UnitSpec>| {
+        field(2000, &[(0, BuildingKind::Spire, SPIRE.0, SPIRE.1)], eyes)
+            .build()
+            .unwrap()
+    };
+    let assembling = |eyes: Vec<UnitSpec>| {
+        let mut state = spire_field(eyes);
+        let spire = id(&state, 0, BuildingKind::Spire);
+        state.tick(&[cmd(0, Command::OrderRound { building: spire })]);
+        state.tick(&[]);
+        state
+    };
+    let dark = assembling(vec![]);
+    assert!(dark.known_magazines(east).is_empty());
+    let seen = assembling(vec![unit(1, UnitKind::Surveyor, 9, 13)]);
+    let progress = seen.known_magazines(PlayerId(0))[0]
+        .assembly
+        .filter(|progress| *progress > 0)
+        .expect("premise: the round is taking shape");
+    let known = seen.known_magazines(east);
+    assert_eq!(
+        known[0].assembly,
+        Some(progress),
+        "the gantry works in plain sight"
+    );
+    assert_eq!(known[0].detail, None, "how many are ordered stays hidden");
+
+    let mut aiming = loaded(&spire_field(vec![unit(1, UnitKind::Surveyor, 9, 13)]));
+    let spire = id(&aiming, 0, BuildingKind::Spire);
+    aiming.tick(&[cmd(0, launch(spire, TARGET))]);
+    run_until(&mut aiming, 200, |state, _| {
+        state.known_magazines(PlayerId(0))[0]
+            .deck
+            .is_some_and(|deck| deck.ready > 0)
+    });
+    assert_eq!(
+        aiming.known_magazines(east)[0].deck,
+        aiming.known_magazines(PlayerId(0))[0].deck,
+        "the locks release in plain sight"
     );
 }
 
