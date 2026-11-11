@@ -102,16 +102,6 @@ impl CommandPhaseView<'_> {
     }
 }
 
-/// Whether this seat is stranded and eligible for Foundry recovery income.
-///
-/// Keep every automatic consumer of the recovery reserve on this one
-/// predicate: a living, completed Foundry can rebuild an economy only when
-/// its owner has no machine that can harvest, whether in the world, aboard a
-/// transport, or prepaid in a live production queue.
-fn harvester_recovery_needed(state: &State, player: crate::ids::PlayerId) -> bool {
-    state.harvester_recovery_needed(player)
-}
-
 impl State {
     /// Inspects a private clone after applying only this tick's commands.
     ///

@@ -49,7 +49,7 @@ pub(super) fn capture_recovery_entitlements(state: &mut State) {
         .map(|(index, _)| PlayerId::from_index(index))
         .collect();
     for player in players {
-        if !super::harvester_recovery_needed(state, player)
+        if !state.harvester_recovery_needed(player)
             || state.player(player).recovery != Recovery::Ready
         {
             continue;
@@ -178,7 +178,7 @@ pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
         .map(|(index, _)| PlayerId::from_index(index))
         .collect();
     for player in &players {
-        if !super::harvester_recovery_needed(state, *player) {
+        if !state.harvester_recovery_needed(*player) {
             continue;
         }
         let seat = state.player_mut(*player);
@@ -194,7 +194,7 @@ pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
         .is_multiple_of(crate::stats::FOUNDRY_RECOVERY_PERIOD)
     {
         for player in players {
-            if !super::harvester_recovery_needed(state, player) {
+            if !state.harvester_recovery_needed(player) {
                 continue;
             }
             let seat = state.player_mut(player);

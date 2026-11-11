@@ -1811,7 +1811,8 @@ impl State {
 
     /// Whether a living Foundry owns no machine that can harvest: none in the
     /// world, none riding a transport, and none prepaid in a live production
-    /// queue.
+    /// queue. Every automatic consumer of the recovery reserve reads this one
+    /// predicate.
     pub(crate) fn harvester_recovery_needed(&self, player: PlayerId) -> bool {
         let harvests = |kind: UnitKind| kind.stats().harvest.is_some();
         !self.player(player).resigned
