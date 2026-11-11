@@ -159,9 +159,9 @@ fn a_touch_device_never_reads_at_a_stale_mouse_point() {
     let mut input = InputState::new();
     input.mouse = vec2(400.0, 300.0);
     input.last_pointer = crate::input::Pointer::Mouse;
-    assert_eq!(hover_point(&input), Some(vec2(400.0, 300.0)));
+    assert_eq!(input.chrome_hover_point(), Some(vec2(400.0, 300.0)));
     input.last_pointer = crate::input::Pointer::Touch;
-    assert_eq!(hover_point(&input), None);
+    assert_eq!(input.chrome_hover_point(), None);
 }
 
 #[test]

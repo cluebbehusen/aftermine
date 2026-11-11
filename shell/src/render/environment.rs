@@ -1,7 +1,6 @@
 //! Quarry boundary vocabulary: the terrace palette, decals, and edge
 //! geometry the boundary, peak, and pit passes share.
 
-use crate::game::Scene;
 use crate::numeric::Fit;
 use crate::render::prim::line_between;
 use chassis::grid::TilePos;
@@ -269,7 +268,7 @@ pub(super) fn hash(x: i32, y: i32, salt: u32) -> u32 {
     value
 }
 
-pub(super) fn draw_backdrop(_game: &Scene<'_>) {
+pub(super) fn draw_backdrop() {
     // Boundary sight extends off-map, so the void must match opaque fog.
     draw_rectangle(
         0.0,

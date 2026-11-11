@@ -89,7 +89,6 @@ pub struct Presentation {
     /// The network's word on players a LAN match lost track of, or on the
     /// host's pause, pinned while it holds.
     pub net_notice: Option<String>,
-    /// Scorch decals where buildings died: (world pos, seconds old).
     /// Scorch decals: where, age in seconds, and width in tiles.
     pub scorches: Vec<(Vec2, f32, f32)>,
     /// Live alerts: world position, seconds of age, and what they warn

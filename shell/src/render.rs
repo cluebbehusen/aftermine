@@ -608,7 +608,7 @@ pub(crate) fn draw_world(game: &crate::game::Scene<'_>, sprites: &Sprites, input
     clear_background(OUTSIDE);
     let alpha = game.clock.render_alpha();
     pass(FramePass::Terrain, || {
-        environment::draw_backdrop(game);
+        environment::draw_backdrop();
         ground_cache.draw(ground::Layer::Floor, &ground, &view, sprites);
     });
     pass(FramePass::Salvage, || {
@@ -910,7 +910,7 @@ impl UnitSpriteFrame {
         let mut frame = motion::unit_frame(kind, animation);
         // Treads drawn apart from the body roll while its frame holds still:
         // the shared belts, and the Maw's own layers (`render::maw`). The
-        // Maw's whole-body move frames are never loaded, so its idle body is
+        // Maw's whole-body move frames are never drawn, so its idle body is
         // the outline every shot, blast and tool meets.
         if tracks::supported(kind) || kind == aftermine_sim::UnitKind::Maw {
             match &mut frame {

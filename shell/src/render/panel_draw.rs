@@ -1322,42 +1322,44 @@ pub(crate) fn draw_card_icon(
     // (translucent under a scaffold while its site is still rising) and
     // the verb as a corner badge on a dark plate, so the pictogram never
     // dissolves into the hull beneath it. Every other icon is one sprite.
-    let CardIcon::Order {
-        subject,
-        verb,
-        ghost,
-    } = icon
-    else {
-        match icon {
-            CardIcon::Unit(kind) => {
-                sprites.draw_portrait(dest, &unit_layers(*kind, tint, owner));
-            }
-            CardIcon::Building(kind, tier) => {
-                sprites.draw_portrait(dest, &building_layers(*kind, *tier, true, tint, owner));
-            }
-            CardIcon::Round(kind) => {
-                let layers = sprites.round(*kind).map_or_else(
-                    || building_layers(*kind, 0, true, tint, owner),
-                    |[body, accent]| vec![(body, tint), (accent, shade(owner, tint))],
-                );
-                sprites.draw_portrait(dest, &layers);
-            }
-            CardIcon::Verb(v) => blit(dest, sprites.verb_icon(*v), tint),
-            CardIcon::Salvage { wreck } => blit(
-                dest,
-                if *wreck {
-                    sprites.wreck_pile()
-                } else {
-                    sprites.scrap(
-                        aftermine_sim::stats::SCRAP_NODE_AMOUNT,
-                        aftermine_sim::stats::SCRAP_NODE_AMOUNT,
-                    )
-                },
-                tint,
-            ),
-            CardIcon::Order { verb, .. } => blit(dest, sprites.verb_icon(*verb), tint),
+    let (subject, verb, ghost) = match icon {
+        CardIcon::Order {
+            subject,
+            verb,
+            ghost,
+        } => (subject, verb, ghost),
+        CardIcon::Unit(kind) => {
+            sprites.draw_portrait(dest, &unit_layers(*kind, tint, owner));
+            return;
         }
-        return;
+        CardIcon::Building(kind, tier) => {
+            sprites.draw_portrait(dest, &building_layers(*kind, *tier, true, tint, owner));
+            return;
+        }
+        CardIcon::Round(kind) => {
+            let layers = sprites.round(*kind).map_or_else(
+                || building_layers(*kind, 0, true, tint, owner),
+                |[body, accent]| vec![(body, tint), (accent, shade(owner, tint))],
+            );
+            sprites.draw_portrait(dest, &layers);
+            return;
+        }
+        CardIcon::Verb(v) => {
+            blit(dest, sprites.verb_icon(*v), tint);
+            return;
+        }
+        CardIcon::Salvage { wreck } => {
+            let pile = if *wreck {
+                sprites.wreck_pile()
+            } else {
+                sprites.scrap(
+                    aftermine_sim::stats::SCRAP_NODE_AMOUNT,
+                    aftermine_sim::stats::SCRAP_NODE_AMOUNT,
+                )
+            };
+            blit(dest, pile, tint);
+            return;
+        }
     };
     let hull = if *ghost {
         Color::new(tint.r, tint.g, tint.b, tint.a * 0.7)
@@ -2076,7 +2078,7 @@ fn draw_dock(
 
 /// Whether the mouse hovers `rect`, only while it is the pointer in use.
 fn hovers(input: &InputState, rect: Rect) -> bool {
-    super::chrome::hover_point(input).is_some_and(|p| rect.contains(p))
+    input.chrome_hover_point().is_some_and(|p| rect.contains(p))
 }
 
 /// What pad mode shows where a selection's command cards were: the
@@ -2135,7 +2137,7 @@ pub(crate) fn draw_panel_tooltip(game: &crate::game::Scene<'_>, input: &InputSta
     // what it hovers only while it is the pointer in use.
     let pointer = match input.touch_preview() {
         Some(p) => Some((p, Some(s))),
-        None => super::chrome::hover_point(input).map(|p| (p, None)),
+        None => input.chrome_hover_point().map(|p| (p, None)),
     };
     let Some(hit) =
         pointer.and_then(|(p, touch_ui)| crate::layout::card_under(&layout, p, touch_ui))

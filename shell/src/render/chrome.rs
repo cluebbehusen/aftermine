@@ -292,7 +292,7 @@ fn draw_army_strip(layout: &ArmyStripLayout, input: &InputState, s: f32) {
         crate::theme::Stroke::Edge.at(s),
         crate::theme::BORDER_STRONG,
     );
-    let hover = hover_point(input);
+    let hover = input.chrome_hover_point();
     for (rect, count) in [(strip.all, layout.all), (strip.in_view, layout.in_view)] {
         let live = count > 0;
         let hovered = live && hover.is_some_and(|p| rect.contains(p));
@@ -389,7 +389,7 @@ pub(crate) fn draw_army_tooltip(
     let layout = game.presentation.layout.get();
     let pointer = match input.touch_preview() {
         Some(p) => Some((p, Some(s))),
-        None => hover_point(input).map(|p| (p, None)),
+        None => input.chrome_hover_point().map(|p| (p, None)),
     };
     let Some(reach) =
         pointer.and_then(|(p, touch_ui)| crate::layout::army_button_under(&layout, p, touch_ui))
@@ -485,13 +485,6 @@ fn draw_pause_button(rect: Rect, paused: bool, s: f32) {
             );
         }
     }
-}
-
-/// Where the HUD reads its hover: the queue strip's lit entry while it is
-/// open, else the mouse or the reticle, never a stale point on a touch
-/// device.
-pub(super) fn hover_point(input: &InputState) -> Option<Vec2> {
-    input.chrome_hover_point()
 }
 
 /// The queue strip while a controller has it open: its lit entry outlined
@@ -643,7 +636,7 @@ pub(crate) fn draw_reticle(game: &crate::game::Scene<'_>, input: &InputState) {
 /// Hovered salvage says what it holds, by the same fog rule as the
 /// panel. Touch reads it by selecting the pile instead.
 pub(crate) fn draw_salvage_tooltip(game: &crate::game::Scene<'_>, input: &InputState) {
-    let Some(point) = hover_point(input) else {
+    let Some(point) = input.chrome_hover_point() else {
         return;
     };
     if game.presentation.layout.get().chrome_owns(point) {
@@ -1472,7 +1465,7 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
 /// Patrol there again starts the loop, and Back, which drops the route.
 fn draw_patrol_buttons(sprites: &Sprites, buttons: &PatrolButtons, input: &InputState, s: f32) {
     use crate::theme::{BORDER_FAINT, CARD_ARMED, CARD_HOVER, CARD_IDLE, EDGE_CARD, EDGE_FOCUS};
-    let hover = hover_point(input);
+    let hover = input.chrome_hover_point();
     let (start, ready) = (buttons.start, buttons.ready);
     let start_hovered = ready && hover.is_some_and(|p| start.contains(p));
     fill_rect(start, if ready { CARD_ARMED } else { CARD_IDLE });
@@ -1555,7 +1548,7 @@ fn draw_centered_button(
 /// The salvo's minus and plus, faint where the size can go no further. In
 /// pad mode the bumpers that step it stand in for the glyphs.
 fn draw_salvo_steppers(sprites: &Sprites, steppers: &SalvoSteppers, input: &InputState, s: f32) {
-    let hover = hover_point(input);
+    let hover = input.chrome_hover_point();
     let pad = input.hud_hands().names();
     for (rect, enabled, plus) in [
         (steppers.less, steppers.less_enabled, false),

@@ -1458,15 +1458,12 @@ fn defense_tracking_game() -> (crate::game::Game, BuildingId, UnitId) {
 #[test]
 fn every_weapon_family_uses_its_physical_report() {
     assert_eq!(
-        unit_shot_style(UnitKind::Scuttler, 0).unwrap(),
+        unit_shot_style(UnitKind::Scuttler).unwrap(),
         ShotStyle::Contact
     );
+    assert_eq!(unit_shot_style(UnitKind::Lancer).unwrap(), ShotStyle::Rail);
     assert_eq!(
-        unit_shot_style(UnitKind::Lancer, 0).unwrap(),
-        ShotStyle::Rail
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Flakhound, 0).unwrap(),
+        unit_shot_style(UnitKind::Flakhound).unwrap(),
         ShotStyle::FlakBurst {
             yoke_delay: FlakYokeDelay::OneTick,
             rounds_per_yoke: 2,
@@ -1475,27 +1472,23 @@ fn every_weapon_family_uses_its_physical_report() {
     // Both Sentinel slots speak through its one physical barrel;
     // the second is a weaker skyward poke, not a paired flak gun.
     assert_eq!(
-        unit_shot_style(UnitKind::Sentinel, 0).unwrap(),
+        unit_shot_style(UnitKind::Sentinel).unwrap(),
         ShotStyle::Kinetic { heavy: false }
     );
     assert_eq!(
-        unit_shot_style(UnitKind::Sentinel, 1).unwrap(),
-        ShotStyle::Kinetic { heavy: false }
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Warden, 0).unwrap(),
+        unit_shot_style(UnitKind::Warden).unwrap(),
         ShotStyle::Kinetic { heavy: true }
     );
     assert_eq!(
-        unit_shot_style(UnitKind::Breaker, 0).unwrap(),
+        unit_shot_style(UnitKind::Breaker).unwrap(),
         ShotStyle::Mortar
     );
     assert_eq!(
-        unit_shot_style(UnitKind::Buzzard, 0).unwrap(),
+        unit_shot_style(UnitKind::Buzzard).unwrap(),
         ShotStyle::Kinetic { heavy: true }
     );
     assert_eq!(
-        unit_shot_style(UnitKind::Talon, 0).unwrap(),
+        unit_shot_style(UnitKind::Talon).unwrap(),
         ShotStyle::ForgeSpot
     );
     assert_eq!(

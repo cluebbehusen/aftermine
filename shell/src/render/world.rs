@@ -1,5 +1,4 @@
-//! Ground layers: terrain tiles (fog-ruled), the fog veil, and battle
-//! scars.
+//! Ground layers: terrain tiles, the fog veil over them, and battle scars.
 
 use super::ground::{Ground, GroundView};
 use super::*;

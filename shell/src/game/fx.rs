@@ -452,10 +452,10 @@ impl ShotStyle {
     }
 }
 
-/// Which report family a unit's weapon slot fires: every slot speaks
-/// through the kind's one physical barrel. None for a kind that never draws
-/// a direct report.
-fn unit_shot_style(kind: aftermine_sim::UnitKind, _weapon: usize) -> Option<ShotStyle> {
+/// Which report family a unit fires: every weapon slot speaks through the
+/// kind's one physical barrel. None for a kind that never draws a direct
+/// report.
+fn unit_shot_style(kind: aftermine_sim::UnitKind) -> Option<ShotStyle> {
     crate::look::unit(kind)
         .weapon
         .and_then(|weapon| weapon.shot)
@@ -552,8 +552,6 @@ pub(crate) fn mantle_emitter(center: Vec2, rotation: f32, slot: u8) -> Vec2 {
     center + Vec2::from_angle(rotation).rotate(local)
 }
 
-/// Seconds a stopped warhead flies on as a ghost while its interceptor
-/// climbs to meet it in the sky.
 /// Ticks an interceptor climbs from its pod to its warhead.
 pub(crate) const INTERCEPT_FLIGHT_TICKS: f32 = 22.0;
 /// Ticks a pod's clamp takes to open before its interceptor leaves.
@@ -1307,7 +1305,7 @@ impl Presentation {
                         {
                             origin.y += crate::render::air_presentation(*attacker_kind, 1.0).2;
                         }
-                        let Some(style) = unit_shot_style(*attacker_kind, *weapon) else {
+                        let Some(style) = unit_shot_style(*attacker_kind) else {
                             continue;
                         };
                         let report = push_direct_report(
