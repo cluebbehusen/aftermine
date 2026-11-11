@@ -531,3 +531,51 @@ fn harvesters_leave_wreck_to_the_maw_bound_for_it() {
         harvests(&commands)
     );
 }
+
+/// West's first decision on the fortress with every other tech building, a
+/// standing army and 300 scrap, 200 of it held for a Maw cradle, with or
+/// without its Extractor frame.
+fn saving_for_a_cradle(bore: bool) -> (Vec<PlayerCommand>, Trace) {
+    let mut scenario = fortress(&RING);
+    if !bore {
+        scenario
+            .buildings
+            .retain(|b| b.kind != BuildingKind::Extractor);
+        scenario.map[4].replace_range(8..9, ".");
+    }
+    scenario.buildings.extend([
+        building(0, BuildingKind::Fabricator, 6, 13),
+        building(0, BuildingKind::Airworks, 9, 13),
+    ]);
+    scenario.players[0].scrap = 300;
+    scenario
+        .units
+        .extend((3..=10).map(|x| unit(0, UnitKind::Sentinel, x, 20)));
+    let state = scenario.build().unwrap();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["saving"] = serde_json::json!({
+            "protected": 200,
+            "target": {"investment": Investment::Tech(BuildingKind::MawCradle), "attempt": null},
+        });
+        json["income"] = serde_json::json!({"previous": null, "per_minute": 2_000});
+    });
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    (commands, trace.unwrap())
+}
+
+#[test]
+fn a_seat_with_no_deep_bore_in_reach_spends_what_it_held_for_a_cradle() {
+    let cradle = Some(Investment::Tech(BuildingKind::MawCradle));
+    let (commands, trace) = saving_for_a_cradle(true);
+    assert_eq!(trace.target.map(|target| target.investment), cradle);
+    assert!(
+        trace.target.and_then(|target| target.next).is_some() && trains(&commands).is_empty(),
+        "premise: the seat saves toward a Deep Bore: {trace:?}"
+    );
+    let (commands, trace) = saving_for_a_cradle(false);
+    assert_ne!(trace.target.map(|target| target.investment), cradle);
+    assert!(
+        trace.spent > 100 && !trains(&commands).is_empty(),
+        "the held scrap goes to production: {commands:?}"
+    );
+}

@@ -383,6 +383,15 @@ fn a_seat_s_last_known_foundry_draws_the_volley_that_fells_it() {
     );
 }
 
+/// Adds a West Extractor beside its start that it could refit into a Deep
+/// Bore, the Spire's prerequisite.
+fn bore(scenario: &mut Scenario) {
+    scenario.map[4].replace_range(8..9, "E");
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Extractor, 8, 4));
+}
+
 /// West's warhead investments on `state`.
 fn wanted(scenario: &Scenario, state: &State) -> Vec<Investment> {
     let observation = ObservationData::fog_honest(state, PlayerId(0));
@@ -400,6 +409,12 @@ fn a_spire_is_wanted_once_a_crucible_stands_and_a_known_strike_repays_its_round_
     scenario
         .buildings
         .push(building(0, BuildingKind::Crucible, 6, 17));
+    let state = staged(&scenario, 0);
+    assert!(
+        wanted(&scenario, &state).is_empty(),
+        "no Deep Bore stands or could"
+    );
+    bore(&mut scenario);
     let state = staged(&scenario, 0);
     assert_eq!(
         wanted(&scenario, &state),
@@ -431,7 +446,8 @@ fn an_empty_spire_wants_a_round_and_known_interceptors_want_another_spire() {
         .id;
     assert_eq!(wanted(&scenario, &state), [Investment::Round(spire)]);
 
-    // A loaded Spire against a block under one interceptor wants company.
+    // A loaded Spire against a block under one interceptor wants company,
+    // once a Deep Bore stands or could.
     let mut guarded = scenario.clone();
     guarded
         .buildings
@@ -441,6 +457,12 @@ fn an_empty_spire_wants_a_round_and_known_interceptors_want_another_spire() {
             .buildings
             .push(building(1, BuildingKind::Crucible, *x, *y));
     }
+    let state = staged(&guarded, 1);
+    assert!(
+        wanted(&guarded, &state).is_empty(),
+        "no Deep Bore stands or could"
+    );
+    bore(&mut guarded);
     let state = staged(&guarded, 1);
     assert_eq!(
         wanted(&guarded, &state),
@@ -455,6 +477,7 @@ fn spires_short_of_a_full_lattice_over_works_worth_its_interceptors_want_another
     scenario
         .buildings
         .push(building(0, BuildingKind::Crucible, 9, 17));
+    bore(&mut scenario);
     let state = staged(&scenario, 2);
     assert_eq!(
         wanted(&scenario, &state),
@@ -528,6 +551,50 @@ fn a_spire_steps_through_deepening_the_seats_own_extractor() {
     }
     let deep: State = serde_json::from_value(value).unwrap();
     assert_eq!(step(&deep), Some(Step::Build(BuildingKind::Spire)));
+}
+
+/// West's first decision with a Crucible, every other tech building and
+/// 300 scrap, 200 of it held for a Spire against East's block, with or
+/// without an Extractor it could refit into a Deep Bore.
+fn saving_for_a_spire(bore_frame: bool) -> (Vec<PlayerCommand>, Trace) {
+    let mut scenario = strikes(&[], &BLOCK, &[], &[(31, 5)]);
+    scenario.buildings.extend([
+        building(0, BuildingKind::Crucible, 6, 17),
+        building(0, BuildingKind::Fabricator, 9, 17),
+        building(0, BuildingKind::Airworks, 9, 14),
+    ]);
+    if bore_frame {
+        bore(&mut scenario);
+    }
+    scenario.players[0].scrap = 300;
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 12, &[]);
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["saving"] = json!({
+            "protected": 200,
+            "target": {"investment": Investment::Tech(BuildingKind::Spire), "attempt": null},
+        });
+        json["income"] = json!({"previous": null, "per_minute": 2_000});
+    });
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    (commands, trace.unwrap())
+}
+
+#[test]
+fn a_seat_with_no_deep_bore_in_reach_spends_what_it_held_for_a_spire() {
+    let spire = Some(Investment::Tech(BuildingKind::Spire));
+    let (_, trace) = saving_for_a_spire(true);
+    assert_eq!(trace.target.map(|target| target.investment), spire);
+    assert!(
+        trace.target.and_then(|target| target.next).is_some() && trace.protected > 0,
+        "premise: the seat saves toward a Deep Bore: {trace:?}"
+    );
+    let (commands, trace) = saving_for_a_spire(false);
+    assert_ne!(trace.target.map(|target| target.investment), spire);
+    assert!(
+        trace.spent > 100 && !trains(&commands).is_empty(),
+        "the held scrap goes to production: {commands:?}"
+    );
 }
 
 /// West's checkpoint with its saving target set to `investment`.

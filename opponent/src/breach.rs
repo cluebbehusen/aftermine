@@ -24,11 +24,12 @@ const EXIT_MARGIN: u16 = 30;
 /// evidence that the seat cannot break in competes with its tech.
 const GIVEN_UP: u64 = 3;
 
-/// A cradle for each breaching experimental once a Crucible stands. It is
-/// scored by [`guns_shortfall`]. While the seat fields and assembles no such
-/// machine and no gunship, it is also wanted at [`GIVEN_UP`] times the base
-/// while an attack on ground it reaches was lately given up: that attack went
-/// without one. Siege weighs it and income scales it, as they do a Spire.
+/// A cradle for each breaching experimental once a Crucible stands and a Deep
+/// Bore stands or could. It is scored by [`guns_shortfall`]. While the seat
+/// fields and assembles no such machine and no gunship, it is also wanted at
+/// [`GIVEN_UP`] times the base while an attack on ground it reaches was
+/// lately given up: that attack went without one. Siege weighs it and income
+/// scales it, as they do a Spire.
 pub(crate) fn investments(
     observation: &ObservationData,
     map: &MapModel,
@@ -41,7 +42,7 @@ pub(crate) fn investments(
         .my_buildings
         .iter()
         .any(|building| building.kind == BuildingKind::Crucible && building.built);
-    if !crucible {
+    if !crucible || !crate::expansion::bore_within_reach(observation) {
         return Vec::new();
     }
     let me = observation.me;
