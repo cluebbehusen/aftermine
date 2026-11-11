@@ -236,13 +236,16 @@ enum Transport {
     Slower,
     /// Steps up the speed ladder, holding at the fastest step.
     Faster,
+    /// Shows or hides the composition overlay.
+    Stats,
 }
 
 /// What a controller button does in the viewer. Like the menus' layout it
 /// goes by position and no binding moves it: confirm plays and pauses,
-/// back leaves, the bumpers and the D-pad's sides seek, and the triggers and
-/// its other two arms step the speed. The D-pad is how the Siri Remote's
-/// swipes reach all this.
+/// back leaves, the bumpers and the D-pad's sides seek, the triggers and
+/// its other two arms step the speed, and the top face button shows the
+/// statistics. The D-pad is how the Siri Remote's swipes reach all but the
+/// last.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PadPress {
     Transport(Transport),
@@ -254,6 +257,7 @@ fn pad_press(button: PadButton) -> Option<PadPress> {
     Some(match button {
         crate::pad::CONFIRM | PadButton::PlayPause => PadPress::Transport(Transport::PlayPause),
         crate::pad::BACK => PadPress::Transport(Transport::Back),
+        STATS_BUTTON => PadPress::Transport(Transport::Stats),
         b if b == crate::pad::TABS.0 => PadPress::SeekBack,
         b if b == crate::pad::TABS.1 => PadPress::SeekForward,
         b if b == crate::pad::PAGES.0 => PadPress::Transport(Transport::Slower),
@@ -265,6 +269,9 @@ fn pad_press(button: PadButton) -> Option<PadPress> {
         _ => return None,
     })
 }
+
+/// The controller button that shows the statistics.
+const STATS_BUTTON: PadButton = PadButton::North;
 
 /// Ticks one seek key or bumper press moves: 25 seconds.
 const SEEK_STEP: u64 = 500;
@@ -280,13 +287,14 @@ enum Zone {
 }
 
 /// The transport row along the bottom edge, left of the timeline:
-/// play/pause, then the speed stepper around its readout.
+/// play/pause, the speed stepper around its readout, then the statistics.
 struct TransportRow {
     play: macroquad::prelude::Rect,
     slower: macroquad::prelude::Rect,
     /// The current speed; drawn, never pressed.
     readout: macroquad::prelude::Rect,
     faster: macroquad::prelude::Rect,
+    stats: macroquad::prelude::Rect,
 }
 
 impl TransportRow {
@@ -295,7 +303,7 @@ impl TransportRow {
         macroquad::prelude::Rect::new(
             self.play.x,
             self.play.y,
-            self.faster.right() - self.play.x,
+            self.stats.right() - self.play.x,
             self.play.h,
         )
     }
@@ -316,11 +324,13 @@ fn transport_row(viewport: Vec2, s: f32, touch_only: bool) -> TransportRow {
     let slower = macroquad::prelude::Rect::new(play.right() + 8.0 * s, y, h, h);
     let readout = macroquad::prelude::Rect::new(slower.right() + 4.0 * s, y, 48.0 * s, h);
     let faster = macroquad::prelude::Rect::new(readout.right() + 4.0 * s, y, h, h);
+    let stats = macroquad::prelude::Rect::new(faster.right() + 8.0 * s, y, 80.0 * s, h);
     TransportRow {
         play,
         slower,
         readout,
         faster,
+        stats,
     }
 }
 
@@ -341,6 +351,7 @@ fn transport_buttons(
         (row.play, Transport::PlayPause),
         (row.slower, Transport::Slower),
         (row.faster, Transport::Faster),
+        (row.stats, Transport::Stats),
     ]
 }
 
@@ -380,7 +391,7 @@ pub fn scrub_rect(game: &Scene<'_>, viewport: Vec2) -> macroquad::prelude::Rect 
     let s = render::ui_scale();
     let mini = render::minimap_rect(game);
     let left = transport_row(viewport, s, crate::platform::PLATFORM.touch_only())
-        .faster
+        .stats
         .right()
         + 12.0 * s;
     let right = (mini.x - 8.0 * s).min(viewport.x - 12.0 * s);
@@ -492,6 +503,7 @@ pub fn playback_hud(
             Transport::PlayPause => "Pause",
             Transport::Slower => "-",
             Transport::Faster => "+",
+            Transport::Stats => "Stats",
         };
         crate::button::draw(rect, label, crate::platform::hovers(rect, mouse), s);
     }
@@ -616,7 +628,9 @@ fn pad_hint(family: PadFamily, sticks: bool) -> HintLine {
         .pad(icon(PAGES.0))
         .text("/")
         .pad(icon(PAGES.1))
-        .text(" speed | ");
+        .text(" speed | ")
+        .pad(icon(STATS_BUTTON))
+        .text(" stats | ");
     let line = if sticks {
         line.pad(icon(PadButton::LeftStick))
             .text(" pan | ")
@@ -733,11 +747,16 @@ fn composition_band(
     let mut x = band.x + 4.0 * s;
     let size = crate::theme::Type::Small.at(s);
     for (index, kind) in named.iter().enumerate() {
-        let label = format!("{kind} ");
+        let label = format!("{} ", legend_label(kind));
         draw_text(&label, x, band.y - 4.0 * s, size, BAND_COLORS[index]);
         x += measure_text(&label, None, numeric::font_size(size), 1.0).width + 6.0 * s;
     }
     stroke_rect(band, theme::Stroke::Edge.at(s), theme::EDGE_CHIP);
+}
+
+/// A kind's name in the composition legend, as the Roster spells it.
+fn legend_label(kind: &str) -> String {
+    crate::typography::entity_name(kind)
 }
 
 impl PlaybackSession {
@@ -872,6 +891,7 @@ impl PlaybackSession {
                     self.clock.speed = speed;
                 }
             }
+            Transport::Stats => self.toggle_stats(),
         }
         false
     }
