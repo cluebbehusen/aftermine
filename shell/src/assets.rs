@@ -1708,7 +1708,7 @@ mod contact_outline_tests;
 /// The asset manifest, checked without a GPU.
 ///
 /// [`Sprites::load`] fails on a missing region, including any row a unit
-/// or building kind needs, but it needs a window, which CI never opens.
+/// or building kind needs, but it needs a window, which the workspace test run never opens.
 /// These tests read `atlas.json` as plain data instead, so a regenerated
 /// atlas that dropped a row, or a kind whose art was never generated,
 /// fails by name in the ordinary test run.

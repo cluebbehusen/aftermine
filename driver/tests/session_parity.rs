@@ -4,11 +4,13 @@
 //! real `Client`, plus the save-is-a-replay check (the session's own
 //! saved record re-executes to its live hash). The live half drives the
 //! same script through a spawned shell window and the headless session
-//! side by side, asserting reply-for-reply identity; it needs a native
-//! window and runs with the #[ignore]d battery:
+//! side by side, asserting reply-for-reply identity. It is `#[ignore]`d
+//! because it spawns a real window; run it explicitly, under Xvfb where
+//! there is no display:
 //!
-//! ```text
-//! cargo test -p aftermine-driver --test session_parity -- --ignored
+//! ```sh
+//! xvfb-run -s "-screen 0 1280x800x24" \
+//!     cargo test -p aftermine-driver --test session_parity -- --ignored
 //! ```
 
 use aftermine_driver::client::Client;
@@ -227,10 +229,8 @@ fn every_live_verb_works_headless_over_tcp_and_the_record_reproduces() -> Result
 }
 
 /// The live half: one script, two servers, reply-for-reply identity.
-/// Needs a native window (spawns a real shell), so it runs with the
-/// #[ignore]d battery, never in CI.
 #[test]
-#[ignore = "needs a native window"]
+#[ignore = "spawns a real window; run with --ignored"]
 fn the_live_shell_and_the_headless_session_answer_identically() -> Result<()> {
     let scratch = Scratch::new();
     let scenario_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

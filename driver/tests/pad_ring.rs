@@ -340,7 +340,7 @@ fn strings(items: &[&str]) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn y_opens_the_unit_ring_and_b_closes_it_keeping_the_selection() -> Result<()> {
     let mut drill = Drill::spawn(44_330)?;
     let view = drill.load(&squad())?;
@@ -363,7 +363,7 @@ fn y_opens_the_unit_ring_and_b_closes_it_keeping_the_selection() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_picks_stop_and_the_squad_halts() -> Result<()> {
     let mut drill = Drill::spawn(44_331)?;
     let view = drill.load(&squad())?;
@@ -379,7 +379,7 @@ fn a_picks_stop_and_the_squad_halts() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_harvester_builds_through_the_build_rings() -> Result<()> {
     let mut drill = Drill::spawn(44_332)?;
     let view = drill.load(&drill_harvester())?;
@@ -449,7 +449,7 @@ fn drill_harvester() -> Value {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_foundry_trains_counts_and_cancels_from_its_ring() -> Result<()> {
     let mut drill = Drill::spawn(44_333)?;
     drill.load(&scene(&[], &[(BuildingKind::Foundry, 30, 18)]))?;
@@ -498,7 +498,7 @@ fn a_foundry_trains_counts_and_cancels_from_its_ring() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_mixed_selection_opens_its_harvesters_from_one_slice() -> Result<()> {
     let mut drill = Drill::spawn(44_334)?;
     drill.load(&scene(
@@ -590,7 +590,7 @@ fn recall_and_order(drill: &mut Drill, slot: &str, at: [f64; 2]) -> Result<Vec<U
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn dpad_right_assigns_and_recalls_groups_on_the_pad_alone() -> Result<()> {
     let mut drill = Drill::spawn(44_335)?;
     let view = drill.load(&squads())?;
@@ -604,7 +604,7 @@ fn dpad_right_assigns_and_recalls_groups_on_the_pad_alone() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn each_rings_button_opens_it_in_the_others_place_and_closes_its_own() -> Result<()> {
     let mut drill = Drill::spawn(44_336)?;
     let view = drill.load(&squad())?;
@@ -632,7 +632,7 @@ fn each_rings_button_opens_it_in_the_others_place_and_closes_its_own() -> Result
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn groups_assign_and_recall_with_the_group_bar_hidden() -> Result<()> {
     let mut config = quiet_config()?;
     config["control_groups"] = json!(false);
@@ -645,7 +645,7 @@ fn groups_assign_and_recall_with_the_group_bar_hidden() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn x_switches_auto_repair_on_the_repair_slice() -> Result<()> {
     let mut drill = Drill::spawn(44_338)?;
     let view = drill.load(&drill_harvester())?;
@@ -676,7 +676,7 @@ fn drill_lattice() -> Value {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_held_left_trigger_turns_order_into_fill() -> Result<()> {
     let mut drill = Drill::spawn(44_339)?;
     let view = drill.load(&drill_lattice())?;
