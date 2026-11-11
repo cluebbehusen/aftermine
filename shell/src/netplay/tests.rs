@@ -720,12 +720,25 @@ fn an_injected_desync_halts_both_machines() {
     let mut lan = Match::start(duel());
     lan.run(5);
     lan.client.0.state.tick(&[]);
-    let desync = End::Desync {
-        tick: aftermine_net::HASH_INTERVAL,
-    };
-    assert_eq!(lan.ends(), (desync, desync));
-    assert!(desync.notice().contains("Out of sync at 0:01"));
+    let (host, client) = lan.ends();
+    assert_eq!((host, client), desyncs(false));
+    assert_eq!(
+        host.notice(),
+        "Out of sync at 0:01.",
+        "an undecided host keeps a LAN save, not a replay"
+    );
+    assert_eq!(client.notice(), "Out of sync at 0:01. Replay saved.");
     assert_eq!(End::HostLost.notice(), "Lost connection to the host.");
+}
+
+/// The host's and the client's ends once the first report tick disagreed,
+/// the host's match decided or not.
+fn desyncs(decided: bool) -> (End, End) {
+    let desync = |replay| End::Desync {
+        tick: aftermine_net::HASH_INTERVAL,
+        replay,
+    };
+    (desync(decided), desync(true))
 }
 
 #[test]
@@ -742,10 +755,13 @@ fn a_desync_before_the_decisive_tick_still_halts_both_machines() {
     while lan.host.0.state.result().is_none() {
         lan.step_host();
     }
-    let desync = End::Desync {
-        tick: aftermine_net::HASH_INTERVAL,
-    };
-    assert_eq!(lan.ends(), (desync, desync));
+    let (host, client) = lan.ends();
+    assert_eq!((host, client), desyncs(true));
+    assert_eq!(
+        host.notice(),
+        "Out of sync at 0:01. Replay saved.",
+        "a decided host keeps a replay"
+    );
 }
 
 #[test]

@@ -875,7 +875,8 @@ impl App {
     }
 
     /// Reports why a LAN match ended and leaves it through the ordinary
-    /// leave save, which keeps its replay.
+    /// leave save, which keeps a replay, or a host's resumable LAN save
+    /// while the match is undecided.
     fn end_network_match(&mut self, end: crate::netplay::End, screen: Screen) -> Screen {
         self.notify(end.notice(), true);
         // The match stays behind the menus; its network line no longer

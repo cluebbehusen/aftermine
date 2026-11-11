@@ -60,6 +60,10 @@ pub(crate) enum End {
     Desync {
         /// The report tick that disagreed.
         tick: Tick,
+        /// Whether this machine's leave save keeps a replay: a client's
+        /// always does, a host's only once its match is decided, since an
+        /// undecided one stays a resumable LAN save.
+        replay: bool,
     },
 }
 
@@ -74,12 +78,14 @@ impl End {
             End::SeatGone => "You lost your seat while away.".to_owned(),
             End::Over => "That match is over.".to_owned(),
             End::TooLarge => "The match is too large to rejoin.".to_owned(),
-            End::Desync { tick } => {
-                format!(
-                    "Out of sync at {}. Replay saved.",
-                    crate::clock_label::ticks(tick)
-                )
-            }
+            End::Desync {
+                tick,
+                replay: false,
+            } => format!("Out of sync at {}.", crate::clock_label::ticks(tick)),
+            End::Desync { tick, replay: true } => format!(
+                "Out of sync at {}. Replay saved.",
+                crate::clock_label::ticks(tick)
+            ),
         }
     }
 }
@@ -727,7 +733,12 @@ impl HostLink {
                     }
                 }
                 HostEvent::Lost { seat } => self.peers.retain(|(peer, _)| *peer != seat),
-                HostEvent::Desync { tick, .. } => end = Some(End::Desync { tick }),
+                HostEvent::Desync { tick, .. } => {
+                    end = Some(End::Desync {
+                        tick,
+                        replay: game.state.result().is_some(),
+                    });
+                }
             }
         }
         game.presentation.net_notice = NetStatus::hosted(&self.session, now).notice(game);
@@ -975,7 +986,7 @@ impl ClientLink {
     fn end(&mut self, end: ClientEnd) -> End {
         self.connection = None;
         match end {
-            ClientEnd::Desync { tick } => End::Desync { tick },
+            ClientEnd::Desync { tick } => End::Desync { tick, replay: true },
             ClientEnd::HostSilent | ClientEnd::Protocol => End::HostLost,
             ClientEnd::Released(Release::Dropped) => End::Dropped,
             ClientEnd::Released(Release::Replaced) => End::Replaced,
