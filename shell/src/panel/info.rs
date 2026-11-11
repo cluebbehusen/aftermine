@@ -12,6 +12,15 @@ use aftermine_sim::stats::{
 /// An Extractor's income rows while it produces nothing.
 const NOT_PRODUCING: &str = "\u{2013}";
 
+/// A Sight row's value: how many tiles a structure or unit sees.
+fn sight(tiles: i32) -> String {
+    if tiles == 1 {
+        "1 tile".to_owned()
+    } else {
+        format!("{tiles} tiles")
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StatIcon {
     Capability(CapabilityIcon),
@@ -425,7 +434,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         info.ownership(game, b.player);
         info.row(
             "Sight",
-            format!("{} tiles", stats.vision),
+            sight(stats.vision),
             Some(Cap(CapabilityIcon::Vision)),
         );
         if b.player == game.presentation.human {
@@ -545,7 +554,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         );
         info.row(
             "Sight",
-            format!("{} tiles", stats.vision),
+            sight(stats.vision),
             Some(Cap(CapabilityIcon::Vision)),
         );
         if crate::look::scout(u.kind) {

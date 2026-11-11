@@ -3,6 +3,7 @@
 //! (resume, watch, settings, restart, main menu, quit) and draws.
 
 use crate::game::SoundKind;
+use crate::game::network::NetRole;
 use crate::menu::{Answer, Label, Menu};
 use crate::text_field::{Edit, Field, Form, Keyboard};
 use aftermine_protocol::RawEvent;
@@ -112,22 +113,18 @@ impl Confirmable {
             Confirmable::Quit => Out::Quit,
         }
     }
+}
 
-    /// The dialog's subtitle: what confirming costs. A lesson is never
-    /// saved, so leaving one only loses its progress.
-    fn consequence(self, lesson: bool, lan: bool) -> &'static str {
-        if lan && matches!(self, Confirmable::MainMenu | Confirmable::Quit) {
-            return "You leave the match";
-        }
-        match (self, lesson) {
-            (Confirmable::Surrender, _) | (Confirmable::Restart, true) => "",
-            (Confirmable::Restart, false) => "Progress is lost",
-            (Confirmable::MainMenu | Confirmable::Quit, false) => "The match is saved first",
-            (Confirmable::MainMenu | Confirmable::Quit, true) => {
-                "your progress in this lesson is lost"
-            }
-        }
-    }
+/// Where the local seat stands in the match under the menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Standing {
+    /// The match runs and the seat still gives orders.
+    Playing,
+    /// The match runs on without the seat: it surrendered or lost its
+    /// last Foundry.
+    Out,
+    /// The match has a result.
+    Decided,
 }
 
 /// What a row of any pause face stands for.
@@ -248,9 +245,12 @@ pub struct PauseScreen {
     /// A one-line verdict from the last explicit save (success or
     /// failure), shown as the subtitle until the next activation.
     notice: Option<String>,
-    /// Whether this is the menu over a LAN match (see
+    /// This machine's part in the LAN match under the menu, if one is (see
     /// [`PauseScreen::for_lan_match`]).
-    lan: bool,
+    lan: Option<NetRole>,
+    /// Where the local seat stands now. A LAN match keeps running under its
+    /// menu, so this can move on after the rows were built.
+    standing: Standing,
     /// Whether this is the menu over a lesson (see
     /// [`PauseScreen::for_lesson`]).
     lesson: bool,
@@ -294,7 +294,14 @@ impl PauseScreen {
             rows,
             face: Face::Rows,
             notice: None,
-            lan: false,
+            lan: None,
+            standing: if finished {
+                Standing::Decided
+            } else if can_surrender {
+                Standing::Playing
+            } else {
+                Standing::Out
+            },
             lesson: false,
         }
     }
@@ -347,13 +354,13 @@ impl PauseScreen {
 
     /// The menu over a LAN match, which keeps running underneath: no
     /// restart, and only the host saves.
-    pub fn for_lan_match(mut self, host: bool) -> Self {
+    pub fn for_lan_match(mut self, role: NetRole) -> Self {
         self.rows.retain(|row| match row {
             Row::Restart => false,
-            Row::SaveGame => host,
+            Row::SaveGame => role == NetRole::Host,
             _ => true,
         });
-        self.lan = true;
+        self.lan = Some(role);
         self.menu = pause_menu(&self.rows, true);
         self
     }
@@ -373,6 +380,11 @@ impl PauseScreen {
         self.lesson = true;
         self.menu = pause_menu(&self.rows, false);
         self
+    }
+
+    /// Follows the local seat as the match under the menu plays on.
+    pub fn observe(&mut self, standing: Standing) {
+        self.standing = standing;
     }
 
     /// Shows `notice` as the subtitle until the next activation.
@@ -408,7 +420,7 @@ impl PauseScreen {
     /// Returns to the pause rows with the cursor on `row`.
     fn back_to_rows(&mut self, row: Row) {
         self.face = Face::Rows;
-        self.menu = pause_menu(&self.rows, self.lan);
+        self.menu = pause_menu(&self.rows, self.lan.is_some());
         self.menu.select_where(|choice| *choice == Choice::Row(row));
     }
 
@@ -429,6 +441,27 @@ impl PauseScreen {
         self.menu = menu;
         self.face = Face::SaveFailed(SaveFailed { verb, line });
         self
+    }
+
+    /// The confirmation dialog's subtitle: what confirming `verb` costs. A
+    /// lesson is never saved, so leaving one only loses its progress. While a
+    /// LAN match is still being played, a host leaving ends it for everyone
+    /// and a client leaving surrenders its seat, if the seat is still in.
+    fn consequence(&self, verb: Confirmable) -> &'static str {
+        match verb {
+            Confirmable::Surrender => "",
+            Confirmable::Restart if self.lesson => "",
+            Confirmable::Restart => "Progress is lost",
+            Confirmable::MainMenu | Confirmable::Quit => match (self.lan, self.standing) {
+                (Some(NetRole::Host), Standing::Playing | Standing::Out) => {
+                    "The match ends for every player"
+                }
+                (Some(NetRole::Client), Standing::Playing) => "You surrender your seat",
+                (Some(_), _) => "You leave the match",
+                (None, _) if self.lesson => "your progress in this lesson is lost",
+                (None, _) => "The match is saved first",
+            },
+        }
     }
 
     /// Whether the rows were built for a decided match.
@@ -464,7 +497,7 @@ impl PauseScreen {
         match &self.face {
             Face::SaveFailed(dialog) => &dialog.line,
             Face::Naming(_) => naming_hint(crate::platform::hands()),
-            Face::Confirm(verb) => verb.consequence(self.lesson, self.lan),
+            Face::Confirm(verb) => self.consequence(*verb),
             Face::Rows => self.notice.as_deref().unwrap_or(scenario_name),
         }
     }

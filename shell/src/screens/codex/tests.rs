@@ -251,3 +251,20 @@ fn a_page_too_long_for_the_smallest_type_says_it_goes_on() {
     let (last, _) = body.lines.last().expect("a line fits");
     assert!(last.ends_with("..."), "{last}");
 }
+
+#[test]
+fn an_array_reveals_charges_only_where_its_owner_also_has_sight() {
+    let notes = building_notes(BuildingKind::Array).join("\n");
+    for line in [
+        format!(
+            "It reveals Scuttle Charges within {} tiles where you also have sight.",
+            aftermine_sim::stats::CHARGE_BASE_ARRAY_DETECT_RADIUS
+        ),
+        format!(
+            "reveals Scuttle Charges within {} tiles where you also have sight",
+            aftermine_sim::stats::CHARGE_ARRAY_DETECT_RADIUS
+        ),
+    ] {
+        assert!(notes.contains(&line), "{notes}");
+    }
+}

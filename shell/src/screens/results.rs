@@ -557,7 +557,7 @@ impl ResultsScreen {
         crate::menu::draw_title(title, layout.title_y, title_color);
         let stats = game.end_stats.as_ref();
         let duration = stats.map_or(0, |report| report.final_tick);
-        let meta = format!("{subtitle}  |  {}", crate::clock_label::ticks(duration));
+        let meta = meta_line(&subtitle, duration);
         let meta_size = crate::typography::fit(
             &meta,
             layout.meta_size,
@@ -825,9 +825,15 @@ fn verdict(game: &Game) -> (&'static str, Color, String) {
         Some(Verdict::Draw) | None => (
             "MUTUAL DESTRUCTION",
             theme::TEXT_BODY,
-            "no Foundry survived".to_string(),
+            "No Foundry survived".to_string(),
         ),
     }
+}
+
+/// The line under the verdict: who won, or that nobody did, then how long
+/// the match ran. Winners' names keep the form their players typed.
+fn meta_line(subtitle: &str, duration: u64) -> String {
+    format!("{subtitle}  |  {}", crate::clock_label::ticks(duration))
 }
 
 fn winner_subtitle(game: &Game, winners: &[PlayerId]) -> String {

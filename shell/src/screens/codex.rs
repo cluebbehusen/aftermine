@@ -20,7 +20,7 @@ use crate::theme::{
     BORDER_STRONG, CHIP, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_PRIMARY,
     TEXT_SECONDARY, Type,
 };
-use crate::typography::{entity_name, plural_name};
+use crate::typography::{entity_name, plural_name, series};
 use aftermine_protocol::RawEvent;
 use aftermine_sim::stats::{BuildingKind, Domain, UnitKind};
 use macroquad::prelude::*;
@@ -472,7 +472,7 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
             notes.push(format!("{} reveal it.", series(&charge_finders())));
         }
         BuildingKind::Array => notes.push(format!(
-            "Its radar reaches {} tiles. It reveals Scuttle Charges within {} tiles.",
+            "Its radar reaches {} tiles. It reveals Scuttle Charges within {} tiles where you also have sight.",
             base.radar.unwrap_or(0),
             aftermine_sim::stats::CHARGE_BASE_ARRAY_DETECT_RADIUS
         )),
@@ -590,7 +590,7 @@ fn upgrade_figures(kind: BuildingKind, tier: u8) -> Vec<String> {
             60 * u64::from(aftermine_sim::TICKS_PER_SECOND) / aftermine_sim::stats::REFINERY_PERIOD
         )),
         BuildingKind::Array => figures.push(format!(
-            "reveals Scuttle Charges within {} tiles",
+            "reveals Scuttle Charges within {} tiles where you also have sight",
             aftermine_sim::stats::CHARGE_ARRAY_DETECT_RADIUS
         )),
         _ => {}
@@ -624,16 +624,6 @@ fn article(name: &str) -> String {
     let name = entity_name(name);
     let vowel = name.starts_with(['A', 'E', 'I', 'O', 'U']);
     format!("{} {name}", if vowel { "an" } else { "a" })
-}
-
-/// "x", "x and y", or "x, y, and z".
-fn series(items: &[String]) -> String {
-    match items {
-        [] => String::new(),
-        [one] => one.clone(),
-        [first, second] => format!("{first} and {second}"),
-        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
-    }
 }
 
 #[cfg(test)]

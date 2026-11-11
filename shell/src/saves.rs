@@ -143,6 +143,13 @@ const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
+/// The time in unix seconds, to date records against.
+pub(crate) fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
 /// When a record was saved, as of `now` (both unix seconds): minutes,
 /// hours, then days for a week, then its UTC calendar date, with the
 /// year only when it is not this one. A save stamped in the future (a

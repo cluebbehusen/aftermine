@@ -36,27 +36,35 @@ fn alert_badge_text(kind: crate::game::AlertKind, key: &str, keyless: bool) -> S
     }
 }
 
-/// The idle badge names its key where one exists.
+/// The idle badge names its key where one exists, and an unbound key reads
+/// bare.
 fn idle_badge_text(idle: usize, key: &str, keyless: bool) -> String {
-    if keyless {
+    if keyless || key.is_empty() {
         format!("{idle} idle")
     } else {
         format!("{idle} idle [{key}]")
     }
 }
 
-/// The concede banner's way to the menu.
-fn concede_hint(hands: crate::platform::Hands) -> &'static str {
+/// The concede banner's line: that the team fights on, when a teammate
+/// still plays, then the way to the menu.
+fn concede_hint(hands: crate::platform::Hands, team_fights_on: bool) -> String {
     // A controller opens the menu with its own Menu button; pad mode
     // hides the top bar's.
-    if hands.pad.is_some() {
-        return "your team fights on | {menu} menu";
-    }
-    match (hands.touch(), hands.keys) {
-        (false, true) => "your team fights on | {back} menu",
-        (false, false) => "your team fights on | click the menu button",
-        (true, true) => "your team fights on | {back} or tap the menu button",
-        (true, false) => "your team fights on | tap the menu button",
+    let way = if hands.pad.is_some() {
+        "{menu} menu"
+    } else {
+        match (hands.touch(), hands.keys) {
+            (false, true) => "{back} menu",
+            (false, false) => "click the menu button",
+            (true, true) => "{back} or tap the menu button",
+            (true, false) => "tap the menu button",
+        }
+    };
+    if team_fights_on {
+        format!("your team fights on | {way}")
+    } else {
+        way.to_owned()
     }
 }
 
@@ -1829,7 +1837,12 @@ pub(super) fn top_bar_layout(
     let scrap = scrap.to_string();
     let units = my_units.to_string();
     let keyless = hands.pad_mode() || !crate::platform::hands().keys;
-    let idle = crate::input::idle_harvesters(game).len();
+    // A seat out of the match has no harvester left to order.
+    let idle = if game.state.accepts_commands(game.presentation.human) {
+        crate::input::idle_harvesters(game).len()
+    } else {
+        0
+    };
     let idle = (idle > 0).then(|| idle_badge_text(idle, &label(Action::CycleIdleWorker), keyless));
     // Alerts age out in a few seconds and hold while paused, so the
     // badge shows exactly while the minimap still pulses one.
@@ -2163,7 +2176,8 @@ pub(crate) fn draw_result_overlay(game: &crate::game::Scene<'_>, sprites: &Sprit
         PANEL,
     );
     crate::menu::draw_title(text, y, DANGER);
-    crate::menu::hint_line(concede_hint(crate::platform::hands())).draw(
+    let team_fights_on = crate::game::team_fights_on(game.state, game.presentation.human);
+    crate::menu::hint_line(&concede_hint(crate::platform::hands(), team_fights_on)).draw(
         sprites,
         screen_width() * 0.5,
         y + 28.0 * s,

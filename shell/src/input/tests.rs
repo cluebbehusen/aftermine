@@ -866,6 +866,41 @@ fn the_cycle_key_walks_idle_harvesters_in_id_order() {
 }
 
 #[test]
+fn the_cycle_key_does_nothing_for_a_seat_out_of_the_match() {
+    let mut scenario =
+        aftermine_sim::Scenario::load("../scenarios/eight-pits.json").expect("Eight Pits loads");
+    for player in &mut scenario.players {
+        assert_eq!(player.team, None, "premise: a free-for-all");
+        player.bot = false;
+        player.bot_config = None;
+    }
+    cycle_key_does_nothing_once_out(headless_game(), false);
+    cycle_key_does_nothing_once_out(
+        Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap(),
+        true,
+    );
+}
+
+/// Surrenders `game`'s local seat, which leaves the match running only in
+/// a free-for-all (`ffa`), then presses N.
+fn cycle_key_does_nothing_once_out(mut game: Game, ffa: bool) {
+    let mut input = InputState::new();
+    assert!(!idle_harvesters(&game.view()).is_empty());
+    game.issue(aftermine_sim::Command::Surrender);
+    game.do_tick();
+    assert!(!game.state.accepts_commands(game.presentation.human));
+    assert_eq!(
+        game.state.result().is_none(),
+        ffa,
+        "premise: only the free-for-all plays on"
+    );
+    game.presentation.sounds_pending.clear();
+    apply_events(&mut game, &mut input, &[key_down(Key::N), key_up(Key::N)]);
+    assert!(game.presentation.selection.units.is_empty());
+    assert!(game.presentation.sounds_pending.is_empty());
+}
+
+#[test]
 fn a_misclick_keeps_placement_armed_and_a_shift_click_repeats() {
     let mut game = headless_game();
     let mut input = InputState::new();

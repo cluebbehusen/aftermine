@@ -814,6 +814,26 @@ fn surrendered(seats: [(u8, bool); 4], net: Option<network::NetRole>) -> Game {
 }
 
 #[test]
+fn a_surrendered_seat_s_team_fights_on_only_while_a_teammate_is_in() {
+    let team = surrendered([(0, false), (0, true), (1, true), (1, true)], None);
+    assert!(team_fights_on(&team.state, team.presentation.human));
+    let free_for_all = surrendered([(0, false), (1, true), (2, true), (3, true)], None);
+    assert!(
+        !team_fights_on(&free_for_all.state, free_for_all.presentation.human),
+        "a free-for-all seat has no team left"
+    );
+    let mut deserted = surrendered([(0, false), (0, false), (1, true), (1, true)], None);
+    deserted.execute(&[PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Surrender,
+    }]);
+    assert!(
+        !team_fights_on(&deserted.state, deserted.presentation.human),
+        "an ally that surrendered too fights on no more"
+    );
+}
+
+#[test]
 fn fog_holds_only_while_a_lan_teammate_plays_on() {
     let team = [(0, false), (0, false), (1, true), (1, true)];
     let mut lan = surrendered(team, Some(network::NetRole::Client));

@@ -531,7 +531,7 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         app.request_catalog();
     }
     offer_rejoin(app, &mut home);
-    home.set_missing(crate::cloud_mirror::missing());
+    home.set_missing(crate::cloud_mirror::missing(), crate::saves::unix_now());
     home.age_question(dt);
     let input_scope = app
         .game
@@ -1332,7 +1332,11 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
             return app.persistence_screen(persistence::Intent::Load(path), Screen::Replays(shelf));
         }
         screens::shelf::Out::Delete(path) => {
-            app.catalog_delete = Some(path);
+            app.catalog_delete = shelf
+                .entries
+                .iter()
+                .find(|entry| entry.path == path)
+                .map(persistence::Deletion::of);
             shelf.catalog_ready = false;
         }
         screens::shelf::Out::Stay => {}
@@ -1412,6 +1416,7 @@ fn waiting_frame(
 }
 
 fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Result<Screen> {
+    ps.observe(super::standing(&app.game));
     let input_scope = app
         .game
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);

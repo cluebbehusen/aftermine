@@ -34,8 +34,13 @@ pub(crate) fn plural_name(name: &str) -> String {
 
 /// `text` with its first letter capitalized. Refusal reasons are
 /// lowercase fragments so they also read inside longer messages; a
-/// surface that shows one alone starts it as a sentence.
+/// surface that shows one alone starts it as a sentence. A name that
+/// carries its own capitals, such as iCloud, keeps them.
 pub(crate) fn sentence_case(text: &str) -> String {
+    let first_word = text.split_whitespace().next().unwrap_or_default();
+    if first_word.chars().skip(1).any(char::is_uppercase) {
+        return text.to_owned();
+    }
     let mut chars = text.chars();
     chars.next().map_or_else(String::new, |first| {
         first.to_uppercase().chain(chars).collect()
@@ -48,6 +53,16 @@ thread_local! {
 
 pub(crate) fn install(font: Font) {
     DISPLAY.with(|current| *current.borrow_mut() = Some(font));
+}
+
+/// "x", "x and y", or "x, y, and z".
+pub(crate) fn series(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [first, second] => format!("{first} and {second}"),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+    }
 }
 
 /// `text` cut to `max` characters, its last three spent on "...". Counts

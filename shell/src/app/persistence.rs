@@ -79,8 +79,53 @@ fn failure_outlives_its_match(job: &BackgroundJob, slot: &autosave::SaveSlot) ->
 /// downloading from iCloud.
 const RESCAN: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// A record the shelf asked to delete, and what the player reads should the
+/// delete fail.
+pub(super) struct Deletion {
+    path: PathBuf,
+    failure: &'static str,
+}
+
+impl Deletion {
+    /// The delete of the shelf's `entry`.
+    pub(super) fn of(entry: &crate::saves::ReplayEntry) -> Self {
+        Self {
+            path: entry.path.clone(),
+            failure: if entry.kind.resumable() {
+                "Could not delete that save"
+            } else {
+                "Could not delete that replay"
+            },
+        }
+    }
+}
+
+/// A delete from the shelf that failed: what the player reads, and why.
+pub(super) struct Undeleted {
+    failure: &'static str,
+    error: std::io::Error,
+}
+
+/// Deletes a record the player chose while iCloud holds off syncing it. A
+/// record already gone, deleted on another device, counts as deleted.
+fn delete_record(path: &std::path::Path) -> std::io::Result<()> {
+    crate::cloud_mirror::deleting(path);
+    match aftermine_apple_bridge::coordinate(
+        path,
+        aftermine_apple_bridge::Access::Delete,
+        |granted| std::fs::remove_file(granted),
+    )
+    .and_then(|removed| removed)
+    {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        removed => removed,
+    }
+}
+
 pub(super) enum Output {
-    Catalog(crate::saves::Catalog),
+    /// The shelf's records, after any delete it asked for, which failed if
+    /// `Undeleted` says so.
+    Catalog(crate::saves::Catalog, Option<Undeleted>),
     Loaded(Box<crate::game::checkpoint::RestoredGame>),
     /// A saved LAN match, for Match Setup to resume with its players.
     LanSave(Box<crate::game::checkpoint::LanSave>),
@@ -329,7 +374,10 @@ impl App {
             if let Err(error) = &result {
                 self.notify_failure("Could not read saves", format_args!("{error:#}"));
             }
-            if let Ok(Output::Catalog(catalog)) = result {
+            if let Ok(Output::Catalog(catalog, undeleted)) = result {
+                if let Some(Undeleted { failure, error }) = undeleted {
+                    self.notify_failure(failure, error);
+                }
                 self.catalog_rescan =
                     (catalog.downloading > 0).then(|| self.clock.elapsed() + RESCAN);
                 match screen {
@@ -483,19 +531,17 @@ impl App {
             self.mirror_at = Some(now + crate::cloud_mirror::EVERY);
         }
         let task: Task = Box::new(move |cancel| {
-            if let Some(path) = delete {
-                crate::cloud_mirror::deleting(&path);
-                aftermine_apple_bridge::coordinate(
-                    &path,
-                    aftermine_apple_bridge::Access::Delete,
-                    |granted| std::fs::remove_file(granted),
-                )??;
-                crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
-            }
+            let undeleted = delete.and_then(|Deletion { path, failure }| {
+                let deleted = delete_record(&path);
+                if deleted.is_ok() {
+                    crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
+                }
+                deleted.err().map(|error| Undeleted { failure, error })
+            });
             let mut catalog = crate::saves::discover(|| cancel.cancelled());
             anyhow::ensure!(!cancel.cancelled(), "catalog cancelled");
             catalog.downloading += crate::cloud_mirror::pending();
-            Ok(Output::Catalog(catalog))
+            Ok(Output::Catalog(catalog, undeleted))
         });
         match self.persistence.start(task) {
             Ok(id) => {
@@ -731,7 +777,7 @@ pub(super) fn frame(
                     },
                 );
             }
-            Ok(Output::Catalog(_) | Output::Discarded) => unreachable!(),
+            Ok(Output::Catalog(..) | Output::Discarded) => unreachable!(),
         }
     }
     // An exit with nothing left to go out quits without drawing a frame.

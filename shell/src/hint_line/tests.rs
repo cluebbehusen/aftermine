@@ -64,15 +64,31 @@ fn a_long_line_shrinks_to_fit_but_not_past_its_floor() {
 #[test]
 fn only_opening_copy_is_sentence_cased() {
     assert_eq!(
-        HintLine::from("click to choose".to_string())
-            .sentence_cased()
-            .copy(),
+        HintLine::from("click to choose".to_string()).shown().copy(),
         "Click to choose"
     );
+    assert_eq!(*footer().shown(), footer(), "an icon opens the line");
+}
+
+#[test]
+fn a_hint_from_a_lowercase_template_is_drawn_sentence_cased() {
+    let line = crate::menu::hint_line("tap a map to select it - tap it again to play");
     assert_eq!(
-        footer().sentence_cased(),
-        footer(),
-        "an icon opens the line"
+        line.shown().copy(),
+        "Tap a map to select it - tap it again to play"
+    );
+    let tenth_of_capitals = |copy: &str, size: f32| {
+        copy.chars().filter(char::is_ascii_uppercase).count() as f32 * size * 0.1
+    };
+    assert_eq!(
+        line.width_with(10.0, tenth_of_capitals),
+        1.0,
+        "it is measured as drawn"
+    );
+    assert_eq!(
+        line.fit_with(10.0, 0.5, 1.0, tenth_of_capitals),
+        5.0,
+        "and shrinks to fit as drawn"
     );
 }
 

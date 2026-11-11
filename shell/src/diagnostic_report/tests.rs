@@ -1,7 +1,7 @@
 use super::*;
 use std::time::{Duration, Instant};
 
-fn finished(job: &mut ReportJob) -> Result<String, String> {
+fn finished(job: &mut ReportJob) -> Result<String, Failure> {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if let Some(result) = job.poll() {
@@ -79,11 +79,7 @@ fn an_unplayed_match_without_incidents_has_nothing_to_export() {
     let game = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     let mut job = ReportJob::default();
     job.start(&game, Some(root.clone())).unwrap();
-    assert!(
-        finished(&mut job)
-            .unwrap_err()
-            .contains("Nothing to export")
-    );
+    assert_eq!(finished(&mut job).unwrap(), "Nothing to export yet.");
     assert!(!root.join("reports").exists());
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -148,11 +144,9 @@ fn a_failed_export_leaves_no_partial_report() {
     let game = crate::game::Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     let mut job = ReportJob::default();
     job.start(&game, Some(root.clone())).unwrap();
-    assert!(
-        finished(&mut job)
-            .unwrap_err()
-            .contains("crash-replay.json")
-    );
+    let failure = finished(&mut job).unwrap_err();
+    assert_eq!(failure.line, "Could not export the diagnostic report");
+    assert!(failure.cause.contains("crash-replay.json"), "{failure:?}");
     assert_eq!(
         std::fs::read_dir(root.join("reports")).unwrap().count(),
         0,

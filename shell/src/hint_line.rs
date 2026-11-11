@@ -7,6 +7,7 @@ use crate::pad::PadIcon;
 use crate::theme::Type;
 use aftermine_protocol::{PadButton, PadFamily};
 use macroquad::prelude::*;
+use std::borrow::Cow;
 
 /// An icon's height as a share of the text size: a little taller than
 /// capitals, so the label inside it reads at the same size as the copy.
@@ -53,20 +54,28 @@ impl HintLine {
         }
     }
 
-    /// The line with its opening copy sentence-cased. A line that opens on
-    /// an icon reads like one that opens on the button's name, so it keeps
-    /// its words as written.
-    pub(crate) fn sentence_cased(mut self) -> Self {
-        if let Some(Segment::Text(first)) = self.segments.first_mut() {
-            *first = crate::typography::sentence_case(first);
+    /// The line as it is measured and drawn: its opening copy
+    /// sentence-cased, however its template began. A line that opens on an
+    /// icon reads like one that opens on the button's name, so it keeps its
+    /// words as written.
+    fn shown(&self) -> Cow<'_, Self> {
+        let Some(Segment::Text(first)) = self.segments.first() else {
+            return Cow::Borrowed(self);
+        };
+        let cased = crate::typography::sentence_case(first);
+        if cased == *first {
+            return Cow::Borrowed(self);
         }
-        self
+        let mut line = self.clone();
+        line.segments[0] = Segment::Text(cased);
+        Cow::Owned(line)
     }
 
-    /// The line's width at text `size`, given how wide `measure` finds a
-    /// run of copy at that size.
+    /// The line's width at text `size` as drawn, given how wide `measure`
+    /// finds a run of copy at that size.
     fn width_with(&self, size: f32, measure: impl Fn(&str, f32) -> f32) -> f32 {
-        self.segments
+        self.shown()
+            .segments
             .iter()
             .map(|segment| match segment {
                 Segment::Text(text) => measure(text, size),
@@ -118,7 +127,7 @@ impl HintLine {
         icons: Color,
     ) {
         let mut x = x;
-        for segment in &self.segments {
+        for segment in &self.shown().segments {
             match segment {
                 Segment::Text(copy) => {
                     draw_text(copy, x, baseline, size, text);

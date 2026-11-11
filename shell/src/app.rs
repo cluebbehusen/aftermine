@@ -118,7 +118,7 @@ struct App {
     persistence: persistence::Worker,
     persistence_result: Option<Result<persistence::Output>>,
     catalog_id: Option<u64>,
-    catalog_delete: Option<std::path::PathBuf>,
+    catalog_delete: Option<persistence::Deletion>,
     /// When to scan again for records still downloading from iCloud.
     catalog_rescan: Option<std::time::Duration>,
     /// The record changes the last catalog scan began after: iCloud Drive
@@ -382,14 +382,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     let mut live_start = (app.game.slot.clone(), app.game.state.current_tick());
 
     loop {
-        if let Some(result) = app.report_job.poll() {
-            let (text, danger) = match result {
-                Ok(text) => (text, false),
-                Err(error) => (format!("Diagnostic operation failed: {error}"), true),
-            };
-            if !text.is_empty() {
-                app.notify(text, danger);
-            }
+        match app.report_job.poll() {
+            Some(Ok(text)) if !text.is_empty() => app.notify(text, false),
+            Some(Err(failure)) => app.notify_failure(failure.line, failure.cause),
+            Some(Ok(_)) | None => {}
         }
         app.report_settings();
         let visible = screen.visible(&app.game);
@@ -730,12 +726,23 @@ fn can_surrender(game: &Game) -> bool {
     game.state.accepts_commands(game.presentation.human)
 }
 
+/// Where the local seat stands, for the pause menu to follow.
+fn standing(game: &Game) -> screens::pause::Standing {
+    if game.state.result().is_some() {
+        screens::pause::Standing::Decided
+    } else if can_surrender(game) {
+        screens::pause::Standing::Playing
+    } else {
+        screens::pause::Standing::Out
+    }
+}
+
 /// The pause rows for the live match; a LAN match keeps running under
 /// its menu and offers no save or restart.
 fn pause_menu(game: &Game) -> PauseScreen {
     let pause = PauseScreen::open(game.state.result().is_some(), can_surrender(game));
     if let Some(role) = game.net_role() {
-        pause.for_lan_match(role == crate::game::network::NetRole::Host)
+        pause.for_lan_match(role)
     } else if game.tutorial.is_some() {
         pause.for_lesson()
     } else {

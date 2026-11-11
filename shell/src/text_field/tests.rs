@@ -92,6 +92,7 @@ fn a_blank_field_refuses_to_commit_and_escape_cancels() {
     assert_eq!(edit, Edit::Stay);
     assert_eq!(sounds, vec![SoundKind::Denied]);
     assert_eq!(form.error, Some("type something first"));
+    assert_eq!(form.error_line().as_deref(), Some("Type something first"));
     feed(&mut form, &text("a"));
     assert_eq!(form.error, None, "an edit clears the refusal");
     assert_eq!(feed(&mut form, &key(Key::Escape)).0, Edit::Cancel);

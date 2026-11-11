@@ -75,6 +75,9 @@ pub(super) fn select_army(game: &mut Game, input: &mut super::InputState, in_vie
 /// order, wrapping) and centers the camera on it. Stateless: the
 /// selection itself is the cursor.
 pub(super) fn cycle_idle_worker(game: &mut Game, input: &mut super::InputState) {
+    if !game.state.accepts_commands(game.presentation.human) {
+        return;
+    }
     let idle = idle_harvesters(&game.view());
     let Some(&first) = idle.first() else {
         game.presentation

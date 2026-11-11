@@ -374,10 +374,10 @@ fn a_row_reads_its_title_chip_format_match_time_and_age() {
 #[test]
 fn the_shelf_says_it_is_looking_until_the_catalog_lands() {
     let mut shelf = Shelf::open();
-    assert!(
-        shelf.status().starts_with("looking"),
-        "an unscanned shelf is not an empty one: {}",
-        shelf.status()
+    assert_eq!(
+        shelf.status(),
+        "Looking for saves and replays...",
+        "an unscanned shelf is not an empty one"
     );
     assert_eq!(shelf.empty_message(), None);
     shelf.set_catalog(Vec::new(), 0);
@@ -671,7 +671,7 @@ fn an_incompatible_record_refuses_its_verb_on_both_tabs() {
     );
     assert_eq!(
         shelf.status(),
-        Unavailable::OtherVersion.reason(),
+        "Made by a different version of Aftermine",
         "the focused record says why it will not open"
     );
     assert_eq!(
@@ -753,7 +753,7 @@ fn only_apple_tv_says_why_records_are_not_backing_up() {
     let mut shelf = Shelf::open();
     shelf.set_backup(Some(Trouble::NoAccount));
     assert!(
-        shelf.status_on(Platform::Tv).starts_with("looking"),
+        shelf.status_on(Platform::Tv).starts_with("Looking"),
         "the scan comes first"
     );
     shelf.set_catalog(mixed(), 0);
@@ -792,7 +792,7 @@ fn only_apple_tv_says_why_records_are_not_backing_up() {
     shelf.set_catalog(vec![old], 0);
     assert_eq!(
         shelf.status_on(Platform::Tv),
-        Unavailable::OtherVersion.reason(),
+        "Made by a different version of Aftermine",
         "the focused record says why it will not open"
     );
     shelf.set_catalog(mixed(), 0);

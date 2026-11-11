@@ -159,7 +159,7 @@ impl Shelf {
             .asking
             .take()
             .filter(|ask| entries.iter().any(|entry| entry.path == ask.path));
-        let mut fresh = Self::at(entries, unix_now(), self.tab);
+        let mut fresh = Self::at(entries, crate::saves::unix_now(), self.tab);
         if let Some(path) = selected {
             let paths: Vec<_> = fresh.entries.iter().map(|e| e.path.clone()).collect();
             if !fresh.menu.select_where(|i| paths[*i] == path) {
@@ -189,7 +189,7 @@ impl Shelf {
     /// Builds the shelf over the given records (tests inject their own),
     /// open on the tab [`Tab::opening`] picks.
     pub fn from_entries(entries: Vec<ReplayEntry>) -> Self {
-        Self::at(entries, unix_now(), None)
+        Self::at(entries, crate::saves::unix_now(), None)
     }
 
     /// The shelf as of `now` (unix seconds), which dates every row, on
@@ -400,7 +400,7 @@ impl Shelf {
         let backup = self
             .backup
             .and_then(|trouble| backup_line(platform, trouble));
-        if !self.catalog_ready {
+        let status = if !self.catalog_ready {
             "looking for saves and replays...".to_string()
         } else if let Some(problem) = problem {
             problem.reason().to_string()
@@ -412,7 +412,8 @@ impl Shelf {
             String::new()
         } else {
             standing_line(platform).to_string()
-        }
+        };
+        crate::typography::sentence_case(&status)
     }
 
     /// Draws the delete question, or else the tab's rows, the strip, and
@@ -537,12 +538,6 @@ fn steps_tab(events: &[RawEvent]) -> bool {
             }
         )
     })
-}
-
-fn unix_now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs())
 }
 
 #[cfg(test)]

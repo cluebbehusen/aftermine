@@ -300,3 +300,38 @@ fn a_failed_load_with_a_quit_pending_quits_and_a_failed_save_asks() {
         AfterFailure::Back
     );
 }
+
+#[test]
+fn a_record_already_gone_counts_as_deleted_and_a_real_failure_names_its_kind() {
+    let dir = std::env::temp_dir().join(format!("aftermine-delete-record-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("save-0000000010-1700000000.amsave");
+    std::fs::write(&file, b"x").unwrap();
+    delete_record(&file).unwrap();
+    assert!(!file.exists());
+    delete_record(&file).expect("another device deleted it first");
+    assert!(
+        delete_record(&dir).is_err(),
+        "a folder is no record to delete"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+
+    let entry = |kind| crate::saves::ReplayEntry {
+        path: file.clone(),
+        title: "x".to_owned(),
+        map: None,
+        format: "1v1".to_owned(),
+        clock: "1:00".to_owned(),
+        saved_secs: 0,
+        problem: None,
+        kind,
+    };
+    assert_eq!(
+        Deletion::of(&entry(crate::saves::RecordKind::Save)).failure,
+        "Could not delete that save"
+    );
+    assert_eq!(
+        Deletion::of(&entry(crate::saves::RecordKind::Match)).failure,
+        "Could not delete that replay"
+    );
+}

@@ -4,6 +4,7 @@ use super::*;
 fn hud_copy_names_keys_only_on_desktop() {
     use crate::game::AlertKind;
     assert_eq!(idle_badge_text(3, "F1", false), "3 idle [F1]");
+    assert_eq!(idle_badge_text(3, "", false), "3 idle");
     crate::platform::tests::assert_touch_copy(&idle_badge_text(3, "F1", true));
     assert_eq!(
         alert_badge_text(AlertKind::Attack, "Tab", false),
@@ -27,22 +28,39 @@ fn hud_copy_names_keys_only_on_desktop() {
         "Tab",
         true,
     ));
-    for hands in crate::platform::tests::ALL_HANDS {
-        let hint = concede_hint(hands);
-        assert_eq!(hint.contains("{back}"), hands.keys, "{hint}");
-        if !hands.keys {
-            crate::platform::tests::assert_keyless_copy(hint);
+    for team in [false, true] {
+        for hands in crate::platform::tests::ALL_HANDS {
+            let hint = concede_hint(hands, team);
+            assert_eq!(hint.contains("{back}"), hands.keys, "{hint}");
+            if !hands.keys {
+                crate::platform::tests::assert_keyless_copy(&hint);
+            }
+            if hands.touch() {
+                crate::platform::tests::assert_mouseless_copy(&hint);
+            }
         }
-        if hands.touch() {
-            crate::platform::tests::assert_mouseless_copy(hint);
+        // A controller names its own Menu button, since pad mode hides the
+        // top bar's.
+        for hands in crate::platform::tests::pad_hands() {
+            let hint = concede_hint(hands, team);
+            assert!(hint.contains("{menu}"), "{hint}");
+            crate::platform::tests::assert_touch_copy(&hint.replace("{menu}", "Menu"));
         }
     }
-    // A controller names its own Menu button, since pad mode hides the
-    // top bar's.
-    for hands in crate::platform::tests::pad_hands() {
-        let hint = concede_hint(hands);
-        assert!(hint.contains("{menu}"), "{hint}");
-        crate::platform::tests::assert_touch_copy(&hint.replace("{menu}", "Menu"));
+}
+
+#[test]
+fn the_concede_banner_says_the_team_fights_on_only_while_a_teammate_does() {
+    for hands in crate::platform::tests::ALL_HANDS
+        .into_iter()
+        .chain(crate::platform::tests::pad_hands())
+    {
+        let alone = concede_hint(hands, false);
+        assert!(!alone.contains("team"), "{alone}");
+        assert_eq!(
+            concede_hint(hands, true),
+            format!("your team fights on | {alone}")
+        );
     }
 }
 

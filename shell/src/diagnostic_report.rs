@@ -2,14 +2,25 @@
 use anyhow::{Context, Result, ensure};
 use std::sync::mpsc::{self, Receiver};
 
+/// A diagnostic operation that failed: the line the player reads, and the
+/// cause, for the log.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Failure {
+    pub(crate) line: &'static str,
+    pub(crate) cause: String,
+}
+
 #[derive(Default)]
 pub(crate) struct ReportJob {
-    receiver: Option<Receiver<Result<String, String>>>,
+    /// The running operation's result, and what the player reads should it
+    /// fail.
+    receiver: Option<(Receiver<Result<String, String>>, &'static str)>,
 }
 impl ReportJob {
     fn begin(
         &mut self,
         name: &str,
+        failure: &'static str,
         work: impl FnOnce() -> Result<String> + Send + 'static,
     ) -> Result<()> {
         ensure!(
@@ -22,7 +33,7 @@ impl ReportJob {
             .spawn(move || {
                 let _ = sender.send(work().map_err(|error| format!("{error:#}")));
             })?;
-        self.receiver = Some(receiver);
+        self.receiver = Some((receiver, failure));
         Ok(())
     }
     /// Exports the live match's command log, when it has played any ticks,
@@ -38,14 +49,13 @@ impl ReportJob {
             replay.meta.ticks = Some(game.state.current_tick());
             replay
         });
-        self.begin("aftermine-report-export", move || {
+        self.begin("aftermine-report-export", EXPORT_FAILED, move || {
             let incidents = root.join(aftermine_kit::diagnostics::INCIDENTS);
             let incidents = incidents.is_file().then_some(incidents);
             let crash = aftermine_kit::diagnostics::newest_crash_dump(&root);
-            ensure!(
-                replay.is_some() || incidents.is_some() || crash.is_some(),
-                "Nothing to export yet"
-            );
+            if replay.is_none() && incidents.is_none() && crash.is_none() {
+                return Ok(NOTHING_TO_EXPORT.into());
+            }
             let reports = root.join("reports");
             std::fs::create_dir_all(&reports)?;
             let stamp = std::time::SystemTime::now()
@@ -96,22 +106,21 @@ impl ReportJob {
             Ok(exported_notice(crate::platform::PLATFORM).into())
         })
     }
-    pub(crate) fn poll(&mut self) -> Option<Result<String, String>> {
-        match self.receiver.as_ref()?.try_recv() {
-            Ok(result) => {
-                self.receiver = None;
-                Some(result)
-            }
-            Err(mpsc::TryRecvError::Disconnected) => {
-                self.receiver = None;
-                Some(Err("diagnostic worker stopped".into()))
-            }
-            Err(mpsc::TryRecvError::Empty) => None,
-        }
+    /// The finished operation's notice, or why it failed.
+    pub(crate) fn poll(&mut self) -> Option<Result<String, Failure>> {
+        let (receiver, line) = self.receiver.as_ref()?;
+        let result = match receiver.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Disconnected) => Err("diagnostic worker stopped".into()),
+            Err(mpsc::TryRecvError::Empty) => return None,
+        };
+        let line = *line;
+        self.receiver = None;
+        Some(result.map_err(|cause| Failure { line, cause }))
     }
     pub(crate) fn open_folder(&mut self) -> Result<()> {
         let root = crate::paths::diagnostics_dir().context("diagnostics folder unavailable")?;
-        self.begin("aftermine-open-diagnostics", move || {
+        self.begin("aftermine-open-diagnostics", OPEN_FAILED, move || {
             std::fs::create_dir_all(&root)?;
             #[cfg(target_os = "macos")]
             let mut command = std::process::Command::new("open");
@@ -127,6 +136,15 @@ impl ReportJob {
         })
     }
 }
+
+/// What an export with nothing to put in a report tells the player.
+const NOTHING_TO_EXPORT: &str = "Nothing to export yet.";
+
+/// What the player reads when an export fails.
+const EXPORT_FAILED: &str = "Could not export the diagnostic report";
+
+/// What the player reads when the diagnostics folder does not open.
+const OPEN_FAILED: &str = "Could not open the diagnostics folder";
 
 /// What an export tells the player: where to find the report, wherever
 /// `platform` has a way to reach it.

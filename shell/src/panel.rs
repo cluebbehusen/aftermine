@@ -2107,15 +2107,11 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             // The same construction tech gate placement enforces: an
             // enabled card would only arm a ghost the sim refuses.
             let (enabled, why) = if !game.state.prerequisites_met(game.presentation.human, kind) {
-                let need = kind
-                    .base_stats()
-                    .construction
-                    .requires
-                    .iter()
-                    .map(|k| entity_name(k.name()))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                (false, Some(format!("needs a standing {need}")))
+                let requires = kind.base_stats().construction.requires;
+                (
+                    false,
+                    Some(crate::building_actions::needs_standing(requires)),
+                )
             } else if scrap < cost {
                 (false, Some(format!("needs {cost} scrap")))
             } else {
