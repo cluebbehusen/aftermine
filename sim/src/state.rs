@@ -1445,11 +1445,7 @@ impl Building {
     /// first stage.
     pub fn construction_stage(&self) -> Option<u8> {
         let progress = u64::from(self.construction_progress()?);
-        let total = u64::from(
-            self.stats()
-                .construction
-                .map_or(1, |stats| stats.build_ticks),
-        );
+        let total = u64::from(self.stats().construction.build_ticks);
         let stages = u64::from(crate::stats::CONSTRUCTION_STAGES);
         let stage = (progress * stages)
             .checked_div(total)
@@ -1811,7 +1807,8 @@ impl State {
 
     /// Whether a living Foundry owns no machine that can harvest: none in the
     /// world, none riding a transport, and none prepaid in a live production
-    /// queue.
+    /// queue. Every automatic consumer of the recovery reserve reads this one
+    /// predicate.
     pub(crate) fn harvester_recovery_needed(&self, player: PlayerId) -> bool {
         let harvests = |kind: UnitKind| kind.stats().harvest.is_some();
         !self.player(player).resigned
@@ -2706,7 +2703,6 @@ impl State {
         let stats = b.stats();
         if *phase == BuildingPhase::Provisional
             && (*hp != stats.max_hp / 5
-                || stats.construction.is_none()
                 || rally.is_some()
                 || focus.is_some()
                 || *cooldown != 0
@@ -2733,9 +2729,9 @@ impl State {
         }
         let meter_overrun = match *phase {
             BuildingPhase::Provisional => false,
-            BuildingPhase::Site { progress } | BuildingPhase::Upgrading { progress } => stats
-                .construction
-                .is_none_or(|construction| progress > construction.build_ticks),
+            BuildingPhase::Site { progress } | BuildingPhase::Upgrading { progress } => {
+                progress > stats.construction.build_ticks
+            }
             BuildingPhase::Built { training } => training > PROGRESS_ENVELOPE,
         };
         if meter_overrun {
@@ -2754,19 +2750,16 @@ impl State {
             if !self.valid_attack_reference(*player, target) {
                 return Err(E::UnmintedBuildingFocus(id));
             }
-            let current_domain = match target.entity() {
-                Some(entity) => self.visible_hostile_target_domain(*player, entity),
-                None => self.attack_view(*player, target).map(|view| view.domain),
-            };
-            let live_entity = target.entity().is_some_and(|entity| match entity {
-                Target::Unit(id) => self.unit(id).is_some(),
-                Target::Building(id) => self.building(id).is_some(),
-            });
-            if !b.built()
-                || stats.weapons.is_empty()
-                || ((live_entity || target.entity().is_none()) && current_domain.is_none())
-                || current_domain.is_some_and(|domain| !stats.weapons[0].targets.covers(domain))
-            {
+            // Focus fire stores the contact or footprint its command
+            // resolved to, never a raw unit or building id.
+            let covered = target.entity().is_none()
+                && self.attack_view(*player, target).is_some_and(|view| {
+                    stats
+                        .weapons
+                        .first()
+                        .is_some_and(|weapon| weapon.targets.covers(view.domain))
+                });
+            if !b.built() || !covered {
                 return Err(E::InvalidBuildingFocus(id));
             }
         }
@@ -3873,7 +3866,7 @@ fn salvage_ledger_coherent(b: &Building) -> bool {
         return false;
     }
     let stats = b.stats();
-    let basis = stats.construction.map_or(0, |c| c.cost);
+    let basis = stats.construction.cost;
     let target =
         u64::from(b.salvage_drained) * u64::from(basis) * crate::stats::SALVAGE_REFUND_PERMILLE
             / (1000 * u64::from(stats.max_hp));
@@ -3885,8 +3878,11 @@ fn salvage_ledger_coherent(b: &Building) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaceRefusal {
-    /// The kind is scenario-authored, never player-buildable.
-    NotConstructible,
+    /// The seat gives no more orders: it surrendered or lost its last
+    /// Foundry, or the match is decided. Only
+    /// [`State::place_intent_refusal`] gives it; [`State::place_refusal`]
+    /// leaves the seat to command validation.
+    OutOfPlay,
     /// A footprint tile is not currently visible.
     Fog,
     /// A footprint tile is impassable ground.

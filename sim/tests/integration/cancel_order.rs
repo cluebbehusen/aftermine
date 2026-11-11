@@ -231,11 +231,7 @@ fn cancelling_the_last_build_order_on_an_unstarted_site_refunds_it() {
         "test premise"
     );
     let report = state.tick(&[cancel(worker, OrderKey::Build { site }, 0, &[])]);
-    let cost = BuildingKind::Turret
-        .base_stats()
-        .construction
-        .expect("buildable")
-        .cost;
+    let cost = BuildingKind::Turret.base_stats().construction.cost;
     assert!(report.events.contains(&Event::BuildCancelled {
         building: site,
         player: PlayerId(0),

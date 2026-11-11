@@ -128,9 +128,7 @@ fn building_aura_bill(kind: BuildingKind, tier: u8, from: u32, to: u32) -> u32 {
     let basis = if kind == BuildingKind::Foundry {
         aftermine_sim::stats::FOUNDRY_REPAIR_PRICE
     } else {
-        stats
-            .construction
-            .map_or(aftermine_sim::stats::FOUNDRY_REPAIR_PRICE, |row| row.cost)
+        stats.construction.cost
     };
     let millis = |hp: u32| -> u64 {
         u64::from(hp) * u64::from(basis) * aftermine_sim::stats::REPAIR_COST_PERMILLE

@@ -20,7 +20,7 @@ fn last_worker_wreck_survives_provisional_site_cleanup_and_refund() {
         } else {
             state.place_site(PlayerId(0), BuildingKind::Turret, tile)
         };
-        let cost = BuildingKind::Turret.base_stats().construction.unwrap().cost;
+        let cost = BuildingKind::Turret.base_stats().construction.cost;
         state.player_mut(PlayerId(0)).scrap -= cost;
         let bank = state.player(PlayerId(0)).scrap;
         let unit = state.unit_mut(worker).unwrap();
@@ -97,7 +97,7 @@ fn a_lethal_hit_to_the_last_worker_refunds_its_unstarted_site() {
         anchor,
     };
     state.refresh_vision();
-    let cost = BuildingKind::Turret.base_stats().construction.unwrap().cost;
+    let cost = BuildingKind::Turret.base_stats().construction.cost;
     state.player_mut(PlayerId(0)).scrap -= cost;
     let bank = state.player(PlayerId(0)).scrap;
     let mut report = state.tick(&[PlayerCommand {

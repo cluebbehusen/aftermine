@@ -563,22 +563,6 @@ impl Map {
         self.elevation.is_some()
     }
 
-    /// The levels layer in its authored glyphs; empty for a flat map. A
-    /// level past the last glyph, which no scenario can author, prints as
-    /// `?`.
-    pub fn level_rows(&self) -> Vec<String> {
-        let Some(levels) = &self.elevation else {
-            return Vec::new();
-        };
-        let mut rows = vec![String::with_capacity(as_index(self.width())); as_index(self.height())];
-        for (pos, elevation) in levels.iter() {
-            let (level, _) = elevation.span();
-            let glyph = char::from_digit(u32::from(level), 36).unwrap_or('?');
-            rows[as_index(pos.y)].push(glyph);
-        }
-        rows
-    }
-
     /// Map width in tiles.
     pub fn width(&self) -> i32 {
         self.grid.width()

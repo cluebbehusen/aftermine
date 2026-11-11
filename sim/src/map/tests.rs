@@ -1,5 +1,21 @@
 use super::*;
 
+/// Asserts that every tile of `map` stands at the lower level its glyph in
+/// `levels` names.
+fn assert_levels(map: &Map, levels: &[&str]) {
+    for (y, row) in levels.iter().enumerate() {
+        for (x, glyph) in row.chars().enumerate() {
+            let tile = TilePos::new(i32::try_from(x).unwrap(), i32::try_from(y).unwrap());
+            let (low, _) = map.elevation(tile).expect("a tiered map").span();
+            assert_eq!(
+                char::from_digit(u32::from(low), 36),
+                Some(glyph),
+                "{tile:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn parses_legend_and_anchors() {
     let (map, anchors) = Map::parse(&["#.s", ".1.", "..2"]).unwrap();
@@ -77,7 +93,7 @@ fn tiered_rows_parse_and_round_trip() {
     assert!(map.terrain_passable(TilePos::new(1, 1)), "ramps are ground");
     assert!(map.is_ramp(TilePos::new(1, 1)));
     assert_eq!(map.ascii_rows(), TIERED);
-    assert_eq!(map.level_rows(), TIERED_LEVELS);
+    assert_levels(&map, &TIERED_LEVELS);
 }
 
 #[test]
@@ -92,7 +108,7 @@ fn levels_past_nine_use_letters() {
         map.elevation(TilePos::new(3, 1)),
         Some(Elevation::Ramp { low: 10 })
     );
-    assert_eq!(map.level_rows(), levels);
+    assert_levels(&map, &levels);
 }
 
 #[test]

@@ -176,7 +176,7 @@ fn frame_only_sites_are_valued_and_stop_drawing_redundant_foundries() {
     let site = &model.sites()[index];
     let anchor = site.anchors[0];
     let state = scenario.build().unwrap();
-    let observation = aftermine_sim::observation::ObservationData::omniscient(&state, PlayerId(0));
+    let observation = mapped(&state, PlayerId(0));
     assert!(
         crate::expansion::value(
             &observation,
@@ -193,10 +193,7 @@ fn frame_only_sites_are_valued_and_stop_drawing_redundant_foundries() {
         x: anchor.x,
         y: anchor.y,
     });
-    let observation = aftermine_sim::observation::ObservationData::omniscient(
-        &scenario.build().unwrap(),
-        PlayerId(0),
-    );
+    let observation = mapped(&scenario.build().unwrap(), PlayerId(0));
     assert_eq!(
         crate::expansion::value(
             &observation,

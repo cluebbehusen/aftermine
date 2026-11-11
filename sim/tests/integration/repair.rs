@@ -463,13 +463,7 @@ fn reclaimers_trickle_scrap_forever() {
     );
     // The payback math that keeps it out of opening builds: minutes, not
     // seconds.
-    let cost = u64::from(
-        BuildingKind::Reclaimer
-            .base_stats()
-            .construction
-            .unwrap()
-            .cost,
-    );
+    let cost = u64::from(BuildingKind::Reclaimer.base_stats().construction.cost);
     let payback_ticks = cost * RECLAIMER_PERIOD;
     assert!(
         payback_ticks >= 20 * 60 * 3,
@@ -598,7 +592,7 @@ fn the_last_coin_prepays_its_full_scrap_of_welding() {
 
     let stats = BuildingKind::Turret.base_stats();
     let ramp = u64::from(stats.max_hp - stats.max_hp / 5);
-    let construction = stats.construction.unwrap();
+    let construction = stats.construction;
     let ramp_ticks = u64::from(construction.build_ticks);
     let basis = u64::from(construction.cost);
     // Replays the billing derivation: welded hp telescopes along the

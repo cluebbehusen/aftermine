@@ -53,9 +53,8 @@ impl SelectionInfo {
     /// A cradle's assembly progress, its crew for its owner, and the machine
     /// it becomes.
     fn cradle_rows(&mut self, game: &Scene<'_>, b: &aftermine_sim::Building) {
-        if let (Some(progress), Some(construction)) =
-            (b.construction_progress(), b.stats().construction)
-        {
+        if let Some(progress) = b.construction_progress() {
+            let construction = b.stats().construction;
             self.row(
                 "Assembly",
                 format!(

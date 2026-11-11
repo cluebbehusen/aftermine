@@ -736,7 +736,6 @@ fn a_finished_roc_cradle_lifts_its_roc_off_from_its_centre() {
     let build = BuildingKind::RocCradle
         .base_stats()
         .construction
-        .unwrap()
         .build_ticks;
     let mut doc = serde_json::to_value(&state).unwrap();
     for b in doc["buildings"].as_array_mut().unwrap() {

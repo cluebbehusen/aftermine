@@ -196,10 +196,7 @@ impl CodexScreen {
                 };
                 format!("{domain} | {} scrap", stats.cost)
             }
-            Entry::Building(kind) => kind
-                .base_stats()
-                .construction
-                .map_or_else(String::new, |c| format!("{} scrap", c.cost)),
+            Entry::Building(kind) => format!("{} scrap", kind.base_stats().construction.cost),
         };
 
         // The page: description, figures, weapons, and what else the
@@ -414,9 +411,8 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
         notes.push("It only stops warheads that friendly sight or radar has tracked.".to_string());
     }
     notes.extend(cradle_crew_line(kind));
-    if let Some(c) = base.construction
-        && !c.requires.is_empty()
-    {
+    let c = base.construction;
+    if !c.requires.is_empty() {
         // You start with a Foundry, so its requirement is for another one.
         notes.push(if kind == BuildingKind::Foundry {
             format!("Building another Foundry needs {}.", needs(c.requires))
@@ -433,9 +429,7 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
         notes.push(format!("Trains {}.", names.join(", ")));
     }
     for (tier, stats) in kind.tiers().iter().enumerate().skip(1) {
-        let Some(c) = stats.construction else {
-            continue;
-        };
+        let c = stats.construction;
         let tier = tier.fit::<u8>();
         let name = entity_name(kind.tier_name(tier));
         let mut needed: Vec<String> = c.requires.iter().map(|p| article(p.name())).collect();
