@@ -362,6 +362,25 @@ pub(super) fn select_picked(game: &mut Game, picked: Option<Picked>, screen: Vec
     game.presentation.selection.pile = game.view().known_salvage(tile).is_some().then_some(tile);
 }
 
+/// The viewer's own units a box between world corners `a` and `b` covers
+/// and its release would select, which the box's preview rings.
+pub(crate) fn boxed_own_units<'a>(
+    game: &'a crate::game::Scene<'_>,
+    a: Vec2,
+    b: Vec2,
+) -> impl Iterator<Item = &'a aftermine_sim::Unit> {
+    let (lo, hi) = (a.min(b), a.max(b));
+    game.state.units().iter().filter(move |unit| {
+        let p = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
+        unit.player == game.presentation.human
+            && sees_unit(game, unit)
+            && p.x >= lo.x
+            && p.x <= hi.x
+            && p.y >= lo.y
+            && p.y <= hi.y
+    })
+}
+
 pub(super) fn box_select(game: &mut Game, a_screen: Vec2, b_screen: Vec2, additive: bool) {
     let a = game.presentation.camera.to_world(a_screen);
     let b = game.presentation.camera.to_world(b_screen);

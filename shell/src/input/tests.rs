@@ -9055,10 +9055,15 @@ fn drones_are_never_box_selected() {
     assert_eq!(drones.len(), 2, "premise: both launched");
     let top_left = game.presentation.camera.to_screen(vec2(-1.0, -1.0));
     let bottom_right = game.presentation.camera.to_screen(vec2(40.0, 24.0));
+    let ringed: Vec<UnitId> =
+        crate::input::boxed_own_units(&game.view(), vec2(-1.0, -1.0), vec2(40.0, 24.0))
+            .map(|unit| unit.id)
+            .collect();
     box_select(&mut game, top_left, bottom_right, false);
     let selected = &game.presentation.selection.units;
     assert!(selected.contains(&roc));
     assert!(drones.iter().all(|drone| !selected.contains(drone)));
+    assert_eq!(&ringed, selected, "the box's preview rings what it selects");
 }
 
 #[test]

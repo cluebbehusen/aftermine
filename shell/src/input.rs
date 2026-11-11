@@ -2227,11 +2227,11 @@ mod touch;
 
 use dispatch::dispatch_action;
 use orders::{OrderReach, context_order, rally_at, rally_producers, rally_selected_producers};
-pub(crate) use select::army_units;
 pub use select::idle_harvesters;
 use select::{
     Reach, box_select, click_on_hud, click_select, cycle_idle_worker, select_all_of_kind_on_screen,
 };
+pub(crate) use select::{army_units, boxed_own_units};
 pub use touch::update_touch;
 pub(crate) use touch::{
     Pair, TOUCH_REST_MS, TouchBorn, TouchPoint, card_press_progress, group_press_progress,
