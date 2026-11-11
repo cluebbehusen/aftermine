@@ -42,7 +42,7 @@ fn plan(crew: Vec<UnitId>, anchor: TilePos, queue: bool) -> Command {
 fn one_paid_nonphysical_site_survives_until_the_final_worker_abandons_it() {
     let (mut state, crew, anchor) = fixture();
     let bank = state.player(PlayerId(0)).scrap;
-    let cost = BuildingKind::Turret.base_stats().construction.unwrap().cost;
+    let cost = BuildingKind::Turret.base_stats().construction.cost;
     let mut duplicate_crew = crew.clone();
     duplicate_crew.extend(&crew);
     let report = state.tick(&[cmd(0, plan(duplicate_crew, anchor, true))]);

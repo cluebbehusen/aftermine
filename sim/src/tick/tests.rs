@@ -15,11 +15,7 @@ fn command_phase_inspection_is_pure_and_stops_before_the_tick() {
         .id;
     let kind = crate::BuildingKind::Turret;
     let anchor = TilePos::new(10, 4);
-    let cost = kind
-        .base_stats()
-        .construction
-        .expect("turret is constructible")
-        .cost;
+    let cost = kind.base_stats().construction.cost;
     let command = PlayerCommand {
         player: crate::PlayerId(0),
         command: crate::Command::Build {

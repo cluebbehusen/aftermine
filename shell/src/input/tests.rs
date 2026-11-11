@@ -1856,18 +1856,12 @@ fn wheel_bursts_are_capped() {
 #[test]
 fn every_build_palette_entry_costs_scrap_to_raise() {
     // The palette is exactly what a harvester can place, so each entry
-    // must carry construction stats with a real price. A `None` (a
-    // Foundry-style scenario-only kind) or a zero cost would offer a
-    // ghost the sim can never accept.
+    // must have a real price.
     for kind in crate::action::BUILD_CATEGORIES
         .iter()
         .flat_map(|(_, kinds)| kinds.iter())
     {
-        let cost = kind
-            .base_stats()
-            .construction
-            .unwrap_or_else(|| panic!("{} is in the palette but not constructable", kind.name()))
-            .cost;
+        let cost = kind.base_stats().construction.cost;
         assert!(cost > 0, "{} is free to build", kind.name());
     }
 }
@@ -6882,11 +6876,7 @@ fn an_undrained_deferred_build_is_replaced_before_preflight() {
     let kind = aftermine_sim::BuildingKind::Fabricator;
     let first = TilePos::new(18, 4);
     let replacement = TilePos::new(19, 4);
-    let cost = kind
-        .base_stats()
-        .construction
-        .expect("fabricator is constructible")
-        .cost;
+    let cost = kind.base_stats().construction.cost;
     let scrap = game.state.player(game.presentation.human).scrap;
     assert!(
         cost <= scrap && scrap < cost.saturating_mul(2),
@@ -7066,11 +7056,7 @@ fn pending_projection_refunds_unstarted_sites_on_replacement_or_stop() {
     let builder = game.state.units()[0].id;
     let kind = aftermine_sim::BuildingKind::Turret;
     let anchor = TilePos::new(4, 2);
-    let cost = kind
-        .base_stats()
-        .construction
-        .expect("turret is constructible")
-        .cost;
+    let cost = kind.base_stats().construction.cost;
     game.presentation.selection.units = vec![builder];
     game.pending.push(PlayerCommand {
         player: game.presentation.human,
@@ -7173,11 +7159,7 @@ fn a_paid_site_does_not_reserve_its_surviving_deferred_claim_again() {
     assert_eq!(workers.len(), 2, "skirmish authors two human workers");
     let kind = aftermine_sim::BuildingKind::Turret;
     let anchor = TilePos::new(10, 4);
-    let cost = kind
-        .base_stats()
-        .construction
-        .expect("turret is constructible")
-        .cost;
+    let cost = kind.base_stats().construction.cost;
     let scrap = game.state.player(game.presentation.human).scrap;
     game.pending.extend([
         PlayerCommand {

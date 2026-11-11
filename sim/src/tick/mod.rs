@@ -357,15 +357,13 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
             pos: building.center(),
         });
         let stats = building.stats();
-        let price = stats
-            .construction
-            .map_or(crate::stats::FOUNDRY_WRECK_VALUE, |c| c.cost);
+        let price = stats.construction.cost;
         let mut value = price * crate::stats::WRECK_VALUE_NUM / crate::stats::WRECK_VALUE_DEN;
         if building.kind.assembles().is_some() {
             // A cradle's price is the machine it would become, so its wreck
             // holds only the share its crew had raised: the hit points its
             // work had built, of the cradle's full health.
-            let construction = stats.construction.expect("cradles are built");
+            let construction = stats.construction;
             let progress = u64::from(building.construction_progress().unwrap_or(0));
             let start = u64::from(stats.max_hp / 5);
             let raised = start

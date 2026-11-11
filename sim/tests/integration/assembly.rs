@@ -414,7 +414,7 @@ fn a_finished_cradle_stands_up_its_maw_at_its_centre() {
     });
     // Nearly done, but only half as healthy as its work raised it.
     let stats = BuildingKind::MawCradle.base_stats();
-    let build = stats.construction.unwrap().build_ticks;
+    let build = stats.construction.build_ticks;
     let mut state = forge_cradle(&state, build - 4, stats.max_hp / 2);
     let id = cradle(&state).unwrap().id;
     let events = run_until(&mut state, 200, |_, events| {
@@ -475,7 +475,7 @@ fn a_destroyed_cradle_leaves_a_wreck_for_the_work_its_crew_raised() {
         cradle(state).is_some_and(|c| !c.unstarted())
     });
     let stats = BuildingKind::MawCradle.base_stats();
-    let build = stats.construction.unwrap().build_ticks;
+    let build = stats.construction.build_ticks;
     let mut state = forge_cradle(&state, build / 2, 1);
     let id = cradle(&state).unwrap().id;
     let sentinel = ids(&state, 1, UnitKind::Sentinel)[0];
@@ -1031,10 +1031,7 @@ fn a_maw_cuts_a_building_square_to_a_side_from_any_side() {
             continue;
         }
         for tier in 0..u8::try_from(kind.tiers().len()).unwrap() {
-            let labor = kind
-                .tier_stats(tier)
-                .construction
-                .map_or(0, |construction| construction.build_ticks);
+            let labor = kind.tier_stats(tier).construction.build_ticks;
             let phase = if tier == 0 { "site" } else { "upgrading" };
             // A site no work has touched is abandoned without a builder.
             for progress in [None, Some(1), Some(labor.div_ceil(3))] {
@@ -1539,11 +1536,7 @@ fn forge_upgrade(state: &State, anchor: TilePos, progress: u32) -> State {
 #[test]
 fn a_maw_cuts_on_while_an_upgrade_redraws_the_outline_under_it() {
     let anchor = TilePos::new(15, 15);
-    let labor = BuildingKind::Bastion
-        .tier_stats(1)
-        .construction
-        .unwrap()
-        .build_ticks;
+    let labor = BuildingKind::Bastion.tier_stats(1).construction.build_ticks;
     for redraw in [labor.div_ceil(3), labor] {
         let (mut state, maw, target) = upgrading_bastion(anchor, TilePos::new(19, 19), 1);
         let attack = Command::Attack {
@@ -1593,11 +1586,7 @@ fn a_maw_cuts_on_while_an_upgrade_redraws_the_outline_under_it() {
 #[test]
 fn a_maw_driving_in_cuts_square_to_the_outline_an_upgrade_redraws() {
     let anchor = TilePos::new(15, 15);
-    let labor = BuildingKind::Bastion
-        .tier_stats(1)
-        .construction
-        .unwrap()
-        .build_ticks;
+    let labor = BuildingKind::Bastion.tier_stats(1).construction.build_ticks;
     let (mut state, maw, target) =
         upgrading_bastion(anchor, TilePos::new(15, 10), labor * 2 / 3 + 1);
     state.tick(&[cmd(

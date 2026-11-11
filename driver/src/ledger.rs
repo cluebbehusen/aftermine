@@ -413,10 +413,7 @@ fn snapshot(state: &State) -> Vec<Body> {
             carrier: None,
             host: None,
             progress: building.construction_progress().unwrap_or(0),
-            build_ticks: stats
-                .construction
-                .as_ref()
-                .map_or(0, |construction| construction.build_ticks),
+            build_ticks: stats.construction.build_ticks,
             salvage: building.salvage_drained,
         }
     }));

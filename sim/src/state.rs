@@ -1445,11 +1445,7 @@ impl Building {
     /// first stage.
     pub fn construction_stage(&self) -> Option<u8> {
         let progress = u64::from(self.construction_progress()?);
-        let total = u64::from(
-            self.stats()
-                .construction
-                .map_or(1, |stats| stats.build_ticks),
-        );
+        let total = u64::from(self.stats().construction.build_ticks);
         let stages = u64::from(crate::stats::CONSTRUCTION_STAGES);
         let stage = (progress * stages)
             .checked_div(total)
@@ -2707,7 +2703,6 @@ impl State {
         let stats = b.stats();
         if *phase == BuildingPhase::Provisional
             && (*hp != stats.max_hp / 5
-                || stats.construction.is_none()
                 || rally.is_some()
                 || focus.is_some()
                 || *cooldown != 0
@@ -2734,9 +2729,9 @@ impl State {
         }
         let meter_overrun = match *phase {
             BuildingPhase::Provisional => false,
-            BuildingPhase::Site { progress } | BuildingPhase::Upgrading { progress } => stats
-                .construction
-                .is_none_or(|construction| progress > construction.build_ticks),
+            BuildingPhase::Site { progress } | BuildingPhase::Upgrading { progress } => {
+                progress > stats.construction.build_ticks
+            }
             BuildingPhase::Built { training } => training > PROGRESS_ENVELOPE,
         };
         if meter_overrun {
@@ -3871,7 +3866,7 @@ fn salvage_ledger_coherent(b: &Building) -> bool {
         return false;
     }
     let stats = b.stats();
-    let basis = stats.construction.map_or(0, |c| c.cost);
+    let basis = stats.construction.cost;
     let target =
         u64::from(b.salvage_drained) * u64::from(basis) * crate::stats::SALVAGE_REFUND_PERMILLE
             / (1000 * u64::from(stats.max_hp));

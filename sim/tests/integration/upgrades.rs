@@ -351,12 +351,7 @@ fn the_bastion_ladder_starts_behind_the_fabricator() {
     teched.tick(&[build(&teched)]);
     assert_eq!(
         teched.player(PlayerId(0)).scrap,
-        1_000
-            - BuildingKind::Bastion
-                .base_stats()
-                .construction
-                .unwrap()
-                .cost
+        1_000 - BuildingKind::Bastion.base_stats().construction.cost
     );
 }
 

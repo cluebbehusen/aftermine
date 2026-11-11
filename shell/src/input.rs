@@ -971,7 +971,7 @@ fn judge(
         }
         None => pending_build_projection_for(game, game.pending, kind, anchor, queue, defer),
     };
-    let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
+    let cost = kind.base_stats().construction.cost;
     let available = projection.funds.available();
     // The order a click checks them in: the ground, the bank, the queue.
     let verdict = if let Some(refusal) = projection.refusal {

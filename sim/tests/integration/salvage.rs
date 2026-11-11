@@ -236,7 +236,7 @@ fn foundations_preserve_wrecks_until_construction_starts() {
             .events
             .iter()
             .any(|event| matches!(event, Event::BuildCancelled { refund, .. }
-        if *refund == BuildingKind::Turret.base_stats().construction.unwrap().cost))
+        if *refund == BuildingKind::Turret.base_stats().construction.cost))
     );
     assert_eq!(
         stopped.player(PlayerId(0)).scrap,
@@ -353,8 +353,8 @@ fn a_dead_building_splits_its_wreck_across_the_footprint() {
             .iter()
             .any(|e| matches!(e, Event::BuildingDestroyed { .. }))
     });
-    let expected = BuildingKind::Turret.base_stats().construction.unwrap().cost * WRECK_VALUE_NUM
-        / WRECK_VALUE_DEN;
+    let expected =
+        BuildingKind::Turret.base_stats().construction.cost * WRECK_VALUE_NUM / WRECK_VALUE_DEN;
     let found = state.map().wreck_at(anchor);
     assert!(
         found > 0 && found <= expected,
@@ -542,7 +542,7 @@ fn a_full_health_salvage_banks_exactly_its_permille() {
     )]);
     let events = run_until(&mut state, 800, |s, _| s.building(turret).is_none());
     let stats = BuildingKind::Turret.base_stats();
-    let cost = stats.construction.unwrap().cost;
+    let cost = stats.construction.cost;
     let refund = u32::try_from(u64::from(cost) * SALVAGE_REFUND_PERMILLE / 1000).unwrap();
     assert_eq!(
         state.player(PlayerId(0)).scrap,
@@ -606,7 +606,7 @@ fn an_interrupted_salvage_credits_only_the_hp_it_drained() {
     )]);
     state.tick(&[]);
     let drained = stats.max_hp - state.building(turret).unwrap().hp;
-    let cost = u64::from(stats.construction.unwrap().cost);
+    let cost = u64::from(stats.construction.cost);
     let credited = u32::try_from(
         u64::from(drained) * cost * SALVAGE_REFUND_PERMILLE / (1000 * u64::from(stats.max_hp)),
     )
@@ -751,8 +751,7 @@ fn fire_finishing_a_salvage_target_wins_and_forfeits_the_rest() {
     );
     let stats = BuildingKind::Array.base_stats();
     let full =
-        u32::try_from(u64::from(stats.construction.unwrap().cost) * SALVAGE_REFUND_PERMILLE / 1000)
-            .unwrap();
+        u32::try_from(u64::from(stats.construction.cost) * SALVAGE_REFUND_PERMILLE / 1000).unwrap();
     assert!(
         state.player(PlayerId(0)).scrap < bank_before + full,
         "the unfinished teardown must not pay the full refund"
@@ -883,8 +882,7 @@ fn a_salvaged_producer_refunds_its_prepaid_queue_in_full() {
     );
     let stats = BuildingKind::Fabricator.base_stats();
     let refund =
-        u32::try_from(u64::from(stats.construction.unwrap().cost) * SALVAGE_REFUND_PERMILLE / 1000)
-            .unwrap();
+        u32::try_from(u64::from(stats.construction.cost) * SALVAGE_REFUND_PERMILLE / 1000).unwrap();
     assert!(
         state.player(PlayerId(0)).scrap >= bank_after_orders + refund + 2 * lancer_cost
             && state.player(PlayerId(0)).scrap
@@ -1069,7 +1067,7 @@ fn salvage_walks_the_construction_ramp_backward_on_schedule() {
     }
     let (start, end) = (first_drain.unwrap(), gone_at.unwrap());
     let ramp = u64::from(stats.max_hp - stats.max_hp / 5);
-    let build_ticks = u64::from(stats.construction.unwrap().build_ticks);
+    let build_ticks = u64::from(stats.construction.build_ticks);
     // Total work ticks to drain max_hp on the ramp clock; the span
     // MEASURED starts at the first visible drop, which trails the
     // first work tick by however many leading steps floor to zero.

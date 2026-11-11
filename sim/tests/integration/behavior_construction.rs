@@ -123,11 +123,7 @@ fn a_pocketed_canonical_founder_drives_off_across_its_site() {
     let site_id = site.id;
     assert_eq!(
         state.player(PlayerId(0)).scrap,
-        300 - BuildingKind::Fabricator
-            .base_stats()
-            .construction
-            .unwrap()
-            .cost
+        300 - BuildingKind::Fabricator.base_stats().construction.cost
     );
     run_until(&mut state, 600, |s, _| s.building(site_id).unwrap().built());
     state.validate_invariants().unwrap();
@@ -188,7 +184,7 @@ fn construction_ramps_and_completes() {
     let builder = state.units()[0].id;
     let anchor = TilePos::new(5, 6);
     let scrap_before = state.player(PlayerId(0)).scrap;
-    let cost = BuildingKind::Turret.base_stats().construction.unwrap().cost;
+    let cost = BuildingKind::Turret.base_stats().construction.cost;
     state.tick(&[cmd(
         0,
         Command::Build {
@@ -379,7 +375,7 @@ fn cancel_refunds_by_health_and_damage_burns_it() {
     }
     let stats = BuildingKind::Turret.base_stats();
     let b = state.building(site).unwrap();
-    let expected = stats.construction.unwrap().cost * b.hp / stats.max_hp;
+    let expected = stats.construction.cost * b.hp / stats.max_hp;
     let scrap_before = state.player(PlayerId(0)).scrap;
     let report = state.tick(&[cmd(0, Command::Cancel { building: site })]);
     assert!(
@@ -1102,11 +1098,7 @@ fn a_doomed_site_never_comes_online() {
     let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
     let (builder, s1, s2, l1, l2, l3) = (ids[0], ids[1], ids[2], ids[3], ids[4], ids[5]);
     let anchor = TilePos::new(9, 5);
-    let build_ticks = BuildingKind::Turret
-        .base_stats()
-        .construction
-        .unwrap()
-        .build_ticks;
+    let build_ticks = BuildingKind::Turret.base_stats().construction.build_ticks;
 
     let mut all_events = Vec::new();
     all_events.extend(
@@ -1324,13 +1316,7 @@ fn replacing_the_only_builders_program_refunds_a_queued_site() {
         .expect("queued site exists")
         .id;
     let bank = state.player(PlayerId(0)).scrap;
-    let cost = state
-        .building(queued)
-        .unwrap()
-        .stats()
-        .construction
-        .unwrap()
-        .cost;
+    let cost = state.building(queued).unwrap().stats().construction.cost;
 
     state.tick(&[cmd(
         0,
@@ -2314,7 +2300,7 @@ fn a_deferred_build_founds_on_arrival() {
             defer: true,
         },
     )]);
-    let cost = BuildingKind::Turret.base_stats().construction.unwrap().cost;
+    let cost = BuildingKind::Turret.base_stats().construction.cost;
     assert_eq!(state.player(PlayerId(0)).scrap, scrap_before - cost);
     assert!(
         state
@@ -2336,7 +2322,7 @@ fn a_deferred_build_founds_on_arrival() {
             .iter()
             .any(|b| b.anchor == spot && !b.provisional())
     });
-    let cost = BuildingKind::Turret.base_stats().construction.unwrap().cost;
+    let cost = BuildingKind::Turret.base_stats().construction.cost;
     assert_eq!(
         state.player(PlayerId(0)).scrap,
         scrap_before - cost + drip_credits(&state),
@@ -2831,7 +2817,7 @@ fn cancelling_a_paid_queued_site_removes_only_its_build_leg() {
     )]);
     let second_site = state.building(second).unwrap();
     let stats = second_site.kind.base_stats();
-    let expected_refund = stats.construction.unwrap().cost;
+    let expected_refund = stats.construction.cost;
     let scrap_before = state.player(PlayerId(0)).scrap;
 
     state.tick(&[cmd(0, Command::Cancel { building: second })]);
@@ -3533,7 +3519,7 @@ fn a_late_crewmate_finds_its_building_finished_and_calls_it_done() {
 fn a_paid_founder_cannot_lose_its_funding_to_training() {
     use aftermine_sim::stats::BuildingKind;
     let mut scenario = arena(vec![unit(0, UnitKind::Harvester, 12, 2)]);
-    let cost = BuildingKind::Turret.base_stats().construction.unwrap().cost;
+    let cost = BuildingKind::Turret.base_stats().construction.cost;
     scenario.players[0].scrap = cost;
     let mut state = scenario.build().unwrap();
     let builder = state.units()[0].id;
