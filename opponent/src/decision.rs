@@ -621,7 +621,7 @@ pub(crate) fn decide(
     for (kind, anchor) in failures {
         persistent.memory.fail(kind, anchor, tick);
     }
-    for (kind, anchor) in persistent.missions.lift(
+    if let Some((kind, anchor)) = persistent.missions.lift(
         observation,
         map,
         profile,
