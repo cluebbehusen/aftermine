@@ -2370,26 +2370,18 @@ fn bomber_attack(
     // The leash binds a bomber's chase as it does a ground guard's, but only
     // one that follows its victim out past the radius: every pass carries a
     // bomber an egress and a turn past its victim, so its own distance cannot
-    // tell a chase from a run on a victim near its post.
-    let leash = state.unit(id).expect("caller checked").leash;
+    // tell a chase from a run on a victim near its post. A victim near the
+    // post spends no patience and grants none, so bait that turns away still
+    // breaks the chase at the radius.
     let radius_sq = crate::stats::LEASH_RADIUS * crate::stats::LEASH_RADIUS;
-    match leash {
-        Some(leash)
-            if resume.is_none() && leash.anchor.center().dist_sq(aim_point) <= radius_sq =>
-        {
-            state
-                .unit_mut(id)
-                .expect("caller checked")
-                .leash
-                .as_mut()
-                .expect("just seen")
-                .patience = crate::stats::LEASH_PATIENCE;
-        }
-        _ => {
-            if !tether_holds(state, id, pos, resume) {
-                return;
-            }
-        }
+    let near_post = resume.is_none()
+        && state
+            .unit(id)
+            .expect("caller checked")
+            .leash
+            .is_some_and(|leash| leash.anchor.center().dist_sq(aim_point) <= radius_sq);
+    if !near_post && !tether_holds(state, id, pos, resume) {
+        return;
     }
 
     // Chase: keep a live route on the victim, repathing when it drifts.
