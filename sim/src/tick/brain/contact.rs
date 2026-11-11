@@ -3,10 +3,16 @@ use super::locomotion::approach_rect;
 use super::*;
 use crate::stats::Domain;
 use crate::tick::crowding;
+use crate::tick::spatial::UnitIndex;
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::{TilePos, as_index, cell_count};
 
-pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> bool {
+pub(super) fn approach(
+    state: &mut State,
+    index: &UnitIndex,
+    id: UnitId,
+    building: BuildingId,
+) -> bool {
     let b = state.building(building).expect("live target");
     let (anchor, size) = (b.anchor, b.kind.size());
     let unit = state.unit(id).expect("contact unit");
@@ -22,7 +28,7 @@ pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> b
     // unable to land there. A crew holds only a pad.
     if unit.path.as_ref().is_some_and(|path| {
         path.final_point.is_some_and(|point| {
-            !crowding::claimed(state, id, point, true)
+            !crowding::claimed(state, index, id, point, true)
                 && admissible(state, unit, b, path.goal, point)
                 && pads.as_ref().is_none_or(|pads| {
                     pads.iter().any(|&entry| {
@@ -45,6 +51,7 @@ pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> b
         });
         crowding::choose(
             state,
+            index,
             id,
             candidates,
             anchor.center()
@@ -596,7 +603,12 @@ fn delivery_drop_off(
 /// land on never keeps it from working. A crew member stops only on the pad
 /// it set out for: one passing over another pad on its way would leave its
 /// own empty and crowd the crewmate bound for that one.
-pub(super) fn approach_worker(state: &mut State, id: UnitId, building: BuildingId) -> bool {
+pub(super) fn approach_worker(
+    state: &mut State,
+    index: &UnitIndex,
+    id: UnitId,
+    building: BuildingId,
+) -> bool {
     let unit = state.unit(id).expect("contact unit");
     let passing = unit
         .path
@@ -609,5 +621,5 @@ pub(super) fn approach_worker(state: &mut State, id: UnitId, building: BuildingI
         state.unit_mut(id).expect("contact unit").path = None;
         return true;
     }
-    approach(state, id, building)
+    approach(state, index, id, building)
 }

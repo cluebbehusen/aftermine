@@ -3,6 +3,13 @@ use crate::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
 use crate::stats::BuildingKind;
 use crate::{PlayerId, Scenario, UnitKind};
 
+/// The bodies as they stand now, as the brain phase indexes them.
+fn indexed(state: &State) -> UnitIndex {
+    let mut index = UnitIndex::new();
+    index.rebuild(state.units());
+    index
+}
+
 #[test]
 fn return_cargo_reuses_exhausted_floods_per_worker_and_safety_pass() {
     let mut rows = vec![vec!['.'; 32]; 20];
@@ -43,7 +50,14 @@ fn return_cargo_reuses_exhausted_floods_per_worker_and_safety_pass() {
     for (worker, searches) in state.units[..2].iter().zip([2, 1]) {
         let before = danger.route_search_count();
         assert_eq!(
-            return_cargo_destination(&state, &danger, &DropOffs::built(&state), worker.id, None),
+            return_cargo_destination(
+                &state,
+                &indexed(&state),
+                &danger,
+                &DropOffs::built(&state),
+                worker.id,
+                None
+            ),
             None
         );
         assert_eq!(danger.route_search_count() - before, searches);
@@ -51,6 +65,7 @@ fn return_cargo_reuses_exhausted_floods_per_worker_and_safety_pass() {
     assert!(
         return_cargo_destination(
             &state,
+            &indexed(&state),
             &danger,
             &DropOffs::built(&state),
             state.units[2].id,
@@ -95,6 +110,7 @@ fn return_cargo_resets_reachability_before_ignoring_danger() {
     assert!(
         known_rect_route(
             &state,
+            &indexed(&state),
             &danger,
             worker,
             foundry.anchor,
@@ -108,7 +124,14 @@ fn return_cargo_resets_reachability_before_ignoring_danger() {
     // pass that ignores danger must still search afresh and succeed.
     let before = danger.route_search_count();
     assert_eq!(
-        return_cargo_destination(&state, &danger, &DropOffs::built(&state), worker, None),
+        return_cargo_destination(
+            &state,
+            &indexed(&state),
+            &danger,
+            &DropOffs::built(&state),
+            worker,
+            None
+        ),
         Some(foundry.id)
     );
     assert_eq!(danger.route_search_count() - before, 1);
@@ -146,7 +169,18 @@ fn a_failed_search_from_a_small_pocket_keeps_no_proof() {
         .unwrap();
     let (anchor, size) = (foundry.anchor, foundry.kind.size());
     let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
-    let route = || known_rect_route(&state, &danger, worker, anchor, size, true, None);
+    let route = || {
+        known_rect_route(
+            &state,
+            &indexed(&state),
+            &danger,
+            worker,
+            anchor,
+            size,
+            true,
+            None,
+        )
+    };
     assert!(route().is_none());
     let before = danger.route_search_count();
     assert!(route().is_none());
@@ -191,7 +225,18 @@ fn a_failed_safe_search_settles_repeats_until_a_watched_node_drains() {
     let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
     assert!(state.vision(PlayerId(0)).visible(gate));
     assert!(danger.outside_every_envelope(state.units[0].tile()));
-    let route = |state: &State| known_rect_route(state, &danger, worker, anchor, size, true, None);
+    let route = |state: &State| {
+        known_rect_route(
+            state,
+            &indexed(state),
+            &danger,
+            worker,
+            anchor,
+            size,
+            true,
+            None,
+        )
+    };
 
     assert!(route(&state).is_none());
     let before = danger.route_search_count();
@@ -258,8 +303,10 @@ fn a_held_drop_off_route_yields_only_to_a_nearer_worker() {
     let keeps = |state: &mut State, id: UnitId| {
         let danger = GroundSalvageDanger::capture(state, PlayerId(0));
         let mut events = Vec::new();
+        let index = indexed(state);
         assert!(try_drop_offs(
             state,
+            &index,
             &danger,
             id,
             &[foundry_id],
@@ -341,8 +388,9 @@ fn searches(
         state.units[0].path = Some(ordered.clone());
         let danger = GroundSalvageDanger::capture(state, PlayerId(0));
         let before = danger.route_search_count();
+        let index = indexed(state);
         assert!(approach_authoritative_source(
-            state, &danger, worker, source
+            state, &index, &danger, worker, source
         ));
         if danger.route_search_count() > before {
             searched.push(tick - start);
@@ -415,7 +463,9 @@ fn a_sealed_worker_settles_every_work_position_with_one_search() {
         known_source(&state, PlayerId(0), TilePos::new(20, 7)).expect("the node is in sight");
     let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
     let before = danger.route_search_count();
-    assert!(safe_source_route(&state, &danger, state.units[0].id, source).is_none());
+    assert!(
+        safe_source_route(&state, &indexed(&state), &danger, state.units[0].id, source).is_none()
+    );
     assert_eq!(danger.route_search_count() - before, 1);
 }
 
@@ -461,8 +511,10 @@ fn a_worker_held_from_its_drop_off_rescans_after_the_retry_period_and_on_command
         let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
         let before = danger.route_search_count();
         let mut events = Vec::new();
+        let index = indexed(&state);
         assert!(try_drop_offs(
             &mut state,
+            &index,
             &danger,
             worker,
             &[foundry],
@@ -519,8 +571,10 @@ fn arriving_at_the_source_ends_a_route_hold() {
     assert!(state.units[0].in_work_reach(node, (1, 1)), "premise");
     let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
     let drop_offs = DropOffs::built(&state);
+    let index = indexed(&state);
     harvest(
         &mut state,
+        &index,
         &danger,
         &drop_offs,
         worker,
@@ -589,9 +643,16 @@ fn mirrored_workers_replace_depleted_sources_in_their_local_frame() {
                             mirror(anchor)
                         };
                         let danger = GroundSalvageDanger::capture(&state, player);
-                        replacement_source(&state, &danger, worker.id, anchor, Some(anchor))
-                            .unwrap()
-                            .pos
+                        replacement_source(
+                            &state,
+                            &indexed(&state),
+                            &danger,
+                            worker.id,
+                            anchor,
+                            Some(anchor),
+                        )
+                        .unwrap()
+                        .pos
                     })
                     .collect();
                 assert_eq!(
@@ -665,13 +726,20 @@ fn replacement_preserves_worker_affinity_before_route_efficiency() {
     let local = known_source(&state, PlayerId(0), TilePos::new(8, 5)).unwrap();
     let cheap_route = known_source(&state, PlayerId(0), TilePos::new(5, 9)).unwrap();
     assert!(
-        source_route_len(&state, &danger, worker, local).unwrap()
-            > source_route_len(&state, &danger, worker, cheap_route).unwrap(),
+        source_route_len(&state, &indexed(&state), &danger, worker, local).unwrap()
+            > source_route_len(&state, &indexed(&state), &danger, worker, cheap_route).unwrap(),
         "the fixture must make route-first scoring prefer the farther source"
     );
     assert_eq!(
-        replacement_source(&state, &danger, worker, TilePos::new(5, 5), None)
-            .map(|source| source.pos),
+        replacement_source(
+            &state,
+            &indexed(&state),
+            &danger,
+            worker,
+            TilePos::new(5, 5),
+            None
+        )
+        .map(|source| source.pos),
         Some(local.pos),
         "safe reachable sources stay with the worker already closest to them"
     );
@@ -922,9 +990,20 @@ fn an_unscouted_enemy_building_cannot_bend_a_route_through_fog() {
     };
     let clear_danger = GroundSalvageDanger::capture(&clear, PlayerId(0));
     let obscured_danger = GroundSalvageDanger::capture(&obscured, PlayerId(0));
-    let clear_route = safe_source_route(&clear, &clear_danger, clear.units[0].id, source);
-    let obscured_route =
-        safe_source_route(&obscured, &obscured_danger, obscured.units[0].id, source);
+    let clear_route = safe_source_route(
+        &clear,
+        &indexed(&clear),
+        &clear_danger,
+        clear.units[0].id,
+        source,
+    );
+    let obscured_route = safe_source_route(
+        &obscured,
+        &indexed(&obscured),
+        &obscured_danger,
+        obscured.units[0].id,
+        source,
+    );
     assert_eq!(
         obscured_route, clear_route,
         "two views that differ only behind fog must choose the same route"

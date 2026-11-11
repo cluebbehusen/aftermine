@@ -1,4 +1,5 @@
 //! Occupied work and firing positions share admission and yielding.
+use super::spatial::UnitIndex;
 use crate::{State, Unit, UnitId};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::{CARDINALS, TilePos};
@@ -12,8 +13,16 @@ pub(crate) fn spacing(a: &Unit, b: &Unit) -> Fx {
         distance
     }
 }
-pub(crate) fn claimed(state: &State, id: UnitId, point: Vec2Fx, retained: bool) -> bool {
-    let pressure = Pressure::new(state, id, point, Fx::ZERO);
+/// Whether another body works or arrives at `point` before `id` may.
+/// `index` holds the bodies as they stand now.
+pub(in crate::tick) fn claimed(
+    state: &State,
+    index: &UnitIndex,
+    id: UnitId,
+    point: Vec2Fx,
+    retained: bool,
+) -> bool {
+    let pressure = Pressure::new(state, index, id, point, Fx::ZERO);
     let (occupied, _, arriving) = pressure.rank(point, retained);
     occupied > 0 || arriving > 0
 }
@@ -39,13 +48,25 @@ impl Pressure {
     /// a destination closer to the point than their spacing, and a counted
     /// destination lies within [`crate::stats::ARRIVAL_WINDOW`] of its body, so a body
     /// farther than `reach` plus both from `center` never counts.
-    fn new(state: &State, id: UnitId, center: Vec2Fx, reach: Fx) -> Self {
+    ///
+    /// `index` must hold the bodies where they stand now. Only the tiles
+    /// within that distance of `center`, for the widest body, are walked,
+    /// in the index's order: [`rank`](Self::rank) only counts, so the order
+    /// of the neighbors never matters.
+    fn new(state: &State, index: &UnitIndex, id: UnitId, center: Vec2Fx, reach: Fx) -> Self {
         let unit = state.unit(id).expect("position owner");
+        let window = reach
+            + unit.kind.stats().radius
+            + index.widest()
+            + crate::stats::ARRIVAL_WINDOW
+            + const { Fx::lit("0.125") };
+        let low = TilePos::containing(center - Vec2Fx::new(window, window));
+        let high = TilePos::containing(center + Vec2Fx::new(window, window));
         Self {
             origin: unit.pos,
-            neighbors: state
-                .units()
-                .iter()
+            neighbors: (low.y..=high.y)
+                .flat_map(|y| index.row_span(y, low.x, high.x))
+                .map(|&(_, slot)| &state.units()[slot])
                 .filter(|other| {
                     other.id != id
                         && other.hp > 0
@@ -116,8 +137,9 @@ pub(crate) struct Position {
 }
 
 /// Callers supply legal candidates in their geometric tie order and their own route predicate.
-pub(crate) fn choose(
+pub(in crate::tick) fn choose(
     state: &State,
+    index: &UnitIndex,
     id: UnitId,
     mut candidates: Vec<Position>,
     center: Vec2Fx,
@@ -133,7 +155,7 @@ pub(crate) fn choose(
         .max()
         .unwrap_or(Fx::ZERO)
         + push;
-    let pressure = Pressure::new(state, id, center, reach);
+    let pressure = Pressure::new(state, index, id, center, reach);
     candidates.sort_by_cached_key(|candidate| pressure.rank(candidate.point, false));
     if candidates
         .first()

@@ -98,6 +98,12 @@ fn team_bit(team: u8) -> Option<u32> {
 }
 
 impl UnitIndex {
+    /// The widest indexed body's radius, never below
+    /// [`SMALL_BODY_RADIUS`](crate::stats::SMALL_BODY_RADIUS).
+    pub(super) fn widest(&self) -> chassis::fx::Fx {
+        self.widest
+    }
+
     /// Tiles a window must widen by to find every hull that reaches into
     /// it: zero unless a hull wider than a tile lives.
     pub(super) fn wide_reach(&self) -> i32 {

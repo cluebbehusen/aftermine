@@ -11,6 +11,7 @@ use crate::ids::{BuildingId, PlayerId, Target, UnitId};
 use crate::state::{Order, PathFollow, State};
 use crate::stats::HARVEST_ZONE_RADIUS;
 use crate::tick::crowding;
+use crate::tick::spatial::UnitIndex;
 use crate::vision::GroundSalvageDanger;
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
@@ -78,6 +79,7 @@ pub(super) fn advance_upgrades(state: &mut State, builds: &mut Vec<PendingHpGain
 /// (damage taken meanwhile is simply kept — nobody rebuilds for free).
 pub(super) fn build(
     state: &mut State,
+    index: &UnitIndex,
     id: UnitId,
     site: crate::ids::BuildingId,
     events: &mut Vec<Event>,
@@ -143,7 +145,7 @@ pub(super) fn build(
             });
         }
         state.unit_mut(id).expect("caller checked").path = None;
-    } else if !contact::approach_worker(state, id, site) {
+    } else if !contact::approach_worker(state, index, id, site) {
         let unit = state.unit_mut(id).expect("caller checked");
         let (player, pos) = (unit.player, unit.pos);
         unit.drop_active_order();
@@ -159,6 +161,7 @@ pub(super) fn build(
 /// Approach a paid provisional scaffold without claiming hidden ground.
 pub(super) fn found(
     state: &mut State,
+    index: &UnitIndex,
     id: UnitId,
     kind: crate::stats::BuildingKind,
     anchor: TilePos,
@@ -177,7 +180,7 @@ pub(super) fn found(
     };
     if !provisional {
         state.unit_mut(id).expect("caller checked").order = Order::Build { site };
-        build(state, id, site, events, builds);
+        build(state, index, id, site, events, builds);
         return;
     }
     let tile = state.unit(id).expect("caller checked").tile();
@@ -203,6 +206,7 @@ pub(super) fn found(
 /// through [`weld_building`]. An empty bank stalls the job.
 pub(super) fn repair(
     state: &mut State,
+    index: &UnitIndex,
     id: UnitId,
     building: crate::ids::BuildingId,
     events: &mut Vec<Event>,
@@ -231,7 +235,7 @@ pub(super) fn repair(
                 reason: StallReason::InsufficientScrap,
             });
         }
-    } else if !contact::approach_worker(state, id, building) {
+    } else if !contact::approach_worker(state, index, id, building) {
         let unit = state.unit_mut(id).expect("caller checked");
         let (player, pos) = (unit.player, unit.pos);
         unit.drop_active_order();
@@ -665,6 +669,7 @@ pub(super) fn patient_approaches(
 /// removed. Several strippers stack like builders.
 pub(super) fn salvage(
     state: &mut State,
+    index: &UnitIndex,
     id: UnitId,
     building: crate::ids::BuildingId,
     events: &mut Vec<Event>,
@@ -696,7 +701,7 @@ pub(super) fn salvage(
         if step > 0 {
             drains.push(super::PendingHpDrain { building, step });
         }
-    } else if !contact::approach_worker(state, id, building) {
+    } else if !contact::approach_worker(state, index, id, building) {
         let unit = state.unit_mut(id).expect("caller checked");
         let (player, pos) = (unit.player, unit.pos);
         unit.drop_active_order();
@@ -715,6 +720,7 @@ pub(super) fn salvage(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn harvest(
     state: &mut State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     drop_offs: &DropOffs,
     id: UnitId,
@@ -730,11 +736,11 @@ pub(super) fn harvest(
         return;
     };
     if unit.unloading().is_some() {
-        deliver(state, danger, drop_offs, id, events, withdrawing);
+        deliver(state, index, danger, drop_offs, id, events, withdrawing);
         return;
     }
     if withdrawing {
-        withdraw(state, danger, drop_offs, id, events);
+        withdraw(state, index, danger, drop_offs, id, events);
         return;
     }
 
@@ -747,21 +753,21 @@ pub(super) fn harvest(
         known_source(state, unit.player, node).filter(|_| node == anchor || !danger.contains(node));
 
     if current.is_none() {
-        if let Some(next) = replacement_source(state, danger, id, anchor, Some(node)) {
+        if let Some(next) = replacement_source(state, index, danger, id, anchor, Some(node)) {
             switch_source(state, id, next.pos, anchor);
             return;
         }
         begin_withdrawal(state, id, node, anchor);
         if carrying > 0 {
-            deliver(state, danger, drop_offs, id, events, true);
+            deliver(state, index, danger, drop_offs, id, events, true);
         } else {
-            withdraw(state, danger, drop_offs, id, events);
+            withdraw(state, index, danger, drop_offs, id, events);
         }
         return;
     }
 
     if carrying >= hstats.capacity {
-        deliver(state, danger, drop_offs, id, events, false);
+        deliver(state, index, danger, drop_offs, id, events, false);
         return;
     }
 
@@ -790,8 +796,8 @@ pub(super) fn harvest(
             SourceKind::Scrap => extract(state, id, node, hstats.ticks_per_scrap, events),
             SourceKind::Wreck => extract_wreck(state, id, node, hstats.ticks_per_scrap),
         }
-    } else if !approach_source(state, danger, id, current, authoritative) {
-        source_route_failed(state, danger, drop_offs, id, node, anchor, events);
+    } else if !approach_source(state, index, danger, id, current, authoritative) {
+        source_route_failed(state, index, danger, drop_offs, id, node, anchor, events);
     }
 }
 
@@ -908,6 +914,7 @@ fn known_source(state: &State, player: PlayerId, pos: TilePos) -> Option<KnownSo
 /// coordinates make every pick unique.
 fn replacement_source(
     state: &State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     id: UnitId,
     anchor: TilePos,
@@ -955,7 +962,7 @@ fn replacement_source(
         if best.as_ref().is_some_and(|(key, _)| distance > key.0) {
             break;
         }
-        let Some(route_len) = source_route_len(state, danger, id, source) else {
+        let Some(route_len) = source_route_len(state, index, danger, id, source) else {
             continue;
         };
         let kind_key = match source.kind {
@@ -982,11 +989,12 @@ fn replacement_source(
 
 fn source_route_len(
     state: &State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     id: UnitId,
     source: KnownSource,
 ) -> Option<usize> {
-    safe_source_route(state, danger, id, source).map(|path| path.waypoints.len())
+    safe_source_route(state, index, danger, id, source).map(|path| path.waypoints.len())
 }
 
 fn approach_work_rect(state: &mut State, id: UnitId, anchor: TilePos, size: (i32, i32)) -> bool {
@@ -1029,13 +1037,14 @@ fn work_position_path(goal: TilePos, mut waypoints: Vec<TilePos>) -> PathFollow 
 /// reaches the known threat.
 fn approach_source(
     state: &mut State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     id: UnitId,
     source: KnownSource,
     authoritative: bool,
 ) -> bool {
     if authoritative {
-        return approach_authoritative_source(state, danger, id, source);
+        return approach_authoritative_source(state, index, danger, id, source);
     }
     let unit = state.unit(id).expect("caller checked");
     let goal_matches = |goal: TilePos| tile_adjacent_to_rect(goal, source.pos, (1, 1));
@@ -1045,7 +1054,7 @@ fn approach_source(
             && (from.chebyshev(path.goal) > 1
                 || path
                     .final_point
-                    .is_none_or(|point| !crowding::claimed(state, id, point, true)))
+                    .is_none_or(|point| !crowding::claimed(state, index, id, point, true)))
             && keep_flagged_route(state, id, path, |waypoint| {
                 danger.route_safe_from(from, waypoint)
             })
@@ -1058,7 +1067,7 @@ fn approach_source(
         return true;
     }
 
-    let Some(path) = safe_source_route(state, danger, id, source) else {
+    let Some(path) = safe_source_route(state, index, danger, id, source) else {
         state.unit_mut(id).expect("caller checked").path = None;
         return false;
     };
@@ -1073,6 +1082,7 @@ fn approach_source(
 /// a player's order into withdrawal.
 fn approach_authoritative_source(
     state: &mut State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     id: UnitId,
     source: KnownSource,
@@ -1091,7 +1101,7 @@ fn approach_authoritative_source(
             && (from.chebyshev(path.goal) > 1
                 || path
                     .final_point
-                    .is_none_or(|point| !crowding::claimed(state, id, point, true)))
+                    .is_none_or(|point| !crowding::claimed(state, index, id, point, true)))
         {
             state
                 .unit_mut(id)
@@ -1114,7 +1124,7 @@ fn approach_authoritative_source(
         {
             return true;
         }
-        let detour = authoritative_source_route(state, danger, id, source);
+        let detour = authoritative_source_route(state, index, danger, id, source);
         let tick = state.tick;
         let worker = state.unit_mut(id).expect("caller checked");
         worker.worker_mut().danger_retry_at = (detour.is_none() && danger_only)
@@ -1131,7 +1141,7 @@ fn approach_authoritative_source(
         .unit_mut(id)
         .expect("caller checked")
         .clear_danger_hold();
-    if let Some(path) = authoritative_source_route(state, danger, id, source) {
+    if let Some(path) = authoritative_source_route(state, index, danger, id, source) {
         state.unit_mut(id).expect("caller checked").path = Some(path);
         return true;
     }
@@ -1146,11 +1156,12 @@ fn approach_authoritative_source(
 /// so a newly threatened worker can route out of danger.
 fn safe_source_route(
     state: &State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     id: UnitId,
     source: KnownSource,
 ) -> Option<PathFollow> {
-    source_route_avoiding_danger(state, danger, id, source, false)
+    source_route_avoiding_danger(state, index, danger, id, source, false)
 }
 
 /// The danger-aware route for an explicit source. The final work position
@@ -1158,16 +1169,18 @@ fn safe_source_route(
 /// still has to be safe.
 fn authoritative_source_route(
     state: &State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     id: UnitId,
     source: KnownSource,
 ) -> Option<PathFollow> {
-    safe_source_route(state, danger, id, source)
-        .or_else(|| source_route_avoiding_danger(state, danger, id, source, true))
+    safe_source_route(state, index, danger, id, source)
+        .or_else(|| source_route_avoiding_danger(state, index, danger, id, source, true))
 }
 
 fn source_route_avoiding_danger(
     state: &State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     id: UnitId,
     source: KnownSource,
@@ -1252,6 +1265,7 @@ fn source_route_avoiding_danger(
     };
     crowding::choose(
         state,
+        index,
         id,
         candidates,
         source.pos.center(),
@@ -1340,6 +1354,7 @@ struct DropOffScan {
 /// false only when no drop-off is reachable at all: the caller's stall.
 fn try_drop_offs(
     state: &mut State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     id: UnitId,
     drop_offs: &[BuildingId],
@@ -1372,7 +1387,7 @@ fn try_drop_offs(
                 && (from.chebyshev(path.goal) > 1
                     || path
                         .final_point
-                        .is_none_or(|point| !crowding::claimed(state, id, point, true)))
+                        .is_none_or(|point| !crowding::claimed(state, index, id, point, true)))
                 && keep_flagged_route(state, id, path, |waypoint| {
                     known_ground_passable(state, danger, player, waypoint)
                         && danger.route_safe_from(from, waypoint)
@@ -1389,8 +1404,16 @@ fn try_drop_offs(
                 return true;
             }
         }
-        if let Some(path) = known_rect_route(state, danger, id, anchor, size, true, Some(&mut scan))
-        {
+        if let Some(path) = known_rect_route(
+            state,
+            index,
+            danger,
+            id,
+            anchor,
+            size,
+            true,
+            Some(&mut scan),
+        ) {
             let worker = state.unit_mut(id).expect("caller checked");
             worker.path = Some(path);
             worker.clear_danger_hold();
@@ -1405,7 +1428,18 @@ fn try_drop_offs(
     for &foundry_id in drop_offs {
         let foundry = state.building(foundry_id).expect("collected live drop-off");
         let (anchor, size) = (foundry.anchor, foundry.kind.size());
-        if known_rect_route(state, danger, id, anchor, size, false, Some(&mut scan)).is_some() {
+        if known_rect_route(
+            state,
+            index,
+            danger,
+            id,
+            anchor,
+            size,
+            false,
+            Some(&mut scan),
+        )
+        .is_some()
+        {
             // Danger-blocked, not sealed: stand and wait for the window,
             // checking again only after the retry period.
             let tick = state.tick;
@@ -1446,8 +1480,10 @@ fn report_danger_hold(state: &State, id: UnitId, events: &mut Vec<Event>) {
 /// knowledge. A bounded near-path check reacts to newly known danger
 /// without rescanning a long route every tick; a full deterministic A*
 /// runs only when that check fails or no path exists yet.
+#[allow(clippy::too_many_arguments)]
 fn known_rect_route(
     state: &State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     id: UnitId,
     anchor: TilePos,
@@ -1500,6 +1536,7 @@ fn known_rect_route(
     let safe_shortcut = avoid_danger && danger.outside_every_envelope(from);
     crowding::choose(
         state,
+        index,
         id,
         candidates,
         anchor.center()
@@ -1564,8 +1601,10 @@ fn begin_withdrawal(state: &mut State, id: UnitId, node: TilePos, anchor: TilePo
     unit.progress = 0;
 }
 
+#[allow(clippy::too_many_arguments)]
 fn source_route_failed(
     state: &mut State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     drop_offs: &DropOffs,
     id: UnitId,
@@ -1573,16 +1612,16 @@ fn source_route_failed(
     anchor: TilePos,
     events: &mut Vec<Event>,
 ) {
-    if let Some(next) = replacement_source(state, danger, id, anchor, Some(node)) {
+    if let Some(next) = replacement_source(state, index, danger, id, anchor, Some(node)) {
         switch_source(state, id, next.pos, anchor);
         return;
     }
     let carrying = state.unit(id).expect("caller checked").carrying();
     begin_withdrawal(state, id, node, anchor);
     if carrying > 0 {
-        deliver(state, danger, drop_offs, id, events, true);
+        deliver(state, index, danger, drop_offs, id, events, true);
     } else {
-        withdraw(state, danger, drop_offs, id, events);
+        withdraw(state, index, danger, drop_offs, id, events);
     }
 }
 
@@ -1710,6 +1749,7 @@ fn finish_delivery(state: &mut State, id: UnitId, foundry: BuildingId) {
 
 pub(in crate::tick) fn return_cargo_destination(
     state: &State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     drop_offs: &DropOffs,
     id: UnitId,
@@ -1726,6 +1766,7 @@ pub(in crate::tick) fn return_cargo_destination(
             state.in_building_work_reach(state.unit(id).expect("validated worker"), *foundry_id)
                 || known_rect_route(
                     state,
+                    index,
                     danger,
                     id,
                     foundry.anchor,
@@ -1743,6 +1784,7 @@ pub(in crate::tick) fn return_cargo_destination(
 
 pub(super) fn return_cargo(
     state: &mut State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     id: UnitId,
     foundry: BuildingId,
@@ -1780,7 +1822,7 @@ pub(super) fn return_cargo(
             return;
         }
         state.unit_mut(id).expect("caller checked").end_release();
-        if try_drop_offs(state, danger, id, &[foundry], events) {
+        if try_drop_offs(state, index, danger, id, &[foundry], events) {
             return;
         }
     }
@@ -1800,6 +1842,7 @@ pub(super) fn return_cargo(
 /// arrival; a live contract keeps its anchored zone and returns next tick.
 fn deliver(
     state: &mut State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     built: &DropOffs,
     id: UnitId,
@@ -1829,7 +1872,7 @@ fn deliver(
     }
     state.unit_mut(id).expect("caller checked").end_release();
 
-    if try_drop_offs(state, danger, id, &drop_offs, events) {
+    if try_drop_offs(state, index, danger, id, &drop_offs, events) {
         return;
     }
 
@@ -1851,13 +1894,14 @@ fn deliver(
 /// reachable, the queue still advances once instead of being erased.
 fn withdraw(
     state: &mut State,
+    index: &UnitIndex,
     danger: &GroundSalvageDanger,
     built: &DropOffs,
     id: UnitId,
     events: &mut Vec<Event>,
 ) {
     if state.unit(id).expect("caller checked").carrying() > 0 {
-        deliver(state, danger, built, id, events, true);
+        deliver(state, index, danger, built, id, events, true);
         return;
     }
     let tile = state.unit(id).expect("caller checked").tile();
@@ -1871,7 +1915,7 @@ fn withdraw(
         finish_delivery(state, id, foundry);
         return;
     }
-    if try_drop_offs(state, danger, id, &drop_offs, events) {
+    if try_drop_offs(state, index, danger, id, &drop_offs, events) {
         return;
     }
     let unit = state.unit_mut(id).expect("caller checked");

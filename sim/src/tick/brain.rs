@@ -262,25 +262,18 @@ pub(super) fn run(
                 }
             }
             Order::ReturnCargo { foundry, repair } => {
-                let player = state.unit(id).expect("caller checked").player;
-                let team = state.player(player).team as usize;
-                let danger = harvest_danger_by_team[team].get_or_insert_with(|| {
-                    crate::vision::GroundSalvageDanger::capture(state, player)
-                });
-                economy::return_cargo(state, danger, id, foundry, repair, events);
+                let danger = team_danger(&mut harvest_danger_by_team, state, id);
+                economy::return_cargo(state, index, danger, id, foundry, repair, events);
             }
             Order::Harvest {
                 node,
                 anchor,
                 withdrawing,
             } => {
-                let player = state.unit(id).expect("just seen").player;
-                let team = state.player(player).team as usize;
-                let danger = harvest_danger_by_team[team].get_or_insert_with(|| {
-                    crate::vision::GroundSalvageDanger::capture(state, player)
-                });
+                let danger = team_danger(&mut harvest_danger_by_team, state, id);
                 harvest(
                     state,
+                    index,
                     danger,
                     &drop_offs,
                     id,
@@ -314,10 +307,12 @@ pub(super) fn run(
                 &mut hits,
                 &mut launches,
             ),
-            Order::Build { site } => build(state, id, site, events, &mut builds),
-            Order::Repair { building } => repair(state, id, building, events, &mut builds),
-            Order::Salvage { building } => salvage(state, id, building, events, &mut drains),
-            Order::Found { kind, anchor } => found(state, id, kind, anchor, events, &mut builds),
+            Order::Build { site } => build(state, index, id, site, events, &mut builds),
+            Order::Repair { building } => repair(state, index, id, building, events, &mut builds),
+            Order::Salvage { building } => salvage(state, index, id, building, events, &mut drains),
+            Order::Found { kind, anchor } => {
+                found(state, index, id, kind, anchor, events, &mut builds);
+            }
             Order::RepairUnit { unit } => repair_unit(state, id, unit, events, &mut field_welds),
             Order::Board { transport } => {
                 logistics::board(state, id, transport, &mut logistics_pending, events);
@@ -345,11 +340,7 @@ pub(super) fn run(
                 events,
             ),
             Order::Scout { tile } => {
-                let player = state.unit(id).expect("just seen").player;
-                let team = state.player(player).team as usize;
-                let danger = harvest_danger_by_team[team].get_or_insert_with(|| {
-                    crate::vision::GroundSalvageDanger::capture(state, player)
-                });
+                let danger = team_danger(&mut harvest_danger_by_team, state, id);
                 scout::scout(state, index, &mut reach, danger, id, tile, events);
             }
             Order::Tend { .. } => tend::tend(
@@ -415,6 +406,17 @@ pub(super) fn run(
         assembled,
         docks,
     }
+}
+
+/// The salvage danger `id`'s team reads this phase, captured on first use.
+fn team_danger<'a>(
+    dangers: &'a mut [Option<crate::vision::GroundSalvageDanger>],
+    state: &State,
+    id: UnitId,
+) -> &'a crate::vision::GroundSalvageDanger {
+    let player = state.unit(id).expect("live unit").player;
+    let team = state.player(player).team as usize;
+    dangers[team].get_or_insert_with(|| crate::vision::GroundSalvageDanger::capture(state, player))
 }
 
 mod combat;
