@@ -4,6 +4,14 @@ impl BindingMap {
     pub fn bindings(&self) -> &[Binding] {
         &self.bindings
     }
+
+    /// Drops every mention of `action`, as a map saved before it existed.
+    pub(crate) fn forget(&mut self, action: Action) {
+        for rows in [&mut self.bindings, &mut self.secondary] {
+            rows.retain(|b| b.action != action);
+        }
+        self.unbound.retain(|a| *a != action);
+    }
 }
 
 impl BindingMap {
@@ -371,8 +379,8 @@ fn an_unnamed_action_shares_a_default_key_held_only_where_it_does_not_act() {
     let roc = Action::Build(BuildingKind::RocCradle);
     let experimental = Action::BuildCategory(5);
     let mut map = BindingMap::classic();
-    map.unbind_slot(roc, 0);
-    map.unbind_slot(experimental, 0);
+    map.forget(roc);
+    map.forget(experimental);
     map.bind_unmentioned_defaults();
     // E also steps tabs and trains, and X also stops, elsewhere.
     assert_eq!(map.chord_for(roc), Some(Chord::bare(Key::E)));
@@ -381,4 +389,47 @@ fn an_unnamed_action_shares_a_default_key_held_only_where_it_does_not_act() {
     let once = map.clone();
     map.bind_unmentioned_defaults();
     assert_eq!(map, once, "a second pass adds nothing");
+}
+
+#[test]
+fn a_cleared_action_stays_unbound_until_a_key_is_bound_again() {
+    let mut map = BindingMap::classic();
+    map.unbind_slot(Action::PanUp, 1);
+    map.unbind_slot(Action::SelectArmy, 0);
+    map.bind_unmentioned_defaults();
+    assert_eq!(map.chord_at(Action::PanUp, 1), None);
+    assert_eq!(map.chord_for(Action::SelectArmy), None);
+    assert!(map.valid());
+    assert!(map.rebind_slot(Action::SelectArmy, 1, Chord::ctrl(Key::J)));
+    assert_eq!(map.unbound, Vec::new(), "binding a key ends the record");
+    assert!(map.valid());
+}
+
+#[test]
+fn a_cleared_record_names_only_unbound_actions_and_each_once() {
+    let mut bound = BindingMap::classic();
+    bound.unbound.push(Action::SelectArmy);
+    assert!(!bound.valid(), "a bound action recorded as cleared");
+    let mut twice = BindingMap::classic();
+    twice.unbind_slot(Action::SelectArmy, 0);
+    twice.unbound.push(Action::SelectArmy);
+    assert!(!twice.valid(), "a cleared action recorded twice");
+    let mut insane = BindingMap::classic();
+    insane.unbound.push(Action::Slot(9));
+    assert!(!insane.valid(), "an action no build has");
+}
+
+#[test]
+fn a_left_handed_map_fills_from_left_handed_defaults() {
+    let mut map = BindingMap::left_handed();
+    map.forget(Action::SelectArmy);
+    map.bind_unmentioned_defaults();
+    assert_eq!(map.chord_for(Action::SelectArmy), Some(Chord::ctrl(Key::J)));
+    let mut classic = BindingMap::classic();
+    classic.forget(Action::SelectArmy);
+    classic.bind_unmentioned_defaults();
+    assert_eq!(
+        classic.chord_for(Action::SelectArmy),
+        Some(Chord::ctrl(Key::A))
+    );
 }

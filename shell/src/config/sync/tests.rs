@@ -280,7 +280,7 @@ fn a_binding_list_that_misses_an_action_arrives_with_its_default_key() {
     use crate::action::{Action, BindingMap, Chord};
     use aftermine_protocol::Key;
     let mut older = BindingMap::classic();
-    older.unbind_slot(Action::SelectArmy, 0);
+    older.forget(Action::SelectArmy);
     assert!(older.rebind(Action::Patrol, Chord::bare(Key::J)));
     let text = serde_json::to_string(&older).unwrap();
     let arrived = |config: &Config| {
@@ -311,7 +311,7 @@ fn defaults_a_read_binding_list_gains_never_go_up_over_a_newer_rebind() {
     use crate::action::{Action, BindingMap, Chord};
     use aftermine_protocol::Key;
     let mut older = BindingMap::classic();
-    older.unbind_slot(Action::SelectArmy, 0);
+    older.forget(Action::SelectArmy);
     let mut cloud = Cloud::new();
     cloud.insert(
         key(SyncedField::Bindings),
@@ -357,6 +357,30 @@ fn defaults_a_read_binding_list_gains_never_go_up_over_a_newer_rebind() {
         );
     }
     assert!(mac.config.reduced_motion && mac.config.volumes.music == 0.25);
+}
+
+#[test]
+fn an_action_cleared_on_one_device_stays_unbound_on_the_other() {
+    use crate::action::Action;
+    let mut cloud = Cloud::new();
+    let mut mac = Device::launch(Config::default(), &mut cloud);
+    let mut ipad = Device::launch(Config::default(), &mut cloud);
+    mac.config.bindings.unbind_slot(Action::SelectArmy, 0);
+    mac.save(&mut cloud);
+    assert!(ipad.catch_up(&mut cloud));
+    assert_eq!(ipad.config.bindings, mac.config.bindings);
+    let restarted = Config::from_text(Some(&ipad.config.text()));
+    assert_eq!(restarted.bindings.chord_for(Action::SelectArmy), None);
+    let relaunched = Device::launch(restarted, &mut cloud);
+    assert_eq!(relaunched.config.bindings, mac.config.bindings);
+    ipad.config.volumes.music = 0.25;
+    ipad.save(&mut cloud);
+    assert!(mac.catch_up(&mut cloud));
+    assert_eq!(mac.config.bindings.chord_for(Action::SelectArmy), None);
+    assert_eq!(
+        cloud[&key(SyncedField::Bindings)],
+        SyncedField::Bindings.json(&mac.config)
+    );
 }
 
 #[test]

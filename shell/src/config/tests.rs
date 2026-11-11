@@ -71,12 +71,30 @@ fn a_customized_map_survives_the_round_trip() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// Default settings whose binding list never names `missing`, as a file
-/// saved before the action existed.
+#[test]
+fn an_explicit_unbinding_survives_the_restart() {
+    let dir = std::env::temp_dir().join(format!("aftermine-config-unbind-{}", std::process::id()));
+    let path = dir.join("config.json");
+    let mut config = Config::default();
+    config
+        .bindings
+        .unbind_slot(crate::action::Action::Patrol, 0);
+    config.save_to(&path).expect("save");
+    let loaded = Config::load_from(Some(path));
+    assert_eq!(
+        loaded.bindings.chord_for(crate::action::Action::Patrol),
+        None,
+        "the deliberate unbinding persisted"
+    );
+    assert_eq!(loaded.bindings, config.bindings);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Default settings whose binding list never mentions `missing`, as a
+/// file saved before the action existed.
 fn saved_without(missing: crate::action::Action) -> Config {
     let mut config = Config::default();
-    config.bindings.unbind_slot(missing, 0);
-    config.bindings.unbind_slot(missing, 1);
+    config.bindings.forget(missing);
     config
 }
 
@@ -102,6 +120,53 @@ fn an_action_the_saved_list_never_names_loads_with_its_default_key() {
     assert_eq!(
         [0, 1].map(|slot| loaded.bindings.chord_at(Action::PanLeft, slot)),
         [Some(Chord::bare(Key::A)), Some(Chord::bare(Key::Left))]
+    );
+}
+
+#[test]
+fn a_list_written_before_cleared_actions_and_layouts_were_recorded_loads_filled() {
+    use crate::action::{Action, Chord};
+    use aftermine_protocol::Key;
+    let saved = Config {
+        ui_scale: 1.25,
+        ..saved_without(Action::SelectArmy)
+    };
+    let mut text: serde_json::Value = serde_json::from_str(&saved.text()).unwrap();
+    let bindings = text["bindings"].as_object_mut().unwrap();
+    assert!(bindings.remove("unbound").is_some() && bindings.remove("layout").is_some());
+    let loaded = Config::from_text(Some(&text.to_string()));
+    assert_eq!(loaded.ui_scale, 1.25, "the file loads rather than resets");
+    assert_eq!(
+        loaded.bindings.chord_for(Action::SelectArmy),
+        Some(Chord::ctrl(Key::A))
+    );
+}
+
+#[test]
+fn a_left_handed_list_fills_from_left_handed_defaults() {
+    use crate::action::{Action, BindingMap, Chord};
+    use aftermine_protocol::Key;
+    let mut saved = Config {
+        bindings: BindingMap::left_handed(),
+        ..Config::default()
+    };
+    saved.bindings.forget(Action::SelectArmy);
+    saved.bindings.forget(Action::PanLeft);
+    let loaded = Config::from_text(Some(&saved.text()));
+    assert_eq!(
+        loaded.bindings.chord_for(Action::SelectArmy),
+        Some(Chord::ctrl(Key::J))
+    );
+    assert_eq!(
+        [0, 1].map(|slot| loaded.bindings.chord_at(Action::PanLeft, slot)),
+        [Some(Chord::bare(Key::J)), Some(Chord::bare(Key::Left))]
+    );
+    let mut again = loaded.clone();
+    again.bindings.forget(Action::SelectArmy);
+    assert_eq!(
+        Config::from_text(Some(&again.text())),
+        loaded,
+        "the layout survives the file"
     );
 }
 
@@ -347,8 +412,9 @@ fn the_driver_quiet_config_has_the_current_shape() {
     assert_eq!(config.volumes.master, 0.0);
     // A capture that launches to Home must not wait out the first-launch report.
     assert!(config.cold_open_seen);
-    // An empty or partial map binds nothing, so every scripted key press
-    // would be silently ignored.
+    // Driver scripts press the classic keys. Loading fills only actions the
+    // file never names, so a different chord, a cleared action or the
+    // left-handed layout here would redirect or drop scripted presses.
     assert!(
         config.bindings == BindingMap::classic(),
         "quiet_config.json must carry the default bindings:\n{}",

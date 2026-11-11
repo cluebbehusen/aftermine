@@ -327,12 +327,34 @@ pub struct Binding {
     pub chord: Chord,
     pub action: Action,
 }
+/// The default keys a binding map started from, which also fill in any
+/// action the map never mentions.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Layout {
+    #[default]
+    Classic,
+    LeftHanded,
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BindingMap {
     bindings: Vec<Binding>,
     secondary: Vec<Binding>,
+    /// Actions the player cleared every key of, so their defaults never
+    /// fill back in.
+    #[serde(default)]
+    unbound: Vec<Action>,
+    #[serde(default)]
+    layout: Layout,
 }
 impl BindingMap {
+    fn empty(layout: Layout) -> Self {
+        Self {
+            bindings: Vec::new(),
+            secondary: Vec::new(),
+            unbound: Vec::new(),
+            layout,
+        }
+    }
     pub fn classic() -> Self {
         use Action::{
             Accompany, AssignGroup, Back, Build, BuildCategory, ClearRally, Confirm,
@@ -345,10 +367,7 @@ impl BindingMap {
             ToggleBuildPalette, ToggleIdleWeld, ToggleOverlay, TogglePause, TrainSlot, Unload,
             Upgrade,
         };
-        let mut map = Self {
-            bindings: Vec::new(),
-            secondary: Vec::new(),
-        };
+        let mut map = Self::empty(Layout::Classic);
         let defaults = [
             (PanUp, Key::W),
             (PanLeft, Key::A),
@@ -474,14 +493,21 @@ impl BindingMap {
             rows.retain(|b| b.action.offered_in(packaged));
         }
     }
-    /// Gives each action this map does not mention its classic chords,
-    /// except a chord Controls would refuse because another action here
-    /// already holds it. A map saved before an action existed never names
-    /// it. Rows already here never change.
+    /// Gives each action this map neither binds nor records as cleared its
+    /// layout's chords, except a chord Controls would refuse because
+    /// another action here already holds it. A map saved before an action
+    /// existed never mentions it. Rows already here never change.
     pub fn bind_unmentioned_defaults(&mut self) {
-        let classic = Self::classic();
-        let mentioned: Vec<Action> = self.rows().map(|b| b.action).collect();
-        for (slot, rows) in [(0, &classic.bindings), (1, &classic.secondary)] {
+        let defaults = match self.layout {
+            Layout::Classic => Self::classic(),
+            Layout::LeftHanded => Self::left_handed(),
+        };
+        let mentioned: Vec<Action> = self
+            .rows()
+            .map(|b| b.action)
+            .chain(self.unbound.iter().copied())
+            .collect();
+        for (slot, rows) in [(0, &defaults.bindings), (1, &defaults.secondary)] {
             for b in rows.iter().filter(|b| !mentioned.contains(&b.action)) {
                 self.rebind_slot(b.action, slot, b.chord);
             }
@@ -526,6 +552,7 @@ impl BindingMap {
                 other => other,
             };
         }
+        map.layout = Layout::LeftHanded;
         map
     }
     fn rows(&self) -> impl Iterator<Item = &Binding> {
@@ -675,6 +702,9 @@ impl BindingMap {
             &mut self.secondary
         };
         rows.retain(|b| b.action != action);
+        if self.chord_for(action).is_none() && !self.unbound.contains(&action) {
+            self.unbound.push(action);
+        }
     }
     pub fn conflict(&self, action: Action, slot: usize, chord: Chord) -> Option<Action> {
         self.rows()
@@ -701,13 +731,19 @@ impl BindingMap {
             Some(b) => b.chord = chord,
             None => rows.push(Binding { chord, action }),
         }
+        self.unbound.retain(|a| *a != action);
         true
     }
     pub fn valid(&self) -> bool {
-        let mut seen = Self {
-            bindings: Vec::new(),
-            secondary: Vec::new(),
-        };
+        let cleared = self.unbound.iter().enumerate().all(|(index, action)| {
+            action.sane()
+                && self.chord_for(*action).is_none()
+                && !self.unbound[..index].contains(action)
+        });
+        if !cleared {
+            return false;
+        }
+        let mut seen = Self::empty(self.layout);
         for (slot, rows) in [(0, &self.bindings), (1, &self.secondary)] {
             for b in rows {
                 if !b.action.sane()
