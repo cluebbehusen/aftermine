@@ -207,6 +207,7 @@ impl Worker {
     }
 }
 
+#[derive(Debug)]
 pub(super) enum Intent {
     Load(PathBuf),
     Continue,
@@ -268,11 +269,6 @@ impl Busy {
     }
     pub(super) fn request_leave(&mut self) {
         self.leave_after = true;
-    }
-    /// Whether the match must be left once this finishes: it ended
-    /// meanwhile, and this was not already leaving.
-    fn leaving_after(&self) -> bool {
-        self.leave_after && !matches!(self.intent, Intent::Leave(..))
     }
 }
 
@@ -680,105 +676,7 @@ pub(super) fn frame(
         return Ok(*busy.back);
     }
     if let Some(result) = app.persistence_result.take() {
-        match result {
-            Ok(Output::Loaded(loaded)) => {
-                app.install(loaded.install(), Install::local(true));
-                if busy.quit_after {
-                    return Ok(app.persistence_screen(
-                        Intent::Leave(screens::pause::LeaveVerb::Quit),
-                        Screen::Playing,
-                    ));
-                }
-                return Ok(Screen::Playing);
-            }
-            Ok(Output::LanSave(save)) => {
-                // Nothing was installed, so quitting saves nothing.
-                if busy.quit_after {
-                    return Ok(app.persistence_screen(Intent::Exit, *busy.back));
-                }
-                // The lobby opens at once, under the player's name.
-                app.draft.player_name = Some(app.config.name());
-                return Ok(Screen::Wizard(screens::wizard::Wizard::resume(
-                    *save,
-                    &mut app.draft,
-                )));
-            }
-            Ok(Output::Recording(recording)) => {
-                // Nothing was installed, so quitting saves nothing.
-                if busy.quit_after {
-                    return Ok(app.persistence_screen(Intent::Exit, *busy.back));
-                }
-                return Ok(watch(*recording, *busy.back, |error| {
-                    app.notify_failure("Could not open the replay", format_args!("{error:#}"));
-                }));
-            }
-            Ok(Output::Saved(mark)) => {
-                if let Some(mark) = mark {
-                    app.game.mark_saved(&mark);
-                }
-                if busy.quit_after {
-                    return Ok(app.persistence_screen(
-                        Intent::Leave(screens::pause::LeaveVerb::Quit),
-                        *busy.back,
-                    ));
-                }
-                if busy.leaving_after() {
-                    return Ok(app.persistence_screen(
-                        Intent::Leave(screens::pause::LeaveVerb::MainMenu),
-                        *busy.back,
-                    ));
-                }
-                return Ok(match busy.intent {
-                    Intent::Named(name) => {
-                        if let Screen::Pause(ref mut pause) = *busy.back {
-                            pause.end_naming(format!("saved: {name}"));
-                        }
-                        *busy.back
-                    }
-                    Intent::Leave(screens::pause::LeaveVerb::Quit) => {
-                        app.persistence_screen(Intent::Exit, *busy.back)
-                    }
-                    Intent::Leave(screens::pause::LeaveVerb::MainMenu) => {
-                        Screen::Home(HomeScreen::open())
-                    }
-                    Intent::Rematch => {
-                        let fresh = super::screen_flow::rebuild_match(&app.game)?;
-                        app.install(fresh, Install::local(app.args.paused));
-                        Screen::Playing
-                    }
-                    _ => unreachable!(),
-                });
-            }
-            Err(error) => {
-                eprintln!(
-                    "{} failed: {error:#}",
-                    if loading { "Load" } else { "Save" }
-                );
-                return Ok(
-                    match after_failure(&busy.intent, busy.quit_after, busy.leaving_after()) {
-                        AfterFailure::Exit => app.persistence_screen(Intent::Exit, *busy.back),
-                        AfterFailure::SaveFailed(verb) => Screen::Pause(
-                            pause_menu(&app.game).with_save_failed(error.to_string(), verb),
-                        ),
-                        AfterFailure::Leave => {
-                            app.notify(error.to_string(), true);
-                            app.persistence_screen(
-                                Intent::Leave(screens::pause::LeaveVerb::MainMenu),
-                                *busy.back,
-                            )
-                        }
-                        AfterFailure::Back => {
-                            app.notify(failure_line(&busy.intent, &error), true);
-                            if let Screen::Pause(ref mut pause) = *busy.back {
-                                pause.end_naming(error.to_string());
-                            }
-                            *busy.back
-                        }
-                    },
-                );
-            }
-            Ok(Output::Catalog(..) | Output::Discarded) => unreachable!(),
-        }
+        return finish(app, *busy, result);
     }
     // An exit with nothing left to go out quits without drawing a frame.
     if !busy.presented && !exiting {
@@ -847,6 +745,100 @@ pub(super) fn frame(
     Ok(Screen::Busy(busy))
 }
 
+/// Carries out where `busy`'s finished job goes, as [`after_success`] or
+/// [`after_failure`] decides.
+fn finish(app: &mut App, busy: Busy, result: Result<Output>) -> Result<Screen> {
+    use screens::pause::LeaveVerb::{MainMenu, Quit};
+    let Busy {
+        intent,
+        back,
+        quit_after,
+        leave_after,
+        ..
+    } = busy;
+    let mut back = *back;
+    let output = match result {
+        Ok(output) => output,
+        Err(error) => {
+            eprintln!(
+                "{} failed: {error:#}",
+                if intent.loading() { "Load" } else { "Save" }
+            );
+            return Ok(match after_failure(&intent, quit_after, leave_after) {
+                AfterFailure::Exit => app.persistence_screen(Intent::Exit, back),
+                AfterFailure::SaveFailed(verb) => {
+                    Screen::Pause(pause_menu(&app.game).with_save_failed(error.to_string(), verb))
+                }
+                AfterFailure::Leave => {
+                    app.notify(error.to_string(), true);
+                    app.persistence_screen(Intent::Leave(MainMenu), back)
+                }
+                AfterFailure::Back => {
+                    app.notify(failure_line(&intent, &error), true);
+                    if let Screen::Pause(pause) = &mut back {
+                        pause.end_naming(error.to_string());
+                    }
+                    back
+                }
+            });
+        }
+    };
+    let after = |landed| after_success(&intent, quit_after, leave_after, landed);
+    let next = match output {
+        Output::Loaded(loaded) => {
+            app.install(loaded.install(), Install::local(true));
+            // The restored match plays behind this screen now.
+            back = Screen::Playing;
+            after(Landed::Match)
+        }
+        Output::LanSave(save) => match after(Landed::LanSave) {
+            AfterSuccess::Open => {
+                // The lobby opens at once, under the player's name.
+                app.draft.player_name = Some(app.config.name());
+                return Ok(Screen::Wizard(screens::wizard::Wizard::resume(
+                    *save,
+                    &mut app.draft,
+                )));
+            }
+            next => next,
+        },
+        Output::Recording(recording) => match after(Landed::Recording) {
+            AfterSuccess::Open => {
+                return Ok(watch(*recording, back, |error| {
+                    app.notify_failure("Could not open the replay", format_args!("{error:#}"));
+                }));
+            }
+            next => next,
+        },
+        Output::Saved(mark) => {
+            if let Some(mark) = mark {
+                app.game.mark_saved(&mark);
+            }
+            after(Landed::Saved)
+        }
+        Output::Catalog(..) | Output::Discarded => unreachable!(),
+    };
+    Ok(match next {
+        // Only a restored match is left to open; the others opened above.
+        AfterSuccess::Open => Screen::Playing,
+        AfterSuccess::Back => {
+            if let (Intent::Named(name), Screen::Pause(pause)) = (&intent, &mut back) {
+                pause.end_naming(format!("saved: {name}"));
+            }
+            back
+        }
+        AfterSuccess::Home => Screen::Home(HomeScreen::open()),
+        AfterSuccess::Rematch => {
+            let fresh = super::screen_flow::rebuild_match(&app.game)?;
+            app.install(fresh, Install::local(app.args.paused));
+            Screen::Playing
+        }
+        AfterSuccess::SaveThenQuit => app.persistence_screen(Intent::Leave(Quit), back),
+        AfterSuccess::Exit => app.persistence_screen(Intent::Exit, back),
+        AfterSuccess::Leave => app.persistence_screen(Intent::Leave(MainMenu), back),
+    })
+}
+
 /// The viewer over a recording the worker opened. Leaving it lands back on
 /// `back`, the shelf that asked, its tab and cursor where they were; a
 /// recording that will not play stays there and says so through `failed`.
@@ -909,18 +901,81 @@ enum AfterFailure {
 }
 
 /// Where a failed `intent` goes, given a quit asked for meanwhile
-/// (`quit_after`) or a LAN match that ended meanwhile (`leaving_after`).
-fn after_failure(intent: &Intent, quit_after: bool, leaving_after: bool) -> AfterFailure {
+/// (`quit_after`) or a LAN match that ended meanwhile (`leave_after`),
+/// which a save already leaving it ignores.
+fn after_failure(intent: &Intent, quit_after: bool, leave_after: bool) -> AfterFailure {
     if quit_after && intent.loading() {
         AfterFailure::Exit
     } else if quit_after {
         AfterFailure::SaveFailed(screens::pause::LeaveVerb::Quit)
-    } else if leaving_after {
-        AfterFailure::Leave
     } else if let Intent::Leave(verb) = intent {
         AfterFailure::SaveFailed(*verb)
+    } else if leave_after {
+        AfterFailure::Leave
     } else {
         AfterFailure::Back
+    }
+}
+
+/// What a save or load that succeeded brought back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Landed {
+    /// A saved match, restored.
+    Match,
+    /// A saved LAN match, for Match Setup to resume with its players.
+    LanSave,
+    /// A replay, opened.
+    Recording,
+    /// A save, written.
+    Saved,
+}
+
+/// Where a save or load that succeeded goes.
+#[derive(Debug, PartialEq, Eq)]
+enum AfterSuccess {
+    /// Into what the load brought: the restored match plays, a saved LAN
+    /// match opens its lobby, or a replay opens in the viewer.
+    Open,
+    /// Back to the pause menu, saying the named save landed.
+    Back,
+    /// Home, the match saved.
+    Home,
+    /// A fresh run of the match just saved.
+    Rematch,
+    /// Save the match now held, then quit.
+    SaveThenQuit,
+    /// Quit, with nothing more to save.
+    Exit,
+    /// Leave the LAN match that ended meanwhile through its leave save.
+    Leave,
+}
+
+/// Where `intent` goes once it `landed`, given a quit asked for meanwhile
+/// (`quit_after`) or a LAN match that ended meanwhile (`leave_after`),
+/// which a save already leaving it ignores.
+fn after_success(
+    intent: &Intent,
+    quit_after: bool,
+    leave_after: bool,
+    landed: Landed,
+) -> AfterSuccess {
+    use screens::pause::LeaveVerb::{MainMenu, Quit};
+    match landed {
+        // A quit saves the match now held on its way out.
+        Landed::Match | Landed::Saved if quit_after => AfterSuccess::SaveThenQuit,
+        // Nothing was installed, so quitting saves nothing.
+        Landed::LanSave | Landed::Recording if quit_after => AfterSuccess::Exit,
+        Landed::Match | Landed::LanSave | Landed::Recording => AfterSuccess::Open,
+        Landed::Saved => match intent {
+            Intent::Leave(Quit) => AfterSuccess::Exit,
+            Intent::Leave(MainMenu) => AfterSuccess::Home,
+            _ if leave_after => AfterSuccess::Leave,
+            Intent::Named(_) => AfterSuccess::Back,
+            Intent::Rematch => AfterSuccess::Rematch,
+            Intent::Load(_) | Intent::Continue | Intent::Watch(_) | Intent::Exit => {
+                unreachable!("only a save writes one")
+            }
+        },
     }
 }
 
