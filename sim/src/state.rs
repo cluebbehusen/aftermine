@@ -2755,19 +2755,16 @@ impl State {
             if !self.valid_attack_reference(*player, target) {
                 return Err(E::UnmintedBuildingFocus(id));
             }
-            let current_domain = match target.entity() {
-                Some(entity) => self.visible_hostile_target_domain(*player, entity),
-                None => self.attack_view(*player, target).map(|view| view.domain),
-            };
-            let live_entity = target.entity().is_some_and(|entity| match entity {
-                Target::Unit(id) => self.unit(id).is_some(),
-                Target::Building(id) => self.building(id).is_some(),
-            });
-            if !b.built()
-                || stats.weapons.is_empty()
-                || ((live_entity || target.entity().is_none()) && current_domain.is_none())
-                || current_domain.is_some_and(|domain| !stats.weapons[0].targets.covers(domain))
-            {
+            // Focus fire stores the contact or footprint its command
+            // resolved to, never a raw unit or building id.
+            let covered = target.entity().is_none()
+                && self.attack_view(*player, target).is_some_and(|view| {
+                    stats
+                        .weapons
+                        .first()
+                        .is_some_and(|weapon| weapon.targets.covers(view.domain))
+                });
+            if !b.built() || !covered {
                 return Err(E::InvalidBuildingFocus(id));
             }
         }

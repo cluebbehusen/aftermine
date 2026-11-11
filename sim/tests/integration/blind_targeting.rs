@@ -3,7 +3,8 @@
 use crate::common;
 use aftermine_sim::scenario::BuildingSpec;
 use aftermine_sim::{
-    AttackTarget, BuildingKind, Command, Event, Order, PlayerId, Target, UnitKind,
+    AttackTarget, BuildingKind, Command, Event, Order, PlayerId, RememberedBuilding, Target,
+    UnitKind,
 };
 use chassis::grid::TilePos;
 use chassis::grid::as_index;
@@ -926,34 +927,52 @@ fn unreachable_blind_attacks_stall_once_and_clear_the_program() {
 }
 
 #[test]
-fn a_focus_on_a_friendly_hidden_or_incompatible_unit_is_rejected() {
-    for case in ["friendly", "hidden", "air"] {
-        let enemy_kind = if case == "air" {
+fn a_stored_focus_must_be_a_seen_target_the_gun_covers() {
+    // A Bastion fires on ground only; the Fabricator has no gun.
+    for case in ["covered", "raw id", "air", "unseen", "unarmed"] {
+        let kind = if case == "air" {
             UnitKind::Kestrel
         } else {
             UnitKind::Harvester
         };
-        let mut scenario = open_arena(
-            32,
-            24,
-            vec![unit(
-                u8::from(case != "friendly"),
-                enemy_kind,
-                if case == "hidden" { 24 } else { 12 },
-                10,
-            )],
-        );
-        scenario.buildings = vec![BuildingSpec {
-            player: 0,
-            kind: BuildingKind::Bastion,
-            x: 8,
-            y: 10,
-        }];
-        let state = scenario.build().unwrap();
-        let defense = state
+        let mut scenario = open_arena(32, 24, vec![unit(1, kind, 12, 10)]);
+        scenario.buildings = vec![
+            BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Bastion,
+                x: 8,
+                y: 10,
+            },
+            BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Fabricator,
+                x: 8,
+                y: 14,
+            },
+        ];
+        let mut state = scenario.build().unwrap();
+        state.tick(&[]);
+        let seen = state.units()[0].id;
+        let contact = state
+            .attack_objective(PlayerId(0), AttackTarget::Unit(seen))
+            .expect("the Bastion sees the enemy");
+        let (holder, focus) = match case {
+            "raw id" => (BuildingKind::Bastion, AttackTarget::Unit(seen)),
+            "unseen" => (
+                BuildingKind::Bastion,
+                AttackTarget::RememberedBuilding(RememberedBuilding {
+                    owner: PlayerId(1),
+                    building_kind: BuildingKind::Fabricator,
+                    anchor: TilePos::new(24, 4),
+                }),
+            ),
+            "unarmed" => (BuildingKind::Fabricator, contact),
+            _ => (BuildingKind::Bastion, contact),
+        };
+        let holder = state
             .buildings()
             .iter()
-            .find(|b| b.kind == BuildingKind::Bastion)
+            .find(|b| b.kind == holder)
             .unwrap()
             .id;
         let mut data = serde_json::to_value(&state).unwrap();
@@ -961,13 +980,18 @@ fn a_focus_on_a_friendly_hidden_or_incompatible_unit_is_rejected() {
             .as_array_mut()
             .unwrap()
             .iter_mut()
-            .find(|b| b["id"] == serde_json::json!(defense))
-            .unwrap()["focus"] = serde_json::to_value(Target::Unit(state.units()[0].id)).unwrap();
-        let error = serde_json::from_value::<aftermine_sim::State>(data).unwrap_err();
-        assert!(
-            error.to_string().contains("invalid defense focus"),
-            "{case}: {error}"
-        );
+            .find(|b| b["id"] == serde_json::json!(holder))
+            .unwrap()["focus"] = serde_json::to_value(focus).unwrap();
+        let loaded = serde_json::from_value::<aftermine_sim::State>(data);
+        if case == "covered" {
+            loaded.expect("a seen contact the gun covers is a valid focus");
+        } else {
+            let error = loaded.unwrap_err();
+            assert!(
+                error.to_string().contains("invalid defense focus"),
+                "{case}: {error}"
+            );
+        }
     }
 }
 
