@@ -236,9 +236,10 @@ impl MenuNotice {
 
 /// Delivers the frame's notices to the screen that is up: the HUD's toast
 /// strip in live play or a replay, the Settings and pause menus' own notice
-/// lines, and the shared menu line everywhere else. The final map has no
-/// running clock to age a toast, so its notices wait on the menu line for
-/// the report it returns to.
+/// lines, and the shared menu line everywhere else, including the waiting
+/// screen, which covers the HUD. The final map has no running clock to age
+/// a toast, so its notices wait on the menu line for the report it returns
+/// to.
 pub(super) fn deliver_notices(
     notices: &mut Vec<Notice>,
     live: &mut Game,
@@ -247,7 +248,7 @@ pub(super) fn deliver_notices(
 ) {
     for Notice { text, danger } in notices.drain(..) {
         match screen {
-            Screen::Playing | Screen::Waiting(_) => live.presentation.toast(text),
+            Screen::Playing => live.presentation.toast(text),
             Screen::Playback { session, .. } => session.presentation.toast(text),
             Screen::Settings { screen, .. } => {
                 screen.notice = Some(screens::settings::Notice { text, danger });
@@ -262,6 +263,7 @@ pub(super) fn deliver_notices(
             | Screen::Replays(_)
             | Screen::Results(_)
             | Screen::FinalMap(_)
+            | Screen::Waiting(_)
             | Screen::Busy(_) => *menu_notice = Some(MenuNotice { text, until: None }),
         }
     }

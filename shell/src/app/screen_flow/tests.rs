@@ -536,6 +536,7 @@ fn a_notice_lands_where_the_player_is_looking() {
         Screen::Home(HomeScreen::open()),
         Screen::Results(ResultsScreen::open(false)),
         Screen::FinalMap(FinalMapScreen::open()),
+        Screen::Waiting(screens::waiting::WaitingScreen::open(Vec::new(), true)),
     ] {
         let menu = deliver(&mut game, &mut screen);
         assert_eq!(
