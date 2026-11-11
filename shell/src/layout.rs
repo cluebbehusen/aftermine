@@ -511,6 +511,9 @@ pub enum TooltipSide {
     /// the dock hugs the left edge and stacks upward, so "above" would
     /// land on the neighbouring chip instead of open screen.
     RightOf,
+    /// Left of the anchor, centered on it — the control-group column's
+    /// rule, mirroring the dock's on the right edge.
+    LeftOf,
 }
 
 /// Places a tooltip box against the rect it describes. `gap` is the
@@ -533,6 +536,10 @@ pub fn tooltip_origin(
         TooltipSide::Above => (anchor.x, anchor.y - size.y - gap),
         TooltipSide::RightOf => (
             anchor.x + anchor.w + gap,
+            anchor.y + (anchor.h - size.y) * 0.5,
+        ),
+        TooltipSide::LeftOf => (
+            anchor.x - size.x - gap,
             anchor.y + (anchor.h - size.y) * 0.5,
         ),
     };

@@ -440,6 +440,115 @@ pub(crate) fn draw_army_tooltip(
     );
 }
 
+/// What a press on a control-group slot does, worded as its tooltip: a
+/// saved group selects and the "+" saves the selection there. Keys show
+/// only to a player who has pressed one, and only while bound. An empty
+/// group's place has no tooltip, since a plain press there does nothing.
+fn group_tooltip(
+    slot: crate::layout::GroupSlot,
+    hands: crate::platform::Hands,
+    bindings: &crate::action::BindingMap,
+) -> Option<crate::panel::Card> {
+    use crate::action::Action;
+    use crate::layout::GroupSlot;
+    let key = |action| {
+        bindings
+            .chord_for(action)
+            .filter(|_| hands.keys)
+            .map(crate::action::BindingMap::chord_label)
+            .unwrap_or_default()
+    };
+    let (title, hotkey, desc) = match slot {
+        GroupSlot::Recall(n) => {
+            let tap = crate::platform::tap_or_click_capitalized(hands.touch());
+            let mut desc = vec![format!("{tap} twice to move the camera to it.")];
+            let assign = key(Action::AssignGroup(n));
+            let press = if assign.is_empty() {
+                String::new()
+            } else {
+                format!(" or press {assign}")
+            };
+            desc.extend(match (hands.touch(), hands.keys) {
+                (false, true) => Some(format!(
+                    "Ctrl-click{press} to save the selection here instead."
+                )),
+                (true, _) => Some(format!(
+                    "Long-press{press} to save the selection here instead."
+                )),
+                (false, false) => None,
+            });
+            (format!("Select group {n}"), key(Action::Slot(n)), desc)
+        }
+        GroupSlot::Assign(n) => (
+            format!("Save the selection as group {n}"),
+            key(Action::AssignGroup(n)),
+            Vec::new(),
+        ),
+        GroupSlot::Empty(_) => return None,
+    };
+    Some(crate::panel::Card {
+        icon: crate::panel::CardIcon::Verb(crate::panel::VerbIcon::Cancel),
+        title,
+        cost: None,
+        hotkey,
+        action: crate::panel::CardAction::None,
+        enabled: true,
+        why: None,
+        desc,
+        progress: None,
+        autocast: None,
+        hold: None,
+    })
+}
+
+/// The tooltip of the control-group slot under the pointer, beside the
+/// column so it never covers the neighbouring slots.
+pub(crate) fn draw_group_tooltip(
+    game: &crate::game::Scene<'_>,
+    input: &InputState,
+    bindings: &crate::action::BindingMap,
+) {
+    let s = ui_scale();
+    let layout = game.presentation.layout.get();
+    let pointer = match input.touch_preview() {
+        Some(p) => Some((p, Some(s))),
+        None => input.chrome_hover_point().map(|p| (p, None)),
+    };
+    let Some(slot) =
+        pointer.and_then(|(p, touch_ui)| crate::layout::group_slot_under(&layout, p, touch_ui))
+    else {
+        return;
+    };
+    let Some((rect, _)) = layout
+        .group_slots
+        .iter()
+        .flatten()
+        .find(|(_, under)| *under == slot)
+    else {
+        return;
+    };
+    let Some(card) = group_tooltip(slot, crate::platform::hands(), bindings) else {
+        return;
+    };
+    let column = layout.group_column;
+    let anchor = Rect::new(column.x, rect.y, column.w.max(rect.w), rect.h);
+    super::panel_draw::draw_card_tooltip(
+        &card,
+        None,
+        (400.0 * s).min(screen_width() - 40.0 * s),
+        |size| {
+            crate::layout::tooltip_origin(
+                anchor,
+                size,
+                crate::layout::TooltipSide::LeftOf,
+                vec2(screen_width(), screen_height()),
+                layout.top_bar_h,
+                6.0 * s,
+            )
+        },
+    );
+}
+
 /// Three bars on the badge fill: the glyph needs no font coverage or
 /// atlas entry, and whole-rect fills stay crisp at any scale.
 fn draw_menu_button(rect: Rect, s: f32) {

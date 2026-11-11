@@ -47,6 +47,69 @@ fn hud_copy_names_keys_only_on_desktop() {
 }
 
 #[test]
+fn a_group_slot_s_tooltip_says_what_its_press_does() {
+    use crate::layout::GroupSlot;
+    let bindings = crate::action::BindingMap::classic();
+    for hands in crate::platform::tests::ALL_HANDS {
+        let recall = group_tooltip(GroupSlot::Recall(2), hands, &bindings).expect("a saved group");
+        assert_eq!(recall.title, "Select group 2");
+        assert_eq!(recall.hotkey, if hands.keys { "2" } else { "" });
+        let assign = group_tooltip(GroupSlot::Assign(3), hands, &bindings).expect("the plus");
+        assert_eq!(assign.title, "Save the selection as group 3");
+        assert_eq!(assign.hotkey, if hands.keys { "Ctrl+3" } else { "" });
+        for line in recall.desc.iter().chain(&assign.desc) {
+            crate::platform::tests::assert_copy_fits(hands, line);
+        }
+        assert!(
+            group_tooltip(GroupSlot::Empty(4), hands, &bindings).is_none(),
+            "a plain press on an empty group does nothing"
+        );
+    }
+    let [mouse, ..] = crate::platform::tests::ALL_HANDS;
+    assert_eq!(
+        group_tooltip(GroupSlot::Recall(2), mouse, &bindings)
+            .unwrap()
+            .desc,
+        [
+            "Click twice to move the camera to it.",
+            "Ctrl-click or press Ctrl+2 to save the selection here instead."
+        ]
+    );
+
+    // Unbound group keys name nothing.
+    let mut unbound = bindings.clone();
+    for action in [
+        crate::action::Action::Slot(2),
+        crate::action::Action::AssignGroup(2),
+    ] {
+        unbound.unbind_slot(action, 0);
+        unbound.unbind_slot(action, 1);
+    }
+    let recall = group_tooltip(GroupSlot::Recall(2), mouse, &unbound).unwrap();
+    assert_eq!(recall.hotkey, "");
+    assert_eq!(
+        recall.desc[1],
+        "Ctrl-click to save the selection here instead."
+    );
+    let touch_keys = crate::platform::Hands {
+        pointer: crate::input::Pointer::Touch,
+        ..mouse
+    };
+    assert_eq!(
+        group_tooltip(GroupSlot::Recall(2), touch_keys, &unbound)
+            .unwrap()
+            .desc[1],
+        "Long-press to save the selection here instead."
+    );
+    assert_eq!(
+        group_tooltip(GroupSlot::Assign(2), mouse, &unbound)
+            .unwrap()
+            .hotkey,
+        ""
+    );
+}
+
+#[test]
 fn the_ribbon_stays_on_screen_above_the_panel() {
     for (viewport, scale) in [
         (vec2(1024.0, 768.0), 1.5),
