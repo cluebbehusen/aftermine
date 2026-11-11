@@ -1,6 +1,6 @@
 //! Frozen inspection of the already-final live battlefield.
 
-use crate::action::{Action, ActionEvent, ActionResolver, BindingMap, Context};
+use crate::action::{Action, ActionResolver, BindingMap, Context};
 use crate::camera::controls::{
     MinimapPoint, RemoteCamera, ViewerHands, ViewerPads, event_point, held_pan, pan_toward,
 };
@@ -61,18 +61,12 @@ impl FinalMapScreen {
         for event in &events {
             match event {
                 RawEvent::KeyDown { key } => {
-                    if self
-                        .resolver
-                        .key_edge_in(bindings, *key, true, Context::FinalMap)
-                        == Some(ActionEvent::Pressed(Action::Back))
+                    if self.resolver.press(bindings, *key, Context::FinalMap) == Some(Action::Back)
                     {
                         return true;
                     }
                 }
-                RawEvent::KeyUp { key } => {
-                    self.resolver
-                        .key_edge_in(bindings, *key, false, Context::FinalMap);
-                }
+                RawEvent::KeyUp { key } => self.resolver.release(*key),
                 // The controller's back button, by position like the menus'.
                 RawEvent::PadDown {
                     button: crate::pad::BACK,

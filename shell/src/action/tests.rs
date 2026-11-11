@@ -66,30 +66,29 @@ fn releases_pair_with_what_the_press_meant() {
     let map = BindingMap::classic();
     let mut r = ActionResolver::default();
     assert_eq!(
-        r.key_edge_in(&map, Key::Ctrl, true, Context::Units),
+        r.press(&map, Key::Ctrl, Context::Units),
         None,
         "modifiers are truth, not actions"
     );
     assert_eq!(
-        r.key_edge_in(&map, Key::Num2, true, Context::Units),
-        Some(ActionEvent::Pressed(Action::AssignGroup(2)))
+        r.press(&map, Key::Num2, Context::Units),
+        Some(Action::AssignGroup(2))
     );
     // Ctrl comes up before the digit: the release still closes the
     // assign, not a phantom recall.
-    r.key_edge_in(&map, Key::Ctrl, false, Context::Units);
-    assert_eq!(
-        r.key_edge_in(&map, Key::Num2, false, Context::Units),
-        Some(ActionEvent::Released(Action::AssignGroup(2)))
-    );
+    r.release(Key::Ctrl);
+    assert!(r.is_held(Action::AssignGroup(2)));
+    r.release(Key::Num2);
+    assert!(!r.is_held(Action::AssignGroup(2)));
 }
 
 #[test]
 fn held_pans_read_back_until_released() {
     let map = BindingMap::classic();
     let mut r = ActionResolver::default();
-    r.key_edge_in(&map, Key::Left, true, Context::Units);
+    r.press(&map, Key::Left, Context::Units);
     assert!(r.is_held(Action::PanLeft));
-    r.key_edge_in(&map, Key::Left, false, Context::Units);
+    r.release(Key::Left);
     assert!(!r.is_held(Action::PanLeft));
 }
 
@@ -97,13 +96,13 @@ fn held_pans_read_back_until_released() {
 fn clear_forgets_holds_and_modifiers() {
     let map = BindingMap::classic();
     let mut r = ActionResolver::default();
-    r.key_edge_in(&map, Key::Ctrl, true, Context::Units);
-    r.key_edge_in(&map, Key::Up, true, Context::Units);
+    r.press(&map, Key::Ctrl, Context::Units);
+    r.press(&map, Key::Up, Context::Units);
     r.clear();
     assert!(!r.is_held(Action::PanUp));
     assert_eq!(
-        r.key_edge_in(&map, Key::Num3, true, Context::Units),
-        Some(ActionEvent::Pressed(Action::Slot(3))),
+        r.press(&map, Key::Num3, Context::Units),
+        Some(Action::Slot(3)),
         "ctrl must not survive a clear"
     );
 }
@@ -141,14 +140,14 @@ fn contexts_allow_panel_reuse_but_reserve_camera_and_group_keys() {
 fn releasing_one_pan_alias_or_changing_context_does_not_release_the_other() {
     let map = BindingMap::classic();
     let mut resolver = ActionResolver::default();
-    resolver.key_edge_in(&map, Key::W, true, Context::Units);
-    resolver.key_edge_in(&map, Key::Up, true, Context::Units);
-    resolver.key_edge_in(&map, Key::Shift, true, Context::Construction);
-    resolver.key_edge_in(&map, Key::W, false, Context::Construction);
+    resolver.press(&map, Key::W, Context::Units);
+    resolver.press(&map, Key::Up, Context::Units);
+    resolver.press(&map, Key::Shift, Context::Construction);
+    resolver.release(Key::W);
     assert!(resolver.is_held(Action::PanUp));
-    resolver.key_edge_in(&map, Key::Up, false, Context::Construction);
+    resolver.release(Key::Up);
     assert!(!resolver.is_held(Action::PanUp));
-    resolver.key_edge_in(&map, Key::W, true, Context::Playback);
+    resolver.press(&map, Key::W, Context::Playback);
     resolver.clear();
     assert!(!resolver.is_held(Action::PanUp));
 }

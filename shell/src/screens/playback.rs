@@ -1,7 +1,7 @@
 //! Read-only replay viewing. The engine owns simulation state; presentation
 //! borrows it for rendering, interpolation, effects, and audio.
 
-use crate::action::{Action, ActionEvent, ActionResolver, BindingMap, Context as InputContext};
+use crate::action::{Action, ActionResolver, BindingMap, Context as InputContext};
 use crate::camera::controls::{
     MinimapPoint, RemoteCamera, ViewerHands, ViewerPads, event_point, held_pan, pan_toward,
 };
@@ -796,9 +796,8 @@ impl PlaybackSession {
         for e in events {
             match e {
                 RawEvent::KeyDown { key } => {
-                    if let Some(ActionEvent::Pressed(action)) =
-                        self.resolver
-                            .key_edge_in(bindings, *key, true, InputContext::Playback)
+                    if let Some(action) =
+                        self.resolver.press(bindings, *key, InputContext::Playback)
                     {
                         match action {
                             Action::Back => leave = true,
@@ -817,10 +816,7 @@ impl PlaybackSession {
                         }
                     }
                 }
-                RawEvent::KeyUp { key } => {
-                    self.resolver
-                        .key_edge_in(bindings, *key, false, InputContext::Playback);
-                }
+                RawEvent::KeyUp { key } => self.resolver.release(*key),
                 RawEvent::PadDown { button, .. } => match pad_press(*button) {
                     Some(PadPress::Transport(button)) => leave |= self.press(button),
                     Some(PadPress::SeekBack) => {

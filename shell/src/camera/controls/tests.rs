@@ -9,12 +9,7 @@ fn camera() -> Camera {
 fn held_keys_pan_at_the_preferred_speed_in_any_view() {
     let mut resolver = ActionResolver::default();
     let bindings = crate::action::BindingMap::classic();
-    resolver.key_edge_in(
-        &bindings,
-        Key::Right,
-        true,
-        crate::action::Context::FinalMap,
-    );
+    resolver.press(&bindings, Key::Right, crate::action::Context::FinalMap);
     assert_eq!(held_pan(&resolver), vec2(1.0, 0.0));
 
     let mut slow = camera();
