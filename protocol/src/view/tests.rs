@@ -385,8 +385,8 @@ fn the_overlaid_debug_map_is_a_picture_not_a_parseable_scenario() {
 fn parity_world() -> aftermine_sim::State {
     // Each seat refits its home Extractor into a Deep Bore at once, and West
     // then starts a Maw cradle, so both public rules are compared as well.
-    // East's Lattice assembles a round where West's raid can see it, and
-    // East's Bombard shells the raid.
+    // East's Lattice assembles a round and its Foundry trains where West's
+    // raid can see them, and East's Bombard shells the raid.
     let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.units.push(aftermine_sim::scenario::UnitSpec {
         player: 1,
@@ -452,6 +452,20 @@ fn parity_world() -> aftermine_sim::State {
                 .map(|b| aftermine_sim::PlayerCommand {
                     player: b.player,
                     command: aftermine_sim::Command::UpgradeBuilding { building: b.id },
+                }),
+        )
+        .chain(
+            state
+                .buildings()
+                .iter()
+                .filter(|b| b.player.0 == 1 && b.kind == aftermine_sim::BuildingKind::Foundry)
+                .flat_map(|b| [b.id; 5])
+                .map(|building| aftermine_sim::PlayerCommand {
+                    player: PlayerId(1),
+                    command: aftermine_sim::Command::Train {
+                        building,
+                        kind: aftermine_sim::UnitKind::Harvester,
+                    },
                 }),
         )
         .collect();
@@ -526,6 +540,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     let mut compared_tiered_ghost = false;
     let mut compared_hostile_assembly = false;
     let mut compared_shells = false;
+    let mut compared_hostile_works = false;
     let mut cradle_ordered = false;
     for tick in 0..1_500 {
         if tick % 25 == 0 {
@@ -571,6 +586,16 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     fog_buildings, obs_buildings,
                     "tick {tick} seat {seat:?} buildings"
                 );
+                let fog_works: Vec<_> = fog
+                    .buildings
+                    .iter()
+                    .filter_map(|b| Some((aftermine_sim::BuildingId(b.id), b.works?)))
+                    .collect();
+                assert_eq!(fog_works, obs.works, "tick {tick} seat {seat:?} works");
+                compared_hostile_works |= obs
+                    .works
+                    .iter()
+                    .any(|(id, _)| obs.enemy_buildings.iter().any(|b| b.id == *id));
 
                 let key = |owner: u8, kind, x, y, tier| (owner, kind, x, y, tier);
                 let fog_ghosts: BTreeSet<_> = fog
@@ -698,6 +723,10 @@ fn the_fog_view_and_the_bot_observation_agree() {
         "a hostile round in assembly was compared"
     );
     assert!(compared_shells, "a hostile shell in flight was compared");
+    assert!(
+        compared_hostile_works,
+        "a hostile producer at work was compared"
+    );
 }
 
 #[test]

@@ -680,3 +680,54 @@ fn piledriver_reload_runs_through_every_pose_even_when_driving() {
         UnitFrame::Idle
     );
 }
+
+#[test]
+fn a_producer_draws_no_more_of_its_queue_than_its_works_tell_everyone() {
+    use crate::presentation_animation::{
+        AnimationClock, AnimationController, AnimationOptions, BuildingAnimationFacts,
+    };
+    use aftermine_sim::observation::Works;
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
+    let foundry = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Foundry)
+        .unwrap();
+    let controller = AnimationController::default();
+    for (kind, unit) in [
+        (BuildingKind::Foundry, UnitKind::Sentinel),
+        (BuildingKind::Airworks, UnitKind::Buzzard),
+    ] {
+        let mut producer = foundry.clone();
+        producer.kind = kind;
+        let total = unit.stats().train_ticks;
+        let training_frames = production_frames(kind).unwrap();
+        for queue in [vec![], vec![unit]] {
+            producer.queue = queue.into();
+            for training in 0..=total {
+                producer.phase = aftermine_sim::BuildingPhase::Built { training };
+                for reduced_motion in [false, true] {
+                    let animation = controller.building_state(
+                        BuildingAnimationFacts::capture(&state, &producer),
+                        AnimationClock::from_state(&state, 0.0),
+                        AnimationOptions { reduced_motion },
+                    );
+                    let shown = match building_frame(kind, animation).body {
+                        BuildingBodyFrame::Idle => None,
+                        BuildingBodyFrame::Work(frame) if frame < training_frames => {
+                            Some(Works::Training)
+                        }
+                        BuildingBodyFrame::Work(2) => Some(Works::BayOpening),
+                        BuildingBodyFrame::Work(3) => Some(Works::BayOpen),
+                        other => panic!("{kind:?} drew {other:?}"),
+                    };
+                    assert_eq!(
+                        shown,
+                        Works::of(&producer),
+                        "{kind:?} at {training} of {total}"
+                    );
+                }
+            }
+        }
+    }
+}

@@ -204,6 +204,10 @@ pub struct BuildingView {
     /// building's tier shows in its silhouette on the ground.
     #[serde(default, skip_serializing_if = "is_default")]
     pub tier: u8,
+    /// What a producer's machinery shows while it works. Visible in every
+    /// view, as the building's art shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub works: Option<aftermine_sim::observation::Works>,
 }
 
 /// The world as one seat knows it: the fog-honest debug and agent
@@ -660,11 +664,13 @@ fn building_view(b: &Building) -> BuildingView {
             .construction_progress()
             .unwrap_or_else(|| b.training_progress()),
         tier: b.tier,
+        works: aftermine_sim::observation::Works::of(b),
     }
 }
 
-/// A hostile building as the viewer sees it: hull, scaffold stage, and
-/// wounds, but never its production queue, rally point, or focus target.
+/// A hostile building as the viewer sees it: hull, scaffold stage, wounds
+/// and what its machinery shows, but never its production queue, rally
+/// point, or focus target.
 fn building_view_redacted(b: &Building) -> BuildingView {
     BuildingView {
         queue: None,
