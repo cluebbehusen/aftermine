@@ -679,27 +679,26 @@ fn composition_band(
     bar: macroquad::prelude::Rect,
     s: f32,
 ) {
+    use aftermine_sim::UnitKind;
     use std::collections::BTreeMap;
     let columns = stats.sample_ticks.len();
     if columns == 0 {
         return;
     }
     // Pool seats per column, and rank kinds by their peak pooled count.
-    let mut pooled: Vec<BTreeMap<&'static str, u32>> = vec![BTreeMap::new(); columns];
-    let mut peak: BTreeMap<&'static str, u32> = BTreeMap::new();
+    let mut pooled: Vec<BTreeMap<UnitKind, u32>> = vec![BTreeMap::new(); columns];
+    let mut peak: BTreeMap<UnitKind, u32> = BTreeMap::new();
     for player in &stats.players {
         for (column, counts) in player.kinds.iter().enumerate() {
             for (kind, count) in counts {
-                let entry = pooled[column].entry(kind).or_default();
+                let entry = pooled[column].entry(*kind).or_default();
                 *entry += u32::from(*count);
-                let best = peak.entry(kind).or_default();
+                let best = peak.entry(*kind).or_default();
                 *best = (*best).max(*entry);
             }
         }
     }
-    let mut ranked: Vec<(&'static str, u32)> = peak.into_iter().collect();
-    ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
-    let named: Vec<&'static str> = ranked.iter().take(8).map(|(kind, _)| *kind).collect();
+    let named = ranked_kinds(peak);
 
     let band = macroquad::prelude::Rect::new(bar.x, bar.y - STATS_BAND_RISE * s, bar.w, 72.0 * s);
     fill_rect(band, theme::SURFACE_CAPTION);
@@ -747,16 +746,26 @@ fn composition_band(
     let mut x = band.x + 4.0 * s;
     let size = crate::theme::Type::Small.at(s);
     for (index, kind) in named.iter().enumerate() {
-        let label = format!("{} ", legend_label(kind));
+        let label = format!("{} ", legend_label(*kind));
         draw_text(&label, x, band.y - 4.0 * s, size, BAND_COLORS[index]);
         x += measure_text(&label, None, numeric::font_size(size), 1.0).width + 6.0 * s;
     }
     stroke_rect(band, theme::Stroke::Edge.at(s), theme::EDGE_CHIP);
 }
 
+/// The kinds the composition band names: the eight with the highest peak,
+/// ties in name order.
+fn ranked_kinds(
+    peak: std::collections::BTreeMap<aftermine_sim::UnitKind, u32>,
+) -> Vec<aftermine_sim::UnitKind> {
+    let mut ranked: Vec<_> = peak.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.name().cmp(b.0.name())));
+    ranked.into_iter().take(8).map(|(kind, _)| kind).collect()
+}
+
 /// A kind's name in the composition legend, as the Roster spells it.
-fn legend_label(kind: &str) -> String {
-    crate::typography::entity_name(kind)
+fn legend_label(kind: aftermine_sim::UnitKind) -> String {
+    crate::typography::entity_name(kind.name())
 }
 
 impl PlaybackSession {
