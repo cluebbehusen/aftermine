@@ -345,6 +345,57 @@ fn the_build_lesson_plays_as_its_controller_card_says() {
 }
 
 #[test]
+fn the_build_lesson_s_lt_chain_ends_with_b_as_its_controller_card_says() {
+    let (mut game, mut input) = pad_begin(Lesson::Build);
+    place(
+        &mut game,
+        &mut input,
+        &["Build", "Production", "Fabricator"],
+        BuildingKind::Fabricator,
+        FABRICATOR_SPOT,
+    );
+    run_to(&mut game, &input, Some("Build three Barricades"));
+
+    assert!(
+        pad_copy(&game).contains("hold LT and press A on three spots, and press B to stop placing")
+    );
+    let builder = own(&game, UnitKind::Harvester)[0].1;
+    tap_at(&mut game, &mut input, builder, PadButton::South);
+    command(&mut game, &mut input, &["Build", "Defense", "Barricade"]);
+    hold(&mut game, &mut input, PadButton::LeftTrigger);
+    for spot in BARRICADES {
+        tap_at(&mut game, &mut input, spot, PadButton::South);
+    }
+    let_go(&mut game, &mut input, PadButton::LeftTrigger);
+    assert_eq!(
+        placed(&game, BuildingKind::Barricade),
+        3,
+        "a held LT chains them"
+    );
+    assert!(input.placing.is_some(), "letting go of LT keeps placing");
+    tap(&mut game, &mut input, PadButton::East);
+    assert!(input.placing.is_none(), "B stops placing");
+    assert!(input.ring.is_none(), "without opening the build ring");
+    assert!(!input.construction_open(), "and closes construction");
+    run_to(&mut game, &input, Some("Set a rally point"));
+
+    let fabricator = own_building(&game, BuildingKind::Fabricator);
+    tap_at(&mut game, &mut input, fabricator, PadButton::South);
+    assert_eq!(
+        game.presentation.selection.buildings.len(),
+        1,
+        "A selects the Fabricator"
+    );
+    tap_at(&mut game, &mut input, RALLY_SPOT, PadButton::West);
+    assert!(
+        game.pending
+            .iter()
+            .any(|c| matches!(c.command, Command::SetRally { rally: Some(_), .. })),
+        "X on ground with the Fabricator selected rallies it"
+    );
+}
+
+#[test]
 fn the_fight_lesson_plays_as_its_controller_card_says() {
     let (mut game, mut input) = pad_begin(Lesson::Fight);
     let order_to = |game: &mut Game, input: &mut InputState, verb: &str, world: Vec2| {

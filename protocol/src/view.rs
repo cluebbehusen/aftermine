@@ -103,7 +103,9 @@ pub struct UnitView {
     pub tile: [i32; 2],
     /// Hit points.
     pub hp: u32,
-    /// Scrap on board.
+    /// Scrap on board. A hostile row reads the exact load, which the screen
+    /// shows only as one of five fill levels and the bots' observation
+    /// reads as zero.
     pub carrying: u32,
     /// Current intent, as the sim's own tagged serialization. `None` when
     /// the fog view redacts a hostile unit's intent; omniscient captures
@@ -202,6 +204,10 @@ pub struct BuildingView {
     /// building's tier shows in its silhouette on the ground.
     #[serde(default, skip_serializing_if = "is_default")]
     pub tier: u8,
+    /// What a producer's machinery shows while it works. Visible in every
+    /// view, as the building's art shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub works: Option<aftermine_sim::observation::Works>,
 }
 
 /// The world as one seat knows it: the fog-honest debug and agent
@@ -252,7 +258,8 @@ pub struct FogView {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub public_buildings: Vec<PublicBuildingView>,
     /// Magazines the seat may know of, in building-id order: its team's in
-    /// full, hostile loaded rounds and silo decks only while in sight.
+    /// full, hostile loaded rounds, rounds in assembly and silo decks only
+    /// while in sight.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub magazines: Vec<aftermine_sim::strike::KnownMagazine>,
     /// Warheads in flight the seat may know of, in id order: its team's in
@@ -260,6 +267,10 @@ pub struct FogView {
     /// tracked.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warheads: Vec<aftermine_sim::strike::KnownWarhead>,
+    /// Impact tiles `[x, y]` of hostile shells in flight whose impact tile
+    /// the seat sees, sorted by (y, x).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub incoming_shells: Vec<[i32; 2]>,
 }
 
 /// A hostile building every seat knows of regardless of fog.
@@ -408,6 +419,10 @@ impl FogView {
                 .collect(),
             magazines: state.known_magazines(player),
             warheads: state.known_warheads(player),
+            incoming_shells: aftermine_sim::observation::incoming_shells(state, player)
+                .into_iter()
+                .map(|tile| [tile.x, tile.y])
+                .collect(),
         }
     }
 }
@@ -649,11 +664,13 @@ fn building_view(b: &Building) -> BuildingView {
             .construction_progress()
             .unwrap_or_else(|| b.training_progress()),
         tier: b.tier,
+        works: aftermine_sim::observation::Works::of(b),
     }
 }
 
-/// A hostile building as the viewer sees it: hull, scaffold stage, and
-/// wounds, but never its production queue, rally point, or focus target.
+/// A hostile building as the viewer sees it: hull, scaffold stage, wounds
+/// and what its machinery shows, but never its production queue, rally
+/// point, or focus target.
 fn building_view_redacted(b: &Building) -> BuildingView {
     BuildingView {
         queue: None,

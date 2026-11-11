@@ -576,6 +576,39 @@ fn a_modifier_held_on_another_screen_still_captures_its_chord() -> Result<()> {
     Ok(())
 }
 
+/// Waits until the settings file under `home` binds `key` to `action` in
+/// either slot. The shell writes settings off its frame thread, so killing it
+/// the moment a row shows a change could lose the write.
+fn wait_for_saved_binding(home: &std::path::Path, key: &str, action: &str) -> Result<()> {
+    let saved = || {
+        [
+            "Library/Application Support/Aftermine",
+            ".config/aftermine",
+            "AppData/Aftermine",
+        ]
+        .iter()
+        .filter_map(|dir| std::fs::read(home.join(dir).join("config.json")).ok())
+        .filter_map(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .any(|config| {
+            ["bindings", "secondary"].iter().any(|slot| {
+                config["bindings"][slot].as_array().is_some_and(|bindings| {
+                    bindings.iter().any(|binding| {
+                        binding["chord"]["key"] == key && binding["action"] == action
+                    })
+                })
+            })
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !saved() {
+        if Instant::now() >= deadline {
+            bail!("the settings file never bound {key} to {action}");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    Ok(())
+}
+
 #[test]
 #[ignore = "spawns a real window; run explicitly in the phase battery"]
 fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction() -> Result<()> {
@@ -585,12 +618,13 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
     select_labeled(&mut client, "pan up:")?;
     press_key(&mut client, Key::Right)?;
     press_key(&mut client, Key::Enter)?;
-    press_key(&mut client, Key::I)?;
+    press_key(&mut client, Key::L)?;
     let rows = ui(&mut client)?.items;
     assert!(
-        rows.iter().any(|row| row.contains("Pan up: W | [I]")),
+        rows.iter().any(|row| row.contains("Pan up: W | [L]")),
         "{rows:?}"
     );
+    wait_for_saved_binding(&guard.home, "i", "PanUp")?;
     drop(client);
     drop(guard.shell.take());
     let (shell, reconnected) = spawn_shell(&SpawnOptions {
@@ -606,7 +640,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
         ui(&mut client)?
             .items
             .iter()
-            .any(|row| row.contains("Pan up: [W] | I"))
+            .any(|row| row.contains("Pan up: [W] | L"))
     );
     let mut scenario = aftermine_sim::Scenario::skirmish();
     scenario.players[0].scrap = 10000;
@@ -639,7 +673,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
         Ok(camera.center)
     };
     let before = camera(&mut client)?;
-    for key in [Key::W, Key::I] {
+    for key in [Key::W, Key::L] {
         client.call(Request::InjectEvent {
             event: RawEvent::KeyDown { key },
         })?;
@@ -651,7 +685,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
     let halfway = camera(&mut client)?;
     std::thread::sleep(std::time::Duration::from_millis(120));
     client.call(Request::InjectEvent {
-        event: RawEvent::KeyUp { key: Key::I },
+        event: RawEvent::KeyUp { key: Key::L },
     })?;
     let after = camera(&mut client)?;
     assert!(

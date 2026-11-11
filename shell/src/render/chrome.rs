@@ -448,6 +448,115 @@ pub(crate) fn draw_army_tooltip(
     );
 }
 
+/// What a press on a control-group slot does, worded as its tooltip: a
+/// saved group selects and the "+" saves the selection there. Keys show
+/// only to a player who has pressed one, and only while bound. An empty
+/// group's place has no tooltip, since a plain press there does nothing.
+fn group_tooltip(
+    slot: crate::layout::GroupSlot,
+    hands: crate::platform::Hands,
+    bindings: &crate::action::BindingMap,
+) -> Option<crate::panel::Card> {
+    use crate::action::Action;
+    use crate::layout::GroupSlot;
+    let key = |action| {
+        bindings
+            .chord_for(action)
+            .filter(|_| hands.keys)
+            .map(crate::action::BindingMap::chord_label)
+            .unwrap_or_default()
+    };
+    let (title, hotkey, desc) = match slot {
+        GroupSlot::Recall(n) => {
+            let tap = crate::platform::tap_or_click_capitalized(hands.touch());
+            let mut desc = vec![format!("{tap} twice to move the camera to it.")];
+            let assign = key(Action::AssignGroup(n));
+            let press = if assign.is_empty() {
+                String::new()
+            } else {
+                format!(" or press {assign}")
+            };
+            desc.extend(match (hands.touch(), hands.keys) {
+                (false, true) => Some(format!(
+                    "Ctrl-click{press} to save the selection here instead."
+                )),
+                (true, _) => Some(format!(
+                    "Long-press{press} to save the selection here instead."
+                )),
+                (false, false) => None,
+            });
+            (format!("Select group {n}"), key(Action::Slot(n)), desc)
+        }
+        GroupSlot::Assign(n) => (
+            format!("Save the selection as group {n}"),
+            key(Action::AssignGroup(n)),
+            Vec::new(),
+        ),
+        GroupSlot::Empty(_) => return None,
+    };
+    Some(crate::panel::Card {
+        icon: crate::panel::CardIcon::Verb(crate::panel::VerbIcon::Cancel),
+        title,
+        cost: None,
+        hotkey,
+        action: crate::panel::CardAction::None,
+        enabled: true,
+        why: None,
+        desc,
+        progress: None,
+        autocast: None,
+        hold: None,
+    })
+}
+
+/// The tooltip of the control-group slot under the pointer, beside the
+/// column so it never covers the neighbouring slots.
+pub(crate) fn draw_group_tooltip(
+    game: &crate::game::Scene<'_>,
+    input: &InputState,
+    bindings: &crate::action::BindingMap,
+) {
+    let s = ui_scale();
+    let layout = game.presentation.layout.get();
+    let pointer = match input.touch_preview() {
+        Some(p) => Some((p, Some(s))),
+        None => input.chrome_hover_point().map(|p| (p, None)),
+    };
+    let Some(slot) =
+        pointer.and_then(|(p, touch_ui)| crate::layout::group_slot_under(&layout, p, touch_ui))
+    else {
+        return;
+    };
+    let Some((rect, _)) = layout
+        .group_slots
+        .iter()
+        .flatten()
+        .find(|(_, under)| *under == slot)
+    else {
+        return;
+    };
+    let Some(card) = group_tooltip(slot, crate::platform::hands(), bindings) else {
+        return;
+    };
+    let column = layout.group_column;
+    let anchor = Rect::new(column.x, rect.y, column.w.max(rect.w), rect.h);
+    super::panel_draw::draw_card_tooltip(
+        &card,
+        None,
+        (400.0 * s).min(screen_width() - 40.0 * s),
+        |size| {
+            crate::layout::tooltip_origin(
+                anchor,
+                size,
+                crate::layout::TooltipSide::LeftOf,
+                vec2(screen_width(), screen_height()),
+                layout.top_bar_h,
+                6.0 * s,
+            )
+        },
+    );
+}
+
 /// Three bars on the badge fill: the glyph needs no font coverage or
 /// atlas entry, and whole-rect fills stay crisp at any scale.
 fn draw_menu_button(rect: Rect, s: f32) {
@@ -903,7 +1012,7 @@ pub(super) fn queue_flag_layout(
     let h = QUEUE_TAB_H * s;
     let left = game
         .corner_card
-        .map_or(0.0, |card| (card.right(env) + 8.0 * s).round());
+        .map_or(0.0, |card| (card.right() + 8.0 * s).round());
     let readout = (performance.w > 0.0 && performance.y < y + h && performance.bottom() > y)
         .then_some(performance);
     let right = readout.map_or(viewport.x - 12.0 * s, |panel| panel.x - 8.0 * s);
@@ -1109,14 +1218,15 @@ pub(crate) struct RibbonLayout {
     pub(super) status: Option<RibbonStatus>,
     pub(super) salvo: Option<SalvoSteppers>,
     pub(super) patrol: Option<PatrolButtons>,
+    /// The cross at the ribbon's right end, which cancels the mode. The
+    /// rest of the ribbon only names it.
+    pub(super) cancel: Rect,
 }
 
-/// A patrol ribbon's buttons: Start, lit once the route has a point, and
-/// the cross that drops the route.
+/// A patrol ribbon's Start, lit once the route has a point.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PatrolButtons {
     pub(crate) start: Rect,
-    pub(crate) cancel: Rect,
     pub(crate) ready: bool,
 }
 
@@ -1198,7 +1308,8 @@ pub(super) fn ribbon_layout(
         label_w
     };
     let start_w = measure(Face::Body, PATROL_START, label_size) + 36.0 * s;
-    let patrol_w = patrol.map_or(0.0, |_| 16.0 * s + start_w + 6.0 * s + STEPPER * s);
+    let patrol_w = patrol.map_or(0.0, |_| 16.0 * s + start_w);
+    let cancel_w = 6.0 * s + STEPPER * s;
     let cost_w = cost.as_deref().map_or(0.0, |cost| {
         12.0 * s + measure(Face::Body, cost, crate::theme::Type::Body.at(s))
     });
@@ -1227,7 +1338,7 @@ pub(super) fn ribbon_layout(
         );
         (widest - label_w).max(0.0) + 8.0 * s + 2.0 * STEPPER * s + 4.0 * s
     });
-    let content = icon_w + (words_w + cost_w).max(status_w) + steppers_w + patrol_w;
+    let content = icon_w + (words_w + cost_w).max(status_w) + steppers_w + patrol_w + cancel_w;
     let size = (
         ribbon_width(viewport, s, content),
         ribbon_height(s, status.is_some()),
@@ -1240,6 +1351,9 @@ pub(super) fn ribbon_layout(
         .map(|r| r.y)
         .fold(f32::INFINITY, f32::min);
     let rect = ribbon_geometry(viewport, s, panel_top, size, minimap);
+    let side = STEPPER * s;
+    let button_y = rect.y + (crate::theme::MIN_TOUCH_TARGET * s - side) * 0.5;
+    let cancel = Rect::new(rect.x + rect.w - 4.0 * s - side, button_y, side, side);
     Some(RibbonLayout {
         rect,
         label,
@@ -1249,26 +1363,19 @@ pub(super) fn ribbon_layout(
         icon_w,
         status,
         salvo: salvo.map(|(fires, ready)| {
-            let side = STEPPER * s;
-            let y = rect.y + (crate::theme::MIN_TOUCH_TARGET * s - side) * 0.5;
-            let more = Rect::new(rect.x + rect.w - 4.0 * s - side, y, side, side);
+            let more = Rect::new(cancel.x - 6.0 * s - side, button_y, side, side);
             SalvoSteppers {
-                less: Rect::new(more.x - 4.0 * s - side, y, side, side),
+                less: Rect::new(more.x - 4.0 * s - side, button_y, side, side),
                 more,
                 less_enabled: fires > 1,
                 more_enabled: fires < ready,
             }
         }),
-        patrol: patrol.map(|ready| {
-            let side = STEPPER * s;
-            let y = rect.y + (crate::theme::MIN_TOUCH_TARGET * s - side) * 0.5;
-            let cancel = Rect::new(rect.x + rect.w - 4.0 * s - side, y, side, side);
-            PatrolButtons {
-                start: Rect::new(cancel.x - 6.0 * s - start_w, y, start_w, side),
-                cancel,
-                ready,
-            }
+        patrol: patrol.map(|ready| PatrolButtons {
+            start: Rect::new(cancel.x - 6.0 * s - start_w, button_y, start_w, side),
+            ready,
         }),
+        cancel,
     })
 }
 
@@ -1393,6 +1500,7 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
         status,
         salvo,
         patrol,
+        cancel,
     } = layout;
     let (ribbon, building, label_w, icon_w) = (*ribbon, *building, *label_w, *icon_w);
     // The label keeps the touch-target row; a status row hangs under it.
@@ -1436,8 +1544,9 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
         draw_salvo_steppers(sprites, steppers, input, s);
     }
     if let Some(buttons) = patrol {
-        draw_patrol_buttons(sprites, buttons, input, s);
+        draw_patrol_start(sprites, buttons, input, s);
     }
+    draw_ribbon_cancel(sprites, *cancel, input, s);
     if let Some(status) = status {
         let size = crate::theme::Type::Small.at(s);
         let baseline = ribbon.y + ribbon.h - 8.0 * s;
@@ -1454,12 +1563,11 @@ fn draw_mode_ribbon(sprites: &Sprites, layout: &RibbonLayout, input: &InputState
     }
 }
 
-/// The patrol ribbon's Start, lit amber once there is a point to loop,
-/// and its cross. In pad mode the buttons that do the same stand in for
-/// the word and the glyph: the command ring's button, since picking
-/// Patrol there again starts the loop, and Back, which drops the route.
-fn draw_patrol_buttons(sprites: &Sprites, buttons: &PatrolButtons, input: &InputState, s: f32) {
-    use crate::theme::{BORDER_FAINT, CARD_ARMED, CARD_HOVER, CARD_IDLE, EDGE_CARD, EDGE_FOCUS};
+/// The patrol ribbon's Start, lit amber once there is a point to loop. In
+/// pad mode the command ring's button stands in for the word, since
+/// picking Patrol there again starts the loop.
+fn draw_patrol_start(sprites: &Sprites, buttons: &PatrolButtons, input: &InputState, s: f32) {
+    use crate::theme::{BORDER_FAINT, CARD_ARMED, CARD_IDLE, EDGE_FOCUS};
     let hover = input.chrome_hover_point();
     let (start, ready) = (buttons.start, buttons.ready);
     let start_hovered = ready && hover.is_some_and(|p| start.contains(p));
@@ -1496,8 +1604,15 @@ fn draw_patrol_buttons(sprites: &Sprites, buttons: &PatrolButtons, input: &Input
             start_ink,
         );
     }
-    let cancel = buttons.cancel;
-    let cancel_hovered = hover.is_some_and(|p| cancel.contains(p));
+}
+
+/// The ribbon's cross, which cancels the mode; in pad mode the button
+/// that cancels stands in for the glyph.
+fn draw_ribbon_cancel(sprites: &Sprites, cancel: Rect, input: &InputState, s: f32) {
+    use crate::theme::{CARD_HOVER, CARD_IDLE, EDGE_CARD, EDGE_FOCUS};
+    let cancel_hovered = input
+        .chrome_hover_point()
+        .is_some_and(|p| cancel.contains(p));
     fill_rect(
         cancel,
         if cancel_hovered {
@@ -1515,7 +1630,7 @@ fn draw_patrol_buttons(sprites: &Sprites, buttons: &PatrolButtons, input: &Input
             EDGE_CARD
         },
     );
-    if let Some(family) = pad {
+    if let Some(family) = input.hud_hands().names() {
         draw_centered_button(sprites, family, crate::pad::BACK, cancel, s, TEXT_BODY);
         return;
     }

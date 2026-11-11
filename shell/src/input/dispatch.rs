@@ -65,7 +65,8 @@ pub(super) fn dispatch_action(
             if slot < input.groups.len() {
                 let own = super::Group::of_selection(&game.view());
                 let selection = &game.presentation.selection;
-                if own.len() < selection.units.len().max(selection.buildings.len()) {
+                let picked = selection.units.len().max(selection.buildings.len());
+                if own.len() < picked {
                     game.presentation.toast(match own {
                         super::Group::Units(_) => "Only your own units join a control group",
                         super::Group::Buildings(_) => {
@@ -78,7 +79,9 @@ pub(super) fn dispatch_action(
                 {
                     tutorial.note_group();
                 }
-                input.groups[slot] = own;
+                if picked == 0 || !own.is_empty() {
+                    input.groups[slot] = own;
+                }
             }
         }
         Action::ReturnCargo => {
@@ -454,6 +457,7 @@ pub(super) fn dispatch_action(
         Action::CycleIdleWorker => cycle_idle_worker(game, input),
         Action::SelectArmy => select_army(game, input, false),
         Action::SelectArmyInView => select_army(game, input, true),
+        Action::SelectAllOfKind => select_all_of_kind(game, input, bindings),
         Action::JumpToLastAlert => {
             if let Some(world) = game.presentation.last_alert {
                 super::reticle::look_at(game, input, world);
@@ -479,6 +483,25 @@ pub(super) fn dispatch_action(
                 super::reticle::look_at(game, input, *target);
             }
         }
+    }
+}
+
+/// Presses the panel's All button for a selection of one kind; with no
+/// such offer, as when every one is already selected, the press is refused.
+/// The panel is built afresh rather than read from the published one: a key
+/// can follow a click that changed the selection in the same batch, before
+/// any relayout.
+fn select_all_of_kind(
+    game: &mut Game,
+    input: &mut InputState,
+    bindings: &crate::action::BindingMap,
+) {
+    let offer = crate::panel::build_for_input(&game.view(), bindings, input)
+        .and_then(|panel| panel.select_all)
+        .map(|all| all.card.action);
+    match offer {
+        Some(action) => super::activate_card(game, input, bindings, action),
+        None => super::deny(game),
     }
 }
 

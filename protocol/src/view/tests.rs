@@ -380,17 +380,20 @@ fn the_overlaid_debug_map_is_a_picture_not_a_parseable_scenario() {
     }
 }
 
-/// Bots read `ObservationData` and agents read [`FogView`]; both are
-/// fog-honest projections of the same vision and must expose exactly the
-/// same world to the same seat.
-#[test]
-fn the_fog_view_and_the_bot_observation_agree() {
-    use aftermine_sim::observation::ObservationData;
-    use std::collections::BTreeSet;
-
+/// A skirmish staged for [`the_fog_view_and_the_bot_observation_agree`],
+/// one tick in.
+fn parity_world() -> aftermine_sim::State {
     // Each seat refits its home Extractor into a Deep Bore at once, and West
     // then starts a Maw cradle, so both public rules are compared as well.
+    // East's Lattice assembles a round and its Foundry trains where West's
+    // raid can see them, and East's Bombard shells the raid.
     let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
+        player: 1,
+        kind: aftermine_sim::UnitKind::Bombard,
+        x: 37,
+        y: 12,
+    });
     for player in &mut scenario.players {
         player.scrap = 1_000;
     }
@@ -400,6 +403,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
         (1, aftermine_sim::BuildingKind::Extractor, 30, 18),
         (0, aftermine_sim::BuildingKind::Crucible, 1, 1),
         (1, aftermine_sim::BuildingKind::Crucible, 37, 21),
+        (1, aftermine_sim::BuildingKind::Lattice, 35, 15),
     ] {
         scenario
             .buildings
@@ -423,14 +427,6 @@ fn the_fog_view_and_the_bot_observation_agree() {
         "tier": 1,
     }]);
     let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
-    let foundry = |state: &aftermine_sim::State, seat: u8| {
-        state
-            .buildings()
-            .iter()
-            .find(|b| b.player.0 == seat && b.kind == aftermine_sim::BuildingKind::Foundry)
-            .unwrap()
-            .anchor
-    };
     // Only West raids, so East meets hostiles at home while West's cradle
     // stays out of its sight.
     let raids: Vec<aftermine_sim::PlayerCommand> = [0u8]
@@ -458,12 +454,93 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     command: aftermine_sim::Command::UpgradeBuilding { building: b.id },
                 }),
         )
+        .chain(
+            state
+                .buildings()
+                .iter()
+                .filter(|b| b.player.0 == 1 && b.kind == aftermine_sim::BuildingKind::Foundry)
+                .flat_map(|b| [b.id; 5])
+                .map(|building| aftermine_sim::PlayerCommand {
+                    player: PlayerId(1),
+                    command: aftermine_sim::Command::Train {
+                        building,
+                        kind: aftermine_sim::UnitKind::Harvester,
+                    },
+                }),
+        )
         .collect();
     state.tick(&raids);
+    state
+}
+
+/// The anchor of `seat`'s Foundry.
+fn foundry(state: &aftermine_sim::State, seat: u8) -> TilePos {
+    state
+        .buildings()
+        .iter()
+        .find(|b| b.player.0 == seat && b.kind == aftermine_sim::BuildingKind::Foundry)
+        .unwrap()
+        .anchor
+}
+
+/// West's order for a Maw cradle near its Foundry, once its Deep Bore
+/// allows one.
+fn cradle_order(state: &aftermine_sim::State) -> Option<aftermine_sim::PlayerCommand> {
+    if !state.requirements_met(
+        PlayerId(0),
+        aftermine_sim::BuildingKind::MawCradle
+            .base_stats()
+            .construction
+            .requires,
+    ) {
+        return None;
+    }
+    let home = foundry(state, 0);
+    let anchor = (0..12)
+        .flat_map(|dy| (0..12).map(move |dx| home.offset(dx, dy)))
+        .find(|&anchor| {
+            state
+                .place_refusal(PlayerId(0), aftermine_sim::BuildingKind::MawCradle, anchor)
+                .is_none()
+        })
+        .expect("room for a cradle near West's Foundry");
+    let worker = state
+        .units()
+        .iter()
+        .find(|u| u.player.0 == 0 && u.kind.stats().harvest.is_some())
+        .unwrap()
+        .id;
+    Some(aftermine_sim::PlayerCommand {
+        player: PlayerId(0),
+        command: aftermine_sim::Command::Build {
+            units: vec![worker],
+            kind: aftermine_sim::BuildingKind::MawCradle,
+            anchor,
+            queue: false,
+            defer: false,
+        },
+    })
+}
+
+/// Bots read `ObservationData` and agents read [`FogView`]; both are
+/// fog-honest projections of the same vision and must expose exactly the
+/// same world to the same seat. One field differs on purpose and is not
+/// compared: a hostile unit row in [`FogView`] reads its exact scrap load,
+/// which the screen shows only as one of five fill levels and the bots read
+/// as zero.
+#[test]
+fn the_fog_view_and_the_bot_observation_agree() {
+    use aftermine_sim::observation::ObservationData;
+    use std::collections::BTreeSet;
+
+    let mut state = parity_world();
     let mut compared_hostiles = false;
     let mut compared_public = false;
     let mut compared_cradle = false;
     let mut compared_tiered_ghost = false;
+    let mut compared_hostile_assembly = false;
+    let mut compared_shells = false;
+    let mut compared_hostile_works = false;
     let mut cradle_ordered = false;
     for tick in 0..1_500 {
         if tick % 25 == 0 {
@@ -481,6 +558,21 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .collect();
                 assert_eq!(fog_units, obs_units, "tick {tick} seat {seat:?} units");
                 compared_hostiles |= !obs.enemy_units.is_empty();
+                let mut fog_rows: Vec<_> = fog
+                    .units
+                    .iter()
+                    .map(|u| (u.id, u.hp, u.landed, u.charges))
+                    .collect();
+                fog_rows.sort_unstable();
+                let mut obs_rows: Vec<_> = obs
+                    .my_units
+                    .iter()
+                    .chain(&obs.ally_units)
+                    .chain(&obs.enemy_units)
+                    .map(|u| (u.id.0, u.hp, u.grounded, u.charges))
+                    .collect();
+                obs_rows.sort_unstable();
+                assert_eq!(fog_rows, obs_rows, "tick {tick} seat {seat:?} unit rows");
 
                 let fog_buildings: BTreeSet<u32> = fog.buildings.iter().map(|b| b.id).collect();
                 let obs_buildings: BTreeSet<u32> = obs
@@ -494,6 +586,16 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     fog_buildings, obs_buildings,
                     "tick {tick} seat {seat:?} buildings"
                 );
+                let fog_works: Vec<_> = fog
+                    .buildings
+                    .iter()
+                    .filter_map(|b| Some((aftermine_sim::BuildingId(b.id), b.works?)))
+                    .collect();
+                assert_eq!(fog_works, obs.works, "tick {tick} seat {seat:?} works");
+                compared_hostile_works |= obs
+                    .works
+                    .iter()
+                    .any(|(id, _)| obs.enemy_buildings.iter().any(|b| b.id == *id));
 
                 let key = |owner: u8, kind, x, y, tier| (owner, kind, x, y, tier);
                 let fog_ghosts: BTreeSet<_> = fog
@@ -561,6 +663,20 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     fog.magazines, obs.magazines,
                     "tick {tick} seat {seat:?} magazines"
                 );
+                compared_hostile_assembly |= obs
+                    .magazines
+                    .iter()
+                    .any(|magazine| magazine.detail.is_none() && magazine.assembly.is_some());
+                let fog_shells: Vec<TilePos> = fog
+                    .incoming_shells
+                    .iter()
+                    .map(|&[x, y]| TilePos::new(x, y))
+                    .collect();
+                assert_eq!(
+                    fog_shells, obs.incoming_shells,
+                    "tick {tick} seat {seat:?} incoming shells"
+                );
+                compared_shells |= !obs.incoming_shells.is_empty();
                 assert_eq!(
                     fog.warheads, obs.warheads,
                     "tick {tick} seat {seat:?} warheads"
@@ -575,43 +691,14 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 });
             }
         }
-        let mut orders = Vec::new();
-        if !cradle_ordered
-            && state.requirements_met(
-                PlayerId(0),
-                aftermine_sim::BuildingKind::MawCradle
-                    .base_stats()
-                    .construction
-                    .requires,
-            )
-        {
-            let home = foundry(&state, 0);
-            let anchor = (0..12)
-                .flat_map(|dy| (0..12).map(move |dx| home.offset(dx, dy)))
-                .find(|&anchor| {
-                    state
-                        .place_refusal(PlayerId(0), aftermine_sim::BuildingKind::MawCradle, anchor)
-                        .is_none()
-                })
-                .expect("room for a cradle near West's Foundry");
-            let worker = state
-                .units()
-                .iter()
-                .find(|u| u.player.0 == 0 && u.kind.stats().harvest.is_some())
-                .unwrap()
-                .id;
-            orders.push(aftermine_sim::PlayerCommand {
-                player: PlayerId(0),
-                command: aftermine_sim::Command::Build {
-                    units: vec![worker],
-                    kind: aftermine_sim::BuildingKind::MawCradle,
-                    anchor,
-                    queue: false,
-                    defer: false,
-                },
-            });
-            cradle_ordered = true;
+        let orders: Vec<_> = if cradle_ordered {
+            None
+        } else {
+            cradle_order(&state)
         }
+        .into_iter()
+        .collect();
+        cradle_ordered |= !orders.is_empty();
         state.tick(&orders);
     }
     assert!(
@@ -630,6 +717,15 @@ fn the_fog_view_and_the_bot_observation_agree() {
     assert!(
         compared_tiered_ghost,
         "an upgraded building out of sight was compared"
+    );
+    assert!(
+        compared_hostile_assembly,
+        "a hostile round in assembly was compared"
+    );
+    assert!(compared_shells, "a hostile shell in flight was compared");
+    assert!(
+        compared_hostile_works,
+        "a hostile producer at work was compared"
     );
 }
 

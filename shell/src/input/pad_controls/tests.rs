@@ -422,13 +422,6 @@ fn rt_moves_on_from_a_kind_whose_last_member_is_gone() {
     );
 }
 
-/// Publishes the panel as the HUD's layout pass does before input, so RT
-/// reads the All button the frame shows.
-fn publish(game: &Game, input: &InputState) {
-    *game.presentation.panel_model.borrow_mut() =
-        crate::panel::build_for_input(&game.view(), &BindingMap::classic(), input);
-}
-
 #[test]
 fn rt_widens_one_kind_to_every_one_of_it_as_the_all_button_does() {
     let mut game = scene(
@@ -443,7 +436,6 @@ fn rt_widens_one_kind_to_every_one_of_it_as_the_all_button_does() {
     );
     let mut input = pad_input(&mut game);
     game.presentation.selection.units = vec![unit_at(&game, 30, 20), unit_at(&game, 31, 20)];
-    publish(&game, &input);
     press(&mut game, &mut input, PadButton::RightTrigger);
     assert_eq!(
         game.presentation.selection.units,
@@ -459,7 +451,6 @@ fn rt_refuses_one_kind_once_every_one_is_selected() {
     let mut input = pad_input(&mut game);
     let both = units_of(&game, 0, SENTINEL);
     game.presentation.selection.units = both.clone();
-    publish(&game, &input);
     press(&mut game, &mut input, PadButton::RightTrigger);
     assert!(denied(&game));
     assert_eq!(game.presentation.selection.units, both);
@@ -487,7 +478,6 @@ fn rt_walks_structure_kinds_in_roster_order_then_widens_one_kind() {
         assert_eq!(game.presentation.selection.buildings, step);
     }
     game.presentation.selection.buildings = vec![turret];
-    publish(&game, &input);
     press(&mut game, &mut input, PadButton::RightTrigger);
     let mut turrets = vec![turret, other];
     turrets.sort_unstable();

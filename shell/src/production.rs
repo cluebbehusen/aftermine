@@ -98,16 +98,25 @@ impl Production {
             batch.reason = Some(crate::building_actions::needs_standing(&[*req]));
             return Some(batch);
         }
-        let mut bank = self.selected.scrap;
         let mut full = 0;
         let mut offline = 0;
-        let mut unfunded = 0;
+        let mut ready = Vec::new();
         for building in candidates {
             if !building.built() || !building.stats().produces.contains(&kind) {
                 offline += 1;
             } else if building.queue.len() >= aftermine_sim::stats::QUEUE_CAP {
                 full += 1;
-            } else if bank < kind.stats().cost {
+            } else {
+                ready.push(building);
+            }
+        }
+        // When scrap cannot cover every ready producer, the queues that
+        // would empty soonest get the units.
+        ready.sort_by_key(|b| (queue_ticks(b), b.queue.len(), b.id));
+        let mut bank = self.selected.scrap;
+        let mut unfunded = 0;
+        for building in ready {
+            if bank < kind.stats().cost {
                 unfunded += 1;
             } else {
                 bank -= kind.stats().cost;
@@ -281,6 +290,16 @@ impl Production {
         }
         (cards, groups)
     }
+}
+
+/// Ticks of training left on everything a producer has queued.
+fn queue_ticks(building: &Building) -> u32 {
+    building
+        .queue
+        .iter()
+        .map(|kind| kind.stats().train_ticks)
+        .sum::<u32>()
+        .saturating_sub(building.training_progress())
 }
 
 pub(crate) fn train(game: &mut Game, slot: usize) {

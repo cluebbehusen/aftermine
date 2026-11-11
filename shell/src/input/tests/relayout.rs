@@ -5,7 +5,7 @@ use super::*;
 use crate::render::hud::{self, HudEnv};
 
 /// Lays the HUD out headlessly in the 1280x800 test window.
-fn relayout(game: &Game, input: &InputState) {
+pub(super) fn relayout(game: &Game, input: &InputState) {
     hud::refresh(
         &game.view(),
         input,

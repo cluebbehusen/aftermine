@@ -128,7 +128,7 @@ impl SelectedBuildings {
                 game.state.accepts_commands(game.presentation.human),
             )
         } else {
-            game.state.inspect_command_phase(game.pending, |state| {
+            game.with_staged(|state| {
                 snapshot(
                     state.buildings(),
                     state.scrap(game.presentation.human).unwrap_or(0),
@@ -628,9 +628,11 @@ impl SelectedBuildings {
         if !sites.is_empty() {
             cards.push(Card {
                 icon: CardIcon::Verb(VerbIcon::Cancel),
-                title: if plural { format!("Scrap {} sites", sites.len()) } else { "Scrap site".into() },
+                title: if sites.len() > 1 { format!("Scrap {} sites", sites.len()) } else { "Scrap site".into() },
                 cost: None,
-                hotkey: if defenses.is_empty() { bindings.labels(Action::StopOrScrap) } else { String::new() },
+                // Beside a defense X clears its target, and beside a
+                // producer keys read as production, where X does nothing.
+                hotkey: if defenses.is_empty() && producers.is_empty() { bindings.labels(Action::StopOrScrap) } else { String::new() },
                 action: CardAction::ScrapSites,
                 enabled: true,
                 why: None,

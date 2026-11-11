@@ -539,7 +539,7 @@ impl ResultsScreen {
     }
 
     /// Draws the report over the rendered battlefield.
-    pub fn draw(&self, game: &Game, sprites: &crate::assets::Sprites) {
+    pub fn draw(&self, game: &Game, sprites: &crate::assets::Sprites, mouse: Vec2) {
         let viewport = render::viewport();
         let s = render::ui_scale();
         draw_rectangle(0.0, 0.0, viewport.x, viewport.y, theme::VEIL);
@@ -752,14 +752,8 @@ impl ResultsScreen {
                     layout.graph_label_size,
                     s,
                 );
-                self.chart.draw(
-                    game,
-                    sprites,
-                    report,
-                    &chart_layout,
-                    s,
-                    layout.graph_label_size,
-                );
+                self.chart
+                    .draw(game, sprites, report, &chart_layout, mouse, s);
             }
         }
 

@@ -13,6 +13,7 @@ use crate::render::sky::{
     Flight, INTERCEPTOR_TAIL, InterceptorPath, SCALE_PER_TILE, SHADOW_PER_TILE, WARHEAD_TAIL,
 };
 use aftermine_sim::Building;
+use aftermine_sim::strike::KnownMagazine;
 use assembly::{LATTICE_ARM, Mouth, SPIRE_GANTRY, draw_box_sparks};
 
 /// Where a Lattice pod turns, as a share of the footprint.
@@ -111,7 +112,8 @@ fn draw_layers(sprites: &Sprites, zoom: f32, layers: &[Layer]) {
 }
 
 /// A completed Spire: the fixed foundation, then the deck and everything
-/// riding it, turned to the simulation heading.
+/// riding it, turned to the simulation heading. It draws only what
+/// [`KnownMagazine::in_sight`] tells anyone who sees it.
 pub(super) fn draw_spire(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
@@ -120,15 +122,17 @@ pub(super) fn draw_spire(
     dest: Vec2,
     accent: Color,
 ) -> bool {
-    let (Some(magazine), Some(launcher), Some(stats)) = (b.magazine, b.launcher, b.kind.magazine())
-    else {
+    let Some(magazine) = KnownMagazine::in_sight(b) else {
+        return false;
+    };
+    let (Some(deck), Some(stats)) = (magazine.deck, b.kind.magazine()) else {
         return false;
     };
     let rigs = sprites.strategic_rigs();
     let rig: &SpireRig = &rigs.spire;
     let zoom = game.presentation.camera.zoom;
     let pivot = screen + dest * 0.5;
-    let rotation = deck_rotation(launcher.heading);
+    let rotation = deck_rotation(deck.heading);
     let mut layers = Vec::new();
     let mut push = |row: Rect, tint: Color, rotation: f32| {
         layers.push(Layer {
@@ -145,13 +149,13 @@ pub(super) fn draw_spire(
     push(rig.deck[0], WHITE, rotation);
     push(rig.deck[1], accent, rotation);
     let round_ticks = stats.round_ticks as usize;
-    let progress = magazine.progress as usize;
-    let assembly = (magazine.ordered > 0 && magazine.loaded == 0)
+    let progress = magazine.assembly.unwrap_or(0) as usize;
+    let assembly = (magazine.assembly.is_some() && magazine.loaded == 0)
         .then(|| SPIRE_GANTRY.at(progress, round_ticks));
     let (lower, upper) = if magazine.loaded > 0 {
         // Once the deck stands aligned on its strike, the upper lock
         // releases, then the lower, and the round is free to fly.
-        let ready = usize::from(launcher.ready);
+        let ready = usize::from(deck.ready);
         let release = |from: usize| 4 - ready.saturating_sub(from).min(4);
         (release(LOWER_RELEASE), release(UPPER_RELEASE))
     } else if assembly.is_some() {
@@ -211,7 +215,8 @@ pub(super) fn draw_spire(
 
 /// A completed Lattice: the base, each pod turned to its own bearing with
 /// its interceptor or the parts of one, the reload arm serving the pod
-/// being refilled, and the cover plate.
+/// being refilled, and the cover plate. Its magazine draws only what
+/// [`KnownMagazine::in_sight`] tells anyone who sees it.
 pub(super) fn draw_lattice(
     game: &crate::game::Scene<'_>,
     sprites: &Sprites,
@@ -220,7 +225,7 @@ pub(super) fn draw_lattice(
     dest: Vec2,
     accent: Color,
 ) -> bool {
-    let (Some(magazine), Some(stats)) = (b.magazine, b.kind.magazine()) else {
+    let (Some(magazine), Some(stats)) = (KnownMagazine::in_sight(b), b.kind.magazine()) else {
         return false;
     };
     let rigs = sprites.strategic_rigs();
@@ -239,8 +244,8 @@ pub(super) fn draw_lattice(
     // The pod being refilled, and where its round's assembly stands; its
     // clamp shuts on the nose.
     let round_ticks = stats.round_ticks as usize;
-    let progress = magazine.progress as usize;
-    let rebuilding = (magazine.ordered > 0 && magazine.loaded < stats.capacity).then(|| {
+    let progress = magazine.assembly.unwrap_or(0) as usize;
+    let rebuilding = (magazine.assembly.is_some() && magazine.loaded < stats.capacity).then(|| {
         (
             magazine.loaded,
             LATTICE_ARM.at(progress, round_ticks),

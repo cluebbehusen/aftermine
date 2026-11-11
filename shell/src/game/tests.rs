@@ -591,6 +591,30 @@ fn paused_wall_time_freezes_presentation() {
 }
 
 #[test]
+fn toasts_age_by_wall_time_alone_paused_or_not() {
+    let mut game = Game::with_viewport(
+        Scenario::skirmish(),
+        macroquad::prelude::vec2(1280.0, 800.0),
+    )
+    .expect("skirmish builds");
+    game.presentation.toast("refused");
+    game.clock.paused = true;
+    game.update_wall_clock_fx(1.0);
+    assert_eq!(game.presentation.toasts[0].age, 1.0);
+    assert_eq!(game.presentation.fx_time(), 0.0, "effects still hold");
+
+    // A driven step stands for sim time, which the toast does not wait on.
+    game.present_ticks(4);
+    assert_eq!(game.presentation.toasts[0].age, 1.0);
+
+    game.update_wall_clock_fx(2.0);
+    assert!(
+        game.presentation.toasts.is_empty(),
+        "a paused match still clears its toasts"
+    );
+}
+
+#[test]
 fn wall_clock_profile_bound_cannot_overshoot_inside_a_multi_tick_frame() {
     let mut game = Game::with_viewport(
         Scenario::skirmish(),

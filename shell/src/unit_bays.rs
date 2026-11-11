@@ -46,7 +46,7 @@ pub(crate) fn with_pending<R>(game: &Scene<'_>, look: impl FnOnce(&[Unit], u32, 
             state.accepts_commands(human),
         )
     } else {
-        game.state.inspect_command_phase(game.pending, |state| {
+        game.with_staged(|state| {
             look(
                 state.units(),
                 state.scrap(human).unwrap_or(0),
