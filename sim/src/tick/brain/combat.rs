@@ -2358,6 +2358,13 @@ fn bomber_attack(
                 next: 0,
                 clearing: false,
             });
+        } else if resume.is_some() {
+            // A fight its hunt, patrol or escort picked ends quietly, as
+            // `stall_attack` ends one, and the program goes on.
+            state
+                .unit_mut(id)
+                .expect("caller checked")
+                .complete_attack(resume);
         } else {
             let unit = state.unit_mut(id).expect("caller checked");
             let (player, upos) = (unit.player, unit.pos);
