@@ -1510,6 +1510,120 @@ fn the_upper_rungs_hold_a_fight_they_are_only_slightly_outweighed_in() {
     }
 }
 
+/// Who flies an attack into the guns of [`guns_that_fire_only_at_aircraft_never_turn_a_ground_attack_back`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Flight {
+    Sentinels,
+    WithTalon,
+    TalonAlone,
+}
+
+#[test]
+fn guns_that_fire_only_at_aircraft_never_turn_a_ground_attack_back() {
+    // Twelve East guns in contact with an attack on its way to East's
+    // Foundry, short of their reach, worth more than the attack: Flak
+    // Turrets cannot hit the seven Sentinels but can hit a Talon, and
+    // Turrets can hit the Sentinels.
+    for (kind, flight, difficulty, withdraws) in [
+        (
+            BuildingKind::FlakTurret,
+            Flight::Sentinels,
+            BotDifficulty::Standard,
+            false,
+        ),
+        (
+            BuildingKind::FlakTurret,
+            Flight::WithTalon,
+            BotDifficulty::Standard,
+            false,
+        ),
+        (
+            BuildingKind::FlakTurret,
+            Flight::WithTalon,
+            BotDifficulty::Prime,
+            false,
+        ),
+        (
+            BuildingKind::FlakTurret,
+            Flight::TalonAlone,
+            BotDifficulty::Standard,
+            true,
+        ),
+        (
+            BuildingKind::Turret,
+            Flight::Sentinels,
+            BotDifficulty::Standard,
+            true,
+        ),
+    ] {
+        let why = format!("{kind:?}, {flight:?}, {difficulty:?}");
+        let mut scenario = advanced(difficulty, &[]);
+        for y in 6..18 {
+            scenario.buildings.push(building(1, kind, 30, y));
+        }
+        if flight != Flight::Sentinels {
+            scenario.units.push(unit(0, UnitKind::Talon, 21, 13));
+        }
+        let mut state = scenario.build().unwrap();
+        let (sentinels, mut missions) =
+            under_way(&state, &serde_json::json!({"engage": {"focus": null}}), 0);
+        let talon = (flight != Flight::Sentinels).then(|| at(&state, 21, 13));
+        let mut members = if flight == Flight::TalonAlone {
+            Vec::new()
+        } else {
+            sentinels.clone()
+        };
+        members.extend(talon);
+        members.sort_unstable();
+        missions["list"][0]["units"] = serde_json::json!(members);
+        let on = PlayerCommand {
+            player: PlayerId(0),
+            command: Command::Hunt {
+                units: members.clone(),
+                goal: TilePos::new(42, 11),
+                queue: false,
+            },
+        };
+        advance_to(&mut state, 12, &[on]);
+        let mut opponent = restaged(&scenario, &state, missions);
+        let mut traces = Vec::new();
+        let mut sent = Vec::new();
+        while state.current_tick() < 1_200 {
+            let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+            traces.extend(trace);
+            sent.extend(commands.iter().map(|command| command.command.clone()));
+            state.tick(&commands);
+        }
+        let seen = phases(&traces);
+        assert_eq!(
+            seen.contains(&Phase::Withdraw),
+            withdraws,
+            "{why}: {seen:?}"
+        );
+        if withdraws {
+            continue;
+        }
+        assert!(
+            sentinels
+                .iter()
+                .filter_map(|id| state.units().iter().find(|unit| unit.id == *id))
+                .any(|unit| unit.tile().x > 31),
+            "{why}: the army pressed past the line"
+        );
+        let Some(talon) = talon else {
+            continue;
+        };
+        let homeward = |command: &&Command| matches!(command, Command::Run { units, goal, .. } if *units == [talon] && goal.x < 20);
+        // Sent back while the army stands in the flak, it would only be
+        // sent home again.
+        assert_eq!(
+            sent.iter().filter(homeward).count(),
+            1,
+            "{why}: the Talon is sent home alone, once"
+        );
+    }
+}
+
 #[test]
 fn the_lowest_rung_attacks_piecemeal() {
     let mut scenario = doubled();
