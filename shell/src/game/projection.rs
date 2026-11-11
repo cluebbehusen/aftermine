@@ -5,7 +5,10 @@
 //! networked order is still on its way, names an order in the program that
 //! command will actually edit.
 
-use aftermine_sim::{Building, BuildingId, Order, PlayerCommand, State, Tick, Unit, UnitId};
+use aftermine_sim::{
+    Building, BuildingId, CommandPhaseView, Order, PlayerCommand, PlayerId, State, Tick, Unit,
+    UnitId,
+};
 
 /// One unit's order program, active order first.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +55,9 @@ pub(crate) struct Projection {
     captured: Option<Captured>,
     programs: Vec<(UnitId, Program)>,
     sites: Vec<Building>,
+    /// The selection's Build and Found orders, with their owners, whose site
+    /// a worker outside the selection also holds.
+    shared: Vec<(PlayerId, Order)>,
 }
 
 impl Projection {
@@ -61,27 +67,24 @@ impl Projection {
         })
     }
 
-    /// Projects `units` through `pending`. Only a staged batch needs the
-    /// command phase; otherwise the programs are the world's own.
+    /// Projects `units` through `pending`. With nothing staged the command
+    /// phase reads the world itself.
     pub(super) fn capture(state: &State, pending: &[PlayerCommand], units: Vec<UnitId>) -> Self {
-        let (programs, sites) = if pending.is_empty() {
-            (programs(&units, |id| state.unit(id)), Vec::new())
-        } else {
-            state.inspect_command_phase(pending, |view| {
-                let programs = programs(&units, |id| view.unit(id));
-                let sites = view
-                    .buildings()
-                    .iter()
-                    .filter(|site| {
-                        programs.iter().any(|(_, program)| {
-                            program.orders.contains(&Order::Build { site: site.id })
-                        })
+        let (programs, sites, shared) = state.inspect_command_phase(pending, |view| {
+            let programs = programs(&units, |id| view.unit(id));
+            let sites = view
+                .buildings()
+                .iter()
+                .filter(|site| {
+                    programs.iter().any(|(_, program)| {
+                        program.orders.contains(&Order::Build { site: site.id })
                     })
-                    .cloned()
-                    .collect();
-                (programs, sites)
-            })
-        };
+                })
+                .cloned()
+                .collect();
+            let shared = shared_sites(&view, &programs);
+            (programs, sites, shared)
+        });
         Self {
             captured: Some(Captured {
                 tick: state.current_tick(),
@@ -90,6 +93,7 @@ impl Projection {
             }),
             programs,
             sites,
+            shared,
         }
     }
 
@@ -109,6 +113,54 @@ impl Projection {
             .find(|site| site.id == id)
             .or_else(|| state.building(id))
     }
+
+    /// Whether a worker outside the selection still holds the site that a
+    /// selected unit of `player` names with its Build or Found `order`.
+    pub(crate) fn site_shared(&self, player: PlayerId, order: Order) -> bool {
+        self.shared.contains(&(player, order))
+    }
+}
+
+/// The Build and Found orders in `programs`, with their owners, whose site a
+/// worker outside `programs` also holds.
+fn shared_sites(
+    view: &CommandPhaseView<'_>,
+    programs: &[(UnitId, Program)],
+) -> Vec<(PlayerId, Order)> {
+    let selected = |id: UnitId| {
+        programs
+            .binary_search_by_key(&id, |(unit, _)| *unit)
+            .is_ok()
+    };
+    let mut seen = Vec::new();
+    let mut shared = Vec::new();
+    for (unit, program) in programs {
+        let Some(player) = view.unit(*unit).map(|unit| unit.player) else {
+            continue;
+        };
+        for &order in &program.orders {
+            if !matches!(order, Order::Build { .. } | Order::Found { .. })
+                || seen.contains(&(player, order))
+            {
+                continue;
+            }
+            seen.push((player, order));
+            let site = view.buildings().iter().find(|site| match order {
+                Order::Build { site: id } => site.id == id,
+                Order::Found { kind, anchor } => {
+                    site.player == player
+                        && site.kind == kind
+                        && site.anchor == anchor
+                        && site.under_construction()
+                }
+                _ => false,
+            });
+            if site.is_some_and(|site| view.site_crew(site.id).any(|id| !selected(id))) {
+                shared.push((player, order));
+            }
+        }
+    }
+    shared
 }
 
 /// The programs of `ids` in id order, so a selection-wide read looks each

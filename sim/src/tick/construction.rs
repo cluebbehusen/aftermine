@@ -10,6 +10,16 @@ impl State {
             .filter_map(|id| Some(self.building(*id)?.stats().construction.cost))
             .fold(0, u32::saturating_add)
     }
+
+    /// The live workers holding `site` in their programs, active or queued,
+    /// in id order. An unstarted site is refunded once none is left.
+    pub fn site_crew(&self, site: BuildingId) -> impl Iterator<Item = UnitId> + '_ {
+        let site = self.building(site);
+        self.units
+            .iter()
+            .filter(move |unit| site.is_some_and(|site| committed(unit, site)))
+            .map(|unit| unit.id)
+    }
 }
 
 pub(crate) fn committed(unit: &crate::Unit, site: &Building) -> bool {
