@@ -133,7 +133,7 @@ fn theme_prop_selection_is_a_180_degree_pair() {
 }
 
 #[test]
-fn raised_theme_props_keep_world_space_lighting_upright() {
+fn theme_marks_turn_by_their_quarter_turns() {
     for quarter_turns in 0..4 {
         for variant in 0..3 {
             let placement = ThemePropPlacement {
@@ -144,13 +144,6 @@ fn raised_theme_props_keep_world_space_lighting_upright() {
                 placement.rotation(),
                 f32::from(quarter_turns) * std::f32::consts::FRAC_PI_2
             );
-        }
-        for variant in 3..13 {
-            let placement = ThemePropPlacement {
-                variant,
-                quarter_turns,
-            };
-            assert_eq!(placement.rotation(), 0.0);
         }
     }
 }

@@ -1373,7 +1373,7 @@ pub(crate) fn draw_card_icon(
     if *ghost {
         // Scaffold and subject share their authored canvas, including its margins.
         layers.push((
-            sprites.scaffold(false),
+            sprites.scaffold(),
             Color::new(tint.r, tint.g, tint.b, tint.a * 0.45),
         ));
         sprites.draw_canvas(dest, &layers);

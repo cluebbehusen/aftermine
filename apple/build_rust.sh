@@ -49,6 +49,14 @@ fi
 mkdir -p "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH"
 cp "$BUILT" "$TARGET_BUILD_DIR/$EXECUTABLE_PATH"
 
+# The Resources phase, which runs before this one, copies all of assets/.
+# The game reads only the atlas pages under sprites/, and the app icon comes
+# from Assets.xcassets, so the loose sprite and icon PNGs, which the generator
+# and tests read in the repository, leave the bundle.
+ASSETS="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/assets"
+find "$ASSETS/sprites" -maxdepth 1 -name '*.png' ! -name 'atlas*.png' -delete
+find "$ASSETS/icon" -maxdepth 1 -name '*.png' -delete
+
 # The app wears the workspace version. App Store Connect requires every
 # upload to carry a higher build number than the last, so the build number
 # is the commit count.

@@ -44,9 +44,9 @@ pub struct Sprites {
     /// The derelict 2x2 Extractor frame bed, drawn on unclaimed frames.
     extractor_frame: Rect,
     rock_skirt: Rect,
-    decals: [Rect; 4],
+    wreck_decal: Rect,
     /// Six flat ground-dressing variants for each shipped theme.
-    theme_props: [Rect; 36],
+    theme_props: [Rect; 18],
     /// Passable remnants scattered over safe ground.
     /// Multi-tile industrial obstacles drawn over Rock terrain.
     ground_blockers: [Rect; 9],
@@ -67,7 +67,7 @@ pub struct Sprites {
     buildings: Vec<Vec<RungArt>>,
     /// Chassis art per unit kind, indexed by the kind's discriminant.
     units: Vec<UnitArt>,
-    scaffold: [Rect; 2],
+    scaffold: Rect,
     debris: [Rect; 3],
     excavator_cargo: [Rect; EXCAVATOR_CARGO_LEVELS],
     mantle_charge: [Rect; MANTLE_CHARGE_FRAMES],
@@ -650,22 +650,6 @@ const WRECK_PILE_KEYS: [&str; WRECK_PILES] = [
     "wreck_pile_3_1",
 ];
 
-/// Remnants the floor no longer draws, because they pull the eye from units.
-/// The atlas still holds them.
-#[cfg(test)]
-const FIELD_DEBRIS_KEYS: [&str; 10] = [
-    "field_debris_severed_cable",
-    "field_debris_bent_service_rail",
-    "field_debris_abandoned_canisters",
-    "field_debris_braided_cable",
-    "field_debris_fastener_spill",
-    "field_debris_canister_cluster",
-    "field_debris_sunken_cooling_fan",
-    "field_debris_inspection_hatch",
-    "field_debris_cable_tray",
-    "field_debris_motor_casing",
-];
-
 const GROUND_BLOCKER_KEYS: [&str; 9] = [
     "ground_blocker_cooling_fan",
     "ground_blocker_compressor_skid",
@@ -678,47 +662,27 @@ const GROUND_BLOCKER_KEYS: [&str; 9] = [
     "ground_blocker_generator_pallet",
 ];
 
-const DECAL_KEYS: [&str; 4] = ["decal_crack", "decal_plate", "decal_stain", "decal_wreck"];
-
-/// Six flat ground-dressing sprites per shipped theme. Theme order is
-/// mirrored by [`Sprites::theme_prop`].
-const THEME_PROP_KEYS: [&str; 36] = [
+/// The three flat ground-dressing marks the floor draws per shipped theme.
+/// Theme order is mirrored by [`Sprites::theme_prop`].
+const THEME_PROP_KEYS: [&str; 18] = [
     "theme_rusted_yard_0",
     "theme_rusted_yard_1",
     "theme_rusted_yard_2",
-    "theme_rusted_yard_3",
-    "theme_rusted_yard_4",
-    "theme_rusted_yard_5",
     "theme_cold_circuitry_0",
     "theme_cold_circuitry_1",
     "theme_cold_circuitry_2",
-    "theme_cold_circuitry_3",
-    "theme_cold_circuitry_4",
-    "theme_cold_circuitry_5",
     "theme_quarry_dust_0",
     "theme_quarry_dust_1",
     "theme_quarry_dust_2",
-    "theme_quarry_dust_3",
-    "theme_quarry_dust_4",
-    "theme_quarry_dust_5",
     "theme_basalt_0",
     "theme_basalt_1",
     "theme_basalt_2",
-    "theme_basalt_3",
-    "theme_basalt_4",
-    "theme_basalt_5",
     "theme_slag_0",
     "theme_slag_1",
     "theme_slag_2",
-    "theme_slag_3",
-    "theme_slag_4",
-    "theme_slag_5",
     "theme_verdigris_0",
     "theme_verdigris_1",
     "theme_verdigris_2",
-    "theme_verdigris_3",
-    "theme_verdigris_4",
-    "theme_verdigris_5",
 ];
 
 fn theme_prop_row(theme: &str) -> Option<usize> {
@@ -732,8 +696,6 @@ fn theme_prop_row(theme: &str) -> Option<usize> {
         _ => None,
     }
 }
-
-const SCAFFOLD_KEYS: [&str; 2] = ["scaffold_dense", "scaffold_sparse"];
 
 const DEBRIS_KEYS: [&str; 3] = ["debris_0", "debris_1", "debris_2"];
 
@@ -1092,12 +1054,10 @@ fn atlas_keys(atlas: &Manifest) -> Vec<String> {
         .chain(GROUND_KEYS.iter())
         .chain(GROUND_DETAIL_KEYS.iter())
         .chain(ROCK_SLAB_KEYS.iter())
-        .chain(DECAL_KEYS.iter())
+        .chain(["decal_wreck", "scaffold_sparse"].iter())
         .chain(THEME_PROP_KEYS.iter())
         .chain(WRECK_PILE_KEYS.iter())
-        .chain(FIELD_DEBRIS_KEYS.iter())
         .chain(GROUND_BLOCKER_KEYS.iter())
-        .chain(SCAFFOLD_KEYS.iter())
         .chain(DEBRIS_KEYS.iter())
         .map(|key| (*key).to_string())
         .collect();
@@ -1475,7 +1435,7 @@ impl Sprites {
             rock_slabs: pick(&rects, ROCK_SLAB_KEYS)?,
             extractor_frame,
             rock_skirt,
-            decals: pick(&rects, DECAL_KEYS)?,
+            wreck_decal: lookup(&rects, "decal_wreck")?,
             theme_props: pick(&rects, THEME_PROP_KEYS)?,
             ground_blockers: pick(&rects, GROUND_BLOCKER_KEYS)?,
             scrap_full,
@@ -1492,7 +1452,7 @@ impl Sprites {
             harvester_cargo_tread: harvester_cargo_motion_rows(&rects, TREAD_SUFFIXES)?,
             buildings: building_art(&rects)?,
             units: unit_art(&rects)?,
-            scaffold: pick(&rects, SCAFFOLD_KEYS)?,
+            scaffold: lookup(&rects, "scaffold_sparse")?,
             debris: pick(&rects, DEBRIS_KEYS)?,
             excavator_cargo: excavator_cargo_rows(&rects)?,
             mantle_charge: mantle_charge_rows(&rects)?,
@@ -1720,15 +1680,16 @@ impl Sprites {
         self.rock_skirt
     }
 
-    /// A ground decal's atlas region.
-    pub fn decal(&self, variant: usize) -> Rect {
-        self.decals[variant % self.decals.len()]
+    /// The wreck decal's atlas region.
+    pub fn wreck_decal(&self) -> Rect {
+        self.wreck_decal
     }
 
-    /// A flat ground-dressing sprite for a shipped map theme.
+    /// A flat ground-dressing mark for a shipped map theme; only the first
+    /// three of a theme's marks ship.
     pub fn theme_prop(&self, theme: &str, variant: usize) -> Option<Rect> {
         let row = theme_prop_row(theme)?;
-        Some(self.theme_props[row * 6 + variant % 6])
+        (variant < 3).then(|| self.theme_props[row * 3 + variant])
     }
 
     /// The scrap sprite region for a remaining amount: anything above a
@@ -1934,9 +1895,9 @@ impl Sprites {
         self.moving_unit_row(kind, frame)[ACCENT]
     }
 
-    /// The construction lattice: dense early, sparse near completion.
-    pub fn scaffold(&self, dense: bool) -> Rect {
-        self.scaffold[usize::from(!dense)]
+    /// The construction lattice.
+    pub fn scaffold(&self) -> Rect {
+        self.scaffold
     }
 
     /// A death-scatter hull shard.

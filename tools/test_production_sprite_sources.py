@@ -407,15 +407,9 @@ class ProductionSpriteSourceTests(unittest.TestCase):
         )
 
     def test_finalized_environment_bank_is_complete_and_pixel_stable(self) -> None:
-        self.assertEqual(len(environment_final.FIELD_DEBRIS_KEYS), 10)
         self.assertEqual(len(environment_final.GROUND_BLOCKER_KEYS), 9)
 
         digest = hashlib.sha256()
-        for key in environment_final.FIELD_DEBRIS_KEYS:
-            image = self.registry[key]
-            self.assertIn(image.size, ((32, 32), (64, 64)))
-            digest.update(key.encode())
-            digest.update(image.tobytes())
         for key, footprint in zip(
             environment_final.GROUND_BLOCKER_KEYS,
             environment_final.GROUND_BLOCKER_FOOTPRINTS,
@@ -427,7 +421,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "3c9dbbd2cc09cd516004a5309784db2cb271d4e35b3f602a8d48ae7df4a2b2cd",
+            "7966344fb5d47ab30fedfd09f0d76492b65fcef37ac8a43677b3a436e72214af",
         )
 
     def test_slab_library_covers_every_size_class_without_clipping(self) -> None:
