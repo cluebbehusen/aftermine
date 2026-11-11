@@ -562,6 +562,15 @@ impl Queue {
     fn held(&self) -> bool {
         self.running.is_none() && self.not_before.is_some_and(|at| at > Instant::now())
     }
+
+    /// Marks the pass under way done. A pass cut short leaves the push it
+    /// took up to the pass that follows it.
+    fn end_pass(&mut self, again: bool) {
+        self.running = None;
+        if std::mem::take(&mut self.sending) && again {
+            self.unsent = true;
+        }
+    }
 }
 
 impl Shared {
@@ -772,8 +781,6 @@ fn serve_one(shared: &Shared, remote: &impl Remote, places: impl FnOnce() -> Opt
     }
     let again = {
         let mut queue = shared.queue();
-        queue.running = None;
-        queue.sending = false;
         let again = match result {
             Some(Ok(outcome)) => {
                 // A push has not looked at CloudKit, and a question answered
@@ -816,6 +823,7 @@ fn serve_one(shared: &Shared, remote: &impl Remote, places: impl FnOnce() -> Opt
             }
             None => false,
         };
+        queue.end_pass(again);
         if !again && queue.wanted.is_none() {
             queue.background = None;
         }
