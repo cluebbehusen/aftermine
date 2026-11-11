@@ -11,7 +11,7 @@ fn pause_save_bulk_advance_and_replacement_keep_the_settled_boundary() {
         building: BuildingId(0),
         kind: UnitKind::Harvester,
     });
-    let settled = serde_json::to_vec(&game).unwrap();
+    let settled = crate::game::checkpoint::tests::saved(&game);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while game.bot_decision.is_none() {
         game.prepare_bot_decision();
@@ -25,16 +25,16 @@ fn pause_save_bulk_advance_and_replacement_keep_the_settled_boundary() {
     game.clock.paused = true;
     assert!(!game.advance_wall_clock(1.0, None));
     assert!(game.bot_decision.is_some());
-    assert_eq!(serde_json::to_vec(&game).unwrap(), settled);
-    let mut loaded: Game = serde_json::from_slice(&settled).unwrap();
+    assert_eq!(crate::game::checkpoint::tests::saved(&game), settled);
+    let mut loaded = crate::game::checkpoint::tests::load(settled.clone()).unwrap();
     assert!(loaded.bot_decision.is_none());
     game.advance_ticks(120);
     loaded.advance_ticks(120);
     assert!(game.bot_decision.is_none());
     assert_eq!(game.hash_hex(), loaded.hash_hex());
     assert_eq!(
-        serde_json::to_vec(&game).unwrap(),
-        serde_json::to_vec(&loaded).unwrap()
+        crate::game::checkpoint::tests::saved(&game),
+        crate::game::checkpoint::tests::saved(&loaded)
     );
     game.prepare_bot_decision();
     let replacement = (*loaded.state).clone();

@@ -108,7 +108,7 @@ fn boundary_exploration_survives_movement_bulk_ticks_and_resume() {
     assert!(game.presentation.boundary_fog.explored(tile));
     let mut replay = game.recorder.clone();
     replay.meta.ticks = Some(game.state.current_tick());
-    let saved: Game = serde_json::from_slice(&serde_json::to_vec(&game).unwrap()).unwrap();
+    let saved = crate::game::checkpoint::tests::reloaded(&game);
     assert_eq!(game.hash_hex(), saved.hash_hex());
     assert_eq!(
         game.presentation.boundary_fog,

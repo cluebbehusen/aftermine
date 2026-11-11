@@ -2273,8 +2273,7 @@ fn checkpoint_projectiles_recover_unit_contacts_without_launch_history() {
             }
         }
         assert!(!game.state.shells().is_empty(), "{kind:?} launched");
-        let mut restored: Game =
-            serde_json::from_slice(&serde_json::to_vec(&game).unwrap()).unwrap();
+        let mut restored = crate::game::checkpoint::tests::reloaded(&game);
         assert_eq!(game.state.hash(), restored.state.hash());
         assert_eq!(
             restored.recorder.commands.len(),

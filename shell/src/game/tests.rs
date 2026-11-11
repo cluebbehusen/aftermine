@@ -84,8 +84,7 @@ fn foundry_free_sandbox_accepts_local_input_and_restores_checkpoint() {
         goal: chassis::grid::TilePos::new(8, 6),
         queue: false,
     });
-    let mut resumed: Game =
-        serde_json::from_value(serde_json::to_value(&original).unwrap()).unwrap();
+    let mut resumed = checkpoint::tests::reloaded(&original);
     for game in [&mut original, &mut resumed] {
         assert!(game.state.accepts_commands(PlayerId(0)));
         let report = game.do_tick();

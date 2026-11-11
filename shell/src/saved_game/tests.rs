@@ -83,8 +83,8 @@ fn save_restores_pending_input_history_and_exact_future() {
         serde_json::to_value(&original.recorder.commands).unwrap()
     );
     assert_eq!(
-        serde_json::to_value(&restored).unwrap()["session"]["stats"],
-        serde_json::to_value(&original).unwrap()["session"]["stats"]
+        crate::game::checkpoint::tests::saved(&restored)["session"]["stats"],
+        crate::game::checkpoint::tests::saved(&original)["session"]["stats"]
     );
     assert_eq!(
         restored.presentation.boundary_fog,

@@ -2,6 +2,22 @@ use super::*;
 use crate::numeric::Fit;
 use aftermine_sim::scenario::BotConfig;
 
+/// `game` as a player's save writes it.
+pub(crate) fn saved(game: &Game) -> serde_json::Value {
+    serde_json::to_value(game.capture_save().checkpoint().unwrap()).unwrap()
+}
+
+/// Loads a save as Continue does, refusing whatever restoration refuses.
+pub(crate) fn load(save: serde_json::Value) -> anyhow::Result<Game> {
+    let checkpoint: GameCheckpoint = serde_json::from_value(save)?;
+    Ok(checkpoint.restore()?.install())
+}
+
+/// `game` saved and loaded again.
+pub(crate) fn reloaded(game: &Game) -> Game {
+    load(saved(game)).unwrap()
+}
+
 #[test]
 fn a_save_capture_leaves_the_live_world_free_to_tick() {
     let mut game = Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 720.0)).unwrap();
@@ -84,9 +100,9 @@ fn checkpoint_preserves_pending_input_memory_and_statistics() {
         units: vec![original.state.units()[0].id],
     });
     let before = original.state.hash();
-    let bytes = serde_json::to_vec(&original).unwrap();
+    let bytes = saved(&original);
     assert_eq!(before, original.state.hash());
-    let mut restored: Game = serde_json::from_slice(&bytes).unwrap();
+    let mut restored = load(bytes).unwrap();
     assert_eq!(before, restored.state.hash());
     assert_eq!(*original.pending, *restored.pending);
     assert!(restored.clock.paused);
@@ -115,7 +131,7 @@ fn checkpoint_preserves_pending_input_memory_and_statistics() {
     original.issue(Command::Surrender);
     original.do_tick();
     assert!(original.state.result().is_some());
-    let finished: Game = serde_json::from_slice(&serde_json::to_vec(&original).unwrap()).unwrap();
+    let finished = reloaded(&original);
     assert_eq!(original.state.hash(), finished.state.hash());
     assert_eq!(original.end_stats, finished.end_stats);
 }
@@ -151,7 +167,7 @@ fn an_opponent_seat_continues_through_save_and_replay_resume() {
         serde_json::json!([{"event": "command_rejected", "reason": "no_valid_units"}])
     );
 
-    let saved: Game = serde_json::from_slice(&serde_json::to_vec(&original).unwrap()).unwrap();
+    let saved = reloaded(&original);
     let resumed = Game::from_replay(replay).unwrap();
     // Two whole sessions are too large for the stack.
     let mut continuations = vec![saved, resumed];
@@ -181,13 +197,13 @@ fn an_opponent_seat_continues_through_save_and_replay_resume() {
 #[test]
 fn checkpoint_rejects_invalid_shell_metadata_before_installation() {
     let game = Game::with_viewport(Scenario::skirmish(), vec2(1280.0, 720.0)).unwrap();
-    let original = serde_json::to_value(&game).unwrap();
+    let original = saved(&game);
     let mut bad = original.clone();
     bad["human"] = serde_json::json!(255);
-    assert!(serde_json::from_value::<Game>(bad).is_err());
+    assert!(load(bad).is_err());
     let mut bad = original;
     bad["boundary_fog"]["visible"] = serde_json::json!([{"x":-1,"y":-1}]);
-    assert!(serde_json::from_value::<Game>(bad).is_err());
+    assert!(load(bad).is_err());
     assert_eq!(game.state.current_tick(), 0);
     assert!(game.pending.is_empty());
 }
@@ -201,12 +217,12 @@ fn checkpoint_requires_the_scenarios_default_local_seat() {
             player.bot_config = player.bot.then_some(BotConfig::default());
         }
         let game = Game::with_viewport(scenario, vec2(1280.0, 720.0)).unwrap();
-        let original = serde_json::to_value(&game).unwrap();
-        let restored: Game = serde_json::from_value(original.clone()).unwrap();
+        let original = saved(&game);
+        let restored = load(original.clone()).unwrap();
         assert_eq!(restored.presentation.human, PlayerId(human.fit::<u8>()));
         let mut bad = original;
         bad["human"] = serde_json::json!(1 - human);
-        let error = serde_json::from_value::<Game>(bad).err().unwrap();
+        let error = load(bad).err().unwrap();
         assert!(error.to_string().contains("invalid local seat"));
     }
     for bots in [false, true] {
