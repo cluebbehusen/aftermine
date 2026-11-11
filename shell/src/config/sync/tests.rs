@@ -276,6 +276,114 @@ fn a_value_the_load_checks_would_reject_is_ignored() {
 }
 
 #[test]
+fn a_binding_list_that_misses_an_action_arrives_with_its_default_key() {
+    use crate::action::{Action, BindingMap, Chord};
+    use aftermine_protocol::Key;
+    let mut older = BindingMap::classic();
+    older.forget(Action::SelectArmy);
+    assert!(older.rebind(Action::Patrol, Chord::bare(Key::J)));
+    let text = serde_json::to_string(&older).unwrap();
+    let arrived = |config: &Config| {
+        assert_eq!(
+            config.bindings.chord_for(Action::Patrol),
+            Some(Chord::bare(Key::J)),
+            "the other device's rebind arrives"
+        );
+        assert_eq!(
+            config.bindings.chord_for(Action::SelectArmy),
+            Some(Chord::ctrl(Key::A))
+        );
+    };
+
+    let mut cloud = Cloud::new();
+    cloud.insert(key(SyncedField::Bindings), text.clone());
+    arrived(&Device::launch(Config::default(), &mut cloud).config);
+
+    let mut cloud = Cloud::new();
+    let mut device = Device::launch(Config::default(), &mut cloud);
+    cloud.insert(key(SyncedField::Bindings), text);
+    assert!(device.catch_up(&mut cloud));
+    arrived(&device.config);
+}
+
+#[test]
+fn defaults_a_read_binding_list_gains_never_go_up_over_a_newer_rebind() {
+    use crate::action::{Action, BindingMap, Chord};
+    use aftermine_protocol::Key;
+    let mut older = BindingMap::classic();
+    older.forget(Action::SelectArmy);
+    let mut cloud = Cloud::new();
+    cloud.insert(
+        key(SyncedField::Bindings),
+        serde_json::to_string(&older).unwrap(),
+    );
+    let mut mac = Device::launch(Config::default(), &mut cloud);
+    let mut ipad = Device::launch(Config::default(), &mut cloud);
+    let launched = cloud.clone();
+    mac.save(&mut cloud);
+    ipad.save(&mut cloud);
+    assert_eq!(
+        cloud, launched,
+        "the defaults read in are no change to send"
+    );
+
+    assert!(
+        mac.config
+            .bindings
+            .rebind(Action::Patrol, Chord::bare(Key::J))
+    );
+    mac.save(&mut cloud);
+    let rebound = cloud[&key(SyncedField::Bindings)].clone();
+    ipad.config.reduced_motion = true;
+    ipad.save(&mut cloud);
+    assert!(ipad.catch_up(&mut cloud));
+    ipad.config.volumes.music = 0.25;
+    ipad.save(&mut cloud);
+    mac.catch_up(&mut cloud);
+
+    assert_eq!(
+        cloud[&key(SyncedField::Bindings)],
+        rebound,
+        "the store keeps the Mac's list"
+    );
+    for device in [&mac, &ipad] {
+        assert_eq!(
+            device.config.bindings.chord_for(Action::Patrol),
+            Some(Chord::bare(Key::J))
+        );
+        assert_eq!(
+            device.config.bindings.chord_for(Action::SelectArmy),
+            Some(Chord::ctrl(Key::A))
+        );
+    }
+    assert!(mac.config.reduced_motion && mac.config.volumes.music == 0.25);
+}
+
+#[test]
+fn an_action_cleared_on_one_device_stays_unbound_on_the_other() {
+    use crate::action::Action;
+    let mut cloud = Cloud::new();
+    let mut mac = Device::launch(Config::default(), &mut cloud);
+    let mut ipad = Device::launch(Config::default(), &mut cloud);
+    mac.config.bindings.unbind_slot(Action::SelectArmy, 0);
+    mac.save(&mut cloud);
+    assert!(ipad.catch_up(&mut cloud));
+    assert_eq!(ipad.config.bindings, mac.config.bindings);
+    let restarted = Config::from_text(Some(&ipad.config.text()));
+    assert_eq!(restarted.bindings.chord_for(Action::SelectArmy), None);
+    let relaunched = Device::launch(restarted, &mut cloud);
+    assert_eq!(relaunched.config.bindings, mac.config.bindings);
+    ipad.config.volumes.music = 0.25;
+    ipad.save(&mut cloud);
+    assert!(mac.catch_up(&mut cloud));
+    assert_eq!(mac.config.bindings.chord_for(Action::SelectArmy), None);
+    assert_eq!(
+        cloud[&key(SyncedField::Bindings)],
+        SyncedField::Bindings.json(&mac.config)
+    );
+}
+
+#[test]
 fn equal_settings_written_differently_go_back_at_most_once() {
     let mut cloud = Cloud::new();
     let mut device = Device::launch(Config::default(), &mut cloud);

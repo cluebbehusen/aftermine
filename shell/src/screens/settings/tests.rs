@@ -1016,6 +1016,19 @@ fn the_page_heading_stacks_title_strip_and_list_and_shows_more_rows() {
 }
 
 #[test]
+fn x_clears_a_binding_that_the_defaults_never_fill_back_in() {
+    let mut config = Config::default();
+    let mut screen = on(Tab::Controls, &config);
+    focus(&mut screen, Item::Binding(Action::SelectArmy));
+    assert!(drive(&mut screen, &mut config, &press(Key::X), false).dirty);
+    assert_eq!(config.bindings.chord_for(Action::SelectArmy), None);
+    let mut written: Config =
+        serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+    written.bindings.bind_unmentioned_defaults();
+    assert_eq!(written.bindings.chord_for(Action::SelectArmy), None);
+}
+
+#[test]
 fn every_default_action_is_editable_and_secondary_edit_does_not_replace_primary() {
     let mut config = Config::default();
     let mut screen = on(Tab::Controls, &config);
