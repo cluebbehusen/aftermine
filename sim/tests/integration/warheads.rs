@@ -1311,7 +1311,7 @@ fn a_revealed_silo_replaces_the_memories_its_footprint_overlaps() {
         memory(BuildingKind::Turret, 0, SPIRE.0 + 1, SPIRE.1 + 1),
         memory(BuildingKind::Array, 0, SPIRE.0 + 4, SPIRE.1),
     ];
-    stale.sort_unstable_by_key(|g| (g.anchor.y, g.anchor.x, g.owner));
+    stale.sort_unstable_by_key(|g| (g.anchor.y, g.anchor.x, g.owner, g.kind));
     d["vision"][1]["ghosts"] = serde_json::to_value(&stale).unwrap();
     state = serde_json::from_value(d).unwrap();
     let spire = id(&state, 0, BuildingKind::Spire);
