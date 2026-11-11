@@ -101,15 +101,13 @@ pub struct SeatFailures {
     /// A mission stayed in one phase for [`FAILURE_WINDOW_TICKS`] past the
     /// timeout its controller gives that phase. The subject is the mission
     /// and the detail its kind and phase; each phase is one episode.
-    #[serde(default)]
     pub stuck_missions: FailureTally,
     /// For [`FAILURE_WINDOW_TICKS`] while a hostile player was still playing,
     /// armed units worth at least half the seat's army, and at least
     /// [`IDLE_ARMY_FLOOR`], had each rested at home out of every enemy's reach
     /// for [`IDLE_TICKS`]. The subject is the idle value and the detail the
     /// idle and whole army values; the episode ends once that no longer
-    /// holds. `None` for unwatched seats and rows that omit it.
-    #[serde(default)]
+    /// holds. `None` for unwatched seats.
     pub idle_army: Option<FailureTally>,
 }
 
