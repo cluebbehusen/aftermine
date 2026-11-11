@@ -547,3 +547,46 @@ fn the_bounding_box_shortcut_never_changes_a_sweep() {
         "{open} open, {blocked} blocked"
     );
 }
+
+#[test]
+fn a_work_point_on_its_goal_tile_s_edge_is_steered_for_after_a_half_turn() {
+    // A work point can sit exactly on a tile seam. On any edge or corner of
+    // its goal tile it belongs to that tile, whichever side flooring takes.
+    let state = scene(UnitKind::Harvester);
+    let (width, height) = (24, 16);
+    let turn = |p: Vec2Fx| Vec2Fx::new(Fx::from_num(width) - p.x, Fx::from_num(height) - p.y);
+    let turn_tile = |t: TilePos| TilePos::new(width - 1 - t.x, height - 1 - t.y);
+    let steer = |pos: Vec2Fx, goal: TilePos, point: Vec2Fx| {
+        let mut unit = state.units()[0].clone();
+        unit.pos = pos;
+        unit.path = Some(PathFollow {
+            final_point: Some(point),
+            goal,
+            waypoints: vec![goal],
+            next: 0,
+            clearing: false,
+        });
+        route_target(&mut unit, &state.ground_terrain(), &ParkedBodies::default())
+            .expect("en route")
+            .0
+    };
+    let goal = TilePos::new(12, 8);
+    let pos = TilePos::new(8, 8).center();
+    let at = |x: &str, y: &str| Vec2Fx::new(Fx::lit(x), Fx::lit(y));
+    for point in [
+        at("13", "8.5"),
+        at("12", "8.5"),
+        at("12.5", "9"),
+        at("12.5", "8"),
+        at("13", "9"),
+        at("12", "8"),
+    ] {
+        let steered = steer(pos, goal, point);
+        assert_eq!(steered, point, "{point:?}");
+        assert_eq!(
+            steer(turn(pos), turn_tile(goal), turn(point)),
+            turn(steered),
+            "{point:?}"
+        );
+    }
+}
