@@ -596,6 +596,7 @@ fn needed(aims: &[Aim], marks: &[Mark], have: u64) -> Option<(u64, u64)> {
 pub(crate) fn investments(
     observation: &ObservationData,
     map: &MapModel,
+    frame: HomeFrame,
     traits: PersonalityTraits,
     income: u32,
 ) -> Vec<(Investment, u32)> {
@@ -603,9 +604,6 @@ pub(crate) fn investments(
         .my_buildings
         .iter()
         .any(|building| building.kind == BuildingKind::Crucible && building.built);
-    let Some(frame) = HomeFrame::of(observation, map) else {
-        return Vec::new();
-    };
     if !crucible {
         return Vec::new();
     }

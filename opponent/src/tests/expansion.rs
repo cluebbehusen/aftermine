@@ -311,6 +311,7 @@ fn a_half_explored_footprint_is_still_scouted() {
         &observation,
         &[],
         &model,
+        home_frame(&observation, &model),
         &opponent.profile,
         &mut persistent,
     );
@@ -459,8 +460,10 @@ fn a_remote_extractor_is_never_deepened() {
         building: own_extractor(&state),
         tier: 1,
     };
+    let model = map(&bore_arena(13));
+    let frame = home_frame(&observation, &model);
     assert_eq!(
-        crate::investments::step(&observation, &map(&bore_arena(13)), deep_bore),
+        crate::investments::step(&observation, frame, deep_bore),
         None
     );
 }

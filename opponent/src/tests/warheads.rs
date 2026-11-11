@@ -395,7 +395,9 @@ fn bore(scenario: &mut Scenario) {
 /// West's warhead investments on `state`.
 fn wanted(scenario: &Scenario, state: &State) -> Vec<Investment> {
     let observation = ObservationData::fog_honest(state, PlayerId(0));
-    crate::warheads::investments(&observation, &map(scenario), middling(), 360)
+    let model = map(scenario);
+    let frame = home_frame(&observation, &model);
+    crate::warheads::investments(&observation, &model, frame, middling(), 360)
         .into_iter()
         .map(|(investment, _)| investment)
         .collect()
@@ -523,12 +525,9 @@ fn a_spire_steps_through_deepening_the_seats_own_extractor() {
         .id;
     let spire = Investment::Tech(BuildingKind::Spire);
     let step = |state: &State| {
-        investments::step(
-            &ObservationData::fog_honest(state, PlayerId(0)),
-            &model,
-            spire,
-        )
-        .map(|(step, _)| step)
+        let observation = ObservationData::fog_honest(state, PlayerId(0));
+        let frame = home_frame(&observation, &model);
+        investments::step(&observation, frame, spire).map(|(step, _)| step)
     };
     assert_eq!(step(&state), Some(Step::Upgrade(extractor)));
     let mut refitting = state.clone();

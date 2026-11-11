@@ -248,10 +248,11 @@ fn targets_switch_only_for_a_clearly_better_investment() {
     let model = map(&scenario);
     let state = scenario.build().unwrap();
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let frame = home_frame(&observation, &model);
     let candidate = |investment, score| Candidate {
         investment,
         score,
-        next: investments::step(&observation, &model, investment),
+        next: investments::step(&observation, frame, investment),
     };
     let fabricator = Investment::Tech(BuildingKind::Fabricator);
     let mut memory = Memory::default();
@@ -339,7 +340,7 @@ fn reclaimers_wait_for_home_scrap_to_run_down_and_refineries_need_a_fabricator()
     assert_eq!(
         investments::step(
             &observation,
-            &model,
+            home_frame(&observation, &model),
             Investment::Upgrade {
                 building: reclaimer,
                 tier: 1
@@ -634,7 +635,7 @@ fn a_scaffold_stays_pending_until_its_ground_is_confirmed() {
     let candidates = [Candidate {
         investment: fabricator,
         score: 400,
-        next: investments::step(&observation, &model, fabricator),
+        next: investments::step(&observation, home_frame(&observation, &model), fabricator),
     }];
     let mut memory = Memory::default();
     let mut saving = Saving::default();

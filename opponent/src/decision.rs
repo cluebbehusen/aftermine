@@ -320,6 +320,7 @@ pub(crate) fn decide(
     observation: &ObservationData,
     events: &[OwnEvent],
     map: &MapModel,
+    frame: HomeFrame,
     profile: &ResolvedProfile,
     persistent: &mut Persistent,
 ) -> Decision {
@@ -333,9 +334,6 @@ pub(crate) fn decide(
         allowance(profile.difficulty),
     );
     ledger.stuck = persistent.memory.stuck();
-    let Some(frame) = HomeFrame::of(observation, map) else {
-        return ledger.decision;
-    };
     let tick = observation.tick;
     let producers = producers(
         observation,
@@ -461,6 +459,7 @@ pub(crate) fn decide(
         wanted,
         observation,
         map,
+        frame,
         memory: &persistent.memory,
         traits: profile.traits,
         saturation: staffing.saturation(),

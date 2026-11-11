@@ -200,7 +200,8 @@ impl<'a> Settlement<'a> {
         investment: Investment,
         ledger: &Ledger,
     ) -> Option<(Step, u32)> {
-        let basic = investments::step(self.observation, self.map, investment)?;
+        let frame = self.scratch.frame;
+        let basic = investments::step(self.observation, frame, investment)?;
         let Some(target) = self.target(missions, investment) else {
             return Some(basic);
         };
@@ -228,7 +229,7 @@ impl<'a> Settlement<'a> {
         {
             return investments::step(
                 self.observation,
-                self.map,
+                frame,
                 Investment::Tech(BuildingKind::Airworks),
             );
         }

@@ -2,7 +2,7 @@
 
 use super::Scratch;
 use super::{Missions, Objective, Task};
-use crate::frame::{HomeFrame, centre_distance, footprint_centre, gap};
+use crate::frame::{centre_distance, footprint_centre, gap};
 use crate::map::MapModel;
 use crate::profile::PersonalityTraits;
 use aftermine_sim::observation::ObservationData;
@@ -45,7 +45,7 @@ impl Missions {
         if owners.len() < 2 {
             return None;
         }
-        let frame = HomeFrame::of(observation, map)?;
+        let frame = scratch.frame;
         let home = footprint_centre(BuildingKind::Foundry, map.start(observation.me)?);
         let nearest = |owner: PlayerId| {
             targets
