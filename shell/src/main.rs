@@ -161,47 +161,11 @@ struct Args {
     #[arg(long)]
     no_high_dpi: bool,
 
-    /// Print startup diagnostics to stderr: prologue milestones with
-    /// ms-since-entry, then per-frame gap and hardware-event counts for
-    /// the first frames. `AFTERMINE_TRACE_STARTUP=1` enables it too (handy
-    /// for the packaged .app, where flags are awkward).
-    #[arg(long)]
-    trace_startup: bool,
-
     /// Collect bounded native GPU-shell frame timings for
     /// `query_performance`. Off by default so ordinary play pays no timing or
     /// sample-retention cost.
     #[arg(long, requires = "debug_server")]
     profile_frames: bool,
-}
-
-/// Wall-clock zero for the startup trace, pinned by the first caller —
-/// `window_conf` runs before the window exists, so it lands close to
-/// process entry.
-static TRACE_ENTRY: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-
-/// Frames the startup trace reports before going quiet.
-const TRACE_FRAMES: u32 = 200;
-
-/// The env var alone must not switch tracing on under `--automation`:
-/// the shots and `menu_ux` harnesses capture stderr from spawned shells,
-/// and an exported `AFTERMINE_TRACE_STARTUP` would leak into every one. The
-/// explicit flag always wins.
-fn trace_active(flag: bool, automation: bool, env_set: bool) -> bool {
-    flag || (env_set && !automation)
-}
-
-fn trace_startup_enabled(args: &Args) -> bool {
-    let env_set = std::env::var("AFTERMINE_TRACE_STARTUP").is_ok_and(|v| v == "1");
-    trace_active(args.trace_startup, args.automation, env_set)
-}
-
-fn trace_mark(label: &str) {
-    let entry = TRACE_ENTRY.get_or_init(std::time::Instant::now);
-    eprintln!(
-        "[trace-startup] {label} +{:.1}ms",
-        entry.elapsed().as_secs_f64() * 1000.0
-    );
 }
 
 /// Parses `WIDTHxHEIGHT` with sane floors — smaller than 640x400 and the
@@ -236,14 +200,10 @@ fn parse_speed(s: &str) -> Result<f64, String> {
 }
 
 fn window_conf() -> Conf {
-    TRACE_ENTRY.get_or_init(std::time::Instant::now);
     // The window is created before `main()` ever sees clap's output, so
     // the size/DPI flags are parsed here too — clap is idempotent and
     // errors surface identically on the second parse in `main()`.
     let args = cli_args();
-    if trace_startup_enabled(&args) {
-        trace_mark("window_conf enter");
-    }
     let (width, height) = args.window.unwrap_or(config::Config::load().window);
     Conf {
         window_title: "Aftermine".to_string(),

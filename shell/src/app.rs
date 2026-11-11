@@ -203,13 +203,6 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     font.set_filter(FilterMode::Linear);
     macroquad::text::set_default_font(font.clone());
     crate::typography::install(font);
-    let trace = crate::trace_startup_enabled(&args);
-    let mark = |label: &str| {
-        if trace {
-            crate::trace_mark(label);
-        }
-    };
-    mark("run enter (first frame)");
     match aftermine_kit::diagnostics::Monitor::start(
         crate::paths::diagnostics_dir(),
         crate::build_identity(),
@@ -246,11 +239,8 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         eprintln!("could not save settings: {error}");
     }
     apply_presentation(&config);
-    mark("config loaded");
     let sprites = assets::Sprites::load()?;
-    mark("sprites loaded");
     let sounds = assets::Sounds::load().await?;
-    mark("sounds loaded");
     let soundtrack = if args.automation {
         None
     } else {
@@ -273,7 +263,6 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     game.crash_dumps = crate::paths::diagnostics_dir();
     game.clock.paused = args.paused;
     game.clock.speed = args.speed;
-    mark("game built");
 
     // Launched for a purpose (a scenario, a resume, or an agent socket)?
     // Straight into the game. Everyone else — automation and humans
@@ -326,7 +315,6 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         Screen::ColdOpen(screens::cold_open::ColdOpenScreen::default())
     } else {
         let home = HomeScreen::open();
-        mark("home screen open");
         Screen::Home(home)
     };
 
@@ -340,14 +328,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             ..Default::default()
         };
         let rx = crate::debug_server::spawn(args.port, limits)?;
-        mark("debug server up");
         Some(rx)
     } else {
         None
     };
-    // Per-frame trace state: (frame index, previous frame top).
-    let mut trace_frames: Option<(u32, std::time::Instant)> =
-        trace.then(|| (0, std::time::Instant::now()));
 
     let profile_frames = args.profile_frames;
     let personality_seeds = PersonalitySeedSource::for_session(args.automation);
@@ -509,21 +493,6 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                 .poll(&mut events);
             events
         });
-        if let Some((frame, last_top)) = trace_frames.as_mut() {
-            *frame += 1;
-            let now = std::time::Instant::now();
-            let entry = crate::TRACE_ENTRY.get_or_init(std::time::Instant::now);
-            eprintln!(
-                "[trace-startup] [F] {frame} +{:.1}ms gap={:.1}ms hw_events={}",
-                now.duration_since(*entry).as_secs_f64() * 1000.0,
-                now.duration_since(*last_top).as_secs_f64() * 1000.0,
-                events.len()
-            );
-            *last_top = now;
-        }
-        if trace_frames.is_some_and(|(frame, _)| frame >= crate::TRACE_FRAMES) {
-            trace_frames = None;
-        }
         events.append(&mut app.injected);
         // Start-of-frame modifier truth, saved before the fold below:
         // the Controls capture replays this frame's edges in order from

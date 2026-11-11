@@ -18,16 +18,6 @@ fn automation_requires_debug_server() {
 }
 
 #[test]
-fn trace_env_never_reaches_an_automation_shell() {
-    // Harness-spawned shells inherit the developer's environment;
-    // only the explicit flag may trace under --automation.
-    assert!(!trace_active(false, true, true));
-    assert!(trace_active(true, true, false));
-    assert!(trace_active(false, false, true));
-    assert!(!trace_active(false, false, false));
-}
-
-#[test]
 fn public_numeric_options_enforce_their_documented_envelopes() {
     assert_eq!(parse_window("640x400"), Ok((640, 400)));
     assert_eq!(parse_window("16384x16384"), Ok((16_384, 16_384)));
