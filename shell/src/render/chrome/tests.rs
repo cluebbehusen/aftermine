@@ -189,7 +189,7 @@ fn the_top_bar_shows_income_before_anything_earns() {
             ui: 1.0,
         },
         &measure,
-        None,
+        crate::input::HudHands::Pointer,
     );
     assert_eq!(top.passive, "+0/min income");
 }
@@ -209,13 +209,21 @@ fn in_pad_mode_the_running_clock_makes_room_for_view() {
         ui: 1.0,
     };
     let bindings = crate::action::BindingMap::classic();
-    let lay = |pad| top_bar_layout(&view, &bindings, env, &measure, pad);
-    let (mouse, pad) = (lay(None), lay(Some(aftermine_protocol::PadFamily::Xbox)));
+    let lay = |hud| top_bar_layout(&view, &bindings, env, &measure, hud);
+    let mouse = lay(crate::input::HudHands::Pointer);
+    let pad = lay(crate::input::HudHands::Pad {
+        names: Some(aftermine_protocol::PadFamily::Xbox),
+    });
     assert_eq!(mouse.status, pad.status, "the same clock");
     let icon = crate::hint_line::icon_width(crate::theme::Type::Small.at(1.0));
     assert!(
         mouse.bar.status_x - pad.bar.status_x >= icon,
         "the clock leaves room for View's icon, as PAUSED does"
+    );
+    let unnamed = lay(crate::input::HudHands::Pad { names: None });
+    assert_eq!(
+        unnamed.bar.status_x, mouse.bar.status_x,
+        "with no controller to name, no icon needs room"
     );
 }
 

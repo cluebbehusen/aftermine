@@ -98,14 +98,15 @@ pub(crate) struct CardLayout {
     folded: bool,
     /// The card's opacity, below 1 while a tip fades out.
     alpha: f32,
-    /// In pad mode, whose buttons the card's own buttons wear.
+    /// Whose buttons the card's own buttons wear: the controller pad mode
+    /// names, if any.
     pad: Option<aftermine_protocol::PadFamily>,
 }
 
 impl CardLayout {
-    /// In pad mode, the card button a controller button presses: A for
-    /// the next lesson or the first match and B for the lesson list, while
-    /// the card offers them.
+    /// While pad mode names a controller, the card button one of its
+    /// buttons presses: A for the next lesson or the first match and B for
+    /// the lesson list, while the card offers them.
     pub(crate) fn pad_press(&self, pressed: aftermine_protocol::PadButton) -> Option<CardButton> {
         self.pad?;
         self.buttons
@@ -213,10 +214,10 @@ pub(crate) fn expand(text: &str, bindings: &crate::action::BindingMap) -> String
 }
 
 /// Lays the card out for `tutorial` over `game`. `coach` is the step's
-/// live line, which the caller reads from the world. In pad mode
-/// (`pad_family`) the card stands open with no fold, since a controller
-/// cannot fold it, and offers only what a finished lesson's buttons do,
-/// each wearing the controller button that presses it; Restart in the
+/// live line, which the caller reads from the world. In pad mode (`hud`)
+/// the card stands open with no fold, since a controller cannot fold it,
+/// and offers only what a finished lesson's buttons do, each wearing the
+/// button that presses it on the controller `hud` names; Restart in the
 /// pause menu stands in for Retry.
 pub(crate) fn layout(
     tutorial: &Tutorial,
@@ -225,7 +226,7 @@ pub(crate) fn layout(
     hands: crate::platform::Hands,
     env: HudEnv,
     measure: Measure,
-    pad_family: Option<aftermine_protocol::PadFamily>,
+    hud: crate::input::HudHands,
 ) -> CardLayout {
     let s = env.ui;
     let (x, y, w) = corner(CARD_W, env);
@@ -234,7 +235,7 @@ pub(crate) fn layout(
     let text_w = w - pad * 2.0;
     let lesson = tutorial.lesson();
     let steps = lesson.steps().len();
-    let folded = tutorial.collapsed() && pad_family.is_none();
+    let folded = tutorial.collapsed() && !hud.pad_mode();
     let mut column = Column {
         x: x + pad,
         cursor: y + pad,
@@ -272,7 +273,7 @@ pub(crate) fn layout(
     let body_size = Type::Body.at(s);
     let wrap = |text: &str| super::wrap_words(text, |t| measure(Face::Body, t, body_size), text_w);
     let mut buttons = Vec::new();
-    if pad_family.is_none() {
+    if !hud.pad_mode() {
         buttons.push((
             Rect::new(x + w - pad - fold, y + 6.0 * s, fold, fold),
             CardButton::Fold,
@@ -332,7 +333,7 @@ pub(crate) fn layout(
                 Course::Lesson(_) => &[CardButton::Next, CardButton::Lessons],
                 Course::FirstMatch => &[CardButton::FirstMatch, CardButton::Lessons],
             }
-        } else if matches!(coach, Some(CoachLine::Stuck)) && pad_family.is_none() {
+        } else if matches!(coach, Some(CoachLine::Stuck)) && !hud.pad_mode() {
             &[CardButton::Retry]
         } else {
             &[]
@@ -343,7 +344,7 @@ pub(crate) fn layout(
             let mut left = x + pad;
             for action in actions {
                 let mut label_w = measure(Face::Body, action.label(), body_size);
-                if pad_family.is_some() {
+                if hud.names().is_some() {
                     label_w += measure(Face::Body, " ", body_size)
                         + crate::hint_line::icon_width(body_size);
                 }
@@ -361,14 +362,13 @@ pub(crate) fn layout(
         lines: column.lines,
         folded,
         alpha: 1.0,
-        pad: pad_family,
+        pad: hud.names(),
     }
 }
 
 /// Lays out the card for match tip `tip` at opacity `alpha`, where the
 /// lesson card sits: its heading, what to do, and a close button. In pad
-/// mode (`pad_family`) it has no close button: a tip closes itself in
-/// time.
+/// mode (`hud`) it has no close button: a tip closes itself in time.
 pub(crate) fn tip_layout(
     tip: Tip,
     alpha: f32,
@@ -376,7 +376,7 @@ pub(crate) fn tip_layout(
     hands: crate::platform::Hands,
     env: HudEnv,
     measure: Measure,
-    pad_family: Option<aftermine_protocol::PadFamily>,
+    hud: crate::input::HudHands,
 ) -> CardLayout {
     let s = env.ui;
     let (x, y, w) = corner(TIP_W, env);
@@ -407,13 +407,13 @@ pub(crate) fn tip_layout(
         );
     }
     let h = column.cursor + pad - y;
-    let buttons = if pad_family.is_none() {
+    let buttons = if hud.pad_mode() {
+        Vec::new()
+    } else {
         vec![(
             Rect::new(x + w - pad - close, y + 6.0 * s, close, close),
             CardButton::Dismiss,
         )]
-    } else {
-        Vec::new()
     };
     CardLayout {
         rect: Rect::new(x, y, w, h),
@@ -421,7 +421,7 @@ pub(crate) fn tip_layout(
         lines: column.lines,
         folded: false,
         alpha,
-        pad: pad_family,
+        pad: hud.names(),
     }
 }
 
@@ -430,7 +430,7 @@ pub(crate) fn current(
     tutorial: &Tutorial,
     game: &crate::game::Game,
     bindings: &crate::action::BindingMap,
-    pad: Option<aftermine_protocol::PadFamily>,
+    hud: crate::input::HudHands,
 ) -> CardLayout {
     layout(
         tutorial,
@@ -439,7 +439,7 @@ pub(crate) fn current(
         crate::platform::hands(),
         HudEnv::current(),
         &super::hud::window_measure,
-        pad,
+        hud,
     )
 }
 
@@ -448,7 +448,7 @@ pub(crate) fn current(
 pub(crate) fn current_tip(
     game: &crate::game::Game,
     bindings: &crate::action::BindingMap,
-    pad: Option<aftermine_protocol::PadFamily>,
+    hud: crate::input::HudHands,
 ) -> Option<CardLayout> {
     let tip = game.tips.showing()?;
     let alpha = game.tips.alpha(
@@ -463,7 +463,7 @@ pub(crate) fn current_tip(
         crate::platform::hands(),
         HudEnv::current(),
         &super::hud::window_measure,
-        pad,
+        hud,
     ))
 }
 

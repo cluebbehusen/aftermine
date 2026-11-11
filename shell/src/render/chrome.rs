@@ -1482,7 +1482,7 @@ fn draw_patrol_buttons(sprites: &Sprites, buttons: &PatrolButtons, input: &Input
         (true, true) => (crate::theme::Stroke::Heavy, EDGE_FOCUS),
     };
     stroke_rect(start, stroke.at(s), edge);
-    let pad = input.hud_pad_family();
+    let pad = input.hud_hands().names();
     let start_ink = if ready {
         TEXT_ACCENT
     } else {
@@ -1556,7 +1556,7 @@ fn draw_centered_button(
 /// pad mode the bumpers that step it stand in for the glyphs.
 fn draw_salvo_steppers(sprites: &Sprites, steppers: &SalvoSteppers, input: &InputState, s: f32) {
     let hover = hover_point(input);
-    let pad = input.hud_pad_family();
+    let pad = input.hud_hands().names();
     for (rect, enabled, plus) in [
         (steppers.less, steppers.less_enabled, false),
         (steppers.more, steppers.more_enabled, true),
@@ -1684,9 +1684,10 @@ pub(crate) struct TopBarLayout {
     alert: Option<String>,
     status: String,
     paused: bool,
-    /// In pad mode, whose buttons the badges and the status name; the menu
-    /// button then stays undrawn, Menu standing in for it.
-    pad: Option<aftermine_protocol::PadFamily>,
+    /// How the HUD stands: in pad mode the menu button stays undrawn, Menu
+    /// standing in for it, and the badges and the status name the buttons
+    /// of the controller named, if any.
+    hands: crate::input::HudHands,
 }
 
 impl TopBarLayout {
@@ -1703,14 +1704,15 @@ impl TopBarLayout {
 
 /// Lays out the top bar: the bank, income, unit count, idle and alert
 /// badges, and the clock with the pause and menu buttons. In pad mode
-/// (`pad`) the badges and the status name the controller's buttons
-/// instead of keys, each icon taking room beside its words.
+/// the badges and the status name no keys; while `hands` names a
+/// controller they name its buttons, each icon taking room beside its
+/// words.
 pub(super) fn top_bar_layout(
     game: &crate::game::Scene<'_>,
     bindings: &crate::action::BindingMap,
     env: super::hud::HudEnv,
     measure: super::hud::Measure<'_>,
-    pad: Option<aftermine_protocol::PadFamily>,
+    hands: crate::input::HudHands,
 ) -> TopBarLayout {
     use super::hud::Face;
     use crate::action::{Action, BindingMap};
@@ -1731,7 +1733,7 @@ pub(super) fn top_bar_layout(
         .count();
     let scrap = scrap.to_string();
     let units = my_units.to_string();
-    let keyless = pad.is_some() || !crate::platform::hands().keys;
+    let keyless = hands.pad_mode() || !crate::platform::hands().keys;
     let idle = crate::input::idle_harvesters(game).len();
     let idle = (idle > 0).then(|| idle_badge_text(idle, &label(Action::CycleIdleWorker), keyless));
     // Alerts age out in a few seconds and hold while paused, so the
@@ -1750,8 +1752,8 @@ pub(super) fn top_bar_layout(
     } else {
         crate::clock_label::ticks(game.state.current_tick())
     };
-    // In pad mode a badge's words are followed by a space and its icon.
-    let with_icon = |face, text: &str, size: f32| match pad {
+    // A named controller's icon follows a badge's words after a space.
+    let with_icon = |face, text: &str, size: f32| match hands.names() {
         Some(_) => measure(face, &format!("{text} "), size) + crate::hint_line::icon_width(size),
         None => measure(face, text, size),
     };
@@ -1785,7 +1787,7 @@ pub(super) fn top_bar_layout(
         alert,
         status,
         paused: game.clock.paused,
-        pad,
+        hands,
     }
 }
 
@@ -1801,16 +1803,16 @@ fn draw_top_bar(top: &TopBarLayout, sprites: &Sprites, s: f32) {
         alert,
         status,
         paused,
-        pad,
+        hands,
     } = top;
     // In pad mode, the button that does what a badge does follows its
     // words.
     let icon_after = |x: f32, size: f32, measured: f32, button, tint| {
-        if let Some(family) = pad {
+        if let Some(family) = hands.names() {
             let x = x + measured + measure_text(" ", None, numeric::font_size(size), 1.0).width;
             crate::hint_line::draw_icon(
                 sprites,
-                crate::pad::button_icon(*family, button),
+                crate::pad::button_icon(family, button),
                 x,
                 26.0 * s,
                 size,
@@ -1871,7 +1873,7 @@ fn draw_top_bar(top: &TopBarLayout, sprites: &Sprites, s: f32) {
     }
     // An Apple TV lays out no menu button, and its HUD can draw a frame
     // before pad mode settles, so the bars mustn't hang off an empty rect.
-    if pad.is_none() && bar.menu_button.w > 0.0 {
+    if !hands.pad_mode() && bar.menu_button.w > 0.0 {
         draw_menu_button(bar.menu_button, s);
     }
     draw_pause_button(bar.pause_button, *paused, s);
@@ -2075,6 +2077,55 @@ pub(crate) fn draw_result_overlay(game: &crate::game::Scene<'_>, sprites: &Sprit
         TEXT_BODY,
         WHITE,
     );
+}
+
+/// What the controller notice says under its title: whether the match
+/// waits for a controller or keeps running without one.
+pub(crate) fn controller_notice_text(lan: bool) -> &'static str {
+    if lan {
+        "The match keeps running for the other players."
+    } else {
+        "The match waits until a controller connects."
+    }
+}
+
+/// The notice over a match no controller can play: it asks for one, says
+/// whether the match waits, and names the remote's Back, its one press
+/// in a match.
+pub(crate) fn draw_controller_notice(sprites: &Sprites, lan: bool) {
+    use crate::hint_line::HintLine;
+    use crate::theme::Type;
+    let s = ui_scale();
+    let title = "CONNECT A CONTROLLER";
+    let body = HintLine::default().text(controller_notice_text(lan));
+    let back = HintLine::default()
+        .button(aftermine_protocol::PadFamily::Remote, crate::pad::BACK)
+        .text(" for the menu");
+    let size = Type::Label.at(s);
+    let width = crate::menu::title_width(title)
+        .max(body.width(size))
+        .max(back.width(size));
+    let center = screen_width() * 0.5;
+    let y = screen_height() * 0.38;
+    draw_rectangle(
+        center - width * 0.5 - 24.0 * s,
+        y - 48.0 * s,
+        width + 48.0 * s,
+        140.0 * s,
+        PANEL,
+    );
+    crate::menu::draw_title(title, y, TEXT_PRIMARY);
+    for (line, baseline) in [(body, y + 30.0 * s), (back, y + 64.0 * s)] {
+        line.draw(
+            sprites,
+            center,
+            baseline,
+            screen_width(),
+            (Type::Label, Type::Label),
+            TEXT_BODY,
+            WHITE,
+        );
+    }
 }
 
 #[cfg(test)]
