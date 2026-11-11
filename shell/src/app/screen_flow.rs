@@ -534,7 +534,7 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
         app.request_catalog();
     }
     offer_rejoin(app, &mut home);
-    home.set_missing(crate::cloud_mirror::missing());
+    home.set_missing(crate::cloud_mirror::missing(), crate::saves::unix_now());
     home.age_question(dt);
     let input_scope = app
         .game

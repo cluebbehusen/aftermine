@@ -49,23 +49,87 @@ struct MissingQuestion {
 /// How long the question ignores input after it appears, in seconds.
 const QUESTION_GRACE: f32 = 1.0;
 
+/// A missing file, from its record name: a folder, then the file's name.
+/// The saves folder holds the game's named saves, `save-` or `lan-` then
+/// the tick and the unix second it was saved; the replays folder holds
+/// replays under whatever name the player gave the file.
+enum Missing<'a> {
+    Save { lan: bool, saved: u64 },
+    OtherSave(&'a str),
+    Replay(&'a str),
+}
+
+impl<'a> Missing<'a> {
+    fn of(name: &'a str) -> Self {
+        let (folder, file) = name.split_once('/').unwrap_or(("", name));
+        if folder == "replays" {
+            return Self::Replay(file);
+        }
+        let named = |prefix: &str| {
+            file.strip_prefix(prefix)?
+                .strip_suffix(".amsave")?
+                .split('-')
+                .nth(1)?
+                .parse::<u64>()
+                .ok()
+        };
+        match (named("save-"), named("lan-")) {
+            (Some(saved), _) => Self::Save { lan: false, saved },
+            (None, Some(saved)) => Self::Save { lan: true, saved },
+            (None, None) => Self::OtherSave(file),
+        }
+    }
+
+    /// What the question calls it, as of `now` in unix seconds.
+    fn described(&self, now: u64) -> String {
+        match self {
+            Self::Save { lan, saved } => format!(
+                "A {}save from {}",
+                if *lan { "LAN " } else { "" },
+                crate::saves::saved_ago(*saved, now)
+            ),
+            Self::OtherSave(file) => format!("The save {file}"),
+            Self::Replay(file) => format!("The replay {file}"),
+        }
+    }
+}
+
+/// What the question says is missing from the Aftermine folder: the one
+/// file by its kind and when it was saved, or by its file name, else how
+/// many of which kinds.
+fn missing_subtitle(names: &[String], now: u64) -> String {
+    if let [name] = names {
+        return format!(
+            "{} is missing from the Aftermine folder",
+            Missing::of(name).described(now)
+        );
+    }
+    let replays = names
+        .iter()
+        .filter(|name| matches!(Missing::of(name), Missing::Replay(_)))
+        .count();
+    let kinds = if replays == 0 {
+        "saves"
+    } else if replays == names.len() {
+        "replays"
+    } else {
+        "saves and replays"
+    };
+    format!(
+        "{} {kinds} are missing from the Aftermine folder",
+        names.len()
+    )
+}
+
 impl MissingQuestion {
     /// Bringing them back sits first and preselected: a mistaken press
     /// deletes nothing.
-    fn new(names: Vec<String>) -> Self {
-        let (subtitle, back) = if names.len() == 1 {
-            (
-                "1 save is missing from the Aftermine folder".to_owned(),
-                "Bring it back",
-            )
+    fn new(names: Vec<String>, now: u64) -> Self {
+        let subtitle = missing_subtitle(&names, now);
+        let back = if names.len() == 1 {
+            "Bring it back"
         } else {
-            (
-                format!(
-                    "{} saves are missing from the Aftermine folder",
-                    names.len()
-                ),
-                "Bring them back",
-            )
+            "Bring them back"
         };
         Self {
             names,
@@ -207,8 +271,9 @@ impl HomeScreen {
     }
 
     /// Asks about `names`, the files now missing from the Aftermine folder,
-    /// or stops asking once there are none.
-    pub(crate) fn set_missing(&mut self, names: Vec<String>) {
+    /// or stops asking once there are none. `now` is the time in unix
+    /// seconds, to say when a missing save was saved.
+    pub(crate) fn set_missing(&mut self, names: Vec<String>, now: u64) {
         if names.is_empty() {
             self.missing = None;
         } else if self
@@ -216,7 +281,7 @@ impl HomeScreen {
             .as_ref()
             .is_none_or(|asked| asked.names != names)
         {
-            self.missing = Some(MissingQuestion::new(names));
+            self.missing = Some(MissingQuestion::new(names, now));
         }
     }
 

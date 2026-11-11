@@ -152,10 +152,10 @@ fn press(home: &mut HomeScreen, key: Key) -> Out {
 #[test]
 fn a_mistaken_press_on_the_missing_files_question_deletes_nothing() {
     let mut home = HomeScreen::with_resumable(true);
-    home.set_missing(vec![
-        "saves/a.amsave".to_owned(),
-        "saves/b.amsave".to_owned(),
-    ]);
+    home.set_missing(
+        vec!["saves/a.amsave".to_owned(), "saves/b.amsave".to_owned()],
+        0,
+    );
     assert_eq!(home.mode_name(), "confirm_missing");
     home.age_question(2.0);
     assert_eq!(press(&mut home, Key::Enter), Out::BringBackMissing);
@@ -167,7 +167,7 @@ fn a_mistaken_press_on_the_missing_files_question_deletes_nothing() {
 #[test]
 fn deleting_missing_files_takes_a_deliberate_choice() {
     let mut home = HomeScreen::with_resumable(true);
-    home.set_missing(vec!["saves/a.amsave".to_owned()]);
+    home.set_missing(vec!["saves/a.amsave".to_owned()], 0);
     home.age_question(2.0);
     assert_eq!(press(&mut home, Key::Down), Out::Stay);
     assert_eq!(press(&mut home, Key::Enter), Out::DeleteMissing);
@@ -176,19 +176,56 @@ fn deleting_missing_files_takes_a_deliberate_choice() {
 #[test]
 fn the_question_goes_away_once_nothing_is_missing_and_survives_a_rescan() {
     let mut home = HomeScreen::with_resumable(true);
-    home.set_missing(vec!["saves/a.amsave".to_owned()]);
+    home.set_missing(vec!["saves/a.amsave".to_owned()], 0);
     home.set_catalog(true);
     assert_eq!(home.mode_name(), "confirm_missing");
-    home.set_missing(Vec::new());
+    home.set_missing(Vec::new(), 0);
     assert_eq!(home.mode_name(), "home");
 }
 
 #[test]
 fn presses_aimed_at_home_never_land_on_the_question() {
     let mut home = HomeScreen::with_resumable(true);
-    home.set_missing(vec!["saves/a.amsave".to_owned()]);
+    home.set_missing(vec!["saves/a.amsave".to_owned()], 0);
     assert_eq!(press(&mut home, Key::Down), Out::Stay);
     assert_eq!(press(&mut home, Key::Enter), Out::Stay);
     home.age_question(2.0);
     assert_eq!(press(&mut home, Key::Enter), Out::BringBackMissing);
+}
+
+#[test]
+fn the_missing_files_question_names_what_is_missing() {
+    let now = 1_800_000_000;
+    let subtitle = |names: &[&str]| {
+        let names = names.iter().map(|name| (*name).to_owned()).collect();
+        MissingQuestion::new(names, now).subtitle
+    };
+    assert_eq!(
+        subtitle(&["saves/save-0000012000-1799996400.amsave"]),
+        "A save from 1 h ago is missing from the Aftermine folder"
+    );
+    assert_eq!(
+        subtitle(&["saves/lan-0000012000-1799996400-2.amsave"]),
+        "A LAN save from 1 h ago is missing from the Aftermine folder"
+    );
+    assert_eq!(
+        subtitle(&["saves/campaign.amsave"]),
+        "The save campaign.amsave is missing from the Aftermine folder"
+    );
+    assert_eq!(
+        subtitle(&["replays/final.amreplay"]),
+        "The replay final.amreplay is missing from the Aftermine folder"
+    );
+    assert_eq!(
+        subtitle(&["saves/a.amsave", "saves/b.amsave"]),
+        "2 saves are missing from the Aftermine folder"
+    );
+    assert_eq!(
+        subtitle(&["replays/a.amreplay", "replays/b.amreplay"]),
+        "2 replays are missing from the Aftermine folder"
+    );
+    assert_eq!(
+        subtitle(&["saves/a.amsave", "replays/b.amreplay"]),
+        "2 saves and replays are missing from the Aftermine folder"
+    );
 }
