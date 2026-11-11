@@ -813,10 +813,12 @@ impl App {
         // Timing and failures belong to the match they were counted for.
         self.background = background_save::Schedule::default();
         self.game.clock.paused = how.paused;
-        if let Some(link) = how.net {
+        if self.game.net_role().is_some() {
             // A LAN match runs in real time with no debug overlay.
             self.game.clock.speed = 1.0;
             self.game.presentation.overlay = false;
+        }
+        if let Some(link) = how.net {
             self.net = Some(link);
         }
         self.performance.reset();
@@ -841,18 +843,14 @@ impl App {
     }
 
     /// Swaps in the match a rejoin restored, keeping the camera where the
-    /// player left it.
+    /// player left it and the link that restored it.
     fn rejoin(&mut self, mut fresh: Game) {
         std::mem::swap(
             &mut fresh.presentation.camera,
             &mut self.game.presentation.camera,
         );
-        self.game = keep_flags(fresh, &self.game);
-        // Timing and failures belong to the match they were counted for.
-        self.background = background_save::Schedule::default();
-        self.game.clock.speed = 1.0;
-        self.game.presentation.overlay = false;
-        self.input.reset_session();
+        let paused = self.game.clock.paused;
+        self.install(fresh, Install { paused, net: None });
     }
 
     /// Saves the settings, sending the ones that follow the player to
@@ -931,7 +929,8 @@ struct Notice {
 struct Install {
     /// Whether it opens paused.
     paused: bool,
-    /// The link carrying a LAN match.
+    /// The link carrying a new LAN match. A rejoin keeps the link already
+    /// running.
     net: Option<crate::netplay::Link>,
 }
 
