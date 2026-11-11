@@ -358,12 +358,6 @@ impl FailureDetectors {
                 continue;
             }
             check_idle_army(detector, state, player, now);
-            let completed: Vec<BuildingKind> = state
-                .buildings()
-                .iter()
-                .filter(|building| building.player == player && building.built())
-                .map(|building| building.kind)
-                .collect();
             let bank = state
                 .player(player)
                 .scrap
@@ -390,7 +384,7 @@ impl FailureDetectors {
                     producers += 1;
                     let idle = building.queue.is_empty();
                     all_idle &= idle;
-                    let unit = cheapest_legal_unit(building, &completed);
+                    let unit = cheapest_legal_unit(state, building);
                     if let Some(unit) = unit
                         && cheapest.is_none_or(|kind| unit.stats().cost < kind.stats().cost)
                     {
@@ -631,22 +625,22 @@ fn observe<'a>(
 }
 
 /// The cheapest unit `producer` may train now under the shared production
-/// rules: its roster and completed prerequisites. Equal prices keep roster
-/// order.
-fn cheapest_legal_unit(producer: &Building, completed: &[BuildingKind]) -> Option<UnitKind> {
-    legal_units(producer, completed).min_by_key(|kind| kind.stats().cost)
+/// rules: its roster and the simulation's own prerequisite gate. Equal prices
+/// keep roster order.
+fn cheapest_legal_unit(state: &State, producer: &Building) -> Option<UnitKind> {
+    legal_units(state, producer).min_by_key(|kind| kind.stats().cost)
 }
 
 fn legal_units<'a>(
+    state: &'a State,
     producer: &'a Building,
-    completed: &'a [BuildingKind],
 ) -> impl Iterator<Item = UnitKind> + 'a {
-    producer.stats().produces.iter().copied().filter(|kind| {
-        kind.stats()
-            .requires
-            .iter()
-            .all(|need| completed.contains(&need.kind))
-    })
+    producer
+        .stats()
+        .produces
+        .iter()
+        .copied()
+        .filter(|kind| state.requirements_met(producer.player, kind.stats().requires))
 }
 
 #[cfg(test)]

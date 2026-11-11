@@ -300,24 +300,29 @@ fn a_busy_or_unaffordable_seat_is_not_starved() {
 
 #[test]
 fn legal_units_follow_the_roster_and_prerequisites() {
-    let state = scenario(fabricator(), 0).build().unwrap();
-    let producer = |kind: BuildingKind| {
+    fn own(state: &State, kind: BuildingKind) -> &Building {
         state
             .buildings()
             .iter()
             .find(|building| building.player == PlayerId(0) && building.kind == kind)
             .unwrap()
+    }
+    let excavator = |state: &State| {
+        legal_units(state, own(state, BuildingKind::Foundry))
+            .any(|kind| kind == UnitKind::Excavator)
     };
-    let fabricator = BuildingKind::Fabricator;
+    let without = scenario(Vec::new(), 0).build().unwrap();
+    let unfinished = staged(&scenario(fabricator(), 0), site(10));
+    let with = scenario(fabricator(), 0).build().unwrap();
+    assert!(!excavator(&without));
+    assert!(!excavator(&unfinished));
+    assert!(excavator(&with));
     assert_eq!(
-        cheapest_legal_unit(producer(fabricator), &[]),
+        cheapest_legal_unit(&with, own(&with, BuildingKind::Fabricator)),
         Some(UnitKind::Flakhound)
     );
-    let foundry = producer(BuildingKind::Foundry);
-    assert!(!legal_units(foundry, &[]).any(|kind| kind == UnitKind::Excavator));
-    assert!(legal_units(foundry, &[fabricator]).any(|kind| kind == UnitKind::Excavator));
     assert_eq!(
-        cheapest_legal_unit(foundry, &[fabricator]).map(|kind| kind.stats().cost),
+        cheapest_legal_unit(&with, own(&with, BuildingKind::Foundry)).map(|kind| kind.stats().cost),
         Some(CHEAPEST_FOUNDRY_UNIT)
     );
 }
