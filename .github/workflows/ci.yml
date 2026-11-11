@@ -67,10 +67,12 @@ jobs:
 
       # The iPad and Apple TV builds compile the shell's Apple-only code, the
       # iCloud crate's Foundation calls and the iOS and tvOS builds of the
-      # miniquad and quad-snd forks. Linting both targets here means a shell
-      # change or a fork pin bump that breaks `cargo ipad` or `cargo tv`
-      # fails in CI. The macOS runner's Xcode supplies the iOS and tvOS SDKs
-      # that the C and Objective-C dependencies compile against.
+      # miniquad and quad-snd forks. Linting both device targets here means a
+      # shell change or a fork pin bump that no longer compiles for them
+      # fails in CI. Linking and the simulator targets are still checked only
+      # by `cargo ipad` and `cargo tv`. The macOS runner's Xcode supplies the
+      # iOS and tvOS SDKs that the C and Objective-C dependencies compile
+      # against.
       - name: Clippy (iOS and tvOS shell)
         if: runner.os == 'macOS'
         run: |
