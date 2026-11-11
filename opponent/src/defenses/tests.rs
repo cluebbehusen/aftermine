@@ -1,4 +1,4 @@
-use super::guns::raises;
+use super::guns::{raises, sites_at};
 use super::*;
 use crate::frame::doubled;
 
@@ -154,4 +154,39 @@ fn a_rim_gun_covers_the_ramp_but_not_the_floor_below() {
     assert!(turret.covers(&map, Domain::Ground, centre(TilePos::new(6, 4))));
     assert!(!turret.covers(&map, Domain::Ground, centre(TilePos::new(5, 5))));
     assert!(turret.covers(&map, Domain::Ground, centre(TilePos::new(3, 2))));
+}
+
+/// [`sites_at`] as it searched the square around a building for anchors
+/// standing off it by one of `gaps`, given widest last.
+fn sites_in_the_square(
+    anchor: TilePos,
+    footprint: (i32, i32),
+    size: (i32, i32),
+    gaps: &[i32],
+) -> Vec<TilePos> {
+    let widest = gaps.last().copied().unwrap_or(0);
+    let low = -(widest + size.0.max(size.1));
+    let high = widest + footprint.0.max(footprint.1);
+    (low..=high)
+        .flat_map(|dy| (low..=high).map(move |dx| anchor.offset(dx, dy)))
+        .filter(|tile| gaps.contains(&crate::frame::gap(anchor, footprint, *tile, size)))
+        .collect()
+}
+
+#[test]
+fn standoff_sites_are_every_anchor_at_a_gap_from_the_building_once() {
+    let anchor = TilePos::new(20, 30);
+    let shapes = [(1, 1), (2, 2), (3, 3), (2, 3), (3, 2)];
+    let gaps: [&'static [i32]; 3] = [&STANDOFF, &[1], &[0, 4]];
+    for footprint in shapes {
+        for size in shapes {
+            for gaps in gaps {
+                let mut ringed: Vec<TilePos> = sites_at(anchor, footprint, size, gaps).collect();
+                let mut searched = sites_in_the_square(anchor, footprint, size, gaps);
+                ringed.sort_unstable();
+                searched.sort_unstable();
+                assert_eq!(ringed, searched, "{footprint:?} {size:?} {gaps:?}");
+            }
+        }
+    }
 }

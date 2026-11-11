@@ -250,19 +250,28 @@ pub(super) fn sites_around(
 }
 
 /// Anchors for a `size` footprint standing off a building of `footprint` at
-/// `anchor` by one of `gaps`, the widest last, a row at a time.
+/// `anchor` by one of `gaps`, each distinct, a ring at a time.
 pub(super) fn sites_at(
     anchor: TilePos,
     footprint: (i32, i32),
     size: (i32, i32),
     gaps: &'static [i32],
 ) -> impl Iterator<Item = TilePos> {
-    let widest = gaps.last().copied().unwrap_or(0);
-    let low = -(widest + size.0.max(size.1));
-    let high = widest + footprint.0.max(footprint.1);
-    (low..=high)
-        .flat_map(move |dy| (low..=high).map(move |dx| anchor.offset(dx, dy)))
-        .filter(move |tile| gaps.contains(&gap(anchor, footprint, *tile, size)))
+    gaps.iter().flat_map(move |gap| {
+        let (left, right) = (anchor.x - size.0 - gap, anchor.x + footprint.0 + gap);
+        let (top, bottom) = (anchor.y - size.1 - gap, anchor.y + footprint.1 + gap);
+        (top..=bottom).flat_map(move |y| {
+            // Rows between the ring's top and bottom hold only its sides.
+            let step = if y == top || y == bottom {
+                1
+            } else {
+                right - left
+            };
+            (left..=right)
+                .step_by(usize::try_from(step).unwrap_or(1).max(1))
+                .map(move |x| TilePos::new(x, y))
+        })
+    })
 }
 
 /// Anchors for a `size` defense holding `gate` from its home side: within
