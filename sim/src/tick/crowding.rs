@@ -136,6 +136,27 @@ pub(crate) struct Position {
     pub point: Vec2Fx,
 }
 
+/// Puts `unit`'s candidate positions for meeting the footprint at `anchor`
+/// in their geometric tie order: [`crate::geometry::stance_rank`] in the
+/// frame of the unit's approach to the footprint.
+pub(in crate::tick) fn sort_stances(
+    state: &State,
+    unit: &Unit,
+    (anchor, size): (TilePos, (i32, i32)),
+    candidates: &mut [Position],
+) {
+    let from = unit.tile();
+    let frame = super::rect_approach_origin(state, unit.player, from, anchor, size);
+    candidates.sort_by_key(|candidate| {
+        crate::geometry::stance_rank(
+            unit.pos,
+            (from, frame),
+            (anchor, size),
+            (candidate.goal, candidate.point),
+        )
+    });
+}
+
 /// Callers supply legal candidates in their geometric tie order and their own route predicate.
 pub(in crate::tick) fn choose(
     state: &State,

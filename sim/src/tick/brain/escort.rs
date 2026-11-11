@@ -222,11 +222,7 @@ fn patient(state: &State, party: &Party, id: UnitId, escorted: UnitId) -> Option
         state.unit(candidate).filter(|u| {
             u.id != id
                 && u.player == welder.player
-                && u.hp > 0
-                && u.hp < u.kind.stats().max_hp
-                && u.kind.stats().repairable()
-                && u.domain() == Domain::Ground
-                && !u.retiring()
+                && u.weldable()
                 && u.pos.dist_sq(party.pos) <= reach_sq
         })
     };

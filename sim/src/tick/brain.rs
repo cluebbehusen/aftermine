@@ -403,6 +403,18 @@ pub(super) fn run(
     }
 }
 
+/// The bearing of `aim` from `from` against `heading`: the frame an exact
+/// distance tie goes round in, which a half turn of the field preserves.
+/// An aim at `from` itself reads as dead ahead.
+fn bearing_from(from: chassis::fx::Vec2Fx, heading: u8, aim: chassis::fx::Vec2Fx) -> u8 {
+    let toward = aim - from;
+    if toward == chassis::fx::Vec2Fx::ZERO {
+        0
+    } else {
+        chassis::compass::heading_of(toward).wrapping_sub(heading)
+    }
+}
+
 /// The salvage danger `id`'s team reads this phase, captured on first use.
 fn team_danger<'a>(
     dangers: &'a mut [Option<crate::vision::GroundSalvageDanger>],
@@ -931,8 +943,8 @@ fn building_distance_sq(a: &crate::state::Building, b: &crate::state::Building) 
 /// melts one wreck unit within its radius into one scrap for its owner, paid
 /// as income. Wreck is unowned, so no fog or ownership check applies.
 fn crucible_smelter(state: &mut State, events: &mut Vec<Event>) {
+    use crate::geometry::footprint_center;
     use crate::stats::BuildingKind;
-    use chassis::grid::TilePos;
     if !state
         .current_tick()
         .is_multiple_of(crate::stats::CRUCIBLE_SMELT_PERIOD)
@@ -953,7 +965,6 @@ fn crucible_smelter(state: &mut State, events: &mut Vec<Event>) {
         .collect();
     let radius = crate::stats::CRUCIBLE_SMELT_RADIUS;
     for id in crucibles {
-        type FuelKey = (chassis::fx::Fx, std::cmp::Reverse<u32>, (i32, i32));
         let Some(b) = state.building(id) else {
             continue;
         };
@@ -961,15 +972,6 @@ fn crucible_smelter(state: &mut State, events: &mut Vec<Event>) {
         let anchor = b.anchor;
         let (w, h) = b.kind.size();
         let reach = radius.to_num::<i32>() + 1;
-        // The nearest wreck feeds first, then the richer one; exact ties fall
-        // to tile order in the crucible's half-turn frame, so mirrored
-        // crucibles eat mirrored tiles.
-        let footprint_center = |anchor: TilePos, (w, h): (i32, i32)| {
-            chassis::fx::Vec2Fx::new(
-                chassis::fx::Fx::from_num(anchor.x * 2 + w) / 2,
-                chassis::fx::Fx::from_num(anchor.y * 2 + h) / 2,
-            )
-        };
         let hearth = footprint_center(anchor, (w, h));
         // A crucible sitting exactly on the map center is its own mirror
         // image, so its frame comes from the owner's earliest Foundry, the
@@ -989,31 +991,20 @@ fn crucible_smelter(state: &mut State, events: &mut Vec<Event>) {
             hearth
         };
         let rotated = super::movement::uses_rotated_map_frame(state, frame);
-        let mut fuel: Option<(FuelKey, TilePos)> = None;
-        for y in (anchor.y - reach)..(anchor.y + h + reach) {
-            for x in (anchor.x - reach)..(anchor.x + w + reach) {
-                let tile = TilePos::new(x, y);
-                let amount = state.map.wreck_at(tile);
-                if amount == 0 {
-                    continue;
-                }
+        let fuel = first_fuel(
+            state,
+            (
+                anchor.offset(-reach, -reach),
+                anchor.offset(w - 1 + reach, h - 1 + reach),
+            ),
+            rotated,
+            |tile| {
                 let center = tile.center();
                 let distance = b.closest_point_to(center).dist_sq(center);
-                if distance > radius * radius {
-                    continue;
-                }
-                let order = if rotated {
-                    (-tile.y, -tile.x)
-                } else {
-                    (tile.y, tile.x)
-                };
-                let key = (distance, std::cmp::Reverse(amount), order);
-                if fuel.as_ref().is_none_or(|(best, _)| key < *best) {
-                    fuel = Some((key, tile));
-                }
-            }
-        }
-        if let Some((_, tile)) = fuel
+                (distance <= radius * radius).then_some(distance)
+            },
+        );
+        if let Some(tile) = fuel
             && state.map.extract_wreck(tile).is_some()
         {
             let bank = &mut state.player_mut(owner).scrap;
@@ -1024,6 +1015,37 @@ fn crucible_smelter(state: &mut State, events: &mut Vec<Event>) {
             });
         }
     }
+}
+
+/// The wreck tile in the rectangle from `low` to `high` an eater bites
+/// next: the nearest by `distance`, which leaves out a tile it gives no
+/// distance, then the richest, then tile order in the half-turn frame
+/// `rotated` picks, so mirrored eaters eat mirrored tiles.
+fn first_fuel(
+    state: &State,
+    (low, high): (chassis::grid::TilePos, chassis::grid::TilePos),
+    rotated: bool,
+    distance: impl Fn(chassis::grid::TilePos) -> Option<chassis::fx::Fx>,
+) -> Option<chassis::grid::TilePos> {
+    let mut fuel = None;
+    for y in low.y..=high.y {
+        for x in low.x..=high.x {
+            let tile = chassis::grid::TilePos::new(x, y);
+            let amount = state.map.wreck_at(tile);
+            if amount == 0 {
+                continue;
+            }
+            let Some(distance) = distance(tile) else {
+                continue;
+            };
+            let order = if rotated { (-y, -x) } else { (y, x) };
+            let key = (distance, std::cmp::Reverse(amount), order);
+            if fuel.as_ref().is_none_or(|(best, _)| key < *best) {
+                fuel = Some((key, tile));
+            }
+        }
+    }
+    fuel.map(|(_, tile)| tile)
 }
 
 #[cfg(test)]

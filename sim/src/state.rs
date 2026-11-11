@@ -1062,6 +1062,18 @@ impl Unit {
         }
     }
 
+    /// Whether a field weld may take this machine on: alive, wounded,
+    /// repairable, on the ground, and not being dismantled. A parked
+    /// airframe is a ground body a welder can reach; an airborne one is not.
+    pub(crate) fn weldable(&self) -> bool {
+        let stats = self.kind.stats();
+        self.hp > 0
+            && self.hp < stats.max_hp
+            && stats.repairable()
+            && self.domain() == crate::stats::Domain::Ground
+            && !self.retiring()
+    }
+
     /// Whether a landed airframe's program leaves it on the ground: idle,
     /// or a landing on the very tile it rests on. Anything else lifts it
     /// off at the next brain tick.

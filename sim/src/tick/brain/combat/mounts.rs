@@ -148,15 +148,6 @@ fn aim_point(state: &State, target: Target, from: Vec2Fx) -> Vec2Fx {
     }
 }
 
-/// The bearing from `pivot` to `aim` against a hull facing `heading`. A
-/// target under the pivot reads as dead ahead, which every arc covers.
-fn relative(pivot: Vec2Fx, aim: Vec2Fx, heading: u8) -> u8 {
-    if aim == pivot {
-        return 0;
-    }
-    chassis::compass::heading_of(aim - pivot).wrapping_sub(heading)
-}
-
 /// Whether a gun at `pivot` has a clear shot at `aim`: only peaks block the
 /// fire of an aircraft.
 fn clear(state: &State, pivot: Vec2Fx, aim: Vec2Fx) -> bool {
@@ -184,7 +175,7 @@ fn feedable(guns: MountedGuns, pos: Vec2Fx, aim: Vec2Fx) -> bool {
     let heading = chassis::compass::heading_of(aim - pos);
     guns.mounts.iter().any(|mount| {
         let pivot = mount.pivot(pos, heading);
-        mount.covers(relative(pivot, aim, heading))
+        mount.covers(bearing_from(pivot, heading, aim))
     })
 }
 
@@ -230,7 +221,7 @@ pub(in crate::tick::brain) fn fire(
         let ranked = sight.ranked(state, pivot, heading);
         let seen = |target: Target, excess: Fx| {
             let aim = aim_point(state, target, pivot);
-            (mount.covers(relative(pivot, aim, heading))
+            (mount.covers(bearing_from(pivot, heading, aim))
                 && in_reach(weapon, pivot, aim, excess)
                 && clear(state, pivot, aim))
             .then_some(aim)
@@ -242,7 +233,7 @@ pub(in crate::tick::brain) fn fire(
             Some(Mark::Blind(view)) => {
                 let aim = view.aim_from(pivot);
                 (weapon.targets.covers(view.domain)
-                    && mount.covers(relative(pivot, aim, heading))
+                    && mount.covers(bearing_from(pivot, heading, aim))
                     && blind::solution(state, pivot, Domain::Air, view, weapon))
                 .then_some((Mark::Blind(view), aim))
             }
@@ -301,7 +292,7 @@ fn traverse(
     aim: Vec2Fx,
 ) -> bool {
     let heading = state.unit(id).expect("caller checked").heading;
-    let wanted = mount.arc_offset(relative(pivot, aim, heading));
+    let wanted = mount.arc_offset(bearing_from(pivot, heading, aim));
     swing(state, id, slot, mount, rate, wanted)
 }
 
@@ -503,7 +494,7 @@ pub(in crate::tick::brain) fn face_idle(
                     .ranked(state, pivot, heading)
                     .iter()
                     .any(|(candidate, aim)| {
-                        !mount.covers(relative(pivot, *aim, heading))
+                        !mount.covers(bearing_from(pivot, heading, *aim))
                             && in_reach(weapon, pivot, *aim, candidate.excess)
                             && feedable(guns, pos, aim_point(state, candidate.target, pos))
                             && clear(state, pivot, *aim)
@@ -534,7 +525,7 @@ pub(in crate::tick::brain) fn face_idle(
     let keeps_picks = guns.mounts.iter().zip(picks).all(|(mount, pick)| {
         pick.is_none_or(|pick| {
             let pivot = mount.pivot(pos, next);
-            mount.covers(relative(pivot, pick.aim, next))
+            mount.covers(bearing_from(pivot, next, pick.aim))
         })
     });
     if keeps_picks {

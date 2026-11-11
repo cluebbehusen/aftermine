@@ -1215,15 +1215,7 @@ fn apply_repair_unit(
     queue: bool,
 ) -> Result<(), RejectReason> {
     let t = state.unit(target).ok_or(RejectReason::InvalidTarget)?;
-    let stats = t.kind.stats();
-    // A parked airframe is a ground body a welder can reach; an airborne
-    // one is not.
-    if t.player != player
-        || t.hp >= stats.max_hp
-        || !stats.repairable()
-        || t.domain() != Domain::Ground
-        || t.retiring()
-    {
+    if t.player != player || !t.weldable() {
         return Err(RejectReason::InvalidTarget);
     }
     assign_each(state, player, units, queue, |unit| {

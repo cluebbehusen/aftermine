@@ -18,8 +18,8 @@ use super::super::flight;
 use super::super::landing;
 use super::super::movement::route_round_hulls;
 use super::super::route_for;
-use super::PendingHit;
 use super::locomotion::{approach_rect, walk};
+use super::{PendingHit, bearing_from};
 use crate::event::{Event, StallReason, UnitLaunchPose};
 use crate::ids::{PlayerId, Target, UnitId};
 use crate::state::{Motor, Order, PathFollow, Resume, State};
@@ -37,24 +37,24 @@ fn target_domain(state: &State, target: Target) -> Domain {
     }
 }
 
-/// The bearing of `aim` from `from` against `heading`: the frame an exact
-/// distance tie between victims goes round in, which a half turn of the
-/// field preserves.
-fn bearing_from(from: Vec2Fx, heading: u8, aim: Vec2Fx) -> u8 {
-    let toward = aim - from;
-    if toward == Vec2Fx::ZERO {
-        0
-    } else {
-        chassis::compass::heading_of(toward).wrapping_sub(heading)
-    }
-}
-
 /// Whether `weapon` reaches a target `distance_sq` from it whose hull
 /// reaches `excess` past a small body's, so a wide machine is hit at its
 /// edge rather than only at its centre.
 fn within_weapon_reach(weapon: &WeaponStats, distance_sq: chassis::fx::Fx, excess: Fx) -> bool {
     let range = weapon.range + excess;
     distance_sq <= range * range && distance_sq >= weapon.minimum_range * weapon.minimum_range
+}
+
+/// Whether `player` sees `target` to fire on it: a unit at its own tile, a
+/// building on any footprint tile and only while its stealth does not hide
+/// it, matching attack validation.
+fn sees_target(state: &State, player: PlayerId, target: Target) -> bool {
+    match target {
+        Target::Unit(uid) => state.unit(uid).is_some_and(|u| state.sees_unit(player, u)),
+        Target::Building(bid) => state.building(bid).is_some_and(|b| {
+            b.tiles().any(|t| state.can_see(player, t)) && state.building_apparent(player, b)
+        }),
+    }
 }
 
 /// Whether a hit on `victim` counts as a hit on a structure: a building, or
@@ -2237,12 +2237,7 @@ fn bomber_attack(
 
     // Release gate: cold bay, in range, spotted, clear arc, and the
     // victim dead ahead. The sight and trace rules are the shared ones.
-    let seen = match target {
-        Target::Unit(uid) => state.unit(uid).is_some_and(|u| state.sees_unit(me, u)),
-        Target::Building(bid) => state.building(bid).is_some_and(|b| {
-            b.tiles().any(|t| state.can_see(me, t)) && state.building_apparent(me, b)
-        }),
-    };
+    let seen = sees_target(state, me, target);
     let to_target = aim_point - pos;
     let in_range =
         within_weapon_reach(weapon, pos.dist_sq(aim_point), target_excess(state, target));
@@ -2572,16 +2567,9 @@ pub(super) fn attack(
     // In range only counts with a clear line (see `crate::tick::fire`) and
     // with sight. The owner must currently see the victim's tile, so a gun
     // that outranges its own vision fires on a spotter's sight. Scrap piles
-    // do not block fire. With no shot, keep approaching.
-    // Sight of any footprint tile serves for a building (matching attack
-    // validation); a unit is seen at its own tile. The line trace runs
-    // only once in range — it is not built for cross-map endpoints.
-    let seen = match target {
-        Target::Unit(uid) => state.unit(uid).is_some_and(|u| state.sees_unit(me, u)),
-        Target::Building(bid) => state.building(bid).is_some_and(|b| {
-            b.tiles().any(|t| state.can_see(me, t)) && state.building_apparent(me, b)
-        }),
-    };
+    // do not block fire. With no shot, keep approaching. The line trace
+    // runs only once in range — it is not built for cross-map endpoints.
+    let seen = sees_target(state, me, target);
     // A wide cutter cuts a building where its drum presses flat against one
     // of its sides: its target's, or short of that, any other it cuts and
     // sees. The stroke lands where the drum meets the side.
@@ -3108,7 +3096,7 @@ fn approach_firing_area(
 ) -> bool {
     let unit = state.unit(id).expect("attacker");
     let b = state.building(building).expect("visible building");
-    let (from, player, pos) = (unit.tile(), unit.player, unit.pos);
+    let pos = unit.pos;
     let domain = unit.domain();
     let legal = |point: Vec2Fx| {
         let aim = b.closest_point_to(point);
@@ -3131,7 +3119,6 @@ fn approach_firing_area(
     }
     let r = weapon.range.ceil().to_num::<i32>();
     let (w, h) = b.kind.size();
-    let frame = crate::tick::rect_approach_origin(state, player, from, b.anchor, (w, h));
     let mut points = Vec::new();
     for y in ((b.anchor.y - r).max(0) * 2)..((b.anchor.y + h + r).min(state.map.height()) * 2) {
         for x in ((b.anchor.x - r).max(0) * 2)..((b.anchor.x + w + r).min(state.map.width()) * 2) {
@@ -3152,21 +3139,14 @@ fn approach_firing_area(
             points.push(point);
         }
     }
-    points.sort_by_key(|&point| {
-        crate::geometry::stance_rank(
-            pos,
-            (from, frame),
-            (b.anchor, (w, h)),
-            (TilePos::containing(point), point),
-        )
-    });
-    let candidates = points
+    let mut candidates: Vec<_> = points
         .into_iter()
         .map(|point| crate::tick::crowding::Position {
             goal: TilePos::containing(point),
             point,
         })
         .collect();
+    crate::tick::crowding::sort_stances(state, unit, (b.anchor, (w, h)), &mut candidates);
     let path = crate::tick::crowding::choose(
         state,
         index,

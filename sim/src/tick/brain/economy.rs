@@ -368,15 +368,10 @@ pub(super) fn repair_unit(
     // The self-target guard is defense in depth: commands refuse it,
     // but an order that somehow names its own welder must end, not
     // bill a machine for welding itself.
-    let Some(t) = state.unit(patient).filter(|t| {
-        t.id != id
-            && t.player == me
-            && t.hp > 0
-            && t.hp < t.kind.stats().max_hp
-            && t.kind.stats().repairable()
-            && t.domain() == crate::stats::Domain::Ground
-            && !t.retiring()
-    }) else {
+    let Some(t) = state
+        .unit(patient)
+        .filter(|t| t.id != id && t.player == me && t.weldable())
+    else {
         // Healed, dead, taken off, retiring, or never a patient: the job is
         // over.
         state.unit_mut(id).expect("caller checked").advance_queue();
@@ -438,14 +433,10 @@ pub(super) fn commit_unit_welds(
                 stationary[slot] = false;
                 continue;
             }
-            let Some(t) = state.unit(weld.patient).filter(|t| {
-                t.player == me
-                    && t.hp > 0
-                    && t.hp < t.kind.stats().max_hp
-                    && t.kind.stats().repairable()
-                    && t.domain() == crate::stats::Domain::Ground
-                    && !t.retiring()
-            }) else {
+            let Some(t) = state
+                .unit(weld.patient)
+                .filter(|t| t.player == me && t.weldable())
+            else {
                 stationary[slot] = false;
                 continue;
             };
@@ -625,13 +616,11 @@ pub(super) fn patient_rank(
     point: Vec2Fx,
     patient: Target,
 ) -> (Fx, u8, Target) {
-    let toward = point - welder.pos;
-    let bearing = if toward == Vec2Fx::ZERO {
-        0
-    } else {
-        chassis::compass::heading_of(toward).wrapping_sub(welder.heading)
-    };
-    (welder.pos.dist_sq(point), bearing, patient)
+    (
+        welder.pos.dist_sq(point),
+        super::bearing_from(welder.pos, welder.heading, point),
+        patient,
+    )
 }
 
 /// The working positions against `patient`'s hull that `welder` tries,
@@ -750,29 +739,18 @@ pub(super) fn harvest(
     // chaining, not an explicit player command. Once the work zone picks
     // a different source for itself, that source remains subject to the
     // fog-honest danger envelope on every tick.
-    let current =
-        known_source(state, unit.player, node).filter(|_| node == anchor || !danger.contains(node));
-
-    if current.is_none() {
-        if let Some(next) = replacement_source(state, index, danger, id, anchor, Some(node)) {
-            switch_source(state, id, next.pos, anchor);
-            return false;
-        }
-        begin_withdrawal(state, id, node, anchor);
-        if carrying > 0 {
-            deliver(state, index, danger, drop_offs, id, events, true);
-        } else {
-            withdraw(state, index, danger, drop_offs, id, events);
-        }
+    let Some(current) =
+        known_source(state, unit.player, node).filter(|_| node == anchor || !danger.contains(node))
+    else {
+        leave_source(state, index, danger, drop_offs, id, node, anchor, events);
         return false;
-    }
+    };
 
     if carrying >= hstats.capacity {
         deliver(state, index, danger, drop_offs, id, events, false);
         return false;
     }
 
-    let current = current.expect("the dry branch returned");
     if state
         .unit(id)
         .expect("caller checked")
@@ -798,7 +776,7 @@ pub(super) fn harvest(
             SourceKind::Wreck => extract_wreck(state, id, node, hstats.ticks_per_scrap),
         }
     } else if !approach_source(state, index, danger, id, current, authoritative) {
-        source_route_failed(state, index, danger, drop_offs, id, node, anchor, events);
+        leave_source(state, index, danger, drop_offs, id, node, anchor, events);
     }
     false
 }
@@ -1208,7 +1186,6 @@ fn source_route_avoiding_danger(
                 )
             })
     };
-    let frame = crate::tick::rect_approach_origin(state, player, from, source.pos, (1, 1));
     let mut candidates: Vec<_> = crate::geometry::work_positions(
         source.pos,
         (1, 1),
@@ -1234,14 +1211,7 @@ fn source_route_avoiding_danger(
         })
     })
     .collect();
-    candidates.sort_by_key(|candidate| {
-        crate::geometry::stance_rank(
-            unit.pos,
-            (from, frame),
-            (source.pos, (1, 1)),
-            (candidate.goal, candidate.point),
-        )
-    });
+    crowding::sort_stances(state, unit, (source.pos, (1, 1)), &mut candidates);
     // Every candidate, including those crowding moves outward, shares one
     // passability rule, so a failed search that explored the start's whole
     // component settles any later goal it never reached.
@@ -1508,7 +1478,6 @@ fn known_rect_route(
     let unit = state.unit(id).expect("caller checked");
     let from = unit.tile();
     let player = unit.player;
-    let frame = crate::tick::rect_approach_origin(state, player, from, anchor, size);
     let building = state
         .buildings()
         .iter()
@@ -1536,14 +1505,7 @@ fn known_rect_route(
         })
     })
     .collect();
-    candidates.sort_by_key(|candidate| {
-        crate::geometry::stance_rank(
-            unit.pos,
-            (from, frame),
-            (anchor, size),
-            (candidate.goal, candidate.point),
-        )
-    });
+    crowding::sort_stances(state, unit, (anchor, size), &mut candidates);
     // The passability predicate is candidate-independent, so one failed
     // search that exhausted the walkable component has already decided
     // every remaining doorstep, including candidates the chooser moves
@@ -1620,8 +1582,11 @@ fn begin_withdrawal(state: &mut State, id: UnitId, node: TilePos, anchor: TilePo
     unit.progress = 0;
 }
 
+/// Moves a worker whose source has run dry, turned dangerous or become
+/// unreachable on to another source in its zone, or else home: it delivers
+/// any load first, then withdraws.
 #[allow(clippy::too_many_arguments)]
-fn source_route_failed(
+fn leave_source(
     state: &mut State,
     index: &UnitIndex,
     danger: &GroundSalvageDanger,
@@ -1645,7 +1610,7 @@ fn source_route_failed(
 }
 
 /// Strip the wreck from beside it. Decay can remove the last piece first;
-/// the dry-source branch above handles that.
+/// [`leave_source`] handles that on the next tick.
 fn extract_wreck(state: &mut State, id: UnitId, node: TilePos, ticks_per_scrap: u32) {
     let unit = state.unit_mut(id).expect("caller checked");
     unit.path = None;
