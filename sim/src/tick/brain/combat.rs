@@ -545,52 +545,23 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
             ));
         }
         let Some(radius) = shell.splash else { continue };
-        let radius_sq = radius * radius;
         // A blast spreads along the level it lands on, never up or down a
         // cliff, and a direct hit's blast stands on the building.
         let footing = direct.map_or_else(|| landing_tile(shell.launch, shell.impact), |b| b.anchor);
-        // Buried charges take splash, as in `buffer_shot`.
-        if shell.targets.ground {
-            for b in &state.buildings {
-                if b.hp == 0
-                    || b.provisional()
-                    || !b.kind.is_stealthy()
-                    || !state.hostile(shell.player, b.player)
-                    || direct.is_some_and(|d| d.id == b.id)
-                    || b.center().dist_sq(shell.impact) > radius_sq
-                    || !blast_catches_charge(state, shell.impact, footing, b)
-                {
-                    continue;
-                }
-                hits.push(PendingHit::along(
-                    state,
-                    shell.shooter,
-                    Target::Building(b.id),
-                    shell.damage,
-                    shell.launch,
-                    shell.impact,
-                ));
-            }
-        }
-        for u in &state.units {
-            let reach = radius + crate::stats::hull_excess(u.kind.stats().radius);
-            if u.hp == 0
-                || !state.hostile(shell.player, u.player)
-                || !shell.targets.covers(u.domain())
-                || u.pos.dist_sq(shell.impact) > reach * reach
-                || !blast_catches(state, shell.impact, footing, u)
-            {
-                continue;
-            }
-            hits.push(PendingHit::along(
-                state,
-                shell.shooter,
-                Target::Unit(u.id),
-                shell.damage,
-                shell.launch,
-                shell.impact,
-            ));
-        }
+        buffer_splash(
+            state,
+            (shell.shooter, shell.player),
+            shell.launch,
+            Blast {
+                at: shell.impact,
+                footing,
+                radius,
+                damage: shell.damage,
+                targets: shell.targets,
+            },
+            direct.map(|b| Target::Building(b.id)),
+            hits,
+        );
     }
 }
 
@@ -752,15 +723,8 @@ fn cut_alongside(
     }
 }
 
-/// Buffers a shot: the direct hit, plus, for splash weapons, one hit on
-/// every other hostile unit inside the radius that the weapon can cover and
-/// on hostile buried charges. Other buildings only take the direct hit.
-///
-/// Splash skips the owner-sight fire gate the aimed paths enforce: the gate
-/// governs choosing a victim, and splash hits whatever stands in the blast.
-/// No information leaks: a bystander's owner learns only that its own body
-/// took damage, and retaliation stays gated on the victim seeing the
-/// shooter.
+/// Buffers a shot: the direct hit, plus, for a splash weapon, its blast
+/// around the victim (see [`buffer_splash`]).
 fn buffer_shot(
     state: &State,
     attacker: Target,
@@ -783,7 +747,6 @@ fn buffer_shot(
         from,
         aim,
     ));
-    let Some(radius) = weapon.splash else { return };
     // The blast stands where the victim does (see `land_shells`).
     let footing = match victim {
         Target::Building(id) => state
@@ -791,50 +754,91 @@ fn buffer_shot(
             .map_or(TilePos::containing(aim), |b| b.anchor),
         Target::Unit(_) => TilePos::containing(aim),
     };
+    if let Some(blast) = Blast::of(weapon, aim, footing) {
+        buffer_splash(
+            state,
+            (attacker, attacker_owner),
+            from,
+            blast,
+            Some(victim),
+            hits,
+        );
+    }
+}
+
+/// The burst a splash weapon's shot makes where it lands.
+#[derive(Clone, Copy)]
+struct Blast {
+    at: Vec2Fx,
+    /// The tile whose level the burst spreads along.
+    footing: TilePos,
+    radius: Fx,
+    damage: u32,
+    targets: crate::stats::DomainMask,
+}
+
+impl Blast {
+    /// The burst of `weapon`'s shot at `at` on `footing`, if it splashes.
+    fn of(weapon: &WeaponStats, at: Vec2Fx, footing: TilePos) -> Option<Self> {
+        Some(Self {
+            at,
+            footing,
+            radius: weapon.splash?,
+            damage: weapon.damage,
+            targets: weapon.targets,
+        })
+    }
+}
+
+/// Buffers one hit of `blast` on every hostile body it catches but
+/// `spared`, which took the direct hit: each unit of a domain it covers,
+/// a wide hull once the burst reaches its edge, and each buried charge
+/// whose centre it reaches. Other buildings only ever take a direct hit;
+/// a buried charge takes splash, detected or not, so saturation fire can
+/// clear a minefield.
+///
+/// Splash skips the owner-sight fire gate the aimed paths enforce: the gate
+/// governs choosing a victim, and splash hits whatever stands in the blast.
+/// No information leaks: a bystander's owner learns only that its own body
+/// took damage, and retaliation stays gated on the victim seeing the
+/// shooter.
+fn buffer_splash(
+    state: &State,
+    (shooter, player): (Target, PlayerId),
+    origin: Vec2Fx,
+    blast: Blast,
+    spared: Option<Target>,
+    hits: &mut Vec<PendingHit>,
+) {
+    let hit = |victim| PendingHit::along(state, shooter, victim, blast.damage, origin, blast.at);
     for u in &state.units {
-        // A wide hull is caught once the blast reaches its edge.
-        let reach = radius + crate::stats::hull_excess(u.kind.stats().radius);
+        let reach = blast.radius + crate::stats::hull_excess(u.kind.stats().radius);
         if u.hp == 0
-            || !state.hostile(attacker_owner, u.player)
-            || Target::Unit(u.id) == victim
-            || !weapon.targets.covers(u.domain())
-            || u.pos.dist_sq(aim) > reach * reach
-            || !blast_catches(state, aim, footing, u)
+            || !state.hostile(player, u.player)
+            || spared == Some(Target::Unit(u.id))
+            || !blast.targets.covers(u.domain())
+            || u.pos.dist_sq(blast.at) > reach * reach
+            || !blast_catches(state, blast.at, blast.footing, u)
         {
             continue;
         }
-        hits.push(PendingHit::along(
-            state,
-            attacker,
-            Target::Unit(u.id),
-            weapon.damage,
-            from,
-            aim,
-        ));
+        hits.push(hit(Target::Unit(u.id)));
     }
-    // The one building exception to direct-hits-only: a buried charge takes
-    // splash, detected or not, so saturation fire can clear a minefield.
-    if weapon.targets.ground {
-        for b in &state.buildings {
-            if b.hp == 0
-                || b.provisional()
-                || !b.kind.is_stealthy()
-                || !state.hostile(attacker_owner, b.player)
-                || Target::Building(b.id) == victim
-                || b.center().dist_sq(aim) > radius * radius
-                || !blast_catches_charge(state, aim, footing, b)
-            {
-                continue;
-            }
-            hits.push(PendingHit::along(
-                state,
-                attacker,
-                Target::Building(b.id),
-                weapon.damage,
-                from,
-                aim,
-            ));
+    if !blast.targets.ground {
+        return;
+    }
+    for b in &state.buildings {
+        if b.hp == 0
+            || b.provisional()
+            || !b.kind.is_stealthy()
+            || !state.hostile(player, b.player)
+            || spared == Some(Target::Building(b.id))
+            || b.center().dist_sq(blast.at) > blast.radius * blast.radius
+            || !blast_catches_charge(state, blast.at, blast.footing, b)
+        {
+            continue;
         }
+        hits.push(hit(Target::Building(b.id)));
     }
 }
 
