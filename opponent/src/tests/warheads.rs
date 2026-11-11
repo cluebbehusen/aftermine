@@ -552,22 +552,49 @@ fn a_spire_steps_through_deepening_the_seats_own_extractor() {
     assert_eq!(step(&deep), Some(Step::Build(BuildingKind::Spire)));
 }
 
+/// West's Extractor beside its start.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Bore {
+    Absent,
+    Refittable,
+    Refitting,
+}
+
 /// West's first decision with a Crucible, every other tech building and
-/// 300 scrap, 200 of it held for a Spire against East's block, with or
-/// without an Extractor it could refit into a Deep Bore.
-fn saving_for_a_spire(bore_frame: bool) -> (Vec<PlayerCommand>, Trace) {
+/// 300 scrap, 200 of it held for a Spire against East's block, with its
+/// Extractor standing as `extractor` says.
+fn saving_for_a_spire(extractor: Bore) -> (Vec<PlayerCommand>, Trace) {
     let mut scenario = strikes(&[], &BLOCK, &[], &[(31, 5)]);
     scenario.buildings.extend([
         building(0, BuildingKind::Crucible, 6, 17),
         building(0, BuildingKind::Fabricator, 9, 17),
         building(0, BuildingKind::Airworks, 9, 14),
     ]);
-    if bore_frame {
+    if extractor != Bore::Absent {
         bore(&mut scenario);
     }
-    scenario.players[0].scrap = 300;
+    let refitting = extractor == Bore::Refitting;
+    let refit = BuildingKind::Extractor.upgrade_from(0).unwrap().cost;
+    scenario.players[0].scrap = if refitting { 300 + refit } else { 300 };
     let mut state = scenario.build().unwrap();
-    advance_to(&mut state, 12, &[]);
+    let upgrade: Vec<PlayerCommand> = state
+        .buildings()
+        .iter()
+        .filter(|b| refitting && b.player == PlayerId(0) && b.kind == BuildingKind::Extractor)
+        .map(|b| PlayerCommand {
+            player: PlayerId(0),
+            command: Command::UpgradeBuilding { building: b.id },
+        })
+        .collect();
+    advance_to(&mut state, 12, &upgrade);
+    assert_eq!(
+        state
+            .buildings()
+            .iter()
+            .any(aftermine_sim::Building::upgrading),
+        refitting,
+        "premise: the Extractor refits only when asked"
+    );
     let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
         json["saving"] = json!({
             "protected": 200,
@@ -582,18 +609,29 @@ fn saving_for_a_spire(bore_frame: bool) -> (Vec<PlayerCommand>, Trace) {
 #[test]
 fn a_seat_with_no_deep_bore_in_reach_spends_what_it_held_for_a_spire() {
     let spire = Some(Investment::Tech(BuildingKind::Spire));
-    let (_, trace) = saving_for_a_spire(true);
+    let (_, trace) = saving_for_a_spire(Bore::Refittable);
     assert_eq!(trace.target.map(|target| target.investment), spire);
     assert!(
         trace.target.and_then(|target| target.next).is_some() && trace.protected > 0,
         "premise: the seat saves toward a Deep Bore: {trace:?}"
     );
-    let (commands, trace) = saving_for_a_spire(false);
+    let (commands, trace) = saving_for_a_spire(Bore::Absent);
     assert_ne!(trace.target.map(|target| target.investment), spire);
     assert!(
         trace.spent > 100 && !trains(&commands).is_empty(),
         "the held scrap goes to production: {commands:?}"
     );
+}
+
+#[test]
+fn a_refitting_deep_bore_keeps_what_the_seat_held_for_a_spire() {
+    let (_, trace) = saving_for_a_spire(Bore::Refitting);
+    assert_eq!(
+        trace.target.map(|target| target.investment),
+        Some(Investment::Tech(BuildingKind::Spire)),
+        "{trace:?}"
+    );
+    assert_eq!(trace.protected, 200, "{trace:?}");
 }
 
 /// West's checkpoint with its saving target set to `investment`.

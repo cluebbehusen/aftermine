@@ -98,14 +98,14 @@ pub(crate) fn supported(observation: &ObservationData, frame: TilePos) -> bool {
     })
 }
 
-/// Whether the seat holds a Deep Bore or an Extractor it could refit into one.
-/// With neither, a Spire's or cradle's prerequisites have no next step and
-/// saving for one would hold the seat's scrap for nothing.
+/// Whether the seat holds a Deep Bore, standing or still refitting, or an
+/// Extractor it could refit into one. With none, a Spire's or cradle's
+/// prerequisites have no next step and saving for one would hold the seat's
+/// scrap for nothing.
 pub(crate) fn bore_within_reach(observation: &ObservationData) -> bool {
     observation.my_buildings.iter().any(|building| {
         building.kind == BuildingKind::Extractor
-            && building.built
-            && (building.tier > 0 || supported(observation, building.anchor))
+            && (building.tier > 0 || (building.built && supported(observation, building.anchor)))
     })
 }
 
