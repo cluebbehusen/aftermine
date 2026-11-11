@@ -847,9 +847,17 @@ fn b_backs_out_of_placement() -> Result<()> {
     drill.client.advance(1)?;
     assert_eq!(sites(&drill.state()?, BuildingKind::Barricade), [[28, 22]]);
 
-    // Armed again, B ends placement, and A no longer builds.
+    // Armed again, B ends placement and goes back to the build ring the
+    // structure came from; Y closes it, and A no longer builds.
     drill.arm_build(Key::R, Key::T)?;
     drill.press(PadButton::East)?;
+    assert_eq!(
+        ui(&mut drill.client)?.title.as_deref(),
+        Some("DEFENSE"),
+        "B reopens the Defense ring"
+    );
+    drill.press(PadButton::North)?;
+    assert_eq!(ui(&mut drill.client)?.title, None, "Y closes it");
     let recorded = drill.recorded()?;
     drill.aim(tile(35, 22))?;
     drill.press(PadButton::South)?;
