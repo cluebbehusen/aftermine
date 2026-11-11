@@ -3820,7 +3820,7 @@ pub(crate) fn activate_action_card(
             game.presentation.toast(why.clone());
         }
     } else if let Action::TrainSlot(slot) = action {
-        orders::train(game, slot as usize);
+        crate::production::train(game, slot as usize);
     }
 }
 
@@ -3842,7 +3842,7 @@ fn activate_card(
 ) {
     match action {
         crate::panel::CardAction::Dispatch(Action::TrainSlot(slot)) => {
-            orders::train(game, slot as usize);
+            crate::production::train(game, slot as usize);
         }
         crate::panel::CardAction::Dispatch(a) => dispatch_action(game, input, bindings, a),
         crate::panel::CardAction::ArmBuild(kind) => {
