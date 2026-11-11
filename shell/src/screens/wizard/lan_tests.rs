@@ -28,13 +28,13 @@ fn hosting() -> (Wizard, NewMatchDraft) {
         env!("CARGO_MANIFEST_DIR"),
         "/../scenarios/broad-front.json"
     ));
-    let mut draft = NewMatchDraft::default();
-    draft.set_scenario(Scenario::load(&path).expect("shipped map"), Some(path));
-    draft.player_name = Some(name("Host"));
-    let mut wizard = Wizard::open(&draft);
-    wizard.goto(Step::Setup, &mut draft);
-    wizard.lan_bind = "127.0.0.1:0".to_owned();
-    wizard.open_lan(&mut draft);
+    let mut draft = NewMatchDraft {
+        player_name: Some(name("Host")),
+        ..NewMatchDraft::default()
+    };
+    let scenario = Scenario::load(&path).expect("shipped map");
+    let wizard = Wizard::host(scenario, Some(path), &mut draft, "127.0.0.1:0");
+    assert_eq!(wizard.step, Step::Setup);
     assert!(wizard.lan.is_some(), "{:?}", wizard.notice);
     assert!(
         draft
@@ -45,6 +45,32 @@ fn hosting() -> (Wizard, NewMatchDraft) {
         "every chair but the host's opens"
     );
     (wizard, draft)
+}
+
+#[test]
+fn hosting_a_scenario_takes_the_first_seat_it_leaves_to_a_human() {
+    let path = PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../scenarios/broad-front.json"
+    ));
+    let mut scenario = Scenario::load(&path).expect("shipped map");
+    scenario.players[0].bot = true;
+    scenario.players[1].bot = false;
+    let mut draft = NewMatchDraft {
+        player_name: Some(name("Host")),
+        ..NewMatchDraft::default()
+    };
+    let wizard = Wizard::host(scenario, Some(path), &mut draft, "127.0.0.1:0");
+    let lan = wizard.lan.as_ref().expect("hosting");
+    assert!(lan.lobby.address().to_string().starts_with("127.0.0.1:"));
+    assert_eq!(draft.seat_choice, 1);
+    assert!(
+        draft
+            .seats
+            .iter()
+            .enumerate()
+            .all(|(seat, plan)| plan.open == (seat != 1))
+    );
 }
 
 fn join(wizard: &Wizard, player: &str) -> Lobby {

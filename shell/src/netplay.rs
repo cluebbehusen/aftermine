@@ -6,7 +6,6 @@ use crate::bot_label::{BotLabelStyle, bot_label};
 use crate::game::Game;
 use crate::game::checkpoint::{LanManifest, SaveCapture};
 use crate::game::network::{CLIENT_BUFFER, NetRole};
-use crate::seating::{Occupant, Seating};
 use aftermine_net::discovery::Beacon;
 use aftermine_net::{
     Advertiser, ClientEnd, ClientSession, Closed, Connection, DEFAULT_PORT, Desk, DeskEvent, Exit,
@@ -16,7 +15,7 @@ use aftermine_net::{
 };
 use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use aftermine_sim::{PlayerId, Scenario, Tick};
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 use macroquad::prelude::Vec2;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
@@ -996,8 +995,6 @@ fn drain(connection: &Connection) -> Result<(), Closed> {
 
 /// Gathering machines until a match starts.
 pub(crate) enum Lobby {
-    /// This machine hosts a fixed scenario.
-    Host(Box<ScenarioHost>),
     /// This machine joins a host.
     Client(ClientLobby),
     /// This machine takes back a seat in a running match.
@@ -1054,7 +1051,6 @@ impl Lobby {
     /// Polls the lobby; returns the match once it starts.
     pub(crate) fn poll(&mut self, now: Duration, viewport: Vec2) -> Option<(Game, Link)> {
         match self {
-            Lobby::Host(host) => host.poll(now, viewport),
             Lobby::Client(client) => client.poll(now, viewport),
             Lobby::Rejoin(returning) => returning.poll(now),
         }
@@ -1063,7 +1059,6 @@ impl Lobby {
     /// One line describing where the lobby stands.
     pub(crate) fn status(&self) -> String {
         match self {
-            Lobby::Host(host) => host.status(),
             Lobby::Client(client) => client.status(),
             Lobby::Rejoin(returning) => returning.status(),
         }
@@ -1072,7 +1067,6 @@ impl Lobby {
     /// One line per seat, once the lobby knows who sits where.
     pub(crate) fn roster(&self) -> Vec<String> {
         match self {
-            Lobby::Host(host) => host.roster(),
             Lobby::Client(client) => client.roster(),
             Lobby::Rejoin(_) => Vec::new(),
         }
@@ -1093,11 +1087,11 @@ impl Lobby {
     }
 
     /// A client's name and the address it joins, so leaving can reopen the
-    /// Join form filled in; `None` for a host or a rejoin.
+    /// Join form filled in; `None` for a rejoin.
     pub(crate) fn joining(&self) -> Option<(&PlayerName, &str)> {
         match self {
             Lobby::Client(ClientLobby { address, name, .. }) => Some((name, address)),
-            _ => None,
+            Lobby::Rejoin(_) => None,
         }
     }
 
@@ -1501,185 +1495,6 @@ pub(crate) fn start_failed_notice(failed: StartFailed) -> &'static str {
         StartFailed::TimedOut => "A player didn't get ready",
         StartFailed::Mismatch { .. } => "A player is out of sync",
         StartFailed::Protocol { .. } => "A player left",
-    }
-}
-
-/// A host for a fixed scenario (`--host`): its human seats open, joiners
-/// take them (or a bot's, when none is open), leavers free theirs, and the
-/// match starts once every seat has someone to play it.
-pub(crate) struct ScenarioHost {
-    lobby: HostLobby,
-    scenario: Scenario,
-    host_name: Option<PlayerName>,
-    seating: Seating,
-    /// The seat order joiners fill: the setup screen's, grouped by team.
-    order: Vec<usize>,
-    /// The host's match while a start runs.
-    starting: Option<Box<Game>>,
-    /// A seating whose match could not be built, so it is not retried.
-    unbuildable: Option<Seating>,
-    notice: Option<String>,
-}
-
-impl ScenarioHost {
-    /// Listens on `address` for the scenario's human seats other than
-    /// `host`'s. `host_name`, when given, names the host's seat.
-    pub(crate) fn new(
-        address: &str,
-        scenario: Scenario,
-        host: PlayerId,
-        commit: &str,
-        host_name: Option<PlayerName>,
-    ) -> Result<Self> {
-        let humans: Vec<PlayerId> = scenario
-            .players
-            .iter()
-            .zip(0..)
-            .filter(|(player, _)| !player.bot)
-            .map(|(_, seat)| PlayerId(seat))
-            .collect();
-        ensure!(
-            humans.len() >= 2 && humans.contains(&host),
-            "a hosted scenario needs the host's seat and another human seat (seats with \"bot\": false)"
-        );
-        Ok(Self {
-            lobby: HostLobby::open(address, commit, &scenario)?,
-            seating: Seating::from_scenario(&scenario, host),
-            order: crate::screens::wizard::seat_display_order(&scenario),
-            scenario,
-            host_name,
-            starting: None,
-            unbuildable: None,
-            notice: None,
-        })
-    }
-
-    fn status(&self) -> String {
-        let place = if self.starting.is_some() {
-            "Starting the match...".to_owned()
-        } else {
-            let open = self
-                .seating
-                .seats()
-                .iter()
-                .filter(|occupant| **occupant == Occupant::Open)
-                .count();
-            let here = 1 + self.seating.members().len();
-            format!(
-                "Hosting on {}: {here} of {} players here",
-                self.lobby.address(),
-                here + open
-            )
-        };
-        match &self.notice {
-            Some(notice) => format!("{place}. {notice}"),
-            None => place,
-        }
-    }
-
-    /// One line per seat: its number and who plays it.
-    fn roster(&self) -> Vec<String> {
-        roster_lines(&self.room(), None)
-    }
-
-    fn room(&self) -> Vec<RoomSeat> {
-        let host = shown_host_name(
-            self.host_name.as_ref(),
-            &self.scenario,
-            self.seating.host_seat(),
-        );
-        self.seating.room(
-            &host,
-            |member| self.lobby.name(member).cloned(),
-            |seat| self.scenario.players[seat].team,
-        )
-    }
-
-    fn poll(&mut self, now: Duration, viewport: Vec2) -> Option<(Game, Link)> {
-        for event in self.lobby.poll(now, self.starting.is_some()) {
-            match event {
-                LobbyEvent::Joined { member, .. } => {
-                    if self.seating.place(member, &self.order).is_none() {
-                        self.lobby.refuse(member);
-                    }
-                }
-                LobbyEvent::Left { member, .. } => {
-                    self.seating.vacate(member);
-                }
-                // The lobby closes these itself.
-                LobbyEvent::Turned { .. } => {}
-            }
-        }
-        if self.starting.is_some() {
-            return self.poll_start(now);
-        }
-        let room = self.room();
-        let seating = &self.seating;
-        self.lobby
-            .publish(&room, |member| seating.seat_of(member), now);
-        // Joiners can take any seat but the host's, so the map's seats are
-        // the lobby's room.
-        let here = 1 + self.seating.members().len();
-        let host = shown_host_name(
-            self.host_name.as_ref(),
-            &self.scenario,
-            self.seating.host_seat(),
-        );
-        let seats = self.scenario.players.len();
-        self.lobby
-            .advertise(&host, &self.scenario.name, here, seats, now);
-        if self.seating.ready() && self.unbuildable.as_ref() != Some(&self.seating) {
-            self.start(now, viewport);
-        }
-        None
-    }
-
-    fn start(&mut self, now: Duration, viewport: Vec2) {
-        let mut scenario = self.scenario.clone();
-        let lobby = &self.lobby;
-        // Every bot seat here came from the scenario and keeps its seed.
-        self.seating.apply(
-            &mut scenario,
-            self.host_name.as_ref(),
-            |member| lobby.name(member).cloned(),
-            0,
-        );
-        let host = self.seating.host_seat();
-        match Game::networked(scenario.clone(), host, NetRole::Host, viewport) {
-            Ok(game) => {
-                let seated = self.seating.members();
-                self.lobby.start(
-                    StartContent::Fresh(&scenario),
-                    host,
-                    &seated,
-                    game.state.hash(),
-                    now,
-                );
-                self.starting = Some(Box::new(game));
-                self.notice = None;
-            }
-            Err(error) => {
-                self.unbuildable = Some(self.seating.clone());
-                eprintln!("Cannot start: {error}");
-                self.notice = Some("Cannot start this match".to_owned());
-            }
-        }
-    }
-
-    fn poll_start(&mut self, now: Duration) -> Option<(Game, Link)> {
-        match self.lobby.poll_start(now, &self.seating.members()) {
-            StartPoll::Waiting => None,
-            StartPoll::Started(started) => {
-                let game = self.starting.take()?;
-                let link = Link::host(*started, &game, now);
-                Some((*game, link))
-            }
-            StartPoll::Failed(failed) => {
-                self.starting = None;
-                self.notice = Some(start_failed_notice(failed).to_owned());
-                None
-            }
-        }
     }
 }
 

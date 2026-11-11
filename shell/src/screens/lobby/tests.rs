@@ -191,40 +191,6 @@ fn back_leaves_the_form_and_steps_out_of_a_join_onto_the_form() {
 }
 
 #[test]
-fn a_roster_longer_than_the_window_scrolls() {
-    crate::render::set_viewport(1280.0, 400.0);
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../scenarios/eight-pits.json");
-    let mut scenario = Scenario::load(std::path::Path::new(path)).expect("shipped map");
-    scenario.players[1].bot = false;
-    scenario.players[1].bot_config = None;
-    let host = crate::netplay::ScenarioHost::new(
-        "127.0.0.1:0",
-        scenario,
-        PlayerId(0),
-        "abc",
-        Some(PlayerName::new("Host").unwrap()),
-    )
-    .unwrap();
-    let mut screen = LobbyScreen::waiting(Lobby::Host(Box::new(host)));
-    let rows = screen.menu.view();
-    assert_eq!(rows.items.len(), 8);
-    assert!(
-        rows.visible_range[1] < 8,
-        "the window shows part: {:?}",
-        rows.visible_range
-    );
-    assert_eq!(rows.visible_range[0], 0);
-    assert_eq!(
-        feed(&mut screen, &[RawEvent::Wheel { delta: -1.0 }]),
-        Out::Stay
-    );
-    assert!(
-        screen.menu.view().visible_range[0] > 0,
-        "the wheel scrolls on"
-    );
-}
-
-#[test]
 fn a_typed_address_that_cannot_parse_opens_the_form_with_why() {
     let screen = LobbyScreen::failed("", "nope:0", "the port must be a number".to_owned());
     assert_eq!(screen.subtitle(), "the port must be a number");
