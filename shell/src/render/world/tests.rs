@@ -402,3 +402,110 @@ fn feather_grid_lines_fall_on_the_band_edges() {
         );
     }
 }
+
+/// A 6×5 map whose fog varies tile by tile, with explored and visible
+/// ground in its boundary margin too; everything past the margin is
+/// unexplored, as the boundary fog leaves it.
+fn patchy_fog(tile: TilePos) -> Fog {
+    let pad = crate::boundary_fog::PAD;
+    if !(-pad..6 + pad).contains(&tile.x) || !(-pad..5 + pad).contains(&tile.y) {
+        return Fog::Unexplored;
+    }
+    FOG_STATES[(tile.x * 7 + tile.y * 3)
+        .rem_euclid(5)
+        .min(2)
+        .fit::<usize>()]
+}
+
+fn scanned(tick: u64, lo: TilePos, hi: TilePos) -> Scanned {
+    Scanned {
+        tick,
+        viewer: aftermine_sim::PlayerId(0),
+        lo,
+        hi,
+    }
+}
+
+#[test]
+fn a_scan_reads_the_fog_once_per_tick_viewer_and_tiles() {
+    let reads = std::cell::Cell::new(0);
+    let fog = |tile| {
+        reads.set(reads.get() + 1);
+        patchy_fog(tile)
+    };
+    let (lo, hi) = (TilePos::new(-2, -2), TilePos::new(8, 7));
+    let mut veil = FogVeil::default();
+    veil.scan(scanned(10, lo, hi), fog);
+    assert!(reads.get() > 0);
+    reads.set(0);
+    veil.scan(scanned(10, lo, hi), fog);
+    assert_eq!(reads.get(), 0, "an unchanged scan reads nothing");
+    for again in [
+        scanned(11, lo, hi),
+        Scanned {
+            viewer: aftermine_sim::PlayerId(1),
+            ..scanned(11, lo, hi)
+        },
+        scanned(11, lo, TilePos::new(9, 7)),
+    ] {
+        veil.scan(again, fog);
+        assert!(reads.get() > 0, "{again:?} scans again");
+        reads.set(0);
+    }
+    veil.forget();
+    veil.scan(scanned(11, lo, TilePos::new(9, 7)), fog);
+    assert!(reads.get() > 0, "a forgotten scan reads again");
+}
+
+#[test]
+fn the_scan_and_the_rest_of_the_view_veil_every_tile_as_its_own_fog_does() {
+    let pad = crate::boundary_fog::PAD;
+    for (min, max) in [
+        (TilePos::new(-30, -25), TilePos::new(40, 33)),
+        (TilePos::new(2, 1), TilePos::new(4, 3)),
+        (TilePos::new(-40, -40), TilePos::new(-20, -20)),
+    ] {
+        let lo = TilePos::new(min.x.max(-pad), min.y.max(-pad));
+        let hi = TilePos::new(max.x.min(6 + pad), max.y.min(5 + pad));
+        let mut veil = FogVeil::default();
+        veil.scan(scanned(1, lo, hi), patchy_fog);
+        let mut cover = BTreeMap::new();
+        for (from, to) in beyond(min, max, veil.scanned) {
+            for y in from.y..to.y {
+                for x in from.x..to.x {
+                    assert!(cover.insert((y, x), Fog::Unexplored).is_none());
+                }
+            }
+        }
+        for run in &veil.runs {
+            for x in run.from..run.to {
+                assert!(cover.insert((run.y, x), run.fog).is_none());
+            }
+        }
+        let mut edges = Vec::new();
+        for y in min.y..max.y {
+            for x in min.x..max.x {
+                let fog = patchy_fog(TilePos::new(x, y));
+                assert_eq!(
+                    cover.get(&(y, x)).copied(),
+                    (fog != Fog::Visible).then_some(fog)
+                );
+                let neighborhood: [[Fog; 3]; 3] = std::array::from_fn(|row| {
+                    std::array::from_fn(|col| {
+                        patchy_fog(TilePos::new(
+                            x + col.fit::<i32>() - 1,
+                            y + row.fit::<i32>() - 1,
+                        ))
+                    })
+                });
+                if fog != Fog::Unexplored && neighborhood.iter().flatten().any(|&n| n > fog) {
+                    edges.push(Edge {
+                        tile: TilePos::new(x, y),
+                        neighborhood,
+                    });
+                }
+            }
+        }
+        assert_eq!(veil.edges, edges, "feathers in view order");
+    }
+}

@@ -116,6 +116,9 @@ pub struct Presentation {
     /// `RefCell` because drawing borrows presentation.
     pub(crate) ground_cache: std::cell::RefCell<Box<crate::render::GroundCache>>,
     pub boundary_fog: crate::boundary_fog::BoundaryFog,
+    /// The fog veil's scan and meshes. A `RefCell` because drawing borrows
+    /// presentation.
+    pub(crate) fog_veil: std::cell::RefCell<crate::render::FogVeil>,
     /// The chrome geometry of the latest HUD layout pass. Hit-testing
     /// reads this same model so drawn and clickable regions cannot
     /// disagree. A `Cell` because drawing borrows presentation.
@@ -401,6 +404,7 @@ impl Presentation {
             ground: std::cell::OnceCell::new(),
             ground_cache: std::cell::RefCell::default(),
             boundary_fog,
+            fog_veil: std::cell::RefCell::default(),
             toasts: Vec::new(),
             stall_reports: Vec::new(),
             net_notice: None,
@@ -1032,6 +1036,7 @@ impl Presentation {
         }
         self.passive_income.set(None);
         self.staged.get_mut().take();
+        self.fog_veil.get_mut().forget();
     }
 }
 

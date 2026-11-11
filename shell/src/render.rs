@@ -129,6 +129,7 @@ use entities::{
 };
 pub use minimap::*;
 use panel_draw::{draw_panel, draw_panel_tooltip};
+pub(crate) use world::FogVeil;
 use world::{draw_fog, draw_scorches};
 
 use crate::game::{EffectKind, Scene};
