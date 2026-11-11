@@ -3,8 +3,8 @@
 
 use crate::bot_label::{difficulty_name, stance_name};
 use crate::game::SoundKind;
-use crate::menu::{Label, Menu, MenuView};
-use aftermine_protocol::{Key, RawEvent};
+use crate::menu::{Answer, Label, Menu, MenuView};
+use aftermine_protocol::RawEvent;
 use aftermine_sim::PlayerId;
 use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use macroquad::prelude::Vec2;
@@ -107,14 +107,12 @@ impl WaitingScreen {
         mouse: &mut Vec2,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Out {
-        let escaped = events
-            .iter()
-            .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
-        let picked = self.menu.handle(events, mouse).map(|picked| picked.value);
-        if picked.is_some() {
-            sounds.push((SoundKind::Click, None));
-        }
+        let escaped = crate::nav::escaped(events);
         if self.face == Face::Rows {
+            let picked = self.menu.handle(events, mouse).map(|picked| picked.value);
+            if picked.is_some() {
+                sounds.push((SoundKind::Click, None));
+            }
             return match picked {
                 Some(Choice::Drop(seat)) => {
                     self.menu = confirm_menu(&self.name(seat));
@@ -131,17 +129,19 @@ impl WaitingScreen {
                 _ => Out::Stay,
             };
         }
-        let out = match (self.face, picked) {
-            (Face::Confirm(seat), Some(Choice::Confirm)) => Out::Drop(seat),
-            (Face::Difficulty(seat), Some(Choice::Difficulty(difficulty))) => {
+        let Some(answer) = self.menu.answer(events, mouse, escaped, sounds) else {
+            return Out::Stay;
+        };
+        let out = match (self.face, answer) {
+            (Face::Confirm(seat), Answer::Picked(Choice::Confirm)) => Out::Drop(seat),
+            (Face::Difficulty(seat), Answer::Picked(Choice::Difficulty(difficulty))) => {
                 self.menu = stance_menu(&self.name(seat));
                 self.face = Face::Stance(seat, difficulty);
                 return Out::Stay;
             }
-            (Face::Stance(seat, difficulty), Some(Choice::Stance(stance))) => {
+            (Face::Stance(seat, difficulty), Answer::Picked(Choice::Stance(stance))) => {
                 Out::Replace(seat, difficulty, stance)
             }
-            (_, None) if !escaped => return Out::Stay,
             _ => Out::Stay,
         };
         // A choice made, cancelled, or escaped returns to the rows.

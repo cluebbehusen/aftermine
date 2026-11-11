@@ -872,6 +872,27 @@ fn a_whole_profile_asks_first_and_every_way_out_keeps_the_rebinds() {
 }
 
 #[test]
+fn every_way_out_of_the_profile_dialog_clicks() {
+    crate::render::set_viewport(1280.0, 800.0);
+    crate::render::set_user_scale(1.0);
+    let mut config = Config::default();
+    let mut s = on(Tab::Controls, &config);
+    for (way, events) in [
+        ("Enter on the preselected Cancel", press(Key::Enter)),
+        ("Escape", press(Key::Escape)),
+        ("the BACK button", crate::button::tests::press_back(true)),
+    ] {
+        focus(&mut s, Profile::LeftHanded.item());
+        drive(&mut s, &mut config, &press(Key::Enter), false);
+        assert_eq!(s.face, Face::Confirming(Profile::LeftHanded));
+        let (mut mouse, mut sounds) = (vec2(0.0, 0.0), Vec::new());
+        s.update(&events, &mut mouse, &mut sounds, &mut config, false, false);
+        assert_eq!(s.face, Face::Tab(Tab::Controls), "{way} closes the dialog");
+        assert_eq!(sounds, [(SoundKind::Click, None)], "{way}");
+    }
+}
+
+#[test]
 fn a_second_tap_on_a_profile_row_never_applies_it() {
     for (width, height) in [(1180.0, 820.0), (640.0, 400.0)] {
         crate::render::set_viewport(width, height);

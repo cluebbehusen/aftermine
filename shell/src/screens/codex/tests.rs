@@ -1,4 +1,5 @@
 use super::*;
+use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
 
 fn drive(screen: &mut CodexScreen, key: Key) -> Out {

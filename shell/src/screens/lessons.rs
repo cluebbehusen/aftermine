@@ -16,7 +16,7 @@ use crate::render::hud::{Face, Measure, window_measure};
 use crate::render::prim::stroke_rect;
 use crate::theme::{BORDER_STRONG, MIN_TOUCH_TARGET, SURFACE_MENU, Stroke, TEXT_BODY, Type};
 use crate::tutorial::{Course, Lesson, Tutorial};
-use aftermine_protocol::{Key, RawEvent};
+use aftermine_protocol::RawEvent;
 use anyhow::Result;
 use macroquad::prelude::{
     Camera2D, DrawTextureParams, FilterMode, Rect, RenderTarget, Vec2, WHITE, draw_rectangle,
@@ -106,10 +106,7 @@ impl LessonsScreen {
             sounds.push((SoundKind::Click, None));
             return Out::Leave;
         }
-        if events
-            .iter()
-            .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }))
-        {
+        if crate::nav::escaped(&events) {
             return Out::Leave;
         }
         let start = start_button(crate::render::ui_scale(), measure);

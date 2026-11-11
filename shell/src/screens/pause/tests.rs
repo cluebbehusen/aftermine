@@ -1,4 +1,5 @@
 use super::*;
+use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
 
 /// Whether the confirmation dialog is up.
@@ -546,5 +547,34 @@ fn the_name_field_names_the_keys_or_controller_buttons_in_use() {
     assert_eq!(naming_hint(ALL_HANDS[0]), "Enter saves | Esc cancels");
     for hands in pad_hands() {
         crate::platform::tests::assert_pad_copy(hands, naming_hint(hands));
+    }
+}
+
+#[test]
+fn every_answer_to_a_pause_dialog_clicks() {
+    let key = |key| [RawEvent::KeyDown { key }, RawEvent::KeyUp { key }];
+    let open_confirm = || {
+        let mut p = PauseScreen::open(false, true);
+        activate(&mut p, "Main menu");
+        assert!(confirming(&p));
+        p
+    };
+    let open_failed =
+        || PauseScreen::open(false, true).with_save_failed("x".to_string(), LeaveVerb::Quit);
+    for (mut p, keys) in [
+        (open_confirm(), vec![Key::Enter]),
+        (open_confirm(), vec![Key::Down, Key::Enter]),
+        (open_confirm(), vec![Key::Escape]),
+        (open_failed(), vec![Key::Enter]),
+        (open_failed(), vec![Key::Up, Key::Enter]),
+        (open_failed(), vec![Key::Down, Key::Enter]),
+        (open_failed(), vec![Key::Escape]),
+    ] {
+        let mode = p.mode_name();
+        let mut heard = Vec::new();
+        for pressed in &keys {
+            heard = pointer(&mut p, &key(*pressed)).1;
+        }
+        assert_eq!(heard, [SoundKind::Click], "{mode} after {keys:?}");
     }
 }

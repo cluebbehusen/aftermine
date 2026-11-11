@@ -505,6 +505,15 @@ pub struct Activation<R> {
     pub column: Option<usize>,
 }
 
+/// What a frame of a question decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Answer<R> {
+    /// A row was picked.
+    Picked(R),
+    /// Escape, or the corner Back, put the question away.
+    Dismissed,
+}
+
 /// How a menu heads its list.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Heading {
@@ -1009,6 +1018,28 @@ impl<R: Clone> Menu<R> {
     pub fn visible_range(&self) -> [usize; 2] {
         let window = self.window();
         [window.first, window.first + window.visible]
+    }
+
+    /// Runs a frame of a question: the row picked, or the question put
+    /// away when `dismissed` (Escape, or the corner Back), which outranks a
+    /// row picked in the same frame. Either answer clicks.
+    pub(crate) fn answer(
+        &mut self,
+        events: &[RawEvent],
+        mouse: &mut Vec2,
+        dismissed: bool,
+        sounds: &mut Vec<(crate::game::SoundKind, Option<Vec2>)>,
+    ) -> Option<Answer<R>> {
+        let picked = self.handle(events, mouse);
+        let answer = if dismissed {
+            Some(Answer::Dismissed)
+        } else {
+            picked.map(|picked| Answer::Picked(picked.value))
+        };
+        if answer.is_some() {
+            sounds.push((crate::game::SoundKind::Click, None));
+        }
+        answer
     }
 
     /// Feeds a frame of events through the menu; returns the activated
@@ -1870,3 +1901,6 @@ mod header_tests;
 
 #[cfg(test)]
 mod entry_tests;
+
+#[cfg(test)]
+mod answer_tests;

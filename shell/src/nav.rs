@@ -45,6 +45,13 @@ impl Nav {
     }
 }
 
+/// Whether a frame pressed Escape.
+pub fn escaped(events: &[RawEvent]) -> bool {
+    events
+        .iter()
+        .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }))
+}
+
 /// Which arrows move a cursor along a line of cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {

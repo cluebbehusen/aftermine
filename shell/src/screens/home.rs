@@ -3,8 +3,8 @@
 //! caller.
 
 use crate::game::SoundKind;
-use crate::menu::{Label, Menu};
-use aftermine_protocol::{Key, RawEvent};
+use crate::menu::{Answer, Label, Menu};
+use aftermine_protocol::RawEvent;
 use macroquad::prelude::{DrawTextureParams, Vec2, WHITE, draw_text, draw_texture_ex, vec2};
 
 /// What a Home frame decided.
@@ -261,18 +261,11 @@ impl HomeScreen {
             if asked.age < QUESTION_GRACE {
                 return Out::Stay;
             }
-            let escaped = events
-                .iter()
-                .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }));
-            let picked = asked.menu.handle(events, mouse).map(|row| row.value);
-            return if escaped || picked == Some(false) {
-                sounds.push((SoundKind::Click, None));
-                Out::BringBackMissing
-            } else if picked == Some(true) {
-                sounds.push((SoundKind::Click, None));
-                Out::DeleteMissing
-            } else {
-                Out::Stay
+            let escaped = crate::nav::escaped(events);
+            return match asked.menu.answer(events, mouse, escaped, sounds) {
+                Some(Answer::Picked(true)) => Out::DeleteMissing,
+                Some(_) => Out::BringBackMissing,
+                None => Out::Stay,
             };
         }
         self.fit();

@@ -255,9 +255,7 @@ impl LobbyScreen {
             }
             return self.update_form(&events, sounds);
         };
-        let escaped = events
-            .iter()
-            .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
+        let escaped = crate::nav::escaped(&events);
         if !back && !escaped {
             // A long roster still scrolls, though it has no row to press.
             if lobby.room_view().is_none() {

@@ -21,7 +21,7 @@ use crate::theme::{
     TEXT_SECONDARY, Type,
 };
 use crate::typography::{entity_name, plural_name};
-use aftermine_protocol::{Key, RawEvent};
+use aftermine_protocol::RawEvent;
 use aftermine_sim::stats::{BuildingKind, Domain, UnitKind};
 use macroquad::prelude::*;
 use std::fmt::Write as _;
@@ -156,10 +156,7 @@ impl CodexScreen {
             sounds.push((SoundKind::Click, None));
             return Out::Leave;
         }
-        if events
-            .iter()
-            .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }))
-        {
+        if crate::nav::escaped(&events) {
             return Out::Leave;
         }
         if self.menu.handle(&events, mouse).is_some() {

@@ -101,6 +101,13 @@ impl BackButton {
         }
         (false, rest)
     }
+
+    /// Whether this frame pressed the button or Escape, and the events
+    /// the button left for the screen.
+    pub(crate) fn route_or_escape(&mut self, events: &[RawEvent]) -> (bool, Vec<RawEvent>) {
+        let (back, rest) = self.route(events);
+        (back || crate::nav::escaped(&rest), rest)
+    }
 }
 
 /// Draws the top-left BACK button, lit under the mouse, outside pad mode.

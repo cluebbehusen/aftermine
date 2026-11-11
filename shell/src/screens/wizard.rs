@@ -11,7 +11,7 @@ use crate::game::Game;
 use crate::game::SoundKind;
 use crate::game::checkpoint::LanSave;
 use crate::game::network::NetRole;
-use crate::menu::{Label, Menu};
+use crate::menu::{Answer, Label, Menu};
 use crate::menu::{Preview, PreviewCache, ScenarioEntry, discover_scenarios};
 use crate::nav::{Axis, Nav, step_line};
 use crate::netplay::{HostLobby, Link, StartPoll, shown_host_name, start_failed_notice};
@@ -1512,13 +1512,8 @@ impl Wizard {
         // change the setup until the start succeeds or fails; Back and
         // Escape call it off.
         if self.lan.as_ref().is_some_and(|lan| lan.starting.is_some()) {
-            let (back, events) = self.back.route(events);
-            let escaped = events
-                .iter()
-                .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
-            if (back || escaped)
-                && let Some(lan) = self.lan.as_mut()
-            {
+            let (dismissed, _) = self.back.route_or_escape(events);
+            if dismissed && let Some(lan) = self.lan.as_mut() {
                 sounds.push((SoundKind::Click, None));
                 lan.lobby.cancel_start();
                 lan.starting = None;
@@ -1527,13 +1522,8 @@ impl Wizard {
         }
         if self.overlay.is_some() {
             // The corner Back closes the overlay, as Escape does.
-            let (back, events) = self.back.route(events);
-            if back {
-                sounds.push((SoundKind::Click, None));
-                self.overlay = None;
-                return Ok(Out::Stay);
-            }
-            self.update_overlay(&events, mouse, draft, sounds);
+            let (dismissed, events) = self.back.route_or_escape(events);
+            self.update_overlay(&events, mouse, dismissed, draft, sounds);
             return Ok(if std::mem::take(&mut self.leaving) {
                 Out::Home
             } else {
@@ -2664,6 +2654,7 @@ impl Wizard {
         &mut self,
         events: &[RawEvent],
         mouse: &mut Vec2,
+        dismissed: bool,
         draft: &mut NewMatchDraft,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) {
@@ -2671,17 +2662,12 @@ impl Wizard {
             return;
         };
         let ask = *ask;
-        let escaped = events
-            .iter()
-            .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
-        if let Some(picked) = menu.handle(events, mouse) {
-            sounds.push((SoundKind::Click, None));
-            self.overlay = None;
-            if picked.value {
-                self.confirmed(ask, draft);
-            }
-        } else if escaped {
-            self.overlay = None;
+        let Some(answer) = menu.answer(events, mouse, dismissed, sounds) else {
+            return;
+        };
+        self.overlay = None;
+        if answer == Answer::Picked(true) {
+            self.confirmed(ask, draft);
         }
     }
 

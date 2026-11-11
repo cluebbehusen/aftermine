@@ -459,9 +459,7 @@ impl Form {
                 None => return Edit::Commit,
             }
         }
-        let escaped = events
-            .iter()
-            .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }));
+        let escaped = crate::nav::escaped(events);
         if pressed == Some(Zone::Cancel) || escaped {
             self.press.cancel();
             return Edit::Cancel;

@@ -627,15 +627,7 @@ pub(super) fn frame(
     }
     if loading
         && app.persistence_result.is_none()
-        && (busy.menu.handle(events, &mut app.input.mouse).is_some()
-            || events.iter().any(|event| {
-                matches!(
-                    event,
-                    RawEvent::KeyDown {
-                        key: aftermine_protocol::Key::Escape
-                    }
-                )
-            }))
+        && (busy.menu.handle(events, &mut app.input.mouse).is_some() || crate::nav::escaped(events))
         && (busy.id.is_none() || app.persistence.cancel())
     {
         app.persistence_result = None;

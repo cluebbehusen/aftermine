@@ -6,7 +6,7 @@
 use crate::action::{Action, BindingMap, Chord, Context};
 use crate::config::{Config, MarkerPrefs, PadPrefs, PerformanceDisplay, ReticleSnap};
 use crate::game::SoundKind;
-use crate::menu::{Heading, Label, Line, Menu};
+use crate::menu::{Answer, Heading, Label, Line, Menu};
 use crate::nav::{Axis, Nav, step_line};
 use crate::numeric;
 use crate::numeric::Fit;
@@ -1004,10 +1004,7 @@ impl SettingsScreen {
             }
             return update;
         }
-        if events
-            .iter()
-            .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }))
-        {
+        if crate::nav::escaped(events) {
             update.out = Out::Leave;
             return update;
         }
@@ -1104,13 +1101,11 @@ impl SettingsScreen {
         config: &mut Config,
         update: &mut Update,
     ) {
-        let escaped = events
-            .iter()
-            .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }));
-        match self.menu.handle(events, mouse).map(|picked| picked.value) {
-            _ if escaped => self.end_confirming(profile, config),
-            Some(Item::Confirm) => {
-                sounds.push((SoundKind::Click, None));
+        match self
+            .menu
+            .answer(events, mouse, crate::nav::escaped(events), sounds)
+        {
+            Some(Answer::Picked(Item::Confirm)) => {
                 config.bindings = profile.bindings();
                 update.dirty = true;
                 self.end_confirming(profile, config);
@@ -1119,10 +1114,7 @@ impl SettingsScreen {
                     danger: false,
                 });
             }
-            Some(_) => {
-                sounds.push((SoundKind::Click, None));
-                self.end_confirming(profile, config);
-            }
+            Some(_) => self.end_confirming(profile, config),
             None => {}
         }
     }

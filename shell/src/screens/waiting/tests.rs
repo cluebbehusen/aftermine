@@ -1,4 +1,5 @@
 use super::*;
+use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
 
 fn absent(seat: u8, name: &str, seconds: u64) -> Absent {
