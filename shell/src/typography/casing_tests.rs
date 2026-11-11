@@ -27,6 +27,7 @@ const TITLES: &[&str] = &[
     "MENU",
     "MUTUAL DESTRUCTION",
     "PAUSED",
+    "QUITTING",
     "REMOVE ?",
     "REPLACE",
     "RESET BINDINGS?",
