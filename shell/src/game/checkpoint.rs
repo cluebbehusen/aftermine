@@ -167,7 +167,8 @@ impl LanSave {
 
     /// Each joined seat whose player was still in the match, in seat
     /// order, with the installation that played it. A seat whose player
-    /// was out waits for nobody.
+    /// was out, or had left with its surrender still to seal, waits for
+    /// nobody.
     pub(crate) fn players(&self) -> &[(PlayerId, aftermine_net::InstallId)] {
         &self.players
     }
@@ -182,9 +183,10 @@ impl LanSave {
     }
 
     /// The match as the host resumes it, with `replaced` seats handed to
-    /// bots, and the unsealed orders of every seat taking part for the
-    /// session to seal first. The game projects only the host's own orders,
-    /// as every networked game does.
+    /// bots, and the unsealed orders of every seat taking part, and of every
+    /// seat that left with its surrender still to seal, for the session to
+    /// seal first. The game projects only the host's own orders, as every
+    /// networked game does.
     pub(crate) fn host_game(
         &self,
         replaced: &[(PlayerId, BotDifficulty, BotStance)],
@@ -193,9 +195,11 @@ impl LanSave {
         game.net = Some(network::NetRole::Host);
         game.clock.paused = false;
         let host = game.presentation.human;
+        let leaving = surrendering(&game.pending.0);
         // A player out of the match takes no part, so neither do its orders.
         let taking_part = |seat: PlayerId| {
             seat == host
+                || leaving.contains(&seat)
                 || (self.players.iter().any(|&(player, _)| player == seat)
                     && !replaced.iter().any(|&(bot, ..)| bot == seat))
         };
@@ -214,7 +218,7 @@ impl LanSave {
     /// The match as the host resumes it alone, once every other player's
     /// seat was handed to a bot. Players out of the match get bots too, so
     /// the host holds the only human seat, as a local match's checkpoint
-    /// requires.
+    /// requires; a surrender still to seal seals on the first tick.
     pub(crate) fn local_game(
         &self,
         replaced: &[(PlayerId, BotDifficulty, BotStance)],
@@ -230,7 +234,8 @@ impl LanSave {
     }
 
     /// The saved match with `bots` seats handed to bots and their orders
-    /// dropped.
+    /// dropped, except those of a seat that left with its surrender still
+    /// to seal.
     fn with_bots(&self, bots: &[(PlayerId, BotDifficulty, BotStance)]) -> Result<Game> {
         let mut game = self
             .checkpoint
@@ -245,11 +250,22 @@ impl LanSave {
             );
             game.take_over_seat(seat, difficulty, stance)?;
         }
-        game.pending
-            .0
-            .retain(|order| !bots.iter().any(|(seat, ..)| *seat == order.player));
+        let leaving = surrendering(&game.pending.0);
+        game.pending.0.retain(|order| {
+            leaving.contains(&order.player) || !bots.iter().any(|(seat, ..)| *seat == order.player)
+        });
         Ok(game)
     }
+}
+
+/// The seats with a surrender among `pending`: they left the match, and
+/// are out of it once their orders seal.
+fn surrendering(pending: &[aftermine_sim::PlayerCommand]) -> Vec<PlayerId> {
+    pending
+        .iter()
+        .filter(|order| matches!(order.command, Command::Surrender))
+        .map(|order| order.player)
+        .collect()
 }
 
 pub(crate) struct RestoredGame {
@@ -283,6 +299,7 @@ impl GameCheckpoint {
     pub(crate) fn into_lan_save(self) -> Result<LanSave> {
         let restored = self.clone().restore()?;
         let state = &restored.core.state;
+        let leaving = surrendering(&restored.core.pending);
         let players = self
             .lan
             .as_ref()
@@ -290,7 +307,7 @@ impl GameCheckpoint {
             .seats
             .iter()
             .copied()
-            .filter(|&(seat, _)| state.accepts_commands(seat))
+            .filter(|&(seat, _)| state.accepts_commands(seat) && !leaving.contains(&seat))
             .collect();
         Ok(LanSave {
             slot: None,

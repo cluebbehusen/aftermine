@@ -218,15 +218,30 @@ impl HostSession {
 
     /// The same session, resuming a saved match whose world is at `tick`,
     /// with the orders it had not yet sealed queued in arrival order. Each
-    /// order must come from one of the session's human seats.
+    /// order must come from one of the session's human seats, or from a
+    /// seat that left before the save, whose surrender is among the orders:
+    /// that seat is out, and its orders seal behind the seats in play.
     #[must_use]
     pub fn resumed(mut self, tick: Tick, pending: Vec<PlayerCommand>) -> Self {
         assert_eq!(self.next_tick, 0, "a session resumes before it seals");
         for command in &pending {
+            let seat = command.player;
+            if self.humans.contains(&seat) {
+                continue;
+            }
             assert!(
-                self.humans.contains(&command.player),
+                pending.iter().any(
+                    |order| order.player == seat && matches!(order.command, Command::Surrender)
+                ),
                 "a pending order must come from a human seat"
             );
+            let at = self.humans.partition_point(|&human| human < seat);
+            self.humans.insert(at, seat);
+            self.clients.push(Client {
+                seat,
+                link: None,
+                standing: Standing::Out,
+            });
         }
         self.next_tick = tick;
         for link in self

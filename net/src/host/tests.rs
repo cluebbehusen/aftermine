@@ -873,6 +873,37 @@ fn a_resumed_session_seals_the_saved_orders_first_from_the_saved_tick() {
 }
 
 #[test]
+fn a_resumed_seat_whose_surrender_was_pending_is_out_and_seals_it_last() {
+    let mut host = HostSession::new(HOST, &[A], secs(0)).resumed(
+        500,
+        vec![
+            from(B, stop(1)),
+            from(B, Command::Surrender),
+            from(A, stop(2)),
+            from(HOST, stop(3)),
+        ],
+    );
+    assert_eq!(host.playing_seats(), [A]);
+    host.poll(secs(0));
+    assert!(!host.waiting(), "nobody waits for B");
+    assert!(host.seats(secs(0)).is_empty());
+    assert_eq!(
+        step(&mut host, secs(0), 7),
+        Some(vec![
+            from(HOST, stop(3)),
+            from(A, stop(2)),
+            from(B, stop(1)),
+            from(B, Command::Surrender),
+        ]),
+        "B's last orders and surrender seal behind the seats in play"
+    );
+    assert!(
+        host.take_outgoing().iter().all(|(seat, _)| *seat == A),
+        "B has no connection"
+    );
+}
+
+#[test]
 #[should_panic(expected = "a pending order must come from a human seat")]
 fn a_resumed_session_refuses_an_order_from_a_bot_seat() {
     let _ = HostSession::new(HOST, &[A], secs(0)).resumed(5, vec![from(B, stop(1))]);
