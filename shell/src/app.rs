@@ -116,7 +116,7 @@ struct App {
     persistence: persistence::Worker,
     persistence_result: Option<Result<persistence::Output>>,
     catalog_id: Option<u64>,
-    catalog_delete: Option<std::path::PathBuf>,
+    catalog_delete: Option<persistence::Deletion>,
     /// When to scan again for records still downloading from iCloud.
     catalog_rescan: Option<std::time::Duration>,
     /// The record changes the last catalog scan began after: iCloud Drive

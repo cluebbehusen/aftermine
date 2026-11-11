@@ -1320,7 +1320,11 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
             return app.persistence_screen(persistence::Intent::Load(path), Screen::Replays(shelf));
         }
         screens::shelf::Out::Delete(path) => {
-            app.catalog_delete = Some(path);
+            app.catalog_delete = shelf
+                .entries
+                .iter()
+                .find(|entry| entry.path == path)
+                .map(persistence::Deletion::of);
             shelf.catalog_ready = false;
         }
         screens::shelf::Out::Stay => {}
