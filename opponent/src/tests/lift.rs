@@ -2107,3 +2107,81 @@ fn free_riders_walk_to_a_start_seen_empty_only_once_it_is_worth_another_look() {
     assert_eq!(walking(13), Vec::new(), "seen lately");
     assert_eq!(walking(12), riders, "worth another look");
 }
+
+/// Three islands on each side of the strait between the two starts, half-turn
+/// symmetric.
+const SHOALS: [&str; 24] = [
+    "################################################",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~........#",
+    "#........~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#..1.....~~~~..........~~..........~~~~....2...#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~........#",
+    "#........~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "#........~~~~..........~~..........~~~~........#",
+    "################################################",
+];
+
+/// Rows of the islands east of the middle pit where an East Barricade stands
+/// at column 27, and two West Sentinels at column 33, on the row and the
+/// next, see it from short of their aggro. The southern pair stands nearer
+/// West's home than the northern one.
+const WADING: [i32; 3] = [2, 11, 19];
+
+/// The shoals with [`WADING`] and its half-turn: each seat's free riders on
+/// the three islands nearest the enemy, beside one enemy Barricade each.
+fn shoals() -> Scenario {
+    let mut scenario = field();
+    scenario.map = SHOALS.map(str::to_owned).to_vec();
+    let rotate = |(x, y): (i32, i32)| (47 - x, 23 - y);
+    for row in WADING {
+        let barricade = (27, row);
+        for (player, (x, y)) in [(1, barricade), (0, rotate(barricade))] {
+            scenario
+                .buildings
+                .push(building(player, BuildingKind::Barricade, x, y));
+        }
+        for spot in [(33, row), (33, row + 1)] {
+            for (player, (x, y)) in [(0, spot), (1, rotate(spot))] {
+                scenario.units.push(unit(player, UnitKind::Sentinel, x, y));
+            }
+        }
+    }
+    scenario
+}
+
+#[test]
+fn mirrored_seats_walk_counterpart_islands_first_when_orders_run_out() {
+    let scenario = shoals();
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 24, &[]);
+    let scrapheap = BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11);
+    let (west, trace) =
+        seat_with(&scenario, 0, scrapheap).act_traced(&state, &mut OwnEvents::default());
+    let walking = west
+        .iter()
+        .filter(|command| matches!(command.command, Command::Attack { .. }))
+        .count();
+    assert_eq!(
+        u32::try_from(walking).unwrap(),
+        trace.unwrap().allowance,
+        "premise: the orders run out before the third island: {west:?}"
+    );
+    let east = seat_with(&scenario, 1, scrapheap).act(&state, &mut OwnEvents::default());
+    assert_eq!(mirror(&state, west), east);
+}

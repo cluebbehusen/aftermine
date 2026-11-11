@@ -1105,31 +1105,33 @@ impl Missions {
     /// and walk to a start presumed held.
     fn walk(&self, lifting: &Lifting<'_>, ledger: &mut Ledger) {
         let (map, observation, frame) = (lifting.map, lifting.observation, lifting.frame);
-        let riders: Vec<&UnitObs> = self
+        let riders: Vec<(&UnitObs, u32)> = self
             .free(observation, ledger)
             .into_iter()
             .filter_map(|id| mine(observation, id))
             .filter(|unit| rides(unit.kind) && unit.idle)
+            .filter_map(|unit| Some((unit, map.component(unit.tile)?)))
+            .filter(|(_, island)| {
+                *island != lifting.home && targeted(lifting.objectives, map, *island)
+            })
             .collect();
-        let mut islands: Vec<u32> = riders
-            .iter()
-            .filter_map(|unit| map.component(unit.tile))
-            .filter(|island| *island != lifting.home && targeted(lifting.objectives, map, *island))
-            .collect();
-        islands.sort_unstable();
-        islands.dedup();
-        for island in islands {
+        // Islands go in order of their rider nearest home, not by label, so
+        // mirrored seats serve counterpart islands first when orders run out.
+        let mut ranked = riders.clone();
+        ranked.sort_unstable_by_key(|(unit, _)| {
+            (frame.rank(frame.home, doubled(unit.tile)), unit.id)
+        });
+        let mut walked: Vec<u32> = Vec::new();
+        for (first, island) in ranked {
+            if walked.contains(&island) {
+                continue;
+            }
+            walked.push(island);
             let on: Vec<&UnitObs> = riders
                 .iter()
-                .copied()
-                .filter(|unit| map.component(unit.tile) == Some(island))
+                .filter(|(_, ground)| *ground == island)
+                .map(|(unit, _)| *unit)
                 .collect();
-            let Some(first) = on
-                .iter()
-                .min_by_key(|unit| (frame.rank(frame.home, doubled(unit.tile)), unit.id))
-            else {
-                continue;
-            };
             let Some((objective, tile)) = lifting.nearest(island, first.tile, None) else {
                 continue;
             };
