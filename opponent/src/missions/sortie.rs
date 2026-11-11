@@ -3,14 +3,15 @@
 //! aim they can take or withdraw when the anti-air around them outweighs them.
 
 use super::air;
-use super::attack::{FIT, Tally, healthy, striking};
+use super::attack::{FIT, healthy, striking};
 use super::clear::{self, Sweep};
+use super::fight::Fight;
 use super::strike::{self, Raid};
 use super::{Mission, Missions, Objective, StrikePhase, Task, mine, run, standing};
 use crate::decision::Ledger;
 use crate::gunship::gunship;
-use aftermine_sim::UnitId;
 use aftermine_sim::observation::{ObservationData, UnitObs};
+use aftermine_sim::{PlayerId, UnitId};
 use chassis::grid::TilePos;
 
 /// Tiles between a member and the aim at which the fight begins.
@@ -69,6 +70,16 @@ impl<'a> Sortie<'_, 'a> {
         match (self, aim) {
             (Self::Strike(raid), Aim::Building(target)) => raid.sets_out(target, strength),
             (Self::Clear(sweep), Aim::Tile(tile)) => sweep.sets_out(tile, strength),
+            _ => unreachable!("a sortie's aim"),
+        }
+    }
+
+    /// The enemy a fight at `aim` goes against: a strike's target's owner.
+    /// A clearance's fight keeps a fixed time.
+    fn owner(self, aim: Aim) -> Option<PlayerId> {
+        match (self, aim) {
+            (Self::Strike(_), Aim::Building(target)) => Some(target.owner),
+            (Self::Clear(_), Aim::Tile(_)) => None,
             _ => unreachable!("a sortie's aim"),
         }
     }
@@ -203,10 +214,7 @@ impl Missions {
                     .iter()
                     .any(|unit| unit.tile.chebyshev(goal) <= CONTACT_TILES);
                 if arrived {
-                    let engage = StrikePhase::Engage {
-                        focus: None,
-                        tally: None,
-                    };
+                    let engage = StrikePhase::Engage(Fight::new(now));
                     self.list[index].set_sortie(aim, engage, now, goal);
                     return None;
                 }
@@ -220,21 +228,16 @@ impl Missions {
                 if sortie.outweighed(&members, strength) {
                     return withdraw(self, ledger).then_some(lost).flatten();
                 }
-                // A strike's fight ends once it has gone its time without
-                // progress, as an attack's does, not after a fixed time.
-                let mission = &mut self.list[index];
-                if let (
-                    Aim::Building(target),
-                    Task::Strike {
-                        phase: StrikePhase::Engage { tally, .. },
-                        ..
-                    },
-                ) = (aim, &mut mission.task)
-                    && Tally::update(tally, sortie.observation(), &members, target.owner)
-                {
-                    mission.since = now;
-                }
-                if !all_idle && now - mission.since < sortie.ticks(phase) {
+                let Some(fight) = self.list[index].task.fight_mut() else {
+                    unreachable!("an engaged sortie's fight");
+                };
+                let going = fight.advance(
+                    sortie.observation(),
+                    &members,
+                    sortie.owner(aim),
+                    sortie.ticks(phase),
+                );
+                if !all_idle && going {
                     return None;
                 }
                 if sortie.stands(aim) {

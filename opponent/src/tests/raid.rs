@@ -505,8 +505,11 @@ fn an_attack_on_a_defended_target_takes_free_sappers_along() {
 
 #[test]
 fn a_fighting_attack_sends_its_sappers_at_the_nearest_defense() {
-    let (state, mut opponent, sapper, turret) =
-        sapping(&serde_json::json!({"engage": {"focus": null}}), true, 12);
+    let (state, mut opponent, sapper, turret) = sapping(
+        &serde_json::json!({"engage": {"focus": null, "progressed": 12}}),
+        true,
+        12,
+    );
     let commands = opponent.act(&state, &mut OwnEvents::default());
     assert_eq!(
         attacks(&commands),
@@ -516,8 +519,11 @@ fn a_fighting_attack_sends_its_sappers_at_the_nearest_defense() {
 
 #[test]
 fn a_fighting_attack_s_sappers_keep_their_orders_when_it_regroups() {
-    let (state, mut opponent, sapper, turret) =
-        sapping(&serde_json::json!({"engage": {"focus": null}}), true, 0);
+    let (state, mut opponent, sapper, turret) = sapping(
+        &serde_json::json!({"engage": {"focus": null, "progressed": 0}}),
+        true,
+        0,
+    );
     let late = {
         let mut state = state.clone();
         while state.current_tick() < 3_612 {
@@ -540,8 +546,11 @@ fn a_fighting_attack_s_sappers_keep_their_orders_when_it_regroups() {
 
 #[test]
 fn an_attack_ending_its_focus_leaves_its_sappers_to_their_work() {
-    let (state, mut opponent, sapper, _) =
-        sapping(&serde_json::json!({"engage": {"focus": 999}}), true, 0);
+    let (state, mut opponent, sapper, _) = sapping(
+        &serde_json::json!({"engage": {"focus": 999, "progressed": 0}}),
+        true,
+        0,
+    );
     let commands = opponent.act(&state, &mut OwnEvents::default());
     let sent = hunts(&commands);
     assert!(

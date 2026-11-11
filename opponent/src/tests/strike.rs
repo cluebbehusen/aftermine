@@ -218,7 +218,7 @@ fn engaged(wing: &[UnitId], tally: &serde_json::Value) -> serde_json::Value {
             "task": {
                 "task": "strike",
                 "target": {"owner": 1, "building": "foundry", "anchor": EAST_START},
-                "phase": {"engage": {"focus": null, "tally": tally}},
+                "phase": {"engage": {"focus": null, "tally": tally, "progressed": 0}},
             },
             "since": 0,
             "units": wing,
@@ -281,9 +281,19 @@ fn a_strike_fight_keeps_what_it_knew_and_resumes_identically() {
     let (scenario, mut state, mut opponent, _) = striking_on(Some(1));
     let commands = opponent.act(&state, &mut OwnEvents::default());
     let json = serde_json::to_value(opponent.checkpoint()).unwrap();
-    assert!(
-        json["missions"]["list"][0]["task"]["phase"]["engage"]["tally"].is_object(),
-        "{json}"
+    let fight = &json["missions"]["list"][0]["task"]["phase"]["engage"];
+    assert!(fight["tally"].is_object(), "{json}");
+    assert_eq!(fight["progressed"], state.current_tick(), "{json}");
+    let mut ahead = json.clone();
+    ahead["missions"]["list"][0]["task"]["phase"]["engage"]["progressed"] =
+        serde_json::json!(state.current_tick() + 1);
+    let ahead: Checkpoint = serde_json::from_value(ahead).unwrap();
+    assert_eq!(
+        Opponent::restore(&ahead, &scenario, &state, map(&scenario))
+            .err()
+            .unwrap(),
+        "checkpoint mission could not have been recorded",
+        "a fight cannot have made progress after now"
     );
     state.tick(&commands);
     resumes_identically(&mut opponent, &scenario, &mut state, 600);

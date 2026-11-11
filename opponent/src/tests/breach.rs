@@ -288,7 +288,7 @@ fn a_maw_leaves_with_an_army_that_turns_home() {
         let mut state = scenario.build().unwrap();
         let maw = at(&state, 21, 15);
         advance_to(&mut state, ends - 12, &[]);
-        let fighting = serde_json::json!({"engage": {"focus": null}});
+        let fighting = serde_json::json!({"engage": {"focus": null, "progressed": 0}});
         let (mut members, mut missions) = super::attack::under_way(&state, &fighting, 0);
         members.push(maw);
         members.sort_unstable();
@@ -322,7 +322,7 @@ fn a_maw_cutting_guns_keeps_a_winning_fight_going() {
     let mut state = scenario.build().unwrap();
     let maw = at(&state, 21, 15);
     advance_to(&mut state, 3_588, &[]);
-    let fighting = serde_json::json!({"engage": {"focus": null}});
+    let fighting = serde_json::json!({"engage": {"focus": null, "progressed": 0}});
     let (mut members, mut missions) = super::attack::under_way(&state, &fighting, 0);
     members.push(maw);
     members.sort_unstable();

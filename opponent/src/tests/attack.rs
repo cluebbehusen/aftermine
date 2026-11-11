@@ -1112,7 +1112,7 @@ fn an_attack_that_razes_a_start_does_not_go_back_to_it() {
             "task": {
                 "task": "attack",
                 "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
-                "phase": {"engage": {"focus": null}},
+                "phase": {"engage": {"focus": null, "progressed": state.current_tick()}},
             },
             "since": state.current_tick(),
             "units": killers,
@@ -1288,8 +1288,11 @@ fn the_upper_rungs_press_a_fight_past_its_time() {
         }
         let mut state = scenario.build().unwrap();
         advance_to(&mut state, 3_588, &[]);
-        let (members, missions) =
-            under_way(&state, &serde_json::json!({"engage": {"focus": null}}), 0);
+        let (members, missions) = under_way(
+            &state,
+            &serde_json::json!({"engage": {"focus": null, "progressed": 0}}),
+            0,
+        );
         advance_to(&mut state, 3_600, &[run(0, members.clone(), 20, 16)]);
         let mut opponent = restaged(&scenario, &state, missions);
         let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
@@ -1339,7 +1342,7 @@ fn an_army_that_cleared_its_way_goes_on_to_the_target_it_knows() {
                 "task": {
                     "task": "attack",
                     "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
-                    "phase": {"engage": {"focus": null}},
+                    "phase": {"engage": {"focus": null, "progressed": since}},
                 },
                 "since": since,
                 "units": members,
@@ -1384,8 +1387,11 @@ fn fighting(
     });
     let mut state = scenario.build().unwrap();
     advance_to(&mut state, 3_588, &[]);
-    let (members, mut missions) =
-        under_way(&state, &serde_json::json!({"engage": {"focus": null}}), 0);
+    let (members, mut missions) = under_way(
+        &state,
+        &serde_json::json!({"engage": {"focus": null, "progressed": 0}}),
+        0,
+    );
     advance_to(&mut state, 3_600, &[run(0, members.clone(), 20, 16)]);
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
     let known = |hp: u32| i64::from(hp);
@@ -1472,7 +1478,7 @@ fn progress_never_holds_an_outweighed_fight() {
     let mut state = scenario.build().unwrap();
     let (_, missions) = under_way(
         &state,
-        &serde_json::json!({"engage": {"focus": null, "tally": {"buildings": u64::MAX, "units": u64::MAX}}}),
+        &serde_json::json!({"engage": {"focus": null, "tally": {"buildings": u64::MAX, "units": u64::MAX}, "progressed": 0}}),
         0,
     );
     advance_to(&mut state, 12, &[]);
@@ -1497,7 +1503,11 @@ fn the_upper_rungs_hold_a_fight_they_are_only_slightly_outweighed_in() {
     ] {
         let scenario = advanced(difficulty, &east);
         let mut state = scenario.build().unwrap();
-        let (_, missions) = under_way(&state, &serde_json::json!({"engage": {"focus": null}}), 0);
+        let (_, missions) = under_way(
+            &state,
+            &serde_json::json!({"engage": {"focus": null, "progressed": 0}}),
+            0,
+        );
         advance_to(&mut state, 12, &[]);
         let mut opponent = restaged(&scenario, &state, missions);
         let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
@@ -1565,8 +1575,11 @@ fn guns_that_fire_only_at_aircraft_never_turn_a_ground_attack_back() {
             scenario.units.push(unit(0, UnitKind::Talon, 21, 13));
         }
         let mut state = scenario.build().unwrap();
-        let (sentinels, mut missions) =
-            under_way(&state, &serde_json::json!({"engage": {"focus": null}}), 0);
+        let (sentinels, mut missions) = under_way(
+            &state,
+            &serde_json::json!({"engage": {"focus": null, "progressed": 0}}),
+            0,
+        );
         let talon = (flight != Flight::Sentinels).then(|| at(&state, 21, 13));
         let mut members = if flight == Flight::TalonAlone {
             Vec::new()
@@ -1668,7 +1681,11 @@ fn an_attack_pulling_back_sends_no_reinforcements_after_it() {
         11,
     ));
     let mut state = scenario.build().unwrap();
-    let (members, missions) = under_way(&state, &serde_json::json!({"engage": {"focus": null}}), 0);
+    let (members, missions) = under_way(
+        &state,
+        &serde_json::json!({"engage": {"focus": null, "progressed": 0}}),
+        0,
+    );
     advance_to(&mut state, 12, &[]);
     let mut opponent = restaged(&scenario, &state, missions);
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());

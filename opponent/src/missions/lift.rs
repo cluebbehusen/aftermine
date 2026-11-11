@@ -7,7 +7,8 @@
 use super::Scratch;
 use super::air::{self, Hazard, Legs};
 
-use super::attack::{FIT, Tally, healthy, margin, minimum, opposed, striking};
+use super::attack::{FIT, healthy, margin, minimum, opposed, striking};
+use super::fight::Fight;
 use super::raid::{aim, blast};
 use super::{
     LiftPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, approach, distant_worth,
@@ -984,10 +985,7 @@ impl Missions {
             let mission = &mut self.list[flight.index];
             mission.task = Task::Lift {
                 target: flight.target,
-                phase: LiftPhase::Fight {
-                    focus: None,
-                    tally: None,
-                },
+                phase: LiftPhase::Fight(Fight::new(lifting.observation.tick)),
             };
             mission.since = lifting.observation.tick;
             mission.goal = goal;
@@ -1045,16 +1043,12 @@ impl Missions {
             .chain(held.iter().copied())
             .collect();
         let mission = &mut self.list[flight.index];
-        if let Task::Lift {
-            phase: LiftPhase::Fight { tally, .. },
-            ..
-        } = &mut mission.task
-            && Tally::update(tally, observation, &fighting, target.owner)
-        {
-            mission.since = now;
-        }
+        let Some(fight) = mission.task.fight_mut() else {
+            unreachable!("a landed lift's fight");
+        };
+        let going = fight.advance(observation, &fighting, Some(target.owner), FIGHT_TICKS);
         let goal = mission.goal;
-        if now - mission.since >= FIGHT_TICKS {
+        if !going {
             self.disband(flight, &held, lifting, ledger);
             return standing.then_some(target);
         }
@@ -1098,10 +1092,7 @@ impl Missions {
             let mission = &mut self.list[flight.index];
             mission.task = Task::Lift {
                 target: next,
-                phase: LiftPhase::Fight {
-                    focus: None,
-                    tally: None,
-                },
+                phase: LiftPhase::Fight(Fight::new(now)),
             };
             mission.since = now;
             mission.goal = tile;

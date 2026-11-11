@@ -25,6 +25,7 @@ mod air;
 mod attack;
 mod clear;
 mod defense;
+mod fight;
 mod focus;
 mod guarding;
 mod lift;
@@ -149,13 +150,7 @@ enum RaidPhase {
 enum StrikePhase {
     Gather,
     Travel,
-    Engage {
-        focus: Option<UnitId>,
-        /// What a strike's fight last knew of the enemy, to tell whether it
-        /// still makes progress. `None` until its first decision, and always
-        /// for a clearance, whose fight keeps a fixed time.
-        tally: Option<attack::Tally>,
-    },
+    Engage(fight::Fight),
     Withdraw,
 }
 
@@ -164,12 +159,7 @@ enum StrikePhase {
 enum LiftPhase {
     Load,
     Fly,
-    Fight {
-        focus: Option<UnitId>,
-        /// What the fight last knew of the enemy, to tell whether it still
-        /// makes progress. `None` until its first decision.
-        tally: Option<attack::Tally>,
-    },
+    Fight(fight::Fight),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -195,12 +185,7 @@ enum AttackPhase {
     /// Gathering at the staging spot before going in together.
     Stage,
     Travel,
-    Engage {
-        focus: Option<UnitId>,
-        /// What the fight last knew of the enemy, to tell whether it still
-        /// makes progress. `None` until its first decision.
-        tally: Option<attack::Tally>,
-    },
+    Engage(fight::Fight),
     Withdraw,
     Recover,
 }
@@ -342,7 +327,8 @@ pub struct MissionStatus {
     pub kind: MissionKind,
     /// Where it stands.
     pub phase: Phase,
-    /// Tick the phase began.
+    /// Tick the phase's timeout counts from: when it began, or a fight's
+    /// last progress.
     pub since: u64,
     /// Ticks the phase should end within, if it has a deadline. A phase much
     /// older than this is a mission that failed to recover; a quiet guard
@@ -478,23 +464,35 @@ impl Task {
             Self::Defend {
                 phase: DefendPhase::Engage { focus },
                 ..
-            }
-            | Self::Attack {
-                phase: AttackPhase::Engage { focus, .. },
+            } => Some(focus),
+            _ => self.fight_mut().map(|fight| &mut fight.focus),
+        }
+    }
+
+    /// The fight of a mission in its fight phase.
+    fn fight(mut self) -> Option<fight::Fight> {
+        self.fight_mut().copied()
+    }
+
+    /// The fight of a mission in its fight phase, to update.
+    fn fight_mut(&mut self) -> Option<&mut fight::Fight> {
+        match self {
+            Self::Attack {
+                phase: AttackPhase::Engage(fight),
                 ..
             }
             | Self::Lift {
-                phase: LiftPhase::Fight { focus, .. },
+                phase: LiftPhase::Fight(fight),
                 ..
             }
             | Self::Strike {
-                phase: StrikePhase::Engage { focus, .. },
+                phase: StrikePhase::Engage(fight),
                 ..
             }
             | Self::Clear {
-                phase: StrikePhase::Engage { focus, .. },
+                phase: StrikePhase::Engage(fight),
                 ..
-            } => Some(focus),
+            } => Some(fight),
             _ => None,
         }
     }
@@ -614,7 +612,10 @@ impl Missions {
                 id: mission.id,
                 kind: mission.task.kind(),
                 phase: mission.task.phase(),
-                since: mission.since,
+                since: mission
+                    .task
+                    .fight()
+                    .map_or(mission.since, fight::Fight::progressed),
                 timeout: mission.task.timeout(),
                 units: u32::try_from(mission.units.len()).expect("mission sizes fit in u32"),
                 goal: mission.goal,
@@ -820,7 +821,8 @@ impl Missions {
                 Task::Clear { aim, .. } => on_map(aim),
                 ref task => task.target().is_none_or(|target| on_map(target.anchor)),
             };
-            if mission.since > now || !on_map(mission.goal) || !target_on_map {
+            let progressed = mission.task.fight().map_or(0, fight::Fight::progressed);
+            if mission.since > now || progressed > now || !on_map(mission.goal) || !target_on_map {
                 return Err("checkpoint mission could not have been recorded".into());
             }
         }

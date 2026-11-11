@@ -2044,7 +2044,7 @@ fn landed(riders: &[UnitId], since: u64, tally: &serde_json::Value) -> serde_jso
             "task": {
                 "task": "lift",
                 "target": {"owner": 1, "building": "foundry", "anchor": {"x": 35, "y": 11}},
-                "phase": {"fight": {"focus": null, "tally": tally}},
+                "phase": {"fight": {"focus": null, "tally": tally, "progressed": since}},
             },
             "since": since,
             "units": riders,
