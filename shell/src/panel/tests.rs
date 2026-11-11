@@ -1509,6 +1509,12 @@ fn panel_copy_uses_only_supported_font_glyphs() {
         for status in &panel.info.status {
             assert!(supported(status), "panel status: {status}");
         }
+        if let Some(health) = panel.info.health {
+            assert!(supported(health.label), "health label: {}", health.label);
+        }
+        if let Some(text) = panel.info.reserved.as_ref().and_then(|l| l.text.as_ref()) {
+            assert!(supported(text), "panel status: {text}");
+        }
         for card in panel.roster.iter().chain(&panel.cards).chain(&panel.queue) {
             assert_card(card);
         }

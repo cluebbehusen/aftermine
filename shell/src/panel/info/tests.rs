@@ -127,7 +127,7 @@ fn hostile_inspection_does_not_expose_current_load_or_orders() {
 }
 
 #[test]
-fn scouts_list_their_radar_and_a_surveyor_reports_it_unfolding() {
+fn scouts_list_their_radar_and_a_surveyor_unfolds_it_without_a_status_line() {
     let radar = |panel: &Panel| {
         panel
             .info
@@ -155,20 +155,23 @@ fn scouts_list_their_radar_and_a_surveyor_reports_it_unfolding() {
     }];
     let mut game = Game::with_viewport(scenario, macroquad::prelude::vec2(640.0, 400.0)).unwrap();
     game.presentation.selection.units = game.state.units().iter().map(|u| u.id).collect();
-    let status = |game: &Game| {
-        build_for_palette(&game.view(), &BindingMap::classic(), false)
+    // The unfolding rig and the radar ring say what its state is.
+    let quiet = |game: &Game| {
+        let info = build_for_palette(&game.view(), &BindingMap::classic(), false)
             .unwrap()
-            .info
-            .status
+            .info;
+        info.status.is_empty() && info.reserved.is_none()
     };
-    assert!(status(&game).is_empty(), "folded at the start");
+    assert!(quiet(&game), "folded at the start");
     game.do_tick();
-    assert_eq!(status(&game), ["Unfolding radar"]);
+    assert!(game.state.units()[0].radar_deploy > 0, "premise: unfolding");
+    assert!(quiet(&game), "unfolding");
     let deploy = UnitKind::Surveyor.stats().radar.unwrap().deploy_ticks;
     for _ in 1..deploy {
         game.do_tick();
     }
-    assert_eq!(status(&game), ["Radar up"]);
+    assert!(game.state.units()[0].radar().is_some(), "premise: up");
+    assert!(quiet(&game), "up");
 }
 
 #[test]
@@ -203,7 +206,7 @@ fn point_defense_reach_carries_the_icon_its_range_ring_draws() {
 }
 
 #[test]
-fn a_battery_counts_warheads_landing_in_its_ring_apart_from_those_still_tracked() {
+fn a_lattice_counts_warheads_landing_in_its_ring_and_those_no_interceptor_meets() {
     use aftermine_sim::strike::{KnownWarhead, WarheadLine};
     use chassis::fx::{Fx, Vec2Fx};
 
@@ -221,20 +224,21 @@ fn a_battery_counts_warheads_landing_in_its_ring_apart_from_those_still_tracked(
         exposure: None,
         interceptor: stopped.then_some(aftermine_sim::BuildingId(7)),
     };
-    let summary = |warheads: &[KnownWarhead]| incoming_warheads(warheads, at(0), Fx::from_num(15));
+    let line = |warheads: &[KnownWarhead]| incoming_line(warheads, at(0), Fx::from_num(15));
 
     assert_eq!(
-        summary(&[warhead(None, false)]).as_deref(),
-        Some("Tracking 1 warhead"),
-        "a contact without a line is neither incoming nor unanswered"
-    );
-    assert_eq!(
-        summary(&[warhead(Some(20), false)]),
+        line(&[warhead(None, false)]),
         None,
-        "outside the ring"
+        "a contact without a line is not incoming"
+    );
+    assert_eq!(line(&[warhead(Some(20), false)]), None, "outside the ring");
+    assert_eq!(
+        line(&[warhead(Some(5), true), warhead(Some(10), true)]).as_deref(),
+        Some("2 incoming"),
+        "every one answered"
     );
     assert_eq!(
-        summary(&[
+        line(&[
             warhead(Some(5), true),
             warhead(Some(10), false),
             warhead(None, false),
@@ -244,6 +248,26 @@ fn a_battery_counts_warheads_landing_in_its_ring_apart_from_those_still_tracked(
             },
         ])
         .as_deref(),
-        Some("2 incoming warheads, 1 unanswered, tracking 1 more")
+        Some("2 incoming, 1 unanswered")
     );
+}
+
+#[test]
+fn only_a_lattice_keeps_a_status_line_while_it_is_blank() {
+    for (kind, reserved) in [
+        (BuildingKind::Lattice, true),
+        (BuildingKind::Spire, false),
+        (BuildingKind::Turret, false),
+    ] {
+        let game = crate::building_actions::tests::fixture(kind, &[0], 0);
+        let info = build_for_palette(&game.view(), &BindingMap::classic(), false)
+            .unwrap()
+            .info;
+        assert_eq!(
+            info.reserved,
+            reserved.then(ReservedLine::default),
+            "{kind:?}"
+        );
+        assert!(info.status.is_empty(), "{kind:?}: {:?}", info.status);
+    }
 }
