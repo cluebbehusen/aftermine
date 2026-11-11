@@ -81,6 +81,32 @@ fn stripping_hotkeys_clears_every_card_row() {
             card.hotkey
         );
     }
+
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
+        .expect("a harvester")
+        .id;
+    game.state.tick(&[PlayerCommand {
+        player: game.presentation.human,
+        command: Command::Hunt {
+            units: vec![harvester],
+            goal: chassis::grid::TilePos::new(8, 8),
+            queue: false,
+        },
+    }]);
+    game.presentation.selection.buildings.clear();
+    game.presentation.selection.units = vec![harvester];
+    let mut panel =
+        build_for_palette(&game.view(), &BindingMap::classic(), false).expect("unit panel");
+    assert_eq!(
+        panel.stop.as_ref().map(|stop| stop.hotkey.as_str()),
+        Some("X")
+    );
+    strip_hotkeys(&mut panel);
+    assert_eq!(panel.stop.map(|stop| stop.hotkey), Some(String::new()));
 }
 
 fn stat<'a>(panel: &'a Panel, label: &str) -> &'a info::StatRow {
@@ -1028,6 +1054,47 @@ fn build_chips_wear_the_works_they_are_raising() {
 }
 
 #[test]
+fn the_orders_dock_offers_every_order_past_its_visible_slots() {
+    let (mut game, harvester) = builder_game();
+    game.presentation.selection.units = vec![harvester];
+    let here = game.state.unit(harvester).expect("harvester").tile();
+    let goals: Vec<_> = (0..12)
+        .map(|step| chassis::grid::TilePos::new(here.x + 2 + step % 2, here.y - 3 + step / 2))
+        .collect();
+    game.state.tick(
+        &goals
+            .iter()
+            .map(|&goal| PlayerCommand {
+                player: game.presentation.human,
+                command: Command::Hunt {
+                    units: vec![harvester],
+                    goal,
+                    queue: true,
+                },
+            })
+            .collect::<Vec<_>>(),
+    );
+    let orders = game
+        .view()
+        .projection()
+        .program(harvester)
+        .expect("a program")
+        .orders
+        .len();
+    assert_eq!(orders, 12, "every queued walk stands");
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
+    assert_eq!(
+        panel.queue.len(),
+        orders,
+        "the dock shows what fits and counts the rest"
+    );
+    assert!(matches!(
+        panel.queue.last().map(|card| card.action),
+        Some(CardAction::CancelOrder { unit, from_end: 0, .. }) if unit == harvester
+    ));
+}
+
+#[test]
 fn deferred_build_chips_cancel_their_logical_sites() {
     use chassis::grid::TilePos;
 
@@ -1562,6 +1629,71 @@ fn a_single_unit_exposes_static_combat_facts_but_a_group_does_not() {
             .all(|card| !matches!(card.action, CardAction::FilterKind(_))),
         "roster filters cannot consume command-card capacity"
     );
+}
+
+#[test]
+fn a_walled_in_producer_says_so_on_its_queue() {
+    for gap in [false, true] {
+        let mut map = vec![".........."; 10];
+        map[4..8].copy_from_slice(&[
+            "....####..",
+            "....#..#..",
+            if gap { "....#....." } else { "....#..#.." },
+            "....####..",
+        ]);
+        let scenario = serde_json::from_value(serde_json::json!({
+            "name": "Walled in", "mode": "sandbox", "map": map,
+            "players": [
+                {"name": "You", "scrap": 1000, "bot": false},
+                {"name": "Target", "scrap": 0, "bot": true}
+            ],
+            "units": [],
+            "buildings": [{"player": 0, "kind": "foundry", "x": 5, "y": 5}]
+        }))
+        .unwrap();
+        let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+        let foundry = human_foundry(&game);
+        game.presentation.selection.buildings = vec![foundry];
+        let panel = |game: &Game| {
+            build_for_palette(&game.view(), &BindingMap::classic(), false).expect("a panel")
+        };
+        let idle = panel(&game);
+        assert_ne!(idle.queue_label, "Walled in", "nothing queued");
+        game.state.tick(&[PlayerCommand {
+            player: game.presentation.human,
+            command: Command::Train {
+                building: foundry,
+                kind: UnitKind::Harvester,
+            },
+        }]);
+        let queued = panel(&game);
+        assert_eq!(
+            queued.queue_label == "Walled in",
+            !gap,
+            "said before the job finishes: {}",
+            queued.queue_label
+        );
+        assert_eq!(
+            queued.queue[0]
+                .desc
+                .iter()
+                .any(|line| line == WALLED_IN_DESC),
+            !gap,
+            "the held chip says why"
+        );
+        assert_eq!(
+            queued.info.status, idle.info.status,
+            "the info box keeps its lines"
+        );
+        for _ in 0..=UnitKind::Harvester.stats().train_ticks {
+            game.state.tick(&[]);
+        }
+        let held = !game.state.building(foundry).unwrap().queue.is_empty();
+        assert_eq!(held, !gap, "the simulation agrees");
+        if held {
+            assert_eq!(panel(&game).queue_label, "Walled in");
+        }
+    }
 }
 
 #[test]

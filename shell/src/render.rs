@@ -527,6 +527,7 @@ pub(crate) fn draw_with_performance(
         chrome::draw_queue_strip(game, sprites, input);
         draw_panel_tooltip(game, input);
         chrome::draw_army_tooltip(game, input, bindings);
+        chrome::draw_group_tooltip(game, input, bindings);
         if let Some(ring) = &hud.ring {
             radial::draw(sprites, ring);
         }

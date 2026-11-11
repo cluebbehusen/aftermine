@@ -3,6 +3,7 @@
 //! `LayoutModel`; the pure card model lives in `crate::panel`.
 
 use super::*;
+use crate::layout::DOCK_SLOTS;
 use crate::numeric;
 use crate::numeric::Fit;
 use crate::render::prim::{fill_rect, stroke_rect};
@@ -366,21 +367,33 @@ fn draw_select_all(
     draw_text(&label, x, baseline, size, TEXT_PRIMARY);
 }
 
-/// Packs every visible queue chip above the command band: a single
-/// column when it fits, otherwise a grid (a full eight-slot production
-/// queue becomes 2×4 in a 640×400 window), so no paid, cancelable job
-/// hides behind an overflow label.
+/// Packs every visible queue chip between the command band and
+/// `ceiling`: a single column when it fits, otherwise a grid (a full
+/// eight-slot production queue becomes 2×4 in a 640×400 window), so no
+/// paid, cancelable job hides behind an overflow label.
 fn queue_grid(
     queue_len: usize,
     panel_top: f32,
+    ceiling: f32,
     scale: f32,
     header: f32,
-) -> (Rect, [Rect; 8], usize) {
-    queue_grid_with_width(queue_len, panel_top, scale, 44.0, header)
+) -> (Rect, [Rect; DOCK_SLOTS], usize) {
+    queue_grid_with_width(queue_len, panel_top, ceiling, scale, 44.0, header)
+}
+
+/// The highest a dock stacked at the window's left may reach: under the
+/// top bar, and under a lesson or tip card holding that corner, which
+/// draws over the HUD and takes the presses that land on it.
+fn dock_ceiling(game: &crate::game::Scene<'_>, scale: f32) -> f32 {
+    let bar = crate::layout::TOP_BAR_H * scale;
+    game.corner_card
+        .map_or(bar, |card| bar.max(card.bottom() + 6.0 * scale))
 }
 
 /// The Stop button's own plate above the dock: the button and its inset.
 const STOP_PLATE: f32 = 60.0;
+/// The row under a full dock's chips that counts the entries past them.
+const MORE_ROW: f32 = 16.0;
 /// The gap between the Stop plate and the dock beneath it.
 const STOP_GAP: f32 = 6.0;
 
@@ -388,12 +401,13 @@ const STOP_GAP: f32 = 6.0;
 fn queue_grid_with_width(
     queue_len: usize,
     panel_top: f32,
+    ceiling: f32,
     scale: f32,
     width: f32,
     header: f32,
-) -> (Rect, [Rect; 8], usize) {
+) -> (Rect, [Rect; DOCK_SLOTS], usize) {
     let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
-    let mut slots = [zero; 8];
+    let mut slots = [zero; DOCK_SLOTS];
     let count = queue_len.min(slots.len());
     if count == 0 {
         return (zero, slots, 0);
@@ -401,8 +415,12 @@ fn queue_grid_with_width(
     let (size, gap) = (44.0 * scale, 4.0 * scale);
     let label_h = 24.0 * scale;
     let header = header * scale;
-    let available =
-        (panel_top - crate::layout::TOP_BAR_H * scale - header - label_h - 2.0 * scale).max(size);
+    let more = if queue_len > count {
+        MORE_ROW * scale
+    } else {
+        0.0
+    };
+    let available = (panel_top - ceiling - header - label_h - more - 2.0 * scale).max(size);
     let max_rows = numeric::to_usize(((available + gap) / (size + gap)).floor()).max(1);
     let columns = count.div_ceil(max_rows).max(1);
     let rows = count.div_ceil(columns);
@@ -427,18 +445,19 @@ fn queue_grid_with_width(
 fn collective_queue_grid(
     count: usize,
     top: f32,
+    ceiling: f32,
     scale: f32,
     viewport_width: f32,
     header: f32,
-) -> (Rect, [Rect; 8], usize) {
+) -> (Rect, [Rect; DOCK_SLOTS], usize) {
     if viewport_width / scale < 800.0 {
-        return queue_grid_with_width(count, top, scale, 64.0, header);
+        return queue_grid_with_width(count, top, ceiling, scale, 64.0, header);
     }
-    let wide = queue_grid_with_width(count, top, scale, 170.0, header);
+    let wide = queue_grid_with_width(count, top, ceiling, scale, 170.0, header);
     if wide.0.right() <= viewport_width {
         wide
     } else {
-        queue_grid_with_width(count, top, scale, 64.0, header)
+        queue_grid_with_width(count, top, ceiling, scale, 64.0, header)
     }
 }
 
@@ -472,7 +491,9 @@ fn queue_label_width(panel: &crate::panel::Panel, measure: impl Fn(&str) -> f32)
         let digits = seconds.ilog10() + 1;
         (digits + 1) as f32 * digit_width + measure(".s")
     };
-    time_width(ticks.sum()).max(measure("Ready"))
+    time_width(ticks.sum())
+        .max(measure("Ready"))
+        .max(measure(&panel.queue_label))
 }
 
 /// The grouped palette's Back column, which spans both rows.
@@ -608,6 +629,25 @@ fn category_label(
     }
 }
 
+/// A category's header as `category_label` words it, without its keys
+/// where `fits` refuses them: Caption is the smallest type, and the cells
+/// and their tooltips name the keys too.
+fn category_heading(
+    label: &str,
+    open: bool,
+    key: &str,
+    palette_key: Option<&str>,
+    keyless: bool,
+    fits: impl Fn(&str) -> bool,
+) -> String {
+    let heading = category_label(label, open, key, palette_key, keyless);
+    if fits(&heading) {
+        heading
+    } else {
+        category_label(label, open, key, palette_key, true)
+    }
+}
+
 /// What pressing a drawn card does: its own action while enabled, an
 /// explanation while disabled.
 fn published_action(card: &crate::panel::Card) -> crate::panel::CardAction {
@@ -645,7 +685,10 @@ fn draw_catalog(
             first += kinds.len();
             let key = bindings.label(crate::action::Action::BuildCategory(category.fit::<u8>()));
             let palette_key = bindings.label(crate::action::Action::ToggleBuildPalette);
-            let label = category_label(
+            let x = cells[0].x + 5.0 * s;
+            let right = cells.iter().map(Rect::right).fold(x, f32::max);
+            let caption = crate::theme::Type::Caption.at(s);
+            let label = category_heading(
                 &name.to_uppercase(),
                 input.build_category == Some(category.fit::<u8>()),
                 &key,
@@ -654,22 +697,9 @@ fn draw_catalog(
                     .is_some()
                     .then_some(palette_key.as_str()),
                 !crate::platform::hands().keys,
+                |label| crate::typography::measure(label, caption).width <= right - x - 2.0 * s,
             );
-            let x = cells[0].x + 5.0 * s;
-            let right = cells.iter().map(Rect::right).fold(x, f32::max);
-            let caption = crate::theme::Type::Caption.at(s);
-            crate::typography::draw(
-                &label,
-                x,
-                band.y + 20.0 * s,
-                crate::typography::fit(
-                    &label,
-                    caption,
-                    right - x - 2.0 * s,
-                    crate::theme::Type::Caption,
-                ),
-                TEXT_SECONDARY,
-            );
+            crate::typography::draw(&label, x, band.y + 20.0 * s, caption, TEXT_SECONDARY);
         }
     }
     let hovered = slots.iter().position(|rect| hovers(input, *rect));
@@ -947,6 +977,9 @@ pub(crate) struct DockLayout {
     stop: Option<(Rect, Rect)>,
     chips: Vec<Rect>,
     hidden: usize,
+    /// Where the count of hidden entries sits: the foot of the chips' own
+    /// rows, above the QUEUE toggle a touch build stretches the plate over.
+    more_baseline: f32,
 }
 
 /// The drone column: its plate and the chips it shows.
@@ -993,8 +1026,21 @@ pub(crate) fn layout_panel(
             panel.cards.len(),
             crate::platform::PLATFORM.touch_only(),
         );
-        let dock = (!panel.queue.is_empty() || panel.stop.is_some())
-            .then(|| layout_dock(game, input, panel, viewport, s, band.y, measure));
+        let dock = (!panel.queue.is_empty() || panel.stop.is_some()).then(|| {
+            layout_dock(
+                super::chrome::queue_toggle_shown(
+                    game,
+                    input,
+                    crate::platform::PLATFORM.touch_only(),
+                ),
+                dock_ceiling(game, s),
+                panel,
+                viewport,
+                s,
+                band.y,
+                measure,
+            )
+        });
         return PanelLayout::Catalog {
             band,
             slots,
@@ -1047,8 +1093,17 @@ pub(crate) fn layout_panel(
             )
         })
         .collect();
-    let dock = (!panel.queue.is_empty() || panel.stop.is_some())
-        .then(|| layout_dock(game, input, panel, viewport, s, top, measure));
+    let dock = (!panel.queue.is_empty() || panel.stop.is_some()).then(|| {
+        layout_dock(
+            super::chrome::queue_toggle_shown(game, input, crate::platform::PLATFORM.touch_only()),
+            dock_ceiling(game, s),
+            panel,
+            viewport,
+            s,
+            top,
+            measure,
+        )
+    });
     let drones = panel
         .drones
         .as_ref()
@@ -1093,7 +1148,7 @@ fn layout_drone_column(
     } else {
         0.0
     };
-    let (mut plate, slots, n) = queue_grid(column.chips.len(), top, s, 0.0);
+    let (mut plate, slots, n) = queue_grid(column.chips.len(), top, dock_ceiling(game, s), s, 0.0);
     let label_width = measure(
         super::hud::Face::Body,
         &column.label,
@@ -1111,9 +1166,11 @@ fn layout_drone_column(
 
 /// Production ghosts or order chips, stacked above the band's left
 /// corner so the band itself stays short.
+/// `toggle_below` lifts it clear of the QUEUE toggle, and its top stays
+/// under `ceiling`.
 fn layout_dock(
-    game: &crate::game::Scene<'_>,
-    input: &InputState,
+    toggle_below: bool,
+    ceiling: f32,
     panel: &crate::panel::Panel,
     viewport: Vec2,
     s: f32,
@@ -1121,8 +1178,6 @@ fn layout_dock(
     measure: super::hud::Measure<'_>,
 ) -> DockLayout {
     let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
-    let toggle_below =
-        super::chrome::queue_toggle_shown(game, input, crate::platform::PLATFORM.touch_only());
     let floor = if toggle_below {
         top - super::chrome::queue_dock_lift(s)
     } else {
@@ -1136,11 +1191,15 @@ fn layout_dock(
     let (mut grid_dock, grid_slots, n) = if panel.queue.is_empty() {
         // A lone Stop plate: some other selected unit is busy.
         let side = STOP_PLATE * s;
-        (Rect::new(0.0, floor - side, side, side), [zero; 8], 0)
+        (
+            Rect::new(0.0, floor - side, side, side),
+            [zero; DOCK_SLOTS],
+            0,
+        )
     } else if panel.queue_groups.is_empty() {
-        queue_grid(panel.queue.len(), floor, s, header)
+        queue_grid(panel.queue.len(), floor, ceiling, s, header)
     } else {
-        collective_queue_grid(panel.queue.len(), floor, s, viewport.x, header)
+        collective_queue_grid(panel.queue.len(), floor, ceiling, s, viewport.x, header)
     };
     if !panel.queue.is_empty() {
         let queue_label_width = queue_label_width(panel, |text| {
@@ -1154,11 +1213,12 @@ fn layout_dock(
     }
     let mut dock = grid_dock;
     let hidden = panel.queue.len().saturating_sub(n);
-    let more_h = if hidden > 0 { 16.0 * s } else { 0.0 };
+    let more_h = if hidden > 0 { MORE_ROW * s } else { 0.0 };
     if more_h > 0.0 {
         dock.y -= more_h;
         dock.h += more_h;
     }
+    let more_baseline = dock.bottom() - 8.0 * s;
     // The dock borders only its open top and right, resting on the
     // band. With the QUEUE toggle beneath it, the plate runs down to
     // the band so the toggle sits inside one closed column.
@@ -1186,6 +1246,7 @@ fn layout_dock(
         stop,
         chips,
         hidden,
+        more_baseline,
     }
 }
 
@@ -1920,11 +1981,12 @@ fn draw_dock(
 ) {
     use crate::panel::CardIcon;
     let DockLayout {
-        dock,
+        dock: _,
         list,
         stop,
         chips,
         hidden,
+        more_baseline,
     } = layout;
     if list.h > 0.0 {
         draw_dock_plate(*list, false, s);
@@ -2069,7 +2131,7 @@ fn draw_dock(
         draw_text(
             format!("+{hidden}"),
             12.0 * s,
-            dock.y + dock.h - 8.0 * s,
+            *more_baseline,
             crate::theme::Type::Small.at(s),
             TEXT_SECONDARY,
         );

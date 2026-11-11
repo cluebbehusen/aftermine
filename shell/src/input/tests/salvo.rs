@@ -127,20 +127,26 @@ fn a_spire_loaded_while_aiming_joins_the_strike() {
 }
 
 #[test]
-fn the_banner_steppers_size_the_salvo_and_the_rest_of_it_stands_down() {
+fn the_banner_steppers_size_the_salvo_and_its_cross_stands_it_down() {
     let (mut game, _) = spires(3, 3, 0);
     let mut input = InputState::new();
     dispatch_action(&mut game, &mut input, Action::Launch);
     relayout(&game, &input);
     let layout = game.presentation.layout.get();
-    let (less, more, ribbon) = (layout.salvo_less, layout.salvo_more, layout.mode_ribbon);
-    for stepper in [less, more] {
+    let (less, more, cancel, ribbon) = (
+        layout.salvo_less,
+        layout.salvo_more,
+        layout.ribbon_cancel,
+        layout.mode_ribbon,
+    );
+    for button in [less, more, cancel] {
         assert!(
-            stepper.w > 0.0 && ribbon.contains(stepper.center()),
-            "{stepper:?} in {ribbon:?}"
+            button.w > 0.0 && ribbon.contains(button.center()),
+            "{button:?} in {ribbon:?}"
         );
     }
     assert!(less.right() <= more.x, "minus sits left of plus");
+    assert!(more.right() <= cancel.x, "the cross ends the row");
     let press = |game: &mut Game, input: &mut InputState, rect: Rect| {
         apply_events(game, input, &click(rect.center().x, rect.center().y));
         relayout(game, input);
@@ -168,7 +174,10 @@ fn the_banner_steppers_size_the_salvo_and_the_rest_of_it_stands_down() {
         &mut input,
         Rect::new(ribbon.x + 2.0, ribbon.y + 2.0, 4.0, 4.0),
     );
-    assert!(input.striking.is_none(), "the rest of the ribbon cancels");
+    assert!(input.striking.is_some(), "the words do nothing");
+    press(&mut game, &mut input, cancel);
+    assert!(input.striking.is_none(), "the cross cancels");
+    assert!(launches(&game).is_empty());
 }
 
 #[test]

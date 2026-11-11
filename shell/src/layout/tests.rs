@@ -376,6 +376,15 @@ fn a_dock_tooltip_tracks_the_chip_it_describes() {
 }
 
 #[test]
+fn a_group_tooltip_stands_left_of_its_column() {
+    let size = Vec2::new(240.0, 90.0);
+    let slot = Rect::new(1180.0, 400.0, 92.0, 40.0);
+    let o = tooltip_origin(slot, size, TooltipSide::LeftOf, VIEW, 32.0, 6.0);
+    assert_eq!(o.x + size.x, slot.x - 6.0, "clear of the column");
+    assert_eq!(o.y + size.y * 0.5, slot.y + slot.h * 0.5);
+}
+
+#[test]
 fn a_tall_tooltip_stops_at_the_top_bar() {
     // A five-line tooltip raised from a chip near the top of a
     // short window: the header must stay readable, so the box pins

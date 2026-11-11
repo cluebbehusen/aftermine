@@ -976,6 +976,7 @@ impl PlaybackSession {
             }
         }
         self.sync_render_clock();
+        self.presentation.age_toasts(time.presentation);
         if !self.clock.paused {
             self.presentation
                 .update_fx(&self.engine.state, time.presentation);

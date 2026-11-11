@@ -47,6 +47,69 @@ fn hud_copy_names_keys_only_on_desktop() {
 }
 
 #[test]
+fn a_group_slot_s_tooltip_says_what_its_press_does() {
+    use crate::layout::GroupSlot;
+    let bindings = crate::action::BindingMap::classic();
+    for hands in crate::platform::tests::ALL_HANDS {
+        let recall = group_tooltip(GroupSlot::Recall(2), hands, &bindings).expect("a saved group");
+        assert_eq!(recall.title, "Select group 2");
+        assert_eq!(recall.hotkey, if hands.keys { "2" } else { "" });
+        let assign = group_tooltip(GroupSlot::Assign(3), hands, &bindings).expect("the plus");
+        assert_eq!(assign.title, "Save the selection as group 3");
+        assert_eq!(assign.hotkey, if hands.keys { "Ctrl+3" } else { "" });
+        for line in recall.desc.iter().chain(&assign.desc) {
+            crate::platform::tests::assert_copy_fits(hands, line);
+        }
+        assert!(
+            group_tooltip(GroupSlot::Empty(4), hands, &bindings).is_none(),
+            "a plain press on an empty group does nothing"
+        );
+    }
+    let [mouse, ..] = crate::platform::tests::ALL_HANDS;
+    assert_eq!(
+        group_tooltip(GroupSlot::Recall(2), mouse, &bindings)
+            .unwrap()
+            .desc,
+        [
+            "Click twice to move the camera to it.",
+            "Ctrl-click or press Ctrl+2 to save the selection here instead."
+        ]
+    );
+
+    // Unbound group keys name nothing.
+    let mut unbound = bindings.clone();
+    for action in [
+        crate::action::Action::Slot(2),
+        crate::action::Action::AssignGroup(2),
+    ] {
+        unbound.unbind_slot(action, 0);
+        unbound.unbind_slot(action, 1);
+    }
+    let recall = group_tooltip(GroupSlot::Recall(2), mouse, &unbound).unwrap();
+    assert_eq!(recall.hotkey, "");
+    assert_eq!(
+        recall.desc[1],
+        "Ctrl-click to save the selection here instead."
+    );
+    let touch_keys = crate::platform::Hands {
+        pointer: crate::input::Pointer::Touch,
+        ..mouse
+    };
+    assert_eq!(
+        group_tooltip(GroupSlot::Recall(2), touch_keys, &unbound)
+            .unwrap()
+            .desc[1],
+        "Long-press to save the selection here instead."
+    );
+    assert_eq!(
+        group_tooltip(GroupSlot::Assign(2), mouse, &unbound)
+            .unwrap()
+            .hotkey,
+        ""
+    );
+}
+
+#[test]
 fn the_ribbon_stays_on_screen_above_the_panel() {
     for (viewport, scale) in [
         (vec2(1024.0, 768.0), 1.5),
@@ -427,9 +490,20 @@ fn the_queue_flag_shows_while_orders_queue_for_own_units() {
     assert_eq!(flag(&game, &input), None, "a spectator queues nothing");
 }
 
+/// A card `width` logical px wide at most, where lesson and tip cards lie:
+/// the corner under the top bar.
+fn corner_card(width: f32, env: super::super::hud::HudEnv) -> Rect {
+    let s = env.ui;
+    Rect::new(
+        12.0 * s,
+        (crate::layout::TOP_BAR_H + 6.0) * s,
+        (width * s).min(env.viewport.x - 24.0 * s),
+        240.0 * s,
+    )
+}
+
 #[test]
 fn the_queue_tab_keeps_clear_of_a_lesson_or_tip_card() {
-    use crate::render::tutorial_card::CornerCard;
     let game =
         crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1133.0, 744.0))
             .unwrap();
@@ -448,13 +522,14 @@ fn the_queue_tab_keeps_clear_of_a_lesson_or_tip_card() {
         let open =
             queue_flag_layout(&view, &input, env, Rect::default(), &measure).expect("QUEUE is on");
         assert!((open.tab.center().x - w * 0.5).abs() <= 1.0, "centred");
-        for card in [CornerCard::Lesson, CornerCard::Tip] {
+        // A lesson's card and a tip's.
+        for card in [corner_card(500.0, env), corner_card(420.0, env)] {
             view.corner_card = Some(card);
             let tab = queue_flag_layout(&view, &input, env, Rect::default(), &measure)
                 .expect("QUEUE is on")
                 .tab;
             assert!(
-                tab.x >= card.right(env) && tab.right() <= w,
+                tab.x >= card.right() && tab.right() <= w,
                 "{card:?} at {w}x{h} x{ui}: {tab:?}"
             );
         }
@@ -463,7 +538,6 @@ fn the_queue_tab_keeps_clear_of_a_lesson_or_tip_card() {
 
 #[test]
 fn the_queue_tab_keeps_clear_of_the_performance_readout() {
-    use crate::render::tutorial_card::CornerCard;
     let game =
         crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1133.0, 744.0))
             .unwrap();
@@ -489,7 +563,7 @@ fn the_queue_tab_keeps_clear_of_the_performance_readout() {
         viewport: vec2(1133.0, 744.0),
         ui: 1.5,
     };
-    view.corner_card = Some(CornerCard::Lesson);
+    view.corner_card = Some(corner_card(500.0, env));
     let readout = Rect::new(755.0, 69.0, 360.0, 180.0);
     let tab = queue_flag_layout(&view, &input, env, readout, &measure)
         .expect("QUEUE is on")

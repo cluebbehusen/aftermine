@@ -218,9 +218,11 @@ pub(crate) struct Scene<'a> {
     /// The clock pacing this world: paused, speed, and render alpha.
     pub clock: &'a super::Clock,
     pub seat_styles: crate::seat_style::SeatStyles,
-    /// The lesson or match tip card holding the corner under the top bar,
-    /// which the HUD's top-centre chrome keeps clear of.
-    pub corner_card: Option<crate::render::tutorial_card::CornerCard>,
+    /// Where the lesson or match tip card over the match lies this frame,
+    /// in window px. It holds the corner under the top bar and draws over
+    /// the HUD, so the top-centre chrome keeps clear of it and the orders
+    /// dock stays under it.
+    pub corner_card: Option<macroquad::math::Rect>,
 }
 impl<'a> Scene<'a> {
     pub fn new(

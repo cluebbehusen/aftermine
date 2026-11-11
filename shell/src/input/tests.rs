@@ -1081,6 +1081,39 @@ fn a_minimap_order_pings_at_the_tile_centre() {
 }
 
 #[test]
+fn a_minimap_right_click_scouts_as_the_battlefield_does() {
+    let (mut game, scout, sentinel) = scout_game();
+    let mut input = InputState::new();
+    let minimap = publish_minimap(&game);
+    let screen = vec2(minimap.x + 97.0, minimap.y + 61.0);
+    let world = crate::render::minimap_world_at(&game.view(), screen).expect("inside the minimap");
+    let tile = numeric::tile_at(world);
+
+    game.presentation.selection.units = vec![scout];
+    apply_events(&mut game, &mut input, &[right_down(screen)]);
+    assert!(
+        matches!(
+            game.pending.as_slice(),
+            [PlayerCommand { command: Command::Scout { goal, .. }, .. }] if *goal == tile
+        ),
+        "{:?}",
+        game.pending
+    );
+
+    game.pending.clear();
+    game.presentation.selection.units = vec![scout, sentinel];
+    apply_events(&mut game, &mut input, &[right_down(screen)]);
+    assert!(
+        matches!(
+            game.pending.as_slice(),
+            [PlayerCommand { command: Command::Advance { goal, .. }, .. }] if *goal == tile
+        ),
+        "a mixed selection advances together: {:?}",
+        game.pending
+    );
+}
+
+#[test]
 fn a_rally_click_on_an_own_unit_rallies_onto_it() {
     let mut game = multi_producer_game();
     let producers: Vec<_> = game
@@ -1403,7 +1436,7 @@ fn the_rally_card_arms_a_touchable_world_target() {
 }
 
 #[test]
-fn a_ribbon_tap_cancels_the_mode_and_keeps_the_selection() {
+fn a_ribbon_s_cross_cancels_the_mode_and_its_words_do_nothing() {
     let mut game = headless_game();
     let mut input = InputState::new();
     let fighter = game
@@ -1416,10 +1449,26 @@ fn a_ribbon_tap_cancels_the_mode_and_keeps_the_selection() {
     game.presentation.selection.units = vec![fighter];
     input.click_verb = Some(ClickVerb::Hunt);
     let ribbon = macroquad::math::Rect::new(220.0, 620.0, 280.0, 44.0);
+    let cancel = macroquad::math::Rect::new(460.0, 624.0, 36.0, 36.0);
     let mut layout = bare_layout(f32::INFINITY, 0.0);
     layout.mode_ribbon = ribbon;
+    layout.ribbon_cancel = cancel;
     game.presentation.layout.set(layout);
-    tap(&mut game, &mut input, ribbon.center());
+    let words = vec2(ribbon.x + 20.0, ribbon.center().y);
+    tap(&mut game, &mut input, words);
+    apply_events(&mut game, &mut input, &click(words.x, words.y));
+    assert_eq!(
+        input.armed_mode(),
+        Some(ArmedMode::Hunt),
+        "the words keep it"
+    );
+    assert!(
+        game.pending.is_empty(),
+        "and nothing reaches the world under them"
+    );
+    assert_eq!(game.presentation.selection.units, vec![fighter]);
+
+    tap(&mut game, &mut input, cancel.center());
     assert_eq!(input.armed_mode(), None);
     assert_eq!(game.presentation.selection.units, vec![fighter]);
     assert!(game.pending.is_empty(), "cancel emits no gameplay command");
@@ -1428,7 +1477,7 @@ fn a_ribbon_tap_cancels_the_mode_and_keeps_the_selection() {
     apply_events(
         &mut game,
         &mut input,
-        &click(ribbon.x + 20.0, ribbon.center().y),
+        &click(cancel.center().x, cancel.center().y),
     );
     assert_eq!(input.armed_mode(), None, "a click cancels too");
 }
@@ -1442,7 +1491,7 @@ fn a_patrol_ribbon_acts_only_through_start_and_the_cross() {
     let mut layout = bare_layout(f32::INFINITY, 0.0);
     layout.mode_ribbon = ribbon;
     layout.patrol_start = start;
-    layout.patrol_cancel = cancel;
+    layout.ribbon_cancel = cancel;
     game.presentation.layout.set(layout);
     let words = vec2(ribbon.x + 20.0, ribbon.center().y);
 
@@ -4218,6 +4267,41 @@ fn fingertip_slop_never_takes_a_tap_from_the_pile_under_it() {
     game.presentation.camera.zoom = 22.0 * input.ui / (distance + 0.1);
     tap_world(&mut game, &mut input, pile);
     assert!(game.presentation.selection.units.is_empty());
+    assert_eq!(game.presentation.selection.pile, Some(TilePos::new(7, 2)));
+}
+
+#[test]
+fn a_zoomed_out_double_click_on_a_pile_never_sweeps_the_unit_beside_it() {
+    let mut game = headless_game();
+    let mut input = InputState::new();
+    let pile = vec2(7.5, 2.5);
+    let (nearest, distance) = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == game.presentation.human)
+        .map(|u| {
+            let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
+            (u, at.distance(pile))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .expect("an own unit");
+    assert!(
+        distance > super::unit_pick_radius(nearest.kind),
+        "premise: the click misses the unit's body"
+    );
+    // Zoomed out until the cursor's reach covers the unit.
+    game.presentation.camera.zoom = 10.0 * input.ui / (distance + 0.1);
+    let p = game.presentation.camera.to_screen(pile);
+    input.now = 1.0;
+    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    input.now = 1.1;
+    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    assert!(
+        game.presentation.selection.units.is_empty(),
+        "{:?}",
+        game.presentation.selection.units
+    );
     assert_eq!(game.presentation.selection.pile, Some(TilePos::new(7, 2)));
 }
 
@@ -9022,10 +9106,15 @@ fn drones_are_never_box_selected() {
     assert_eq!(drones.len(), 2, "premise: both launched");
     let top_left = game.presentation.camera.to_screen(vec2(-1.0, -1.0));
     let bottom_right = game.presentation.camera.to_screen(vec2(40.0, 24.0));
+    let ringed: Vec<UnitId> =
+        crate::input::boxed_own_units(&game.view(), vec2(-1.0, -1.0), vec2(40.0, 24.0))
+            .map(|unit| unit.id)
+            .collect();
     box_select(&mut game, top_left, bottom_right, false);
     let selected = &game.presentation.selection.units;
     assert!(selected.contains(&roc));
     assert!(drones.iter().all(|drone| !selected.contains(drone)));
+    assert_eq!(&ringed, selected, "the box's preview rings what it selects");
 }
 
 #[test]

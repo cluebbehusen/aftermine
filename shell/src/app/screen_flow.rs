@@ -331,6 +331,7 @@ pub(super) fn update_and_draw(
     // battlefield behind it.
     if matches!(screen, Screen::Results(_)) {
         app.game.update_fx(time.presentation);
+        app.game.presentation.age_toasts(time.presentation);
     } else if app.net.is_some() && screen.kind() != ScreenKind::Playing {
         // A LAN match keeps ticking under menus, so its effects age too.
         app.game.update_wall_clock_fx(time.presentation);
@@ -921,7 +922,9 @@ fn playing_frame(
         .game
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);
     let mut card_press = None;
-    if let Some(card) = current_card(app) {
+    let card = current_card(app);
+    let card_rect = card.as_ref().map(|card| card.rect);
+    if let Some(card) = card {
         let filtered = filter_card_pointer(events, &card, render::ui_scale());
         card_press = filtered.pressed;
         // Swallowing a release whose press began in the world must
@@ -969,7 +972,7 @@ fn playing_frame(
     app.input.touch_prefs = app.config.touch;
     let performance = app.performance.view();
     relayout_hud(
-        &app.game.view(),
+        &under_card(&app.game, card_rect),
         &app.input,
         &app.config.bindings,
         Some(performance),
@@ -979,7 +982,14 @@ fn playing_frame(
         &mut app.input,
         &app.config.bindings,
         events,
-        |game, input| relayout_hud(&game.view(), input, &app.config.bindings, Some(performance)),
+        |game, input| {
+            relayout_hud(
+                &under_card(game, card_rect),
+                input,
+                &app.config.bindings,
+                Some(performance),
+            );
+        },
     );
     input::update_held(&mut app.game, &mut app.input, time.presentation);
     input::update_touch(&mut app.game, &mut app.input, &app.config.bindings);
@@ -1060,8 +1070,11 @@ fn playing_frame(
         // the report, not a bare frozen battlefield.
         *rerun = true;
     }
+    // The card as this frame draws it: a fold or a new step reflows the HUD
+    // under it.
+    let card = current_card(app);
     render::draw_with_performance(
-        &app.game.view(),
+        &under_card(&app.game, card.as_ref().map(|card| card.rect)),
         &app.sprites,
         &app.input,
         &app.config.bindings,
@@ -1070,7 +1083,7 @@ fn playing_frame(
     pass(FramePass::Hud, || {
         render::draw_reticle(&app.game.view(), &app.input);
     });
-    if let Some(card) = current_card(app) {
+    if let Some(card) = card {
         pass(FramePass::Hud, || {
             tutorial_card::draw(&card, &app.sprites, app.input.mouse);
         });
@@ -1104,6 +1117,14 @@ fn current_card(app: &App) -> Option<CardLayout> {
             hud,
         )),
         None => tutorial_card::current_tip(&app.game, &app.config.bindings, hud),
+    }
+}
+
+/// The match as the HUD lays out around the card over it, if one shows.
+fn under_card(game: &Game, card: Option<macroquad::math::Rect>) -> crate::game::Scene<'_> {
+    crate::game::Scene {
+        corner_card: card,
+        ..game.view()
     }
 }
 

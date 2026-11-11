@@ -362,6 +362,25 @@ pub(super) fn select_picked(game: &mut Game, picked: Option<Picked>, screen: Vec
     game.presentation.selection.pile = game.view().known_salvage(tile).is_some().then_some(tile);
 }
 
+/// The viewer's own units a box between world corners `a` and `b` covers
+/// and its release would select, which the box's preview rings.
+pub(crate) fn boxed_own_units<'a>(
+    game: &'a crate::game::Scene<'_>,
+    a: Vec2,
+    b: Vec2,
+) -> impl Iterator<Item = &'a aftermine_sim::Unit> {
+    let (lo, hi) = (a.min(b), a.max(b));
+    game.state.units().iter().filter(move |unit| {
+        let p = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
+        unit.player == game.presentation.human
+            && sees_unit(game, unit)
+            && p.x >= lo.x
+            && p.x <= hi.x
+            && p.y >= lo.y
+            && p.y <= hi.y
+    })
+}
+
 pub(super) fn box_select(game: &mut Game, a_screen: Vec2, b_screen: Vec2, additive: bool) {
     let a = game.presentation.camera.to_world(a_screen);
     let b = game.presentation.camera.to_world(b_screen);
@@ -512,37 +531,12 @@ pub(super) fn select_swept(
 }
 
 /// Double-click: visible entities of the picked kind and owner on screen.
+/// The sweep stays within the picked entity's owner, so double-clicking an
+/// ally harvester gathers that ally's harvesters on screen.
 pub(super) fn select_all_of_kind_on_screen(game: &mut Game, screen: Vec2, ui: f32, reach: Reach) {
-    let world = game.presentation.camera.to_world(screen);
-    // The sweep stays within the picked unit's owner: double-clicking an
-    // ally harvester gathers that ally's harvesters on screen. Own units
-    // outrank foreign at the pick, as with plain clicks.
-    let unit = game
-        .state
-        .units()
-        .iter()
-        .filter(|u| selectable(game, u))
-        .filter_map(|u| {
-            let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-            let distance = p.distance(world);
-            (distance <= pick_radius(game, ui, u.kind, reach)).then_some((
-                u.player != game.presentation.human,
-                distance,
-                u.id,
-                u.player,
-            ))
-        })
-        .min_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).expect("finite"));
-    // Else the building a press there picks: the one under it, or for the
-    // reticle one within its reach.
-    let picked = match unit {
-        Some((_, _, id, owner)) => Picked::Unit(id, owner),
-        None => match pick(game, screen, ui, reach) {
-            Some(building @ Picked::Building(..)) => building,
-            _ => return,
-        },
-    };
-    select_all_like(game, picked);
+    if let Some(picked) = pick(game, screen, ui, reach) {
+        select_all_like(game, picked);
+    }
 }
 
 /// Selects every unit or building on screen of `picked`'s kind and owner,
