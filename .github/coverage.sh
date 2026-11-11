@@ -2,9 +2,8 @@
 # Run both coverage gates from one instrumented build and publish a compact
 # per-crate table for each to the job summary. The unit gate counts library
 # and binary unit tests; the combined gate adds the integration suites to the
-# same profiles. Kladde can annotate every miss because it enforces 100%;
-# Aftermine deliberately starts lower, where thousands of line annotations would
-# bury useful output.
+# same profiles. The floors sit below 100%, where annotating every missed line
+# would bury useful output.
 #
 # The combined run skips the representative-map integrity soak:
 # instrumentation makes it expensive while it adds little line coverage, and

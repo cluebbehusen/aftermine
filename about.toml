@@ -12,11 +12,12 @@ accepted = [
     "Unlicense",
     "Zlib",
 ]
-# Every platform a bundle is built for.
+# Every platform the game is built for: the Apple bundles, and the Windows
+# and Linux builds CI tests.
 targets = [
     "aarch64-apple-darwin",
-    "x86_64-apple-darwin",
     "aarch64-apple-ios",
+    "aarch64-apple-tvos",
     "x86_64-pc-windows-msvc",
     "x86_64-unknown-linux-gnu",
 ]
