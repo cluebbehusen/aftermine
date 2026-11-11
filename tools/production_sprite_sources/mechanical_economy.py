@@ -2,37 +2,22 @@
 
 from PIL import Image, ImageDraw
 
-from tools import gen_sprites as gen
+from tools import sprite_kit as kit
 from tools.production_sprite_sources import extractor_reclaimer_final as metal
+from tools.sprite_kit import (
+    DARK,
+    EDGE,
+    IRON,
+    SS,
+    box,
+    line,
+    poly,
+)
 
-S = 4
 VOID = metal.VOID
 DEEP = metal.IRON_DEEP
-IRON = gen.IRON
-DARK = gen.IRON_DARK
-LIGHT = gen.IRON_LIGHT
-EDGE = (112, 111, 119)
+LIGHT = kit.IRON_LIGHT
 RECLAIMER_WORK_FRAMES = 12
-
-
-def box(draw, bounds, color, radius=0):
-    draw.rounded_rectangle(
-        tuple(round(v * S) for v in bounds),
-        radius=round(radius * S),
-        fill=(*color, 255),
-    )
-
-
-def line(draw, points, color, width=1):
-    draw.line(
-        [(round(x * S), round(y * S)) for x, y in points],
-        fill=(*color, 255),
-        width=round(width * S),
-    )
-
-
-def polygon(draw, points, color):
-    draw.polygon([(round(x * S), round(y * S)) for x, y in points], fill=(*color, 255))
 
 
 def plate(draw, bounds, color=IRON, radius=3):
@@ -50,30 +35,30 @@ def foundation(draw, variant):
     metal._foundation(draw, 128, variant)
     for x in (16, 96):
         plate(draw, (x, 22, x + 16, 91))
-        box(draw, (x + 4, 34, x + 12, 51), gen.PALETTES[variant]["dark"])
+        box(draw, (x + 4, 34, x + 12, 51), kit.PALETTES[variant]["dark"])
 
 
 def crusher(image, draw, variant, phase):
     cycle = (phase - 1) % RECLAIMER_WORK_FRAMES if phase else None
-    accent = gen.PALETTES[variant]["dark"]
+    accent = kit.PALETTES[variant]["dark"]
     # Hopper -> opposed corrugated jaws -> open outlet.
-    polygon(draw, ((33, 20), (95, 20), (86, 49), (42, 49)), DARK)
-    polygon(draw, ((38, 24), (90, 24), (82, 43), (46, 43)), VOID)
+    poly(draw, ((33, 20), (95, 20), (86, 49), (42, 49)), DARK)
+    poly(draw, ((38, 24), (90, 24), (82, 43), (46, 43)), VOID)
     line(draw, ((37, 22), (91, 22)), accent, 3)
     line(draw, ((38, 25), (45, 43)), LIGHT, 2)
     line(draw, ((89, 25), (83, 43)), IRON, 2)
     # Clip the feed to the hopper opening so a new piece enters from above
     # and disappears inside the crusher before the next piece arrives.
-    ore = Image.new("RGBA", (22 * S, 23 * S))
+    ore = Image.new("RGBA", (22 * SS, 23 * SS))
     ore_draw = ImageDraw.Draw(ore)
     chunk_y = (30 if cycle is None else 22 + cycle * 3) - 24
-    polygon(
+    poly(
         ore_draw,
         ((3, chunk_y), (11, chunk_y - 2), (18, chunk_y + 2), (10, chunk_y + 6)),
-        gen.SCRAP_DARK,
+        kit.SCRAP_DARK,
     )
-    line(ore_draw, ((4, chunk_y), (11, chunk_y - 1)), gen.SCRAP, 1)
-    image.alpha_composite(ore, (54 * S, 24 * S))
+    line(ore_draw, ((4, chunk_y), (11, chunk_y - 1)), kit.SCRAP, 1)
+    image.alpha_composite(ore, (54 * SS, 24 * SS))
     box(draw, (35, 47, 93, 83), VOID, 3)
     for y, direction in ((51, 1), (69, -1)):
         box(draw, (41, y, 87, y + 11), DARK, 4)
@@ -87,31 +72,29 @@ def crusher(image, draw, variant, phase):
             plate(draw, (x, y - 1, x + 5, y + 12), accent, 1)
     # The working gap stays dark; only the material advances through it.
     if cycle is not None and 4 <= cycle <= 8:
-        box(draw, (59, 63, 69, 67), gen.SCRAP_DARK, 1)
+        box(draw, (59, 63, 69, 67), kit.SCRAP_DARK, 1)
 
 
 def render_reclaimer(variant, phase):
-    image, draw = metal._new_sprite(128)
+    image, draw = kit.canvas()
     foundation(draw, variant)
     crusher(image, draw, variant, phase)
     cycle = (phase - 1) % RECLAIMER_WORK_FRAMES if phase else 0
     metal._belt(draw, (50, 82, 78, 103), cycle, variant=variant, step=2)
     if phase and cycle >= 6:
         y = 83 + (cycle - 6) * 3
-        polygon(draw, ((59, y), (64, y - 1), (69, y + 2), (62, y + 3)), gen.SCRAP_DARK)
-        line(draw, ((60, y), (64, y)), gen.SCRAP)
+        poly(draw, ((59, y), (64, y - 1), (69, y + 2), (62, y + 3)), kit.SCRAP_DARK)
+        line(draw, ((60, y), (64, y)), kit.SCRAP)
     metal._hopper(draw, (42, 100, 86, 117), variant)
-    polygon(
-        draw, ((53, 109), (63, 106), (75, 110), (73, 113), (52, 113)), gen.SCRAP_DARK
-    )
-    line(draw, ((56, 108), (63, 107)), gen.SCRAP, 2)
+    poly(draw, ((53, 109), (63, 106), (75, 110), (73, 113), (52, 113)), kit.SCRAP_DARK)
+    line(draw, ((56, 108), (63, 107)), kit.SCRAP, 2)
     return finish(image)
 
 
 def render_refinery(variant, phase):
-    image, draw = metal._new_sprite(128)
+    image, draw = kit.canvas()
     foundation(draw, variant)
-    accent = gen.PALETTES[variant]["dark"]
+    accent = kit.PALETTES[variant]["dark"]
     plate(draw, (14, 22, 35, 103), accent)
     plate(draw, (93, 67, 115, 103), accent)
     crusher(image, draw, variant, phase)
@@ -125,11 +108,11 @@ def render_refinery(variant, phase):
     plate(draw, (44, 96 - press, 84, 104 - press), IRON, 1)
     metal._hopper(draw, (43, 105, 85, 119), variant)
     for x in (52, 65):
-        box(draw, (x, 111, x + 10, 115), gen.SCRAP_DARK, 1)
-        line(draw, ((x + 1, 111), (x + 8, 111)), gen.SCRAP, 1)
+        box(draw, (x, 111, x + 10, 115), kit.SCRAP_DARK, 1)
+        line(draw, ((x + 1, 111), (x + 8, 111)), kit.SCRAP, 1)
     # One side-mounted exhaust identifies the added thermal stage.
     plate(draw, (94, 5, 115, 82), accent)
-    box(draw, (96, 9, 113, 34), gen.PALETTES[variant]["dark"], 2)
+    box(draw, (96, 9, 113, 34), kit.PALETTES[variant]["dark"], 2)
     box(draw, (99, 12, 110, 29), VOID, 1)
     line(draw, ((99, 10), (110, 10)), LIGHT, 1)
     for y in (51, 58, 65):
@@ -148,27 +131,27 @@ def track(draw, x, phase):
 
 def rocket(draw, nose, tail):
     # 24 source pixels = 0.375 world tiles at the Avalanche's 2-tile draw size.
-    polygon(
+    poly(
         draw, ((64, nose), (67, nose + 6), (67, tail), (61, tail), (61, nose + 6)), VOID
     )
     box(draw, (62, nose + 6, 66, tail - 1), (151, 146, 134))
-    polygon(draw, ((64, nose + 1), (66, nose + 6), (62, nose + 6)), (210, 199, 171))
+    poly(draw, ((64, nose + 1), (66, nose + 6), (62, nose + 6)), (210, 199, 171))
     line(draw, ((62, nose + 7), (62, tail - 4)), (189, 183, 167))
-    polygon(draw, ((61, tail - 6), (59, tail), (63, tail - 1)), LIGHT)
-    polygon(draw, ((67, tail - 6), (69, tail), (65, tail - 1)), DARK)
+    poly(draw, ((61, tail - 6), (59, tail), (63, tail - 1)), LIGHT)
+    poly(draw, ((67, tail - 6), (69, tail), (65, tail - 1)), DARK)
 
 
 def render_avalanche(variant, phase=0, action=0):
-    image, draw = metal._new_sprite(128)
-    accent = gen.PALETTES[variant]["dark"]
+    image, draw = kit.canvas()
+    accent = kit.PALETTES[variant]["dark"]
     track(draw, 23, phase)
     track(draw, 89, phase)
-    polygon(draw, ((40, 39), (88, 39), (96, 56), (91, 102), (37, 102), (32, 56)), VOID)
-    polygon(draw, ((42, 42), (86, 42), (92, 56), (87, 99), (41, 99), (36, 56)), DARK)
+    poly(draw, ((40, 39), (88, 39), (96, 56), (91, 102), (37, 102), (32, 56)), VOID)
+    poly(draw, ((42, 42), (86, 42), (92, 56), (87, 99), (41, 99), (36, 56)), DARK)
     line(draw, ((43, 43), (85, 43)), IRON, 2)
     # The hull's corner plates end where the slew ring is drawn over them.
     for side in (-1, 1):
-        polygon(
+        poly(
             draw,
             [
                 (64 + side * x, y)
@@ -176,7 +159,7 @@ def render_avalanche(variant, phase=0, action=0):
             ],
             VOID,
         )
-        polygon(
+        poly(
             draw,
             [
                 (64 + side * x, y)
@@ -202,7 +185,7 @@ def render_avalanche(variant, phase=0, action=0):
     box(draw, (50, 94, 78, 98), accent)
     line(draw, ((47, 94), (81, 94)), EDGE)
     chassis = finish(image)
-    image, draw = metal._new_sprite(128)
+    image, draw = kit.canvas()
     for side in (-1, 1):
         foot = (64 + side * 21, 90)
         joint = (64 + side * 17, 77)

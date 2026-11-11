@@ -4,21 +4,22 @@ import math
 
 from PIL import Image
 
-from tools import gen_sprites as g
+from tools import sprite_kit as kit
 from tools.production_sprite_sources import extractor_reclaimer_final as original
-from tools.production_sprite_sources.installed_defenses_final import bolt, plate
-from tools.production_sprite_sources.specialists_final import (
+from tools.sprite_kit import (
     DARK,
     DEEP,
     EDGE,
     IRON,
     STEEL,
     VOID,
+    bolt,
     box,
     canvas,
     circle,
     finish,
     line,
+    plate,
     poly,
     vent,
 )
@@ -47,7 +48,7 @@ def hose(d, pts):
 def render_deep_bore(variant: str, phase: float) -> Image.Image:
     phase %= 4
     im, d = canvas()
-    p = g.PALETTES[variant]["dark"]
+    p = kit.PALETTES[variant]["dark"]
     plate(d, (5, 13, 123, 124), DEEP, 9)
     # Anchors and braces carry the rig instead of filling its footprint with a solid deck.
     for x in (16, 112):
@@ -97,7 +98,7 @@ def render_deep_bore(variant: str, phase: float) -> Image.Image:
         box(d, (x - 5, 19, x + 5, 32), p, 2)
         plate(d, (x - 9, 73, x + 9, 94), DARK, 3)
         bolt(d, x, 83)
-        line(d, [(x - 2, 45), (x - 2, 71)], g.BONE)
+        line(d, [(x - 2, 45), (x - 2, 71)], kit.BONE)
     plate(d, (23, 33 + feed, 105, 51 + feed), DARK, 4)
     plate(d, (43, 27 + feed, 85, 58 + feed), IRON, 5)
     box(d, (49, 32 + feed, 79, 43 + feed), p, 2)
@@ -130,7 +131,7 @@ def render_deep_bore(variant: str, phase: float) -> Image.Image:
 def render_extractor(variant: str, phase: float) -> Image.Image:
     phase %= 4
     im, d = canvas()
-    p = g.PALETTES[variant]["dark"]
+    p = kit.PALETTES[variant]["dark"]
     plate(d, (7, 9, 121, 121), DEEP, 8)
     # Same foundation and processing path, reduced cutter and drive housing.
     for x, y in ((16, 18), (112, 18), (16, 111), (112, 111)):
@@ -139,7 +140,7 @@ def render_extractor(variant: str, phase: float) -> Image.Image:
     original._belt(d, (55, 74, 76, 107), phase, variant=variant, step=2)
     for j in range(3):
         yy = 81 + (j * 8 + phase * 2) % 24
-        poly(d, [(59, yy), (64, yy - 2), (69, yy + 2), (63, yy + 4)], g.SCRAP_DARK)
+        poly(d, [(59, yy), (64, yy - 2), (69, yy + 2), (63, yy + 4)], kit.SCRAP_DARK)
     for x in (51, 80):
         line(d, [(x, 80), (x, 108)], IRON, 3)
     circle(d, (39, 37, 93, 90), VOID)
@@ -172,7 +173,7 @@ def render_extractor(variant: str, phase: float) -> Image.Image:
     plate(d, (46, 82, 85, 91), DARK, 2)
     box(d, (55, 85, 76, 94), VOID, 1)
     original._hopper(d, (43, 104, 87, 118), variant)
-    poly(d, [(53, 113), (59, 110), (65, 113), (73, 111), (78, 115)], g.SCRAP_DARK)
+    poly(d, [(53, 113), (59, 110), (65, 113), (73, 111), (78, 115)], kit.SCRAP_DARK)
     for x in (26, 93):
         box(d, (x, 111, x + 9, 114), p, 1)
     return finish(im)

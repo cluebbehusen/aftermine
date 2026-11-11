@@ -2,47 +2,34 @@
 
 import math
 
-from tools import gen_sprites as gen
-from tools.production_sprite_sources.mechanical_ground import (
+from tools import sprite_kit as kit
+from tools.production_sprite_sources.mechanical_ground import LIGHT
+from tools.sprite_kit import (
+    BRASS,
     DARK,
     DEEP,
     EDGE,
     IRON,
-    LIGHT,
     SS,
     STEEL,
     VOID,
     box,
     canvas,
     circle,
+    engine,
     finish,
     line,
+    panel,
     poly,
+    strut,
     vent,
 )
 
 HEAT = (169, 104, 52)
 FLASH = (236, 190, 112)
-BRASS = (130, 105, 66)
 SKYHOOK_DOOR_GAP = (0, 3, 7, 7, 3)
 SKYHOOK_ARM_REACH = (0, 5, 10, 6, 2)
 SKYHOOK_GRIP_OPEN = (0, 1, 1, 0, 0)
-
-
-def panel(d, points, paint):
-    poly(d, points, VOID)
-    cx = sum(p[0] for p in points) / len(points)
-    cy = sum(p[1] for p in points) / len(points)
-    inner = [(cx + (x - cx) * 0.88, cy + (y - cy) * 0.88) for x, y in points]
-    poly(d, inner, paint)
-    line(d, inner[:2], EDGE)
-
-
-def strut(d, a, b, width=6):
-    line(d, [a, b], VOID, width + 3)
-    line(d, [a, b], IRON, width)
-    for x, y in (a, b):
-        circle(d, (x - 2, y - 2, x + 2, y + 2), STEEL)
 
 
 def fan(d, x, y, r, phase, paint, heavy=True):
@@ -64,22 +51,6 @@ def fan(d, x, y, r, phase, paint, heavy=True):
         box(d, (x + side * (r - 2) - 1, y - 3, x + side * (r - 2) + 1, y + 3), paint)
     circle(d, (x - 4, y - 4, x + 4, y + 4), VOID)
     circle(d, (x - 2, y - 2, x + 2, y + 2), STEEL)
-
-
-def engine(d, x, y, width, height, paint, phase):
-    box(d, (x, y, x + width, y + height), VOID, 4)
-    box(d, (x + 2, y + 2, x + width - 2, y + height - 2), DARK, 3)
-    box(d, (x + 5, y + 3, x + width - 5, y + 8), DEEP, 1)
-    line(d, [(x + 4, y + 2), (x + width - 4, y + 2)], EDGE)
-    box(d, (x + 5, y + 12, x + width - 5, y + height - 13), paint, 2)
-    box(d, (x + 4, y + height - 10, x + width - 4, y + height - 3), DEEP, 1)
-    for i in range(3):
-        xx = x + 5 + i * (width - 10) / 2
-        line(
-            d,
-            [(xx, y + height - 8), (xx, y + height - 5)],
-            EDGE if (i + phase) % 2 else IRON,
-        )
 
 
 def gun(d, x, y, length, width, action):
@@ -118,7 +89,7 @@ def sensor(d, x, y, paint):
 
 def buzzard(variant, move=0, action=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     for x, y in ((25, 40), (103, 40), (25, 94), (103, 94)):
         strut(d, (64, 64 if y < 64 else 84), (x, y), 7)
         fan(d, x, y, 20, move or action, paint)
@@ -152,7 +123,7 @@ def buzzard(variant, move=0, action=0):
 
 def talon(variant, move=0, action=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     for side in (-1, 1):
         panel(
             d,
@@ -317,7 +288,7 @@ def skyhook_clamp(d, side, y, action):
 
 def skyhook(variant, move=0, action=0, part=None):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     for x, outward in ((25, -1), (103, 1)):
         skyhook_rotor(d, x, 34, 22, move, paint, outward)
     if part == "hull":

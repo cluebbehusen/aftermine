@@ -1,7 +1,7 @@
 """Five quarry machines using the accepted layered metal vocabulary."""
 
-from tools import gen_sprites as gen
-from tools.production_sprite_sources.mechanical_ground import (
+from tools import sprite_kit as kit
+from tools.sprite_kit import (
     DARK,
     DEEP,
     EDGE,
@@ -60,7 +60,7 @@ def load(d, level, x0=45, y0=72, width=38, height=28):
 
 def harvester(variant, move=0, work=0, cargo=0, *, body_only=False):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     for bounds in ((17, 36, 36, 112), (92, 36, 111, 112)):
         track(d, bounds, move, paint)
     poly(d, [(34, 48), (44, 38), (84, 38), (94, 48), (90, 111), (38, 111)], VOID)
@@ -115,7 +115,7 @@ def harvester(variant, move=0, work=0, cargo=0, *, body_only=False):
 
 def excavator(variant, move=0, work=0, *, body_only=False):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     for bounds in ((14, 38, 35, 114), (93, 38, 114, 114)):
         track(d, bounds, move, paint)
     poly(d, [(33, 45), (44, 36), (84, 36), (95, 45), (90, 112), (38, 112)], VOID)
@@ -169,7 +169,7 @@ def leg(d, root, knee, foot):
 
 def scuttler(variant, move=0, action=0, *, body_only=False):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     for side in (-1, 1):
         for i, y in enumerate((48, 69, 90)):
             shift = (0, 5, -5)[move] * (1 if (i + (side == 1)) % 2 else -1)
@@ -247,7 +247,7 @@ def scuttler(variant, move=0, action=0, *, body_only=False):
 
 def sapper(variant, move=0, action=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     for side in (-1, 1):
         for i, y in enumerate((45, 91)):
             shift = (0, 5, -5)[move] * (1 if (i + (side == 1)) % 2 else -1)
