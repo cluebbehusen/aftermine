@@ -172,8 +172,9 @@ pub enum Event {
         /// The damaged entity's position.
         pos: Vec2Fx,
     },
-    /// A standing Reclaimer, Extractor or Foundry paid into the bank. Refunds
-    /// and recovery grants are not income and raise no such event.
+    /// A standing Reclaimer, Extractor, Foundry or smelting Crucible paid into
+    /// the bank. Refunds and recovery grants are not income and raise no such
+    /// event.
     ScrapCredited {
         /// The receiving player.
         player: PlayerId,

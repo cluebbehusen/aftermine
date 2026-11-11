@@ -397,7 +397,7 @@ pub(super) fn run(
     state.warheads.extend(warhead_launches);
     repair_bay_aura(state, &hits, &mut heals, &mut builds);
     kiln::feed(state, &mut heals);
-    crucible_smelter(state);
+    crucible_smelter(state, events);
     let (salvaged, assembled) = resolve_hits(state, &hits, &builds, &heals, &drains, events);
     BrainOutcome {
         boardings: logistics_pending,
@@ -921,9 +921,9 @@ fn building_distance_sq(a: &crate::state::Building, b: &crate::state::Building) 
 }
 
 /// The Crucible's smelter: each pulse, every built Crucible, in id order,
-/// melts one wreck unit within its radius into one scrap for its owner. Wreck
-/// is unowned, so no fog or ownership check applies.
-fn crucible_smelter(state: &mut State) {
+/// melts one wreck unit within its radius into one scrap for its owner, paid
+/// as income. Wreck is unowned, so no fog or ownership check applies.
+fn crucible_smelter(state: &mut State, events: &mut Vec<Event>) {
     use crate::stats::BuildingKind;
     use chassis::grid::TilePos;
     if !state
@@ -1011,6 +1011,10 @@ fn crucible_smelter(state: &mut State) {
         {
             let bank = &mut state.player_mut(owner).scrap;
             *bank = bank.saturating_add(1);
+            events.push(Event::ScrapCredited {
+                player: owner,
+                amount: 1,
+            });
         }
     }
 }
