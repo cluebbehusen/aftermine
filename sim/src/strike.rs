@@ -110,28 +110,6 @@ impl State {
             .collect()
     }
 
-    /// Every magazine as an omniscient QA view shows it to `viewer`:
-    /// hostile ones as if in sight.
-    pub fn omniscient_magazines(&self, viewer: PlayerId) -> Vec<KnownMagazine> {
-        self.buildings
-            .iter()
-            .filter_map(|b| {
-                let magazine = b.magazine?;
-                Some(KnownMagazine {
-                    building: b.id,
-                    loaded: magazine.loaded,
-                    heading: b.launcher.map(|launcher| launcher.heading),
-                    detail: (!self.hostile(viewer, b.player)).then(|| MagazineDetail {
-                        ordered: magazine.ordered,
-                        progress: magazine.progress,
-                        autofill: magazine.autofill,
-                        target: b.launcher.and_then(|launcher| launcher.target),
-                    }),
-                })
-            })
-            .collect()
-    }
-
     /// Every warhead in flight as an omniscient QA view shows it to
     /// `viewer`: hostile ones identified and on their line.
     pub fn omniscient_warheads(&self, viewer: PlayerId) -> Vec<KnownWarhead> {

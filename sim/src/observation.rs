@@ -1,13 +1,10 @@
 //! What a bot may know.
 //!
 //! An [`ObservationData`] is the only input a bot policy receives. It is
-//! serializable and buildable two ways: [`ObservationData::omniscient`] exposes
-//! the whole state for focused tests, while [`ObservationData::fog_honest`]
-//! filters through the player's own vision:
-//! visible enemies live, remembered buildings as ghosts, remembered scrap
-//! amounts, anonymous team-shared salvage warnings, and the public buildings
-//! every seat knows of, nothing else. Both produce the same shape; they differ
-//! only in how much they reveal.
+//! serializable, and [`ObservationData::fog_honest`] builds it through the
+//! player's own vision: visible enemies live, remembered buildings as ghosts,
+//! remembered scrap amounts, anonymous team-shared salvage warnings, and the
+//! public buildings every seat knows of, nothing else.
 //!
 //! Fog-honesty is enforced by explicit filtering, not trust:
 //! `Vision` alone is not a safe boundary (the `State` behind it exposes
@@ -218,22 +215,19 @@ pub struct ObservationData {
     /// for deferred placement: a bot may assume unknown routes continue, but
     /// it may not promise a foundation on a tile its team has never seen.
     pub explored: Vec<bool>,
-    /// Scrap nodes as known: `(tile, amount)` — live amounts under the
-    /// omniscient builder, remembered amounts under the fog-honest one.
+    /// Scrap nodes as known: `(tile, amount)`, with remembered amounts.
     /// Sorted by (y, x).
     pub known_scrap: Vec<(TilePos, u32)>,
-    /// Impassable terrain as known (rock, peaks, pits, and cliffs) — all of it
-    /// omnisciently, explored tiles only fog-honestly (terrain is
-    /// static, so once seen it is known forever). What placement and
-    /// staging decisions steer around; sorted by (y, x).
+    /// Impassable terrain on explored tiles (rock, peaks, pits, and cliffs);
+    /// terrain is static, so once seen it is known forever. What placement
+    /// and staging decisions steer around; sorted by (y, x).
     pub known_rock: Vec<TilePos>,
     /// Derelict Extractor frame anchors discovered through any footprint
-    /// tile (all of them, omnisciently). Frames are map facts and never move.
+    /// tile. Frames are map facts and never move.
     #[serde(default)]
     pub known_frames: Vec<TilePos>,
-    /// Wreck salvage as known: `(tile, amount)` — live under the
-    /// omniscient builder, remembered under the fog-honest one. Sorted
-    /// by (y, x).
+    /// Wreck salvage as known: `(tile, amount)`, with remembered amounts.
+    /// Sorted by (y, x).
     pub known_wrecks: Vec<(TilePos, u32)>,
     /// Recent allied damage or loss locations that remain unsafe for
     /// autonomous salvage. These are anonymous team-shared warning tiles,
@@ -241,9 +235,8 @@ pub struct ObservationData {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub salvage_incidents: Vec<TilePos>,
     /// Radar blips: unidentified hostile contacts and their domains inside
-    /// an allied radar ring but out of sight. Always empty under the
-    /// omniscient builder. In [`crate::vision::RadarContact::sort_key`]
-    /// order.
+    /// an allied radar ring but out of sight. In
+    /// [`crate::vision::RadarContact::sort_key`] order.
     pub blips: Vec<crate::vision::RadarContact>,
     /// Hostile buildings every seat knows of regardless of fog, such as
     /// Deep Bores. Sorted by (y, x, owner).
@@ -289,7 +282,7 @@ impl ObservationData {
     }
 
     /// Whether `tile` is known impassable terrain: a binary search of
-    /// `known_rock`, which both builders emit sorted by (y, x).
+    /// `known_rock`, which is sorted by (y, x).
     pub fn known_rock_at(&self, tile: TilePos) -> bool {
         self.known_rock
             .binary_search_by_key(&(tile.y, tile.x), |p| (p.y, p.x))
@@ -332,89 +325,6 @@ impl ObservationData {
             .and_then(|index| mask.get(index))
             .copied()
             .unwrap_or(false)
-    }
-
-    /// The complete live view used by focused policy tests.
-    pub fn omniscient(state: &State, me: PlayerId) -> Self {
-        let mut obs = Self::base(state, me);
-        for u in state.units() {
-            if u.hp == 0 {
-                continue;
-            }
-            if u.player == me {
-                obs.my_units.push(own_unit(state, u));
-                obs.observe_own_cargo(u);
-                if let Some(target) = own_repair_target(&u.order) {
-                    obs.my_repair_targets.push((u.id, target));
-                }
-            } else if !state.hostile(me, u.player) {
-                obs.ally_units.push(enemy_unit(u));
-            } else {
-                obs.enemy_units.push(enemy_unit(u));
-            }
-        }
-        for b in state.buildings() {
-            if b.player == me {
-                obs.my_buildings.push(own_building(b));
-                obs.my_queues.push(b.queue.iter().copied().collect());
-                obs.my_queue_progress.push(if b.queue.is_empty() {
-                    0
-                } else {
-                    b.training_progress()
-                });
-            } else if !state.hostile(me, b.player) {
-                obs.ally_buildings.push(BuildingObs {
-                    provisional: b.provisional(),
-                    id: b.id,
-                    player: b.player,
-                    kind: b.kind,
-                    anchor: b.anchor,
-                    hp: b.hp,
-                    built: b.built(),
-                    seen: true,
-                    tier: b.tier,
-                });
-            } else {
-                obs.enemy_buildings.push(BuildingObs {
-                    provisional: b.provisional(),
-                    id: b.id,
-                    player: b.player,
-                    kind: b.kind,
-                    anchor: b.anchor,
-                    hp: b.hp,
-                    built: b.built(),
-                    seen: true,
-                    tier: b.tier,
-                });
-            }
-        }
-        for (pos, tile) in state.map().iter() {
-            if tile.scrap > 0 {
-                obs.known_scrap.push((pos, tile.scrap));
-            }
-            if tile.wreck > 0 {
-                obs.known_wrecks.push((pos, tile.wreck));
-            }
-            if tile.terrain.blocks_ground() {
-                obs.known_rock.push(pos);
-            }
-            if state.map().is_extractor_frame(pos) {
-                obs.known_frames.push(pos);
-            }
-        }
-        let tile_count = state.map().iter().count();
-        obs.visible = vec![true; tile_count];
-        obs.explored = vec![true; tile_count];
-        obs.incoming_shells = state
-            .shells()
-            .iter()
-            .filter(|s| state.hostile(me, s.player))
-            .map(|s| TilePos::containing(s.impact))
-            .collect();
-        obs.incoming_shells.sort_by_key(|p| (p.y, p.x));
-        obs.magazines = state.omniscient_magazines(me);
-        obs.warheads = state.omniscient_warheads(me);
-        obs
     }
 
     /// The fair view: own side in full, the enemy only as this player's
