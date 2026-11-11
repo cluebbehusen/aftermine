@@ -257,9 +257,17 @@ pub(super) fn draw_rebar(rect: Rect, cell: f32, tile: f32) {
     }
 }
 
+/// A tile's dressing hash: [`word_hash`] over its coordinates and `salt`.
 pub(super) fn hash(x: i32, y: i32, salt: u32) -> u32 {
+    word_hash(&[x.cast_unsigned(), y.cast_unsigned(), salt])
+}
+
+/// 32-bit FNV-1a over little-endian words: stable across platforms and
+/// Rust versions, unlike `DefaultHasher`. Every dressing pick on the
+/// ground reads it, so changing it moves the art on every map.
+pub(super) fn word_hash(words: &[u32]) -> u32 {
     let mut value = 2_166_136_261u32;
-    for word in [x.cast_unsigned(), y.cast_unsigned(), salt] {
+    for word in words {
         for byte in word.to_le_bytes() {
             value ^= u32::from(byte);
             value = value.wrapping_mul(16_777_619);

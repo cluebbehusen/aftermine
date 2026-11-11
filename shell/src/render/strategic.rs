@@ -7,7 +7,7 @@ mod assembly;
 
 use super::*;
 use crate::assets::{LatticeRig, SpireRig};
-use crate::numeric::Fit;
+use crate::numeric::{Fit, smoothstep};
 use crate::render::prim::{fill_circle, fill_rect, line_between, stroke_circle};
 use crate::render::sky::{
     Flight, INTERCEPTOR_TAIL, InterceptorPath, SCALE_PER_TILE, SHADOW_PER_TILE, WARHEAD_TAIL,
@@ -39,11 +39,6 @@ const LOWER_RELEASE: usize = 6;
 /// east and turns clockwise too.
 fn deck_rotation(heading: u8) -> f32 {
     f32::from(heading) / 256.0 * std::f32::consts::TAU + std::f32::consts::FRAC_PI_2
-}
-
-fn smoothstep(x: f32) -> f32 {
-    let x = x.clamp(0.0, 1.0);
-    x * x * (3.0 - 2.0 * x)
 }
 
 /// Where the Spire's service bay welds the next section, under its cover.
@@ -344,9 +339,7 @@ pub(super) fn draw_lattice(
 /// swings onto its interceptor's path.
 fn pod_aims(game: &crate::game::Scene<'_>, b: &Building, loaded: u8) -> [f32; 2] {
     let now = game.presentation.fx_time();
-    let wrap = |angle: f32| {
-        (angle + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
-    };
+    let wrap = |angle: f32| crate::game::angle_delta(0.0, angle);
     let bearing = |d: Vec2| d.y.atan2(d.x) + std::f32::consts::FRAC_PI_2;
     let mut aims = [0.0; 2];
     for (pod, aim) in aims.iter_mut().enumerate() {

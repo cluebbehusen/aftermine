@@ -30,12 +30,8 @@ pub(super) fn draw(
     scale: f32,
 ) {
     let factor = size / 128.0;
-    let (sin, cos) = rotation.sin_cos();
-    let point = |x: f32, y: f32| {
-        let x = (x - 64.0) * factor;
-        let y = (y - 64.0) * factor;
-        center + vec2(x * cos - y * sin, x * sin + y * cos)
-    };
+    let turn = Vec2::from_angle(rotation);
+    let point = |x: f32, y: f32| center + turn.rotate((vec2(x, y) - 64.0) * factor);
     // Every link goes into one mesh: a draw call per triangle cost more
     // than the rest of the unit together.
     let mut mesh = Mesh {

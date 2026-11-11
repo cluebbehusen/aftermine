@@ -690,9 +690,7 @@ fn unit_work_facing(
         | UnitWorkState::Unloading { target, .. } => target,
         UnitWorkState::Idle => return None,
     };
-    let to_screen_space =
-        |point: chassis::fx::Vec2Fx| vec2(point.x.to_num::<f32>(), point.y.to_num::<f32>());
-    let direction = to_screen_space(target) - to_screen_space(from);
+    let direction = crate::game::world_vec(target) - crate::game::world_vec(from);
     (direction.length_squared() > 1e-6)
         .then(|| direction.y.atan2(direction.x) + std::f32::consts::FRAC_PI_2)
 }
@@ -803,7 +801,7 @@ pub(crate) fn unit_animation(
     state: &aftermine_sim::State,
     unit: &aftermine_sim::Unit,
 ) -> crate::presentation_animation::UnitAnimationState {
-    let current = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
+    let current = crate::game::world_vec(unit.pos);
     let moving = presentation
         .prev_pos
         .get(&unit.id.0)
@@ -980,7 +978,8 @@ pub(crate) fn unit_body_pose(
             Some((angle, at))
                 if animation.attack.is_some()
                     || (rig.is_some() || !moving)
-                        && (preparing || game.presentation.fx_time() - at < 1.2) =>
+                        && (preparing
+                            || game.presentation.fx_time() - at < crate::game::AIM_HOLD_SECS) =>
             {
                 angle
             }
@@ -1280,10 +1279,7 @@ fn draw_rig_mount(
             // The cropped mechanism retains its position on the 128-pixel
             // chassis and swings about its breech.
             let scale = dest / 128.0;
-            let turn = |v: Vec2, angle: f32| {
-                let (sin, cos) = angle.sin_cos();
-                vec2(v.x * cos - v.y * sin, v.x * sin + v.y * cos)
-            };
+            let turn = crate::numeric::rotate;
             let breech = vec2(4.0, 0.0) * scale;
             let mount = vec2(4.0, -8.0) * scale;
             (
@@ -1317,9 +1313,6 @@ fn draw_unit_pass(
     const CULL_MARGIN: f32 = 2.5;
     let zoom = game.presentation.camera.zoom;
     let airborne = domain == aftermine_sim::stats::Domain::Air;
-    // Frustum cull with a margin covering the sprite, its shadow, rings,
-    // and bars.
-    let (view_lo, view_hi) = game.presentation.camera.world_rect();
     for unit in game.state.units() {
         // The body's current layer, not its kind's: a parked airframe
         // draws among ground bodies with no shadow or lift.
@@ -1331,11 +1324,12 @@ fn draw_unit_pass(
         }
         let pos = roc::drone_draw_pos(game, unit, alpha)
             .unwrap_or_else(|| game.presentation.draw_pos(unit.id, unit.pos, alpha));
-        let margin = unit_cull_margin(unit.kind, CULL_MARGIN);
-        if pos.x < view_lo.x - margin
-            || pos.y < view_lo.y - margin
-            || pos.x > view_hi.x + margin
-            || pos.y > view_hi.y + margin
+        // Frustum cull with a margin covering the sprite, its shadow, rings,
+        // and bars.
+        if !game
+            .presentation
+            .camera
+            .in_view(pos, unit_cull_margin(unit.kind, CULL_MARGIN))
         {
             continue;
         }

@@ -37,7 +37,7 @@ pub(super) fn rally_producers(
     let at = match rally {
         Rally::Tile(tile) => tile_center(tile),
         Rally::Unit(unit) => match game.state.unit(unit) {
-            Some(u) => vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>()),
+            Some(u) => crate::game::world_vec(u.pos),
             None => return,
         },
     };

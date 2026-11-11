@@ -26,9 +26,7 @@ impl TrackMotion {
         if self.tick == tick {
             return;
         }
-        let turn = (heading - self.heading + std::f32::consts::PI)
-            .rem_euclid(std::f32::consts::TAU)
-            - std::f32::consts::PI;
+        let turn = crate::game::angle_delta(self.heading, heading);
         let mid = self.heading + turn * 0.5;
         let forward = travel.dot(Vec2::new(mid.cos(), mid.sin()));
         self.previous = self.distance;

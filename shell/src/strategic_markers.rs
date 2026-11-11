@@ -137,7 +137,6 @@ type Shown<'a> = (&'a Unit, Vec2, bool);
 /// The unit markers in view, unselected ones first so a selection's rings
 /// draw over its neighbours, each part in the world's unit order.
 fn shown_units<'a>(game: &Scene<'a>, alpha: f32) -> Vec<Shown<'a>> {
-    let (lo, hi) = game.presentation.camera.world_rect();
     let selection = &game.presentation.selection.units;
     let mut chosen = Vec::new();
     let mut shown: Vec<Shown<'a>> = game
@@ -147,8 +146,7 @@ fn shown_units<'a>(game: &Scene<'a>, alpha: f32) -> Vec<Shown<'a>> {
         .filter(|unit| game.sees_unit(unit))
         .filter_map(|unit| {
             let pos = game.presentation.draw_pos(unit.id, unit.pos, alpha);
-            if pos.x < lo.x - 2.0 || pos.y < lo.y - 2.0 || pos.x > hi.x + 2.0 || pos.y > hi.y + 2.0
-            {
+            if !game.presentation.camera.in_view(pos, 2.0) {
                 return None;
             }
             if selection.binary_search(&unit.id).is_ok() {
@@ -266,7 +264,6 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
 
 fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
     let scale = prefs().scale;
-    let (lo, hi) = game.presentation.camera.world_rect();
     // A Spire's deck art is too small to read here, so its marker says
     // whether it holds a warhead, as far as the viewer may know.
     let loaded: Vec<_> = game
@@ -331,11 +328,7 @@ fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
             anchor.x as f32 + w as f32 * 0.5,
             anchor.y as f32 + h as f32 * 0.5,
         );
-        if world.x < lo.x - 3.0
-            || world.y < lo.y - 3.0
-            || world.x > hi.x + 3.0
-            || world.y > hi.y + 3.0
-        {
+        if !game.presentation.camera.in_view(world, 3.0) {
             continue;
         }
         let pen = Pen {
@@ -505,15 +498,9 @@ pub(crate) fn draw_extractor_frames(game: &Scene<'_>) {
 
 fn draw_frame_markers(game: &Scene<'_>, alpha: f32) {
     let scale = prefs().scale;
-    let (lo, hi) = game.presentation.camera.world_rect();
     for &frame in game.state.map().extractor_frames() {
         let pos = vec2(frame.x as f32 + 1.0, frame.y as f32 + 1.0);
-        if pos.x < lo.x - 2.0
-            || pos.y < lo.y - 2.0
-            || pos.x > hi.x + 2.0
-            || pos.y > hi.y + 2.0
-            || !extractor_frame_visible(game, frame)
-        {
+        if !game.presentation.camera.in_view(pos, 2.0) || !extractor_frame_visible(game, frame) {
             continue;
         }
         let pen = Pen {

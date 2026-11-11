@@ -186,3 +186,14 @@ fn a_zoom_glide_lands_without_a_visible_last_step() {
         );
     }
 }
+
+#[test]
+fn in_view_reaches_its_margin_past_the_visible_rectangle() {
+    let cam = camera();
+    let (lo, hi) = cam.world_rect();
+    assert!(cam.in_view(lo, 0.0) && cam.in_view(hi, 0.0), "edges count");
+    let outside = hi + vec2(1.0, 0.0);
+    assert!(!cam.in_view(outside, 0.0));
+    assert!(cam.in_view(outside, 1.0));
+    assert!(!cam.in_view(lo - vec2(0.0, 2.5), 2.0));
+}

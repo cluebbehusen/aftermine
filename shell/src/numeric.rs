@@ -1,4 +1,5 @@
-//! Presentation-side numeric conversions.
+//! Presentation-side numeric conversions, and the easing and rotation the
+//! animations share.
 //!
 //! Screen and world measures are floats. Converting one to an integer
 //! truncates toward zero and saturates at the target's bounds, with NaN
@@ -29,6 +30,23 @@ pub(crate) fn with_commas(value: u32) -> String {
 )]
 pub(crate) fn font_size(px: f32) -> u16 {
     px as u16
+}
+
+/// `x` eased in and out: 0 at or below 0, 1 at or above 1, with no
+/// speed at either end.
+pub(crate) fn smoothstep(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
+/// [`smoothstep`] across `t` running from `start` to `end`.
+pub(crate) fn ramp(t: f32, start: f32, end: f32) -> f32 {
+    smoothstep((t - start) / (end - start))
+}
+
+/// `v` turned by `angle` radians, clockwise on screen.
+pub(crate) fn rotate(v: Vec2, angle: f32) -> Vec2 {
+    Vec2::from_angle(angle).rotate(v)
 }
 
 /// The tile containing a world position.

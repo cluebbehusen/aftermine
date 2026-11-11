@@ -9,7 +9,7 @@ use crate::action::Action;
 use crate::game::Game;
 use crate::numeric;
 use aftermine_sim::Command;
-use macroquad::prelude::{Vec2, vec2};
+use macroquad::prelude::Vec2;
 
 #[expect(clippy::too_many_lines, reason = "one arm per action")]
 pub(super) fn dispatch_action(
@@ -464,7 +464,7 @@ pub(super) fn own_foundries(game: &crate::game::Scene<'_>) -> Vec<Vec2> {
     game.own_foundries()
         .map(|b| {
             let center = b.center();
-            vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>())
+            crate::game::world_vec(center)
         })
         .collect()
 }

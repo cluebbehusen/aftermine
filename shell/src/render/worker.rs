@@ -1,17 +1,7 @@
 //! Worker mechanisms, attached to the chassis and the visible work surface.
 use super::*;
+use crate::numeric::rotate;
 use crate::presentation_animation::{ExcavatorTool, UnitAnimationState, UnitWorkState, WorkTarget};
-
-fn world(pos: chassis::fx::Vec2Fx) -> Vec2 {
-    vec2(pos.x.to_num(), pos.y.to_num())
-}
-
-fn rotate(v: Vec2, angle: f32) -> Vec2 {
-    vec2(
-        v.x * angle.cos() - v.y * angle.sin(),
-        v.x * angle.sin() + v.y * angle.cos(),
-    )
-}
 
 fn contact(
     game: &Scene<'_>,
@@ -31,14 +21,12 @@ fn contact(
                 sprites,
                 crate::game::BuildingHit::capture(game.state, b),
                 from,
-                world(
-                    game.state
-                        .contact_surface(b)
-                        .closest(chassis::fx::Vec2Fx::new(
-                            chassis::fx::Fx::from_num(from.x),
-                            chassis::fx::Fx::from_num(from.y),
-                        )),
-                ),
+                crate::game::world_vec(game.state.contact_surface(b).closest(
+                    chassis::fx::Vec2Fx::new(
+                        chassis::fx::Fx::from_num(from.x),
+                        chassis::fx::Fx::from_num(from.y),
+                    ),
+                )),
             )
         }
         WorkTarget::Scrap(tile) | WorkTarget::Wreck(tile) => {
@@ -122,11 +110,6 @@ fn forward_work_point(point: Vec2, root: Vec2, forward: Vec2, scale: f32) -> Vec
     root + forward * ahead + lateral * sideways
 }
 
-fn smooth_step(value: f32) -> f32 {
-    let t = value.clamp(0., 1.);
-    t * t * (3. - 2. * t)
-}
-
 fn arm_joints(target: Vec2, deployment: f32) -> [Vec2; 3] {
     let mount = vec2(86., 66.);
     let upper: f32 = 34.;
@@ -143,9 +126,7 @@ fn arm_joints(target: Vec2, deployment: f32) -> [Vec2; 3] {
     let upper_angle = (elbow - mount).to_angle();
     let lower_angle = (endpoint - elbow).to_angle();
     let turn = |from: f32, to: f32, phase: f32| {
-        let delta = (to - from + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
-            - std::f32::consts::PI;
-        from + delta * smooth_step(phase)
+        from + crate::game::angle_delta(from, to) * crate::numeric::smoothstep(phase)
     };
     let shoulder = turn(std::f32::consts::FRAC_PI_2, upper_angle, deployment / 0.65);
     let elbow_fold = turn(
@@ -534,13 +515,14 @@ fn draw_scuttler(
     let (gap, extension) = match animation.attack {
         Some(AttackPhase::Report { .. }) => (1.5, 1.),
         Some(AttackPhase::Recover { progress, .. }) => (
-            1.5 + 12.5 * smooth_step(progress),
-            1. - smooth_step(progress),
+            1.5 + 12.5 * crate::numeric::smoothstep(progress),
+            1. - crate::numeric::smoothstep(progress),
         ),
         None => match animation.weapons[0] {
-            WeaponCycle::Preparing { progress } => {
-                (14. + 6. * smooth_step((progress - 0.5) * 2.), 0.)
-            }
+            WeaponCycle::Preparing { progress } => (
+                14. + 6. * crate::numeric::smoothstep((progress - 0.5) * 2.),
+                0.,
+            ),
             _ => (14., 0.),
         },
     };

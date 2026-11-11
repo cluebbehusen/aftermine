@@ -326,7 +326,7 @@ pub(crate) fn draw_breadcrumbs(game: &crate::game::Scene<'_>, input: &InputState
         let start = game
             .presentation
             .camera
-            .to_screen(vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>()));
+            .to_screen(crate::game::world_vec(unit.pos));
         let s = ui_scale();
         let numbered = is_subject && program.orders.len() > 1;
         let mut prev = start;
@@ -507,10 +507,7 @@ fn payload_contact(
     index: usize,
 ) -> (Vec2, Option<crate::game::HitSurface>) {
     let shell = &game.state.shells()[index];
-    let at = vec2(
-        shell.impact.x.to_num::<f32>(),
-        shell.impact.y.to_num::<f32>(),
-    );
+    let at = crate::game::world_vec(shell.impact);
     let target = game
         .presentation
         .projectile_releases
@@ -894,16 +891,15 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     }
     // Frustum cull by anchor with a margin covering the widest footprint
     // plus bars and site dressing.
-    let (view_lo, view_hi) = game.presentation.camera.world_rect();
     for building in game.state.buildings().iter().filter(|b| !b.provisional()) {
         if !game.sees_building(building) {
             continue;
         }
         let anchor = vec2(building.anchor.x as f32, building.anchor.y as f32);
-        if anchor.x < view_lo.x - BUILDING_CULL_MARGIN
-            || anchor.y < view_lo.y - BUILDING_CULL_MARGIN
-            || anchor.x > view_hi.x + BUILDING_CULL_MARGIN
-            || anchor.y > view_hi.y + BUILDING_CULL_MARGIN
+        if !game
+            .presentation
+            .camera
+            .in_view(anchor, BUILDING_CULL_MARGIN)
         {
             continue;
         }
@@ -1143,10 +1139,7 @@ fn draw_bomber_bombs(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         let Some(release) = bomber_release(game, index) else {
             continue;
         };
-        let launch = vec2(
-            shell.launch.x.to_num::<f32>(),
-            shell.launch.y.to_num::<f32>(),
-        );
+        let launch = crate::game::world_vec(shell.launch);
         let (impact, _) = payload_contact(game, sprites, index);
         let total = payload_flight_ticks(game, index);
         let t = (crate::audio_timeline::projectile_elapsed_ticks(now, shell.arrival, total)
@@ -1499,10 +1492,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         if bomber_release(game, index).is_some() {
             continue;
         }
-        let launch = vec2(
-            shell.launch.x.to_num::<f32>(),
-            shell.launch.y.to_num::<f32>(),
-        );
+        let launch = crate::game::world_vec(shell.launch);
         let (to, _) = payload_contact(game, sprites, index);
         // Indirect building fire is Bastion fire. Its sim launch stays at
         // the stable footprint center; presentation advances that point to
@@ -3047,7 +3037,7 @@ fn visit_active_ranges(
     ) && let Some(unit) = game.state.unit(id)
         && unit.player == game.presentation.human
     {
-        let center = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
+        let center = crate::game::world_vec(unit.pos);
         let stats = unit.kind.stats();
         for weapon in stats.weapons {
             let kind = weapon_range_kind(weapon);
@@ -3487,7 +3477,7 @@ fn draw_selection_rect(game: &crate::game::Scene<'_>, corner: Vec2, other: Vec2,
     let a = game.presentation.camera.to_world(lo);
     let b = game.presentation.camera.to_world(lo + size);
     for unit in crate::input::boxed_own_units(game, a, b) {
-        let p = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
+        let p = crate::game::world_vec(unit.pos);
         let screen = game.presentation.camera.to_screen(p);
         stroke_circle(
             screen,

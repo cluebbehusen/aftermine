@@ -60,7 +60,7 @@ impl ProjectileReleases {
                 let pose = unit_pose.map(|pose| {
                     let heading = chassis::compass::dir(pose.heading);
                     LaunchPose {
-                        heading: vec2(heading.x.to_num::<f32>(), heading.y.to_num::<f32>()),
+                        heading: crate::game::world_vec(heading),
                         kind: pose.kind,
                     }
                 });

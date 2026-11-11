@@ -408,7 +408,7 @@ fn sprite_vertices(
         size.y = -size.y;
     }
     let pivot = params.pivot.unwrap_or(origin + size * 0.5);
-    let (sin, cos) = params.rotation.sin_cos();
+    let turn = Vec2::from_angle(params.rotation);
     [
         vec2(0.0, 0.0),
         vec2(1.0, 0.0),
@@ -417,11 +417,7 @@ fn sprite_vertices(
     ]
     .map(|corner| {
         let offset = origin + (area.point() + corner * area.size()) * size - pivot;
-        let pos = pivot
-            + vec2(
-                offset.x * cos - offset.y * sin,
-                offset.x * sin + offset.y * cos,
-            );
+        let pos = pivot + turn.rotate(offset);
         let uv = (a.rect.point() + corner * a.rect.size()) / PAGE as f32;
         let reduced = (b.rect.point() + corner * b.rect.size()) / PAGE as f32;
         let mut vertex = Vertex::new(pos.x, pos.y, 0.0, uv.x, uv.y, tint);

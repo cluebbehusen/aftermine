@@ -195,16 +195,6 @@ fn distance(width: i32, height: i32, seed: impl Fn(i32, i32) -> bool) -> Vec<u8>
     d
 }
 
-fn lifted(color: Color, lift: i16) -> Color {
-    let amount = f32::from(lift) / 255.0;
-    Color::new(
-        (color.r + amount).clamp(0.0, 1.0),
-        (color.g + amount).clamp(0.0, 1.0),
-        (color.b + amount).clamp(0.0, 1.0),
-        color.a,
-    )
-}
-
 fn ground_at(map: &Map, pos: TilePos) -> Option<Elevation> {
     map.tile(pos)
         .filter(|tile| tile.terrain == Terrain::Ground)
@@ -680,7 +670,7 @@ impl Levels {
                 let color = if riser[i] {
                     riser_color
                 } else {
-                    lifted(self.level_flat(bench_level[i]), WAVE_LIFTS[phase])
+                    super::environment::shifted(self.level_flat(bench_level[i]), WAVE_LIFTS[phase])
                 };
                 push(cx, cy, whole, color);
             }

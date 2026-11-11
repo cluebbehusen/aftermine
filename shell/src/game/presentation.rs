@@ -928,7 +928,7 @@ impl Presentation {
                 || self
                     .aim_units
                     .get(&unit.id.0)
-                    .is_some_and(|(_, at)| self.fx_clock - at < 1.2));
+                    .is_some_and(|(_, at)| self.fx_clock - at < super::AIM_HOLD_SECS));
         !aiming && (propulsion != Vec2::ZERO || matches!(unit.order, aftermine_sim::Order::Idle))
     }
 

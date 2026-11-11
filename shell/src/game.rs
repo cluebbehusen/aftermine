@@ -766,6 +766,12 @@ pub(crate) fn gun_turns_off_hull(kind: UnitKind) -> bool {
             .is_some_and(|brace| brace.traverse.is_some())
 }
 
+/// How long, in seconds, a body that fired without a turret holds its aim
+/// before it may turn back to its facing.
+pub(crate) const AIM_HOLD_SECS: f32 = 1.2;
+
+/// The signed turn from angle `from` to angle `to` the short way, in
+/// radians within `[-PI, PI)`.
 pub(crate) fn angle_delta(from: f32, to: f32) -> f32 {
     (to - from + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }
