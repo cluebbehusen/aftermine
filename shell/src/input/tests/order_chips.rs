@@ -325,6 +325,102 @@ fn a_held_site_chip_scraps_nothing_but_a_tap_cancels_the_site() {
 }
 
 #[test]
+fn a_site_chip_takes_only_the_selection_off_a_shared_site() {
+    use aftermine_sim::BuildingKind::Turret;
+    let mut scenario = super::armed_skirmish();
+    scenario.players[0].scrap = 5_000;
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Harvester,
+        x: 8,
+        y: 6,
+    });
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let mut input = InputState::new();
+    let human = game.presentation.human;
+    let crew: Vec<UnitId> = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == human && u.kind == UnitKind::Harvester)
+        .map(|u| u.id)
+        .collect();
+    assert_eq!(crew.len(), 4, "premise: four workers");
+    let (first, last) = crew.split_at(2);
+    let mut sites = Vec::new();
+    for queue in [false, true] {
+        let anchor = turret_ground(&game, crew[0]);
+        game.state.tick(&[PlayerCommand {
+            player: human,
+            command: Command::Build {
+                units: crew.clone(),
+                kind: Turret,
+                anchor,
+                queue,
+                defer: false,
+            },
+        }]);
+        sites.push(
+            game.state
+                .buildings()
+                .iter()
+                .find(|b| b.anchor == anchor)
+                .expect("the site stands")
+                .id,
+        );
+    }
+    let [row, queued] = sites[..] else {
+        unreachable!()
+    };
+    let crew_of = |game: &Game, site| game.state.site_crew(site).collect::<Vec<_>>();
+    let bank = |game: &Game| game.state.player(human).scrap;
+    let cost = Turret.base_stats().construction.cost;
+    assert_eq!(crew_of(&game, queued), crew);
+
+    game.presentation.selection.units = first.to_vec();
+    let chips = publish_dock(&mut game, &input);
+    let before = bank(&game);
+    press(&mut game, &mut input, chips[1]);
+    game.advance_ticks(1);
+    assert!(game.state.building(queued).is_some(), "the site stands");
+    assert_eq!(crew_of(&game, queued), last, "queued for the other two");
+    assert_eq!(bank(&game), before, "nothing refunded");
+
+    game.presentation.selection.units = last.to_vec();
+    let chips = publish_dock(&mut game, &input);
+    input.now += 1.0;
+    press(&mut game, &mut input, chips[1]);
+    game.advance_ticks(1);
+    assert!(
+        game.state.building(queued).is_none(),
+        "the last two left it"
+    );
+    assert_eq!(bank(&game), before + cost, "refunded in full");
+
+    for _ in 0..600 {
+        if !game.state.building(row).unwrap().unstarted() {
+            break;
+        }
+        game.advance_ticks(1);
+    }
+    let site = game.state.building(row).unwrap();
+    assert!(!site.unstarted(), "premise: work on the site began");
+    let value = cost * site.hp / site.stats().max_hp;
+    assert!(value < cost, "premise: {value} is less than the full price");
+    game.presentation.selection.units = crew.clone();
+    let chips = publish_dock(&mut game, &input);
+    let before = bank(&game);
+    input.now += 1.0;
+    press(&mut game, &mut input, chips[0]);
+    game.advance_ticks(1);
+    assert!(
+        game.state.building(row).is_none(),
+        "the whole crew's site goes"
+    );
+    assert_eq!(bank(&game), before + value, "for its remaining value");
+}
+
+#[test]
 fn a_held_production_chip_cancels_nothing_but_a_tap_does() {
     let mut game = headless_game();
     let mut input = InputState::new();

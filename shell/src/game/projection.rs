@@ -6,8 +6,8 @@
 //! command will actually edit.
 
 use aftermine_sim::{
-    Building, BuildingId, CommandPhase, CommandPhaseView, Order, PlayerCommand, State, Tick, Unit,
-    UnitId,
+    Building, BuildingId, CommandPhase, CommandPhaseView, Order, PlayerCommand, PlayerId, State,
+    Tick, Unit, UnitId,
 };
 
 /// The world as the staged commands leave it, shared by every read of it
@@ -82,6 +82,9 @@ pub(crate) struct Projection {
     captured: Option<Captured>,
     programs: Vec<(UnitId, Program)>,
     sites: Vec<Building>,
+    /// The selection's Build and Found orders, with their owners, whose site
+    /// a worker outside the selection also holds.
+    shared: Vec<(PlayerId, Order)>,
 }
 
 impl Projection {
@@ -100,8 +103,17 @@ impl Projection {
         staged: Option<CommandPhaseView<'_>>,
         units: Vec<UnitId>,
     ) -> Self {
-        let (programs, sites) = match staged {
-            None => (programs(&units, |id| state.unit(id)), Vec::new()),
+        let (programs, sites, shared) = match staged {
+            None => {
+                let programs = programs(&units, |id| state.unit(id));
+                let shared = shared_sites(
+                    &programs,
+                    |id| state.unit(id),
+                    state.buildings(),
+                    |site| state.site_crew(site),
+                );
+                (programs, Vec::new(), shared)
+            }
             Some(view) => {
                 let programs = programs(&units, |id| view.unit(id));
                 let sites = view
@@ -114,7 +126,13 @@ impl Projection {
                     })
                     .cloned()
                     .collect();
-                (programs, sites)
+                let shared = shared_sites(
+                    &programs,
+                    |id| view.unit(id),
+                    view.buildings(),
+                    |site| view.site_crew(site),
+                );
+                (programs, sites, shared)
             }
         };
         Self {
@@ -125,6 +143,7 @@ impl Projection {
             }),
             programs,
             sites,
+            shared,
         }
     }
 
@@ -144,6 +163,56 @@ impl Projection {
             .find(|site| site.id == id)
             .or_else(|| state.building(id))
     }
+
+    /// Whether a worker outside the selection still holds the site that a
+    /// selected unit of `player` names with its Build or Found `order`.
+    pub(crate) fn site_shared(&self, player: PlayerId, order: Order) -> bool {
+        self.shared.contains(&(player, order))
+    }
+}
+
+/// The Build and Found orders in `programs`, with their owners, whose site a
+/// worker outside `programs` also holds.
+fn shared_sites<'w, C: Iterator<Item = UnitId>>(
+    programs: &[(UnitId, Program)],
+    unit_of: impl Fn(UnitId) -> Option<&'w Unit>,
+    buildings: &'w [Building],
+    crew: impl Fn(BuildingId) -> C,
+) -> Vec<(PlayerId, Order)> {
+    let selected = |id: UnitId| {
+        programs
+            .binary_search_by_key(&id, |(unit, _)| *unit)
+            .is_ok()
+    };
+    let mut seen = Vec::new();
+    let mut shared = Vec::new();
+    for (unit, program) in programs {
+        let Some(player) = unit_of(*unit).map(|unit| unit.player) else {
+            continue;
+        };
+        for &order in &program.orders {
+            if !matches!(order, Order::Build { .. } | Order::Found { .. })
+                || seen.contains(&(player, order))
+            {
+                continue;
+            }
+            seen.push((player, order));
+            let site = buildings.iter().find(|site| match order {
+                Order::Build { site: id } => site.id == id,
+                Order::Found { kind, anchor } => {
+                    site.player == player
+                        && site.kind == kind
+                        && site.anchor == anchor
+                        && site.under_construction()
+                }
+                _ => false,
+            });
+            if site.is_some_and(|site| crew(site.id).any(|id| !selected(id))) {
+                shared.push((player, order));
+            }
+        }
+    }
+    shared
 }
 
 /// The programs of `ids` in id order, so a selection-wide read looks each

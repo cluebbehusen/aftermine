@@ -1130,8 +1130,9 @@ fn order_card(
 }
 
 /// The chip for `program.orders[index]` of the dock's own subject. Pressing
-/// it removes that order from the selection; an unbuilt site and a planned
-/// one are cancelled outright instead, for every crew member.
+/// it removes that order from the selection. An unbuilt or planned site that
+/// no worker outside the selection holds is cancelled outright instead, so a
+/// started one refunds its remaining value rather than standing abandoned.
 fn own_order_card(
     game: &Scene<'_>,
     subject: aftermine_sim::UnitId,
@@ -1144,50 +1145,72 @@ fn own_order_card(
     if program.looping {
         patrol_leg(&mut card, order, index == 0);
     }
-    let unbuilt = match order {
+    // The outright cancel, whether a removal could name the site instead,
+    // and the line saying what the cancel does.
+    let site = match order {
         Order::Build { site } => projection
             .building(game.state, *site)
-            .filter(|building| !building.built()),
+            .filter(|building| !building.built())
+            .map(|site| {
+                // A site only the staged commands place has no settled id
+                // yet: other seats' commands, or batches before its own, can
+                // take the id it was projected with. It is named by kind and
+                // anchor, which a removal's Build key cannot do.
+                let cancel = if game.state.building(site.id).is_some() {
+                    CardAction::CancelSite(site.id)
+                } else {
+                    CardAction::CancelFound(site.kind, site.anchor)
+                };
+                (
+                    cancel,
+                    matches!(cancel, CardAction::CancelSite(_)),
+                    "to cancel the site and recover its remaining value.",
+                )
+            }),
+        Order::Found { kind, anchor } => Some((
+            CardAction::CancelFound(*kind, *anchor),
+            true,
+            "to cancel this planned site.",
+        )),
         _ => None,
     };
-    match (order, unbuilt) {
-        (Order::Build { .. }, Some(site)) => {
-            // A site only the staged commands place has no settled id yet:
-            // other seats' commands, or batches before its own, can take the
-            // id it was projected with. It is named by kind and anchor.
-            card.action = if game.state.building(site.id).is_some() {
-                CardAction::CancelSite(site.id)
-            } else {
-                CardAction::CancelFound(site.kind, site.anchor)
-            };
+    let tap = crate::platform::tap_or_click_capitalized(crate::platform::hands().touch());
+    match site {
+        Some((_, true, _)) if projection.site_shared(game.presentation.human, *order) => {
+            card.action = removal(game, subject, program, index);
             card.desc.push(format!(
-                "{} to cancel the site and recover its remaining value.",
-                crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
+                "{tap} to take the selection off this site; other workers keep building it."
             ));
         }
-        (Order::Found { kind, anchor }, _) => {
-            card.action = CardAction::CancelFound(*kind, *anchor);
-            card.desc.push(format!(
-                "{} to cancel this planned site.",
-                crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
-            ));
+        Some((cancel, _, does)) => {
+            card.action = cancel;
+            card.desc.push(format!("{tap} {does}"));
         }
-        _ => {
-            let human = game.presentation.human;
-            if let Some(key) = order.key(game.state, human) {
-                let later = program.orders[index + 1..]
-                    .iter()
-                    .filter(|later| later.key(game.state, human) == Some(key))
-                    .count();
-                card.action = CardAction::CancelOrder {
-                    unit: subject,
-                    key,
-                    from_end: u8::try_from(later).unwrap_or(u8::MAX),
-                };
-            }
-        }
+        None => card.action = removal(game, subject, program, index),
     }
     card
+}
+
+/// Removes `program.orders[index]` from every selected unit that has it.
+fn removal(
+    game: &Scene<'_>,
+    subject: aftermine_sim::UnitId,
+    program: &Program,
+    index: usize,
+) -> CardAction {
+    let human = game.presentation.human;
+    let Some(key) = program.orders[index].key(game.state, human) else {
+        return CardAction::None;
+    };
+    let later = program.orders[index + 1..]
+        .iter()
+        .filter(|later| later.key(game.state, human) == Some(key))
+        .count();
+    CardAction::CancelOrder {
+        unit: subject,
+        key,
+        from_end: u8::try_from(later).unwrap_or(u8::MAX),
+    }
 }
 
 /// Names a patrol's leg as Patrol, with the loop icon, so a patrolling

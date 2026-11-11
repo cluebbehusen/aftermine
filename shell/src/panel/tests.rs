@@ -1114,6 +1114,149 @@ fn deferred_build_chips_cancel_their_logical_sites() {
     assert!(card.desc.iter().any(|line| line.contains("planned site")));
 }
 
+#[test]
+fn a_site_chip_takes_the_selection_off_a_site_other_workers_hold() {
+    use aftermine_sim::{OrderKey, UnitId};
+    use chassis::grid::TilePos;
+
+    let mut scenario = Scenario::skirmish();
+    scenario.players[0].scrap = 5000;
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Harvester,
+        x: 8,
+        y: 6,
+    });
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("skirmish builds");
+    let human = game.presentation.human;
+    let crew: Vec<UnitId> = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == human && u.kind == UnitKind::Harvester)
+        .map(|u| u.id)
+        .collect();
+    assert_eq!(crew.len(), 4, "premise: four workers");
+    let (first, last) = crew.split_at(2);
+    let mut anchors: Vec<TilePos> = Vec::new();
+    for y in 1..12 {
+        for x in 1..24 {
+            let anchor = TilePos::new(x, y);
+            if anchors.iter().all(|other| other.chebyshev(anchor) >= 3)
+                && game.state.can_place(human, BuildingKind::Turret, anchor)
+            {
+                anchors.push(anchor);
+            }
+        }
+    }
+    let &[built, planned, staged, ..] = anchors.as_slice() else {
+        panic!("open ground for three Turrets: {anchors:?}");
+    };
+    let build = |anchor, defer| Command::Build {
+        units: crew.clone(),
+        kind: BuildingKind::Turret,
+        anchor,
+        queue: false,
+        defer,
+    };
+    let chip = |game: &mut Game, selected: &[UnitId]| {
+        game.presentation.selection.units = selected.to_vec();
+        build_for_palette(&game.view(), &BindingMap::classic(), false)
+            .expect("panel")
+            .queue
+            .swap_remove(0)
+    };
+    let takes_off = |card: &Card| {
+        card.desc
+            .iter()
+            .any(|line| line.contains("take the selection off this site"))
+    };
+    // In play only a tick drains the staged batch, and the cached projection
+    // and staged command phase key on its length, so dropping the batch here
+    // drops both caches too.
+    let unstage = |game: &mut Game| {
+        game.pending.clear();
+        game.presentation.projection.take();
+        game.presentation.staged.get_mut().take();
+    };
+
+    game.state.tick(&[PlayerCommand {
+        player: human,
+        command: build(built, false),
+    }]);
+    let site = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.anchor == built)
+        .expect("the site stands")
+        .id;
+    for part in [first, last] {
+        let card = chip(&mut game, part);
+        assert_eq!(
+            card.action,
+            CardAction::CancelOrder {
+                unit: part[0],
+                key: OrderKey::Build { site },
+                from_end: 0,
+            },
+            "the rest of the crew keeps the site"
+        );
+        assert!(takes_off(&card), "{:?}", card.desc);
+    }
+    let card = chip(&mut game, &crew);
+    assert_eq!(card.action, CardAction::CancelSite(site));
+    assert!(!takes_off(&card), "{:?}", card.desc);
+    game.issue(Command::Stop {
+        units: last.to_vec(),
+    });
+    assert_eq!(
+        chip(&mut game, first).action,
+        CardAction::CancelSite(site),
+        "a staged Stop leaves the selection the whole crew"
+    );
+    unstage(&mut game);
+
+    // Ground in sight is verified within the tick, so the plan is staged.
+    game.issue(build(planned, true));
+    let card = chip(&mut game, first);
+    assert_eq!(
+        game.view()
+            .projection()
+            .program(first[0])
+            .map(|p| p.orders[0]),
+        Some(Order::Found {
+            kind: BuildingKind::Turret,
+            anchor: planned,
+        }),
+        "premise: the planned site awaits its ground"
+    );
+    assert_eq!(
+        card.action,
+        CardAction::CancelOrder {
+            unit: first[0],
+            key: OrderKey::Found {
+                kind: BuildingKind::Turret,
+                anchor: planned,
+            },
+            from_end: 0,
+        }
+    );
+    assert!(takes_off(&card), "{:?}", card.desc);
+    assert_eq!(
+        chip(&mut game, &crew).action,
+        CardAction::CancelFound(BuildingKind::Turret, planned)
+    );
+
+    unstage(&mut game);
+    game.issue(build(staged, false));
+    assert_eq!(
+        chip(&mut game, first).action,
+        CardAction::CancelFound(BuildingKind::Turret, staged),
+        "a site only the staged commands place has no id a removal could name"
+    );
+}
+
 /// Contiguous index per [`Order`] variant: a new order stops this
 /// compiling until its chip is covered below.
 fn order_kind(order: &Order) -> usize {
@@ -1141,7 +1284,7 @@ fn order_kind(order: &Order) -> usize {
 }
 
 #[test]
-fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
+fn every_own_chip_removes_its_order_but_a_site_held_by_the_selection_alone_cancels() {
     use aftermine_sim::{AttackTarget, ContactId, Goal, OrderKey};
     use chassis::grid::TilePos;
 

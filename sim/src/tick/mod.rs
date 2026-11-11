@@ -87,6 +87,14 @@ impl CommandPhaseView<'_> {
         self.state.construction_refund(player, units)
     }
 
+    /// The projected live workers holding `site`, in id order.
+    pub fn site_crew(
+        &self,
+        site: crate::ids::BuildingId,
+    ) -> impl Iterator<Item = crate::ids::UnitId> + '_ {
+        self.state.site_crew(site)
+    }
+
     /// Projected live units, in canonical id order.
     pub fn units(&self) -> &[crate::state::Unit] {
         self.state.units()
