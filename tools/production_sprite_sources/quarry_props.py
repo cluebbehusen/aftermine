@@ -3,8 +3,10 @@
 import math
 
 from PIL import Image, ImageDraw
+from tools.sprite_kit import (
+    SS,
+)
 
-SS = 4
 VOID = (17, 17, 21)
 DEEP = (28, 27, 32)
 IRON = (52, 52, 55)

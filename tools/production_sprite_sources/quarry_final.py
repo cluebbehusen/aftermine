@@ -6,18 +6,19 @@ from pathlib import Path
 
 from PIL import Image
 
-from tools import gen_sprites as gen
-from tools.production_sprite_sources.installed_defenses_final import bolt, plate
-from tools.production_sprite_sources.specialists_final import (
+from tools import sprite_kit as kit
+from tools.sprite_kit import (
     DARK,
     DEEP,
     IRON,
     VOID,
+    bolt,
     box,
     canvas,
     circle,
     finish,
     line,
+    plate,
 )
 
 
@@ -76,15 +77,15 @@ def scrap(stage):
     pieces = 30 if rich else int(14 * fullness) + 4
     spread = 19 if rich else 10 * fullness + 6
     lift = 7 if rich else 3 * fullness
-    im, d = gen.canvas(64)
+    im, d = kit.canvas(64)
     rng = random.Random(23 if rich else 11)
     radius = spread + 5
     d.ellipse(
         [
-            gen.s(32 - radius),
-            gen.s(36 - radius * 0.6),
-            gen.s(32 + radius),
-            gen.s(36 + radius * 0.6),
+            kit.s(32 - radius),
+            kit.s(36 - radius * 0.6),
+            kit.s(32 + radius),
+            kit.s(36 + radius * 0.6),
         ],
         fill=(24, 20, 16, 120),
     )
@@ -100,9 +101,9 @@ def scrap(stage):
     placed.sort(key=lambda p: -p[0])
     for i, (dist, cx, cy, w, h) in enumerate(placed):
         tone = (
-            rng.choice((gen.SCRAP, gen.SCRAP_LIGHT))
+            rng.choice((kit.SCRAP, kit.SCRAP_LIGHT))
             if dist < spread * 0.45
-            else rng.choice((gen.SCRAP, gen.SCRAP_DARK, gen.SCRAP_DARK))
+            else rng.choice((kit.SCRAP, kit.SCRAP_DARK, kit.SCRAP_DARK))
         )
         dx = rng.uniform(-2.5, 2.5)
         pts = [
@@ -111,43 +112,43 @@ def scrap(stage):
             (cx + w / 2 + dx, cy + h / 2),
             (cx - w / 2, cy + h / 2 - dx / 2),
         ]
-        d.polygon([(gen.s(x), gen.s(y)) for x, y in pts], fill=(*tone, 255))
+        d.polygon([(kit.s(x), kit.s(y)) for x, y in pts], fill=(*tone, 255))
         d.line(
-            [(gen.s(x), gen.s(y)) for x, y in pts[1:]],
+            [(kit.s(x), kit.s(y)) for x, y in pts[1:]],
             fill=(100, 73, 33, 255),
-            width=gen.SS,
+            width=kit.SS,
         )
         if i % 3 == 0:
             d.line(
-                [(gen.s(x), gen.s(y)) for x, y in pts[:2]],
+                [(kit.s(x), kit.s(y)) for x, y in pts[:2]],
                 fill=(227, 189, 113, 255),
-                width=gen.SS,
+                width=kit.SS,
             )
         if i % 5 == 1:
             d.line(
                 [
-                    (gen.s(cx - w * 0.2), gen.s(cy - h * 0.15)),
-                    (gen.s(cx + w * 0.2), gen.s(cy + h * 0.1)),
+                    (kit.s(cx - w * 0.2), kit.s(cy - h * 0.15)),
+                    (kit.s(cx + w * 0.2), kit.s(cy + h * 0.1)),
                 ],
                 fill=(106, 84, 43, 255),
-                width=gen.SS,
+                width=kit.SS,
             )
     for _ in range(max(1, pieces // 6)):
         cx, cy = 32 + rng.uniform(-6, 6), 32 - lift * 0.7 + rng.uniform(-4, 4)
         d.rectangle(
-            [gen.s(cx - 1.2), gen.s(cy - 0.8), gen.s(cx + 1.2), gen.s(cy + 0.8)],
+            [kit.s(cx - 1.2), kit.s(cy - 0.8), kit.s(cx + 1.2), kit.s(cy + 0.8)],
             fill=(242, 215, 157, 255),
         )
     return im.resize((64, 64), Image.Resampling.LANCZOS)
 
 
 def dressing(index):
-    im, d = gen.canvas(64)
+    im, d = kit.canvas(64)
     rng = random.Random(3809 + index * 177)
 
     def ln(points, color, width=1):
         d.line(
-            [(gen.s(x), gen.s(y)) for x, y in points], fill=color, width=gen.s(width)
+            [(kit.s(x), kit.s(y)) for x, y in points], fill=color, width=kit.s(width)
         )
 
     if index < 4:
@@ -157,7 +158,7 @@ def dressing(index):
                 a = j * math.tau / 12
                 r = rng.uniform(9, 19) * (1 - layer * 0.13)
                 points.append(
-                    (gen.s(32 + math.cos(a) * r), gen.s(32 + math.sin(a) * r * 0.6))
+                    (kit.s(32 + math.cos(a) * r), kit.s(32 + math.sin(a) * r * 0.6))
                 )
             d.polygon(points, fill=(31 + layer * 2, 25 + layer, 25, 55 + layer * 12))
         ln([(24, 36), (31, 37), (39, 33)], (65, 46, 31, 55))
@@ -166,7 +167,7 @@ def dressing(index):
         w = rng.randrange(23, 32)
         h = rng.randrange(15, 24)
         d.rectangle(
-            [gen.s(x), gen.s(y), gen.s(x + w), gen.s(y + h)], fill=(15, 16, 20, 160)
+            [kit.s(x), kit.s(y), kit.s(x + w), kit.s(y + h)], fill=(15, 16, 20, 160)
         )
         ln([(x, y + h), (x, y), (x + w, y)], (77, 73, 69, 160))
         for xx in range(x + 4, x + w - 2, 5):

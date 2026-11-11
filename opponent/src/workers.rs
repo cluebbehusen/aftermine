@@ -11,7 +11,7 @@ use aftermine_sim::TICKS_PER_SECOND;
 use aftermine_sim::ids::Target;
 use aftermine_sim::observation::{BuildingObs, ObservationData, RepairWork, UnitObs};
 use aftermine_sim::scenario::BotStance;
-use aftermine_sim::stats::{FOUNDRY_REPAIR_PRICE, HARVEST_INCIDENT_DANGER_RADIUS};
+use aftermine_sim::stats::HARVEST_INCIDENT_DANGER_RADIUS;
 use aftermine_sim::{BuildingKind, Command, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
@@ -461,12 +461,7 @@ fn weld(
             if room(observation, map, building.anchor, size, ground) == 0 {
                 return None;
             }
-            let price = building
-                .kind
-                .base_stats()
-                .construction
-                .as_ref()
-                .map_or(FOUNDRY_REPAIR_PRICE, |construction| construction.cost);
+            let price = building.kind.base_stats().construction.cost;
             let missing = u64::from(price) * (max - hp) / max;
             Some((missing, centre, building))
         })

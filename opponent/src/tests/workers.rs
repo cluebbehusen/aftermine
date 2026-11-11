@@ -579,9 +579,16 @@ fn unseen_wreck_is_never_salvaged() {
     scenario.units.push(harvester(0, 5, 11));
     let state = wrecked(&scenario.build().unwrap(), &[(30, 11, 400)]);
     let fogged = ObservationData::fog_honest(&state, PlayerId(0));
-    let omniscient = ObservationData::omniscient(&state, PlayerId(0));
     assert!(fogged.known_wrecks.is_empty());
-    assert_eq!(omniscient.known_wrecks.len(), 1, "premise: the wreck lies");
+    assert_eq!(
+        state
+            .map()
+            .iter()
+            .filter(|(_, tile)| tile.wreck > 0)
+            .count(),
+        1,
+        "premise: the wreck lies"
+    );
     let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
     assert!(harvests(&commands).is_empty(), "{commands:?}");
 }

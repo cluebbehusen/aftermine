@@ -7,12 +7,7 @@ impl State {
     pub fn construction_refund(&self, player: PlayerId, units: &[UnitId]) -> u32 {
         replaced_sites(self, player, units)
             .iter()
-            .filter_map(|id| {
-                self.building(*id)?
-                    .stats()
-                    .construction
-                    .map(|stats| stats.cost)
-            })
+            .filter_map(|id| Some(self.building(*id)?.stats().construction.cost))
             .fold(0, u32::saturating_add)
     }
 }
@@ -52,10 +47,7 @@ pub(crate) fn replaced_sites(state: &State, player: PlayerId, units: &[UnitId]) 
 
 pub(super) fn refund(state: &mut State, id: BuildingId, events: &mut Vec<Event>) {
     let site = state.building(id).expect("collected site");
-    let (player, cost) = (
-        site.player,
-        site.stats().construction.expect("constructible site").cost,
-    );
+    let (player, cost) = (site.player, site.stats().construction.cost);
     super::commands::cancel_site(state, player, id, cost, events);
 }
 

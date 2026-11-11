@@ -21,9 +21,14 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from tools import gen_sprites as gen
-from tools.production_sprite_sources.installed_defenses_final import bolt, plate
-from tools.production_sprite_sources.specialists_final import (
+from tools import sprite_kit as kit
+from tools.production_sprite_sources.spire_final import (
+    brace,
+    exhaust,
+    missile,
+    smooth,
+)
+from tools.sprite_kit import (
     BRASS,
     DARK,
     DEEP,
@@ -32,19 +37,15 @@ from tools.production_sprite_sources.specialists_final import (
     SS,
     STEEL,
     VOID,
+    bolt,
     box,
     canvas,
+    disk,
     finish,
     line,
     panel,
+    plate,
     vent,
-)
-from tools.production_sprite_sources.spire_final import (
-    brace,
-    disk,
-    exhaust,
-    missile,
-    smooth,
 )
 
 Registry = dict[str, Image.Image]
@@ -271,9 +272,9 @@ def _rotate(image: Image.Image, heading: float, pivot) -> Image.Image:
 
 
 def _paint(variant: str) -> Color:
-    if variant not in gen.PALETTES:
+    if variant not in kit.PALETTES:
         raise ValueError(f"unknown variant: {variant}")
-    return gen.PALETTES[variant]["base"]
+    return kit.PALETTES[variant]["base"]
 
 
 def _downsample(image: Image.Image) -> Image.Image:
@@ -404,7 +405,7 @@ def render_cover() -> Image.Image:
 
 
 def _save(registry: Registry, out: Path, name: str, image: Image.Image) -> None:
-    gen.save_sprite(image, out, name)
+    kit.save_sprite(image, out, name)
     registry[name] = image
 
 
@@ -414,8 +415,8 @@ def install_lattice(registry: Registry, out: Path) -> None:
     Layers that carry paint ship an allegiance-accent row; the base, cover,
     arm, plain parts and clamps never do."""
     sides = ("left", "right")
-    for variant in gen.PALETTES:
-        tag = gen.variant_tag(variant)
+    for variant in kit.PALETTES:
+        tag = kit.variant_tag(variant)
         _save(registry, out, f"lattice{tag}", render_lattice(variant))
         _save(registry, out, f"rig_lattice_pod{tag}", render_pod(variant))
         _save(

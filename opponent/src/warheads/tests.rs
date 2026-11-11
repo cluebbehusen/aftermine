@@ -90,11 +90,7 @@ fn a_hit_bills_the_weld_the_simulation_charges_and_not_the_price_paid() {
         ..crucible(10, 10)
     });
     let max = BuildingKind::Extractor.tier_stats(1).max_hp;
-    let basis = BuildingKind::Extractor
-        .tier_stats(1)
-        .construction
-        .unwrap()
-        .cost;
+    let basis = BuildingKind::Extractor.tier_stats(1).construction.cost;
     assert_ne!(u64::from(basis), bore.paid, "the upgrade alone bills");
     assert_eq!(
         recovered(&[bore], &[], TilePos::new(10, 10), 1),
@@ -134,7 +130,7 @@ fn losing_an_earner_costs_the_income_it_stops_until_it_stands_again() {
         },
     ];
     recovery(&mut marks, &[]);
-    let ticks = |kind: BuildingKind| u64::from(kind.base_stats().construction.unwrap().build_ticks);
+    let ticks = |kind: BuildingKind| u64::from(kind.base_stats().construction.build_ticks);
     let (foundry, extractor) = (ticks(BuildingKind::Foundry), ticks(BuildingKind::Extractor));
     let (supported, remote) = (yields(0, true, foundry), yields(0, false, foundry));
     assert_eq!(

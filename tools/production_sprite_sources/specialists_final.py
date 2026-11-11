@@ -1,122 +1,30 @@
 """Canonical artillery, anti-air, and continuously scanning scout frames."""
 
-from PIL import Image, ImageDraw
-
-from tools import gen_sprites as gen
-
-SS = 4
-
-
-SIZE = 128
-
-
-VOID = (11, 11, 15)
-
-
-DEEP = (24, 25, 31)
-
-
-DARK = gen.IRON_DARK
-
-
-IRON = gen.IRON
-
-
-EDGE = (112, 111, 119)
-
-
-STEEL = (143, 140, 135)
-
-
-def canvas():
-    image = Image.new("RGBA", (SIZE * SS, SIZE * SS))
-    return image, ImageDraw.Draw(image)
-
-
-def box(d, bounds, color, radius=0):
-    d.rounded_rectangle(
-        tuple(round(v * SS) for v in bounds),
-        radius=round(radius * SS),
-        fill=(*color, 255),
-    )
-
-
-def line(d, points, color, width=1):
-    d.line(
-        [(round(x * SS), round(y * SS)) for x, y in points],
-        fill=(*color, 255),
-        width=round(width * SS),
-    )
-
-
-def poly(d, points, color):
-    d.polygon([(round(x * SS), round(y * SS)) for x, y in points], fill=(*color, 255))
-
-
-def circle(d, bounds, color):
-    d.ellipse(tuple(round(v * SS) for v in bounds), fill=(*color, 255))
-
-
-def finish(image, rim=True):
-    image = image.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
-    return gen.rim_light(image) if rim else image
-
-
-def track(d, bounds, phase, paint):
-    x0, y0, x1, y1 = bounds
-    box(d, bounds, VOID, 5)
-    box(d, (x0 + 2, y0 + 2, x1 - 2, y1 - 2), DARK, 3)
-    box(d, (x0 + 5, y0 + 4, x1 - 5, y1 - 4), DEEP, 2)
-    for y in range(round(y0 + 5), round(y1 - 5), 9):
-        offset = (phase * 3) % 9
-        if y + offset + 3 < y1 - 3:
-            box(d, (x0 + 3, y + offset, x1 - 3, y + offset + 3), IRON, 1)
-    line(d, [(x0 + 2, y0 + 6), (x0 + 2, y1 - 7)], EDGE)
-    box(d, (x0 + 5, y0 + 6, x1 - 5, y0 + 11), paint, 1)
-
-
-def vent(d, x, y, width=16):
-    box(d, (x, y, x + width, y + 14), VOID, 2)
-    for yy in (y + 3, y + 7, y + 11):
-        line(d, [(x + 3, yy), (x + width - 3, yy)], IRON)
+from tools import sprite_kit as kit
+from tools.sprite_kit import (
+    BRASS,
+    DARK,
+    DEEP,
+    EDGE,
+    IRON,
+    STEEL,
+    VOID,
+    box,
+    canvas,
+    circle,
+    engine,
+    finish,
+    line,
+    mirror,
+    panel,
+    poly,
+    strut,
+    track,
+    vent,
+)
 
 
 FLASH = (232, 180, 97)
-
-
-def panel(d, points, paint):
-    poly(d, points, VOID)
-    cx = sum(p[0] for p in points) / len(points)
-    cy = sum(p[1] for p in points) / len(points)
-    inner = [(cx + (x - cx) * 0.88, cy + (y - cy) * 0.88) for x, y in points]
-    poly(d, inner, paint)
-    line(d, inner[:2], EDGE)
-
-
-def strut(d, a, b, width=6):
-    line(d, [a, b], VOID, width + 3)
-    line(d, [a, b], IRON, width)
-    for x, y in (a, b):
-        circle(d, (x - 2, y - 2, x + 2, y + 2), STEEL)
-
-
-def engine(d, x, y, width, height, paint, phase):
-    box(d, (x, y, x + width, y + height), VOID, 4)
-    box(d, (x + 2, y + 2, x + width - 2, y + height - 2), DARK, 3)
-    box(d, (x + 5, y + 3, x + width - 5, y + 8), DEEP, 1)
-    line(d, [(x + 4, y + 2), (x + width - 4, y + 2)], EDGE)
-    box(d, (x + 5, y + 12, x + width - 5, y + height - 13), paint, 2)
-    box(d, (x + 4, y + height - 10, x + width - 4, y + height - 3), DEEP, 1)
-    for i in range(3):
-        xx = x + 5 + i * (width - 10) / 2
-        line(
-            d,
-            [(xx, y + height - 8), (xx, y + height - 5)],
-            EDGE if (i + phase) % 2 else IRON,
-        )
-
-
-BRASS = (130, 105, 66)
 
 
 GLASS = (94, 133, 134)
@@ -157,7 +65,7 @@ def muzzle(d, x, y, width=5):
 
 def bombard(variant, move=0, action=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     recoil = {4: 9, 5: 4, 6: 1}.get(action, 0)
     for bounds in ((13, 46, 34, 112), (94, 46, 115, 112)):
         track(d, bounds, move, paint)
@@ -273,7 +181,7 @@ def aa_tube(d, x, y, length, recoil, width=9, report=False):
 
 def flakhound(variant, move=0, action=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     for bounds in ((11, 61, 34, 116), (94, 61, 117, 116)):
         track(d, bounds, move, paint)
     for x in (23, 105):
@@ -342,17 +250,13 @@ def scout_radar():
     return finish(im, rim=False)
 
 
-def _mirror(points, side):
-    return [(64 + side * x, y) for x, y in points]
-
-
 def kestrel_wing(d, side, paint):
-    panel(d, _mirror(((11, 32), (34, 51), (28, 74), (15, 68)), side), IRON)
-    poly(d, _mirror(((18, 40), (33, 52), (28, 73), (17, 69)), side), VOID)
-    poly(d, _mirror(((20, 43), (31, 52), (26, 71), (19, 67)), side), paint)
-    line(d, _mirror(((20, 43), (31, 52)), side), EDGE)
-    line(d, _mirror(((19, 57), (29, 60)), side), VOID, 1.5)
-    line(d, _mirror(((14, 40), (15, 64)), side), DARK, 1.5)
+    panel(d, mirror(((11, 32), (34, 51), (28, 74), (15, 68)), side), IRON)
+    poly(d, mirror(((18, 40), (33, 52), (28, 73), (17, 69)), side), VOID)
+    poly(d, mirror(((20, 43), (31, 52), (26, 71), (19, 67)), side), paint)
+    line(d, mirror(((20, 43), (31, 52)), side), EDGE)
+    line(d, mirror(((19, 57), (29, 60)), side), VOID, 1.5)
+    line(d, mirror(((14, 40), (15, 64)), side), DARK, 1.5)
 
 
 def kestrel_fuselage(d, paint):
@@ -368,7 +272,7 @@ def kestrel_fuselage(d, paint):
 
 def kestrel(variant, move=0, action=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     panel(
         d,
         [
@@ -403,8 +307,8 @@ def bombard_spades(phase):
 
 
 def source_frames():
-    for variant in gen.PALETTES:
-        tag = gen.variant_tag(variant)
+    for variant in kit.PALETTES:
+        tag = kit.variant_tag(variant)
         for kind, count in [
             ("bombard", 6),
             ("flakhound", 9),
@@ -429,4 +333,4 @@ def source_frames():
 def install_specialists(registry, out):
     for key, image in source_frames():
         registry[key] = image
-        gen.save_sprite(image, out, key)
+        kit.save_sprite(image, out, key)

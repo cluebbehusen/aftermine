@@ -49,9 +49,10 @@ pub(crate) fn merge(observation: &mut ObservationData) {
 /// a site's starting fifth and the share its work has raised since.
 fn condition(public: aftermine_sim::PublicBuilding) -> (bool, u32) {
     let stats = public.kind.tier_stats(public.tier);
-    let (Some(progress), Some(construction)) = (public.progress, stats.construction) else {
+    let Some(progress) = public.progress else {
         return (true, stats.max_hp);
     };
+    let construction = stats.construction;
     let start = u64::from(stats.max_hp / 5);
     let raised = start
         + (u64::from(stats.max_hp) - start) * u64::from(progress)

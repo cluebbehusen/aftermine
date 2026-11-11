@@ -7,6 +7,7 @@ from unittest.mock import patch
 from PIL import Image
 
 from tools import gen_sprites
+from tools import sprite_kit as kit
 
 
 class SpriteReproducibilityTests(unittest.TestCase):
@@ -78,18 +79,18 @@ class SpriteReproducibilityTests(unittest.TestCase):
         self.assertFalse((self.actual / "atlas_1.png").exists())
 
     def test_probe_renders_become_masks_and_never_ship(self) -> None:
-        self.assertEqual(gen_sprites.variant_tag("base"), "")
-        self.assertEqual(gen_sprites.variant_tag("probe"), gen_sprites.PROBE_TAG)
+        self.assertEqual(kit.variant_tag("base"), "")
+        self.assertEqual(kit.variant_tag("probe"), kit.PROBE_TAG)
         with self.assertRaises(ValueError):
-            gen_sprites.variant_tag("other")
+            kit.variant_tag("other")
         base = Image.new("RGBA", (2, 1), (52, 52, 62, 255))
-        base.putpixel((0, 0), (*gen_sprites.PALETTES["base"]["base"], 255))
+        base.putpixel((0, 0), (*kit.PALETTES["base"]["base"], 255))
         probe = base.copy()
-        probe.putpixel((0, 0), (*gen_sprites.PALETTES["probe"]["base"], 255))
+        probe.putpixel((0, 0), (*kit.PALETTES["probe"]["base"], 255))
         registry = {}
         for variant, image in (("base", base), ("probe", probe)):
-            name = f"unit{gen_sprites.variant_tag(variant)}"
-            gen_sprites.save_sprite(image, self.actual, name)
+            name = f"unit{kit.variant_tag(variant)}"
+            kit.save_sprite(image, self.actual, name)
             registry[name] = image
         with (
             patch.object(gen_sprites, "OUT", self.actual),

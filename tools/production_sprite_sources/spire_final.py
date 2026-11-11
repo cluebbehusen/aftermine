@@ -21,9 +21,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from tools import gen_sprites as gen
-from tools.production_sprite_sources.installed_defenses_final import bolt, plate
-from tools.production_sprite_sources.specialists_final import (
+from tools import sprite_kit as kit
+from tools.sprite_kit import (
     BRASS,
     DARK,
     DEEP,
@@ -33,11 +32,13 @@ from tools.production_sprite_sources.specialists_final import (
     SS,
     STEEL,
     VOID,
+    bolt,
     box,
     canvas,
-    circle,
+    disk,
     finish,
     line,
+    plate,
     poly,
     strut,
     vent,
@@ -68,10 +69,6 @@ PARK = (100.0, 86.0)
 def smooth(t: float) -> float:
     t = max(0.0, min(1.0, t))
     return t * t * (3 - 2 * t)
-
-
-def disk(d: ImageDraw.ImageDraw, x: float, y: float, r: float, color: Color) -> None:
-    circle(d, (x - r, y - r, x + r, y + r), color)
 
 
 def brace(d: ImageDraw.ImageDraw, a, b, width: float = 5) -> None:
@@ -322,9 +319,9 @@ def _rotate(image: Image.Image, heading: float) -> Image.Image:
 
 
 def _paint(variant: str) -> Color:
-    if variant not in gen.PALETTES:
+    if variant not in kit.PALETTES:
         raise ValueError(f"unknown variant: {variant}")
-    return gen.PALETTES[variant]["base"]
+    return kit.PALETTES[variant]["base"]
 
 
 def _downsample(image: Image.Image) -> Image.Image:
@@ -445,7 +442,7 @@ def render_warhead(variant: str, flicker: int | None) -> Image.Image:
 
 
 def _save(registry: Registry, out: Path, name: str, image: Image.Image) -> None:
-    gen.save_sprite(image, out, name)
+    kit.save_sprite(image, out, name)
     registry[name] = image
 
 
@@ -454,8 +451,8 @@ def install_spire(registry: Registry, out: Path) -> None:
 
     Layers that carry paint ship an allegiance-accent row; the hook, the
     plain sections and the locks never do."""
-    for variant in gen.PALETTES:
-        tag = gen.variant_tag(variant)
+    for variant in kit.PALETTES:
+        tag = kit.variant_tag(variant)
         _save(registry, out, f"spire{tag}", render_spire(variant))
         _save(registry, out, f"rig_spire_foundation{tag}", render_foundation(variant))
         _save(registry, out, f"rig_spire_deck{tag}", render_deck(variant))

@@ -1320,7 +1320,7 @@ fn exercise_assembly_reach(state: &mut State) {
         started,
         "the fuzz reach fixture's crew must start the cradle"
     );
-    let build = kind.base_stats().construction.unwrap().build_ticks;
+    let build = kind.base_stats().construction.build_ticks;
     let mut d = serde_json::to_value(&*state).unwrap();
     for b in d["buildings"].as_array_mut().unwrap() {
         if b["kind"] == json!("maw_cradle") {

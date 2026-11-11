@@ -23,13 +23,20 @@ fn seats(description: Option<String>) -> Vec<SeatPlayer> {
 #[test]
 fn evaluation_replays_name_the_controllers_that_drove_their_seats() {
     let prime = BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 9);
-    let controllers =
-        serde_json::to_string(&[Some(EvaluationController::configured(prime)), None]).unwrap();
+    let standard = BotConfig::new(BotDifficulty::Standard, BotStance::Turtle, 4);
+    let controllers = serde_json::to_string(&[
+        EvaluationController::configured(prime),
+        EvaluationController::configured(standard),
+    ])
+    .unwrap();
     assert_eq!(
         seats(Some(format!(
             "bot-eval candidate=unit; leg=forward; controllers={controllers}"
         ))),
-        [SeatPlayer::Bot { config: prime }, SeatPlayer::Human]
+        [
+            SeatPlayer::Bot { config: prime },
+            SeatPlayer::Bot { config: standard }
+        ]
     );
     assert_eq!(
         seats(Some(
@@ -41,7 +48,10 @@ fn evaluation_replays_name_the_controllers_that_drove_their_seats() {
         seats(Some(format!(
             "bot-eval candidate=a; controllers=[]; leg=forward; controllers={controllers}"
         ))),
-        [SeatPlayer::Bot { config: prime }, SeatPlayer::Human],
+        [
+            SeatPlayer::Bot { config: prime },
+            SeatPlayer::Bot { config: standard }
+        ],
         "the last marker holds the controllers"
     );
     assert_eq!(seats(None), [SeatPlayer::Human, SeatPlayer::Human]);

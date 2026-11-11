@@ -30,10 +30,7 @@ fn building_facts(kind: BuildingKind) -> BuildingAnimationFacts {
         tier: 0,
         built: true,
         progress: 0,
-        construction_total: kind
-            .base_stats()
-            .construction
-            .map(|stats| stats.build_ticks),
+        construction_total: kind.base_stats().construction.build_ticks,
         construction_stage: 0,
         construction_active: false,
         production: None,

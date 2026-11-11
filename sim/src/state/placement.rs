@@ -33,9 +33,6 @@ impl State {
         anchor: TilePos,
         ignored: Option<crate::BuildingId>,
     ) -> Option<PlaceRefusal> {
-        if kind.base_stats().construction.is_none() {
-            return Some(PlaceRefusal::NotConstructible);
-        }
         let (w, h) = kind.size();
         // Sight answers before the authored-frame rules. Otherwise the
         // distinct FrameRequired / FrameBlocked reasons turn placement
@@ -122,13 +119,9 @@ impl State {
 
     /// Whether `player` meets every prerequisite `kind`'s construction
     /// names — the tech tree's construction gate, shared verbatim by
-    /// command validation, the armed placement ghost, and every bot. An
-    /// unconstructible kind trivially passes (its own refusal arm answers
-    /// first).
+    /// command validation, the armed placement ghost, and every bot.
     pub fn prerequisites_met(&self, player: PlayerId, kind: BuildingKind) -> bool {
-        kind.base_stats()
-            .construction
-            .is_none_or(|construction| self.requirements_met(player, construction.requires))
+        self.requirements_met(player, kind.base_stats().construction.requires)
     }
 
     /// Whether `player` has, for each of `needs`, a completed own building
@@ -229,10 +222,10 @@ impl State {
         anchor: TilePos,
         units: &[UnitId],
     ) -> Option<PlaceRefusal> {
-        let released = crate::tick::construction::replaced_sites(self, player, units);
-        if kind.base_stats().construction.is_none() {
-            return Some(PlaceRefusal::NotConstructible);
+        if !self.accepts_commands(player) {
+            return Some(PlaceRefusal::OutOfPlay);
         }
+        let released = crate::tick::construction::replaced_sites(self, player, units);
         if !self.prerequisites_met(player, kind) {
             return Some(PlaceRefusal::Prerequisite);
         }

@@ -5,6 +5,89 @@ use crate::scenario::{Scenario, UnitSpec};
 use crate::stats::UnitKind;
 use chassis::grid::TilePos;
 
+/// Every unit, structure, resource, shell and warhead as `me` would see
+/// them with no fog.
+fn omniscient(state: &State, me: PlayerId) -> Observation {
+    let mut obs = Observation::base(state, me);
+    for u in state.units() {
+        if u.hp == 0 {
+            continue;
+        }
+        if u.player == me {
+            obs.my_units.push(own_unit(state, u));
+            obs.observe_own_cargo(u);
+            if let Some(target) = own_repair_target(&u.order) {
+                obs.my_repair_targets.push((u.id, target));
+            }
+        } else if !state.hostile(me, u.player) {
+            obs.ally_units.push(enemy_unit(u));
+        } else {
+            obs.enemy_units.push(enemy_unit(u));
+        }
+    }
+    for b in state.buildings() {
+        if b.player == me {
+            obs.my_buildings.push(own_building(b));
+            obs.my_queues.push(b.queue.iter().copied().collect());
+            obs.my_queue_progress.push(if b.queue.is_empty() {
+                0
+            } else {
+                b.training_progress()
+            });
+        } else if !state.hostile(me, b.player) {
+            obs.ally_buildings.push(BuildingObs {
+                provisional: b.provisional(),
+                id: b.id,
+                player: b.player,
+                kind: b.kind,
+                anchor: b.anchor,
+                hp: b.hp,
+                built: b.built(),
+                seen: true,
+                tier: b.tier,
+            });
+        } else {
+            obs.enemy_buildings.push(BuildingObs {
+                provisional: b.provisional(),
+                id: b.id,
+                player: b.player,
+                kind: b.kind,
+                anchor: b.anchor,
+                hp: b.hp,
+                built: b.built(),
+                seen: true,
+                tier: b.tier,
+            });
+        }
+    }
+    for (pos, tile) in state.map().iter() {
+        if tile.scrap > 0 {
+            obs.known_scrap.push((pos, tile.scrap));
+        }
+        if tile.wreck > 0 {
+            obs.known_wrecks.push((pos, tile.wreck));
+        }
+        if tile.terrain.blocks_ground() {
+            obs.known_rock.push(pos);
+        }
+        if state.map().is_extractor_frame(pos) {
+            obs.known_frames.push(pos);
+        }
+    }
+    let tile_count = state.map().iter().count();
+    obs.visible = vec![true; tile_count];
+    obs.explored = vec![true; tile_count];
+    obs.incoming_shells = state
+        .shells()
+        .iter()
+        .filter(|s| state.hostile(me, s.player))
+        .map(|s| TilePos::containing(s.impact))
+        .collect();
+    obs.incoming_shells.sort_by_key(|p| (p.y, p.x));
+    obs.warheads = state.omniscient_warheads(me);
+    obs
+}
+
 #[test]
 fn paid_provisional_sites_are_marked_for_their_team_and_hidden_from_enemies() {
     for allied in [false, true] {
@@ -105,7 +188,7 @@ fn exact_repair_targets_are_owner_only_and_round_trip() {
     state.unit_mut(worker).unwrap().order = Order::Repair { building: patient };
     for own in [
         ObservationData::fog_honest(&state, PlayerId(0)),
-        ObservationData::omniscient(&state, PlayerId(0)),
+        omniscient(&state, PlayerId(0)),
     ] {
         assert_eq!(own.repair_target(worker), Some(Target::Building(patient)));
         assert_eq!(own.version, OBSERVATION_VERSION);
@@ -122,7 +205,7 @@ fn exact_repair_targets_are_owner_only_and_round_trip() {
     }
     for other in [
         ObservationData::fog_honest(&state, PlayerId(1)),
-        ObservationData::omniscient(&state, PlayerId(1)),
+        omniscient(&state, PlayerId(1)),
     ] {
         assert_eq!(other.repair_target(worker), None);
         assert!(!other.enemy_units.iter().any(|unit| unit.repair.is_some()));
@@ -154,7 +237,7 @@ fn owner_training_progress_is_exact_aligned_and_required_by_the_schema() {
 
     for observation in [
         ObservationData::fog_honest(&state, PlayerId(0)),
-        ObservationData::omniscient(&state, PlayerId(0)),
+        omniscient(&state, PlayerId(0)),
     ] {
         let index = observation
             .my_buildings
@@ -210,11 +293,6 @@ fn hostile_training_progress_never_enters_an_observation() {
         ObservationData::fog_honest(&control, PlayerId(0)),
         ObservationData::fog_honest(&variant, PlayerId(0)),
         "fog-honest policy input must not expose hostile production intent"
-    );
-    assert_eq!(
-        ObservationData::omniscient(&control, PlayerId(0)),
-        ObservationData::omniscient(&variant, PlayerId(0)),
-        "even the complete test view keeps hostile production private"
     );
 }
 
@@ -272,7 +350,7 @@ fn owner_observation_reports_exact_sling_occupancy_without_leaking_the_manifest(
 
     for observation in [
         ObservationData::fog_honest(&state, PlayerId(0)),
-        ObservationData::omniscient(&state, PlayerId(0)),
+        omniscient(&state, PlayerId(0)),
     ] {
         let transport = observation
             .my_units
@@ -305,7 +383,7 @@ fn owner_observation_reports_exact_sling_occupancy_without_leaking_the_manifest(
         );
     }
 
-    let opponent = ObservationData::omniscient(&state, PlayerId(1));
+    let opponent = omniscient(&state, PlayerId(1));
     assert!(opponent.my_carried_units.is_empty());
     assert!(
         ObservationData::fog_honest(&state, PlayerId(1))
@@ -353,7 +431,7 @@ fn a_parked_airframe_is_grounded_for_its_owner_and_for_anyone_who_sees_it() {
         .id;
     let goal = TilePos::new(20, 12);
 
-    let airborne = ObservationData::omniscient(&state, PlayerId(1));
+    let airborne = omniscient(&state, PlayerId(1));
     let flying = airborne
         .enemy_units
         .iter()
@@ -389,7 +467,7 @@ fn a_parked_airframe_is_grounded_for_its_owner_and_for_anyone_who_sees_it() {
 
     for observation in [
         ObservationData::fog_honest(&state, PlayerId(0)),
-        ObservationData::omniscient(&state, PlayerId(0)),
+        omniscient(&state, PlayerId(0)),
     ] {
         let own = observation
             .my_units
@@ -401,7 +479,7 @@ fn a_parked_airframe_is_grounded_for_its_owner_and_for_anyone_who_sees_it() {
     }
     for observation in [
         ObservationData::fog_honest(&state, PlayerId(1)),
-        ObservationData::omniscient(&state, PlayerId(1)),
+        omniscient(&state, PlayerId(1)),
     ] {
         let seen = observation
             .enemy_units
@@ -465,7 +543,7 @@ fn owner_observation_exposes_the_active_harvest_node_without_leaking_enemy_order
         (PlayerId(0), p0_worker, p0_node, p1_worker),
         (PlayerId(1), p1_worker, p1_node, p0_worker),
     ] {
-        let observation = ObservationData::omniscient(&state, observer);
+        let observation = omniscient(&state, observer);
         assert_eq!(
             observation
                 .my_units
@@ -507,7 +585,7 @@ fn pit_rock_is_exploration_limited_and_serialized() {
     let fog = ObservationData::fog_honest(&state, PlayerId(0));
     assert!(fog.known_rock_at(local));
     assert!(!fog.known_rock_at(hidden));
-    assert!(ObservationData::omniscient(&state, PlayerId(0)).known_rock_at(hidden));
+    assert!(omniscient(&state, PlayerId(0)).known_rock_at(hidden));
     let restored: Observation =
         serde_json::from_str(&serde_json::to_string(&fog).unwrap()).unwrap();
     assert_eq!(restored, fog);

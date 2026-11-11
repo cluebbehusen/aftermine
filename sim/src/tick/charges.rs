@@ -18,7 +18,7 @@ pub(super) fn cancel_discovered(state: &mut State, events: &mut Vec<Event>) -> b
         .buildings
         .iter()
         .filter(|b| b.hp > 0 && b.unstarted() && known_charge_in(state, b.player, b.kind, b.anchor))
-        .map(|b| (b.id, b.player, b.stats().construction.expect("site").cost))
+        .map(|b| (b.id, b.player, b.stats().construction.cost))
         .collect();
     let removed = !sites.is_empty();
     for (site, player, cost) in sites {

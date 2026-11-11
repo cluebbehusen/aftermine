@@ -29,7 +29,7 @@ fn evaluate_artifact(
     leg: EvaluationLeg,
     candidate: &str,
 ) -> Result<(EvaluationRow, GameReplay)> {
-    let plan = EvaluationPlan::from_scenario(scenario.clone(), leg);
+    let plan = EvaluationPlan::from_scenario(scenario.clone(), leg)?;
     evaluate_plan_artifact(&plan, tick_limit, candidate)
 }
 
@@ -81,7 +81,7 @@ fn replay_filename(
     candidate: &str,
     scenario: &Scenario,
 ) -> Result<String> {
-    let plan = EvaluationPlan::from_scenario(scenario.clone(), leg);
+    let plan = EvaluationPlan::from_scenario(scenario.clone(), leg)?;
     evaluation_replay_filename(scenario_index, run, tick_limit, candidate, &plan)
 }
 
@@ -94,12 +94,10 @@ fn matchup_plans(
     personality_seed_base: u64,
     paired: bool,
 ) -> anyhow::Result<Vec<EvaluationPlan>> {
-    Ok(
-        configured_matchup_legs(source, matchup, personality_seed_base, paired)?
-            .into_iter()
-            .map(|(leg, scenario)| EvaluationPlan::from_scenario(scenario, leg))
-            .collect(),
-    )
+    configured_matchup_legs(source, matchup, personality_seed_base, paired)?
+        .into_iter()
+        .map(|(leg, scenario)| EvaluationPlan::from_scenario(scenario, leg))
+        .collect()
 }
 
 fn firing_squad() -> Scenario {
@@ -135,15 +133,15 @@ fn firing_squad() -> Scenario {
                 name: "attacker".into(),
                 team: None,
                 scrap: 100,
-                bot: false,
-                bot_config: None,
+                bot: true,
+                bot_config: Some(opponent_config()),
             },
             PlayerSpec {
                 name: "victim".into(),
                 team: None,
                 scrap: 100,
-                bot: false,
-                bot_config: None,
+                bot: true,
+                bot_config: Some(opponent_config()),
             },
         ],
         units,
@@ -191,8 +189,8 @@ fn configured_evaluation_records_exact_controller_provenance() {
     for plan in plans {
         let (row, replay) = evaluate_plan_artifact(&plan, 1, "candidate-a").unwrap();
         let expected = match plan.leg {
-            EvaluationLeg::Forward => [Some(prime_config()), Some(opponent_config())],
-            EvaluationLeg::Swapped => [Some(opponent_config()), Some(prime_config())],
+            EvaluationLeg::Forward => [prime_config(), opponent_config()],
+            EvaluationLeg::Swapped => [opponent_config(), prime_config()],
             EvaluationLeg::Single => panic!("paired plans cannot contain a single leg"),
         };
 
@@ -209,7 +207,7 @@ fn configured_evaluation_records_exact_controller_provenance() {
         for (seat_index, (seat, config)) in row.seats.iter().zip(expected).enumerate() {
             assert_eq!(seat.seat, u8::try_from(seat_index).unwrap());
             assert_eq!(seat.config, config);
-            assert_eq!(seat.profile, config.map(ResolvedProfile::resolve));
+            assert_eq!(seat.profile, ResolvedProfile::resolve(config));
         }
         assert!(
             row.evidence.iter().all(|seat| seat.commands > 0),
@@ -358,11 +356,11 @@ fn command_hash_ignores_setup_but_covers_ticks_and_commands() {
 fn evaluation_plan_refuses_missing_or_excess_controller_slots() {
     let scenario = firing_squad();
     for controllers in [
-        vec![Some(opponent_controller())],
+        vec![opponent_controller()],
         vec![
-            Some(opponent_controller()),
-            Some(opponent_controller()),
-            Some(opponent_controller()),
+            opponent_controller(),
+            opponent_controller(),
+            opponent_controller(),
         ],
     ] {
         let plan = EvaluationPlan {
@@ -402,10 +400,6 @@ fn evaluation_stops_on_the_decision_instead_of_padding_frozen_ticks() {
     assert_eq!(row.result, Some(GameResult::Victory { team: 0 }));
     assert_eq!(row.winner_seats, [0]);
     assert!(row.duration_ticks < 3_000, "decision was not an early stop");
-    assert_eq!(
-        row.evidence.iter().map(|seat| seat.commands).sum::<u64>(),
-        0
-    );
 }
 
 #[test]
@@ -424,15 +418,6 @@ fn rows_record_teams_eliminations_detectors_income_and_provenance() {
     );
     assert_eq!(row.evidence[0].eliminated_at, None);
     assert_eq!(row.evidence[1].eliminated_at, Some(row.duration_ticks - 1));
-    assert!(
-        row.evidence
-            .iter()
-            .all(|seat| seat.failures == SeatFailures::default()
-                && seat.income.is_empty()
-                && seat.ledger.is_none()
-                && seat.attacks.is_none()),
-        "seats without a controller are not watched"
-    );
     assert_eq!(row.build, crate::build_identity());
     let json = serde_json::to_value(&row).unwrap();
     assert_eq!(json["seats"][1]["team"], 1);
@@ -460,30 +445,13 @@ fn rows_record_teams_eliminations_detectors_income_and_provenance() {
         };
         assert_eq!(sample.tick, INCOME_CHECKPOINTS[0]);
         assert!(sample.actual_per_minute > 0 && sample.saturation_per_minute > 0);
-        let ledger = seat
-            .ledger
-            .as_ref()
-            .expect("controlled seats keep a ledger");
+        let ledger = &seat.ledger;
         assert_eq!(
             ledger.worth.len() as u64,
             INCOME_CHECKPOINTS[0] / crate::ledger::WORTH_PERIOD
         );
         assert!(ledger.units["harvester"].harvested > 0);
     }
-
-    let mut plan = plan;
-    for controller in plan.controllers.iter_mut().flatten() {
-        *controller = EvaluationController::configured(BotConfig::new(
-            BotDifficulty::Standard,
-            BotStance::Balanced,
-            73,
-        ));
-    }
-    let (row, _) = evaluate_plan_artifact(&plan, 600, "test-build").unwrap();
-    assert!(
-        row.evidence.iter().all(|seat| seat.attacks.is_some()),
-        "aftermine-opponent seats are calibrated"
-    );
 }
 
 #[test]
@@ -1068,7 +1036,7 @@ fn a_unit_stalling_the_same_way_repeatedly_is_a_counted_loop() {
 
 #[test]
 fn a_stall_loop_limit_of_zero_is_refused_and_none_disables_the_stop() {
-    let plan = EvaluationPlan::from_scenario(firing_squad(), EvaluationLeg::Single);
+    let plan = EvaluationPlan::from_scenario(firing_squad(), EvaluationLeg::Single).unwrap();
     let error = evaluate_plan(&plan, 100, Some(0), "test-build", None).unwrap_err();
     assert!(error.to_string().contains("stall-loop limit"), "{error:#}");
     let (row, _) = evaluate_plan(&plan, 100, None, "test-build", None).unwrap();
@@ -1081,5 +1049,18 @@ fn a_stall_loop_limit_of_zero_is_refused_and_none_disables_the_stop() {
             .unwrap()
             .contains("\"stall_loop\":"),
         "an absent loop stays off the wire"
+    );
+}
+
+#[test]
+fn a_seat_without_a_bot_configuration_is_refused() {
+    let mut scenario = firing_squad();
+    scenario.players[1].bot = false;
+    let error = EvaluationPlan::from_scenario(scenario, EvaluationLeg::Single).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("seat 1 has no bot configuration"),
+        "{error:#}"
     );
 }
