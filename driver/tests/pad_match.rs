@@ -749,13 +749,58 @@ fn a_held_left_trigger_keeps_placing() -> Result<()> {
     drill.aim(tile(30, 18))?;
     drill.press(PadButton::South)?;
     drill.up(PadButton::LeftTrigger)?;
-    // Letting go ended placement: this A selects.
-    drill.select_at(tile(35, 18))?;
+    // Letting go keeps placing; B leaves it with the chain standing.
+    drill.press(PadButton::East)?;
     drill.client.advance(1)?;
     assert_eq!(
         sites(&drill.state()?, BuildingKind::Barricade),
         [[28, 18], [30, 18]]
     );
+
+    // Out of placement, A selects rather than places.
+    let recorded = drill.recorded()?;
+    drill.select_at(tile(35, 18))?;
+    drill.client.advance(1)?;
+    assert_eq!(drill.recorded()?, recorded);
+    Ok(())
+}
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_plain_a_after_the_left_trigger_replaces_the_chain_and_ends_placement() -> Result<()> {
+    let mut drill = PadMatch::spawn(44_328)?;
+    let view = drill.load(&drill_build())?;
+    let harvester = unit_at(&view, 32, 23)?;
+    drill.select_at(BUILDER)?;
+    drill.arm_build(Key::R, Key::T)?;
+    drill.down(PadButton::LeftTrigger)?;
+    drill.aim(tile(28, 18))?;
+    drill.press(PadButton::South)?;
+    drill.aim(tile(30, 18))?;
+    drill.press(PadButton::South)?;
+    drill.client.advance(1)?;
+    drill.up(PadButton::LeftTrigger)?;
+
+    // With LT up, A is a plain placement: it replaces the Harvester's
+    // orders, the chain included, and ends placement.
+    drill.aim(tile(35, 18))?;
+    drill.press(PadButton::South)?;
+    drill.client.advance(1)?;
+    let after = drill.state()?;
+    let site = after
+        .buildings
+        .iter()
+        .find(|building| building.kind == BuildingKind::Barricade && building.anchor == [35, 18])
+        .map(|building| BuildingId(building.id))
+        .context("A founded a site at (35, 18)")?;
+    let builder = unit(&after, harvester)?;
+    assert_eq!(builder.order, Some(Order::Build { site }));
+    assert!(builder.queue.is_empty(), "{:?}", builder.queue);
+
+    let recorded = drill.recorded()?;
+    drill.select_at(tile(35, 22))?;
+    drill.client.advance(1)?;
+    assert_eq!(drill.recorded()?, recorded, "the next A selects");
     Ok(())
 }
 
