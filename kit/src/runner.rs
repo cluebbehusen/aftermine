@@ -5,8 +5,7 @@ use aftermine_sim::{PlayerCommand, SIM_VERSION, Scenario, State};
 use anyhow::{Context, Result};
 use chassis::replay::Replay;
 
-/// The concrete replay type for Aftermine sessions.
-pub use crate::GameReplay;
+use crate::{GameReplay, MAX_REPLAY_TICKS};
 
 /// A finished headless run.
 pub struct RunOutcome {
@@ -105,13 +104,8 @@ pub fn run_scenario(
     Ok(RunOutcome { state, replay })
 }
 
-/// Longest replay the driver runs without an explicit override, so a forged
-/// duration cannot spin the process forever.
-pub use crate::MAX_REPLAY_TICKS;
-
 /// Re-executes a recorded run and returns the final state. With no override,
-/// the length comes from the replay's own metadata (falling back to the last
-/// command tick for hand-written files), bounded by [`MAX_REPLAY_TICKS`].
+/// the length is [`crate::replay_duration`], bounded by [`MAX_REPLAY_TICKS`].
 ///
 /// The replay is validated first, including that this sim version recorded
 /// it. Playback that fails to consume every command is an error.

@@ -705,9 +705,8 @@ impl Monitor {
     /// Make this the process's monitor and record panics through it. Only the
     /// first call succeeds; a rejected monitor is returned.
     pub fn install(self) -> Result<&'static Self, Self> {
-        static HOOK: std::sync::Once = std::sync::Once::new();
         PROCESS.set(self)?;
-        HOOK.call_once(|| {
+        {
             let previous = std::panic::take_hook();
             std::panic::set_hook(Box::new(move |info| {
                 if let Some(monitor) = PROCESS.get() {
@@ -733,7 +732,7 @@ impl Monitor {
                 }
                 previous(info);
             }));
-        });
+        }
         Ok(PROCESS.get().expect("installed monitor"))
     }
 

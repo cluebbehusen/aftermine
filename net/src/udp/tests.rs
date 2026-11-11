@@ -21,7 +21,6 @@ fn an_advertiser_reaches_a_scanner_once_per_interval() {
     let mut scanner = Scanner::bind_to("127.0.0.1:0", COMMIT).unwrap();
     let mut advertiser = Advertiser::with_target(scanner.local_addr().unwrap()).unwrap();
     advertiser.poll(&beacon(), Duration::ZERO);
-    assert!(!advertiser.failing());
     let deadline = Instant::now() + std::time::Duration::from_secs(10);
     loop {
         let heard = scanner.poll(Duration::ZERO);

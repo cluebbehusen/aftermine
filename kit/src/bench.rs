@@ -139,14 +139,9 @@ pub fn engage(state: &mut aftermine_sim::State) {
 
 /// Flags every chair as a bot with the default configuration.
 pub fn all_bots(scenario: &mut Scenario) {
-    all_bots_with_config(scenario, aftermine_sim::scenario::BotConfig::default());
-}
-
-/// Seats one exact player-facing profile in every chair of a measurement.
-pub fn all_bots_with_config(scenario: &mut Scenario, config: aftermine_sim::scenario::BotConfig) {
     for player in &mut scenario.players {
         player.bot = true;
-        player.bot_config = Some(config);
+        player.bot_config = Some(aftermine_sim::scenario::BotConfig::default());
     }
 }
 

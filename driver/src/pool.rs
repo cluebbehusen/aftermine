@@ -9,23 +9,12 @@ use std::num::NonZeroUsize;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// Runs `play` over every job across a worker pool, returning the
-/// results in job order.
+/// Runs independent jobs with at most `limit` workers and returns input order.
 ///
 /// The first recorded failure is returned; workers stop picking up new
 /// jobs once one exists, though a worker already inside a job finishes
 /// it. `play` must be self-contained: the fan-out is safe only because
 /// the jobs are independent sims.
-pub fn fan_out<J, R, F>(jobs: &[J], play: F) -> Result<Vec<R>>
-where
-    J: Sync,
-    R: Send,
-    F: Fn(&J) -> Result<R> + Sync,
-{
-    fan_out_bounded(jobs, NonZeroUsize::MAX, play)
-}
-
-/// Runs independent jobs with at most `limit` workers and returns input order.
 /// Multiple match workers suppress nested bot-seat parallelism. Large outputs
 /// should be staged by `play`; completed results are retained until all jobs end.
 pub fn fan_out_bounded<J, R, F>(jobs: &[J], limit: NonZeroUsize, play: F) -> Result<Vec<R>>

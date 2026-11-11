@@ -107,10 +107,7 @@ fn every_message_survives_a_round_trip() {
         LobbyMessage::Go {
             token: Token::new(9),
         },
-        LobbyMessage::Waiting {
-            host: PlayerName::new("Connor").unwrap(),
-            map: "Broad Front".to_owned(),
-        },
+        LobbyMessage::Waiting,
         LobbyMessage::Gone {
             reason: GoneReason::SeatTaken,
         },
@@ -273,14 +270,7 @@ fn wire_shape_is_stable() {
         .encode(),
         r#"{"type":"probe","token":"00000000000000000000000000000001"}"#
     );
-    assert_eq!(
-        LobbyMessage::Waiting {
-            host: PlayerName::new("Connor").unwrap(),
-            map: "Broad Front".to_owned()
-        }
-        .encode(),
-        r#"{"type":"waiting","host":"Connor","map":"Broad Front"}"#
-    );
+    assert_eq!(LobbyMessage::Waiting.encode(), r#"{"type":"waiting"}"#);
     assert_eq!(
         LobbyMessage::Gone {
             reason: GoneReason::Over

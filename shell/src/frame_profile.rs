@@ -555,7 +555,6 @@ impl FrameProfiler {
                 buildings: sample.buildings,
             });
         let view = FrameProfileView {
-            renderer: "gpu".to_string(),
             frames,
             tick_start,
             tick_end,

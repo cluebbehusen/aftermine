@@ -53,8 +53,6 @@ pub struct PlaybackSession {
     pub show_stats: bool,
     /// Match statistics for that overlay.
     stats: Stats,
-    /// The pristine record, shared with the statistics pass.
-    replay: std::sync::Arc<GameReplay>,
 }
 
 /// The composition overlay's statistics: one deterministic re-execution of
@@ -126,7 +124,7 @@ impl PlaybackSession {
     pub(crate) fn view(&self) -> Scene<'_> {
         Scene::new(
             &self.engine.state,
-            &self.replay.setup,
+            &self.engine.replay().setup,
             &[],
             &self.presentation,
             &self.clock,
@@ -178,11 +176,11 @@ impl PlaybackSession {
     }
 
     fn from_recording(recording: aftermine_kit::Recording) -> Result<Self> {
-        let record = std::sync::Arc::new(recording.replay.clone());
         let engine = aftermine_kit::playback::Playback::open(recording)?;
         // The spectator door: an all-bot record (driver benchmark,
         // bot-vs-bot spectacle) is a perfectly watchable replay.
-        let vantage = record
+        let vantage = engine
+            .replay()
             .setup
             .players
             .iter()
@@ -210,7 +208,6 @@ impl PlaybackSession {
             remote: RemoteCamera::with_control(),
             show_stats: false,
             stats: Stats::Unasked,
-            replay: record,
         })
     }
 
@@ -227,7 +224,7 @@ impl PlaybackSession {
         self.show_stats = !self.show_stats;
         if self.show_stats && matches!(self.stats, Stats::Unasked) {
             let every = ((self.engine.total() - self.engine.start()) / 240).max(50);
-            self.stats = Stats::build(std::sync::Arc::clone(&self.replay), every);
+            self.stats = Stats::build(std::sync::Arc::clone(self.engine.replay()), every);
         }
     }
 
@@ -1029,7 +1026,7 @@ impl aftermine_protocol::DebugSession for PlaybackSession {
             tick: self.engine.state.current_tick(),
             paused: self.clock.paused,
             speed: self.clock.speed,
-            scenario: self.replay.setup.name.clone(),
+            scenario: self.engine.replay().setup.name.clone(),
             sim_version: SIM_VERSION,
             result: self.engine.state.result(),
             recorded_commands: 0,

@@ -167,7 +167,8 @@ impl Drop for TempReplay {
 }
 
 fn foreign_version_replay() -> TempReplay {
-    let replay: GameReplay = GameReplay::new(SIM_VERSION + 1, "test", Scenario::skirmish());
+    let mut replay: GameReplay = GameReplay::new(SIM_VERSION + 1, "test", Scenario::skirmish());
+    replay.meta.ticks = Some(0);
     let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
         "aftermine-foreign-version-replay-{}-{id}.json",

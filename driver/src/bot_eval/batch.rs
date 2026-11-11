@@ -75,23 +75,16 @@ pub fn evaluate_batch(
             .trace_output
             .map(|path| trace_evidence.stage_trace_jsonl(path))
             .transpose()?;
-        let (mut row, replay) = if let Some(writer) = &mut trace_writer {
-            let (row, replay, _) = evaluate_plan_artifact_traced_with(
-                plan,
-                options.ticks,
-                options.stall_loop_limit,
-                options.candidate,
-                |trace| writer.write_row(trace),
-            )?;
-            (row, replay)
-        } else {
-            evaluate_plan_artifact_with(
-                plan,
-                options.ticks,
-                options.stall_loop_limit,
-                options.candidate,
-            )?
-        };
+        let mut write = trace_writer
+            .as_mut()
+            .map(|writer| |trace: &EvaluationTraceRow| writer.write_row(trace));
+        let (mut row, replay) = evaluate_plan(
+            plan,
+            options.ticks,
+            options.stall_loop_limit,
+            options.candidate,
+            write.as_mut().map(|write| write as EvaluationTraceSink<'_>),
+        )?;
         let trace = if let Some(writer) = trace_writer {
             let path = writer.staged.clone();
             let rows = writer.finish()?;
@@ -125,11 +118,7 @@ pub fn evaluate_batch(
         if let (Some(writer), Some(trace)) = (&mut writer, &leg.trace) {
             let mut input =
                 std::fs::File::open(&trace.path).context("opening completed leg trace")?;
-            std::io::copy(
-                &mut input,
-                writer.writer.as_mut().expect("unfinished trace writer"),
-            )
-            .context("merging ordered leg trace")?;
+            std::io::copy(&mut input, &mut writer.writer).context("merging ordered leg trace")?;
             writer.rows = writer.rows.saturating_add(trace.rows);
         }
         evidence.staged.append(&mut leg.replay.staged);

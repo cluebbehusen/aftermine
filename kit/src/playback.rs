@@ -67,7 +67,6 @@ impl Playback {
     pub fn open(recording: Recording) -> Result<Self> {
         // Seeking is synchronous: a structurally valid file claiming an
         // absurd length would hang the viewer at the first End press.
-        const MAX_INTERACTIVE_TICKS: u64 = 2_000_000;
         let Recording { replay, keyframes } = recording;
         replay
             .validate(Some(SIM_VERSION))
@@ -75,8 +74,9 @@ impl Playback {
         let origin = crate::recording::initial_state(&replay)?;
         let total = crate::replay_duration(&replay);
         anyhow::ensure!(
-            total <= MAX_INTERACTIVE_TICKS,
-            "replay spans {total} ticks, beyond the {MAX_INTERACTIVE_TICKS}-tick interactive limit"
+            total <= crate::MAX_REPLAY_TICKS,
+            "replay spans {total} ticks, beyond the {}-tick interactive limit",
+            crate::MAX_REPLAY_TICKS
         );
         keyframes.validate(replay.start_tick(), total)?;
         Ok(Self {
@@ -127,6 +127,11 @@ impl Playback {
     /// First absolute tick available in the recording.
     pub fn start(&self) -> u64 {
         self.replay.start_tick()
+    }
+
+    /// The record being played.
+    pub fn replay(&self) -> &Arc<GameReplay> {
+        &self.replay
     }
 
     /// The absolute end tick.

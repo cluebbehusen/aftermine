@@ -5,7 +5,7 @@
 //! [`aftermine_sim::State::current_tick`] is exactly `N`: commands stamped `N`
 //! have not executed yet.
 
-use aftermine_kit::runner::GameReplay;
+use aftermine_kit::GameReplay;
 use aftermine_protocol::{FogView, StateFilter, StateView, hash_hex};
 use aftermine_sim::scenario::BotConfig;
 use aftermine_sim::{Command, GameResult, PlayerId, SIM_VERSION};

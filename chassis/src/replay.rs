@@ -23,7 +23,10 @@ pub const MAX_REPLAY_COMMANDS: usize = 1_000_000;
 
 /// A recorded segment: metadata, setup, optional origin, and recorded commands.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(bound(deserialize = "S: Deserialize<'de>, C: Deserialize<'de>, O: Deserialize<'de>"))]
+#[serde(
+    deny_unknown_fields,
+    bound(deserialize = "S: Deserialize<'de>, C: Deserialize<'de>, O: Deserialize<'de>")
+)]
 pub struct Replay<S, C, O = ()> {
     /// Provenance and context for the run.
     pub meta: ReplayMeta,
@@ -259,20 +262,6 @@ impl<S, C, O: RecordingOrigin<S>> Replay<S, C, O> {
         Self::load_with_limits(path, MAX_REPLAY_BYTES, MAX_REPLAY_COMMANDS)
     }
 
-    /// Reads a bounded replay file and delegates its wire format to a
-    /// game-specific decoder. The decoded replay still receives the shared
-    /// command-count check.
-    ///
-    /// Use this when a game must inspect versioned setup metadata before it
-    /// can produce the current `S`, without duplicating the file-size and
-    /// command-count boundary owned by chassis.
-    pub fn load_with_decoder(
-        path: impl AsRef<Path>,
-        decoder: impl FnOnce(&[u8]) -> Result<Self, ReplayError>,
-    ) -> Result<Self, ReplayError> {
-        Self::load_with_limits_and_decoder(path, MAX_REPLAY_BYTES, MAX_REPLAY_COMMANDS, decoder)
-    }
-
     fn load_with_limits(
         path: impl AsRef<Path>,
         max_bytes: usize,
@@ -283,17 +272,6 @@ impl<S, C, O: RecordingOrigin<S>> Replay<S, C, O> {
         C: DeserializeOwned,
         O: DeserializeOwned,
     {
-        Self::load_with_limits_and_decoder(path, max_bytes, max_commands, |bytes| {
-            Ok(serde_json::from_slice(bytes)?)
-        })
-    }
-
-    fn load_with_limits_and_decoder(
-        path: impl AsRef<Path>,
-        max_bytes: usize,
-        max_commands: usize,
-        decoder: impl FnOnce(&[u8]) -> Result<Self, ReplayError>,
-    ) -> Result<Self, ReplayError> {
         let file = std::fs::File::open(path)?;
         let length = usize::try_from(file.metadata()?.len()).unwrap_or(usize::MAX);
         if length > max_bytes {
@@ -310,7 +288,7 @@ impl<S, C, O: RecordingOrigin<S>> Replay<S, C, O> {
             )));
         }
 
-        let replay = decoder(&bytes)?;
+        let replay: Self = serde_json::from_slice(&bytes)?;
         replay.validate_command_count(max_commands)?;
         Ok(replay)
     }

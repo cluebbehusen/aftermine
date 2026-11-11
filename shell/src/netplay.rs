@@ -383,7 +383,7 @@ fn call(
                 }
                 return Ok(true);
             }
-            Ok(Some(VisitEvent::Waiting { .. }) | None) => {}
+            Ok(Some(VisitEvent::Waiting) | None) => {}
             Err(VisitEnd::Gone(GoneReason::SeatTaken)) => return Err(Some(End::SeatGone)),
             Err(VisitEnd::Gone(GoneReason::Over | GoneReason::NoMatch)) => {
                 return Err(Some(End::Over));
@@ -455,13 +455,11 @@ impl HostLink {
 
 impl Link {
     pub(crate) fn host(started: Started, game: &Game, now: Duration) -> Self {
-        let host = game.presentation.human;
-        let name = shown_host_name(None, &game.scenario, host);
         Self::Host(HostLink {
             session: started.session,
             peers: started.peers,
             listener: started.listener,
-            desk: Desk::new(&started.commit, name, &game.scenario.name),
+            desk: Desk::new(&started.commit),
             visitors: Vec::new(),
             departing: Vec::new(),
             closing: None,
@@ -1364,7 +1362,7 @@ impl HostLobby {
                 // A member dropped in the poll that accepted it still gets
                 // the host's queued Hello, which tells another build why it
                 // cannot join; dropping the connection would abort that line.
-                LobbyEvent::Left { member, .. } | LobbyEvent::Turned { member } => {
+                LobbyEvent::Left { member } | LobbyEvent::Turned { member } => {
                     self.farewells.push(*member);
                 }
                 LobbyEvent::Joined { .. } => {}

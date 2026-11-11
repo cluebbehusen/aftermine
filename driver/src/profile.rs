@@ -2,7 +2,7 @@
 
 use crate::auto::{ShellGuard, build_shell_executable_for, isolate_home};
 use crate::client::Client;
-use aftermine_kit::runner::GameReplay;
+use aftermine_kit::GameReplay;
 use aftermine_protocol::{FrameProfileView, Reply, Request};
 use aftermine_sim::TICKS_PER_SECOND;
 use anyhow::{Context, Result, bail, ensure};
@@ -78,12 +78,7 @@ pub fn run(options: &ProfileOptions<'_>) -> Result<ProfileReport> {
     // CLI error.
     let record = aftermine_kit::load_replay(&replay)
         .with_context(|| format!("loading replay {}", replay.display()))?;
-    let total = record.meta.ticks.unwrap_or_else(|| {
-        record
-            .commands
-            .last()
-            .map_or(0, |command| command.tick.saturating_add(1))
-    });
+    let total = aftermine_kit::replay_duration(&record);
     anyhow::ensure!(
         record.origin.is_none(),
         "live profiling requires a session checkpoint for this replay origin"
@@ -205,10 +200,6 @@ pub fn run(options: &ProfileOptions<'_>) -> Result<ProfileReport> {
 }
 
 fn validate_profile_result(frames: &FrameProfileView, from: u64, to: u64) -> Result<f64> {
-    ensure!(
-        frames.renderer == "gpu",
-        "shell reported a non-GPU renderer"
-    );
     ensure!(frames.frames > 0, "shell returned an empty frame profile");
     let window = frames
         .window

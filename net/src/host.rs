@@ -21,9 +21,6 @@ pub enum Exit {
     Left,
     /// The host handed the seat to a bot.
     Replaced,
-    /// The seat can no longer act in the world; its client may stay on to
-    /// watch.
-    Defeated,
 }
 
 /// Something the host's caller must act on.
@@ -75,7 +72,8 @@ enum Standing {
     Rejoining {
         away_since: Duration,
     },
-    Out(Exit),
+    /// Gone from the match for good.
+    Out,
 }
 
 /// A client connection's progress and liveness.
@@ -297,14 +295,14 @@ impl HostSession {
     /// A client is taking `seat` back on a fresh connection: any old
     /// connection is lost, the seat's unsealed orders go, and the match
     /// waits until [`HostSession::readmit`] or
-    /// [`HostSession::rejoin_failed`]. False when the seat is not in play.
-    pub fn rejoining(&mut self, seat: PlayerId, now: Duration) -> bool {
+    /// [`HostSession::rejoin_failed`]. A seat out of play is left alone.
+    pub fn rejoining(&mut self, seat: PlayerId, now: Duration) {
         let index = self.client_index(seat);
         let away_since = match self.clients[index].standing {
             Standing::Playing(Presence::Away { since }) => since,
             Standing::Rejoining { away_since } => away_since,
             Standing::Playing(Presence::Live | Presence::Quiet) => now,
-            Standing::Out(_) => return false,
+            Standing::Out => return,
         };
         if self.clients[index].link.take().is_some() {
             self.events.push(HostEvent::Lost { seat });
@@ -315,7 +313,6 @@ impl HostSession {
             .retain(|pending| pending.command.player != seat);
         self.clients[index].standing = Standing::Rejoining { away_since };
         self.prune_hashes();
-        true
     }
 
     /// The rejoining client restored the match at [`HostSession::tick`]:
@@ -448,7 +445,7 @@ impl HostSession {
         }
         self.pending
             .retain(|pending| pending.command.player != seat);
-        self.clients[index].standing = Standing::Out(Exit::Replaced);
+        self.clients[index].standing = Standing::Out;
         if self.clients[index].link.take().is_some() {
             self.outgoing.push((
                 seat,
@@ -471,7 +468,7 @@ impl HostSession {
     pub fn retire_seat(&mut self, seat: PlayerId) {
         let index = self.client_index(seat);
         if self.clients[index].playing() {
-            self.clients[index].standing = Standing::Out(Exit::Defeated);
+            self.clients[index].standing = Standing::Out;
         }
     }
 
@@ -609,7 +606,7 @@ impl HostSession {
                     client.standing,
                     Standing::Playing(Presence::Away { .. })
                         | Standing::Rejoining { .. }
-                        | Standing::Out(_)
+                        | Standing::Out
                 )
             })
             .filter_map(|client| client.link.as_ref())
@@ -744,7 +741,7 @@ impl HostSession {
                 // The host keeps no hashes for a retired seat's watching
                 // client, which may report long after the rest.
                 None => assert!(
-                    matches!(self.clients[index].standing, Standing::Out(_)),
+                    matches!(self.clients[index].standing, Standing::Out),
                     "the host records its hash before a playing client can report that tick"
                 ),
             }
@@ -779,7 +776,7 @@ impl HostSession {
         let client = &mut self.clients[index];
         let seat = client.seat;
         if client.playing() {
-            client.standing = Standing::Out(exit);
+            client.standing = Standing::Out;
             self.pending.push(Pending::new(seat, Command::Surrender));
         }
         if exit == Exit::Dropped && self.clients[index].link.is_some() {
@@ -844,7 +841,7 @@ impl HostSession {
         let oldest = self
             .clients
             .iter()
-            .filter(|client| !matches!(client.standing, Standing::Out(_)))
+            .filter(|client| !matches!(client.standing, Standing::Out))
             .filter_map(|client| client.link.as_ref())
             .map(|link| link.acked)
             .min();

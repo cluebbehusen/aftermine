@@ -10,7 +10,6 @@ fn valid_profile() -> FrameProfileView {
         max_ms: 9.0,
     };
     FrameProfileView {
-        renderer: "gpu".to_string(),
         frames: 4,
         tick_start: 10,
         tick_end: 20,
@@ -117,11 +116,7 @@ fn exact_profile_validation_returns_the_measured_wall_time() {
 }
 
 #[test]
-fn exact_profile_validation_requires_gpu_frames() {
-    let mut profile = valid_profile();
-    profile.renderer = "cpu".to_string();
-    assert_eq!(profile_error(&profile), "shell reported a non-GPU renderer");
-
+fn exact_profile_validation_requires_frames() {
     let mut profile = valid_profile();
     profile.frames = 0;
     assert_eq!(

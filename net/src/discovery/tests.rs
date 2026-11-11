@@ -51,8 +51,7 @@ fn another_builds_beacon_lists_by_its_header_and_noise_is_ignored() {
     assert_eq!(
         hear(theirs.as_bytes(), COMMIT),
         Some(Heard::OtherBuild {
-            host: "Sam".to_owned(),
-            commit: "def".to_owned()
+            host: "Sam".to_owned()
         }),
         "a later build may add fields; its header still reads"
     );
@@ -97,7 +96,6 @@ fn sightings_update_in_place_sort_by_host_and_expire() {
 
     let other = Heard::OtherBuild {
         host: "Riley".to_owned(),
-        commit: "def".to_owned(),
     };
     list.hear(ip(4), other, secs(5));
     assert_eq!(

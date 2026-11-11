@@ -13,7 +13,6 @@ fn timing(mean_ms: f64) -> TimingSummary {
 
 fn trial(units_mean: f64, fog_mean: f64, over_budget: usize) -> FrameProfileView {
     FrameProfileView {
-        renderer: "gpu".to_string(),
         frames: 240,
         tick_start: 0,
         tick_end: 0,

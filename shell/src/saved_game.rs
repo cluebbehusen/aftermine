@@ -286,12 +286,9 @@ fn inspect_reader(path: &Path, file: &mut (impl Read + Seek), len: u64) -> Resul
         } else {
             Some(Unavailable::OtherVersion)
         };
-        let ticks = aftermine_kit::replay_duration(&replay);
         let teams = crate::menu::team_count(replay.setup.players.iter().map(|p| p.team));
-        let mut meta = replay.meta;
-        meta.ticks = Some(ticks);
         Ok(RecordInfo {
-            meta,
+            meta: replay.meta,
             map: replay.setup.name,
             seats: replay.setup.players.len(),
             teams,

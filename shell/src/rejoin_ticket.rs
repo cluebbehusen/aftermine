@@ -196,7 +196,7 @@ fn ask(ticket: &Ticket) -> Probed {
         loop {
             match connection.try_recv() {
                 Ok(Some(line)) => match visit.receive(&line, elapsed()) {
-                    Ok(Some(VisitEvent::Waiting { .. })) => return Probed::Waiting(ticket.clone()),
+                    Ok(Some(VisitEvent::Waiting)) => return Probed::Waiting(ticket.clone()),
                     Ok(_) => {}
                     Err(VisitEnd::Gone(_) | VisitEnd::OtherBuild { .. }) => {
                         return Probed::Gone(ticket.clone());

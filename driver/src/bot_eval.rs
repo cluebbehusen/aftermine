@@ -13,8 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 mod batch;
 mod calibration;
@@ -447,100 +446,24 @@ pub struct EvaluationTraceRow {
     pub trace: SeatTrace,
 }
 
-type EvaluationTraceSink<'a> = &'a mut dyn FnMut(&EvaluationTraceRow) -> Result<()>;
+/// Where an evaluation sends each decision trace row.
+pub type EvaluationTraceSink<'a> = &'a mut dyn FnMut(&EvaluationTraceRow) -> Result<()>;
 
-/// Runs one configured scenario until its result or `tick_limit`.
-///
-/// A replay is always assembled in memory so command counts and optional
-/// evidence use the exact recorded input stream. It is written only when
-/// `replay_path` is supplied.
-pub fn evaluate(
-    scenario: &Scenario,
-    tick_limit: u64,
-    leg: EvaluationLeg,
-    candidate: &str,
-    replay_path: Option<&Path>,
-) -> Result<EvaluationRow> {
-    let (mut row, replay) = evaluate_artifact(scenario, tick_limit, leg, candidate)?;
-    if let Some(path) = replay_path {
-        let mut batch = EvidenceBatch::default();
-        batch.stage_replay(&replay, path)?;
-        batch.publish()?;
-        row.replay = Some(path.display().to_string());
-    }
-    Ok(row)
-}
-
-/// Runs one configured scenario and returns its row plus unpublished replay.
-///
-/// Callers evaluating a batch can stage every returned replay and publish only
-/// after every scenario has succeeded.
-pub fn evaluate_artifact(
-    scenario: &Scenario,
-    tick_limit: u64,
-    leg: EvaluationLeg,
-    candidate: &str,
-) -> Result<(EvaluationRow, GameReplay)> {
-    let plan = EvaluationPlan::from_scenario(scenario.clone(), leg);
-    evaluate_plan_artifact(&plan, tick_limit, candidate)
-}
-
-/// Runs one exact evaluation plan and returns its row plus unpublished replay.
+/// Runs one exact evaluation plan until its result or `tick_limit`, and
+/// returns its row plus the unpublished replay. The leg stops early once one
+/// unit stalls `stall_loop_limit` times for the same reason; `None` never
+/// stops early. With `trace_sink`, every controlled seat's decision
+/// diagnostics go to it; the row and replay are the same either way.
 ///
 /// Controller identities come from the evaluation plan and are recorded in
 /// replay provenance independently of the physical scenario configuration.
-pub fn evaluate_plan_artifact(
-    plan: &EvaluationPlan,
-    tick_limit: u64,
-    candidate: &str,
-) -> Result<(EvaluationRow, GameReplay)> {
-    evaluate_plan_artifact_with(plan, tick_limit, Some(DEFAULT_STALL_LOOP_LIMIT), candidate)
-}
-
-/// [`evaluate_plan_artifact`] with an explicit stall-loop limit; `None`
-/// disables the early stop so a leg always runs to its result or ceiling.
-pub fn evaluate_plan_artifact_with(
-    plan: &EvaluationPlan,
-    tick_limit: u64,
-    stall_loop_limit: Option<u64>,
-    candidate: &str,
-) -> Result<(EvaluationRow, GameReplay)> {
-    let (row, replay, _) =
-        evaluate_plan_artifact_impl(plan, tick_limit, stall_loop_limit, candidate, None)?;
-    Ok((row, replay))
-}
-
-/// Runs one exact evaluation plan and also captures player-facing decision
-/// diagnostics produced during that run.
-///
-/// The returned replay and compact evaluation row are identical to those from
-/// [`evaluate_plan_artifact_with`]. Every controlled seat emits decision traces.
-pub fn evaluate_plan_artifact_traced_with<F>(
-    plan: &EvaluationPlan,
-    tick_limit: u64,
-    stall_loop_limit: Option<u64>,
-    candidate: &str,
-    mut on_trace: F,
-) -> Result<(EvaluationRow, GameReplay, u64)>
-where
-    F: FnMut(&EvaluationTraceRow) -> Result<()>,
-{
-    evaluate_plan_artifact_impl(
-        plan,
-        tick_limit,
-        stall_loop_limit,
-        candidate,
-        Some(&mut on_trace),
-    )
-}
-
-fn evaluate_plan_artifact_impl(
+pub fn evaluate_plan(
     plan: &EvaluationPlan,
     tick_limit: u64,
     stall_loop_limit: Option<u64>,
     candidate: &str,
     mut trace_sink: Option<EvaluationTraceSink<'_>>,
-) -> Result<(EvaluationRow, GameReplay, u64)> {
+) -> Result<(EvaluationRow, GameReplay)> {
     ensure!(tick_limit > 0, "bot evaluation tick limit must be positive");
     ensure!(
         stall_loop_limit != Some(0),
@@ -571,7 +494,6 @@ fn evaluate_plan_artifact_impl(
     ));
     let mut evidence: Vec<SeatEvidence> =
         (0..scenario.players.len()).map(SeatEvidence::new).collect();
-    let mut trace_count = 0_u64;
     let watched: Vec<bool> = plan.controllers.iter().map(Option::is_some).collect();
     let mut failures = failures::FailureDetectors::new(watched.iter().copied());
     let mut reactions = reactivity::ReactivityDetectors::new(watched.iter().copied());
@@ -595,7 +517,6 @@ fn evaluate_plan_artifact_impl(
                     trace,
                 };
                 on_trace(&row)?;
-                trace_count = trace_count.saturating_add(1);
             }
             traced.report
         } else {
@@ -709,7 +630,7 @@ fn evaluate_plan_artifact_impl(
         evidence,
         replay: None,
     };
-    Ok((row, replay, trace_count))
+    Ok((row, replay))
 }
 
 fn record_evidence_event(evidence: &mut [SeatEvidence], event: &Event) -> Option<StallSample> {
@@ -719,26 +640,6 @@ fn record_evidence_event(evidence: &mut [SeatEvidence], event: &Event) -> Option
     };
     let PlayerId(seat) = player?;
     evidence.get_mut(usize::from(seat))?.observe(event)
-}
-
-/// Builds the single or paired all-bot legs for one cell.
-///
-/// A paired cell is defined only for two-player scenarios. The second leg
-/// exchanges the two complete controller configurations while preserving
-/// map geometry, teams and starting rosters.
-pub fn configured_legs(
-    source: &Scenario,
-    difficulty: BotDifficulty,
-    stance: BotStance,
-    personality_seed_base: u64,
-    paired: bool,
-) -> Result<Vec<(EvaluationLeg, Scenario)>> {
-    configured_matchup_legs(
-        source,
-        ProfileMatchup::uniform(difficulty, stance),
-        personality_seed_base,
-        paired,
-    )
 }
 
 /// Builds evaluation legs with optional seat-one controller overrides.
@@ -789,11 +690,6 @@ pub fn configured_matchup_legs(
     ])
 }
 
-/// Atomically writes compact evaluation records as one JSON object per line.
-pub fn write_jsonl(rows: &[EvaluationRow], path: &Path) -> Result<()> {
-    write_serialized_jsonl(rows, path, "bot evaluation JSONL")
-}
-
 pub(crate) fn write_serialized_jsonl<T: Serialize>(
     rows: &[T],
     path: &Path,
@@ -814,20 +710,16 @@ pub(crate) fn write_serialized_jsonl<T: Serialize>(
 /// Call [`finish`](Self::finish) before publishing its [`EvidenceBatch`]. A
 /// dropped or failed stream remains private and the batch removes it.
 pub struct EvaluationTraceWriter {
-    writer: Option<BufWriter<std::fs::File>>,
+    writer: BufWriter<std::fs::File>,
     staged: PathBuf,
     destination: PathBuf,
-    ready: Arc<AtomicBool>,
     rows: u64,
 }
 
 impl EvaluationTraceWriter {
     /// Appends one deterministic trace row to the private staging file.
     pub fn write_row(&mut self, row: &EvaluationTraceRow) -> Result<()> {
-        let writer = self
-            .writer
-            .as_mut()
-            .expect("a live trace writer retains its staging file");
+        let writer = &mut self.writer;
         serde_json::to_writer(&mut *writer, row).with_context(|| {
             format!(
                 "serializing bot decision trace for {}",
@@ -844,36 +736,15 @@ impl EvaluationTraceWriter {
         Ok(())
     }
 
-    /// Flushes and syncs the private trace file, returning its row count.
+    /// Flushes the private trace file, returning its row count.
     pub fn finish(mut self) -> Result<u64> {
-        let mut writer = self
-            .writer
-            .take()
-            .expect("a live trace writer retains its staging file");
-        writer.flush().with_context(|| {
+        self.writer.flush().with_context(|| {
             format!(
                 "flushing bot decision trace for {}",
                 self.destination.display()
             )
         })?;
-        writer.get_ref().sync_all().with_context(|| {
-            format!(
-                "syncing bot decision trace for {}",
-                self.destination.display()
-            )
-        })?;
-        drop(writer);
-        self.ready.store(true, Ordering::Release);
         Ok(self.rows)
-    }
-}
-
-impl Drop for EvaluationTraceWriter {
-    fn drop(&mut self) {
-        if !self.ready.load(Ordering::Acquire) {
-            drop(self.writer.take());
-            std::fs::remove_file(&self.staged).ok();
-        }
     }
 }
 
@@ -889,7 +760,6 @@ impl Drop for EvaluationTraceWriter {
 #[derive(Debug, Default)]
 pub struct EvidenceBatch {
     staged: Vec<(PathBuf, PathBuf)>,
-    trace_ready: Vec<Arc<AtomicBool>>,
     published: Vec<PathBuf>,
     committed: bool,
 }
@@ -926,13 +796,10 @@ impl EvidenceBatch {
                     destination.display()
                 )
             })?;
-        let ready = Arc::new(AtomicBool::new(false));
-        self.trace_ready.push(Arc::clone(&ready));
         Ok(EvaluationTraceWriter {
-            writer: Some(BufWriter::new(file)),
+            writer: BufWriter::new(file),
             staged,
             destination: destination.to_path_buf(),
-            ready,
             rows: 0,
         })
     }
@@ -944,12 +811,6 @@ impl EvidenceBatch {
     /// Errors returned from this call roll back links already created by this
     /// batch; abrupt process termination can interrupt that rollback.
     pub fn publish(mut self) -> Result<()> {
-        ensure!(
-            self.trace_ready
-                .iter()
-                .all(|ready| ready.load(Ordering::Acquire)),
-            "bot evaluation decision traces must be finished before publication"
-        );
         let mut destinations: Vec<&Path> = self
             .staged
             .iter()
@@ -971,13 +832,11 @@ impl EvidenceBatch {
             })?;
             self.published.push(destination.clone());
         }
-        sync_parents(self.staged.iter().map(|(_, destination)| destination))?;
         for (staged, _) in &self.staged {
             std::fs::remove_file(staged).with_context(|| {
                 format!("removing bot evaluation staging file {}", staged.display())
             })?;
         }
-        sync_parents(self.staged.iter().map(|(_, destination)| destination))?;
         self.committed = true;
         Ok(())
     }
@@ -1068,30 +927,6 @@ pub fn preflight_destinations(paths: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
-fn sync_parents<'a>(destinations: impl Iterator<Item = &'a PathBuf>) -> Result<()> {
-    let mut parents: Vec<&Path> = destinations
-        .map(|path| {
-            path.parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-                .unwrap_or_else(|| Path::new("."))
-        })
-        .collect();
-    parents.sort_unstable();
-    parents.dedup();
-    for parent in parents {
-        std::fs::File::open(parent)
-            .and_then(|directory| directory.sync_all())
-            .with_context(|| format!("syncing evidence directory {}", parent.display()))?;
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn sync_parents<'a>(_destinations: impl Iterator<Item = &'a PathBuf>) -> Result<()> {
-    Ok(())
-}
-
 /// Stable digest of every serialized scenario field used to build a match.
 pub fn scenario_fingerprint(scenario: &Scenario) -> Result<String> {
     let configured = serde_json::to_vec(scenario).context("serializing scenario provenance")?;
@@ -1172,24 +1007,6 @@ fn validate_candidate(candidate: &str) -> Result<()> {
         "bot evaluation candidate must not contain surrounding whitespace or control characters"
     );
     Ok(())
-}
-
-/// Builds a replay filename that cannot alias a different configured matchup.
-///
-/// The digest covers the candidate, simulation version, tick ceiling, and
-/// complete configured scenario, including every seat's difficulty, stance,
-/// and personality seed. Repeating the exact cell intentionally chooses the
-/// same path so create-only publication refuses to erase its earlier evidence.
-pub fn replay_filename(
-    scenario_index: usize,
-    run: u64,
-    tick_limit: u64,
-    leg: EvaluationLeg,
-    candidate: &str,
-    scenario: &Scenario,
-) -> Result<String> {
-    let plan = EvaluationPlan::from_scenario(scenario.clone(), leg);
-    evaluation_replay_filename(scenario_index, run, tick_limit, candidate, &plan)
 }
 
 /// Builds a replay filename for one exact evaluation plan.

@@ -78,12 +78,6 @@ impl Connection {
         Self::spawn(TcpStream::connect(address)?)
     }
 
-    /// Connects to `address`, giving up after `timeout` instead of the
-    /// operating system's minute or more.
-    pub fn connect_timeout(address: &SocketAddr, timeout: Duration) -> io::Result<Self> {
-        Self::spawn(TcpStream::connect_timeout(address, timeout)?)
-    }
-
     /// Connects to the first of `address`'s resolved addresses that answers,
     /// giving each up to `timeout`: a host name can resolve to an address
     /// the host does not listen on before one it does.

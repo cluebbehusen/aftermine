@@ -21,20 +21,24 @@ fn worker_limit_bounds_live_jobs() {
 #[test]
 fn results_come_back_in_job_order() {
     let jobs: Vec<u64> = (0..500).collect();
-    let out = fan_out(&jobs, |&j| Ok(j * 2)).unwrap();
+    let out = fan_out_bounded(&jobs, NonZeroUsize::MAX, |&j| Ok(j * 2)).unwrap();
     assert_eq!(out, jobs.iter().map(|j| j * 2).collect::<Vec<_>>());
 }
 
 #[test]
 fn an_empty_queue_spawns_nothing() {
     let jobs: Vec<u64> = Vec::new();
-    assert!(fan_out(&jobs, |_| Ok(0u64)).unwrap().is_empty());
+    assert!(
+        fan_out_bounded(&jobs, NonZeroUsize::MAX, |_| Ok(0u64))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
 fn a_failing_job_surfaces_its_error() {
     let jobs: Vec<u64> = (0..64).collect();
-    let err = fan_out(&jobs, |&j| {
+    let err = fan_out_bounded(&jobs, NonZeroUsize::MAX, |&j| {
         if j == 17 {
             anyhow::bail!("job {j} refused")
         }

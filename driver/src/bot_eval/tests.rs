@@ -4,6 +4,87 @@ use aftermine_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
 use aftermine_sim::{StallReason, UnitKind};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// One configured scenario run to its result or `tick_limit`, with its
+/// replay published to `replay_path` when one is given.
+fn evaluate(
+    scenario: &Scenario,
+    tick_limit: u64,
+    leg: EvaluationLeg,
+    candidate: &str,
+    replay_path: Option<&Path>,
+) -> Result<EvaluationRow> {
+    let (mut row, replay) = evaluate_artifact(scenario, tick_limit, leg, candidate)?;
+    if let Some(path) = replay_path {
+        let mut batch = EvidenceBatch::default();
+        batch.stage_replay(&replay, path)?;
+        batch.publish()?;
+        row.replay = Some(path.display().to_string());
+    }
+    Ok(row)
+}
+
+fn evaluate_artifact(
+    scenario: &Scenario,
+    tick_limit: u64,
+    leg: EvaluationLeg,
+    candidate: &str,
+) -> Result<(EvaluationRow, GameReplay)> {
+    let plan = EvaluationPlan::from_scenario(scenario.clone(), leg);
+    evaluate_plan_artifact(&plan, tick_limit, candidate)
+}
+
+fn evaluate_plan_artifact(
+    plan: &EvaluationPlan,
+    tick_limit: u64,
+    candidate: &str,
+) -> Result<(EvaluationRow, GameReplay)> {
+    evaluate_plan(
+        plan,
+        tick_limit,
+        Some(DEFAULT_STALL_LOOP_LIMIT),
+        candidate,
+        None,
+    )
+}
+
+/// Builds the single or paired all-bot legs for one cell.
+///
+/// A paired cell is defined only for two-player scenarios. The second leg
+/// exchanges the two complete controller configurations while preserving
+/// map geometry, teams and starting rosters.
+fn configured_legs(
+    source: &Scenario,
+    difficulty: BotDifficulty,
+    stance: BotStance,
+    personality_seed_base: u64,
+    paired: bool,
+) -> Result<Vec<(EvaluationLeg, Scenario)>> {
+    configured_matchup_legs(
+        source,
+        ProfileMatchup::uniform(difficulty, stance),
+        personality_seed_base,
+        paired,
+    )
+}
+
+/// Builds a replay filename that cannot alias a different configured matchup.
+///
+/// The digest covers the candidate, simulation version, tick ceiling, and
+/// complete configured scenario, including every seat's difficulty, stance,
+/// and personality seed. Repeating the exact cell intentionally chooses the
+/// same path so create-only publication refuses to erase its earlier evidence.
+fn replay_filename(
+    scenario_index: usize,
+    run: u64,
+    tick_limit: u64,
+    leg: EvaluationLeg,
+    candidate: &str,
+    scenario: &Scenario,
+) -> Result<String> {
+    let plan = EvaluationPlan::from_scenario(scenario.clone(), leg);
+    evaluation_replay_filename(scenario_index, run, tick_limit, candidate, &plan)
+}
+
 static NEXT_REPLAY_ID: AtomicU64 = AtomicU64::new(0);
 
 /// Plans for a configured matchup's legs, as `bot-eval` builds them.
@@ -97,26 +178,6 @@ fn opponent_controller() -> EvaluationController {
     EvaluationController::configured(opponent_config())
 }
 
-fn one_evaluation_trace() -> EvaluationTraceRow {
-    let plan = matchup_plans(
-        &Scenario::skirmish(),
-        prime_matchup(),
-        prime_config().personality_seed,
-        false,
-    )
-    .unwrap()
-    .remove(0);
-    let mut trace = None;
-    evaluate_plan_artifact_traced_with(&plan, 1, None, "candidate-a", |row| {
-        if row.seat == 0 {
-            assert!(trace.replace(row.clone()).is_none());
-        }
-        Ok(())
-    })
-    .unwrap();
-    trace.expect("Prime emits one trace at tick zero")
-}
-
 #[test]
 fn configured_evaluation_records_exact_controller_provenance() {
     let plans = matchup_plans(
@@ -173,21 +234,31 @@ fn traced_evaluation_is_deterministic_and_does_not_change_authoritative_evidence
     .remove(0);
 
     let (ordinary_row, ordinary_replay) =
-        evaluate_plan_artifact_with(&plan, 25, None, "candidate-a").unwrap();
+        evaluate_plan(&plan, 25, None, "candidate-a", None).unwrap();
     let mut traces = Vec::new();
-    let (traced_row, traced_replay, trace_count) =
-        evaluate_plan_artifact_traced_with(&plan, 25, None, "candidate-a", |row| {
+    let (traced_row, traced_replay) = evaluate_plan(
+        &plan,
+        25,
+        None,
+        "candidate-a",
+        Some(&mut |row: &EvaluationTraceRow| {
             traces.push(row.clone());
             Ok(())
-        })
-        .unwrap();
+        }),
+    )
+    .unwrap();
     let mut repeated_traces = Vec::new();
-    let (_, _, repeated_count) =
-        evaluate_plan_artifact_traced_with(&plan, 25, None, "candidate-a", |row| {
+    let _ = evaluate_plan(
+        &plan,
+        25,
+        None,
+        "candidate-a",
+        Some(&mut |row: &EvaluationTraceRow| {
             repeated_traces.push(row.clone());
             Ok(())
-        })
-        .unwrap();
+        }),
+    )
+    .unwrap();
 
     assert_eq!(traced_row, ordinary_row);
     assert_eq!(traced_row.final_hash, ordinary_row.final_hash);
@@ -198,8 +269,6 @@ fn traced_evaluation_is_deterministic_and_does_not_change_authoritative_evidence
         "trace capture must not enter replay metadata or commands"
     );
     assert!(!traces.is_empty(), "Prime should produce a decision trace");
-    assert_eq!(trace_count, traces.len() as u64);
-    assert_eq!(repeated_count, repeated_traces.len() as u64);
     assert_eq!(traces, repeated_traces);
     assert_eq!(
         serde_json::to_vec(&traces).unwrap(),
@@ -600,14 +669,18 @@ fn a_trace_publication_collision_rolls_back_the_compact_index() {
     .unwrap()
     .remove(0);
     let mut traces = Vec::new();
-    let (row, _, trace_count) =
-        evaluate_plan_artifact_traced_with(&plan, 1, None, "candidate-a", |row| {
+    let (row, _) = evaluate_plan(
+        &plan,
+        1,
+        None,
+        "candidate-a",
+        Some(&mut |row: &EvaluationTraceRow| {
             traces.push(row.clone());
             Ok(())
-        })
-        .unwrap();
+        }),
+    )
+    .unwrap();
     assert!(!traces.is_empty());
-    assert_eq!(trace_count, traces.len() as u64);
 
     let mut batch = EvidenceBatch::default();
     batch
@@ -628,57 +701,6 @@ fn a_trace_publication_collision_rolls_back_the_compact_index() {
         b"racing trace evidence"
     );
     std::fs::remove_dir_all(dir).unwrap();
-}
-
-#[test]
-fn an_unfinished_trace_stream_cannot_be_published() {
-    let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "aftermine-bot-trace-unfinished-{}-{replay_id}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let trace_path = dir.join("trace.jsonl");
-    let mut batch = EvidenceBatch::default();
-    let mut writer = batch.stage_trace_jsonl(&trace_path).unwrap();
-    writer.write_row(&one_evaluation_trace()).unwrap();
-
-    let error = batch.publish().unwrap_err();
-    assert!(error.to_string().contains("must be finished"));
-    assert!(!trace_path.exists(), "unfinished output was not published");
-    drop(writer);
-    assert_eq!(
-        std::fs::read_dir(&dir).unwrap().count(),
-        0,
-        "closing the unfinished writer removes its private staging file"
-    );
-    std::fs::remove_dir(dir).unwrap();
-}
-
-#[test]
-fn an_unfinished_trace_writer_cleans_up_after_its_batch_is_dropped() {
-    let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "aftermine-bot-trace-drop-order-{}-{replay_id}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let trace_path = dir.join("trace.jsonl");
-    let writer = {
-        let mut batch = EvidenceBatch::default();
-        let writer = batch.stage_trace_jsonl(&trace_path).unwrap();
-        drop(batch);
-        writer
-    };
-
-    drop(writer);
-    assert!(!trace_path.exists(), "a dropped stream is never published");
-    assert_eq!(
-        std::fs::read_dir(&dir).unwrap().count(),
-        0,
-        "the writer removes a staging file that outlives its batch"
-    );
-    std::fs::remove_dir(dir).unwrap();
 }
 
 #[test]
@@ -1047,9 +1069,9 @@ fn a_unit_stalling_the_same_way_repeatedly_is_a_counted_loop() {
 #[test]
 fn a_stall_loop_limit_of_zero_is_refused_and_none_disables_the_stop() {
     let plan = EvaluationPlan::from_scenario(firing_squad(), EvaluationLeg::Single);
-    let error = evaluate_plan_artifact_with(&plan, 100, Some(0), "test-build").unwrap_err();
+    let error = evaluate_plan(&plan, 100, Some(0), "test-build", None).unwrap_err();
     assert!(error.to_string().contains("stall-loop limit"), "{error:#}");
-    let (row, _) = evaluate_plan_artifact_with(&plan, 100, None, "test-build").unwrap();
+    let (row, _) = evaluate_plan(&plan, 100, None, "test-build", None).unwrap();
     assert_eq!(row.stall_loop_limit, None);
     assert_eq!(row.stall_loop, None);
     let (row, _) = evaluate_plan_artifact(&plan, 100, "test-build").unwrap();

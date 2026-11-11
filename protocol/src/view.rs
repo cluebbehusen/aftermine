@@ -81,7 +81,6 @@ pub struct PlayerView {
     /// Standing buildings.
     pub buildings: usize,
     /// Whether this seat has conceded and can no longer issue commands.
-    #[serde(default)]
     pub resigned: bool,
     /// The tick this seat lost its last Foundry and site, if it has
     /// (free-for-all placement reads from these).

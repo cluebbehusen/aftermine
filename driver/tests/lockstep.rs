@@ -573,7 +573,7 @@ fn a_lost_client_rejoins_from_a_snapshot_and_stays_in_sync() {
 
     // The handshake, in memory: the snapshot is the host's world as JSON.
     let now = net.now;
-    let mut desk = Desk::new("test", PlayerName::new("Host").unwrap(), "Twin Forges");
+    let mut desk = Desk::new("test");
     let visitor = desk.connected(now);
     let mut visit = Visit::rejoin("test", Token::new(u128::from(gone.0)), now);
     let mut restored = None;
@@ -612,7 +612,7 @@ fn a_lost_client_rejoins_from_a_snapshot_and_stays_in_sync() {
                     visit.ready(state.hash());
                     restored = Some(state);
                 }
-                Some(VisitEvent::Go | VisitEvent::Waiting { .. }) | None => {}
+                Some(VisitEvent::Go | VisitEvent::Waiting) | None => {}
             }
         }
     }

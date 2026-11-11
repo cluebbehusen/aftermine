@@ -10,7 +10,7 @@ use aftermine_driver::client::Client;
 use aftermine_protocol::{Key, RawEvent, Request, RequestEnvelope, StateFilter};
 use aftermine_sim::{BuildingId, Command, PlayerId, Target, UnitId};
 use anyhow::{Context, Result, bail};
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 
 /// The one finger injected touch gestures use; each gesture lifts it
 /// before the next begins.
@@ -73,17 +73,11 @@ pub(crate) enum LiveCmd {
     },
     /// Hunt units to a tile (engage everything on the way).
     Hunt {
-        /// Acting player index.
-        player: u8,
-        /// Unit ids, comma-separated.
-        #[arg(long, value_delimiter = ',')]
-        units: Vec<u32>,
+        #[command(flatten)]
+        squad: Squad,
         /// Goal as "x,y".
         #[arg(long)]
         to: String,
-        /// Append behind current orders instead of replacing them.
-        #[arg(long)]
-        queue: bool,
     },
     /// Resume a session from a replay file (fast-forwards, keeps recording).
     LoadReplay {
@@ -92,32 +86,20 @@ pub(crate) enum LiveCmd {
     },
     /// Run units to a tile without engaging enemies.
     Run {
-        /// Acting player index.
-        player: u8,
-        /// Unit ids, comma-separated.
-        #[arg(long, value_delimiter = ',')]
-        units: Vec<u32>,
+        #[command(flatten)]
+        squad: Squad,
         /// Goal as "x,y".
         #[arg(long)]
         to: String,
-        /// Append behind current orders instead of replacing them.
-        #[arg(long)]
-        queue: bool,
     },
     /// Advance units to a tile, firing in-range primary weapons without
     /// stopping or chasing.
     AdvanceUnits {
-        /// Acting player index.
-        player: u8,
-        /// Unit ids, comma-separated.
-        #[arg(long, value_delimiter = ',')]
-        units: Vec<u32>,
+        #[command(flatten)]
+        squad: Squad,
         /// Goal as "x,y".
         #[arg(long)]
         to: String,
-        /// Append behind current orders instead of replacing them.
-        #[arg(long)]
-        queue: bool,
     },
     /// Walk units on a looping circuit, engaging everything met.
     Patrol {
@@ -132,45 +114,27 @@ pub(crate) enum LiveCmd {
     },
     /// Attack an enemy unit.
     AttackUnit {
-        /// Acting player index.
-        player: u8,
-        /// Unit ids, comma-separated.
-        #[arg(long, value_delimiter = ',')]
-        units: Vec<u32>,
+        #[command(flatten)]
+        squad: Squad,
         /// Victim unit id.
         #[arg(long)]
         target: u32,
-        /// Append behind current orders instead of replacing them.
-        #[arg(long)]
-        queue: bool,
     },
     /// Attack an enemy building.
     AttackBuilding {
-        /// Acting player index.
-        player: u8,
-        /// Unit ids, comma-separated.
-        #[arg(long, value_delimiter = ',')]
-        units: Vec<u32>,
+        #[command(flatten)]
+        squad: Squad,
         /// Victim building id.
         #[arg(long)]
         target: u32,
-        /// Append behind current orders instead of replacing them.
-        #[arg(long)]
-        queue: bool,
     },
     /// Put harvesters on a scrap node.
     Harvest {
-        /// Acting player index.
-        player: u8,
-        /// Unit ids, comma-separated.
-        #[arg(long, value_delimiter = ',')]
-        units: Vec<u32>,
+        #[command(flatten)]
+        squad: Squad,
         /// Node tile as "x,y".
         #[arg(long)]
         node: String,
-        /// Append behind current orders instead of replacing them.
-        #[arg(long)]
-        queue: bool,
     },
     /// Queue a unit at a Foundry.
     Train {
@@ -185,20 +149,14 @@ pub(crate) enum LiveCmd {
     },
     /// Start a construction site with a harvester.
     Build {
-        /// Acting player index.
-        player: u8,
-        /// Candidate builder unit ids, comma-separated.
-        #[arg(long, value_delimiter = ',')]
-        units: Vec<u32>,
+        #[command(flatten)]
+        squad: Squad,
         /// What to construct.
         #[arg(long, value_parser = parse_building_kind)]
         kind: aftermine_sim::BuildingKind,
         /// Anchor tile as "x,y" (top-left of the footprint).
         #[arg(long)]
         at: String,
-        /// Append behind current orders instead of replacing them.
-        #[arg(long)]
-        queue: bool,
         /// Defer the claim: walk out and found on arrival (validated
         /// against the seat's knowledge, paid when the ground is
         /// claimed) — the shell's explored-but-unseen mode.
@@ -207,62 +165,38 @@ pub(crate) enum LiveCmd {
     },
     /// Send harvesters to weld a damaged own built building.
     Repair {
-        /// Acting player index.
-        player: u8,
-        /// Welder unit ids, comma-separated.
-        #[arg(long, value_delimiter = ',')]
-        units: Vec<u32>,
+        #[command(flatten)]
+        squad: Squad,
         /// The building to weld.
         #[arg(long)]
         building: u32,
-        /// Append behind current orders instead of replacing them.
-        #[arg(long)]
-        queue: bool,
     },
     /// Send harvesters to weld a wounded own ground unit (billed per
     /// hp against the patient's cost; air patients refuse).
     RepairUnit {
-        /// Acting player index.
-        player: u8,
-        /// Welder unit ids, comma-separated.
-        #[arg(long, value_delimiter = ',')]
-        units: Vec<u32>,
+        #[command(flatten)]
+        squad: Squad,
         /// The wounded machine.
         #[arg(long)]
         target: u32,
-        /// Append behind current orders instead of replacing them.
-        #[arg(long)]
-        queue: bool,
     },
     /// Send units to escort an own unit: hold a slot around it, fight
     /// threats near it, and weld its group whenever it stops.
     Accompany {
-        /// Acting player index.
-        player: u8,
-        /// Escort unit ids, comma-separated.
-        #[arg(long, value_delimiter = ',')]
-        units: Vec<u32>,
+        #[command(flatten)]
+        squad: Squad,
         /// The escorted unit.
         #[arg(long)]
         target: u32,
-        /// Append behind current orders instead of replacing them.
-        #[arg(long)]
-        queue: bool,
     },
     /// Send harvesters to strip an own built building for a partial
     /// refund (Foundries refuse; sites keep Cancel).
     Salvage {
-        /// Acting player index.
-        player: u8,
-        /// Stripper unit ids, comma-separated.
-        #[arg(long, value_delimiter = ',')]
-        units: Vec<u32>,
+        #[command(flatten)]
+        squad: Squad,
         /// The building coming down.
         #[arg(long)]
         building: u32,
-        /// Append behind current orders instead of replacing them.
-        #[arg(long)]
-        queue: bool,
     },
     /// Scrap an own unfinished site: full refund before work, health-scaled afterward.
     Cancel {
@@ -510,6 +444,29 @@ fn units(ids: Vec<u32>) -> Vec<UnitId> {
     ids.into_iter().map(UnitId).collect()
 }
 
+/// Who acts, with which units, and whether the order waits its turn.
+#[derive(Args)]
+pub(crate) struct Squad {
+    /// Acting player index.
+    player: u8,
+    /// Unit ids, comma-separated.
+    #[arg(long, value_delimiter = ',')]
+    units: Vec<u32>,
+    /// Append behind current orders instead of replacing them.
+    #[arg(long)]
+    queue: bool,
+}
+
+impl Squad {
+    /// The order `command` builds from these units and the queue flag.
+    fn send(self, command: impl FnOnce(Vec<UnitId>, bool) -> Command) -> Request {
+        Request::SendCommand {
+            player: PlayerId(self.player),
+            command: command(units(self.units), self.queue),
+        }
+    }
+}
+
 #[expect(clippy::too_many_lines, reason = "one arm per live subcommand")]
 pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
     Ok(vec![match cmd {
@@ -547,32 +504,14 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
                 .context("parsing command JSON")?
                 .request
         }
-        LiveCmd::Run {
-            player,
-            units: ids,
-            to,
-            queue,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::Run {
-                units: units(ids),
-                goal: parse_tile(&to)?,
-                queue,
-            },
-        },
-        LiveCmd::AdvanceUnits {
-            player,
-            units: ids,
-            to,
-            queue,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::Advance {
-                units: units(ids),
-                goal: parse_tile(&to)?,
-                queue,
-            },
-        },
+        LiveCmd::Run { squad, to } => {
+            let goal = parse_tile(&to)?;
+            squad.send(|units, queue| Command::Run { units, goal, queue })
+        }
+        LiveCmd::AdvanceUnits { squad, to } => {
+            let goal = parse_tile(&to)?;
+            squad.send(|units, queue| Command::Advance { units, goal, queue })
+        }
         LiveCmd::Patrol {
             player,
             units: ids,
@@ -587,59 +526,25 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
                     .collect::<Result<Vec<_>>>()?,
             },
         },
-        LiveCmd::Hunt {
-            player,
-            units: ids,
-            to,
-            queue,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::Hunt {
-                units: units(ids),
-                goal: parse_tile(&to)?,
-                queue,
-            },
-        },
+        LiveCmd::Hunt { squad, to } => {
+            let goal = parse_tile(&to)?;
+            squad.send(|units, queue| Command::Hunt { units, goal, queue })
+        }
         LiveCmd::LoadReplay { path } => Request::LoadReplay { path },
-        LiveCmd::AttackUnit {
-            player,
-            units: ids,
-            target,
+        LiveCmd::AttackUnit { squad, target } => squad.send(|units, queue| Command::Attack {
+            units,
+            target: Target::Unit(UnitId(target)).into(),
             queue,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::Attack {
-                units: units(ids),
-                target: Target::Unit(UnitId(target)).into(),
-                queue,
-            },
-        },
-        LiveCmd::AttackBuilding {
-            player,
-            units: ids,
-            target,
+        }),
+        LiveCmd::AttackBuilding { squad, target } => squad.send(|units, queue| Command::Attack {
+            units,
+            target: Target::Building(BuildingId(target)).into(),
             queue,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::Attack {
-                units: units(ids),
-                target: Target::Building(BuildingId(target)).into(),
-                queue,
-            },
-        },
-        LiveCmd::Harvest {
-            player,
-            units: ids,
-            node,
-            queue,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::Harvest {
-                units: units(ids),
-                node: parse_tile(&node)?,
-                queue,
-            },
-        },
+        }),
+        LiveCmd::Harvest { squad, node } => {
+            let node = parse_tile(&node)?;
+            squad.send(|units, queue| Command::Harvest { units, node, queue })
+        }
         LiveCmd::Train {
             player,
             building,
@@ -656,74 +561,40 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
             command: Command::Stop { units: units(ids) },
         },
         LiveCmd::Build {
-            player,
-            units: ids,
+            squad,
             kind,
             at,
-            queue,
             defer,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::Build {
-                units: units(ids),
+        } => {
+            let anchor = parse_tile(&at)?;
+            squad.send(|units, queue| Command::Build {
+                units,
                 kind,
-                anchor: parse_tile(&at)?,
+                anchor,
                 queue,
                 defer,
-            },
-        },
-        LiveCmd::Repair {
-            player,
-            units: ids,
-            building,
+            })
+        }
+        LiveCmd::Repair { squad, building } => squad.send(|units, queue| Command::Repair {
+            units,
+            building: BuildingId(building),
             queue,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::Repair {
-                units: units(ids),
-                building: BuildingId(building),
-                queue,
-            },
-        },
-        LiveCmd::RepairUnit {
-            player,
-            units: ids,
-            target,
+        }),
+        LiveCmd::RepairUnit { squad, target } => squad.send(|units, queue| Command::RepairUnit {
+            units,
+            target: UnitId(target),
             queue,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::RepairUnit {
-                units: units(ids),
-                target: UnitId(target),
-                queue,
-            },
-        },
-        LiveCmd::Accompany {
-            player,
-            units: ids,
-            target,
+        }),
+        LiveCmd::Accompany { squad, target } => squad.send(|units, queue| Command::Accompany {
+            units,
+            target: UnitId(target),
             queue,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::Accompany {
-                units: units(ids),
-                target: UnitId(target),
-                queue,
-            },
-        },
-        LiveCmd::Salvage {
-            player,
-            units: ids,
-            building,
+        }),
+        LiveCmd::Salvage { squad, building } => squad.send(|units, queue| Command::Salvage {
+            units,
+            building: BuildingId(building),
             queue,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::Salvage {
-                units: units(ids),
-                building: BuildingId(building),
-                queue,
-            },
-        },
+        }),
         LiveCmd::Cancel { player, building } => Request::SendCommand {
             player: PlayerId(player),
             command: Command::Cancel {

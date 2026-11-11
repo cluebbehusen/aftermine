@@ -67,8 +67,6 @@ pub enum Heard {
     OtherBuild {
         /// The host's name, as sent.
         host: String,
-        /// The host's build.
-        commit: String,
     },
 }
 
@@ -114,7 +112,6 @@ pub fn hear(datagram: &[u8], commit: &str) -> Option<Heard> {
     if !same_build(header.protocol, header.sim, &header.commit, commit) {
         return Some(Heard::OtherBuild {
             host: header.host.chars().take(PlayerName::MAX_CHARS).collect(),
-            commit: header.commit.chars().take(40).collect(),
         });
     }
     serde_json::from_slice(datagram).ok().map(Heard::Joinable)

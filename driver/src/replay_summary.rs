@@ -11,7 +11,7 @@
 //! value dips while transports fly. A replay from any other
 //! [`aftermine_sim::SIM_VERSION`] is refused because it would not reproduce.
 
-use aftermine_kit::runner::GameReplay;
+use aftermine_kit::GameReplay;
 use aftermine_kit::stats::{LOUD_BUILDINGS, LOUD_UNITS};
 use aftermine_sim::scenario::BotConfig;
 use aftermine_sim::{

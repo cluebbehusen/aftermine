@@ -11,14 +11,24 @@ fn step_uses_the_presentation_preserving_protocol_method() {
 
 #[test]
 fn advance_units_speaks_the_zero_chase_sim_verb() {
+    #[derive(clap::Parser)]
+    struct Live {
+        #[command(subcommand)]
+        command: LiveCmd,
+    }
+    let parsed = <Live as clap::Parser>::try_parse_from([
+        "live",
+        "advance-units",
+        "1",
+        "--units",
+        "7,3",
+        "--to",
+        "12,9",
+        "--queue",
+    ])
+    .unwrap();
     assert_eq!(
-        live_requests(LiveCmd::AdvanceUnits {
-            player: 1,
-            units: vec![7, 3],
-            to: "12,9".to_string(),
-            queue: true,
-        })
-        .unwrap(),
+        live_requests(parsed.command).unwrap(),
         vec![Request::SendCommand {
             player: PlayerId(1),
             command: Command::Advance {

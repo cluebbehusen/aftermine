@@ -146,10 +146,7 @@ static char *json(NSDictionary *object) {
 }
 
 static NSDictionary *failure(NSError *error) {
-    return @{
-        @"error" : error.localizedDescription ?: @"CloudKit failed",
-        @"code" : @(error.code),
-    };
+    return @{@"error" : error.localizedDescription ?: @"CloudKit failed"};
 }
 
 static BOOL wait_for(dispatch_semaphore_t done) {
@@ -171,8 +168,13 @@ static BOOL perform(CKDatabase *database, CKDatabaseOperation *operation,
     return NO;
 }
 
-static NSDictionary *timed_out(void) {
-    return @{@"error" : @"CloudKit did not answer in time", @"code" : @(-1)};
+static NSError *no_answer(void) {
+    return [NSError errorWithDomain:CKErrorDomain
+                               code:CKErrorNetworkFailure
+                           userInfo:@{
+                               NSLocalizedDescriptionKey :
+                                   @"CloudKit did not answer in time"
+                           }];
 }
 
 // Whether `error`, or any item's error inside a partial failure, has `code`.
@@ -227,9 +229,7 @@ static NSError *ensure_zone(CKDatabase *database) {
           dispatch_semaphore_signal(done);
         };
     if (!perform(database, operation, done)) {
-        return [NSError errorWithDomain:CKErrorDomain
-                                   code:CKErrorNetworkFailure
-                               userInfo:nil];
+        return no_answer();
     }
     zone_ready = failed == nil;
     return failed;
@@ -274,7 +274,7 @@ static char *current_account(void) {
 
 // One fetch of the zone's changes since `previous`, each changed record's
 // file copied into `folder`: the answer, or nil with `*failed` naming the
-// error, or nil alone when CloudKit did not answer in time.
+// error.
 static NSDictionary *fetch_once(CKDatabase *database,
                                 CKServerChangeToken *previous,
                                 NSString *folder, NSError **failed_out) {
@@ -358,6 +358,7 @@ static NSDictionary *fetch_once(CKDatabase *database,
       dispatch_semaphore_signal(done);
     };
     if (!perform(database, operation, done)) {
+        *failed_out = no_answer();
         return nil;
     }
     if (failed != nil) {
@@ -388,7 +389,7 @@ char *aftermine_icloud_cloudkit_account(void) {
 static char *fetch_changes(const char *token, const char *staging) {
     CKContainer *app = container();
     if (app == nil) {
-        return json(@{@"error" : @"no CloudKit container", @"code" : @(-2)});
+        return json(@{@"error" : @"no CloudKit container"});
     }
     CKDatabase *database = app.privateCloudDatabase;
     CKServerChangeToken *previous = nil;
@@ -435,7 +436,7 @@ static char *fetch_changes(const char *token, const char *staging) {
             previous = nil;
             continue;
         }
-        return json(failed != nil ? failure(failed) : timed_out());
+        return json(failure(failed));
     }
 }
 
@@ -447,15 +448,6 @@ char *aftermine_icloud_cloudkit_fetch(const char *token, const char *staging) {
             return json(@{@"error" : exception.reason ?: @"CloudKit failed"});
         }
     }
-}
-
-static NSError *no_answer(void) {
-    return [NSError errorWithDomain:CKErrorDomain
-                               code:CKErrorNetworkFailure
-                           userInfo:@{
-                               NSLocalizedDescriptionKey :
-                                   @"CloudKit did not answer in time"
-                           }];
 }
 
 // The record CloudKit holds under `record_id`, without its file, or nil with
@@ -528,7 +520,7 @@ static char *save_version(const char *name, long long ticks,
                           long long saved_at, NSURL *file) {
     CKContainer *app = container();
     if (app == nil) {
-        return json(@{@"error" : @"no CloudKit container", @"code" : @(-2)});
+        return json(@{@"error" : @"no CloudKit container"});
     }
     CKDatabase *database = app.privateCloudDatabase;
     CKRecordID *record_id = [[CKRecordID alloc]

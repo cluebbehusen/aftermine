@@ -2,7 +2,6 @@
 //! names a seat, or rejoining that seat with a snapshot of the match.
 
 use crate::message::{GoneReason, JoinMessage, LobbyMessage, same_build};
-use crate::name::PlayerName;
 use crate::snapshot::Assembler;
 use crate::token::Token;
 use crate::{HEARTBEAT_INTERVAL, SILENCE_TIMEOUT, SUSPEND_GAP};
@@ -13,12 +12,7 @@ use std::time::Duration;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VisitEvent {
     /// The token names a seat the match is waiting for.
-    Waiting {
-        /// The host's name.
-        host: PlayerName,
-        /// The match's map.
-        map: String,
-    },
+    Waiting,
     /// The match as it stands: restore `bytes`, a world at `tick`, on
     /// `seat`, then call [`Visit::ready`].
     Snapshot {
@@ -146,9 +140,9 @@ impl Visit {
                 self.say(&ask);
                 Ok(None)
             }
-            (Stage::Asked, LobbyMessage::Waiting { host, map }) if self.errand == Errand::Probe => {
+            (Stage::Asked, LobbyMessage::Waiting) if self.errand == Errand::Probe => {
                 self.stage = Stage::Done;
-                Ok(Some(VisitEvent::Waiting { host, map }))
+                Ok(Some(VisitEvent::Waiting))
             }
             (
                 Stage::Asked,

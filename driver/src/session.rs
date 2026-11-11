@@ -14,8 +14,9 @@
 //! server and the live shell and asserts hash, event, and status identity;
 //! its headless half runs in CI.
 
+use aftermine_kit::GameReplay;
 use aftermine_kit::controller::{SeatController, record_events, seat_controllers};
-use aftermine_kit::runner::{self, GameReplay};
+use aftermine_kit::runner;
 use aftermine_protocol::framing::{IncomingRequest, Limits, incoming};
 use aftermine_protocol::{
     AdvancedView, DebugSession, PresentedView, Reply, Request, ResponseEnvelope, SavedView,
@@ -72,18 +73,13 @@ impl Session {
         );
         let scenario = replay.setup.clone();
         let mut state = scenario.build().context("building replay setup")?;
-        let total = replay.meta.ticks.unwrap_or_else(|| {
-            replay
-                .commands
-                .last()
-                .map_or(0, |c| c.tick.saturating_add(1))
-        });
+        let total = aftermine_kit::replay_duration(&replay);
         // The shell's load bound: a structurally valid file can still
         // claim an absurd duration.
         anyhow::ensure!(
-            total <= runner::MAX_REPLAY_TICKS,
+            total <= aftermine_kit::MAX_REPLAY_TICKS,
             "replay spans {total} ticks, beyond the {}-tick load limit",
-            runner::MAX_REPLAY_TICKS
+            aftermine_kit::MAX_REPLAY_TICKS
         );
         // Bots carry memory across ticks, so they observe every replayed
         // tick; their commands are discarded because the record is

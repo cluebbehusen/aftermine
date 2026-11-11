@@ -104,7 +104,7 @@ impl ScenarioHost {
                         self.lobby.refuse(member);
                     }
                 }
-                LobbyEvent::Left { member, .. } => {
+                LobbyEvent::Left { member } => {
                     self.seating.vacate(member);
                 }
                 // The lobby closes these itself.

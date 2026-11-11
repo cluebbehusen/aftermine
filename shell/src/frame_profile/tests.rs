@@ -46,7 +46,6 @@ fn snapshot_reports_native_work_and_can_reset_the_window() {
     }
 
     let view = profiler.snapshot(true);
-    assert_eq!(view.renderer, "gpu");
     assert_eq!(view.frames, 3);
     assert_eq!(view.tick_start, 100);
     assert_eq!(view.tick_end, 103);

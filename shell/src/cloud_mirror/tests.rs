@@ -901,6 +901,7 @@ pub(super) fn write_record(
     let path = places.path(name).unwrap();
     let mut replay: GameReplay =
         chassis::replay::Replay::new(SIM_VERSION, "test", aftermine_sim::Scenario::skirmish());
+    replay.meta.ticks = Some(0);
     replay.meta.saved_at = Some(saved_at);
     replay.meta.description = Some(description.to_owned());
     replay.save(&path).unwrap();

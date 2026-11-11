@@ -395,22 +395,6 @@ fn a_quiet_guard_has_no_stuck_deadline() {
     assert_eq!(detectors.finish()[0].failures.stuck_missions.incidents, 0);
 }
 
-#[test]
-fn failures_recorded_before_the_mission_detector_still_load() {
-    let mut value = serde_json::to_value(SeatFailures::default()).unwrap();
-    value.as_object_mut().unwrap().remove("stuck_missions");
-    let loaded: SeatFailures = serde_json::from_value(value).unwrap();
-    assert_eq!(loaded, SeatFailures::default());
-}
-
-#[test]
-fn failures_recorded_before_the_idle_army_detector_read_as_unmeasured() {
-    let mut value = serde_json::to_value(SeatFailures::default()).unwrap();
-    value.as_object_mut().unwrap().remove("idle_army");
-    let loaded: SeatFailures = serde_json::from_value(value).unwrap();
-    assert_eq!(loaded.idle_army, None);
-}
-
 /// The detectors' scenario with seat zero's Sentinels on row `y`, from
 /// column `x` rightward, and any extra units after them.
 fn army(count: u32, x: i32, y: i32, extra: &[UnitSpec]) -> Scenario {
