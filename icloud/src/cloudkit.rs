@@ -2,9 +2,14 @@
 //! record per file, each carrying the file and when it was saved. Every call
 //! waits for CloudKit, which can take seconds, so only a worker thread may
 //! make one. Which files go where is the shell's decision.
+//!
+//! A call CloudKit refuses fails with an [`io::Error`] carrying a
+//! [`Failure`], which says what the player could do about it.
 
+use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// A record another device changed: a file, copied to this device, or a
 /// delete record.
@@ -42,17 +47,58 @@ pub struct Changes {
     pub restarted: bool,
 }
 
-/// The iCloud account CloudKit would act for: its user record name, or
-/// `None` while the device is signed out, restricted, offline, or the build
-/// has no CloudKit entitlement. Always `None` off Apple platforms.
-pub fn account() -> Option<String> {
+/// What the player could do about a call CloudKit refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Trouble {
+    /// The player's iCloud storage is full.
+    StorageFull,
+    /// No iCloud account CloudKit can act for: the device is signed out or
+    /// restricted, or the build has no CloudKit entitlement.
+    NoAccount,
+    /// Anything else, such as no network or CloudKit being busy.
+    Failing,
+}
+
+/// A call CloudKit refused, as the [`io::Error`]s of this module carry it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Failure {
+    /// What the player could do about it.
+    pub trouble: Trouble,
+    /// How long CloudKit asked callers to wait before trying again.
+    pub retry_after: Option<Duration>,
+    /// CloudKit's description of what went wrong.
+    pub message: String,
+}
+
+impl Failure {
+    /// The CloudKit refusal behind `error`, if CloudKit refused anything.
+    pub fn of(error: &io::Error) -> Option<&Self> {
+        error.get_ref()?.downcast_ref()
+    }
+}
+
+impl fmt::Display for Failure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Failure {}
+
+/// The iCloud account CloudKit would act for: its user record name. Fails
+/// with [`Trouble::NoAccount`] while the device is signed out or restricted,
+/// when the build has no CloudKit entitlement, and always off Apple
+/// platforms; with another [`Trouble`] when CloudKit could not tell, as
+/// when offline.
+pub fn account() -> io::Result<String> {
     #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos"))]
     {
         bridge::account()
     }
     #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "tvos")))]
     {
-        None
+        Err(unsupported())
     }
 }
 
@@ -105,18 +151,23 @@ pub fn delete(name: &str, ticks: u64) -> io::Result<()> {
 fn unsupported() -> io::Error {
     io::Error::new(
         io::ErrorKind::Unsupported,
-        "CloudKit needs an Apple platform",
+        Failure {
+            trouble: Trouble::NoAccount,
+            retry_after: None,
+            message: "CloudKit needs an Apple platform".to_owned(),
+        },
     )
 }
 
 #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos"))]
 #[allow(unsafe_code)]
 mod bridge {
-    use super::Changes;
+    use super::{Changes, Failure, Trouble};
     use std::ffi::{CString, c_char, c_longlong};
     use std::io;
     use std::os::unix::ffi::OsStrExt;
     use std::path::Path;
+    use std::time::Duration;
 
     unsafe extern "C" {
         fn aftermine_icloud_cloudkit_account() -> *mut c_char;
@@ -135,33 +186,52 @@ mod bridge {
 
     #[derive(serde::Deserialize)]
     struct Account {
-        account: Option<String>,
+        account: String,
     }
 
     /// A reply naming what went wrong.
     #[derive(serde::Deserialize)]
-    struct Failure {
+    struct Refusal {
         error: Option<String>,
         #[serde(default)]
         behind: bool,
+        trouble: Option<Trouble>,
+        /// In seconds.
+        retry_after: Option<f64>,
     }
 
-    /// The bridge's JSON reply as `T`, or the error it names.
+    fn failing(message: String) -> io::Error {
+        io::Error::other(Failure {
+            trouble: Trouble::Failing,
+            retry_after: None,
+            message,
+        })
+    }
+
+    /// The bridge's JSON reply as `T`, or the error it names: a version
+    /// further along as [`io::ErrorKind::AlreadyExists`], and anything else
+    /// with its [`Failure`].
     pub(super) fn answer<T: serde::de::DeserializeOwned>(text: Option<Vec<u8>>) -> io::Result<T> {
-        let text = text.ok_or_else(|| io::Error::other("CloudKit gave no answer"))?;
-        if let Ok(Failure {
+        let text = text.ok_or_else(|| failing("CloudKit gave no answer".to_owned()))?;
+        if let Ok(Refusal {
             error: Some(error),
             behind,
-        }) = serde_json::from_slice::<Failure>(&text)
+            trouble,
+            retry_after,
+        }) = serde_json::from_slice::<Refusal>(&text)
         {
-            let kind = if behind {
-                io::ErrorKind::AlreadyExists
-            } else {
-                io::ErrorKind::Other
-            };
-            return Err(io::Error::new(kind, error));
+            if behind {
+                return Err(io::Error::new(io::ErrorKind::AlreadyExists, error));
+            }
+            return Err(io::Error::other(Failure {
+                trouble: trouble.unwrap_or(Trouble::Failing),
+                retry_after: retry_after
+                    .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
+                    .filter(|wait| !wait.is_zero()),
+                message: error,
+            }));
         }
-        serde_json::from_slice(&text).map_err(io::Error::other)
+        serde_json::from_slice(&text).map_err(|error| failing(error.to_string()))
     }
 
     fn text(value: &str) -> io::Result<CString> {
@@ -172,10 +242,10 @@ mod bridge {
         CString::new(value.as_os_str().as_bytes()).map_err(io::Error::other)
     }
 
-    pub(super) fn account() -> Option<String> {
+    pub(super) fn account() -> io::Result<String> {
         // SAFETY: takes no arguments and returns a string `take` owns.
         let reply = crate::objc::take(unsafe { aftermine_icloud_cloudkit_account() });
-        answer::<Account>(reply).ok()?.account
+        answer::<Account>(reply).map(|reply| reply.account)
     }
 
     pub(super) fn fetch(token: Option<&str>, staging: &Path) -> io::Result<Changes> {
@@ -221,3 +291,6 @@ mod bridge {
         answer::<serde_json::Value>(reply).map(|_| ())
     }
 }
+
+#[cfg(all(test, any(target_os = "ios", target_os = "macos", target_os = "tvos")))]
+mod tests;

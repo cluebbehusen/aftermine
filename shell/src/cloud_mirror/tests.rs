@@ -1,5 +1,7 @@
 use super::*;
 use crate::game::GameReplay;
+use crate::platform::Platform;
+use crate::screens::shelf::Shelf;
 use aftermine_sim::SIM_VERSION;
 use std::cell::{Cell, RefCell};
 
@@ -665,7 +667,20 @@ pub(super) struct FakeCloud {
     pub(super) refused: RefCell<BTreeSet<String>>,
     /// Whether the next save lands only once [`Self::land`] runs.
     pub(super) delay_save: Cell<bool>,
+    /// How every save fails while set, and the wait it asks for.
+    pub(super) outage: Cell<Option<(Trouble, Option<Duration>)>>,
+    /// Saves asked of the cloud, refused or not.
+    pub(super) tries: Cell<usize>,
     late: RefCell<Vec<(String, Stored)>>,
+}
+
+/// An error as the bridge gives one for a call CloudKit refused.
+fn refusing(trouble: Trouble, retry_after: Option<Duration>) -> io::Error {
+    io::Error::other(Failure {
+        trouble,
+        retry_after,
+        message: format!("CloudKit refused: {trouble:?}"),
+    })
 }
 
 impl FakeCloud {
@@ -739,8 +754,12 @@ impl FakeCloud {
     }
 
     fn save(&self, name: &str, stored: Stored) -> io::Result<()> {
+        self.tries.set(self.tries.get() + 1);
+        if let Some((trouble, retry_after)) = self.outage.get() {
+            return Err(refusing(trouble, retry_after));
+        }
         if self.fail_save.take() || self.refused.borrow().contains(name) {
-            return Err(io::Error::other("no network"));
+            return Err(refusing(Trouble::Failing, None));
         }
         if self.delay_save.take() {
             self.late.borrow_mut().push((name.to_owned(), stored));
@@ -758,12 +777,15 @@ impl FakeCloud {
 }
 
 impl Remote for FakeCloud {
-    fn account(&self) -> Option<String> {
-        self.account.borrow().clone()
+    fn account(&self) -> io::Result<String> {
+        self.account
+            .borrow()
+            .clone()
+            .ok_or_else(|| refusing(Trouble::NoAccount, None))
     }
     fn fetch(&self, token: Option<&str>, staging: &Path) -> io::Result<Changes> {
         if self.fail_fetch.take() {
-            return Err(io::Error::other("no network"));
+            return Err(refusing(Trouble::Failing, None));
         }
         let log = self.log.borrow();
         let asked: Option<usize> = token.map(|token| token.parse().unwrap());
@@ -910,6 +932,17 @@ pub(super) fn write_record(
 
 fn sync(cloud: &FakeCloud, places: &Places) -> Outcome {
     pass(cloud, places, Mode::Full, &Game::default()).unwrap()
+}
+
+/// The same folders again, for a pass that takes its own.
+fn same(places: &Places) -> Places {
+    Places {
+        manifest: places.manifest.clone(),
+        staging: places.staging.clone(),
+        folders: places.folders.clone(),
+        purgeable: places.purgeable,
+        dataless: places.dataless,
+    }
 }
 
 /// Writes a file with a modification time no other write shares, as a real
@@ -1513,7 +1546,13 @@ fn a_signed_out_device_leaves_everything_alone() {
     let cloud = FakeCloud::default();
     let tv = tv();
     write_record(&tv, "saves/save-1.json", 1_000, "offline");
-    assert_eq!(sync(&cloud, &tv), Outcome::default());
+    assert_eq!(
+        sync(&cloud, &tv),
+        Outcome {
+            trouble: Some(Trouble::NoAccount),
+            ..Outcome::default()
+        }
+    );
     assert!(cloud.records.borrow().is_empty());
     assert!(!tv.manifest.exists());
 }
@@ -1558,7 +1597,7 @@ struct Held {
 }
 
 impl Remote for Held {
-    fn account(&self) -> Option<String> {
+    fn account(&self) -> io::Result<String> {
         self.gate.recv().ok();
         self.cloud.account()
     }
@@ -1645,6 +1684,136 @@ fn background_time_spans_every_pass_asked_for_and_ends_once_none_is_left() {
         shared.queue().background.is_none(),
         "nothing left to run gives the time back"
     );
+}
+
+#[test]
+fn a_full_icloud_shows_on_the_shelf_until_a_pass_gets_through() {
+    let shared = Shared::default();
+    let cloud = FakeCloud::signed_in();
+    let tv = tv();
+    let name = "saves/save-1.json";
+    write_record(&tv, name, 1_000, "only on the TV");
+    let mut shelf = Shelf::from_entries(Vec::new());
+    cloud.outage.set(Some((Trouble::StorageFull, None)));
+    shared.want(Mode::Full);
+    serve_one(&shared, &cloud, || Some(same(&tv)));
+    assert_eq!(cloud.file(name), None);
+    shelf.set_backup(shared.trouble());
+    assert_eq!(
+        shelf.status_on(Platform::Tv),
+        "iCloud storage is full, so saves and replays are not backed up"
+    );
+    cloud.outage.set(None);
+    shared.want(Mode::Push);
+    serve_one(&shared, &cloud, || Some(same(&tv)));
+    assert_eq!(cloud.file(name), Some(1_000));
+    shelf.set_backup(shared.trouble());
+    assert_eq!(
+        shelf.status_on(Platform::Tv),
+        "",
+        "the empty tab says the rest"
+    );
+}
+
+#[test]
+fn a_failed_fetch_leaves_nothing_downloading() {
+    let cloud = FakeCloud::signed_in();
+    let tv = tv();
+    write_record(&tv, "matches/match-1.json", 1_000, "a match");
+    sync(&cloud, &tv);
+    let ipad = device("ipad");
+    let shared = Shared::default();
+    let run = |mode| {
+        shared.want(mode);
+        serve_one(&shared, &cloud, || Some(same(&ipad)));
+    };
+    let pending = || shared.pending.load(std::sync::atomic::Ordering::Relaxed);
+    run(Mode::Full);
+    assert_eq!(pending(), 1, "the match waits for Home");
+    run(Mode::Push);
+    assert_eq!(pending(), 1, "a push never asks what is on its way");
+    cloud.fail_fetch.set(true);
+    run(Mode::Full);
+    assert_eq!(pending(), 0);
+    let mut shelf = Shelf::from_entries(Vec::new());
+    shelf.set_catalog(Vec::new(), pending());
+    shelf.set_backup(shared.trouble());
+    assert_eq!(
+        shelf.status_on(Platform::Tv),
+        "Could not back up saves and replays to iCloud"
+    );
+}
+
+#[test]
+fn a_signed_out_account_is_trouble_until_it_signs_in() {
+    let shared = Shared::default();
+    let cloud = FakeCloud::default();
+    let tv = tv();
+    shared.want(Mode::Full);
+    serve_one(&shared, &cloud, || Some(same(&tv)));
+    assert_eq!(shared.trouble(), Some(Trouble::NoAccount));
+    *cloud.account.borrow_mut() = Some("me".into());
+    shared.want(Mode::Full);
+    serve_one(&shared, &cloud, || Some(same(&tv)));
+    assert_eq!(shared.trouble(), None);
+}
+
+#[test]
+fn a_wait_cloudkit_asks_for_ends_the_pass_and_holds_back_the_next() {
+    let shared = Shared::default();
+    let cloud = FakeCloud::signed_in();
+    let tv = tv();
+    write_record(&tv, "saves/save-1.json", 1_000, "first");
+    write_record(&tv, "saves/save-2.json", 2_000, "second");
+    cloud
+        .outage
+        .set(Some((Trouble::Failing, Some(Duration::from_millis(200)))));
+    shared.want(Mode::Push);
+    serve_one(&shared, &cloud, || Some(same(&tv)));
+    assert_eq!(cloud.tries.get(), 1, "nothing more goes to CloudKit");
+    let held = shared.queue().not_before.expect("a wait");
+    cloud.outage.set(None);
+    shared.want(Mode::Push);
+    serve_one(&shared, &cloud, || Some(same(&tv)));
+    assert!(Instant::now() >= held, "the next pass waited");
+    assert_eq!(cloud.files().len(), 2);
+    write_record(&tv, "saves/save-3.json", 3_000, "third");
+    cloud
+        .outage
+        .set(Some((Trouble::Failing, Some(Duration::from_hours(24)))));
+    shared.want(Mode::Push);
+    serve_one(&shared, &cloud, || Some(same(&tv)));
+    let held = shared.queue().not_before.expect("a wait");
+    assert!(
+        held <= Instant::now() + LONGEST_HOLD,
+        "a day's wait holds passes back no longer than the bound"
+    );
+}
+
+#[test]
+fn a_trouble_the_player_can_act_on_outranks_a_vague_one() {
+    let mut outcome = Outcome::default();
+    outcome.refused((Trouble::Failing, Some(Duration::from_secs(3))));
+    outcome.refused((Trouble::StorageFull, None));
+    outcome.refused((Trouble::Failing, Some(Duration::from_secs(1))));
+    assert_eq!(outcome.trouble, Some(Trouble::StorageFull));
+    assert_eq!(outcome.retry_after, Some(Duration::from_secs(3)));
+}
+
+#[test]
+fn nothing_waits_on_a_mirror_cloudkit_has_held_back() {
+    let shared = Shared::default();
+    shared.want(Mode::Full);
+    shared.want(Mode::Push);
+    assert!(shared.syncing() && !shared.sent());
+    shared.queue().not_before = Some(Instant::now() + Duration::from_mins(1));
+    assert!(
+        !shared.syncing(),
+        "no fetch can bring a newer copy before the hold ends"
+    );
+    assert!(shared.sent(), "no push can go up before the hold ends");
+    shared.queue().not_before = Some(Instant::now());
+    assert!(shared.syncing() && !shared.sent());
 }
 
 #[test]

@@ -747,3 +747,55 @@ fn only_apple_tv_warns_that_records_may_not_last() {
     assert_eq!(standing_line(Platform::Desktop), "");
     assert_eq!(standing_line(Platform::Touch), "");
 }
+
+#[test]
+fn only_apple_tv_says_why_records_are_not_backing_up() {
+    let mut shelf = Shelf::open();
+    shelf.set_backup(Some(Trouble::NoAccount));
+    assert!(
+        shelf.status_on(Platform::Tv).starts_with("looking"),
+        "the scan comes first"
+    );
+    shelf.set_catalog(mixed(), 0);
+    for (trouble, line) in [
+        (
+            Trouble::StorageFull,
+            "iCloud storage is full, so saves and replays are not backed up",
+        ),
+        (
+            Trouble::NoAccount,
+            "Sign in to iCloud to back up saves and replays",
+        ),
+        (
+            Trouble::Failing,
+            "Could not back up saves and replays to iCloud",
+        ),
+    ] {
+        shelf.set_backup(Some(trouble));
+        assert_eq!(shelf.status_on(Platform::Tv), line);
+        assert_eq!(shelf.status_on(Platform::Touch), "");
+        assert_eq!(shelf.status_on(Platform::Desktop), "");
+    }
+    shelf.set_catalog(Vec::new(), 0);
+    assert_eq!(
+        shelf.status_on(Platform::Tv),
+        "Could not back up saves and replays to iCloud",
+        "an empty tab still hears it, and a refresh keeps it"
+    );
+    shelf.set_catalog(Vec::new(), 2);
+    assert_eq!(
+        shelf.status_on(Platform::Tv),
+        "Downloading 2 files from iCloud",
+        "files on their way say so first"
+    );
+    let old = entry("old", false, RecordKind::Save, "/nowhere/s.json".into());
+    shelf.set_catalog(vec![old], 0);
+    assert_eq!(
+        shelf.status_on(Platform::Tv),
+        Unavailable::OtherVersion.reason(),
+        "the focused record says why it will not open"
+    );
+    shelf.set_catalog(mixed(), 0);
+    shelf.set_backup(None);
+    assert_eq!(shelf.status_on(Platform::Tv), standing_line(Platform::Tv));
+}
