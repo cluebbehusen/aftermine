@@ -5273,6 +5273,7 @@ mod placement_verdict;
 mod queue_latch;
 mod relayout;
 mod salvo;
+mod second_finger;
 mod top_bar;
 mod touch_placement;
 
