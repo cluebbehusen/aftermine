@@ -86,8 +86,8 @@ pub(crate) mod projection;
 pub(crate) use projectiles::{LaunchPose, missile_ejection_ticks, projectile_elapsed_ticks};
 
 pub(crate) use fx::{
-    BuildingHit, HitSurface, INTERCEPT_OVERLAP_TICKS, InterceptFlight, UnitBody, UnitHit,
-    WARHEAD_BURST,
+    BuildingHit, FLAK_ROUND_TRAVEL, HitSurface, INTERCEPT_OVERLAP_TICKS, InterceptFlight, UnitBody,
+    UnitHit, WARHEAD_BURST,
 };
 pub use fx::{Effect, EffectKind, FlakYokeDelay, PingKind, ShotStyle, SoundKind};
 

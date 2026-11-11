@@ -1349,8 +1349,7 @@ fn shell_tail_start(progress: f32, world_distance: f32) -> f32 {
     (progress - 0.14 / world_distance).max(0.0)
 }
 
-const FLAK_ROUND_TRAVEL: f32 = 0.10;
-const FORGE_SPOT_TRAVEL_FRACTION: f32 = 0.60;
+use crate::game::FLAK_ROUND_TRAVEL;
 
 fn flak_round_progress(age: f32, yoke_delay: crate::game::FlakYokeDelay) -> [Option<f32>; 2] {
     let round = |delay: f32| {
@@ -1408,38 +1407,51 @@ fn flak_barrel_rounds(
     })
 }
 
-fn forge_spot_phases(progress: f32) -> (f32, f32) {
-    let progress = progress.clamp(0.0, 1.0);
-    let travel = (progress / FORGE_SPOT_TRAVEL_FRACTION).clamp(0.0, 1.0);
-    let impact = ((progress - FORGE_SPOT_TRAVEL_FRACTION) / (1.0 - FORGE_SPOT_TRAVEL_FRACTION))
-        .clamp(0.0, 1.0);
-    (travel, impact)
-}
-
-fn direct_phases(style: crate::game::ShotStyle, age: f32) -> (f32, f32) {
-    let travel_time = match style {
-        crate::game::ShotStyle::ForgeSpot => 0.12,
-        crate::game::ShotStyle::Mortar => 0.144,
-        _ => return forge_spot_phases(age / style.life()),
-    };
-    (
-        (age / travel_time).clamp(0., 1.),
-        ((age - travel_time) / (style.life() - travel_time)).clamp(0., 1.),
-    )
-}
-
-fn shot_impact_progress(style: crate::game::ShotStyle, age: f32) -> f32 {
-    use crate::game::ShotStyle;
-    match style {
-        ShotStyle::Contact | ShotStyle::Rail => (age / style.life()).clamp(0.0, 1.0),
-        ShotStyle::ForgeSpot | ShotStyle::Mortar | ShotStyle::Kinetic { .. } => {
-            direct_phases(style, age).1
-        }
-        ShotStyle::FlakBurst { yoke_delay, .. } => {
-            let arrival = yoke_delay.seconds() + FLAK_ROUND_TRAVEL;
-            ((age - arrival) / (style.life() - arrival)).clamp(0.0, 1.0)
-        }
+/// How far a round of `style` has flown at `age`, 0 to 1; a shot with no
+/// flight has already arrived.
+fn shot_travel_progress(style: crate::game::ShotStyle, age: f32) -> f32 {
+    let travel = style.travel_time();
+    if travel <= 0.0 {
+        return 1.0;
     }
+    (age / travel).clamp(0.0, 1.0)
+}
+
+/// How far the impact of a shot of `style` has played at `age`, 0 to 1.
+fn shot_impact_progress(style: crate::game::ShotStyle, age: f32) -> f32 {
+    let travel = style.travel_time();
+    ((age - travel) / (style.life() - travel)).clamp(0.0, 1.0)
+}
+
+/// The contact mark a direct shot of `style` leaves at `at`, the same
+/// size whether or not its shooter is seen. `direction` runs along the
+/// shot, and is zero when the shooter is hidden so the mark never points
+/// at it.
+fn direct_contact(
+    style: crate::game::ShotStyle,
+    surface: Option<crate::game::HitSurface>,
+    at: Vec2,
+    direction: Vec2,
+    splash: Option<f32>,
+    age: f32,
+    seed: u32,
+) -> Option<super::impacts::Contact> {
+    use crate::game::ShotStyle;
+    let family = super::impacts::Family::direct(style)?;
+    let radius = match style {
+        ShotStyle::Rail => 0.75,
+        ShotStyle::Mortar => splash.unwrap_or(0.9),
+        _ => splash.unwrap_or(0.55),
+    };
+    Some(super::impacts::Contact {
+        family,
+        recipient: super::impacts::Recipient::of(surface),
+        at,
+        direction,
+        radius,
+        age: age - style.travel_time(),
+        seed,
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1853,6 +1865,18 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 let fade = 1.0 - progress;
                 let impact = shot_impact_progress(style, age);
                 let visibility = shot_visibility(style, sees(from), sees(to));
+                let contact = |direction: Vec2| {
+                    direct_contact(
+                        style,
+                        surface,
+                        b,
+                        direction,
+                        splash,
+                        age,
+                        super::impacts::seed(to, completed_tick),
+                    )
+                    .map(|contact| super::impacts::draw(contact, game.presentation.camera.zoom))
+                };
                 if visibility == ShotVisibility::ImpactOnly {
                     if let Some(radius) = splash
                         && impact > 0.0
@@ -1865,24 +1889,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                             impact,
                         );
                     }
-                    if let Some(family) = super::impacts::Family::direct(style) {
-                        let arrival = match style {
-                            ShotStyle::Rail => 0.,
-                            ShotStyle::ForgeSpot => 0.12,
-                            _ => 0.144,
-                        };
-                        super::impacts::draw(
-                            super::impacts::Contact {
-                                family,
-                                recipient: super::impacts::Recipient::of(surface),
-                                at: b,
-                                direction: Vec2::ZERO,
-                                radius: splash.unwrap_or(0.55),
-                                age: age - arrival,
-                                seed: super::impacts::seed(to, completed_tick),
-                            },
-                            game.presentation.camera.zoom,
-                        );
+                    if contact(Vec2::ZERO).is_some() {
                         continue;
                     }
                     if style == ShotStyle::Contact {
@@ -1936,14 +1943,14 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     ShotStyle::Contact => {}
                     ShotStyle::Kinetic { .. } | ShotStyle::Mortar => {
                         let heavy = !matches!(style, ShotStyle::Kinetic { heavy: false });
-                        let (travel, impact) = direct_phases(style, age);
+                        let travel = shot_travel_progress(style, age);
                         let direction = (b - a).normalize_or_zero();
                         let zoom = game.presentation.camera.zoom;
                         let round = a.lerp(b, travel);
                         let length = zoom * if heavy { 0.19 } else { 0.09 };
                         let tail = round - direction * length.min(round.distance(a));
                         let alpha = if style == ShotStyle::Mortar {
-                            (1. - (age - 0.144).max(0.) / 0.05).clamp(0., 1.)
+                            (1. - (age - style.travel_time()).max(0.) / 0.05).clamp(0., 1.)
                         } else {
                             1. - impact
                         };
@@ -1953,20 +1960,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                             (zoom * if heavy { 0.065 } else { 0.03 }).max(1.0),
                             Color::new(0.91, 0.79, 0.57, alpha),
                         );
-                        if style == ShotStyle::Mortar {
-                            super::impacts::draw(
-                                super::impacts::Contact {
-                                    family: super::impacts::Family::Mortar,
-                                    recipient: super::impacts::Recipient::of(surface),
-                                    at: b,
-                                    direction,
-                                    radius: splash.unwrap_or(0.9),
-                                    age: age - 0.144,
-                                    seed: super::impacts::seed(to, completed_tick),
-                                },
-                                zoom,
-                            );
-                        } else if impact > 0.0 {
+                        if contact(direction).is_none() && impact > 0.0 {
                             let normal = vec2(-direction.y, direction.x);
                             for side in [-1.0, 0.0, 1.0] {
                                 let spread = (-direction + normal * side * 1.4).normalize_or_zero();
@@ -1979,38 +1973,16 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                         }
                     }
                     ShotStyle::ForgeSpot => {
-                        let (travel, _) = direct_phases(style, age);
-                        let round = a.lerp(b, travel);
-                        let round_alpha = (1. - (age - 0.12).max(0.) / 0.05).clamp(0., 1.);
+                        let round = a.lerp(b, shot_travel_progress(style, age));
+                        let round_alpha =
+                            (1. - (age - style.travel_time()).max(0.) / 0.05).clamp(0., 1.);
                         fill_circle(round, 3.8, Color::new(1.0, 0.38, 0.10, 0.20 * round_alpha));
                         fill_circle(round, 2.3, Color::new(0.42, 0.19, 0.09, round_alpha));
                         fill_circle(round, 1.35, Color::new(1.0, 0.85, 0.52, round_alpha));
-                        super::impacts::draw(
-                            super::impacts::Contact {
-                                family: super::impacts::Family::Orb,
-                                recipient: super::impacts::Recipient::of(surface),
-                                at: b,
-                                direction: b - a,
-                                radius: splash.unwrap_or(0.55),
-                                age: age - 0.12,
-                                seed: super::impacts::seed(to, completed_tick),
-                            },
-                            game.presentation.camera.zoom,
-                        );
+                        contact(b - a);
                     }
                     ShotStyle::Rail => {
-                        super::impacts::draw(
-                            super::impacts::Contact {
-                                family: super::impacts::Family::Rail,
-                                recipient: super::impacts::Recipient::of(surface),
-                                at: b,
-                                direction: b - a,
-                                radius: 0.75,
-                                age,
-                                seed: super::impacts::seed(to, completed_tick),
-                            },
-                            game.presentation.camera.zoom,
-                        );
+                        contact(b - a);
                         line_between(
                             a,
                             b,

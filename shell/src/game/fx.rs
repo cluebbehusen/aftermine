@@ -175,10 +175,8 @@ impl PreviousEffects {
                 .filter(|crash| {
                     crash.arrival == state.current_tick()
                         && (crash.player == game.human
-                            || game.sees_tile(
-                                state,
-                                chassis::grid::TilePos::containing(crash.impact),
-                            ))
+                            || game
+                                .sees_tile(state, chassis::grid::TilePos::containing(crash.impact)))
                 })
                 .map(|crash| crash.unit)
                 .collect(),
@@ -427,7 +425,25 @@ pub enum ShotStyle {
     },
 }
 
+/// Seconds one flak round flies from its yoke to the burst.
+pub(crate) const FLAK_ROUND_TRAVEL: f32 = 0.10;
+
+/// The share of a kinetic report's life its round spends in flight.
+const KINETIC_TRAVEL_FRACTION: f32 = 0.60;
+
 impl ShotStyle {
+    /// Seconds before the shot reaches its contact and the impact begins:
+    /// none for a rail or a contact tool, the last yoke's round for flak.
+    pub fn travel_time(self) -> f32 {
+        match self {
+            ShotStyle::Contact | ShotStyle::Rail => 0.0,
+            ShotStyle::ForgeSpot => 0.12,
+            ShotStyle::Mortar => 0.144,
+            ShotStyle::Kinetic { .. } => KINETIC_TRAVEL_FRACTION * self.life(),
+            ShotStyle::FlakBurst { yoke_delay, .. } => yoke_delay.seconds() + FLAK_ROUND_TRAVEL,
+        }
+    }
+
     /// Seconds the report stays on screen.
     pub fn life(self) -> f32 {
         match self {
