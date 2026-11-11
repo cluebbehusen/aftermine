@@ -449,14 +449,7 @@ impl ObservationData {
         // Blips carry a tile and a domain only, so they pass through
         // unfiltered.
         obs.blips = vision.contacts().to_vec();
-        obs.incoming_shells = state
-            .shells()
-            .iter()
-            .filter(|s| state.hostile(me, s.player))
-            .map(|s| TilePos::containing(s.impact))
-            .filter(|t| vision.visible(*t))
-            .collect();
-        obs.incoming_shells.sort_by_key(|p| (p.y, p.x));
+        obs.incoming_shells = incoming_shells(state, me);
         obs.magazines = state.known_magazines(me);
         obs.warheads = state.known_warheads(me);
         obs
@@ -500,6 +493,21 @@ impl ObservationData {
             warheads: Vec::new(),
         }
     }
+}
+
+/// Impact tiles of the hostile shells in flight whose impact tile `me`
+/// sees, sorted by (y, x).
+pub fn incoming_shells(state: &State, me: PlayerId) -> Vec<TilePos> {
+    let vision = state.vision(me);
+    let mut tiles: Vec<TilePos> = state
+        .shells()
+        .iter()
+        .filter(|shell| state.hostile(me, shell.player))
+        .map(|shell| TilePos::containing(shell.impact))
+        .filter(|tile| vision.visible(*tile))
+        .collect();
+    tiles.sort_by_key(|tile| (tile.y, tile.x));
+    tiles
 }
 
 /// The public buildings hostile to `me`, sorted by (y, x, owner). Own and

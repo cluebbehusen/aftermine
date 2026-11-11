@@ -103,7 +103,9 @@ pub struct UnitView {
     pub tile: [i32; 2],
     /// Hit points.
     pub hp: u32,
-    /// Scrap on board.
+    /// Scrap on board. A hostile row reads the exact load, which the screen
+    /// shows only as one of five fill levels and the bots' observation
+    /// reads as zero.
     pub carrying: u32,
     /// Current intent, as the sim's own tagged serialization. `None` when
     /// the fog view redacts a hostile unit's intent; omniscient captures
@@ -261,6 +263,10 @@ pub struct FogView {
     /// tracked.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warheads: Vec<aftermine_sim::strike::KnownWarhead>,
+    /// Impact tiles `[x, y]` of hostile shells in flight whose impact tile
+    /// the seat sees, sorted by (y, x).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub incoming_shells: Vec<[i32; 2]>,
 }
 
 /// A hostile building every seat knows of regardless of fog.
@@ -409,6 +415,10 @@ impl FogView {
                 .collect(),
             magazines: state.known_magazines(player),
             warheads: state.known_warheads(player),
+            incoming_shells: aftermine_sim::observation::incoming_shells(state, player)
+                .into_iter()
+                .map(|tile| [tile.x, tile.y])
+                .collect(),
         }
     }
 }

@@ -385,8 +385,15 @@ fn the_overlaid_debug_map_is_a_picture_not_a_parseable_scenario() {
 fn parity_world() -> aftermine_sim::State {
     // Each seat refits its home Extractor into a Deep Bore at once, and West
     // then starts a Maw cradle, so both public rules are compared as well.
-    // East's Lattice assembles a round where West's raid can see it.
+    // East's Lattice assembles a round where West's raid can see it, and
+    // East's Bombard shells the raid.
     let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
+        player: 1,
+        kind: aftermine_sim::UnitKind::Bombard,
+        x: 37,
+        y: 12,
+    });
     for player in &mut scenario.players {
         player.scrap = 1_000;
     }
@@ -503,7 +510,10 @@ fn cradle_order(state: &aftermine_sim::State) -> Option<aftermine_sim::PlayerCom
 
 /// Bots read `ObservationData` and agents read [`FogView`]; both are
 /// fog-honest projections of the same vision and must expose exactly the
-/// same world to the same seat.
+/// same world to the same seat. One field differs on purpose and is not
+/// compared: a hostile unit row in [`FogView`] reads its exact scrap load,
+/// which the screen shows only as one of five fill levels and the bots read
+/// as zero.
 #[test]
 fn the_fog_view_and_the_bot_observation_agree() {
     use aftermine_sim::observation::ObservationData;
@@ -515,6 +525,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     let mut compared_cradle = false;
     let mut compared_tiered_ghost = false;
     let mut compared_hostile_assembly = false;
+    let mut compared_shells = false;
     let mut cradle_ordered = false;
     for tick in 0..1_500 {
         if tick % 25 == 0 {
@@ -532,6 +543,21 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .collect();
                 assert_eq!(fog_units, obs_units, "tick {tick} seat {seat:?} units");
                 compared_hostiles |= !obs.enemy_units.is_empty();
+                let mut fog_rows: Vec<_> = fog
+                    .units
+                    .iter()
+                    .map(|u| (u.id, u.hp, u.landed, u.charges))
+                    .collect();
+                fog_rows.sort_unstable();
+                let mut obs_rows: Vec<_> = obs
+                    .my_units
+                    .iter()
+                    .chain(&obs.ally_units)
+                    .chain(&obs.enemy_units)
+                    .map(|u| (u.id.0, u.hp, u.grounded, u.charges))
+                    .collect();
+                obs_rows.sort_unstable();
+                assert_eq!(fog_rows, obs_rows, "tick {tick} seat {seat:?} unit rows");
 
                 let fog_buildings: BTreeSet<u32> = fog.buildings.iter().map(|b| b.id).collect();
                 let obs_buildings: BTreeSet<u32> = obs
@@ -616,6 +642,16 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .magazines
                     .iter()
                     .any(|magazine| magazine.detail.is_none() && magazine.assembly.is_some());
+                let fog_shells: Vec<TilePos> = fog
+                    .incoming_shells
+                    .iter()
+                    .map(|&[x, y]| TilePos::new(x, y))
+                    .collect();
+                assert_eq!(
+                    fog_shells, obs.incoming_shells,
+                    "tick {tick} seat {seat:?} incoming shells"
+                );
+                compared_shells |= !obs.incoming_shells.is_empty();
                 assert_eq!(
                     fog.warheads, obs.warheads,
                     "tick {tick} seat {seat:?} warheads"
@@ -661,6 +697,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
         compared_hostile_assembly,
         "a hostile round in assembly was compared"
     );
+    assert!(compared_shells, "a hostile shell in flight was compared");
 }
 
 #[test]
