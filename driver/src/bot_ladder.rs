@@ -298,12 +298,10 @@ pub struct ScoredLadderRow {
     /// Seats on the winning team.
     pub winner_seats: Vec<u8>,
     /// Ticks the leg ran.
-    #[serde(default)]
     pub duration_ticks: u64,
     /// Configuration by seat.
     pub seats: Vec<LadderSeat>,
     /// QA evidence by seat.
-    #[serde(default)]
     pub evidence: Vec<SeatEvidence>,
 }
 
@@ -314,7 +312,7 @@ pub struct LadderSeat {
     pub seat: u8,
     /// The configured controller; its wire form leaves out defaults, which
     /// deserializing restores.
-    pub config: Option<BotConfig>,
+    pub config: BotConfig,
 }
 
 /// Reads ladder rows from JSONL files, in file and line order.
@@ -429,8 +427,7 @@ pub struct ComparisonReport {
     pub stances: Vec<(BotStance, Tally)>,
     /// By map family, in family order.
     pub families: Vec<(MapFamily, Tally)>,
-    /// The higher rung's share of net worth, by pair; empty when the rows
-    /// carry no ledgers.
+    /// The higher rung's share of net worth, by pair.
     pub worth: Vec<WorthShare>,
 }
 
@@ -465,10 +462,10 @@ type PairLegs = (usize, [Option<Won>; 2]);
 /// its leg says.
 fn winner(row: &ScoredLadderRow) -> Result<Won> {
     let label = &row.ladder;
-    let rungs: Vec<Option<BotDifficulty>> = row
+    let rungs: Vec<BotDifficulty> = row
         .seats
         .iter()
-        .map(|seat| seat.config.map(|config| config.difficulty))
+        .map(|seat| seat.config.difficulty)
         .collect();
     let expected = match row.leg {
         EvaluationLeg::Forward => [label.higher, label.lower],
@@ -482,7 +479,7 @@ fn winner(row: &ScoredLadderRow) -> Result<Won> {
                 .iter()
                 .enumerate()
                 .all(|(index, seat)| usize::from(seat.seat) == index)
-            && rungs == expected.map(Some),
+            && rungs == expected,
         "a {} leg of {} against {} needs aftermine-opponent at {:?} by seat, found {:?}",
         row.leg.name(),
         label.higher,
@@ -504,7 +501,7 @@ fn winner(row: &ScoredLadderRow) -> Result<Won> {
             label.lower
         )
     })?;
-    Ok(Some(*rung == Some(label.higher)))
+    Ok(Some(*rung == label.higher))
 }
 
 /// Scores rows into pairs by comparison, refusing incomplete or repeated
@@ -517,33 +514,34 @@ pub fn build_report(rows: &[ScoredLadderRow]) -> Result<LadderReport> {
     let mut rungs: BTreeMap<(String, usize), (BotDifficulty, SeatSummaryBuilder)> = BTreeMap::new();
     for (index, row) in rows.iter().enumerate() {
         let label = &row.ladder;
-        let ledgers: Vec<Option<&SeatLedger>> = row
+        ensure!(
+            row.seats.len() == row.evidence.len(),
+            "ladder row {} has evidence for {} of {} seats",
+            index + 1,
+            row.evidence.len(),
+            row.seats.len()
+        );
+        let ledgers: Vec<&SeatLedger> = row
             .evidence
             .iter()
-            .map(|evidence| evidence.ledger.as_ref())
+            .map(|evidence| &evidence.ledger)
             .collect();
         let higher_seat = match row.leg {
             EvaluationLeg::Swapped => 1,
             _ => 0,
         };
-        if ledgers.len() == row.seats.len()
-            && let Some(shares) = team_shares(&ledgers, &[0, 1], higher_seat)
-        {
-            worth
-                .entry((
-                    label.manifest.clone(),
-                    label.higher.to_string(),
-                    label.lower.to_string(),
-                ))
-                .or_default()
-                .entry(format!("{} {} {}", label.map, label.stance, label.run))
-                .or_default()
-                .push(shares);
-        }
+        worth
+            .entry((
+                label.manifest.clone(),
+                label.higher.to_string(),
+                label.lower.to_string(),
+            ))
+            .or_default()
+            .entry(format!("{} {} {}", label.map, label.stance, label.run))
+            .or_default()
+            .push(team_shares(&ledgers, &[0, 1], higher_seat));
         for (seat, evidence) in row.seats.iter().zip(&row.evidence) {
-            let Some(config) = seat.config else {
-                continue;
-            };
+            let config = seat.config;
             rungs
                 .entry((label.manifest.clone(), rank(config.difficulty)))
                 .or_insert_with(|| (config.difficulty, SeatSummaryBuilder::default()))

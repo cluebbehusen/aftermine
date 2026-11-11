@@ -107,8 +107,8 @@ pub struct SeatFailures {
     /// [`IDLE_ARMY_FLOOR`], had each rested at home out of every enemy's reach
     /// for [`IDLE_TICKS`]. The subject is the idle value and the detail the
     /// idle and whole army values; the episode ends once that no longer
-    /// holds. `None` for unwatched seats.
-    pub idle_army: Option<FailureTally>,
+    /// holds.
+    pub idle_army: FailureTally,
 }
 
 /// Diagnostic, not an incident: the value of armed ground units a seat trained
@@ -189,25 +189,12 @@ struct SeatDetector {
     guards: BTreeSet<u32>,
 }
 
-impl SeatDetector {
-    fn watched() -> Self {
-        Self {
-            failures: SeatFailures {
-                idle_army: Some(FailureTally::default()),
-                ..SeatFailures::default()
-            },
-            ..Self::default()
-        }
-    }
-}
-
 /// What the detectors found for one seat.
 #[derive(Debug, Default)]
 pub(super) struct SeatReport {
     pub(super) failures: SeatFailures,
     pub(super) idle_producers: Vec<ProducerIdle>,
-    /// Absent for unwatched seats.
-    pub(super) deliveries: Option<Deliveries>,
+    pub(super) deliveries: Deliveries,
 }
 
 /// Terrain ground components: equal labels are connected by ground, closed
@@ -239,32 +226,28 @@ impl Ground {
     }
 }
 
-/// Detector memory for one evaluation leg. Seats without a controller are not
-/// watched.
+/// Detector memory for one evaluation leg.
 pub(super) struct FailureDetectors {
-    seats: Vec<Option<SeatDetector>>,
+    seats: Vec<SeatDetector>,
     last_check: Option<u64>,
     ground: Option<Ground>,
 }
 
 impl FailureDetectors {
     pub(super) fn record_guards(&mut self, seat: u8, units: &[UnitId]) {
-        if let Some(Some(detector)) = self.seats.get_mut(usize::from(seat)) {
+        if let Some(detector) = self.seats.get_mut(usize::from(seat)) {
             detector.guards = units.iter().map(|id| id.0).collect();
         }
     }
-    pub(super) fn new(watched: impl IntoIterator<Item = bool>) -> Self {
+    pub(super) fn new(seats: usize) -> Self {
         Self {
-            seats: watched
-                .into_iter()
-                .map(|watched| watched.then(SeatDetector::watched))
-                .collect(),
+            seats: (0..seats).map(|_| SeatDetector::default()).collect(),
             last_check: None,
             ground: None,
         }
     }
 
-    /// Follows the armed ground units watched seats train while severed, where
+    /// Follows the armed ground units seats train while severed, where
     /// carriers unload them, and their deaths.
     pub(super) fn observe_events(&mut self, state: &State, events: &[Event], now: u64) {
         for event in events {
@@ -279,7 +262,7 @@ impl FailureDetectors {
                     if stats.domain != Domain::Ground || !stats.can_fight() {
                         continue;
                     }
-                    let Some(Some(detector)) = self.seats.get_mut(usize::from(player.0)) else {
+                    let Some(detector) = self.seats.get_mut(usize::from(player.0)) else {
                         continue;
                     };
                     let ground = self.ground.get_or_insert_with(|| Ground::of(state));
@@ -306,7 +289,7 @@ impl FailureDetectors {
                 Event::UnitUnloaded {
                     unit, player, at, ..
                 } => {
-                    if let Some(Some(detector)) = self.seats.get_mut(usize::from(player.0))
+                    if let Some(detector) = self.seats.get_mut(usize::from(player.0))
                         && let Some(ground) = &self.ground
                         && detector
                             .pending
@@ -318,7 +301,7 @@ impl FailureDetectors {
                     }
                 }
                 Event::UnitDied { unit, player, .. } => {
-                    if let Some(Some(detector)) = self.seats.get_mut(usize::from(player.0))
+                    if let Some(detector) = self.seats.get_mut(usize::from(player.0))
                         && let Some(pending) = detector.pending.remove(&unit.0)
                     {
                         detector.deliveries.lost += pending.cost;
@@ -331,7 +314,7 @@ impl FailureDetectors {
 
     /// Counts one `OrderStalled` event observed at `tick`.
     pub(super) fn record_stall(&mut self, seat: u8, unit: u32, reason: &str, tick: u64) {
-        let Some(Some(seat)) = self.seats.get_mut(usize::from(seat)) else {
+        let Some(seat) = self.seats.get_mut(usize::from(seat)) else {
             return;
         };
         if reason == EXEMPT_STALL_REASON {
@@ -357,9 +340,6 @@ impl FailureDetectors {
         let elapsed = now - self.last_check.unwrap_or(now);
         self.last_check = Some(now);
         for (index, detector) in self.seats.iter_mut().enumerate() {
-            let Some(detector) = detector else {
-                continue;
-            };
             detector.stalls.retain(|_, history| {
                 history
                     .ticks
@@ -452,7 +432,7 @@ impl FailureDetectors {
 
     /// Checks the missions `seat`'s controller reports at `now`.
     pub(super) fn check_missions(&mut self, seat: u8, now: u64, missions: &[MissionStatus]) {
-        let Some(Some(detector)) = self.seats.get_mut(usize::from(seat)) else {
+        let Some(detector) = self.seats.get_mut(usize::from(seat)) else {
             return;
         };
         detector.stuck.retain(|(id, since)| {
@@ -477,17 +457,14 @@ impl FailureDetectors {
         }
     }
 
-    /// Detected episodes and diagnostics by seat; unwatched seats report none.
+    /// Detected episodes and diagnostics by seat.
     pub(super) fn finish(self) -> Vec<SeatReport> {
         self.seats
             .into_iter()
-            .map(|seat| {
-                seat.map(|seat| SeatReport {
-                    failures: seat.failures,
-                    idle_producers: seat.idle.into_values().collect(),
-                    deliveries: Some(seat.deliveries),
-                })
-                .unwrap_or_default()
+            .map(|seat| SeatReport {
+                failures: seat.failures,
+                idle_producers: seat.idle.into_values().collect(),
+                deliveries: seat.deliveries,
             })
             .collect()
     }
@@ -613,13 +590,11 @@ fn check_idle_army(detector: &mut SeatDetector, state: &State, player: PlayerId,
     let since = *episode.since.get_or_insert(now);
     if !episode.flagged && now - since >= FAILURE_WINDOW_TICKS {
         episode.flagged = true;
-        if let Some(tally) = &mut detector.failures.idle_army {
-            tally.record(
-                now,
-                u32::try_from(idle).unwrap_or(u32::MAX),
-                &format!("idle {idle} of {army}"),
-            );
-        }
+        detector.failures.idle_army.record(
+            now,
+            u32::try_from(idle).unwrap_or(u32::MAX),
+            &format!("idle {idle} of {army}"),
+        );
     }
 }
 

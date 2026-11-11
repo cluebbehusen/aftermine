@@ -115,13 +115,13 @@ pub fn seat_players(replay: &GameReplay) -> Vec<SeatPlayer> {
             }
             match &evaluated {
                 None => SeatPlayer::Human,
-                Some(Ok(controllers)) => match controllers.get(seat) {
-                    Some(Some(recorded)) => SeatPlayer::Bot {
-                        config: recorded.config,
-                    },
-                    Some(None) => SeatPlayer::Human,
-                    None => SeatPlayer::Unknown,
-                },
+                Some(Ok(controllers)) => {
+                    controllers
+                        .get(seat)
+                        .map_or(SeatPlayer::Unknown, |recorded| SeatPlayer::Bot {
+                            config: recorded.config,
+                        })
+                }
                 Some(Err(_)) => SeatPlayer::Unknown,
             }
         })
@@ -139,7 +139,7 @@ struct RecordedController {
 /// the replay description instead. `None` for other recordings.
 fn evaluation_controllers(
     replay: &GameReplay,
-) -> Option<serde_json::Result<Vec<Option<RecordedController>>>> {
+) -> Option<serde_json::Result<Vec<RecordedController>>> {
     let description = replay.meta.description.as_deref()?;
     // The controllers come last, after fields such as the candidate that may
     // themselves contain the marker.

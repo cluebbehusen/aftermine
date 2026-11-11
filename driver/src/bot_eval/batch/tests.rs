@@ -23,7 +23,7 @@ fn plans(dir: &Path) -> Vec<(EvaluationPlan, Option<PathBuf>)> {
             )
             .unwrap()
             .into_iter()
-            .map(|(leg, scenario)| EvaluationPlan::from_scenario(scenario, leg))
+            .map(|(leg, scenario)| EvaluationPlan::from_scenario(scenario, leg).unwrap())
         })
         .enumerate()
         .map(|(i, plan)| (plan, Some(dir.join(format!("{i}.json")))))

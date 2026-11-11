@@ -39,7 +39,7 @@ fn status(id: u64, phase: Phase) -> MissionStatus {
 fn attacks_are_followed_to_their_end_and_grouped_by_what_was_sent() {
     let state = Scenario::skirmish().build().unwrap();
     let ledger = ImpactLedger::new(&state);
-    let mut follower = AttackFollower::new([true, false]);
+    let mut follower = AttackFollower::new(1);
     let launches = [launch(1, 0, 600), launch(2, 400, 700), launch(3, 100, 900)];
     follower.open(0, &launches, &ledger);
     follower.follow(
@@ -60,10 +60,8 @@ fn attacks_are_followed_to_their_end_and_grouped_by_what_was_sent() {
         &ledger,
     );
     follower.follow(0, 36, &[status(2, Phase::Withdraw)], &ledger);
-    follower.open(1, &launches, &ledger);
-    follower.follow(1, 36, &[], &ledger);
-    let [Some(seat), None] = &follower.finish(&ledger)[..] else {
-        panic!("only the opponent seat is followed");
+    let [seat] = &follower.finish(&ledger)[..] else {
+        panic!("one calibration per seat");
     };
     assert_eq!(
         (seat.unknown.attacks, seat.unknown.no_contact),
@@ -91,7 +89,7 @@ fn attacks_are_followed_to_their_end_and_grouped_by_what_was_sent() {
 fn an_ended_attack_closes_when_its_units_launch_again() {
     let state = Scenario::skirmish().build().unwrap();
     let ledger = ImpactLedger::new(&state);
-    let mut follower = AttackFollower::new([true]);
+    let mut follower = AttackFollower::new(1);
     let unit = |id| aftermine_sim::UnitId(id);
     let first = Launch {
         units: vec![unit(7), unit(8)],
@@ -100,13 +98,7 @@ fn an_ended_attack_closes_when_its_units_launch_again() {
     follower.open(0, std::slice::from_ref(&first), &ledger);
     follower.follow(0, 12, &[], &ledger);
     let open = |follower: &AttackFollower| -> Vec<u64> {
-        follower.seats[0]
-            .as_ref()
-            .unwrap()
-            .open
-            .keys()
-            .copied()
-            .collect()
+        follower.seats[0].open.keys().copied().collect()
     };
     assert_eq!(open(&follower), [1], "ended, still in its tail");
     let second = Launch {
@@ -119,7 +111,7 @@ fn an_ended_attack_closes_when_its_units_launch_again() {
         [2],
         "the first closed when unit 8 relaunched"
     );
-    let [Some(seat)] = &follower.finish(&ledger)[..] else {
+    let [seat] = &follower.finish(&ledger)[..] else {
         panic!();
     };
     assert_eq!(seat.unknown.attacks, 2);

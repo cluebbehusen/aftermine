@@ -132,9 +132,7 @@ Read the ladder report per comparison, overall and by stance and map family:
 
 Then each rung's seats, and in `bot-summary` each team layout and rung's:
 
-- **Failure incidents** and **income**, with seat-legs for scale. Rows recorded
-  before a detector existed do not count toward it, and the report shows how
-  many seat-legs did.
+- **Failure incidents** and **income**, with seat-legs for scale.
 - **Deliveries**, shown when any seat trained armed ground units on severed
   ground: their scrap delivered, lost and left at home.
 - **Reactivity**: the situations below, how many arose, the share answered in
