@@ -168,6 +168,15 @@ pub struct Game {
     pub(crate) clock: Clock,
 }
 
+/// Whether another seat on `seat`'s team is still in the match, so the team
+/// fights on without it.
+pub(crate) fn team_fights_on(state: &State, seat: PlayerId) -> bool {
+    (0..state.players().len()).any(|index| {
+        let mate = PlayerId::from_index(index);
+        mate != seat && !state.hostile(seat, mate) && state.accepts_commands(mate)
+    })
+}
+
 pub(crate) fn world_vec(pos: chassis::fx::Vec2Fx) -> Vec2 {
     vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>())
 }

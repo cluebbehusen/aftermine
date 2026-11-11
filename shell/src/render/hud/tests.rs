@@ -90,6 +90,54 @@ fn a_spectator_has_no_top_bar_controls_but_keeps_the_minimap() {
     assert!(hud.layout.minimap.w > 0.0);
 }
 
+/// An eight-seat free-for-all, every seat human so no bot works between
+/// ticks: a surrender there leaves the match running.
+fn free_for_all() -> Game {
+    let mut scenario =
+        aftermine_sim::Scenario::load("../scenarios/eight-pits.json").expect("Eight Pits loads");
+    for player in &mut scenario.players {
+        assert_eq!(player.team, None, "premise: a free-for-all");
+        player.bot = false;
+        player.bot_config = None;
+    }
+    Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap()
+}
+
+#[test]
+fn a_seat_out_of_the_match_shows_no_idle_badge() {
+    a_seat_out_shows_no_idle_badge(&mut skirmish(), false);
+    a_seat_out_shows_no_idle_badge(&mut free_for_all(), true);
+}
+
+fn a_seat_out_shows_no_idle_badge(game: &mut Game, ffa: bool) {
+    let human = game.presentation.human;
+    let badge = |game: &Game| {
+        layout(
+            &game.view(),
+            &InputState::new(),
+            &BindingMap::classic(),
+            env(1280.0, 800.0),
+            None,
+            &fixed,
+        )
+        .layout
+        .idle_badge
+    };
+    assert!(
+        badge(game).w > 0.0,
+        "premise: the match opens with idle workers"
+    );
+    game.issue(aftermine_sim::Command::Surrender);
+    game.do_tick();
+    assert!(!game.state.accepts_commands(human));
+    assert_eq!(
+        game.state.result().is_none(),
+        ffa,
+        "premise: only the free-for-all plays on"
+    );
+    assert_eq!(badge(game).w, 0.0);
+}
+
 #[test]
 fn a_resize_moves_the_minimap_before_the_next_click() {
     let game = skirmish();
