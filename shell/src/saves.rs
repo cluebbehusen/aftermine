@@ -11,7 +11,7 @@ use std::path::PathBuf;
 /// untagged record is a finished match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordKind {
-    /// A live session written on quit.
+    /// A live session saved on its own as it plays.
     Autosave,
     /// A player-named explicit save.
     Save,

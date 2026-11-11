@@ -87,15 +87,6 @@ impl LessonsScreen {
         }
     }
 
-    /// The debug protocol's stable mode name.
-    #[expect(
-        clippy::unused_self,
-        reason = "other screens answer this from their state"
-    )]
-    pub fn mode_name(&self) -> &'static str {
-        "lessons"
-    }
-
     /// The story of the row under the cursor.
     pub fn briefing(&self) -> Option<&'static str> {
         self.menu.value().map(|row| row.briefing())

@@ -137,15 +137,6 @@ impl CodexScreen {
         }
     }
 
-    /// The debug protocol's stable mode name.
-    #[expect(
-        clippy::unused_self,
-        reason = "other screens answer this from their state"
-    )]
-    pub fn mode_name(&self) -> &'static str {
-        "codex"
-    }
-
     /// The page under the cursor, if the cursor is on a kind.
     pub fn selected_entry(&self) -> Option<Entry> {
         self.menu.value().copied()

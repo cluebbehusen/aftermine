@@ -152,8 +152,8 @@ resumes the newest autosave or local named save since the last finished match;
 older ones stay on the Replays shelf. With iCloud Drive on, an iPad keeps saves,
 autosaves and replays in the Aftermine folder in iCloud Drive, which the Files
 app shows; otherwise they appear under On My iPad > Aftermine. Diagnostics
-always stay under On My iPad. A Mac uses iCloud Drive only from a signed build,
-so `cargo run` and today's packaged app keep everything on the Mac.
+always stay under On My iPad. A Mac uses iCloud Drive only from a signed build
+such as `cargo mac`'s, so `cargo run` keeps everything on the Mac.
 
 Crash and freeze diagnostics are always on and write only when a panic, stall or
 fatal error happens. A panic during a tick also leaves a crash dump with the

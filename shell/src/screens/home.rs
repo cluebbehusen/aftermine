@@ -82,6 +82,9 @@ impl MissingQuestion {
     }
 }
 
+/// The tagline under the title.
+const SUBTITLE: &str = "Machines eating a dead world";
+
 /// The Home screen: its menu and the verb behind each row.
 pub struct HomeScreen {
     /// The rows, each standing for its verb, so a conditional row
@@ -99,7 +102,8 @@ pub struct HomeScreen {
 }
 
 impl HomeScreen {
-    /// Builds the door, checking for a match Continue can resume.
+    /// Builds the door without Continue until the save scan reports a match
+    /// to resume.
     pub fn open() -> Self {
         Self::with_resumable(false)
     }
@@ -246,15 +250,6 @@ impl HomeScreen {
             .map_or_else(|| self.menu.view(), |asked| asked.menu.view())
     }
 
-    /// The standing subtitle.
-    #[expect(
-        clippy::unused_self,
-        reason = "other screens answer this from their state"
-    )]
-    pub fn subtitle(&self) -> &'static str {
-        "Machines eating a dead world"
-    }
-
     /// Applies a frame's events.
     pub fn update(
         &mut self,
@@ -308,7 +303,7 @@ impl HomeScreen {
             return;
         }
         self.fit();
-        self.menu.draw(sprites, self.subtitle());
+        self.menu.draw(sprites, SUBTITLE);
         let ui = crate::render::ui_scale();
         let s = ui * self.menu.growth;
         let view = crate::render::viewport();
@@ -328,7 +323,7 @@ impl HomeScreen {
             },
         );
         draw_text(
-            self.subtitle(),
+            SUBTITLE,
             left,
             baseline + 34.0 * s,
             crate::theme::Type::Body.at(s),

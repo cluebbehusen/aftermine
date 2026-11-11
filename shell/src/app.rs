@@ -1,16 +1,7 @@
 //! The session coordinator: [`App`] owns everything that outlives a
 //! screen, [`Screen`] owns everything that does not.
 //!
-//! Frame order is fixed and matters:
-//!
-//! 1. drain debug-socket requests (screenshots defer to post-render),
-//! 2. gather input events — polled hardware first, then injected — and route
-//!    them to the active screen (menu or the one gameplay input mapper),
-//! 3. advance the sim by wall clock (unless paused; `advance_ticks` from the
-//!    socket bypasses the clock entirely — that's driven mode),
-//! 4. render with interpolation, then settle any change of screen and
-//!    deliver the frame's notices,
-//! 5. capture any requested screenshot from the finished frame.
+//! Frame order is fixed and matters; `docs/shell-architecture.md` lists it.
 //!
 //! Every screen variant carries that screen's complete state, so a mode
 //! without its payload is unrepresentable.
@@ -869,7 +860,6 @@ impl App {
         }
     }
 
-    /// Tells the player something; see [`screen_flow::deliver_notices`].
     /// Tells the player what failed and leaves the cause on stderr for a
     /// report: raw error chains mean nothing to a player.
     fn notify_failure(&mut self, what: &str, cause: impl std::fmt::Display) {

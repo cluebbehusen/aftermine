@@ -126,7 +126,7 @@ pub struct Shelf {
 }
 
 impl Shelf {
-    /// Scans the save and replay directories like the front door does.
+    /// An empty shelf awaiting the worker's scan of saves and replays.
     pub fn open() -> Self {
         let mut shelf = Self::from_entries(Vec::new());
         shelf.catalog_ready = false;
