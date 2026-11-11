@@ -823,7 +823,7 @@ fn a_match_starts_and_stays_in_sync_over_tcp() {
     let clients: Vec<Connection> = CLIENTS
         .iter()
         .map(|_| {
-            let connection = Connection::connect(address).unwrap();
+            let connection = Connection::connect_any(address, Duration::from_secs(5)).unwrap();
             connection.send(&JoinMessage::hello(COMMIT).encode());
             connection
         })

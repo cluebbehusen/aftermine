@@ -73,11 +73,6 @@ pub struct Connection {
 }
 
 impl Connection {
-    /// Connects to `address`, such as an IP address or host name with port.
-    pub fn connect(address: impl ToSocketAddrs) -> io::Result<Self> {
-        Self::spawn(TcpStream::connect(address)?)
-    }
-
     /// Connects to the first of `address`'s resolved addresses that answers,
     /// giving each up to `timeout`: a host name can resolve to an address
     /// the host does not listen on before one it does.

@@ -262,6 +262,11 @@ const REJOIN_PAUSE: Duration = Duration::from_secs(1);
 /// How long one rejoin attempt waits to connect.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// How long a join waits for each address of the host to answer: longer
+/// than a rejoin attempt, since iOS can hold the first connect open behind
+/// its Local Network prompt.
+const JOIN_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// A client taking its seat back.
 struct Rejoin {
     home: Home,
@@ -1576,13 +1581,26 @@ enum Joining {
 impl ClientLobby {
     /// Starts connecting to the host at `address`, to join as `name`.
     pub(crate) fn new(address: &str, commit: &str, name: PlayerName, install: InstallId) -> Self {
+        Self::within(JOIN_TIMEOUT, address, commit, name, install)
+    }
+
+    /// Starts connecting to the host at `address`, giving each address it
+    /// names `bound` to answer.
+    fn within(
+        bound: Duration,
+        address: &str,
+        commit: &str,
+        name: PlayerName,
+        install: InstallId,
+    ) -> Self {
         let target = address.to_owned();
+        let connect = move || Connection::connect_any(target.as_str(), bound);
         Self {
             address: address.to_owned(),
             commit: commit.to_owned(),
             name,
             install,
-            state: Joining::Connecting(thread::spawn(move || Connection::connect(target))),
+            state: Joining::Connecting(thread::spawn(connect)),
         }
     }
 

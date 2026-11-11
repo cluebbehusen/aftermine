@@ -24,7 +24,8 @@ fn pair() -> (Connection, Connection) {
         listener.try_accept().unwrap().is_none(),
         "nobody has connected"
     );
-    let client = Connection::connect(listener.local_addr().unwrap()).unwrap();
+    let client =
+        Connection::connect_any(listener.local_addr().unwrap(), Duration::from_secs(5)).unwrap();
     let host = wait(|| listener.try_accept().unwrap());
     (host, client)
 }
