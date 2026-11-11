@@ -5912,8 +5912,8 @@ fn the_roster_strip_cuts_a_mixed_selection_both_ways() {
     let strip: Vec<_> = panel
         .roster
         .iter()
-        .filter_map(|c| match c.action {
-            crate::panel::CardAction::FilterKind(k) => Some((k, c.title.clone())),
+        .filter_map(|c| match c.card.action {
+            crate::panel::CardAction::FilterKind(k) => Some((k, c.card.title.clone())),
             _ => None,
         })
         .collect();

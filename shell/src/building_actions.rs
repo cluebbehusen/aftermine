@@ -3,7 +3,7 @@
 use crate::action::{Action, BindingMap};
 use crate::game::{Game, Scene};
 use crate::numeric::Fit;
-use crate::panel::{Card, CardAction, CardIcon, VerbIcon, tick_time_label};
+use crate::panel::{Card, CardAction, CardIcon, RallyVerb, VerbIcon, tick_time_label};
 use crate::typography::entity_name;
 use aftermine_sim::stats::Prerequisite;
 use aftermine_sim::{Building, BuildingId, BuildingKind, Command};
@@ -142,6 +142,22 @@ impl SelectedBuildings {
         self.buildings
             .first()
             .is_some_and(|first| self.buildings.iter().all(|b| b.kind == first.kind))
+    }
+
+    /// What the rally card does for these producers: set a first rally,
+    /// or reset one already set. None when nothing selected produces.
+    pub(crate) fn rally_verb(&self) -> Option<RallyVerb> {
+        let mut producers = self
+            .buildings
+            .iter()
+            .filter(|b| self.accepts && b.built() && !b.stats().produces.is_empty())
+            .peekable();
+        producers.peek()?;
+        Some(if producers.any(|b| b.rally.is_some()) {
+            RallyVerb::Reset
+        } else {
+            RallyVerb::Set
+        })
     }
 
     pub fn producers(&self) -> Vec<BuildingId> {
@@ -582,15 +598,11 @@ impl SelectedBuildings {
         let mut cards = Vec::new();
         let producers = self.producers();
         let plural = self.buildings.len() > 1;
-        if !producers.is_empty() {
-            let any_rally = self
-                .buildings
-                .iter()
-                .any(|b| producers.contains(&b.id) && b.rally.is_some());
+        if let Some(verb) = self.rally_verb() {
             let noun = if plural { "rallies" } else { "rally" };
             cards.push(Card {
                 icon: CardIcon::Verb(VerbIcon::Rally),
-                title: format!("{} {noun}", if any_rally { "Reset" } else { "Set" }),
+                title: format!("{} {noun}", verb.label()),
                 cost: None,
                 hotkey: bindings.labels(Action::SetRally),
                 action: CardAction::ArmRally,
@@ -614,8 +626,8 @@ impl SelectedBuildings {
                 cost: None,
                 hotkey: bindings.labels(Action::ClearRally),
                 action: CardAction::ClearRally,
-                enabled: any_rally,
-                why: (!any_rally).then(|| "no rally points set".into()),
+                enabled: verb == RallyVerb::Reset,
+                why: (verb == RallyVerb::Set).then(|| "no rally points set".into()),
                 desc: vec!["New units wait at the structure.".into()],
                 progress: None,
                 autocast: None,

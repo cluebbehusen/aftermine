@@ -1445,3 +1445,25 @@ fn an_extractor_keeps_its_picture_still_as_it_finishes_building_and_upgrading() 
     finish(&mut game);
     assert_eq!(game.state.building(extractor).unwrap().tier, 1);
 }
+
+#[test]
+fn a_small_roster_chip_shows_its_count_alone() {
+    let chip = crate::panel::RosterChip {
+        count: 12,
+        card: crate::panel::Card {
+            icon: crate::panel::CardIcon::Unit(aftermine_sim::UnitKind::Sentinel),
+            title: "Sentinel x12".into(),
+            cost: None,
+            hotkey: String::new(),
+            action: crate::panel::CardAction::FilterKind(aftermine_sim::UnitKind::Sentinel),
+            enabled: true,
+            why: None,
+            desc: Vec::new(),
+            progress: None,
+            autocast: None,
+            hold: None,
+        },
+    };
+    assert_eq!(roster_face(&chip, true), "12");
+    assert_eq!(roster_face(&chip, false), "Sentinel x12");
+}

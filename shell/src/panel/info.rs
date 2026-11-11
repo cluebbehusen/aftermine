@@ -365,10 +365,10 @@ fn hold_rows(info: &mut SelectionInfo, game: &Scene<'_>, u: &aftermine_sim::Unit
     let hostile = game.state.hostile(game.presentation.human, u.player);
     if stats.transport_capacity > 0 {
         let value = if hostile {
-            format!("{} points", stats.transport_capacity)
+            format!("{} slots", stats.transport_capacity)
         } else {
             let held: u8 = u.cargo.iter().map(|r| r.kind.stats().transport_size).sum();
-            format!("{held}/{} points", stats.transport_capacity)
+            format!("{held}/{} slots", stats.transport_capacity)
         };
         info.row("Cargo", value, Some(StatIcon::Verb(VerbIcon::Build)));
     }
@@ -559,7 +559,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         );
         if crate::look::scout(u.kind) {
             info.row(
-                "Mine detection",
+                "Charge detection",
                 format!("{CHARGE_SCOUT_DETECT_RADIUS} tiles"),
                 Some(Cap(CapabilityIcon::Radar)),
             );

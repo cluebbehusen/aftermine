@@ -73,7 +73,13 @@ fn stripping_hotkeys_clears_every_card_row() {
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("hq panel");
     assert!(panel.cards.iter().any(|card| !card.hotkey.is_empty()));
     strip_hotkeys(&mut panel);
-    for card in panel.roster.iter().chain(&panel.cards).chain(&panel.queue) {
+    for card in panel
+        .roster
+        .iter()
+        .map(|chip| &chip.card)
+        .chain(&panel.cards)
+        .chain(&panel.queue)
+    {
         assert!(
             card.hotkey.is_empty(),
             "{} keeps {}",
@@ -1716,7 +1722,13 @@ fn panel_copy_uses_only_supported_font_glyphs() {
         if let Some(text) = panel.info.reserved.as_ref().and_then(|l| l.text.as_ref()) {
             assert!(supported(text), "panel status: {text}");
         }
-        for card in panel.roster.iter().chain(&panel.cards).chain(&panel.queue) {
+        for card in panel
+            .roster
+            .iter()
+            .map(|chip| &chip.card)
+            .chain(&panel.cards)
+            .chain(&panel.queue)
+        {
             assert_card(card);
         }
     };
@@ -2148,33 +2160,36 @@ fn a_mixed_building_selection_offers_one_counted_chip_per_kind() {
         .collect();
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     assert_eq!(panel.title, "7 STRUCTURES");
-    let chips: Vec<(&str, CardAction)> = panel
+    let chips: Vec<(&str, usize, CardAction)> = panel
         .roster
         .iter()
-        .map(|card| (card.title.as_str(), card.action))
+        .map(|chip| (chip.card.title.as_str(), chip.count, chip.card.action))
         .collect();
     assert_eq!(
         chips,
         [
             (
                 "Crucible x1",
+                1,
                 CardAction::FilterBuilding(BuildingKind::Crucible)
             ),
             (
                 "Fabricator x1",
+                1,
                 CardAction::FilterBuilding(BuildingKind::Fabricator)
             ),
             (
                 "Turret x5",
+                5,
                 CardAction::FilterBuilding(BuildingKind::Turret)
             ),
         ]
     );
-    let turrets = &panel.roster[2];
+    let turrets = &panel.roster[2].card;
     assert_eq!(turrets.icon, CardIcon::Building(BuildingKind::Turret, 2));
     assert_eq!(turrets.desc[0], "3 Bulwark, 2 Heavy Turret");
     assert_eq!(
-        panel.roster[0].desc,
+        panel.roster[0].card.desc,
         roster_filter_desc(crate::platform::hands()),
         "one tier needs no breakdown"
     );
@@ -2361,4 +2376,42 @@ fn a_roc_docks_its_drones_on_order_beside_its_program() {
         stat(&panel, "Drones").value,
         format!("up to {}", bay.capacity)
     );
+}
+
+#[test]
+fn the_panel_types_its_rally_verb_and_what_its_dock_holds() {
+    let mut game = game();
+    let human = game.presentation.human;
+    let foundry = human_foundry(&game);
+    game.presentation.selection.buildings = vec![foundry];
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert_eq!(panel.rally, Some(RallyVerb::Set));
+    assert_eq!(panel.cards[0].title, "Set rally");
+    assert_eq!(panel.dock, DockKind::Work);
+
+    game.state.tick(&[PlayerCommand {
+        player: human,
+        command: Command::SetRally {
+            building: foundry,
+            rally: Some(aftermine_sim::Rally::Tile(chassis::grid::TilePos::new(
+                8, 8,
+            ))),
+        },
+    }]);
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert_eq!(panel.rally, Some(RallyVerb::Reset));
+    assert_eq!(panel.cards[0].title, "Reset rally");
+
+    game.presentation.selection.buildings.clear();
+    game.presentation.selection.units = game
+        .state
+        .units()
+        .iter()
+        .filter(|unit| unit.player == human)
+        .map(|unit| unit.id)
+        .take(1)
+        .collect();
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert_eq!(panel.dock, DockKind::Orders);
+    assert_eq!(panel.rally, None);
 }
