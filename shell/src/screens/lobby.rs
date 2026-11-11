@@ -594,7 +594,6 @@ fn draw_room(
 
     crate::menu::draw_page_heading("MATCH SETUP", &format!("{} - {status}", map.name));
 
-    wizard::draw_team_headings(&layout, ui);
     let styles = wizard::seat_styles(seats.len(), you, |seat| {
         seats.get(seat).and_then(|seat| seat.team)
     });

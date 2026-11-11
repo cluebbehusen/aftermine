@@ -81,7 +81,6 @@ const LABELS: &[&str] = &[
     "STEP  OF",
     "STRUCTURES",
     "SURRENDERED - SPECTATING",
-    "TEAM",
     "TURTLE",
     "UNITS",
     "WEALTH",
