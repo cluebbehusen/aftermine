@@ -4,7 +4,7 @@
 //! [`Shelf::draw`].
 
 use crate::game::SoundKind;
-use crate::menu::{Heading, Label, Line, Menu};
+use crate::menu::{Answer, Heading, Label, Line, Menu};
 use crate::platform::{PLATFORM, Platform};
 use crate::saves::ReplayEntry;
 use crate::tabs::TabStrip;
@@ -279,24 +279,19 @@ impl Shelf {
         mouse: &mut Vec2,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Out {
-        let escaped = events
-            .iter()
-            .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }));
+        let escaped = crate::nav::escaped(events);
         let delete_pressed = events
             .iter()
             .any(|e| matches!(e, RawEvent::KeyDown { key: Key::X }));
         let (back, events) = self.back.route(events);
         if let Some(ask) = &mut self.asking {
-            // As in the pause menu's dialogs, BACK and Escape outrank a
-            // row picked in the same frame.
-            let picked = ask.menu.handle(&events, mouse).map(|row| row.value);
-            if back || escaped || picked == Some(false) {
-                sounds.push((SoundKind::Click, None));
-                self.asking = None;
-            } else if picked == Some(true) {
-                sounds.push((SoundKind::Click, None));
-                let ask = self.asking.take();
-                return ask.map_or(Out::Stay, |ask| Out::Delete(ask.path));
+            match ask.menu.answer(&events, mouse, back || escaped, sounds) {
+                Some(Answer::Picked(true)) => {
+                    let ask = self.asking.take();
+                    return ask.map_or(Out::Stay, |ask| Out::Delete(ask.path));
+                }
+                Some(_) => self.asking = None,
+                None => {}
             }
             return Out::Stay;
         }

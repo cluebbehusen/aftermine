@@ -69,7 +69,7 @@ pub struct ReplayEntry {
     pub title: String,
     /// The map, when the title is a name the player gave instead.
     pub map: Option<String>,
-    /// The match's format: `1v1`, `2v2`, `4-way FFA`.
+    /// The match's format: `1v1`, `1v7`, `4-way FFA`.
     pub format: String,
     /// Match time when the record was written.
     pub clock: String,
@@ -258,7 +258,7 @@ fn scan_cancellable(
                 path,
                 title: name.unwrap_or_else(|| replay.map.clone()),
                 map,
-                format: crate::menu::match_format(replay.seats, replay.teams),
+                format: crate::menu::split_format(&replay.teams),
                 clock: crate::clock_label::ticks(replay.meta.ticks.unwrap_or(0)),
                 saved_secs,
                 problem: replay.problem,

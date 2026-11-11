@@ -252,6 +252,12 @@ fn moment_label(moment: &Moment, name: &str) -> String {
     }
 }
 
+/// The keys to name beside the strip: none for a player who has no way to
+/// press them.
+fn strip_keys() -> Option<(crate::hint_line::HintLine, crate::hint_line::HintLine)> {
+    crate::tabs::shown_keys()
+}
+
 /// Where the panel's parts sit.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct ChartLayout {
@@ -423,7 +429,7 @@ impl Chart {
             theme::TEXT_DISABLED,
         );
         let labels = ChartView::ALL.map(ChartView::label);
-        let keys = crate::tabs::keys();
+        let keys = strip_keys();
         crate::tabs::draw_in(
             sprites,
             &layout.strip,

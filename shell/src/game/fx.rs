@@ -2002,20 +2002,18 @@ impl Presentation {
                         }
                     }
                 }
-                Event::GameOver { result } => {
-                    let won = matches!(
-                        result,
-                        aftermine_sim::GameResult::Victory { team }
-                            if *team == state.player(self.human).team
-                    );
-                    self.sounds_pending.push((
-                        if won {
-                            SoundKind::Victory
-                        } else {
-                            SoundKind::Defeat
-                        },
-                        None,
-                    ));
+                Event::GameOver { .. } => {
+                    let stinger = match super::Verdict::of(state, self.human) {
+                        Some(super::Verdict::Victory) => Some(SoundKind::Victory),
+                        Some(super::Verdict::Defeat | super::Verdict::Surrendered) => {
+                            Some(SoundKind::Defeat)
+                        }
+                        // The result score carries a draw on its own.
+                        Some(super::Verdict::Draw) | None => None,
+                    };
+                    if let Some(stinger) = stinger {
+                        self.sounds_pending.push((stinger, None));
+                    }
                 }
                 _ => {}
             }

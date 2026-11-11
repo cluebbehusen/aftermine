@@ -128,16 +128,14 @@ fn max_scroll(all: &[Line], view: Vec2, ui: f32) -> f32 {
     let GridMetrics {
         card_h,
         heading_h,
+        row_gap,
         top,
         bottom,
         ..
     } = metrics(view, ui);
-    let gap = 16.0 * ui;
-    (content_height(all, card_h, heading_h, gap) - (bottom - top)).max(0.0)
+    (content_height(all, card_h, heading_h, row_gap) - (bottom - top)).max(0.0)
 }
 
-/// Card and band sizes at this viewport. Returns
-/// (`band_x`, `band_w`, `card_w`, `card_h`, `heading_h`, top, bottom).
 /// The grid's geometry in a window.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct GridMetrics {
@@ -147,6 +145,9 @@ struct GridMetrics {
     card_w: f32,
     card_h: f32,
     heading_h: f32,
+    /// The space between cards in a row, and after a row.
+    col_gap: f32,
+    row_gap: f32,
     /// The scrolling shelf's top and bottom edges.
     top: f32,
     bottom: f32,
@@ -156,8 +157,9 @@ fn metrics(view: Vec2, ui: f32) -> GridMetrics {
     let cols = columns(view.x, ui) as f32;
     let band_w = (view.x - 96.0 * ui).min(1120.0 * ui);
     let band_x = (view.x - band_w) * 0.5;
-    let gap = 12.0 * ui;
-    let card_w = (band_w - gap * (cols - 1.0)) / cols;
+    let col_gap = 12.0 * ui;
+    let row_gap = 16.0 * ui;
+    let card_w = (band_w - col_gap * (cols - 1.0)) / cols;
     let heading_h = 30.0 * ui;
     // Margins yield before content does: a small window (or a large
     // UI scale) compresses the title and hint zones first.
@@ -165,11 +167,10 @@ fn metrics(view: Vec2, ui: f32) -> GridMetrics {
     let bottom = view.y - (76.0 * ui).min(view.y * 0.14);
     // At least one heading and card row must always fit the window, or
     // the grid draws nothing while Enter still activates the hidden
-    // selection. The 16ui row gap matches `layout()`. The floor is
-    // physical: when even compressed chrome can't afford it, cards run
-    // small but never to zero.
+    // selection. The floor is physical: when even compressed chrome
+    // can't afford it, cards run small but never to zero.
     let card_h = (card_w * 0.5 + 26.0 * ui)
-        .min(bottom - top - heading_h - 16.0 * ui)
+        .min(bottom - top - heading_h - row_gap)
         .max(40.0);
     GridMetrics {
         band_x,
@@ -177,6 +178,8 @@ fn metrics(view: Vec2, ui: f32) -> GridMetrics {
         card_w,
         card_h,
         heading_h,
+        col_gap,
+        row_gap,
         top,
         bottom,
     }
@@ -243,13 +246,14 @@ impl Browser {
             card_w,
             card_h,
             heading_h,
+            col_gap,
+            row_gap,
             top,
             bottom,
         } = metrics(view, ui);
         let cols = columns(view.x, ui);
-        let gap = 16.0 * ui;
         let all = lines(entries, cols);
-        let content_height = content_height(&all, card_h, heading_h, gap);
+        let content_height = content_height(&all, card_h, heading_h, row_gap);
         let viewport_height = bottom - top;
         let scroll_max = (content_height - viewport_height).max(0.0);
         let scroll_offset = self.scroll_y.clamp(0.0, scroll_max);
@@ -257,7 +261,7 @@ impl Browser {
         let mut headings = Vec::new();
         let mut cards = Vec::new();
         for line in &all {
-            let advance = line_height(line, card_h, heading_h, gap);
+            let advance = line_height(line, card_h, heading_h, row_gap);
             let drawn_h = match line {
                 Line::Heading(_) => heading_h,
                 Line::Cards(_) => card_h,
@@ -269,7 +273,7 @@ impl Browser {
                     }
                     Line::Cards(row) => {
                         for (ci, &entry) in row.iter().enumerate() {
-                            let x = band_x + ci as f32 * (card_w + gap);
+                            let x = band_x + ci as f32 * (card_w + col_gap);
                             cards.push((entry, Rect::new(x, y, card_w, card_h)));
                         }
                     }
@@ -309,15 +313,15 @@ impl Browser {
         let GridMetrics {
             card_h,
             heading_h,
+            row_gap,
             top,
             bottom,
             ..
         } = metrics(view, ui);
-        let gap = 16.0 * ui;
         let (li, _) = Self::locate(entries, cols, self.selected);
         let mut line_top = 0.0;
         for line in &all[..li] {
-            line_top += line_height(line, card_h, heading_h, gap);
+            line_top += line_height(line, card_h, heading_h, row_gap);
         }
         let line_bottom = line_top + card_h;
         let viewport_h = bottom - top;
@@ -440,12 +444,13 @@ impl Browser {
                         .collect();
                     let GridMetrics {
                         card_h,
+                        row_gap,
                         top,
                         bottom,
                         ..
                     } = metrics(view, ui);
                     let page_rows =
-                        numeric::to_usize(((bottom - top) / (card_h + 16.0 * ui)).floor());
+                        numeric::to_usize(((bottom - top) / (card_h + row_gap)).floor());
                     if let Some(next) = step_grid(&rows, self.selected, nav, page_rows) {
                         self.selected = next;
                         if nav == Nav::Home {

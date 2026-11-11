@@ -11,7 +11,7 @@ use crate::game::Game;
 use crate::game::SoundKind;
 use crate::game::checkpoint::LanSave;
 use crate::game::network::NetRole;
-use crate::menu::{Label, Menu};
+use crate::menu::{Answer, Label, Menu};
 use crate::menu::{Preview, PreviewCache, ScenarioEntry, discover_scenarios};
 use crate::nav::{Axis, Nav, step_line};
 use crate::netplay::{HostLobby, Link, StartPoll, shown_host_name, start_failed_notice};
@@ -439,8 +439,7 @@ pub struct Wizard {
     moving: Option<usize>,
     /// A confirmation over the setup screen.
     overlay: Option<Overlay>,
-    /// Why hosting or a start failed, until the next change.
-    notice: Option<String>,
+    notice: Option<Notice>,
     /// Where a lobby listens.
     pub(crate) lan_bind: String,
     /// The saved LAN match this setup screen resumes, if it resumes one.
@@ -1014,6 +1013,32 @@ fn draft_seating(draft: &NewMatchDraft, members: &[Option<MemberId>]) -> Seating
     )
 }
 
+/// A line setup shows in place of its hint, until the next change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Notice {
+    /// Start found this seat open with nobody in it; true only until the
+    /// lobby's seats change.
+    SeatOpen(usize),
+    /// Why hosting or a start failed, or why Start is refused.
+    Text(&'static str),
+}
+
+impl std::fmt::Display for Notice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SeatOpen(seat) => write!(f, "Seat {} is still open", seat + 1),
+            Self::Text(text) => f.write_str(text),
+        }
+    }
+}
+
+/// Drops a notice about an open seat once the seats it spoke of change.
+fn reseated(notice: &mut Option<Notice>) {
+    if matches!(notice, Some(Notice::SeatOpen(_))) {
+        *notice = None;
+    }
+}
+
 /// Something over the setup screen that takes its input.
 enum Overlay {
     /// Asking before a step that drops players; Cancel sits preselected.
@@ -1487,13 +1512,8 @@ impl Wizard {
         // change the setup until the start succeeds or fails; Back and
         // Escape call it off.
         if self.lan.as_ref().is_some_and(|lan| lan.starting.is_some()) {
-            let (back, events) = self.back.route(events);
-            let escaped = events
-                .iter()
-                .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
-            if (back || escaped)
-                && let Some(lan) = self.lan.as_mut()
-            {
+            let (dismissed, _) = self.back.route_or_escape(events);
+            if dismissed && let Some(lan) = self.lan.as_mut() {
                 sounds.push((SoundKind::Click, None));
                 lan.lobby.cancel_start();
                 lan.starting = None;
@@ -1502,13 +1522,8 @@ impl Wizard {
         }
         if self.overlay.is_some() {
             // The corner Back closes the overlay, as Escape does.
-            let (back, events) = self.back.route(events);
-            if back {
-                sounds.push((SoundKind::Click, None));
-                self.overlay = None;
-                return Ok(Out::Stay);
-            }
-            self.update_overlay(&events, mouse, draft, sounds);
+            let (dismissed, events) = self.back.route_or_escape(events);
+            self.update_overlay(&events, mouse, dismissed, draft, sounds);
             return Ok(if std::mem::take(&mut self.leaving) {
                 Out::Home
             } else {
@@ -1763,7 +1778,7 @@ impl Wizard {
                 }
                 if resuming && self.lan.is_none() {
                     sounds.push((SoundKind::Denied, None));
-                    self.notice = Some("Switch to LAN to resume this match".to_owned());
+                    self.notice = Some(Notice::Text("Switch to LAN to resume this match"));
                     return None;
                 }
                 if let Some(lan) = &self.lan {
@@ -1773,7 +1788,7 @@ impl Wizard {
                         .find(|&seat| open[seat] && lan.members[seat].is_none());
                     if let Some(seat) = waiting {
                         sounds.push((SoundKind::Denied, None));
-                        self.notice = Some(format!("Seat {} is still open", seat + 1));
+                        self.notice = Some(Notice::SeatOpen(seat));
                         return None;
                     }
                     if !lan.has_members() {
@@ -1922,7 +1937,7 @@ impl Wizard {
         }
         // Start button, disabled for an all-one-team draft.
         let one_team = draft_one_team(draft);
-        let start_selected = self.setup_sel == layout.cards.len();
+        let start_selected = self.on_start(layout.cards.len());
         if let Some(start) = layout.start {
             draw_rectangle(start.x, start.y, start.w, start.h, SURFACE_MENU);
             stroke_rect(
@@ -2017,7 +2032,7 @@ impl Wizard {
         if !compact || self.notice.is_some() || controller_warning.is_some() {
             let hands = crate::platform::hands();
             let (hint, warning) = if let Some(notice) = &self.notice {
-                (crate::hint_line::HintLine::from(notice.clone()), true)
+                (crate::hint_line::HintLine::from(notice.to_string()), true)
             } else if self.moving.is_some() {
                 (crate::menu::hint_line(moving_hint(hands)), false)
             } else if let Some(warning) = controller_warning {
@@ -2358,6 +2373,12 @@ impl Wizard {
         if live { self.setup_cell } else { Cell::Seat }
     }
 
+    /// Whether the cursor sits on Start, past `cards` seat cards: the
+    /// switch above the cards keeps the row it came from.
+    fn on_start(&self, cards: usize) -> bool {
+        !self.on_switch && self.setup_sel >= cards
+    }
+
     /// What a press at the cursor does.
     fn cursor_press(&self, draft: &NewMatchDraft, open: &[bool], order: &[usize]) -> CursorPress {
         if self.on_switch {
@@ -2402,7 +2423,7 @@ impl Wizard {
             return;
         };
         if scenario.players.is_empty() {
-            self.notice = Some("This map has no seats".to_owned());
+            self.notice = Some(Notice::Text("This map has no seats"));
             return;
         }
         match HostLobby::open(&self.lan_bind, &crate::build_identity().revision, scenario) {
@@ -2421,7 +2442,7 @@ impl Wizard {
             }
             Err(error) => {
                 eprintln!("Cannot host: {error:#}");
-                self.notice = Some("Cannot host on this network".to_owned());
+                self.notice = Some(Notice::Text("Cannot host on this network"));
             }
         }
     }
@@ -2431,6 +2452,7 @@ impl Wizard {
     fn close_lan(&mut self, draft: &mut NewMatchDraft) {
         self.lan = None;
         self.moving = None;
+        reseated(&mut self.notice);
         for plan in &mut draft.seats {
             plan.open = false;
         }
@@ -2476,6 +2498,7 @@ impl Wizard {
                             Some(seat) => {
                                 draft.seats[seat].open = true;
                                 lan.members[seat] = Some(member);
+                                reseated(&mut self.notice);
                             }
                             None => lan.lobby.refuse(member),
                         }
@@ -2484,6 +2507,7 @@ impl Wizard {
                         for slot in &mut lan.members {
                             if *slot == Some(member) {
                                 *slot = None;
+                                reseated(&mut self.notice);
                             }
                         }
                     }
@@ -2513,7 +2537,7 @@ impl Wizard {
                 // now, before anything can start again this frame.
                 StartPoll::Failed(failed) => {
                     lan.starting = None;
-                    self.notice = Some(start_failed_notice(failed).to_owned());
+                    self.notice = Some(Notice::Text(start_failed_notice(failed)));
                 }
             }
         }
@@ -2630,6 +2654,7 @@ impl Wizard {
         &mut self,
         events: &[RawEvent],
         mouse: &mut Vec2,
+        dismissed: bool,
         draft: &mut NewMatchDraft,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) {
@@ -2637,17 +2662,12 @@ impl Wizard {
             return;
         };
         let ask = *ask;
-        let escaped = events
-            .iter()
-            .any(|event| matches!(event, RawEvent::KeyDown { key: Key::Escape }));
-        if let Some(picked) = menu.handle(events, mouse) {
-            sounds.push((SoundKind::Click, None));
-            self.overlay = None;
-            if picked.value {
-                self.confirmed(ask, draft);
-            }
-        } else if escaped {
-            self.overlay = None;
+        let Some(answer) = menu.answer(events, mouse, dismissed, sounds) else {
+            return;
+        };
+        self.overlay = None;
+        if answer == Answer::Picked(true) {
+            self.confirmed(ask, draft);
         }
     }
 
@@ -2662,6 +2682,7 @@ impl Wizard {
                         }
                     }
                 }
+                reseated(&mut self.notice);
             }
             Confirm::Close { .. } if self.resume.is_some() => self.leaving = true,
             Confirm::Close { to_map } => {

@@ -295,26 +295,27 @@ fn click(p: Vec2) -> [RawEvent; 2] {
 }
 
 /// The transport buttons at the viewport `feed` drives.
-fn buttons() -> [(macroquad::prelude::Rect, Transport); 4] {
+fn buttons() -> [(macroquad::prelude::Rect, Transport); 5] {
     transport_buttons(vec2(1280.0, 800.0), render::ui_scale(), false)
         .try_into()
-        .expect("four buttons outside pad mode")
+        .expect("five buttons outside pad mode")
 }
 
 #[test]
 fn pad_mode_leaves_the_transport_buttons_to_the_controller() {
     let viewport = vec2(1280.0, 800.0);
     assert!(transport_buttons(viewport, render::ui_scale(), true).is_empty());
-    let [back, play, slower, faster] = buttons().map(|(rect, _)| rect.center());
+    let [back, play, slower, faster, stats] = buttons().map(|(rect, _)| rect.center());
     for hands in crate::platform::tests::pad_hands() {
         crate::platform::set_hands(hands);
         let mut pb = session();
         let before = pb.presentation.camera.center;
-        for (id, at) in (1..).zip([back, play, slower, faster]) {
+        for (id, at) in (1..).zip([back, play, slower, faster, stats]) {
             assert!(!feed(&mut pb, &tap(id, at)), "{hands:?}: no Back to tap");
             assert!(!feed(&mut pb, &click(at)));
         }
         assert!(!pb.clock.paused, "{hands:?}: the row is inert");
+        assert!(!pb.show_stats);
         assert!((pb.clock.speed - 1.0).abs() < f64::EPSILON);
         assert_eq!(pb.presentation.camera.center, before, "and never pans");
     }
@@ -329,8 +330,32 @@ fn the_pad_mode_readout_says_whether_it_plays_and_how_fast() {
 }
 
 #[test]
+fn the_stats_button_shows_and_hides_the_overlay_by_click_and_by_tap() {
+    let [_, _, _, _, (stats, button)] = buttons();
+    assert_eq!(button, Transport::Stats);
+    let mut pb = session();
+    assert!(!feed(&mut pb, &click(stats.center())));
+    assert!(pb.show_stats, "a click shows the statistics");
+    assert!(
+        matches!(pb.stats, Stats::Building(_)),
+        "and starts their pass"
+    );
+    assert!(!feed(&mut pb, &tap(1, stats.center())));
+    assert!(!pb.show_stats, "a tap hides them");
+}
+
+#[test]
+fn the_composition_legend_names_kinds_as_players_read_them() {
+    for kind in aftermine_sim::stats::UnitKind::ALL {
+        let label = legend_label(kind.name());
+        assert_eq!(label, crate::typography::entity_name(kind.name()));
+        assert!(label.starts_with(char::is_uppercase), "{label}");
+    }
+}
+
+#[test]
 fn the_transport_buttons_leave_and_toggle_by_click_and_by_tap() {
-    let [back, play, _, _] = buttons().map(|(rect, _)| rect.center());
+    let [back, play, _, _, _] = buttons().map(|(rect, _)| rect.center());
     let mut pb = session();
     assert!(!feed(&mut pb, &tap(1, play)));
     assert!(pb.clock.paused, "a tap pauses");
@@ -343,7 +368,7 @@ fn the_transport_buttons_leave_and_toggle_by_click_and_by_tap() {
 
 #[test]
 fn the_speed_stepper_walks_the_key_ladder_and_stops_at_its_ends() {
-    let [_, _, slower, faster] = buttons().map(|(rect, _)| rect.center());
+    let [_, _, slower, faster, _] = buttons().map(|(rect, _)| rect.center());
     let mut pb = session();
     let mut id = 0;
     let mut press = |pb: &mut PlaybackSession, at: Vec2, speed: f64, why: &str| {
@@ -390,7 +415,7 @@ fn the_transport_row_sits_bottom_left_clear_of_the_timeline() {
             for touch_only in [false, true] {
                 let row = transport_row(viewport, s, touch_only);
                 let finger = crate::theme::MIN_TOUCH_TARGET * s;
-                let cells = [row.play, row.slower, row.readout, row.faster];
+                let cells = [row.play, row.slower, row.readout, row.faster, row.stats];
                 for (i, cell) in cells.iter().enumerate() {
                     assert!(
                         cell.h >= finger,
@@ -439,15 +464,15 @@ fn the_transport_row_sits_bottom_left_clear_of_the_timeline() {
         }
         let row = transport_row(viewport, ui, crate::platform::PLATFORM.touch_only());
         assert!(
-            bar.x > row.faster.right(),
-            "{viewport}: the bar starts past the stepper"
+            bar.x > row.stats.right(),
+            "{viewport}: the bar starts past the row"
         );
     }
 }
 
 #[test]
 fn a_back_press_that_slides_off_stays() {
-    let [(back, _), _, _, _] = buttons();
+    let [(back, _), _, _, _, _] = buttons();
     let off = vec2(back.center().x, back.y + back.h + 200.0);
     let mut pb = session();
     let before = pb.presentation.camera.center;
@@ -1063,7 +1088,11 @@ fn a_controller_pauses_seeks_steps_the_speed_and_leaves() {
     pb.seeking = None;
     assert!(!feed(&mut pb, &pad(crate::pad::TABS.0)));
     assert_eq!(pb.seeking, Some(700), "LB seeks back 25 seconds");
-    assert!(!feed(&mut pb, &pad(PadButton::North)), "Y does nothing");
+    assert!(!feed(&mut pb, &pad(PadButton::North)));
+    assert!(pb.show_stats, "Y shows the statistics");
+    assert!(!feed(&mut pb, &pad(PadButton::North)));
+    assert!(!pb.show_stats, "and hides them");
+    assert!(!feed(&mut pb, &pad(PadButton::West)), "X does nothing");
     assert!(feed(&mut pb, &pad(crate::pad::BACK)), "B leaves");
 }
 
@@ -1072,11 +1101,11 @@ fn the_hint_names_the_controllers_transport_while_one_is_in_use() {
     use aftermine_protocol::PadFamily;
     assert_eq!(
         pad_hint(PadFamily::Xbox, false).copy(),
-        "A pause | LB/RB seek | LT/RT speed | B leave"
+        "A pause | LB/RB seek | LT/RT speed | Y stats | B leave"
     );
     assert_eq!(
         pad_hint(PadFamily::Xbox, true).copy(),
-        "A pause | LB/RB seek | LT/RT speed | LS pan | RS zoom | B leave"
+        "A pause | LB/RB seek | LT/RT speed | Y stats | LS pan | RS zoom | B leave"
     );
     for hands in crate::platform::tests::pad_hands() {
         let family = hands.pad.expect("pad hands");

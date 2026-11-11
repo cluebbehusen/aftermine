@@ -19,9 +19,9 @@ pub(crate) enum Scene {
     Pause,
     /// A drawn match.
     Result,
-    /// The local player won.
+    /// The local player's team won.
     Victory,
-    /// The local player lost or surrendered.
+    /// Another team won.
     Defeat,
 }
 
@@ -160,15 +160,11 @@ impl Soundtrack {
 
 /// The score for a match in `game`'s state, from its bound seat's side.
 pub(crate) fn match_scene(game: &crate::game::Scene<'_>, paused: bool) -> Scene {
-    match game.state.result() {
-        Some(aftermine_sim::GameResult::Draw) => Scene::Result,
-        Some(aftermine_sim::GameResult::Victory { team })
-            if !game.state.player(game.presentation.human).resigned
-                && game.state.player(game.presentation.human).team == team =>
-        {
-            Scene::Victory
-        }
-        Some(aftermine_sim::GameResult::Victory { .. }) => Scene::Defeat,
+    use crate::game::Verdict;
+    match Verdict::of(game.state, game.presentation.human) {
+        Some(Verdict::Draw) => Scene::Result,
+        Some(Verdict::Victory) => Scene::Victory,
+        Some(Verdict::Defeat | Verdict::Surrendered) => Scene::Defeat,
         None if paused => Scene::Pause,
         None => Scene::Match,
     }

@@ -123,3 +123,14 @@ fn grid_rows_of_sections_skip_empty_rows() {
     assert_eq!(step_grid(&rows, 1, Nav::Down, 1), Some(3));
     assert_eq!(step_grid(&rows, 4, Nav::Down, 1), Some(1));
 }
+
+#[test]
+fn only_a_press_of_escape_escapes() {
+    use aftermine_protocol::{Key, RawEvent};
+    assert!(escaped(&[
+        RawEvent::KeyDown { key: Key::Down },
+        RawEvent::KeyDown { key: Key::Escape },
+    ]));
+    assert!(!escaped(&[RawEvent::KeyUp { key: Key::Escape }]));
+    assert!(!escaped(&[]));
+}

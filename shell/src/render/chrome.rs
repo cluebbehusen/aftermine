@@ -742,38 +742,25 @@ pub(crate) fn draw_reticle(game: &crate::game::Scene<'_>, input: &InputState) {
     }
 }
 
-/// Hovered salvage says what it holds, by the same fog rule as the
-/// panel. Touch reads it by selecting the pile instead.
-pub(crate) fn draw_salvage_tooltip(game: &crate::game::Scene<'_>, input: &InputState) {
-    let Some(point) = input.chrome_hover_point() else {
-        return;
-    };
-    if game.presentation.layout.get().chrome_owns(point) {
-        return;
-    }
-    let world = game.presentation.camera.to_world(point);
-    let tile = numeric::tile_at(world);
-    let text = match game.known_salvage(tile) {
-        Some(crate::game::Salvage::Scrap(amount)) => format!("scrap {amount}"),
-        Some(crate::game::Salvage::Wreck(amount)) => format!("wreck {amount}"),
-        None => return,
-    };
+/// Hovered salvage says what it holds, on the HUD's layer, so it never
+/// shows over a match seen behind a menu.
+pub(crate) fn draw_salvage_chip(chip: &super::hud::SalvageChip) {
     let s = ui_scale();
-    let dims = measure_text(
-        &text,
-        None,
-        numeric::font_size(crate::theme::Type::Body.at(s)),
-        1.0,
-    );
-    let (x, y) = (point.x + 14.0 * s, point.y - 10.0 * s);
+    let (x, y) = (chip.at.x, chip.at.y);
     draw_rectangle(
         x - 4.0 * s,
         y - 14.0 * s,
-        dims.width + 8.0 * s,
+        chip.text_w + 8.0 * s,
         20.0 * s,
         PANEL,
     );
-    draw_text(&text, x, y, crate::theme::Type::Body.at(s), SCRAP_COLOR);
+    draw_text(
+        &chip.text,
+        x,
+        y,
+        crate::theme::Type::Body.at(s),
+        SCRAP_COLOR,
+    );
 }
 
 pub(crate) fn draw_overlay(game: &crate::game::Scene<'_>, alpha: f32) {

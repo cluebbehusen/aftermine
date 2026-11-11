@@ -75,8 +75,10 @@ pub struct Selection {
 mod clock;
 mod fx;
 mod presentation;
+mod verdict;
 pub(crate) use clock::Clock;
 pub(crate) use presentation::{AlertKind, Presentation, Salvage, Scene, Stance};
+pub(crate) use verdict::Verdict;
 pub(crate) mod checkpoint;
 pub(crate) mod network;
 mod projectiles;

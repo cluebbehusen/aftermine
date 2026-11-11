@@ -3,9 +3,9 @@
 //! (resume, watch, settings, restart, main menu, quit) and draws.
 
 use crate::game::SoundKind;
-use crate::menu::{Label, Menu};
+use crate::menu::{Answer, Label, Menu};
 use crate::text_field::{Edit, Field, Form, Keyboard};
-use aftermine_protocol::{Key, RawEvent};
+use aftermine_protocol::RawEvent;
 use macroquad::prelude::Vec2;
 
 /// The name field's coaching line, for [`crate::menu::binding_hint`]. A
@@ -476,9 +476,7 @@ impl PauseScreen {
         mouse: &mut Vec2,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) -> Out {
-        let escaped = events
-            .iter()
-            .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }));
+        let escaped = crate::nav::escaped(events);
         if let Face::Naming(form) = &mut self.face {
             match form.update(events, sounds) {
                 Edit::Commit => return Out::Save(form.value(0).to_owned()),
@@ -487,15 +485,13 @@ impl PauseScreen {
             }
             return Out::Stay;
         }
-        let picked = self.menu.handle(events, mouse).map(|picked| picked.value);
         match &self.face {
             Face::SaveFailed(dialog) => {
                 let verb = dialog.verb;
-                match picked {
-                    Some(Choice::Retry) => return Out::RetrySave(verb),
-                    Some(Choice::LeaveUnsaved) => return Out::LeaveUnsaved(verb),
+                match self.menu.answer(events, mouse, escaped, sounds) {
+                    Some(Answer::Picked(Choice::Retry)) => return Out::RetrySave(verb),
+                    Some(Answer::Picked(Choice::LeaveUnsaved)) => return Out::LeaveUnsaved(verb),
                     Some(_) => {}
-                    None if escaped => {}
                     None => return Out::Stay,
                 }
                 // Cancel (or Escape — never the leave verb): back to the
@@ -508,17 +504,18 @@ impl PauseScreen {
             }
             Face::Confirm(verb) => {
                 let verb = *verb;
-                if escaped || picked == Some(Choice::Cancel) {
-                    // The cursor returns to the armed row.
-                    self.back_to_rows(verb.row());
-                    return Out::Stay;
+                match self.menu.answer(events, mouse, escaped, sounds) {
+                    Some(Answer::Picked(Choice::Confirm)) => verb.out(),
+                    Some(_) => {
+                        // The cursor returns to the armed row.
+                        self.back_to_rows(verb.row());
+                        Out::Stay
+                    }
+                    None => Out::Stay,
                 }
-                if picked == Some(Choice::Confirm) {
-                    return verb.out();
-                }
-                Out::Stay
             }
             Face::Rows | Face::Naming(_) => {
+                let picked = self.menu.handle(events, mouse).map(|picked| picked.value);
                 let Some(Choice::Row(row)) = picked else {
                     return if escaped { Out::Resume } else { Out::Stay };
                 };

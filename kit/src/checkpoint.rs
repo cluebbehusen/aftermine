@@ -44,12 +44,8 @@ pub struct RestoredSession {
 
 impl SessionCheckpoint {
     /// Cheap metadata for an already captured checkpoint.
-    pub fn metadata(&self) -> (&str, usize, u64) {
-        (
-            &self.scenario.name,
-            self.scenario.players.len(),
-            self.state.current_tick(),
-        )
+    pub fn metadata(&self) -> (&str, u64) {
+        (&self.scenario.name, self.state.current_tick())
     }
 
     /// Each seat's team tag, in seat order, so a host can count teams

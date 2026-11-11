@@ -17,10 +17,11 @@ use crate::panel::{
 use crate::render;
 use crate::render::prim::stroke_rect;
 use crate::theme::{
-    BORDER_STRONG, CHIP, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_PRIMARY, TEXT_SECONDARY,
+    BORDER_STRONG, CHIP, SURFACE_MENU, Stroke, TEXT_ACCENT, TEXT_BODY, TEXT_PRIMARY,
+    TEXT_SECONDARY, Type,
 };
 use crate::typography::{entity_name, plural_name};
-use aftermine_protocol::{Key, RawEvent};
+use aftermine_protocol::RawEvent;
 use aftermine_sim::stats::{BuildingKind, Domain, UnitKind};
 use macroquad::prelude::*;
 use std::fmt::Write as _;
@@ -155,10 +156,7 @@ impl CodexScreen {
             sounds.push((SoundKind::Click, None));
             return Out::Leave;
         }
-        if events
-            .iter()
-            .any(|e| matches!(e, RawEvent::KeyDown { key: Key::Escape }))
-        {
+        if crate::nav::escaped(&events) {
             return Out::Leave;
         }
         if self.menu.handle(&events, mouse).is_some() {
@@ -176,10 +174,15 @@ impl CodexScreen {
         };
         let s = render::ui_scale();
         // The page fits its own content within the column.
-        let column = crate::menu::page_column(s);
-        let (x, w, top, bottom) = (column.x, column.w, column.y, column.bottom());
-        let pad = 14.0 * s;
-        let plate = 84.0 * s;
+        let frame = PageFrame::at(s);
+        let (x, w, top, bottom) = (
+            frame.column.x,
+            frame.column.w,
+            frame.column.y,
+            frame.column.bottom(),
+        );
+        let pad = frame.pad;
+        let plate = frame.plate;
         let plate_x = x + pad;
         let plate_y = top + pad;
 
@@ -199,50 +202,18 @@ impl CodexScreen {
             Entry::Building(kind) => format!("{} scrap", kind.base_stats().construction.cost),
         };
 
-        // The page: description, figures, weapons, and what else the
-        // kind does — the same lines the training tooltip shows.
-        let body_size = crate::theme::Type::Body.at(s);
-        let line_h = 20.0 * s;
-        let body_w = w - pad * 2.0;
-        let measure = |t: &str| measure_text(t, None, numeric::font_size(body_size), 1.0).width;
-        let mut lines: Vec<(String, Color)> = Vec::new();
-        let para = |text: &str, color: Color, lines: &mut Vec<(String, Color)>| {
-            for line in render::wrap_words(text, measure, body_w) {
-                lines.push((line, color));
-            }
-        };
-        match entry {
-            Entry::Unit(kind) => {
-                para(&unit_description(kind), TEXT_BODY, &mut lines);
-                lines.push((String::new(), TEXT_BODY));
-                lines.push((unit_stat_line(kind), TEXT_PRIMARY));
-                for line in weapon_lines(kind)
-                    .into_iter()
-                    .chain(point_defense_line(kind))
-                {
-                    lines.push((line, TEXT_SECONDARY));
-                }
-                for line in unit_notes(kind) {
-                    para(&line, TEXT_SECONDARY, &mut lines);
-                }
-            }
-            Entry::Building(kind) => {
-                para(&building_description(kind), TEXT_BODY, &mut lines);
-                lines.push((String::new(), TEXT_BODY));
-                lines.push((building_stat_line(kind), TEXT_PRIMARY));
-                for line in building_weapon_lines(kind, 0) {
-                    lines.push((line, TEXT_SECONDARY));
-                }
-                for line in building_notes(kind) {
-                    para(&line, TEXT_SECONDARY, &mut lines);
-                }
-            }
-        }
-
         // The box fits its page: never shorter than the plate row,
         // never past the hint line.
-        let text_top = plate_y + plate + pad + line_h;
-        let box_bottom = (text_top + lines.len() as f32 * line_h + pad * 0.5).min(bottom);
+        let body_top = frame.body_top();
+        let body = page_body(
+            entry,
+            frame.body_width(),
+            frame.body_room(),
+            s,
+            &|text, size| measure_text(text, None, numeric::font_size(size), 1.0).width,
+        );
+        let box_bottom =
+            (body_top + (body.lines.len() + 1) as f32 * body.line_h + pad * 0.5).min(bottom);
         draw_rectangle(x, top, w, box_bottom - top, SURFACE_MENU);
         stroke_rect(
             Rect::new(x, top, w, box_bottom - top),
@@ -278,16 +249,149 @@ impl CodexScreen {
             crate::theme::Type::Body.at(s),
             TEXT_ACCENT,
         );
-        let mut y = text_top;
-        for (line, color) in lines {
-            if y > box_bottom - pad * 0.5 {
-                break;
-            }
-            draw_text(&line, x + pad, y, body_size, color);
-            y += line_h;
+        let mut y = body_top;
+        for (line, color) in body.lines {
+            y += body.line_h;
+            draw_text(&line, x + pad, y, body.size, color);
         }
     }
 }
+
+/// Where a page sits: the column beside the list, its padding, and the
+/// portrait plate's side.
+struct PageFrame {
+    column: Rect,
+    pad: f32,
+    plate: f32,
+}
+
+impl PageFrame {
+    fn at(s: f32) -> Self {
+        Self {
+            column: crate::menu::page_column(s),
+            pad: 14.0 * s,
+            plate: 84.0 * s,
+        }
+    }
+
+    /// The top of the text under the plate.
+    fn body_top(&self) -> f32 {
+        self.column.y + self.pad * 2.0 + self.plate
+    }
+
+    fn body_width(&self) -> f32 {
+        self.column.w - self.pad * 2.0
+    }
+
+    /// The height the text may fill, its last baseline clear of the box.
+    fn body_room(&self) -> f32 {
+        self.column.bottom() - self.pad * 0.5 - self.body_top()
+    }
+}
+
+/// A Roster page's text under its plate, set to fit.
+struct PageBody {
+    size: f32,
+    /// The distance from one baseline to the next.
+    line_h: f32,
+    lines: Vec<(String, Color)>,
+}
+
+/// One piece of a page before it is set: a paragraph wraps, a line of
+/// figures stands alone.
+enum Piece {
+    Paragraph(String, Color),
+    Line(String, Color),
+}
+
+/// What a page says: description, figures, weapons, and what else the kind
+/// does, the same lines the training tooltip shows.
+fn page_pieces(entry: Entry) -> Vec<Piece> {
+    let mut pieces = Vec::new();
+    match entry {
+        Entry::Unit(kind) => {
+            pieces.push(Piece::Paragraph(unit_description(kind), TEXT_BODY));
+            pieces.push(Piece::Line(String::new(), TEXT_BODY));
+            pieces.push(Piece::Line(unit_stat_line(kind), TEXT_PRIMARY));
+            for line in weapon_lines(kind)
+                .into_iter()
+                .chain(point_defense_line(kind))
+            {
+                pieces.push(Piece::Line(line, TEXT_SECONDARY));
+            }
+            for line in unit_notes(kind) {
+                pieces.push(Piece::Paragraph(line, TEXT_SECONDARY));
+            }
+        }
+        Entry::Building(kind) => {
+            pieces.push(Piece::Paragraph(building_description(kind), TEXT_BODY));
+            pieces.push(Piece::Line(String::new(), TEXT_BODY));
+            pieces.push(Piece::Line(building_stat_line(kind), TEXT_PRIMARY));
+            for line in building_weapon_lines(kind, 0) {
+                pieces.push(Piece::Line(line, TEXT_SECONDARY));
+            }
+            for line in building_notes(kind) {
+                pieces.push(Piece::Paragraph(line, TEXT_SECONDARY));
+            }
+        }
+    }
+    pieces
+}
+
+/// Sets `entry`'s page `width` wide in `room` of height, stepping down the
+/// type scale until every line fits. A page too long even for the smallest
+/// size ends its last line in an ellipsis, so nothing goes missing unseen.
+fn page_body(
+    entry: Entry,
+    width: f32,
+    room: f32,
+    s: f32,
+    measure: &dyn Fn(&str, f32) -> f32,
+) -> PageBody {
+    let pieces = page_pieces(entry);
+    let set = |size: f32| -> Vec<(String, Color)> {
+        let mut lines = Vec::new();
+        for piece in &pieces {
+            match piece {
+                Piece::Paragraph(text, color) => {
+                    for line in render::wrap_words(text, |t| measure(t, size), width) {
+                        lines.push((line, *color));
+                    }
+                }
+                Piece::Line(line, color) => lines.push((line.clone(), *color)),
+            }
+        }
+        lines
+    };
+    let sizes = [Type::Body, Type::Small, Type::Caption];
+    let mut body = PageBody {
+        size: 0.0,
+        line_h: 0.0,
+        lines: Vec::new(),
+    };
+    for step in sizes {
+        let size = step.at(s);
+        body = PageBody {
+            size,
+            line_h: size * LINE_SPACING,
+            lines: set(size),
+        };
+        if body.lines.len() as f32 * body.line_h <= room {
+            return body;
+        }
+    }
+    let fits = numeric::to_usize((room / body.line_h).floor()).max(1);
+    body.lines.truncate(fits);
+    if let Some((last, _)) = body.lines.last_mut() {
+        *last = crate::typography::elide_to_width(&format!("{last}..."), width, &|text| {
+            measure(text, body.size)
+        });
+    }
+    body
+}
+
+/// A page's baseline-to-baseline distance, as a multiple of its type size.
+const LINE_SPACING: f32 = 1.25;
 
 /// What a unit does besides fight, as page lines.
 fn unit_notes(kind: UnitKind) -> Vec<String> {

@@ -24,8 +24,8 @@ struct Header {
     version: u32,
     meta: ReplayMeta,
     map: String,
-    seats: usize,
-    teams: usize,
+    /// Each team's seat count, smallest first.
+    teams: Vec<usize>,
     compressed_bytes: u64,
     decoded_bytes: u64,
 }
@@ -33,9 +33,8 @@ struct Header {
 pub struct RecordInfo {
     pub meta: ReplayMeta,
     pub map: String,
-    pub seats: usize,
-    /// The teams the seats form.
-    pub teams: usize,
+    /// Each team's seat count, smallest first.
+    pub teams: Vec<usize>,
     pub problem: Option<Unavailable>,
 }
 
@@ -72,8 +71,8 @@ pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path)
         "save exceeds decoded byte limit"
     );
     // Metadata is obtained from the checkpoint itself, without restoring controllers.
-    let (map, seats, tick) = checkpoint.metadata();
-    let teams = crate::menu::team_count(checkpoint.team_tags());
+    let (map, tick) = checkpoint.metadata();
+    let teams = crate::menu::team_sizes(checkpoint.team_tags());
     ensure!(meta.ticks == Some(tick), "save metadata mismatch");
     let mut encoder = zstd::stream::Encoder::new(Vec::new(), LEVEL)?;
     encoder.include_checksum(true)?;
@@ -83,7 +82,6 @@ pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path)
         version: VERSION,
         meta,
         map: map.to_owned(),
-        seats,
         teams,
         compressed_bytes: compressed.len() as u64,
         decoded_bytes: payload.len() as u64,
@@ -144,8 +142,13 @@ fn check_header(header: &Header) -> Result<()> {
         ),
         "invalid save kind"
     );
+    let max = aftermine_sim::scenario::MAX_PLAYERS;
     ensure!(
-        header.teams <= header.seats && (header.teams == 0) == (header.seats == 0),
+        !header.teams.is_empty()
+            && header.teams.len() <= max
+            && header.teams.iter().all(|size| (1..=max).contains(size))
+            && header.teams.iter().sum::<usize>() <= max
+            && header.teams.is_sorted(),
         "invalid save teams"
     );
     Ok(())
@@ -185,9 +188,8 @@ pub(crate) fn prepare(path: &Path) -> Result<Loaded> {
     ensure!(
         header.meta.ticks == Some(tick)
             && header.map == scenario.name
-            && header.seats == scenario.players.len()
             && header.teams
-                == crate::menu::team_count(scenario.players.iter().map(|player| player.team)),
+                == crate::menu::team_sizes(scenario.players.iter().map(|player| player.team)),
         "save metadata does not match session"
     );
     Ok(loaded)
@@ -247,7 +249,6 @@ fn inspect_reader(path: &Path, file: &mut (impl Read + Seek), len: u64) -> Resul
         Ok(RecordInfo {
             meta: header.meta,
             map: header.map,
-            seats: header.seats,
             teams: header.teams,
             problem,
         })
@@ -266,11 +267,10 @@ fn inspect_reader(path: &Path, file: &mut (impl Read + Seek), len: u64) -> Resul
         } else {
             Some(Unavailable::OtherVersion)
         };
-        let teams = crate::menu::team_count(replay.setup.players.iter().map(|p| p.team));
+        let teams = crate::menu::team_sizes(replay.setup.players.iter().map(|p| p.team));
         Ok(RecordInfo {
             meta: replay.meta,
             map: replay.setup.name,
-            seats: replay.setup.players.len(),
             teams,
             problem,
         })

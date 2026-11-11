@@ -112,7 +112,18 @@ fn a_shelf_replay_opens_on_the_worker_and_a_bad_one_says_so() {
     else {
         panic!("a recording opens")
     };
-    assert!(screens::playback::PlaybackSession::watch(*recording).is_ok());
+    let viewer = watch(
+        *recording,
+        Screen::Replays(screens::shelf::Shelf::open()),
+        |error| panic!("{error:#}"),
+    );
+    let Screen::Playback { back, .. } = viewer else {
+        panic!("a viewer opens")
+    };
+    assert!(
+        matches!(*back, Screen::Replays(_)),
+        "leaving the viewer lands back on the shelf"
+    );
 
     let bad = dir.join("broken.amreplay");
     std::fs::write(&bad, b"not a replay").unwrap();

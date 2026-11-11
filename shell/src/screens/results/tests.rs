@@ -444,6 +444,23 @@ fn verdict_copy_distinguishes_winning_from_surrendering() {
         winner_subtitle(&surrendered, &surrendered.state.winners())
     );
     assert!(!subtitle.contains("North West"), "{subtitle}");
+
+    let scenario = aftermine_sim::Scenario::load("../scenarios/bridge-town.json").expect("map");
+    let mut carried = Game::new(scenario).expect("game");
+    for seats in [&[0][..], &[1, 3]] {
+        for &seat in seats {
+            carried.stage(aftermine_sim::PlayerCommand {
+                player: PlayerId(seat),
+                command: aftermine_sim::Command::Surrender,
+            });
+        }
+        carried.present_ticks(1);
+    }
+    assert_eq!(
+        verdict(&carried).0,
+        "VICTORY",
+        "a seat that surrendered shares its team's win"
+    );
 }
 
 #[test]

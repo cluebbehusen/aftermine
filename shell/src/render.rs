@@ -119,9 +119,7 @@ pub(crate) mod tutorial_card;
 mod worker;
 mod world;
 pub(crate) use chrome::{controller_notice_text, draw_controller_notice, draw_reticle};
-use chrome::{
-    draw_hud, draw_overlay, draw_overlay_info, draw_result_overlay, draw_salvage_tooltip,
-};
+use chrome::{draw_hud, draw_overlay, draw_overlay_info, draw_result_overlay};
 use entities::{
     draw_blips, draw_breadcrumbs, draw_buildings, draw_drag_rect, draw_fx, draw_group_press_ring,
     draw_long_press_ring, draw_paint_sweep, draw_pending_founds, draw_pings, draw_placement_ghost,
@@ -515,6 +513,9 @@ pub(crate) fn draw_with_performance(
     });
     draw_world(game, sprites, input);
     pass(FramePass::Hud, || {
+        if let Some(chip) = &hud.salvage_chip {
+            chrome::draw_salvage_chip(chip);
+        }
         draw_hud(game, sprites, input, bindings, &hud, performance);
         if game.presentation.overlay {
             draw_overlay_info(game);
@@ -614,7 +615,6 @@ pub(crate) fn draw_world(game: &crate::game::Scene<'_>, sprites: &Sprites, input
         draw_touch_box(game, input);
         draw_paint_sweep(game, input);
         draw_long_press_ring(input);
-        draw_salvage_tooltip(game, input);
     });
 }
 

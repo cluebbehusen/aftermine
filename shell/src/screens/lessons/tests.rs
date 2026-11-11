@@ -1,4 +1,5 @@
 use super::*;
+use aftermine_protocol::Key;
 use aftermine_protocol::MouseButton;
 use macroquad::prelude::vec2;
 

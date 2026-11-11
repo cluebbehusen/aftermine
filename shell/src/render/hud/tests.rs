@@ -956,3 +956,63 @@ fn the_click_that_ends_pad_mode_lands_on_the_hud_pad_mode_drew() {
         "the next click finds the card the mouse HUD draws"
     );
 }
+
+#[test]
+fn the_salvage_chip_is_part_of_the_hud_and_stays_off_its_chrome() {
+    let game = skirmish();
+    let view = game.view();
+    let map = game.state.map();
+    let tile = (0..map.height())
+        .flat_map(|y| (0..map.width()).map(move |x| chassis::grid::TilePos::new(x, y)))
+        .find(|tile| {
+            matches!(
+                view.known_salvage(*tile),
+                Some(crate::game::Salvage::Scrap(_))
+            ) && {
+                let at = game
+                    .presentation
+                    .camera
+                    .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5));
+                at.x > 100.0 && at.x < 900.0 && at.y > 100.0 && at.y < 500.0
+            }
+        })
+        .expect("the opening view shows a scrap node");
+    let Some(crate::game::Salvage::Scrap(amount)) = view.known_salvage(tile) else {
+        unreachable!()
+    };
+    let mut input = InputState::new();
+    input.mouse = game
+        .presentation
+        .camera
+        .to_screen(vec2(tile.x as f32 + 0.5, tile.y as f32 + 0.5));
+    let lay_out = |input: &InputState| {
+        layout(
+            &game.view(),
+            input,
+            &BindingMap::classic(),
+            env(1280.0, 800.0),
+            None,
+            &fixed,
+        )
+    };
+    let hud = lay_out(&input);
+    let chip = hud
+        .geometry
+        .salvage_chip
+        .expect("hovered scrap names itself");
+    assert_eq!(chip.text, format!("scrap {amount}"));
+    assert_eq!(chip.at, input.mouse + vec2(14.0, -10.0));
+
+    let mut covered = hud.layout;
+    covered.panel_regions[0] = Rect::new(input.mouse.x - 8.0, input.mouse.y - 8.0, 16.0, 16.0);
+    assert_eq!(
+        salvage_chip(&game.view(), &covered, Some(input.mouse), 1.0, &fixed),
+        None,
+        "nothing shows through chrome over the scrap"
+    );
+    assert_eq!(
+        salvage_chip(&game.view(), &hud.layout, None, 1.0, &fixed),
+        None,
+        "nor without a pointer"
+    );
+}

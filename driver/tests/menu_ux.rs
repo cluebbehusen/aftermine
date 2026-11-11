@@ -517,11 +517,11 @@ fn a_controller_watches_a_replay() -> Result<()> {
     })?;
     press_pad(&mut client, PadButton::South)?;
     wait_for_status(&mut client, "Cross plays again", |s| !s.paused)?;
-    // The shelf is a front door: leaving a replay lands on Home.
+    // Leaving a replay lands back on the shelf's tab.
     press_pad(&mut client, PadButton::East)?;
     wait_for_mode(
         &mut client,
-        "home",
+        "replays",
         &["playback"],
         "Circle leaves the replay",
     )?;
@@ -804,6 +804,11 @@ fn a_remote_finds_a_replay_on_the_other_tab_and_watches_it() -> Result<()> {
     );
     assert!(after.paused, "a click only changes mode");
     press_pad(&mut client, PadButton::East)?;
-    wait_for_mode(&mut client, "home", &["playback"], "Back leaves the replay")?;
+    wait_for_mode(
+        &mut client,
+        "replays",
+        &["playback"],
+        "Back leaves the replay",
+    )?;
     Ok(())
 }

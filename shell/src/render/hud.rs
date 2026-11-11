@@ -65,9 +65,43 @@ pub(crate) struct HudGeometry {
     pub(super) queue_flag: Option<chrome::QueueFlagLayout>,
     pub(super) performance: Option<performance::PerformanceLayout>,
     pub(super) ring: Option<radial::RingLayout>,
+    /// What the salvage under the pointer holds, where no chrome covers it.
+    pub(super) salvage_chip: Option<SalvageChip>,
     /// The hit regions as laid out before pad mode left any out; what
     /// stays, such as the toasts, keeps its place by them.
     pub(super) laid_out: LayoutModel,
+}
+
+/// The chip beside the pointer naming the salvage under it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SalvageChip {
+    pub(super) text: String,
+    /// The text's baseline origin.
+    pub(super) at: Vec2,
+    pub(super) text_w: f32,
+}
+
+/// The salvage chip for the pointer at `point`, by the same fog rule as the
+/// panel; nothing where `layout` puts chrome. Touch reads salvage by
+/// selecting the pile instead.
+fn salvage_chip(
+    game: &crate::game::Scene<'_>,
+    layout: &LayoutModel,
+    point: Option<Vec2>,
+    ui: f32,
+    measure: Measure<'_>,
+) -> Option<SalvageChip> {
+    let point = point.filter(|point| !layout.chrome_owns(*point))?;
+    let tile = numeric::tile_at(game.presentation.camera.to_world(point));
+    let text = match game.known_salvage(tile)? {
+        crate::game::Salvage::Scrap(amount) => format!("scrap {amount}"),
+        crate::game::Salvage::Wreck(amount) => format!("wreck {amount}"),
+    };
+    Some(SalvageChip {
+        text_w: measure(Face::Body, &text, crate::theme::Type::Body.at(ui)),
+        text,
+        at: vec2(point.x + 14.0 * ui, point.y - 10.0 * ui),
+    })
 }
 
 /// Lays out the HUD for the scene as it stands, before anything draws.
@@ -251,8 +285,10 @@ pub(crate) fn layout(
         drone_count: geometry.drone_count,
     };
     let shown = !hands.pad_mode();
+    let layout = if shown { laid_out } else { pad_mode(&laid_out) };
+    let salvage_chip = salvage_chip(game, &layout, input.chrome_hover_point(), env.ui, measure);
     Hud {
-        layout: if shown { laid_out } else { pad_mode(&laid_out) },
+        layout,
         panel,
         geometry: HudGeometry {
             top_bar,
@@ -264,6 +300,7 @@ pub(crate) fn layout(
             queue_flag,
             performance,
             ring,
+            salvage_chip,
             laid_out,
         },
     }

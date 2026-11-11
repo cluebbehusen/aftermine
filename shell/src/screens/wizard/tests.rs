@@ -141,6 +141,44 @@ fn the_setup_hint_follows_what_a_press_on_the_cursors_row_does() {
     assert_eq!(at_cursor(&w, &draft), CursorPress::Switch);
 }
 
+#[test]
+fn start_loses_the_cursor_while_it_sits_on_the_switch() {
+    let mut draft = NewMatchDraft::default();
+    let mut w = Wizard::open(&draft);
+    pick_first_map(&mut w, &mut draft);
+    let cards = draft
+        .scenario
+        .as_ref()
+        .expect("a map was picked")
+        .players
+        .len();
+    assert!(w.on_start(cards), "setup opens on Start");
+    drive(&mut w, &mut draft, Key::Down);
+    assert!(w.on_switch, "Down from Start wraps to the switch");
+    assert!(!w.on_start(cards), "Enter there toggles the lobby");
+    drive(&mut w, &mut draft, Key::Up);
+    assert!(w.on_start(cards));
+}
+
+#[test]
+fn every_answer_to_a_setup_question_clicks() {
+    let mut draft = NewMatchDraft::default();
+    let mut w = Wizard::open(&draft);
+    pick_first_map(&mut w, &mut draft);
+    for (way, events) in [
+        ("Enter on the preselected Cancel", press(Key::Enter)),
+        ("Escape", press(Key::Escape)),
+        ("the BACK button", crate::button::tests::press_back(true)),
+    ] {
+        w.overlay = Some(confirm_overlay(Confirm::Close { to_map: false }, None));
+        let (mut mouse, mut sounds) = (vec2(0.0, 0.0), Vec::new());
+        w.update(&events, &mut mouse, &mut draft, &mut sounds)
+            .expect("update");
+        assert!(w.overlay.is_none(), "{way} puts the question away");
+        assert_eq!(sounds, [(SoundKind::Click, None)], "{way}");
+    }
+}
+
 fn press(key: Key) -> Vec<RawEvent> {
     vec![RawEvent::KeyDown { key }, RawEvent::KeyUp { key }]
 }
