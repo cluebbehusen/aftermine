@@ -244,9 +244,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     let soundtrack = if args.automation {
         None
     } else {
-        let mut soundtrack = crate::soundtrack::Soundtrack::default();
-        soundtrack.start(&sounds);
-        Some(soundtrack)
+        Some(crate::soundtrack::Soundtrack::start(&sounds))
     };
 
     let mut game = if let Some(path) = &args.replay {

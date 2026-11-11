@@ -616,13 +616,7 @@ fn on_payload_course(from: Vec2, to: Vec2, contact: Vec2) -> bool {
 
 fn payload_flight_ticks(game: &crate::game::Scene<'_>, index: usize) -> f32 {
     let shell = &game.state.shells()[index];
-    game.presentation
-        .projectile_releases
-        .flight(game.state.shells(), index)
-        .map_or_else(
-            || shell.arrival.saturating_sub(shell.launched_at).max(1) as f32,
-            |flight| flight.ticks as f32,
-        )
+    shell.arrival.saturating_sub(shell.launched_at).max(1) as f32
 }
 
 pub(super) fn building_contact(

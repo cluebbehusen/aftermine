@@ -491,12 +491,6 @@ impl BuildingAnimationFacts {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct AttackStamp {
-    completed_tick: u64,
-    weapon: usize,
-}
-
-#[derive(Debug, Clone, Copy)]
 enum TransportActionKind {
     Boarding,
     Unloading,
@@ -621,7 +615,7 @@ struct BracePose {
 #[derive(Debug, Default)]
 pub(crate) struct AnimationController {
     unit_attacks: HashMap<UnitId, [Option<u64>; MAX_WEAPONS]>,
-    building_attacks: HashMap<BuildingId, AttackStamp>,
+    building_attacks: HashMap<BuildingId, u64>,
     repair_pulses: HashMap<BuildingId, u64>,
     transport_actions: HashMap<UnitId, TransportActionStamp>,
     airworks_launches: HashMap<BuildingId, u64>,
@@ -644,23 +638,11 @@ impl AnimationController {
                         self.note_unit_attack(*unit, 0, completed_tick);
                     }
                     aftermine_sim::Target::Building(building) => {
-                        self.building_attacks.insert(
-                            *building,
-                            AttackStamp {
-                                completed_tick,
-                                weapon: 0,
-                            },
-                        );
+                        self.building_attacks.insert(*building, completed_tick);
                     }
                 },
                 Event::TurretFired { turret, .. } => {
-                    self.building_attacks.insert(
-                        *turret,
-                        AttackStamp {
-                            completed_tick,
-                            weapon: 0,
-                        },
-                    );
+                    self.building_attacks.insert(*turret, completed_tick);
                 }
                 Event::UnitRepaired {
                     source: UnitRepairSource::RepairBay { building },
@@ -1205,9 +1187,12 @@ impl AnimationController {
         kind: BuildingKind,
         clock: AnimationClock,
     ) -> Option<AttackPhase> {
-        let stamp = self.building_attacks.get(&building)?;
-        let elapsed = clock.elapsed_since(stamp.completed_tick)?;
-        attack_phase(elapsed, stamp.weapon, building_attack_timing(kind)?)
+        let fired = *self.building_attacks.get(&building)?;
+        attack_phase(
+            clock.elapsed_since(fired)?,
+            0,
+            building_attack_timing(kind)?,
+        )
     }
 
     fn repair_activity(&self, building: BuildingId, clock: AnimationClock) -> BuildingActivity {

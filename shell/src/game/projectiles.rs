@@ -19,7 +19,6 @@ pub(crate) struct LaunchPose {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Flight {
     pub(crate) target: Option<Target>,
-    pub(crate) ticks: u64,
     pub(crate) pose: Option<LaunchPose>,
     /// Where it was aimed, which tells apart the record of a shell shot down
     /// in flight from its siblings'.
@@ -67,7 +66,6 @@ impl ProjectileReleases {
                 });
                 releases.push(Flight {
                     target: *target,
-                    ticks: *flight,
                     pose,
                     impact: *to,
                 });

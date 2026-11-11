@@ -100,11 +100,6 @@ fn building_reports_keep_surface_facts_through_the_lethal_tick() {
             .expect("ordinary and lethal hits both retain the building outline");
         assert_eq!(hit.kind, BuildingKind::Fabricator);
         assert_eq!(hit.anchor, Vec2::new(13., 9.));
-        assert!(
-            game.presentation
-                .building_hit(&game.state, Some(Target::Unit(UnitId(0))))
-                .is_none()
-        );
     }
 }
 
@@ -124,7 +119,7 @@ fn unseen_buildings_do_not_supply_surface_facts() {
         .unwrap();
     assert!(
         game.presentation
-            .building_hit(&game.state, Some(Target::Building(hidden.id)))
+            .building_hit(&game.state, hidden.id)
             .is_none()
     );
     assert!(
