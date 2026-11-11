@@ -555,16 +555,16 @@ shell.
 
 ## Source and test map
 
-| Contract                      | Primary source                                                                 | Behavioral evidence                                                                 |
-| ----------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`       | Screen tests, `driver/tests/menu_ux.rs`                                             |
-| Live tick and recording       | `shell/src/game.rs`                                                            | Game tests, `driver/src/smoke.rs`                                                   |
-| Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests, `driver/tests/pad_match.rs`, `driver/tests/pad_ring.rs`     |
-| Saves                         | `shell/src/autosave.rs`, `shell/src/saves.rs`                                  | Module tests                                                                        |
-| Diagnostic persistence        | `kit/src/diagnostics.rs`, `shell/src/diagnostic_report.rs`                     | Module tests                                                                        |
-| Playback and seeking          | `kit/src/playback.rs`, `shell/src/screens/playback.rs`                         | Playback tests                                                                      |
-| Protocol capabilities and fog | `protocol/src/session.rs`, `protocol/src/view.rs`, `shell/src/debug_server.rs` | Protocol tests, `driver/tests/session_parity.rs`                                    |
-| Native presentation           | `shell/src/look.rs`, `shell/src/render.rs`, `shell/src/assets.rs`              | Asset and look tests, `shell/tests/presentation_animation.rs`, native capture tests |
-| CPU schematics                | `kit/src/render.rs`                                                            | `driver/tests/golden.rs`                                                            |
-| Audio                         | `shell/src/mixer.rs`, `shell/src/audio_mix.rs`, `shell/src/soundtrack.rs`      | Module tests                                                                        |
-| iPad, Apple TV and Mac apps   | `apple/`, `shell/src/platform.rs`                                              | iOS and tvOS clippy in CI, device builds                                            |
+| Contract                      | Primary source                                                                 | Behavioral evidence                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`       | Screen tests, `driver/tests/menu_ux.rs`                                         |
+| Live tick and recording       | `shell/src/game.rs`                                                            | Game tests, `driver/src/smoke.rs`                                               |
+| Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests, `driver/tests/pad_match.rs`, `driver/tests/pad_ring.rs` |
+| Saves                         | `shell/src/autosave.rs`, `shell/src/saves.rs`                                  | Module tests                                                                    |
+| Diagnostic persistence        | `kit/src/diagnostics.rs`, `shell/src/diagnostic_report.rs`                     | Module tests                                                                    |
+| Playback and seeking          | `kit/src/playback.rs`, `shell/src/screens/playback.rs`                         | Playback tests                                                                  |
+| Protocol capabilities and fog | `protocol/src/session.rs`, `protocol/src/view.rs`, `shell/src/debug_server.rs` | Protocol tests, `driver/tests/session_parity.rs`                                |
+| Native presentation           | `shell/src/look.rs`, `shell/src/render.rs`, `shell/src/assets.rs`              | Asset and look tests                                                            |
+| CPU schematics                | `kit/src/render.rs`                                                            | `driver/tests/golden.rs`                                                        |
+| Audio                         | `shell/src/mixer.rs`, `shell/src/audio_mix.rs`, `shell/src/soundtrack.rs`      | Module tests                                                                    |
+| iPad, Apple TV and Mac apps   | `apple/`, `shell/src/platform.rs`                                              | iOS and tvOS clippy in CI, device builds                                        |

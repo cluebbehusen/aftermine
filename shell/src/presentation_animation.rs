@@ -1532,7 +1532,4 @@ fn active_site_construction(state: &State, building: &Building) -> bool {
 }
 
 #[cfg(test)]
-// Explicit because `shell/tests/presentation_animation.rs` also includes
-// this file by path, and a path-included file resolves children beside it.
-#[path = "presentation_animation/tests.rs"]
 mod tests;
