@@ -257,6 +257,11 @@ pub(super) struct Busy {
     leave_after: bool,
 }
 impl Busy {
+    /// Whether this is a load still waiting for the saves to list.
+    pub(super) fn awaits_catalog(&self) -> bool {
+        self.intent.loading() && self.id.is_none()
+    }
+
     pub(super) fn mode(&self) -> &'static str {
         if self.intent.loading() {
             "loading"
@@ -316,11 +321,7 @@ impl App {
     }
 
     pub(super) fn poll_persistence(&mut self, screen: &mut Screen) {
-        crate::cloud_mirror::allow_arrivals(match screen {
-            Screen::Home(_) | Screen::Replays(_) => true,
-            Screen::Busy(busy) => busy.intent.loading() && busy.id.is_none(),
-            _ => false,
-        });
+        crate::cloud_mirror::allow_arrivals(screen.takes_mirror_arrivals());
         if !self.discarded.is_empty() && !self.persistence.busy() {
             let slots = std::mem::take(&mut self.discarded);
             if let Err(error) = self.persistence.start(Box::new(move |_| {
@@ -376,20 +377,7 @@ impl App {
                 }
                 self.catalog_rescan =
                     (catalog.downloading > 0).then(|| self.clock.elapsed() + RESCAN);
-                match screen {
-                    Screen::Home(home) => {
-                        // A rescan that changes nothing leaves the menu,
-                        // and any press on it, alone.
-                        let resumable = catalog.continuable().next().is_some();
-                        if !home.catalog_ready || home.resumable() != resumable {
-                            home.set_catalog(resumable);
-                        }
-                    }
-                    Screen::Replays(shelf) => {
-                        shelf.set_catalog(catalog.entries, catalog.downloading);
-                    }
-                    _ => {}
-                }
+                screen.take_catalog(catalog);
             }
         } else if matches!(screen, Screen::Busy(busy) if busy.id == Some(id)) {
             self.persistence_result = Some(result);
@@ -645,12 +633,13 @@ pub(super) fn frame(
         _ => "...",
     };
     let exiting = matches!(busy.intent, Intent::Exit);
-    match &*busy.back {
-        Screen::Pause(pause) if !loading => {
-            let doing = if exiting { "Quitting" } else { "Saving" };
-            pause.draw_saving(&app.sprites, &format!("{doing}{dots}"));
-        }
-        _ => busy.menu.draw(
+    let doing = if exiting { "Quitting" } else { "Saving" };
+    if loading
+        || !busy
+            .back
+            .draw_saving(&app.sprites, &format!("{doing}{dots}"))
+    {
+        busy.menu.draw(
             &app.sprites,
             &format!(
                 "{}{}",
@@ -665,7 +654,7 @@ pub(super) fn frame(
                 },
                 dots
             ),
-        ),
+        );
     }
     if loading
         && app.persistence_result.is_none()

@@ -210,26 +210,16 @@ pub(super) fn handle_request(incoming: IncomingRequest, app: &mut App, screen: &
                         .map(|()| Reply::Ok)
                 }
             }
-            Request::RunFrameScript { script, probes } => match &*screen {
-                Screen::Playback { session, .. } if session.engine.filling() => {
-                    Err("the viewer is still filling in its record; retry shortly".to_string())
-                }
-                _ if script.plays && !matches!(screen, Screen::Playing) => {
-                    Err("only the live match can play during a frame script".to_string())
-                }
-                // Restarting from the scene's checkpoint makes every script on
-                // Home draw the same frames, however long Home has been open.
-                Screen::Home(_) => {
-                    app.home_backdrop.unload();
+            Request::RunFrameScript { script, probes } => match screen.frame_script(script.plays) {
+                Err(refusal) => Err(refusal.to_string()),
+                Ok(start) => {
+                    if start == super::screen::ScriptStart::Backdrop {
+                        app.home_backdrop.unload();
+                    }
                     app.frame_profiler
                         .begin_script(&script, &probes)
                         .map(|()| Reply::Ok)
                 }
-                Screen::Playing | Screen::Playback { .. } => app
-                    .frame_profiler
-                    .begin_script(&script, &probes)
-                    .map(|()| Reply::Ok),
-                _ => Err("frame scripts run on Home, the live match or the viewer".to_string()),
             },
             Request::ToggleOverlay => {
                 let game = screen.visible_presentation(game);

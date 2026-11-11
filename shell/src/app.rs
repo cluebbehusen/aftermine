@@ -398,8 +398,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             width: numeric::to_u32(screen_width()),
             height: numeric::to_u32(screen_height()),
             dpi: f64::from(macroquad::miniquad::window::dpi_scale()),
-            paused: matches!(screen.kind(), ScreenKind::Pause | ScreenKind::Waiting)
-                || visible.paused(),
+            paused: screen.kind().veils_match() || visible.paused(),
             minimized: input::reported_minimized(),
         });
         let input_diagnostic_scope = visible_stage(&screen, &app, Stage::Input);
@@ -576,7 +575,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                     1.0,
                 )
                 .width;
-                let y = if screen.kind() == ScreenKind::Results {
+                let y = if screen.kind().notice_over_actions() {
                     screens::results::action_rects(1, vec2(screen_width(), screen_height()), s)[0].y
                         - 10.0 * s
                 } else {
@@ -630,7 +629,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             screen.keeps_screen_awake(&app.game, held),
         );
         if let Some(pads) = &mut app.pads {
-            pads.offer_presses_to_system(matches!(screen, Screen::Home(_)));
+            pads.offer_presses_to_system(screen.kind().top_screen());
         }
         audio::frame(&mut app, &mut screen, time.presentation);
 
@@ -708,9 +707,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
 /// A LAN match runs under its menu and can end there; the report replaces a
 /// menu built for the running match.
 fn report_under_menu(game: &Game, screen: Screen) -> Screen {
-    let stale =
-        matches!(&screen, Screen::Pause(pause) if !pause.decided() && !pause.saving_failed());
-    if stale
+    if screen.built_for_running_match()
         && game.net_role().is_some()
         && game.state.result().is_some()
         && game.end_stats.is_some()
