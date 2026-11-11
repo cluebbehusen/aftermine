@@ -141,6 +141,25 @@ fn the_setup_hint_follows_what_a_press_on_the_cursors_row_does() {
     assert_eq!(at_cursor(&w, &draft), CursorPress::Switch);
 }
 
+#[test]
+fn start_loses_the_cursor_while_it_sits_on_the_switch() {
+    let mut draft = NewMatchDraft::default();
+    let mut w = Wizard::open(&draft);
+    pick_first_map(&mut w, &mut draft);
+    let cards = draft
+        .scenario
+        .as_ref()
+        .expect("a map was picked")
+        .players
+        .len();
+    assert!(w.on_start(cards), "setup opens on Start");
+    drive(&mut w, &mut draft, Key::Down);
+    assert!(w.on_switch, "Down from Start wraps to the switch");
+    assert!(!w.on_start(cards), "Enter there toggles the lobby");
+    drive(&mut w, &mut draft, Key::Up);
+    assert!(w.on_start(cards));
+}
+
 fn press(key: Key) -> Vec<RawEvent> {
     vec![RawEvent::KeyDown { key }, RawEvent::KeyUp { key }]
 }

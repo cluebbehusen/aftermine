@@ -1922,7 +1922,7 @@ impl Wizard {
         }
         // Start button, disabled for an all-one-team draft.
         let one_team = draft_one_team(draft);
-        let start_selected = self.setup_sel == layout.cards.len();
+        let start_selected = self.on_start(layout.cards.len());
         if let Some(start) = layout.start {
             draw_rectangle(start.x, start.y, start.w, start.h, SURFACE_MENU);
             stroke_rect(
@@ -2356,6 +2356,12 @@ impl Wizard {
             self.resume.is_some(),
         );
         if live { self.setup_cell } else { Cell::Seat }
+    }
+
+    /// Whether the cursor sits on Start, past `cards` seat cards: the
+    /// switch above the cards keeps the row it came from.
+    fn on_start(&self, cards: usize) -> bool {
+        !self.on_switch && self.setup_sel >= cards
     }
 
     /// What a press at the cursor does.
