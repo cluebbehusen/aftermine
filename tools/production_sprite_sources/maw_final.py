@@ -39,7 +39,8 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw
 
-from tools import gen_sprites as gen
+from tools import sprite_kit as kit
+from tools.sprite_kit import BONE, SCRAP, SCRAP_DARK, SCRAP_LIGHT
 
 Registry = dict[str, Image.Image]
 
@@ -59,10 +60,6 @@ RUST = (111, 72, 49)
 BRASS = (137, 111, 64)
 PAINT = {"base": (154, 73, 48), "probe": (40, 139, 158)}
 
-SCRAP = gen.SCRAP
-SCRAP_DARK = gen.SCRAP_DARK
-SCRAP_LIGHT = gen.SCRAP_LIGHT
-BONE = gen.BONE
 WRECK = ((58, 58, 68), (44, 44, 52), (86, 64, 40), (72, 72, 84))
 HOT = ((214, 128, 52), (236, 158, 70), (250, 214, 150))
 KILN_HOT = (196, 112, 48)
@@ -724,7 +721,7 @@ def render_lamp(lit: bool) -> Image.Image:
 
 
 def _save(registry: Registry, out: Path, name: str, image: Image.Image) -> None:
-    gen.save_sprite(image, out, name)
+    kit.save_sprite(image, out, name)
     registry[name] = image
 
 
@@ -733,8 +730,8 @@ def install_maw(registry: Registry, out: Path) -> None:
 
     Painted layers ship an allegiance-accent row; treads, slats, scrap,
     kiln, arms and the weld never do."""
-    for variant in gen.PALETTES:
-        tag = gen.variant_tag(variant)
+    for variant in kit.PALETTES:
+        tag = kit.variant_tag(variant)
         _save(registry, out, f"maw{tag}", render_maw(variant))
         for move in (1, 2):
             phase = float(-2 * move)

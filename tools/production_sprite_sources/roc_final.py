@@ -41,7 +41,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
-from tools import gen_sprites as gen
+from tools import sprite_kit as kit
 from tools.production_sprite_sources import maw_final as maw
 
 Registry = dict[str, Image.Image]
@@ -984,7 +984,7 @@ def render_drone_shadow() -> Image.Image:
 
 
 def _save(registry: Registry, out: Path, name: str, image: Image.Image) -> None:
-    gen.save_sprite(image, out, name)
+    kit.save_sprite(image, out, name)
     registry[name] = image
 
 
@@ -993,8 +993,8 @@ def install_roc(registry: Registry, out: Path) -> None:
 
     Painted layers ship an allegiance-accent row; shadows, the wall and the
     yokes never do."""
-    for variant in gen.PALETTES:
-        tag = gen.variant_tag(variant)
+    for variant in kit.PALETTES:
+        tag = kit.variant_tag(variant)
         roc = render_roc(variant)
         for suffix in ("", "_move1", "_move2"):
             _save(registry, out, f"roc{tag}{suffix}", roc)

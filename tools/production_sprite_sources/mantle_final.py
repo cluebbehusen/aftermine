@@ -2,25 +2,26 @@
 
 from pathlib import Path
 from PIL import Image
-from tools import gen_sprites as gen
-from tools.production_sprite_sources.specialists_final import (
-    canvas,
+from tools import sprite_kit as kit
+from tools.sprite_kit import (
+    BRASS,
+    DARK,
+    DEEP,
+    EDGE,
+    IRON,
+    STEEL,
+    VOID,
+    bolt,
     box,
-    line,
-    poly,
+    canvas,
     circle,
     finish,
+    line,
+    plate,
+    poly,
     track,
     vent,
-    VOID,
-    DARK,
-    IRON,
-    EDGE,
-    STEEL,
-    BRASS,
-    DEEP,
 )
-from tools.production_sprite_sources.installed_defenses_final import plate, bolt
 
 LIGHT = (225, 205, 163)
 RECHARGE_STEPS = 16
@@ -31,13 +32,13 @@ def render_mantle(
     variant: str, move: int = 0, charges: int = 3, recharge: float = 0.0
 ) -> Image.Image:
     if (
-        variant not in gen.PALETTES
+        variant not in kit.PALETTES
         or move not in range(3)
         or charges not in range(4)
         or not 0 <= recharge <= 1
     ):
         raise ValueError("invalid Mantle sprite state")
-    paint = gen.PALETTES[variant]["base"]
+    paint = kit.PALETTES[variant]["base"]
     phase = move
     im, d = canvas()
     muted = tuple((round(c * 0.66) for c in paint))
@@ -100,15 +101,15 @@ def render_charge_frame(frame: int) -> Image.Image:
 
 
 def install_mantle(registry: dict[str, Image.Image], out: Path) -> None:
-    for variant in gen.PALETTES:
+    for variant in kit.PALETTES:
         for move in range(3):
             image = render_mantle(variant, move)
             suffix = "" if move == 0 else f"_move{move}"
-            key = f"mantle{gen.variant_tag(variant)}{suffix}"
-            gen.save_sprite(image, out, key)
+            key = f"mantle{kit.variant_tag(variant)}{suffix}"
+            kit.save_sprite(image, out, key)
             registry[key] = image
     for frame in range(CHARGE_FRAMES):
         image = render_charge_frame(frame)
         key = f"mantle_charge{frame}"
-        gen.save_sprite(image, out, key)
+        kit.save_sprite(image, out, key)
         registry[key] = image

@@ -20,13 +20,43 @@ them toward their heading.
 import json
 import math
 import random
+import sys
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image
+
+if __package__ in (None, ""):
+    # Run as a script: make the `tools` package importable.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from tools.production_sprite_sources.construction_final import (
+    install_finalized_construction,
+)
+from tools.production_sprite_sources.environment_final import (
+    install_finalized_environment,
+)
+from tools.production_sprite_sources.finalized import install_finalized_sprites
+from tools.production_sprite_sources.maw_final import install_maw
+from tools.production_sprite_sources.roc_final import install_roc
+from tools.sprite_kit import (
+    canvas,
+    s,
+    save_sprite,
+    BONE,
+    GROUND,
+    GROUND_DARK,
+    GROUND_LIGHT,
+    IRON,
+    IRON_DARK,
+    IRON_LIGHT,
+    PROBE_TAG,
+    SCRAP,
+    SCRAP_LIGHT,
+    SS,
+)
 
 OUT = Path(__file__).resolve().parent.parent / "assets" / "sprites"
-SS = 4  # supersample factor
 
 class SpriteRegistry(dict):
     """The sprite bank: every finished sprite lands here, so main() can pack
@@ -46,79 +76,12 @@ REGISTRY: SpriteRegistry = SpriteRegistry()
 # are inputs, not shipped sprites, so they stay out of the registry.
 GROUND_CONTROLS: dict[str, Image.Image] = {}
 
-# The Aftermine palette. Keep in sync with kit/src/render.rs and the shell.
-GROUND = (35, 35, 41)
-GROUND_DARK = (28, 28, 34)
-GROUND_LIGHT = (44, 44, 52)
-SCRAP = (217, 164, 65)
-SCRAP_DARK = (140, 106, 47)
-SCRAP_LIGHT = (240, 200, 120)
-IRON = (52, 52, 62)
-IRON_DARK = (38, 38, 46)
-IRON_LIGHT = (72, 72, 84)
-BONE = (232, 228, 216)
-
-# Accent palettes. "base" is the only one that ships. Every accented sprite
-# is also rendered in "probe" so accent_masks() can find its tintable
-# regions by diffing the two renders; probe renders never reach disk or the
-# atlas.
-PALETTES = {
-    "base": {
-        "base": (196, 87, 59),
-        "dark": (126, 56, 38),
-        "light": (232, 137, 107),
-    },
-    "probe": {
-        "base": (63, 148, 130),
-        "dark": (39, 96, 79),
-        "light": (119, 196, 176),
-    },
-}
-PROBE_TAG = "_probe"
-
-
-def variant_tag(variant: str) -> str:
-    """The sprite-name token for a palette variant: none for base."""
-    if variant not in PALETTES:
-        raise ValueError(f"unknown variant: {variant}")
-    return "" if variant == "base" else PROBE_TAG
-
-
-def save_sprite(image: Image.Image, out: Path, name: str) -> None:
-    """Writes a shipping sprite; probe renders stay in memory only."""
-    if PROBE_TAG not in name:
-        image.save(out / f"{name}.png")
-
-
-def canvas(px: int, color=(0, 0, 0, 0)) -> tuple[Image.Image, ImageDraw.ImageDraw]:
-    img = Image.new("RGBA", (px * SS, px * SS), color)
-    return img, ImageDraw.Draw(img)
-
-
 def finish(img: Image.Image, px: int, name: str) -> None:
     img = img.resize((px, px), Image.LANCZOS)
     save_sprite(img, OUT, name)
     REGISTRY[name] = img
     if PROBE_TAG not in name:
         print(f"  {name}.png")
-
-
-def rim_light(img: Image.Image) -> Image.Image:
-    """A one-pixel warm edge along the top-left silhouette — keeps units
-    readable at small zoom against dark ground."""
-    from PIL import ImageChops, ImageFilter
-
-    alpha = img.split()[3]
-    grown = alpha.filter(ImageFilter.MaxFilter(3))
-    edge = ImageChops.subtract(grown, alpha)
-    shifted = ImageChops.subtract(
-        edge, edge.transform(edge.size, Image.AFFINE, (1, 0, -1, 0, 1, -1))
-    )
-    rim = Image.new("RGBA", img.size, (255, 244, 224, 0))
-    rim.putalpha(shifted.point(lambda v: min(v, 110)))
-    out = img.copy()
-    out.alpha_composite(rim)
-    return out
 
 
 def pack_atlas() -> None:
@@ -185,52 +148,6 @@ def pack_atlas() -> None:
     )
 
 
-def _install_finalized_sprite_bank() -> None:
-    """Installs approved frames into this generator's live registry."""
-    import sys
-
-    repo_root = str(Path(__file__).resolve().parent.parent)
-    if repo_root not in sys.path:
-        sys.path.insert(0, repo_root)
-    sys.modules["tools.gen_sprites"] = sys.modules[__name__]
-
-    from tools.production_sprite_sources.finalized import install_finalized_sprites
-
-    install_finalized_sprites(REGISTRY, OUT)
-
-
-def _install_finalized_environment_bank() -> None:
-    """Installs the approved quarry environment into the live registry."""
-    from tools.production_sprite_sources.environment_final import (
-        install_finalized_environment,
-    )
-
-    install_finalized_environment(REGISTRY, OUT)
-
-
-def _install_finalized_construction_bank() -> None:
-    """Installs the approved full-hull site frames into the live registry."""
-    from tools.production_sprite_sources.construction_final import (
-        install_finalized_construction,
-    )
-
-    install_finalized_construction(REGISTRY, OUT)
-
-
-def _install_maw_bank() -> None:
-    """Installs the Maw, its runtime layers and its cradle."""
-    from tools.production_sprite_sources.maw_final import install_maw
-
-    install_maw(REGISTRY, OUT)
-
-
-def _install_roc_bank() -> None:
-    """Installs the Roc, its drones and their runtime layers."""
-    from tools.production_sprite_sources.roc_final import install_roc
-
-    install_roc(REGISTRY, OUT)
-
-
 def accent_masks() -> None:
     """Derives one allegiance-accent mask per probe render, then drops the
     probe renders from the registry.
@@ -261,11 +178,6 @@ def accent_masks() -> None:
         mask.save(OUT / f"{out_name}.png")
         REGISTRY[out_name] = mask
         print(f"  {out_name}.png")
-
-
-def s(v: float) -> int:
-    """Scale a sprite-space coordinate by the supersample factor."""
-    return round(v * SS)
 
 
 def ground(variant: int) -> None:
@@ -1287,11 +1199,11 @@ def generate(output: Path) -> None:
     scaffold()
     for variant in range(3):
         debris(variant)
-    _install_finalized_sprite_bank()
-    _install_finalized_environment_bank()
-    _install_finalized_construction_bank()
-    _install_maw_bank()
-    _install_roc_bank()
+    install_finalized_sprites(REGISTRY, OUT)
+    install_finalized_environment(REGISTRY, OUT, GROUND_CONTROLS)
+    install_finalized_construction(REGISTRY, OUT)
+    install_maw(REGISTRY, OUT)
+    install_roc(REGISTRY, OUT)
     accent_masks()
     icon_stop()
     icon_move()
