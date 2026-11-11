@@ -3,7 +3,7 @@
 
 use crate::action::{Action, ActionResolver, BindingMap, Context as InputContext};
 use crate::camera::controls::{
-    MinimapPoint, RemoteCamera, ViewerHands, ViewerPads, event_point, held_pan, pan_toward,
+    MinimapPoint, RemoteCamera, ViewerHands, ViewerPads, held_pan, pan_toward,
 };
 use crate::frame_time::FrameTime;
 use crate::game::{self, GameReplay, Presentation, Scene};
@@ -924,10 +924,11 @@ impl PlaybackSession {
             }
             _ => {}
         }
-        let minimap = event_point(e).map_or_else(MinimapPoint::default, |p| MinimapPoint {
-            under: render::minimap_world_at(&self.view(), p),
-            clamped: render::minimap_world_clamped(&self.view(), p),
-        });
+        let minimap =
+            crate::press::position(e).map_or_else(MinimapPoint::default, |p| MinimapPoint {
+                under: render::minimap_world_at(&self.view(), p),
+                clamped: render::minimap_world_clamped(&self.view(), p),
+            });
         self.hands
             .pointer(e, minimap, &mut self.presentation.camera, mouse, prefs, ui);
         if self.scrubbing && matches!(e, RawEvent::MouseMove { .. }) {
@@ -976,6 +977,7 @@ impl PlaybackSession {
             }
         }
         self.sync_render_clock();
+        self.presentation.age_toasts(time.presentation);
         if !self.clock.paused {
             self.presentation
                 .update_fx(&self.engine.state, time.presentation);

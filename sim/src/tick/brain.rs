@@ -233,7 +233,6 @@ pub(super) fn run(
                 unit.lift_off();
             }
         }
-        let reported = events.len();
         let turret = state.unit(id).expect("just seen").turret_heading;
         // Mounted guns survey once: positions hold still until resolution,
         // so the order and the guns read the same hostiles.
@@ -271,7 +270,7 @@ pub(super) fn run(
                 withdrawing,
             } => {
                 let danger = team_danger(&mut harvest_danger_by_team, state, id);
-                harvest(
+                if harvest(
                     state,
                     index,
                     danger,
@@ -281,7 +280,9 @@ pub(super) fn run(
                     anchor,
                     withdrawing,
                     events,
-                );
+                ) {
+                    reach.forget_ground();
+                }
             }
             Order::Attack { .. } => combat::attack_known(
                 state,
@@ -353,12 +354,6 @@ pub(super) fn run(
                 &mut builds,
                 events,
             ),
-        }
-        if events[reported..]
-            .iter()
-            .any(|event| matches!(event, Event::NodeDepleted { .. }))
-        {
-            reach.forget_ground();
         }
         super::movement::rest_idle_turret(state, id, turret);
         combat::normalize_order(state, id);

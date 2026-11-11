@@ -3520,23 +3520,18 @@ fn draw_selection_rect(game: &crate::game::Scene<'_>, corner: Vec2, other: Vec2,
     }
     let a = game.presentation.camera.to_world(lo);
     let b = game.presentation.camera.to_world(lo + size);
-    for unit in game.state.units() {
-        if unit.player != game.presentation.human {
-            continue;
-        }
+    for unit in crate::input::boxed_own_units(game, a, b) {
         let p = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
-        if p.x >= a.x && p.x <= b.x && p.y >= a.y && p.y <= b.y {
-            let screen = game.presentation.camera.to_screen(p);
-            stroke_circle(
-                screen,
-                unit.kind.stats().radius.to_num::<f32>() * game.presentation.camera.zoom + 3.0,
-                1.5,
-                Color {
-                    a: 0.5,
-                    ..crate::render::self_color()
-                },
-            );
-        }
+        let screen = game.presentation.camera.to_screen(p);
+        stroke_circle(
+            screen,
+            unit.kind.stats().radius.to_num::<f32>() * game.presentation.camera.zoom + 3.0,
+            1.5,
+            Color {
+                a: 0.5,
+                ..crate::render::self_color()
+            },
+        );
     }
 }
 

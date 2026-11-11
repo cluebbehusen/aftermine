@@ -81,6 +81,60 @@ fn stripping_hotkeys_clears_every_card_row() {
             card.hotkey
         );
     }
+
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
+        .expect("a harvester")
+        .id;
+    game.state.tick(&[PlayerCommand {
+        player: game.presentation.human,
+        command: Command::Hunt {
+            units: vec![harvester],
+            goal: chassis::grid::TilePos::new(8, 8),
+            queue: false,
+        },
+    }]);
+    game.presentation.selection.buildings.clear();
+    game.presentation.selection.units = vec![harvester];
+    let mut panel =
+        build_for_palette(&game.view(), &BindingMap::classic(), false).expect("unit panel");
+    assert_eq!(
+        panel.stop.as_ref().map(|stop| stop.hotkey.as_str()),
+        Some("X")
+    );
+    strip_hotkeys(&mut panel);
+    assert_eq!(panel.stop.map(|stop| stop.hotkey), Some(String::new()));
+}
+
+#[test]
+fn the_all_button_names_its_key_only_while_a_keyboard_is_in_use() {
+    let mut game = game();
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
+        .expect("a harvester")
+        .id;
+    game.presentation.selection.units = vec![harvester];
+    let input = crate::input::InputState::new();
+    for hands in crate::platform::tests::ALL_HANDS
+        .into_iter()
+        .chain(crate::platform::tests::pad_hands())
+    {
+        crate::platform::set_hands(hands);
+        let panel = build_for_input(&game.view(), &BindingMap::classic(), &input).expect("a panel");
+        let all = panel.select_all.expect("more Harvesters to gather");
+        assert_eq!(
+            all.card.hotkey,
+            if hands.keys { "I" } else { "" },
+            "{hands:?}"
+        );
+    }
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
 }
 
 fn stat<'a>(panel: &'a Panel, label: &str) -> &'a info::StatRow {
@@ -1028,6 +1082,47 @@ fn build_chips_wear_the_works_they_are_raising() {
 }
 
 #[test]
+fn the_orders_dock_offers_every_order_past_its_visible_slots() {
+    let (mut game, harvester) = builder_game();
+    game.presentation.selection.units = vec![harvester];
+    let here = game.state.unit(harvester).expect("harvester").tile();
+    let goals: Vec<_> = (0..12)
+        .map(|step| chassis::grid::TilePos::new(here.x + 2 + step % 2, here.y - 3 + step / 2))
+        .collect();
+    game.state.tick(
+        &goals
+            .iter()
+            .map(|&goal| PlayerCommand {
+                player: game.presentation.human,
+                command: Command::Hunt {
+                    units: vec![harvester],
+                    goal,
+                    queue: true,
+                },
+            })
+            .collect::<Vec<_>>(),
+    );
+    let orders = game
+        .view()
+        .projection()
+        .program(harvester)
+        .expect("a program")
+        .orders
+        .len();
+    assert_eq!(orders, 12, "every queued walk stands");
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
+    assert_eq!(
+        panel.queue.len(),
+        orders,
+        "the dock shows what fits and counts the rest"
+    );
+    assert!(matches!(
+        panel.queue.last().map(|card| card.action),
+        Some(CardAction::CancelOrder { unit, from_end: 0, .. }) if unit == harvester
+    ));
+}
+
+#[test]
 fn deferred_build_chips_cancel_their_logical_sites() {
     use chassis::grid::TilePos;
 
@@ -1045,6 +1140,149 @@ fn deferred_build_chips_cancel_their_logical_sites() {
         CardAction::CancelFound(BuildingKind::Bastion, TilePos::new(11, 7))
     );
     assert!(card.desc.iter().any(|line| line.contains("planned site")));
+}
+
+#[test]
+fn a_site_chip_takes_the_selection_off_a_site_other_workers_hold() {
+    use aftermine_sim::{OrderKey, UnitId};
+    use chassis::grid::TilePos;
+
+    let mut scenario = Scenario::skirmish();
+    scenario.players[0].scrap = 5000;
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Harvester,
+        x: 8,
+        y: 6,
+    });
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("skirmish builds");
+    let human = game.presentation.human;
+    let crew: Vec<UnitId> = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == human && u.kind == UnitKind::Harvester)
+        .map(|u| u.id)
+        .collect();
+    assert_eq!(crew.len(), 4, "premise: four workers");
+    let (first, last) = crew.split_at(2);
+    let mut anchors: Vec<TilePos> = Vec::new();
+    for y in 1..12 {
+        for x in 1..24 {
+            let anchor = TilePos::new(x, y);
+            if anchors.iter().all(|other| other.chebyshev(anchor) >= 3)
+                && game.state.can_place(human, BuildingKind::Turret, anchor)
+            {
+                anchors.push(anchor);
+            }
+        }
+    }
+    let &[built, planned, staged, ..] = anchors.as_slice() else {
+        panic!("open ground for three Turrets: {anchors:?}");
+    };
+    let build = |anchor, defer| Command::Build {
+        units: crew.clone(),
+        kind: BuildingKind::Turret,
+        anchor,
+        queue: false,
+        defer,
+    };
+    let chip = |game: &mut Game, selected: &[UnitId]| {
+        game.presentation.selection.units = selected.to_vec();
+        build_for_palette(&game.view(), &BindingMap::classic(), false)
+            .expect("panel")
+            .queue
+            .swap_remove(0)
+    };
+    let takes_off = |card: &Card| {
+        card.desc
+            .iter()
+            .any(|line| line.contains("take the selection off this site"))
+    };
+    // In play only a tick drains the staged batch, and the cached projection
+    // and staged command phase key on its length, so dropping the batch here
+    // drops both caches too.
+    let unstage = |game: &mut Game| {
+        game.pending.clear();
+        game.presentation.projection.take();
+        game.presentation.staged.get_mut().take();
+    };
+
+    game.state.tick(&[PlayerCommand {
+        player: human,
+        command: build(built, false),
+    }]);
+    let site = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.anchor == built)
+        .expect("the site stands")
+        .id;
+    for part in [first, last] {
+        let card = chip(&mut game, part);
+        assert_eq!(
+            card.action,
+            CardAction::CancelOrder {
+                unit: part[0],
+                key: OrderKey::Build { site },
+                from_end: 0,
+            },
+            "the rest of the crew keeps the site"
+        );
+        assert!(takes_off(&card), "{:?}", card.desc);
+    }
+    let card = chip(&mut game, &crew);
+    assert_eq!(card.action, CardAction::CancelSite(site));
+    assert!(!takes_off(&card), "{:?}", card.desc);
+    game.issue(Command::Stop {
+        units: last.to_vec(),
+    });
+    assert_eq!(
+        chip(&mut game, first).action,
+        CardAction::CancelSite(site),
+        "a staged Stop leaves the selection the whole crew"
+    );
+    unstage(&mut game);
+
+    // Ground in sight is verified within the tick, so the plan is staged.
+    game.issue(build(planned, true));
+    let card = chip(&mut game, first);
+    assert_eq!(
+        game.view()
+            .projection()
+            .program(first[0])
+            .map(|p| p.orders[0]),
+        Some(Order::Found {
+            kind: BuildingKind::Turret,
+            anchor: planned,
+        }),
+        "premise: the planned site awaits its ground"
+    );
+    assert_eq!(
+        card.action,
+        CardAction::CancelOrder {
+            unit: first[0],
+            key: OrderKey::Found {
+                kind: BuildingKind::Turret,
+                anchor: planned,
+            },
+            from_end: 0,
+        }
+    );
+    assert!(takes_off(&card), "{:?}", card.desc);
+    assert_eq!(
+        chip(&mut game, &crew).action,
+        CardAction::CancelFound(BuildingKind::Turret, planned)
+    );
+
+    unstage(&mut game);
+    game.issue(build(staged, false));
+    assert_eq!(
+        chip(&mut game, first).action,
+        CardAction::CancelFound(BuildingKind::Turret, staged),
+        "a site only the staged commands place has no id a removal could name"
+    );
 }
 
 /// Contiguous index per [`Order`] variant: a new order stops this
@@ -1074,7 +1312,7 @@ fn order_kind(order: &Order) -> usize {
 }
 
 #[test]
-fn every_own_chip_removes_its_order_but_sites_cancel_outright() {
+fn every_own_chip_removes_its_order_but_a_site_held_by_the_selection_alone_cancels() {
     use aftermine_sim::{AttackTarget, ContactId, Goal, OrderKey};
     use chassis::grid::TilePos;
 
@@ -1410,7 +1648,8 @@ fn panel_copy_uses_only_supported_font_glyphs() {
         BuildingKind::RepairBay,
         BuildingKind::Extractor,
     ];
-    let supported = |text: &str| text.is_ascii();
+    // ChakraPetch also carries the en dash an idle Extractor's rows read.
+    let supported = |text: &str| text.chars().all(|c| c.is_ascii() || c == '\u{2013}');
     let assert_card = |card: &Card| {
         assert!(supported(&card.title), "card title: {}", card.title);
         assert!(supported(&card.hotkey), "card hotkey: {}", card.hotkey);
@@ -1441,6 +1680,12 @@ fn panel_copy_uses_only_supported_font_glyphs() {
         }
         for status in &panel.info.status {
             assert!(supported(status), "panel status: {status}");
+        }
+        if let Some(health) = panel.info.health {
+            assert!(supported(health.label), "health label: {}", health.label);
+        }
+        if let Some(text) = panel.info.reserved.as_ref().and_then(|l| l.text.as_ref()) {
+            assert!(supported(text), "panel status: {text}");
         }
         for card in panel.roster.iter().chain(&panel.cards).chain(&panel.queue) {
             assert_card(card);
@@ -1478,12 +1723,15 @@ fn panel_copy_uses_only_supported_font_glyphs() {
         &build_for_palette(&builder_game.view(), &BindingMap::classic(), false)
             .expect("Harvester panel"),
     );
+    let extractor = place(&mut builder_game, harvester, BuildingKind::Extractor, true);
     builder_game.presentation.selection.units.clear();
-    builder_game.presentation.selection.buildings = vec![site];
-    assert_panel(
-        &build_for_palette(&builder_game.view(), &BindingMap::classic(), false)
-            .expect("site panel"),
-    );
+    for site in [site, extractor] {
+        builder_game.presentation.selection.buildings = vec![site];
+        assert_panel(
+            &build_for_palette(&builder_game.view(), &BindingMap::classic(), false)
+                .expect("site panel"),
+        );
+    }
 }
 
 #[test]
@@ -1562,6 +1810,71 @@ fn a_single_unit_exposes_static_combat_facts_but_a_group_does_not() {
             .all(|card| !matches!(card.action, CardAction::FilterKind(_))),
         "roster filters cannot consume command-card capacity"
     );
+}
+
+#[test]
+fn a_walled_in_producer_says_so_on_its_queue() {
+    for gap in [false, true] {
+        let mut map = vec![".........."; 10];
+        map[4..8].copy_from_slice(&[
+            "....####..",
+            "....#..#..",
+            if gap { "....#....." } else { "....#..#.." },
+            "....####..",
+        ]);
+        let scenario = serde_json::from_value(serde_json::json!({
+            "name": "Walled in", "mode": "sandbox", "map": map,
+            "players": [
+                {"name": "You", "scrap": 1000, "bot": false},
+                {"name": "Target", "scrap": 0, "bot": true}
+            ],
+            "units": [],
+            "buildings": [{"player": 0, "kind": "foundry", "x": 5, "y": 5}]
+        }))
+        .unwrap();
+        let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+        let foundry = human_foundry(&game);
+        game.presentation.selection.buildings = vec![foundry];
+        let panel = |game: &Game| {
+            build_for_palette(&game.view(), &BindingMap::classic(), false).expect("a panel")
+        };
+        let idle = panel(&game);
+        assert_ne!(idle.queue_label, "Walled in", "nothing queued");
+        game.state.tick(&[PlayerCommand {
+            player: game.presentation.human,
+            command: Command::Train {
+                building: foundry,
+                kind: UnitKind::Harvester,
+            },
+        }]);
+        let queued = panel(&game);
+        assert_eq!(
+            queued.queue_label == "Walled in",
+            !gap,
+            "said before the job finishes: {}",
+            queued.queue_label
+        );
+        assert_eq!(
+            queued.queue[0]
+                .desc
+                .iter()
+                .any(|line| line == WALLED_IN_DESC),
+            !gap,
+            "the held chip says why"
+        );
+        assert_eq!(
+            queued.info.status, idle.info.status,
+            "the info box keeps its lines"
+        );
+        for _ in 0..=UnitKind::Harvester.stats().train_ticks {
+            game.state.tick(&[]);
+        }
+        let held = !game.state.building(foundry).unwrap().queue.is_empty();
+        assert_eq!(held, !gap, "the simulation agrees");
+        if held {
+            assert_eq!(panel(&game).queue_label, "Walled in");
+        }
+    }
 }
 
 #[test]

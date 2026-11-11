@@ -203,9 +203,9 @@ pub(super) const BUILD: [Step; 5] = [
         title: "Build three Barricades",
         copy: &[
             Para::Each {
-                mouse: "Barricades are cheap walls. Choose Barricade in the Defense column, then [hold Shift and click three spots. You can also click and drag to lay a row.|click and drag across open ground to lay a row of three.]",
+                mouse: "Barricades are cheap walls. Choose Barricade in the Defense column, then [hold Shift and click three spots, and press {back} to stop placing. You can also click and drag to lay a row.|click and drag across open ground to lay a row of three.]",
                 touch: "Barricades are cheap walls. Choose Barricade in the Defense column. Drag the handle on the outline's edge to stretch it into a row of three, then tap the check mark.",
-                pad: "Barricades are cheap walls. Pick Barricade in Defense, then hold {A} and move the reticle to lay a row of three. You can also hold {LT} and press {A} on three spots.",
+                pad: "Barricades are cheap walls. Pick Barricade in Defense, then hold {A} and move the reticle to lay a row of three. You can also hold {LT} and press {A} on three spots, and press {B} to stop placing.",
             },
             Para::Same(PAID_IN_ORDER),
         ],

@@ -372,6 +372,7 @@ pub struct SelectAll {
 impl SelectAll {
     /// Offers the seat's `owned` of a kind when the selection holds fewer.
     fn offer(
+        bindings: &BindingMap,
         icon: CardIcon,
         name: &str,
         owned: usize,
@@ -384,7 +385,7 @@ impl SelectAll {
                 icon,
                 title: format!("Select all {owned} {}", plural_name(&entity_name(name))),
                 cost: None,
-                hotkey: String::new(),
+                hotkey: chord(bindings, Action::SelectAllOfKind),
                 action,
                 enabled: true,
                 why: None,
@@ -726,6 +727,25 @@ fn unit_speed_label(kind: UnitKind) -> String {
     )
 }
 
+/// Whether `b` holds its queue's head for want of somewhere to put it, by
+/// the test the simulation's production makes: Airworks aircraft leave
+/// through the roof, and everything else needs an open tile around the
+/// footprint. That ring lies in the owner's own sight.
+fn walled_in(state: &aftermine_sim::State, b: &aftermine_sim::Building) -> bool {
+    let Some(kind) = b.queue.front() else {
+        return false;
+    };
+    let domain = kind.stats().domain;
+    if b.kind == BuildingKind::Airworks && domain == aftermine_sim::stats::Domain::Air {
+        return false;
+    }
+    !aftermine_sim::geometry::rect_adjacent_tiles(b.anchor, b.kind.size())
+        .any(|tile| state.passable_for(domain, tile))
+}
+
+/// A walled-in queue head's tooltip line.
+const WALLED_IN_DESC: &str = "Walled in: it leaves once a tile beside the structure opens.";
+
 /// The production dock's heading: the time left on everything queued,
 /// or "Ready" while a finished head waits to leave.
 fn production_queue_label(
@@ -766,13 +786,13 @@ fn magazine_queue(
     queue: &mut Vec<Card>,
 ) -> Option<String> {
     let stats = building.kind.magazine()?;
-    let magazine = game
+    let known = game
         .state
         .known_magazines(game.presentation.human)
         .into_iter()
-        .find(|known| known.building == building.id)?
-        .detail
-        .filter(|detail| detail.ordered > 0)?;
+        .find(|known| known.building == building.id)?;
+    let magazine = known.detail.filter(|detail| detail.ordered > 0)?;
+    let progress = known.assembly.unwrap_or(0);
     let own = building.player == game.presentation.human;
     let round_ticks = stats.round_ticks.max(1);
     let title =
@@ -791,14 +811,13 @@ fn magazine_queue(
             enabled: true,
             why: None,
             desc: if own { refund_chip_desc() } else { Vec::new() },
-            progress: (index == 0)
-                .then(|| (magazine.progress as f32 / round_ticks as f32).clamp(0.0, 1.0)),
+            progress: (index == 0).then(|| (progress as f32 / round_ticks as f32).clamp(0.0, 1.0)),
             autocast: None,
             hold: None,
         });
     }
     Some(tick_time_label(
-        u32::from(magazine.ordered) * round_ticks - magazine.progress.min(round_ticks),
+        u32::from(magazine.ordered) * round_ticks - progress.min(round_ticks),
     ))
 }
 
@@ -1112,8 +1131,9 @@ fn order_card(
 }
 
 /// The chip for `program.orders[index]` of the dock's own subject. Pressing
-/// it removes that order from the selection; an unbuilt site and a planned
-/// one are cancelled outright instead, for every crew member.
+/// it removes that order from the selection. An unbuilt or planned site that
+/// no worker outside the selection holds is cancelled outright instead, so a
+/// started one refunds its remaining value rather than standing abandoned.
 fn own_order_card(
     game: &Scene<'_>,
     subject: aftermine_sim::UnitId,
@@ -1126,50 +1146,72 @@ fn own_order_card(
     if program.looping {
         patrol_leg(&mut card, order, index == 0);
     }
-    let unbuilt = match order {
+    // The outright cancel, whether a removal could name the site instead,
+    // and the line saying what the cancel does.
+    let site = match order {
         Order::Build { site } => projection
             .building(game.state, *site)
-            .filter(|building| !building.built()),
+            .filter(|building| !building.built())
+            .map(|site| {
+                // A site only the staged commands place has no settled id
+                // yet: other seats' commands, or batches before its own, can
+                // take the id it was projected with. It is named by kind and
+                // anchor, which a removal's Build key cannot do.
+                let cancel = if game.state.building(site.id).is_some() {
+                    CardAction::CancelSite(site.id)
+                } else {
+                    CardAction::CancelFound(site.kind, site.anchor)
+                };
+                (
+                    cancel,
+                    matches!(cancel, CardAction::CancelSite(_)),
+                    "to cancel the site and recover its remaining value.",
+                )
+            }),
+        Order::Found { kind, anchor } => Some((
+            CardAction::CancelFound(*kind, *anchor),
+            true,
+            "to cancel this planned site.",
+        )),
         _ => None,
     };
-    match (order, unbuilt) {
-        (Order::Build { .. }, Some(site)) => {
-            // A site only the staged commands place has no settled id yet:
-            // other seats' commands, or batches before its own, can take the
-            // id it was projected with. It is named by kind and anchor.
-            card.action = if game.state.building(site.id).is_some() {
-                CardAction::CancelSite(site.id)
-            } else {
-                CardAction::CancelFound(site.kind, site.anchor)
-            };
+    let tap = crate::platform::tap_or_click_capitalized(crate::platform::hands().touch());
+    match site {
+        Some((_, true, _)) if projection.site_shared(game.presentation.human, *order) => {
+            card.action = removal(game, subject, program, index);
             card.desc.push(format!(
-                "{} to cancel the site and recover its remaining value.",
-                crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
+                "{tap} to take the selection off this site; other workers keep building it."
             ));
         }
-        (Order::Found { kind, anchor }, _) => {
-            card.action = CardAction::CancelFound(*kind, *anchor);
-            card.desc.push(format!(
-                "{} to cancel this planned site.",
-                crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
-            ));
+        Some((cancel, _, does)) => {
+            card.action = cancel;
+            card.desc.push(format!("{tap} {does}"));
         }
-        _ => {
-            let human = game.presentation.human;
-            if let Some(key) = order.key(game.state, human) {
-                let later = program.orders[index + 1..]
-                    .iter()
-                    .filter(|later| later.key(game.state, human) == Some(key))
-                    .count();
-                card.action = CardAction::CancelOrder {
-                    unit: subject,
-                    key,
-                    from_end: u8::try_from(later).unwrap_or(u8::MAX),
-                };
-            }
-        }
+        None => card.action = removal(game, subject, program, index),
     }
     card
+}
+
+/// Removes `program.orders[index]` from every selected unit that has it.
+fn removal(
+    game: &Scene<'_>,
+    subject: aftermine_sim::UnitId,
+    program: &Program,
+    index: usize,
+) -> CardAction {
+    let human = game.presentation.human;
+    let Some(key) = program.orders[index].key(game.state, human) else {
+        return CardAction::None;
+    };
+    let later = program.orders[index + 1..]
+        .iter()
+        .filter(|later| later.key(game.state, human) == Some(key))
+        .count();
+    CardAction::CancelOrder {
+        unit: subject,
+        key,
+        from_end: u8::try_from(later).unwrap_or(u8::MAX),
+    }
 }
 
 /// Names a patrol's leg as Patrol, with the loop icon, so a patrolling
@@ -1322,6 +1364,8 @@ fn strip_hotkeys(panel: &mut Panel) {
         .chain(&mut panel.cards)
         .chain(&mut panel.queue)
         .chain(&mut panel.absent)
+        .chain(&mut panel.stop)
+        .chain(panel.select_all.iter_mut().map(|all| &mut all.card))
     {
         card.hotkey.clear();
     }
@@ -1491,6 +1535,7 @@ fn building_roster(buildings: &[aftermine_sim::Building]) -> Vec<Card> {
 /// the seat owns, built or not.
 fn building_select_all(
     game: &Scene<'_>,
+    bindings: &BindingMap,
     buildings: &[aftermine_sim::Building],
 ) -> Option<SelectAll> {
     let first = buildings.first()?;
@@ -1504,6 +1549,7 @@ fn building_select_all(
         .filter(|b| b.player == game.presentation.human && b.kind == first.kind)
         .count();
     SelectAll::offer(
+        bindings,
         CardIcon::Building(first.kind, first.tier),
         first.kind.name(),
         owned,
@@ -1639,10 +1685,11 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         let selected = crate::building_actions::SelectedBuildings::inspect(game);
         panel.cards = selected.cards(bindings);
         panel.roster = building_roster(&selected.buildings);
-        panel.select_all = building_select_all(game, &selected.buildings);
+        panel.select_all = building_select_all(game, bindings, &selected.buildings);
         if plural {
             panel.summary = building_summary(&selected.buildings);
         } else if let Some(building) = selected.buildings.first() {
+            let walled = walled_in(game.state, building);
             if let Some(target) = building.focus {
                 panel.queue_label = "Target".into();
                 panel.queue.push(order_card(
@@ -1658,6 +1705,8 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 ));
             } else if let Some(label) = magazine_queue(game, building, &mut panel.queue) {
                 panel.queue_label = label;
+            } else if walled {
+                panel.queue_label = "Walled in".into();
             } else {
                 panel.queue_label =
                     production_queue_label(&building.queue, building.training_progress())
@@ -1676,10 +1725,13 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     action: CardAction::CancelQueue(building.id, i.fit::<u8>()),
                     enabled: true,
                     why: None,
-                    desc: vec![format!(
+                    desc: [format!(
                         "{} to cancel; full refund.",
                         crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
-                    )],
+                    )]
+                    .into_iter()
+                    .chain((i == 0 && walled).then(|| WALLED_IN_DESC.to_string()))
+                    .collect(),
                     progress,
                     autocast: None,
                     hold: None,
@@ -1824,6 +1876,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             .filter(|u| u.player == owner && u.kind == first.kind && u.host.is_none())
             .count();
         panel.select_all = SelectAll::offer(
+            bindings,
             CardIcon::Unit(first.kind),
             first.kind.name(),
             owned,
@@ -2138,7 +2191,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         .program(first.id)
         .filter(|program| !program.is_idle())
     {
-        for index in 0..program.orders.len().min(8) {
+        for index in 0..program.orders.len() {
             panel
                 .queue
                 .push(own_order_card(game, first.id, program, index, &projection));

@@ -80,6 +80,13 @@ pub(super) fn measure_info(
         .status
         .iter()
         .flat_map(|text| wrap_words(text, |s| measure_body(s, font), inner))
+        .chain(
+            panel
+                .info
+                .reserved
+                .as_ref()
+                .map(|line| line.text.clone().unwrap_or_default()),
+        )
         .collect();
     y += status.len() as f32 * line_h;
     let health_y = y;
@@ -165,11 +172,11 @@ pub(super) struct PanelGeometry {
     pub roster_count: usize,
     pub cards: [(Rect, crate::panel::CardAction); crate::panel::MAX_CARDS],
     pub card_count: usize,
-    pub queue_slots: [(Rect, crate::panel::CardAction); 8],
+    pub queue_slots: [(Rect, crate::panel::CardAction); crate::layout::DOCK_SLOTS],
     pub queue_count: usize,
     pub queue_stop: (Rect, crate::panel::CardAction),
     pub drones: Rect,
-    pub drone_slots: [(Rect, crate::panel::CardAction); 8],
+    pub drone_slots: [(Rect, crate::panel::CardAction); crate::layout::DOCK_SLOTS],
     pub drone_count: usize,
     pub hides_minimap: bool,
 }
@@ -188,11 +195,11 @@ impl PanelGeometry {
             roster_count: 0,
             cards: [(zero, CardAction::None); crate::panel::MAX_CARDS],
             card_count: 0,
-            queue_slots: [(zero, CardAction::None); 8],
+            queue_slots: [(zero, CardAction::None); crate::layout::DOCK_SLOTS],
             queue_count: 0,
             queue_stop: (zero, CardAction::None),
             drones: zero,
-            drone_slots: [(zero, CardAction::None); 8],
+            drone_slots: [(zero, CardAction::None); crate::layout::DOCK_SLOTS],
             drone_count: 0,
             hides_minimap: false,
         }

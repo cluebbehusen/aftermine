@@ -84,11 +84,6 @@ pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button:
         }
         PadButton::LeftTrigger => {
             input.queue_pads.remove(&pad);
-            if !input.queue_held() {
-                let placing = input.placing.is_some();
-                input.queue_released();
-                placed(input, placing);
-            }
         }
         _ => {}
     }
@@ -96,15 +91,11 @@ pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button:
 
 /// A placement a controller ended returns to the selection. Pad mode
 /// draws no palette, so one left open would blank the panel and turn Y
-/// into the build ring. Out of pad mode, as after a mouse placement made
-/// under a held LT, the palette is drawn and stays. An open build ring
-/// keeps it too, as LT let go over one leaves it: that ring closes
-/// construction as it closes.
+/// into the build ring. Out of pad mode the palette is drawn, so it stays.
 fn placed(input: &mut InputState, placing: bool) {
     if placing
         && input.placing.is_none()
         && super::hud_in_pad_mode(crate::platform::PLATFORM, input.pad_in_use.is_some())
-        && !super::pad_ring::building(input.ring.as_ref())
     {
         input.close_construction();
     }
@@ -192,17 +183,23 @@ fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u6
 }
 
 /// B: a held A goes first, leaving the selection as it was; then what Back
-/// walks out of, the selection last. Out of a placement it goes back to the
-/// build ring the structure was picked from, where Back goes back to the
-/// palette pad mode doesn't draw.
+/// walks out of, the selection last. Out of a placement that staged nothing
+/// it goes back to the build ring the structure was picked from, where Back
+/// goes back to the palette pad mode doesn't draw. Out of one that staged a
+/// chain it returns to the selection, as a placement A ends does.
 fn back(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u64) {
     if paint::abandon(input) {
         return;
     }
     let placing = input.placing.is_some();
+    let staged = input.placement_staged();
     super::dispatch_action(game, input, bindings, Action::Back);
     if placing && input.placing.is_none() {
-        super::pad_ring::reopen_build(game, input, pad);
+        if staged {
+            placed(input, placing);
+        } else {
+            super::pad_ring::reopen_build(game, input, pad);
+        }
     }
 }
 
@@ -294,7 +291,9 @@ fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
                 .map(|(kind, _)| kind)
                 .collect()
         }) {
-            Cycle::OneKind => select_all(game, input, bindings),
+            Cycle::OneKind => {
+                super::dispatch_action(game, input, bindings, Action::SelectAllOfKind);
+            }
             Cycle::Narrow { group, kind, ids } => {
                 game.presentation.selection.units = ids;
                 input.narrowed = Some(Narrowed::Units { group, kind });
@@ -316,30 +315,15 @@ fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
         match cycle(alive(&selection.buildings), last, kind_of, |ids, left| {
             crate::panel::building_kinds(ids.iter().filter_map(|id| kind_of(*id)).chain(left))
         }) {
-            Cycle::OneKind => select_all(game, input, bindings),
+            Cycle::OneKind => {
+                super::dispatch_action(game, input, bindings, Action::SelectAllOfKind);
+            }
             Cycle::Narrow { group, kind, ids } => {
                 game.presentation.selection.buildings = ids;
                 input.narrowed = Some(Narrowed::Buildings { group, kind });
             }
             Cycle::Whole(group) => game.presentation.selection.buildings = group,
         }
-    }
-}
-
-/// Presses the panel's All button for a selection of one kind, through the
-/// card it published; with no such offer, as when every one is already
-/// selected, the press is refused.
-fn select_all(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
-    let offer = game
-        .presentation
-        .panel_model
-        .borrow()
-        .as_ref()
-        .and_then(|panel| panel.select_all.as_ref())
-        .map(|all| all.card.action);
-    match offer {
-        Some(action) => super::activate_card(game, input, bindings, action),
-        None => super::deny(game),
     }
 }
 

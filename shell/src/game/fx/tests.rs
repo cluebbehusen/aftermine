@@ -1281,6 +1281,45 @@ fn a_sapper_blast_is_witnessed_when_its_view_dies_with_an_ally_but_not_an_enemy(
 }
 
 #[test]
+fn a_hostile_shell_raises_the_alarm_only_for_the_harm_it_does() {
+    let mut game = crate::game::Game::with_viewport(
+        aftermine_sim::Scenario::skirmish(),
+        macroquad::prelude::vec2(1280.0, 800.0),
+    )
+    .unwrap();
+    let human = game.presentation.human;
+    let pos = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human)
+        .expect("an own unit")
+        .pos;
+    let enemy = aftermine_sim::PlayerId::from_index(1);
+    assert!(game.state.hostile(human, enemy), "premise");
+    let landed = aftermine_sim::Event::ShellLanded {
+        player: enemy,
+        at: pos,
+        targets: aftermine_sim::stats::DomainMask::GROUND,
+        splash: Some(chassis::fx::Fx::from_num(2)),
+    };
+    game.presentation
+        .spawn_fx(&game.state, std::slice::from_ref(&landed));
+    assert!(
+        game.presentation.alerts.is_empty(),
+        "a shell that hurts nothing is no attack"
+    );
+    game.presentation.spawn_fx(
+        &game.state,
+        &[
+            landed,
+            aftermine_sim::Event::DamageTaken { player: human, pos },
+        ],
+    );
+    assert_eq!(game.presentation.alerts.len(), 1, "its harm alerts");
+}
+
+#[test]
 fn impact_metadata_is_consumed_in_landing_order() {
     let mut game = crate::game::Game::with_viewport(
         aftermine_sim::Scenario::skirmish(),

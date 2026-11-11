@@ -243,6 +243,84 @@ fn cancelling_the_last_build_order_on_an_unstarted_site_refunds_it() {
 }
 
 #[test]
+fn a_removal_for_part_of_a_crew_leaves_the_site_to_the_rest() {
+    let mut scenario = arena((4..8).map(|x| unit(0, UnitKind::Harvester, x, 1)).collect());
+    scenario.players[0].scrap = 1_000;
+    let mut state = scenario.build().unwrap();
+    let crew = ids(&state, 0);
+    let (first, last) = crew.split_at(2);
+    let [near, far] = [(4, 6), (9, 6)].map(|(x, y)| TilePos::new(x, y));
+    let build = |anchor, queue| {
+        cmd(
+            0,
+            Command::Build {
+                units: crew.clone(),
+                kind: BuildingKind::Turret,
+                anchor,
+                queue,
+                defer: false,
+            },
+        )
+    };
+    state.tick(&[build(near, false), build(far, true)]);
+    let site_at = |state: &State, anchor| {
+        state
+            .buildings()
+            .iter()
+            .find(|b| b.anchor == anchor)
+            .map(|b| b.id)
+    };
+    let (first_site, site) = (
+        site_at(&state, near).unwrap(),
+        site_at(&state, far).unwrap(),
+    );
+    assert!(state.building(site).unwrap().unstarted(), "test premise");
+    assert_eq!(state.site_crew(site).collect::<Vec<_>>(), crew);
+    let paid = state.player(PlayerId(0)).scrap;
+
+    let report = state.tick(&[cancel(first[0], OrderKey::Build { site }, 0, &first[1..])]);
+    assert!(
+        !report
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::BuildCancelled { .. })),
+        "{:?}",
+        report.events
+    );
+    assert_eq!(site_at(&state, far), Some(site), "the site stands");
+    assert_eq!(state.site_crew(site).collect::<Vec<_>>(), last);
+    for &id in first {
+        assert_eq!(
+            keys(&state, id),
+            [OrderKey::Build { site: first_site }],
+            "{id} left"
+        );
+    }
+    for &id in last {
+        assert_eq!(
+            keys(&state, id),
+            [
+                OrderKey::Build { site: first_site },
+                OrderKey::Build { site }
+            ],
+            "{id} keeps it queued"
+        );
+    }
+    assert_eq!(state.player(PlayerId(0)).scrap, paid, "nothing refunded");
+
+    let report = state.tick(&[cancel(last[0], OrderKey::Build { site }, 0, &last[1..])]);
+    let cost = BuildingKind::Turret.base_stats().construction.cost;
+    assert!(report.events.contains(&Event::BuildCancelled {
+        building: site,
+        player: PlayerId(0),
+        refund: cost,
+    }));
+    assert_eq!(site_at(&state, far), None);
+    assert_eq!(state.site_crew(site).count(), 0);
+    assert_eq!(state.player(PlayerId(0)).scrap, paid + cost);
+}
+
+#[test]
 fn an_engagement_on_the_march_goes_with_its_leg() {
     let mut state = sandbox(
         40,

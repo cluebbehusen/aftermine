@@ -324,3 +324,16 @@ fn the_least_recently_drawn_chunks_go_first() {
     );
     assert!(stalest(&chunks, 0).is_empty());
 }
+
+#[test]
+fn a_flush_in_pieces_submits_every_flush_tiles_tiles() {
+    let submitted = std::cell::Cell::new(0);
+    let submit = || submitted.set(submitted.get() + 1);
+    let mut flush = Flush::in_pieces(&submit);
+    for _ in 1..FLUSH_TILES * 3 {
+        flush.tile();
+    }
+    assert_eq!(submitted.get(), 2);
+    flush.tile();
+    assert_eq!(submitted.get(), 3);
+}

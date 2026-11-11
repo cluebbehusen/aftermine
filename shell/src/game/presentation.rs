@@ -116,6 +116,9 @@ pub struct Presentation {
     /// `RefCell` because drawing borrows presentation.
     pub(crate) ground_cache: std::cell::RefCell<Box<crate::render::GroundCache>>,
     pub boundary_fog: crate::boundary_fog::BoundaryFog,
+    /// The fog veil's scan and meshes. A `RefCell` because drawing borrows
+    /// presentation.
+    pub(crate) fog_veil: std::cell::RefCell<crate::render::FogVeil>,
     /// The chrome geometry of the latest HUD layout pass. Hit-testing
     /// reads this same model so drawn and clickable regions cannot
     /// disagree. A `Cell` because drawing borrows presentation.
@@ -129,6 +132,9 @@ pub struct Presentation {
     /// orders dock and the waypoint chain. A `RefCell` because drawing
     /// borrows presentation.
     pub(crate) projection: std::cell::RefCell<super::projection::Projection>,
+    /// The world through the staged commands, shared by every HUD read of
+    /// it. A `RefCell` because drawing borrows presentation.
+    pub(crate) staged: std::cell::RefCell<Option<super::projection::StagedPhase>>,
     /// The latest placement verdict, shared by the ghost, the mode ribbon,
     /// and the click.
     pub(crate) placement_verdict: crate::input::VerdictCache,
@@ -218,9 +224,11 @@ pub(crate) struct Scene<'a> {
     /// The clock pacing this world: paused, speed, and render alpha.
     pub clock: &'a super::Clock,
     pub seat_styles: crate::seat_style::SeatStyles,
-    /// The lesson or match tip card holding the corner under the top bar,
-    /// which the HUD's top-centre chrome keeps clear of.
-    pub corner_card: Option<crate::render::tutorial_card::CornerCard>,
+    /// Where the lesson or match tip card over the match lies this frame,
+    /// in window px. It holds the corner under the top bar and draws over
+    /// the HUD, so the top-centre chrome keeps clear of it and the orders
+    /// dock stays under it.
+    pub corner_card: Option<macroquad::math::Rect>,
 }
 impl<'a> Scene<'a> {
     pub fn new(
@@ -299,19 +307,51 @@ impl<'a> Scene<'a> {
     /// The selection's programs as the staged commands will leave them.
     /// Callers drop the borrow before asking again.
     pub(crate) fn projection(&self) -> std::cell::Ref<'a, super::projection::Projection> {
+        use super::projection::Projection;
         let units = &self.presentation.selection.units;
         let cache = &self.presentation.projection;
         if !cache
             .borrow()
             .is_current(self.state.current_tick(), self.pending.len(), units)
         {
-            cache.replace(super::projection::Projection::capture(
-                self.state,
-                self.pending,
-                units.clone(),
-            ));
+            let pending = self.pending.len();
+            let fresh = if self.pending.is_empty() {
+                Projection::capture(self.state, pending, None, units.clone())
+            } else {
+                self.with_staged(|view| {
+                    Projection::capture(self.state, pending, Some(view), units.clone())
+                })
+            };
+            cache.replace(fresh);
         }
         cache.borrow()
+    }
+
+    /// `read` the world as the staged commands will leave it. With nothing
+    /// staged that is the world itself; otherwise every caller shares one
+    /// projection per tick and staged-command count, so the HUD copies the
+    /// world once rather than once per read.
+    pub(crate) fn with_staged<R>(
+        &self,
+        read: impl FnOnce(aftermine_sim::CommandPhaseView<'_>) -> R,
+    ) -> R {
+        if self.pending.is_empty() {
+            return self.state.inspect_command_phase(&[], read);
+        }
+        let cache = &self.presentation.staged;
+        let (tick, pending) = (self.state.current_tick(), self.pending.len());
+        if !cache
+            .borrow()
+            .as_ref()
+            .is_some_and(|kept| kept.is_current(tick, pending))
+        {
+            cache.replace(Some(super::projection::StagedPhase::capture(
+                self.state,
+                self.pending,
+            )));
+        }
+        let kept = cache.borrow();
+        read(kept.as_ref().expect("kept above").view())
     }
 }
 impl Presentation {
@@ -366,6 +406,7 @@ impl Presentation {
             ground: std::cell::OnceCell::new(),
             ground_cache: std::cell::RefCell::default(),
             boundary_fog,
+            fog_veil: std::cell::RefCell::default(),
             toasts: Vec::new(),
             stall_reports: Vec::new(),
             net_notice: None,
@@ -378,6 +419,7 @@ impl Presentation {
             passive_income: std::cell::Cell::new(None),
             panel_model: std::cell::RefCell::new(None),
             projection: std::cell::RefCell::default(),
+            staged: std::cell::RefCell::new(None),
             placement_verdict: crate::input::VerdictCache::default(),
             conceded_banner: false,
             stance: Stance::Seat,
@@ -995,6 +1037,8 @@ impl Presentation {
             layer.forget();
         }
         self.passive_income.set(None);
+        self.staged.get_mut().take();
+        self.fog_veil.get_mut().forget();
     }
 }
 

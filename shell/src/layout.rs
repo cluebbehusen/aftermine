@@ -54,17 +54,17 @@ pub struct LayoutModel {
     /// spectating.
     pub pause_button: Rect,
     /// Persistent armed-command ribbon. It is chrome even away from
-    /// the command band, and a press anywhere on it cancels the mode,
-    /// except on a patrol's, where only its Start and cross act.
+    /// the command band, and only its buttons act: a press on its words
+    /// does nothing.
     pub mode_ribbon: Rect,
-    /// The strike ribbon's buttons that shrink and grow the salvo; they
-    /// answer before the ribbon's cancel.
+    /// The strike ribbon's buttons that shrink and grow the salvo.
     pub salvo_less: Rect,
     pub salvo_more: Rect,
     /// The patrol ribbon's Start, which sends the route once it has a
-    /// point, and its cross, which drops the route.
+    /// point.
     pub patrol_start: Rect,
-    pub patrol_cancel: Rect,
+    /// The ribbon's cross, which cancels the mode but keeps the selection.
+    pub ribbon_cancel: Rect,
     /// The QUEUE toggle beside the ribbon, on touch-only builds.
     pub queue_toggle: Rect,
     /// The queue flag under the top bar while orders queue: its rule and
@@ -92,7 +92,7 @@ pub struct LayoutModel {
     /// How many cards are live this frame.
     pub card_count: usize,
     /// Queue thumbnails (production or orders), same contract.
-    pub queue_slots: [(Rect, CardAction); 8],
+    pub queue_slots: [(Rect, CardAction); DOCK_SLOTS],
     /// How many queue slots are live this frame.
     pub queue_count: usize,
     /// The Stop button above the dock; zero-sized while there is none.
@@ -101,7 +101,7 @@ pub struct LayoutModel {
     /// is none.
     pub drones: Rect,
     /// Its chips, same contract as the queue's.
-    pub drone_slots: [(Rect, CardAction); 8],
+    pub drone_slots: [(Rect, CardAction); DOCK_SLOTS],
     /// How many drone chips are live this frame.
     pub drone_count: usize,
 }
@@ -128,7 +128,7 @@ impl Default for LayoutModel {
             salvo_less: Rect::new(0.0, 0.0, 0.0, 0.0),
             salvo_more: Rect::new(0.0, 0.0, 0.0, 0.0),
             patrol_start: Rect::new(0.0, 0.0, 0.0, 0.0),
-            patrol_cancel: Rect::new(0.0, 0.0, 0.0, 0.0),
+            ribbon_cancel: Rect::new(0.0, 0.0, 0.0, 0.0),
             queue_toggle: Rect::new(0.0, 0.0, 0.0, 0.0),
             queue_flag: [Rect::new(0.0, 0.0, 0.0, 0.0); 2],
             ghost_confirm: Rect::new(0.0, 0.0, 0.0, 0.0),
@@ -140,15 +140,19 @@ impl Default for LayoutModel {
             roster_count: 0,
             cards: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); crate::panel::MAX_CARDS],
             card_count: 0,
-            queue_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 8],
+            queue_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); DOCK_SLOTS],
             queue_count: 0,
             queue_stop: (Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None),
             drones: Rect::new(0.0, 0.0, 0.0, 0.0),
-            drone_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); 8],
+            drone_slots: [(Rect::new(0.0, 0.0, 0.0, 0.0), CardAction::None); DOCK_SLOTS],
             drone_count: 0,
         }
     }
 }
+
+/// The most entries the orders dock and the drone column show; the
+/// dock counts the rest under its chips.
+pub(crate) const DOCK_SLOTS: usize = 16;
 
 /// Top-bar height in logical px at 1x scale, read by both hit-testing
 /// and drawing.
@@ -507,6 +511,9 @@ pub enum TooltipSide {
     /// the dock hugs the left edge and stacks upward, so "above" would
     /// land on the neighbouring chip instead of open screen.
     RightOf,
+    /// Left of the anchor, centered on it — the control-group column's
+    /// rule, mirroring the dock's on the right edge.
+    LeftOf,
 }
 
 /// Places a tooltip box against the rect it describes. `gap` is the
@@ -529,6 +536,10 @@ pub fn tooltip_origin(
         TooltipSide::Above => (anchor.x, anchor.y - size.y - gap),
         TooltipSide::RightOf => (
             anchor.x + anchor.w + gap,
+            anchor.y + (anchor.h - size.y) * 0.5,
+        ),
+        TooltipSide::LeftOf => (
+            anchor.x - size.x - gap,
             anchor.y + (anchor.h - size.y) * 0.5,
         ),
     };

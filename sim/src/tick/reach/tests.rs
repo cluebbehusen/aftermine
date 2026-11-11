@@ -461,11 +461,9 @@ fn a_depletion_during_the_brain_phase_reopens_the_ground_for_later_walkers() {
     assert_eq!(state.tick % 2, 0, "premise: the brains run in id order");
     assert!(scout < harvester && harvester < walker);
     let report = state.tick(&[]);
-    assert!(
-        report
-            .events
-            .iter()
-            .any(|event| matches!(event, Event::NodeDepleted { pos } if *pos == node)),
+    assert_eq!(
+        state.map.scrap_at(node),
+        0,
         "premise: the harvester emptied the node this tick"
     );
     assert!(

@@ -14,7 +14,8 @@
 //! what a slice queues or else does what a right-click on its card does.
 //! The build rings step the same construction state the build keys do, so
 //! the palette's cards judge what they offer, though pad mode draws none of
-//! it. A controller's placement closes that state, and B out of one opens
+//! it. A controller's placement closes that state, as does B out of a
+//! placement that staged a chain; B out of one that staged nothing opens
 //! the build ring it was picked from. The group ring recalls a
 //! group with A and saves the selection to it with X, through the actions
 //! the group keys dispatch.
@@ -239,10 +240,10 @@ fn swap(game: &mut Game, input: &mut InputState, kind: RingKind) {
     }
 }
 
-/// B out of a controller's placement: the command ring opens on the build
-/// ring the structure was picked from, and `pad` keeping B down may close
-/// every ring, as a B pressed in a ring may. With nothing there to offer,
-/// construction closes instead.
+/// B out of a controller's placement that staged nothing: the command ring
+/// opens on the build ring the structure was picked from, and `pad` keeping
+/// B down may close every ring, as a B pressed in a ring may. With nothing
+/// there to offer, construction closes instead.
 pub(super) fn reopen_build(game: &Game, input: &mut InputState, pad: u64) {
     if !show(game, input, RingKind::Commands) {
         input.close_construction();
@@ -401,7 +402,7 @@ fn dismiss(input: &mut InputState) {
 
 /// Whether `open` stands in the build rings, whose palette closes with
 /// them.
-pub(super) fn building(open: Option<&PadRing>) -> bool {
+fn building(open: Option<&PadRing>) -> bool {
     open.is_some_and(|open| open.path.contains(&Branch::Build))
 }
 

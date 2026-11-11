@@ -129,6 +129,7 @@ use entities::{
 };
 pub use minimap::*;
 use panel_draw::{draw_panel, draw_panel_tooltip};
+pub(crate) use world::FogVeil;
 use world::{draw_fog, draw_scorches};
 
 use crate::game::{EffectKind, Scene};
@@ -527,6 +528,7 @@ pub(crate) fn draw_with_performance(
         chrome::draw_queue_strip(game, sprites, input);
         draw_panel_tooltip(game, input);
         chrome::draw_army_tooltip(game, input, bindings);
+        chrome::draw_group_tooltip(game, input, bindings);
         if let Some(ring) = &hud.ring {
             radial::draw(sprites, ring);
         }
@@ -542,10 +544,10 @@ pub(crate) fn draw_world(game: &crate::game::Scene<'_>, sprites: &Sprites, input
     measure(FramePass::TerrainBake, || {
         ground_cache.prepare(&ground, &view, &game.presentation.camera, sprites);
     });
-    clear_background(OUTSIDE);
+    // Boundary sight extends off-map, so the void must match opaque fog.
+    clear_background(FOG_UNEXPLORED);
     let alpha = game.clock.render_alpha();
     pass(FramePass::Terrain, || {
-        environment::draw_backdrop();
         ground_cache.draw(ground::Layer::Floor, &ground, &view, sprites);
     });
     pass(FramePass::Salvage, || {

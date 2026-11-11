@@ -36,7 +36,7 @@ use super::environment::{
     BoundaryInsets, LAYERS, Layer, Material, SALT, UNLIT, WAVE_LIFTS, draw_fracture, draw_lip,
     draw_missing_slab, draw_rebar, draw_strata, faces_light, hash, mixed, quarry_color, shifted,
 };
-use super::ground::GroundView;
+use super::ground::{Flush, GroundView};
 use super::stretches::Shapes;
 use super::tall_faces::TallFaces;
 use crate::numeric;
@@ -514,6 +514,7 @@ pub(super) fn draw_terraces(
     view: &GroundView,
     terraces: &Terraces,
     grade: super::grade::Grade,
+    flush: &mut Flush,
 ) {
     let layers = LAYERS.map(|layer| grade.layer(layer));
     let (min, max) = screen_tiles(map, view);
@@ -529,8 +530,9 @@ pub(super) fn draw_terraces(
                     .is_some_and(|tile| tile.terrain == Terrain::Peak)
         })
         .collect();
-    draw_shadow(map, view, terraces);
+    draw_shadow(map, view, terraces, flush);
     for &pos in &tiles {
+        flush.tile();
         let (xs, ys) = cell_edges(view, pos);
         for sy in 0..CELLS {
             for sx in 0..CELLS {
@@ -578,6 +580,7 @@ pub(super) fn draw_terraces(
     };
     // Decals sit on a tile whose first two-by-two cells share one bench.
     for &pos in &tiles {
+        flush.tile();
         let (cx, cy) = (pos.x * CELLS, pos.y * CELLS);
         let Some(Material::Bench(level)) = material_at(cx, cy) else {
             continue;
@@ -610,6 +613,7 @@ pub(super) fn draw_terraces(
     // face.
     let lip = (zoom * 0.055).max(1.0);
     for &pos in &tiles {
+        flush.tile();
         let (xs, ys) = cell_edges(view, pos);
         for sy in 0..CELLS {
             for sx in 0..CELLS {
@@ -703,7 +707,7 @@ fn in_shadow(material: impl Fn(i32, i32) -> Option<Material>, cx: i32, cy: i32) 
             .any(|(dx, dy)| material(cx - dx, cy - dy).is_some())
 }
 
-fn draw_shadow(map: &Map, view: &GroundView, terraces: &Terraces) {
+fn draw_shadow(map: &Map, view: &GroundView, terraces: &Terraces, flush: &mut Flush) {
     let frame = &terraces.frame;
     let is_wall = |x: i32, y: i32| {
         let pos = TilePos::new(x, y);
@@ -718,6 +722,7 @@ fn draw_shadow(map: &Map, view: &GroundView, terraces: &Terraces) {
             if !frame.contains(pos) || !reachable {
                 continue;
             }
+            flush.tile();
             let (xs, ys) = cell_edges(view, pos);
             for sy in 0..CELLS {
                 for sx in 0..CELLS {

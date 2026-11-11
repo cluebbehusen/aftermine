@@ -185,9 +185,9 @@ fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
         MenuHome, MenuLeft, MenuPageDown, MenuPageUp, MenuRight, MenuUp, NextTab, OrderRound,
         PanDown, PanLeft, PanRight, PanUp, Patrol, PrevTab, RecallBookmark, RepairUnit, ReplayBack,
         ReplayEnd, ReplayForward, ReplayPause, ReplaySpeed, ReplayStart, ReplayStats, Retire,
-        ReturnCargo, Run, Salvage, Scout, SelectArmy, SelectArmyInView, SetBookmark, SetRally,
-        Slot, StopOrScrap, ToggleAutofill, ToggleBuildPalette, ToggleIdleWeld, ToggleOverlay,
-        TogglePause, TrainSlot, Unload, Upgrade,
+        ReturnCargo, Run, Salvage, Scout, SelectAllOfKind, SelectArmy, SelectArmyInView,
+        SetBookmark, SetRally, Slot, StopOrScrap, ToggleAutofill, ToggleBuildPalette,
+        ToggleIdleWeld, ToggleOverlay, TogglePause, TrainSlot, Unload, Upgrade,
     };
     let mut sections = vec![
         (
@@ -244,7 +244,7 @@ fn control_sections() -> Vec<(&'static str, Vec<Action>)> {
     sections.extend([
         (
             "Control groups",
-            [SelectArmy, SelectArmyInView]
+            [SelectArmy, SelectArmyInView, SelectAllOfKind]
                 .into_iter()
                 .chain((1..=5).flat_map(|n| [Slot(n), AssignGroup(n)]))
                 .collect(),

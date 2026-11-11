@@ -2,14 +2,21 @@
 
 use crate::game::Scene;
 use crate::numeric;
-use crate::render::prim::stroke_rect;
-use crate::render::prim::{fill_circle, stroke_circle};
 use aftermine_sim::Unit;
 use macroquad::prelude::*;
+
+mod ink;
 
 thread_local! {
     static PREFS: std::cell::Cell<crate::config::MarkerPrefs> =
         std::cell::Cell::new(crate::config::MarkerPrefs::default());
+    static INK: std::cell::RefCell<ink::Ink> = std::cell::RefCell::default();
+}
+
+/// Draws what the pens of `draw` queued, after it returns.
+fn inked(draw: impl FnOnce()) {
+    draw();
+    INK.with_borrow_mut(ink::Ink::flush);
 }
 
 pub(crate) fn set_prefs(prefs: crate::config::MarkerPrefs) {
@@ -28,7 +35,8 @@ pub(crate) fn marker_alpha(zoom: f32) -> f32 {
 /// Draws one marker's art around its screen position. The art is authored as
 /// offsets at 100% and takes the player's marker size here rather than from a
 /// camera: `set_camera` flushes the frame's draw batch, and that mid-frame
-/// re-upload stalls in the GL driver.
+/// re-upload stalls in the GL driver. Shapes queue on [`INK`], so only code
+/// [`inked`] runs may draw with one.
 #[derive(Clone, Copy)]
 struct Pen {
     center: Vec2,
@@ -42,67 +50,75 @@ impl Pen {
 
     fn line(self, a: (f32, f32), b: (f32, f32), thickness: f32, color: Color) {
         let (a, b) = (self.at(a), self.at(b));
-        draw_line(a.x, a.y, b.x, b.y, thickness * self.scale, color);
+        INK.with_borrow_mut(|ink| ink.line(a.x, a.y, b.x, b.y, thickness * self.scale, color));
     }
 
     fn rect(self, corner: (f32, f32), size: (f32, f32), color: Color) {
         let corner = self.at(corner);
-        draw_rectangle(
-            corner.x,
-            corner.y,
-            size.0 * self.scale,
-            size.1 * self.scale,
-            color,
-        );
+        INK.with_borrow_mut(|ink| {
+            ink.rect(
+                corner.x,
+                corner.y,
+                size.0 * self.scale,
+                size.1 * self.scale,
+                color,
+            );
+        });
     }
 
     fn rect_lines(self, corner: (f32, f32), size: (f32, f32), thickness: f32, color: Color) {
         let corner = self.at(corner);
-        stroke_rect(
-            Rect::new(corner.x, corner.y, size.0 * self.scale, size.1 * self.scale),
-            thickness * self.scale,
-            color,
-        );
+        INK.with_borrow_mut(|ink| {
+            ink.rect_lines(
+                Rect::new(corner.x, corner.y, size.0 * self.scale, size.1 * self.scale),
+                thickness * self.scale,
+                color,
+            );
+        });
     }
 
     fn poly(self, sides: u8, radius: f32, rotation: f32, color: Color) {
-        draw_poly(
-            self.center.x,
-            self.center.y,
-            sides,
-            radius * self.scale,
-            rotation,
-            color,
-        );
+        INK.with_borrow_mut(|ink| {
+            ink.poly(
+                self.center.x,
+                self.center.y,
+                sides,
+                radius * self.scale,
+                rotation,
+                color,
+            );
+        });
     }
 
     fn poly_lines(self, sides: u8, radius: f32, rotation: f32, thickness: f32, color: Color) {
-        draw_poly_lines(
-            self.center.x,
-            self.center.y,
-            sides,
-            radius * self.scale,
-            rotation,
-            thickness * self.scale,
-            color,
-        );
+        INK.with_borrow_mut(|ink| {
+            ink.poly_lines(
+                self.center.x,
+                self.center.y,
+                sides,
+                radius * self.scale,
+                rotation,
+                thickness * self.scale,
+                color,
+            );
+        });
     }
 
     fn circle(self, offset: (f32, f32), radius: f32, color: Color) {
-        fill_circle(self.at(offset), radius * self.scale, color);
+        let center = self.at(offset);
+        INK.with_borrow_mut(|ink| ink.circle(center, radius * self.scale, color));
     }
 
     fn circle_lines(self, offset: (f32, f32), radius: f32, thickness: f32, color: Color) {
-        stroke_circle(
-            self.at(offset),
-            radius * self.scale,
-            thickness * self.scale,
-            color,
-        );
+        let center = self.at(offset);
+        INK.with_borrow_mut(|ink| {
+            ink.circle_lines(center, radius * self.scale, thickness * self.scale, color);
+        });
     }
 
     fn triangle(self, a: (f32, f32), b: (f32, f32), c: (f32, f32), color: Color) {
-        draw_triangle(self.at(a), self.at(b), self.at(c), color);
+        let (a, b, c) = (self.at(a), self.at(b), self.at(c));
+        INK.with_borrow_mut(|ink| ink.triangle(a, b, c, color));
     }
 }
 
@@ -120,35 +136,52 @@ pub(crate) fn visible(game: &Scene<'_>, unit: &Unit) -> bool {
         || game.my_vision().sees_unit(unit)
 }
 
+/// A unit marker the view shows: the unit, where it draws, and whether it is
+/// selected.
+type Shown<'a> = (&'a Unit, Vec2, bool);
+
+/// The unit markers in view, unselected ones first so a selection's rings
+/// draw over its neighbours, each part in the world's unit order.
+fn shown_units<'a>(game: &Scene<'a>, alpha: f32) -> Vec<Shown<'a>> {
+    let (lo, hi) = game.presentation.camera.world_rect();
+    let selection = &game.presentation.selection.units;
+    let mut chosen = Vec::new();
+    let mut shown: Vec<Shown<'a>> = game
+        .state
+        .units()
+        .iter()
+        .filter(|unit| visible(game, unit))
+        .filter_map(|unit| {
+            let pos = game.presentation.draw_pos(unit.id, unit.pos, alpha);
+            if pos.x < lo.x - 2.0 || pos.y < lo.y - 2.0 || pos.x > hi.x + 2.0 || pos.y > hi.y + 2.0
+            {
+                return None;
+            }
+            if selection.binary_search(&unit.id).is_ok() {
+                chosen.push((unit, pos, true));
+                return None;
+            }
+            Some((unit, pos, false))
+        })
+        .collect();
+    shown.append(&mut chosen);
+    shown
+}
+
 pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
     let opacity = marker_alpha(game.presentation.camera.zoom);
     if opacity <= 0.0 {
         return;
     }
+    inked(|| draw_unit_markers(game, alpha, opacity));
+}
+
+fn draw_unit_markers(game: &Scene<'_>, alpha: f32, opacity: f32) {
     let scale = prefs().scale;
-    let (lo, hi) = game.presentation.camera.world_rect();
+    let shown = shown_units(game, alpha);
     // Draw all backplates before any glyph so adjacent markers cannot erase roles.
     for backplates in [true, false] {
-        for unit in game
-            .state
-            .units()
-            .iter()
-            .filter(|u| !game.presentation.selection.units.contains(&u.id))
-            .chain(
-                game.state
-                    .units()
-                    .iter()
-                    .filter(|u| game.presentation.selection.units.contains(&u.id)),
-            )
-        {
-            if !visible(game, unit) {
-                continue;
-            }
-            let pos = game.presentation.draw_pos(unit.id, unit.pos, alpha);
-            if pos.x < lo.x - 2.0 || pos.y < lo.y - 2.0 || pos.x > hi.x + 2.0 || pos.y > hi.y + 2.0
-            {
-                continue;
-            }
+        for &(unit, pos, selected) in &shown {
             let pen = Pen {
                 center: game.presentation.camera.to_screen(pos),
                 scale,
@@ -157,7 +190,6 @@ pub fn draw_markers(game: &Scene<'_>, alpha: f32) {
             let color = Color { a: opacity, ..tint };
             let fill = Color::new(0.065, 0.065, 0.075, opacity);
             let ink = Color::new(0.91, 0.89, 0.83, opacity);
-            let selected = game.presentation.selection.units.contains(&unit.id);
             let air = unit.domain() == aftermine_sim::stats::Domain::Air;
             if backplates {
                 if air {
@@ -242,6 +274,10 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
     if alpha <= 0.0 {
         return;
     }
+    inked(|| draw_building_markers(game, alpha));
+}
+
+fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
     let scale = prefs().scale;
     let (lo, hi) = game.presentation.camera.world_rect();
     // A Spire's deck art is too small to read here, so its marker says
@@ -250,7 +286,7 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
         .state
         .known_magazines(game.presentation.human)
         .into_iter()
-        .filter(|known| known.heading.is_some() && known.loaded > 0)
+        .filter(|known| known.deck.is_some() && known.loaded > 0)
         .map(|known| known.building)
         .collect();
     let mut markers = Vec::new();
@@ -473,12 +509,15 @@ pub(crate) fn extractor_frame_visible(game: &Scene<'_>, frame: chassis::grid::Ti
 }
 
 pub(crate) fn draw_extractor_frames(game: &Scene<'_>) {
-    let prefs = prefs();
     let alpha = marker_alpha(game.presentation.camera.zoom);
     if alpha <= 0.0 {
         return;
     }
-    let scale = prefs.scale;
+    inked(|| draw_frame_markers(game, alpha));
+}
+
+fn draw_frame_markers(game: &Scene<'_>, alpha: f32) {
+    let scale = prefs().scale;
     let (lo, hi) = game.presentation.camera.world_rect();
     for &frame in game.state.map().extractor_frames() {
         let pos = vec2(frame.x as f32 + 1.0, frame.y as f32 + 1.0);

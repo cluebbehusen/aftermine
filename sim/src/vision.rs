@@ -112,6 +112,11 @@ fn ghost_built_default() -> bool {
 }
 
 impl GhostBuilding {
+    /// The memory table's canonical order.
+    pub(crate) fn sort_key(&self) -> (i32, i32, PlayerId, BuildingKind) {
+        (self.anchor.y, self.anchor.x, self.owner, self.kind)
+    }
+
     pub(crate) fn footprint(&self) -> impl Iterator<Item = TilePos> + use<> {
         let (w, h) = self.kind.size();
         let anchor = self.anchor;
@@ -137,9 +142,11 @@ pub(crate) struct SalvageIncident {
 pub struct Vision {
     visible: Grid<bool>,
     explored: Grid<bool>,
-    /// Remembered enemy buildings, sorted by (anchor.y, anchor.x, owner).
-    /// The owner is part of the key because two hostile seats can leave
-    /// memories recorded under the same corner.
+    /// Remembered enemy buildings, sorted by (anchor.y, anchor.x, owner,
+    /// kind), a key no two memories share. Two hostile seats can leave
+    /// memories under the same corner, and so can one seat: a buried
+    /// charge's memory outlives its unseen tile while its owner builds a
+    /// wider structure from the same corner.
     ghosts: Vec<GhostBuilding>,
     /// Scrap per tile as this player last saw it. Only meaningful where
     /// `explored`; frozen wherever sight is lost, exactly like ghosts.
@@ -458,8 +465,7 @@ impl Vision {
             self.warheads.push(track);
         }
         if revealed {
-            self.ghosts
-                .sort_unstable_by_key(|g| (g.anchor.y, g.anchor.x, g.owner));
+            self.ghosts.sort_unstable_by_key(GhostBuilding::sort_key);
         }
     }
 
@@ -1614,7 +1620,7 @@ pub(crate) fn refresh(state: &mut State) {
                 });
             }
         }
-        ghosts.sort_unstable_by_key(|g| (g.anchor.y, g.anchor.x, g.owner));
+        ghosts.sort_unstable_by_key(GhostBuilding::sort_key);
         view.ghosts = ghosts;
 
         // Freeze-frame the economy the same way: wherever there is sight,

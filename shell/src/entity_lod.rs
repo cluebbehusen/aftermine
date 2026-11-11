@@ -180,25 +180,58 @@ fn contact_sources(manifest: &HashMap<String, [f32; 4]>) -> BTreeSet<Source> {
         .map(|(_, row)| row.map(numeric::to_u32))
         .collect()
 }
+/// What [`EntityLod`] derives from the atlas on the CPU: the packed levels
+/// and every sprite's bounds and contacts.
+struct Baked {
+    sprites: HashMap<Source, Packed>,
+    bounds: HashMap<Source, Rect>,
+    contacts: HashMap<Source, crate::sprite_contact::SpriteContact>,
+    pages: Vec<Image>,
+}
+
 impl EntityLod {
-    pub(crate) fn load(manifest: &HashMap<String, [f32; 4]>, page_height: f32) -> Result<Self> {
-        let sources = entity_sources(manifest);
-        let count = sources
+    /// Derives the reductions from the atlas pages the caller already
+    /// decoded for its own textures.
+    pub(crate) fn load(
+        manifest: &HashMap<String, [f32; 4]>,
+        originals: &[Image],
+        page_height: f32,
+    ) -> Result<Self> {
+        let Baked {
+            sprites,
+            bounds,
+            contacts,
+            pages,
+        } = Self::bake(manifest, originals, page_height)?;
+        let pages: Vec<_> = pages
             .iter()
-            .map(|k| k[1] as usize / numeric::to_usize(page_height) + 1)
-            .max()
-            .unwrap_or(0);
-        let mut originals = Vec::new();
-        for index in 0..count {
-            let name = if index == 0 {
-                "atlas.png".to_owned()
-            } else {
-                format!("atlas_{index}.png")
-            };
-            originals.push(crate::assets::load_resource_image(&format!(
-                "assets/sprites/{name}"
-            ))?);
-        }
+            .map(|image| {
+                let t = Texture2D::from_image(image);
+                t.set_filter(FilterMode::Linear);
+                t
+            })
+            .collect();
+        let material = blend_material(&pages)?;
+        Ok(Self {
+            _pages: pages,
+            material,
+            sprites,
+            bounds,
+            contacts,
+            mesh: RefCell::new(Mesh {
+                vertices: vec![Vertex::new(0.0, 0.0, 0.0, 0.0, 0.0, WHITE); 4],
+                indices: vec![0, 1, 2, 0, 2, 3],
+                texture: None,
+            }),
+        })
+    }
+
+    fn bake(
+        manifest: &HashMap<String, [f32; 4]>,
+        originals: &[Image],
+        page_height: f32,
+    ) -> Result<Baked> {
+        let sources = entity_sources(manifest);
         let mut sprites = HashMap::new();
         let mut bounds = HashMap::new();
         let mut areas = BTreeMap::new();
@@ -220,17 +253,20 @@ impl EntityLod {
                 key[2] as usize + 4 <= PAGE && key[3] as usize + 4 <= PAGE,
                 "sprite exceeds texture page"
             );
+            let original = originals
+                .get(page)
+                .with_context(|| format!("sprite on missing atlas page {page}"))?;
             anyhow::ensure!(
-                local[0] + local[2] <= u32::from(originals[page].width)
-                    && local[1] + local[3] <= u32::from(originals[page].height),
+                local[0] + local[2] <= u32::from(original.width)
+                    && local[1] + local[3] <= u32::from(original.height),
                 "sprite exceeds source atlas page"
             );
-            bounds.insert(key, opaque_bounds(&originals[page], local));
-            areas.insert(key, packed_area(&originals[page], local));
+            bounds.insert(key, opaque_bounds(original, local));
+            areas.insert(key, packed_area(original, local));
             if contact_sources.contains(&key) {
                 contacts.insert(
                     key,
-                    crate::sprite_contact::SpriteContact::capture(&originals[page], local),
+                    crate::sprite_contact::SpriteContact::capture(original, local),
                 );
             }
         }
@@ -259,27 +295,11 @@ impl EntityLod {
                 })
                 .levels[level] = region;
         }
-        let pages: Vec<_> = packer
-            .images
-            .iter()
-            .map(|image| {
-                let t = Texture2D::from_image(image);
-                t.set_filter(FilterMode::Linear);
-                t
-            })
-            .collect();
-        let material = blend_material(&pages)?;
-        Ok(Self {
-            _pages: pages,
-            material,
+        Ok(Baked {
             sprites,
             bounds,
             contacts,
-            mesh: RefCell::new(Mesh {
-                vertices: vec![Vertex::new(0.0, 0.0, 0.0, 0.0, 0.0, WHITE); 4],
-                indices: vec![0, 1, 2, 0, 2, 3],
-                texture: None,
-            }),
+            pages: packer.images,
         })
     }
     pub(crate) fn contact(

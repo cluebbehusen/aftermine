@@ -76,11 +76,12 @@ elimination stamps or a final result, and session checkpoints require matching
 scenario and world modes.
 
 All `State` fields are crate-private. Other crates get narrow immutable
-accessors and change the world only by passing commands to `tick`.
-`inspect_command_phase` is the one exception, for prediction. It clones the
-state, applies only command validation and command-phase effects, shows a
-restricted read-only view to a callback, and discards the clone. It never
-advances or installs authoritative state.
+accessors and change the world only by passing commands to `tick`. Prediction is
+the one exception. `command_phase` clones the state, applies only command
+validation and command-phase effects, and returns an owned `CommandPhase` a
+caller may keep but read only through the restricted `CommandPhaseView`;
+`inspect_command_phase` lends the same view to a callback. Neither advances or
+installs authoritative state.
 
 Deserialization goes through a private mirror type and then
 `State::validate_invariants`; there is no unchecked path. Validation covers,
