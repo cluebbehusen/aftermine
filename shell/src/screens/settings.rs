@@ -339,7 +339,7 @@ pub(crate) enum Row {
 }
 
 /// The capture prompt, shown while a binding row listens.
-const CAPTURE_PROMPT: &str = "Press a key - Esc cancels";
+const CAPTURE_PROMPT: &str = "Press a key - Esc or Back cancels";
 
 /// Volume steps, low to high.
 const VOLUMES: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];

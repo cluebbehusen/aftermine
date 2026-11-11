@@ -347,6 +347,11 @@ fn the_back_button_cancels_a_capture_then_leaves() {
     let back = crate::button::tests::press_back(true);
 
     screen.face = Face::Capturing(Action::PanUp);
+    let (prompt, _) = screen.status().expect("a capture prompts");
+    assert!(
+        prompt.contains("Esc") && prompt.contains("Back"),
+        "the prompt names both ways out: {prompt}"
+    );
     let update = drive(&mut screen, &mut config, &back, false);
     assert_eq!(screen.face, Face::Tab(Tab::Controls), "cancels capture");
     assert!(!update.dirty, "a cancelled capture binds nothing");

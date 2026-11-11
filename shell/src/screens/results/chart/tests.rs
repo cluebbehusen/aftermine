@@ -262,6 +262,15 @@ fn turning_points_read_as_plain_sentences() {
 }
 
 #[test]
+fn the_strip_names_tab_keys_only_to_a_player_who_can_press_them() {
+    for hands in crate::platform::tests::ALL_HANDS {
+        crate::platform::set_hands(hands);
+        assert_eq!(strip_keys().is_some(), hands.keys, "{hands:?}");
+    }
+    crate::platform::set_hands(crate::platform::Hands::BUILD);
+}
+
+#[test]
 fn tabs_cycle_with_keys_and_wrap_both_ways() {
     let stats = report(vec![0, 100], vec![player(0, vec![0, 0])], Vec::new());
     let mut chart = Chart::default();
