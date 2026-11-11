@@ -258,8 +258,8 @@ impl Missions {
             .iter()
             .filter(|building| building.kind == BuildingKind::Foundry && building.built)
             .collect();
-        let routes = Routes::new(map, frame, scratch, &homes);
-        let mut routes = routes.around_incidents(&observation.salvage_incidents);
+        let mut routes = Routes::new(map, frame, scratch, &homes)
+            .around_incidents(&observation.salvage_incidents);
         let fields: Vec<(TilePos, u32)> = observation
             .known_wrecks
             .iter()
