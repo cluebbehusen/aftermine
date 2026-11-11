@@ -260,14 +260,7 @@ fn follow(state: &mut State, reach: &mut Reach, party: &Party, id: UnitId) {
     if settled(unit, endpoint) {
         return;
     }
-    let path = crate::tick::movement::route_round_hulls(state, unit, unit.pos, endpoint).map(
-        |waypoints| PathFollow {
-            final_point: None,
-            goal: endpoint,
-            waypoints,
-            next: 0,
-            clearing: false,
-        },
-    );
+    let path = crate::tick::movement::route_round_hulls(state, unit, unit.pos, endpoint)
+        .map(|waypoints| PathFollow::to(endpoint, waypoints));
     state.unit_mut(id).expect("caller checked").path = path;
 }

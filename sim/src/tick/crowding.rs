@@ -260,11 +260,8 @@ pub(in crate::tick) fn choose_admitted(
                 waypoints.push(candidate.goal);
             }
             return Some(crate::state::PathFollow {
-                goal: candidate.goal,
                 final_point: Some(candidate.point),
-                waypoints,
-                next: 0,
-                clearing: false,
+                ..crate::state::PathFollow::to(candidate.goal, waypoints)
             });
         }
         failed.insert(candidate.goal);

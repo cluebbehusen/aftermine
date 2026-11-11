@@ -482,13 +482,7 @@ pub(in crate::tick::brain) fn attack_known(
         tile.center(),
         goal,
     ) {
-        state.unit_mut(id).expect("live unit").path = Some(PathFollow {
-            final_point: None,
-            goal,
-            waypoints,
-            next: 0,
-            clearing: false,
-        });
+        state.unit_mut(id).expect("live unit").path = Some(PathFollow::to(goal, waypoints));
         true
     } else {
         false

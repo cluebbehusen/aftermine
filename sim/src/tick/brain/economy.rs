@@ -3,9 +3,9 @@
 //! damage and resolve after it — fire wins ties.
 
 use super::super::{route_for, tile_adjacent_to_rect};
-use super::PendingHpGain;
 use super::contact;
 use super::locomotion::approach_rect;
+use super::{PendingHpGain, Stall, stall};
 use crate::event::{Event, StallReason};
 use crate::ids::{BuildingId, PlayerId, Target, UnitId};
 use crate::state::{Order, PathFollow, State};
@@ -146,15 +146,7 @@ pub(super) fn build(
         }
         state.unit_mut(id).expect("caller checked").path = None;
     } else if !contact::approach_worker(state, index, id, site) {
-        let unit = state.unit_mut(id).expect("caller checked");
-        let (player, pos) = (unit.player, unit.pos);
-        unit.drop_active_order();
-        events.push(Event::OrderStalled {
-            unit: id,
-            player,
-            pos,
-            reason: StallReason::NoRoute,
-        });
+        stall(state, id, Stall::Drop, StallReason::NoRoute, events);
     }
 }
 
@@ -190,15 +182,7 @@ pub(super) fn found(
     {
         state.unit_mut(id).expect("caller checked").path = None;
     } else if !approach_rect(state, id, anchor, size) {
-        let unit = state.unit_mut(id).expect("caller checked");
-        let pos = unit.pos;
-        unit.drop_active_order();
-        events.push(Event::OrderStalled {
-            unit: id,
-            player,
-            pos,
-            reason: StallReason::NoRoute,
-        });
+        stall(state, id, Stall::Drop, StallReason::NoRoute, events);
     }
 }
 
@@ -225,26 +209,16 @@ pub(super) fn repair(
     if unit.work_stopped() && state.in_building_work_reach(unit, building) {
         if !weld_building(state, id, building, builds) {
             // Broke stalls the torch.
-            let unit = state.unit_mut(id).expect("caller checked");
-            let (player, pos) = (unit.player, unit.pos);
-            unit.clear_program();
-            events.push(Event::OrderStalled {
-                unit: id,
-                player,
-                pos,
-                reason: StallReason::InsufficientScrap,
-            });
+            stall(
+                state,
+                id,
+                Stall::Clear,
+                StallReason::InsufficientScrap,
+                events,
+            );
         }
     } else if !contact::approach_worker(state, index, id, building) {
-        let unit = state.unit_mut(id).expect("caller checked");
-        let (player, pos) = (unit.player, unit.pos);
-        unit.drop_active_order();
-        events.push(Event::OrderStalled {
-            unit: id,
-            player,
-            pos,
-            reason: StallReason::NoRoute,
-        });
+        stall(state, id, Stall::Drop, StallReason::NoRoute, events);
     }
 }
 
@@ -496,15 +470,13 @@ pub(super) fn commit_unit_welds(
         }
         if due > bank {
             // Broke stalls the torch.
-            let unit = state.unit_mut(weld.welder).expect("just seen");
-            let (player, pos) = (unit.player, unit.pos);
-            unit.clear_program();
-            events.push(Event::OrderStalled {
-                unit: weld.welder,
-                player,
-                pos,
-                reason: StallReason::InsufficientScrap,
-            });
+            stall(
+                state,
+                weld.welder,
+                Stall::Clear,
+                StallReason::InsufficientScrap,
+                events,
+            );
             continue;
         }
         state.player_mut(me).scrap = bank - due;
@@ -559,15 +531,7 @@ fn chase_patient(state: &mut State, id: UnitId, patient: UnitId, events: &mut Ve
     if approach_patient(state, id, patient) {
         return;
     }
-    let unit = state.unit_mut(id).expect("caller checked");
-    let (player, pos) = (unit.player, unit.pos);
-    unit.drop_active_order();
-    events.push(Event::OrderStalled {
-        unit: id,
-        player,
-        pos,
-        reason: StallReason::NoRoute,
-    });
+    stall(state, id, Stall::Drop, StallReason::NoRoute, events);
 }
 
 /// Routes welder `id` to a working position against `patient`'s hull,
@@ -691,15 +655,7 @@ pub(super) fn salvage(
             drains.push(super::PendingHpDrain { building, step });
         }
     } else if !contact::approach_worker(state, index, id, building) {
-        let unit = state.unit_mut(id).expect("caller checked");
-        let (player, pos) = (unit.player, unit.pos);
-        unit.drop_active_order();
-        events.push(Event::OrderStalled {
-            unit: id,
-            player,
-            pos,
-            reason: StallReason::NoRoute,
-        });
+        stall(state, id, Stall::Drop, StallReason::NoRoute, events);
     }
 }
 
@@ -1002,13 +958,7 @@ fn work_position_path(goal: TilePos, mut waypoints: Vec<TilePos>) -> PathFollow 
     if waypoints.is_empty() {
         waypoints.push(goal);
     }
-    PathFollow {
-        final_point: None,
-        goal,
-        waypoints,
-        next: 0,
-        clearing: false,
-    }
+    PathFollow::to(goal, waypoints)
 }
 
 /// Keep or create a path whose near remaining segment is outside every
@@ -1803,15 +1753,7 @@ pub(super) fn return_cargo(
             return;
         }
     }
-    let unit = state.unit_mut(id).expect("caller checked");
-    let (player, pos) = (unit.player, unit.pos);
-    unit.advance_queue();
-    events.push(Event::OrderStalled {
-        unit: id,
-        player,
-        pos,
-        reason: StallReason::NoRoute,
-    });
+    stall(state, id, Stall::Advance, StallReason::NoRoute, events);
 }
 
 /// Haul the load to a reachable own Foundry and deposit when adjacent.
@@ -1855,15 +1797,7 @@ fn deliver(
 
     // Homeless or sealed off: keep the cargo, but do not erase a queued
     // program. The next order may still bring the worker to a drop-off.
-    let unit = state.unit_mut(id).expect("caller checked");
-    let (player, pos) = (unit.player, unit.pos);
-    unit.advance_queue();
-    events.push(Event::OrderStalled {
-        unit: id,
-        player,
-        pos,
-        reason: StallReason::NoRoute,
-    });
+    stall(state, id, Stall::Advance, StallReason::NoRoute, events);
 }
 
 /// Sticky withdrawal: a dry/unsafe worker reaches a built Foundry before
@@ -1895,15 +1829,7 @@ fn withdraw(
     if try_drop_offs(state, index, danger, id, &drop_offs, events) {
         return;
     }
-    let unit = state.unit_mut(id).expect("caller checked");
-    let (player, pos) = (unit.player, unit.pos);
-    unit.advance_queue();
-    events.push(Event::OrderStalled {
-        unit: id,
-        player,
-        pos,
-        reason: StallReason::NoRoute,
-    });
+    stall(state, id, Stall::Advance, StallReason::NoRoute, events);
 }
 
 /// Each seat's standing drop-off structures, in building order, as they

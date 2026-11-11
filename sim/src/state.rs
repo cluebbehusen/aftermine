@@ -436,6 +436,20 @@ pub struct PathFollow {
     pub clearing: bool,
 }
 
+impl PathFollow {
+    /// A fresh walk along `waypoints` to the tile `goal`, with no exact
+    /// endpoint.
+    pub(crate) fn to(goal: TilePos, waypoints: Vec<TilePos>) -> Self {
+        Self {
+            final_point: None,
+            goal,
+            waypoints,
+            next: 0,
+            clearing: false,
+        }
+    }
+}
+
 /// A point defender's ready charges and its progress toward the next one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

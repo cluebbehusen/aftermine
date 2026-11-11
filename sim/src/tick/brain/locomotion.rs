@@ -8,6 +8,7 @@ use super::super::{
     tile_adjacent_to_rect,
 };
 use super::combat::{acquire_reachable_target, acquire_target_from};
+use super::{Stall, stall};
 use crate::event::{Event, StallReason};
 use crate::ids::{Target, UnitId};
 use crate::state::{Goal, Order, PathFollow, State};
@@ -150,17 +151,7 @@ pub(super) fn land(
             unit.order = Order::Land { goal, from };
             unit.path = None;
         }
-        Touchdown::Stalled(reason) => {
-            let unit = state.unit_mut(id).expect("caller checked");
-            let (player, pos) = (unit.player, unit.pos);
-            unit.drop_active_order();
-            events.push(Event::OrderStalled {
-                unit: id,
-                player,
-                pos,
-                reason,
-            });
-        }
+        Touchdown::Stalled(reason) => stall(state, id, Stall::Drop, reason, events),
     }
 }
 
@@ -285,13 +276,7 @@ pub(super) fn fly_run_in(state: &mut State, id: UnitId, goal: TilePos) -> Touchd
     let Some(waypoints) = route else {
         return Touchdown::Stalled(StallReason::NoRoute);
     };
-    state.unit_mut(id).expect("caller checked").path = Some(PathFollow {
-        final_point: None,
-        goal,
-        waypoints,
-        next: 0,
-        clearing: false,
-    });
+    state.unit_mut(id).expect("caller checked").path = Some(PathFollow::to(goal, waypoints));
     Touchdown::Flying
 }
 
@@ -540,13 +525,8 @@ pub(super) fn steer(
     };
     match super::contact::route(state, unit, from, endpoint) {
         Some(waypoints) => {
-            state.unit_mut(id).expect("caller checked").path = Some(PathFollow {
-                final_point: None,
-                goal: endpoint,
-                waypoints,
-                next: 0,
-                clearing: false,
-            });
+            state.unit_mut(id).expect("caller checked").path =
+                Some(PathFollow::to(endpoint, waypoints));
             Steer::Walking
         }
         None => Steer::Done { short: true },
@@ -694,13 +674,7 @@ pub(super) fn approach_rect(
         let unit = state.unit(id).expect("caller checked");
         if let Some(waypoints) = super::contact::route(state, unit, tile.center(), goal) {
             let unit = state.unit_mut(id).expect("caller checked");
-            unit.path = Some(PathFollow {
-                final_point: None,
-                goal,
-                waypoints,
-                next: 0,
-                clearing: false,
-            });
+            unit.path = Some(PathFollow::to(goal, waypoints));
             return true;
         }
     }

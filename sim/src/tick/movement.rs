@@ -278,13 +278,7 @@ fn open_escape(
                 continue;
             }
             if let Some(waypoints) = super::route_for(state, kind, from, goal) {
-                return Some(PathFollow {
-                    final_point: None,
-                    goal,
-                    waypoints,
-                    next: 0,
-                    clearing: false,
-                });
+                return Some(PathFollow::to(goal, waypoints));
             }
         }
     }
@@ -328,11 +322,8 @@ fn clearing_route(state: &State, unit: &crate::state::Unit) -> Option<PathFollow
             }
             waypoints.reverse();
             return Some(PathFollow {
-                final_point: None,
-                goal: tile,
-                waypoints,
-                next: 0,
                 clearing: true,
+                ..PathFollow::to(tile, waypoints)
             });
         }
         for (dx, dy) in NEIGHBORS {

@@ -386,13 +386,8 @@ pub(super) fn attack(
     }
     match route_for(state, kind, tile, goal) {
         Some(waypoints) => {
-            state.unit_mut(id).expect("caller checked").path = Some(PathFollow {
-                final_point: None,
-                goal,
-                waypoints,
-                next: 0,
-                clearing: false,
-            });
+            state.unit_mut(id).expect("caller checked").path =
+                Some(PathFollow::to(goal, waypoints));
         }
         None => stall_attack(state, id, resume, StallReason::NoRoute, events),
     }

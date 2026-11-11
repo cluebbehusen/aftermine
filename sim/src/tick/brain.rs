@@ -403,6 +403,42 @@ pub(super) fn run(
     }
 }
 
+/// What a stalled order leaves of its unit's program.
+#[derive(Clone, Copy)]
+enum Stall {
+    /// The order goes without coming round again in a loop
+    /// ([`crate::state::Unit::drop_active_order`]).
+    Drop,
+    /// The whole program goes ([`crate::state::Unit::clear_program`]).
+    Clear,
+    /// The order ends as if done, so a loop keeps it for its next lap
+    /// ([`crate::state::Unit::advance_queue`]).
+    Advance,
+}
+
+/// Ends unit `id`'s active order as `then` says and reports the stall.
+fn stall(
+    state: &mut State,
+    id: UnitId,
+    then: Stall,
+    reason: crate::event::StallReason,
+    events: &mut Vec<Event>,
+) {
+    let unit = state.unit_mut(id).expect("a stalled unit lives");
+    let (player, pos) = (unit.player, unit.pos);
+    match then {
+        Stall::Drop => unit.drop_active_order(),
+        Stall::Clear => unit.clear_program(),
+        Stall::Advance => unit.advance_queue(),
+    }
+    events.push(Event::OrderStalled {
+        unit: id,
+        player,
+        pos,
+        reason,
+    });
+}
+
 /// The bearing of `aim` from `from` against `heading`: the frame an exact
 /// distance tie goes round in, which a half turn of the field preserves.
 /// An aim at `from` itself reads as dead ahead.

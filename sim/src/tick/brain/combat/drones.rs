@@ -219,14 +219,8 @@ fn head_for(state: &mut State, id: UnitId, point: Vec2Fx) {
         return;
     }
     let (pos, kind) = (unit.pos, unit.kind);
-    let path =
-        crate::tick::route_for_position(state, kind, pos, goal).map(|waypoints| PathFollow {
-            final_point: None,
-            goal,
-            waypoints,
-            next: 0,
-            clearing: false,
-        });
+    let path = crate::tick::route_for_position(state, kind, pos, goal)
+        .map(|waypoints| PathFollow::to(goal, waypoints));
     state.unit_mut(id).expect("caller checked").path = path;
 }
 

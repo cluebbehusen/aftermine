@@ -19,7 +19,7 @@ use super::super::landing;
 use super::super::movement::route_round_hulls;
 use super::super::route_for;
 use super::locomotion::{approach_rect, walk};
-use super::{PendingHit, bearing_from};
+use super::{PendingHit, Stall, bearing_from, stall};
 use crate::event::{Event, StallReason, UnitLaunchPose};
 use crate::ids::{PlayerId, Target, UnitId};
 use crate::state::{Motor, Order, PathFollow, Resume, State};
@@ -1250,13 +1250,8 @@ fn route_to_stand(
         )
     });
     let path = candidates.into_iter().find_map(|goal| {
-        route_round_hulls(state, unit, from_tile.center(), goal).map(|waypoints| PathFollow {
-            final_point: None,
-            goal,
-            waypoints,
-            next: 0,
-            clearing: false,
-        })
+        route_round_hulls(state, unit, from_tile.center(), goal)
+            .map(|waypoints| PathFollow::to(goal, waypoints))
     });
     let found = path.is_some();
     state.unit_mut(id).expect("caller checked").path = path;
@@ -2127,23 +2122,9 @@ fn sapper_attack(
     };
     if let Some((goal, waypoints)) = routed {
         let unit = state.unit_mut(id).expect("caller checked");
-        unit.path = Some(PathFollow {
-            final_point: None,
-            goal,
-            waypoints,
-            next: 0,
-            clearing: false,
-        });
+        unit.path = Some(PathFollow::to(goal, waypoints));
     } else {
-        let unit = state.unit_mut(id).expect("caller checked");
-        let (player, upos) = (unit.player, unit.pos);
-        unit.clear_program();
-        events.push(Event::OrderStalled {
-            unit: id,
-            player,
-            pos: upos,
-            reason: StallReason::NoRoute,
-        });
+        stall(state, id, Stall::Clear, StallReason::NoRoute, events);
     }
 }
 
@@ -2291,13 +2272,7 @@ fn bomber_attack(
         // chase below lines up the next run.
         let egress = egress_goal(state, pos, heading, stats);
         let unit = state.unit_mut(id).expect("caller checked");
-        unit.path = egress.map(|goal| PathFollow {
-            final_point: None,
-            goal,
-            waypoints: vec![goal],
-            next: 0,
-            clearing: false,
-        });
+        unit.path = egress.map(|goal| PathFollow::to(goal, vec![goal]));
         // A bomb away refreshes the leash patience, as a ground guard's
         // reaching its firing stance does.
         if resume.is_none()
@@ -2317,13 +2292,7 @@ fn bomber_attack(
             && let Some(goal) = egress_goal(state, pos, heading, stats)
         {
             let unit = state.unit_mut(id).expect("caller checked");
-            unit.path = Some(PathFollow {
-                final_point: None,
-                goal,
-                waypoints: vec![goal],
-                next: 0,
-                clearing: false,
-            });
+            unit.path = Some(PathFollow::to(goal, vec![goal]));
         }
         return;
     }
@@ -2343,13 +2312,7 @@ fn bomber_attack(
     if (in_range || inside_ring) && state.unit(id).expect("caller checked").path.is_none() {
         let departure = egress_goal(state, pos, heading, stats);
         let unit = state.unit_mut(id).expect("caller checked");
-        unit.path = departure.map(|waypoint| PathFollow {
-            final_point: None,
-            goal: target_tile,
-            waypoints: vec![waypoint],
-            next: 0,
-            clearing: false,
-        });
+        unit.path = departure.map(|waypoint| PathFollow::to(target_tile, vec![waypoint]));
         return;
     }
 
@@ -2388,13 +2351,7 @@ fn bomber_attack(
             landing::RunIn::Attack,
         ) {
             let unit = state.unit_mut(id).expect("caller checked");
-            unit.path = Some(PathFollow {
-                final_point: None,
-                goal: target_tile,
-                waypoints,
-                next: 0,
-                clearing: false,
-            });
+            unit.path = Some(PathFollow::to(target_tile, waypoints));
         } else if resume.is_some() {
             // A fight its hunt, patrol or escort picked ends quietly, as
             // `stall_attack` ends one, and the program goes on.
@@ -2403,15 +2360,7 @@ fn bomber_attack(
                 .expect("caller checked")
                 .complete_attack(resume);
         } else {
-            let unit = state.unit_mut(id).expect("caller checked");
-            let (player, upos) = (unit.player, unit.pos);
-            unit.clear_program();
-            events.push(Event::OrderStalled {
-                unit: id,
-                player,
-                pos: upos,
-                reason: StallReason::NoRoute,
-            });
+            stall(state, id, Stall::Clear, StallReason::NoRoute, events);
         }
     }
 }
@@ -2768,13 +2717,7 @@ pub(super) fn attack(
                 match routed {
                     Some((goal, waypoints)) => {
                         let unit = state.unit_mut(id).expect("caller checked");
-                        unit.path = Some(PathFollow {
-                            final_point: None,
-                            goal,
-                            waypoints,
-                            next: 0,
-                            clearing: false,
-                        });
+                        unit.path = Some(PathFollow::to(goal, waypoints));
                         Ok(())
                     }
                     // NoFiringPosition derives from the victim's footing;
@@ -2843,19 +2786,12 @@ fn stall_attack(
         unit.path = None;
         return;
     }
-    let (player, pos) = (unit.player, unit.pos);
     // A chase that could not be prosecuted leaves the unit stationed,
     // so its next idle acquisition tethers and the leash cooldown
     // paces re-acquisition instead of the same refused chase firing
     // every tick.
     unit.settled = crate::stats::LEASH_STATION_TICKS;
-    unit.clear_program();
-    events.push(Event::OrderStalled {
-        unit: id,
-        player,
-        pos,
-        reason,
-    });
+    stall(state, id, Stall::Clear, reason, events);
 }
 
 /// The sidearm's opportunist victim: the nearest hostile unit the weapon

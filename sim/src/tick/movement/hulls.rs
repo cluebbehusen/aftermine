@@ -242,13 +242,7 @@ fn way_aside(state: &State, slot: usize) -> Option<PathFollow> {
                     continue;
                 }
                 if let Some(waypoints) = crate::tick::route_for(state, hull.kind, from, goal) {
-                    return Some(PathFollow {
-                        final_point: None,
-                        goal,
-                        waypoints,
-                        next: 0,
-                        clearing: false,
-                    });
+                    return Some(PathFollow::to(goal, waypoints));
                 }
             }
         }
