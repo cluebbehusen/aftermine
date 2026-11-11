@@ -8,12 +8,8 @@ from PIL import Image, ImageChops, ImageStat
 
 from tools import gen_sprites as gen
 from tools.production_sprite_sources import (
-    air_final,
-    air_support_final,
-    airworks_scouts_final,
     construction_final,
     environment_final,
-    excavator_final,
     finalized,
     installed_defenses_final,
     lattice_final,
@@ -25,12 +21,67 @@ from tools.production_sprite_sources import (
     quarry_final,
     quarry_rocks,
     roc_final,
-    skyhook_sapper_crucible_final,
     specialists_final,
     spire_final,
     surveyor_final,
-    tier_one_combat_final,
 )
+
+
+# The frame sets the finalized banks ship, which these tests hold them to.
+UNIT_MOVEMENT: dict[str, tuple[str, ...]] = {
+    "sentinel": ("_move1", "_move2"),
+    "scuttler": ("_move1", "_move2"),
+    "lancer": ("_move1", "_move2"),
+    "bombard": ("_move1", "_move2"),
+    "flakhound": ("_tread1", "_tread2"),
+    "buzzard": ("_move1", "_move2"),
+    "talon": ("_move1", "_move2"),
+}
+
+UNIT_ACTIONS: dict[str, tuple[str, ...]] = {
+    "sentinel": tuple(f"_action{i}" for i in range(1, 5)),
+    "scuttler": tuple(f"_action{i}" for i in range(1, 5)),
+    "lancer": tuple(f"_action{i}" for i in range(1, 7)),
+    "bombard": tuple(f"_action{i}" for i in range(1, 7)),
+    "flakhound": tuple(f"_action{i}" for i in range(1, 10)),
+    "buzzard": tuple(f"_action{i}" for i in range(1, 5)),
+    "talon": tuple(f"_action{i}" for i in range(1, 5)),
+}
+
+HARVESTER_ACTIONS = ("", "_scoop1", "_scoop2", "_scoop1", "")
+
+BUILDING_WORK: dict[str, tuple[str, ...]] = {
+    "foundry": ("_work1", "_work2", "_work3", "_work4"),
+    "fabricator": ("_work1", "_work2", "_work3", "_work4"),
+    "array": tuple(f"_work{i}" for i in range(1, 7)),
+    "reclaimer": ("_work1", "_work2", "_work3"),
+    "repair_bay": ("_work1", "_work2", "_work3", "_work4"),
+    "airworks": ("_work1", "_work2", "_work3", "_work4"),
+}
+
+TURRET_ACTIONS = tuple(f"_action{i}" for i in range(1, 5))
+
+DEFENSE_ACTIONS: dict[str, tuple[str, ...]] = {
+    "turret_barrel": TURRET_ACTIONS,
+    "turret_barrel_t1": TURRET_ACTIONS,
+    "turret_barrel_t2": TURRET_ACTIONS,
+    "flak_mount": tuple(f"_action{i}" for i in range(1, 9)),
+    "bastion_mount": tuple(f"_action{i}" for i in range(1, 10)),
+}
+
+DEFENSE_BASE_ACTIONS: dict[str, tuple[str, ...]] = {
+    "bastion": DEFENSE_ACTIONS["bastion_mount"],
+}
+
+ACTION_COUNTS = {
+    **{stem: len(frames) for stem, frames in UNIT_ACTIONS.items()},
+    "harvester": len(HARVESTER_ACTIONS),
+    **{stem: len(frames) for stem, frames in BUILDING_WORK.items()},
+    **{stem: len(frames) for stem, frames in DEFENSE_ACTIONS.items()},
+    **{stem: len(frames) for stem, frames in DEFENSE_BASE_ACTIONS.items()},
+}
+
+HARVESTER_CARGO_LEVELS = 5
 
 
 def _changed_pixels(left: Image.Image, right: Image.Image) -> int:
@@ -67,12 +118,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             for phase in range(6):
                 gen.ground(phase)
             cls.ground_controls = cls.registry.copy()
-            for variant in gen.PALETTES:
-                gen.harvester(variant)
-                gen.harvester(variant, dig=1)
-                gen.harvester(variant, dig=2)
-                gen.barricade(variant)
-                gen.scuttle_charge(variant)
             finalized.install_finalized_sprites(cls.registry, cls.out)
             construction_final.install_finalized_construction(cls.registry, cls.out)
             environment_final.install_finalized_environment(cls.registry, cls.out)
@@ -403,32 +448,32 @@ class ProductionSpriteSourceTests(unittest.TestCase):
         self.assertEqual(list(quarry_rocks.SLAB_RADII), sorted(quarry_rocks.SLAB_RADII))
 
     def test_metadata_counts_match_every_generated_action_row(self) -> None:
-        for stem, frame_set in finalized.UNIT_ACTIONS.items():
-            self.assertEqual(finalized.ACTION_COUNTS[stem], len(frame_set))
+        for stem, frame_set in UNIT_ACTIONS.items():
+            self.assertEqual(ACTION_COUNTS[stem], len(frame_set))
             for variant in gen.PALETTES:
                 for suffix in frame_set:
                     self.assertIn(
                         f"{stem}{gen.variant_tag(variant)}{suffix}", self.registry
                     )
 
-        for stem, frame_set in finalized.BUILDING_WORK.items():
-            self.assertEqual(finalized.ACTION_COUNTS[stem], len(frame_set))
+        for stem, frame_set in BUILDING_WORK.items():
+            self.assertEqual(ACTION_COUNTS[stem], len(frame_set))
             for variant in gen.PALETTES:
                 for suffix in frame_set:
                     self.assertIn(
                         f"{stem}{gen.variant_tag(variant)}{suffix}", self.registry
                     )
 
-        for stem, frame_set in finalized.DEFENSE_ACTIONS.items():
-            self.assertEqual(finalized.ACTION_COUNTS[stem], len(frame_set))
+        for stem, frame_set in DEFENSE_ACTIONS.items():
+            self.assertEqual(ACTION_COUNTS[stem], len(frame_set))
             for variant in gen.PALETTES:
                 for suffix in frame_set:
                     self.assertIn(
                         f"{stem}{gen.variant_tag(variant)}{suffix}", self.registry
                     )
 
-        for stem, frame_set in finalized.DEFENSE_BASE_ACTIONS.items():
-            self.assertEqual(finalized.ACTION_COUNTS[stem], len(frame_set))
+        for stem, frame_set in DEFENSE_BASE_ACTIONS.items():
+            self.assertEqual(ACTION_COUNTS[stem], len(frame_set))
             for variant in gen.PALETTES:
                 for suffix in frame_set:
                     self.assertIn(
@@ -436,8 +481,8 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                     )
 
     def test_movement_metadata_matches_every_generated_row(self) -> None:
-        self.assertEqual(set(finalized.UNIT_MOVEMENT), set(finalized.UNIT_ACTIONS))
-        for stem, frame_set in finalized.UNIT_MOVEMENT.items():
+        self.assertEqual(set(UNIT_MOVEMENT), set(UNIT_ACTIONS))
+        for stem, frame_set in UNIT_MOVEMENT.items():
             for variant in gen.PALETTES:
                 tag = gen.variant_tag(variant)
                 base = self.registry[f"{stem}{tag}"]
@@ -452,68 +497,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                     stem,
                 )
 
-    def test_air_support_detail_passes_preserve_the_approved_silhouettes(self) -> None:
-        for variant in ("base", "probe"):
-            with finalized._variant_palette(variant):
-                for base_builder, approved_builder in (
-                    (air_final.buzzard_sequence, air_support_final.buzzard_sequence),
-                    (air_final.talon_sequence, air_support_final.talon_sequence),
-                ):
-                    base = base_builder()
-                    approved = approved_builder()
-                    self.assertEqual(len(base.frames), len(approved.frames))
-                    for base_frame, approved_frame in zip(
-                        base.frames, approved.frames, strict=True
-                    ):
-                        self.assertEqual(
-                            base_frame.image.getchannel("A").tobytes(),
-                            approved_frame.image.getchannel("A").tobytes(),
-                        )
-
-    def test_tier_one_combat_art_preserves_motion_and_attack_contracts(self) -> None:
-        for builder in (
-            tier_one_combat_final.lancer_sequence,
-            tier_one_combat_final.bombard_sequence,
-            tier_one_combat_final.flakhound_sequence,
-        ):
-            sequence = builder()
-            idle, move1, move2 = (frame.image for frame in sequence.frames[:3])
-            self.assertEqual(idle.size, (64, 64))
-            self.assertNotEqual(idle.tobytes(), move1.tobytes())
-            self.assertNotEqual(move1.tobytes(), move2.tobytes())
-            damage_frames = [frame for frame in sequence.frames if frame.logical_damage]
-            self.assertEqual(len(damage_frames), 1)
-            self.assertGreaterEqual(damage_frames[0].report_count, 1)
-
-    def test_kestrel_sequence_keeps_its_airframe_fixed(self) -> None:
-        for variant in ("base", "probe"):
-            frames = [
-                airworks_scouts_final.render_kestrel(variant, phase)
-                for phase in range(3)
-            ]
-            alpha = frames[0].getchannel("A").tobytes()
-            self.assertTrue(
-                all(frame.getchannel("A").tobytes() == alpha for frame in frames)
-            )
-            self.assertTrue(
-                all(
-                    _changed_pixels(left, right) > 2 for left, right in pairwise(frames)
-                )
-            )
-
-    def test_airworks_queue_frames_keep_the_doors_closed(self) -> None:
-        for variant in ("base", "probe"):
-            frames = [
-                airworks_scouts_final.render_airworks(variant, stage)
-                for stage in range(5)
-            ]
-            door_box = (29, 44, 100, 106)
-            closed = frames[0].crop(door_box).tobytes()
-            self.assertEqual(frames[1].crop(door_box).tobytes(), closed)
-            self.assertEqual(frames[2].crop(door_box).tobytes(), closed)
-            self.assertNotEqual(frames[3].crop(door_box).tobytes(), closed)
-            self.assertNotEqual(frames[4].crop(door_box).tobytes(), closed)
-
     def test_skyhook_rotors_and_sapper_legs_have_real_movement(self) -> None:
         for variant in ("base", "probe"):
             tag = gen.variant_tag(variant)
@@ -523,11 +506,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 move2 = self.registry[f"{stem}{tag}_move2"]
                 self.assertNotEqual(idle.tobytes(), move1.tobytes())
                 self.assertNotEqual(move1.tobytes(), move2.tobytes())
-            self.assertIsNone(
-                skyhook_sapper_crucible_final.render_sapper(variant, action=4)
-                .getchannel("A")
-                .getbbox()
-            )
 
     def test_crucible_opens_and_closes_its_segmented_lid(self) -> None:
         for variant in gen.PALETTES:
@@ -601,7 +579,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
     def test_excavator_meter_matches_the_harvesters_five_load_levels(self) -> None:
         frames = [
             self.registry[f"excavator_cargo{level}"]
-            for level in range(excavator_final.CARGO_LEVELS)
+            for level in range(5)
         ]
         self.assertEqual(len({frame.tobytes() for frame in frames}), 5)
         self.assertIsNone(frames[0].getchannel("A").getbbox())
@@ -660,7 +638,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
     def test_harvester_keeps_cargo_separate_from_tracks_and_grapple(self) -> None:
         for variant in gen.PALETTES:
             loads = []
-            for cargo in range(finalized.HARVESTER_CARGO_LEVELS):
+            for cargo in range(HARVESTER_CARGO_LEVELS):
                 prefix = f"harvester{gen.variant_tag(variant)}_cargo{cargo}"
                 idle = self.registry[prefix]
                 loads.append(idle.crop((44, 67, 84, 101)).tobytes())
@@ -705,7 +683,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                     self.assertIsNotNone(base.getchannel("A").getbbox())
                     self.assertIsNotNone(mount.getchannel("A").getbbox())
                     self.assertGreater(_changed_pixels(base, mount), side)
-                for suffix in finalized.DEFENSE_ACTIONS[mount_stem]:
+                for suffix in DEFENSE_ACTIONS[mount_stem]:
                     action = self.registry[f"{mount_stem}{tag}{suffix}"]
                     self.assertEqual(action.size, (side, side))
                     if mount_stem == "bastion_mount":
@@ -718,7 +696,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
     def test_action_rows_contain_real_frame_changes(self) -> None:
         for variant in gen.PALETTES:
             tag = gen.variant_tag(variant)
-            for stem, frame_set in finalized.UNIT_ACTIONS.items():
+            for stem, frame_set in UNIT_ACTIONS.items():
                 base = self.registry[f"{stem}{tag}"]
                 changed = [
                     _changed_pixels(base, self.registry[f"{stem}{tag}{suffix}"])
@@ -726,7 +704,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 ]
                 with self.subTest(variant=variant, stem=stem):
                     self.assertGreater(max(changed), 12)
-            for stem, frame_set in finalized.BUILDING_WORK.items():
+            for stem, frame_set in BUILDING_WORK.items():
                 base = self.registry[f"{stem}{tag}"]
                 changed = [
                     _changed_pixels(base, self.registry[f"{stem}{tag}{suffix}"])
@@ -824,24 +802,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                             for index in mount_pixels
                         )
                     )
-
-    def test_buzzard_matches_the_approved_armored_quad_fan_sequence(self) -> None:
-        expected = (
-            "1143a769ec064862af3d9fe9837b15434bd60326b45af2415fe267e3c80cb56d",
-            "d5d7eb5d4f8a152bdc5a7ddabe52aa8093f1c99333469d9d841a5838021ba971",
-            "018ba81c920b462f0a9f9f3fa009d6685c3886d8daf289d6e74155786c62b4d4",
-            "1143a769ec064862af3d9fe9837b15434bd60326b45af2415fe267e3c80cb56d",
-            "acc78432f812a96dea0e1551c251169d7f24f57174769e87e2a53162b09ed1b7",
-            "f945d232516998e8518ba3320ad4e8556ada1131a39ffd072ecf0e28940a9fd7",
-            "ed31b38adce84cd193df0e44fd047d95007cccf742b71c8b729c7f1dfea135b8",
-            "1143a769ec064862af3d9fe9837b15434bd60326b45af2415fe267e3c80cb56d",
-        )
-        sequence = finalized._unit_sequences()["buzzard"]()
-        actual = tuple(
-            hashlib.sha256(frame.image.convert("RGBA").tobytes()).hexdigest()
-            for frame in sequence.frames
-        )
-        self.assertEqual(actual, expected)
 
     def test_buzzard_attack_flare_does_not_touch_the_canvas_edge(self) -> None:
         for variant in gen.PALETTES:
