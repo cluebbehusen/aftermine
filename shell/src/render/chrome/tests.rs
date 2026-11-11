@@ -4,6 +4,7 @@ use super::*;
 fn hud_copy_names_keys_only_on_desktop() {
     use crate::game::AlertKind;
     assert_eq!(idle_badge_text(3, "F1", false), "3 idle [F1]");
+    assert_eq!(idle_badge_text(3, "", false), "3 idle");
     crate::platform::tests::assert_touch_copy(&idle_badge_text(3, "F1", true));
     assert_eq!(
         alert_badge_text(AlertKind::Attack, "Tab", false),

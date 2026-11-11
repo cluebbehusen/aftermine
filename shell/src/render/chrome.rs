@@ -36,9 +36,10 @@ fn alert_badge_text(kind: crate::game::AlertKind, key: &str, keyless: bool) -> S
     }
 }
 
-/// The idle badge names its key where one exists.
+/// The idle badge names its key where one exists, and an unbound key reads
+/// bare.
 fn idle_badge_text(idle: usize, key: &str, keyless: bool) -> String {
-    if keyless {
+    if keyless || key.is_empty() {
         format!("{idle} idle")
     } else {
         format!("{idle} idle [{key}]")
