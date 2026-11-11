@@ -949,7 +949,7 @@ fn apply_build_inner(
         // validation waits until the entire footprint is visible.
         let replaced_units = if queue { &[][..] } else { crew.as_slice() };
         if state
-            .place_intent_refusal_replacing(player, kind, anchor, replaced_units)
+            .place_intent_refusal(player, kind, anchor, replaced_units)
             .is_some()
         {
             return Err(RejectReason::BadSite);

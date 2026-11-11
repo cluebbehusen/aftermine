@@ -183,10 +183,7 @@ fn a_ramp_takes_walls_and_mines_but_no_foundation() {
     let me = PlayerId(0);
     for kind in [BuildingKind::Barricade, BuildingKind::ScuttleCharge] {
         assert_eq!(state.place_refusal(me, kind, ramp), None, "{kind:?}");
-        assert_eq!(
-            state.place_intent_refusal_replacing(me, kind, ramp, &[]),
-            None
-        );
+        assert_eq!(state.place_intent_refusal(me, kind, ramp, &[]), None);
     }
     for anchor in [ramp, TilePos::new(10, cliff_row(0) - 1)] {
         assert_eq!(
@@ -200,7 +197,7 @@ fn a_ramp_takes_walls_and_mines_but_no_foundation() {
         );
     }
     assert_eq!(
-        state.place_intent_refusal_replacing(me, BuildingKind::Turret, ramp, &[]),
+        state.place_intent_refusal(me, BuildingKind::Turret, ramp, &[]),
         Some(PlaceRefusal::Terrain)
     );
     assert_eq!(

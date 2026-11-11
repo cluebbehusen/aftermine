@@ -120,9 +120,6 @@ struct PendingHpDrain {
     step: u32,
 }
 
-/// Runs every machine's decision and resolves the tick's buffered work.
-/// Returns the pending boardings and unloads, and the buildings salvage
-/// stripped to nothing, which cleanup removes without wreck.
 /// What the brain phase hands the rest of the tick: boardings and unloads
 /// to resolve, buildings salvaged away, and cradles whose last work landed.
 pub(super) struct BrainOutcome {
@@ -133,6 +130,8 @@ pub(super) struct BrainOutcome {
     pub(super) docks: Vec<UnitId>,
 }
 
+/// Runs every machine's decision and resolves the tick's buffered work into
+/// the [`BrainOutcome`] the rest of the tick resolves.
 pub(super) fn run(
     state: &mut State,
     index: &mut super::spatial::UnitIndex,

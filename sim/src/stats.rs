@@ -996,22 +996,6 @@ impl UnitKind {
         })
     }
 
-    /// Ticks a ground chassis loses leaving a stop on the opposite bearing,
-    /// against covering the same ground at full speed: the pivot in place
-    /// through a half turn, plus the ramps up to speed and back down to rest.
-    pub fn ground_reversal_ticks(self) -> u64 {
-        let rate = u64::from(self.ground_turn_rate());
-        if rate == 0 {
-            return 0;
-        }
-        let pivot = u64::from(128 - GROUND_ALIGNED_STEPS)
-            .div_ceil(rate)
-            .saturating_sub(1);
-        // A linear ramp over `n` ticks covers the ground of `(n + 1) / 2`.
-        let ramps = u64::from(GROUND_ACCEL_TICKS + GROUND_BRAKE_TICKS - 2).div_ceil(2);
-        pivot + ramps
-    }
-
     /// Ground gun mounts whose bearing is independent of the chassis.
     pub const fn has_ground_turret(self) -> bool {
         let stats = self.stats();

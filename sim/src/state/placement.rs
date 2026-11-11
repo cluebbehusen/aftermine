@@ -216,20 +216,13 @@ impl State {
     /// can never be a hidden-enemy detector. The arrival re-check
     /// through the strict predicate is what catches the collisions
     /// memory cannot (an allied scaffold on unseen ground included).
+    ///
+    /// A non-queued build replaces the programs of `units`: an unstarted own
+    /// site only workers in `units` are committed to is refunded when the
+    /// command lands, so it does not reserve ground against the replacement.
+    /// A site any other own worker is still committed to, and any started
+    /// site, remains a blocker.
     pub fn place_intent_refusal(
-        &self,
-        player: PlayerId,
-        kind: BuildingKind,
-        anchor: TilePos,
-    ) -> Option<PlaceRefusal> {
-        self.place_intent_refusal_replacing(player, kind, anchor, &[])
-    }
-
-    /// The intent verdict for a non-queued build that replaces the programs
-    /// of `units`. Sites claimed by live own harvesters in that selection
-    /// leave with those programs and therefore do not reserve ground against
-    /// the replacement. Every other site remains a blocker.
-    pub fn place_intent_refusal_replacing(
         &self,
         player: PlayerId,
         kind: BuildingKind,

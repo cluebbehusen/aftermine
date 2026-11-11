@@ -38,7 +38,7 @@ fn command_phase_inspection_is_pure_and_stops_before_the_tick() {
             Some(state.player(crate::PlayerId(0)).scrap - cost)
         );
         assert_eq!(
-            projected.place_intent_refusal_replacing(crate::PlayerId(0), kind, anchor, &[]),
+            projected.place_intent_refusal(crate::PlayerId(0), kind, anchor, &[]),
             Some(crate::PlaceRefusal::Building),
             "the projected site owns its footprint"
         );

@@ -411,11 +411,28 @@ fn each_ground_chassis_accelerates_in_six_ticks_and_stops_in_three() {
     }
 }
 
+/// Ticks a ground chassis loses leaving a stop on the opposite bearing,
+/// against covering the same ground at full speed: the pivot in place
+/// through a half turn, plus the ramps up to speed and back down to rest.
+fn reversal_ticks(kind: UnitKind) -> u64 {
+    use crate::stats::{GROUND_ACCEL_TICKS, GROUND_ALIGNED_STEPS, GROUND_BRAKE_TICKS};
+    let rate = u64::from(kind.ground_turn_rate());
+    if rate == 0 {
+        return 0;
+    }
+    let pivot = u64::from(128 - GROUND_ALIGNED_STEPS)
+        .div_ceil(rate)
+        .saturating_sub(1);
+    // A linear ramp over `n` ticks covers the ground of `(n + 1) / 2`.
+    let ramps = u64::from(GROUND_ACCEL_TICKS + GROUND_BRAKE_TICKS - 2).div_ceil(2);
+    pivot + ramps
+}
+
 #[test]
 fn a_reversal_from_rest_costs_the_quoted_ticks_over_free_flow() {
     for kind in UnitKind::ALL {
         if kind.stats().domain != crate::stats::Domain::Ground {
-            assert_eq!(kind.ground_reversal_ticks(), 0, "{kind:?}");
+            assert_eq!(reversal_ticks(kind), 0, "{kind:?}");
             continue;
         }
         let state = scene(kind);
@@ -436,7 +453,7 @@ fn a_reversal_from_rest_costs_the_quoted_ticks_over_free_flow() {
         let free_flow = (Fx::from_num(12) / kind.stats().speed)
             .ceil()
             .to_num::<u64>();
-        let quoted = kind.ground_reversal_ticks();
+        let quoted = reversal_ticks(kind);
         assert!(
             (quoted - 1..=quoted).contains(&(ticks - free_flow)),
             "{kind:?}: {ticks} against {free_flow} + {quoted}"

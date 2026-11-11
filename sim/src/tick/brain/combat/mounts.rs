@@ -256,7 +256,7 @@ pub(in crate::tick::brain) fn fire(
         });
         let Some((mark, aim)) = pick else {
             if state.unit(id).expect("caller checked").cooldowns[slot] == 0 {
-                let rest = crate::state::Mounts::resting(guns).bearings[slot];
+                let rest = crate::state::Mounts::default().bearings[slot];
                 swing(
                     state,
                     id,

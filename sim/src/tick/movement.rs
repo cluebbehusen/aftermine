@@ -490,12 +490,6 @@ pub(super) fn evict_claimed_ground(state: &mut State) {
     }
 }
 
-/// After collisions: a ground body whose contact cancelled most of its
-/// intended progress toward its waypoint, or whose motor refused the step
-/// outright, for [`crate::stats::STALL_REPLAN_TICKS`] running ticks drops
-/// its route, so its brain plans again from where the body actually is.
-/// `travel`, `refused` and `driven` are this tick's propulsion, motor
-/// refusals and post-propulsion positions, indexed like `state.units`.
 /// Unfolds each parking radar a tick further while its machine stands
 /// still, and folds it the moment the machine drives itself: this tick's own
 /// travel, a refused step, a route to follow, or speed to shed. A collision
@@ -520,6 +514,12 @@ pub(super) fn raise_radars(state: &mut State, travel: &[Vec2Fx], refused: &[bool
     }
 }
 
+/// After collisions: a ground body whose contact cancelled most of its
+/// intended progress toward its waypoint, or whose motor refused the step
+/// outright, for [`crate::stats::STALL_REPLAN_TICKS`] running ticks drops
+/// its route, so its brain plans again from where the body actually is.
+/// `travel`, `refused` and `driven` are this tick's propulsion, motor
+/// refusals and post-propulsion positions, indexed like `state.units`.
 pub(super) fn note_stalls(
     state: &mut State,
     travel: &[Vec2Fx],
@@ -1387,16 +1387,6 @@ fn sort_collision_pairs(
     pairs
 }
 
-/// One pass over the tick's candidate pairs; returns whether any pair
-/// overlapped beyond [`COLLISION_SLOP`].
-///
-/// Corrections apply immediately, pair by pair, in deterministic order
-/// (Gauss–Seidel, not Jacobi). Accumulating all pushes first admits frozen
-/// equilibria: symmetric arrangements, such as several full harvesters at
-/// one doorstep, cancel to exactly zero net correction while everything
-/// still overlaps. Sequential application cannot cancel, so jams always
-/// evolve. Dead units are skipped: a corpse should not shove the living on
-/// its removal tick.
 /// How a pressing pair splits its overlap. A landed airframe is a fixture
 /// on its tile center and takes none of it. A body that holds its ground,
 /// anchored at work in place or built like a structure, takes none either,
@@ -1435,6 +1425,16 @@ fn push_shares(
     }
 }
 
+/// One pass over the tick's candidate pairs; returns whether any pair
+/// overlapped beyond [`COLLISION_SLOP`].
+///
+/// Corrections apply immediately, pair by pair, in deterministic order
+/// (Gauss–Seidel, not Jacobi). Accumulating all pushes first admits frozen
+/// equilibria: symmetric arrangements, such as several full harvesters at
+/// one doorstep, cancel to exactly zero net correction while everything
+/// still overlaps. Sequential application cannot cancel, so jams always
+/// evolve. Dead units are skipped: a corpse should not shove the living on
+/// its removal tick.
 fn relaxation_pass(
     state: &mut State,
     travel: &[Vec2Fx],

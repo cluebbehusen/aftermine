@@ -794,7 +794,7 @@ fn pending_build_projection_for(
     let replaced = replaced_build_units(game, queue);
     game.state.inspect_command_phase(batch, |state| {
         let refusal = if state.accepts_commands(game.presentation.human) {
-            state.place_intent_refusal_replacing(game.presentation.human, kind, anchor, replaced)
+            state.place_intent_refusal(game.presentation.human, kind, anchor, replaced)
         } else {
             Some(aftermine_sim::PlaceRefusal::NotConstructible)
         };
