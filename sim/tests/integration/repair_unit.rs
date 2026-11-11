@@ -10,8 +10,8 @@ use common::{arena, cmd, run_until, unit};
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::UnitSpec;
 use aftermine_sim::{
-    BuildingKind, Command, Event, Order, PlayerCommand, PlayerId, State, Target, UnitId, UnitKind,
-    UnitRepairSource,
+    BuildingKind, Command, Event, Order, PlayerCommand, PlayerId, StallReason, State, Target,
+    UnitId, UnitKind, UnitRepairSource,
 };
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
@@ -903,6 +903,61 @@ fn a_queued_weld_waits_its_turn_then_welds() {
         s.unit(welder).unwrap().tile() == waypoint
     });
     run_until(&mut state, 2_000, |s, _| s.unit(patient).unwrap().hp > hurt);
+}
+
+#[test]
+fn an_empty_bank_stalls_a_commanded_weld_and_clears_its_program() {
+    let mut scenario = arena(cast());
+    scenario.players[0].scrap = 0;
+    let mut state = commanded_only(&scenario);
+    let (welder, patient, raider) = (
+        state.units()[0].id,
+        state.units()[1].id,
+        state.units()[2].id,
+    );
+    let hurt = wound(&mut state, patient, raider, 45);
+    assert_eq!(state.player(PlayerId(0)).scrap, 0, "premise: an empty bank");
+    state.tick(&[
+        cmd(
+            0,
+            Command::RepairUnit {
+                units: vec![welder],
+                target: patient,
+                queue: false,
+            },
+        ),
+        cmd(
+            0,
+            Command::Run {
+                units: vec![welder],
+                goal: TilePos::new(10, 2),
+                queue: true,
+            },
+        ),
+    ]);
+    assert_eq!(
+        state.unit(welder).unwrap().queue.len(),
+        1,
+        "premise: a walk waits behind the weld"
+    );
+    let stalls = |events: &[Event]| -> Vec<StallReason> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                Event::OrderStalled { unit, reason, .. } if *unit == welder => Some(*reason),
+                _ => None,
+            })
+            .collect()
+    };
+    let events = run_until(&mut state, 300, |_, events| !stalls(events).is_empty());
+    assert_eq!(stalls(&events), [StallReason::InsufficientScrap]);
+    let welder = state.unit(welder).unwrap();
+    assert_eq!(welder.order, Order::Idle);
+    assert!(
+        welder.queue.is_empty(),
+        "the queued walk goes with the weld"
+    );
+    assert_eq!(state.unit(patient).unwrap().hp, hurt, "no free hp");
 }
 
 #[test]
