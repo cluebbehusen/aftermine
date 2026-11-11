@@ -1009,3 +1009,51 @@ fn an_unscouted_enemy_building_cannot_bend_a_route_through_fog() {
         "two views that differ only behind fog must choose the same route"
     );
 }
+
+/// A work position whose tile no open neighbour joins has no route, and
+/// learning so costs no search; a worker already standing there, or
+/// stranded on the rock beside it, still gets its route.
+#[test]
+fn a_work_position_walled_off_from_every_side_costs_no_search() {
+    let mut rows = vec![vec!['.'; 32]; 20];
+    for (y, row) in rows.iter_mut().enumerate() {
+        for (x, tile) in row.iter_mut().enumerate() {
+            let pocket = (6..=8).contains(&y) && (19..=22).contains(&x);
+            if y == 0 || y == 19 || x == 0 || x == 31 || pocket {
+                *tile = '#';
+            }
+        }
+    }
+    rows[2][18] = '1';
+    rows[16][28] = '2';
+    rows[7][20] = 's';
+    rows[7][21] = '.';
+    let scenario = serde_json::json!({
+        "name": "walled-work-position", "map": rows.into_iter().map(|row| row.into_iter().collect::<String>()).collect::<Vec<_>>(),
+        "players": [
+            {"name": "F", "scrap": 0, "bot": false},
+            {"name": "C", "scrap": 0, "bot": true}
+        ],
+        "units": [{"player": 0, "kind": "harvester", "x": 4, "y": 5}]
+    });
+    let mut state = Scenario::from_json(&scenario.to_string())
+        .unwrap()
+        .build()
+        .unwrap();
+    let source =
+        known_source(&state, PlayerId(0), TilePos::new(20, 7)).expect("the node is in sight");
+    let worker = state.units[0].id;
+    let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
+    let route = |state: &State| safe_source_route(state, &indexed(state), &danger, worker, source);
+    assert!(route(&state).is_none());
+    assert_eq!(danger.route_search_count(), 0);
+
+    let pocket = TilePos::new(21, 7);
+    for stand in [pocket, pocket.offset(1, 0)] {
+        state.units[0].pos = stand.center();
+        let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
+        let path = safe_source_route(&state, &indexed(&state), &danger, worker, source)
+            .expect("the pocket is one step or none away");
+        assert_eq!(path.goal, pocket);
+    }
+}

@@ -1246,6 +1246,18 @@ fn source_route_avoiding_danger(
     let mut failed = false;
     let outside = danger.outside_every_envelope(from);
     let route = |goal: TilePos| {
+        // A* never cuts a corner, so it enters a goal only from a cardinal
+        // neighbour it may cross or starts on. A goal with none has no
+        // route, and flooding the safe ground would only prove it. Nothing
+        // is searched, so the last search and its verdict stand.
+        if goal != from
+            && !chassis::grid::CARDINALS.into_iter().any(|(dx, dy)| {
+                let next = goal.offset(dx, dy);
+                next == from || open(next, goal)
+            })
+        {
+            return None;
+        }
         if outside && safe_route_impossible(state, danger, from, goal, allow_dangerous_goal) {
             return None;
         }
