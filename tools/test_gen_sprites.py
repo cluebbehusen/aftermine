@@ -21,6 +21,13 @@ class SpriteReproducibilityTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
+    def test_the_registry_refuses_a_second_write_to_a_key(self) -> None:
+        registry = gen_sprites.SpriteRegistry()
+        image = Image.new("RGBA", (1, 1))
+        registry["sprite"] = image
+        with self.assertRaisesRegex(KeyError, "written twice"):
+            registry["sprite"] = image
+
     def test_paged_atlas_preserves_pixels_extrusion_and_duplicate_aliases(self) -> None:
         frames = {
             f"sprite_{i}": Image.new("RGBA", (1024, 1024), (i * 17, 80, 90, 255))
