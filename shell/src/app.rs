@@ -803,12 +803,9 @@ fn apply_presentation(config: &config::Config) {
 
 impl App {
     /// The one way a match arrives: session toggles carry over from the
-    /// old game, which retires off the frame thread, and the frame profile
-    /// and the session's input start clean.
+    /// old game, and the frame profile and the session's input start clean.
     fn install(&mut self, fresh: Game, how: Install) {
-        let fresh = keep_flags(fresh, &self.game);
-        let old = std::mem::replace(&mut self.game, fresh);
-        self.persistence.retire(old);
+        self.game = keep_flags(fresh, &self.game);
         // Timing and failures belong to the match they were counted for.
         self.background = background_save::Schedule::default();
         self.game.clock.paused = how.paused;
@@ -846,9 +843,7 @@ impl App {
             &mut fresh.presentation.camera,
             &mut self.game.presentation.camera,
         );
-        let fresh = keep_flags(fresh, &self.game);
-        let old = std::mem::replace(&mut self.game, fresh);
-        self.persistence.retire(old);
+        self.game = keep_flags(fresh, &self.game);
         // Timing and failures belong to the match they were counted for.
         self.background = background_save::Schedule::default();
         self.game.clock.speed = 1.0;

@@ -185,21 +185,6 @@ pub(crate) fn world_vec(pos: chassis::fx::Vec2Fx) -> Vec2 {
 }
 
 impl Game {
-    pub(crate) fn retire(self) -> impl FnOnce() + Send {
-        let Self {
-            state,
-            bots,
-            bot_decision,
-            recorder,
-            history,
-            live_stats,
-            presentation,
-            ..
-        } = self;
-        drop(presentation);
-        move || drop((state, bots, bot_decision, recorder, history, live_stats))
-    }
-
     pub(crate) fn view(&self) -> Scene<'_> {
         use crate::render::tutorial_card::CornerCard;
         Scene {
