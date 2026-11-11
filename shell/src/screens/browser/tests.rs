@@ -276,6 +276,39 @@ fn a_small_window_at_max_scale_still_shows_cards() {
 }
 
 #[test]
+fn a_full_card_row_spans_exactly_the_centered_band() {
+    let entries: Vec<ScenarioEntry> = (0..8).map(|i| entry(&format!("m{i}"), 2)).collect();
+    for (view, ui) in [
+        (vec2(1133.0, 744.0), 1.0),
+        (vec2(1280.0, 800.0), 1.0),
+        (vec2(1280.0, 800.0), 1.5),
+        (vec2(1920.0, 1080.0), 1.25),
+    ] {
+        let grid = metrics(view, ui);
+        let layout = Browser::new().layout(&entries, view, ui);
+        let row: Vec<Rect> = layout
+            .cards
+            .iter()
+            .map(|(_, rect)| *rect)
+            .filter(|rect| (rect.y - layout.cards[0].1.y).abs() < 0.01)
+            .collect();
+        assert_eq!(row.len(), columns(view.x, ui), "{view}");
+        let (first, last) = (row[0], row[row.len() - 1]);
+        assert!((first.x - grid.band_x).abs() < 0.01, "{view} at {ui}");
+        assert!(
+            (last.right() - (grid.band_x + grid.band_w)).abs() < 0.01,
+            "{view} at {ui}: the last card ends at {} for a band ending at {}",
+            last.right(),
+            grid.band_x + grid.band_w
+        );
+        assert!(
+            (grid.band_x - (view.x - last.right())).abs() < 0.01,
+            "{view} at {ui}: the row sits centered"
+        );
+    }
+}
+
+#[test]
 fn enter_picks_and_escape_backs_out() {
     let entries = shelf();
     let mut b = Browser::new();
