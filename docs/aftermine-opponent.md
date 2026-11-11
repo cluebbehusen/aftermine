@@ -153,10 +153,10 @@ other non-derivable state persists between decisions:
 - memory of enemy units and buildings, of failed objectives, of raided targets,
   of when each scouting point was last in sight, and of own units whose orders
   stalled for want of a route or a firing position;
-- missions and their phases, what a fighting attack or lift last knew of the
-  enemy's health, which tells whether the fight still makes progress, and since
-  when a free army that could attack has waited, which lowers the margin an
-  attack must bring until it reaches its fight;
+- missions and their phases, what a fighting attack, lift or strike last knew of
+  the enemy's health, which tells whether the fight still makes progress, and
+  since when a free army that could attack has waited, which lowers the margin
+  an attack must bring until it reaches its fight;
 - the saving target; the investment list is rebuilt each decision;
 - the previous bank and spending used to estimate income, and the smoothed
   estimate;
@@ -223,7 +223,7 @@ Each behavior is proven by a staged scenario test.
 | Best target out of the army's reach                        | Attack the best known target the free army beats at the full margin, and keep it while the best stays out of reach                                                                                                                                                                                                     |
 | Losing a fight                                             | Withdraw, with a threshold shaped by personality and difficulty                                                                                                                                                                                                                                                        |
 | Army cleared what it met short of a target it knows        | Go on to that target while the fight's time lasts                                                                                                                                                                                                                                                                      |
-| Fight still making progress                                | Fight on; a fight ends once three minutes pass without the enemy losing building health or armed units around the army                                                                                                                                                                                                 |
+| Fight still making progress                                | Fight on; an attack or lift ends its fight once three minutes pass without the enemy losing building health or armed units around it, and a strike once two minutes do                                                                                                                                                 |
 | Won a defense with army left                               | Counterattack if the attack check passes                                                                                                                                                                                                                                                                               |
 | Enemy artillery shelling assets                            | Prioritize and reach the artillery; raise the need for mobile and artillery counters                                                                                                                                                                                                                                   |
 | Assets under indirect fire                                 | Go for the guns, not the spotters overhead                                                                                                                                                                                                                                                                             |

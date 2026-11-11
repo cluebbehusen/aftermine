@@ -3,7 +3,7 @@
 //! aim they can take or withdraw when the anti-air around them outweighs them.
 
 use super::air;
-use super::attack::{FIT, healthy, striking};
+use super::attack::{FIT, Tally, healthy, striking};
 use super::clear::{self, Sweep};
 use super::strike::{self, Raid};
 use super::{Mission, Missions, Objective, StrikePhase, Task, mine, run, standing};
@@ -203,7 +203,10 @@ impl Missions {
                     .iter()
                     .any(|unit| unit.tile.chebyshev(goal) <= CONTACT_TILES);
                 if arrived {
-                    let engage = StrikePhase::Engage { focus: None };
+                    let engage = StrikePhase::Engage {
+                        focus: None,
+                        tally: None,
+                    };
                     self.list[index].set_sortie(aim, engage, now, goal);
                     return None;
                 }
@@ -217,7 +220,21 @@ impl Missions {
                 if sortie.outweighed(&members, strength) {
                     return withdraw(self, ledger).then_some(lost).flatten();
                 }
-                if !all_idle && age < sortie.ticks(phase) {
+                // A strike's fight ends once it has gone its time without
+                // progress, as an attack's does, not after a fixed time.
+                let mission = &mut self.list[index];
+                if let (
+                    Aim::Building(target),
+                    Task::Strike {
+                        phase: StrikePhase::Engage { tally, .. },
+                        ..
+                    },
+                ) = (aim, &mut mission.task)
+                    && Tally::update(tally, sortie.observation(), &members, target.owner)
+                {
+                    mission.since = now;
+                }
+                if !all_idle && now - mission.since < sortie.ticks(phase) {
                     return None;
                 }
                 if sortie.stands(aim) {

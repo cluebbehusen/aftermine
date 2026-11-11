@@ -208,3 +208,83 @@ fn a_wing_worth_two_strikes_sends_both_at_distinct_targets() {
     };
     assert!(a.iter().all(|id| !b.contains(id)), "no aircraft in both");
 }
+
+/// A strike of `wing` fighting at East's Foundry since tick 0.
+fn engaged(wing: &[UnitId], tally: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "next": 1,
+        "list": [{
+            "id": 0,
+            "task": {
+                "task": "strike",
+                "target": {"owner": 1, "building": "foundry", "anchor": EAST_START},
+                "phase": {"engage": {"focus": null, "tally": tally}},
+            },
+            "since": 0,
+            "units": wing,
+            "goal": {"x": 42, "y": 11},
+        }],
+    })
+}
+
+/// West's wing at tick 2,400, still busy, in a strike engaged since tick 0
+/// whose fight last knew of East's buildings `tally` more health than West
+/// knows now, with a West Kestrel over East's start.
+fn striking_on(tally: Option<i64>) -> (Scenario, State, Opponent, Vec<UnitId>) {
+    let mut scenario = winged();
+    scenario.units.push(unit(0, UnitKind::Kestrel, 41, 11));
+    let mut state = scenario.build().unwrap();
+    let mut wing: Vec<UnitId> = WING.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    wing.sort_unstable();
+    advance_to(&mut state, 2_388, &[]);
+    advance_to(&mut state, 2_400, &[run(0, wing.clone(), 8, 21)]);
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let buildings: i64 = observation
+        .enemy_buildings
+        .iter()
+        .map(|building| i64::from(building.hp))
+        .sum();
+    assert!(buildings > 0, "premise: East's Foundry is known");
+    let tally = tally.map_or(
+        serde_json::Value::Null,
+        |more| serde_json::json!({"buildings": buildings + more, "units": 0}),
+    );
+    let opponent = super::attack::restaged(&scenario, &state, engaged(&wing, &tally));
+    (scenario, state, opponent, wing)
+}
+
+#[test]
+fn a_strike_fights_on_past_its_time_only_while_it_makes_progress() {
+    for (tally, goes_on, why) in [
+        (Some(1), true, "a building lost health"),
+        (Some(0), false, "nothing lost"),
+        (None, false, "the fight's first reading"),
+    ] {
+        let (_, state, mut opponent, wing) = striking_on(tally);
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let mission = strike(&trace.unwrap().missions).expect("the strike stays");
+        let sent = runs(&commands)
+            .into_iter()
+            .any(|(units, _)| units.iter().any(|id| wing.contains(id)));
+        if goes_on {
+            assert_eq!(mission.phase, Phase::Engage, "{why}");
+            assert!(!sent, "{why}: {commands:?}");
+        } else {
+            assert_eq!(mission.phase, Phase::Withdraw, "{why}: the fight ends");
+            assert!(sent, "{why}: the wing turns home: {commands:?}");
+        }
+    }
+}
+
+#[test]
+fn a_strike_fight_keeps_what_it_knew_and_resumes_identically() {
+    let (scenario, mut state, mut opponent, _) = striking_on(Some(1));
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let json = serde_json::to_value(opponent.checkpoint()).unwrap();
+    assert!(
+        json["missions"]["list"][0]["task"]["phase"]["engage"]["tally"].is_object(),
+        "{json}"
+    );
+    state.tick(&commands);
+    resumes_identically(&mut opponent, &scenario, &mut state, 600);
+}

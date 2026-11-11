@@ -149,7 +149,13 @@ enum RaidPhase {
 enum StrikePhase {
     Gather,
     Travel,
-    Engage { focus: Option<UnitId> },
+    Engage {
+        focus: Option<UnitId>,
+        /// What a strike's fight last knew of the enemy, to tell whether it
+        /// still makes progress. `None` until its first decision, and always
+        /// for a clearance, whose fight keeps a fixed time.
+        tally: Option<attack::Tally>,
+    },
     Withdraw,
 }
 
@@ -482,11 +488,11 @@ impl Task {
                 ..
             }
             | Self::Strike {
-                phase: StrikePhase::Engage { focus },
+                phase: StrikePhase::Engage { focus, .. },
                 ..
             }
             | Self::Clear {
-                phase: StrikePhase::Engage { focus },
+                phase: StrikePhase::Engage { focus, .. },
                 ..
             } => Some(focus),
             _ => None,
