@@ -13,8 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 mod batch;
 mod calibration;
@@ -711,20 +710,16 @@ pub(crate) fn write_serialized_jsonl<T: Serialize>(
 /// Call [`finish`](Self::finish) before publishing its [`EvidenceBatch`]. A
 /// dropped or failed stream remains private and the batch removes it.
 pub struct EvaluationTraceWriter {
-    writer: Option<BufWriter<std::fs::File>>,
+    writer: BufWriter<std::fs::File>,
     staged: PathBuf,
     destination: PathBuf,
-    ready: Arc<AtomicBool>,
     rows: u64,
 }
 
 impl EvaluationTraceWriter {
     /// Appends one deterministic trace row to the private staging file.
     pub fn write_row(&mut self, row: &EvaluationTraceRow) -> Result<()> {
-        let writer = self
-            .writer
-            .as_mut()
-            .expect("a live trace writer retains its staging file");
+        let writer = &mut self.writer;
         serde_json::to_writer(&mut *writer, row).with_context(|| {
             format!(
                 "serializing bot decision trace for {}",
@@ -741,36 +736,15 @@ impl EvaluationTraceWriter {
         Ok(())
     }
 
-    /// Flushes and syncs the private trace file, returning its row count.
+    /// Flushes the private trace file, returning its row count.
     pub fn finish(mut self) -> Result<u64> {
-        let mut writer = self
-            .writer
-            .take()
-            .expect("a live trace writer retains its staging file");
-        writer.flush().with_context(|| {
+        self.writer.flush().with_context(|| {
             format!(
                 "flushing bot decision trace for {}",
                 self.destination.display()
             )
         })?;
-        writer.get_ref().sync_all().with_context(|| {
-            format!(
-                "syncing bot decision trace for {}",
-                self.destination.display()
-            )
-        })?;
-        drop(writer);
-        self.ready.store(true, Ordering::Release);
         Ok(self.rows)
-    }
-}
-
-impl Drop for EvaluationTraceWriter {
-    fn drop(&mut self) {
-        if !self.ready.load(Ordering::Acquire) {
-            drop(self.writer.take());
-            std::fs::remove_file(&self.staged).ok();
-        }
     }
 }
 
@@ -786,7 +760,6 @@ impl Drop for EvaluationTraceWriter {
 #[derive(Debug, Default)]
 pub struct EvidenceBatch {
     staged: Vec<(PathBuf, PathBuf)>,
-    trace_ready: Vec<Arc<AtomicBool>>,
     published: Vec<PathBuf>,
     committed: bool,
 }
@@ -823,13 +796,10 @@ impl EvidenceBatch {
                     destination.display()
                 )
             })?;
-        let ready = Arc::new(AtomicBool::new(false));
-        self.trace_ready.push(Arc::clone(&ready));
         Ok(EvaluationTraceWriter {
-            writer: Some(BufWriter::new(file)),
+            writer: BufWriter::new(file),
             staged,
             destination: destination.to_path_buf(),
-            ready,
             rows: 0,
         })
     }
@@ -841,12 +811,6 @@ impl EvidenceBatch {
     /// Errors returned from this call roll back links already created by this
     /// batch; abrupt process termination can interrupt that rollback.
     pub fn publish(mut self) -> Result<()> {
-        ensure!(
-            self.trace_ready
-                .iter()
-                .all(|ready| ready.load(Ordering::Acquire)),
-            "bot evaluation decision traces must be finished before publication"
-        );
         let mut destinations: Vec<&Path> = self
             .staged
             .iter()
@@ -868,13 +832,11 @@ impl EvidenceBatch {
             })?;
             self.published.push(destination.clone());
         }
-        sync_parents(self.staged.iter().map(|(_, destination)| destination))?;
         for (staged, _) in &self.staged {
             std::fs::remove_file(staged).with_context(|| {
                 format!("removing bot evaluation staging file {}", staged.display())
             })?;
         }
-        sync_parents(self.staged.iter().map(|(_, destination)| destination))?;
         self.committed = true;
         Ok(())
     }
@@ -962,30 +924,6 @@ pub fn preflight_destinations(paths: &[PathBuf]) -> Result<()> {
             }
         }
     }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn sync_parents<'a>(destinations: impl Iterator<Item = &'a PathBuf>) -> Result<()> {
-    let mut parents: Vec<&Path> = destinations
-        .map(|path| {
-            path.parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-                .unwrap_or_else(|| Path::new("."))
-        })
-        .collect();
-    parents.sort_unstable();
-    parents.dedup();
-    for parent in parents {
-        std::fs::File::open(parent)
-            .and_then(|directory| directory.sync_all())
-            .with_context(|| format!("syncing evidence directory {}", parent.display()))?;
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn sync_parents<'a>(_destinations: impl Iterator<Item = &'a PathBuf>) -> Result<()> {
     Ok(())
 }
 

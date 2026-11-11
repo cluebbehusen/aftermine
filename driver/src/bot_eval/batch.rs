@@ -118,11 +118,7 @@ pub fn evaluate_batch(
         if let (Some(writer), Some(trace)) = (&mut writer, &leg.trace) {
             let mut input =
                 std::fs::File::open(&trace.path).context("opening completed leg trace")?;
-            std::io::copy(
-                &mut input,
-                writer.writer.as_mut().expect("unfinished trace writer"),
-            )
-            .context("merging ordered leg trace")?;
+            std::io::copy(&mut input, &mut writer.writer).context("merging ordered leg trace")?;
             writer.rows = writer.rows.saturating_add(trace.rows);
         }
         evidence.staged.append(&mut leg.replay.staged);

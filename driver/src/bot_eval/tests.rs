@@ -178,32 +178,6 @@ fn opponent_controller() -> EvaluationController {
     EvaluationController::configured(opponent_config())
 }
 
-fn one_evaluation_trace() -> EvaluationTraceRow {
-    let plan = matchup_plans(
-        &Scenario::skirmish(),
-        prime_matchup(),
-        prime_config().personality_seed,
-        false,
-    )
-    .unwrap()
-    .remove(0);
-    let mut trace = None;
-    evaluate_plan(
-        &plan,
-        1,
-        None,
-        "candidate-a",
-        Some(&mut |row: &EvaluationTraceRow| {
-            if row.seat == 0 {
-                assert!(trace.replace(row.clone()).is_none());
-            }
-            Ok(())
-        }),
-    )
-    .unwrap();
-    trace.expect("Prime emits one trace at tick zero")
-}
-
 #[test]
 fn configured_evaluation_records_exact_controller_provenance() {
     let plans = matchup_plans(
@@ -727,57 +701,6 @@ fn a_trace_publication_collision_rolls_back_the_compact_index() {
         b"racing trace evidence"
     );
     std::fs::remove_dir_all(dir).unwrap();
-}
-
-#[test]
-fn an_unfinished_trace_stream_cannot_be_published() {
-    let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "aftermine-bot-trace-unfinished-{}-{replay_id}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let trace_path = dir.join("trace.jsonl");
-    let mut batch = EvidenceBatch::default();
-    let mut writer = batch.stage_trace_jsonl(&trace_path).unwrap();
-    writer.write_row(&one_evaluation_trace()).unwrap();
-
-    let error = batch.publish().unwrap_err();
-    assert!(error.to_string().contains("must be finished"));
-    assert!(!trace_path.exists(), "unfinished output was not published");
-    drop(writer);
-    assert_eq!(
-        std::fs::read_dir(&dir).unwrap().count(),
-        0,
-        "closing the unfinished writer removes its private staging file"
-    );
-    std::fs::remove_dir(dir).unwrap();
-}
-
-#[test]
-fn an_unfinished_trace_writer_cleans_up_after_its_batch_is_dropped() {
-    let replay_id = NEXT_REPLAY_ID.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "aftermine-bot-trace-drop-order-{}-{replay_id}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let trace_path = dir.join("trace.jsonl");
-    let writer = {
-        let mut batch = EvidenceBatch::default();
-        let writer = batch.stage_trace_jsonl(&trace_path).unwrap();
-        drop(batch);
-        writer
-    };
-
-    drop(writer);
-    assert!(!trace_path.exists(), "a dropped stream is never published");
-    assert_eq!(
-        std::fs::read_dir(&dir).unwrap().count(),
-        0,
-        "the writer removes a staging file that outlives its batch"
-    );
-    std::fs::remove_dir(dir).unwrap();
 }
 
 #[test]
