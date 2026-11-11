@@ -819,6 +819,19 @@ fn event_target_owner(
     }
 }
 
+/// The tiles a structure of `kind` centred on `center` stood on.
+fn footprint(
+    kind: aftermine_sim::BuildingKind,
+    center: chassis::fx::Vec2Fx,
+) -> impl Iterator<Item = chassis::grid::TilePos> {
+    use chassis::fx::{Fx, HALF, Vec2Fx};
+    let (w, h) = kind.size();
+    let anchor = chassis::grid::TilePos::containing(
+        center - Vec2Fx::new(Fx::from_num(w) * HALF, Fx::from_num(h) * HALF),
+    );
+    (0..h).flat_map(move |dy| (0..w).map(move |dx| anchor.offset(dx, dy)))
+}
+
 impl Presentation {
     pub(super) fn restore_pending_crashes(&mut self, state: &State) {
         for crash in state.aircraft_crashes().to_vec() {
@@ -1473,6 +1486,7 @@ impl Presentation {
                 }
                 Event::BuildingDestroyed {
                     building,
+                    kind,
                     pos,
                     player,
                     ..
@@ -1487,6 +1501,12 @@ impl Presentation {
                         let witnessed = !state.hostile(self.human, *player) || sees(self, *pos);
                         self.queue_blast(SoundKind::BuildingBoom, world_vec(*pos), witnessed);
                     }
+                    // Seeing any tile of the footprint clears a ghost, so a
+                    // mark there tells nothing the player hasn't learned.
+                    let scorched = !state.hostile(self.human, *player)
+                        || self.all_seeing()
+                        || footprint(*kind, *pos)
+                            .any(|tile| state.vision(self.human).visible(tile));
                     let body = self
                         .fx_previous
                         .buildings
@@ -1506,10 +1526,14 @@ impl Presentation {
                         ),
                         age: 0.0,
                     });
-                    // A fading scorch decal; capped, oldest dropped first.
-                    self.scorches.push((world_vec(*pos), 0.0, BUILDING_SCORCH));
-                    if self.scorches.len() > 16 {
-                        self.scorches.remove(0);
+                    // A fading scorch decal where the fall was seen, since
+                    // explored fog only half hides one; capped, oldest
+                    // dropped first.
+                    if scorched {
+                        self.scorches.push((world_vec(*pos), 0.0, BUILDING_SCORCH));
+                        if self.scorches.len() > 16 {
+                            self.scorches.remove(0);
+                        }
                     }
                 }
                 // The cradle was public, so every seat may learn its

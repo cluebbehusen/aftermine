@@ -239,3 +239,13 @@ fn a_hidden_roc_s_bay_stays_at_rest() {
     let docks = &presentation.dock_motion[&roc.0];
     assert_eq!(*docks, crate::dock_motion::DockMotion::settled(0));
 }
+
+#[test]
+fn dropping_presentation_clears_the_old_timeline_s_scorches() {
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    game.presentation
+        .scorches
+        .push((macroquad::prelude::vec2(4.0, 4.0), 0.0, 1.0));
+    game.presentation.drop_presentation(&game.state);
+    assert!(game.presentation.scorches.is_empty());
+}

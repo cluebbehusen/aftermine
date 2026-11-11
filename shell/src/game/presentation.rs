@@ -608,6 +608,7 @@ impl Presentation {
     /// not replay it as a burst of noise.
     pub fn drop_presentation(&mut self, state: &State) {
         self.fx.clear();
+        self.scorches.clear();
         self.projection.take();
         self.placement_verdict.clear();
         self.restore_pending_crashes(state);
