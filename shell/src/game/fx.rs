@@ -884,8 +884,9 @@ impl Presentation {
         });
     }
 
-    /// Advances the effect clock and ages and prunes effects, alerts, and
-    /// toasts.
+    /// Advances the effect clock and ages and prunes effects and alerts.
+    /// Toasts age apart, by wall time: a driven step stands for sim time
+    /// and would age them a second time.
     pub fn update_fx(&mut self, state: &State, dt: f32) {
         self.fx_clock += dt;
         for (_, age, _) in &mut self.alerts {
@@ -989,14 +990,18 @@ impl Presentation {
                     EffectKind::Debris { .. } => 3.0,
                 }
         });
-        for toast in &mut self.toasts {
-            toast.age += dt;
-        }
-        self.toasts.retain(|t| t.age < 2.5);
         for (_, age, _) in &mut self.scorches {
             *age += dt;
         }
         self.scorches.retain(|(_, age, _)| *age < 20.0);
+    }
+
+    /// Ages and prunes toasts by frame time, paused or not.
+    pub(crate) fn age_toasts(&mut self, dt: f32) {
+        for toast in &mut self.toasts {
+            toast.age += dt;
+        }
+        self.toasts.retain(|t| t.age < 2.5);
     }
 
     fn building_hit(&self, state: &State, id: aftermine_sim::BuildingId) -> Option<BuildingHit> {

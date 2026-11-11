@@ -331,6 +331,7 @@ pub(super) fn update_and_draw(
     // battlefield behind it.
     if matches!(screen, Screen::Results(_)) {
         app.game.update_fx(time.presentation);
+        app.game.presentation.age_toasts(time.presentation);
     } else if app.net.is_some() && screen.kind() != ScreenKind::Playing {
         // A LAN match keeps ticking under menus, so its effects age too.
         app.game.update_wall_clock_fx(time.presentation);

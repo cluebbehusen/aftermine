@@ -197,10 +197,12 @@ impl Game {
     pub(crate) fn update_fx(&mut self, dt: f32) {
         self.presentation.update_fx(&self.state, dt);
     }
-    /// Ages effects by frame time while the match's clock runs; driven
-    /// presentation steps call [`Self::update_fx`] directly because they
-    /// stand for sim time even while the wall clock is paused.
+    /// Ages effects by frame time while the match's clock runs, and toasts
+    /// by frame time always, so a refusal read while paused still clears.
+    /// Driven presentation steps call [`Self::update_fx`] directly because
+    /// they stand for sim time even while the wall clock is paused.
     pub(crate) fn update_wall_clock_fx(&mut self, dt: f32) {
+        self.presentation.age_toasts(dt);
         if !self.clock.paused {
             self.update_fx(dt);
         }
