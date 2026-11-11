@@ -22,19 +22,6 @@ SS = 4
 # Verdigris on unowned debris and blockers, beside the base palette's rust.
 PATINA = (39, 96, 79)
 
-FIELD_DEBRIS_KEYS = (
-    "field_debris_severed_cable",
-    "field_debris_bent_service_rail",
-    "field_debris_abandoned_canisters",
-    "field_debris_braided_cable",
-    "field_debris_fastener_spill",
-    "field_debris_canister_cluster",
-    "field_debris_sunken_cooling_fan",
-    "field_debris_inspection_hatch",
-    "field_debris_cable_tray",
-    "field_debris_motor_casing",
-)
-
 GROUND_BLOCKER_KEYS = (
     "ground_blocker_cooling_fan",
     "ground_blocker_compressor_skid",
@@ -93,17 +80,6 @@ def _put(registry: Registry, out: Path, key: str, image: Image.Image) -> None:
     image.save(out / f"{key}.png")
     registry[key] = image
     print(f"  {key}.png")
-
-
-def _flat_shadow(
-    draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], alpha: int = 80
-) -> None:
-    x0, y0, x1, y1 = box
-    draw.rounded_rectangle(
-        _box((x0 + 1, y0 + 3, x1 + 2, y1 + 4)),
-        radius=_s(3),
-        fill=(9, 9, 12, alpha),
-    )
 
 
 def _raised_plinth(
@@ -276,165 +252,6 @@ def _fan(
         )
     draw.ellipse(_box((cx - 4, cy - 4, cx + 4, cy + 4)), fill=_rgba(gen.IRON_LIGHT))
     draw.ellipse(_box((cx - 2, cy - 2, cx + 2, cy + 2)), fill=_rgba(gen.SCRAP_DARK))
-
-
-def _legacy_debris(index: int) -> Image.Image:
-    image = Image.new("RGBA", (32, 32), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    rust = gen.PALETTES["base"]["dark"]
-    if index == 0:
-        draw.arc((4, 7, 27, 28), 170, 345, fill=_rgba(gen.IRON_LIGHT), width=2)
-    elif index == 1:
-        draw.line((5, 20, 10, 10, 22, 9, 27, 18), fill=_rgba(gen.IRON), width=3)
-    elif index == 5:
-        for x in (8, 16, 24):
-            draw.rectangle((x - 3, 10, x + 2, 24), fill=_rgba(gen.IRON_DARK))
-            draw.line((x - 2, 12, x + 1, 12), fill=_rgba(rust))
-    else:
-        raise ValueError(f"unsupported finalized legacy debris {index}")
-    return image
-
-
-def _refined_debris(index: int) -> Image.Image:
-    image, draw = _canvas(64, 64)
-    rust = gen.PALETTES["base"]["dark"]
-    if index == 0:
-        _flat_shadow(draw, (7, 15, 57, 48), 36)
-        draw.arc(
-            _box((8, 11, 55, 53)), 165, 350, fill=_rgba(gen.IRON_DARK), width=_s(6)
-        )
-        draw.arc(
-            _box((8, 11, 55, 53)), 165, 350, fill=_rgba(gen.IRON_LIGHT), width=_s(2)
-        )
-        for x, y, color in (
-            (9, 33, gen.SCRAP),
-            (11, 36, PATINA),
-            (53, 25, rust),
-            (55, 28, gen.SCRAP_DARK),
-        ):
-            draw.line(
-                _points(((x, y), (x - 5 if x < 20 else x + 5, y + 5))),
-                fill=_rgba(color),
-                width=_s(2),
-            )
-    elif index == 2:
-        for x, y, angle in (
-            (13, 17, 0),
-            (27, 13, 1),
-            (43, 20, 0),
-            (19, 38, 1),
-            (39, 42, 0),
-            (50, 35, 1),
-        ):
-            draw.ellipse(_box((x - 4, y - 4, x + 4, y + 4)), fill=_rgba(gen.IRON_DARK))
-            draw.ellipse(_box((x - 2, y - 2, x + 2, y + 2)), fill=_rgba(gen.IRON_LIGHT))
-            line = (
-                ((x - 1, y - 2), (x + 1, y + 2)) if angle else ((x - 2, y), (x + 2, y))
-            )
-            draw.line(_points(line), fill=_rgba(rust), width=_s(1))
-    elif index == 3:
-        for x, y, tilt in ((16, 30, -2), (32, 27, 1), (47, 34, 0)):
-            draw.rounded_rectangle(
-                _box((x - 7 + tilt, y - 14, x + 6 + tilt, y + 15)),
-                radius=_s(3),
-                fill=_rgba(gen.IRON_DARK),
-            )
-            draw.rectangle(
-                _box((x - 5 + tilt, y - 10, x + 4 + tilt, y + 10)),
-                fill=_rgba(gen.IRON),
-            )
-            draw.line(
-                _points(((x - 4 + tilt, y - 5), (x + 3 + tilt, y - 5))),
-                fill=_rgba(rust if x != 32 else PATINA),
-                width=_s(2),
-            )
-            draw.rectangle(
-                _box((x - 3 + tilt, y - 16, x + 2 + tilt, y - 12)),
-                fill=_rgba(gen.IRON_LIGHT),
-            )
-    else:
-        raise ValueError(f"unsupported finalized refined debris {index}")
-    return _finish(image, 64, 64)
-
-
-def _new_debris(index: int) -> Image.Image:
-    image, draw = _canvas(64, 64)
-    rust = gen.PALETTES["base"]["dark"]
-    if index == 0:
-        draw.rounded_rectangle(
-            _box((7, 8, 57, 56)), radius=_s(5), fill=_rgba(gen.GROUND_DARK)
-        )
-        draw.line(_points(((12, 12), (52, 12))), fill=_rgba(gen.IRON_DARK), width=_s(2))
-        _fan(draw, (32, 32), 18, raised=False)
-        for x, y in ((11, 12), (53, 12), (11, 52), (53, 52)):
-            draw.ellipse(_box((x - 2, y - 2, x + 2, y + 2)), fill=_rgba(gen.IRON_LIGHT))
-    elif index == 1:
-        draw.polygon(
-            _points(((16, 8), (48, 8), (57, 19), (53, 51), (14, 55), (7, 43), (9, 18))),
-            fill=_rgba(gen.IRON_DARK),
-        )
-        draw.polygon(
-            _points(
-                ((18, 12), (46, 12), (52, 21), (49, 47), (17, 50), (12, 40), (13, 21))
-            ),
-            fill=_rgba(gen.IRON),
-        )
-        draw.line(_points(((18, 17), (46, 44))), fill=_rgba(PATINA), width=_s(3))
-        for x, y in ((18, 17), (46, 17), (18, 45), (46, 45)):
-            draw.ellipse(_box((x - 2, y - 2, x + 2, y + 2)), fill=_rgba(gen.BONE, 160))
-    elif index == 3:
-        draw.polygon(
-            _points(((5, 20), (54, 12), (59, 40), (11, 49))),
-            fill=_rgba(gen.IRON_DARK),
-        )
-        draw.polygon(
-            _points(((9, 22), (51, 16), (54, 37), (13, 45))),
-            fill=_rgba(gen.GROUND_DARK),
-        )
-        for offset in range(0, 41, 7):
-            draw.line(
-                _points(
-                    ((12 + offset, 20 - offset // 7), (15 + offset, 44 - offset // 7))
-                ),
-                fill=_rgba(gen.IRON_LIGHT),
-                width=_s(1),
-            )
-        draw.arc(_box((9, 16, 53, 47)), 165, 350, fill=_rgba(rust), width=_s(3))
-        draw.arc(_box((12, 15, 56, 44)), 170, 345, fill=_rgba(PATINA), width=_s(2))
-    elif index == 5:
-        draw.rounded_rectangle(
-            _box((8, 17, 55, 48)), radius=_s(7), fill=_rgba(gen.IRON_DARK)
-        )
-        draw.rounded_rectangle(
-            _box((13, 20, 50, 44)), radius=_s(5), fill=_rgba(gen.IRON)
-        )
-        for x in range(17, 49, 6):
-            draw.line(
-                _points(((x, 22), (x - 2, 42))),
-                fill=_rgba(gen.GROUND_DARK),
-                width=_s(2),
-            )
-        draw.ellipse(_box((40, 25, 55, 40)), fill=_rgba(gen.IRON_DARK))
-        draw.ellipse(_box((44, 29, 51, 36)), fill=_rgba(PATINA))
-        draw.line(_points(((15, 24), (23, 18))), fill=_rgba(rust), width=_s(2))
-    else:
-        raise ValueError(f"unsupported finalized new debris {index}")
-    return _finish(image, 64, 64)
-
-
-def _field_debris() -> tuple[Image.Image, ...]:
-    return (
-        _legacy_debris(0),
-        _legacy_debris(1),
-        _legacy_debris(5),
-        _refined_debris(0),
-        _refined_debris(2),
-        _refined_debris(3),
-        _new_debris(0),
-        _new_debris(1),
-        _new_debris(3),
-        _new_debris(5),
-    )
 
 
 def _ground_blocker(original_index: int) -> Image.Image:
@@ -667,8 +484,6 @@ def _ground_blockers() -> tuple[Image.Image, ...]:
 def install_finalized_environment(registry: Registry, out: Path) -> None:
     """Install every approved environment sprite into the production bank."""
 
-    for key, image in zip(FIELD_DEBRIS_KEYS, _field_debris(), strict=True):
-        _put(registry, out, key, image)
     for key, image in zip(GROUND_BLOCKER_KEYS, _ground_blockers(), strict=True):
         _put(registry, out, key, image)
 

@@ -284,16 +284,9 @@ struct ThemePropPlacement {
 }
 
 impl ThemePropPlacement {
+    /// Theme marks are flat surface marks, so they turn freely.
     fn rotation(self) -> f32 {
-        // The first prop bank is made of flat surface marks. The second bank
-        // contains raised objects with a baked world-space highlight and
-        // shadow, so rotating those objects also rotates their lighting.
-        let turns = if self.variant < 3 {
-            self.quarter_turns
-        } else {
-            0
-        };
-        f32::from(turns) * std::f32::consts::FRAC_PI_2
+        f32::from(self.quarter_turns) * std::f32::consts::FRAC_PI_2
     }
 }
 
@@ -770,7 +763,7 @@ pub(super) fn draw_floor(ground: &Ground<'_>, view: &GroundView, sprites: &Sprit
                 .quarry_dressing(placement.variant)
                 .map(|source| (source, placement.rotation, tint))
         } else if tile.cosmetic == 1 {
-            Some((sprites.decal(3), 0.0, tint))
+            Some((sprites.wreck_decal(), 0.0, tint))
         } else if let Some(placement) = prop_candidate {
             quiet_mark(placement)
                 .filter(|_| symmetric_safe_theme_prop_tile(&ground.scenario.map, pos))

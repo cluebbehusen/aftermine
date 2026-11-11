@@ -796,9 +796,9 @@ fn every_theme_prop_row_is_tile_sized_and_ordered_like_the_lookup() {
     .enumerate()
     {
         assert_eq!(theme_prop_row(theme), Some(row));
-        for variant in 0..6 {
+        for variant in 0..3 {
             let key = format!("theme_{stem}_{variant}");
-            assert_eq!(THEME_PROP_KEYS[row * 6 + variant], key);
+            assert_eq!(THEME_PROP_KEYS[row * 3 + variant], key);
             assert_eq!(atlas[&key][2..], [64.0, 64.0]);
         }
     }
@@ -808,10 +808,6 @@ fn every_theme_prop_row_is_tile_sized_and_ordered_like_the_lookup() {
 #[test]
 fn finalized_environment_regions_keep_their_authored_footprints() {
     let atlas = manifest();
-    for key in FIELD_DEBRIS_KEYS {
-        let [_, _, width, height] = atlas[key];
-        assert!(matches!((width, height), (32.0, 32.0) | (64.0, 64.0)));
-    }
     for (key, footprint) in GROUND_BLOCKER_KEYS.into_iter().zip([
         (2, 2),
         (2, 1),
