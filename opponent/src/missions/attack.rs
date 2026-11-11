@@ -11,7 +11,7 @@ use super::defense::{artillery, battery, lobs};
 use super::raid::{aim, blast};
 use super::{
     AttackPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, against_buildings,
-    approach, breacher, distant_worth, hits, hunt, insert, known, mine, run, seen_lately, standing,
+    approach, breacher, distant_worth, hits, hunt, insert, known, mine, presumed, run, standing,
     value,
 };
 use crate::composition::{self, Role};
@@ -1325,7 +1325,7 @@ impl<'a> Plan<'a> {
                 let anchor = self.map.start(owner)?;
                 self.target(owner, BuildingKind::Foundry, anchor)
             })
-            .filter(|target| self.presumed(target.objective()))
+            .filter(|target| presumed(self.observation, self.map, self.memory, target.objective()))
             .collect();
         let rival = |targets: &[Target]| -> Vec<Target> {
             targets
@@ -1367,24 +1367,10 @@ impl<'a> Plan<'a> {
     /// reads as standing whether or not anything stands there.
     fn present(&self, objective: Objective) -> bool {
         if self.start(objective) {
-            self.presumed(objective)
+            presumed(self.observation, self.map, self.memory, objective)
         } else {
             known(self.observation, objective).is_some()
         }
-    }
-
-    /// Whether the hostile start `objective` is presumed held: the seat knows
-    /// the Foundry there, or has not seen the start lately. One seen empty
-    /// stays cleared out of sight until it is worth another look.
-    fn presumed(&self, objective: Objective) -> bool {
-        known(self.observation, objective).is_some()
-            || !seen_lately(
-                self.map,
-                self.memory,
-                self.observation.me,
-                objective.owner,
-                self.observation.tick,
-            )
     }
 
     /// Whether `objective` is the Foundry presumed at its owner's start.

@@ -11,7 +11,7 @@ use super::attack::{FIT, Tally, healthy, margin, minimum, opposed, striking};
 use super::raid::{aim, blast};
 use super::{
     LiftPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, approach, distant_worth,
-    hits, hunt, known, mine, open, run, standing,
+    hits, hunt, known, mine, open, presumed, run, standing,
 };
 use crate::composition::{self, Role};
 use crate::decision::Ledger;
@@ -1370,9 +1370,9 @@ impl<'a> Lifting<'a> {
             })
     }
 
-    /// The target on `island` other than `skip` and not given up on, this
-    /// decision or lately, whose tile beside it lies nearest `from`, with
-    /// that tile.
+    /// The target on `island` presumed held, other than `skip` and not given
+    /// up on, this decision or lately, whose tile beside it lies nearest
+    /// `from`, with that tile.
     fn nearest(
         &self,
         island: u32,
@@ -1390,6 +1390,7 @@ impl<'a> Lifting<'a> {
                     .memory
                     .abandoned(objective.building, objective.anchor, now)
             })
+            .filter(|objective| presumed(self.observation, self.map, self.memory, *objective))
             .filter_map(|objective| Some((objective, self.hunt_tile(objective, from)?)))
             .min_by_key(|(_, tile)| {
                 (

@@ -2067,19 +2067,43 @@ fn free_riders_on_a_targets_island_go_at_a_target_there() {
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
     assert!(attacked(&commands, &riders, foundry), "{commands:?}");
 
-    let far = [(27, 21), (28, 21), (27, 22), (28, 22)];
-    let (scenario, state, riders) = ashore(&far);
+    let (scenario, state, riders) = ashore(&AFAR);
     let observation = ObservationData::fog_honest(&state, PlayerId(0));
     assert!(
         observation.enemy_buildings.is_empty(),
         "premise: the start is out of sight"
     );
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    assert_eq!(walking_to_start(&commands), riders, "{commands:?}");
+}
+
+/// Spots on East's shore out of sight of East's start.
+const AFAR: [(i32, i32); 4] = [(27, 21), (28, 21), (27, 22), (28, 22)];
+
+/// The units `commands` send beside East's start, in id order.
+fn walking_to_start(commands: &[PlayerCommand]) -> Vec<UnitId> {
     let size = BuildingKind::Foundry.size();
-    assert!(
-        hunts(&commands).iter().any(|(units, goal)| {
-            *units == riders && crate::frame::gap(EAST_START, size, *goal, (1, 1)) == 0
-        }),
-        "{commands:?}"
-    );
+    let mut units: Vec<UnitId> = hunts(commands)
+        .into_iter()
+        .filter(|(_, goal)| crate::frame::gap(EAST_START, size, *goal, (1, 1)) == 0)
+        .flat_map(|(units, _)| units)
+        .collect();
+    units.sort_unstable();
+    units
+}
+
+#[test]
+fn free_riders_walk_to_a_start_seen_empty_only_once_it_is_worth_another_look() {
+    // Out of sight of East's start, West last saw it at `seen` and knows no
+    // Foundry there: it saw the start empty.
+    let (scenario, mut state, riders) = ashore(&AFAR);
+    advance_to(&mut state, crate::missions::STALE_TICKS + 12, &[]);
+    let walking = |seen: u64| {
+        let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            json["memory"]["scouted"] = serde_json::json!([seen]);
+        });
+        walking_to_start(&opponent.act(&state, &mut OwnEvents::default()))
+    };
+    assert_eq!(walking(13), Vec::new(), "seen lately");
+    assert_eq!(walking(12), riders, "worth another look");
 }

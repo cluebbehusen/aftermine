@@ -1168,6 +1168,19 @@ fn standing(observation: &ObservationData, target: Objective) -> bool {
     known(observation, target).is_some() || !seen
 }
 
+/// Whether `target`, a known enemy building or a hostile start, is presumed
+/// held: the seat knows it, or has not seen its owner's start lately. A start
+/// seen empty stays cleared out of sight until it is worth another look.
+fn presumed(
+    observation: &ObservationData,
+    map: &MapModel,
+    memory: &Memory,
+    target: Objective,
+) -> bool {
+    known(observation, target).is_some()
+        || !seen_lately(map, memory, observation.me, target.owner, observation.tick)
+}
+
 /// The enemy building the seat knows of as `target`.
 fn known(observation: &ObservationData, target: Objective) -> Option<&BuildingObs> {
     observation.enemy_buildings.iter().find(|building| {
