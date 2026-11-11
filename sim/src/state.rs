@@ -15,6 +15,7 @@
 mod goal;
 mod order_key;
 mod placement;
+pub(crate) mod sky;
 mod targeting;
 pub use goal::{Aim, Goal};
 pub use order_key::OrderKey;
@@ -1566,6 +1567,9 @@ pub struct State {
     /// ask whether a tile is blocked thousands of times per tick.
     #[serde(skip)]
     pub(crate) building_occupancy: Vec<u8>,
+    /// Derived: recent air route searches. Never serialized or hashed.
+    #[serde(skip)]
+    pub(crate) air_routes: sky::AirRoutes,
 }
 
 /// Map tiles under friendly ground bodies standing still, one bit per tile
@@ -1773,6 +1777,7 @@ impl State {
             next_warhead_id: 0,
             next_march_id: 0,
             building_occupancy: vec![0; cell_count(map_width, map_height)],
+            air_routes: sky::AirRoutes::default(),
         }
     }
 
@@ -2127,6 +2132,7 @@ impl State {
             next_warhead_id,
             next_march_id,
             building_occupancy: _,
+            air_routes: _,
         } = self;
 
         self.validate_players()?;
@@ -4513,6 +4519,7 @@ impl From<StateWire> for State {
         State {
             mode,
             building_occupancy: Vec::new(),
+            air_routes: sky::AirRoutes::default(),
             tick,
             map,
             players,
