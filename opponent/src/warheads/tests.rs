@@ -206,3 +206,79 @@ fn the_volley_that_ends_a_seat_counts_nothing_else_of_it_from_the_fall_on() {
     assert!(beside[0] > alone[0], "a unit counts until the seat falls");
     assert_eq!(beside[3], alone[3], "and is the seat's from then on");
 }
+
+#[test]
+fn a_strike_on_a_tile_centre_takes_what_the_falloff_deals_at_the_closest_point() {
+    for kind in BuildingKind::ALL {
+        let mark = owned(kind, 20, 20);
+        for y in 10..32 {
+            for x in 10..32 {
+                let tile = TilePos::new(x, y);
+                assert_eq!(
+                    mark.taken_at(tile),
+                    mark.taken(tile.center()),
+                    "{kind:?} struck at {tile:?}"
+                );
+            }
+        }
+    }
+}
+
+/// [`needed`] as it scored every volley at every aim.
+fn needed_by_every_volley(aims: &[Aim], marks: &[Mark], have: u64) -> Option<(u64, u64)> {
+    let spire = u64::from(BuildingKind::Spire.invested_cost(0));
+    aims.iter()
+        .flat_map(|aim| {
+            recovered(marks, &[], aim.tile, most_hits())
+                .into_iter()
+                .zip(aim.interceptors + 1..)
+                .filter(move |(value, spent)| {
+                    value + aim.drawn >= price(*spent) + spire * spent.saturating_sub(have)
+                })
+                .map(|(value, spent)| (spent, value))
+        })
+        .min_by_key(|(spires, value)| (*spires, Reverse(*value)))
+}
+
+#[test]
+fn the_spires_a_strike_needs_skip_no_volley_that_could_better_the_best() {
+    let mut rng = chassis::rng::Pcg32::new(7, 0);
+    let mut draw = |bound: usize| rng.next_index(bound);
+    let tile = |x: usize, y: usize| {
+        TilePos::new(
+            i32::try_from(x).expect("small"),
+            i32::try_from(y).expect("small"),
+        )
+    };
+    let mut found = [0; 2];
+    for _ in 0..400 {
+        let marks: Vec<Mark> = (0..=draw(12))
+            .map(|_| {
+                let kind = BuildingKind::ALL[draw(BuildingKind::ALL.len())];
+                let at = tile(10 + draw(12), 10 + draw(12));
+                let mark = owned(kind, at.x, at.y);
+                Mark {
+                    owner: aftermine_sim::PlayerId(if draw(2) == 0 { 1 } else { 2 }),
+                    hp: mark.max_hp - u32::try_from(draw(mark.max_hp as usize)).expect("health"),
+                    built: draw(4) > 0,
+                    extra: draw(2_000) as u64,
+                    last: kind == BuildingKind::Foundry && draw(2) == 0,
+                    ..mark
+                }
+            })
+            .collect();
+        let marks = by_column(marks);
+        let aims: Vec<Aim> = (0..=draw(16))
+            .map(|_| Aim {
+                tile: tile(8 + draw(16), 8 + draw(16)),
+                interceptors: draw(4) as u64,
+                drawn: draw(2_000) as u64,
+            })
+            .collect();
+        let have = draw(4) as u64;
+        let needs = needed(&aims, &marks, have);
+        assert_eq!(needs, needed_by_every_volley(&aims, &marks, have));
+        found[usize::from(needs.is_some())] += 1;
+    }
+    assert!(found.iter().all(|cases| *cases > 20), "{found:?}");
+}
