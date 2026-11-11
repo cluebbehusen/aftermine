@@ -25,10 +25,9 @@ type LabelSet = [u32; 4];
 /// same passability the routes use, so a target outside the unit's labels is
 /// one no route can reach. Labels are built on first use and describe
 /// passability at that moment. The only passability write inside the brain
-/// phase is a scrap node running dry, which a harvester reports with
-/// [`crate::Event::NodeDepleted`]; the owner must call
-/// [`Reach::forget_ground`] after any brain that emitted one. Sky
-/// passability never changes during a match.
+/// phase is a scrap node running dry; the harvest that empties one says so,
+/// and the owner calls [`Reach::forget_ground`] at once. Sky passability
+/// never changes during a match.
 ///
 /// Settled crowds are judged against the bodies that stood idle, pathless,
 /// and stopped when the phase began, so the answer never depends on which
