@@ -81,6 +81,32 @@ fn stripping_hotkeys_clears_every_card_row() {
             card.hotkey
         );
     }
+
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
+        .expect("a harvester")
+        .id;
+    game.state.tick(&[PlayerCommand {
+        player: game.presentation.human,
+        command: Command::Hunt {
+            units: vec![harvester],
+            goal: chassis::grid::TilePos::new(8, 8),
+            queue: false,
+        },
+    }]);
+    game.presentation.selection.buildings.clear();
+    game.presentation.selection.units = vec![harvester];
+    let mut panel =
+        build_for_palette(&game.view(), &BindingMap::classic(), false).expect("unit panel");
+    assert_eq!(
+        panel.stop.as_ref().map(|stop| stop.hotkey.as_str()),
+        Some("X")
+    );
+    strip_hotkeys(&mut panel);
+    assert_eq!(panel.stop.map(|stop| stop.hotkey), Some(String::new()));
 }
 
 fn stat<'a>(panel: &'a Panel, label: &str) -> &'a info::StatRow {

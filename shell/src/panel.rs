@@ -1322,6 +1322,7 @@ fn strip_hotkeys(panel: &mut Panel) {
         .chain(&mut panel.cards)
         .chain(&mut panel.queue)
         .chain(&mut panel.absent)
+        .chain(&mut panel.stop)
     {
         card.hotkey.clear();
     }
