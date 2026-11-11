@@ -380,14 +380,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     let mut live_start = (app.game.slot.clone(), app.game.state.current_tick());
 
     loop {
-        if let Some(result) = app.report_job.poll() {
-            let (text, danger) = match result {
-                Ok(text) => (text, false),
-                Err(error) => (format!("Diagnostic operation failed: {error}"), true),
-            };
-            if !text.is_empty() {
-                app.notify(text, danger);
-            }
+        match app.report_job.poll() {
+            Some(Ok(text)) if !text.is_empty() => app.notify(text, false),
+            Some(Err(failure)) => app.notify_failure(failure.line, failure.cause),
+            Some(Ok(_)) | None => {}
         }
         let visible = screen.visible(&app.game);
         aftermine_kit::diagnostics::frame(aftermine_kit::diagnostics::FrameContext {
