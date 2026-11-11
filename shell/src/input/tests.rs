@@ -2816,6 +2816,51 @@ fn a_hostile_selection_inspects_and_leaks_nothing() {
 }
 
 #[test]
+fn shift_clicked_units_keep_the_selection_in_id_order() {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.units.clear();
+    for x in [4, 8, 12] {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
+            player: 0,
+            kind: aftermine_sim::UnitKind::Sentinel,
+            x,
+            y: 8,
+        });
+    }
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+    let mut input = InputState::new();
+    let units: Vec<_> = game.state.units().iter().map(|unit| unit.id).collect();
+    let screen = |game: &Game, id| {
+        let pos = game.state.unit(id).unwrap().pos;
+        game.presentation
+            .camera
+            .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()))
+    };
+    let shift_click = |game: &mut Game, input: &mut InputState, at: Vec2| {
+        apply_events(
+            game,
+            input,
+            &[
+                key_down(Key::Shift),
+                left_down(at),
+                left_up(at),
+                key_up(Key::Shift),
+            ],
+        );
+    };
+    let last = screen(&game, units[2]);
+    apply_events(&mut game, &mut input, &click(last.x, last.y));
+    for id in [units[0], units[1]] {
+        let at = screen(&game, id);
+        shift_click(&mut game, &mut input, at);
+    }
+    assert_eq!(game.presentation.selection.units, units);
+    let middle = screen(&game, units[1]);
+    shift_click(&mut game, &mut input, middle);
+    assert_eq!(game.presentation.selection.units, [units[0], units[2]]);
+}
+
+#[test]
 fn a_selection_never_mixes_allegiances() {
     let mut game = team_game();
     let mut input = InputState::new();

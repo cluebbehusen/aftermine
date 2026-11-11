@@ -305,16 +305,12 @@ pub(super) fn select_picked(game: &mut Game, picked: Option<Picked>, screen: Vec
             .map(|u| u.player);
         if additive && current_owner == Some(owner) {
             // Shift-click toggles membership within one allegiance.
-            if let Some(index) = game
-                .presentation
-                .selection
-                .units
-                .iter()
-                .position(|u| *u == id)
-            {
-                game.presentation.selection.units.remove(index);
-            } else {
-                game.presentation.selection.units.push(id);
+            let units = &mut game.presentation.selection.units;
+            match units.binary_search(&id) {
+                Ok(index) => {
+                    units.remove(index);
+                }
+                Err(index) => units.insert(index, id),
             }
         } else {
             // A different owner replaces the selection, keeping it to one

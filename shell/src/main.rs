@@ -200,13 +200,13 @@ fn parse_speed(s: &str) -> Result<f64, String> {
     }
 }
 
-fn window_conf() -> Conf {
+fn window_conf() -> macroquad::conf::Conf {
     // The window is created before `main()` ever sees clap's output, so
     // the size/DPI flags are parsed here too — clap is idempotent and
     // errors surface identically on the second parse in `main()`.
     let args = cli_args();
     let (width, height) = args.window.unwrap_or(config::Config::load().window);
-    Conf {
+    batched(Conf {
         window_title: "Aftermine".to_string(),
         window_width: width.fit::<i32>(),
         window_height: height.fit::<i32>(),
@@ -234,6 +234,22 @@ fn window_conf() -> Conf {
             ..Default::default()
         },
         ..Default::default()
+    })
+}
+
+/// Vertices macroquad keeps room for in one draw call.
+const DRAW_CALL_VERTICES: usize = 10_000;
+
+/// `window` as macroquad's own conversion would take it, but with index room
+/// for every quad the vertex room holds: macroquad's default holds a third of
+/// that, so a batch of quads ended every 833.
+fn batched(window: Conf) -> macroquad::conf::Conf {
+    macroquad::conf::Conf {
+        miniquad_conf: window,
+        update_on: None,
+        default_filter_mode: FilterMode::Linear,
+        draw_call_vertex_capacity: DRAW_CALL_VERTICES,
+        draw_call_index_capacity: DRAW_CALL_VERTICES / 4 * 6,
     }
 }
 

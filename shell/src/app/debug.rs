@@ -4,9 +4,7 @@ use super::screenshot::PendingScreenshot;
 use super::{App, Install, Screen, ScreenKind};
 use crate::debug_server::IncomingRequest;
 use crate::game::Game;
-use aftermine_protocol::{
-    CameraView, OverlayView, Reply, Request, ResponseEnvelope, SavedView, UiView,
-};
+use aftermine_protocol::{CameraView, OverlayView, Reply, Request, ResponseEnvelope, SavedView};
 use aftermine_sim::{PlayerCommand, Scenario};
 use macroquad::prelude::{screen_height, screen_width};
 
@@ -103,12 +101,7 @@ pub(super) fn lockstep_refuses(
 /// overlay) and answered for the screen the window shows, or
 /// live-mutating (commands, loads, saves) and refused while the viewer
 /// owns the screen.
-pub(super) fn handle_request(
-    incoming: IncomingRequest,
-    app: &mut App,
-    screen: &mut Screen,
-    ui_view: &UiView,
-) {
+pub(super) fn handle_request(incoming: IncomingRequest, app: &mut App, screen: &mut Screen) {
     let IncomingRequest { id, request, reply } = incoming;
     if screen.kind() == ScreenKind::Busy && frozen_map_refuses(&request) {
         reply
@@ -192,7 +185,7 @@ pub(super) fn handle_request(
                     ],
                 }))
             }
-            Request::QueryUi => Ok(Reply::Ui(ui_view.clone())),
+            Request::QueryUi => Ok(Reply::Ui(super::ui_view::capture_ui(screen, app))),
             Request::QueryPerformance { reset } => {
                 if app.frame_profiler.enabled() {
                     Ok(Reply::Performance(app.frame_profiler.snapshot(reset)))

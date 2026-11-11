@@ -110,7 +110,7 @@ impl SelectedBuildings {
                 game.state.accepts_commands(game.presentation.human),
             )
         } else {
-            game.state.inspect_command_phase(game.pending, |state| {
+            game.with_staged(|state| {
                 snapshot(
                     state.buildings(),
                     state.scrap(game.presentation.human).unwrap_or(0),
