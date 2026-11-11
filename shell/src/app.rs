@@ -370,7 +370,6 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         autosave_retry: None,
         clock: std::time::Instant::now(),
     };
-    let mut ui_view = ui_view::capture_ui(&screen, &app);
     // A rerun pass re-enters the loop inside the same presented frame;
     // the frame's starting screen is the one recorded before it.
     let mut rerun_pass = false;
@@ -417,7 +416,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                 // until the event has actually been felt.
                 let holds_queries = matches!(incoming.request, Request::InjectEvent { .. });
                 let before = screen.kind();
-                debug::handle_request(incoming, &mut app, &mut screen, &ui_view);
+                debug::handle_request(incoming, &mut app, &mut screen);
                 screen_flow::settle(&mut app, before, &screen);
                 if holds_queries {
                     break;
@@ -633,7 +632,6 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         if let Some(pads) = &mut app.pads {
             pads.offer_presses_to_system(matches!(screen, Screen::Home(_)));
         }
-        ui_view = ui_view::capture_ui(&screen, &app);
         audio::frame(&mut app, &mut screen, time.presentation);
 
         screenshot::serve(&mut app);
