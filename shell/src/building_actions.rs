@@ -637,10 +637,11 @@ impl SelectedBuildings {
                 enabled: false,
                 why: Some("upgrades cannot be cancelled".into()),
                 desc: Vec::new(),
-                progress: b.stats().construction.map(|c| {
-                    (b.construction_progress().unwrap_or(0) as f32 / c.build_ticks.max(1) as f32)
-                        .clamp(0.0, 1.0)
-                }),
+                progress: Some(
+                    (b.construction_progress().unwrap_or(0) as f32
+                        / b.stats().construction.build_ticks.max(1) as f32)
+                        .clamp(0.0, 1.0),
+                ),
                 autocast: None,
                 hold: None,
             });

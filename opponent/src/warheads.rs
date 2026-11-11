@@ -404,8 +404,7 @@ fn rebuild_ticks(kind: BuildingKind, tier: u8) -> u64 {
     kind.tiers()
         .iter()
         .take(usize::from(tier) + 1)
-        .filter_map(|stats| stats.construction.as_ref())
-        .map(|construction| u64::from(construction.build_ticks))
+        .map(|stats| u64::from(stats.construction.build_ticks))
         .sum()
 }
 

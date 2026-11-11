@@ -85,7 +85,7 @@ fn hit(attacker: UnitId, target: Target) -> Event {
 }
 
 fn found(detectors: ReactivityDetectors, seat: usize) -> SeatReactivity {
-    detectors.finish()[seat].clone().unwrap()
+    detectors.finish()[seat].clone()
 }
 
 fn counts(reactions: &Reactions) -> (u64, u64, u64, u64) {
@@ -107,7 +107,7 @@ fn run(detectors: &mut ReactivityDetectors, state: &State, ticks: std::ops::Rang
 fn first_enemy_air_is_answered_by_anti_air_in_time_or_missed() {
     let buzzard = (1, UnitKind::Buzzard, 4, 4);
     let bare = built(&field(&[buzzard], &[], false));
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &bare, 0..ANTI_AIR_TICKS + 12);
     let missed = found(detectors, 0);
     assert_eq!(counts(&missed.anti_air), (1, 0, 1, 0));
@@ -117,7 +117,7 @@ fn first_enemy_air_is_answered_by_anti_air_in_time_or_missed() {
         &[],
         false,
     ));
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &bare, 0..24);
     run(&mut detectors, &defended, 24..36);
     let answered = found(detectors, 0);
@@ -136,12 +136,12 @@ fn an_airworks_seen_first_wants_anti_air_before_the_first_aircraft() {
     ));
     let raided = built(&field(&[(1, UnitKind::Buzzard, 4, 4)], &[airworks], false));
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &seen, 0..24);
     run(&mut detectors, &defended, 24..36);
     assert_eq!(counts(&found(detectors, 0).airworks), (1, 1, 0, 0));
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &seen, 0..24);
     run(&mut detectors, &raided, 24..36);
     let missed = found(detectors, 0);
@@ -160,7 +160,7 @@ fn a_pressed_foundry_is_answered_by_a_hit_lapses_when_the_enemy_leaves_or_is_mis
     let presser = unit_at(&state, 6, 3);
     let defender = unit_at(&state, 2, 6);
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &state, 0..24);
     detectors.observe_events(&state, &[hit(defender, Target::Unit(presser))], 30);
     run(&mut detectors, &state, 36..48);
@@ -169,12 +169,12 @@ fn a_pressed_foundry_is_answered_by_a_hit_lapses_when_the_enemy_leaves_or_is_mis
     assert_eq!(answered.ground_defense.answer_ticks, 30);
 
     let quiet = built(&field(&[(0, UnitKind::Sentinel, 2, 6)], &[], false));
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &state, 0..24);
     run(&mut detectors, &quiet, 24..36);
     assert_eq!(counts(&found(detectors, 0).ground_defense), (1, 0, 0, 1));
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &state, 0..DEFENSE_TICKS + 24);
     assert_eq!(
         counts(&found(detectors, 0).ground_defense),
@@ -190,7 +190,7 @@ fn a_sapper_pressing_a_foundry_opens_a_ground_defense_case() {
         &[],
         false,
     ));
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &state, 0..12);
     assert_eq!(found(detectors, 0).ground_defense.arose, 1);
 }
@@ -204,7 +204,7 @@ fn enemy_aircraft_over_a_foundry_open_an_air_defense_case() {
     ));
     let raider = unit_at(&state, 6, 3);
     let flak = unit_at(&state, 2, 6);
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &state, 0..12);
     detectors.observe_events(&state, &[hit(flak, Target::Unit(raider))], 12);
     let answered = found(detectors, 0);
@@ -235,13 +235,13 @@ fn shelling_is_answered_by_hitting_the_gun_and_lapses_if_it_dies_to_another() {
         flight: 20,
     };
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     detectors.observe_events(&state, std::slice::from_ref(&shell), 12);
     detectors.observe_events(&state, std::slice::from_ref(&shell), 24);
     detectors.observe_events(&state, &[hit(sentinel, Target::Unit(gun))], 100);
     assert_eq!(counts(&found(detectors, 0).artillery), (1, 1, 0, 0));
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     detectors.observe_events(&state, std::slice::from_ref(&shell), 12);
     detectors.observe_events(
         &state,
@@ -256,7 +256,7 @@ fn shelling_is_answered_by_hitting_the_gun_and_lapses_if_it_dies_to_another() {
     );
     assert_eq!(counts(&found(detectors, 0).artillery), (1, 0, 0, 1));
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     detectors.observe_events(&state, std::slice::from_ref(&shell), 0);
     run(&mut detectors, &state, 0..ARTILLERY_TICKS + 12);
     let missed = found(detectors, 0);
@@ -272,7 +272,7 @@ fn shelling_is_answered_by_hitting_the_gun_and_lapses_if_it_dies_to_another() {
         to: Vec2Fx::new(Fx::from_num(20), Fx::from_num(10)),
         flight: 20,
     };
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     detectors.observe_events(&state, &[afield], 12);
     assert_eq!(
         found(detectors, 0).artillery.arose,
@@ -285,12 +285,12 @@ fn shelling_is_answered_by_hitting_the_gun_and_lapses_if_it_dies_to_another() {
 fn a_stale_hostile_start_is_answered_when_seen_again_or_missed() {
     let hidden = built(&field(&[], &[], false));
     let looking = built(&field(&[(0, UnitKind::Sentinel, 19, 5)], &[], false));
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &hidden, 0..STALE_TICKS + 12);
     run(&mut detectors, &looking, STALE_TICKS + 12..STALE_TICKS + 24);
     assert_eq!(counts(&found(detectors, 0).scouting), (1, 1, 0, 0));
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &hidden, 0..STALE_TICKS + SCOUT_TICKS + 12);
     assert_eq!(counts(&found(detectors, 0).scouting), (1, 0, 1, 0));
 }
@@ -307,12 +307,12 @@ fn a_worker_in_reach_must_run_and_one_that_dies_or_stays_is_missed() {
     let left = built(&field(&[(0, UnitKind::Harvester, 12, 8)], &[], false));
     let worker = unit_at(&reached, 12, 8);
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &reached, 0..12);
     run(&mut detectors, &ran, 12..24);
     assert_eq!(counts(&found(detectors, 0).evacuation), (1, 1, 0, 0));
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &reached, 0..12);
     run(&mut detectors, &left, 12..24);
     assert_eq!(
@@ -321,7 +321,7 @@ fn a_worker_in_reach_must_run_and_one_that_dies_or_stays_is_missed() {
         "the enemy left before the worker moved"
     );
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &reached, 0..12);
     detectors.observe_events(
         &reached,
@@ -336,7 +336,7 @@ fn a_worker_in_reach_must_run_and_one_that_dies_or_stays_is_missed() {
     );
     assert_eq!(counts(&found(detectors, 0).evacuation), (1, 0, 1, 0));
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &reached, 0..EVACUATE_TICKS + 12);
     assert_eq!(counts(&found(detectors, 0).evacuation), (1, 0, 1, 0));
 }
@@ -359,12 +359,12 @@ fn a_damaged_building_with_no_enemy_near_wants_repair() {
     let hurt = damaged(&state, "fabricator", 100);
     let mending = damaged(&state, "fabricator", 140);
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &hurt, 0..24);
     run(&mut detectors, &mending, 24..36);
     assert_eq!(counts(&found(detectors, 0).repair), (1, 1, 0, 0));
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &hurt, 0..REPAIR_TICKS + 12);
     assert_eq!(counts(&found(detectors, 0).repair), (1, 0, 1, 0));
 
@@ -377,13 +377,13 @@ fn a_damaged_building_with_no_enemy_near_wants_repair() {
         "fabricator",
         100,
     );
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &contested, 0..REPAIR_TICKS + 12);
     assert_eq!(found(detectors, 0).repair.arose, 0, "an enemy stands near");
 
     let barricade = (0, BuildingKind::Barricade, 6, 6);
     let worn = damaged(&built(&field(&[], &[barricade], false)), "barricade", 10);
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &worn, 0..REPAIR_TICKS + 12);
     assert_eq!(
         found(detectors, 0).repair.arose,
@@ -405,14 +405,14 @@ fn a_destroyed_extractor_wants_another_on_its_site() {
         pos: Vec2Fx::ZERO,
     };
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &standing, 0..12);
     detectors.observe_events(&standing, std::slice::from_ref(&lost), 12);
     run(&mut detectors, &gone, 12..48);
     run(&mut detectors, &standing, 48..60);
     assert_eq!(counts(&found(detectors, 0).restoration), (1, 1, 0, 0));
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &standing, 0..12);
     detectors.observe_events(&standing, std::slice::from_ref(&lost), 12);
     run(&mut detectors, &gone, 12..RESTORE_TICKS + 24);
@@ -431,7 +431,7 @@ fn an_ally_s_pressed_foundry_is_answered_by_the_seat_s_hit() {
     ));
     let presser = unit_at(&state, 6, 13);
     let helper = unit_at(&state, 5, 11);
-    let mut detectors = ReactivityDetectors::new([true, false, false]);
+    let mut detectors = ReactivityDetectors::new(3);
     run(&mut detectors, &state, 0..12);
     detectors.observe_events(&state, &[hit(helper, Target::Unit(presser))], 20);
     let answered = found(detectors, 0);
@@ -460,7 +460,7 @@ fn mission(id: u64, owner: u8, phase: Phase, units: u32) -> MissionStatus {
 
 #[test]
 fn a_losing_fight_should_withdraw_and_new_targets_count_switches() {
-    let mut detectors = ReactivityDetectors::new([true, false, false]);
+    let mut detectors = ReactivityDetectors::new(3);
     detectors.check_missions(0, 12, &[mission(0, 1, Phase::Travel, 8)]);
     detectors.check_missions(0, 24, &[mission(0, 1, Phase::Engage, 8)]);
     detectors.check_missions(0, 36, &[mission(0, 1, Phase::Withdraw, 5)]);
@@ -478,24 +478,24 @@ fn a_losing_fight_should_withdraw_and_new_targets_count_switches() {
     };
     detectors.check_missions(0, 96, &[raid]);
     let found = found(detectors, 0);
-    let withdrawal = found.withdrawal.unwrap();
+    let withdrawal = found.withdrawal;
     assert_eq!(counts(&withdrawal), (3, 1, 1, 1));
     assert_eq!(withdrawal.examples[0].detail, "attack");
-    assert_eq!(found.target_switches, Some(1));
+    assert_eq!(found.target_switches, 1);
 }
 
 #[test]
 fn seats_without_missions_report_no_withdrawal() {
-    let detectors = ReactivityDetectors::new([true, false]);
+    let detectors = ReactivityDetectors::new(2);
     let found = found(detectors, 0);
-    assert_eq!(found.withdrawal, None);
-    assert_eq!(found.target_switches, None);
+    assert_eq!(found.withdrawal, Reactions::default());
+    assert_eq!(found.target_switches, 0);
 }
 
 #[test]
 fn cases_open_when_a_seat_falls_or_the_leg_ends_are_moot() {
     let state = built(&field(&[(1, UnitKind::Sentinel, 6, 3)], &[], false));
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &state, 0..12);
     assert_eq!(counts(&found(detectors, 0).ground_defense), (1, 0, 0, 1));
 }
@@ -529,7 +529,7 @@ fn a_hit_from_a_shooter_killed_that_tick_still_answers() {
         pos: Vec2Fx::ZERO,
         grounded: true,
     };
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &state, 0..24);
     detectors.observe_events(&after, &[hit(defender, Target::Unit(presser)), died], 30);
     assert_eq!(counts(&found(detectors, 0).ground_defense), (1, 1, 0, 0));
@@ -560,7 +560,7 @@ fn an_eliminated_seat_opens_and_answers_no_cases() {
     let fallen = without(&state, 0, "foundry");
     assert!(!fallen.accepts_commands(PlayerId(0)), "premise");
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     detectors.observe_events(&fallen, std::slice::from_ref(&shell), 12);
     assert_eq!(
         found(detectors, 0).artillery.arose,
@@ -568,7 +568,7 @@ fn an_eliminated_seat_opens_and_answers_no_cases() {
         "shelling a fallen seat is no case"
     );
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     detectors.observe_events(&state, std::slice::from_ref(&shell), 12);
     detectors.observe_events(&fallen, &[hit(sentinel, Target::Unit(gun))], 24);
     assert_eq!(
@@ -584,12 +584,12 @@ fn a_building_still_damaged_after_its_case_closes_opens_no_second_case() {
     let state = built(&field(&[], &[fabricator], false));
     let hurt = damaged(&state, "fabricator", 100);
     let mending = damaged(&state, "fabricator", 140);
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &hurt, 0..24);
     run(&mut detectors, &mending, 24..240);
     assert_eq!(counts(&found(detectors, 0).repair), (1, 1, 0, 0));
 
-    let mut detectors = ReactivityDetectors::new([true, false]);
+    let mut detectors = ReactivityDetectors::new(2);
     run(&mut detectors, &hurt, 0..24);
     run(&mut detectors, &mending, 24..36);
     run(&mut detectors, &state, 36..48);
@@ -617,21 +617,21 @@ fn merged_reactions_sum_and_keep_the_first_examples() {
                 .collect(),
             ..Reactions::default()
         },
-        withdrawal: Some(Reactions {
+        withdrawal: Reactions {
             arose: 1,
             answered: 1,
             answer_ticks: 50,
             ..Reactions::default()
-        }),
-        target_switches: Some(2),
+        },
+        target_switches: 2,
         ..SeatReactivity::default()
     };
     total.merge(&one);
     total.merge(&one);
     assert_eq!(counts(&total.repair), (4, 0, 4, 0));
     assert_eq!(total.repair.examples.len(), MAX_FAILURE_EXAMPLES);
-    assert_eq!(total.withdrawal.unwrap().answer_ticks, 100);
-    assert_eq!(total.target_switches, Some(4));
+    assert_eq!(total.withdrawal.answer_ticks, 100);
+    assert_eq!(total.target_switches, 4);
 }
 
 #[test]

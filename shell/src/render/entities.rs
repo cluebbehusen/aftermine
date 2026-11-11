@@ -1045,7 +1045,7 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         }
         if !building.built() {
             // Construction progress in bone, distinct from training amber.
-            let ticks = building.stats().construction.map_or(1, |c| c.build_ticks);
+            let ticks = building.stats().construction.build_ticks;
             let fraction = building.construction_progress().unwrap_or(0) as f32 / ticks as f32;
             draw_rectangle(screen.x, screen.y + dest.y + 3.0, dest.x, 4.0, HP_BACK);
             draw_rectangle(
@@ -1073,7 +1073,7 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             // The gold teardown bar below already shows the fraction.
             false
         } else if let Some(progress) = building.construction_progress() {
-            let ticks = building.stats().construction.map_or(1, |c| c.build_ticks);
+            let ticks = building.stats().construction.build_ticks;
             let start = max_hp / 5;
             let expected = start + (max_hp - start) * progress.min(ticks) / ticks;
             building.hp < expected
@@ -2321,11 +2321,7 @@ pub(crate) fn draw_public_buildings(game: &crate::game::Scene<'_>) {
         let centre = (low + high) * 0.5;
         let r = zoom * 0.45;
         if let Some(progress) = public.progress {
-            let build = public
-                .kind
-                .base_stats()
-                .construction
-                .map_or(1, |c| c.build_ticks.max(1));
+            let build = public.kind.base_stats().construction.build_ticks.max(1);
             let hull = vec2(zoom * 0.7, zoom * 0.9);
             stroke_rect(
                 Rect::new(

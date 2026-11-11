@@ -1,7 +1,27 @@
 use super::*;
 
+/// A complete evidence row with `fields` in place of its defaults.
+fn complete(fields: serde_json::Value) -> serde_json::Value {
+    let mut value = serde_json::json!({
+        "eliminated_at": null,
+        "failures": SeatFailures::default(),
+        "deliveries": Deliveries::default(),
+        "income": [],
+        "reactivity": SeatReactivity::default(),
+        "ledger": SeatLedger::default(),
+        "attacks": AttackCalibration::default(),
+    });
+    let serde_json::Value::Object(fields) = fields else {
+        panic!("evidence fields");
+    };
+    for (key, field) in fields {
+        value[key] = field;
+    }
+    value
+}
+
 fn evidence(idle: u64, income: [(u64, u32, u32); 2]) -> serde_json::Value {
-    serde_json::json!({
+    complete(serde_json::json!({
         "seat": 0,
         "failures": {
             "repeated_orders": {"incidents": 1, "examples": []},
@@ -18,7 +38,7 @@ fn evidence(idle: u64, income: [(u64, u32, u32); 2]) -> serde_json::Value {
                 "saturation_per_minute": saturation,
             }))
             .collect::<Vec<_>>(),
-    })
+    }))
 }
 
 fn row(teams: &[u8], difficulties: &[&str], idle: u64) -> String {
@@ -128,9 +148,9 @@ fn duel(difficulties: [&str; 2], stances: [&str; 2], winner: Option<u8>, minutes
             }))
             .collect::<Vec<_>>(),
         "evidence": (0..2u8)
-            .map(|seat| serde_json::json!({
+            .map(|seat| complete(serde_json::json!({
                 "ledger": ledger(minutes, (winner == Some(seat)).then_some(4)),
-            }))
+            })))
             .collect::<Vec<_>>(),
     })
     .to_string()

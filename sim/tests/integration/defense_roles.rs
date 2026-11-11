@@ -96,8 +96,8 @@ fn defense_stats_name_three_distinct_jobs() {
     assert_eq!(turret.weapons[0].range, chassis::fx::Fx::lit("5"));
     assert_eq!(turret.weapons[0].minimum_range, chassis::fx::Fx::ZERO);
     assert_eq!(turret.weapons[0].cooldown_ticks, 25);
-    assert_eq!(turret.construction.unwrap().cost, 100);
-    assert_eq!(turret.construction.unwrap().build_ticks, 300);
+    assert_eq!(turret.construction.cost, 100);
+    assert_eq!(turret.construction.build_ticks, 300);
 
     let flak = BuildingKind::FlakTurret.base_stats();
     assert_eq!(flak.max_hp, 300);
@@ -109,8 +109,8 @@ fn defense_stats_name_three_distinct_jobs() {
     assert!(flak.weapons[0].targets.air);
     assert!(!flak.weapons[0].targets.ground);
     assert_eq!(flak.weapons[0].splash, Some(chassis::fx::Fx::lit("1.2")));
-    assert_eq!(flak.construction.unwrap().cost, 90);
-    assert_eq!(flak.construction.unwrap().build_ticks, 250);
+    assert_eq!(flak.construction.cost, 90);
+    assert_eq!(flak.construction.build_ticks, 250);
 
     let bastion = BuildingKind::Bastion.base_stats();
     assert_eq!(bastion.max_hp, 500);
@@ -123,10 +123,10 @@ fn defense_stats_name_three_distinct_jobs() {
     );
     assert_eq!(bastion.weapons[0].cooldown_ticks, 90);
     assert_eq!(bastion.weapons[0].splash, Some(chassis::fx::Fx::lit("1.3")));
-    assert_eq!(bastion.construction.unwrap().cost, 210);
-    assert_eq!(bastion.construction.unwrap().build_ticks, 500);
+    assert_eq!(bastion.construction.cost, 210);
+    assert_eq!(bastion.construction.build_ticks, 500);
     assert_eq!(
-        bastion.construction.unwrap().requires,
+        bastion.construction.requires,
         &[aftermine_sim::stats::Prerequisite::built(
             BuildingKind::Fabricator
         )]
@@ -155,7 +155,7 @@ fn defense_stats_name_three_distinct_jobs() {
             long_gun.splash
         )
     );
-    let upgrade = citadel.construction.unwrap();
+    let upgrade = citadel.construction;
     assert_eq!((upgrade.cost, upgrade.build_ticks), (250, 400));
     assert_eq!(
         upgrade.requires,

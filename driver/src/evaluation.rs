@@ -155,9 +155,7 @@ pub fn seated_plan(
     EvaluationPlan {
         leg,
         scenario,
-        controllers: seats
-            .map(|config| Some(EvaluationController::configured(config)))
-            .collect(),
+        controllers: seats.map(EvaluationController::configured).collect(),
     }
 }
 

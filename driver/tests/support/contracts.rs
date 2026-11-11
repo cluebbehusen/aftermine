@@ -256,7 +256,7 @@ fn construction() -> BTreeMap<String, String> {
     let site = p.building(0, BuildingKind::Turret);
     assert_eq!(
         p.state.player(PlayerId(0)).scrap,
-        bank - BuildingKind::Turret.base_stats().construction.unwrap().cost
+        bank - BuildingKind::Turret.base_stats().construction.cost
     );
     assert!(!p.state.building(site).unwrap().built());
     p.until("construction progress", 100, |p| {

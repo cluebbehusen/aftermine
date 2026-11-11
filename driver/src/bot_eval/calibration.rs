@@ -141,9 +141,9 @@ struct SeatAttacks {
     done: AttackCalibration,
 }
 
-/// Follows every `aftermine-opponent` seat's attacks over a leg.
+/// Follows every seat's attacks over a leg.
 pub(crate) struct AttackFollower {
-    seats: Vec<Option<SeatAttacks>>,
+    seats: Vec<SeatAttacks>,
 }
 
 fn totals(ledger: &ImpactLedger, units: &[UnitId]) -> (u64, u64) {
@@ -154,13 +154,10 @@ fn totals(ledger: &ImpactLedger, units: &[UnitId]) -> (u64, u64) {
 }
 
 impl AttackFollower {
-    /// A follower for the seats `opponents` marks.
-    pub(crate) fn new(opponents: impl IntoIterator<Item = bool>) -> Self {
+    /// A follower for `seats` seats.
+    pub(crate) fn new(seats: usize) -> Self {
         Self {
-            seats: opponents
-                .into_iter()
-                .map(|opponent| opponent.then(SeatAttacks::default))
-                .collect(),
+            seats: (0..seats).map(|_| SeatAttacks::default()).collect(),
         }
     }
 
@@ -169,7 +166,7 @@ impl AttackFollower {
     /// on its command tick. An ended attack still in its tail closes once any
     /// of its units launch again, so the two never share later fighting.
     pub(crate) fn open(&mut self, seat: u8, launches: &[Launch], ledger: &ImpactLedger) {
-        let Some(Some(attacks)) = self.seats.get_mut(usize::from(seat)) else {
+        let Some(attacks) = self.seats.get_mut(usize::from(seat)) else {
             return;
         };
         for launch in launches {
@@ -215,7 +212,7 @@ impl AttackFollower {
         missions: &[MissionStatus],
         ledger: &ImpactLedger,
     ) {
-        let Some(Some(attacks)) = self.seats.get_mut(usize::from(seat)) else {
+        let Some(attacks) = self.seats.get_mut(usize::from(seat)) else {
             return;
         };
         for (id, open) in &mut attacks.open {
@@ -243,18 +240,15 @@ impl AttackFollower {
         }
     }
 
-    /// Closes every attack still open and returns each seat's calibration;
-    /// `None` for seats that are not `aftermine-opponent`.
-    pub(crate) fn finish(self, ledger: &ImpactLedger) -> Vec<Option<AttackCalibration>> {
+    /// Closes every attack still open and returns each seat's calibration.
+    pub(crate) fn finish(self, ledger: &ImpactLedger) -> Vec<AttackCalibration> {
         self.seats
             .into_iter()
-            .map(|seat| {
-                seat.map(|mut attacks| {
-                    for open in std::mem::take(&mut attacks.open).into_values() {
-                        close(&mut attacks.done, &open, ledger);
-                    }
-                    attacks.done
-                })
+            .map(|mut attacks| {
+                for open in std::mem::take(&mut attacks.open).into_values() {
+                    close(&mut attacks.done, &open, ledger);
+                }
+                attacks.done
             })
             .collect()
     }

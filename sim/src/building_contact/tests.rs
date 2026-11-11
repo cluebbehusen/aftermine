@@ -392,7 +392,7 @@ fn work_reach_matches_the_surface_alone() {
         for tier in 0..u8::try_from(kind.tiers().len()).unwrap() {
             let b = state.building_mut(site).unwrap();
             (b.kind, b.tier) = (kind, tier);
-            let total = b.stats().construction.map_or(1, |c| c.build_ticks);
+            let total = b.stats().construction.build_ticks;
             let stages = (0..CONSTRUCTION_STAGES)
                 .map(|s| u32::from(s) * total / u32::from(CONSTRUCTION_STAGES));
             let phases: Vec<BuildingPhase> = std::iter::once(BuildingPhase::Built { training: 0 })

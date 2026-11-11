@@ -6,7 +6,7 @@ use crate::frame::{centre_of, doubled, footprint_centre};
 use crate::workers;
 use aftermine_sim::BuildingKind;
 use aftermine_sim::observation::UnitObs;
-use aftermine_sim::stats::{FOUNDRY_REPAIR_PRICE, REPAIR_BAY_RADIUS};
+use aftermine_sim::stats::REPAIR_BAY_RADIUS;
 use chassis::grid::TilePos;
 
 /// Scrap of missing health a Repair Bay's aura must reach to be worth
@@ -59,12 +59,7 @@ impl Guard<'_> {
             .filter(|building| building.built && building.kind != BuildingKind::RepairBay)
             .map(|building| {
                 let stats = building.kind.tier_stats(building.tier);
-                let price = building
-                    .kind
-                    .base_stats()
-                    .construction
-                    .as_ref()
-                    .map_or(FOUNDRY_REPAIR_PRICE, |construction| construction.cost);
+                let price = building.kind.base_stats().construction.cost;
                 let span = Span::of(building.kind.size(), building.anchor);
                 (span, price, building.hp, stats.max_hp)
             })

@@ -486,12 +486,13 @@ pub fn unit_stat_line(kind: UnitKind) -> String {
 /// its crew, so [`cradle_crew_line`] gives it instead.
 pub fn building_stat_line(kind: BuildingKind) -> String {
     let stats = kind.base_stats();
-    let build = match stats.construction {
-        Some(c) if kind.assembles().is_none() => format!(
+    let build = if kind.assembles().is_none() {
+        format!(
             " | {:.1} s build",
-            c.build_ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32
-        ),
-        _ => String::new(),
+            stats.construction.build_ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32
+        )
+    } else {
+        String::new()
     };
     let (width, height) = kind.size();
     format!(
@@ -503,7 +504,7 @@ pub fn building_stat_line(kind: BuildingKind) -> String {
 /// How long a full crew of each kind of worker takes to build a cradle.
 pub fn cradle_crew_line(kind: BuildingKind) -> Option<String> {
     kind.assembles()?;
-    let ticks = kind.base_stats().construction?.build_ticks;
+    let ticks = kind.base_stats().construction.build_ticks;
     let crew = aftermine_sim::stats::ASSEMBLY_CREW_CAP;
     let mut workers: Vec<UnitKind> = UnitKind::ALL
         .into_iter()
@@ -827,7 +828,7 @@ fn order_subject(
                 || game.state.building(*site),
                 |projection| projection.building(game.state, *site),
             )?;
-            let ticks = b.stats().construction.map_or(1, |c| c.build_ticks).max(1);
+            let ticks = b.stats().construction.build_ticks.max(1);
             let frac =
                 (b.construction_progress().unwrap_or(0) as f32 / ticks as f32).clamp(0.0, 1.0);
             Some((
@@ -1210,7 +1211,7 @@ fn subject_detail(game: &Scene<'_>, order: &Order, progress: Option<f32>) -> Opt
         }
         Order::Salvage { building } => {
             let b = game.state.building(*building)?;
-            let cost = b.stats().construction.map_or(0, |c| c.cost);
+            let cost = b.stats().construction.cost;
             let left = u64::from(cost) * aftermine_sim::stats::SALVAGE_REFUND_PERMILLE / 1000
                 * u64::from(b.hp)
                 / u64::from(b.stats().max_hp.max(1));
@@ -1276,7 +1277,7 @@ pub(crate) fn build_for_input(
     for card in &mut panel.cards {
         if let CardAction::ArmBuild(kind) = card.action {
             if game.state.prerequisites_met(game.presentation.human, kind) {
-                let cost = kind.base_stats().construction.map_or(0, |stats| stats.cost);
+                let cost = kind.base_stats().construction.cost;
                 card.enabled = construction_scrap.unwrap_or(0) >= cost;
                 card.why = (!card.enabled).then(|| format!("needs {cost} scrap"));
             }
@@ -2049,15 +2050,14 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             .flat_map(|(_, kinds)| kinds.iter().copied())
             .filter(|_| build_menu_open)
         {
-            let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
+            let cost = kind.base_stats().construction.cost;
             // The same construction tech gate placement enforces: an
             // enabled card would only arm a ghost the sim refuses.
             let (enabled, why) = if !game.state.prerequisites_met(game.presentation.human, kind) {
                 let need = kind
                     .base_stats()
                     .construction
-                    .map(|c| c.requires)
-                    .unwrap_or_default()
+                    .requires
                     .iter()
                     .map(|k| entity_name(k.name()))
                     .collect::<Vec<_>>()

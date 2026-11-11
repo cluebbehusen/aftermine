@@ -785,7 +785,6 @@ impl Needs {
             .max()?;
         BuildingKind::ALL
             .into_iter()
-            .filter(|building| building.base_stats().construction.is_some())
             .filter(|building| {
                 !observation
                     .my_buildings
@@ -938,10 +937,7 @@ impl Needs {
                         self::role(*kind) == Some(role) && kind.stats().requires.is_empty()
                     })
                 })
-                .filter_map(|building| {
-                    let cost = building.base_stats().construction.as_ref()?.cost;
-                    Some((cost, building))
-                })
+                .map(|building| (building.base_stats().construction.cost, building))
                 .min();
             if let Some((_, building)) = cheapest {
                 pull.push((building, PULL));

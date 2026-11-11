@@ -396,7 +396,7 @@ impl Goal {
                 (seat.workers().count() < count).then(|| (harvester.name(), harvester.stats().cost))
             }
             Goal::Build(kind, count) => (seat.own_buildings(kind).count() < count).then(|| {
-                let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
+                let cost = kind.base_stats().construction.cost;
                 (kind.name(), cost)
             }),
             Goal::Look(_)
@@ -452,7 +452,7 @@ impl Goal {
                     // A factory for it can still go up, then pay for it.
                     seat.workers().next().is_some()
                         && seat.factory_for(kind).is_some_and(|factory| {
-                            let site = factory.base_stats().construction.map_or(0, |c| c.cost);
+                            let site = factory.base_stats().construction.cost;
                             let placed = seat.own_buildings(factory).next().is_some();
                             affords(if placed { cost } else { site + cost })
                         })
@@ -467,7 +467,7 @@ impl Goal {
             }
             Goal::Build(kind, count) => {
                 let placed = seat.own_buildings(kind).count();
-                let cost = kind.base_stats().construction.map_or(0, |c| c.cost);
+                let cost = kind.base_stats().construction.cost;
                 seat.workers().next().is_some()
                     && (placed >= count || (affords(cost) && seat.room_for(kind) >= count - placed))
             }
@@ -829,8 +829,7 @@ impl<'a> Seat<'a> {
     /// A building kind the player may raise that trains `kind`.
     fn factory_for(&self, kind: UnitKind) -> Option<BuildingKind> {
         BuildingKind::ALL.into_iter().find(|factory| {
-            factory.base_stats().construction.is_some()
-                && factory.base_stats().produces.contains(&kind)
+            factory.base_stats().produces.contains(&kind)
                 && self.state.prerequisites_met(self.human, *factory)
         })
     }
@@ -871,9 +870,8 @@ impl<'a> Seat<'a> {
                 && BuildingKind::ALL.into_iter().any(|kind| {
                     let stats = kind.base_stats();
                     air(stats.weapons)
-                        && stats.construction.is_some_and(|c| {
-                            self.own_buildings(kind).next().is_some() || affords(c.cost)
-                        })
+                        && (self.own_buildings(kind).next().is_some()
+                            || affords(stats.construction.cost))
                         && self.state.prerequisites_met(self.human, kind)
                 }))
     }

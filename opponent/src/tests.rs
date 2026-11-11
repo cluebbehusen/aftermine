@@ -123,6 +123,33 @@ fn stakes() -> crate::defenses::Stakes {
     }
 }
 
+/// `me`'s fog-honest view with the whole map explored: every scrap node,
+/// wreck, rock and Extractor frame known. Rival units and structures stay
+/// as the seat sees them.
+fn mapped(state: &State, me: PlayerId) -> ObservationData {
+    let mut observation = ObservationData::fog_honest(state, me);
+    observation.explored.fill(true);
+    observation.known_scrap.clear();
+    observation.known_wrecks.clear();
+    observation.known_rock.clear();
+    observation.known_frames.clear();
+    for (pos, tile) in state.map().iter() {
+        if tile.scrap > 0 {
+            observation.known_scrap.push((pos, tile.scrap));
+        }
+        if tile.wreck > 0 {
+            observation.known_wrecks.push((pos, tile.wreck));
+        }
+        if tile.terrain.blocks_ground() {
+            observation.known_rock.push(pos);
+        }
+        if state.map().is_extractor_frame(pos) {
+            observation.known_frames.push(pos);
+        }
+    }
+    observation
+}
+
 fn seat(scenario: &Scenario, player: u8) -> Opponent {
     seat_with(scenario, player, config())
 }
@@ -1002,19 +1029,15 @@ fn unexplored_scrap_is_never_targeted() {
     }
     let state = scenario.build().unwrap();
     let fogged = ObservationData::fog_honest(&state, PlayerId(0));
-    let omniscient = ObservationData::omniscient(&state, PlayerId(0));
+    let nodes: Vec<TilePos> = state
+        .map()
+        .iter()
+        .filter(|(_, tile)| tile.scrap > 0)
+        .map(|(node, _)| node)
+        .collect();
     assert!(fogged.known_scrap.is_empty());
-    assert_eq!(
-        omniscient.known_scrap.len(),
-        2,
-        "premise: distant scrap exists"
-    );
-    assert!(
-        omniscient
-            .known_scrap
-            .iter()
-            .all(|(node, _)| !fogged.explored(*node))
-    );
+    assert_eq!(nodes.len(), 2, "premise: distant scrap exists");
+    assert!(nodes.iter().all(|node| !fogged.explored(*node)));
     assert!(
         seat(&scenario, 0)
             .act(&state, &mut OwnEvents::default())

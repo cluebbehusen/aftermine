@@ -38,7 +38,6 @@ fn turret_cost() -> u32 {
     aftermine_sim::BuildingKind::Turret
         .base_stats()
         .construction
-        .expect("turrets are built")
         .cost
 }
 

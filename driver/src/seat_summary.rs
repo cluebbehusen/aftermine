@@ -28,29 +28,19 @@ const MINUTE: u64 = aftermine_sim::TICKS_PER_SECOND as u64 * 60;
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct SeatEvidence {
     /// Tick the seat resigned or lost its last Foundry; absent while it stood.
-    #[serde(default)]
     pub eliminated_at: Option<u64>,
     /// Detected failure episodes.
-    #[serde(default)]
     pub failures: SeatFailures,
-    /// Armed ground units trained on severed ground, by outcome; absent when
-    /// the row omits it.
-    #[serde(default)]
-    pub deliveries: Option<Deliveries>,
+    /// Armed ground units trained on severed ground, by outcome.
+    pub deliveries: Deliveries,
     /// Income checkpoints reached.
-    #[serde(default)]
     pub income: Vec<IncomeSample>,
-    /// Situations met and how they were answered; absent when the row omits
-    /// them.
-    #[serde(default)]
-    pub reactivity: Option<SeatReactivity>,
-    /// What the seat's units and buildings did; absent when the row omits
-    /// it.
-    #[serde(default)]
-    pub ledger: Option<SeatLedger>,
+    /// Situations met and how they were answered.
+    pub reactivity: SeatReactivity,
+    /// What the seat's units and buildings did.
+    pub ledger: SeatLedger,
     /// What it believed when it launched each attack, and how they went.
-    #[serde(default)]
-    pub attacks: Option<AttackCalibration>,
+    pub attacks: AttackCalibration,
 }
 
 /// Median income at one checkpoint.
@@ -81,29 +71,20 @@ pub struct SeatSummary {
     pub starved_production: u64,
     /// Missions stuck in one phase past its timeout.
     pub stuck_missions: u64,
-    /// Idle-army episodes over the seat-legs whose rows record the detector.
+    /// Idle-army episodes.
     pub idle_army: u64,
-    /// Seat-legs whose rows record the idle-army detector.
-    pub idle_army_seat_legs: u32,
-    /// Armed ground units trained on severed ground, by outcome, over the
-    /// seat-legs whose rows record the diagnostic.
+    /// Armed ground units trained on severed ground, by outcome.
     pub deliveries: Deliveries,
-    /// Seat-legs whose rows record deliveries.
-    pub deliveries_seat_legs: u32,
-    /// Situations met and how they were answered, summed over the seat-legs
-    /// whose rows record them; absent when none do.
-    pub reactivity: Option<SeatReactivity>,
-    /// Seat-legs whose rows record reactivity.
-    pub reactivity_seat_legs: u32,
-    /// Ticks those seat-legs played while their seat stood, for rates.
+    /// Situations met and how they were answered.
+    pub reactivity: SeatReactivity,
+    /// Ticks the seat-legs played while their seat stood, for rates.
     pub reactivity_ticks: u64,
     /// Income medians by checkpoint.
     pub income: Vec<IncomeMedian>,
-    /// Pooled impact ledgers over the seat-legs whose rows record one.
+    /// Pooled impact ledgers.
     pub ledger: LedgerPool,
-    /// Attack calibration summed over the seat-legs whose rows record it;
-    /// absent when none do.
-    pub attacks: Option<AttackCalibration>,
+    /// Attack calibration, summed.
+    pub attacks: AttackCalibration,
 }
 
 /// Pools seat evidence into a [`SeatSummary`].
@@ -115,15 +96,12 @@ pub struct SeatSummaryBuilder {
     starved_production: u64,
     stuck_missions: u64,
     idle_army: u64,
-    idle_army_seat_legs: u32,
     deliveries: Deliveries,
-    deliveries_seat_legs: u32,
-    reactivity: Option<SeatReactivity>,
-    reactivity_seat_legs: u32,
+    reactivity: SeatReactivity,
     reactivity_ticks: u64,
     income: BTreeMap<u64, Vec<(u32, u32)>>,
     ledger: LedgerPool,
-    attacks: Option<AttackCalibration>,
+    attacks: AttackCalibration,
 }
 
 impl SeatSummaryBuilder {
@@ -135,37 +113,21 @@ impl SeatSummaryBuilder {
         self.abandoned_sites += failures.abandoned_sites.incidents;
         self.starved_production += failures.starved_production.incidents;
         self.stuck_missions += failures.stuck_missions.incidents;
-        if let Some(idle) = &failures.idle_army {
-            self.idle_army += idle.incidents;
-            self.idle_army_seat_legs += 1;
-        }
-        if let Some(deliveries) = evidence.deliveries {
-            self.deliveries.delivered += deliveries.delivered;
-            self.deliveries.lost += deliveries.lost;
-            self.deliveries.undelivered += deliveries.undelivered;
-            self.deliveries_seat_legs += 1;
-        }
-        if let Some(reactivity) = &evidence.reactivity {
-            self.reactivity
-                .get_or_insert_with(SeatReactivity::default)
-                .merge(reactivity);
-            self.reactivity_seat_legs += 1;
-            self.reactivity_ticks += evidence.eliminated_at.unwrap_or(duration_ticks);
-        }
+        self.idle_army += failures.idle_army.incidents;
+        let deliveries = evidence.deliveries;
+        self.deliveries.delivered += deliveries.delivered;
+        self.deliveries.lost += deliveries.lost;
+        self.deliveries.undelivered += deliveries.undelivered;
+        self.reactivity.merge(&evidence.reactivity);
+        self.reactivity_ticks += evidence.eliminated_at.unwrap_or(duration_ticks);
         for sample in &evidence.income {
             self.income
                 .entry(sample.tick)
                 .or_default()
                 .push((sample.actual_per_minute, sample.saturation_per_minute));
         }
-        if let Some(ledger) = &evidence.ledger {
-            self.ledger.add(ledger);
-        }
-        if let Some(attacks) = &evidence.attacks {
-            self.attacks
-                .get_or_insert_with(AttackCalibration::default)
-                .add(attacks);
-        }
+        self.ledger.add(&evidence.ledger);
+        self.attacks.add(&evidence.attacks);
     }
 
     /// The pooled summary.
@@ -177,11 +139,8 @@ impl SeatSummaryBuilder {
             starved_production: self.starved_production,
             stuck_missions: self.stuck_missions,
             idle_army: self.idle_army,
-            idle_army_seat_legs: self.idle_army_seat_legs,
             deliveries: self.deliveries,
-            deliveries_seat_legs: self.deliveries_seat_legs,
             reactivity: self.reactivity,
-            reactivity_seat_legs: self.reactivity_seat_legs,
             reactivity_ticks: self.reactivity_ticks,
             income: self
                 .income
@@ -232,16 +191,6 @@ fn median(mut values: Vec<u64>) -> Option<u64> {
     values.get(values.len() / 2).copied()
 }
 
-/// A count over the seat-legs whose rows record it: the count alone when every
-/// row does, with its coverage when only some do, and `-` when none do.
-fn measured(count: u64, recorded: u32, seat_legs: u32) -> String {
-    match recorded {
-        0 => "-".into(),
-        _ if recorded == seat_legs => count.to_string(),
-        _ => format!("{count} ({recorded}/{seat_legs} seat-legs)"),
-    }
-}
-
 /// Renders every summary's tables, one row per labelled group: failure
 /// incidents, deliveries when any seat trained armed ground units on
 /// severed ground, reactivity, income, and each group's ledger.
@@ -268,11 +217,7 @@ pub fn render(out: &mut String, groups: &[(String, &SeatSummary)]) {
             summary.abandoned_sites,
             summary.starved_production,
             summary.stuck_missions,
-            measured(
-                summary.idle_army,
-                summary.idle_army_seat_legs,
-                summary.seat_legs
-            )
+            summary.idle_army
         );
     }
     let severed = |summary: &SeatSummary| {
@@ -282,18 +227,17 @@ pub fn render(out: &mut String, groups: &[(String, &SeatSummary)]) {
     if groups.iter().any(|(_, summary)| severed(summary) > 0) {
         let _ = writeln!(
             out,
-            "\narmed ground units trained on severed ground, scrap: delivered/lost/undelivered (seat-legs recorded)"
+            "\narmed ground units trained on severed ground, scrap: delivered/lost/undelivered (seat-legs)"
         );
         for (label, summary) in groups.iter().filter(|(_, summary)| severed(summary) > 0) {
             let deliveries = summary.deliveries;
             let _ = writeln!(
                 out,
-                "  {:<24} {}/{}/{} ({}/{})",
+                "  {:<24} {}/{}/{} ({})",
                 label,
                 deliveries.delivered,
                 deliveries.lost,
                 deliveries.undelivered,
-                summary.deliveries_seat_legs,
                 summary.seat_legs
             );
         }
@@ -334,21 +278,12 @@ pub fn render(out: &mut String, groups: &[(String, &SeatSummary)]) {
         let _ = writeln!(out);
     }
     for (label, summary) in groups {
-        if summary.ledger.seats == 0 {
-            continue;
-        }
+        let _ = writeln!(out, "\nledger, {label}: {} seat-legs", summary.seat_legs);
         let _ = writeln!(
             out,
-            "\nledger, {label}: {} of {} seat-legs recorded",
-            summary.ledger.seats, summary.seat_legs
+            "  attacks, by strength sent against the known defense:"
         );
-        if let Some(attacks) = &summary.attacks {
-            let _ = writeln!(
-                out,
-                "  attacks, by strength sent against the known defense:"
-            );
-            attacks.render(out, "    ");
-        }
+        summary.attacks.render(out, "    ");
         summary.ledger.render(out, "  ", Some(LEDGER_KINDS));
     }
 }
@@ -356,11 +291,7 @@ pub fn render(out: &mut String, groups: &[(String, &SeatSummary)]) {
 /// Each group's situations: how many arose, the share answered, those missed
 /// and moot, and the mean ticks to an answer.
 fn render_reactivity(out: &mut String, groups: &[(String, &SeatSummary)]) {
-    let recorded: Vec<(&String, &SeatSummary, &SeatReactivity)> = groups
-        .iter()
-        .filter_map(|(label, summary)| Some((label, *summary, summary.reactivity.as_ref()?)))
-        .collect();
-    if recorded.is_empty() {
+    if groups.is_empty() {
         return;
     }
     let _ = writeln!(
@@ -372,11 +303,8 @@ fn render_reactivity(out: &mut String, groups: &[(String, &SeatSummary)]) {
         "  {:<24} {:<15} {:>7} {:>9} {:>7} {:>7} {:>11}",
         "group", "situation", "arose", "answered", "missed", "moot", "mean ticks"
     );
-    for (label, summary, reactivity) in recorded {
-        for (name, reactions) in reactivity.items() {
-            let Some(reactions) = reactions else {
-                continue;
-            };
+    for (label, summary) in groups {
+        for (name, reactions) in summary.reactivity.items() {
             let answered = if reactions.arose == 0 {
                 "-".to_string()
             } else {
@@ -395,15 +323,14 @@ fn render_reactivity(out: &mut String, groups: &[(String, &SeatSummary)]) {
                 label, name, reactions.arose, answered, reactions.missed, reactions.moot, mean
             );
         }
-        if let Some(switches) = reactivity.target_switches
-            && summary.reactivity_ticks > 0
-        {
+        if summary.reactivity_ticks > 0 {
             let _ = writeln!(
                 out,
                 "  {:<24} target switches per 10k ticks: {:.2} ({} seat-legs)",
                 label,
-                switches as f64 * 10_000.0 / summary.reactivity_ticks as f64,
-                summary.reactivity_seat_legs
+                summary.reactivity.target_switches as f64 * 10_000.0
+                    / summary.reactivity_ticks as f64,
+                summary.seat_legs
             );
         }
     }
@@ -413,7 +340,6 @@ fn render_reactivity(out: &mut String, groups: &[(String, &SeatSummary)]) {
 #[derive(Debug, Clone, Deserialize)]
 struct SummaryRow {
     duration_ticks: u64,
-    #[serde(default)]
     result: Option<GameResult>,
     seats: Vec<SummarySeat>,
     evidence: Vec<SeatEvidence>,
@@ -423,7 +349,7 @@ struct SummaryRow {
 #[derive(Debug, Clone, Deserialize)]
 struct SummarySeat {
     team: u8,
-    config: Option<BotConfig>,
+    config: BotConfig,
 }
 
 /// Evaluation rows pooled by team layout and then by difficulty.
@@ -456,7 +382,7 @@ pub struct OutcomeSummary {
     /// Each stance's record in won legs, every stance in player-facing
     /// order.
     pub stances: Vec<StanceRecord>,
-    /// Net-worth pacing of the legs whose every seat recorded a ledger.
+    /// Net-worth pacing of the legs.
     pub pacing: PacingSummary,
 }
 
@@ -489,14 +415,12 @@ impl OutcomeBuilder {
         if row.result.is_some() {
             self.decided_ticks.push(row.duration_ticks);
         }
-        let ledgers: Option<Vec<&SeatLedger>> = row
+        let ledgers: Vec<&SeatLedger> = row
             .evidence
             .iter()
-            .map(|evidence| evidence.ledger.as_ref())
+            .map(|evidence| &evidence.ledger)
             .collect();
-        if let Some(pacing) =
-            ledgers.and_then(|ledgers| crate::pacing::pacing(&ledgers, teams, row.result))
-        {
+        if let Some(pacing) = crate::pacing::pacing(&ledgers, teams, row.result) {
             self.pacing.push(pacing);
         }
         let Some(GameResult::Victory { team: winner }) = row.result else {
@@ -505,15 +429,11 @@ impl OutcomeBuilder {
         self.won += 1;
         self.first_seat_won += u32::from(teams.first() == Some(&winner));
         for seat in &row.seats {
-            let Some(config) = seat.config else {
-                continue;
-            };
-            let mirrored = row.seats.iter().any(|other| {
-                other.team != seat.team
-                    && other
-                        .config
-                        .is_some_and(|other| other.stance == config.stance)
-            });
+            let config = seat.config;
+            let mirrored = row
+                .seats
+                .iter()
+                .any(|other| other.team != seat.team && other.config.stance == config.stance);
             if mirrored {
                 continue;
             }
@@ -575,7 +495,7 @@ pub fn summarize(paths: &[PathBuf]) -> Result<RowSummary> {
             let mut rungs: Vec<BotDifficulty> = row
                 .seats
                 .iter()
-                .filter_map(|seat| seat.config.map(|config| config.difficulty))
+                .map(|seat| seat.config.difficulty)
                 .collect();
             rungs.sort_by_key(|difficulty| rank(*difficulty));
             rungs.dedup();
@@ -593,9 +513,7 @@ pub fn summarize(paths: &[PathBuf]) -> Result<RowSummary> {
                 .1
                 .add(&row, &teams);
             for (seat, evidence) in row.seats.iter().zip(&row.evidence) {
-                let Some(config) = seat.config else {
-                    continue;
-                };
+                let config = seat.config;
                 let rank = rank(config.difficulty);
                 groups
                     .entry((mode.clone(), rank))

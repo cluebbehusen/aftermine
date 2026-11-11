@@ -598,11 +598,7 @@ pub(crate) fn emergency(
                         .all(|point| guard.covered(domain, *point) == 0)
             })
         };
-        let price = kind
-            .base_stats()
-            .construction
-            .as_ref()
-            .map_or(u32::MAX, |construction| construction.cost);
+        let price = kind.base_stats().construction.cost;
         for asset in guard
             .assets
             .iter()
@@ -680,10 +676,7 @@ fn chebyshev(a: (i64, i64), b: (i64, i64)) -> i64 {
 
 /// What a building costs to place.
 fn price(stats: &BuildingStats) -> u64 {
-    stats
-        .construction
-        .as_ref()
-        .map_or(QUOTE, |construction| u64::from(construction.cost).max(1))
+    u64::from(stats.construction.cost).max(1)
 }
 
 fn points(worth: u64) -> u32 {

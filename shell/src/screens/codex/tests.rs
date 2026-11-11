@@ -145,11 +145,7 @@ fn a_cradle_page_gives_crew_times_not_one_worker_s_time() {
     let cradle = BuildingKind::MawCradle;
     assert!(!building_stat_line(cradle).contains("build"));
     assert!(!unit_stat_line(UnitKind::Maw).contains("build"));
-    let ticks = cradle
-        .base_stats()
-        .construction
-        .expect("a cradle is built")
-        .build_ticks;
+    let ticks = cradle.base_stats().construction.build_ticks;
     let crew = aftermine_sim::stats::ASSEMBLY_CREW_CAP;
     let seconds = |worker: UnitKind| {
         ticks as usize

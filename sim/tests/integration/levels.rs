@@ -114,7 +114,17 @@ fn the_levels_layer_parses_and_round_trips() {
         .map(|row| row.replace(['1', '2'], "."))
         .collect();
     assert_eq!(map.ascii_rows(), terrain, "anchors print as ground");
-    assert_eq!(map.level_rows(), scenario.levels);
+    for (y, row) in scenario.levels.iter().enumerate() {
+        for (x, glyph) in row.chars().enumerate() {
+            let tile = TilePos::new(i32::try_from(x).unwrap(), i32::try_from(y).unwrap());
+            let (low, _) = map.elevation(tile).unwrap().span();
+            assert_eq!(
+                char::from_digit(u32::from(low), 36),
+                Some(glyph),
+                "{tile:?}"
+            );
+        }
+    }
 }
 
 #[test]

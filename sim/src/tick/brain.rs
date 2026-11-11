@@ -631,7 +631,7 @@ fn resolve_hits(
             // Credit whole scrap as the cumulative target passes it, so
             // truncation never drifts and a full-health salvage totals
             // cost * permille / 1000.
-            let basis = stats.construction.map_or(0, |c| c.cost);
+            let basis = stats.construction.cost;
             let target = u64::from(b.salvage_drained)
                 * u64::from(basis)
                 * crate::stats::SALVAGE_REFUND_PERMILLE

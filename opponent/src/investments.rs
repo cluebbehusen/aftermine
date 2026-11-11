@@ -303,11 +303,7 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
     };
     // The opening economy is up once harvesting is saturated or income would
     // pay for a Turret every minute.
-    let turret = BuildingKind::Turret
-        .base_stats()
-        .construction
-        .as_ref()
-        .map_or(u32::MAX, |construction| construction.cost);
+    let turret = BuildingKind::Turret.base_stats().construction.cost;
     let settled = saturated || situation.income >= turret;
     list.extend(defenses::investments(
         observation,
@@ -577,7 +573,7 @@ fn build_step(
     kind: BuildingKind,
     depth: u8,
 ) -> Option<(Step, u32)> {
-    let construction = kind.base_stats().construction.as_ref()?;
+    let construction = &kind.base_stats().construction;
     match construction
         .requires
         .iter()
@@ -727,8 +723,7 @@ pub(crate) fn met(observation: &ObservationData, need: Prerequisite) -> bool {
 pub(crate) fn buildable(observation: &ObservationData, kind: BuildingKind) -> bool {
     kind.base_stats()
         .construction
-        .as_ref()
-        .map_or(&[][..], |construction| construction.requires)
+        .requires
         .iter()
         .all(|need| met(observation, *need))
 }
