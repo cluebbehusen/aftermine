@@ -74,9 +74,6 @@ pub struct UnitObs {
     /// the repair channel reads it to keep the two verbs off one
     /// target; enemy work orders stay opaque).
     pub salvaging: Option<BuildingId>,
-    /// A deferred intent without an associated paid site (own units only).
-    /// Paid provisional construction is reported through `site`.
-    pub founding: Option<(BuildingKind, TilePos)>,
     /// The repair work of the current program, if it is repair work (own
     /// units only; always `None` for allies and enemies).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -712,10 +709,6 @@ fn own_unit(state: &State, u: &crate::state::Unit) -> UnitObs {
             Order::Salvage { building } => Some(building),
             _ => None,
         },
-        founding: match u.order {
-            Order::Found { kind, anchor } if site.is_none() => Some((kind, anchor)),
-            _ => None,
-        },
         repair: if matches!(u.order, Order::Tend { .. }) {
             Some(RepairWork::Tending)
         } else {
@@ -741,7 +734,6 @@ fn enemy_unit(u: &crate::state::Unit) -> UnitObs {
         cargo: 0,         // a sealed sling shows nothing
         site: None,       // nor their work orders
         salvaging: None,  // ditto
-        founding: None,   // ditto
         repair: None,
         grounded: u.landed(),
         charges: u.point_defense.map(|held| held.charges),

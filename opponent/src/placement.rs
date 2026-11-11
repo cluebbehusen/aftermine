@@ -30,7 +30,7 @@ pub(crate) enum Refusal {
     Crowded,
     /// A visible hostile ground unit stands there.
     HostileUnit,
-    /// An own construction claim or this decision's plan holds the ground.
+    /// A footprint this decision already planned holds the ground.
     Claimed,
     /// No explored open tile borders it.
     NoEgress,
@@ -138,12 +138,7 @@ pub(crate) fn check(
     {
         return Err(Refusal::HostileUnit);
     }
-    let founding = observation
-        .my_units
-        .iter()
-        .filter_map(|unit| unit.founding)
-        .chain(planned.iter().copied());
-    for (claimed, at) in founding {
+    for &(claimed, at) in planned {
         if keeps(claimed, at) {
             return Err(Refusal::Claimed);
         }
@@ -343,8 +338,8 @@ impl<'a> Danger<'a> {
 /// beyond repair, and no open ground beside it cut off, where units would
 /// be trapped or trained into a pocket they never leave. One flood fill over
 /// the ground from the rings of the seat's Foundries on it, with known
-/// buildings, claims, `planned` footprints, known live scrap and the new
-/// footprint in the way. A buried Scuttle Charge blocks nothing.
+/// buildings, `planned` footprints, known live scrap and the new footprint
+/// in the way. A buried Scuttle Charge blocks nothing.
 pub(crate) fn keeps_paths(
     observation: &ObservationData,
     map: &MapModel,
@@ -362,11 +357,9 @@ pub(crate) fn keeps_paths(
             .then(|| tile.row_major(width))
     };
     let tiles = |kind: BuildingKind, anchor: TilePos| tiles_of(anchor, kind.size());
-    let claims: Vec<(BuildingKind, TilePos)> = observation
-        .my_units
+    let claims: Vec<(BuildingKind, TilePos)> = planned
         .iter()
-        .filter_map(|unit| unit.founding)
-        .chain(planned.iter().copied())
+        .copied()
         .filter(|(kind, _)| *kind != BuildingKind::ScuttleCharge)
         .collect();
     let mut blocked = vec![false; chassis::grid::cell_count(width, height)];

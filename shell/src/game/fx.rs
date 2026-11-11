@@ -1879,9 +1879,6 @@ impl Presentation {
                         aftermine_sim::StallReason::InsufficientScrap => {
                             ("Not enough scrap", false)
                         }
-                        aftermine_sim::StallReason::GroundTaken => {
-                            ("That site was taken first", false)
-                        }
                         aftermine_sim::StallReason::CrewFull => ("Cradle crew is full", false),
                         aftermine_sim::StallReason::TransportFull => {
                             ("The transport is full", false)

@@ -40,7 +40,6 @@ fn paid_provisional_sites_are_marked_for_their_team_and_hidden_from_enemies() {
         );
         let observed_worker = own.my_units.iter().find(|u| u.id == worker).unwrap();
         assert_eq!(observed_worker.site, Some(site));
-        assert_eq!(observed_worker.founding, None);
         let roundtrip: Observation =
             serde_json::from_value(serde_json::to_value(&own).unwrap()).unwrap();
         assert_eq!(roundtrip, own);

@@ -167,8 +167,8 @@ enum Outcome {
     /// The building, its physical site, or the upgrade stands, or the unit
     /// is queued.
     Placed,
-    /// A provisional scaffold or a worker's claim still waits for its
-    /// ground to be confirmed, which can still refund it.
+    /// A provisional scaffold still waits for its ground to be confirmed,
+    /// which can still refund it.
     Pending,
     /// Nothing stands: it was rejected, cancelled or refunded.
     Missing,
@@ -181,14 +181,9 @@ fn outcome(observation: &ObservationData, investment: Investment, attempt: Attem
                 .my_buildings
                 .iter()
                 .find(|building| building.kind == kind && building.anchor == attempt.anchor);
-            let claimed = observation
-                .my_units
-                .iter()
-                .any(|unit| unit.founding == Some((kind, attempt.anchor)));
             match site {
                 Some(site) if !site.provisional => Outcome::Placed,
                 Some(_) => Outcome::Pending,
-                None if claimed => Outcome::Pending,
                 None => Outcome::Missing,
             }
         }

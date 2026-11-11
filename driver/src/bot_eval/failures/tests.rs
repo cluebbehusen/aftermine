@@ -85,7 +85,7 @@ fn repeated_stalls_fire_on_the_fifth_inside_the_window_only() {
     for tick in [100, 400, 700, 1_000] {
         detectors.record_stall(0, 7, "no_route", tick);
     }
-    detectors.record_stall(0, 7, "ground_taken", 1_050);
+    detectors.record_stall(0, 7, "transport_full", 1_050);
     detectors.record_stall(0, 8, "no_route", 1_050);
     detectors.record_stall(1, 7, "no_route", 1_050);
     let mut spread = FailureDetectors::new([true]);
