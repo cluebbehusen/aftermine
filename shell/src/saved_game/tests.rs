@@ -243,9 +243,11 @@ fn header_session_mismatch_and_decoding_expansion_are_rejected() {
     for (field, value) in [
         ("version", serde_json::json!(999)),
         ("map", serde_json::json!("different")),
-        ("seats", serde_json::json!(99)),
-        ("teams", serde_json::json!(99)),
-        ("teams", serde_json::json!(1)),
+        ("teams", serde_json::json!([2])),
+        ("teams", serde_json::json!([1, 1, 1])),
+        ("teams", serde_json::json!([])),
+        ("teams", serde_json::json!([0, 1, 1])),
+        ("teams", serde_json::json!([1, 99])),
         ("decoded_bytes", serde_json::json!(1)),
         ("decoded_bytes", serde_json::json!(MAX_BYTES + 1)),
     ] {
@@ -262,27 +264,51 @@ fn header_session_mismatch_and_decoding_expansion_are_rejected() {
 }
 
 #[test]
-fn a_save_header_counts_its_teams_for_the_shelf() {
+fn a_save_header_sizes_its_teams_for_the_shelf() {
     let path = Fixture::new();
     let duel = Game::new(Scenario::skirmish()).unwrap();
     write(&duel, meta(&duel), &path.0).unwrap();
     let info = inspect(&path.0).unwrap();
-    assert_eq!(
-        (info.seats, info.teams),
-        (2, 2),
-        "a duel's seats each stand alone"
-    );
+    assert_eq!(info.teams, [1, 1], "a duel's seats each stand alone");
 
     let scenario = Scenario::load("../scenarios/bridge-town.json").expect("shipped map");
     let pairs = Game::new(scenario).unwrap();
     write(&pairs, meta(&pairs), &path.0).unwrap();
     let info = inspect(&path.0).unwrap();
     assert_eq!(
-        (info.seats, info.teams),
-        (4, 2),
-        "teammates count once, so a 2v2 save never reads as a free-for-all"
+        info.teams,
+        [2, 2],
+        "teammates count together, so a 2v2 save never reads as a free-for-all"
     );
     assert!(prepare_load(&path.0).is_ok());
+}
+
+#[test]
+fn an_uneven_split_reads_as_played_on_save_and_replay_rows() {
+    let mut scenario = Scenario::load("../scenarios/great-cut.json").expect("shipped map");
+    for (seat, player) in scenario.players.iter_mut().enumerate() {
+        player.team = Some(u8::from(seat != 0));
+    }
+    let mut game = Game::new(scenario).unwrap();
+    game.advance_ticks(10);
+    let path = Fixture::new();
+    write(&game, meta(&game), &path.0).unwrap();
+    let info = inspect(&path.0).unwrap();
+    assert_eq!(crate::menu::split_format(&info.teams), "1v7");
+    assert!(prepare_load(&path.0).is_ok());
+
+    let replay = path.0.with_extension("amreplay");
+    let mut record = game.recorder.clone();
+    record.meta.ticks = Some(game.state.current_tick());
+    aftermine_kit::save_recording(
+        &replay,
+        &record,
+        &aftermine_kit::keyframes::Keyframes::default(),
+    )
+    .unwrap();
+    let info = inspect(&replay).unwrap();
+    std::fs::remove_file(&replay).unwrap();
+    assert_eq!(crate::menu::split_format(&info.teams), "1v7");
 }
 
 #[test]

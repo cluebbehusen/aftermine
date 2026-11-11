@@ -1821,17 +1821,39 @@ pub(crate) fn browser_blurb(meta: &ScenarioMeta) -> String {
 /// Teams formed by seats with these team indices: seats sharing an index
 /// count once, and a seat with none is its own team.
 pub(crate) fn team_count(teams: impl IntoIterator<Item = Option<u8>>) -> usize {
-    let mut shared = std::collections::BTreeSet::new();
-    let mut alone = 0;
+    team_sizes(teams).len()
+}
+
+/// Each team's seat count, smallest first: seats that share a tag form one
+/// team, and a seat without one stands alone.
+pub(crate) fn team_sizes(teams: impl IntoIterator<Item = Option<u8>>) -> Vec<usize> {
+    let mut shared = std::collections::BTreeMap::<u8, usize>::new();
+    let mut sizes = Vec::new();
     for team in teams {
         match team {
-            Some(team) => {
-                shared.insert(team);
-            }
-            None => alone += 1,
+            Some(team) => *shared.entry(team).or_default() += 1,
+            None => sizes.push(1),
         }
     }
-    shared.len() + alone
+    sizes.extend(shared.into_values());
+    sizes.sort_unstable();
+    sizes
+}
+
+/// A played match's format from its team sizes, smallest first: "1v1",
+/// "1v7", "2v2v2", "4-way FFA".
+pub(crate) fn split_format(teams: &[usize]) -> String {
+    let seats: usize = teams.iter().sum();
+    match teams {
+        _ if seats < 2 => "Solo".to_string(),
+        [_] => format!("{seats} seats"),
+        _ if seats > 2 && teams.iter().all(|&size| size == 1) => format!("{seats}-way FFA"),
+        _ => teams
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("v"),
+    }
 }
 
 #[cfg(test)]

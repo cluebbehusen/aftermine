@@ -974,8 +974,7 @@ pub(super) fn write_save(path: &Path, ticks: u64, saved_at: u64) {
             "saved_at": saved_at,
         },
         "map": "test",
-        "seats": 1,
-        "teams": 1,
+        "teams": [1],
         "compressed_bytes": 0,
         "decoded_bytes": 0,
     })

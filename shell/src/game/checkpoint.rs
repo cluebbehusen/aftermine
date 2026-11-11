@@ -281,7 +281,7 @@ pub(crate) struct RestoredGame {
 }
 
 impl GameCheckpoint {
-    pub(crate) fn metadata(&self) -> (&str, usize, u64) {
+    pub(crate) fn metadata(&self) -> (&str, u64) {
         self.session.metadata()
     }
 
