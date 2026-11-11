@@ -33,15 +33,18 @@ impl Guard<'_> {
             .iter()
             .map(|anchor| Span::of(size, *anchor))
             .collect();
-        // Only units resting with wounds deep enough to send them to a Bay
-        // call for one: a Bay placed by units passing through stands empty
-        // once they move on.
+        // Only units a Bay heals, resting with wounds deep enough to send
+        // them to one, call for one: a Bay placed by units passing through
+        // stands empty once they move on.
         let hurt: Vec<&UnitObs> = observation
             .my_units
             .iter()
             .filter(|unit| {
-                let max = u64::from(unit.kind.stats().max_hp);
-                unit.idle && u64::from(unit.hp) * 1_000 <= max * (1_000 - workers::UNIT_WELD_DAMAGE)
+                let stats = unit.kind.stats();
+                let max = u64::from(stats.max_hp);
+                unit.idle
+                    && stats.repairable()
+                    && u64::from(unit.hp) * 1_000 <= max * (1_000 - workers::UNIT_WELD_DAMAGE)
             })
             .collect();
         let treated = crate::missions::treating(&anchors, &hurt);

@@ -609,6 +609,36 @@ fn a_repair_bay_goes_up_where_the_wounded_gather() {
     );
 }
 
+/// What West builds on its first decision in the arena with 600 scrap and
+/// a fair income, its `kind` units at `spots` beside home at a quarter of
+/// their health.
+fn built_for_wounded(kind: UnitKind, spots: &[(i32, i32)]) -> Vec<(BuildingKind, TilePos)> {
+    let mut scenario = arena(600);
+    for (x, y) in spots {
+        scenario.units.push(unit(0, kind, *x, *y));
+    }
+    let state = scenario.build().unwrap();
+    let ids: Vec<UnitId> = spots.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    let state = all_wounded(&state, &ids, kind.stats().max_hp / 4);
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["income"] = serde_json::json!({"previous": null, "per_minute": 2_000});
+    });
+    builds(&opponent.act(&state, &mut OwnEvents::default()))
+}
+
+#[test]
+fn a_wounded_maw_buys_no_repair_bay_that_cannot_heal_it() {
+    let bay = |built: &[(BuildingKind, TilePos)]| {
+        built
+            .iter()
+            .any(|(kind, _)| *kind == BuildingKind::RepairBay)
+    };
+    let breakers = built_for_wounded(UnitKind::Breaker, &SQUAD);
+    assert!(bay(&breakers), "premise: wounded Breakers want a Bay");
+    let maw = built_for_wounded(UnitKind::Maw, &[(4, 9)]);
+    assert!(!bay(&maw), "{maw:?}");
+}
+
 #[test]
 fn wounded_a_full_repair_bay_cannot_treat_call_for_another() {
     let anchor = TilePos::new(9, 7);
