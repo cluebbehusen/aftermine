@@ -519,3 +519,34 @@ fn a_winners_band_spans_its_own_row_and_the_whole_table() {
     assert!(band.y >= 120.0 + 2.0 * 27.0);
     assert!(band.y + band.h <= 120.0 + 3.0 * 27.0);
 }
+
+#[test]
+fn the_meta_line_keeps_a_winner_s_name_as_typed() {
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.players[0].name = "cjl".into();
+    let mut won = Game::new(scenario).expect("game");
+    won.stage(aftermine_sim::PlayerCommand {
+        player: PlayerId(1),
+        command: aftermine_sim::Command::Surrender,
+    });
+    won.present_ticks(1);
+    let (_, _, subtitle) = verdict(&won);
+    assert_eq!(subtitle, "cjl won");
+    assert!(
+        meta_line(&subtitle, 0).starts_with("cjl won  |  "),
+        "{}",
+        meta_line(&subtitle, 0)
+    );
+    let mut drawn = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
+    for seat in [0, 1] {
+        drawn.stage(aftermine_sim::PlayerCommand {
+            player: PlayerId(seat),
+            command: aftermine_sim::Command::Surrender,
+        });
+    }
+    drawn.present_ticks(1);
+    assert!(drawn.state.result().is_some(), "premise: decided");
+    let (title, _, subtitle) = verdict(&drawn);
+    assert_eq!(title, "MUTUAL DESTRUCTION", "premise: nobody won");
+    assert_eq!(subtitle, "No Foundry survived");
+}

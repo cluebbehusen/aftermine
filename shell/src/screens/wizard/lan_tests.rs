@@ -153,6 +153,8 @@ fn joiners_take_open_chairs_then_bots_in_display_order_and_see_who_sits_where() 
     assert!(member_at(&w, 1).is_none(), "North East keeps its bot");
     let hosting = w.hosting_line(&draft).unwrap();
     assert!(hosting.ends_with("3 of 3 players"), "{hosting}");
+    let alone = w.hosting_status(&draft).unwrap();
+    assert!(alone.starts_with("Hosting on "), "{alone}");
 
     // With no chair open, a joiner replaces a bot.
     clients.push(join(&w, "Riley"));
@@ -330,6 +332,10 @@ fn a_full_lobby_starts_on_every_machine_under_the_players_names() {
     let scenario = launch::hosted_scenario(&draft, 0x500, &w.member_names()).unwrap();
     w.start_lan(&draft, &scenario, Duration::ZERO).unwrap();
     assert!(w.hosting_line(&draft).unwrap().starts_with("starting"));
+    assert_eq!(
+        w.hosting_status(&draft).as_deref(),
+        Some("Starting the match...")
+    );
 
     // The start launches the setup it froze, so nothing changes it.
     let frozen = draft.seats.clone();

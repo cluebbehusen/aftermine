@@ -467,6 +467,11 @@ impl Form {
         Edit::Stay
     }
 
+    /// Why the last commit was refused, as the form shows it.
+    fn error_line(&self) -> Option<String> {
+        self.error.map(crate::typography::sentence_case)
+    }
+
     /// The first field that fails its check, and why.
     fn first_invalid(&self) -> Option<(usize, &'static str)> {
         self.fields.iter().enumerate().find_map(|(index, field)| {
@@ -495,9 +500,9 @@ impl Form {
             draw_text(text, (view.x - width) * 0.5, y, size, color);
         };
         crate::menu::draw_title(self.title, layout.title_y, TEXT_TITLE);
-        match self.error {
-            Some(reason) => centered(reason, layout.hint_y, Type::Label.at(s), TEXT_DANGER),
-            None => hint.clone().sentence_cased().draw(
+        match self.error_line() {
+            Some(reason) => centered(&reason, layout.hint_y, Type::Label.at(s), TEXT_DANGER),
+            None => hint.draw(
                 sprites,
                 view.x * 0.5,
                 layout.hint_y,

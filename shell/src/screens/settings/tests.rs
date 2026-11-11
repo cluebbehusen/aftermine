@@ -100,10 +100,16 @@ fn a_capture_prompt_is_information_and_key_help_is_coaching() {
     });
     assert_eq!(
         screen.status(),
-        Some((CAPTURE_PROMPT, false)),
+        Some((CAPTURE_PROMPT.to_owned(), false)),
         "an armed capture always says it is listening"
     );
     assert_eq!(screen.coaching(), None);
+    screen.face = Face::Tab(Tab::Controls);
+    assert_eq!(
+        screen.status(),
+        Some(("A delivered notice".to_owned(), false)),
+        "a notice reads as a sentence however it was worded"
+    );
 }
 
 #[test]

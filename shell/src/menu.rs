@@ -1412,7 +1412,7 @@ impl<R: Clone> Menu<R> {
         let scrolls = first > 0 || first + visible < self.lines.len();
         let hint =
             coaching.map_or_else(|| menu_footer(crate::platform::hands(), scrolls), hint_line);
-        hint.sentence_cased().draw(
+        hint.draw(
             sprites,
             view_w() * 0.5,
             view_h() - 24.0 * s,

@@ -49,3 +49,13 @@ fn every_building_name_has_a_plural() {
         ]
     );
 }
+
+#[test]
+fn a_sentence_opens_with_a_capital_unless_its_first_word_is_a_name_with_its_own() {
+    assert_eq!(sentence_case("no Foundry survived"), "No Foundry survived");
+    assert_eq!(
+        sentence_case("iCloud storage is full"),
+        "iCloud storage is full"
+    );
+    assert_eq!(sentence_case(""), "");
+}

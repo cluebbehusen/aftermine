@@ -796,13 +796,15 @@ impl SettingsScreen {
     /// The line above the footer: the capture prompt while a binding
     /// row listens, since it is the only sign the next key is taken,
     /// else the standing notice. The flag marks a complaint.
-    fn status(&self) -> Option<(&str, bool)> {
+    fn status(&self) -> Option<(String, bool)> {
         match self.face {
-            Face::Capturing(_) => Some((CAPTURE_PROMPT, false)),
-            Face::Tab(_) | Face::Confirming(_) => self
-                .notice
-                .as_ref()
-                .map(|notice| (notice.text.as_str(), notice.danger)),
+            Face::Capturing(_) => Some((CAPTURE_PROMPT.to_owned(), false)),
+            Face::Tab(_) | Face::Confirming(_) => self.notice.as_ref().map(|notice| {
+                (
+                    crate::typography::sentence_case(&notice.text),
+                    notice.danger,
+                )
+            }),
         }
     }
 
@@ -919,9 +921,9 @@ impl SettingsScreen {
         if let Some((text, danger)) = self.status() {
             let s = render::ui_scale();
             let size = crate::theme::Type::Body.at(s);
-            let width = measure_text(text, None, numeric::font_size(size), 1.0).width;
+            let width = measure_text(&text, None, numeric::font_size(size), 1.0).width;
             draw_text(
-                text,
+                &text,
                 (render::viewport().x - width) * 0.5,
                 render::viewport().y - 48.0 * s,
                 size,

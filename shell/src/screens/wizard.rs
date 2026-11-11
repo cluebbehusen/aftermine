@@ -1860,7 +1860,6 @@ impl Wizard {
             self.setup_page,
         );
         let order = seat_display_order(scenario);
-        let hosting = self.hosting_line(draft);
 
         let compact = layout.page_count > 1;
         if compact {
@@ -1870,7 +1869,7 @@ impl Wizard {
                 TEXT_TITLE,
             );
         } else {
-            let subtitle = hosting.as_ref().map_or_else(
+            let subtitle = self.hosting_line(draft).map_or_else(
                 || scenario.name.clone(),
                 |hosting| format!("{} - {hosting}", scenario.name),
             );
@@ -1878,7 +1877,7 @@ impl Wizard {
         }
 
         self.draw_switch(&layout, ui);
-        if compact && let Some(hosting) = &hosting {
+        if compact && let Some(hosting) = &self.hosting_status(draft) {
             let switch = layout.switch[1];
             let x = switch.x + switch.w + 14.0 * ui;
             let room = layout.preview.x - x - 14.0 * ui;
@@ -2121,6 +2120,13 @@ impl Wizard {
             shown_address(lan.lobby.address()),
             here + waiting
         ))
+    }
+
+    /// The hosting line where compact setup shows it on its own beside the
+    /// switch, opening as a sentence.
+    fn hosting_status(&self, draft: &NewMatchDraft) -> Option<String> {
+        self.hosting_line(draft)
+            .map(|line| crate::typography::sentence_case(&line))
     }
 
     /// Draws a confirmation over a veil.

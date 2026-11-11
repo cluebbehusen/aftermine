@@ -400,7 +400,7 @@ impl Shelf {
         let backup = self
             .backup
             .and_then(|trouble| backup_line(platform, trouble));
-        if !self.catalog_ready {
+        let status = if !self.catalog_ready {
             "looking for saves and replays...".to_string()
         } else if let Some(problem) = problem {
             problem.reason().to_string()
@@ -412,7 +412,8 @@ impl Shelf {
             String::new()
         } else {
             standing_line(platform).to_string()
-        }
+        };
+        crate::typography::sentence_case(&status)
     }
 
     /// Draws the delete question, or else the tab's rows, the strip, and
