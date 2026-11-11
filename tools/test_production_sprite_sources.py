@@ -84,6 +84,32 @@ ACTION_COUNTS = {
 HARVESTER_CARGO_LEVELS = 5
 
 
+# The ground blockers mechanical_final ships, with their tile footprints.
+GROUND_BLOCKER_KEYS = (
+    "ground_blocker_cooling_fan",
+    "ground_blocker_compressor_skid",
+    "ground_blocker_transformer_bank",
+    "ground_blocker_exposed_gearbox",
+    "ground_blocker_conveyor_drive",
+    "ground_blocker_crusher_motor",
+    "ground_blocker_track_assembly",
+    "ground_blocker_vent_blower",
+    "ground_blocker_generator_pallet",
+)
+
+GROUND_BLOCKER_FOOTPRINTS = (
+    (2, 2),
+    (2, 1),
+    (3, 2),
+    (2, 2),
+    (3, 2),
+    (3, 2),
+    (3, 1),
+    (2, 2),
+    (2, 2),
+)
+
+
 def _changed_pixels(left: Image.Image, right: Image.Image) -> int:
     difference = ImageChops.difference(left.convert("RGBA"), right.convert("RGBA"))
     return sum(pixel != (0, 0, 0, 0) for pixel in difference.get_flattened_data())
@@ -109,7 +135,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.temp = tempfile.TemporaryDirectory(prefix="aftermine-production-sprites-")
         cls.out = Path(cls.temp.name)
-        cls.registry: dict[str, Image.Image] = {}
+        cls.registry: dict[str, Image.Image] = gen.SpriteRegistry()
         old_out = gen.OUT
         old_registry = gen.REGISTRY
         try:
@@ -117,7 +143,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             gen.REGISTRY = cls.registry
             for phase in range(6):
                 gen.ground(phase)
-            cls.ground_controls = cls.registry.copy()
+            cls.ground_controls = dict(gen.GROUND_CONTROLS)
             finalized.install_finalized_sprites(cls.registry, cls.out)
             construction_final.install_finalized_construction(cls.registry, cls.out)
             environment_final.install_finalized_environment(cls.registry, cls.out)
@@ -407,12 +433,15 @@ class ProductionSpriteSourceTests(unittest.TestCase):
         )
 
     def test_finalized_environment_bank_is_complete_and_pixel_stable(self) -> None:
-        self.assertEqual(len(environment_final.GROUND_BLOCKER_KEYS), 9)
+        self.assertEqual(
+            {key for key in self.registry if key.startswith("ground_blocker_")},
+            set(GROUND_BLOCKER_KEYS),
+        )
 
         digest = hashlib.sha256()
         for key, footprint in zip(
-            environment_final.GROUND_BLOCKER_KEYS,
-            environment_final.GROUND_BLOCKER_FOOTPRINTS,
+            GROUND_BLOCKER_KEYS,
+            GROUND_BLOCKER_FOOTPRINTS,
             strict=True,
         ):
             image = self.registry[key]

@@ -28,9 +28,23 @@ from PIL import Image, ImageDraw
 OUT = Path(__file__).resolve().parent.parent / "assets" / "sprites"
 SS = 4  # supersample factor
 
-# Every finished sprite lands here too, so main() can pack one atlas the
-# shell renders from, sharing texture pages across the whole world.
-REGISTRY: dict[str, Image.Image] = {}
+class SpriteRegistry(dict):
+    """The sprite bank: every finished sprite lands here, so main() can pack
+    one atlas the shell renders from. Each key is written once, so a recipe
+    whose rows a later pass would replace fails here instead of drawing art
+    that never ships."""
+
+    def __setitem__(self, key: str, image: Image.Image) -> None:
+        if key in self:
+            raise KeyError(f"sprite {key!r} is written twice")
+        super().__setitem__(key, image)
+
+
+REGISTRY: SpriteRegistry = SpriteRegistry()
+
+# The plain ground tiles quarry_final paints its finished ground over. They
+# are inputs, not shipped sprites, so they stay out of the registry.
+GROUND_CONTROLS: dict[str, Image.Image] = {}
 
 # The Aftermine palette. Keep in sync with kit/src/render.rs and the shell.
 GROUND = (35, 35, 41)
@@ -261,7 +275,7 @@ def ground(variant: int) -> None:
     lift = [-6, -3, 0, 2, 4, 7][variant % 6]
     base = tuple(max(0, c + lift) for c in GROUND)
     img, _ = canvas(px, (*base, 255))
-    finish(img, px, f"ground_{variant}")
+    GROUND_CONTROLS[f"ground_{variant}"] = img.resize((px, px), Image.LANCZOS)
 
 
 def ground_detail(variant: int) -> None:
@@ -285,106 +299,6 @@ def ground_detail(variant: int) -> None:
         points.append((x0, y0))
     d.line([(s(x), s(y)) for x, y in points], fill=(*GROUND_DARK, 255), width=SS)
     finish(img, px, f"ground_detail_{variant}")
-
-
-def extractor_frame_marker() -> None:
-    """The derelict frame: a collapsed 2x2 machine bed that says
-    'an Extractor can be rebuilt here'. Drawn on the map itself,
-    unowned: the frame belongs to no one and outlives everyone."""
-    px = 128
-    img, d = canvas(px)
-    rng = random.Random(40415)
-    # The sunken bed plate.
-    d.rounded_rectangle(
-        [s(10), s(10), s(118), s(118)], radius=s(8), fill=(24, 23, 26, 235)
-    )
-    d.rounded_rectangle(
-        [s(16), s(16), s(112), s(112)], radius=s(6), fill=(31, 30, 33, 255)
-    )
-    # Broken foundation girders: an open rectangle with two collapsed
-    # spans, the role feature that reads as a rebuildable frame.
-    for x0, y0, x1, y1 in ((20, 20, 108, 28), (20, 100, 108, 108), (20, 28, 28, 100)):
-        d.rectangle([s(x0), s(y0), s(x1), s(y1)], fill=(*IRON_DARK, 255))
-    d.rectangle([s(100), s(28), s(108), s(64)], fill=(*IRON_DARK, 255))
-    # The fallen east girder lies across the bed at an angle.
-    d.polygon(
-        [(s(100), s(70)), (s(108), s(72)), (s(74), s(104)), (s(66), s(98))],
-        fill=(*IRON, 255),
-    )
-    # Faded corporate paint on the bed floor: the old operator's chevron.
-    d.polygon(
-        [
-            (s(48), s(76)),
-            (s(64), s(52)),
-            (s(80), s(76)),
-            (s(72), s(76)),
-            (s(64), s(64)),
-            (s(56), s(76)),
-        ],
-        fill=(78, 66, 40, 200),
-    )
-    # Anchor sockets at the girder corners, still waiting for a machine.
-    for x, y in ((24, 24), (104, 24), (24, 104)):
-        d.ellipse([s(x - 3), s(y - 3), s(x + 3), s(y + 3)], fill=(*SCRAP_LIGHT, 235))
-    # Scattered fasteners.
-    for _ in range(9):
-        x, y = rng.randrange(30, 98), rng.randrange(34, 96)
-        d.point([(s(x), s(y))], fill=(*IRON_LIGHT, 160))
-    finish(img, px, "extractor_frame")
-
-
-def scrap_pile(name: str, seed: int, pieces: int, spread: float, lift: float) -> None:
-    """A mounded salvage heap: shadow base, center-biased shards piled so
-    they overlap into one mass, glints on the crown. `lift` raises the
-    crown for taller piles."""
-    px = 64
-    img, d = canvas(px)
-    rng = random.Random(seed)
-    base_r = spread + 5
-    d.ellipse(
-        [s(32 - base_r), s(36 - base_r * 0.6), s(32 + base_r), s(36 + base_r * 0.6)],
-        fill=(24, 20, 16, 120),
-    )
-    # Far pieces first so central ones stack on top.
-    placed = []
-    for _ in range(pieces):
-        angle = rng.uniform(0, 6.28318)
-        dist = spread * rng.random() ** 0.6
-        cx = 32 + dist * math.cos(angle)
-        cy = 34 + dist * math.sin(angle) * 0.65 - lift * (1 - dist / spread)
-        w = rng.uniform(6, 12) * (1.15 - 0.4 * dist / spread)
-        h = rng.uniform(4, 9) * (1.15 - 0.4 * dist / spread)
-        placed.append((dist, cx, cy, w, h))
-    placed.sort(key=lambda p: -p[0])
-    for dist, cx, cy, w, h in placed:
-        # Central pieces catch light; the fringe sits in shade.
-        tone = (
-            rng.choice((SCRAP, SCRAP_LIGHT))
-            if dist < spread * 0.45
-            else rng.choice((SCRAP, SCRAP_DARK, SCRAP_DARK))
-        )
-        dx = rng.uniform(-2.5, 2.5)
-        box = [
-            (cx - w / 2 - dx, cy - h / 2),
-            (cx + w / 2, cy - h / 2 + dx / 2),
-            (cx + w / 2 + dx, cy + h / 2),
-            (cx - w / 2, cy + h / 2 - dx / 2),
-        ]
-        d.polygon([(s(x), s(y)) for x, y in box], fill=(*tone, 255))
-    for _ in range(max(1, pieces // 6)):
-        cx, cy = 32 + rng.uniform(-6, 6), 32 - lift * 0.7 + rng.uniform(-4, 4)
-        d.ellipse([s(cx - 2), s(cy - 2), s(cx + 2), s(cy + 2)], fill=(*BONE, 255))
-    finish(img, px, name)
-
-
-def scrap(stage: str, fullness: float) -> None:
-    scrap_pile(
-        f"scrap_{stage}",
-        seed=11,
-        pieces=int(14 * fullness) + 4,
-        spread=10 * fullness + 6,
-        lift=3 * fullness,
-    )
 
 
 def scaffold() -> None:
@@ -758,11 +672,6 @@ def theme_prop(theme: str, variant: int) -> None:
     )
     img.putalpha(alpha)
     finish(img, px, f"theme_{theme}_{variant}")
-
-
-def scrap_rich() -> None:
-    """A dense, tall heap — the 'S' legend's double-value node."""
-    scrap_pile("scrap_rich", seed=23, pieces=30, spread=19, lift=7)
 
 
 def scorch() -> None:
@@ -1359,6 +1268,7 @@ def generate(output: Path) -> None:
     global OUT
     OUT = output
     REGISTRY.clear()
+    GROUND_CONTROLS.clear()
     OUT.mkdir(parents=True, exist_ok=True)
     print(f"writing {OUT}")
     for i in range(6):
@@ -1366,15 +1276,10 @@ def generate(output: Path) -> None:
     for i in range(12):
         ground_detail(i)
     rock_skirt()
-    extractor_frame_marker()
     for theme in THEMES:
         for variant in range(3):
             theme_prop(theme, variant)
-    scrap_rich()
     scorch()
-    scrap("full", 1.0)
-    scrap("mid", 0.55)
-    scrap("low", 0.25)
     wreck_pile()
     wreck_piles()
     air_shadow()

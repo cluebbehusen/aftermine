@@ -193,7 +193,9 @@ def source_frames(controls: dict[str, Image.Image]):
         yield f"quarry_dressing_{index}", dressing(index)
 
 
-def install_quarry(registry: dict[str, Image.Image], out: Path) -> None:
-    for key, image in source_frames(registry):
+def install_quarry(
+    registry: dict[str, Image.Image], out: Path, controls: dict[str, Image.Image]
+) -> None:
+    for key, image in source_frames(controls):
         registry[key] = image
         image.save(out / f"{key}.png")
