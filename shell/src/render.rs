@@ -6,9 +6,7 @@
 //! Reads the sim, never writes it. Unit positions interpolate between the
 //! previous and current tick so motion stays smooth between sim ticks.
 
-use crate::assets::{
-    ExcavatorPose as SpriteExcavatorPose, HarvesterPose as SpriteHarvesterPose, Sprites,
-};
+use crate::assets::Sprites;
 use crate::frame_profile::{FramePass, measure, pass};
 use crate::numeric;
 use crate::numeric::Fit;
@@ -848,24 +846,13 @@ impl UnitSpriteFrame {
     ) -> Self {
         let mut frame = motion::unit_frame(kind, animation);
         // Treads drawn apart from the body roll while its frame holds still:
-        // the shared belts, and the Maw's own layers (`render::maw`). The
-        // Maw's whole-body move frames are never drawn, so its idle body is
-        // the outline every shot, blast and tool meets.
-        if tracks::supported(kind) || kind == aftermine_sim::UnitKind::Maw {
-            match &mut frame {
-                motion::UnitFrame::Moving(_) => frame = motion::UnitFrame::Idle,
-                motion::UnitFrame::Harvester { pose, .. }
-                    if matches!(pose, motion::HarvesterPose::Moving(_)) =>
-                {
-                    *pose = motion::HarvesterPose::Idle;
-                }
-                motion::UnitFrame::Excavator { pose, .. }
-                    if matches!(pose, motion::ExcavatorPose::Moving(_)) =>
-                {
-                    *pose = motion::ExcavatorPose::Idle;
-                }
-                _ => {}
-            }
+        // the shared belts, and the Maw's own layers (`render::maw`). Neither
+        // ships whole-body move frames, so the idle body is the outline every
+        // shot, blast and tool meets.
+        if (tracks::supported(kind) || kind == aftermine_sim::UnitKind::Maw)
+            && matches!(frame, motion::UnitFrame::Moving(_))
+        {
+            frame = motion::UnitFrame::Idle;
         }
         let worker_phase = match animation.locomotion {
             crate::presentation_animation::LocomotionState::Moving { cycle }
@@ -907,68 +894,36 @@ pub(crate) fn unit_body_sources(
     kind: aftermine_sim::UnitKind,
     frame: UnitSpriteFrame,
 ) -> (Rect, Rect, Option<Rect>, bool) {
-    let (source, accent, mechanism_layer) = match frame.frame {
-        motion::UnitFrame::Idle => (sprites.unit(kind), sprites.unit_accent(kind), None),
-        motion::UnitFrame::Moving(phase) => (
-            sprites.unit_moving(kind, phase + 1),
-            sprites.unit_moving_accent(kind, phase + 1),
-            None,
-        ),
-        motion::UnitFrame::Action(action) => (
-            sprites.unit_action(kind, action),
-            sprites.unit_action_accent(kind, action),
-            None,
-        ),
-        motion::UnitFrame::Harvester { cargo, pose } => {
-            let pose = match pose {
-                motion::HarvesterPose::Idle => SpriteHarvesterPose::Idle,
-                motion::HarvesterPose::Moving(0) => SpriteHarvesterPose::Tread1,
-                motion::HarvesterPose::Moving(_) => SpriteHarvesterPose::Tread2,
-                motion::HarvesterPose::Scoop(0) => SpriteHarvesterPose::Scoop1,
-                motion::HarvesterPose::Scoop(_) => SpriteHarvesterPose::Scoop2,
-            };
-            (
-                sprites.harvester_frame(cargo, pose),
-                sprites.harvester_frame_accent(cargo, pose),
-                None,
-            )
-        }
-        motion::UnitFrame::Excavator { cargo, pose } => {
-            let pose = match pose {
-                motion::ExcavatorPose::Idle => SpriteExcavatorPose::Idle,
-                motion::ExcavatorPose::Moving(0) => SpriteExcavatorPose::Tread1,
-                motion::ExcavatorPose::Moving(_) => SpriteExcavatorPose::Tread2,
-                motion::ExcavatorPose::Working(0) => SpriteExcavatorPose::Work1,
-                motion::ExcavatorPose::Working(1) => SpriteExcavatorPose::Work2,
-                motion::ExcavatorPose::Working(2) => SpriteExcavatorPose::Work3,
-                motion::ExcavatorPose::Working(_) => SpriteExcavatorPose::Work4,
-            };
-            (
-                sprites.excavator_frame(pose),
-                sprites.excavator_frame_accent(pose),
-                Some(sprites.excavator_cargo(cargo)),
-            )
-        }
-    };
-    let (source, accent) = sprites.unit_rig(kind).map_or((source, accent), |rig| {
-        rig.hull(if tracks::supported(kind) {
-            0
-        } else {
-            usize::from(frame.hull_phase)
-        })
-    });
+    // A worker draws its body layer and a rig its hull, never their
+    // whole-body frames.
     let worker_body = sprites.worker_body(
         kind,
         usize::from(frame.cargo),
         usize::from(frame.worker_phase),
     );
-    let (source, accent) = worker_body.unwrap_or((source, accent));
-    let mechanism_layer = if kind == aftermine_sim::UnitKind::Mantle {
-        frame
-            .point_defense
-            .map(|frame| sprites.mantle_charge(usize::from(frame)))
+    let (source, accent) = if let Some(body) = worker_body {
+        body
+    } else if let Some(rig) = sprites.unit_rig(kind) {
+        rig.hull(usize::from(frame.hull_phase))
     } else {
-        mechanism_layer
+        match frame.frame {
+            motion::UnitFrame::Moving(phase) => (
+                sprites.unit_moving(kind, phase + 1),
+                sprites.unit_moving_accent(kind, phase + 1),
+            ),
+            motion::UnitFrame::Action(action) => (
+                sprites.unit_action(kind, action),
+                sprites.unit_action_accent(kind, action),
+            ),
+            _ => (sprites.unit(kind), sprites.unit_accent(kind)),
+        }
+    };
+    let mechanism_layer = match frame.frame {
+        _ if kind == aftermine_sim::UnitKind::Mantle => frame
+            .point_defense
+            .map(|frame| sprites.mantle_charge(usize::from(frame))),
+        motion::UnitFrame::Excavator { cargo, .. } => Some(sprites.excavator_cargo(cargo)),
+        _ => None,
     };
     (source, accent, mechanism_layer, worker_body.is_some())
 }
@@ -1094,27 +1049,26 @@ fn draw_piledriver_anchors(
             game.presentation.tick_fraction(),
         ),
     );
-    if let Some((anchor, accent)) = sprites.piledriver_anchors(deployment) {
-        for (source, tint) in [
-            (anchor, WHITE),
-            (accent, seat_identity_color(game, unit.player)),
-        ] {
-            let factor = dest / 128.0;
-            let center = body + vec2(-body_rotation.sin(), body_rotation.cos()) * (13.0 * factor);
-            let size = vec2(source.w, source.h) * factor;
-            sprites.draw_unit(
-                center.x - size.x * 0.5,
-                center.y - size.y * 0.5,
-                tint,
-                DrawTextureParams {
-                    dest_size: Some(size),
-                    source: Some(source),
-                    rotation: body_rotation,
-                    ..Default::default()
-                },
-                zoom,
-            );
-        }
+    let (anchor, accent) = sprites.piledriver_anchors(deployment);
+    for (source, tint) in [
+        (anchor, WHITE),
+        (accent, seat_identity_color(game, unit.player)),
+    ] {
+        let factor = dest / 128.0;
+        let center = body + vec2(-body_rotation.sin(), body_rotation.cos()) * (13.0 * factor);
+        let size = vec2(source.w, source.h) * factor;
+        sprites.draw_unit(
+            center.x - size.x * 0.5,
+            center.y - size.y * 0.5,
+            tint,
+            DrawTextureParams {
+                dest_size: Some(size),
+                source: Some(source),
+                rotation: body_rotation,
+                ..Default::default()
+            },
+            zoom,
+        );
     }
 }
 
@@ -1195,9 +1149,7 @@ fn draw_unit_body(
     (draw_scale, alpha): (f32, f32),
 ) {
     let zoom = game.presentation.camera.zoom;
-    let maw_rig = (unit.kind == aftermine_sim::UnitKind::Maw)
-        .then(|| sprites.maw_rigs())
-        .flatten();
+    let maw_rig = (unit.kind == aftermine_sim::UnitKind::Maw).then(|| sprites.maw_rigs());
     if let Some(rigs) = maw_rig {
         let treads = game
             .presentation
@@ -1410,9 +1362,7 @@ fn draw_unit_pass(
             ..
         } = unit_body_pose(game, sprites, unit, alpha);
         let rig = sprites.unit_rig(unit.kind);
-        let roc_rig = (unit.kind == aftermine_sim::UnitKind::Roc)
-            .then(|| sprites.roc_rig())
-            .flatten();
+        let roc_rig = (unit.kind == aftermine_sim::UnitKind::Roc).then(|| sprites.roc_rig());
         if airborne {
             let body_lift = air_presentation(unit.kind, zoom).2;
             draw_air_shadow(
@@ -1451,9 +1401,8 @@ fn draw_unit_pass(
             }
         }
         let body_size = vec2(dest, dest);
-        if unit.kind == aftermine_sim::UnitKind::Bombard
-            && let Some(source) = sprites.bombard_spades(unit.braces())
-        {
+        if unit.kind == aftermine_sim::UnitKind::Bombard {
+            let source = sprites.bombard_spades(unit.braces());
             sprites.draw_unit(
                 body.x - body_size.x * 0.5,
                 body.y - body_size.y * 0.5,
@@ -1508,8 +1457,8 @@ fn draw_unit_pass(
         }
         if unit.kind == aftermine_sim::UnitKind::Kestrel
             && let Some(cycle) = animation.scanner
-            && let Some(source) = sprites.scout_radar()
         {
+            let source = sprites.scout_radar();
             let mount_y = 47.0;
             let offset = (mount_y - 64.0) / 128.0 * body_size.y;
             let center = body + vec2(-body_rotation.sin(), body_rotation.cos()) * offset;

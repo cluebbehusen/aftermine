@@ -2,11 +2,9 @@ use super::*;
 
 /// How many `_{label}N` frames the shipped atlas holds under `stem`.
 pub(crate) fn shipped_frames(stem: &str, label: &str) -> usize {
-    static SHIPPED: std::sync::LazyLock<Manifest> = std::sync::LazyLock::new(|| {
-        serde_json::from_str(include_str!("../../../assets/sprites/atlas.json"))
-            .expect("the shipped atlas parses")
-    });
-    numbered_suffixes(&SHIPPED, stem, label)
+    let shipped = Manifest::parse(include_str!("../../../assets/sprites/atlas.json"))
+        .expect("the shipped atlas parses");
+    numbered_suffixes(&shipped, stem, label)
         .expect("complete rows")
         .len()
 }
@@ -19,286 +17,6 @@ pub(crate) fn unit_action_frames(kind: UnitKind) -> usize {
     } else {
         shipped_frames(unit_stem(kind), "action")
     }
-}
-
-/// Every key accepted in the generated production atlas, including legacy
-/// compatibility aliases that remain in the generator output.
-fn atlas_keys(atlas: &Manifest) -> Vec<String> {
-    let mut keys: Vec<String> = SINGLE_KEYS
-        .iter()
-        .chain(VERB_ICON_KEYS.iter())
-        .chain(PAD_ICON_KEYS.iter())
-        .chain(GROUND_KEYS.iter())
-        .chain(GROUND_DETAIL_KEYS.iter())
-        .chain(ROCK_SLAB_KEYS.iter())
-        .chain(["decal_wreck", "scaffold_sparse"].iter())
-        .chain(THEME_PROP_KEYS.iter())
-        .chain(WRECK_PILE_KEYS.iter())
-        .chain(GROUND_BLOCKER_KEYS.iter())
-        .chain(DEBRIS_KEYS.iter())
-        .map(|key| (*key).to_string())
-        .collect();
-    keys.extend((0..5).map(|phase| format!("bombard_spades_{phase}")));
-    if atlas.contains_key("piledriver_anchors") {
-        keys.extend(variant_keys("piledriver_anchors", ""));
-        for suffix in
-            numbered_suffixes(atlas, "piledriver_anchors", "action").expect("complete anchors")
-        {
-            keys.extend(variant_keys("piledriver_anchors", &suffix));
-        }
-    }
-    keys.push("scout_radar".to_owned());
-    if atlas
-        .keys()
-        .any(|key| key.starts_with("rig_harvester_body_"))
-    {
-        for cargo in 0..6 {
-            keys.extend(variant_keys(
-                "rig_harvester_body",
-                &format!("_cargo{cargo}"),
-            ));
-        }
-    }
-    for stem in ["rig_excavator_body", "rig_scuttler_body"] {
-        if atlas.keys().any(|key| key.starts_with(stem)) {
-            for suffix in ["", "_move1", "_move2"] {
-                keys.extend(variant_keys(stem, suffix));
-            }
-        }
-    }
-    keys.extend((0..12).map(|index| format!("quarry_dressing_{index}")));
-    for (stem, action_count) in UnitKind::ALL
-        .into_iter()
-        .filter(|kind| crate::look::unit(*kind).rig)
-        .map(|kind| {
-            let actions =
-                numbered_suffixes(atlas, &rig_mount_stem(kind), "action").expect("complete rows");
-            (unit_stem(kind), actions.len())
-        })
-    {
-        for suffix in ["", "_move1", "_move2"] {
-            keys.extend(variant_keys(&format!("rig_{stem}_hull"), suffix));
-        }
-        keys.extend(variant_keys(&format!("rig_{stem}_mount"), ""));
-        for shadow in [
-            format!("rig_{stem}_shadow"),
-            format!("rig_{stem}_mount_shadow"),
-        ] {
-            if atlas.contains_key(&shadow) {
-                keys.push(shadow);
-            }
-        }
-        for action in 1..=action_count {
-            keys.extend(variant_keys(
-                &format!("rig_{stem}_mount"),
-                &format!("_action{action}"),
-            ));
-        }
-    }
-    for tier in 0..2 {
-        for part in ["base", "rotor"] {
-            keys.extend(variant_keys(&format!("rig_array_t{tier}_{part}"), ""));
-        }
-    }
-    keys.extend(strategic_rig_keys(atlas));
-    keys.extend(maw_rig_keys(atlas));
-    keys.extend(roc_rig_keys(atlas));
-
-    for kind in UnitKind::ALL {
-        let stem = unit_stem(kind);
-        keys.extend(variant_keys(stem, ""));
-        for suffix in unit_move_suffixes(kind) {
-            keys.extend(variant_keys(stem, suffix));
-        }
-        for suffix in numbered_suffixes(atlas, stem, "action").expect("complete rows") {
-            keys.extend(variant_keys(stem, &suffix));
-        }
-    }
-    for suffix in SCOOP_SUFFIXES {
-        keys.extend(variant_keys(unit_stem(UnitKind::Harvester), suffix));
-    }
-    for level in 0..HARVESTER_CARGO_LEVELS {
-        keys.extend(variant_keys("harvester", &format!("_cargo{level}")));
-        for suffix in TREAD_SUFFIXES.into_iter().chain(SCOOP_SUFFIXES) {
-            keys.extend(variant_keys("harvester", &format!("_cargo{level}{suffix}")));
-        }
-    }
-    for frame in 0..MANTLE_CHARGE_FRAMES {
-        keys.push(format!("mantle_charge{frame}"));
-    }
-    for level in 0..EXCAVATOR_CARGO_LEVELS {
-        keys.push(format!("excavator_cargo{level}"));
-    }
-    for kind in BuildingKind::ALL {
-        let defense = crate::look::defense(kind);
-        for tier in 0..kind.tiers().len() {
-            let hull = rung_stem(building_stem(kind), tier);
-            let mut families = vec![(hull.clone(), "work")];
-            if defense.is_some_and(|defense| defense.charge_rack) {
-                families.push((hull.clone(), "action"));
-            }
-            keys.extend(variant_keys(&hull, ""));
-            if let Some(defense) = defense {
-                let mount = rung_stem(defense.mount, tier);
-                keys.extend(variant_keys(&mount, ""));
-                families.push((mount, "action"));
-            }
-            for (stem, label) in families {
-                for suffix in numbered_suffixes(atlas, &stem, label).expect("complete rows") {
-                    keys.extend(variant_keys(&stem, &suffix));
-                }
-            }
-        }
-        let site_tiers = if matches!(kind, BuildingKind::Extractor | BuildingKind::Bastion) {
-            kind.tiers().len()
-        } else {
-            1
-        };
-        for tier in 0..site_tiers {
-            for stage in 0..SITE_STAGES {
-                for phase in 0..SITE_PHASES {
-                    keys.extend(variant_keys(
-                        &construction_stem(kind, tier),
-                        &format!("_site{stage}_{phase}"),
-                    ));
-                }
-            }
-        }
-    }
-    keys
-}
-
-/// The Roc's layers beyond its hull and guns: each fan's and dock's rows
-/// carry paint; the wall and yokes are untinted single rows.
-fn roc_rig_keys(atlas: &Manifest) -> Vec<String> {
-    let mut keys = vec![
-        "rig_roc_wall".to_owned(),
-        "rig_roc_yoke".to_owned(),
-        "rig_roc_glow".to_owned(),
-    ];
-    keys.extend(variant_keys("rig_roc_wreck", ""));
-    keys.extend(variant_keys("rig_roc_ghost", ""));
-    let docks = (1..)
-        .map(|dock| format!("rig_roc_dock{dock}"))
-        .take_while(|stem| atlas.contains_key(&format!("{stem}_1")));
-    for stem in [
-        "rig_roc_fan_left".to_owned(),
-        "rig_roc_fan_right".to_owned(),
-        "rig_roc_hatch".to_owned(),
-    ]
-    .into_iter()
-    .chain(docks)
-    {
-        for suffix in numbered_suffixes(atlas, &stem, "").expect("complete rows") {
-            keys.extend(variant_keys(&stem, &suffix));
-        }
-    }
-    keys
-}
-
-/// The Maw's and its cradle's composition layers. The hull, drum, bridge
-/// and trolley carry paint; the rest are untinted single rows.
-fn maw_rig_keys(atlas: &Manifest) -> Vec<String> {
-    let numbered = |stem: &str| -> Vec<String> {
-        let mut keys = Vec::new();
-        while let key = format!("{stem}_{}", keys.len() + 1)
-            && atlas.contains_key(&key)
-        {
-            keys.push(key);
-        }
-        keys
-    };
-    let mut keys = Vec::new();
-    for stem in ["rig_maw_hull", "rig_cradle_bridge", "rig_cradle_trolley"] {
-        keys.extend(variant_keys(stem, ""));
-    }
-    for stem in ["rig_maw_drum", "rig_cradle_trolley"] {
-        for suffix in numbered_suffixes(atlas, stem, "").expect("complete rows") {
-            keys.extend(variant_keys(stem, &suffix));
-        }
-    }
-    keys.extend(
-        [
-            "rig_maw_kiln",
-            "rig_maw_kiln_glow",
-            "rig_cradle_pad",
-            "rig_cradle_lamp",
-        ]
-        .map(str::to_owned),
-    );
-    for stem in [
-        "rig_maw_tread_left",
-        "rig_maw_tread_right",
-        "rig_maw_slats",
-        "rig_maw_arms",
-        "rig_maw_scrap",
-        "rig_cradle_lamp",
-    ] {
-        keys.extend(numbered(stem));
-    }
-    keys
-}
-
-/// The Spire's and Lattice's composition layers. Rows that carry paint
-/// ship an allegiance mask; the hook, plain sections, locks, clamps, arm,
-/// base and cover are untinted single rows.
-fn strategic_rig_keys(atlas: &Manifest) -> Vec<String> {
-    let numbered = |stem: &str| -> Vec<String> {
-        let mut keys = Vec::new();
-        while let key = format!("{stem}_{}", keys.len() + 1)
-            && atlas.contains_key(&key)
-        {
-            keys.push(key);
-        }
-        keys
-    };
-    let mut keys = Vec::new();
-    for stem in [
-        "rig_spire_foundation",
-        "rig_spire_deck",
-        "rig_spire_cover",
-        "rig_spire_round",
-        "rig_spire_warhead",
-        "rig_lattice_pod",
-        "rig_lattice_interceptor",
-        "rig_lattice_launch",
-    ] {
-        keys.extend(variant_keys(stem, ""));
-    }
-    for stem in [
-        "rig_spire_nose",
-        "rig_spire_warhead",
-        "rig_lattice_launch",
-        "rig_lattice_nose_left",
-        "rig_lattice_nose_right",
-    ] {
-        for suffix in numbered_suffixes(atlas, stem, "").expect("complete rows") {
-            keys.extend(variant_keys(stem, &suffix));
-        }
-    }
-    for stem in [
-        "rig_spire_gantry",
-        "rig_spire_lock_lower",
-        "rig_spire_lock_upper",
-        "rig_lattice_base",
-        "rig_lattice_cover",
-        "rig_lattice_clamp",
-    ] {
-        keys.push(stem.to_owned());
-    }
-    for stem in [
-        "rig_spire_stack",
-        "rig_spire_gantry",
-        "rig_spire_lock_lower",
-        "rig_spire_lock_upper",
-        "rig_lattice_stack",
-        "rig_lattice_clamp",
-        "rig_lattice_arm_left",
-        "rig_lattice_arm_right",
-    ] {
-        keys.extend(numbered(stem));
-    }
-    keys
 }
 
 const SOUND_NAMES: [&str; 55] = [
@@ -380,7 +98,30 @@ pub(super) fn manifest() -> Manifest {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/sprites/atlas.json");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("reading {}: {err}", path.display()));
-    serde_json::from_str(&text).expect("atlas.json maps names to [x, y, w, h]")
+    Manifest::parse(&text).expect("atlas.json maps names to [x, y, w, h]")
+}
+
+impl Manifest {
+    pub(crate) fn insert(&mut self, name: String, rect: [f32; 4]) {
+        self.rects.insert(name, rect);
+    }
+
+    pub(crate) fn remove(&mut self, name: &str) {
+        self.rects.remove(name);
+    }
+
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &String> {
+        self.rects.keys()
+    }
+}
+
+impl Clone for Manifest {
+    fn clone(&self) -> Self {
+        Self {
+            rects: self.rects.clone(),
+            asked: std::cell::RefCell::default(),
+        }
+    }
 }
 
 #[test]
@@ -418,7 +159,7 @@ fn extractor_loops_visit_every_pose_in_order_and_use_their_own_scaffolds() {
 #[test]
 fn array_layers_require_both_tiers_and_every_allegiance_mask() {
     let mut atlas = Manifest::default();
-    assert!(array_rig(&atlas).unwrap().is_none());
+    assert!(array_rig(&atlas).is_err());
     for tier in 0..2 {
         for (part_index, part) in ["base", "rotor"].into_iter().enumerate() {
             for (variant_index, variant) in ["", "_accent"].into_iter().enumerate() {
@@ -434,7 +175,7 @@ fn array_layers_require_both_tiers_and_every_allegiance_mask() {
             }
         }
     }
-    let rig = array_rig(&atlas).unwrap().unwrap();
+    let rig = array_rig(&atlas).unwrap();
     let layers = rig.layers(1);
     assert_eq!(layers[0].0, Rect::new(1.0, 0.0, 128.0, 128.0));
     assert_eq!(layers[1].1, Rect::new(1.0, 1.0, 129.0, 128.0));
@@ -446,7 +187,7 @@ fn array_layers_require_both_tiers_and_every_allegiance_mask() {
 }
 
 #[test]
-fn articulated_unit_bank_is_optional_but_must_be_complete() {
+fn articulated_unit_bank_must_be_complete() {
     for (stem, actions) in [
         ("sentinel", 4),
         ("warden", 4),
@@ -454,11 +195,11 @@ fn articulated_unit_bank_is_optional_but_must_be_complete() {
         ("buzzard", 4),
         ("skyhook", 4),
     ] {
-        assert!(unit_rig(&manifest(), stem, actions).unwrap().is_some());
+        let hull = ["", "_move1", "_move2"];
         let mut atlas = Manifest::default();
-        assert!(unit_rig(&atlas, stem, actions).unwrap().is_none());
+        assert!(unit_rig(&atlas, stem, &hull, actions).is_err());
         atlas.insert(format!("rig_{stem}_hull"), [0.0, 0.0, 128.0, 128.0]);
-        assert!(unit_rig(&atlas, stem, actions).is_err());
+        assert!(unit_rig(&atlas, stem, &hull, actions).is_err());
         for variant in ["", "_accent"] {
             for suffix in ["", "_move1", "_move2"] {
                 atlas.insert(
@@ -478,35 +219,35 @@ fn articulated_unit_bank_is_optional_but_must_be_complete() {
                 );
             }
         }
-        let rig = unit_rig(&atlas, stem, actions).unwrap().unwrap();
+        let rig = unit_rig(&atlas, stem, &hull, actions).unwrap();
         assert_eq!(rig.hull(2).0, Rect::new(8.0, 16.0, 128.0, 128.0));
         assert_eq!(
             rig.mount(Some(actions - 1)).1,
             Rect::new(actions as f32, 16.0, 128.0, 128.0)
         );
         atlas.remove(&format!("rig_{stem}_mount_accent_action{actions}"));
-        assert!(unit_rig(&atlas, stem, actions).is_err());
+        assert!(unit_rig(&atlas, stem, &hull, actions).is_err());
     }
 }
 
 #[test]
 fn harvester_body_layers_require_every_cargo_and_its_accent_mask() {
-    let mut atlas = Manifest::new();
-    assert!(harvester_body_rows(&atlas).unwrap().is_none());
+    let mut atlas = Manifest::default();
+    assert!(harvester_body_rows(&atlas).is_err());
     for cargo in 0..6 {
         for key in variant_keys("rig_harvester_body", &format!("_cargo{cargo}")) {
             atlas.insert(key, [1., 1., 128., 128.]);
         }
     }
-    assert!(harvester_body_rows(&atlas).unwrap().is_some());
+    assert!(harvester_body_rows(&atlas).is_ok());
     atlas.remove("rig_harvester_body_accent_cargo5");
     assert!(harvester_body_rows(&atlas).is_err());
 }
 
 #[test]
-fn quarry_dressing_is_optional_but_partial_banks_are_rejected() {
-    let mut atlas = Manifest::new();
-    assert!(quarry_dressing_rows(&atlas).unwrap().is_none());
+fn quarry_dressing_requires_all_twelve_variants() {
+    let mut atlas = Manifest::default();
+    assert!(quarry_dressing_rows(&atlas).is_err());
     atlas.insert("quarry_dressing_0".into(), [0.0, 0.0, 64.0, 64.0]);
     assert!(quarry_dressing_rows(&atlas).is_err());
     for index in 1..12 {
@@ -515,13 +256,13 @@ fn quarry_dressing_is_optional_but_partial_banks_are_rejected() {
             [index as f32 * 66.0, 0.0, 64.0, 64.0],
         );
     }
-    assert_eq!(quarry_dressing_rows(&atlas).unwrap().unwrap().len(), 12);
+    assert_eq!(quarry_dressing_rows(&atlas).unwrap().len(), 12);
 }
 
 #[test]
-fn optional_bombard_spades_require_every_deployment_pose() {
-    let mut atlas = Manifest::new();
-    assert!(bombard_spade_rows(&atlas).unwrap().is_none());
+fn bombard_spades_require_every_deployment_pose() {
+    let mut atlas = Manifest::default();
+    assert!(bombard_spade_rows(&atlas).is_err());
     atlas.insert("bombard_spades_0".into(), [0.0, 0.0, 128.0, 128.0]);
     assert!(bombard_spade_rows(&atlas).is_err());
     for phase in 1..5 {
@@ -530,7 +271,7 @@ fn optional_bombard_spades_require_every_deployment_pose() {
             [phase as f32, 0.0, 128.0, 128.0],
         );
     }
-    assert_eq!(bombard_spade_rows(&atlas).unwrap().unwrap()[4].x, 4.0);
+    assert_eq!(bombard_spade_rows(&atlas).unwrap()[4].x, 4.0);
 }
 
 #[test]
@@ -600,28 +341,18 @@ fn generated_sound_bank_is_complete_and_has_valid_pcm_metadata() {
 }
 
 #[test]
-fn the_shell_and_the_atlas_name_the_same_sprites() {
+fn every_region_the_atlas_ships_has_a_loader() {
     let atlas = manifest();
-    let named = atlas_keys(&atlas);
-    let mut missing: Vec<&String> = named.iter().filter(|k| !atlas.contains_key(*k)).collect();
-    missing.sort();
+    Regions::read(&atlas).expect("the shipped atlas holds every region the shell reads");
+    // gen_sprites.py and the shell ship together, so a region no loader asks
+    // for is an incomplete change.
+    let asked = atlas.asked.borrow();
+    let mut unread: Vec<&String> = atlas.keys().filter(|key| !asked.contains(*key)).collect();
+    unread.sort();
     assert!(
-        missing.is_empty(),
-        "the shell asks for sprites the atlas does not ship: {missing:?} \
-             (regenerate with tools/gen_sprites.py)"
+        unread.is_empty(),
+        "the atlas ships sprites no loader reads: {unread:?}"
     );
-    // The other direction: every atlas row needs a reader.
-    // gen_sprites.py and the shell ship together, so an unread row is
-    // an incomplete change.
-    let mut orphans: Vec<&String> = atlas.keys().filter(|k| !named.contains(k)).collect();
-    orphans.sort();
-    assert!(
-        orphans.is_empty(),
-        "the atlas ships sprites the shell never draws: {orphans:?}"
-    );
-    // Containment both ways still allows the shell to name one
-    // region twice; a bijection does not.
-    assert_eq!(named.len(), atlas.len(), "a sprite is named twice");
 }
 
 #[test]
@@ -677,6 +408,7 @@ fn atlas_regions_fit_a_portable_texture_with_extrusion_room() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/sprites");
     let atlas = manifest();
     let page_count = atlas
+        .rects
         .values()
         .map(|row| numeric::to_usize(row[1]) / 4096 + 1)
         .max()
@@ -701,7 +433,7 @@ fn atlas_regions_fit_a_portable_texture_with_extrusion_room() {
             image
         })
         .collect();
-    for (name, [x, y, w, h]) in atlas {
+    for (name, [x, y, w, h]) in atlas.rects {
         let (page, local) = atlas_page(Rect::new(x, y, w, h), 4096.0);
         let image = &pages[page];
         assert!(w > 0.0 && h > 0.0, "{name} has an empty atlas region");
@@ -731,12 +463,12 @@ fn atlas_page_coordinates_preserve_sprite_canvas_and_legacy_banks() {
 fn defense_mounts_match_their_footprints_and_rotate_about_square_canvases() {
     let atlas = manifest();
     for (base_stem, mount) in defense_rungs() {
-        let base = &atlas[&variant_keys(&base_stem, "")[0]];
+        let base = &atlas.rects[&variant_keys(&base_stem, "")[0]];
         let actions = numbered_suffixes(&atlas, &mount, "action").unwrap();
         assert!(!actions.is_empty(), "{mount} ships its firing frames");
         for suffix in std::iter::once("").chain(actions.iter().map(String::as_str)) {
             for key in variant_keys(&mount, suffix) {
-                let rect = &atlas[&key];
+                let rect = &atlas.rects[&key];
                 assert_eq!(
                     rect[2..],
                     base[2..],
@@ -749,8 +481,8 @@ fn defense_mounts_match_their_footprints_and_rotate_about_square_canvases() {
     for suffix in numbered_suffixes(&atlas, "bastion", "action").unwrap() {
         for key in variant_keys("bastion", &suffix) {
             assert_eq!(
-                atlas[&key][2..],
-                atlas[&variant_keys("bastion", "")[0]][2..],
+                atlas.rects[&key][2..],
+                atlas.rects[&variant_keys("bastion", "")[0]][2..],
                 "{key} must stay synchronized with the Bastion mount footprint"
             );
         }
@@ -855,18 +587,9 @@ fn assert_animation_variant(stem: &str, suffix: &str) {
 
 #[test]
 fn authored_animation_families_are_complete_distinct_and_masked() {
-    for (stem, suffixes) in [
-        ("harvester", TREAD_SUFFIXES),
-        ("sentinel", MOVE_SUFFIXES),
-        ("scuttler", MOVE_SUFFIXES),
-        ("lancer", MOVE_SUFFIXES),
-        ("bombard", MOVE_SUFFIXES),
-        ("flakhound", TREAD_SUFFIXES),
-        ("buzzard", MOVE_SUFFIXES),
-        ("talon", MOVE_SUFFIXES),
-    ] {
+    for stem in ["sapper", "talon"] {
         let mut seen = vec![sprite_image(stem).bytes];
-        for suffix in suffixes {
+        for suffix in MOVE_SUFFIXES {
             assert_animation_variant(stem, suffix);
             let frame = sprite_image(&format!("{stem}{suffix}")).bytes;
             assert_ne!(
@@ -876,17 +599,6 @@ fn authored_animation_families_are_complete_distinct_and_masked() {
             );
             seen.push(frame);
         }
-    }
-
-    let harvester = sprite_image("harvester");
-    let base_alpha = alpha_bytes(&harvester).collect::<Vec<_>>();
-    for suffix in TREAD_SUFFIXES {
-        let tread = sprite_image(&format!("harvester{suffix}"));
-        assert_eq!(
-            alpha_bytes(&tread).collect::<Vec<_>>(),
-            base_alpha,
-            "harvester{suffix} cleats must stay inside the resting silhouette"
-        );
     }
 
     let working = BuildingKind::ALL
@@ -913,13 +625,6 @@ fn authored_animation_families_are_complete_distinct_and_masked() {
         changed |= sprite_image(&format!("reclaimer_t1{suffix}")).bytes != refinery.bytes;
     }
     assert!(changed, "reclaimer_t1 needs at least one visible work pose");
-    let deep_array = sprite_image("array_t1");
-    let mut changed = false;
-    for suffix in numbered_suffixes(&manifest(), "array_t1", "work").unwrap() {
-        assert_animation_variant("array_t1", &suffix);
-        changed |= sprite_image(&format!("array_t1{suffix}")).bytes != deep_array.bytes;
-    }
-    assert!(changed, "array_t1 needs at least one visible work pose");
     for kind in BuildingKind::ALL {
         let stem = building_stem(kind);
         let base = sprite_image(stem);
@@ -963,16 +668,6 @@ fn production_action_and_cargo_rows_match_the_runtime_contract() {
         }
     }
 
-    for level in 0..HARVESTER_CARGO_LEVELS {
-        for suffix in std::iter::once(format!("_cargo{level}")).chain(
-            TREAD_SUFFIXES
-                .into_iter()
-                .chain(SCOOP_SUFFIXES)
-                .map(|pose| format!("_cargo{level}{pose}")),
-        ) {
-            assert_animation_variant("harvester", &suffix);
-        }
-    }
     let atlas = manifest();
     for level in 0..EXCAVATOR_CARGO_LEVELS {
         assert!(
@@ -1100,7 +795,7 @@ fn every_theme_prop_row_is_tile_sized_and_ordered_like_the_lookup() {
         for variant in 0..3 {
             let key = format!("theme_{stem}_{variant}");
             assert_eq!(THEME_PROP_KEYS[row * 3 + variant], key);
-            assert_eq!(atlas[&key][2..], [64.0, 64.0]);
+            assert_eq!(atlas.rects[&key][2..], [64.0, 64.0]);
         }
     }
     assert_eq!(theme_prop_row("unknown"), None);
@@ -1121,7 +816,7 @@ fn finalized_environment_regions_keep_their_authored_footprints() {
         (2, 2),
     ]) {
         assert_eq!(
-            atlas[key][2..],
+            atlas.rects[key][2..],
             [footprint.0 as f32 * 64.0, footprint.1 as f32 * 64.0]
         );
     }
@@ -1129,10 +824,11 @@ fn finalized_environment_regions_keep_their_authored_footprints() {
     // tile, so a slab's footprint always covers the tile it stands on.
     for size in 0..ROCK_SLAB_SIZES {
         for variant in 0..ROCK_SLAB_VARIANTS {
-            let [.., width, height] = atlas[ROCK_SLAB_KEYS[size * ROCK_SLAB_VARIANTS + variant]];
+            let [.., width, height] =
+                atlas.rects[ROCK_SLAB_KEYS[size * ROCK_SLAB_VARIANTS + variant]];
             assert!(width >= 64.0 && height >= 64.0);
             if size > 0 {
-                let [.., smaller, _] = atlas[ROCK_SLAB_KEYS[(size - 1) * ROCK_SLAB_VARIANTS]];
+                let [.., smaller, _] = atlas.rects[ROCK_SLAB_KEYS[(size - 1) * ROCK_SLAB_VARIANTS]];
                 assert!(width > smaller, "slab size {size} is not larger");
             }
         }
@@ -1171,7 +867,7 @@ fn a_wreck_pile_steps_down_with_the_salvage_it_holds() {
 fn wreck_piles_share_a_canvas_wider_than_their_tile() {
     let atlas = manifest();
     for key in WRECK_PILE_KEYS {
-        let [_, _, width, height] = atlas[key];
+        let [_, _, width, height] = atlas.rects[key];
         assert_eq!((width, height), (96.0, 96.0), "{key}");
     }
 }

@@ -130,8 +130,8 @@ pub(super) fn mixed(left: Color, right: Color, amount: f32) -> Color {
     )
 }
 
-pub(super) fn quarry_color(color: Color, material: Material, fractured: bool) -> Color {
-    if fractured && matches!(material, Material::Riser(_) | Material::Bench(_)) {
+pub(super) fn quarry_color(color: Color, material: Material) -> Color {
+    if matches!(material, Material::Riser(_) | Material::Bench(_)) {
         Color::new(color.r + 0.008, color.g + 0.004, color.b, color.a)
     } else {
         color

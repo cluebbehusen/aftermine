@@ -162,13 +162,12 @@ impl Layer {
         match self {
             Layer::Floor => world::draw_floor(ground, view, sprites),
             Layer::Raised => {
-                let fractured = sprites.quarry_dressing(0).is_some();
                 let layout = ground.layout;
                 let grade = ground.grade;
                 world::draw_blockers(view, sprites, &layout.blockers, grade);
-                pits::draw_pits(ground.map, view, &layout.pits, fractured, grade);
+                pits::draw_pits(ground.map, view, &layout.pits, grade);
                 boulders::draw_boulders(view, sprites, &layout.slabs, grade);
-                terraces::draw_terraces(ground.map, view, &layout.terraces, fractured, grade);
+                terraces::draw_terraces(ground.map, view, &layout.terraces, grade);
             }
         }
     }

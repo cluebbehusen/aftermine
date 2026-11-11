@@ -102,12 +102,10 @@ def render_charge_frame(frame: int) -> Image.Image:
 
 def install_mantle(registry: dict[str, Image.Image], out: Path) -> None:
     for variant in kit.PALETTES:
-        for move in range(3):
-            image = render_mantle(variant, move)
-            suffix = "" if move == 0 else f"_move{move}"
-            key = f"mantle{kit.variant_tag(variant)}{suffix}"
-            kit.save_sprite(image, out, key)
-            registry[key] = image
+        image = render_mantle(variant, 0)
+        key = f"mantle{kit.variant_tag(variant)}"
+        kit.save_sprite(image, out, key)
+        registry[key] = image
     for frame in range(CHARGE_FRAMES):
         image = render_charge_frame(frame)
         key = f"mantle_charge{frame}"

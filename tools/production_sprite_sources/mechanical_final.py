@@ -53,11 +53,13 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
             "avalanche",
         ):
             count = 6 if kind == "lancer" else 4
-            for suffix, move, action in [
-                ("", 0, 0),
-                ("_move1", 1, 0),
-                ("_move2", 2, 0),
-            ] + [(f"_action{i}", 0, i) for i in range(1, count + 1)]:
+            rigged = kind in ("sentinel", "warden", "lancer")
+            # A rig draws its hull and mount in place of whole-body frames,
+            # and a tracked hull holds still while its belts roll.
+            actions = (
+                [] if rigged else [(f"_action{i}", 0, i) for i in range(1, count + 1)]
+            )
+            for suffix, move, action in [("", 0, 0)] + actions:
                 if kind == "breaker":
                     image = ground.render_breaker(variant, move, action)
                 elif kind == "avalanche":
@@ -65,13 +67,8 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
                 else:
                     image = ground.render(kind, variant, move, action)
                 put(f"{kind}{tag}{suffix}", image)
-            if kind in ("sentinel", "warden", "lancer"):
-                for phase in range(3):
-                    suffix = "" if phase == 0 else f"_move{phase}"
-                    put(
-                        f"rig_{kind}_hull{tag}{suffix}",
-                        ground.hull(kind, variant, phase),
-                    )
+            if rigged:
+                put(f"rig_{kind}_hull{tag}", ground.hull(kind, variant, 0))
                 for action in range(count + 1):
                     suffix = "" if action == 0 else f"_action{action}"
                     put(
@@ -79,40 +76,29 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
                         ground.mount(kind, variant, action),
                     )
 
-        for cargo in range(5):
-            for suffix, move, work in [
-                ("", 0, 0),
-                ("_tread1", 1, 0),
-                ("_tread2", 2, 0),
-                ("_scoop1", 0, 1),
-                ("_scoop2", 0, 2),
-            ]:
-                image = workers.harvester(variant, move, work, cargo)
-                put(f"harvester{tag}_cargo{cargo}{suffix}", image)
-                if cargo == 0:
-                    put(f"harvester{tag}{suffix}", image)
+        # Workers draw their body layers in play; the whole-body rest frame
+        # is their portrait.
+        put(f"harvester{tag}", workers.harvester(variant, 0, 0, 0))
         for cargo in range(6):
             put(
                 f"rig_harvester_body{tag}_cargo{cargo}",
                 workers.harvester(variant, cargo=cargo, body_only=True),
             )
-        for kind in ("excavator", "scuttler"):
-            for phase in range(3):
+        # The Excavator's tracks roll beneath a still body.
+        for kind, phases in (("excavator", 1), ("scuttler", 3)):
+            for phase in range(phases):
                 suffix = "" if phase == 0 else f"_move{phase}"
                 put(
                     f"rig_{kind}_body{tag}{suffix}",
                     getattr(workers, kind)(variant, move=phase, body_only=True),
                 )
-        for kind in ("excavator", "scuttler", "sapper"):
-            for suffix, move, action in [
-                ("", 0, 0),
-                ("_move1", 1, 0),
-                ("_move2", 2, 0),
-            ] + [(f"_action{i}", 0, i) for i in range(1, 4 if kind == "sapper" else 5)]:
-                put(
-                    f"{kind}{tag}{suffix}",
-                    getattr(workers, kind)(variant, move, action),
-                )
+            put(f"{kind}{tag}", getattr(workers, kind)(variant, 0, 0))
+        for suffix, move, action in [
+            ("", 0, 0),
+            ("_move1", 1, 0),
+            ("_move2", 2, 0),
+        ] + [(f"_action{i}", 0, i) for i in range(1, 4)]:
+            put(f"sapper{tag}{suffix}", workers.sapper(variant, move, action))
         for suffix, action in [("", 0), ("_move1", 0), ("_move2", 0)] + [
             (f"_action{i}", i) for i in range(1, 5)
         ]:
@@ -121,11 +107,11 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
                 bombers.render_condor(variant, bombers.CONDOR_STATES[action]),
             )
         for kind in ("buzzard", "talon", "skyhook"):
-            for suffix, move, action in [
-                ("", 0, 0),
-                ("_move1", 1, 0),
-                ("_move2", 2, 0),
-            ] + [(f"_action{i}", 0, i) for i in range(1, 5)]:
+            frames = [("", 0, 0)]
+            if kind == "talon":
+                frames += [("_move1", 1, 0), ("_move2", 2, 0)]
+                frames += [(f"_action{i}", 0, i) for i in range(1, 5)]
+            for suffix, move, action in frames:
                 render = (
                     buzzard.buzzard if kind == "buzzard" else getattr(aircraft, kind)
                 )
@@ -156,7 +142,7 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
             ("airworks", 4),
             ("crucible", 4),
             ("repair_bay", 4),
-            ("array", 6),
+            ("array", 0),
             ("reclaimer", economy.RECLAIMER_WORK_FRAMES),
             ("reclaimer_t1", economy.RECLAIMER_WORK_FRAMES),
         ):
@@ -182,11 +168,7 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
             put(f"{kind}{tag}", render(variant, 0))
             for frame in range(count):
                 put(f"{kind}{tag}_work{frame + 1}", render(variant, frame * 4 / count))
-        for phase in range(7):
-            put(
-                f"array_t1{tag}" + (f"_work{phase}" if phase else ""),
-                buildings.array(variant, phase, 1),
-            )
+        put(f"array_t1{tag}", buildings.array(variant, 0, 1))
         for tier in range(2):
             for part in ("base", "rotor"):
                 put(

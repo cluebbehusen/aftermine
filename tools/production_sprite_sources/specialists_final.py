@@ -320,9 +320,10 @@ def source_frames():
                 "kestrel": kestrel,
             }[kind]
             yield f"{kind}{tag}", builder(variant)
-            for phase in (1, 2):
-                suffix = "tread" if kind == "flakhound" else "move"
-                yield f"{kind}{tag}_{suffix}{phase}", builder(variant, move=phase)
+            # Bombard and Flakhound tracks roll beneath a still body.
+            if kind == "kestrel":
+                for phase in (1, 2):
+                    yield f"{kind}{tag}_move{phase}", builder(variant, move=phase)
             for phase in range(1, count + 1):
                 yield f"{kind}{tag}_action{phase}", builder(variant, action=phase)
     for phase in range(5):

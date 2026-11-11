@@ -9,35 +9,12 @@ use crate::numeric;
 use aftermine_sim::{BuildingKind, UnitKind};
 
 use crate::presentation_animation::{
-    AttackPhase, BuildingActivity, BuildingAnimationState, CargoState, ExcavatorTool,
-    LocomotionState, PropulsionState, TransportActionState, UnitAnimationState, UnitWorkState,
-    WeaponCycle,
+    AttackPhase, BuildingActivity, BuildingAnimationState, CargoState, LocomotionState,
+    PropulsionState, TransportActionState, UnitAnimationState, WeaponCycle,
 };
 
 const BUZZARD_CHARGE_THRESHOLD: f32 = 0.94;
 pub(crate) const PILEDRIVER_RELOAD_FRAMES: usize = 100;
-
-/// A Harvester pose within one cargo-specific row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HarvesterPose {
-    /// Resting chassis and scoop.
-    Idle,
-    /// One of the two tread phases.
-    Moving(usize),
-    /// One of the two lowered-scoop phases.
-    Scoop(usize),
-}
-
-/// An Excavator chassis pose beneath its independent cargo meter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ExcavatorPose {
-    /// Resting chassis and raised milling drum.
-    Idle,
-    /// One of the two tread phases.
-    Moving(usize),
-    /// One of the four milling-drum work phases.
-    Working(usize),
-}
 
 /// The atlas row selected for a unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,19 +25,10 @@ pub(crate) enum UnitFrame {
     Moving(usize),
     /// Zero-based `_actionN` frame.
     Action(usize),
-    /// Cargo-aware Harvester art.
-    Harvester {
-        /// One of five load levels.
-        cargo: usize,
-        /// Scoop or tread mechanism state.
-        pose: HarvesterPose,
-    },
-    /// Cargo-aware Excavator art.
+    /// The Excavator, whose cargo meter draws apart from its body.
     Excavator {
         /// One of five authoritative load-fraction levels.
         cargo: usize,
-        /// Milling-drum or tread mechanism state.
-        pose: ExcavatorPose,
     },
 }
 
@@ -129,38 +97,10 @@ pub(crate) fn unit_frame(kind: UnitKind, state: UnitAnimationState) -> UnitFrame
         return UnitFrame::Action(frame);
     }
 
-    if kind == UnitKind::Harvester {
-        let cargo = state.cargo.map_or(0, cargo_bucket);
-        let pose = match state.work {
-            UnitWorkState::Harvesting { cycle, .. }
-            | UnitWorkState::Constructing { cycle, .. }
-            | UnitWorkState::Repairing { cycle, .. }
-            | UnitWorkState::Salvaging { cycle, .. } => harvester_work_frame(cycle),
-            UnitWorkState::Unloading { .. } => harvester_work_frame(0.75),
-            UnitWorkState::Idle => match state.locomotion {
-                LocomotionState::Moving { cycle } => match tread_phase(cycle) {
-                    0 => HarvesterPose::Idle,
-                    phase => HarvesterPose::Moving(phase - 1),
-                },
-                LocomotionState::Rest => HarvesterPose::Idle,
-            },
-        };
-        return UnitFrame::Harvester { cargo, pose };
-    }
-
     if kind == UnitKind::Excavator {
-        let cargo = state.cargo.map_or(0, cargo_bucket);
-        let pose = match state.work.excavator_tool() {
-            ExcavatorTool::Drum { cycle } => excavator_work_frame(cycle),
-            ExcavatorTool::WeldingArm { .. } | ExcavatorTool::Stowed => match state.locomotion {
-                LocomotionState::Moving { cycle } => match tread_phase(cycle) {
-                    0 => ExcavatorPose::Idle,
-                    phase => ExcavatorPose::Moving(phase - 1),
-                },
-                LocomotionState::Rest => ExcavatorPose::Idle,
-            },
+        return UnitFrame::Excavator {
+            cargo: state.cargo.map_or(0, cargo_bucket),
         };
-        return UnitFrame::Excavator { cargo, pose };
     }
 
     if let LocomotionState::Moving { cycle } = state.locomotion {
@@ -241,9 +181,8 @@ pub(crate) fn building_frame(kind: BuildingKind, state: BuildingAnimationState) 
             BuildingActivity::AirworksLaunch { progress } => {
                 BuildingBodyFrame::Work(2 + cycle_index(progress, 2))
             }
-            BuildingActivity::ArraySweep { cycle } => {
-                BuildingBodyFrame::Work(cycle_index(cycle, 6))
-            }
+            // The Array's rotor is a layer of its own, turned by the sweep.
+            BuildingActivity::ArraySweep { .. } => BuildingBodyFrame::Idle,
             BuildingActivity::Extracting { cycle } => BuildingBodyFrame::WorkCycle(cycle),
             BuildingActivity::Reclaiming { cycle } => {
                 BuildingBodyFrame::Work(cycle_index(cycle, 12))
@@ -301,21 +240,6 @@ pub(crate) fn production_frames(kind: BuildingKind) -> Option<usize> {
 
 fn cargo_bucket(cargo: CargoState) -> usize {
     numeric::to_usize((cargo.fill.clamp(0.0, 1.0) * 4.0).round()).min(4)
-}
-
-fn harvester_work_frame(cycle: f32) -> HarvesterPose {
-    match cycle_index(cycle, 5) {
-        0 | 4 => HarvesterPose::Idle,
-        1 | 3 => HarvesterPose::Scoop(0),
-        _ => HarvesterPose::Scoop(1),
-    }
-}
-
-fn excavator_work_frame(cycle: f32) -> ExcavatorPose {
-    match cycle_index(cycle, 5) {
-        0 => ExcavatorPose::Idle,
-        phase => ExcavatorPose::Working(phase - 1),
-    }
 }
 
 fn skyhook_transport_frame(action: TransportActionState) -> UnitFrame {

@@ -30,31 +30,19 @@ from tools.production_sprite_sources import (
 
 # The frame sets the finalized banks ship, which these tests hold them to.
 UNIT_MOVEMENT: dict[str, tuple[str, ...]] = {
-    "sentinel": ("_move1", "_move2"),
-    "scuttler": ("_move1", "_move2"),
-    "lancer": ("_move1", "_move2"),
-    "bombard": ("_move1", "_move2"),
-    "flakhound": ("_tread1", "_tread2"),
-    "buzzard": ("_move1", "_move2"),
+    "sapper": ("_move1", "_move2"),
     "talon": ("_move1", "_move2"),
 }
 
 UNIT_ACTIONS: dict[str, tuple[str, ...]] = {
-    "sentinel": tuple(f"_action{i}" for i in range(1, 5)),
-    "scuttler": tuple(f"_action{i}" for i in range(1, 5)),
-    "lancer": tuple(f"_action{i}" for i in range(1, 7)),
     "bombard": tuple(f"_action{i}" for i in range(1, 7)),
     "flakhound": tuple(f"_action{i}" for i in range(1, 10)),
-    "buzzard": tuple(f"_action{i}" for i in range(1, 5)),
     "talon": tuple(f"_action{i}" for i in range(1, 5)),
 }
-
-HARVESTER_ACTIONS = ("", "_scoop1", "_scoop2", "_scoop1", "")
 
 BUILDING_WORK: dict[str, tuple[str, ...]] = {
     "foundry": ("_work1", "_work2", "_work3", "_work4"),
     "fabricator": ("_work1", "_work2", "_work3", "_work4"),
-    "array": tuple(f"_work{i}" for i in range(1, 7)),
     "reclaimer": ("_work1", "_work2", "_work3"),
     "repair_bay": ("_work1", "_work2", "_work3", "_work4"),
     "airworks": ("_work1", "_work2", "_work3", "_work4"),
@@ -76,14 +64,10 @@ DEFENSE_BASE_ACTIONS: dict[str, tuple[str, ...]] = {
 
 ACTION_COUNTS = {
     **{stem: len(frames) for stem, frames in UNIT_ACTIONS.items()},
-    "harvester": len(HARVESTER_ACTIONS),
     **{stem: len(frames) for stem, frames in BUILDING_WORK.items()},
     **{stem: len(frames) for stem, frames in DEFENSE_ACTIONS.items()},
     **{stem: len(frames) for stem, frames in DEFENSE_BASE_ACTIONS.items()},
 }
-
-HARVESTER_CARGO_LEVELS = 5
-
 
 # The ground blockers mechanical_final ships, with their tile footprints.
 GROUND_BLOCKER_KEYS = (
@@ -249,7 +233,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             frames = {}
             mechanical_final.install_machines(frames, Path(directory))
-        self.assertEqual(len(frames), 637)
+        self.assertEqual(len(frames), 443)
         digest = hashlib.sha256()
         for key, image in sorted(frames.items()):
             self.assertEqual(self.registry[key].tobytes(), image.tobytes(), key)
@@ -257,7 +241,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "2e1004e1421e1eb5d6f9e2132b8f73d883c7bbc0cd60dc642416f0d6be4276af",
+            "5c1b75390ecde007490df4cd657a99048c3378231492d210949e283cd5b51ee3",
         )
 
     def test_extractor_key_poses_keep_the_approved_art(self) -> None:
@@ -386,7 +370,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             digest.update(image.tobytes())
         self.assertEqual(
             digest.hexdigest(),
-            "6f146b7880e9b94941fa143b4c89bdc662ee6c8c0a264cd0d3e2e28569b9fbb8",
+            "5521b57385b5332db54f60cb75296b1d624c311bf2d6a5a06c69c1b256dff899",
         )
 
     def test_promoted_defenses_match_approved_pixels(self) -> None:
@@ -507,7 +491,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                     )
 
     def test_movement_metadata_matches_every_generated_row(self) -> None:
-        self.assertEqual(set(UNIT_MOVEMENT), set(UNIT_ACTIONS))
         for stem, frame_set in UNIT_MOVEMENT.items():
             for variant in kit.PALETTES:
                 tag = kit.variant_tag(variant)
@@ -526,7 +509,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
     def test_skyhook_rotors_and_sapper_legs_have_real_movement(self) -> None:
         for variant in ("base", "probe"):
             tag = kit.variant_tag(variant)
-            for stem in ("skyhook", "sapper"):
+            for stem in ("rig_skyhook_hull", "sapper"):
                 idle = self.registry[f"{stem}{tag}"]
                 move1 = self.registry[f"{stem}{tag}_move1"]
                 move2 = self.registry[f"{stem}{tag}_move2"]
@@ -555,22 +538,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                     20,
                 )
 
-    def test_crucible_units_animate_treads_without_wobbling_the_hull(self) -> None:
-        for stem in ("breaker", "avalanche"):
-            for variant in ("base", "probe"):
-                tag = kit.variant_tag(variant)
-                idle = self.registry[f"{stem}{tag}"]
-                move1 = self.registry[f"{stem}{tag}_move1"]
-                move2 = self.registry[f"{stem}{tag}_move2"]
-                self.assertEqual(
-                    idle.getchannel("A").tobytes(), move1.getchannel("A").tobytes()
-                )
-                self.assertEqual(
-                    idle.getchannel("A").tobytes(), move2.getchannel("A").tobytes()
-                )
-                self.assertNotEqual(idle.tobytes(), move1.tobytes())
-                self.assertNotEqual(move1.tobytes(), move2.tobytes())
-
     def test_heavy_weapon_actions_preserve_distinct_launch_and_recovery_poses(
         self,
     ) -> None:
@@ -582,25 +549,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                 ]
                 self.assertGreaterEqual(len({frame.tobytes() for frame in frames}), 3)
                 self.assertNotEqual(frames[0].tobytes(), frames[1].tobytes())
-
-    def test_tracked_workers_move_only_their_treads(self) -> None:
-        for stem in ("excavator",):
-            for variant in kit.PALETTES:
-                tag = kit.variant_tag(variant)
-                idle = self.registry[f"{stem}{tag}"]
-                for phase in (1, 2):
-                    frame = self.registry[f"{stem}{tag}_move{phase}"]
-                    self.assertEqual(
-                        idle.getchannel("A").tobytes(), frame.getchannel("A").tobytes()
-                    )
-                    self.assertEqual(
-                        idle.crop((38, 0, 90, 128)).tobytes(),
-                        frame.crop((38, 0, 90, 128)).tobytes(),
-                    )
-                    for tread in ((10, 36, 38, 117), (90, 36, 118, 117)):
-                        self.assertGreater(
-                            _changed_pixels(idle.crop(tread), frame.crop(tread)), 8
-                        )
 
     def test_excavator_meter_matches_the_harvesters_five_load_levels(self) -> None:
         frames = [
@@ -614,19 +562,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             for frame in frames
         ]
         self.assertTrue(all(left < right for left, right in pairwise(areas)))
-
-    def test_warden_moves_without_wobbling_the_hull(self) -> None:
-        for variant in ("base", "probe"):
-            tag = kit.variant_tag(variant)
-            idle = self.registry[f"warden{tag}"]
-            phases = [self.registry[f"warden{tag}_move{phase}"] for phase in (1, 2)]
-            for frame in phases:
-                self.assertEqual(
-                    idle.getchannel("A").tobytes(),
-                    frame.getchannel("A").tobytes(),
-                )
-            self.assertTrue(any(idle.tobytes() != frame.tobytes() for frame in phases))
-            self.assertNotEqual(phases[0].tobytes(), phases[1].tobytes())
 
     def test_condor_keeps_its_wing_fixed_while_the_nose_opens(self) -> None:
         for variant in kit.PALETTES:
@@ -660,35 +595,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
                     probe.getchannel("A").tobytes(),
                 )
                 self.assertGreater(_changed_pixels(base, probe), 8)
-
-    def test_harvester_keeps_cargo_separate_from_tracks_and_grapple(self) -> None:
-        for variant in kit.PALETTES:
-            loads = []
-            for cargo in range(HARVESTER_CARGO_LEVELS):
-                prefix = f"harvester{kit.variant_tag(variant)}_cargo{cargo}"
-                idle = self.registry[prefix]
-                loads.append(idle.crop((44, 67, 84, 101)).tobytes())
-                for suffix in ("_tread1", "_tread2", "_scoop1", "_scoop2"):
-                    frame = self.registry[prefix + suffix]
-                    self.assertEqual(
-                        idle.crop((44, 67, 84, 101)).tobytes(),
-                        frame.crop((44, 67, 84, 101)).tobytes(),
-                    )
-                    self.assertNotEqual(idle.tobytes(), frame.tobytes())
-                for suffix in ("_tread1", "_tread2"):
-                    self.assertEqual(
-                        idle.crop((0, 0, 128, 32)).tobytes(),
-                        self.registry[prefix + suffix].crop((0, 0, 128, 32)).tobytes(),
-                    )
-                for claw in ((30, 3, 64, 55), (64, 3, 98, 55)):
-                    self.assertGreater(
-                        _changed_pixels(
-                            idle.crop(claw),
-                            self.registry[prefix + "_scoop1"].crop(claw),
-                        ),
-                        20,
-                    )
-            self.assertEqual(len(set(loads)), 5)
 
     def test_defense_foundations_and_mounts_are_separate_square_layers(self) -> None:
         pairs = (
@@ -832,7 +738,7 @@ class ProductionSpriteSourceTests(unittest.TestCase):
     def test_buzzard_attack_flare_does_not_touch_the_canvas_edge(self) -> None:
         for variant in kit.PALETTES:
             frame = self.registry[
-                f"buzzard{kit.variant_tag(variant)}_action2"
+                f"rig_buzzard_mount{kit.variant_tag(variant)}_action2"
             ].getchannel("A")
             edge = list(frame.crop((0, 0, frame.width, 1)).get_flattened_data())
             self.assertFalse(any(edge), f"{variant} muzzle flare is clipped")
@@ -914,8 +820,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
     def test_flakhound_magazines_fill_during_reload(self) -> None:
         expected = {
             "": 4,
-            "_tread1": 4,
-            "_tread2": 4,
             "_action1": 0,
             "_action2": 1,
             "_action3": 2,

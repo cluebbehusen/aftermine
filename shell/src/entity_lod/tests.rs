@@ -13,8 +13,7 @@ fn live_body_frames_have_cached_production_contact_sources() {
     // Every idle building body and rig base too: a hit on one lands on its art.
     for name in [
         "rig_harvester_body_cargo5",
-        "rig_excavator_body_move2",
-        "rig_excavator_body_move1",
+        "rig_excavator_body",
         "rig_scuttler_body_move2",
         "rig_buzzard_hull_move2",
         "bombard_action2",
@@ -49,29 +48,6 @@ fn live_body_frames_have_cached_production_contact_sources() {
             "empty body mask: {name}"
         );
     }
-}
-
-#[test]
-fn layered_units_omit_unused_full_poses_but_keep_portraits_and_fallbacks() {
-    let mut manifest = HashMap::from([
-        ("buzzard".to_owned(), [0.0, 0.0, 128.0, 128.0]),
-        ("buzzard_move1".to_owned(), [128.0, 0.0, 128.0, 128.0]),
-        ("buzzard_action2".to_owned(), [256.0, 0.0, 128.0, 128.0]),
-        (
-            "buzzard_accent_move1".to_owned(),
-            [640.0, 0.0, 128.0, 128.0],
-        ),
-    ]);
-    assert_eq!(entity_sources(&manifest).len(), 4);
-    manifest.insert("rig_buzzard_hull".to_owned(), [384.0, 0.0, 128.0, 128.0]);
-    manifest.insert(
-        "rig_buzzard_mount_action2".to_owned(),
-        [512.0, 0.0, 128.0, 128.0],
-    );
-    assert_eq!(
-        entity_sources(&manifest),
-        BTreeSet::from([[0, 0, 128, 128], [384, 0, 128, 128], [512, 0, 128, 128],])
-    );
 }
 
 /// The production atlas pages and their height.

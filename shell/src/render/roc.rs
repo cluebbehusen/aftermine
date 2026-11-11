@@ -255,9 +255,7 @@ pub(super) fn draw_assembling(
     centre: Vec2,
     stage: usize,
 ) {
-    let Some(roc) = sprites.roc_rig() else {
-        return;
-    };
+    let roc = sprites.roc_rig();
     let zoom = game.presentation.camera.zoom;
     let opacity = ASSEMBLY_OPACITY[stage.min(ASSEMBLY_OPACITY.len() - 1)];
     let scale = zoom * super::unit_draw_scale(UnitKind::Roc) / roc.ghost[0].w;
