@@ -1664,3 +1664,30 @@ fn setup_warns_of_a_missing_controller_unless_start_is_refused_anyway() {
     );
     assert_eq!(controller_warning(false, false), None);
 }
+
+#[test]
+fn a_seat_card_labels_the_viewer_s_seat_and_a_seat_on_the_move() {
+    let view = |controller, moving| CardView {
+        seat: 0,
+        accent: macroquad::prelude::WHITE,
+        name: "North",
+        controller,
+        team: "FFA".to_owned(),
+        focus: None,
+        moving,
+    };
+    assert_eq!(view(CardController::Own, false).tag(), Some("YOU"));
+    assert_eq!(view(CardController::Own, true).tag(), Some("MOVING"));
+    assert_eq!(
+        view(
+            CardController::Person {
+                name: "Sam",
+                host: false
+            },
+            true
+        )
+        .tag(),
+        Some("MOVING")
+    );
+    assert_eq!(view(CardController::Open, false).tag(), None);
+}

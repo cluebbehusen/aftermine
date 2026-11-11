@@ -1187,6 +1187,20 @@ pub(crate) struct CardView<'a> {
     pub moving: bool,
 }
 
+impl CardView<'_> {
+    /// The small label beside the team chip: that the occupant is picked up
+    /// to move, or that the seat is the viewer's own.
+    fn tag(&self) -> Option<&'static str> {
+        if self.moving {
+            Some("MOVING")
+        } else if matches!(self.controller, CardController::Own) {
+            Some("YOU")
+        } else {
+            None
+        }
+    }
+}
+
 /// Draws one seat card: its numbered disc, its name, its controller chip
 /// (one wide chip for a person or an open chair), and its team chip.
 pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
@@ -1252,8 +1266,7 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
         name_font,
         TEXT_PRIMARY,
     );
-    if is_you || moving {
-        let tag = if moving { "moving" } else { "you" };
+    if let Some(tag) = view.tag() {
         let tag_font = Type::Small.at(ui).min(rect.h * 0.55);
         let tdims = measure_text(tag, None, numeric::font_size(tag_font), 1.0);
         draw_text(

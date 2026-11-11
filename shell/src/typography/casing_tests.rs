@@ -70,6 +70,7 @@ const LABELS: &[&str] = &[
     "LESSON :   |",
     "LOST",
     "MATCHES ON YOUR NETWORK",
+    "MOVING",
     "PEAK WEALTH",
     "PEAK ARMY",
     "PAUSED []",
@@ -88,6 +89,7 @@ const LABELS: &[&str] = &[
     "WEALTH",
     "WON",
     "VET",
+    "YOU",
 ];
 
 /// Acronyms, which keep their capitals anywhere.
