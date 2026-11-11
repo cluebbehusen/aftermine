@@ -7,7 +7,7 @@
 
 use super::cell_field::CellField;
 use super::environment::{boundary_ring, hash};
-use super::ground::GroundView;
+use super::ground::{Flush, GroundView};
 use super::world::Blockers;
 use crate::assets::{ROCK_SLAB_SIZES, Sprites};
 use aftermine_sim::map::{Map, Terrain};
@@ -203,6 +203,7 @@ pub(super) fn draw_boulders(
     sprites: &Sprites,
     slabs: &Slabs,
     grade: super::grade::Grade,
+    flush: &mut Flush,
 ) {
     // Unclamped: a slab on the map's edge overhangs past it.
     let (lo, hi) = view.world_rect();
@@ -231,6 +232,7 @@ pub(super) fn draw_boulders(
                 ..Default::default()
             },
         );
+        flush.tile();
     }
 }
 
