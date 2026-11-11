@@ -284,7 +284,8 @@ exact tie goes to the earlier unit of one seat.
 
 A cradle crew member routes to its pad round the cradle's other pads, by the far
 side of the cradle if need be, and keeps its ordinary route only when there is
-no such way. It stops only on the pad it set out for, never sets out for a pad a
+no such way and that route crosses no pad a crewmate already works from. It
+stops only on the pad it set out for, never sets out for or through a pad a
 crewmate already works from, and reports `NoRoute` when it can reach no other.
 
 Ground motor speed is serialized and validated. A pathless ground unit can still

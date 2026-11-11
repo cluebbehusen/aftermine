@@ -2021,3 +2021,76 @@ fn a_crew_member_that_can_reach_no_free_pad_reports_it_once_and_leaves() {
         );
     }
 }
+
+#[test]
+fn a_crew_member_whose_only_way_to_a_free_pad_crosses_a_crewmate_at_work_leaves() {
+    // Barricades close the south pad row's east end and the cradle's east
+    // face, so the only way to the south-east pad runs over the south-west
+    // one. Routes ignore a worker's body: a late member that took that way
+    // past the crewmate working there would press on it for good.
+    let (w, h) = BuildingKind::MawCradle.size();
+    let corner: Vec<BuildingSpec> = (WEST_CRADLE.x..=WEST_CRADLE.x + w)
+        .map(|x| (x, WEST_CRADLE.y + h + 1))
+        .chain((WEST_CRADLE.y..=WEST_CRADLE.y + h).map(|y| (WEST_CRADLE.x + w, y)))
+        .map(|(x, y)| building(0, BuildingKind::Barricade, x, y))
+        .collect();
+    let pads = pads(WEST_CRADLE);
+    let (taken, free) = pads.split_at(3);
+    assert_eq!(free, [WEST_CRADLE.offset(w - 1, h)], "the south-east pad");
+    for kind in [UnitKind::Excavator, UnitKind::Harvester] {
+        let mut units: Vec<UnitSpec> = taken
+            .iter()
+            .map(|pad| unit(0, kind, pad.x, pad.y))
+            .collect();
+        units.push(unit(0, kind, 10, WEST_CRADLE.y + h));
+        let mut state = yard(units, corner.clone());
+        let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
+        let (crew, late) = (&ids[..3], ids[3]);
+        assert_eq!(
+            rejected(&state.tick(&[raise(crew, WEST_CRADLE, false)])),
+            None
+        );
+        run_until(&mut state, CREW_SETTLES_TICKS, |state, _| {
+            crew_tiles(state, crew) == taken
+                && crew
+                    .iter()
+                    .all(|id| state.unit(*id).unwrap().work_stopped())
+        });
+
+        assert_eq!(
+            rejected(&state.tick(&[raise(&[late], WEST_CRADLE, false)])),
+            None
+        );
+        let mut stalled = Vec::new();
+        run_until(&mut state, CREW_SETTLES_TICKS, |_, events| {
+            stalled.extend(events.iter().filter_map(|event| match event {
+                Event::OrderStalled { unit, reason, .. } => Some((*unit, *reason)),
+                _ => None,
+            }));
+            !stalled.is_empty()
+        });
+        assert_eq!(stalled, [(late, StallReason::NoRoute)], "{kind:?}");
+        assert_eq!(state.unit(late).unwrap().order, Order::Idle, "{kind:?}");
+        let before = progress(&state);
+        for _ in 0..50 {
+            let report = state.tick(&[]);
+            assert!(
+                !report
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, Event::OrderStalled { .. })),
+                "{kind:?}"
+            );
+            assert!(
+                ids.iter().all(|id| state.unit(*id).unwrap().path.is_none()),
+                "{kind:?}: no one plans again"
+            );
+        }
+        assert_eq!(crew_tiles(&state, crew), taken, "{kind:?}");
+        assert_eq!(
+            progress(&state) - before,
+            50 * 3 * kind.stats().build_rate,
+            "{kind:?}: the other three work on"
+        );
+    }
+}

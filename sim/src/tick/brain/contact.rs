@@ -33,6 +33,13 @@ pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> b
     }) {
         return true;
     }
+    // Squeezing onto or past a pad a crewmate already works from can leave a
+    // body pressing on it for good, planning again every tick.
+    let worked = if pads.is_some() {
+        pads_at_work(state, unit, b)
+    } else {
+        Vec::new()
+    };
     let frame = crate::tick::rect_approach_origin(state, player, from, anchor, size);
     let choose = |mut candidates: Vec<crowding::Position>| {
         candidates.sort_by_key(|candidate| {
@@ -50,17 +57,11 @@ pub(super) fn approach(state: &mut State, id: UnitId, building: BuildingId) -> b
             anchor.center()
                 + Vec2Fx::new(Fx::from_num(size.0 - 1), Fx::from_num(size.1 - 1)) / Fx::from_num(2),
             |tile| state.passable(tile),
-            |goal| stance_route(state, unit, b, from.center(), goal),
+            |goal| stance_route(state, unit, b, &worked, from.center(), goal),
         )
     };
-    let crew = pads.is_some();
     let mut stances = ordinary_stances(state, unit, b, pads);
-    if crew {
-        // Squeezing onto a pad a crewmate already works from can leave a
-        // body pressing on it for good, planning again every tick.
-        let worked = pads_at_work(state, unit, b);
-        stances.retain(|stance| !worked.contains(&stance.goal));
-    }
+    stances.retain(|stance| !worked.contains(&stance.goal));
     let path = choose(stances);
     let reachable = path.is_some();
     state.unit_mut(id).expect("contact unit").path = path;
@@ -147,11 +148,15 @@ fn pads_at_work(state: &State, unit: &crate::Unit, site: &crate::Building) -> Ve
 
 /// `unit`'s route from `from` to `goal`. A crew member's route to its pad
 /// goes round the cradle's other pads, where crewmates work or will, when
-/// [`round_pads`] finds a way; with none it keeps the ordinary route.
+/// [`round_pads`] finds a way. With none it keeps the ordinary route only
+/// if that crosses none of the `worked` pads: ordinary routes ignore a
+/// worker's body, so a member that followed one through a crewmate at work
+/// would press on it for good.
 fn stance_route(
     state: &State,
     unit: &crate::Unit,
     site: &crate::Building,
+    worked: &[TilePos],
     from: Vec2Fx,
     goal: TilePos,
 ) -> Option<Vec<TilePos>> {
@@ -159,13 +164,15 @@ fn stance_route(
     let Some(pads) = state.crew_pads_for(unit, site) else {
         return Some(waypoints);
     };
-    if !waypoints
-        .iter()
-        .any(|&tile| tile != goal && pads.contains(&tile))
-    {
+    let crosses = |way: &[TilePos], tiles: &[TilePos]| {
+        way.iter()
+            .any(|&tile| tile != goal && tiles.contains(&tile))
+    };
+    if !crosses(&waypoints, &pads) {
         return Some(waypoints);
     }
-    Some(round_pads(state, unit, site, &pads, from, goal).unwrap_or(waypoints))
+    round_pads(state, unit, site, &pads, from, goal)
+        .or_else(|| (!crosses(&waypoints, worked)).then_some(waypoints))
 }
 
 /// A way from `from` to `goal`, one of `site`'s `pads`, that keeps off the
