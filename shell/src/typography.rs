@@ -50,6 +50,16 @@ pub(crate) fn install(font: Font) {
     DISPLAY.with(|current| *current.borrow_mut() = Some(font));
 }
 
+/// "x", "x and y", or "x, y, and z".
+pub(crate) fn series(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [first, second] => format!("{first} and {second}"),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+    }
+}
+
 /// `text` cut to `max` characters, its last three spent on "...". Counts
 /// chars, not bytes: names are player-typed, and slicing bytes could
 /// split a multibyte character.

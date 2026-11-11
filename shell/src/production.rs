@@ -95,7 +95,7 @@ impl Production {
             .iter()
             .find(|req| !self.selected.meets(**req))
         {
-            batch.reason = Some(format!("needs a standing {}", entity_name(req.name())));
+            batch.reason = Some(crate::building_actions::needs_standing(&[*req]));
             return Some(batch);
         }
         let mut bank = self.selected.scrap;

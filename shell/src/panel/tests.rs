@@ -621,6 +621,35 @@ fn an_upgrade_needs_no_harvester_and_explains_its_downtime() {
 }
 
 #[test]
+fn a_locked_card_names_an_upgrade_by_the_structure_it_upgrades() {
+    let mut game = game();
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == game.presentation.human && unit.kind == UnitKind::Harvester)
+        .expect("a harvester")
+        .id;
+    game.presentation.selection.units = vec![harvester];
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), true).expect("panel");
+    let why = |title: &str| {
+        panel
+            .cards
+            .iter()
+            .find(|card| card.title == title)
+            .and_then(|card| card.why.clone())
+    };
+    assert_eq!(
+        why("Spire").as_deref(),
+        Some("needs a standing Crucible and Deep Bore (Extractor upgrade)")
+    );
+    assert_eq!(
+        why("Roc Cradle").as_deref(),
+        Some("needs a standing Crucible, Deep Bore (Extractor upgrade), and Airworks")
+    );
+}
+
+#[test]
 fn poverty_and_capacity_disable_cards_with_reasons() {
     let mut scenario = Scenario::skirmish();
     // The bank must outlast the queue cap or poverty masks it.

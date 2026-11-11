@@ -5,6 +5,7 @@ use crate::game::{Game, Scene};
 use crate::numeric::Fit;
 use crate::panel::{Card, CardAction, CardIcon, VerbIcon, tick_time_label};
 use crate::typography::entity_name;
+use aftermine_sim::stats::Prerequisite;
 use aftermine_sim::{Building, BuildingId, BuildingKind, Command};
 use chassis::grid::TilePos;
 use std::fmt::Write as _;
@@ -28,6 +29,23 @@ pub(crate) fn foundry_reach_reason() -> String {
         entity_name(BuildingKind::Foundry.name()),
         aftermine_sim::stats::EXTRACTOR_SUPPORT_RADIUS
     )
+}
+
+/// What players call a requirement. An upgrade has no card of its own, so
+/// it names the structure it upgrades.
+fn prerequisite_name(req: Prerequisite) -> String {
+    let name = entity_name(req.name());
+    if req.tier == 0 {
+        name
+    } else {
+        format!("{name} ({} upgrade)", entity_name(req.kind.name()))
+    }
+}
+
+/// Why a card or an upgrade waits on `requires`.
+pub(crate) fn needs_standing(requires: &[Prerequisite]) -> String {
+    let names: Vec<String> = requires.iter().copied().map(prerequisite_name).collect();
+    format!("needs a standing {}", crate::typography::series(&names))
 }
 
 /// What a magazine holds: a Spire's warheads, a Lattice's interceptors.
@@ -530,7 +548,7 @@ impl SelectedBuildings {
                 Some("offline".into())
             } else if let Some(upgrade) = b.kind.upgrade_from(b.tier) {
                 if let Some(req) = upgrade.requires.iter().find(|req| !self.meets(**req)) {
-                    Some(format!("needs a standing {}", entity_name(req.name())))
+                    Some(needs_standing(&[*req]))
                 } else if b.kind.upgrade_needs_foundry_support(b.tier)
                     && !self.foundries.iter().any(|&foundry| {
                         aftermine_sim::geometry::foundry_supports(foundry, b.anchor)
