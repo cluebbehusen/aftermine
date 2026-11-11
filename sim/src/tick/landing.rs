@@ -27,13 +27,6 @@ pub(crate) enum RunIn {
     Landing,
 }
 
-fn sky_open(state: &State, tile: TilePos) -> bool {
-    state
-        .map()
-        .tile(tile)
-        .is_none_or(|t| !t.terrain.blocks_air())
-}
-
 /// Whether the tile can be landed on straight from here, on whatever
 /// bearing it lies: the nose must settle onto that line before the tile (a
 /// turn of `sweep` steps covers about a quarter of a radius per sixteen
@@ -58,7 +51,7 @@ pub(crate) fn straight_in(
         && sweep <= 64
         && room
         && flight::escapable(map, goal, chassis::compass::heading_of(approach), radius)
-        && !chassis::path::line_blocked(pos, goal, |t| sky_open(state, t))
+        && !chassis::path::line_blocked(pos, goal, |t| map.sky_open(t))
 }
 
 /// How a landing tile is chosen around a point.
@@ -149,9 +142,7 @@ fn initial_points<'a>(
                     };
                     flyable(point)
                         && flyable(entry)
-                        && !chassis::path::line_blocked(entry.center(), goal, |t| {
-                            sky_open(state, t)
-                        })
+                        && !chassis::path::line_blocked(entry.center(), goal, |t| map.sky_open(t))
                 }
             };
             open.then_some((run_in, point, distance))
@@ -344,31 +335,26 @@ pub(crate) fn nearest_landable(
     for &straight in passes {
         for ring in 0..=radius {
             let mut best: Option<((u8, u8, Fx, Fx), TilePos)> = None;
-            for dy in -ring..=ring {
-                for dx in -ring..=ring {
-                    if dx.abs().max(dy.abs()) != ring {
-                        continue;
-                    }
-                    let tile = around.offset(dx, dy);
-                    if exclude == Some(tile)
-                        || !known(tile)
-                        || !landing_clear(state, stats, me, tile, tile.center())
-                        || (straight && !straight_in(state, stats, pos, heading, tile))
-                    {
-                        continue;
-                    }
-                    let offset = tile.center() - pos;
-                    let bearing = chassis::compass::heading_of(offset).wrapping_sub(heading);
-                    let nose = chassis::compass::dir(heading);
-                    let key = (
-                        bearing.min(bearing.wrapping_neg()),
-                        bearing,
-                        offset.length_sq(),
-                        nose.x * offset.y - nose.y * offset.x,
-                    );
-                    if best.as_ref().is_none_or(|(held, _)| key < *held) {
-                        best = Some((key, tile));
-                    }
+            for (dx, dy) in super::goals::ring(ring) {
+                let tile = around.offset(dx, dy);
+                if exclude == Some(tile)
+                    || !known(tile)
+                    || !landing_clear(state, stats, me, tile, tile.center())
+                    || (straight && !straight_in(state, stats, pos, heading, tile))
+                {
+                    continue;
+                }
+                let offset = tile.center() - pos;
+                let bearing = chassis::compass::heading_of(offset).wrapping_sub(heading);
+                let nose = chassis::compass::dir(heading);
+                let key = (
+                    bearing.min(bearing.wrapping_neg()),
+                    bearing,
+                    offset.length_sq(),
+                    nose.x * offset.y - nose.y * offset.x,
+                );
+                if best.as_ref().is_none_or(|(held, _)| key < *held) {
+                    best = Some((key, tile));
                 }
             }
             if let Some((_, tile)) = best {

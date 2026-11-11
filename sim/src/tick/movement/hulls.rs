@@ -226,34 +226,29 @@ fn way_aside(state: &State, slot: usize) -> Option<PathFollow> {
     let reach = footprint.width();
     for &waypoint in onward {
         for r in 0..=reach {
-            for dy in -r..=r {
-                for dx in -r..=r {
-                    if dx.abs().max(dy.abs()) != r {
-                        continue;
-                    }
-                    let goal = waypoint.offset(dx * direction, dy * direction);
-                    let offset = goal.center() - hull.pos;
-                    if goal == from
-                        || offset.x * ahead.x + offset.y * ahead.y <= Fx::ZERO
-                        || !crate::geometry::hull_open(goal, radius, |t| state.passable(t))
-                    {
-                        continue;
-                    }
-                    if Footprint::at(goal.center(), radius)
-                        .tiles()
-                        .any(|t| routes.binary_search(&t).is_ok())
-                    {
-                        continue;
-                    }
-                    if let Some(waypoints) = crate::tick::route_for(state, hull.kind, from, goal) {
-                        return Some(PathFollow {
-                            final_point: None,
-                            goal,
-                            waypoints,
-                            next: 0,
-                            clearing: false,
-                        });
-                    }
+            for (dx, dy) in crate::tick::goals::ring(r) {
+                let goal = waypoint.offset(dx * direction, dy * direction);
+                let offset = goal.center() - hull.pos;
+                if goal == from
+                    || offset.x * ahead.x + offset.y * ahead.y <= Fx::ZERO
+                    || !crate::geometry::hull_open(goal, radius, |t| state.passable(t))
+                {
+                    continue;
+                }
+                if Footprint::at(goal.center(), radius)
+                    .tiles()
+                    .any(|t| routes.binary_search(&t).is_ok())
+                {
+                    continue;
+                }
+                if let Some(waypoints) = crate::tick::route_for(state, hull.kind, from, goal) {
+                    return Some(PathFollow {
+                        final_point: None,
+                        goal,
+                        waypoints,
+                        next: 0,
+                        clearing: false,
+                    });
                 }
             }
         }

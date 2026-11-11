@@ -1955,6 +1955,15 @@ impl State {
         ))
     }
 
+    /// `player`'s earliest Foundry that is more than a provisional plan: the
+    /// one thing a half-turn of the map exchanges between mirrored seats, so
+    /// tie frames that have no other bearing turn on it.
+    pub(crate) fn first_foundry(&self, player: PlayerId) -> Option<&Building> {
+        self.buildings
+            .iter()
+            .find(|b| b.player == player && !b.provisional() && b.kind == BuildingKind::Foundry)
+    }
+
     /// Whether a completed own Foundry supports a completed, living
     /// Extractor. An unfinished or fallen Extractor is remote.
     pub(crate) fn foundry_support(&self, extractor: &Building) -> ExtractorSupport {
@@ -3482,9 +3491,7 @@ impl State {
     pub fn passable_for(&self, domain: crate::stats::Domain, pos: TilePos) -> bool {
         match domain {
             crate::stats::Domain::Ground => self.passable(pos),
-            crate::stats::Domain::Air => {
-                self.map.tile(pos).is_some_and(|t| !t.terrain.blocks_air())
-            }
+            crate::stats::Domain::Air => self.map.sky_open(pos),
         }
     }
 

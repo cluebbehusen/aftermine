@@ -97,22 +97,16 @@ impl Parties {
 /// mirrored slots.
 fn slot_frame(state: &State, owner: PlayerId) -> bool {
     let parity = owner.0 % 2 == 1;
-    state
-        .buildings()
-        .iter()
-        .find(|b| {
-            b.player == owner && !b.provisional() && b.kind == crate::stats::BuildingKind::Foundry
-        })
-        .map_or(parity, |home| {
-            let (w, h) = home.kind.size();
-            let dx = i64::from(home.anchor.x) * 2 + i64::from(w) - i64::from(state.map.width());
-            let dy = i64::from(home.anchor.y) * 2 + i64::from(h) - i64::from(state.map.height());
-            if (dx, dy) == (0, 0) {
-                parity
-            } else {
-                dy < 0 || (dy == 0 && dx < 0)
-            }
-        })
+    state.first_foundry(owner).map_or(parity, |home| {
+        let (w, h) = home.kind.size();
+        let dx = i64::from(home.anchor.x) * 2 + i64::from(w) - i64::from(state.map.width());
+        let dy = i64::from(home.anchor.y) * 2 + i64::from(h) - i64::from(state.map.height());
+        if (dx, dy) == (0, 0) {
+            parity
+        } else {
+            dy < 0 || (dy == 0 && dx < 0)
+        }
+    })
 }
 
 /// One tick of escort duty for `id`, escorting `escorted`.

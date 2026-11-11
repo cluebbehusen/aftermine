@@ -1157,15 +1157,10 @@ fn chase_stand_ins(
 ) -> Vec<TilePos> {
     let mut out = Vec::new();
     for r in 1..=crate::stats::CHASE_STAND_RADIUS {
-        for dy in -r..=r {
-            for dx in -r..=r {
-                if dx.abs().max(dy.abs()) != r {
-                    continue;
-                }
-                let t = around.offset(dx, dy);
-                if state.passable_for(domain, t) && t.center().dist_sq(aim) <= range * range {
-                    out.push(t);
-                }
+        for (dx, dy) in crate::tick::goals::ring(r) {
+            let t = around.offset(dx, dy);
+            if state.passable_for(domain, t) && t.center().dist_sq(aim) <= range * range {
+                out.push(t);
             }
         }
     }
@@ -2452,10 +2447,7 @@ fn egress_goal(
                 && tile.center().dist_sq(pos) > accept_sq
                 && flight::escapable(state.map(), tile.center(), leg_heading, radius)
                 && !chassis::path::line_blocked(pos, tile.center(), |crossed| {
-                    state
-                        .map()
-                        .tile(crossed)
-                        .is_some_and(|terrain| !terrain.terrain.blocks_air())
+                    state.map().sky_open(crossed)
                 })
             {
                 return Some(tile);
