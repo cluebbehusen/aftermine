@@ -25,10 +25,11 @@ pub const MAX_ADVANCE_TICKS: u64 = 1_000_000;
 pub const MAX_PRESENT_TICKS: u64 = 120;
 
 /// Ticks per second both sides budget for a synchronous advance, set
-/// conservatively so a slow machine still finishes inside the deadline. The
-/// client derives its read timeout and the server its reply deadline from
-/// this one figure, so the two agree about a legal wait.
-pub const ADVANCE_TICKS_PER_BUDGET_SECOND: u64 = 1_000;
+/// conservatively so a slow machine still finishes inside the deadline: a
+/// windowless session runs an eight-seat match at well under 1,000 ticks a
+/// second. The client derives its read timeout and the server its reply
+/// deadline from this one figure, so the two agree about a legal wait.
+pub const ADVANCE_TICKS_PER_BUDGET_SECOND: u64 = 250;
 
 /// Longest request line a server accepts, newline excluded. A longer line
 /// is answered with an error naming the limit and the connection is closed,
