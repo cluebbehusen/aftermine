@@ -379,7 +379,14 @@ open or a load is waiting for them, never during a match. A load waits at most
 five seconds for a full pass under way, so a match does not resume from an older
 copy and then save over the newer one. A quit waits at most five seconds for the
 pushes this device asked for, so the save it made reaches the player's other
-devices. A pass that changes local records makes the shelf scan again.
+devices. A pass that changes local records makes the shelf scan again. The shelf
+counts the records the last full pass left on their way; a push leaves that
+count alone, and a full pass that fails leaves none. A pass CloudKit refuses
+keeps why, iCloud storage full, no account or anything else, until a later pass
+gets through, and meanwhile Apple TV's shelf says so, since there CloudKit holds
+the only lasting copy. A wait CloudKit asks for holds every pass back until it
+ends, for at most five minutes, and meanwhile no load or quit waits on the
+mirror.
 
 Each record has a version: how far its match has been played, in ticks, or, once
 deleted, a delete record one tick past the save it deleted. The most ticks wins

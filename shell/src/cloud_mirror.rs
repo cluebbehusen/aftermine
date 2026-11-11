@@ -26,6 +26,9 @@
 //! Passes run on a thread of their own, since every CloudKit call waits on
 //! the network and must never hold up a save. Files arrive only while Home or
 //! the shelf is open or a load is waiting for them, never during a match.
+//!
+//! A pass CloudKit refuses keeps why, until a later pass gets through, and
+//! a wait CloudKit asks for holds every pass back until it is over.
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,7 +38,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use aftermine_icloud::cloudkit::{Changed, Changes};
+use aftermine_icloud::cloudkit::{Changed, Changes, Failure, Trouble};
 
 /// How long one pass may spend moving files before it stops and leaves the
 /// rest to the next one.
@@ -454,9 +457,10 @@ pub(crate) fn plan(
     actions
 }
 
-/// The CloudKit calls a pass makes, so tests can stand in for iCloud.
+/// The CloudKit calls a pass makes, so tests can stand in for iCloud. A call
+/// CloudKit refuses fails with a [`Failure`].
 pub(crate) trait Remote {
-    fn account(&self) -> Option<String>;
+    fn account(&self) -> io::Result<String>;
     fn fetch(&self, token: Option<&str>, staging: &Path) -> io::Result<Changes>;
     fn upload(&self, name: &str, path: &Path, ticks: u64, saved_at: u64) -> io::Result<()>;
     fn delete(&self, name: &str, ticks: u64) -> io::Result<()>;
@@ -466,7 +470,7 @@ pub(crate) trait Remote {
 pub(crate) struct CloudKit;
 
 impl Remote for CloudKit {
-    fn account(&self) -> Option<String> {
+    fn account(&self) -> io::Result<String> {
         aftermine_icloud::cloudkit::account()
     }
     fn fetch(&self, token: Option<&str>, staging: &Path) -> io::Result<Changes> {
@@ -504,6 +508,10 @@ pub(crate) enum Mode {
 /// How often Home and the shelf look for records other devices changed.
 pub(crate) const EVERY: Duration = Duration::from_secs(30);
 
+/// The longest a wait CloudKit asks for holds passes back, so a mistaken
+/// value cannot stop the mirror for good.
+const LONGEST_HOLD: Duration = Duration::from_mins(5);
+
 /// The mirror's thread, once started, and what it is asked to do.
 static MIRROR: OnceLock<Shared> = OnceLock::new();
 
@@ -511,7 +519,9 @@ static MIRROR: OnceLock<Shared> = OnceLock::new();
 struct Shared {
     queue: Mutex<Queue>,
     wake: Condvar,
-    /// Records the last pass left on their way to this device.
+    /// Records the last full pass left on their way to this device. A push
+    /// never asks CloudKit what changed, and a failed full pass brings
+    /// nothing.
     pending: AtomicUsize,
     /// How many passes added, replaced or removed a local file.
     changes: AtomicU64,
@@ -535,10 +545,23 @@ struct Queue {
     answers: Vec<Answer>,
     /// Files the last pass found missing from an iCloud Drive folder.
     missing: Vec<String>,
+    /// Why the last pass could not back records up, until a pass gets
+    /// through.
+    trouble: Option<Trouble>,
+    /// No pass starts before then, as CloudKit asked.
+    not_before: Option<Instant>,
     /// Time asked of the system, from a pass being asked for until no pass
     /// is wanted or under way, so leaving the app does not cut a push short.
     /// Every request asks afresh: the system may have ended the time already.
     background: Option<aftermine_icloud::application::BackgroundTask>,
+}
+
+impl Queue {
+    /// Whether no pass can start until CloudKit's wait is over: nothing
+    /// asked for meanwhile is on its way, so a load or quit need not wait.
+    fn held(&self) -> bool {
+        self.running.is_none() && self.not_before.is_some_and(|at| at > Instant::now())
+    }
 }
 
 impl Shared {
@@ -548,7 +571,16 @@ impl Shared {
 
     fn sent(&self) -> bool {
         let queue = self.queue();
-        !queue.unsent && !queue.sending
+        queue.held() || (!queue.unsent && !queue.sending)
+    }
+
+    fn syncing(&self) -> bool {
+        let queue = self.queue();
+        !queue.held() && (queue.wanted == Some(Mode::Full) || queue.running == Some(Mode::Full))
+    }
+
+    fn trouble(&self) -> Option<Trouble> {
+        self.queue().trouble
     }
 
     /// Asks for a pass; a full pass covers a push.
@@ -615,10 +647,7 @@ pub(crate) fn deleting(path: &Path) {
 /// Whether a full pass is under way or about to start, so that another
 /// device's newer copy may be on its way here.
 pub(crate) fn syncing() -> bool {
-    MIRROR.get().is_some_and(|shared| {
-        let queue = shared.queue();
-        queue.wanted == Some(Mode::Full) || queue.running == Some(Mode::Full)
-    })
+    MIRROR.get().is_some_and(Shared::syncing)
 }
 
 /// Whether every push asked for has run, so this device's changes have gone
@@ -626,6 +655,12 @@ pub(crate) fn syncing() -> bool {
 /// reaches the player's other devices.
 pub(crate) fn sent() -> bool {
     MIRROR.get().is_none_or(Shared::sent)
+}
+
+/// Why the last pass could not back this device's records up, until a pass
+/// gets through.
+pub(crate) fn trouble() -> Option<Trouble> {
+    MIRROR.get().and_then(Shared::trouble)
 }
 
 /// Files missing from an iCloud Drive folder that the player has yet to
@@ -666,7 +701,7 @@ pub(crate) fn allow_arrivals(allowed: bool) {
     }
 }
 
-/// Records the last pass left on their way to this device.
+/// Records the last full pass left on their way to this device.
 pub(crate) fn pending() -> usize {
     MIRROR.get().map_or(0, |shared| {
         shared.pending.load(std::sync::atomic::Ordering::Relaxed)
@@ -688,13 +723,38 @@ fn serve(shared: &'static Shared) {
     }
 }
 
-/// Waits for a pass to be asked for and runs it, reporting a failure
-/// rather than raising it: a mirror that cannot reach iCloud leaves records
-/// where they are.
+/// When passes may run again after CloudKit asked them to wait
+/// `retry_after`.
+fn held_until(retry_after: Option<Duration>) -> Option<Instant> {
+    retry_after.map(|wait| Instant::now() + wait.min(LONGEST_HOLD))
+}
+
+/// What `error` says about backing up: CloudKit's refusal, or failing for
+/// anything that went wrong on this device.
+fn refusal(error: &io::Error) -> (Trouble, Option<Duration>) {
+    Failure::of(error).map_or((Trouble::Failing, None), |failure| {
+        (failure.trouble, failure.retry_after)
+    })
+}
+
+/// Waits for a pass to be asked for, and for any wait CloudKit asked for to
+/// end, and runs it, reporting a failure rather than raising it: a mirror
+/// that cannot reach iCloud leaves records where they are.
 fn serve_one(shared: &Shared, remote: &impl Remote, places: impl FnOnce() -> Option<Places>) {
     let mode = {
         let mut queue = shared.queue();
         loop {
+            let held = queue.not_before.map_or(Duration::ZERO, |at| {
+                at.saturating_duration_since(Instant::now())
+            });
+            if !held.is_zero() {
+                queue = shared
+                    .wake
+                    .wait_timeout(queue, held)
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .0;
+                continue;
+            }
             if let Some(mode) = queue.wanted.take() {
                 queue.running = Some(mode);
                 queue.sending = std::mem::take(&mut queue.unsent);
@@ -707,20 +767,15 @@ fn serve_one(shared: &Shared, remote: &impl Remote, places: impl FnOnce() -> Opt
         }
     };
     let result = places().map(|places| pass(remote, &places, mode, shared));
-    let outcome = match result {
-        Some(Ok(outcome)) => Some(outcome),
-        Some(Err(error)) => {
-            eprintln!("iCloud mirror: {error}");
-            None
-        }
-        None => None,
-    };
+    if let Some(Err(error)) = &result {
+        eprintln!("iCloud mirror: {error}");
+    }
     let again = {
         let mut queue = shared.queue();
         queue.running = None;
         queue.sending = false;
-        let again = match outcome {
-            Some(outcome) => {
+        let again = match result {
+            Some(Ok(outcome)) => {
                 // A push has not looked at CloudKit, and a question answered
                 // while this pass ran stays answered.
                 if mode == Mode::Full {
@@ -735,16 +790,29 @@ fn serve_one(shared: &Shared, remote: &impl Remote, places: impl FnOnce() -> Opt
                         })
                         .collect();
                     queue.answers = answers;
+                    shared
+                        .pending
+                        .store(outcome.pending, std::sync::atomic::Ordering::Relaxed);
                 }
-                shared
-                    .pending
-                    .store(outcome.pending, std::sync::atomic::Ordering::Relaxed);
                 if outcome.changed {
                     shared
                         .changes
                         .fetch_add(1, std::sync::atomic::Ordering::Release);
                 }
+                queue.trouble = outcome.trouble;
+                queue.not_before = held_until(outcome.retry_after);
                 outcome.again
+            }
+            Some(Err(error)) => {
+                if mode == Mode::Full {
+                    shared
+                        .pending
+                        .store(0, std::sync::atomic::Ordering::Relaxed);
+                }
+                let (trouble, retry_after) = refusal(&error);
+                queue.trouble = Some(trouble);
+                queue.not_before = held_until(retry_after);
+                false
             }
             None => false,
         };
@@ -770,6 +838,21 @@ pub(crate) struct Outcome {
     pub again: bool,
     /// Files missing from an iCloud Drive folder, for the player to decide on.
     pub missing: Vec<String>,
+    /// Why CloudKit refused a call; `None` when every call went through.
+    pub trouble: Option<Trouble>,
+    /// How long CloudKit asked the next pass to wait.
+    pub retry_after: Option<Duration>,
+}
+
+impl Outcome {
+    /// Notes a call CloudKit refused: a trouble the player can act on
+    /// outranks a vague one, and the longest wait asked for stands.
+    fn refused(&mut self, (trouble, retry_after): (Trouble, Option<Duration>)) {
+        if self.trouble.is_none_or(|kept| kept == Trouble::Failing) {
+            self.trouble = Some(trouble);
+        }
+        self.retry_after = self.retry_after.max(retry_after);
+    }
 }
 
 /// Where a pass keeps its state and finds records.
@@ -909,19 +992,24 @@ pub(crate) fn pass(
         .iter()
         .map(|(label, dir)| ((*label).to_owned(), dir.clone()))
         .collect();
-    let Some(account) = remote.account() else {
-        // What the player did while signed out still counts once signed in,
-        // provided it was done to the folders the manifest speaks for.
-        let deleted = host.take_deleted();
-        let answers = host.take_answers();
-        if manifest.folders == folders {
-            let noted = manifest.note_deleted(places, &deleted);
-            let (answered, _) = manifest.answer(answers);
-            if noted || answered {
-                save(&places.manifest, &manifest)?;
+    let account = match remote.account() {
+        Ok(account) => account,
+        Err(error) => {
+            // What the player did while signed out still counts once signed
+            // in, provided it was done to the folders the manifest speaks for.
+            let deleted = host.take_deleted();
+            let answers = host.take_answers();
+            if manifest.folders == folders {
+                let noted = manifest.note_deleted(places, &deleted);
+                let (answered, _) = manifest.answer(answers);
+                if noted || answered {
+                    save(&places.manifest, &manifest)?;
+                }
             }
+            let mut outcome = Outcome::default();
+            outcome.refused(refusal(&error));
+            return Ok(outcome);
         }
-        return Ok(Outcome::default());
     };
     if manifest.account != account || manifest.folders != folders {
         manifest = Manifest {
@@ -982,11 +1070,13 @@ pub(crate) fn pass(
         let step = Step {
             out_of_time,
             arrivals: host.allows_arrivals(),
+            held: outcome.retry_after.is_some(),
             listing: &listing,
         };
         match apply(remote, places, &mut manifest, action, &step) {
             Applied::Done => outcome.changed |= writes,
             Applied::Behind => refetch = true,
+            Applied::Refused(refusal) => outcome.refused(refusal),
             Applied::Skipped { arriving } => {
                 complete &= !arriving;
                 outcome.pending += usize::from(arriving);
@@ -1013,6 +1103,8 @@ pub(crate) fn pass(
 struct Step<'a> {
     out_of_time: bool,
     arrivals: bool,
+    /// CloudKit asked for a wait, so nothing more goes to it this pass.
+    held: bool,
     listing: &'a Listing,
 }
 
@@ -1027,6 +1119,8 @@ enum Applied {
     Skipped {
         arriving: bool,
     },
+    /// CloudKit refused it, saying why; left for a later pass.
+    Refused((Trouble, Option<Duration>)),
 }
 
 fn apply(
@@ -1041,11 +1135,15 @@ fn apply(
         Action::Download(_) | Action::DeleteLocal(..) | Action::RemoveCopy(_) | Action::Wait(_)
     );
     let moves_nothing = matches!(action, Action::Keep(_) | Action::Refetch(_));
+    let calls_cloud = matches!(action, Action::Upload(_) | Action::DeleteRemote(..));
     let deleting = match &action {
         Action::DeleteRemote(name, _) => Some(name.clone()),
         _ => None,
     };
-    if (step.out_of_time && !moves_nothing) || (arriving && !step.arrivals) {
+    if (step.out_of_time && !moves_nothing)
+        || (arriving && !step.arrivals)
+        || (calls_cloud && step.held)
+    {
         return Applied::Skipped { arriving };
     }
     let scanned = |name: &str| step.listing.found.get(name).copied();
@@ -1094,7 +1192,10 @@ fn apply(
                 manifest.deleted.remove(&name);
                 return Applied::Behind;
             }
-            Applied::Skipped { arriving }
+            match Failure::of(&error) {
+                Some(failure) => Applied::Refused((failure.trouble, failure.retry_after)),
+                None => Applied::Skipped { arriving },
+            }
         }
     }
 }

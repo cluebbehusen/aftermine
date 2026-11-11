@@ -1297,6 +1297,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
     if !shelf.catalog_ready || app.catalog_stale() {
         app.request_catalog();
     }
+    shelf.set_backup(crate::cloud_mirror::trouble());
     let mut leave: Option<Screen> = None;
     let input_scope = app
         .game

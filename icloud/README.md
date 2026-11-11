@@ -24,8 +24,10 @@ which settings sync is the shell's decision, in `shell/src/config/sync.rs`.
   counts the changes that reach it from other devices.
 - `cloudkit` mirrors record files through one zone of CloudKit's private
   database: it names the account, fetches what changed since a token, and saves
-  files and delete records. Every call waits on CloudKit, so callers keep them
-  off the main thread.
+  files and delete records. A call CloudKit refuses says whether iCloud storage
+  is full, there is no account or something else failed, and how long CloudKit
+  asked callers to wait. Every call waits on CloudKit, so callers keep them off
+  the main thread.
 - `defaults` reads and writes strings in the app's user defaults, which stay on
   the device.
 - `application` turns the idle timer off and on, and `BackgroundTask` holds

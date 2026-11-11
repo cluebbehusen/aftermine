@@ -8,6 +8,7 @@ use crate::menu::{Heading, Label, Line, Menu};
 use crate::platform::{PLATFORM, Platform};
 use crate::saves::ReplayEntry;
 use crate::tabs::TabStrip;
+use aftermine_icloud::cloudkit::Trouble;
 use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::{Vec2, draw_text, measure_text};
 
@@ -108,6 +109,8 @@ pub struct Shelf {
     pub(crate) catalog_ready: bool,
     /// Records still downloading from iCloud at the last scan.
     downloading: usize,
+    /// Why records are not backing up to iCloud, if they are not.
+    backup: Option<Trouble>,
     /// The tab on show; `None` until the first catalog lands or the
     /// player picks one, so the shelf opens where the records are.
     tab: Option<Tab>,
@@ -168,12 +171,19 @@ impl Shelf {
         fresh.asking = asking;
         fresh.catalog_ready = true;
         fresh.downloading = downloading;
+        fresh.backup = self.backup;
         // A refresh landing mid-press must not drop the BACK or tab
         // gesture.
         fresh.back = std::mem::take(&mut self.back);
         fresh.tabs = std::mem::take(&mut self.tabs);
         fresh.menu.cursor_hidden = fresh.tabs.focused();
         *self = fresh;
+    }
+
+    /// Takes why records are not backing up to iCloud, or `None` while they
+    /// are.
+    pub(crate) fn set_backup(&mut self, trouble: Option<Trouble>) {
+        self.backup = trouble;
     }
 
     /// Builds the shelf over the given records (tests inject their own),
@@ -191,6 +201,7 @@ impl Shelf {
             entries,
             catalog_ready: true,
             downloading: 0,
+            backup: None,
             tab: Some(tab),
             now,
             menu,
@@ -378,24 +389,34 @@ impl Shelf {
     }
 
     /// The line above the footer: what the shelf is doing, or what is
-    /// wrong with the focused record, and otherwise on Apple TV that
-    /// records may not last. Rows and an empty tab's message say
-    /// everything else.
+    /// wrong with the focused record, then on Apple TV why records are not
+    /// backing up, and otherwise there that records may not last. Rows and
+    /// an empty tab's message say everything else.
     pub fn status(&self) -> String {
+        self.status_on(PLATFORM)
+    }
+
+    /// [`Self::status`] as `platform` words it.
+    pub(crate) fn status_on(&self, platform: Platform) -> String {
         let problem = self
             .menu
             .value()
             .and_then(|i| self.entries.get(*i)?.problem);
+        let backup = self
+            .backup
+            .and_then(|trouble| backup_line(platform, trouble));
         if !self.catalog_ready {
             "looking for saves and replays...".to_string()
         } else if let Some(problem) = problem {
             problem.reason().to_string()
         } else if self.downloading > 0 {
             downloading_line(self.downloading)
+        } else if let Some(backup) = backup {
+            backup.to_string()
         } else if self.empty_message().is_some() {
             String::new()
         } else {
-            standing_line(PLATFORM).to_string()
+            standing_line(platform).to_string()
         }
     }
 
@@ -456,6 +477,20 @@ fn standing_line(platform: Platform) -> &'static str {
         Platform::Tv => "Apple TV may delete saves and replays when it needs space",
         Platform::Desktop | Platform::Touch => "",
     }
+}
+
+/// What the status line says while records are not backing up to iCloud:
+/// only on Apple TV, where iCloud holds the only lasting copy of each
+/// record. iPad and Mac keep theirs in iCloud Drive or on the device.
+fn backup_line(platform: Platform, trouble: Trouble) -> Option<&'static str> {
+    if platform != Platform::Tv {
+        return None;
+    }
+    Some(match trouble {
+        Trouble::StorageFull => "iCloud storage is full, so saves and replays are not backed up",
+        Trouble::NoAccount => "Sign in to iCloud to back up saves and replays",
+        Trouble::Failing => "Could not back up saves and replays to iCloud",
+    })
 }
 
 /// What the status line says while records download from iCloud.

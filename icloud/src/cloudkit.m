@@ -9,6 +9,7 @@
 #include <mach-o/dyld.h>
 #include <mach-o/getsect.h>
 #include <mach-o/loader.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -145,10 +146,6 @@ static char *json(NSDictionary *object) {
     return text != nil ? strdup(text.UTF8String) : NULL;
 }
 
-static NSDictionary *failure(NSError *error) {
-    return @{@"error" : error.localizedDescription ?: @"CloudKit failed"};
-}
-
 static BOOL wait_for(dispatch_semaphore_t done) {
     return dispatch_semaphore_wait(
                done, dispatch_time(DISPATCH_TIME_NOW,
@@ -177,24 +174,75 @@ static NSError *no_answer(void) {
                            }];
 }
 
-// Whether `error`, or any item's error inside a partial failure, has `code`.
-static BOOL has_code(NSError *error, CKErrorCode code) {
+// `error`, then each item's error inside it when it is a partial failure.
+static NSArray<NSError *> *with_items(NSError *error) {
     if (error == nil) {
-        return NO;
+        return @[];
     }
-    if (error.code == code) {
-        return YES;
+    NSMutableArray<NSError *> *all = [NSMutableArray arrayWithObject:error];
+    if ([error.domain isEqualToString:CKErrorDomain] &&
+        error.code == CKErrorPartialFailure) {
+        NSDictionary *partial = error.userInfo[CKPartialErrorsByItemIDKey];
+        if ([partial isKindOfClass:NSDictionary.class]) {
+            [all addObjectsFromArray:partial.allValues];
+        }
     }
-    if (error.code != CKErrorPartialFailure) {
-        return NO;
-    }
-    NSDictionary *partial = error.userInfo[CKPartialErrorsByItemIDKey];
-    for (NSError *each in partial.allValues) {
-        if (each.code == code) {
+    return all;
+}
+
+// Whether `error`, or any item's error inside a partial failure, has
+// CloudKit's `code`. Other domains reuse the same small numbers.
+static BOOL has_code(NSError *error, CKErrorCode code) {
+    for (NSError *each in with_items(error)) {
+        if ([each.domain isEqualToString:CKErrorDomain] && each.code == code) {
             return YES;
         }
     }
     return NO;
+}
+
+// What the player could do about `error`.
+static NSString *trouble(NSError *error) {
+    if (has_code(error, CKErrorNotAuthenticated)) {
+        return @"no_account";
+    }
+    if (has_code(error, CKErrorQuotaExceeded)) {
+        return @"storage_full";
+    }
+    return @"failing";
+}
+
+// The longest wait, in seconds, CloudKit asked for in `error` or any item's
+// error inside a partial failure; 0 when it asked for none.
+static double retry_after(NSError *error) {
+    double longest = 0;
+    for (NSError *each in with_items(error)) {
+        NSNumber *seconds = each.userInfo[CKErrorRetryAfterKey];
+        if ([seconds isKindOfClass:NSNumber.class] &&
+            isfinite(seconds.doubleValue) && seconds.doubleValue > longest) {
+            longest = seconds.doubleValue;
+        }
+    }
+    return longest;
+}
+
+// A reply naming `error`, what the player could do about it and how long
+// CloudKit asked callers to wait.
+static NSDictionary *failure(NSError *error) {
+    NSMutableDictionary *reply = [NSMutableDictionary dictionary];
+    reply[@"error"] = error.localizedDescription ?: @"CloudKit failed";
+    reply[@"trouble"] = trouble(error);
+    double wait = retry_after(error);
+    if (wait > 0) {
+        reply[@"retry_after"] = @(wait);
+    }
+    return reply;
+}
+
+// A build without CloudKit, which acts as if no one were signed in.
+static char *no_container(void) {
+    return json(
+        @{@"error" : @"no CloudKit container", @"trouble" : @"no_account"});
 }
 
 // Whether the zone is gone, as in an account the player switched to since
@@ -236,38 +284,47 @@ static NSError *ensure_zone(CKDatabase *database) {
 }
 
 // {"account": "<user record name>"} while an iCloud account can use
-// CloudKit, otherwise {"unavailable": "<reason>"}.
+// CloudKit, otherwise a failure naming why.
 static char *current_account(void) {
     CKContainer *app = container();
     if (app == nil) {
-        return json(@{@"unavailable" : @"no CloudKit container"});
+        return no_container();
     }
     __block NSDictionary *answer = nil;
     dispatch_semaphore_t done = dispatch_semaphore_create(0);
     [app accountStatusWithCompletionHandler:^(CKAccountStatus status,
                                               NSError *error) {
+      if (status == CKAccountStatusCouldNotDetermine) {
+          answer = error != nil
+                       ? failure(error)
+                       : @{@"error" : @"could not determine the account"};
+          dispatch_semaphore_signal(done);
+          return;
+      }
+      // Signed out, restricted, or waiting on the player to sign in again.
       if (status != CKAccountStatusAvailable) {
           answer = @{
-              @"unavailable" : error.localizedDescription
+              @"error" : error.localizedDescription
                   ?: [NSString stringWithFormat:@"account status %ld",
-                                                (long)status]
+                                                (long)status],
+              @"trouble" : @"no_account",
           };
           dispatch_semaphore_signal(done);
           return;
       }
       [app fetchUserRecordIDWithCompletionHandler:^(CKRecordID *record,
                                                     NSError *failed) {
-        answer = record != nil
-                     ? @{@"account" : record.recordName}
-                     : @{
-                           @"unavailable" : failed.localizedDescription
-                               ?: @"no user record"
-                       };
+        if (record != nil) {
+            answer = @{@"account" : record.recordName};
+        } else {
+            answer = failed != nil ? failure(failed)
+                                   : @{@"error" : @"no user record"};
+        }
         dispatch_semaphore_signal(done);
       }];
     }];
     if (!wait_for(done)) {
-        return json(@{@"unavailable" : @"CloudKit did not answer in time"});
+        return json(@{@"error" : @"CloudKit did not answer in time"});
     }
     return json(answer);
 }
@@ -378,7 +435,7 @@ char *aftermine_icloud_cloudkit_account(void) {
         @try {
             return current_account();
         } @catch (NSException *exception) {
-            return json(@{@"unavailable" : exception.reason ?: @"CloudKit failed"});
+            return json(@{@"error" : exception.reason ?: @"CloudKit failed"});
         }
     }
 }
@@ -389,7 +446,7 @@ char *aftermine_icloud_cloudkit_account(void) {
 static char *fetch_changes(const char *token, const char *staging) {
     CKContainer *app = container();
     if (app == nil) {
-        return json(@{@"error" : @"no CloudKit container"});
+        return no_container();
     }
     CKDatabase *database = app.privateCloudDatabase;
     CKServerChangeToken *previous = nil;
@@ -520,7 +577,7 @@ static char *save_version(const char *name, long long ticks,
                           long long saved_at, NSURL *file) {
     CKContainer *app = container();
     if (app == nil) {
-        return json(@{@"error" : @"no CloudKit container"});
+        return no_container();
     }
     CKDatabase *database = app.privateCloudDatabase;
     CKRecordID *record_id = [[CKRecordID alloc]
