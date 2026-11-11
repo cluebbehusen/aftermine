@@ -52,11 +52,30 @@ fn the_keeper_writes_refreshes_and_clears_the_ticket_off_the_frame_loop() {
     assert_eq!(written.token, Token::new(1));
     assert!(written.contact > 0, "the keeper stamps the contact");
     keeper.clear();
-    eventually(|| !path.exists());
+    eventually(|| keeper.settled());
+    assert!(!path.exists());
     keeper.clear();
+    assert!(keeper.settled(), "a second clear has nothing to write");
     let mut nothing = Keeper::new(None);
     nothing.keep(kept, Duration::ZERO);
     nothing.clear();
+}
+
+#[test]
+fn a_settled_keeper_has_every_write_on_disk() {
+    let path = scratch("settled");
+    let mut keeper = Keeper::new(Some(path.clone()));
+    for round in 1..=20 {
+        keeper.keep(ticket("127.0.0.1:4200", Token::new(round)), Duration::ZERO);
+        eventually(|| keeper.settled());
+        assert_eq!(read(&path).map(|kept| kept.token), Some(Token::new(round)));
+        keeper.clear();
+        eventually(|| keeper.settled());
+        assert!(
+            !path.exists(),
+            "a cleared ticket is gone once the keeper settles"
+        );
+    }
 }
 
 #[test]

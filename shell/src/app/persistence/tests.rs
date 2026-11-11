@@ -247,3 +247,45 @@ fn quitting_from_home_keeps_a_left_lan_matchs_resumable_save() {
     );
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_quit_leaves_its_lan_match_then_waits_for_what_goes_out_up_to_a_bound() {
+    let early = std::time::Duration::ZERO;
+    let almost = EXIT_WAIT.saturating_sub(std::time::Duration::from_millis(1));
+    assert_eq!(departure(true, true, early), Departure::Leave);
+    assert_eq!(departure(true, false, EXIT_WAIT), Departure::Leave);
+    assert_eq!(departure(false, true, early), Departure::Wait);
+    assert_eq!(departure(false, true, almost), Departure::Wait);
+    assert_eq!(departure(false, true, EXIT_WAIT), Departure::Exit);
+    assert_eq!(departure(false, false, early), Departure::Exit);
+}
+
+#[test]
+fn a_failed_load_with_a_quit_pending_quits_and_a_failed_save_asks() {
+    use screens::pause::LeaveVerb::{MainMenu, Quit};
+    let load = Intent::Continue;
+    let save = Intent::Leave(Quit);
+    assert_eq!(after_failure(&load, true, false), AfterFailure::Exit);
+    assert_eq!(after_failure(&load, true, true), AfterFailure::Exit);
+    assert_eq!(
+        after_failure(&save, true, false),
+        AfterFailure::SaveFailed(Quit)
+    );
+    assert_eq!(
+        after_failure(&Intent::Named("keep".into()), true, false),
+        AfterFailure::SaveFailed(Quit)
+    );
+    assert_eq!(
+        after_failure(&Intent::Rematch, false, true),
+        AfterFailure::Leave
+    );
+    assert_eq!(
+        after_failure(&Intent::Leave(MainMenu), false, false),
+        AfterFailure::SaveFailed(MainMenu)
+    );
+    assert_eq!(after_failure(&load, false, false), AfterFailure::Back);
+    assert_eq!(
+        after_failure(&Intent::Named("keep".into()), false, false),
+        AfterFailure::Back
+    );
+}

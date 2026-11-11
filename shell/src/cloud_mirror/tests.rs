@@ -1549,3 +1549,55 @@ fn record_names_never_leave_their_folder() {
         assert_eq!(tv.path(name), None, "{name}");
     }
 }
+
+/// A cloud whose first call waits for the test to let it go, as the real
+/// one waits on the network.
+struct Held {
+    cloud: FakeCloud,
+    gate: std::sync::mpsc::Receiver<()>,
+}
+
+impl Remote for Held {
+    fn account(&self) -> Option<String> {
+        self.gate.recv().ok();
+        self.cloud.account()
+    }
+    fn fetch(&self, token: Option<&str>, staging: &Path) -> io::Result<Changes> {
+        self.cloud.fetch(token, staging)
+    }
+    fn upload(&self, name: &str, path: &Path, ticks: u64, saved_at: u64) -> io::Result<()> {
+        self.cloud.upload(name, path, ticks, saved_at)
+    }
+    fn delete(&self, name: &str, ticks: u64) -> io::Result<()> {
+        self.cloud.delete(name, ticks)
+    }
+}
+
+#[test]
+fn a_push_is_sent_once_a_pass_has_taken_it_up_and_run() {
+    let shared = Shared::default();
+    shared.want(Mode::Full);
+    assert!(
+        shared.sent(),
+        "a fetch alone sends nothing of this device's"
+    );
+    shared.want(Mode::Push);
+    assert!(!shared.sent(), "a push is asked for");
+    let (release, gate) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let pass = scope.spawn(|| {
+            let held = Held {
+                cloud: FakeCloud::signed_in(),
+                gate,
+            };
+            serve_one(&shared, &held, || Some(device("sent")));
+        });
+        while shared.queue().running.is_none() {
+            std::thread::yield_now();
+        }
+        assert!(!shared.sent(), "the pass carrying the push is under way");
+        release.send(()).unwrap();
+        pass.join().unwrap();
+    });
+    assert!(shared.sent());
+}

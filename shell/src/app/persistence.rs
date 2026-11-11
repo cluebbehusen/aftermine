@@ -169,7 +169,8 @@ pub(super) enum Intent {
     Rematch,
     /// Quits once the worker is idle, saving nothing: no live match is
     /// held, so the one behind the screen was saved on the way out or left
-    /// unsaved on purpose.
+    /// unsaved on purpose. A LAN match is left first, and the quit waits a
+    /// little for what is still going out (see [`departure`]).
     Exit,
 }
 impl Intent {
@@ -198,8 +199,9 @@ pub(super) struct Busy {
     back: Box<Screen>,
     id: Option<u64>,
     presented: bool,
-    /// When a load began waiting for a sync under way.
-    syncing_since: Option<std::time::Duration>,
+    /// When this began waiting on another thread: a load for a sync under
+    /// way, or an exit for what is still going out.
+    waiting_since: Option<std::time::Duration>,
     pub(super) menu: crate::menu::Menu<usize>,
     quit_after: bool,
     /// The LAN match ended while this ran: leave it once done.
@@ -245,6 +247,8 @@ impl App {
             "LOADING REPLAY"
         } else if loading {
             "LOADING MATCH"
+        } else if matches!(intent, Intent::Exit) {
+            "QUITTING"
         } else {
             "SAVING MATCH"
         };
@@ -253,7 +257,7 @@ impl App {
             back: Box::new(back),
             id: None,
             presented: false,
-            syncing_since: None,
+            waiting_since: None,
             quit_after: false,
             leave_after: false,
             menu: crate::menu::Menu::list(
@@ -594,9 +598,11 @@ pub(super) fn frame(
         1 => "..",
         _ => "...",
     };
+    let exiting = matches!(busy.intent, Intent::Exit);
     match &*busy.back {
         Screen::Pause(pause) if !loading => {
-            pause.draw_saving(&app.sprites, &format!("Saving{dots}"));
+            let doing = if exiting { "Quitting" } else { "Saving" };
+            pause.draw_saving(&app.sprites, &format!("{doing}{dots}"));
         }
         _ => busy.menu.draw(
             &app.sprites,
@@ -606,6 +612,8 @@ pub(super) fn frame(
                     "Loading replay"
                 } else if loading {
                     "Loading game"
+                } else if exiting {
+                    "Quitting"
                 } else {
                     "Saving game"
                 },
@@ -718,39 +726,34 @@ pub(super) fn frame(
                     "{} failed: {error:#}",
                     if loading { "Load" } else { "Save" }
                 );
-                // A failed load installed nothing, so quitting saves nothing.
-                if busy.quit_after && loading {
-                    return Ok(app.persistence_screen(Intent::Exit, *busy.back));
-                }
-                if busy.quit_after {
-                    return Ok(Screen::Pause(pause_menu(&app.game).with_save_failed(
-                        error.to_string(),
-                        screens::pause::LeaveVerb::Quit,
-                    )));
-                }
-                if busy.leaving_after() {
-                    app.notify(error.to_string(), true);
-                    return Ok(app.persistence_screen(
-                        Intent::Leave(screens::pause::LeaveVerb::MainMenu),
-                        *busy.back,
-                    ));
-                }
-                if let Intent::Leave(verb) = busy.intent {
-                    return Ok(Screen::Pause(
-                        pause_menu(&app.game).with_save_failed(error.to_string(), verb),
-                    ));
-                }
-                app.notify(failure_line(&busy.intent, &error), true);
-                if let Screen::Pause(ref mut pause) = *busy.back {
-                    pause.end_naming(error.to_string());
-                }
-                return Ok(*busy.back);
+                return Ok(
+                    match after_failure(&busy.intent, busy.quit_after, busy.leaving_after()) {
+                        AfterFailure::Exit => app.persistence_screen(Intent::Exit, *busy.back),
+                        AfterFailure::SaveFailed(verb) => Screen::Pause(
+                            pause_menu(&app.game).with_save_failed(error.to_string(), verb),
+                        ),
+                        AfterFailure::Leave => {
+                            app.notify(error.to_string(), true);
+                            app.persistence_screen(
+                                Intent::Leave(screens::pause::LeaveVerb::MainMenu),
+                                *busy.back,
+                            )
+                        }
+                        AfterFailure::Back => {
+                            app.notify(failure_line(&busy.intent, &error), true);
+                            if let Screen::Pause(ref mut pause) = *busy.back {
+                                pause.end_naming(error.to_string());
+                            }
+                            *busy.back
+                        }
+                    },
+                );
             }
             Ok(Output::Catalog(_) | Output::Discarded) => unreachable!(),
         }
     }
-    // An exit draws nothing worth a frame before it quits.
-    if !busy.presented && !matches!(busy.intent, Intent::Exit) {
+    // An exit with nothing left to go out quits without drawing a frame.
+    if !busy.presented && !exiting {
         busy.presented = true;
         return Ok(Screen::Busy(busy));
     }
@@ -758,10 +761,22 @@ pub(super) fn frame(
     // since saving over it from an older one would lose that progress.
     if busy.id.is_none() && busy.intent.resumes() && crate::cloud_mirror::syncing() {
         let now = app.clock.elapsed();
-        let since = *busy.syncing_since.get_or_insert(now);
+        let since = *busy.waiting_since.get_or_insert(now);
         if now.saturating_sub(since) < SYNC_WAIT {
             return Ok(Screen::Busy(busy));
         }
+    }
+    if exiting && busy.id.is_none() && !app.persistence.busy() {
+        let now = app.clock.elapsed();
+        let waited = now.saturating_sub(*busy.waiting_since.get_or_insert(now));
+        let flushing =
+            app.lingering.is_some() || !app.ticket.settled() || !crate::cloud_mirror::sent();
+        match departure(app.net.is_some(), flushing, waited) {
+            Departure::Leave => super::screen_flow::leave_network(app),
+            Departure::Wait => {}
+            Departure::Exit => std::process::exit(0),
+        }
+        return Ok(Screen::Busy(busy));
     }
     if busy.id.is_none() && !app.persistence.busy() {
         let task: Task = match &busy.intent {
@@ -780,8 +795,7 @@ pub(super) fn frame(
             }
             intent => {
                 let Some(job) = save_job(intent, &app.game, app.net.as_ref()) else {
-                    // Nothing to save, and the worker is idle.
-                    std::process::exit(0)
+                    unreachable!("only an exit saves nothing, and it starts no task")
                 };
                 let mark = job.mark();
                 Box::new(move |_| {
@@ -800,6 +814,66 @@ pub(super) fn frame(
         }
     }
     Ok(Screen::Busy(busy))
+}
+
+/// How long a quit waits for what is still going out: a LAN goodbye, the
+/// rejoin ticket's removal, and the iCloud push of saves made so far, the
+/// quit's own included.
+const EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The next step of a quit with nothing left to save.
+#[derive(Debug, PartialEq, Eq)]
+enum Departure {
+    /// Leave the LAN match still joined, saying goodbye.
+    Leave,
+    /// Let what is going out finish.
+    Wait,
+    Exit,
+}
+
+/// Where a quit stands: `joined` while a LAN match is still joined,
+/// `flushing` while something is still going out, `waited` since the quit
+/// began. Other devices learn of the quit only if the process outlives it,
+/// but never for longer than [`EXIT_WAIT`].
+fn departure(joined: bool, flushing: bool, waited: std::time::Duration) -> Departure {
+    if joined {
+        Departure::Leave
+    } else if flushing && waited < EXIT_WAIT {
+        Departure::Wait
+    } else {
+        Departure::Exit
+    }
+}
+
+/// Where a failed save or load goes.
+#[derive(Debug, PartialEq, Eq)]
+enum AfterFailure {
+    /// Quit anyway: a failed load installed nothing, so there is nothing to
+    /// save.
+    Exit,
+    /// The save-failure dialog, holding open what the player was leaving
+    /// toward.
+    SaveFailed(screens::pause::LeaveVerb),
+    /// The LAN match ended meanwhile: say what failed and leave it.
+    Leave,
+    /// Say what failed, back where the player was.
+    Back,
+}
+
+/// Where a failed `intent` goes, given a quit asked for meanwhile
+/// (`quit_after`) or a LAN match that ended meanwhile (`leaving_after`).
+fn after_failure(intent: &Intent, quit_after: bool, leaving_after: bool) -> AfterFailure {
+    if quit_after && intent.loading() {
+        AfterFailure::Exit
+    } else if quit_after {
+        AfterFailure::SaveFailed(screens::pause::LeaveVerb::Quit)
+    } else if leaving_after {
+        AfterFailure::Leave
+    } else if let Intent::Leave(verb) = intent {
+        AfterFailure::SaveFailed(*verb)
+    } else {
+        AfterFailure::Back
+    }
 }
 
 /// The save `intent` owes before it completes, if any. A LAN host keeps
