@@ -244,10 +244,7 @@ fn known_hostile_target_at(
 /// Group recall works independently of the selected panel.
 pub(super) fn digit_action(game: &mut Game, input: &mut InputState, slot: usize) {
     input.close_construction();
-
-    if slot < 5 {
-        group_action(game, input, slot);
-    }
+    group_action(game, input, slot);
 }
 
 /// Recall (or with Ctrl, assign) a control group; a quick double-tap on
@@ -305,16 +302,10 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: O
         return;
     }
     let units = game.presentation.selection.units.clone();
-    // Each verb crews by its own capability, mirroring the sim's crew
-    // filters exactly: workers (harvest kit) carry build and harvest
-    // labor, welders carry the torch. A coarser union here would stage
-    // commands the sim rejects with an empty crew.
+    // The sim crews building, harvesting and welding from units with a
+    // harvest kit, so a selection without one stages none of those orders
+    // for the sim to reject with an empty crew.
     let has_worker = units.iter().any(|id| {
-        game.state
-            .unit(*id)
-            .is_some_and(|u| u.kind.stats().harvest.is_some())
-    });
-    let has_welder = units.iter().any(|id| {
         game.state
             .unit(*id)
             .is_some_and(|u| u.kind.stats().harvest.is_some())
@@ -338,31 +329,25 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: O
     // buildings always draw.
     let human = game.presentation.human;
     let own_building = reach.building(game, world, |b| b.player == human);
-    if (has_worker || has_welder)
-        && let Some(building) = own_building
-    {
+    if has_worker && let Some(building) = own_building {
         if !building.built() {
             if building.tier > 0 {
                 game.presentation.toast("Upgrade runs automatically");
                 return;
             }
-            if has_worker {
-                // Resume the site: the sim commits every accepted
-                // worker (builders stack). Send the building's own
-                // anchor and kind — the cursor may be on any footprint
-                // tile of a 2x2.
-                game.issue(Command::Build {
-                    units,
-                    kind: building.kind,
-                    anchor: building.anchor,
-                    queue,
-                    defer: false,
-                });
-                game.presentation
-                    .ping_order(world, PingKind::Harvest, queue);
-                return;
-            }
-            // Welders alone cannot lay construction: fall through.
+            // Resume the site: the sim commits every accepted worker
+            // (builders stack). Send the building's own anchor and kind —
+            // the cursor may be on any footprint tile of a 2x2.
+            game.issue(Command::Build {
+                units,
+                kind: building.kind,
+                anchor: building.anchor,
+                queue,
+                defer: false,
+            });
+            game.presentation
+                .ping_order(world, PingKind::Harvest, queue);
+            return;
         } else if building.kind.is_drop_off()
             && units.iter().any(|id| {
                 game.state
@@ -399,7 +384,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: O
             }
             game.presentation.ping(world, PingKind::Harvest);
             return;
-        } else if building.hp < building.stats().max_hp && has_welder {
+        } else if building.hp < building.stats().max_hp {
             game.issue(Command::Repair {
                 units,
                 building: building.id,
@@ -480,7 +465,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: O
     // intent stays reliable in a brawl) and never for a machine in the
     // current selection, so ordering a group that contains its own wounded
     // still reads as a move. The armed Weld verb reaches those.
-    if has_welder {
+    if has_worker {
         let patient = game
             .state
             .units()
@@ -530,9 +515,4 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: O
     game.issue(Command::Advance { units, goal, queue });
     game.presentation
         .ping_order(tile_center(goal), PingKind::Move, queue);
-}
-
-/// Train the selected production slot through the shared pending-command view.
-pub(super) fn train(game: &mut Game, slot: usize) {
-    crate::production::train(game, slot);
 }

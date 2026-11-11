@@ -330,7 +330,7 @@ fn a_held_production_chip_cancels_nothing_but_a_tap_does() {
     let mut input = InputState::new();
     let foundry = game.view().own_foundries().next().expect("a Foundry").id;
     game.presentation.selection.buildings = vec![foundry];
-    super::super::orders::train(&mut game, 0);
+    crate::production::train(&mut game, 0);
     let staged: Vec<PlayerCommand> = game.pending.drain(..).collect();
     assert_eq!(staged.len(), 1, "premise: one job queued");
     game.state.tick(&staged);

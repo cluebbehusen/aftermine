@@ -7,7 +7,7 @@
 //! commands. Input that bypasses this module escapes every injected-event
 //! test.
 
-use crate::action::{Action, ActionEvent, ActionResolver, BindingMap};
+use crate::action::{Action, ActionResolver, BindingMap};
 use crate::game::{Game, PingKind};
 use crate::numeric;
 use crate::numeric::Fit;
@@ -1456,17 +1456,6 @@ impl InputState {
             .unwrap_or(aftermine_protocol::PadFamily::Other)
     }
 
-    /// Feeds a key edge through the binding map.
-    fn key_edge(
-        &mut self,
-        bindings: &BindingMap,
-        key: Key,
-        down: bool,
-        context: crate::action::Context,
-    ) -> Option<ActionEvent> {
-        self.resolver.key_edge_in(bindings, key, down, context)
-    }
-
     pub(crate) fn context(&self, game: &Game) -> crate::action::Context {
         use crate::action::Context;
         if self.construction_open()
@@ -2547,15 +2536,12 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
         RawEvent::KeyDown { key } => {
             pad_ring::other_hands(input);
             pad_dock::other_hands(input);
-            if let Some(ActionEvent::Pressed(action)) =
-                input.key_edge(bindings, key, true, input.context(game))
-            {
+            let context = input.context(game);
+            if let Some(action) = input.resolver.press(bindings, key, context) {
                 dispatch_action(game, input, bindings, action);
             }
         }
-        RawEvent::KeyUp { key } => {
-            let _ = input.key_edge(bindings, key, false, input.context(game));
-        }
+        RawEvent::KeyUp { key } => input.resolver.release(key),
         RawEvent::TouchDown { id, x, y } => touch::down(game, input, id, vec2(x, y)),
         RawEvent::TouchMove { id, x, y } => touch::moved(game, input, id, vec2(x, y)),
         RawEvent::Text { .. } => {
@@ -3834,7 +3820,7 @@ pub(crate) fn activate_action_card(
             game.presentation.toast(why.clone());
         }
     } else if let Action::TrainSlot(slot) = action {
-        orders::train(game, slot as usize);
+        crate::production::train(game, slot as usize);
     }
 }
 
@@ -3856,7 +3842,7 @@ fn activate_card(
 ) {
     match action {
         crate::panel::CardAction::Dispatch(Action::TrainSlot(slot)) => {
-            orders::train(game, slot as usize);
+            crate::production::train(game, slot as usize);
         }
         crate::panel::CardAction::Dispatch(a) => dispatch_action(game, input, bindings, a),
         crate::panel::CardAction::ArmBuild(kind) => {

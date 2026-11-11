@@ -26,12 +26,6 @@ fn toned(color: Color, tone: f32) -> Color {
     )
 }
 
-/// Minimap identity color: the same seat accents the world renderer uses
-/// (own faction, cool allies, warm hostiles).
-fn mini_entity_color(game: &crate::game::Scene<'_>, owner: aftermine_sim::PlayerId) -> Color {
-    super::seat_identity_color(game, owner)
-}
-
 fn dim(color: Color) -> Color {
     Color::new(color.r * 0.55, color.g * 0.55, color.b * 0.55, color.a)
 }
@@ -347,7 +341,7 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
             // Ghosts keep their dimmed seat color as it fades, so
             // allegiance stays readable when the player plans from memory.
             let color = stale_toward(
-                dim(mini_entity_color(game, ghost.owner)),
+                dim(super::seat_identity_color(game, ghost.owner)),
                 dim(MINI_GROUND),
                 age,
             );
@@ -366,7 +360,7 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
             game.presentation.human,
         ) {
             let (w, h) = public.kind.size();
-            let color = mini_entity_color(game, public.owner);
+            let color = super::seat_identity_color(game, public.owner);
             stroke_rect(
                 Rect::new(
                     rect.x + public.anchor.x as f32 * scale - 1.0,
@@ -411,7 +405,7 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
             rect.y + building.anchor.y as f32 * scale,
             w as f32 * scale,
             h as f32 * scale,
-            mini_entity_color(game, building.player),
+            super::seat_identity_color(game, building.player),
         );
     }
     for unit in game.state.units() {
@@ -427,7 +421,7 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
             rect.y + unit.pos.y.to_num::<f32>() * scale - dot * 0.5,
             dot,
             dot,
-            mini_entity_color(game, unit.player),
+            super::seat_identity_color(game, unit.player),
         );
     }
 

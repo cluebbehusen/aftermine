@@ -142,28 +142,7 @@ fn quits_save_every_hidden_live_match() {
 }
 
 #[test]
-fn backdrop_animation_freezes_only_when_a_live_match_is_paused() {
-    let home = || Screen::Home(HomeScreen::with_resumable(false));
-    let pause = || Screen::Pause(PauseScreen::open(false, true));
-
-    assert!(home().backdrop_runs());
-    assert!(!Screen::Playing.backdrop_runs());
-    assert!(!pause().backdrop_runs());
-
-    let settings_from_home = Screen::Settings {
-        screen: SettingsScreen::open(&crate::config::Config::default()),
-        back: Box::new(home()),
-    };
-    let settings_from_pause = Screen::Settings {
-        screen: SettingsScreen::open(&crate::config::Config::default()),
-        back: Box::new(pause()),
-    };
-    assert!(settings_from_home.backdrop_runs());
-    assert!(!settings_from_pause.backdrop_runs());
-}
-
-#[test]
-fn the_waiting_screen_holds_the_lan_match_over_a_frozen_backdrop() {
+fn the_waiting_screen_holds_the_lan_match() {
     use crate::screens::waiting::{Absent, WaitingScreen};
     let waiting = Screen::Waiting(WaitingScreen::open(
         vec![Absent {
@@ -174,7 +153,6 @@ fn the_waiting_screen_holds_the_lan_match_over_a_frozen_backdrop() {
         true,
     ));
     assert!(waiting.holds_live_match());
-    assert!(!waiting.backdrop_runs());
     assert_eq!(waiting.keyboard(), None);
     assert_eq!(waiting.mode(), "waiting");
     assert_eq!(waiting.profile_mode(), "waiting");

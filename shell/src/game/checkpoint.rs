@@ -132,25 +132,6 @@ impl SaveCapture {
     }
 }
 
-impl Serialize for Game {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.capture_save()
-            .checkpoint()
-            .map_err(serde::ser::Error::custom)?
-            .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Game {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let checkpoint = GameCheckpoint::deserialize(deserializer)?;
-        checkpoint
-            .restore()
-            .map(RestoredGame::install)
-            .map_err(serde::de::Error::custom)
-    }
-}
-
 /// A saved LAN match, checked, waiting in Match Setup for its players.
 pub(crate) struct LanSave {
     checkpoint: GameCheckpoint,
@@ -446,7 +427,7 @@ impl RestoredGame {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 #[cfg(test)]
 mod background_tests;

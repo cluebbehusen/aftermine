@@ -40,9 +40,8 @@ use crate::theme::{
 /// One seat's editable choices in the draft.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct SeatPlan {
-    /// Player-facing skill rung for this opponent. It remains attached to the
-    /// chair if the human moves elsewhere; launch ignores it only for the
-    /// chair the human ultimately takes.
+    /// Player-facing skill rung for this opponent. It moves with the bot when
+    /// the human swaps seats; launch ignores it for the human's seat.
     pub difficulty: BotDifficulty,
     /// Player-facing strategic posture for this opponent.
     pub stance: BotStance,
@@ -1449,13 +1448,10 @@ impl Wizard {
         resume.save.local_game(&resume.replaced(draft))
     }
 
-    /// The entry for the draft's picked map, with its stable index —
-    /// what the setup screen keys its preview by.
-    pub fn picked_entry(&self, draft: &NewMatchDraft) -> Option<(usize, &ScenarioEntry)> {
-        self.entries
-            .iter()
-            .position(|e| e.path == draft.scenario_path)
-            .and_then(|i| self.entries.get(i).map(|e| (i, e)))
+    /// The entry for the draft's picked map, which the setup screen keys
+    /// its preview by.
+    pub fn picked_entry(&self, draft: &NewMatchDraft) -> Option<&ScenarioEntry> {
+        self.entries.iter().find(|e| e.path == draft.scenario_path)
     }
 
     fn goto(&mut self, step: Step, draft: &mut NewMatchDraft) {
@@ -2006,7 +2002,7 @@ impl Wizard {
         // from the command line may be any file, so both draw from the
         // scenario itself.
         let preview = match self.picked_entry(draft).filter(|_| self.resume.is_none()) {
-            Some((_, entry)) => previews
+            Some(entry) => previews
                 .get(entry, layout.preview)
                 .map(|preview| (preview, entry.theme.as_str())),
             None => previews.get_map(scenario, layout.preview).map(|preview| {

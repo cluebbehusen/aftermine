@@ -88,7 +88,6 @@ pub(super) enum Output {
     Recording(Box<aftermine_kit::Recording>),
     /// A save finished, with the slot and content the match counts as saved.
     Saved(Option<autosave::SaveMark>),
-    Retired,
     Discarded,
 }
 
@@ -145,22 +144,6 @@ impl Worker {
         self.active.is_some()
     }
 
-    /// Lets a replaced match's world, bots and any speculative bot decision
-    /// drop here rather than on the frame thread. A worker busy with other
-    /// work leaves the game to drop on the caller's thread.
-    pub(super) fn retire(&mut self, old: Game) {
-        if self.busy() {
-            drop(old);
-            return;
-        }
-        let retired = old.retire();
-        if let Err(error) = self.start(Box::new(move |_| {
-            retired();
-            Ok(Output::Retired)
-        })) {
-            eprintln!("Retiring the previous match failed: {error:#}");
-        }
-    }
     fn poll(&mut self) -> Option<(u64, Result<Output>)> {
         match self.receiver.try_recv() {
             Ok(result) => {
@@ -763,7 +746,7 @@ pub(super) fn frame(
                 }
                 return Ok(*busy.back);
             }
-            Ok(Output::Catalog(_) | Output::Retired | Output::Discarded) => unreachable!(),
+            Ok(Output::Catalog(_) | Output::Discarded) => unreachable!(),
         }
     }
     // An exit draws nothing worth a frame before it quits.

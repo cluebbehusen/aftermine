@@ -66,28 +66,15 @@ impl Mix {
 }
 
 /// Pure mix state plus the thin macroquad playback adapter.
+#[derive(Default)]
 pub(crate) struct Soundtrack {
     mix: Mix,
     combat_energy: f32,
-    started: bool,
-}
-
-impl Default for Soundtrack {
-    fn default() -> Self {
-        Self {
-            mix: Mix::default(),
-            combat_energy: 0.0,
-            started: false,
-        }
-    }
 }
 
 impl Soundtrack {
-    /// Starts every bed silently and exactly once.
-    pub fn start(&mut self, sounds: &Sounds) {
-        if self.started {
-            return;
-        }
+    /// Starts every bed silently; `apply` then sets their volumes.
+    pub fn start(sounds: &Sounds) -> Self {
         for sound in [
             &sounds.music_menu,
             &sounds.music_calm,
@@ -104,7 +91,7 @@ impl Soundtrack {
                 },
             );
         }
-        self.started = true;
+        Self::default()
     }
 
     /// Advances the pure crossfade and returns the resulting authored gains.
@@ -161,8 +148,7 @@ impl Soundtrack {
     }
 
     /// Applies the current pure mix to the already-running beds.
-    pub fn apply(&mut self, sounds: &Sounds) {
-        self.start(sounds);
+    pub fn apply(&self, sounds: &Sounds) {
         set_sound_volume(&sounds.music_menu, self.mix.menu);
         set_sound_volume(&sounds.music_calm, self.mix.calm);
         set_sound_volume(&sounds.music_combat, self.mix.combat);

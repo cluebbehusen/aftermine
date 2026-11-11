@@ -29,13 +29,13 @@ pub(crate) fn lattice_pod_pivot(b: &Building, pod: u8) -> Vec2 {
         + POD_PIVOTS[usize::from(pod.min(1))] * vec2(w as f32, h as f32)
 }
 
-/// The art faces north at zero and turns clockwise; the compass starts
-/// east and turns clockwise too.
 /// Ready ticks at which the Spire's upper and lower locks start to
 /// release; each takes four.
 const UPPER_RELEASE: usize = 2;
 const LOWER_RELEASE: usize = 6;
 
+/// The art faces north at zero and turns clockwise; the compass starts
+/// east and turns clockwise too.
 fn deck_rotation(heading: u8) -> f32 {
     f32::from(heading) / 256.0 * std::f32::consts::TAU + std::f32::consts::FRAC_PI_2
 }
@@ -413,8 +413,6 @@ fn warhead_tint(
     }
 }
 
-/// Where a flight stands in the sky on screen at `tick`, its height as a
-/// share of the apex, and the screen direction it is moving.
 /// One warhead in flight at `tick`, on the straight line from its deck to
 /// its target: its shadow falling away as it climbs, the smoke trail
 /// behind its nozzle, the body under power or coasting, and the re-entry

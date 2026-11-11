@@ -607,7 +607,7 @@ fn training_skips_a_selected_nonproducer_before_the_factory() {
     let foundry = game.view().own_foundries().next().unwrap().id;
     game.presentation.selection.buildings = vec![turret, foundry];
 
-    super::orders::train(&mut game, 0);
+    crate::production::train(&mut game, 0);
 
     assert!(matches!(
         game.pending.as_slice(),
@@ -644,7 +644,7 @@ fn training_uses_the_first_selected_factory_that_supports_the_slot() {
     // Slot 2 sits past the Crucible's two-card roster, so only the Foundry
     // can serve it — a slot both producers serve would legitimately land on
     // the first selected producer instead.
-    super::orders::train(&mut game, 2);
+    crate::production::train(&mut game, 2);
 
     assert!(matches!(
         game.pending.as_slice(),

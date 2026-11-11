@@ -100,11 +100,6 @@ fn building_reports_keep_surface_facts_through_the_lethal_tick() {
             .expect("ordinary and lethal hits both retain the building outline");
         assert_eq!(hit.kind, BuildingKind::Fabricator);
         assert_eq!(hit.anchor, Vec2::new(13., 9.));
-        assert!(
-            game.presentation
-                .building_hit(&game.state, Some(Target::Unit(UnitId(0))))
-                .is_none()
-        );
     }
 }
 
@@ -124,7 +119,7 @@ fn unseen_buildings_do_not_supply_surface_facts() {
         .unwrap();
     assert!(
         game.presentation
-            .building_hit(&game.state, Some(Target::Building(hidden.id)))
+            .building_hit(&game.state, hidden.id)
             .is_none()
     );
     assert!(
@@ -1463,15 +1458,12 @@ fn defense_tracking_game() -> (crate::game::Game, BuildingId, UnitId) {
 #[test]
 fn every_weapon_family_uses_its_physical_report() {
     assert_eq!(
-        unit_shot_style(UnitKind::Scuttler, 0).unwrap(),
+        unit_shot_style(UnitKind::Scuttler).unwrap(),
         ShotStyle::Contact
     );
+    assert_eq!(unit_shot_style(UnitKind::Lancer).unwrap(), ShotStyle::Rail);
     assert_eq!(
-        unit_shot_style(UnitKind::Lancer, 0).unwrap(),
-        ShotStyle::Rail
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Flakhound, 0).unwrap(),
+        unit_shot_style(UnitKind::Flakhound).unwrap(),
         ShotStyle::FlakBurst {
             yoke_delay: FlakYokeDelay::OneTick,
             rounds_per_yoke: 2,
@@ -1480,27 +1472,23 @@ fn every_weapon_family_uses_its_physical_report() {
     // Both Sentinel slots speak through its one physical barrel;
     // the second is a weaker skyward poke, not a paired flak gun.
     assert_eq!(
-        unit_shot_style(UnitKind::Sentinel, 0).unwrap(),
+        unit_shot_style(UnitKind::Sentinel).unwrap(),
         ShotStyle::Kinetic { heavy: false }
     );
     assert_eq!(
-        unit_shot_style(UnitKind::Sentinel, 1).unwrap(),
-        ShotStyle::Kinetic { heavy: false }
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Warden, 0).unwrap(),
+        unit_shot_style(UnitKind::Warden).unwrap(),
         ShotStyle::Kinetic { heavy: true }
     );
     assert_eq!(
-        unit_shot_style(UnitKind::Breaker, 0).unwrap(),
+        unit_shot_style(UnitKind::Breaker).unwrap(),
         ShotStyle::Mortar
     );
     assert_eq!(
-        unit_shot_style(UnitKind::Buzzard, 0).unwrap(),
+        unit_shot_style(UnitKind::Buzzard).unwrap(),
         ShotStyle::Kinetic { heavy: true }
     );
     assert_eq!(
-        unit_shot_style(UnitKind::Talon, 0).unwrap(),
+        unit_shot_style(UnitKind::Talon).unwrap(),
         ShotStyle::ForgeSpot
     );
     assert_eq!(
@@ -2278,8 +2266,7 @@ fn checkpoint_projectiles_recover_unit_contacts_without_launch_history() {
             }
         }
         assert!(!game.state.shells().is_empty(), "{kind:?} launched");
-        let mut restored: Game =
-            serde_json::from_slice(&serde_json::to_vec(&game).unwrap()).unwrap();
+        let mut restored = crate::game::checkpoint::tests::reloaded(&game);
         assert_eq!(game.state.hash(), restored.state.hash());
         assert_eq!(
             restored.recorder.commands.len(),

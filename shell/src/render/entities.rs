@@ -616,13 +616,7 @@ fn on_payload_course(from: Vec2, to: Vec2, contact: Vec2) -> bool {
 
 fn payload_flight_ticks(game: &crate::game::Scene<'_>, index: usize) -> f32 {
     let shell = &game.state.shells()[index];
-    game.presentation
-        .projectile_releases
-        .flight(game.state.shells(), index)
-        .map_or_else(
-            || shell.arrival.saturating_sub(shell.launched_at).max(1) as f32,
-            |flight| flight.ticks as f32,
-        )
+    shell.arrival.saturating_sub(shell.launched_at).max(1) as f32
 }
 
 pub(super) fn building_contact(
@@ -1287,7 +1281,7 @@ fn payload_world_position(
     {
         flat - vec2(
             0.0,
-            shell_arc_lift(from.distance(impact), 1.0, shooter) * 4.0 * t * (1.0 - t),
+            shell_arc_lift(from.distance(impact)) * 4.0 * t * (1.0 - t),
         )
     } else if kind == aftermine_sim::ProjectileKind::Bomb {
         flat - vec2(0.0, 0.18 * (1.0 - t))
@@ -1341,19 +1335,10 @@ fn bombard_shell_position(launch: Vec2, impact: Vec2, heading: Vec2, progress: f
     muzzle.lerp(impact, t)
 }
 
-fn shell_arc_lift(screen_distance: f32, zoom: f32, shooter: aftermine_sim::Target) -> f32 {
-    match shooter {
-        // Bombard arcs visibly as indirect artillery, but its lift above
-        // the flat path stays capped.
-        aftermine_sim::Target::Unit(_) => (screen_distance * 0.06).min(zoom * 0.60),
-        // Bastion is a low-carriage siege gun; a high arc would detach its
-        // compact shell from the barrel and impact.
-        aftermine_sim::Target::Building(_) => (screen_distance * 0.04).min(zoom * 0.40),
-    }
-}
-
-fn missile_ejection_ticks(total_ticks: f32) -> f32 {
-    crate::audio_timeline::missile_ejection_ticks(total_ticks)
+/// A unit's shell arcs visibly as indirect artillery, but its lift above the
+/// flat path stays capped, in tiles.
+fn shell_arc_lift(distance: f32) -> f32 {
+    (distance * 0.06).min(0.60)
 }
 
 pub(crate) fn missile_travel_progress(progress: f32, total_ticks: f32, distance: f32) -> f32 {
@@ -1361,7 +1346,7 @@ pub(crate) fn missile_travel_progress(progress: f32, total_ticks: f32, distance:
     if distance <= f32::EPSILON {
         return progress;
     }
-    let ejection_ticks = missile_ejection_ticks(total_ticks);
+    let ejection_ticks = crate::audio_timeline::missile_ejection_ticks(total_ticks);
     let ejection_distance = 0.45_f32.min(distance * 0.12);
     let ejection_speed = ejection_distance / ejection_ticks;
     let elapsed = progress * total_ticks;
@@ -1384,7 +1369,7 @@ pub(crate) fn missile_travel_progress(progress: f32, total_ticks: f32, distance:
 }
 
 fn missile_motor_strength(progress: f32, total_ticks: f32) -> f32 {
-    let ejection_ticks = missile_ejection_ticks(total_ticks);
+    let ejection_ticks = crate::audio_timeline::missile_ejection_ticks(total_ticks);
     let ramp_ticks = 2.0_f32.min((total_ticks - ejection_ticks) * 0.25);
     ((progress * total_ticks - ejection_ticks) / ramp_ticks).clamp(0.0, 1.0)
 }
@@ -1525,10 +1510,6 @@ fn shot_visibility(
     } else {
         ShotVisibility::Full
     }
-}
-
-fn draw_splash_bloom(sprites: &Sprites, center: Vec2, zoom: f32, radius: f32, progress: f32) {
-    super::destruction::draw_hit(sprites, center, zoom, radius, progress);
 }
 
 #[expect(clippy::too_many_lines, reason = "draws every shell and effect kind")]
@@ -1918,7 +1899,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     if let Some(radius) = splash
                         && impact > 0.0
                     {
-                        draw_splash_bloom(
+                        super::destruction::draw_hit(
                             sprites,
                             b,
                             game.presentation.camera.zoom,
@@ -1985,7 +1966,13 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     // The area bloom is part of the round-arrival phase,
                     // behind the projectiles, rather than an explosion the
                     // rounds visibly fly into.
-                    draw_splash_bloom(sprites, b, game.presentation.camera.zoom, radius, impact);
+                    super::destruction::draw_hit(
+                        sprites,
+                        b,
+                        game.presentation.camera.zoom,
+                        radius,
+                        impact,
+                    );
                 }
                 match style {
                     ShotStyle::Contact => {}
@@ -2160,7 +2147,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     );
                 }
                 if visibility.bloom {
-                    draw_splash_bloom(
+                    super::destruction::draw_hit(
                         sprites,
                         game.presentation.camera.to_screen(blast_at),
                         game.presentation.camera.zoom,
@@ -2239,7 +2226,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             EffectKind::Burst { at, radius } => {
                 let center = game.presentation.camera.to_screen(at);
                 let progress = (fx.age / 0.35).clamp(0.0, 1.0);
-                draw_splash_bloom(
+                super::destruction::draw_hit(
                     sprites,
                     center,
                     game.presentation.camera.zoom,

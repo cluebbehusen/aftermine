@@ -452,10 +452,10 @@ impl ShotStyle {
     }
 }
 
-/// Which report family a unit's weapon slot fires: every slot speaks
-/// through the kind's one physical barrel. None for a kind that never draws
-/// a direct report.
-fn unit_shot_style(kind: aftermine_sim::UnitKind, _weapon: usize) -> Option<ShotStyle> {
+/// Which report family a unit fires: every weapon slot speaks through the
+/// kind's one physical barrel. None for a kind that never draws a direct
+/// report.
+fn unit_shot_style(kind: aftermine_sim::UnitKind) -> Option<ShotStyle> {
     crate::look::unit(kind)
         .weapon
         .and_then(|weapon| weapon.shot)
@@ -552,8 +552,6 @@ pub(crate) fn mantle_emitter(center: Vec2, rotation: f32, slot: u8) -> Vec2 {
     center + Vec2::from_angle(rotation).rotate(local)
 }
 
-/// Seconds a stopped warhead flies on as a ghost while its interceptor
-/// climbs to meet it in the sky.
 /// Ticks an interceptor climbs from its pod to its warhead.
 pub(crate) const INTERCEPT_FLIGHT_TICKS: f32 = 22.0;
 /// Ticks a pod's clamp takes to open before its interceptor leaves.
@@ -1001,14 +999,7 @@ impl Presentation {
         self.scorches.retain(|(_, age, _)| *age < 20.0);
     }
 
-    fn building_hit(
-        &self,
-        state: &State,
-        target: Option<aftermine_sim::Target>,
-    ) -> Option<BuildingHit> {
-        let aftermine_sim::Target::Building(id) = target? else {
-            return None;
-        };
+    fn building_hit(&self, state: &State, id: aftermine_sim::BuildingId) -> Option<BuildingHit> {
         state
             .building(id)
             .filter(|b| {
@@ -1033,14 +1024,11 @@ impl Presentation {
         state: &State,
         target: Option<aftermine_sim::Target>,
     ) -> Option<HitSurface> {
-        let target = target?;
-        if let aftermine_sim::Target::Building(_) = target {
-            return self
-                .building_hit(state, Some(target))
-                .map(HitSurface::Building);
-        }
-        let aftermine_sim::Target::Unit(id) = target else {
-            return None;
+        let id = match target? {
+            aftermine_sim::Target::Building(id) => {
+                return self.building_hit(state, id).map(HitSurface::Building);
+            }
+            aftermine_sim::Target::Unit(id) => id,
         };
         let (body, mut center, airborne, frame) = if let Some(unit) = state.unit(id) {
             if !self.all_seeing()
@@ -1084,47 +1072,44 @@ impl Presentation {
         targets: aftermine_sim::stats::DomainMask,
     ) -> Option<HitSurface> {
         let covers = |surface: HitSurface| surface.covers(at);
-        let known = self
-            .hit_surface(state, target)
-            .filter(|surface| covers(*surface));
         if target.is_some() {
-            return known;
+            return self
+                .hit_surface(state, target)
+                .filter(|surface| covers(*surface));
         }
-        known
-            .or_else(|| {
-                let mut units = state
-                    .units()
+        let mut units = state
+            .units()
+            .iter()
+            .filter(|unit| {
+                if !state.hostile(player, unit.player) || !targets.covers(unit.domain()) {
+                    return false;
+                }
+                let mut center = self.draw_pos(unit.id, unit.pos, 1.0);
+                if unit.domain() == aftermine_sim::stats::Domain::Air {
+                    center.y -= crate::render::air_presentation(unit.kind, 1.0).2;
+                }
+                center.distance(at) <= unit.kind.stats().radius.to_num::<f32>()
+            })
+            .map(|unit| unit.id)
+            .chain(
+                self.fx_previous
+                    .units
                     .iter()
-                    .filter(|unit| {
-                        if !state.hostile(player, unit.player) || !targets.covers(unit.domain()) {
-                            return false;
-                        }
-                        let mut center = self.draw_pos(unit.id, unit.pos, 1.0);
-                        if unit.domain() == aftermine_sim::stats::Domain::Air {
-                            center.y -= crate::render::air_presentation(unit.kind, 1.0).2;
-                        }
-                        center.distance(at) <= unit.kind.stats().radius.to_num::<f32>()
+                    .filter(|(id, body, _, airborne, _)| {
+                        state.unit(*id).is_none()
+                            && state.hostile(player, body.player)
+                            && if *airborne {
+                                targets.air
+                            } else {
+                                targets.ground
+                            }
                     })
-                    .map(|unit| unit.id)
-                    .chain(
-                        self.fx_previous
-                            .units
-                            .iter()
-                            .filter(|(id, body, _, airborne, _)| {
-                                state.unit(*id).is_none()
-                                    && state.hostile(player, body.player)
-                                    && if *airborne {
-                                        targets.air
-                                    } else {
-                                        targets.ground
-                                    }
-                            })
-                            .map(|(id, ..)| *id),
-                    );
-                units.find_map(|id| {
-                    self.hit_surface(state, Some(aftermine_sim::Target::Unit(id)))
-                        .filter(|surface| covers(*surface))
-                })
+                    .map(|(id, ..)| *id),
+            );
+        units
+            .find_map(|id| {
+                self.hit_surface(state, Some(aftermine_sim::Target::Unit(id)))
+                    .filter(|surface| covers(*surface))
             })
             .or_else(|| {
                 if !targets.ground {
@@ -1320,7 +1305,7 @@ impl Presentation {
                         {
                             origin.y += crate::render::air_presentation(*attacker_kind, 1.0).2;
                         }
-                        let Some(style) = unit_shot_style(*attacker_kind, *weapon) else {
+                        let Some(style) = unit_shot_style(*attacker_kind) else {
                             continue;
                         };
                         let report = push_direct_report(
@@ -1749,11 +1734,9 @@ impl Presentation {
                     // Like gunfire, the zap is heard when either end is seen:
                     // at the emitter when it is, else where the shell
                     // dissolves. The shell makes no sound of its own.
-                    if from.is_some() || impact_witnessed {
-                        let anchor = if from.is_some() { defender_pos } else { at };
-                        self.sounds_pending
-                            .push((SoundKind::InterceptZap, Some(world_vec(*anchor))));
-                    }
+                    let anchor = if from.is_some() { defender_pos } else { at };
+                    self.sounds_pending
+                        .push((SoundKind::InterceptZap, Some(world_vec(*anchor))));
                     self.fx.push(Effect {
                         kind: EffectKind::Intercept {
                             from,

@@ -750,11 +750,6 @@ impl Default for BindingMap {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ActionEvent {
-    Pressed(Action),
-    Released(Action),
-}
 #[derive(Debug, Default)]
 pub struct ActionResolver {
     ctrl: bool,
@@ -762,42 +757,30 @@ pub struct ActionResolver {
     active: HashMap<Key, Action>,
 }
 impl ActionResolver {
-    pub fn key_edge_in(
-        &mut self,
-        map: &BindingMap,
-        key: Key,
-        down: bool,
-        context: Context,
-    ) -> Option<ActionEvent> {
-        self.edge(map, key, down, |a| a.available(context))
-    }
-    fn edge(
-        &mut self,
-        map: &BindingMap,
-        key: Key,
-        down: bool,
-        accepts: impl Fn(Action) -> bool,
-    ) -> Option<ActionEvent> {
+    /// The action a key press starts in `context`. A modifier or a key
+    /// already held starts none.
+    pub fn press(&mut self, map: &BindingMap, key: Key, context: Context) -> Option<Action> {
         match key {
-            Key::Ctrl => {
-                self.ctrl = down;
-                return None;
-            }
-            Key::Shift => {
-                self.shift = down;
-                return None;
+            Key::Ctrl => self.ctrl = true,
+            Key::Shift => self.shift = true,
+            _ if !self.active.contains_key(&key) => {
+                let action =
+                    map.resolve_where(key, self.ctrl, self.shift, |a| a.available(context))?;
+                self.active.insert(key, action);
+                return Some(action);
             }
             _ => {}
         }
-        if down {
-            if self.active.contains_key(&key) {
-                return None;
+        None
+    }
+    /// Ends whatever the key's press started, in any context.
+    pub fn release(&mut self, key: Key) {
+        match key {
+            Key::Ctrl => self.ctrl = false,
+            Key::Shift => self.shift = false,
+            _ => {
+                self.active.remove(&key);
             }
-            let action = map.resolve_where(key, self.ctrl, self.shift, accepts)?;
-            self.active.insert(key, action);
-            Some(ActionEvent::Pressed(action))
-        } else {
-            self.active.remove(&key).map(ActionEvent::Released)
         }
     }
     pub fn is_held(&self, action: Action) -> bool {

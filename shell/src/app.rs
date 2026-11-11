@@ -1,16 +1,7 @@
 //! The session coordinator: [`App`] owns everything that outlives a
 //! screen, [`Screen`] owns everything that does not.
 //!
-//! Frame order is fixed and matters:
-//!
-//! 1. drain debug-socket requests (screenshots defer to post-render),
-//! 2. gather input events — polled hardware first, then injected — and route
-//!    them to the active screen (menu or the one gameplay input mapper),
-//! 3. advance the sim by wall clock (unless paused; `advance_ticks` from the
-//!    socket bypasses the clock entirely — that's driven mode),
-//! 4. render with interpolation, then settle any change of screen and
-//!    deliver the frame's notices,
-//! 5. capture any requested screenshot from the finished frame.
+//! Frame order is fixed and matters; `docs/shell-architecture.md` lists it.
 //!
 //! Every screen variant carries that screen's complete state, so a mode
 //! without its payload is unrepresentable.
@@ -244,9 +235,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     let soundtrack = if args.automation {
         None
     } else {
-        let mut soundtrack = crate::soundtrack::Soundtrack::default();
-        soundtrack.start(&sounds);
-        Some(soundtrack)
+        Some(crate::soundtrack::Soundtrack::start(&sounds))
     };
 
     let mut game = if let Some(path) = &args.replay {
@@ -805,12 +794,9 @@ fn apply_presentation(config: &config::Config) {
 
 impl App {
     /// The one way a match arrives: session toggles carry over from the
-    /// old game, which retires off the frame thread, and the frame profile
-    /// and the session's input start clean.
+    /// old game, and the frame profile and the session's input start clean.
     fn install(&mut self, fresh: Game, how: Install) {
-        let fresh = keep_flags(fresh, &self.game);
-        let old = std::mem::replace(&mut self.game, fresh);
-        self.persistence.retire(old);
+        self.game = keep_flags(fresh, &self.game);
         // Timing and failures belong to the match they were counted for.
         self.background = background_save::Schedule::default();
         self.game.clock.paused = how.paused;
@@ -848,9 +834,7 @@ impl App {
             &mut fresh.presentation.camera,
             &mut self.game.presentation.camera,
         );
-        let fresh = keep_flags(fresh, &self.game);
-        let old = std::mem::replace(&mut self.game, fresh);
-        self.persistence.retire(old);
+        self.game = keep_flags(fresh, &self.game);
         // Timing and failures belong to the match they were counted for.
         self.background = background_save::Schedule::default();
         self.game.clock.speed = 1.0;
@@ -876,7 +860,6 @@ impl App {
         }
     }
 
-    /// Tells the player something; see [`screen_flow::deliver_notices`].
     /// Tells the player what failed and leaves the cause on stderr for a
     /// report: raw error chains mean nothing to a player.
     fn notify_failure(&mut self, what: &str, cause: impl std::fmt::Display) {

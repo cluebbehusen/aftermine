@@ -673,13 +673,8 @@ fn artillery_shells_begin_at_the_barrel_and_use_a_low_arc() {
         launch
     );
 
-    let zoom = 32.0;
-    let bombard = aftermine_sim::Target::Unit(aftermine_sim::UnitId(4));
-    let bastion = aftermine_sim::Target::Building(aftermine_sim::BuildingId(4));
-    assert!((shell_arc_lift(320.0, zoom, bombard) - 19.2).abs() < 1.0e-4);
-    assert!((shell_arc_lift(320.0, zoom, bastion) - 12.8).abs() < 1.0e-4);
-    assert_eq!(shell_arc_lift(1_000.0, zoom, bombard), zoom * 0.60);
-    assert_eq!(shell_arc_lift(1_000.0, zoom, bastion), zoom * 0.40);
+    assert!((shell_arc_lift(5.0) - 0.3).abs() < 1.0e-4);
+    assert_eq!(shell_arc_lift(100.0), 0.60);
 
     let tail = shell_tail_start(0.5, 10.0);
     assert!((tail - 0.486).abs() < 1.0e-4);

@@ -97,17 +97,13 @@ pub(crate) fn unit_frame(kind: UnitKind, state: UnitAnimationState) -> UnitFrame
         return skyhook_transport_frame(action);
     }
 
-    if kind == UnitKind::Piledriver {
-        if let Some(attack) = state.attack {
-            return UnitFrame::Action(unit_attack_frame(kind, attack));
-        }
-        if let Some(progress) = preparation_progress(&state.weapons) {
-            return UnitFrame::Action(piledriver_reload_frame(progress));
-        }
-    }
-
     if let Some(attack) = state.attack {
         return UnitFrame::Action(unit_attack_frame(kind, attack));
+    }
+    if kind == UnitKind::Piledriver
+        && let Some(progress) = preparation_progress(&state.weapons)
+    {
+        return UnitFrame::Action(piledriver_reload_frame(progress));
     }
     if kind == UnitKind::Avalanche
         && let Some(progress) = preparation_progress(&state.weapons)

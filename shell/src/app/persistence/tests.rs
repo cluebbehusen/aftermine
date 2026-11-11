@@ -173,29 +173,6 @@ fn main_menu_leaves_at_once_while_the_finished_record_saves() {
 }
 
 #[test]
-fn a_replaced_match_retires_on_the_worker_when_it_is_free() {
-    let mut worker = Worker::new().expect("worker");
-    worker.retire(Game::new(aftermine_sim::Scenario::skirmish()).expect("game"));
-    assert!(
-        worker.busy(),
-        "the old match winds down off the frame thread"
-    );
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let result = loop {
-        if let Some((_, result)) = worker.poll() {
-            break result;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the retire job finishes"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    };
-    assert!(matches!(result, Ok(Output::Retired)));
-    assert!(!worker.busy());
-}
-
-#[test]
 fn quitting_from_home_keeps_a_left_lan_matchs_resumable_save() {
     let dir = std::env::temp_dir().join(format!(
         "aftermine-home-quit-{}-{}",

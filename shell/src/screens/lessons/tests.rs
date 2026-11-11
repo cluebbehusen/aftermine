@@ -122,7 +122,6 @@ fn enter_starts_the_selected_row_and_back_or_escape_leaves() {
             Out::Leave
         );
     }
-    assert_eq!(LessonsScreen::open(&[], false).mode_name(), "lessons");
 }
 
 #[test]

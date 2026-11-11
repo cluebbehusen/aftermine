@@ -402,17 +402,13 @@ fn draw_capability_icon(
     }
 }
 
-/// The user's UI scale preference, stored as atomic f32 bits so the
-/// settings screen can retune it live while draw and hit-test paths read
-/// it lock-free.
-#[cfg(not(test))]
-static USER_SCALE: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(f32::to_bits(1.0));
-
-// Parallel layout tests must not change each other's hit-test geometry.
-#[cfg(test)]
+// The UI scale preference and window size belong to the frame thread, the
+// only one that lays out or draws. Libtest runs each test on its own thread,
+// so a test that changes either cannot move a concurrent test's hit-test
+// geometry or leak into a later one, even by panicking.
 thread_local! {
     static USER_SCALE: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
+    static VIEW: std::cell::Cell<Vec2> = const { std::cell::Cell::new(Vec2::new(1280.0, 800.0)) };
 }
 
 /// The smallest user scale: the Settings row's first step. Layouts are
@@ -425,11 +421,7 @@ pub const MAX_USER_SCALE: f32 = 1.5;
 /// Installs the user scale factor, clamped to the range the Settings row
 /// offers.
 pub fn set_user_scale(factor: f32) {
-    let factor = factor.clamp(MIN_USER_SCALE, MAX_USER_SCALE);
-    #[cfg(not(test))]
-    USER_SCALE.store(f32::to_bits(factor), std::sync::atomic::Ordering::Relaxed);
-    #[cfg(test)]
-    USER_SCALE.set(factor);
+    USER_SCALE.set(factor.clamp(MIN_USER_SCALE, MAX_USER_SCALE));
 }
 
 static REDUCED_MOTION: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -451,11 +443,7 @@ pub fn reduced_motion() -> bool {
 /// macroquad's high-dpi backing store absorbs the display's pixel ratio,
 /// so the DPI factor must not be applied here.
 pub fn ui_scale() -> f32 {
-    #[cfg(not(test))]
-    let user = f32::from_bits(USER_SCALE.load(std::sync::atomic::Ordering::Relaxed));
-    #[cfg(test)]
-    let user = USER_SCALE.get();
-    effective_ui_scale(user, viewport())
+    effective_ui_scale(USER_SCALE.get(), viewport())
 }
 
 fn effective_ui_scale(user: f32, viewport: Vec2) -> f32 {
@@ -468,41 +456,19 @@ fn effective_ui_scale(user: f32, viewport: Vec2) -> f32 {
     user.min(width_cap).min(height_cap)
 }
 
-#[cfg(not(test))]
-static VIEW_WIDTH: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-#[cfg(not(test))]
-static VIEW_HEIGHT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
-// Under cfg(test) the storage is thread-local: libtest runs each test on
-// its own thread, so a test that injects a small window cannot affect a
-// concurrent layout test or leak into a later one, even by panicking.
-// Every test thread starts at the 1280x800 default and needs no restore.
-#[cfg(test)]
-thread_local! {
-    static VIEW: std::cell::Cell<(u32, u32)> = const { std::cell::Cell::new((0, 0)) };
-}
-
 /// Installs the window size; the frame loop calls this once per frame.
 /// [`ui_scale`], menu layout, and session construction read it through
 /// [`viewport`] instead of querying the window, so they run headless
 /// (the default is 1280x800). HUD and world drawing query the window
-/// directly.
-#[cfg(not(test))]
+/// directly. A side the window reports as empty keeps its default.
 pub fn set_viewport(w: f32, h: f32) {
-    VIEW_WIDTH.store(w.to_bits(), std::sync::atomic::Ordering::Relaxed);
-    VIEW_HEIGHT.store(h.to_bits(), std::sync::atomic::Ordering::Relaxed);
-}
-
-/// Test flavor of [`set_viewport`]: same contract, but the size is
-/// this test thread's alone.
-#[cfg(test)]
-pub fn set_viewport(w: f32, h: f32) {
-    VIEW.set((w.to_bits(), h.to_bits()));
+    let side = |reported: f32, default: f32| if reported > 0.0 { reported } else { default };
+    VIEW.set(vec2(side(w, 1280.0), side(h, 800.0)));
 }
 
 /// The injected window size.
-pub fn viewport() -> macroquad::prelude::Vec2 {
-    macroquad::prelude::vec2(view_width(), view_height())
+pub fn viewport() -> Vec2 {
+    VIEW.get()
 }
 
 /// Breaks `text` into lines no wider than `max_w` under `measure`,
@@ -529,43 +495,6 @@ pub fn wrap_words(text: &str, measure: impl Fn(&str) -> f32, max_w: f32) -> Vec<
         lines.push(line);
     }
     lines
-}
-
-#[cfg(not(test))]
-fn view_bits() -> (u32, u32) {
-    (
-        VIEW_WIDTH.load(std::sync::atomic::Ordering::Relaxed),
-        VIEW_HEIGHT.load(std::sync::atomic::Ordering::Relaxed),
-    )
-}
-
-#[cfg(test)]
-fn view_bits() -> (u32, u32) {
-    VIEW.with(std::cell::Cell::get)
-}
-
-fn view_width() -> f32 {
-    match view_bits().0 {
-        0 => 1280.0,
-        bits => f32::from_bits(bits),
-    }
-}
-
-fn view_height() -> f32 {
-    match view_bits().1 {
-        0 => 800.0,
-        bits => f32::from_bits(bits),
-    }
-}
-
-/// Draws one frame.
-pub fn draw(
-    game: &crate::game::Scene<'_>,
-    sprites: &Sprites,
-    input: &InputState,
-    bindings: &crate::action::BindingMap,
-) {
-    draw_with_performance(game, sprites, input, bindings, None);
 }
 
 pub(crate) fn draw_with_performance(
@@ -618,7 +547,7 @@ pub(crate) fn draw_world(game: &crate::game::Scene<'_>, sprites: &Sprites, input
     clear_background(OUTSIDE);
     let alpha = game.clock.render_alpha();
     pass(FramePass::Terrain, || {
-        environment::draw_backdrop(game);
+        environment::draw_backdrop();
         ground_cache.draw(ground::Layer::Floor, &ground, &view, sprites);
     });
     pass(FramePass::Salvage, || {
@@ -920,7 +849,7 @@ impl UnitSpriteFrame {
         let mut frame = motion::unit_frame(kind, animation);
         // Treads drawn apart from the body roll while its frame holds still:
         // the shared belts, and the Maw's own layers (`render::maw`). The
-        // Maw's whole-body move frames are never loaded, so its idle body is
+        // Maw's whole-body move frames are never drawn, so its idle body is
         // the outline every shot, blast and tool meets.
         if tracks::supported(kind) || kind == aftermine_sim::UnitKind::Maw {
             match &mut frame {
