@@ -9,6 +9,9 @@ use aftermine_sim::stats::{
     WeaponStats,
 };
 
+/// An Extractor's income rows while it produces nothing.
+const NOT_PRODUCING: &str = "\u{2013}";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StatIcon {
     Capability(CapabilityIcon),
@@ -426,19 +429,26 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
             Some(Cap(CapabilityIcon::Vision)),
         );
         if b.player == game.presentation.human {
-            if let Some(income) = game.state.extractor_income(b.id) {
+            if b.kind == BuildingKind::Extractor {
+                // Both rows stand while it goes up or upgrades too, so the
+                // card keeps its height when it starts producing.
+                let income = game.state.extractor_income(b.id);
                 info.row(
                     "Income",
-                    format!("{} scrap/min", income.scrap_per_minute()),
+                    income.map_or_else(
+                        || NOT_PRODUCING.into(),
+                        |income| format!("{} scrap/min", income.scrap_per_minute()),
+                    ),
                     Some(Verb(VerbIcon::Harvest)),
                 );
                 info.row(
                     "Support",
-                    if income.is_supported() {
-                        "Foundry".to_string()
-                    } else {
-                        "Remote".to_string()
-                    },
+                    match income {
+                        None => NOT_PRODUCING,
+                        Some(income) if income.is_supported() => "Foundry",
+                        Some(_) => "Remote",
+                    }
+                    .into(),
                     Some(Cap(CapabilityIcon::EconomySupport)),
                 );
             } else if matches!(b.kind, BuildingKind::Foundry | BuildingKind::Reclaimer) {

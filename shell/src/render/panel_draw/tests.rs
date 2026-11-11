@@ -1363,3 +1363,85 @@ fn a_lattice_keeps_its_picture_and_dock_still_as_warheads_come_and_go() {
         "the blank line keeps its room"
     );
 }
+
+#[test]
+fn an_extractor_keeps_its_picture_still_as_it_finishes_building_and_upgrading() {
+    use aftermine_sim::{BuildingKind, Command, PlayerCommand};
+    let mut map = vec![".".repeat(40); 20];
+    map[8].replace_range(20..21, "E");
+    let scenario = serde_json::from_value(serde_json::json!({
+        "name": "Extractor rows", "mode": "sandbox", "map": map,
+        "players": [{"name": "You", "scrap": 5000, "bot": false}],
+        "units": [{"player": 0, "kind": "harvester", "x": 19, "y": 12}],
+        // A Foundry to support it and a Crucible to unlock the Deep Bore.
+        "buildings": [
+            {"player": 0, "kind": "foundry", "x": 14, "y": 4},
+            {"player": 0, "kind": "fabricator", "x": 26, "y": 12},
+            {"player": 0, "kind": "crucible", "x": 28, "y": 4}
+        ]
+    }))
+    .unwrap();
+    let mut game = Game::with_viewport(scenario, vec2(1133.0, 744.0)).unwrap();
+    let human = game.presentation.human;
+    let harvester = game.state.units()[0].id;
+    let anchor = chassis::grid::TilePos::new(20, 8);
+    assert!(game.state.can_place(human, BuildingKind::Extractor, anchor));
+    game.state.tick(&[PlayerCommand {
+        player: human,
+        command: Command::Build {
+            units: vec![harvester],
+            kind: BuildingKind::Extractor,
+            anchor,
+            queue: false,
+            defer: false,
+        },
+    }]);
+    let extractor = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Extractor)
+        .expect("the Extractor's site")
+        .id;
+    game.presentation.selection.buildings = vec![extractor];
+    let rows = |game: &Game| {
+        let info = selection_info(game);
+        ["Income", "Support"].map(|label| {
+            info.rows
+                .iter()
+                .find(|row| row.label == label)
+                .map(|row| row.value.clone())
+        })
+    };
+    let finish = |game: &mut Game| {
+        let start = card_frame(game);
+        let mut unfinished = Vec::new();
+        while !game.state.building(extractor).unwrap().built() {
+            assert_eq!(card_frame(game), start, "tick {}", unfinished.len());
+            unfinished.push(rows(game));
+            game.state.tick(&[]);
+            assert!(unfinished.len() < 4000, "never finished");
+        }
+        assert_eq!(card_frame(game), start, "done");
+        unfinished.dedup();
+        let idle = Some("\u{2013}".to_string());
+        assert_eq!(unfinished, [[idle.clone(), idle]]);
+    };
+    finish(&mut game);
+    let [income, support] = rows(&game);
+    assert!(income.unwrap().ends_with("scrap/min"));
+    assert_eq!(support.as_deref(), Some("Foundry"));
+    game.state.tick(&[PlayerCommand {
+        player: human,
+        command: Command::UpgradeBuilding {
+            building: extractor,
+        },
+    }]);
+    assert_eq!(
+        health_label(&game),
+        "Upgrading",
+        "premise: a Deep Bore going up"
+    );
+    finish(&mut game);
+    assert_eq!(game.state.building(extractor).unwrap().tier, 1);
+}
