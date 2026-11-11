@@ -172,21 +172,13 @@ pub(crate) fn world_vec(pos: chassis::fx::Vec2Fx) -> Vec2 {
 
 impl Game {
     pub(crate) fn view(&self) -> Scene<'_> {
-        use crate::render::tutorial_card::CornerCard;
-        Scene {
-            corner_card: if self.tutorial.is_some() {
-                Some(CornerCard::Lesson)
-            } else {
-                self.tips.showing().map(|_| CornerCard::Tip)
-            },
-            ..Scene::new(
-                &self.state,
-                &self.scenario,
-                &self.pending,
-                &self.presentation,
-                &self.clock,
-            )
-        }
+        Scene::new(
+            &self.state,
+            &self.scenario,
+            &self.pending,
+            &self.presentation,
+            &self.clock,
+        )
     }
     pub fn selection_commandable(&self) -> bool {
         self.view().selection_commandable()

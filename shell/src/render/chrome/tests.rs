@@ -427,9 +427,20 @@ fn the_queue_flag_shows_while_orders_queue_for_own_units() {
     assert_eq!(flag(&game, &input), None, "a spectator queues nothing");
 }
 
+/// A card `width` logical px wide at most, where lesson and tip cards lie:
+/// the corner under the top bar.
+fn corner_card(width: f32, env: super::super::hud::HudEnv) -> Rect {
+    let s = env.ui;
+    Rect::new(
+        12.0 * s,
+        (crate::layout::TOP_BAR_H + 6.0) * s,
+        (width * s).min(env.viewport.x - 24.0 * s),
+        240.0 * s,
+    )
+}
+
 #[test]
 fn the_queue_tab_keeps_clear_of_a_lesson_or_tip_card() {
-    use crate::render::tutorial_card::CornerCard;
     let game =
         crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1133.0, 744.0))
             .unwrap();
@@ -448,13 +459,14 @@ fn the_queue_tab_keeps_clear_of_a_lesson_or_tip_card() {
         let open =
             queue_flag_layout(&view, &input, env, Rect::default(), &measure).expect("QUEUE is on");
         assert!((open.tab.center().x - w * 0.5).abs() <= 1.0, "centred");
-        for card in [CornerCard::Lesson, CornerCard::Tip] {
+        // A lesson's card and a tip's.
+        for card in [corner_card(500.0, env), corner_card(420.0, env)] {
             view.corner_card = Some(card);
             let tab = queue_flag_layout(&view, &input, env, Rect::default(), &measure)
                 .expect("QUEUE is on")
                 .tab;
             assert!(
-                tab.x >= card.right(env) && tab.right() <= w,
+                tab.x >= card.right() && tab.right() <= w,
                 "{card:?} at {w}x{h} x{ui}: {tab:?}"
             );
         }
@@ -463,7 +475,6 @@ fn the_queue_tab_keeps_clear_of_a_lesson_or_tip_card() {
 
 #[test]
 fn the_queue_tab_keeps_clear_of_the_performance_readout() {
-    use crate::render::tutorial_card::CornerCard;
     let game =
         crate::game::Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1133.0, 744.0))
             .unwrap();
@@ -489,7 +500,7 @@ fn the_queue_tab_keeps_clear_of_the_performance_readout() {
         viewport: vec2(1133.0, 744.0),
         ui: 1.5,
     };
-    view.corner_card = Some(CornerCard::Lesson);
+    view.corner_card = Some(corner_card(500.0, env));
     let readout = Rect::new(755.0, 69.0, 360.0, 180.0);
     let tab = queue_flag_layout(&view, &input, env, readout, &measure)
         .expect("QUEUE is on")

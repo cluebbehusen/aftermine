@@ -367,17 +367,27 @@ fn draw_select_all(
     draw_text(&label, x, baseline, size, TEXT_PRIMARY);
 }
 
-/// Packs every visible queue chip above the command band: a single
-/// column when it fits, otherwise a grid (a full eight-slot production
-/// queue becomes 2×4 in a 640×400 window), so no paid, cancelable job
-/// hides behind an overflow label.
+/// Packs every visible queue chip between the command band and
+/// `ceiling`: a single column when it fits, otherwise a grid (a full
+/// eight-slot production queue becomes 2×4 in a 640×400 window), so no
+/// paid, cancelable job hides behind an overflow label.
 fn queue_grid(
     queue_len: usize,
     panel_top: f32,
+    ceiling: f32,
     scale: f32,
     header: f32,
 ) -> (Rect, [Rect; DOCK_SLOTS], usize) {
-    queue_grid_with_width(queue_len, panel_top, scale, 44.0, header)
+    queue_grid_with_width(queue_len, panel_top, ceiling, scale, 44.0, header)
+}
+
+/// The highest a dock stacked at the window's left may reach: under the
+/// top bar, and under a lesson or tip card holding that corner, which
+/// draws over the HUD and takes the presses that land on it.
+fn dock_ceiling(game: &crate::game::Scene<'_>, scale: f32) -> f32 {
+    let bar = crate::layout::TOP_BAR_H * scale;
+    game.corner_card
+        .map_or(bar, |card| bar.max(card.bottom() + 6.0 * scale))
 }
 
 /// The Stop button's own plate above the dock: the button and its inset.
@@ -391,6 +401,7 @@ const STOP_GAP: f32 = 6.0;
 fn queue_grid_with_width(
     queue_len: usize,
     panel_top: f32,
+    ceiling: f32,
     scale: f32,
     width: f32,
     header: f32,
@@ -409,9 +420,7 @@ fn queue_grid_with_width(
     } else {
         0.0
     };
-    let available =
-        (panel_top - crate::layout::TOP_BAR_H * scale - header - label_h - more - 2.0 * scale)
-            .max(size);
+    let available = (panel_top - ceiling - header - label_h - more - 2.0 * scale).max(size);
     let max_rows = numeric::to_usize(((available + gap) / (size + gap)).floor()).max(1);
     let columns = count.div_ceil(max_rows).max(1);
     let rows = count.div_ceil(columns);
@@ -436,18 +445,19 @@ fn queue_grid_with_width(
 fn collective_queue_grid(
     count: usize,
     top: f32,
+    ceiling: f32,
     scale: f32,
     viewport_width: f32,
     header: f32,
 ) -> (Rect, [Rect; DOCK_SLOTS], usize) {
     if viewport_width / scale < 800.0 {
-        return queue_grid_with_width(count, top, scale, 64.0, header);
+        return queue_grid_with_width(count, top, ceiling, scale, 64.0, header);
     }
-    let wide = queue_grid_with_width(count, top, scale, 170.0, header);
+    let wide = queue_grid_with_width(count, top, ceiling, scale, 170.0, header);
     if wide.0.right() <= viewport_width {
         wide
     } else {
-        queue_grid_with_width(count, top, scale, 64.0, header)
+        queue_grid_with_width(count, top, ceiling, scale, 64.0, header)
     }
 }
 
@@ -1021,6 +1031,7 @@ pub(crate) fn layout_panel(
                     input,
                     crate::platform::PLATFORM.touch_only(),
                 ),
+                dock_ceiling(game, s),
                 panel,
                 viewport,
                 s,
@@ -1083,6 +1094,7 @@ pub(crate) fn layout_panel(
     let dock = (!panel.queue.is_empty() || panel.stop.is_some()).then(|| {
         layout_dock(
             super::chrome::queue_toggle_shown(game, input, crate::platform::PLATFORM.touch_only()),
+            dock_ceiling(game, s),
             panel,
             viewport,
             s,
@@ -1134,7 +1146,7 @@ fn layout_drone_column(
     } else {
         0.0
     };
-    let (mut plate, slots, n) = queue_grid(column.chips.len(), top, s, 0.0);
+    let (mut plate, slots, n) = queue_grid(column.chips.len(), top, dock_ceiling(game, s), s, 0.0);
     let label_width = measure(
         super::hud::Face::Body,
         &column.label,
@@ -1152,9 +1164,11 @@ fn layout_drone_column(
 
 /// Production ghosts or order chips, stacked above the band's left
 /// corner so the band itself stays short.
-/// `toggle_below` lifts it clear of the QUEUE toggle.
+/// `toggle_below` lifts it clear of the QUEUE toggle, and its top stays
+/// under `ceiling`.
 fn layout_dock(
     toggle_below: bool,
+    ceiling: f32,
     panel: &crate::panel::Panel,
     viewport: Vec2,
     s: f32,
@@ -1181,9 +1195,9 @@ fn layout_dock(
             0,
         )
     } else if panel.queue_groups.is_empty() {
-        queue_grid(panel.queue.len(), floor, s, header)
+        queue_grid(panel.queue.len(), floor, ceiling, s, header)
     } else {
-        collective_queue_grid(panel.queue.len(), floor, s, viewport.x, header)
+        collective_queue_grid(panel.queue.len(), floor, ceiling, s, viewport.x, header)
     };
     if !panel.queue.is_empty() {
         let queue_label_width = queue_label_width(panel, |text| {

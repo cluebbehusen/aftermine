@@ -908,7 +908,7 @@ pub(super) fn queue_flag_layout(
     let h = QUEUE_TAB_H * s;
     let left = game
         .corner_card
-        .map_or(0.0, |card| (card.right(env) + 8.0 * s).round());
+        .map_or(0.0, |card| (card.right() + 8.0 * s).round());
     let readout = (performance.w > 0.0 && performance.y < y + h && performance.bottom() > y)
         .then_some(performance);
     let right = readout.map_or(viewport.x - 12.0 * s, |panel| panel.x - 8.0 * s);

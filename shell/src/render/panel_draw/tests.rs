@@ -1,6 +1,11 @@
 use super::*;
 use crate::game::Game;
 
+/// The top bar's bottom, the ceiling a dock has with no card over it.
+fn bar(scale: f32) -> f32 {
+    crate::layout::TOP_BAR_H * scale
+}
+
 #[test]
 fn category_labels_name_keys_only_where_keys_exist() {
     assert_eq!(
@@ -47,8 +52,14 @@ fn collective_queue_keeps_every_kind_visible_in_narrow_windows() {
     for scale in [1.0, 1.5, 2.0] {
         for (width, top) in [(640.0, 110.0), (800.0, 190.0), (1280.0, 650.0)] {
             for count in 1..=8 {
-                let (dock, slots, shown) =
-                    collective_queue_grid(count, top * scale, scale, width * scale, 0.0);
+                let (dock, slots, shown) = collective_queue_grid(
+                    count,
+                    top * scale,
+                    bar(scale),
+                    scale,
+                    width * scale,
+                    0.0,
+                );
                 assert_eq!(shown, count);
                 assert!(dock.right() <= width * scale);
                 assert!(dock.y >= crate::layout::TOP_BAR_H * scale);
@@ -191,7 +202,7 @@ fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
         let info = selection_info_rect(viewport, left, measured.height, actions);
         assert_eq!(info.y, actions.y);
         assert_eq!(info.bottom(), viewport.y);
-        let (dock, slots, count) = queue_grid(8, info.y, scale, 0.0);
+        let (dock, slots, count) = queue_grid(8, info.y, bar(scale), scale, 0.0);
         assert_eq!(count, 8);
         assert_eq!(dock.bottom(), info.y);
         assert!(slots[..count].iter().all(|slot| slot.bottom() <= info.y));
@@ -628,7 +639,7 @@ fn eight_paid_slots_form_a_fully_clickable_small_window_dock() {
     // A 120px command band leaves panel_top=280 in the
     // 640×400 stress case. Every slot must remain present, above the band,
     // and below the top bar rather than folding into "+N".
-    let (dock, slots, count) = queue_grid(8, 280.0, 1.0, 0.0);
+    let (dock, slots, count) = queue_grid(8, 280.0, bar(1.0), 1.0, 0.0);
     assert_eq!(count, 8);
     assert!(dock.y >= crate::layout::TOP_BAR_H);
     assert_eq!(
@@ -660,8 +671,8 @@ fn eight_paid_slots_form_a_fully_clickable_small_window_dock() {
 fn the_stop_plate_sits_above_the_label_and_every_slot() {
     let header = STOP_PLATE + STOP_GAP;
     for (len, top) in [(3, 680.0), (8, 280.0)] {
-        let (plain, _, _) = queue_grid(len, top, 1.0, 0.0);
-        let (dock, slots, count) = queue_grid(len, top, 1.0, header);
+        let (plain, _, _) = queue_grid(len, top, bar(1.0), 1.0, 0.0);
+        let (dock, slots, count) = queue_grid(len, top, bar(1.0), 1.0, header);
         assert_eq!(count, len, "the square never folds a slot away");
         assert!(dock.y >= crate::layout::TOP_BAR_H);
         assert_eq!(dock.bottom(), top, "the dock still rests on the band");
@@ -678,7 +689,7 @@ fn the_stop_plate_sits_above_the_label_and_every_slot() {
 
 #[test]
 fn a_queue_that_fits_stays_in_one_quiet_column() {
-    let (_, slots, count) = queue_grid(5, 680.0, 1.0, 0.0);
+    let (_, slots, count) = queue_grid(5, 680.0, bar(1.0), 1.0, 0.0);
     assert_eq!(count, 5);
     assert!(slots[..count].iter().all(|slot| slot.x == slots[0].x));
 }
@@ -734,7 +745,7 @@ fn a_mixed_small_window_selection_keeps_roster_and_queue_in_the_corner() {
     );
     assert_eq!(panel.roster.len(), 8);
     assert_eq!(info.roster_columns, 4);
-    let (dock, slots, count) = queue_grid(8, 400.0 - info.height, 1.0, 0.0);
+    let (dock, slots, count) = queue_grid(8, 400.0 - info.height, bar(1.0), 1.0, 0.0);
     assert_eq!(count, 8);
     assert!(dock.y >= crate::layout::TOP_BAR_H);
     assert!(dock.w <= 204.0);
@@ -1036,9 +1047,15 @@ fn the_hidden_count_sits_above_a_touch_build_s_queue_toggle() {
         crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
             .unwrap();
     let (viewport, top) = (vec2(1133.0, 744.0), 600.0);
-    let dock = layout_dock(true, &panel, viewport, 1.0, top, &|_, text: &str, size| {
-        text.chars().count() as f32 * size * 0.5
-    });
+    let dock = layout_dock(
+        true,
+        bar(1.0),
+        &panel,
+        viewport,
+        1.0,
+        top,
+        &|_, text: &str, size| text.chars().count() as f32 * size * 0.5,
+    );
     assert_eq!(dock.chips.len(), DOCK_SLOTS);
     assert_eq!(dock.hidden, 20 - DOCK_SLOTS);
     let toggle = super::super::chrome::queue_toggle_rect(
@@ -1055,4 +1072,60 @@ fn the_hidden_count_sits_above_a_touch_build_s_queue_toggle() {
         "+N at {} between the chips ({chips_bottom}) and the toggle ({toggle:?})",
         dock.more_baseline
     );
+}
+
+#[test]
+fn a_long_dock_fills_the_room_under_a_corner_card_and_no_further() {
+    let measure = |_: super::super::hud::Face, text: &str, size: f32| {
+        text.chars().count() as f32 * size * 0.5
+    };
+    let (viewport, top) = (vec2(1133.0, 744.0), 600.0);
+    // A card whose foot leaves `rows` rows of chips and `slack` px more,
+    // beneath the Stop plate, the dock's label and, when some hide, the
+    // count row. With no slack the chips fill the room exactly; with 32 px
+    // only the count row's reservation keeps the eighth row out.
+    for (orders, rows, slack, columns, hidden) in [
+        (12, 3, 0.0, 4, 0),
+        (20, 4, 0.0, 4, 20 - DOCK_SLOTS),
+        (20, 7, 32.0, 3, 20 - DOCK_SLOTS),
+    ] {
+        let game = harvester_with_orders(orders);
+        let panel = crate::panel::build_for_palette(
+            &game.view(),
+            &crate::action::BindingMap::classic(),
+            false,
+        )
+        .unwrap();
+        let more = if hidden > 0 { MORE_ROW } else { 0.0 };
+        let room = (STOP_PLATE + STOP_GAP) + 24.0 + more + 2.0 + rows as f32 * 48.0 - 4.0 + slack;
+        let card = Rect::new(12.0, 46.0, 500.0, top - room - 6.0 - 46.0);
+        let scene = crate::game::Scene {
+            corner_card: Some(card),
+            ..game.view()
+        };
+        let ceiling = dock_ceiling(&scene, 1.0);
+        assert_eq!(ceiling, top - room, "premise: the card's foot");
+        let dock = layout_dock(false, ceiling, &panel, viewport, 1.0, top, &measure);
+        assert_eq!(dock.chips.len(), orders - hidden, "{orders} orders");
+        assert_eq!(dock.hidden, hidden);
+        let xs: std::collections::BTreeSet<i32> = dock
+            .chips
+            .iter()
+            .map(|chip| crate::numeric::to_i32(chip.x))
+            .collect();
+        assert_eq!(
+            xs.len(),
+            columns,
+            "{orders} orders under {rows} rows of room"
+        );
+        assert!(
+            dock.dock.y >= ceiling - 1e-3,
+            "{:?} under {ceiling}",
+            dock.dock
+        );
+        let (plate, button) = dock.stop.expect("a busy unit offers Stop");
+        for rect in [plate, button].iter().chain(&dock.chips) {
+            assert!(rect.y >= ceiling - 1e-3, "{rect:?} under {ceiling}");
+        }
+    }
 }
