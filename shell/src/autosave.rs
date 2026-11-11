@@ -6,7 +6,6 @@
 //! instead of a bool.
 
 use crate::game::Game;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -18,10 +17,6 @@ const KEEP_MATCHES: usize = 20;
 /// A temp older than this is an orphan from a crashed save, not a
 /// write in flight.
 const TEMP_ORPHAN_AGE: Duration = Duration::from_secs(3600);
-/// Invalid-JSON ownership marker held at a destination until its record
-/// atomically replaces it.
-const RESERVATION_MARKER_PREFIX: &str = "aftermine-save-reservation:";
-
 /// What a successful [`SaveJob::run`] call actually did.
 #[derive(Debug)]
 pub enum SaveOutcome {
@@ -71,84 +66,12 @@ impl SaveError {
     }
 }
 
-/// Owns an exclusively-created path until an atomic write replaces its
-/// marker. A failed write removes the marker, while an error reported
-/// after rename leaves the published record intact.
-struct PathReservation {
-    path: PathBuf,
-    marker: Vec<u8>,
-    armed: bool,
-}
-
-impl PathReservation {
-    fn publish<E>(
-        mut self,
-        write: impl FnOnce(&Path) -> Result<(), E>,
-    ) -> Result<PathBuf, (PathBuf, E)> {
-        match write(&self.path) {
-            Ok(()) => {
-                self.armed = false;
-                Ok(self.path.clone())
-            }
-            Err(source) => Err((self.path.clone(), source)),
-        }
-    }
-}
-
-impl Drop for PathReservation {
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
-        let still_our_marker = std::fs::metadata(&self.path)
-            .is_ok_and(|metadata| metadata.len() == self.marker.len() as u64)
-            && std::fs::read(&self.path).is_ok_and(|contents| contents == self.marker);
-        if still_our_marker {
-            std::fs::remove_file(&self.path).ok();
-        }
-    }
-}
-
-/// Claims `path` for a new record with `create_new` (`O_EXCL`), or answers
-/// `None` when another record already holds it.
-fn reserve(path: &Path) -> std::io::Result<Option<PathReservation>> {
-    static RESERVATION_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let mut file = match std::fs::File::create_new(path) {
-        Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(None),
-        Err(e) => return Err(e),
-    };
-    let nonce = RESERVATION_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let marker = format!(
-        "{RESERVATION_MARKER_PREFIX}{}:{nonce}\n",
-        std::process::id()
-    )
-    .into_bytes();
-    if let Err(source) = file.write_all(&marker) {
-        drop(file);
-        std::fs::remove_file(path).ok();
-        return Err(source);
-    }
-    Ok(Some(PathReservation {
-        path: path.to_owned(),
-        marker,
-        armed: true,
-    }))
-}
-
-/// What one candidate path came to.
-enum Claim {
-    Taken,
-    Refused(std::io::Error),
-    Published(Result<PathBuf, (PathBuf, anyhow::Error)>),
-}
-
 /// Writes a named save to the first free `{prefix}-{tick}-{time}` path in
 /// `dir`. The time keeps two devices saving at one tick from choosing a name
-/// that means different saves.
-/// Each candidate is claimed, written and, on failure, released within one
-/// coordinated access, so iCloud never syncs the claim's marker. Collision
-/// suffixes have no arbitrary cutoff that can bypass the exclusive create.
+/// that means different saves. Each candidate is checked and written within
+/// one coordinated access, so no coordinated writer takes the name between
+/// the two; named saves run one at a time on the save worker. Collision
+/// suffixes have no cutoff.
 fn publish_named(
     dir: &Path,
     prefix: &str,
@@ -164,32 +87,23 @@ fn publish_named(
         } else {
             dir.join(format!("{prefix}-{tick:010}-{time}-{n}.amsave"))
         };
-        let claim =
+        let published =
             aftermine_icloud::coordinate(&path, aftermine_icloud::Access::Replace, |granted| {
-                match reserve(granted) {
-                    Ok(None) => Claim::Taken,
-                    Err(source) => Claim::Refused(source),
-                    Ok(Some(reservation)) => {
-                        let write = write.take().expect("only a claimed path is written");
-                        Claim::Published(reservation.publish(write))
+                match std::fs::symlink_metadata(granted) {
+                    Ok(_) => None,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        let write = write.take().expect("only a free path is written");
+                        Some(write(granted).map(|()| granted.to_owned()))
                     }
+                    Err(error) => Some(Err(error.into())),
                 }
             })
             .map_err(|source| SaveError::Write {
                 path: path.clone(),
                 source: source.into(),
             })?;
-        match claim {
-            Claim::Taken => {}
-            Claim::Refused(source) => {
-                return Err(SaveError::Write {
-                    path,
-                    source: source.into(),
-                });
-            }
-            Claim::Published(published) => {
-                return published.map_err(|(path, source)| SaveError::Write { path, source });
-            }
+        if let Some(published) = published {
+            return published.map_err(|source| SaveError::Write { path, source });
         }
         n = n.checked_add(1).ok_or_else(|| SaveError::Write {
             path,
@@ -366,7 +280,7 @@ fn rotate_prefix(dir: &Path, prefix: &str, keep: usize) {
 /// Header-eligible records Continue may resume, newest first. Loading
 /// must still validate the payload.
 pub(crate) fn candidates() -> Vec<PathBuf> {
-    crate::saves::discover(|| false)
+    crate::saves::discover_arrived(|| false)
         .continuable()
         .map(|entry| entry.path.clone())
         .collect()

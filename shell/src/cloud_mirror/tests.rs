@@ -887,6 +887,7 @@ pub(super) fn device(name: &str) -> Places {
         staging: root.join("cloud-staging"),
         folders: folders.to_vec(),
         purgeable: false,
+        dataless: |_| false,
     }
 }
 
@@ -1148,6 +1149,21 @@ fn a_file_waiting_on_icloud_drive_is_not_missing() {
     std::fs::write(path.with_file_name(".save-1.json.icloud"), b"").unwrap();
     assert!(sync(&cloud, &ipad).missing.is_empty());
     assert_eq!(cloud.file(name), Some(1_000));
+}
+
+#[test]
+fn a_dataless_file_on_a_mac_is_on_its_way_not_found() {
+    let mac = Places {
+        dataless: |path| path.ends_with("save-1.json"),
+        ..device("mac")
+    };
+    let name = "saves/save-1.json";
+    write_record(&mac, name, 1_000, "evicted");
+    write_record(&mac, "saves/save-2.json", 1_000, "here");
+    let listing = mac.local();
+    assert!(listing.arriving.contains(name));
+    assert!(!listing.found.contains_key(name));
+    assert!(listing.found.contains_key("saves/save-2.json"));
 }
 
 #[test]

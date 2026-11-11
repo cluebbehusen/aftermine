@@ -766,6 +766,8 @@ pub(crate) struct Places {
     pub folders: Vec<(&'static str, PathBuf)>,
     /// Whether the system may remove record files on its own.
     pub purgeable: bool,
+    /// Whether a file is one iCloud Drive has not brought down here yet.
+    pub dataless: fn(&Path) -> bool,
 }
 
 impl Places {
@@ -777,6 +779,7 @@ impl Places {
             staging: crate::paths::mirror_staging()?,
             folders: crate::paths::records().mirrored(),
             purgeable: crate::paths::records_purgeable(),
+            dataless: crate::paths::dataless,
         })
     }
 
@@ -832,7 +835,8 @@ impl Places {
                     }
                 } else if !file.starts_with('.') && mirrored(file) {
                     let name = format!("{label}/{file}");
-                    match Stamp::of(&path) {
+                    // macOS keeps one under its real name, with no content.
+                    match Stamp::of(&path).filter(|_| !(self.dataless)(&path)) {
                         Some(stamp) => {
                             listing.found.insert(name, stamp);
                         }

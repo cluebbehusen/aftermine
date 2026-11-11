@@ -152,6 +152,35 @@ fn a_saved_history_must_fit_its_session() {
         SessionHistory::capture(&recorder, crate::MAX_REPLAY_TICKS + 1).is_none(),
         "a match past the replay tick limit saves no history it could not load"
     );
+
+    let mut crowded = recorder.clone();
+    let first = crowded.commands[0].tick;
+    let surrender = TimedCommand {
+        tick: first,
+        command: PlayerCommand {
+            player: aftermine_sim::PlayerId(0),
+            command: Command::Surrender,
+        },
+    };
+    crowded.commands.splice(
+        0..0,
+        std::iter::repeat_n(surrender, chassis::replay::MAX_REPLAY_COMMANDS),
+    );
+    assert!(
+        SessionHistory {
+            players: crowded.setup.players.clone(),
+            commands: crowded.commands.clone(),
+        }
+        .recording(&scenario, &saved, &build())
+        .unwrap_err()
+        .to_string()
+        .contains("-command limit"),
+        "a history over the command limit cannot load"
+    );
+    assert!(
+        SessionHistory::capture(&crowded, SAVED).is_none(),
+        "so a match past it saves none, and resumes on a record from the save"
+    );
 }
 
 #[test]

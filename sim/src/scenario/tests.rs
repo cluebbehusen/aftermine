@@ -151,3 +151,18 @@ fn misplaced_unit_is_an_error() {
     });
     assert!(matches!(scenario.build(), Err(ScenarioError::BadUnit(_))));
 }
+
+#[test]
+fn a_starting_drone_is_an_error() {
+    let mut scenario = Scenario::skirmish();
+    let open = scenario.units[0];
+    scenario.units.push(UnitSpec {
+        kind: UnitKind::Drone,
+        ..open
+    });
+    let drone = scenario.units.len() - 1;
+    assert!(
+        matches!(scenario.build(), Err(ScenarioError::BadUnit(index)) if index == drone),
+        "a drone exists only with the carrier it docks on"
+    );
+}
