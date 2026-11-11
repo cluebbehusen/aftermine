@@ -1523,3 +1523,33 @@ fn drones_launching_from_their_host_do_not_shove_it() {
     );
     assert_eq!(state.unit(host).unwrap().pos, pos, "the Roc held still");
 }
+
+#[test]
+fn a_kept_command_phase_reads_as_the_inspected_one() {
+    let state = crate::Scenario::skirmish()
+        .build()
+        .expect("embedded skirmish builds");
+    let worker = state
+        .units()
+        .iter()
+        .find(|unit| unit.player == crate::PlayerId(0))
+        .expect("seat zero has a unit")
+        .id;
+    let commands = [PlayerCommand {
+        player: crate::PlayerId(0),
+        command: crate::Command::Stop {
+            units: vec![worker],
+        },
+    }];
+    let kept = state.command_phase(&commands);
+    let view = kept.view();
+    state.inspect_command_phase(&commands, |inspected| {
+        assert_eq!(view.units(), inspected.units());
+        assert_eq!(view.buildings(), inspected.buildings());
+        assert_eq!(
+            view.scrap(crate::PlayerId(0)),
+            inspected.scrap(crate::PlayerId(0))
+        );
+    });
+    assert!(!std::ptr::eq(view.units().as_ptr(), state.units().as_ptr()));
+}

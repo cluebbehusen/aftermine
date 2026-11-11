@@ -250,11 +250,12 @@ mine cannot change any player-visible feedback.
 
 Anything that spends or cancels resolves against the commands already staged:
 grouped upgrades, grouped training, magazine orders, strike picks and queue
-cancels. A purchase staged while paused therefore cannot be bought twice. The
-orders dock and waypoint chain show programs with staged commands applied,
-through a cached `inspect_command_phase` that reruns only when the staged batch
-changes. Grouped building controls derive from capabilities rather than a list
-of building kinds, and spend available scrap in building id order.
+cancels. A purchase staged while paused therefore cannot be bought twice. Those
+controls, the orders dock and the waypoint chain read the world with staged
+commands applied through one cached `State::command_phase`, projected again only
+when a tick or another staged command changes the batch. Grouped building
+controls derive from capabilities rather than a list of building kinds, and
+spend available scrap in building id order.
 
 Ground orders name whole tiles clamped onto the map. Entity lookups keep the
 unclamped tile, so a click in the camera's edge slack never binds to whatever

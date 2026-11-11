@@ -762,7 +762,7 @@ pub(crate) fn available_construction_scrap(
                     .construction_refund(game.presentation.human, replaced),
             );
     }
-    game.state.inspect_command_phase(game.pending, |view| {
+    game.with_staged(|view| {
         view.scrap(game.presentation.human)
             .unwrap_or(0)
             .saturating_add(view.construction_refund(game.presentation.human, replaced))
