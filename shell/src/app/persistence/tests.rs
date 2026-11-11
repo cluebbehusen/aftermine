@@ -271,34 +271,172 @@ fn a_quit_leaves_its_lan_match_then_waits_for_what_goes_out_up_to_a_bound() {
     assert_eq!(departure(false, false, early), Departure::Exit);
 }
 
+/// A finished job's table row: its intent, whether a quit and a leave are
+/// pending, where each result that can land goes, and where a failure goes.
+type AfterJobRow<'a> = (
+    Intent,
+    bool,
+    bool,
+    &'a [(Landed, AfterSuccess)],
+    AfterFailure,
+);
+
 #[test]
-fn a_failed_load_with_a_quit_pending_quits_and_a_failed_save_asks() {
+fn a_finished_save_or_load_goes_where_its_intent_and_a_pending_quit_or_leave_say() {
+    use AfterFailure as Failure;
+    use AfterSuccess as Success;
     use screens::pause::LeaveVerb::{MainMenu, Quit};
-    let load = Intent::Continue;
-    let save = Intent::Leave(Quit);
-    assert_eq!(after_failure(&load, true, false), AfterFailure::Exit);
-    assert_eq!(after_failure(&load, true, true), AfterFailure::Exit);
-    assert_eq!(
-        after_failure(&save, true, false),
-        AfterFailure::SaveFailed(Quit)
-    );
-    assert_eq!(
-        after_failure(&Intent::Named("keep".into()), true, false),
-        AfterFailure::SaveFailed(Quit)
-    );
-    assert_eq!(
-        after_failure(&Intent::Rematch, false, true),
-        AfterFailure::Leave
-    );
-    assert_eq!(
-        after_failure(&Intent::Leave(MainMenu), false, false),
-        AfterFailure::SaveFailed(MainMenu)
-    );
-    assert_eq!(after_failure(&load, false, false), AfterFailure::Back);
-    assert_eq!(
-        after_failure(&Intent::Named("keep".into()), false, false),
-        AfterFailure::Back
-    );
+    let load = || Intent::Load(PathBuf::from("match.amsave"));
+    let watch = || Intent::Watch(PathBuf::from("match.amreplay"));
+    let named = || Intent::Named("keep".into());
+    let restored: &[(Landed, AfterSuccess)] = &[
+        (Landed::Match, Success::Open),
+        (Landed::LanSave, Success::Open),
+    ];
+    let restored_then_quit: &[(Landed, AfterSuccess)] = &[
+        (Landed::Match, Success::SaveThenQuit),
+        (Landed::LanSave, Success::Exit),
+    ];
+    // A load starts from Home or the shelf, and a rematch from a local
+    // match's report, so no LAN match is there to end under them.
+    let rows: Vec<AfterJobRow> = vec![
+        (load(), false, false, restored, Failure::Back),
+        (load(), true, false, restored_then_quit, Failure::Exit),
+        (Intent::Continue, false, false, restored, Failure::Back),
+        (
+            Intent::Continue,
+            true,
+            false,
+            restored_then_quit,
+            Failure::Exit,
+        ),
+        (
+            watch(),
+            false,
+            false,
+            &[(Landed::Recording, Success::Open)],
+            Failure::Back,
+        ),
+        (
+            watch(),
+            true,
+            false,
+            &[(Landed::Recording, Success::Exit)],
+            Failure::Exit,
+        ),
+        (
+            named(),
+            false,
+            false,
+            &[(Landed::Saved, Success::Back)],
+            Failure::Back,
+        ),
+        (
+            named(),
+            true,
+            false,
+            &[(Landed::Saved, Success::SaveThenQuit)],
+            Failure::SaveFailed(Quit),
+        ),
+        (
+            named(),
+            false,
+            true,
+            &[(Landed::Saved, Success::Leave)],
+            Failure::Leave,
+        ),
+        (
+            named(),
+            true,
+            true,
+            &[(Landed::Saved, Success::SaveThenQuit)],
+            Failure::SaveFailed(Quit),
+        ),
+        (
+            Intent::Leave(MainMenu),
+            false,
+            false,
+            &[(Landed::Saved, Success::Home)],
+            Failure::SaveFailed(MainMenu),
+        ),
+        (
+            Intent::Leave(MainMenu),
+            true,
+            false,
+            &[(Landed::Saved, Success::SaveThenQuit)],
+            Failure::SaveFailed(Quit),
+        ),
+        (
+            Intent::Leave(MainMenu),
+            false,
+            true,
+            &[(Landed::Saved, Success::Home)],
+            Failure::SaveFailed(MainMenu),
+        ),
+        (
+            Intent::Leave(MainMenu),
+            true,
+            true,
+            &[(Landed::Saved, Success::SaveThenQuit)],
+            Failure::SaveFailed(Quit),
+        ),
+        (
+            Intent::Leave(Quit),
+            false,
+            false,
+            &[(Landed::Saved, Success::Exit)],
+            Failure::SaveFailed(Quit),
+        ),
+        (
+            Intent::Leave(Quit),
+            true,
+            false,
+            &[(Landed::Saved, Success::SaveThenQuit)],
+            Failure::SaveFailed(Quit),
+        ),
+        (
+            Intent::Leave(Quit),
+            false,
+            true,
+            &[(Landed::Saved, Success::Exit)],
+            Failure::SaveFailed(Quit),
+        ),
+        (
+            Intent::Leave(Quit),
+            true,
+            true,
+            &[(Landed::Saved, Success::SaveThenQuit)],
+            Failure::SaveFailed(Quit),
+        ),
+        (
+            Intent::Rematch,
+            false,
+            false,
+            &[(Landed::Saved, Success::Rematch)],
+            Failure::Back,
+        ),
+        (
+            Intent::Rematch,
+            true,
+            false,
+            &[(Landed::Saved, Success::SaveThenQuit)],
+            Failure::SaveFailed(Quit),
+        ),
+    ];
+    for (intent, quit, leave, landings, failure) in rows {
+        for (landed, success) in landings {
+            assert_eq!(
+                after_success(&intent, quit, leave, *landed),
+                *success,
+                "{intent:?} brought back {landed:?}, quit {quit}, leave {leave}"
+            );
+        }
+        assert_eq!(
+            after_failure(&intent, quit, leave),
+            failure,
+            "{intent:?} failed, quit {quit}, leave {leave}"
+        );
+    }
 }
 
 #[test]

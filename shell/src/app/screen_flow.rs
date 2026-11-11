@@ -107,26 +107,68 @@ fn open_lessons(app: &App, back: Screen) -> Screen {
     }
 }
 
-/// Resolves the wizard's semantic outcome for a local match and owns its
-/// seed-consumption boundary. A failed launch leaves the current window
-/// available for retry; successful construction consumes exactly one window
-/// before the game is installed by the caller. A hosted match consumes its
-/// window only once every machine has started.
-fn resolve_new_match(
-    out: WizardOut,
-    draft: &NewMatchDraft,
-    personality_seeds: &mut PersonalitySeedSource,
-) -> Option<Result<Game>> {
-    match out {
-        WizardOut::Home | WizardOut::Stay => None,
-        WizardOut::Launch => {
-            let result = launch(draft, personality_seeds.match_base());
-            if result.is_ok() {
-                personality_seeds.commit_launch();
-            }
-            Some(result)
+/// How Start launches the setup on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Start {
+    /// A new match on this machine, built at once.
+    Local,
+    /// A new match for the players in the lobby, which arrives through it
+    /// once every machine has started.
+    Hosted,
+    /// The saved LAN match for the players who came back, which arrives
+    /// likewise.
+    HostedResume,
+    /// The saved LAN match with nobody back: every other player's seat
+    /// goes to a bot, and the host plays on alone.
+    ResumeAlone,
+}
+
+impl Start {
+    /// How Start launches a setup whose lobby holds players
+    /// (`hosting_players`) or that resumes a saved LAN match (`resuming`).
+    fn of(hosting_players: bool, resuming: bool) -> Self {
+        if hosting_players {
+            Self::hosted(resuming)
+        } else if resuming {
+            Self::ResumeAlone
+        } else {
+            Self::Local
         }
     }
+
+    /// How the lobby's players start, resuming a saved match or not.
+    fn hosted(resuming: bool) -> Self {
+        if resuming {
+            Self::HostedResume
+        } else {
+            Self::Hosted
+        }
+    }
+
+    /// Whether a match arriving through the lobby spends a window of fresh
+    /// personality seeds: a new one makes new personalities, while a resumed
+    /// one keeps those it saved. It spends only once every machine has
+    /// started, so a start that fails leaves the window for the next. A
+    /// local match spends its window as it is built, in
+    /// [`resolve_new_match`].
+    fn arrival_spends_seeds(self) -> bool {
+        self == Self::Hosted
+    }
+}
+
+/// Builds a local match and owns its seed-consumption boundary. A failed
+/// launch leaves the current window available for retry; successful
+/// construction consumes exactly one window before the caller installs the
+/// game.
+fn resolve_new_match(
+    draft: &NewMatchDraft,
+    personality_seeds: &mut PersonalitySeedSource,
+) -> Result<Game> {
+    let result = launch(draft, personality_seeds.match_base());
+    if result.is_ok() {
+        personality_seeds.commit_launch();
+    }
+    result
 }
 
 /// Restart and Rematch both rebuild the exact recorded scenario. Keeping this
@@ -716,10 +758,9 @@ fn lessons_frame(
 fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut bool) -> Screen {
     app.draft.player_name = Some(app.config.name());
     // A hosting setup screen runs its lobby before input, like every lobby.
-    let resuming = w.resuming();
+    let hosted = Start::hosted(w.resuming());
     if let Some((game, link)) = w.poll_lan(&mut app.draft, app.clock.elapsed()) {
-        // A resumed match made no new personalities.
-        if !resuming {
+        if hosted.arrival_spends_seeds() {
             app.personality_seeds.commit_launch();
         }
         app.install(
@@ -752,29 +793,6 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     };
     let mut next: Option<Screen> = None;
     drop(input_scope);
-    let hosted = out == WizardOut::Launch && w.hosting_players();
-    if hosted {
-        let started = if w.resuming() {
-            w.start_resume(&app.draft, app.clock.elapsed())
-        } else {
-            let names = w.member_names();
-            hosted_scenario(&app.draft, app.personality_seeds.match_base(), &names)
-                .and_then(|scenario| w.start_lan(&app.draft, &scenario, app.clock.elapsed()))
-        };
-        if let Err(err) = started {
-            app.notify_failure("Could not start that match", format_args!("{err:#}"));
-        }
-    }
-    let launch_result = if hosted {
-        None
-    } else if out == WizardOut::Launch && w.resuming() {
-        // Every other player's seat went to a bot: the host plays on alone.
-        let alone = w.resume_alone(&app.draft);
-        w.finish_resume(&mut app.draft);
-        Some(alone)
-    } else {
-        resolve_new_match(out, &app.draft, &mut app.personality_seeds)
-    };
     match out {
         WizardOut::Home => {
             // A resumed setup opened from a save, not from Play.
@@ -787,17 +805,40 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
             *rerun = true;
             next = Some(Screen::Home(home));
         }
-        WizardOut::Launch => match launch_result {
-            None => {}
-            Some(Ok(fresh)) => {
-                app.install(fresh, Install::local(app.args.paused));
-                *rerun = true;
-                next = Some(Screen::Playing);
+        WizardOut::Launch => {
+            // A hosted start's match arrives through the lobby above once
+            // every machine has started it.
+            let built = match Start::of(w.hosting_players(), w.resuming()) {
+                Start::Hosted => {
+                    let names = w.member_names();
+                    hosted_scenario(&app.draft, app.personality_seeds.match_base(), &names)
+                        .and_then(|scenario| {
+                            w.start_lan(&app.draft, &scenario, app.clock.elapsed())
+                        })
+                        .map(|()| None)
+                }
+                Start::HostedResume => w
+                    .start_resume(&app.draft, app.clock.elapsed())
+                    .map(|()| None),
+                Start::ResumeAlone => {
+                    let alone = w.resume_alone(&app.draft);
+                    w.finish_resume(&mut app.draft);
+                    alone.map(Some)
+                }
+                Start::Local => resolve_new_match(&app.draft, &mut app.personality_seeds).map(Some),
+            };
+            match built {
+                Ok(None) => {}
+                Ok(Some(fresh)) => {
+                    app.install(fresh, Install::local(app.args.paused));
+                    *rerun = true;
+                    next = Some(Screen::Playing);
+                }
+                Err(err) => {
+                    app.notify_failure("Could not start that match", format_args!("{err:#}"));
+                }
             }
-            Some(Err(err)) => {
-                app.notify_failure("Could not start that match", format_args!("{err:#}"));
-            }
-        },
+        }
         WizardOut::Stay => {}
     }
     if let Some(next) = next {
@@ -1424,22 +1465,21 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
     drop(input_scope);
     match_backdrop(app);
     ps.draw(&app.sprites, &app.game.scenario.name, app.input.mouse);
-    Ok(match out {
-        screens::pause::Out::Stay => Screen::Pause(ps),
-        screens::pause::Out::Resume => {
+    let lesson = app.game.tutorial.as_ref().map(Tutorial::lesson);
+    Ok(match after_pause(out, lesson) {
+        AfterPause::Stay => Screen::Pause(ps),
+        AfterPause::Resume => {
             app.game.clock.paused = false;
             Screen::Playing
         }
-        screens::pause::Out::SaveGame => {
+        AfterPause::Name => {
             // Only the session knows its map; the screen just edits
             // the string.
             ps.begin_naming(&app.game.scenario.name);
             Screen::Pause(ps)
         }
-        screens::pause::Out::Save(name) => {
-            app.persistence_screen(persistence::Intent::Named(name), Screen::Pause(ps))
-        }
-        screens::pause::Out::Settings => {
+        AfterPause::Busy(intent) => app.persistence_screen(intent, Screen::Pause(ps)),
+        AfterPause::Settings => {
             // The pause payload rides along intact: leaving
             // Settings lands back on this exact menu, cursor
             // still on the row that opened it. The sim stays
@@ -1450,12 +1490,12 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
                 back: Box::new(Screen::Pause(ps)),
             }
         }
-        screens::pause::Out::Roster => Screen::Codex {
+        AfterPause::Roster => Screen::Codex {
             screen: CodexScreen::open(),
             back: Box::new(Screen::Pause(ps)),
         },
-        screens::pause::Out::Lessons => open_lessons(app, Screen::Pause(ps)),
-        screens::pause::Out::Surrender => {
+        AfterPause::Lessons => open_lessons(app, Screen::Pause(ps)),
+        AfterPause::Surrender => {
             // The command lands on the next tick like any
             // other. A 1v1 decides on the spot and the
             // normal result flow takes over; in a team game
@@ -1465,7 +1505,7 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
             app.game.clock.paused = false;
             Screen::Playing
         }
-        screens::pause::Out::WatchReplay => {
+        AfterPause::Watch => {
             // Leaving the viewer lands back on this exact menu.
             match live_playback(&app.game) {
                 Ok(session) => open_playback(session, Screen::Pause(ps)),
@@ -1475,33 +1515,77 @@ fn pause_frame(app: &mut App, mut ps: PauseScreen, events: &[RawEvent]) -> Resul
                 }
             }
         }
-        screens::pause::Out::Restart => {
-            if let Some(tutorial) = &app.game.tutorial {
-                return start_lesson(app, tutorial.lesson());
-            }
-            let fresh = rebuild_match(&app.game)?;
-            app.discarded.push(app.game.slot.clone());
+        AfterPause::RestartLesson(lesson) => return start_lesson(app, lesson),
+        AfterPause::Restart => {
+            let fresh = restart(&app.game, &mut app.discarded)?;
             app.install(fresh, Install::local(app.args.paused));
             Screen::Playing
         }
-        screens::pause::Out::MainMenu => app.persistence_screen(
-            persistence::Intent::Leave(screens::pause::LeaveVerb::MainMenu),
-            Screen::Pause(ps),
-        ),
-        screens::pause::Out::Quit => app.persistence_screen(
-            persistence::Intent::Leave(screens::pause::LeaveVerb::Quit),
-            Screen::Pause(ps),
-        ),
-        screens::pause::Out::RetrySave(verb) => {
-            app.persistence_screen(persistence::Intent::Leave(verb), Screen::Pause(ps))
-        }
-        screens::pause::Out::LeaveUnsaved(verb) => match verb {
-            screens::pause::LeaveVerb::MainMenu => Screen::Home(HomeScreen::open()),
-            screens::pause::LeaveVerb::Quit => {
-                app.persistence_screen(persistence::Intent::Exit, Screen::Pause(ps))
-            }
-        },
+        AfterPause::Home => Screen::Home(HomeScreen::open()),
     })
+}
+
+/// What a pause menu choice leads to.
+#[derive(Debug, PartialEq, Eq)]
+enum AfterPause {
+    /// The menu stays up.
+    Stay,
+    /// Back to the match, running again.
+    Resume,
+    /// The save-name field.
+    Name,
+    /// The busy screen, saving or quitting as the intent says.
+    Busy(persistence::Intent),
+    /// Settings over the menu.
+    Settings,
+    /// The roster over the menu.
+    Roster,
+    /// The lesson list over the menu.
+    Lessons,
+    /// Concede the seat, then back to the match.
+    Surrender,
+    /// The viewer over the match so far.
+    Watch,
+    /// The lesson afresh.
+    RestartLesson(Lesson),
+    /// The match afresh, its old save abandoned (see [`restart`]).
+    Restart,
+    /// Home, leaving the match unsaved.
+    Home,
+}
+
+/// What the pause menu's `out` leads to, over a match that runs `lesson`
+/// if it is one.
+fn after_pause(out: screens::pause::Out, lesson: Option<Lesson>) -> AfterPause {
+    use persistence::Intent;
+    use screens::pause::{LeaveVerb, Out};
+    match out {
+        Out::Stay => AfterPause::Stay,
+        Out::Resume => AfterPause::Resume,
+        Out::SaveGame => AfterPause::Name,
+        Out::Save(name) => AfterPause::Busy(Intent::Named(name)),
+        Out::Settings => AfterPause::Settings,
+        Out::Roster => AfterPause::Roster,
+        Out::Lessons => AfterPause::Lessons,
+        Out::Surrender => AfterPause::Surrender,
+        Out::WatchReplay => AfterPause::Watch,
+        Out::Restart => lesson.map_or(AfterPause::Restart, AfterPause::RestartLesson),
+        Out::MainMenu => AfterPause::Busy(Intent::Leave(LeaveVerb::MainMenu)),
+        Out::Quit => AfterPause::Busy(Intent::Leave(LeaveVerb::Quit)),
+        Out::RetrySave(verb) => AfterPause::Busy(Intent::Leave(verb)),
+        Out::LeaveUnsaved(LeaveVerb::MainMenu) => AfterPause::Home,
+        // A quit with nothing to save still lets what is going out finish.
+        Out::LeaveUnsaved(LeaveVerb::Quit) => AfterPause::Busy(Intent::Exit),
+    }
+}
+
+/// Rebuilds `game`'s match for Restart and abandons its save to
+/// `discarded`, for the worker to delete: the fresh run saves to a slot of
+/// its own. A rebuild that fails abandons nothing.
+fn restart(game: &Game, discarded: &mut Vec<autosave::SaveSlot>) -> Result<Game> {
+    let fresh = rebuild_match(game)?;
+    discarded.push(game.slot.clone());
+    Ok(fresh)
 }
 
 #[cfg(test)]
