@@ -1,15 +1,17 @@
 //! What each lesson says and what completes each of its steps. Paragraphs
-//! wrap to the card; `{token}`s name the player's current bindings.
+//! wrap to the card and are worded as [`crate::wording`] describes;
+//! `{token}`s name the player's current bindings.
 
-use super::{Copy, Goal, Sortie, Squad, Stance, Step};
+use super::{Goal, Sortie, Squad, Stance, Step};
+use crate::wording::Para;
 use aftermine_sim::{BuildingKind, UnitKind};
 use chassis::grid::TilePos;
 
 const ZOOM_WHEEL: &str = "Scroll the mouse wheel to zoom in and out.";
 const ZOOM_PINCH: &str = "Pinch with two fingers to zoom in and out.";
+const ZOOM_STICK: &str = "Push the right stick up or down to zoom in and out.";
 const UNIT_PANEL: &str = "The bottom panel shows the selected unit's health and weapons, and the orders you can give it.";
-const DOUBLE: &str = "You can also double-click a Sentinel to select every Sentinel on screen.";
-const DOUBLE_TAP: &str = "You can also double-tap a Sentinel to select every Sentinel on screen.";
+const UNIT_PANEL_PAD: &str = "The bottom panel shows the selected unit's health and weapons. Press {Y} to see the orders you can give it.";
 const TOUCH_BOX: &str = "Hold two fingers on the ground until a box appears. Move your fingers \
     to stretch the box around all four Sentinels, then lift one finger.";
 
@@ -20,103 +22,73 @@ pub(super) const COMMAND_BRIEFING: &str = "Your four Sentinels are at the west e
 pub(super) const COMMAND: [Step; 5] = [
     Step {
         title: "Move the camera",
-        copy: Copy {
-            mouse_keys: &[
-                "Press {pan} or drag with the middle mouse button to move the camera. You can also click the minimap to jump to a spot.",
-                ZOOM_WHEEL,
-            ],
-            mouse: &[
-                "Drag with the middle mouse button to move the camera. You can also click the minimap to jump to a spot.",
-                ZOOM_WHEEL,
-            ],
-            touch_keys: &[
-                "Drag one finger across the ground, or press {pan}, to move the camera.",
-                ZOOM_PINCH,
-            ],
-            touch: &[
-                "Drag one finger across the ground to move the camera.",
-                ZOOM_PINCH,
-            ],
-        },
+        copy: &[
+            Para::Each {
+                mouse: "[Press {pan} or drag|Drag] with the middle mouse button to move the camera. You can also click the minimap to jump to a spot.",
+                touch: "Drag one finger across the ground[, or press {pan},] to move the camera.",
+                pad: "Push the left stick to move the camera. The reticle in the middle of the screen is your pointer.",
+            },
+            Para::Each {
+                mouse: ZOOM_WHEEL,
+                touch: ZOOM_PINCH,
+                pad: ZOOM_STICK,
+            },
+        ],
         goal: Goal::Look(4.0),
     },
     Step {
         title: "Select a Sentinel",
-        copy: Copy {
-            mouse_keys: &[
-                "Your four Sentinels are at the west edge of the map. The minimap shows where. Click one to select it.",
-                UNIT_PANEL,
-            ],
-            mouse: &[
-                "Your four Sentinels are at the west edge of the map. The minimap shows where. Click one to select it.",
-                UNIT_PANEL,
-            ],
-            touch_keys: &[
-                "Your four Sentinels are at the west edge of the map. The minimap shows where. Tap one to select it.",
-                UNIT_PANEL,
-            ],
-            touch: &[
-                "Your four Sentinels are at the west edge of the map. The minimap shows where. Tap one to select it.",
-                UNIT_PANEL,
-            ],
-        },
+        copy: &[
+            Para::Pointer {
+                pointer: "Your four Sentinels are at the west edge of the map. The minimap shows where. {Click} one to select it.",
+                pad: "Your four Sentinels are at the west edge of the map. The minimap shows where. Move the reticle onto one and press {A} to select it.",
+            },
+            Para::Pointer {
+                pointer: UNIT_PANEL,
+                pad: UNIT_PANEL_PAD,
+            },
+        ],
         goal: Goal::Select(1),
     },
     Step {
         title: "Select the squad",
-        copy: Copy {
-            mouse_keys: &[
-                "Drag a box around all four Sentinels to select them together.",
-                DOUBLE,
-                "Shift-click a unit to add it to the selection or remove it.",
-            ],
-            mouse: &[
-                "Drag a box around all four Sentinels to select them together.",
-                DOUBLE,
-            ],
-            touch_keys: &[TOUCH_BOX, DOUBLE_TAP],
-            touch: &[TOUCH_BOX, DOUBLE_TAP],
-        },
+        copy: &[
+            Para::Each {
+                mouse: "Drag a box around all four Sentinels to select them together.",
+                touch: TOUCH_BOX,
+                pad: "Hold {A} and move the reticle across all four Sentinels, then let go to select them together.",
+            },
+            Para::Pointer {
+                pointer: "You can also double-{click} a Sentinel to select every Sentinel on screen.",
+                pad: "You can also press {A} twice on a Sentinel to select every Sentinel on screen.",
+            },
+            Para::Each {
+                mouse: "[Shift-click a unit to add it to the selection or remove it.]",
+                touch: "",
+                pad: "Hold {LT} and press {A} on a unit to add it to the selection or remove it.",
+            },
+        ],
         goal: Goal::Select(4),
     },
     Step {
         title: "Find the enemy",
-        copy: Copy {
-            mouse_keys: &[
-                "Right-click open ground to move the squad there. Head east until you find the enemy Fabricator.",
-            ],
-            mouse: &[
-                "Right-click open ground to move the squad there. Head east until you find the enemy Fabricator.",
-            ],
-            touch_keys: &[
-                "Long-press open ground to move the squad there. Keep your finger down until the ring fills. Head east until you find the enemy Fabricator.",
-            ],
-            touch: &[
-                "Long-press open ground to move the squad there. Keep your finger down until the ring fills. Head east until you find the enemy Fabricator.",
-            ],
-        },
+        copy: &[Para::Each {
+            mouse: "Right-click open ground to move the squad there. Head east until you find the enemy Fabricator.",
+            touch: "Long-press open ground to move the squad there. Keep your finger down until the ring fills. Head east until you find the enemy Fabricator.",
+            pad: "Move the reticle onto open ground and press {X} to move the squad there. Head east until you find the enemy Fabricator.",
+        }],
         goal: Goal::Find,
     },
     Step {
         title: "Destroy the Fabricator",
-        copy: Copy {
-            mouse_keys: &[
-                "Right-click the Fabricator to send the whole squad to attack it.",
-                "To move and fight anything on the way, press {hunt} and then click the ground. Hunting units stop to chase and attack the enemies they meet.",
-            ],
-            mouse: &[
-                "Right-click the Fabricator to send the whole squad to attack it.",
-                "To move and fight anything on the way, click Hunt in the bottom panel and then click the ground. Hunting units stop to chase and attack the enemies they meet.",
-            ],
-            touch_keys: &[
-                "Long-press the Fabricator to send the whole squad to attack it.",
-                "To move and fight anything on the way, tap Hunt in the bottom panel or press {hunt}, and then tap the ground. Hunting units stop to chase and attack the enemies they meet.",
-            ],
-            touch: &[
-                "Long-press the Fabricator to send the whole squad to attack it.",
-                "To move and fight anything on the way, tap Hunt in the bottom panel and then tap the ground. Hunting units stop to chase and attack the enemies they meet.",
-            ],
-        },
+        copy: &[
+            Para::Same("{Right-click} the Fabricator to send the whole squad to attack it."),
+            Para::Each {
+                mouse: "To move and fight anything on the way, [press {hunt}|click Hunt in the bottom panel] and then click the ground. Hunting units stop to chase and attack the enemies they meet.",
+                touch: "To move and fight anything on the way, tap Hunt in the bottom panel[ or press {hunt},] and then tap the ground. Hunting units stop to chase and attack the enemies they meet.",
+                pad: "To move and fight anything on the way, press {Y} and point the left stick at Hunt. Press {A} to pick it, then press {A} again on the ground. Hunting units stop to chase and attack the enemies they meet.",
+            },
+        ],
         goal: Goal::Destroy,
     },
 ];
@@ -131,10 +103,16 @@ const IDLE: &str = "Your new Harvester is idle. The idle badge in the top bar sh
     Harvesters have nothing to do.";
 const NEAR_PAYS: &str = "An Extractor earns scrap without any hauling. Within 8 tiles of a \
     Foundry, it earns 180 scrap a minute.";
-const FAR_FRAME: &[&str] = &[
-    "Your Surveyor has found a second frame to the east. Restore it the same way.",
-    "Farther than 8 tiles from a Foundry, an Extractor earns 120 scrap a minute. The top bar shows your total passive income, including a small trickle from your Foundry.",
+const FAR_FRAME: &[Para] = &[
+    Para::Same("Your Surveyor has found a second frame to the east. Restore it the same way."),
+    Para::Same(
+        "Farther than 8 tiles from a Foundry, an Extractor earns 120 scrap a minute. The top bar shows your total passive income, including a small trickle from your Foundry.",
+    ),
 ];
+const IDLE_PICK: Para = Para::Pointer {
+    pointer: "{Click} the badge[ or press {idle}] to select an idle Harvester, then {right-click} a scrap pile. Repeat until all three Harvesters are collecting.",
+    pad: "Press D-pad down to select an idle Harvester, then press {X} on a scrap pile. Repeat until all three Harvesters are collecting.",
+};
 
 pub(super) const SCRAP_BRIEFING: &str = "You start with a Foundry, two Harvesters, and a \
     Surveyor. Everything you build and train costs scrap, so send a Harvester to collect some. \
@@ -144,88 +122,43 @@ pub(super) const SCRAP_BRIEFING: &str = "You start with a Foundry, two Harvester
 pub(super) const SCRAP: [Step; 5] = [
     Step {
         title: "Collect scrap",
-        copy: Copy {
-            mouse_keys: &["Select a Harvester, then right-click a scrap pile.", HAUL],
-            mouse: &["Select a Harvester, then right-click a scrap pile.", HAUL],
-            touch_keys: &["Select a Harvester, then long-press a scrap pile.", HAUL],
-            touch: &["Select a Harvester, then long-press a scrap pile.", HAUL],
-        },
+        copy: &[
+            Para::Same("Select a Harvester, then {right-click} a scrap pile."),
+            Para::Same(HAUL),
+        ],
         goal: Goal::Deposit,
     },
     Step {
         title: "Train a Harvester",
-        copy: Copy {
-            mouse_keys: &[
-                "Click your Foundry, then click Harvester in the bottom panel or press {train}.",
-                MORE_WORKERS,
-            ],
-            mouse: &[
-                "Click your Foundry, then click Harvester in the bottom panel.",
-                MORE_WORKERS,
-            ],
-            touch_keys: &[
-                "Tap your Foundry, then tap Harvester in the bottom panel or press {train}.",
-                MORE_WORKERS,
-            ],
-            touch: &[
-                "Tap your Foundry, then tap Harvester in the bottom panel.",
-                MORE_WORKERS,
-            ],
-        },
+        copy: &[
+            Para::Pointer {
+                pointer: "{Click} your Foundry, then {click} Harvester in the bottom panel[ or press {train}].",
+                pad: "Select your Foundry and press {Y}. Point the left stick at Harvester and press {A}. The ring stays open so you can train more. Press {B} to close it.",
+            },
+            Para::Same(MORE_WORKERS),
+        ],
         goal: Goal::Train(UnitKind::Harvester),
     },
     Step {
         title: "Put every Harvester to work",
-        copy: Copy {
-            mouse_keys: &[
-                IDLE,
-                "Click the badge or press {idle} to select an idle Harvester, then right-click a scrap pile. Repeat until all three Harvesters are collecting.",
-            ],
-            mouse: &[
-                IDLE,
-                "Click the badge to select an idle Harvester, then right-click a scrap pile. Repeat until all three Harvesters are collecting.",
-            ],
-            touch_keys: &[
-                IDLE,
-                "Tap the badge or press {idle} to select an idle Harvester, then long-press a scrap pile. Repeat until all three Harvesters are collecting.",
-            ],
-            touch: &[
-                IDLE,
-                "Tap the badge to select an idle Harvester, then long-press a scrap pile. Repeat until all three Harvesters are collecting.",
-            ],
-        },
+        copy: &[Para::Same(IDLE), IDLE_PICK],
         goal: Goal::Harvest(3),
     },
     Step {
         title: "Restore an Extractor",
-        copy: Copy {
-            mouse_keys: &[
-                "The 2x2 frame near your Foundry is a derelict Extractor. To restore it, select a Harvester, click Build or press {build}, choose Extractor in the Economy column, and click the frame.",
-                NEAR_PAYS,
-            ],
-            mouse: &[
-                "The 2x2 frame near your Foundry is a derelict Extractor. To restore it, select a Harvester, click Build, choose Extractor in the Economy column, and click the frame.",
-                NEAR_PAYS,
-            ],
-            touch_keys: &[
-                "The 2x2 frame near your Foundry is a derelict Extractor. To restore it, select a Harvester, tap Build or press {build}, and choose Extractor in the Economy column. Drag the structure's outline onto the frame and tap the check mark.",
-                NEAR_PAYS,
-            ],
-            touch: &[
-                "The 2x2 frame near your Foundry is a derelict Extractor. To restore it, select a Harvester, tap Build, and choose Extractor in the Economy column. Drag the structure's outline onto the frame and tap the check mark.",
-                NEAR_PAYS,
-            ],
-        },
+        copy: &[
+            Para::Each {
+                mouse: "The 2x2 frame near your Foundry is a derelict Extractor. To restore it, select a Harvester, click Build[ or press {build}], choose Extractor in the Economy column, and click the frame.",
+                touch: "The 2x2 frame near your Foundry is a derelict Extractor. To restore it, select a Harvester, tap Build[ or press {build}], and choose Extractor in the Economy column. Drag the structure's outline onto the frame and tap the check mark.",
+                pad: "The 2x2 frame near your Foundry is a derelict Extractor. To restore it, select a Harvester, press {Y}, and pick Build, then Economy, then Extractor. Move the reticle onto the frame and press {A}.",
+            },
+            Para::Same(NEAR_PAYS),
+        ],
         goal: Goal::Build(BuildingKind::Extractor, 1),
     },
     Step {
         title: "Restore the far frame",
-        copy: Copy {
-            mouse_keys: FAR_FRAME,
-            mouse: FAR_FRAME,
-            touch_keys: FAR_FRAME,
-            touch: FAR_FRAME,
-        },
+        copy: FAR_FRAME,
         goal: Goal::Build(BuildingKind::Extractor, 2),
     },
 ];
@@ -234,9 +167,7 @@ pub(super) const SCRAP_OUTRO: &str =
     "In a match, keep every Harvester busy and restore Extractors early.";
 
 const MORE_BUILDERS: &str = "More Harvesters on one site build it faster. To add one, select it \
-    and right-click the site.";
-const MORE_BUILDERS_TOUCH: &str = "More Harvesters on one site build it faster. To add one, \
-    select it and long-press the site.";
+    and {right-click} the site.";
 const PAID_IN_ORDER: &str = "Each site is paid for when you place it, and your Harvester builds \
     them one after another.";
 const RALLY_USE: &str = "Armed units hunt their way to the rally point. A Harvester rallied \
@@ -253,116 +184,70 @@ pub(super) const BUILD_BRIEFING: &str = "You have three Harvesters and scrap to 
 pub(super) const BUILD: [Step; 5] = [
     Step {
         title: "Build a Fabricator",
-        copy: Copy {
-            mouse_keys: &[
-                "Select a Harvester, then click Build or press {build}. Structures are sorted into columns such as Economy, Production, and Defense. Point at a card to see what it does, or what it still needs.",
-                "Choose Fabricator in the Production column and click open ground you have explored. The bar above the bottom panel says whether the spot can be built on.",
-                MORE_BUILDERS,
-            ],
-            mouse: &[
-                "Select a Harvester, then click Build. Structures are sorted into columns such as Economy, Production, and Defense. Point at a card to see what it does, or what it still needs.",
-                "Choose Fabricator in the Production column and click open ground you have explored. The bar above the bottom panel says whether the spot can be built on.",
-                MORE_BUILDERS,
-            ],
-            touch_keys: &[
-                "Select a Harvester, then tap Build or press {build}. Structures are sorted into columns such as Economy, Production, and Defense.",
-                "Choose Fabricator in the Production column. Drag the structure's outline onto open ground you have explored and tap the check mark. The bar above the bottom panel says whether the spot can be built on.",
-                MORE_BUILDERS_TOUCH,
-            ],
-            touch: &[
-                "Select a Harvester, then tap Build. Structures are sorted into columns such as Economy, Production, and Defense.",
-                "Choose Fabricator in the Production column. Drag the structure's outline onto open ground you have explored and tap the check mark. The bar above the bottom panel says whether the spot can be built on.",
-                MORE_BUILDERS_TOUCH,
-            ],
-        },
+        copy: &[
+            Para::Each {
+                mouse: "Select a Harvester, then click Build[ or press {build}]. Structures are sorted into columns such as Economy, Production, and Defense. Point at a card to see what it does, or what it still needs.",
+                touch: "Select a Harvester, then tap Build[ or press {build}]. Structures are sorted into columns such as Economy, Production, and Defense.",
+                pad: "Select a Harvester, press {Y}, and pick Build. Structures are sorted into Economy, Production, Defense and more. Point the left stick at one to see what it does, or what it still needs.",
+            },
+            Para::Each {
+                mouse: "Choose Fabricator in the Production column and click open ground you have explored. The bar above the bottom panel says whether the spot can be built on.",
+                touch: "Choose Fabricator in the Production column. Drag the structure's outline onto open ground you have explored and tap the check mark. The bar above the bottom panel says whether the spot can be built on.",
+                pad: "Pick Fabricator in Production, move the reticle onto open ground you have explored, and press {A}. The bar above the bottom panel says whether the spot can be built on.",
+            },
+            Para::Same(MORE_BUILDERS),
+        ],
         goal: Goal::Build(BuildingKind::Fabricator, 1),
     },
     Step {
         title: "Build three Barricades",
-        copy: Copy {
-            mouse_keys: &[
-                "Barricades are cheap walls. Choose Barricade in the Defense column, then hold Shift and click three spots. You can also click and drag to lay a row.",
-                PAID_IN_ORDER,
-            ],
-            mouse: &[
-                "Barricades are cheap walls. Choose Barricade in the Defense column, then click and drag across open ground to lay a row of three.",
-                PAID_IN_ORDER,
-            ],
-            touch_keys: &[
-                "Barricades are cheap walls. Choose Barricade in the Defense column. Drag the handle on the outline's edge to stretch it into a row of three, then tap the check mark.",
-                PAID_IN_ORDER,
-            ],
-            touch: &[
-                "Barricades are cheap walls. Choose Barricade in the Defense column. Drag the handle on the outline's edge to stretch it into a row of three, then tap the check mark.",
-                PAID_IN_ORDER,
-            ],
-        },
+        copy: &[
+            Para::Each {
+                mouse: "Barricades are cheap walls. Choose Barricade in the Defense column, then [hold Shift and click three spots. You can also click and drag to lay a row.|click and drag across open ground to lay a row of three.]",
+                touch: "Barricades are cheap walls. Choose Barricade in the Defense column. Drag the handle on the outline's edge to stretch it into a row of three, then tap the check mark.",
+                pad: "Barricades are cheap walls. Pick Barricade in Defense, then hold {A} and move the reticle to lay a row of three. You can also hold {LT} and press {A} on three spots.",
+            },
+            Para::Same(PAID_IN_ORDER),
+        ],
         goal: Goal::Build(BuildingKind::Barricade, 3),
     },
     Step {
         title: "Set a rally point",
-        copy: Copy {
-            mouse_keys: &[
-                "A rally point is where new units go when they are trained. Select your Fabricator and right-click the ground where they should gather, or press {rally} and click the spot.",
-                RALLY_USE,
-            ],
-            mouse: &[
-                "A rally point is where new units go when they are trained. Select your Fabricator and right-click the ground where they should gather, or click Set next to the flag in the bottom panel and click the spot.",
-                RALLY_USE,
-            ],
-            touch_keys: &[
-                "A rally point is where new units go when they are trained. Select your Fabricator and long-press the ground where they should gather.",
-                RALLY_USE,
-            ],
-            touch: &[
-                "A rally point is where new units go when they are trained. Select your Fabricator and long-press the ground where they should gather.",
-                RALLY_USE,
-            ],
-        },
+        copy: &[
+            Para::Each {
+                mouse: "A rally point is where new units go when they are trained. Select your Fabricator and right-click the ground where they should gather, or [press {rally}|click Set next to the flag in the bottom panel] and click the spot.",
+                touch: "A rally point is where new units go when they are trained. Select your Fabricator and long-press the ground where they should gather.",
+                pad: "A rally point is where new units go when they are trained. Select your Fabricator and press {X} on the ground where they should gather.",
+            },
+            Para::Same(RALLY_USE),
+        ],
         goal: Goal::Rally,
     },
     Step {
         title: "Train a Lancer",
-        copy: Copy {
-            mouse_keys: &[
-                "With the Fabricator selected, click Lancer in the bottom panel or press {train}.",
-                FABRICATOR_UNLOCKS,
-            ],
-            mouse: &[
-                "With the Fabricator selected, click Lancer in the bottom panel.",
-                FABRICATOR_UNLOCKS,
-            ],
-            touch_keys: &[
-                "With the Fabricator selected, tap Lancer in the bottom panel or press {train}.",
-                FABRICATOR_UNLOCKS,
-            ],
-            touch: &[
-                "With the Fabricator selected, tap Lancer in the bottom panel.",
-                FABRICATOR_UNLOCKS,
-            ],
-        },
+        copy: &[
+            Para::Pointer {
+                pointer: "With the Fabricator selected, {click} Lancer in the bottom panel[ or press {train}].",
+                pad: "With the Fabricator selected, press {Y} and pick Lancer, then press {B} to close the ring.",
+            },
+            Para::Same(FABRICATOR_UNLOCKS),
+        ],
         goal: Goal::Train(UnitKind::Lancer),
     },
     Step {
         title: "Make a control group",
-        copy: Copy {
-            mouse_keys: &[
-                "A control group saves a selection so you can select it again with one key. Select your Lancer and press {assign}. This saves it as group 1.",
-                "Press {recall} to select group 1 again. Press it twice to move the camera to it. You can also click the plus above the minimap to save a group, and click the group there to select it.",
-            ],
-            mouse: &[
-                "A control group saves a selection so you can select it again with one click. Select your Lancer, then click the plus above the minimap to save it as a group.",
-                "Click the group above the minimap to select it again.",
-            ],
-            touch_keys: &[
-                "A control group saves a selection so you can select it again with one tap. Select your Lancer, then tap the plus above the minimap or press {assign} to save it as a group.",
-                "Tap the group above the minimap or press {recall} to select it again.",
-            ],
-            touch: &[
-                "A control group saves a selection so you can select it again with one tap. Select your Lancer, then tap the plus above the minimap to save it as a group.",
-                "Tap the group above the minimap to select it again.",
-            ],
-        },
+        copy: &[
+            Para::Each {
+                mouse: "A control group saves a selection so you can select it again with one [key. Select your Lancer and press {assign}. This saves it as group 1.|click. Select your Lancer, then click the plus above the minimap to save it as a group.]",
+                touch: "A control group saves a selection so you can select it again with one tap. Select your Lancer, then tap the plus above the minimap[ or press {assign}] to save it as a group.",
+                pad: "A control group saves a selection so you can select it again quickly. Select your Lancer and press D-pad right. Point the left stick at Group 1 and press {X} to save it there.",
+            },
+            Para::Each {
+                mouse: "[Press {recall} to select group 1 again. Press it twice to move the camera to it. You can also click the plus above the minimap to save a group, and click the group there to select it.|Click the group above the minimap to select it again.]",
+                touch: "Tap the group above the minimap[ or press {recall}] to select it again.",
+                pad: "Press D-pad right and pick Group 1 with {A} to select it again.",
+            },
+        ],
         goal: Goal::Group,
     },
 ];
@@ -372,10 +257,11 @@ pub(super) const BUILD_OUTRO: &str = "";
 const RAID: &str = "Five enemy Scuttlers are coming for your Harvesters. Scuttlers are fast \
     and cheap and kill Harvesters quickly, but a Sentinel beats a Scuttler one on one.";
 const HUNTING: &str = "Hunting units stop to chase and fight every enemy they meet.";
-const ADVANCE_CLICK: &str = "A right-click on the ground is an Advance instead. Advancing \
-    units fire at enemies in range but never stop or chase, so a raid can slip past them.";
-const ADVANCE_PRESS: &str = "A long-press on the ground is an Advance instead. Advancing \
-    units fire at enemies in range but never stop or chase, so a raid can slip past them.";
+const ADVANCE: Para = Para::Each {
+    mouse: "A right-click on the ground is an Advance instead. Advancing units fire at enemies in range but never stop or chase, so a raid can slip past them.",
+    touch: "A long-press on the ground is an Advance instead. Advancing units fire at enemies in range but never stop or chase, so a raid can slip past them.",
+    pad: "Pressing {X} on the ground is an Advance instead. Advancing units fire at enemies in range but never stop or chase, so a raid can slip past them.",
+};
 const ROCK: &str = "Two enemy Lancers stand behind the rock line in the middle. Rock blocks \
     shots between ground units but not sight, so up close you can see them but can't hit \
     them through it.";
@@ -401,100 +287,51 @@ pub(super) const FIGHT_BRIEFING: &str = "Five enemy Scuttlers are coming for you
 pub(super) const FIGHT: [Step; 5] = [
     Step {
         title: "Stop the raid",
-        copy: Copy {
-            mouse_keys: &[
-                RAID,
-                "Select your army, press {hunt}, and click near your Harvesters.",
-                HUNTING,
-                ADVANCE_CLICK,
-            ],
-            mouse: &[
-                RAID,
-                "Select your army, click Hunt in the bottom panel, and click near your Harvesters.",
-                HUNTING,
-                ADVANCE_CLICK,
-            ],
-            touch_keys: &[
-                RAID,
-                "Select your army, tap Hunt in the bottom panel or press {hunt}, and tap near your Harvesters.",
-                HUNTING,
-                ADVANCE_PRESS,
-            ],
-            touch: &[
-                RAID,
-                "Select your army, tap Hunt in the bottom panel, and tap near your Harvesters.",
-                HUNTING,
-                ADVANCE_PRESS,
-            ],
-        },
+        copy: &[
+            Para::Same(RAID),
+            Para::Each {
+                mouse: "Select your army, [press {hunt}|click Hunt in the bottom panel], and click near your Harvesters.",
+                touch: "Select your army, tap Hunt in the bottom panel[ or press {hunt}], and tap near your Harvesters.",
+                pad: "Press {LB} to select your army, then press {Y} and pick Hunt. Press {A} near your Harvesters.",
+            },
+            Para::Same(HUNTING),
+            ADVANCE,
+        ],
         goal: Goal::Defeat(0),
     },
     Step {
         title: "Get around the rocks",
-        copy: Copy {
-            mouse_keys: &[ROCK, AROUND],
-            mouse: &[ROCK, AROUND],
-            touch_keys: &[ROCK, AROUND],
-            touch: &[ROCK, AROUND],
-        },
+        copy: &[Para::Same(ROCK), Para::Same(AROUND)],
         goal: Goal::Defeat(1),
     },
     Step {
         title: "Take the ramp",
-        copy: Copy {
-            mouse_keys: &[LEVELS, RAMP],
-            mouse: &[LEVELS, RAMP],
-            touch_keys: &[LEVELS, RAMP],
-            touch: &[LEVELS, RAMP],
-        },
+        copy: &[Para::Same(LEVELS), Para::Same(RAMP)],
         goal: Goal::Defeat(2),
     },
     Step {
         title: "Fall back",
-        copy: Copy {
-            mouse_keys: &[
-                WARDEN,
-                "Select your army, press {run}, and click near your Turrets.",
-                BESIDE_TURRETS,
-            ],
-            mouse: &[
-                WARDEN,
-                "Select your army, click Run in the bottom panel, and click near your Turrets.",
-                BESIDE_TURRETS,
-            ],
-            touch_keys: &[
-                WARDEN,
-                "Select your army, tap Run in the bottom panel or press {run}, and tap near your Turrets.",
-                BESIDE_TURRETS,
-            ],
-            touch: &[
-                WARDEN,
-                "Select your army, tap Run in the bottom panel, and tap near your Turrets.",
-                BESIDE_TURRETS,
-            ],
-        },
+        copy: &[
+            Para::Same(WARDEN),
+            Para::Each {
+                mouse: "Select your army, [press {run}|click Run in the bottom panel], and click near your Turrets.",
+                touch: "Select your army, tap Run in the bottom panel[ or press {run}], and tap near your Turrets.",
+                pad: "Press {LB} to select your army, then press {Y} and pick Run. Press {A} near your Turrets.",
+            },
+            Para::Same(BESIDE_TURRETS),
+        ],
         goal: Goal::Defeat(3),
     },
     Step {
         title: "Destroy the outpost",
-        copy: Copy {
-            mouse_keys: &[
-                OUTPOST,
-                "Press {hunt} and click near the outpost to clear the way, then right-click each structure to attack it.",
-            ],
-            mouse: &[
-                OUTPOST,
-                "Click Hunt and click near the outpost to clear the way, then right-click each structure to attack it.",
-            ],
-            touch_keys: &[
-                OUTPOST,
-                "Tap Hunt or press {hunt} and tap near the outpost to clear the way, then long-press each structure to attack it.",
-            ],
-            touch: &[
-                OUTPOST,
-                "Tap Hunt and tap near the outpost to clear the way, then long-press each structure to attack it.",
-            ],
-        },
+        copy: &[
+            Para::Same(OUTPOST),
+            Para::Each {
+                mouse: "[Press {hunt}|Click Hunt] and click near the outpost to clear the way, then right-click each structure to attack it.",
+                touch: "Tap Hunt[ or press {hunt}] and tap near the outpost to clear the way, then long-press each structure to attack it.",
+                pad: "Press {Y}, pick Hunt, and press {A} near the outpost to clear the way, then press {X} on each structure to attack it.",
+            },
+        ],
         goal: Goal::Destroy,
     },
 ];
@@ -568,192 +405,86 @@ pub(super) const SUSTAIN_BRIEFING: &str = "An enemy base is somewhere to the eas
 pub(super) const SUSTAIN: [Step; 7] = [
     Step {
         title: "Scout the east",
-        copy: Copy {
-            mouse_keys: &[
-                FOG,
-                SURVEYOR,
-                "Select the Surveyor and right-click far to the east to scout there.",
-                SCOUT_SAFE,
-                SURVEYOR_RADAR,
-            ],
-            mouse: &[
-                FOG,
-                SURVEYOR,
-                "Select the Surveyor and right-click far to the east to scout there.",
-                SCOUT_SAFE,
-                SURVEYOR_RADAR,
-            ],
-            touch_keys: &[
-                FOG,
-                SURVEYOR,
-                "Select the Surveyor and long-press far to the east to scout there.",
-                SCOUT_SAFE,
-                SURVEYOR_RADAR,
-            ],
-            touch: &[
-                FOG,
-                SURVEYOR,
-                "Select the Surveyor and long-press far to the east to scout there.",
-                SCOUT_SAFE,
-                SURVEYOR_RADAR,
-            ],
-        },
+        copy: &[
+            Para::Same(FOG),
+            Para::Same(SURVEYOR),
+            Para::Pointer {
+                pointer: "Select the Surveyor and {right-click} far to the east to scout there.",
+                pad: "Select the Surveyor, move the reticle far to the east, and press {X} to scout there.",
+            },
+            Para::Same(SCOUT_SAFE),
+            Para::Same(SURVEYOR_RADAR),
+        ],
         goal: Goal::Find,
     },
     Step {
         title: "Build an Array",
-        copy: Copy {
-            mouse_keys: &[
-                ARRAY,
-                BLIPS,
-                "Select a Harvester, click Build or press {build}, and choose Array in the Utility column. Click open ground east of your Foundry to place it.",
-            ],
-            mouse: &[
-                ARRAY,
-                BLIPS,
-                "Select a Harvester, click Build, and choose Array in the Utility column. Click open ground east of your Foundry to place it.",
-            ],
-            touch_keys: &[
-                ARRAY,
-                BLIPS,
-                "Select a Harvester, tap Build or press {build}, and choose Array in the Utility column. Drag its outline east of your Foundry and tap the check mark.",
-            ],
-            touch: &[
-                ARRAY,
-                BLIPS,
-                "Select a Harvester, tap Build, and choose Array in the Utility column. Drag its outline east of your Foundry and tap the check mark.",
-            ],
-        },
+        copy: &[
+            Para::Same(ARRAY),
+            Para::Same(BLIPS),
+            Para::Each {
+                mouse: "Select a Harvester, click Build[ or press {build}], and choose Array in the Utility column. Click open ground east of your Foundry to place it.",
+                touch: "Select a Harvester, tap Build[ or press {build}], and choose Array in the Utility column. Drag its outline east of your Foundry and tap the check mark.",
+                pad: "Select a Harvester, press {Y}, and pick Build, then Utility, then Array. Press {A} on open ground east of your Foundry to place it.",
+            },
+        ],
         goal: Goal::Build(BuildingKind::Array, 1),
     },
     Step {
         title: "Build a Flak Turret",
-        copy: Copy {
-            mouse_keys: &[
-                AIRCRAFT,
-                ANTI_AIR,
-                "Select a Harvester, click Build or press {build}, and choose Flak Turret in the Defense column. Click open ground east of your Foundry to place it.",
-            ],
-            mouse: &[
-                AIRCRAFT,
-                ANTI_AIR,
-                "Select a Harvester, click Build, and choose Flak Turret in the Defense column. Click open ground east of your Foundry to place it.",
-            ],
-            touch_keys: &[
-                AIRCRAFT,
-                ANTI_AIR,
-                "Select a Harvester, tap Build or press {build}, and choose Flak Turret in the Defense column. Drag its outline east of your Foundry and tap the check mark.",
-            ],
-            touch: &[
-                AIRCRAFT,
-                ANTI_AIR,
-                "Select a Harvester, tap Build, and choose Flak Turret in the Defense column. Drag its outline east of your Foundry and tap the check mark.",
-            ],
-        },
+        copy: &[
+            Para::Same(AIRCRAFT),
+            Para::Same(ANTI_AIR),
+            Para::Each {
+                mouse: "Select a Harvester, click Build[ or press {build}], and choose Flak Turret in the Defense column. Click open ground east of your Foundry to place it.",
+                touch: "Select a Harvester, tap Build[ or press {build}], and choose Flak Turret in the Defense column. Drag its outline east of your Foundry and tap the check mark.",
+                pad: "Select a Harvester, press {Y}, and pick Build, then Defense, then Flak Turret. Press {A} on open ground east of your Foundry to place it.",
+            },
+        ],
         goal: Goal::Build(BuildingKind::FlakTurret, 1),
     },
     Step {
         title: "Shoot down the Buzzards",
-        copy: Copy {
-            mouse_keys: &[
-                INBOUND,
-                FLAK_FIRST,
-                IN_HARMS_WAY,
-                "Click the badge or press {idle} to select an idle Harvester, then right-click a scrap pile. Repeat until all three Harvesters are collecting.",
-            ],
-            mouse: &[
-                INBOUND,
-                FLAK_FIRST,
-                IN_HARMS_WAY,
-                "Click the badge to select an idle Harvester, then right-click a scrap pile. Repeat until all three Harvesters are collecting.",
-            ],
-            touch_keys: &[
-                INBOUND,
-                FLAK_FIRST,
-                IN_HARMS_WAY,
-                "Tap the badge or press {idle} to select an idle Harvester, then long-press a scrap pile. Repeat until all three Harvesters are collecting.",
-            ],
-            touch: &[
-                INBOUND,
-                FLAK_FIRST,
-                IN_HARMS_WAY,
-                "Tap the badge to select an idle Harvester, then long-press a scrap pile. Repeat until all three Harvesters are collecting.",
-            ],
-        },
+        copy: &[
+            Para::Same(INBOUND),
+            Para::Same(FLAK_FIRST),
+            Para::Same(IN_HARMS_WAY),
+            IDLE_PICK,
+        ],
         goal: Goal::Defeat(0),
     },
     Step {
         title: "Repair the damage",
-        copy: Copy {
-            mouse_keys: &[
-                WELDING,
-                "Select a Harvester and right-click a damaged structure or unit to repair it.",
-                IDLE_WELD,
-            ],
-            mouse: &[
-                WELDING,
-                "Select a Harvester and right-click a damaged structure or unit to repair it.",
-                IDLE_WELD,
-            ],
-            touch_keys: &[
-                WELDING,
-                "Select a Harvester and long-press a damaged structure or unit to repair it.",
-                IDLE_WELD,
-            ],
-            touch: &[
-                WELDING,
-                "Select a Harvester and long-press a damaged structure or unit to repair it.",
-                IDLE_WELD,
-            ],
-        },
+        copy: &[
+            Para::Same(WELDING),
+            Para::Same(
+                "Select a Harvester and {right-click} a damaged structure or unit to repair it.",
+            ),
+            Para::Same(IDLE_WELD),
+        ],
         goal: Goal::Weld,
     },
     Step {
         title: "Build a Repair Bay",
-        copy: Copy {
-            mouse_keys: &[
-                REPAIR_BAY,
-                "Select a Harvester, click Build or press {build}, and choose Repair Bay in the Utility column. Click open ground next to your Foundry to place it.",
-            ],
-            mouse: &[
-                REPAIR_BAY,
-                "Select a Harvester, click Build, and choose Repair Bay in the Utility column. Click open ground next to your Foundry to place it.",
-            ],
-            touch_keys: &[
-                REPAIR_BAY,
-                "Select a Harvester, tap Build or press {build}, and choose Repair Bay in the Utility column. Drag its outline next to your Foundry and tap the check mark.",
-            ],
-            touch: &[
-                REPAIR_BAY,
-                "Select a Harvester, tap Build, and choose Repair Bay in the Utility column. Drag its outline next to your Foundry and tap the check mark.",
-            ],
-        },
+        copy: &[
+            Para::Same(REPAIR_BAY),
+            Para::Each {
+                mouse: "Select a Harvester, click Build[ or press {build}], and choose Repair Bay in the Utility column. Click open ground next to your Foundry to place it.",
+                touch: "Select a Harvester, tap Build[ or press {build}], and choose Repair Bay in the Utility column. Drag its outline next to your Foundry and tap the check mark.",
+                pad: "Select a Harvester, press {Y}, and pick Build, then Utility, then Repair Bay. Press {A} on open ground next to your Foundry to place it.",
+            },
+        ],
         goal: Goal::Build(BuildingKind::RepairBay, 1),
     },
     Step {
         title: "Collect the wrecks",
-        copy: Copy {
-            mouse_keys: &[
-                WRECKS,
-                "Select a Harvester and right-click a wreck to collect it, the same way as a scrap pile.",
-                WRECKS_FADE,
-            ],
-            mouse: &[
-                WRECKS,
-                "Select a Harvester and right-click a wreck to collect it, the same way as a scrap pile.",
-                WRECKS_FADE,
-            ],
-            touch_keys: &[
-                WRECKS,
-                "Select a Harvester and long-press a wreck to collect it, the same way as a scrap pile.",
-                WRECKS_FADE,
-            ],
-            touch: &[
-                WRECKS,
-                "Select a Harvester and long-press a wreck to collect it, the same way as a scrap pile.",
-                WRECKS_FADE,
-            ],
-        },
+        copy: &[
+            Para::Same(WRECKS),
+            Para::Same(
+                "Select a Harvester and {right-click} a wreck to collect it, the same way as a scrap pile.",
+            ),
+            Para::Same(WRECKS_FADE),
+        ],
         goal: Goal::CollectWreck,
     },
 ];

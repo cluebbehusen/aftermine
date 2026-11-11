@@ -285,8 +285,10 @@ frame publishes the last pointer, whether a hardware key has been pressed, and
 the controller pressed since the last key, click or tap as `platform::Hands`; a
 mouse that only moves leaves a controller in use. Hints name keys only once one
 has been pressed, and name a controller's buttons while it is in use. A TV names
-its remote until something else is used. Outside pad mode, every screen offers a
-pointer path for what Escape does.
+its remote until something else is used. Lesson and tip cards follow the HUD
+instead: in pad mode they name the controller it names, and an Xbox pad's
+buttons while none is connected. Outside pad mode, every screen offers a pointer
+path for what Escape does.
 
 While a controller is in use, and always on a TV, the match HUD, the menus and
 the replay viewer stand in pad mode: they leave out the controls a controller's

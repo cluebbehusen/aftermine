@@ -1074,3 +1074,5 @@ fn the_see_and_sustain_lesson_plays_as_its_mouse_and_keys_card_says() {
 fn the_see_and_sustain_lesson_plays_as_its_touch_card_says() {
     play_sustain(true);
 }
+
+mod controller;

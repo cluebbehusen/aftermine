@@ -132,10 +132,7 @@ fn every_lesson_opens_on_a_sandbox_scene_with_each_step_ahead_and_in_reach() {
             );
         }
         assert!(
-            !matches!(
-                t.coach(&game),
-                Some(CoachLine::Stuck | CoachLine::Recovery(_))
-            ),
+            !matches!(t.coach(&game), Some(CoachLine::Stuck | CoachLine::Recovery)),
             "{lesson:?} opens funded and in reach"
         );
     }
@@ -422,7 +419,7 @@ fn the_coach_prices_the_step_and_names_the_way_out_when_broke() {
     assert!(
         matches!(
             tutorial(&game).coach(&game),
-            Some(CoachLine::Recovery(line)) if line.contains("idle badge")
+            Some(line @ CoachLine::Recovery) if line.text(crate::platform::Hands::BUILD).contains("idle badge")
         ),
         "an empty bank with nobody hauling points at an idle Harvester"
     );
@@ -601,34 +598,49 @@ fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
 
 #[test]
 fn every_lesson_string_is_ascii_and_names_only_what_the_hands_have() {
+    use crate::platform::tests::{ALL_HANDS, assert_copy_fits, assert_pad_wording, card_pad_hands};
     // The bundled font cannot be trusted to cover typographic punctuation.
     let ascii = |line: &str| assert!(line.is_ascii(), "non-ASCII lesson text: {line}");
-    ascii(CoachLine::Stuck.text());
-    for hands in crate::platform::tests::ALL_HANDS {
-        let recovery = recovery_line(hands.touch());
-        ascii(recovery);
-        crate::platform::tests::assert_copy_fits(hands, recovery);
-    }
+    let coach = [CoachLine::Recovery, CoachLine::Stuck];
     for lesson in Lesson::ALL {
         for line in [lesson.title(), lesson.outro()] {
             ascii(line);
         }
         for step in lesson.steps() {
             ascii(step.title);
-            for hands in crate::platform::tests::ALL_HANDS {
-                for line in step.body(hands) {
-                    ascii(line);
-                    crate::platform::tests::assert_copy_fits(hands, line);
-                }
+        }
+    }
+    for hands in ALL_HANDS {
+        for line in coach.iter().map(|line| line.text(hands)) {
+            assert_copy_fits(hands, &line);
+        }
+        for step in Lesson::ALL.iter().flat_map(|lesson| lesson.steps()) {
+            for line in step.body(hands) {
+                assert_copy_fits(hands, &line);
+            }
+        }
+    }
+    // A controller is told which of its buttons to press, never to click,
+    // tap or press a key.
+    for hands in card_pad_hands() {
+        for line in coach.iter().map(|line| line.text(hands)) {
+            assert_pad_wording(&line);
+        }
+        for step in Lesson::ALL.iter().flat_map(|lesson| lesson.steps()) {
+            let body = step.body(hands);
+            assert!(!body.is_empty(), "{}: no controller copy", step.title);
+            for line in body {
+                assert_pad_wording(&line);
             }
         }
     }
     // A row's story shows on the lesson list and the card before it,
     // whatever the hands.
     for row in Course::ALL {
-        for hands in crate::platform::tests::ALL_HANDS {
-            crate::platform::tests::assert_copy_fits(hands, row.briefing());
+        for hands in ALL_HANDS {
+            assert_copy_fits(hands, row.briefing());
         }
+        assert_pad_wording(row.briefing());
     }
 }
 

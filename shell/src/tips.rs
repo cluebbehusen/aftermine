@@ -8,6 +8,7 @@
 
 use crate::game::{AlertKind, Game};
 use crate::platform::Hands;
+use crate::wording::Para;
 use aftermine_sim::stats::Domain;
 use aftermine_sim::{
     Building, BuildingKind, Order, PlayerId, State, Target, Tick, UnitId, UnitKind,
@@ -69,15 +70,6 @@ pub(crate) enum Tip {
     FindEnemy,
 }
 
-/// A tip's text for each pairing of pointer and keyboard, as lessons
-/// word it: keys only once one is in use, and a finger long-presses.
-struct Copy {
-    mouse_keys: &'static str,
-    mouse: &'static str,
-    touch_keys: &'static str,
-    touch: &'static str,
-}
-
 impl Tip {
     /// Every tip, most urgent first: when several are due, the first
     /// shows.
@@ -107,65 +99,41 @@ impl Tip {
     }
 
     /// What the card says to do, for the hands in use.
-    pub(crate) fn body(self, hands: Hands) -> &'static str {
-        let copy = self.copy();
-        match (hands.touch(), hands.keys) {
-            (false, true) => copy.mouse_keys,
-            (false, false) => copy.mouse,
-            (true, true) => copy.touch_keys,
-            (true, false) => copy.touch,
-        }
+    pub(crate) fn body(self, hands: Hands) -> String {
+        self.copy().text(hands)
     }
 
-    fn copy(self) -> Copy {
+    fn copy(self) -> Para {
         match self {
-            Tip::UnderAttack => Copy {
-                mouse_keys: "Click the alert badge or press {alert} to see where.",
-                mouse: "Click the alert badge to see where.",
-                touch_keys: "Tap the alert badge or press {alert} to see where.",
-                touch: "Tap the alert badge to see where.",
+            Tip::UnderAttack => Para::Pointer {
+                pointer: "{Click} the alert badge[ or press {alert}] to see where.",
+                pad: "Press D-pad left to see where.",
             },
-            Tip::EnemyAircraft => Copy {
-                mouse_keys: "Nothing of yours can shoot them. Select a Harvester, click Build or press {build}, and choose Flak Turret.",
-                mouse: "Nothing of yours can shoot them. Select a Harvester, click Build, and choose Flak Turret.",
-                touch_keys: "Nothing of yours can shoot them. Select a Harvester, tap Build or press {build}, and choose Flak Turret.",
-                touch: "Nothing of yours can shoot them. Select a Harvester, tap Build, and choose Flak Turret.",
+            Tip::EnemyAircraft => Para::Pointer {
+                pointer: "Nothing of yours can shoot them. Select a Harvester, {click} Build[ or press {build}], and choose Flak Turret.",
+                pad: "Nothing of yours can shoot them. Select a Harvester, press {Y}, and pick Build, then Defense, then Flak Turret.",
             },
-            Tip::IdleHarvesters => Copy {
-                mouse_keys: "Click the idle badge or press {idle} to select one, then right-click a scrap pile.",
-                mouse: "Click the idle badge to select one, then right-click a scrap pile.",
-                touch_keys: "Tap the idle badge or press {idle} to select one, then long-press a scrap pile.",
-                touch: "Tap the idle badge to select one, then long-press a scrap pile.",
+            Tip::IdleHarvesters => Para::Pointer {
+                pointer: "{Click} the idle badge[ or press {idle}] to select one, then {right-click} a scrap pile.",
+                pad: "Press D-pad down to select one, then press {X} on a scrap pile.",
             },
-            Tip::UnspentScrap => Copy {
-                mouse_keys: "Select your Foundry to train units, or select a Harvester and click Build or press {build}.",
-                mouse: "Select your Foundry to train units, or select a Harvester and click Build.",
-                touch_keys: "Select your Foundry to train units, or select a Harvester and tap Build or press {build}.",
-                touch: "Select your Foundry to train units, or select a Harvester and tap Build.",
+            Tip::UnspentScrap => Para::Pointer {
+                pointer: "Select your Foundry to train units, or select a Harvester and {click} Build[ or press {build}].",
+                pad: "Select your Foundry to train units, or select a Harvester, press {Y}, and pick Build.",
             },
-            Tip::WeldDamage => Copy {
-                mouse_keys: "Select a Harvester and right-click a damaged structure to repair it.",
-                mouse: "Select a Harvester and right-click a damaged structure to repair it.",
-                touch_keys: "Select a Harvester and long-press a damaged structure to repair it.",
-                touch: "Select a Harvester and long-press a damaged structure to repair it.",
+            Tip::WeldDamage => {
+                Para::Same("Select a Harvester and {right-click} a damaged structure to repair it.")
+            }
+            Tip::Wrecks => {
+                Para::Same("Select a Harvester and {right-click} a wreck to collect its scrap.")
+            }
+            Tip::ExtractorFrame => Para::Pointer {
+                pointer: "Select a Harvester, {click} Build[ or press {build}], choose Extractor, and place it on the frame.",
+                pad: "Select a Harvester, press {Y}, and pick Build, then Economy, then Extractor. Press {A} on the frame to place it.",
             },
-            Tip::Wrecks => Copy {
-                mouse_keys: "Select a Harvester and right-click a wreck to collect its scrap.",
-                mouse: "Select a Harvester and right-click a wreck to collect its scrap.",
-                touch_keys: "Select a Harvester and long-press a wreck to collect its scrap.",
-                touch: "Select a Harvester and long-press a wreck to collect its scrap.",
-            },
-            Tip::ExtractorFrame => Copy {
-                mouse_keys: "Select a Harvester, click Build or press {build}, choose Extractor, and place it on the frame.",
-                mouse: "Select a Harvester, click Build, choose Extractor, and place it on the frame.",
-                touch_keys: "Select a Harvester, tap Build or press {build}, choose Extractor, and place it on the frame.",
-                touch: "Select a Harvester, tap Build, choose Extractor, and place it on the frame.",
-            },
-            Tip::FindEnemy => Copy {
-                mouse_keys: "Select your Surveyor and right-click far across the map to scout.",
-                mouse: "Select your Surveyor and right-click far across the map to scout.",
-                touch_keys: "Select your Surveyor and long-press far across the map to scout.",
-                touch: "Select your Surveyor and long-press far across the map to scout.",
+            Tip::FindEnemy => Para::Pointer {
+                pointer: "Select your Surveyor and {right-click} far across the map to scout.",
+                pad: "Select your Surveyor, move the reticle far across the map, and press {X} to scout.",
             },
         }
     }

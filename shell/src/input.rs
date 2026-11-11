@@ -254,6 +254,18 @@ impl HudHands {
             Self::Pad { names } => names,
         }
     }
+
+    /// The hands the HUD's cards word their copy for: in pad mode a
+    /// controller of the family the HUD names, or one with Xbox labels while
+    /// none is connected, so a card still says which buttons to press;
+    /// otherwise `hands` without a controller.
+    pub(crate) fn copy_hands(self, hands: crate::platform::Hands) -> crate::platform::Hands {
+        let pad = match self {
+            Self::Pointer => None,
+            Self::Pad { names } => Some(names.unwrap_or(aftermine_protocol::PadFamily::Other)),
+        };
+        crate::platform::Hands { pad, ..hands }
+    }
 }
 
 /// The family copy names, from the one in use or assumed. A remote can't play

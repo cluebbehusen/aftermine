@@ -222,6 +222,7 @@ pub(crate) fn layout(
     measure: Measure,
     hud: crate::input::HudHands,
 ) -> CardLayout {
+    let hands = hud.copy_hands(hands);
     let s = env.ui;
     let (x, y, w) = corner(CARD_W, env);
     let pad = 12.0 * s;
@@ -310,9 +311,9 @@ pub(crate) fn layout(
         if let Some(coach) = coach {
             let color = match coach {
                 CoachLine::Status(_) => TEXT_ACCENT,
-                CoachLine::Recovery(_) | CoachLine::Stuck => TEXT_DANGER,
+                CoachLine::Recovery | CoachLine::Stuck => TEXT_DANGER,
             };
-            for (i, line) in wrap(coach.text()).into_iter().enumerate() {
+            for (i, line) in wrap(&coach.text(hands)).into_iter().enumerate() {
                 column.push(
                     line,
                     Face::Body,
@@ -389,7 +390,7 @@ pub(crate) fn tip_layout(
         6.0 * s,
     );
     let body_size = Type::Body.at(s);
-    let body = expand(tip.body(hands), bindings);
+    let body = expand(&tip.body(hud.copy_hands(hands)), bindings);
     let lines = super::wrap_words(&body, |t| measure(Face::Body, t, body_size), w - pad * 2.0);
     for (i, line) in lines.into_iter().enumerate() {
         column.push(

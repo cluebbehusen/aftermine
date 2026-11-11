@@ -221,7 +221,7 @@ impl Lesson {
 pub struct Step {
     /// The objective, as the card heads it.
     pub title: &'static str,
-    copy: Copy,
+    copy: &'static [crate::wording::Para],
     /// What completes the step.
     pub goal: Goal,
 }
@@ -269,25 +269,14 @@ impl Squad {
     }
 }
 
-/// A step's paragraphs for each pairing of pointer and keyboard: copy
-/// names keys only once one is in use, and a finger has no right button,
-/// wheel, or Shift.
-struct Copy {
-    mouse_keys: &'static [&'static str],
-    mouse: &'static [&'static str],
-    touch_keys: &'static [&'static str],
-    touch: &'static [&'static str],
-}
-
 impl Step {
     /// The paragraphs the player can follow with the hands in use.
-    pub fn body(&self, hands: crate::platform::Hands) -> &'static [&'static str] {
-        match (hands.touch(), hands.keys) {
-            (false, true) => self.copy.mouse_keys,
-            (false, false) => self.copy.mouse,
-            (true, true) => self.copy.touch_keys,
-            (true, false) => self.copy.touch,
-        }
+    pub fn body(&self, hands: crate::platform::Hands) -> Vec<String> {
+        self.copy
+            .iter()
+            .map(|para| para.text(hands))
+            .filter(|text| !text.is_empty())
+            .collect()
     }
 }
 
@@ -503,18 +492,29 @@ pub enum CoachLine {
     Status(String),
     /// The step is unaffordable and nothing is earning, so the coach
     /// points at an idle Harvester.
-    Recovery(&'static str),
+    Recovery,
     /// The world can no longer complete the step; the card offers a retry.
     Stuck,
 }
 
 impl CoachLine {
-    /// The line as drawn.
-    pub fn text(&self) -> &str {
+    /// The line as drawn for `hands`.
+    pub fn text(&self, hands: crate::platform::Hands) -> String {
+        use crate::wording::Para;
         match self {
-            CoachLine::Status(text) => text,
-            CoachLine::Recovery(text) => text,
-            CoachLine::Stuck => "This lesson can no longer be finished.",
+            CoachLine::Status(text) => text.clone(),
+            CoachLine::Recovery => Para::Pointer {
+                pointer: "You can't afford this yet, and no Harvester is collecting. {Click} the idle badge to select a Harvester, then {right-click} a scrap pile.",
+                pad: "You can't afford this yet, and no Harvester is collecting. Press D-pad down to select a Harvester, then press {X} on a scrap pile.",
+            }
+            .text(hands),
+            // A controller has no Retry button; Restart in the pause menu
+            // stands in for it.
+            CoachLine::Stuck => Para::Pointer {
+                pointer: "This lesson can no longer be finished.",
+                pad: "This lesson can no longer be finished. Press {Menu} and choose Restart.",
+            }
+            .text(hands),
         }
     }
 }
@@ -728,9 +728,7 @@ impl Tutorial {
         let bank = seat.bank();
         let mining = seat.harvesting();
         if bank < cost && mining == 0 && !seat.extracting() {
-            return Some(CoachLine::Recovery(recovery_line(
-                crate::platform::hands().touch(),
-            )));
+            return Some(CoachLine::Recovery);
         }
         Some(CoachLine::Status(status_line(item, cost, bank, mining)))
     }
@@ -751,17 +749,6 @@ fn status_line(item: &str, cost: u32, bank: u32, mining: usize) -> String {
         n => format!("{n} Harvesters are collecting"),
     };
     format!("{article} {item} costs {cost} scrap. You have {bank}, and {mining}.")
-}
-
-/// The out-of-scrap nudge, in the order gesture the pointer in use has.
-fn recovery_line(touch: bool) -> &'static str {
-    if touch {
-        "You can't afford this yet, and no Harvester is collecting. Tap the idle badge to select a \
-         Harvester, then long-press a scrap pile."
-    } else {
-        "You can't afford this yet, and no Harvester is collecting. Click the idle badge to select a \
-         Harvester, then right-click a scrap pile."
-    }
 }
 
 /// The human seat's view of the authoritative world. A lesson has no
