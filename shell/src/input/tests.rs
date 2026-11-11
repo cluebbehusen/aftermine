@@ -4255,6 +4255,41 @@ fn fingertip_slop_never_takes_a_tap_from_the_pile_under_it() {
 }
 
 #[test]
+fn a_zoomed_out_double_click_on_a_pile_never_sweeps_the_unit_beside_it() {
+    let mut game = headless_game();
+    let mut input = InputState::new();
+    let pile = vec2(7.5, 2.5);
+    let (nearest, distance) = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player == game.presentation.human)
+        .map(|u| {
+            let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
+            (u, at.distance(pile))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .expect("an own unit");
+    assert!(
+        distance > super::unit_pick_radius(nearest.kind),
+        "premise: the click misses the unit's body"
+    );
+    // Zoomed out until the cursor's reach covers the unit.
+    game.presentation.camera.zoom = 10.0 * input.ui / (distance + 0.1);
+    let p = game.presentation.camera.to_screen(pile);
+    input.now = 1.0;
+    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    input.now = 1.1;
+    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    assert!(
+        game.presentation.selection.units.is_empty(),
+        "{:?}",
+        game.presentation.selection.units
+    );
+    assert_eq!(game.presentation.selection.pile, Some(TilePos::new(7, 2)));
+}
+
+#[test]
 fn selecting_anything_else_drops_the_pile() {
     let mut game = headless_game();
     let mut input = InputState::new();
