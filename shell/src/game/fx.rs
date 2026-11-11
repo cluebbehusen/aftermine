@@ -1772,35 +1772,11 @@ impl Presentation {
                     at,
                     splash,
                 } => {
-                    // The event names no victim (a shell in flight chooses
-                    // nothing), so ask the post-tick world whether the
-                    // blast reached anything of ours. Survivors alert here;
-                    // the dead alert through their own events.
+                    // What the blast hurts alerts through its own
+                    // `DamageTaken`; a near miss raises nothing.
                     let impact_sound = self.audio_timeline.landed(*player, *at);
-                    let reach = splash.map_or(1.0, |r| r.to_num::<f32>().max(1.0));
                     let world = world_vec(*at);
                     let hostile_shell = state.hostile(self.human, *player);
-                    // Parenthesized deliberately: && binds tighter than ||,
-                    // and without the grouping the building branch would
-                    // alert on the player's own artillery.
-                    let own_hurt = hostile_shell
-                        && (state
-                            .units()
-                            .iter()
-                            .filter(|u| u.player == self.human && targets.covers(u.domain()))
-                            .any(|u| world_vec(u.pos).distance(world) <= reach)
-                            || (targets.covers(aftermine_sim::stats::Domain::Ground)
-                                && state
-                                    .buildings()
-                                    .iter()
-                                    .filter(|b| b.player == self.human)
-                                    .any(|b| {
-                                        let c = world_vec(b.center());
-                                        c.distance(world) <= reach + 1.5
-                                    })));
-                    if own_hurt {
-                        self.raise_alert(world);
-                    }
                     self.queue_blast(impact_sound, world, !hostile_shell || sees(self, *at));
                     let arrived = self
                         .fx_previous
