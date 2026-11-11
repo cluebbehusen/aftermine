@@ -270,7 +270,6 @@ fn a_member_of_another_build_is_dropped_and_its_guest_says_why() {
         lan.take_events(),
         vec![LobbyEvent::Left {
             member: lan.member(other),
-            reason: LeaveReason::OtherBuild,
         }]
     );
 }
@@ -305,10 +304,7 @@ fn members_that_never_introduce_or_fall_silent_are_dropped() {
     lan.now = GREETING_TIMEOUT;
     assert_eq!(
         lan.host.poll(lan.now),
-        vec![LobbyEvent::Left {
-            member: mute,
-            reason: LeaveReason::Unintroduced,
-        }]
+        vec![LobbyEvent::Left { member: mute }]
     );
 
     let alex = lan.join("Alex");
@@ -328,7 +324,6 @@ fn members_that_never_introduce_or_fall_silent_are_dropped() {
         lan.host.poll(lan.now),
         vec![LobbyEvent::Left {
             member: lan.member(alex),
-            reason: LeaveReason::Silent,
         }]
     );
 }
@@ -387,10 +382,7 @@ fn a_member_that_breaks_the_protocol_is_dropped() {
         host.receive(member, &line, secs(0));
         assert_eq!(
             host.poll(secs(0)),
-            vec![LobbyEvent::Left {
-                member,
-                reason: LeaveReason::Protocol,
-            }],
+            vec![LobbyEvent::Left { member }],
             "{line}"
         );
         host.receive(member, &line, secs(0));
@@ -409,13 +401,7 @@ fn a_member_that_breaks_the_protocol_is_dropped() {
     host.receive(member, &stale.encode(), secs(0));
     assert!(host.poll(secs(0)).is_empty(), "a Ready outside a start");
     host.disconnected(member);
-    assert_eq!(
-        host.poll(secs(0)),
-        vec![LobbyEvent::Left {
-            member,
-            reason: LeaveReason::Closed,
-        }]
-    );
+    assert_eq!(host.poll(secs(0)), vec![LobbyEvent::Left { member }]);
 }
 
 #[test]
@@ -490,7 +476,6 @@ fn a_failed_start_drops_only_its_culprit_and_the_rest_wait_for_the_next() {
         lan.take_events(),
         vec![LobbyEvent::Left {
             member: lan.member(alex),
-            reason: LeaveReason::FailedStart,
         }]
     );
 
@@ -546,7 +531,6 @@ fn every_member_that_fails_a_start_is_dropped() {
         lan.take_events(),
         [alex, sam].map(|guest| LobbyEvent::Left {
             member: lan.member(guest),
-            reason: LeaveReason::FailedStart,
         })
     );
 }
@@ -636,7 +620,6 @@ fn a_start_that_times_out_drops_the_unready_and_a_closed_seat_fails_it() {
         lan.take_events(),
         vec![LobbyEvent::Left {
             member: lan.member(sam),
-            reason: LeaveReason::FailedStart,
         }]
     );
 
@@ -657,7 +640,6 @@ fn a_start_that_times_out_drops_the_unready_and_a_closed_seat_fails_it() {
         lan.take_events(),
         vec![LobbyEvent::Left {
             member: lan.member(sam),
-            reason: LeaveReason::Closed,
         }]
     );
     assert_eq!(lan.host.name(lan.member(alex)), Some(&name("Alex")));
@@ -963,10 +945,7 @@ fn a_member_quiet_while_it_builds_the_start_is_left_to_the_start() {
         lan.host.poll_start(lan.now).err(),
         Some(StartFailed::TimedOut)
     );
-    let left = |member| LobbyEvent::Left {
-        member,
-        reason: LeaveReason::FailedStart,
-    };
+    let left = |member| LobbyEvent::Left { member };
     let culprits = [left(lan.member(alex)), left(lan.member(sam))];
     assert_eq!(lan.host.poll(lan.now), culprits);
 }

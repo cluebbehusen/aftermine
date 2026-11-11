@@ -20,23 +20,6 @@ use std::time::Duration;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MemberId(u32);
 
-/// Why a member left the lobby.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LeaveReason {
-    /// The transport reported the connection closed.
-    Closed,
-    /// Its Hello named another build.
-    OtherBuild,
-    /// It did not introduce itself within [`GREETING_TIMEOUT`].
-    Unintroduced,
-    /// Nothing arrived from it for [`SILENCE_TIMEOUT`].
-    Silent,
-    /// It sent a line that failed to decode or broke the protocol.
-    Protocol,
-    /// It failed a start: never ready, or a different world at tick zero.
-    FailedStart,
-}
-
 /// Something the host's caller must act on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LobbyEvent {
@@ -53,8 +36,6 @@ pub enum LobbyEvent {
     Left {
         /// The member.
         member: MemberId,
-        /// Why it left.
-        reason: LeaveReason,
     },
     /// A connection asked after a running match the lobby does not have,
     /// and was told so: finish its connection after sending.
@@ -178,7 +159,7 @@ impl Gathering {
         };
         self.members[index].heard = now;
         if line.len() > MAX_JOIN_LINE_BYTES {
-            self.drop_member(index, LeaveReason::Protocol);
+            self.drop_member(index);
             return;
         }
         if let Some(starting) = &mut self.starting
@@ -203,7 +184,7 @@ impl Gathering {
                 if same_build(protocol, sim, &commit, &self.commit) {
                     self.members[index].stage = Stage::Introducing;
                 } else {
-                    self.drop_member(index, LeaveReason::OtherBuild);
+                    self.drop_member(index);
                 }
             }
             Ok(JoinMessage::Probe { .. } | JoinMessage::Rejoin { .. }) if introducing => {
@@ -228,14 +209,14 @@ impl Gathering {
             // A Ready can outlive its abandoned start.
             Ok(JoinMessage::Heartbeat) if !greeting => {}
             Ok(JoinMessage::Ready { .. }) if !greeting && !introducing => {}
-            _ => self.drop_member(index, LeaveReason::Protocol),
+            _ => self.drop_member(index),
         }
     }
 
     /// The transport reported `member`'s connection closed.
     pub fn disconnected(&mut self, member: MemberId) {
         if let Some(index) = self.index(member) {
-            self.drop_member(index, LeaveReason::Closed);
+            self.drop_member(index);
         }
     }
 
@@ -342,12 +323,7 @@ impl Gathering {
                 }
             };
             if expired {
-                let reason = if matches!(member.stage, Stage::Joined(..)) {
-                    LeaveReason::Silent
-                } else {
-                    LeaveReason::Unintroduced
-                };
-                self.drop_member(index, reason);
+                self.drop_member(index);
                 continue;
             }
             if std::mem::take(&mut member.spoke) {
@@ -436,7 +412,7 @@ impl Gathering {
         };
         for seat in culprits {
             if let Some(index) = self.index(member_at(&starting.seating, seat)) {
-                self.drop_member(index, LeaveReason::FailedStart);
+                self.drop_member(index);
             }
         }
         for member in &mut self.members {
@@ -470,13 +446,10 @@ impl Gathering {
         self.outgoing.push((member, line));
     }
 
-    fn drop_member(&mut self, index: usize, reason: LeaveReason) {
+    fn drop_member(&mut self, index: usize) {
         let member = self.members.remove(index);
         self.leave_start(member.id);
-        self.events.push(LobbyEvent::Left {
-            member: member.id,
-            reason,
-        });
+        self.events.push(LobbyEvent::Left { member: member.id });
     }
 
     /// Fails a running start that seated `member`, who is gone, and drops

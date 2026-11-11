@@ -52,9 +52,9 @@ page is the contract between host and clients. Module entry points are in the
   session keeps them, and a token names its seat while the seat is still in the
   match and the match has not ended.
 - A fresh connection to a running match says Hello and then, in place of an
-  introduction, `Probe` or `Rejoin` with its token. A probe hears `Waiting` with
-  the host's name and map, or `Gone` with why. A newcomer's introduction hears
-  `Underway`. A lobby answers either ask with `Gone`.
+  introduction, `Probe` or `Rejoin` with its token. A probe hears `Waiting`, or
+  `Gone` with why. A newcomer's introduction hears `Underway`. A lobby answers
+  either ask with `Gone`.
 - A rejoin makes the seat rejoining: any old connection is lost, the seat's
   unsealed orders go, and the session waits. The host's caller snapshots the
   world at `HostSession::tick` and the desk sends it as `Resume` and its `Part`

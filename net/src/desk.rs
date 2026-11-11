@@ -7,7 +7,6 @@
 
 use crate::host::HostSession;
 use crate::message::{GoneReason, JoinMessage, LobbyMessage, same_build};
-use crate::name::PlayerName;
 use crate::snapshot;
 use crate::{GREETING_TIMEOUT, HEARTBEAT_INTERVAL, MAX_JOIN_LINE_BYTES, START_TIMEOUT};
 use aftermine_sim::{PlayerId, Tick};
@@ -74,8 +73,6 @@ struct Visitor {
 #[derive(Debug)]
 pub struct Desk {
     commit: String,
-    host: PlayerName,
-    map: String,
     visitors: Vec<Visitor>,
     next_id: u64,
     attempt: u32,
@@ -84,12 +81,10 @@ pub struct Desk {
 }
 
 impl Desk {
-    /// A desk for the match of build `commit` hosted by `host` on `map`.
-    pub fn new(commit: &str, host: PlayerName, map: &str) -> Self {
+    /// A desk for the match of build `commit`.
+    pub fn new(commit: &str) -> Self {
         Self {
             commit: commit.to_owned(),
-            host,
-            map: map.to_owned(),
             visitors: Vec::new(),
             next_id: 0,
             attempt: 0,
@@ -111,16 +106,6 @@ impl Desk {
         });
         self.send(id, LobbyMessage::hello(&self.commit).encode());
         id
-    }
-
-    /// How many visitors are at the desk.
-    pub fn len(&self) -> usize {
-        self.visitors.len()
-    }
-
-    /// Whether nobody is at the desk.
-    pub fn is_empty(&self) -> bool {
-        self.visitors.is_empty()
     }
 
     /// Handles one line from `visitor`.
@@ -153,10 +138,7 @@ impl Desk {
             }
             (Stage::Asking, Ok(JoinMessage::Probe { token })) => {
                 let answer = match session.token_seat(token) {
-                    Ok(_) => LobbyMessage::Waiting {
-                        host: self.host.clone(),
-                        map: self.map.clone(),
-                    },
+                    Ok(_) => LobbyMessage::Waiting,
                     Err(reason) => LobbyMessage::Gone { reason },
                 };
                 self.send(visitor, answer.encode());

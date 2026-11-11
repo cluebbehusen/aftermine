@@ -20,7 +20,6 @@ pub struct Advertiser {
     socket: UdpSocket,
     targets: Vec<SocketAddr>,
     last: Option<Duration>,
-    failing: bool,
 }
 
 impl Advertiser {
@@ -54,7 +53,6 @@ impl Advertiser {
             socket,
             targets,
             last: None,
-            failing: false,
         })
     }
 
@@ -68,17 +66,10 @@ impl Advertiser {
         }
         self.last = Some(now);
         let datagram = beacon.encode();
-        let sent = self
-            .targets
-            .iter()
-            .filter(|target| self.socket.send_to(&datagram, target).is_ok())
-            .count();
-        self.failing = sent == 0;
-    }
-
-    /// Whether the last beacon reached no address.
-    pub fn failing(&self) -> bool {
-        self.failing
+        // A beacon that cannot leave is retried at the next interval.
+        for target in &self.targets {
+            let _ = self.socket.send_to(&datagram, target);
+        }
     }
 }
 

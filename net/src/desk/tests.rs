@@ -1,4 +1,5 @@
 use super::*;
+use crate::name::PlayerName;
 use crate::visit::{Visit, VisitEnd, VisitEvent};
 use crate::{ClientMessage, HostEvent, Token, reports_hash};
 use aftermine_sim::Tick;
@@ -21,7 +22,7 @@ fn session() -> HostSession {
 }
 
 fn desk() -> Desk {
-    Desk::new(COMMIT, PlayerName::new("Connor").unwrap(), "Broad Front")
+    Desk::new(COMMIT)
 }
 
 /// Runs the host `ticks` ticks with every client acknowledging.
@@ -100,13 +101,7 @@ fn a_probe_hears_whether_its_seat_is_still_in_play() {
     session.disconnected(A, secs(1));
     let mut call = Call::new(desk(), Visit::probe(COMMIT, token(A), secs(1)), secs(1));
     call.settle(&mut session, secs(1));
-    assert_eq!(
-        call.heard,
-        [VisitEvent::Waiting {
-            host: PlayerName::new("Connor").unwrap(),
-            map: "Broad Front".to_owned()
-        }]
-    );
+    assert_eq!(call.heard, [VisitEvent::Waiting]);
     assert_eq!(
         call.events,
         [DeskEvent::Done {
@@ -182,7 +177,7 @@ fn a_rejoining_client_restores_the_match_and_takes_its_seat_back() {
         }]
     );
     assert_eq!(call.heard.last(), Some(&VisitEvent::Go));
-    assert!(call.desk.is_empty());
+    assert!(call.desk.visitors.is_empty());
     assert!(!session.waiting());
 
     // The new connection acknowledges from the snapshot's tick.
@@ -308,7 +303,7 @@ fn newcomers_other_builds_and_idlers_are_turned_away() {
             "{visitor:?} in {events:?}"
         );
     }
-    assert!(desk.is_empty());
+    assert!(desk.visitors.is_empty());
 }
 
 #[test]

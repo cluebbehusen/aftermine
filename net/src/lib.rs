@@ -22,7 +22,7 @@ use std::time::Duration;
 pub use client::{ClientEnd, ClientSession};
 pub use desk::{Desk, DeskEvent, VisitorId};
 pub use host::{Exit, HostEvent, HostSession};
-pub use lobby::{Gathering, Guest, GuestEnd, GuestEvent, LeaveReason, LobbyEvent, MemberId};
+pub use lobby::{Gathering, Guest, GuestEnd, GuestEvent, LobbyEvent, MemberId};
 pub use message::{
     ClientMessage, GoneReason, HostMessage, JoinMessage, LobbyMessage, Release, RoomSeat,
     SeatHolder, SeatNotice, SeatState, same_build,

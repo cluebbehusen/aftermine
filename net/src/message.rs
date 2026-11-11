@@ -107,12 +107,7 @@ pub enum LobbyMessage {
         token: Token,
     },
     /// The probed token names a seat the running match is waiting for.
-    Waiting {
-        /// The host's name.
-        host: PlayerName,
-        /// The match's map.
-        map: String,
-    },
+    Waiting,
     /// The token names no seat to take back; the connection closes next.
     Gone {
         /// Why.

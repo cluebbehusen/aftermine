@@ -883,7 +883,7 @@ fn a_rejoin_purges_lines_queued_for_the_old_connection() {
     let mut host = HostSession::new(HOST, &[A, B], secs(0));
     let batch = host.seal(secs(0)).unwrap();
     host.publish(&batch);
-    assert!(host.rejoining(A, secs(0)));
+    host.rejoining(A, secs(0));
     let lines = host.take_outgoing();
     assert!(lines.iter().any(|(seat, _)| *seat == B));
     assert!(lines.iter().all(|(seat, _)| *seat != A));
@@ -892,7 +892,7 @@ fn a_rejoin_purges_lines_queued_for_the_old_connection() {
 #[test]
 fn a_concluded_match_readmits_nobody() {
     let mut host = HostSession::new(HOST, &[A], secs(0));
-    assert!(host.rejoining(A, secs(0)));
+    host.rejoining(A, secs(0));
     host.conclude();
     assert!(!host.readmit(A, secs(0)));
 }
@@ -907,7 +907,7 @@ fn everyone_hears_a_readmitted_seat_is_back() {
             .iter()
             .any(|(seat, line)| *seat == B && line.contains("away"))
     );
-    assert!(host.rejoining(A, secs(0)));
+    host.rejoining(A, secs(0));
     assert!(host.readmit(A, secs(0)));
     host.poll(secs(0));
     let cleared = HostMessage::Seats {

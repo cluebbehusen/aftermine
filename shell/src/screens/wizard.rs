@@ -2487,7 +2487,7 @@ impl Wizard {
                             None => lan.lobby.refuse(member),
                         }
                     }
-                    LobbyEvent::Left { member, .. } => {
+                    LobbyEvent::Left { member } => {
                         for slot in &mut lan.members {
                             if *slot == Some(member) {
                                 *slot = None;
