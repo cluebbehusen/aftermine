@@ -89,6 +89,10 @@ pub struct HomeScreen {
     /// verb.
     pub menu: Menu<Out>,
     pub(crate) catalog_ready: bool,
+    /// Whether the player put the cursor where it is, by moving it or by
+    /// coming back to the row they left from. Until then, the first scan's
+    /// Continue takes it.
+    placed: bool,
     /// The row offering a LAN seat back, once its host confirmed it waits.
     rejoin: Option<String>,
     missing: Option<MissingQuestion>,
@@ -100,14 +104,37 @@ impl HomeScreen {
         Self::with_resumable(false)
     }
 
+    /// Builds the door on the way back from the screen `row` opened, with
+    /// the cursor on that row.
+    pub(crate) fn returning_to(row: Out) -> Self {
+        let mut home = Self::open();
+        home.menu.select_where(|out| *out == row);
+        home.placed = true;
+        home
+    }
+
+    /// Takes the save scan's answer. The first one puts the cursor on
+    /// Continue, where a match can be resumed and the player hasn't placed
+    /// it; a later one keeps the cursor on its row.
     pub(crate) fn set_catalog(&mut self, resumable: bool) {
+        let first = !self.catalog_ready && !self.placed;
+        self.rebuild(resumable);
+        if first {
+            self.menu.select_where(|row| *row == Out::Continue);
+        }
+        self.catalog_ready = true;
+    }
+
+    /// Rebuilds the rows, keeping the cursor on its row.
+    fn rebuild(&mut self, resumable: bool) {
         let selected = self.menu.value().copied();
         let mut fresh = Self::with_resumable(resumable).with_rejoin(self.rejoin.take());
         fresh.missing = self.missing.take();
         if let Some(selected) = selected {
             fresh.menu.select_where(|row| *row == selected);
         }
-        fresh.catalog_ready = true;
+        fresh.catalog_ready = self.catalog_ready;
+        fresh.placed = self.placed;
         *self = fresh;
     }
 
@@ -117,10 +144,8 @@ impl HomeScreen {
             return;
         }
         let resumable = self.resumable();
-        let ready = self.catalog_ready;
         self.rejoin = label;
-        self.set_catalog(resumable);
-        self.catalog_ready = ready;
+        self.rebuild(resumable);
     }
 
     pub(crate) fn resumable(&self) -> bool {
@@ -171,6 +196,7 @@ impl HomeScreen {
         Self {
             menu,
             catalog_ready: false,
+            placed: false,
             rejoin: None,
             missing: None,
         }
@@ -255,7 +281,10 @@ impl HomeScreen {
             };
         }
         self.fit();
-        let Some(choice) = self.menu.handle(events, mouse) else {
+        let cursor = self.menu.selected;
+        let choice = self.menu.handle(events, mouse);
+        self.placed |= self.menu.selected != cursor;
+        let Some(choice) = choice else {
             return Out::Stay;
         };
         sounds.push((SoundKind::Click, None));

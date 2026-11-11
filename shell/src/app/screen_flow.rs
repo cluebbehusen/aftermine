@@ -774,8 +774,13 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     };
     match out {
         WizardOut::Home => {
+            // A resumed setup opened from a save, not from Play.
+            let mut home = if w.resuming() {
+                HomeScreen::open()
+            } else {
+                HomeScreen::returning_to(screens::home::Out::Play)
+            };
             w.finish_resume(&mut app.draft);
-            let mut home = HomeScreen::open();
             home_backdrop(app, 0.0);
             home.draw(&app.sprites);
             *rerun = true;
@@ -1302,7 +1307,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
     drop(input_scope);
     match out {
         screens::shelf::Out::Home => {
-            let mut home = HomeScreen::open();
+            let mut home = HomeScreen::returning_to(screens::home::Out::Replays);
             home_backdrop(app, 0.0);
             home.draw(&app.sprites);
             *rerun = true;
