@@ -1075,10 +1075,9 @@ fn an_extractor_destroyed_on_its_payout_tick_is_still_credited_that_payout() {
 }
 
 #[test]
-fn workers_sharing_a_tile_take_its_last_field_scrap_in_the_order_they_act() {
-    // Workers act in id order on even ticks and in reverse on odd ones, so
-    // when two dig a tile's last field scrap on one tick the first to act
-    // has it and the other strips wreck.
+fn workers_sharing_a_tile_strip_what_exceeds_its_field_scrap() {
+    // Two workers dig a tile's last field scrap on one tick: between them
+    // they picked up one more than the field gave, so one is wreck.
     let scenario = field(
         0,
         &[
@@ -1107,23 +1106,15 @@ fn workers_sharing_a_tile_take_its_last_field_scrap_in_the_order_they_act() {
     let low = unit_at(&start, 7, 8);
     let high = unit_at(&start, 9, 8);
     assert!(low < high);
-    for (tick, first) in [(10, low), (11, high)] {
-        let mut ledger = ImpactLedger::new(&start);
-        for id in [low, high] {
-            ledger.working.insert(id, node);
-        }
-        ledger.field_scrap.insert(node, 1);
-        let stripped = ledger.load(&dug, tick);
-        assert_eq!(stripped, BTreeMap::from([(node, 1)]), "tick {tick}");
-        for id in [low, high] {
-            let cargo = ledger.cargo[&id];
-            let field = u32::from(id == first);
-            assert_eq!(
-                (cargo.field, cargo.wreck),
-                (field, 1 - field),
-                "tick {tick}"
-            );
-        }
+    let mut ledger = ImpactLedger::new(&start);
+    for id in [low, high] {
+        ledger.working.insert(id, node);
+    }
+    ledger.field_scrap.insert(node, 1);
+    let stripped = ledger.load(&dug);
+    assert_eq!(stripped, BTreeMap::from([(node, 1)]));
+    for id in [low, high] {
+        assert_eq!(ledger.cargo[&id], 1);
     }
 }
 

@@ -22,9 +22,6 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
   match in scrap: damage dealt, spotting, repair, income and spending.
 - `pacing` reports who led at minutes 5, 10 and 15, lead changes and comebacks,
   from each side's net worth.
-- `replay_health` (`replay-health`) measures late-game health over many
-  recordings: income by source, match length, leftover wreck, army variety and
-  whether won battles turned into gains.
 - `bot_eval` (`bot-eval`) plays bots to a result and writes one JSONL row per
   leg, with QA detectors for failures and reactivity. `seat_summary`
   (`bot-summary`) pools those rows.
