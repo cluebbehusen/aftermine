@@ -822,6 +822,68 @@ fn a_barricade_fronts_a_turret_toward_the_enemy() {
 }
 
 #[test]
+fn mirrored_seats_front_a_gun_between_two_outposts_alike() {
+    // Each seat's Bastion stands midway between two outlying Extractors, so
+    // the outpost it guards ties on distance.
+    let rows = [
+        "##############################",
+        "#............E..E............#",
+        "#............................#",
+        "#............................#",
+        "#............................#",
+        "#.1.......................2..#",
+        "#............................#",
+        "#............................#",
+        "#............................#",
+        "#............E..E............#",
+        "#............................#",
+        "##############################",
+    ];
+    let seat = |name: &str| PlayerSpec {
+        name: name.into(),
+        team: None,
+        scrap: 0,
+        bot: true,
+        bot_config: Some(config()),
+    };
+    let (width, height) = (30, 12);
+    let both = |kind: BuildingKind, x: i32, y: i32| {
+        let (w, h) = kind.size();
+        [
+            building(0, kind, x, y),
+            building(1, kind, width - w - x, height - h - y),
+        ]
+    };
+    let scenario = Scenario {
+        levels: Vec::new(),
+        mode: ScenarioMode::Match,
+        name: "outposts".into(),
+        map: rows.map(str::to_owned).to_vec(),
+        players: vec![seat("west"), seat("east")],
+        units: vec![harvester(0, 11, 5), harvester(1, width - 12, height - 6)],
+        buildings: [
+            both(BuildingKind::Extractor, 13, 1),
+            both(BuildingKind::Extractor, 13, 9),
+            both(BuildingKind::Bastion, 13, 5),
+        ]
+        .concat(),
+        meta: None,
+    };
+    let state = scenario.build().unwrap();
+    let barricade = |player| {
+        let wanted = wanted_by(player, true, &scenario, &state, &Memory::default(), 85);
+        offer(&wanted, BuildingKind::Barricade)
+            .expect("a Barricade is wanted")
+            .0
+    };
+    let west = barricade(0);
+    assert_eq!(
+        TilePos::new(width - 1 - west.x, height - 1 - west.y),
+        barricade(1)
+    );
+}
+
+#[test]
 fn scuttle_charges_mine_the_lanes_of_the_way_in() {
     let charge = |scenario: &Scenario| {
         let state = scenario.build().unwrap();

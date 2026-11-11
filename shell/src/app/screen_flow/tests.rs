@@ -2,11 +2,11 @@ use super::*;
 
 /// A finished lesson's card, laid out headless at 1280x800.
 fn finished_card() -> CardLayout {
-    finished_card_for(None)
+    finished_card_for(crate::input::HudHands::Pointer)
 }
 
-/// A finished lesson's card, in pad mode while `pad` names a controller.
-fn finished_card_for(pad: Option<aftermine_protocol::PadFamily>) -> CardLayout {
+/// A finished lesson's card as the HUD stands in `hud`.
+fn finished_card_for(hud: crate::input::HudHands) -> CardLayout {
     let game = Tutorial::begin_at(Lesson::Command, vec2(1280.0, 800.0)).unwrap();
     let tutorial = game
         .tutorial
@@ -26,7 +26,7 @@ fn finished_card_for(pad: Option<aftermine_protocol::PadFamily>) -> CardLayout {
             ui: 1.0,
         },
         &|_, text, size| text.chars().count() as f32 * size * 0.5,
-        pad,
+        hud,
     )
 }
 
@@ -35,7 +35,9 @@ fn in_pad_mode_a_and_b_press_a_finished_lessons_buttons_and_nothing_else() {
     use aftermine_protocol::{PadButton, PadFamily};
     let down = |button| RawEvent::PadDown { pad: 0, button };
     let up = |button| RawEvent::PadUp { pad: 0, button };
-    let card = finished_card_for(Some(PadFamily::Xbox));
+    let card = finished_card_for(crate::input::HudHands::Pad {
+        names: Some(PadFamily::Xbox),
+    });
     let mut events = vec![
         down(PadButton::North),
         down(PadButton::East),
@@ -56,6 +58,14 @@ fn in_pad_mode_a_and_b_press_a_finished_lessons_buttons_and_nothing_else() {
     let mut events = vec![down(PadButton::South), up(PadButton::South)];
     assert_eq!(filter_card_pad(&mut events, &finished_card()), None);
     assert_eq!(events.len(), 2, "outside pad mode the match keeps A");
+    let remote_only = finished_card_for(crate::input::HudHands::Pad { names: None });
+    let mut events = vec![down(PadButton::South), up(PadButton::South)];
+    assert_eq!(filter_card_pad(&mut events, &remote_only), None);
+    assert_eq!(
+        events.len(),
+        2,
+        "with no controller to name, the remote's click goes on to be refused"
+    );
 }
 
 #[test]
@@ -185,7 +195,7 @@ fn the_tip_card_closes_by_mouse_and_by_finger_and_keeps_its_other_presses() {
             ui: 1.0,
         },
         &|_, text, size| text.chars().count() as f32 * size * 0.5,
-        None,
+        crate::input::HudHands::Pointer,
     );
     let close = card.buttons[0].0;
     let mouse = |at: Vec2| {
@@ -570,4 +580,53 @@ fn a_frame_that_leaves_live_play_runs_no_ticks() {
         game.state.current_tick() > start,
         "a frame that stays in play runs what it owes"
     );
+}
+
+#[test]
+fn only_a_local_match_holds_for_a_controller_and_apart_from_its_pause() {
+    use aftermine_protocol::PadFamily;
+    let connect = |pad, family| RawEvent::PadConnected { pad, family };
+    let mut input = input::InputState::new();
+    input::track_hands(&mut input, &connect(9, PadFamily::Remote), false);
+    let mut game =
+        Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
+    assert!(held_for_controller(&game, &input));
+    assert!(
+        !game.clock.paused,
+        "the hold leaves the player's pause alone"
+    );
+    let start = game.state.current_tick();
+    let held = held_for_controller(&game, &input);
+    advance_live_match(&mut game, 1.0, None, held);
+    assert_eq!(
+        game.state.current_tick(),
+        start,
+        "a held match runs no ticks"
+    );
+
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    for player in &mut scenario.players {
+        player.bot = false;
+        player.bot_config = None;
+    }
+    let lan = Game::networked(
+        scenario,
+        aftermine_sim::PlayerId(0),
+        crate::game::network::NetRole::Host,
+        vec2(1280.0, 800.0),
+    )
+    .unwrap();
+    assert!(
+        !held_for_controller(&lan, &input),
+        "a LAN match runs on for the other players"
+    );
+
+    input::track_hands(&mut input, &connect(1, PadFamily::Xbox), false);
+    assert!(
+        !held_for_controller(&game, &input),
+        "a controller connecting lifts the hold"
+    );
+    let held = held_for_controller(&game, &input);
+    advance_live_match(&mut game, 1.0, None, held);
+    assert!(game.state.current_tick() > start);
 }

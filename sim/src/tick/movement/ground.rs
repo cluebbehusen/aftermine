@@ -65,6 +65,12 @@ pub(super) fn path_point(path: &crate::state::PathFollow, index: usize) -> Vec2F
     }
 }
 
+/// Whether `point` lies on `tile`'s square, its edges included.
+fn on_closed_tile(point: Vec2Fx, tile: TilePos) -> bool {
+    let (low_x, low_y) = (Fx::from_num(tile.x), Fx::from_num(tile.y));
+    (low_x..=low_x + Fx::ONE).contains(&point.x) && (low_y..=low_y + Fx::ONE).contains(&point.y)
+}
+
 /// The point to steer for, its index in the route, and whether it is the
 /// route's final waypoint.
 ///
@@ -144,11 +150,12 @@ fn route_target(
         // A work point is admitted from its goal tile's center. The motor
         // holds a body inside the contact band to that precise clearance, so
         // a straight leg that grazes a neighboring footprint on the way in
-        // would stop the hull short of the point for good.
+        // would stop the hull short of the point for good. A point on the
+        // goal tile's edge belongs to it, whichever side flooring takes, so
+        // a half-turned point is judged alike.
         let mut point = path_point(path, target);
         if target + 1 == path.waypoints.len()
-            && (TilePos::containing(point) != path.goal
-                || terrain.at_contact(unit.pos, contact_radius))
+            && (!on_closed_tile(point, path.goal) || terrain.at_contact(unit.pos, contact_radius))
             && !terrain.contact_clear(unit.pos, point, contact_radius)
         {
             point = path.goal.center();

@@ -43,7 +43,7 @@ fn automatic_radar_uses_a_secondary_solution_without_pursuit() {
         radar_in_range(
             &state,
             PlayerId(0),
-            start,
+            (start, 32),
             Domain::Ground,
             &UnitKind::Sentinel.stats().weapons[0]
         )
@@ -54,9 +54,11 @@ fn automatic_radar_uses_a_secondary_solution_without_pursuit() {
     let mut events = Vec::new();
     let mut hits = Vec::new();
     let mut launches = Vec::new();
+    let mut reach = super::super::super::super::reach::Reach::new(&state);
     assert!(automatic_radar(
         &mut state,
         &index,
+        &mut reach,
         gun,
         false,
         &mut events,
@@ -349,7 +351,7 @@ fn an_automatic_attack_drops_an_unseen_building_but_an_order_keeps_it() {
 fn scanned_radar_in_range(
     state: &State,
     player: PlayerId,
-    from: Vec2Fx,
+    (from, heading): (Vec2Fx, u8),
     domain: Domain,
     weapon: &WeaponStats,
 ) -> Option<AttackView> {
@@ -364,7 +366,14 @@ fn scanned_radar_in_range(
                 .map(|view| (track.id, view))
         })
         .filter(|(_, view)| solution(state, from, domain, *view, weapon))
-        .min_by_key(|(id, view)| (from.dist_sq(view.position), *id))
+        .min_by_key(|(id, view)| {
+            (
+                from.dist_sq(view.position),
+                bearing_from(from, heading, view.position),
+                view.domain,
+                *id,
+            )
+        })
         .map(|(_, view)| view)
 }
 
@@ -443,7 +452,10 @@ fn radar_in_range_matches_the_full_view_scan() {
     let (mut moving, mut chosen, mut empty) = (0, 0, 0);
     for y in 0..40 {
         for x in 0..48 {
-            let from = TilePos::new(x, y).center();
+            let from = (
+                TilePos::new(x, y).center(),
+                (x * 37 + y * 11).to_le_bytes()[0],
+            );
             for weapon in &weapons {
                 for domain in [Domain::Ground, Domain::Air] {
                     let fast = radar_in_range(&state, PlayerId(0), from, domain, weapon);

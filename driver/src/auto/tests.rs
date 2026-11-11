@@ -15,6 +15,8 @@ fn menu(items: &[&str], selected: Option<usize>) -> UiView {
         pause_button: None,
         group_column: None,
         army_strip: None,
+        controller_notice: None,
+        hud_buttons: None,
     }
 }
 

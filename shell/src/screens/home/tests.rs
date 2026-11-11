@@ -70,6 +70,49 @@ fn a_seat_offered_back_tops_the_door_until_the_offer_ends() {
 }
 
 #[test]
+fn the_first_scan_puts_an_untouched_cursor_on_continue() {
+    let mut home = HomeScreen::open();
+    assert_eq!(home.menu.value(), Some(&Out::Play));
+    home.set_rejoin(Some("Rejoin Connor's match on Broad Front".to_owned()));
+    assert_eq!(home.menu.value(), Some(&Out::Play), "an offer is no scan");
+    home.set_catalog(true);
+    assert_eq!(home.menu.value(), Some(&Out::Continue));
+    home.set_catalog(true);
+    assert_eq!(home.menu.value(), Some(&Out::Continue));
+
+    let mut nothing = HomeScreen::open();
+    nothing.set_catalog(false);
+    assert_eq!(nothing.menu.value(), Some(&Out::Play));
+    nothing.set_catalog(true);
+    assert_eq!(
+        nothing.menu.value(),
+        Some(&Out::Play),
+        "only the first scan moves the cursor"
+    );
+}
+
+#[test]
+fn a_placed_cursor_survives_the_first_scan_and_rescans() {
+    let mut moved = HomeScreen::open();
+    assert_eq!(press(&mut moved, Key::Down), Out::Stay);
+    assert_eq!(moved.menu.value(), Some(&Out::Join));
+    moved.set_catalog(true);
+    assert_eq!(moved.menu.value(), Some(&Out::Join));
+    moved.set_catalog(false);
+    moved.set_catalog(true);
+    assert_eq!(moved.menu.value(), Some(&Out::Join));
+
+    for row in [Out::Play, Out::Replays] {
+        let mut back = HomeScreen::returning_to(row);
+        assert_eq!(back.menu.value(), Some(&row));
+        back.set_catalog(true);
+        assert_eq!(back.menu.value(), Some(&row), "Back lands where it left");
+        back.set_catalog(true);
+        assert_eq!(back.menu.value(), Some(&row));
+    }
+}
+
+#[test]
 fn the_door_names_the_build_by_version_and_short_commit() {
     use aftermine_kit::build::BuildIdentity;
     let commit = "228dd0e6ff22cd175b8f8ba27c718bcff896d6eb";

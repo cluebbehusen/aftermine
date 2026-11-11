@@ -1035,6 +1035,101 @@ fn charge_detonation_plays_one_blast_and_preserves_other_building_losses() {
 }
 
 #[test]
+fn a_structure_loss_scorches_only_ground_its_watcher_saw_fall() {
+    let mut game = Game::with_viewport(
+        aftermine_sim::Scenario::skirmish(),
+        Vec2::new(1280.0, 800.0),
+    )
+    .unwrap();
+    let human = game.presentation.human;
+    let enemy = aftermine_sim::PlayerId(1);
+    let hidden = chassis::grid::TilePos::new(30, 20).center();
+    let seen = game
+        .state
+        .buildings()
+        .iter()
+        .find(|b| b.player == human)
+        .expect("an own Foundry")
+        .center();
+    assert!(
+        !game
+            .my_vision()
+            .visible(chassis::grid::TilePos::containing(hidden))
+    );
+    assert!(
+        game.my_vision()
+            .visible(chassis::grid::TilePos::containing(seen))
+    );
+    let lost = |building: u32, kind, player, pos| Event::BuildingDestroyed {
+        building: BuildingId(building),
+        kind,
+        player,
+        tier: 0,
+        pos,
+    };
+    let turret = aftermine_sim::BuildingKind::Turret;
+    game.presentation
+        .spawn_fx(&game.state, &[lost(999, turret, enemy, hidden)]);
+    assert!(
+        game.presentation.scorches.is_empty(),
+        "an unseen hostile loss leaves no mark"
+    );
+    game.presentation.spawn_fx(
+        &game.state,
+        &[
+            Event::ChargeDetonated {
+                building: BuildingId(998),
+                player: enemy,
+                at: hidden,
+            },
+            lost(
+                998,
+                aftermine_sim::BuildingKind::ScuttleCharge,
+                enemy,
+                hidden,
+            ),
+        ],
+    );
+    assert!(
+        game.presentation.scorches.is_empty(),
+        "nor does an unseen charge"
+    );
+    game.presentation
+        .spawn_fx(&game.state, &[lost(997, turret, enemy, seen)]);
+    assert_eq!(game.presentation.scorches.len(), 1, "a seen loss marks");
+    game.presentation
+        .spawn_fx(&game.state, &[lost(996, turret, human, hidden)]);
+    assert_eq!(
+        game.presentation.scorches.len(),
+        2,
+        "a player's own loss marks wherever it stood"
+    );
+
+    // A wide structure seen through one corner, its centre tile fogged.
+    let wide = aftermine_sim::BuildingKind::ALL
+        .into_iter()
+        .find(|kind| kind.size() == (2, 2))
+        .expect("a 2x2 structure");
+    let vision = game.my_vision();
+    let corner = (0..game.state.map().height())
+        .flat_map(|y| (0..game.state.map().width()).map(move |x| chassis::grid::TilePos::new(x, y)))
+        .find(|tile| vision.visible(*tile) && !vision.visible(tile.offset(1, 1)))
+        .expect("an edge of sight");
+    let centre = aftermine_sim::geometry::footprint_center(corner, (2, 2));
+    assert!(
+        !vision.visible(chassis::grid::TilePos::containing(centre)),
+        "premise: its centre tile is fogged"
+    );
+    game.presentation
+        .spawn_fx(&game.state, &[lost(995, wide, enemy, centre)]);
+    assert_eq!(
+        game.presentation.scorches.len(),
+        3,
+        "a loss seen through any of its tiles marks"
+    );
+}
+
+#[test]
 fn hidden_demolition_and_building_loss_sound_without_revealing_identity() {
     let mut game = Game::with_viewport(
         aftermine_sim::Scenario::skirmish(),

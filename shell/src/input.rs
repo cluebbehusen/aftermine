@@ -212,6 +212,50 @@ fn hud_in_pad_mode(platform: crate::platform::Platform, pad_in_use: bool) -> boo
     pad_in_use || platform == crate::platform::Platform::Tv
 }
 
+/// Whether no controller can play a match: on a TV, or wherever a Siri
+/// Remote is connected, while no pad but a remote is.
+fn lacks_controller(
+    platform: crate::platform::Platform,
+    connected: impl Iterator<Item = aftermine_protocol::PadFamily>,
+) -> bool {
+    let mut remote = platform == crate::platform::Platform::Tv;
+    for family in connected {
+        if family != aftermine_protocol::PadFamily::Remote {
+            return false;
+        }
+        remote = true;
+    }
+    remote
+}
+
+/// How the match HUD stands for the hands in use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HudHands {
+    /// Pointer chrome, drawn and hit-tested.
+    Pointer,
+    /// Pad mode: the controls a controller's buttons stand in for stay
+    /// hidden, and the rest name the buttons of `names`, or none while no
+    /// controller is connected.
+    Pad {
+        names: Option<aftermine_protocol::PadFamily>,
+    },
+}
+
+impl HudHands {
+    /// Whether the HUD stands in pad mode.
+    pub(crate) fn pad_mode(self) -> bool {
+        matches!(self, Self::Pad { .. })
+    }
+
+    /// Whose buttons the HUD names, if any.
+    pub(crate) fn names(self) -> Option<aftermine_protocol::PadFamily> {
+        match self {
+            Self::Pointer => None,
+            Self::Pad { names } => names,
+        }
+    }
+}
+
 /// The family copy names, from the one in use or assumed. A remote can't play
 /// a match, so there copy names a connected controller instead, or none.
 fn pad_family_named(
@@ -626,6 +670,11 @@ pub(crate) struct LatchProbe {
 struct HeldStroke {
     by: Presser,
     plan: PlacingStroke,
+    /// The world point the stroke has covered up to: the press's, then each
+    /// move's. The next move plans from here, so however many moves a frame
+    /// brings and however far each jumps, the row covers all the ground the
+    /// pointer crossed, in order, even if the camera moved meanwhile.
+    reached: Vec2,
 }
 
 /// A live drag-to-place stroke: the row it plans, staged only when the
@@ -1290,14 +1339,27 @@ impl InputState {
         self.hud_pad = hud_in_pad_mode(crate::platform::PLATFORM, self.pad_in_use.is_some());
     }
 
-    /// Whose buttons the HUD names while it stands in pad mode: the
-    /// controller in use, or a common pad's before any is pressed. A remote
+    /// How the HUD stands this frame. In pad mode it names the controller
+    /// in use, else a connected one, and no buttons while none is: a remote
     /// can't play a match, so its buttons are never the ones named.
-    pub(crate) fn hud_pad_family(&self) -> Option<aftermine_protocol::PadFamily> {
-        self.hud_pad.then(|| {
-            self.pad_family_named(true)
-                .unwrap_or(aftermine_protocol::PadFamily::Xbox)
-        })
+    pub(crate) fn hud_hands(&self) -> HudHands {
+        if !self.hud_pad {
+            return HudHands::Pointer;
+        }
+        HudHands::Pad {
+            names: self.pad_family_named(true).or_else(|| {
+                self.pads
+                    .values()
+                    .copied()
+                    .find(|family| *family != aftermine_protocol::PadFamily::Remote)
+            }),
+        }
+    }
+
+    /// Whether no controller can play a match: only the Siri Remote, or
+    /// nothing at all on a TV, is connected.
+    pub(crate) fn lacks_controller(&self) -> bool {
+        lacks_controller(crate::platform::PLATFORM, self.pads.values().copied())
     }
 
     /// Where the HUD reads its hover: the queue strip's lit entry while
@@ -1504,6 +1566,24 @@ impl InputState {
     }
 
     /// The previewed plan's stamps.
+    /// A held stroke's presser and the world point it has covered up to.
+    pub(super) fn stroke_reached(&self) -> Option<(Presser, Vec2)> {
+        let held = self.placing.as_ref()?.stroke.as_ref()?;
+        Some((held.by, held.reached))
+    }
+
+    /// Moves a held stroke on to `world` without planning the ground
+    /// between, as after a camera jump, which crosses none.
+    pub(super) fn restart_stroke_at(&mut self, world: Vec2) {
+        if let Some(held) = self
+            .placing
+            .as_mut()
+            .and_then(|placement| placement.stroke.as_mut())
+        {
+            held.reached = world;
+        }
+    }
+
     pub(crate) fn planned_stamps(&self) -> &[TilePos] {
         self.active_plan()
             .map_or(&[], |plan| plan.stamps.as_slice())
@@ -2254,7 +2334,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
     }
     match *event {
         RawEvent::MouseMove { x, y } => {
-            let from = std::mem::replace(&mut input.mouse, vec2(x, y));
+            input.mouse = vec2(x, y);
             // A held minimap press keeps steering: clamp the cursor
             // into the minimap so sliding off its edge doesn't stall
             // the pan mid-gesture.
@@ -2279,9 +2359,8 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // stamps before it: a wall in one stroke. Nothing stages
             // until the release, so a careless stroke costs nothing.
             // Refused cells skip silently (the ghost tells that story).
-            let camera = &game.presentation.camera;
-            let (a, b) = (camera.to_world(from), camera.to_world(vec2(x, y)));
-            extend_stroke(game, input, Presser::Mouse, a, b);
+            let to = game.presentation.camera.to_world(vec2(x, y));
+            extend_stroke(game, input, Presser::Mouse, to);
             if input.handle_drag {
                 pull_row(&game.view(), input, vec2(x, y));
             }
@@ -2371,16 +2450,15 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             x,
             y,
         } => {
-            let from = std::mem::replace(&mut input.mouse, vec2(x, y));
+            input.mouse = vec2(x, y);
             input.minimap_drag = false;
             if std::mem::take(&mut input.handle_drag) {
                 return;
             }
             // The placement stroke ends at release, taking the ground
             // up to the release point.
-            let camera = &game.presentation.camera;
-            let (a, b) = (camera.to_world(from), camera.to_world(vec2(x, y)));
-            extend_stroke(game, input, Presser::Mouse, a, b);
+            let to = game.presentation.camera.to_world(vec2(x, y));
+            extend_stroke(game, input, Presser::Mouse, to);
             finish_stroke(game, input, Presser::Mouse);
             if let Some(origin) = input.drag_origin.take() {
                 let release = vec2(x, y);
@@ -2543,8 +2621,11 @@ fn pad_down(
     if !remote {
         input.pad_points();
     }
-    if plays_in_match(remote, button)
-        && !pad_dock::press(game, input, bindings, pad, button)
+    if !plays_in_match(remote, button) {
+        deny(game);
+        return;
+    }
+    if !pad_dock::press(game, input, bindings, pad, button)
         && !pad_ring::press(game, input, bindings, pad, button)
     {
         pad_controls::press(game, input, bindings, pad, button);
@@ -2787,6 +2868,7 @@ fn armed_click(
                         queue,
                         stamps: vec![anchor],
                     },
+                    reached: world,
                 });
             }
         }
@@ -3360,10 +3442,11 @@ fn finish_stroke(game: &mut Game, input: &mut InputState, by: Presser) -> bool {
     true
 }
 
-/// Plans the stamps the ground from `a` to `b` (world points) crosses while
-/// `by` lays a stroke, sampled finely enough that a fast move leaves no
-/// footprint out. Samples under chrome or the minimap plan nothing.
-fn extend_stroke(game: &Game, input: &mut InputState, by: Presser, a: Vec2, b: Vec2) {
+/// Plans the stamps the ground crosses from the stroke's reached point to
+/// `to` (world points) while `by` lays it, then moves the reached point to
+/// `to`. Sampled finely enough that a fast move leaves no footprint out;
+/// samples under chrome or the minimap plan nothing.
+fn extend_stroke(game: &Game, input: &mut InputState, by: Presser, to: Vec2) {
     let Some(Placement {
         kind,
         stroke: Some(held),
@@ -3375,6 +3458,7 @@ fn extend_stroke(game: &Game, input: &mut InputState, by: Presser, a: Vec2, b: V
     if held.by != by {
         return;
     }
+    let (a, b) = (std::mem::replace(&mut held.reached, to), to);
     let stroke = &mut held.plan;
     let kind = *kind;
     let camera = &game.presentation.camera;
@@ -3953,9 +4037,19 @@ pub fn update_held(game: &mut Game, input: &mut InputState, dt: f32) {
     pad_ring::update(game, input);
     reticle::update(game, input, dt, keys);
     paint::sweep(game, input, before);
-    if let Some(by @ Presser::Pad(_)) = input.stroke_by() {
-        let after = input.reticle.ground(&game.presentation.camera);
-        extend_stroke(game, input, by, before, after);
+    match input.stroke_by() {
+        Some(by @ Presser::Pad(_)) => {
+            let after = input.reticle.ground(&game.presentation.camera);
+            extend_stroke(game, input, by, after);
+        }
+        // A pan moves the ground under a still cursor; taking it a frame at
+        // a time judges each step under that frame's chrome, so ground the
+        // view carries beneath the HUD plans nothing.
+        Some(Presser::Mouse) => {
+            let under = game.presentation.camera.to_world(input.mouse);
+            extend_stroke(game, input, Presser::Mouse, under);
+        }
+        _ => {}
     }
 }
 

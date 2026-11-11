@@ -323,9 +323,9 @@ fn card_title_lines(title: &str, measure: impl Fn(&str) -> f32, width: f32) -> V
     lines
 }
 
-/// The title row's select-all button, framed like a strip chip. In pad
-/// mode (`pad`) the controller's RT leads its words, so they read beside
-/// the button that presses it, inside the same rect.
+/// The title row's select-all button, framed like a strip chip. While pad
+/// mode names a controller (`pad`), its RT leads the words, so they read
+/// beside the button that presses it, inside the same rect.
 fn draw_select_all(
     sprites: &Sprites,
     all: &crate::panel::SelectAll,
@@ -1412,7 +1412,8 @@ pub(crate) fn draw_panel(
     let draw_icon = |dest: Rect, icon: &CardIcon, tint: Color| {
         draw_card_icon(sprites, dest, icon, tint, panel.owner);
     };
-    let pad = input.hud_pad_family();
+    let hands = input.hud_hands();
+    let pad = hands.names();
 
     let selection = match layout {
         PanelLayout::Catalog {
@@ -1422,7 +1423,7 @@ pub(crate) fn draw_panel(
             dock,
         } => {
             // Pad mode builds through the ring's build rings instead.
-            if pad.is_none() {
+            if !hands.pad_mode() {
                 draw_catalog(panel, input, bindings, (*band, slots, *grouped), &draw_icon);
             }
             if let Some(dock) = dock {
@@ -1454,7 +1455,7 @@ pub(crate) fn draw_panel(
     // that open the rings.
     let legend = pad_legend(panel, pad)
         .map(|legend| (legend, pad_legend_band(action_rect, cards_x, info_rect)));
-    let (action_rect, card_rects): (Rect, &[Rect]) = if pad.is_some() {
+    let (action_rect, card_rects): (Rect, &[Rect]) = if hands.pad_mode() {
         (Rect::new(0.0, 0.0, 0.0, 0.0), &[])
     } else {
         (action_rect, card_rects)
@@ -2080,7 +2081,8 @@ fn hovers(input: &InputState, rect: Rect) -> bool {
 
 /// What pad mode shows where a selection's command cards were: the
 /// buttons that open the command ring and the group ring. A selection
-/// whose ring would be empty, such as an enemy's or an ally's, shows none.
+/// whose ring would be empty, such as an enemy's or an ally's, shows none,
+/// and so does pad mode with no controller to name (`pad`).
 pub(crate) fn pad_legend(
     panel: &crate::panel::Panel,
     pad: Option<aftermine_protocol::PadFamily>,

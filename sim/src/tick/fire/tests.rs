@@ -362,3 +362,41 @@ fn levels_change_nothing_where_nothing_stands_higher() {
         }
     }
 }
+
+#[test]
+fn a_shot_at_a_seam_or_corner_lands_alike_after_a_half_turn() {
+    // Aim points on seams and corners, such as a building's nearest edge
+    // point or a footprint's centre, from every tile centre.
+    let rows = ["......", ".#..^.", "...#..", "^.....", "......"];
+    let turned: Vec<String> = rows
+        .iter()
+        .rev()
+        .map(|row| row.chars().rev().collect())
+        .collect();
+    let turned: Vec<&str> = turned.iter().map(String::as_str).collect();
+    let (field, mirror) = (state(&rows), state(&turned));
+    let (w, h) = (6, 5);
+    let half_turn = |v: Vec2Fx| Vec2Fx::new(Fx::from_num(w) - v.x, Fx::from_num(h) - v.y);
+    for (sx, sy) in (0..h).flat_map(|y| (0..w).map(move |x| (x, y))) {
+        for (ax, ay) in (0..=2 * h).flat_map(|y| (0..=2 * w).map(move |x| (x, y))) {
+            let from = at(sx, sy);
+            let aim = Vec2Fx::new(Fx::from_num(ax) / 2, Fx::from_num(ay) / 2);
+            for landing in [Landing::Checked, Landing::Unchecked] {
+                let shot = |state: &State, from, aim| {
+                    clear_line(
+                        state,
+                        Fire::Direct,
+                        ShotEnd::new(from, Domain::Ground),
+                        ShotEnd::new(aim, Domain::Ground),
+                        landing,
+                    )
+                };
+                assert_eq!(
+                    shot(&field, from, aim),
+                    shot(&mirror, half_turn(from), half_turn(aim)),
+                    "{from:?} -> {aim:?}, {landing:?}"
+                );
+            }
+        }
+    }
+}

@@ -1129,3 +1129,69 @@ fn defenses_fire_on_a_building_known_only_by_radar() {
         assert!(state.building(victim).unwrap().hp < hp, "{kind:?}");
     }
 }
+
+#[test]
+fn mirrored_guns_shell_the_mirrored_one_of_two_equally_near_blips() {
+    // Two radar contacts lie equally far from the Avalanche, either side of
+    // its nose. Contact ids count in map row order, so a tie broken by id
+    // would shell different contacts after a half turn.
+    let (width, height) = (40, 30);
+    let scene = |rotated: bool| {
+        let (me, them) = if rotated { (1, 0) } else { (0, 1) };
+        let at = |x: i32, y: i32| {
+            if rotated {
+                (width - 1 - x, height - 1 - y)
+            } else {
+                (x, y)
+            }
+        };
+        let placed = |player, kind, (x, y)| unit(player, kind, x, y);
+        let mut scenario = open_arena(
+            as_index(width),
+            as_index(height),
+            vec![
+                placed(me, UnitKind::Avalanche, at(8, 14)),
+                placed(them, UnitKind::Excavator, at(17, 11)),
+                placed(them, UnitKind::Excavator, at(17, 17)),
+            ],
+        );
+        let (w, h) = BuildingKind::Array.size();
+        scenario.buildings = vec![if rotated {
+            building(me, BuildingKind::Array, width - w - 4, height - h - 4)
+        } else {
+            building(me, BuildingKind::Array, 4, 4)
+        }];
+        let state = scenario.build().unwrap();
+        let viewer = PlayerId(me);
+        assert_eq!(
+            state
+                .vision(viewer)
+                .tracks()
+                .iter()
+                .filter(|track| track.visible_unit.is_none())
+                .count(),
+            2,
+            "premise: both are radar contacts only"
+        );
+        state
+    };
+    let landing = |rotated| {
+        let mut state = scene(rotated);
+        for _ in 0..300 {
+            for event in state.tick(&[]).events {
+                if let Event::ShellLaunched {
+                    target: None, to, ..
+                } = event
+                {
+                    return to;
+                }
+            }
+        }
+        panic!("no blind shell");
+    };
+    let centre = chassis::fx::Vec2Fx::new(
+        chassis::fx::Fx::from_num(width),
+        chassis::fx::Fx::from_num(height),
+    );
+    assert_eq!(landing(true), centre - landing(false));
+}

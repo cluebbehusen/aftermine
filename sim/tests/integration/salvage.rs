@@ -962,6 +962,72 @@ fn repair_and_salvage_evict_each_other_from_a_target() {
 }
 
 #[test]
+fn salvage_sends_home_a_welder_left_looping_on_its_repair() {
+    // A one-waypoint patrol cancelled from in front of a queued Repair
+    // leaves the Repair active in a program still marked looping.
+    let mut scenario = arena(vec![
+        unit(0, UnitKind::Harvester, 7, 2),
+        unit(0, UnitKind::Harvester, 8, 2),
+    ]);
+    scenario
+        .buildings
+        .push(standing(0, BuildingKind::Turret, 9, 2));
+    let mut state = scenario.build().unwrap();
+    let (stripper, welder) = (state.units()[0].id, state.units()[1].id);
+    let turret = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Turret)
+        .unwrap()
+        .id;
+    let stats = BuildingKind::Turret.base_stats();
+    state.tick(&[cmd(
+        0,
+        Command::Salvage {
+            units: vec![stripper],
+            building: turret,
+            queue: false,
+        },
+    )]);
+    run_until(&mut state, 400, |s, _| {
+        s.building(turret).unwrap().hp < stats.max_hp
+    });
+    state.tick(&[cmd(
+        0,
+        Command::Repair {
+            units: vec![welder],
+            building: turret,
+            queue: false,
+        },
+    )]);
+    let mut value = serde_json::to_value(&state).unwrap();
+    let row = value["units"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|u| u["id"] == serde_json::json!(welder))
+        .unwrap();
+    row["looping"] = serde_json::json!(true);
+    let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
+    state.validate_invariants().unwrap();
+    state.tick(&[cmd(
+        0,
+        Command::Salvage {
+            units: vec![stripper],
+            building: turret,
+            queue: false,
+        },
+    )]);
+    assert!(
+        !matches!(
+            state.unit(welder).unwrap().order,
+            aftermine_sim::Order::Repair { .. }
+        ),
+        "issuing salvage sends the welder home"
+    );
+}
+
+#[test]
 fn salvage_walks_the_construction_ramp_backward_on_schedule() {
     // One stripper takes ceil(max_hp * build_ticks / ramp) ticks to
     // level a full-health building — the same clock construction runs,

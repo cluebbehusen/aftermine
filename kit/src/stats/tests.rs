@@ -194,6 +194,26 @@ fn the_final_state_is_always_sampled() {
 }
 
 #[test]
+fn a_called_off_pass_stops_before_the_next_tick() {
+    let replay = record_activity(200);
+    let asked = std::cell::Cell::new(0u32);
+    let stopped = compute_unless(&replay, 50, || {
+        asked.set(asked.get() + 1);
+        asked.get() > 10
+    });
+    assert!(stopped.is_err());
+    assert_eq!(
+        asked.get(),
+        11,
+        "it asks once a tick and stops at the first yes"
+    );
+    assert_eq!(
+        compute_unless(&replay, 50, || false).unwrap().final_tick,
+        compute(&replay, 50).unwrap().final_tick
+    );
+}
+
+#[test]
 fn stats_recompute_identically_from_the_record() {
     let replay = record_activity(600);
     let a = compute(&replay, 100).unwrap();

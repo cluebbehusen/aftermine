@@ -294,9 +294,14 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
         };
         // Saturating, like a delivery: the event reports what was actually
         // credited, cargo first, which differs from the raw amounts only at
-        // the bank's ceiling.
+        // the bank's ceiling. A surrendered seat's cargo credits nothing, as
+        // a delivery does; the refund is a refund, not income.
         let seat = state.player_mut(player);
-        let cargo = seat.scrap.saturating_add(cargo) - seat.scrap;
+        let cargo = if seat.resigned {
+            0
+        } else {
+            seat.scrap.saturating_add(cargo) - seat.scrap
+        };
         seat.scrap += cargo;
         let refund = seat
             .scrap
@@ -426,7 +431,10 @@ fn cleanup(state: &mut State, salvaged: &[crate::ids::BuildingId], events: &mut 
 /// Declares the result once at least one team has been eliminated.
 ///
 /// Elimination is Foundry-based: a team lives while any of its seats holds a
-/// Foundry; other standing buildings do not keep it in the game. A resigned
+/// Foundry, a Foundry site or a paid Foundry blueprint on its way; other
+/// standing buildings do not keep it in the game. A blueprint refunded
+/// because its worker died or its ground turned out blocked leaves the seat
+/// out on that tick. A resigned
 /// seat's Foundries stop counting the tick it concedes, so a fully resigned
 /// team is eliminated immediately. The command gate in `commands::apply` stays
 /// player-scoped: a Foundry-less or resigned seat on a living team spectates
@@ -436,19 +444,18 @@ fn victory(state: &mut State, events: &mut Vec<Event>) {
         return;
     }
     // Stamp each seat's first tick out of the match: resigned, or holding no
-    // Foundry (sites count). Recorded once and never cleared; it is the FFA
-    // scoreboard's placement key.
+    // Foundry (sites and paid blueprints count). Recorded once and never
+    // cleared; it is the FFA scoreboard's placement key.
     for index in 0..state.players.len() {
         if state.players[index].eliminated_at.is_some() {
             continue;
         }
         let seat = crate::ids::PlayerId::from_index(index);
         let out = state.players[index].resigned
-            || !state.buildings.iter().any(|b| {
-                b.player == seat
-                    && !b.provisional()
-                    && b.kind == crate::stats::BuildingKind::Foundry
-            });
+            || !state
+                .buildings
+                .iter()
+                .any(|b| b.player == seat && b.kind == crate::stats::BuildingKind::Foundry);
         if out {
             state.players[index].eliminated_at = Some(state.tick);
         }
@@ -459,10 +466,7 @@ fn victory(state: &mut State, events: &mut Vec<Event>) {
     let alive = |team: u8| {
         state.buildings.iter().any(|b| {
             let owner = &state.players[b.player.0 as usize];
-            !b.provisional()
-                && b.kind == crate::stats::BuildingKind::Foundry
-                && owner.team == team
-                && !owner.resigned
+            b.kind == crate::stats::BuildingKind::Foundry && owner.team == team && !owner.resigned
         })
     };
     let survivors: Vec<u8> = teams.iter().copied().filter(|&t| alive(t)).collect();
@@ -652,6 +656,25 @@ pub(crate) fn footprint_incident_tile(
             (tile.center().dist_sq(impact), cross, Reverse(dot))
         })
         .expect("positive footprint contains a tile")
+}
+
+/// The tile of the footprint at `anchor` an attacker at `from` facing
+/// `heading` heads for: its centre tile, or for an even side the central
+/// tile its approach ranks first. Only an aircraft can be right over the
+/// centre, and it approaches along its heading.
+pub(crate) fn footprint_goal(
+    anchor: TilePos,
+    size: (i32, i32),
+    from: chassis::fx::Vec2Fx,
+    heading: u8,
+) -> TilePos {
+    let centre = crate::geometry::footprint_center(anchor, size);
+    let approach = if from == centre {
+        chassis::compass::dir(heading)
+    } else {
+        centre - from
+    };
+    footprint_incident_tile(anchor, size, centre, approach)
 }
 
 /// Whether `tile` touches (including diagonally) but does not overlap the

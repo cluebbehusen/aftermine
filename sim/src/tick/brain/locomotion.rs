@@ -609,11 +609,9 @@ fn touching_settled_arrival(
     if unit.pos.dist_sq(goal_center) > near * near {
         return false;
     }
-    let my_stats = unit.kind.stats();
-    let my_radius = my_stats.radius;
-    let contact_slack = const { chassis::fx::Fx::lit("0.05") };
     // Contact only means anything between bodies that collide: a flyer
-    // hovering over a parked crowd is not "touching" it.
+    // hovering over a parked crowd is not "touching" it. A hostile body
+    // parked by the goal is no arrival to stop beside.
     let reach = crate::stats::ARRIVAL_NEAR.to_num::<i32>() + 1 + index.wide_reach();
     (goal.y - reach..=goal.y + reach).any(|y| {
         index
@@ -634,8 +632,8 @@ fn touching_settled_arrival(
                             + crate::stats::hull_excess(other.kind.stats().radius);
                         other.pos.dist_sq(goal_center) <= near * near
                     }
-                    && unit.pos.dist(other.pos)
-                        <= my_radius + other.kind.stats().radius + contact_slack
+                    && !state.hostile(unit.player, other.player)
+                    && super::super::reach::touching(unit, other)
             })
     })
 }

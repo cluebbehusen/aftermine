@@ -903,23 +903,57 @@ fn playback_hitches_run_only_one_frames_tick_budget() {
 }
 
 #[test]
-fn statistics_are_created_lazily_and_retained_while_hidden() {
+fn statistics_build_in_the_background_and_stay_while_hidden() {
     let mut pb = session();
     assert!(!pb.show_stats);
-    assert!(pb.stats.is_none());
+    assert!(matches!(pb.stats, Stats::Unasked));
 
-    key(&mut pb, Key::Tab);
+    let mut mouse = vec2(0.0, 0.0);
+    pb.apply_input(
+        &crate::action::BindingMap::classic(),
+        &[
+            RawEvent::KeyDown { key: Key::Tab },
+            RawEvent::KeyUp { key: Key::Tab },
+        ],
+        0.0,
+        vec2(1280.0, 800.0),
+        crate::config::CameraPrefs::default(),
+        &mut mouse,
+    );
     assert!(pb.show_stats);
-    let final_tick = pb.stats.as_ref().expect("statistics computed").final_tick;
+    assert!(
+        matches!(pb.stats, Stats::Building(_)),
+        "the press returns before the statistics exist, the overlay pending"
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while matches!(pb.stats, Stats::Building(_)) {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+        pb.advance_frame(FrameTime::measure(0.0), vec2(1280.0, 800.0));
+    }
+    let final_tick = pb.stats.ready().expect("statistics arrive").final_tick;
     assert_eq!(final_tick, pb.engine.total());
 
     key(&mut pb, Key::Tab);
     assert!(!pb.show_stats);
     assert_eq!(
-        pb.stats.as_ref().map(|stats| stats.final_tick),
+        pb.stats.ready().map(|stats| stats.final_tick),
         Some(final_tick)
     );
 }
+
+#[test]
+fn a_viewer_closed_mid_pass_calls_its_statistics_off() {
+    let mut pb = session();
+    pb.toggle_stats();
+    let Stats::Building(pass) = &pb.stats else {
+        panic!("the pass runs")
+    };
+    let stop = std::sync::Arc::clone(&pass.stop);
+    drop(pb);
+    assert!(stop.load(std::sync::atomic::Ordering::Relaxed));
+}
+
 #[test]
 fn playback_uses_rebound_camera_and_transport_keys_without_advancing_the_record() {
     use crate::action::Chord;

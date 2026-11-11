@@ -718,3 +718,33 @@ fn stop_clears_a_patrol() {
     }
     assert_eq!(state.unit(mover).unwrap().tile(), parked);
 }
+
+#[test]
+fn an_idle_hostile_beside_the_goal_does_not_end_a_walk_short() {
+    // The arrival wave stops a walker beside a friend already parked at the
+    // goal; a parked enemy is no such arrival.
+    let mut state = open_arena(
+        30,
+        16,
+        vec![
+            unit(0, UnitKind::Harvester, 4, 8),
+            unit(1, UnitKind::Harvester, 11, 8),
+        ],
+    )
+    .build()
+    .unwrap();
+    let walker = state.units()[0].id;
+    let goal = TilePos::new(12, 8);
+    state.tick(&[cmd(
+        0,
+        Command::Run {
+            units: vec![walker],
+            goal,
+            queue: false,
+        },
+    )]);
+    run_until(&mut state, 400, |s, _| {
+        s.unit(walker).unwrap().order == aftermine_sim::Order::Idle
+    });
+    assert_eq!(state.unit(walker).unwrap().tile(), goal);
+}

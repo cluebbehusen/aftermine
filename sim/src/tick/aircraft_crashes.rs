@@ -30,6 +30,13 @@ pub(super) fn remember_motion(state: &mut State, before: &[(UnitId, Vec2Fx)]) {
         } else {
             delta
         };
+        // A step can overshoot the speed on one axis by a raw unit or two
+        // that the squared length rounds away; the validator bounds each
+        // axis too.
+        let remembered = Vec2Fx::new(
+            remembered.x.clamp(-speed, speed),
+            remembered.y.clamp(-speed, speed),
+        );
         if let Motor::Airborne { motion } = &mut unit.motor {
             *motion = remembered;
         }

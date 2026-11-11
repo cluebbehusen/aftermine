@@ -606,7 +606,6 @@ fn apply_attack(
     let view = state
         .attack_view(player, target)
         .ok_or(RejectReason::InvalidTarget)?;
-    let target_tile = chassis::grid::TilePos::containing(view.position);
     let victim_domain = view.domain;
     // A demolition machine carries no gun, but its charge covers ground the
     // same way a weapon would.
@@ -621,10 +620,10 @@ fn apply_attack(
         .filter(|id| !covers(state.unit(*id).expect("accepted").kind.stats()))
         .collect();
     let walk_goals = split_domains(state, walkers).map(|(ids, domain)| {
-        (!ids.is_empty()).then(|| {
-            let reverse = spread_scan_reversed(state, target_tile, &ids);
-            goals::issue(state, player, target_tile, domain, reverse).goal(0)
-        })
+        let lead = state.unit(*ids.first()?).expect("accepted");
+        let target_tile = view.goal_from(lead.pos, lead.heading);
+        let reverse = spread_scan_reversed(state, target_tile, &ids);
+        Some(goals::issue(state, player, target_tile, domain, reverse).goal(0))
     });
     let mut landed = 0;
     let applied = for_owned_units(state, player, units, |u| {
@@ -1522,11 +1521,9 @@ fn purge_opposing_verb(
     for unit in state.units.iter_mut().filter(|u| u.player == player) {
         unit.queue.retain(|o| !conflicts(o));
         if conflicts(&unit.order) {
-            // A looping program rotates the finished order to the back of
-            // the queue just cleaned; strip it again, or a patrolling welder
-            // brings the evicted job around forever.
-            unit.advance_queue();
-            unit.queue.retain(|o| !conflicts(o));
+            // Dropped, not finished: a looping program would rotate a
+            // finished order to its back and bring the evicted job around.
+            unit.drop_active_order();
         }
     }
 }

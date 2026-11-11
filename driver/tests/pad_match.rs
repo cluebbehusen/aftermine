@@ -1201,3 +1201,54 @@ fn a_remote_in_a_match_reaches_only_pause() -> Result<()> {
     assert_eq!(ui(&mut drill.client)?.mode, "playing", "Resume by click");
     Ok(())
 }
+
+#[test]
+#[ignore = "spawns a real window; run explicitly in the phase battery"]
+fn a_remote_alone_holds_the_match_and_asks_for_a_controller() -> Result<()> {
+    const REMOTE: u64 = 9;
+    let mut drill = PadMatch::spawn(44_340)?;
+    drill.load(&field())?;
+    drill.inject(RawEvent::PadDisconnected { pad: PAD })?;
+    drill.inject(RawEvent::PadConnected {
+        pad: REMOTE,
+        family: PadFamily::Remote,
+    })?;
+    drill.inject(RawEvent::PadDown {
+        pad: REMOTE,
+        button: PadButton::South,
+    })?;
+    drill.inject(RawEvent::PadUp {
+        pad: REMOTE,
+        button: PadButton::South,
+    })?;
+    expect_ok(drill.client.call(Request::Resume)?)?;
+    let seen = ui(&mut drill.client)?;
+    assert_eq!(seen.mode, "playing");
+    assert!(
+        seen.controller_notice.is_some(),
+        "the notice asks for a controller"
+    );
+    assert_eq!(seen.hud_buttons, None, "and the HUD names no buttons");
+    let held = drill.client.status()?.tick;
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(drill.client.status()?.tick, held, "the match holds");
+
+    drill.inject(RawEvent::PadConnected {
+        pad: PAD,
+        family: PadFamily::Xbox,
+    })?;
+    let seen = ui(&mut drill.client)?;
+    assert_eq!(
+        seen.controller_notice, None,
+        "a controller clears the notice"
+    );
+    assert_eq!(seen.hud_buttons, Some(PadFamily::Xbox));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while drill.client.status()?.tick == held {
+        if Instant::now() > deadline {
+            bail!("the match never resumed once a controller connected");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    Ok(())
+}

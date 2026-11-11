@@ -531,6 +531,48 @@ fn a_step_change_drops_a_half_made_back_press() {
 }
 
 #[test]
+fn every_eight_seat_map_fits_one_setup_page_at_the_floor_size() {
+    let dir = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../scenarios"));
+    let mut eight = Vec::new();
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let scenario = Scenario::load(&path).expect("shipped map");
+        if scenario.players.len() != 8 {
+            continue;
+        }
+        let layout = setup_layout(&scenario, 0, vec2(1133.0, 744.0), 1.0);
+        assert_eq!(layout.page_count, 1, "{} pages", scenario.name);
+        assert!(layout.start.is_some());
+        for card in &layout.cards {
+            let card = card.as_ref().expect("every seat on the page");
+            assert!(
+                card.card.h >= MIN_TOUCH_TARGET,
+                "{}: a {} px card",
+                scenario.name,
+                card.card.h
+            );
+        }
+        eight.push(scenario.name);
+    }
+    eight.sort();
+    assert_eq!(
+        eight,
+        [
+            "Benchwork",
+            "Compass Grand",
+            "Derelict Belt",
+            "Eight Pits",
+            "Grand Viaduct",
+            "Great Cut",
+            "Terminal Basin"
+        ]
+    );
+}
+
+#[test]
 fn the_back_button_clears_grid_and_setup_content() {
     let draft = NewMatchDraft::default();
     let w = Wizard::open(&draft);
@@ -568,7 +610,6 @@ fn the_back_button_clears_grid_and_setup_content() {
                 .iter()
                 .flatten()
                 .map(|card| card.card)
-                .chain(setup.headings.iter().map(|(_, rect)| *rect))
                 .chain(setup.start)
                 .chain([setup.preview]);
             for rect in content {
@@ -1564,4 +1605,18 @@ fn the_setup_hints_name_a_controllers_buttons_while_one_is_in_use() {
             }
         }
     }
+}
+
+#[test]
+fn setup_warns_of_a_missing_controller_unless_start_is_refused_anyway() {
+    assert_eq!(
+        controller_warning(false, true),
+        Some("Connect a controller to play")
+    );
+    assert_eq!(
+        controller_warning(true, true),
+        None,
+        "nobody to fight is the warning that stands"
+    );
+    assert_eq!(controller_warning(false, false), None);
 }

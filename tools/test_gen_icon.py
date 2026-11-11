@@ -122,7 +122,7 @@ class IconGenerationTests(unittest.TestCase):
         approved = {
             gen_icon.TV_FRONT: "c27f759d3b066802627b8583bbc3fe89f16c2388c3a035a8aac3b0cca987982e",
             gen_icon.TV_BACK: "5b1c5cf2229954911a91b9512b17f6dadcfb3a8b2f638fbefafd538f179f4959",
-            gen_icon.TOP_SHELF_SCENE: "59112737e902e2409df76adad8277c209193344e90ff5719800e5357a3c9ac33",
+            gen_icon.TOP_SHELF_SCENE: "3f212d8c71048e5145cc4f5954032ec91a35fa72131e03cf6ea20ec32f9c49f5",
         }
         for path, digest in approved.items():
             with self.subTest(source=path.name):

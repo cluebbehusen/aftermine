@@ -388,7 +388,7 @@ pub(super) fn update_and_draw(
         Screen::Replays(shelf) => replays_frame(app, shelf, &events, &mut rerun),
         Screen::Pause(ps) => pause_frame(app, ps, &events)?,
         Screen::Waiting(waiting) => waiting_frame(app, waiting, &events, &mut rerun),
-        Screen::Busy(busy) => persistence::frame(app, busy, &events)?,
+        Screen::Busy(busy) => persistence::frame(app, busy, &events, &mut rerun)?,
     };
 
     Ok(ScreenFrame {
@@ -562,7 +562,8 @@ fn home_frame(app: &mut App, mut home: HomeScreen, events: &[RawEvent], dt: f32)
             next = Some(Screen::Replays(Shelf::open()));
         }
         screens::home::Out::Quit => {
-            return app.persistence_screen(persistence::Intent::Exit, Screen::Home(home));
+            let intent = persistence::Intent::quit(app.owes_finished_record());
+            return app.persistence_screen(intent, Screen::Home(home));
         }
     }
     home_backdrop(app, dt);
@@ -774,8 +775,13 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
     };
     match out {
         WizardOut::Home => {
+            // A resumed setup opened from a save, not from Play.
+            let mut home = if w.resuming() {
+                HomeScreen::open()
+            } else {
+                HomeScreen::returning_to(screens::home::Out::Play)
+            };
             w.finish_resume(&mut app.draft);
-            let mut home = HomeScreen::open();
             home_backdrop(app, 0.0);
             home.draw(&app.sprites);
             *rerun = true;
@@ -807,7 +813,12 @@ fn wizard_frame(app: &mut App, mut w: Wizard, events: &[RawEvent], rerun: &mut b
         match w.step {
             WizardStep::Map => w.browser.draw(&app.sprites, &w.entries, &mut app.previews),
             WizardStep::Setup => {
-                w.draw_setup(&app.sprites, &app.draft, &mut app.previews);
+                w.draw_setup(
+                    &app.sprites,
+                    &app.draft,
+                    &mut app.previews,
+                    app.input.lacks_controller(),
+                );
             }
         }
         crate::button::draw_back(app.input.mouse);
@@ -1010,7 +1021,8 @@ fn playing_frame(
     }
     drop(input_scope);
     let leaving = next.is_some();
-    let running = !app.game.clock.paused && !leaving;
+    let held = held_for_controller(&app.game, &app.input);
+    let running = !app.game.clock.paused && !held && !leaving;
     let profile_barrier = running && app.frame_profiler.take_start_barrier();
     *profile_frame_active = running && !profile_barrier;
     let profile_stopped = if profile_barrier {
@@ -1018,9 +1030,11 @@ fn playing_frame(
     } else {
         let stop_tick = app.frame_profiler.stop_tick();
         let stopped = measure(FramePass::Sim, || {
-            advance_live_match(&mut app.game, time.raw, stop_tick, leaving)
+            advance_live_match(&mut app.game, time.raw, stop_tick, leaving || held)
         });
-        app.game.update_wall_clock_fx(time.presentation);
+        if !held {
+            app.game.update_wall_clock_fx(time.presentation);
+        }
         stopped
     };
     if profile_stopped {
@@ -1062,7 +1076,19 @@ fn playing_frame(
             tutorial_card::draw(&card, &app.sprites, app.input.mouse);
         });
     }
+    if app.input.lacks_controller() {
+        pass(FramePass::Hud, || {
+            render::draw_controller_notice(&app.sprites, app.game.net_role().is_some());
+        });
+    }
     next.unwrap_or(Screen::Playing)
+}
+
+/// Whether a local match holds for want of a controller. It holds apart
+/// from the player's own pause, so a controller connecting resumes only
+/// what the hold stopped. A LAN match runs on for the other players.
+pub(super) fn held_for_controller(game: &Game, input: &input::InputState) -> bool {
+    input.lacks_controller() && game.net_role().is_none()
 }
 
 /// The card over the match this frame: the lesson's, or a match tip
@@ -1070,24 +1096,25 @@ fn playing_frame(
 fn current_card(app: &App) -> Option<CardLayout> {
     // The card follows the HUD's pad mode, so a press is judged against
     // the card the last frame drew.
-    let pad = app.input.hud_pad_family();
+    let hud = app.input.hud_hands();
     match &app.game.tutorial {
         Some(tutorial) => Some(tutorial_card::current(
             tutorial,
             &app.game,
             &app.config.bindings,
-            pad,
+            hud,
         )),
-        None => tutorial_card::current_tip(&app.game, &app.config.bindings, pad),
+        None => tutorial_card::current_tip(&app.game, &app.config.bindings, hud),
     }
 }
 
 /// Runs the ticks this frame owes a local match, unless the frame has
-/// already chosen to leave live play: the pause menu freezes the match on
-/// the gesture, so a suspension's gap is never caught up behind it. A LAN
+/// already chosen to leave live play or the match is held (`skip`): the
+/// pause menu freezes the match on the gesture, so a suspension's gap is
+/// never caught up behind it, and a hold banks no time to catch up. A LAN
 /// match's link runs its ticks before the screen frame.
-fn advance_live_match(game: &mut Game, raw_dt: f32, stop_tick: Option<u64>, leaving: bool) -> bool {
-    !leaving && game.net_role().is_none() && game.advance_wall_clock(raw_dt, stop_tick)
+fn advance_live_match(game: &mut Game, raw_dt: f32, stop_tick: Option<u64>, skip: bool) -> bool {
+    !skip && game.net_role().is_none() && game.advance_wall_clock(raw_dt, stop_tick)
 }
 
 /// Lays the HUD out for the scene as it stands, so input hit-tests the
@@ -1281,7 +1308,7 @@ fn replays_frame(app: &mut App, mut shelf: Shelf, events: &[RawEvent], rerun: &m
     drop(input_scope);
     match out {
         screens::shelf::Out::Home => {
-            let mut home = HomeScreen::open();
+            let mut home = HomeScreen::returning_to(screens::home::Out::Replays);
             home_backdrop(app, 0.0);
             home.draw(&app.sprites);
             *rerun = true;

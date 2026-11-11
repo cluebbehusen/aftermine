@@ -314,8 +314,9 @@ pub(crate) fn landing_clear(
 
 /// The nearest clear landing tile to `around`, searched ring by ring and,
 /// within a ring, by how little the aircraft would have to turn to head
-/// for it. Bearings are taken relative to the current heading, so a
-/// mirrored aircraft on a mirrored map picks the mirrored tile.
+/// for it, then by how near it lies and which side of the nose. Every term
+/// is taken relative to the aircraft's position and heading, so a mirrored
+/// aircraft on a mirrored map picks the mirrored tile.
 ///
 /// With `explored_by`, only tiles that player's team has explored are
 /// candidates: a pad picked around a distant goal is written into an order
@@ -342,7 +343,7 @@ pub(crate) fn nearest_landable(
     };
     for &straight in passes {
         for ring in 0..=radius {
-            let mut best: Option<((u8, u8, i32, i32), TilePos)> = None;
+            let mut best: Option<((u8, u8, Fx, Fx), TilePos)> = None;
             for dy in -ring..=ring {
                 for dx in -ring..=ring {
                     if dx.abs().max(dy.abs()) != ring {
@@ -356,9 +357,15 @@ pub(crate) fn nearest_landable(
                     {
                         continue;
                     }
-                    let bearing =
-                        chassis::compass::heading_of(tile.center() - pos).wrapping_sub(heading);
-                    let key = (bearing.min(bearing.wrapping_neg()), bearing, tile.y, tile.x);
+                    let offset = tile.center() - pos;
+                    let bearing = chassis::compass::heading_of(offset).wrapping_sub(heading);
+                    let nose = chassis::compass::dir(heading);
+                    let key = (
+                        bearing.min(bearing.wrapping_neg()),
+                        bearing,
+                        offset.length_sq(),
+                        nose.x * offset.y - nose.y * offset.x,
+                    );
                     if best.as_ref().is_none_or(|(held, _)| key < *held) {
                         best = Some((key, tile));
                     }

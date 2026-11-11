@@ -35,7 +35,7 @@ fn lay(tutorial: &Tutorial, coach: Option<&CoachLine>, hands: Hands, w: f32) -> 
         hands,
         env(w),
         &fixed,
-        None,
+        crate::input::HudHands::Pointer,
     )
 }
 
@@ -185,7 +185,7 @@ fn lay_tip(tip: Tip, hands: Hands, w: f32) -> CardLayout {
         hands,
         env(w),
         &fixed,
-        None,
+        crate::input::HudHands::Pointer,
     )
 }
 
@@ -243,8 +243,10 @@ fn the_tip_card_heads_its_tip_names_real_bindings_and_keeps_inside_itself() {
 #[test]
 fn in_pad_mode_a_finished_lesson_takes_a_and_b_and_nothing_else_offers_a_button() {
     use aftermine_protocol::{PadButton, PadFamily};
-    let pad = Some(PadFamily::Xbox);
-    let lay_pad = |tutorial: &Tutorial, coach: Option<&CoachLine>| {
+    let pad = crate::input::HudHands::Pad {
+        names: Some(PadFamily::Xbox),
+    };
+    let lay_in = |hud, tutorial: &Tutorial, coach: Option<&CoachLine>| {
         layout(
             tutorial,
             coach,
@@ -252,9 +254,10 @@ fn in_pad_mode_a_finished_lesson_takes_a_and_b_and_nothing_else_offers_a_button(
             MOUSE,
             env(1280.0),
             &fixed,
-            pad,
+            hud,
         )
     };
+    let lay_pad = |tutorial: &Tutorial, coach: Option<&CoachLine>| lay_in(pad, tutorial, coach);
     let done = lay_pad(&lesson(Lesson::Command, 5), None);
     assert_eq!(actions(&done), [CardButton::Next, CardButton::Lessons]);
     assert_eq!(done.pad_press(PadButton::South), Some(CardButton::Next));
@@ -265,6 +268,21 @@ fn in_pad_mode_a_finished_lesson_takes_a_and_b_and_nothing_else_offers_a_button(
         mouse.pad_press(PadButton::South),
         None,
         "outside pad mode A stays the match's"
+    );
+    let unnamed = lay_in(
+        crate::input::HudHands::Pad { names: None },
+        &lesson(Lesson::Command, 5),
+        None,
+    );
+    assert_eq!(
+        actions(&unnamed),
+        [CardButton::Next, CardButton::Lessons],
+        "with no controller to name, the card keeps pad mode's buttons"
+    );
+    assert_eq!(
+        unnamed.pad_press(PadButton::South),
+        None,
+        "and leaves the remote's click to be refused"
     );
 
     let last = Lesson::ALL[Lesson::ALL.len() - 1];

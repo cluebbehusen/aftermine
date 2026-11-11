@@ -787,9 +787,10 @@ fn line_is_deterministic_and_symmetric_enough() {
 #[test]
 fn hairline_deltas_cannot_overflow_the_trace() {
     // Two machines a single fixed-point ulp apart straddling a tile
-    // boundary: the parametric setup wants 1/ulp = 2^32, past the
-    // type's range. Adversarial in x, in y, and in both at once, in both
-    // directions, over open and blocked ground.
+    // boundary: their crossings must still be ordered exactly, with no
+    // overflow in the products that compare them. Adversarial in x, in y,
+    // and in both at once, in both directions, over open and blocked
+    // ground.
     let (grid, ..) = arena(&["....", "....", "....", "...."]);
     let open = |p: TilePos| grid.get(p).copied().unwrap_or(false);
     let ulp = Fx::from_bits(1);
@@ -811,8 +812,7 @@ fn hairline_deltas_cannot_overflow_the_trace() {
             Vec2Fx::new(edge_x - ulp, edge_y - ulp),
             Vec2Fx::new(edge_x + ulp, edge_y + ulp),
         ),
-        // Hairline in x while y spans real distance (one axis
-        // saturates, the other walks normally).
+        // Hairline in x while y spans real distance.
         (
             Vec2Fx::new(edge_x - ulp, Fx::lit("0.5")),
             Vec2Fx::new(edge_x + ulp, Fx::lit("3.5")),
@@ -836,8 +836,7 @@ fn hairline_deltas_cannot_overflow_the_trace() {
 fn trace_is_mirror_fair() {
     // A 180°-rotated shot over 180°-rotated terrain gets the identical
     // verdict, so mirrored seats never disagree about the same
-    // engagement. Direction symmetry along one segment is not promised;
-    // see the doc comment.
+    // engagement.
     let rows = &["........", "..##....", "....#...", ".#......", "........"];
     let (grid, w, h) = arena(rows);
     let open = |p: TilePos| grid.get(p).copied().unwrap_or(false);
@@ -862,6 +861,91 @@ fn trace_is_mirror_fair() {
             }
         }
     }
+}
+
+/// Every point on the half-tile lattice of a `w` by `h` arena: tile centres,
+/// edge midpoints and corners.
+fn lattice(w: i32, h: i32) -> Vec<Vec2Fx> {
+    (0..=2 * h)
+        .flat_map(|y| (0..=2 * w).map(move |x| (x, y)))
+        .map(|(x, y)| Vec2Fx::new(Fx::from_num(x) / 2, Fx::from_num(y) / 2))
+        .collect()
+}
+
+#[test]
+fn seam_ends_trace_mirror_fair_and_both_ways() {
+    // Aim points on tile seams and corners, such as a footprint's centre or
+    // the nearest point of a building's edge, must trace the same tiles
+    // after a half-turn and from either end.
+    let rows = &["........", "..##....", "....#...", ".#..#...", "........"];
+    let (grid, w, h) = arena(rows);
+    let open = |p: TilePos| grid.get(p).copied().unwrap_or(false);
+    let rot_open = |p: TilePos| {
+        grid.get(TilePos::new(w - 1 - p.x, h - 1 - p.y))
+            .copied()
+            .unwrap_or(false)
+    };
+    let rot = |v: Vec2Fx| Vec2Fx::new(Fx::from_num(w) - v.x, Fx::from_num(h) - v.y);
+    let points = lattice(w, h);
+    for &a in &points {
+        for &b in &points {
+            let verdict = line_blocked(a, b, open);
+            assert_eq!(
+                verdict,
+                line_blocked(rot(a), rot(b), rot_open),
+                "mirror-unfair trace {a:?} -> {b:?}"
+            );
+            assert_eq!(verdict, line_blocked(b, a, open), "{a:?} <-> {b:?}");
+            let landed = line_or_end_blocked(a, b, open);
+            assert_eq!(
+                landed,
+                line_or_end_blocked(rot(a), rot(b), rot_open),
+                "mirror-unfair landing {a:?} -> {b:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_trace_stops_at_its_end() {
+    // A shot from (4, 0) at the corner (2, 2) arrives through (2, 1); the
+    // rocks at (1, 2) and (0, 3) lie past its end. Its half-turn agrees.
+    let (grid, w, h) = arena(&["......", "......", ".#....", "#.....", "......"]);
+    let open = |p: TilePos| grid.get(p).copied().unwrap_or(false);
+    let rot_open = |p: TilePos| open(TilePos::new(w - 1 - p.x, h - 1 - p.y));
+    let rot = |v: Vec2Fx| Vec2Fx::new(Fx::from_num(w) - v.x, Fx::from_num(h) - v.y);
+    let corner = Vec2Fx::new(Fx::from_num(2), Fx::from_num(2));
+    assert!(!line_blocked(center(4, 0), corner, open));
+    assert!(!line_blocked(rot(center(4, 0)), rot(corner), rot_open));
+}
+
+#[test]
+fn a_segment_along_a_seam_touches_both_sides() {
+    let (grid, ..) = arena(&["......", "...#..", "......"]);
+    let open = |p: TilePos| grid.get(p).copied().unwrap_or(false);
+    let at = |x: &str, y: &str| Vec2Fx::new(Fx::from_str(x).unwrap(), Fx::from_str(y).unwrap());
+    // Along y = 1 and y = 2, beside the rock at (3, 1), in either direction.
+    for y in ["1", "2"] {
+        assert!(line_blocked(at("0.5", y), at("5.5", y), open));
+        assert!(line_blocked(at("5.5", y), at("0.5", y), open));
+    }
+    assert!(!line_blocked(at("0.5", "0.5"), at("5.5", "0.5"), open));
+}
+
+#[test]
+fn a_checked_end_tests_the_tile_the_segment_lands_in() {
+    // Arriving on a seam lands in the tile past it.
+    let (grid, ..) = arena(&["......", "...#..", "......"]);
+    let open = |p: TilePos| grid.get(p).copied().unwrap_or(false);
+    let seam = Vec2Fx::new(Fx::from_num(3), Fx::lit("1.5"));
+    assert!(!line_blocked(center(0, 1), seam, open));
+    assert!(line_or_end_blocked(center(0, 1), seam, open));
+    assert!(
+        line_blocked(center(5, 1), seam, open),
+        "it crosses the rock"
+    );
+    assert!(!line_or_end_blocked(center(2, 1), center(2, 1), open));
+    assert!(line_or_end_blocked(center(3, 1), center(3, 1), open));
 }
 
 #[test]

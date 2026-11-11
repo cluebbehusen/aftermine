@@ -60,23 +60,25 @@ jobs:
         run: cargo fmt --all --check
 
       # Lints read the same code on every OS; the few platform branches are
-      # compiled by the test step everywhere and linted for iOS below.
+      # compiled by the test step everywhere and linted for iOS and tvOS below.
       - name: Clippy
         if: runner.os == 'Linux'
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      # The iPad build compiles the shell's touch-only branches and the
-      # iCloud crate's Foundation calls for real; linting them keeps
-      # iOS-only code from rotting between device builds. The iCloud crate's
-      # key-value store also serves Apple TV, so its Objective-C compiles
-      # for tvOS too. The macOS runner's Xcode supplies the iOS and tvOS
-      # SDKs that the C and Objective-C dependencies compile against.
-      - name: Clippy (iOS shell)
+      # The iPad and Apple TV builds compile the shell's Apple-only code, the
+      # iCloud crate's Foundation calls and the iOS and tvOS builds of the
+      # miniquad and quad-snd forks. Linting both device targets here means a
+      # shell change or a fork pin bump that no longer compiles for them
+      # fails in CI. Linking and the simulator targets are still checked only
+      # by `cargo ipad` and `cargo tv`. The macOS runner's Xcode supplies the
+      # iOS and tvOS SDKs that the C and Objective-C dependencies compile
+      # against.
+      - name: Clippy (iOS and tvOS shell)
         if: runner.os == 'macOS'
         run: |
           rustup target add aarch64-apple-ios aarch64-apple-tvos
           cargo clippy -p aftermine-shell -p aftermine-icloud --target aarch64-apple-ios --locked -- -D warnings
-          cargo clippy -p aftermine-icloud --target aarch64-apple-tvos --locked -- -D warnings
+          cargo clippy -p aftermine-shell -p aftermine-icloud --target aarch64-apple-tvos --locked -- -D warnings
 
       - name: Test
         run: cargo test --workspace --locked

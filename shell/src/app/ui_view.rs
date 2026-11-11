@@ -41,6 +41,8 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
                 pause_button: None,
                 group_column: None,
                 army_strip: None,
+                controller_notice: None,
+                hud_buttons: None,
             };
         }
         Screen::Playing | Screen::Playback { .. } | Screen::FinalMap(_) => (screen.mode(), None),
@@ -58,6 +60,8 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
                 pause_button: None,
                 group_column: None,
                 army_strip: None,
+                controller_notice: None,
+                hud_buttons: None,
             };
         }
         Screen::Replays(shelf) => (screen.mode(), Some(shelf.view())),
@@ -106,6 +110,11 @@ pub(super) fn capture_ui(screen: &Screen, app: &App) -> UiView {
         pause_button: live_rect(screen, app.game.presentation.layout.get().pause_button),
         group_column: live_rect(screen, app.game.presentation.layout.get().group_column),
         army_strip: live_rect(screen, app.game.presentation.layout.get().army_strip),
+        controller_notice: (screen.kind() == ScreenKind::Playing && app.input.lacks_controller())
+            .then(|| render::controller_notice_text(app.game.net_role().is_some()).to_string()),
+        hud_buttons: (screen.kind() == ScreenKind::Playing)
+            .then(|| app.input.hud_hands().names())
+            .flatten(),
         panel_regions: (screen.kind() == ScreenKind::Playing).then(|| {
             app.game
                 .presentation

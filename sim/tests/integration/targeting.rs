@@ -289,3 +289,102 @@ fn exact_ties_turn_with_the_field() {
     };
     assert_eq!(scene(false), scene(true));
 }
+
+/// Where `kind`, seat `me`'s, heads to attack a Fabricator across the map,
+/// in the scene or its half turn. A hidden Fabricator is a memory: a
+/// Kestrel scouted it and flew off.
+fn attack_goal(kind: UnitKind, hidden: bool, rotated: bool) -> TilePos {
+    let (width, height) = (40, 30);
+    let (me, them) = if rotated { (1, 0) } else { (0, 1) };
+    let at = |x: i32, y: i32| {
+        if rotated {
+            (width - 1 - x, height - 1 - y)
+        } else {
+            (x, y)
+        }
+    };
+    let placed = |player, kind, (x, y)| unit(player, kind, x, y);
+    let mut scenario = open_arena(
+        40,
+        30,
+        vec![
+            placed(me, kind, at(6, 20)),
+            placed(me, UnitKind::Kestrel, at(22, 8)),
+        ],
+    );
+    let (w, h) = BuildingKind::Fabricator.size();
+    let (x, y) = if rotated {
+        (width - w - 24, height - h - 8)
+    } else {
+        (24, 8)
+    };
+    scenario.buildings = vec![building(them, BuildingKind::Fabricator, x, y)];
+    let mut state = scenario.build().unwrap();
+    let attacker = state.units()[0].id;
+    let scout = state.units()[1].id;
+    let fabricator = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Fabricator)
+        .unwrap()
+        .id;
+    let player = aftermine_sim::PlayerId(me);
+    let memory = state
+        .attack_objective(player, Target::Building(fabricator).into())
+        .expect("premise: the Kestrel sees the Fabricator");
+    if hidden {
+        let (gx, gy) = at(36, 2);
+        state.tick(&[cmd(
+            me,
+            Command::Run {
+                units: vec![scout],
+                goal: TilePos::new(gx, gy),
+                queue: false,
+            },
+        )]);
+        run(&mut state, 120);
+        assert!(
+            state.attack_view(player, memory).unwrap().entity.is_none(),
+            "premise: the Fabricator is only remembered"
+        );
+    }
+    state.tick(&[cmd(
+        me,
+        Command::Attack {
+            units: vec![attacker],
+            target: memory,
+            queue: false,
+        },
+    )]);
+    run(&mut state, 2);
+    let unit = state.unit(attacker).unwrap();
+    match unit.order {
+        aftermine_sim::Order::Run { goal } => goal.tile(),
+        _ => unit.path.as_ref().expect("it set out").goal,
+    }
+}
+
+#[test]
+fn attackers_head_for_the_mirrored_tile_of_a_half_turned_footprint() {
+    // An even footprint has no centre tile: a goal at its anchor or the
+    // floor of its centre is the same absolute corner on both sides of a
+    // half turn.
+    for (kind, hidden) in [
+        (UnitKind::Surveyor, false),
+        (UnitKind::Kestrel, false),
+        (UnitKind::Roc, false),
+        (UnitKind::Condor, false),
+        (UnitKind::Talon, true),
+        // An air gun on a remembered structure routes by memory.
+        (UnitKind::Buzzard, true),
+        (UnitKind::Condor, true),
+    ] {
+        let goal = attack_goal(kind, hidden, false);
+        let turned = attack_goal(kind, hidden, true);
+        assert_eq!(
+            TilePos::new(39 - goal.x, 29 - goal.y),
+            turned,
+            "{kind:?} heads for {goal:?}"
+        );
+    }
+}

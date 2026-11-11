@@ -4639,7 +4639,12 @@ fn the_hud_stands_in_pad_mode_while_a_controller_is_in_use_and_always_on_a_tv() 
     );
     assert!(!input.hud_pad, "not until the frame settles it");
     input.settle_hud();
-    assert_eq!(input.hud_pad_family(), Some(PadFamily::Switch));
+    assert_eq!(
+        input.hud_hands(),
+        HudHands::Pad {
+            names: Some(PadFamily::Switch)
+        }
+    );
     track_hands(&mut input, &mouse_move(vec2(2.0, 2.0)), false);
     input.settle_hud();
     assert!(input.hud_pad, "a mouse that only moves leaves pad mode up");
@@ -4687,12 +4692,88 @@ fn pad_mode_never_names_the_remotes_buttons() {
     );
     input.settle_hud();
     assert_eq!(
-        input.hud_pad_family(),
-        Some(PadFamily::Xbox),
-        "a common pad's stands in with no controller connected"
+        input.hud_hands(),
+        HudHands::Pad { names: None },
+        "with no controller connected, pad mode names no buttons"
     );
+    assert!(input.lacks_controller());
     track_hands(&mut input, &connect(2, PadFamily::Switch), false);
-    assert_eq!(input.hud_pad_family(), Some(PadFamily::Switch));
+    assert_eq!(input.hud_hands().names(), Some(PadFamily::Switch));
+    assert!(!input.lacks_controller());
+    track_hands(&mut input, &key_down(Key::H), false);
+    input.hud_pad = true;
+    assert_eq!(
+        input.hud_hands().names(),
+        Some(PadFamily::Switch),
+        "a TV's pad mode names a connected controller after a key"
+    );
+}
+
+#[test]
+fn only_a_remote_or_a_bare_tv_lacks_a_controller() {
+    use crate::platform::Platform::{Desktop, Touch, Tv};
+    use aftermine_protocol::PadFamily::{Remote, Xbox};
+    let lacks = |platform, pads: &[_]| super::lacks_controller(platform, pads.iter().copied());
+    assert!(lacks(Tv, &[]), "a TV with nothing connected yet");
+    assert!(lacks(Tv, &[Remote, Remote]));
+    assert!(!lacks(Tv, &[Remote, Xbox]));
+    assert!(!lacks(Desktop, &[]), "a Mac plays by mouse and keys");
+    assert!(!lacks(Touch, &[]), "an iPad plays by touch");
+    assert!(lacks(Desktop, &[Remote]));
+    assert!(!lacks(Desktop, &[Xbox]));
+}
+
+#[test]
+fn a_remote_press_in_a_match_is_refused_aloud_except_back() {
+    use aftermine_protocol::{PadButton, PadFamily};
+    use pad_scene::{denied, feed, scene};
+    const REMOTE: u64 = 9;
+    let mut game = scene(&[(0, UnitKind::Scuttler, 32, 20)], &[]);
+    let mut input = InputState::new();
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::PadConnected {
+            pad: REMOTE,
+            family: PadFamily::Remote,
+        }],
+    );
+    for button in [
+        PadButton::South,
+        PadButton::West,
+        PadButton::North,
+        PadButton::DpadUp,
+        PadButton::DpadRight,
+    ] {
+        game.presentation.sounds_pending.clear();
+        feed(
+            &mut game,
+            &mut input,
+            &[
+                RawEvent::PadDown {
+                    pad: REMOTE,
+                    button,
+                },
+                RawEvent::PadUp {
+                    pad: REMOTE,
+                    button,
+                },
+            ],
+        );
+        assert!(denied(&game), "{button:?}");
+    }
+    assert!(game.pending.is_empty(), "the remote gave no order");
+    assert!(game.presentation.selection.units.is_empty());
+    game.presentation.sounds_pending.clear();
+    feed(
+        &mut game,
+        &mut input,
+        &[RawEvent::PadDown {
+            pad: REMOTE,
+            button: crate::pad::BACK,
+        }],
+    );
+    assert!(!denied(&game), "Back walks outward instead");
 }
 
 #[test]

@@ -316,12 +316,25 @@ impl Vision {
             }
             Err(mut index) => {
                 if self.salvage_incidents.len() == crate::stats::HARVEST_INCIDENT_CAP {
+                    // Of those expiring first, the one farthest from the
+                    // newcomer goes, equal ones ranked out from the map
+                    // centre so a mirrored memory drops the mirrored site.
+                    let frame = tracking::TieFrame::outward(
+                        tile,
+                        (self.visible.width(), self.visible.height()),
+                    );
                     let evict = self
                         .salvage_incidents
                         .iter()
                         .enumerate()
                         .min_by_key(|(_, incident)| {
-                            (incident.expires_at, incident.tile.y, incident.tile.x)
+                            (
+                                incident.expires_at,
+                                std::cmp::Reverse(incident.tile.center().dist_sq(tile.center())),
+                                frame.rank(tile, incident.tile),
+                                incident.tile.y,
+                                incident.tile.x,
+                            )
                         })
                         .map(|(index, _)| index)
                         .expect("a full incident table is nonempty");

@@ -69,3 +69,36 @@ fn a_turning_nose_keeps_its_route_and_a_blocked_bearing_drops_it() {
         "a ridge across the bearing forces a replan"
     );
 }
+
+#[test]
+fn an_aligned_hover_flier_skims_past_a_peak_corner_its_compass_bearing_clips() {
+    // Under the ridge's foot, the waypoint lies 0.8 degrees above east. The
+    // nearest compass bearing is 1.4 degrees, and a step along it clips the
+    // Peak's corner that the straight line to the waypoint clears, so a
+    // flier stepping along its bearing replanned the same route forever.
+    let (mut unit, map) = against_ridge(TilePos::new(15, 6));
+    unit.pos = Vec2Fx::new(Fx::lit("6.97"), Fx::lit("7.0005"));
+    let target = Vec2Fx::new(Fx::lit("15.97"), Fx::lit("6.8748"));
+    unit.heading = chassis::compass::heading_of(target - unit.pos);
+    let route = |unit: &mut Unit| {
+        if unit.path.is_none() {
+            unit.path = Some(PathFollow {
+                final_point: Some(target),
+                goal: TilePos::new(15, 6),
+                waypoints: vec![TilePos::new(15, 6)],
+                next: 0,
+                clearing: false,
+            });
+        }
+    };
+    unit.path = None;
+    for _ in 0..60 {
+        route(&mut unit);
+        advance(&mut unit, &map, None);
+    }
+    assert!(
+        unit.pos.x > Fx::from_num(9),
+        "the flier left the corner: {:?}",
+        unit.pos
+    );
+}

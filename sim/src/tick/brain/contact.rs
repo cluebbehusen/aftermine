@@ -1,7 +1,6 @@
 //! Bounded final approaches shared by building work and contact weapons.
 use super::locomotion::approach_rect;
 use super::*;
-use crate::geometry::rect_approach_key_from;
 use crate::stats::Domain;
 use crate::tick::crowding;
 use chassis::fx::{Fx, Vec2Fx};
@@ -41,11 +40,11 @@ fn approach_building(state: &mut State, id: UnitId, building: BuildingId) -> boo
     let frame = crate::tick::rect_approach_origin(state, player, from, anchor, size);
     let choose = |mut candidates: Vec<crowding::Position>| {
         candidates.sort_by_key(|candidate| {
-            (
-                pos.dist_sq(candidate.point),
-                rect_approach_key_from(from, frame, anchor, size, candidate.goal),
-                (candidate.point.x - pos.x) * (frame.center().y - pos.y)
-                    - (candidate.point.y - pos.y) * (frame.center().x - pos.x),
+            crate::geometry::stance_rank(
+                pos,
+                (from, frame),
+                (anchor, size),
+                (candidate.goal, candidate.point),
             )
         });
         crowding::choose(

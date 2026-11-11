@@ -188,7 +188,12 @@ click in menus. Everything past the adapter treats it as a pad, so menus need no
 second path. It has no tab buttons, so a tab strip takes its arrows: Up from the
 top row moves the cursor onto the strip, and only one of the two wears it. It
 can't play a match: there its only press is Back, which walks outward as Escape
-does, and copy names a connected controller instead of the remote. tvOS keeps
+does, and any other press is refused aloud. Copy names a connected controller
+instead of the remote; with none connected, the HUD stays in pad mode and names
+no buttons. While no controller but the remote is connected, setup warns before
+Start and a notice over the match asks for one. A local match holds meanwhile,
+apart from the player's own pause, so a controller connecting resumes only what
+the hold stopped; a LAN match runs on for the other players. tvOS keeps
 controller presses from UIKit until the shell offers them, which it does on
 Home, so Back leaves the app from there and nowhere else, and never on the
 release of the Back that reached Home.
@@ -562,4 +567,4 @@ shell.
 | Native presentation           | `shell/src/look.rs`, `shell/src/render.rs`, `shell/src/assets.rs`              | Asset and look tests, `shell/tests/presentation_animation.rs`, native capture tests |
 | CPU schematics                | `kit/src/render.rs`                                                            | `driver/tests/golden.rs`                                                            |
 | Audio                         | `shell/src/mixer.rs`, `shell/src/audio_mix.rs`, `shell/src/soundtrack.rs`      | Module tests                                                                        |
-| iPad, Apple TV and Mac apps   | `apple/`, `shell/src/platform.rs`                                              | iOS clippy in CI, device builds                                                     |
+| iPad, Apple TV and Mac apps   | `apple/`, `shell/src/platform.rs`                                              | iOS and tvOS clippy in CI, device builds                                            |

@@ -81,12 +81,12 @@ pub(crate) fn layout(
 ) -> Hud {
     let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
     // In pad mode the HUD names the buttons of the controller in use.
-    let pad = input.hud_pad_family();
+    let hands = input.hud_hands();
     // A spectator commands nothing: no bank, unit count, or idle badge;
     // the viewer's transport bar is its own chrome. The minimap stays
     // clickable.
     let top_bar = (!game.presentation.spectating())
-        .then(|| chrome::top_bar_layout(game, bindings, env, measure, pad));
+        .then(|| chrome::top_bar_layout(game, bindings, env, measure, hands));
     let panel = crate::panel::build_for_input(game, bindings, input);
     let panel_layout = panel
         .as_ref()
@@ -253,7 +253,7 @@ pub(crate) fn layout(
         drone_slots: geometry.drone_slots,
         drone_count: geometry.drone_count,
     };
-    let shown = pad.is_none();
+    let shown = !hands.pad_mode();
     Hud {
         layout: if shown { laid_out } else { pad_mode(&laid_out) },
         panel,

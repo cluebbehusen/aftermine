@@ -801,3 +801,153 @@ fn a_bomber_whose_target_dies_keeps_flying() {
         "the direct attack hands back once its victim is gone"
     );
 }
+
+/// A long open strip, a Condor parked at its west end, and Kestrels hovering
+/// every eight tiles along it, so its owner sees the whole way east.
+fn spotted_strip(enemy: Vec<UnitSpec>) -> (aftermine_sim::State, aftermine_sim::ids::UnitId) {
+    let mut map = vec!["#".repeat(130)];
+    map.extend((0..18).map(|_| format!("#{}#", ".".repeat(128))));
+    map.push("#".repeat(130));
+    let mut units = vec![unit(0, UnitKind::Condor, 6, 10)];
+    units.extend(
+        (10..126)
+            .step_by(8)
+            .map(|x| unit(0, UnitKind::Kestrel, x, 6)),
+    );
+    units.extend(enemy);
+    let mut state = Scenario {
+        levels: Vec::new(),
+        mode: ScenarioMode::Sandbox,
+        name: "spotted strip".into(),
+        map,
+        players: players(0),
+        units,
+        buildings: Vec::new(),
+        meta: None,
+    }
+    .build()
+    .unwrap();
+    let condor = state.units()[0].id;
+    for _ in 0..900 {
+        state.tick(&[]);
+        if state.unit(condor).unwrap().landed() {
+            break;
+        }
+    }
+    assert!(
+        state.unit(condor).unwrap().landed(),
+        "premise: the Condor parks"
+    );
+    common::run(&mut state, 60);
+    (state, condor)
+}
+
+/// Sends the hostile Harvester past the parked Condor, then away east as
+/// soon as the Condor takes it on, and returns the farthest the Condor flew
+/// from its pad over the next `ticks` and where it ended.
+fn chase_from_pad(ticks: u32) -> (chassis::fx::Fx, chassis::fx::Fx) {
+    let (mut state, condor) = spotted_strip(vec![unit(1, UnitKind::Harvester, 40, 14)]);
+    let runner = state.units().last().unwrap().id;
+    let pad = state.unit(condor).unwrap().pos;
+    let run = |goal: chassis::grid::TilePos| {
+        cmd(
+            1,
+            Command::Run {
+                units: vec![runner],
+                goal,
+                queue: false,
+            },
+        )
+    };
+    state.tick(&[run(chassis::grid::TilePos::containing(pad).offset(3, 0))]);
+    common::run_until(&mut state, 600, |s, _| {
+        matches!(
+            s.unit(condor).unwrap().order,
+            aftermine_sim::state::Order::Attack { .. }
+        )
+    });
+    state.tick(&[run(chassis::grid::TilePos::new(125, 10))]);
+    let mut farthest = chassis::fx::Fx::ZERO;
+    for _ in 0..ticks {
+        state.tick(&[]);
+        farthest = farthest.max(state.unit(condor).unwrap().pos.dist(pad));
+    }
+    (farthest, state.unit(condor).unwrap().pos.dist(pad))
+}
+
+#[test]
+fn a_parked_condor_breaks_off_a_chase_past_its_leash_and_flies_home() {
+    // Past the 10-tile radius by little more than a turn: bait that came
+    // near the pad and ran grants no patience to chase it out with.
+    let (farthest, end) = chase_from_pad(1500);
+    assert!(
+        farthest < chassis::fx::Fx::from_num(14),
+        "the chase ran {farthest} tiles from the pad"
+    );
+    assert!(
+        end < chassis::fx::Fx::from_num(6),
+        "the Condor came home, ending {end} tiles out"
+    );
+}
+
+#[test]
+fn an_ordered_strike_from_the_pad_still_flies_the_whole_way() {
+    let (mut state, condor) = spotted_strip(vec![unit(1, UnitKind::Harvester, 70, 14)]);
+    let victim = state.units().last().unwrap().id;
+    let pad = state.unit(condor).unwrap().pos;
+    let hp = state.unit(victim).unwrap().hp;
+    state.tick(&[attack(0, condor, Target::Unit(victim))]);
+    let events = common::run_until(&mut state, 1500, |s, _| {
+        s.unit(victim).is_none_or(|v| v.hp < hp)
+    });
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, Event::ShellLaunched { .. })),
+        "the Condor bombed its target"
+    );
+    assert!(
+        state.unit(condor).unwrap().pos.dist(pad) > chassis::fx::Fx::from_num(40),
+        "far past the leash"
+    );
+}
+
+#[test]
+fn a_parked_condor_keeps_making_passes_on_a_victim_near_its_pad() {
+    // A slow tank that cannot shoot back stops a few tiles off the pad: every
+    // pass carries the Condor past the leash radius, yet the victim never
+    // leaves it, so the runs go on with no flight home between them.
+    let (mut state, condor) = spotted_strip(vec![unit(1, UnitKind::Breaker, 40, 14)]);
+    let tank = state.units().last().unwrap().id;
+    let pad = state.unit(condor).unwrap().pos;
+    state.tick(&[cmd(
+        1,
+        Command::Run {
+            units: vec![tank],
+            goal: chassis::grid::TilePos::containing(pad).offset(4, 0),
+            queue: false,
+        },
+    )]);
+    let mut releases = 0;
+    for _ in 0..1500 {
+        let report = state.tick(&[]);
+        releases += report
+            .events
+            .iter()
+            .filter(|e| matches!(e, Event::ShellLaunched { .. }))
+            .count();
+        if releases > 0 {
+            assert!(
+                !matches!(
+                    state.unit(condor).unwrap().order,
+                    aftermine_sim::state::Order::Run { .. }
+                ),
+                "no flight home between passes"
+            );
+        }
+        if releases >= 3 {
+            break;
+        }
+    }
+    assert!(releases >= 3, "{releases} passes");
+}
