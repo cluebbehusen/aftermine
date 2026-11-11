@@ -270,14 +270,6 @@ impl Playback {
         self.last_motion = report.movement;
         report.events
     }
-
-    /// Waits for the fill to finish the record.
-    #[cfg(test)]
-    fn finish_fill(&mut self) {
-        if let Some(worker) = self.fill.as_mut().and_then(|fill| fill.worker.take()) {
-            worker.join().expect("the fill finishes");
-        }
-    }
 }
 
 /// The background fill and what it has kept so far.

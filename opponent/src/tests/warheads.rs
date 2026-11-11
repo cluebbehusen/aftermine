@@ -598,7 +598,7 @@ fn guards_of(scenario: &Scenario, player: u8) -> Vec<(Investment, u32)> {
         middling(),
         true,
         false,
-        crate::defenses::Stakes::default(),
+        stakes(),
     )
 }
 
@@ -713,7 +713,7 @@ fn radar_is_worth_more_where_a_known_spire_s_line_enters_a_guarded_ring() {
             middling(),
             true,
             false,
-            crate::defenses::Stakes::default(),
+            stakes(),
         )
     };
     assert!(array_score(&offers(&remembered)) > array_score(&offers(&state)));
@@ -800,7 +800,7 @@ fn guards_in(scenario: &Scenario, state: &State) -> Vec<(Investment, u32)> {
         middling(),
         true,
         false,
-        crate::defenses::Stakes::default(),
+        stakes(),
     )
 }
 

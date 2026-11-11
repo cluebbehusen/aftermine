@@ -1,5 +1,38 @@
 use super::*;
 
+/// A click (or, with `touch`, a tap) on the BACK button.
+pub(crate) fn press_back(touch: bool) -> Vec<RawEvent> {
+    let p = corner_slot(0, crate::render::ui_scale()).center();
+    if touch {
+        vec![
+            RawEvent::TouchDown {
+                id: 9,
+                x: p.x,
+                y: p.y,
+            },
+            RawEvent::TouchUp {
+                id: 9,
+                x: p.x,
+                y: p.y,
+            },
+        ]
+    } else {
+        let button = aftermine_protocol::MouseButton::Left;
+        vec![
+            RawEvent::MouseDown {
+                button,
+                x: p.x,
+                y: p.y,
+            },
+            RawEvent::MouseUp {
+                button,
+                x: p.x,
+                y: p.y,
+            },
+        ]
+    }
+}
+
 #[test]
 fn the_back_button_claims_its_presses_and_passes_the_rest() {
     let mut back = BackButton::default();
@@ -48,7 +81,7 @@ fn the_back_button_takes_no_press_in_pad_mode() {
         y: p.y,
     };
     assert_eq!(back.route(&[down]), (false, Vec::new()), "armed");
-    for hands in crate::platform::pad_hands() {
+    for hands in crate::platform::tests::pad_hands() {
         crate::platform::set_hands(hands);
         for touch in [false, true] {
             let press = press_back(touch);

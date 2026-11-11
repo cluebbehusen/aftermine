@@ -1,5 +1,18 @@
 use super::*;
 
+impl HintLine {
+    /// The line as copy, each icon spelled as the name it shows.
+    pub(crate) fn copy(&self) -> String {
+        self.segments
+            .iter()
+            .map(|segment| match segment {
+                Segment::Text(text) => text.as_str(),
+                Segment::Pad(icon) => icon.name(),
+            })
+            .collect()
+    }
+}
+
 /// Every character a tenth of the size wide, so widths are easy to read.
 fn tenth(copy: &str, size: f32) -> f32 {
     copy.chars().count() as f32 * size * 0.1
@@ -16,7 +29,7 @@ fn footer() -> HintLine {
 #[test]
 fn a_line_reads_as_copy_with_each_icon_named() {
     assert_eq!(footer().copy(), "D-pad select - Cross confirm");
-    crate::platform::assert_keyless_copy(&footer().copy());
+    crate::platform::tests::assert_keyless_copy(&footer().copy());
 }
 
 #[test]

@@ -93,14 +93,9 @@ struct Failure {
 
 impl Memory {
     /// Refreshes every enemy unit in sight, and forgets those gone stale or
-    /// missing from where they were last seen.
-    #[cfg(test)]
-    pub(crate) fn observe(&mut self, observation: &ObservationData) {
-        self.observe_stranded(observation, |_| false);
-    }
-
-    /// [`observe`](Self::observe), remembering for longer the ground units
-    /// `stranded` says stand on ground the seat's own does not reach.
+    /// missing from where they were last seen, remembering for longer the
+    /// ground units `stranded` says stand on ground the seat's own does not
+    /// reach.
     pub(crate) fn observe_stranded(
         &mut self,
         observation: &ObservationData,

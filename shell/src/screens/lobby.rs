@@ -125,15 +125,6 @@ impl LobbyScreen {
         self
     }
 
-    /// Listens with `scanner` instead of the shared discovery port.
-    #[cfg(test)]
-    pub fn with_scanner(mut self, scanner: Scanner) -> Self {
-        if let Face::Join { scan, .. } = &mut self.face {
-            *scan = Scan::Listening(Box::new(scanner));
-        }
-        self
-    }
-
     /// The Join form showing why the last join failed.
     pub fn failed(name: &str, address: &str, reason: String) -> Self {
         let mut screen = Self::join(name, address);

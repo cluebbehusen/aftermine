@@ -2,6 +2,14 @@ use super::*;
 use crate::grid::cell_count;
 use crate::rng::Pcg32;
 
+impl AstarScratch {
+    /// Fast-forwards the generation counter to exercise the
+    /// wrap-around clearing path without four billion queries.
+    fn force_generation(&mut self, generation: u32) {
+        self.generation = generation;
+    }
+}
+
 fn below(rng: &mut Pcg32, bound: i32) -> i32 {
     i32::try_from(rng.next_below(u32::try_from(bound).unwrap())).unwrap()
 }

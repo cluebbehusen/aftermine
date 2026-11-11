@@ -3,8 +3,6 @@
 
 use crate::numeric::Fit;
 pub use crate::saved_game::Unavailable;
-#[cfg(test)]
-use aftermine_sim::SIM_VERSION;
 use std::path::PathBuf;
 
 /// What a record on disk is, read from its metadata `kind` tag; an
@@ -197,11 +195,6 @@ fn civil(secs: u64) -> (i64, u32, u32) {
 struct RecordTime {
     saved_at: std::time::SystemTime,
     modified: std::time::SystemTime,
-}
-
-#[cfg(test)]
-fn scan(dir: &std::path::Path, out: &mut Vec<(RecordTime, ReplayEntry)>) {
-    scan_cancellable(dir, out, &|_| false, &|| false);
 }
 
 /// Lists the records in `dir`, leaving out any file `dataless` says iCloud

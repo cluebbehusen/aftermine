@@ -6,6 +6,14 @@ use chassis::grid::TilePos;
 use chassis::rng::Pcg32;
 use macroquad::prelude::vec2;
 
+impl Tutorial {
+    /// The same lesson standing at step `at`; the step count is finished.
+    pub(crate) fn at_step(mut self, at: usize) -> Self {
+        self.step = at;
+        self
+    }
+}
+
 fn begin(lesson: Lesson) -> Game {
     Tutorial::begin_at(lesson, vec2(1280.0, 800.0)).expect("embedded lesson scenes build")
 }
@@ -590,7 +598,7 @@ fn a_step_the_world_can_no_longer_complete_raises_the_retry() {
 
 #[test]
 fn every_lesson_string_is_ascii_and_names_only_what_the_hands_have() {
-    use crate::platform::{ALL_HANDS, assert_copy_fits, assert_pad_wording, card_pad_hands};
+    use crate::platform::tests::{ALL_HANDS, assert_copy_fits, assert_pad_wording, card_pad_hands};
     // The bundled font cannot be trusted to cover typographic punctuation.
     let ascii = |line: &str| assert!(line.is_ascii(), "non-ASCII lesson text: {line}");
     let coach = [CoachLine::Recovery, CoachLine::Stuck];

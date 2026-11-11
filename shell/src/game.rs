@@ -34,13 +34,6 @@ impl Deref for ReadOnlyState {
     }
 }
 
-#[cfg(test)]
-impl std::ops::DerefMut for ReadOnlyState {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        Arc::get_mut(&mut self.0).expect("bot decision must finish before world mutation")
-    }
-}
-
 /// How far a tick got before a panic: whether its batch was recorded and
 /// whether the simulation finished it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,13 +53,6 @@ impl Deref for PendingCommands {
 
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-#[cfg(test)]
-impl std::ops::DerefMut for PendingCommands {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 

@@ -375,9 +375,8 @@ fn contact_body_source(
     tier: u8,
     body: super::motion::BuildingBodyFrame,
 ) -> Rect {
-    if !matches!(body, super::motion::BuildingBodyFrame::Construction { .. })
-        && let Some(rigs) = sprites.strategic_rigs()
-    {
+    if !matches!(body, super::motion::BuildingBodyFrame::Construction { .. }) {
+        let rigs = sprites.strategic_rigs();
         match kind {
             aftermine_sim::BuildingKind::Spire => return rigs.spire.foundation[0],
             aftermine_sim::BuildingKind::Lattice => return rigs.lattice.base,
@@ -396,9 +395,8 @@ fn building_body_sources(
     use super::motion::BuildingBodyFrame;
     if !matches!(body, BuildingBodyFrame::Construction { .. })
         && kind == aftermine_sim::BuildingKind::Array
-        && let Some(rig) = sprites.array_rig()
     {
-        return rig.layers(tier)[0];
+        return sprites.array_rig().layers(tier)[0];
     }
     match body {
         BuildingBodyFrame::Idle => (
@@ -942,9 +940,7 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         let frame = super::motion::building_frame(building.kind, animation);
         let array_layers = (building.built()
             && building.kind == aftermine_sim::BuildingKind::Array)
-            .then(|| sprites.array_rig())
-            .flatten()
-            .map(|rig| rig.layers(building.tier));
+            .then(|| sprites.array_rig().layers(building.tier));
         let accent_tint = seat_identity_color(game, building.player);
         let rigged = building.built()
             && match building.kind {
@@ -991,9 +987,9 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             super::roc::draw_assembling(game, sprites, building.player, screen + dest * 0.5, stage);
         }
         if let Some(site) = animation.construction
-            && let Some(rigs) = sprites.maw_rigs()
             && let Some(pads) = building.kind.crew_pads()
         {
+            let rigs = sprites.maw_rigs();
             let viewer = (game.presentation.human, game.presentation.all_seeing());
             if crew_pads_in_use(game.state, viewer, building, pads) {
                 super::maw::draw_crew_places(
@@ -2389,26 +2385,6 @@ enum BuildingRangeShape {
     Circle { center: Vec2, radius: f32 },
     FootprintOffset { min: Vec2, max: Vec2, radius: f32 },
     FootprintSquare { min: Vec2, max: Vec2, radius: f32 },
-}
-
-impl BuildingRangeShape {
-    #[cfg(test)]
-    fn outer_bounds(self) -> (Vec2, Vec2) {
-        match self {
-            Self::Circle { center, radius } => {
-                let reach = vec2(radius, radius);
-                (center - reach, center + reach)
-            }
-            Self::FootprintOffset { min, max, radius } => {
-                let reach = vec2(radius, radius);
-                (min - reach, max + reach)
-            }
-            Self::FootprintSquare { min, max, radius } => {
-                let reach = vec2(radius, radius);
-                (min - reach, max + reach)
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

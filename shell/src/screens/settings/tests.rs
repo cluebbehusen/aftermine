@@ -108,10 +108,10 @@ fn a_capture_prompt_is_information_and_key_help_is_coaching() {
 
 #[test]
 fn the_settings_hint_names_only_what_the_hands_in_use_have() {
-    for hands in crate::platform::ALL_HANDS {
+    for hands in crate::platform::tests::ALL_HANDS {
         for tab_keys in [true, false] {
             let hint = settings_hint(hands, tab_keys);
-            crate::platform::assert_copy_fits(hands, hint);
+            crate::platform::tests::assert_copy_fits(hands, hint);
             assert_eq!(hint.contains("{confirm}"), hands.keys, "{hint}");
             assert_eq!(
                 hint.contains("{prev_tab}"),
@@ -344,7 +344,7 @@ fn the_back_button_cancels_a_capture_then_leaves() {
     let mut config = Config::default();
     let mut screen = on(Tab::Controls, &config);
     assert!(!screen.menu.view().items.iter().any(|item| item == "Back"));
-    let back = crate::button::press_back(true);
+    let back = crate::button::tests::press_back(true);
 
     screen.face = Face::Capturing(Action::PanUp);
     let update = drive(&mut screen, &mut config, &back, false);
@@ -498,7 +498,7 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     drive(&mut s, &mut config, &press(Key::Enter), false);
     assert_eq!(s.menu.view().items, vec!["Connor_"], "prefilled");
     assert!(!s.take_keyboard_request());
-    let back = crate::button::press_back(true);
+    let back = crate::button::tests::press_back(true);
     let up = drive(&mut s, &mut config, &back, false);
     assert_eq!(up.out, Out::Stay);
     assert_eq!(s.mode_name(), "settings");
@@ -685,7 +685,7 @@ fn the_strip_names_the_classic_tab_keys_while_the_tab_actions_are_unbound() {
         Some(("Q".to_string(), "E".to_string()))
     );
     assert!(
-        crate::menu::binding_hint(settings_hint(crate::platform::ALL_HANDS[0], true))
+        crate::menu::binding_hint(settings_hint(crate::platform::tests::ALL_HANDS[0], true))
             .contains("Q/E switch tabs")
     );
     crate::menu::set_bindings(&BindingMap::classic());
@@ -825,7 +825,7 @@ fn a_whole_profile_asks_first_and_every_way_out_keeps_the_rebinds() {
         for (way, events) in [
             ("Enter on the preselected Cancel", press(Key::Enter)),
             ("Escape", press(Key::Escape)),
-            ("the BACK button", crate::button::press_back(true)),
+            ("the BACK button", crate::button::tests::press_back(true)),
         ] {
             focus(&mut s, profile.item());
             let up = drive(&mut s, &mut config, &press(Key::Enter), false);
@@ -1213,14 +1213,14 @@ fn diagnostics_rows_survive_without_a_capture_toggle() {
 #[test]
 fn the_settings_hints_name_a_controllers_buttons_while_one_is_in_use() {
     use aftermine_protocol::PadFamily;
-    for hands in crate::platform::pad_hands() {
+    for hands in crate::platform::tests::pad_hands() {
         for tab_keys in [true, false] {
-            crate::platform::assert_pad_copy(hands, settings_hint(hands, tab_keys));
+            crate::platform::tests::assert_pad_copy(hands, settings_hint(hands, tab_keys));
         }
     }
     let xbox = crate::platform::Hands {
         pad: Some(PadFamily::Xbox),
-        ..crate::platform::ALL_HANDS[0]
+        ..crate::platform::tests::ALL_HANDS[0]
     };
     crate::platform::set_hands(xbox);
     assert_eq!(

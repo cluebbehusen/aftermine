@@ -1,5 +1,46 @@
 use super::*;
 
+impl PadIcon {
+    /// Every icon, in declaration order.
+    pub(crate) const ALL: [Self; 35] = [
+        Self::A,
+        Self::B,
+        Self::X,
+        Self::Y,
+        Self::Cross,
+        Self::Circle,
+        Self::Square,
+        Self::Triangle,
+        Self::Lb,
+        Self::Rb,
+        Self::L1,
+        Self::R1,
+        Self::L,
+        Self::R,
+        Self::Lt,
+        Self::Rt,
+        Self::L2,
+        Self::R2,
+        Self::Zl,
+        Self::Zr,
+        Self::Ls,
+        Self::Rs,
+        Self::L3,
+        Self::R3,
+        Self::View,
+        Self::Menu,
+        Self::Create,
+        Self::Options,
+        Self::Minus,
+        Self::Plus,
+        Self::DpadUp,
+        Self::DpadDown,
+        Self::DpadLeft,
+        Self::DpadRight,
+        Self::DpadUpDown,
+    ];
+}
+
 fn feed(adapter: &mut Adapter, readings: &[Reading]) -> Vec<RawEvent> {
     let mut events = Vec::new();
     for reading in readings {

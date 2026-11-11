@@ -136,12 +136,6 @@ impl CardLayout {
     pub(crate) fn covers(&self, point: Vec2, finger: bool, ui: f32) -> bool {
         self.rect.contains(point) || (finger && self.button_at(point, true, ui).is_some())
     }
-
-    /// Every line of text on the card, in reading order.
-    #[cfg(test)]
-    pub(crate) fn text(&self) -> Vec<&str> {
-        self.lines.iter().map(|line| line.text.as_str()).collect()
-    }
 }
 
 /// The card's width at most, in logical px.

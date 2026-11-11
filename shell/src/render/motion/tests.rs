@@ -1,7 +1,7 @@
 use aftermine_sim::stats::MAX_WEAPONS;
 
 use super::*;
-use crate::presentation_animation::{ConstructionState, PropulsionState};
+use crate::presentation_animation::{ConstructionState, PropulsionState, UnitWorkState};
 
 #[test]
 fn every_production_pose_resolves_to_authored_work_art() {
@@ -91,31 +91,7 @@ fn tread_loop_includes_the_base_phase_instead_of_reversing_between_two_frames() 
         );
     }
     for (cycle, expected) in [(0.0, 0), (0.34, 1), (0.67, 2)] {
-        let mut state = unit_state();
-        state.locomotion = LocomotionState::Moving { cycle };
         assert_eq!(tread_phase(cycle), expected);
-        assert_eq!(
-            unit_frame(UnitKind::Harvester, state),
-            UnitFrame::Harvester {
-                cargo: 0,
-                pose: if expected == 0 {
-                    HarvesterPose::Idle
-                } else {
-                    HarvesterPose::Moving(expected - 1)
-                },
-            },
-        );
-        assert_eq!(
-            unit_frame(UnitKind::Excavator, state),
-            UnitFrame::Excavator {
-                cargo: 0,
-                pose: if expected == 0 {
-                    ExcavatorPose::Idle
-                } else {
-                    ExcavatorPose::Moving(expected - 1)
-                },
-            },
-        );
     }
 }
 
@@ -153,7 +129,7 @@ fn a_parking_radar_unfolds_then_scans_until_it_drives() {
         assert_eq!(at(tick as f32 / 40.0), UnitFrame::Action(tick - 1));
     }
     assert_eq!(
-        crate::assets::unit_action_frames(UnitKind::Surveyor),
+        crate::assets::tests::unit_action_frames(UnitKind::Surveyor),
         RADAR_UNFOLD_FRAMES + RADAR_SCAN_FRAMES
     );
     for frame in 0..RADAR_SCAN_FRAMES {
@@ -304,113 +280,23 @@ fn cargo_buckets_are_monotonic_and_fill_only_near_capacity() {
 }
 
 #[test]
-fn harvester_work_and_motion_retain_the_cargo_bucket() {
-    let mut state = unit_state();
-    state.cargo = Some(CargoState {
-        amount: 5,
-        capacity: 10,
-        fill: 0.5,
-    });
-    state.work = UnitWorkState::Harvesting {
-        target: chassis::grid::TilePos::new(5, 5).center(),
-        cycle: 0.5,
-    };
-    assert_eq!(
-        unit_frame(UnitKind::Harvester, state),
-        UnitFrame::Harvester {
-            cargo: 2,
-            pose: HarvesterPose::Scoop(1),
-        }
-    );
-    state.work = UnitWorkState::Repairing {
-        target: chassis::grid::TilePos::new(6, 5).center(),
-        cycle: 0.25,
-    };
-    assert!(matches!(
-        unit_frame(UnitKind::Harvester, state),
-        UnitFrame::Harvester {
-            cargo: 2,
-            pose: HarvesterPose::Scoop(_),
-        }
-    ));
-    state.work = UnitWorkState::Constructing {
-        site: aftermine_sim::BuildingId(7),
-        target: chassis::grid::TilePos::new(7, 5).center(),
-        cycle: 0.5,
-    };
-    assert_eq!(
-        unit_frame(UnitKind::Harvester, state),
-        UnitFrame::Harvester {
-            cargo: 2,
-            pose: HarvesterPose::Scoop(1),
-        }
-    );
-    state.work = UnitWorkState::Idle;
-    state.locomotion = LocomotionState::Moving { cycle: 0.75 };
-    assert_eq!(
-        unit_frame(UnitKind::Harvester, state),
-        UnitFrame::Harvester {
-            cargo: 2,
-            pose: HarvesterPose::Moving(1),
-        }
-    );
-}
-
-#[test]
-fn excavator_work_and_motion_retain_the_authoritative_cargo_bucket() {
+fn excavator_frames_carry_the_authoritative_cargo_bucket() {
     let mut state = unit_state();
     state.cargo = Some(CargoState {
         amount: 15,
         capacity: 30,
         fill: 0.5,
     });
-    state.work = UnitWorkState::Harvesting {
-        target: chassis::grid::TilePos::new(5, 5).center(),
-        cycle: 0.7,
-    };
-    assert_eq!(
-        unit_frame(UnitKind::Excavator, state),
-        UnitFrame::Excavator {
-            cargo: 2,
-            pose: ExcavatorPose::Working(2),
-        }
-    );
-
-    for work in [
-        UnitWorkState::Unloading {
-            target: chassis::fx::Vec2Fx::ZERO,
-            progress: 0.5,
-        },
-        UnitWorkState::Constructing {
-            site: aftermine_sim::BuildingId(7),
-            target: chassis::fx::Vec2Fx::ZERO,
-            cycle: 0.7,
-        },
-        UnitWorkState::Repairing {
-            target: chassis::fx::Vec2Fx::ZERO,
-            cycle: 0.7,
-        },
+    for locomotion in [
+        LocomotionState::Rest,
+        LocomotionState::Moving { cycle: 0.75 },
     ] {
-        state.work = work;
+        state.locomotion = locomotion;
         assert_eq!(
             unit_frame(UnitKind::Excavator, state),
-            UnitFrame::Excavator {
-                cargo: 2,
-                pose: ExcavatorPose::Idle
-            },
-            "the drum rests while {work:?}"
+            UnitFrame::Excavator { cargo: 2 }
         );
     }
-
-    state.work = UnitWorkState::Idle;
-    state.locomotion = LocomotionState::Moving { cycle: 0.75 };
-    assert_eq!(
-        unit_frame(UnitKind::Excavator, state),
-        UnitFrame::Excavator {
-            cargo: 2,
-            pose: ExcavatorPose::Moving(1),
-        }
-    );
 }
 
 #[test]
@@ -503,7 +389,7 @@ fn buzzard_only_holds_its_gun_ready_near_the_end_of_cooldown() {
 fn every_unit_action_row_stays_inside_its_contract() {
     let action_counts = UnitKind::ALL
         .into_iter()
-        .map(|kind| (kind, crate::assets::unit_action_frames(kind)))
+        .map(|kind| (kind, crate::assets::tests::unit_action_frames(kind)))
         .filter(|(_, count)| *count > 0);
     for (kind, count) in action_counts {
         for progress in [0.0, 0.25, 0.5, 0.75, 1.0] {
@@ -588,7 +474,7 @@ fn building_activity_uses_only_its_authored_row() {
     state.activity = BuildingActivity::ArraySweep { cycle: 0.99 };
     assert_eq!(
         building_frame(BuildingKind::Array, state).body,
-        BuildingBodyFrame::Work(5)
+        BuildingBodyFrame::Idle
     );
     state.activity = BuildingActivity::Extracting { cycle: 0.99 };
     assert_eq!(
@@ -653,7 +539,8 @@ fn bastion_body_and_mount_actions_never_drift() {
 
 #[test]
 fn defense_rows_cover_report_recovery_and_charge_boundaries() {
-    use crate::assets::{building_stem, rung_stem, shipped_frames};
+    use crate::assets::tests::shipped_frames;
+    use crate::assets::{building_stem, rung_stem};
     for kind in BuildingKind::ALL {
         let Some(look) = crate::look::defense(kind) else {
             assert_eq!(defense_preparation_frame(kind, 0.5), None, "{kind:?}");
@@ -753,7 +640,7 @@ fn mantle_charge_rows_do_not_show_a_ready_charge_before_the_sim_restores_it() {
 #[test]
 fn piledriver_reload_runs_through_every_pose_even_when_driving() {
     assert_eq!(
-        crate::assets::unit_action_frames(UnitKind::Piledriver),
+        crate::assets::tests::unit_action_frames(UnitKind::Piledriver),
         PILEDRIVER_RELOAD_FRAMES
     );
     for age in 0..100 {

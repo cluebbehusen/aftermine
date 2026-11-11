@@ -681,13 +681,6 @@ enum SetupZone {
     NextPage,
 }
 
-/// Computes [`SetupLayout`]. `seat_choice` marks the human card; every
-/// other seat receives direct difficulty and stance controls.
-#[cfg(test)]
-pub fn setup_layout(scenario: &Scenario, seat_choice: usize, view: Vec2, ui: f32) -> SetupLayout {
-    setup_layout_page(scenario, seat_choice, &[], view, ui, 0)
-}
-
 /// The switch's two halves at the top of the seat column, and the top of
 /// what follows it.
 fn switch_rects(left_x: f32, top: f32, ui: f32) -> ([Rect; 2], f32) {

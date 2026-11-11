@@ -424,9 +424,7 @@ fn draw_body_piece(
         accent: Some(sprites.unit_accent(body.kind)),
         tint,
     };
-    let roc = (body.kind == aftermine_sim::UnitKind::Roc)
-        .then(|| sprites.roc_rig())
-        .flatten();
+    let roc = (body.kind == aftermine_sim::UnitKind::Roc).then(|| sprites.roc_rig());
     let (Some(roc), Some(rig), Some(guns)) =
         (roc, sprites.unit_rig(body.kind), body.kind.stats().mounts)
     else {

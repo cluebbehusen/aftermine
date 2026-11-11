@@ -478,18 +478,7 @@ impl Missions {
             current
         };
         let Some(target) = target else {
-            if regrouping {
-                self.list.remove(index);
-                return None;
-            }
-            let mission = &mut self.list[index];
-            if ledger.order(run(mission.units.clone(), rally)) {
-                if let Task::Attack { phase, .. } = &mut mission.task {
-                    *phase = AttackPhase::Recover;
-                }
-                mission.since = now;
-                mission.goal = rally;
-            }
+            self.list.remove(index);
             return None;
         };
         let component = plan.map.component(target.approach);
@@ -876,9 +865,13 @@ fn stage_on(
     let observation = plan.observation;
     let now = observation.tick;
     let age = now - mission.since;
-    let Task::Attack { phase, .. } = mission.task else {
-        return None;
-    };
+    let advancing = matches!(
+        mission.task,
+        Task::Attack {
+            phase: AttackPhase::Advance,
+            ..
+        }
+    );
     let need = plan.need(target, breach);
     let stage = mission.goal;
     let there = |unit: &UnitObs| unit.tile.chebyshev(stage) <= STAGE_TILES;
@@ -897,10 +890,7 @@ fn stage_on(
         }
         return None;
     }
-    let Some(share) = staging(plan.difficulty) else {
-        push(observation, mission, target, now, ledger);
-        return None;
-    };
+    let share = staging(plan.difficulty).unwrap_or_default();
     // Shelled where it gathers before it can win, the army
     // falls back out of the guns' reach and gathers there;
     // members only passing through fire go on.
@@ -933,7 +923,7 @@ fn stage_on(
         }
         return None;
     }
-    if phase == AttackPhase::Advance {
+    if advancing {
         if members.iter().any(|unit| there(unit)) {
             // The walk's clock keeps running while the army gathers.
             mission.attack_phase(target, AttackPhase::Stage, mission.since, None);

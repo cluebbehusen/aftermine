@@ -127,7 +127,7 @@ fn checkpoint_rejects_changes_to_the_captured_setup_and_world_pair() {
 #[test]
 fn a_save_between_an_own_event_and_the_next_decision_resumes_identically() {
     use crate::controller::{record_events, seat_controllers};
-    let scenario = crate::controller::mixed_skirmish();
+    let scenario = crate::controller::tests::mixed_skirmish();
     let mut state = scenario.build().unwrap();
     let mut bots = seat_controllers(&scenario).unwrap();
     for _ in 0..25 {
@@ -176,7 +176,7 @@ fn a_save_between_an_own_event_and_the_next_decision_resumes_identically() {
 
 #[test]
 fn bot_seats_round_trip_and_reject_forged_rosters() {
-    let scenario = crate::controller::mixed_skirmish();
+    let scenario = crate::controller::tests::mixed_skirmish();
     let mut state = scenario.build().unwrap();
     let mut bots = crate::controller::seat_controllers(&scenario).unwrap();
     for _ in 0..150 {

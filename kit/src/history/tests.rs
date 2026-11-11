@@ -4,6 +4,17 @@ use crate::runner;
 use aftermine_sim::Command;
 use aftermine_sim::scenario::BotConfig;
 
+impl PendingHistory {
+    /// Waits for the check to finish.
+    fn finish(&self) {
+        drop(
+            self.shared
+                .finished
+                .wait_while(self.shared.outcome(), |outcome| outcome.is_none()),
+        );
+    }
+}
+
 const SAVED: u64 = 2_100;
 
 fn build() -> BuildIdentity {

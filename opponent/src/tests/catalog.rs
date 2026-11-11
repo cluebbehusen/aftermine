@@ -3,7 +3,6 @@
 //! them gets its turn; the rest are here.
 
 use super::*;
-use crate::defenses;
 use crate::investments::{ADOPT, Investment, Situation, candidates};
 use crate::memory::Memory;
 use crate::profile::PersonalityTraits;
@@ -48,7 +47,7 @@ fn offered_lifting(
         depletion: 1,
         pull: Vec::new(),
         exposed: true,
-        stakes: defenses::Stakes::default(),
+        stakes: stakes(),
         severed: lift.is_some(),
         wanted: vec![
             crate::composition::Role::Line,

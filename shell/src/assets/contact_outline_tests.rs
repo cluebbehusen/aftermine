@@ -69,13 +69,13 @@ fn slots(atlas: &Manifest) -> Vec<Slot> {
             if kind.assembles().is_none() {
                 let frames = match kind {
                     BuildingKind::Array => {
-                        vec![array.as_ref().expect("the Array's rig ships").layers(tier)[0].0]
+                        vec![array.layers(tier)[0].0]
                     }
                     BuildingKind::Spire => {
-                        vec![strategic.as_ref().expect("rigs ship").spire.foundation[0]]
+                        vec![strategic.spire.foundation[0]]
                     }
                     BuildingKind::Lattice => {
-                        vec![strategic.as_ref().expect("rigs ship").lattice.base]
+                        vec![strategic.lattice.base]
                     }
                     _ => std::iter::once(rung.hull[0])
                         .chain(rung.work.iter().map(|row| row[0]))
@@ -114,7 +114,7 @@ fn rect_key(rect: Rect) -> [u32; 4] {
 /// identical images once.
 fn names(atlas: &Manifest) -> HashMap<[u32; 4], Vec<String>> {
     let mut names: HashMap<[u32; 4], Vec<String>> = HashMap::new();
-    for (name, row) in atlas {
+    for (name, row) in &atlas.rects {
         if !name.contains("_accent") {
             names
                 .entry(row.map(numeric::to_u32))

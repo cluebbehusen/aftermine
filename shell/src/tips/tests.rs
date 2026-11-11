@@ -514,7 +514,7 @@ fn tips_stay_away_when_turned_off_and_during_lessons() {
 
 #[test]
 fn every_tip_names_only_what_the_hands_in_use_have() {
-    use crate::platform::{ALL_HANDS, assert_copy_fits, assert_pad_wording, card_pad_hands};
+    use crate::platform::tests::{ALL_HANDS, assert_copy_fits, assert_pad_wording, card_pad_hands};
     for tip in Tip::ALL {
         for hands in ALL_HANDS {
             assert_copy_fits(hands, &tip.body(hands));

@@ -161,11 +161,8 @@ def install_surveyor(registry: dict[str, Image.Image], out: Path) -> None:
             stem: render_surveyor(variant),
             f"{rig}_hull{tag}": _pack(_chassis(variant, 0)),
         }
-        for move in (1, 2):
-            frames[f"{stem}_move{move}"] = render_surveyor(variant, move=move)
-            frames[f"{rig}_hull{tag}_move{move}"] = _pack(_chassis(variant, move))
         # The rig draws the hull and the mount below, never a whole-body
-        # action frame, so none is shipped.
+        # frame past its rest, and its tracks roll beneath a still hull.
         for key, image in frames.items():
             kit.save_sprite(image, out, key)
             registry[key] = image

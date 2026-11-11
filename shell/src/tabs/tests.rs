@@ -170,7 +170,7 @@ fn another_controller_takes_the_cursor_back_to_the_list() {
 fn a_strip_above_a_menu_hides_the_row_cursor_while_it_has_it() {
     let hands = crate::platform::Hands {
         pad: Some(PadFamily::Remote),
-        ..crate::platform::ALL_HANDS[3]
+        ..crate::platform::tests::ALL_HANDS[3]
     };
     crate::platform::set_hands(hands);
     let mut strip = TabStrip::default();
@@ -195,7 +195,7 @@ fn a_strip_above_a_menu_hides_the_row_cursor_while_it_has_it() {
 fn a_remote_draws_no_key_chips_beside_a_strip() {
     crate::platform::set_hands(crate::platform::Hands {
         pad: Some(PadFamily::Remote),
-        ..crate::platform::ALL_HANDS[3]
+        ..crate::platform::tests::ALL_HANDS[3]
     });
     assert!(keys().is_none());
     assert!(shown_keys().is_none());

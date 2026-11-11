@@ -293,7 +293,6 @@ fn draw_fill(
     field: &PitField,
     pos: TilePos,
     zoom: f32,
-    fractured: bool,
     drops: &[Layer; DROP.len()],
     tall_tones: [Color; 2],
 ) {
@@ -306,7 +305,7 @@ fn draw_fill(
             pos,
             (sx, sy),
             material,
-            quarry_color(color, material, fractured),
+            quarry_color(color, material),
             drops,
             tall_tones,
         )
@@ -357,7 +356,6 @@ fn draw_relief(
     field: &PitField,
     pos: TilePos,
     zoom: f32,
-    fractured: bool,
     drops: &[Layer; DROP.len()],
 ) {
     let (xs, ys) = cell_edges(view, pos);
@@ -395,14 +393,12 @@ fn draw_relief(
                         }
                         if field.at(pos, sx + dx, sy + dy) < depth && !within {
                             draw_lip(rect, (dx, dy), lip, drops[level].lip);
-                            if fractured {
-                                draw_strata(
-                                    rect,
-                                    (dx, dy),
-                                    drops[level],
-                                    hash(pos.x * CELLS + sx, pos.y * CELLS + sy, SALT + 607),
-                                );
-                            }
+                            draw_strata(
+                                rect,
+                                (dx, dy),
+                                drops[level],
+                                hash(pos.x * CELLS + sx, pos.y * CELLS + sy, SALT + 607),
+                            );
                         }
                     }
                 }
@@ -429,7 +425,6 @@ pub(super) fn draw_pits(
     map: &Map,
     view: &GroundView,
     field: &PitField,
-    fractured: bool,
     grade: super::grade::Grade,
 ) {
     let (min, max) = view.tiles(map);
@@ -449,10 +444,10 @@ pub(super) fn draw_pits(
     // Fills first, then relief: a decal that straddles two tiles must not
     // be buried under the neighbor's fill.
     for pos in &pit_tiles {
-        draw_fill(view, field, *pos, zoom, fractured, &drops, tall_tones);
+        draw_fill(view, field, *pos, zoom, &drops, tall_tones);
     }
     for pos in &pit_tiles {
-        draw_relief(view, field, *pos, zoom, fractured, &drops);
+        draw_relief(view, field, *pos, zoom, &drops);
     }
 }
 

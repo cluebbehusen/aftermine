@@ -26,8 +26,6 @@ pub(crate) struct UnitLook {
     pub(crate) extent: f32,
     /// How the body moves on screen.
     pub(crate) gait: Gait,
-    /// Which atlas rows hold its two locomotion poses.
-    pub(crate) move_rows: MoveRows,
     /// Exposed belt runs inside the track casings, in 128-px sprite space.
     pub(crate) belts: &'static [[f32; 4]],
     /// A separate weapon, rotor, or sensor mechanism drawn over the hull.
@@ -55,15 +53,6 @@ pub(crate) enum Gait {
     Rotor { hull_turn: f32 },
     /// Alternating move frames, or the worker's own work poses.
     Plain,
-}
-
-/// Which atlas rows a kind's locomotion poses use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MoveRows {
-    /// `_tread1`, `_tread2`.
-    Tread,
-    /// `_move1`, `_move2`.
-    Move,
 }
 
 /// The work body a worker draws.
@@ -204,7 +193,6 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
         scale: DEFAULT_SCALE,
         extent: 1.0,
         gait: Gait::Plain,
-        move_rows: MoveRows::Move,
         belts: &[],
         rig: false,
         tool: None,
@@ -216,7 +204,6 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
     let heavy = ShotStyle::Kinetic { heavy: true };
     match kind {
         UnitKind::Harvester => UnitLook {
-            move_rows: MoveRows::Tread,
             belts: &[[20., 48., 33., 107.], [95., 48., 108., 107.]],
             tool: Some(WorkerTool::Scoop),
             marker: M::Worker,
@@ -260,7 +247,6 @@ pub(crate) fn unit(kind: UnitKind) -> UnitLook {
         },
         UnitKind::Flakhound => UnitLook {
             gait: Gait::Treads,
-            move_rows: MoveRows::Tread,
             belts: &[[14., 73., 31., 111.], [97., 73., 114., 111.]],
             weapon: Some(weapon(
                 SoundKind::FlakhoundFire,

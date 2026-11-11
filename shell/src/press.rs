@@ -142,11 +142,6 @@ impl<Z: Copy + PartialEq> Press<Z> {
     pub fn cancel(&mut self) {
         *self = Self::default();
     }
-
-    #[cfg(test)]
-    pub fn armed_touch(&self) -> Option<(u64, Z)> {
-        self.touch
-    }
 }
 
 /// What one pointer event meant to a scrolling list.
@@ -258,11 +253,6 @@ impl<Z: Copy + PartialEq> ScrollPress<Z> {
     /// Whether a finger is dragging the list.
     pub fn scrolling(&self) -> bool {
         self.drag.is_some_and(|drag| drag.scrolling)
-    }
-
-    #[cfg(test)]
-    pub fn armed_touch(&self) -> Option<(u64, Z)> {
-        self.press.armed_touch()
     }
 }
 

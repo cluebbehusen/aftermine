@@ -84,22 +84,7 @@ fn is_entity_source(name: &str) -> bool {
 fn entity_sources(manifest: &HashMap<String, [f32; 4]>) -> BTreeSet<Source> {
     manifest
         .iter()
-        .filter(|(name, _)| {
-            if !is_entity_source(name) {
-                return false;
-            }
-            let Some((body, pose)) = name.rsplit_once('_') else {
-                return true;
-            };
-            if !pose.starts_with("move") && !pose.starts_with("action") {
-                return true;
-            }
-            let stem = body.strip_suffix("_accent").unwrap_or(body);
-            // Layered units draw their hull and mount; only the complete idle
-            // sprite is used, for portraits. Units without rig layers keep
-            // their full poses.
-            !manifest.contains_key(&format!("rig_{stem}_hull"))
-        })
+        .filter(|(name, _)| is_entity_source(name))
         .map(|(_, row)| row.map(numeric::to_u32))
         .collect()
 }

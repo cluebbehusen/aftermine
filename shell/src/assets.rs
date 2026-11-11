@@ -19,18 +19,23 @@ pub struct Sprites {
     entity_lod: crate::entity_lod::EntityLod,
     ground_blend: crate::render::GroundBlend,
     page_height: f32,
-    harvester_body: Option<[[Rect; 2]; 6]>,
-    excavator_body: Option<[[Rect; 2]; 3]>,
-    scuttler_body: Option<[[Rect; 2]; 3]>,
+    regions: Regions,
+}
+
+/// Every atlas region the shell draws, read from the manifest.
+struct Regions {
+    harvester_body: [[Rect; 2]; 6],
+    excavator_body: Vec<[Rect; 2]>,
+    scuttler_body: Vec<[Rect; 2]>,
     /// Hull and mount layers for every kind whose look draws a rig.
     unit_rigs: std::collections::HashMap<UnitKind, UnitRig>,
-    bombard_spades: Option<[Rect; 5]>,
-    piledriver_anchors: Option<Vec<[Rect; 2]>>,
-    scout_radar: Option<Rect>,
-    array_rig: Option<ArrayRig>,
-    strategic_rigs: Option<StrategicRigs>,
-    maw_rigs: Option<MawRigs>,
-    roc_rig: Option<RocRig>,
+    bombard_spades: [Rect; 5],
+    piledriver_anchors: Vec<[Rect; 2]>,
+    scout_radar: Rect,
+    array_rig: ArrayRig,
+    strategic_rigs: StrategicRigs,
+    maw_rigs: MawRigs,
+    roc_rig: RocRig,
     /// Verb pictograms for cards and order chips, indexed by
     /// [`crate::panel::VerbIcon`].
     verb_icons: [Rect; 16],
@@ -38,7 +43,7 @@ pub struct Sprites {
     pad_icons: [Rect; 35],
     ground: [Rect; 6],
     ground_detail: [Rect; 12],
-    quarry_dressing: Option<[Rect; 12]>,
+    quarry_dressing: [Rect; 12],
     /// Layered rock slabs, indexed `size * ROCK_SLAB_VARIANTS + variant`.
     rock_slabs: [Rect; ROCK_SLAB_SIZES * ROCK_SLAB_VARIANTS],
     /// The derelict 2x2 Extractor frame bed, drawn on unclaimed frames.
@@ -47,7 +52,6 @@ pub struct Sprites {
     wreck_decal: Rect,
     /// Six flat ground-dressing variants for each shipped theme.
     theme_props: [Rect; 18],
-    /// Passable remnants scattered over safe ground.
     /// Multi-tile industrial obstacles drawn over Rock terrain.
     ground_blockers: [Rect; 9],
     scrap_full: Rect,
@@ -59,9 +63,6 @@ pub struct Sprites {
     wreck_piles: [Rect; WRECK_PILES],
     air_shadow: Rect,
     burst: Rect,
-    harvester_cargo: [[Rect; 2]; 5],
-    harvester_cargo_scoop: [[[Rect; 2]; 2]; 5],
-    harvester_cargo_tread: [[[Rect; 2]; 2]; 5],
     /// Each building kind's art at every rung of its upgrade ladder,
     /// indexed by discriminant then tier.
     buildings: Vec<Vec<RungArt>>,
@@ -71,6 +72,71 @@ pub struct Sprites {
     debris: [Rect; 3],
     excavator_cargo: [Rect; EXCAVATOR_CARGO_LEVELS],
     mantle_charge: [Rect; MANTLE_CHARGE_FRAMES],
+}
+
+impl Regions {
+    /// Reads every region from `rects`; a missing one is an error.
+    fn read(rects: &Manifest) -> Result<Self> {
+        let [
+            rock_skirt,
+            extractor_frame,
+            scrap_full,
+            scrap_mid,
+            scrap_low,
+            scrap_rich,
+            scorch,
+            wreck_pile,
+            air_shadow,
+            burst,
+        ] = pick(rects, SINGLE_KEYS)?;
+        Ok(Self {
+            unit_rigs: unit_rigs(rects)?,
+            bombard_spades: bombard_spade_rows(rects)?,
+            piledriver_anchors: piledriver_anchor_rows(rects)?,
+            array_rig: array_rig(rects)?,
+            strategic_rigs: strategic_rigs(rects)?,
+            maw_rigs: maw_rigs(rects)?,
+            roc_rig: roc_rig(rects)?,
+            scout_radar: lookup(rects, "scout_radar")?,
+            harvester_body: harvester_body_rows(rects)?,
+            excavator_body: suffix_rows(
+                rects,
+                "rig_excavator_body",
+                hull_suffixes(UnitKind::Excavator),
+            )?,
+            scuttler_body: suffix_rows(
+                rects,
+                "rig_scuttler_body",
+                hull_suffixes(UnitKind::Scuttler),
+            )?,
+            verb_icons: pick(rects, VERB_ICON_KEYS)?,
+            pad_icons: pick(rects, PAD_ICON_KEYS)?,
+            ground: pick(rects, GROUND_KEYS)?,
+            ground_detail: pick(rects, GROUND_DETAIL_KEYS)?,
+            quarry_dressing: quarry_dressing_rows(rects)?,
+            rock_slabs: pick(rects, ROCK_SLAB_KEYS)?,
+            extractor_frame,
+            rock_skirt,
+            wreck_decal: lookup(rects, "decal_wreck")?,
+            theme_props: pick(rects, THEME_PROP_KEYS)?,
+            ground_blockers: pick(rects, GROUND_BLOCKER_KEYS)?,
+            scrap_full,
+            scrap_mid,
+            scrap_low,
+            scrap_rich,
+            scorch,
+            wreck_pile,
+            wreck_piles: pick(rects, WRECK_PILE_KEYS)?,
+            air_shadow,
+            burst,
+            buildings: building_art(rects)?,
+            units: unit_art(rects)?,
+            scaffold: lookup(rects, "scaffold_sparse")?,
+            debris: pick(rects, DEBRIS_KEYS)?,
+            excavator_cargo: excavator_cargo_rows(rects)?,
+            mantle_charge: mantle_charge_rows(rects)?,
+        })
+    }
 }
 
 pub(crate) const MANTLE_RECHARGE_STEPS: usize = 16;
@@ -83,8 +149,32 @@ const BASE: usize = 0;
 /// art's tintable regions in grayscale.
 const ACCENT: usize = 1;
 
-/// The atlas manifest as `tools/gen_sprites.py` writes it.
-type Manifest = std::collections::HashMap<String, [f32; 4]>;
+/// The atlas manifest as `tools/gen_sprites.py` writes it. It remembers every
+/// name a loader asks for, so a test can find a shipped region no loader
+/// reads.
+#[derive(Default)]
+pub(crate) struct Manifest {
+    rects: std::collections::HashMap<String, [f32; 4]>,
+    asked: std::cell::RefCell<std::collections::HashSet<String>>,
+}
+
+impl Manifest {
+    fn parse(json: &str) -> Result<Self> {
+        Ok(Self {
+            rects: serde_json::from_str(json)?,
+            asked: std::cell::RefCell::default(),
+        })
+    }
+
+    fn get(&self, name: &str) -> Option<[f32; 4]> {
+        self.asked.borrow_mut().insert(name.to_owned());
+        self.rects.get(name).copied()
+    }
+
+    fn contains_key(&self, name: &str) -> bool {
+        self.get(name).is_some()
+    }
+}
 
 pub(crate) struct ArrayRig {
     base: [[Rect; 2]; 2],
@@ -184,17 +274,14 @@ pub(crate) struct MawRigs {
     pub cradle: CradleRig,
 }
 
-fn maw_rigs(rects: &Manifest) -> Result<Option<MawRigs>> {
-    if !rects.contains_key("rig_maw_hull") {
-        return Ok(None);
-    }
+fn maw_rigs(rects: &Manifest) -> Result<MawRigs> {
     let scrap = plain_numbered(rects, "rig_maw_scrap")?;
     anyhow::ensure!(
         scrap.len() % MAW_SCRAP_HEAT_STEPS == 0,
         "rig_maw_scrap ships {} frames, not whole heat ramps",
         scrap.len()
     );
-    Ok(Some(MawRigs {
+    Ok(MawRigs {
         maw: MawRig {
             treads: [
                 plain_numbered(rects, "rig_maw_tread_left")?,
@@ -214,7 +301,7 @@ fn maw_rigs(rects: &Manifest) -> Result<Option<MawRigs>> {
             pad: lookup(rects, "rig_cradle_pad")?,
             lamp: plain_sequence(rects, "rig_cradle_lamp")?,
         },
-    }))
+    })
 }
 
 /// The untinted `{stem}_1`, `{stem}_2`, ... frames the atlas ships.
@@ -245,11 +332,8 @@ fn tinted_sequence(rects: &Manifest, stem: &str) -> Result<Vec<[Rect; 2]>> {
     Ok(out)
 }
 
-fn strategic_rigs(rects: &Manifest) -> Result<Option<StrategicRigs>> {
-    if !rects.contains_key("rig_spire_foundation") {
-        return Ok(None);
-    }
-    Ok(Some(StrategicRigs {
+fn strategic_rigs(rects: &Manifest) -> Result<StrategicRigs> {
+    Ok(StrategicRigs {
         spire: SpireRig {
             foundation: variant_row(rects, "rig_spire_foundation", "")?,
             deck: variant_row(rects, "rig_spire_deck", "")?,
@@ -280,14 +364,11 @@ fn strategic_rigs(rects: &Manifest) -> Result<Option<StrategicRigs>> {
             ],
             launch: tinted_sequence(rects, "rig_lattice_launch")?,
         },
-    }))
+    })
 }
 
-fn array_rig(rects: &Manifest) -> Result<Option<ArrayRig>> {
-    if !rects.keys().any(|key| key.starts_with("rig_array_")) {
-        return Ok(None);
-    }
-    Ok(Some(ArrayRig {
+fn array_rig(rects: &Manifest) -> Result<ArrayRig> {
+    Ok(ArrayRig {
         base: [
             variant_row(rects, "rig_array_t0_base", "")?,
             variant_row(rects, "rig_array_t1_base", "")?,
@@ -296,11 +377,11 @@ fn array_rig(rects: &Manifest) -> Result<Option<ArrayRig>> {
             variant_row(rects, "rig_array_t0_rotor", "")?,
             variant_row(rects, "rig_array_t1_rotor", "")?,
         ],
-    }))
+    })
 }
 
 pub(crate) struct UnitRig {
-    hull: [[Rect; 2]; 3],
+    hull: Vec<[Rect; 2]>,
     mount: Vec<[Rect; 2]>,
     shadow: Option<Rect>,
     mount_shadow: Option<Rect>,
@@ -319,7 +400,7 @@ impl UnitRig {
     }
 
     pub(crate) fn hull(&self, phase: usize) -> (Rect, Rect) {
-        let row = self.hull[phase.min(2)];
+        let row = self.hull[phase.min(self.hull.len() - 1)];
         (row[BASE], row[ACCENT])
     }
 
@@ -329,27 +410,31 @@ impl UnitRig {
     }
 }
 
-fn harvester_body_rows(rects: &Manifest) -> Result<Option<[[Rect; 2]; 6]>> {
-    if !rects
-        .keys()
-        .any(|key| key.starts_with("rig_harvester_body_"))
-    {
-        return Ok(None);
-    }
-    Ok(Some(variant_rows(
+fn harvester_body_rows(rects: &Manifest) -> Result<[[Rect; 2]; 6]> {
+    variant_rows(
         rects,
         "rig_harvester_body",
         [
             "_cargo0", "_cargo1", "_cargo2", "_cargo3", "_cargo4", "_cargo5",
         ],
-    )?))
+    )
 }
 
-fn worker_body_rows(rects: &Manifest, stem: &str) -> Result<Option<[[Rect; 2]; 3]>> {
-    if !rects.keys().any(|key| key.starts_with(&format!("{stem}_"))) {
-        return Ok(None);
+fn suffix_rows(rects: &Manifest, stem: &str, suffixes: &[&str]) -> Result<Vec<[Rect; 2]>> {
+    suffixes
+        .iter()
+        .map(|suffix| variant_row(rects, stem, suffix))
+        .collect()
+}
+
+/// A hull's locomotion phases: its rest, then the two move poses for a hull
+/// that rocks as it goes. A tracked hull holds still while its belts roll.
+fn hull_suffixes(kind: UnitKind) -> &'static [&'static str] {
+    if crate::look::unit(kind).belts.is_empty() {
+        &["", "_move1", "_move2"]
+    } else {
+        &[""]
     }
-    Ok(Some(variant_rows(rects, stem, ["", "_move1", "_move2"])?))
 }
 
 /// Every rig the atlas ships for a kind whose look draws one; its mount has
@@ -357,14 +442,12 @@ fn worker_body_rows(rects: &Manifest, stem: &str) -> Result<Option<[[Rect; 2]; 3
 fn unit_rigs(rects: &Manifest) -> Result<std::collections::HashMap<UnitKind, UnitRig>> {
     let mut rigs = std::collections::HashMap::new();
     for kind in UnitKind::ALL {
-        if crate::look::unit(kind).rig
-            && let Some(rig) = unit_rig(
-                rects,
-                unit_stem(kind),
-                numbered_suffixes(rects, &rig_mount_stem(kind), "action")?.len(),
-            )?
-        {
-            rigs.insert(kind, rig);
+        if crate::look::unit(kind).rig {
+            let actions = numbered_suffixes(rects, &rig_mount_stem(kind), "action")?.len();
+            rigs.insert(
+                kind,
+                unit_rig(rects, unit_stem(kind), hull_suffixes(kind), actions)?,
+            );
         }
     }
     Ok(rigs)
@@ -376,16 +459,10 @@ fn rig_mount_stem(kind: UnitKind) -> String {
     format!("rig_{}_mount", unit_stem(kind))
 }
 
-fn unit_rig(rects: &Manifest, stem: &str, actions: usize) -> Result<Option<UnitRig>> {
+fn unit_rig(rects: &Manifest, stem: &str, hull: &[&str], actions: usize) -> Result<UnitRig> {
     let prefix = format!("rig_{stem}");
-    if !rects
-        .keys()
-        .any(|key| key.starts_with(&format!("{prefix}_")))
-    {
-        return Ok(None);
-    }
-    Ok(Some(UnitRig {
-        hull: variant_rows(rects, &format!("{prefix}_hull"), ["", "_move1", "_move2"])?,
+    Ok(UnitRig {
+        hull: suffix_rows(rects, &format!("{prefix}_hull"), hull)?,
         mount: (0..=actions)
             .map(|action| {
                 let suffix = if action == 0 {
@@ -398,7 +475,7 @@ fn unit_rig(rects: &Manifest, stem: &str, actions: usize) -> Result<Option<UnitR
             .collect::<Result<_>>()?,
         shadow: optional(rects, &format!("{prefix}_shadow"))?,
         mount_shadow: optional(rects, &format!("{prefix}_mount_shadow"))?,
-    }))
+    })
 }
 
 fn optional(rects: &Manifest, name: &str) -> Result<Option<Rect>> {
@@ -432,16 +509,13 @@ pub(crate) struct RocRig {
     pub ghost: [Rect; 2],
 }
 
-fn roc_rig(rects: &Manifest) -> Result<Option<RocRig>> {
-    if !rects.contains_key("rig_roc_wall") {
-        return Ok(None);
-    }
+fn roc_rig(rects: &Manifest) -> Result<RocRig> {
     let docks = (1..)
         .map(|dock| format!("rig_roc_dock{dock}"))
         .take_while(|stem| rects.contains_key(&format!("{stem}_1")))
         .map(|stem| numbered_rows(rects, &stem, ""))
         .collect::<Result<Vec<_>>>()?;
-    Ok(Some(RocRig {
+    Ok(RocRig {
         wall: lookup(rects, "rig_roc_wall")?,
         yoke: lookup(rects, "rig_roc_yoke")?,
         fans: [
@@ -453,23 +527,17 @@ fn roc_rig(rects: &Manifest) -> Result<Option<RocRig>> {
         hatch: numbered_rows(rects, "rig_roc_hatch", "")?,
         glow: lookup(rects, "rig_roc_glow")?,
         ghost: variant_row(rects, "rig_roc_ghost", "")?,
-    }))
+    })
 }
 
-fn piledriver_anchor_rows(rects: &Manifest) -> Result<Option<Vec<[Rect; 2]>>> {
-    if !rects.contains_key("piledriver_anchors") {
-        return Ok(None);
-    }
+fn piledriver_anchor_rows(rects: &Manifest) -> Result<Vec<[Rect; 2]>> {
     let mut rows = vec![variant_row(rects, "piledriver_anchors", "")?];
     rows.extend(numbered_rows(rects, "piledriver_anchors", "action")?);
-    Ok(Some(rows))
+    Ok(rows)
 }
 
-fn bombard_spade_rows(rects: &Manifest) -> Result<Option<[Rect; 5]>> {
-    if !rects.keys().any(|key| key.starts_with("bombard_spades_")) {
-        return Ok(None);
-    }
-    Ok(Some(pick(
+fn bombard_spade_rows(rects: &Manifest) -> Result<[Rect; 5]> {
+    pick(
         rects,
         [
             "bombard_spades_0",
@@ -478,15 +546,12 @@ fn bombard_spade_rows(rects: &Manifest) -> Result<Option<[Rect; 5]>> {
             "bombard_spades_3",
             "bombard_spades_4",
         ],
-    )?))
+    )
 }
 
-fn quarry_dressing_rows(rects: &Manifest) -> Result<Option<[Rect; 12]>> {
-    if !rects.keys().any(|key| key.starts_with("quarry_dressing_")) {
-        return Ok(None);
-    }
+fn quarry_dressing_rows(rects: &Manifest) -> Result<[Rect; 12]> {
     let keys: [String; 12] = std::array::from_fn(|index| format!("quarry_dressing_{index}"));
-    Ok(Some(pick(rects, keys.each_ref().map(String::as_str))?))
+    pick(rects, keys.each_ref().map(String::as_str))
 }
 
 /// Untinted sprites: one region, one name.
@@ -699,49 +764,12 @@ fn theme_prop_row(theme: &str) -> Option<usize> {
 
 const DEBRIS_KEYS: [&str; 3] = ["debris_0", "debris_1", "debris_2"];
 
-/// The Harvester's dig frames hang off its own stem.
-const SCOOP_SUFFIXES: [&str; 2] = ["_scoop1", "_scoop2"];
-const TREAD_SUFFIXES: [&str; 2] = ["_tread1", "_tread2"];
+/// The two whole-body move poses of a kind that draws them.
 const MOVE_SUFFIXES: [&str; 2] = ["_move1", "_move2"];
-const HARVESTER_CARGO_LEVELS: usize = 5;
 const EXCAVATOR_CARGO_LEVELS: usize = 5;
 const SITE_STAGES: usize = aftermine_sim::stats::CONSTRUCTION_STAGES as usize;
 const SITE_PHASES: usize = 2;
 const SITE_FRAME_COUNT: usize = SITE_STAGES * SITE_PHASES;
-
-/// One complete Harvester pose at a particular visible cargo level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HarvesterPose {
-    /// Resting chassis and tool.
-    Idle,
-    /// First authored tread phase.
-    Tread1,
-    /// Second authored tread phase.
-    Tread2,
-    /// Claws lowering around salvage.
-    Scoop1,
-    /// Claws closed on salvage.
-    Scoop2,
-}
-
-/// One complete Excavator chassis pose beneath its independent cargo meter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExcavatorPose {
-    /// Resting chassis and raised milling drum.
-    Idle,
-    /// First authored tread phase.
-    Tread1,
-    /// Second authored tread phase.
-    Tread2,
-    /// First milling-drum work phase.
-    Work1,
-    /// Second milling-drum work phase.
-    Work2,
-    /// Third milling-drum work phase.
-    Work3,
-    /// Fourth milling-drum work phase.
-    Work4,
-}
 
 /// The atlas stem a unit kind's rows live under.
 pub(crate) fn unit_stem(kind: UnitKind) -> &'static str {
@@ -780,7 +808,6 @@ fn variant_keys(stem: &str, suffix: &str) -> [String; 2] {
 fn lookup(rects: &Manifest, name: &str) -> Result<Rect> {
     let [x, y, w, h] = rects
         .get(name)
-        .copied()
         .with_context(|| format!("sprite {name:?} missing from atlas"))?;
     Ok(Rect::new(x, y, w, h))
 }
@@ -835,57 +862,11 @@ pub(crate) fn numbered_suffixes(rects: &Manifest, stem: &str, label: &str) -> Re
     Ok(suffixes)
 }
 
-/// How many `_{label}N` frames the shipped atlas holds under `stem`.
-#[cfg(test)]
-pub(crate) fn shipped_frames(stem: &str, label: &str) -> usize {
-    static SHIPPED: std::sync::LazyLock<Manifest> = std::sync::LazyLock::new(|| {
-        serde_json::from_str(include_str!("../../assets/sprites/atlas.json"))
-            .expect("the shipped atlas parses")
-    });
-    numbered_suffixes(&SHIPPED, stem, label)
-        .expect("complete rows")
-        .len()
-}
-
-/// How many action frames a unit kind's shipped atlas bank holds: its rig
-/// mount's for a rigged kind.
-#[cfg(test)]
-pub(crate) fn unit_action_frames(kind: UnitKind) -> usize {
-    if crate::look::unit(kind).rig {
-        shipped_frames(&rig_mount_stem(kind), "action")
-    } else {
-        shipped_frames(unit_stem(kind), "action")
-    }
-}
-
 fn numbered_rows(rects: &Manifest, stem: &str, label: &str) -> Result<Vec<[Rect; 2]>> {
     numbered_suffixes(rects, stem, label)?
         .iter()
         .map(|suffix| variant_row(rects, stem, suffix))
         .collect()
-}
-
-fn harvester_cargo_rows(rects: &Manifest) -> Result<[[Rect; 2]; HARVESTER_CARGO_LEVELS]> {
-    let empty = [Rect::new(0.0, 0.0, 0.0, 0.0); 2];
-    let mut out = [empty; HARVESTER_CARGO_LEVELS];
-    for (level, row) in out.iter_mut().enumerate() {
-        *row = variant_row(rects, "harvester", &format!("_cargo{level}"))?;
-    }
-    Ok(out)
-}
-
-fn harvester_cargo_motion_rows(
-    rects: &Manifest,
-    suffixes: [&str; 2],
-) -> Result<[[[Rect; 2]; 2]; HARVESTER_CARGO_LEVELS]> {
-    let empty_row = [Rect::new(0.0, 0.0, 0.0, 0.0); 2];
-    let mut out = [[empty_row; 2]; HARVESTER_CARGO_LEVELS];
-    for (level, rows) in out.iter_mut().enumerate() {
-        for (row, suffix) in rows.iter_mut().zip(suffixes) {
-            *row = variant_row(rects, "harvester", &format!("_cargo{level}{suffix}"))?;
-        }
-    }
-    Ok(out)
 }
 
 fn mantle_charge_rows(rects: &Manifest) -> Result<[Rect; MANTLE_CHARGE_FRAMES]> {
@@ -904,11 +885,11 @@ fn excavator_cargo_rows(rects: &Manifest) -> Result<[Rect; EXCAVATOR_CARGO_LEVEL
     Ok(out)
 }
 
-/// One unit kind's chassis art: the ready row, its two locomotion poses, and
-/// however many action frames its atlas bank ships.
+/// One unit kind's chassis art: the ready row, its two locomotion poses if
+/// it draws them, and however many action frames its atlas bank ships.
 struct UnitArt {
     base: [Rect; 2],
-    moving: [[Rect; 2]; 2],
+    moving: Vec<[Rect; 2]>,
     action: Vec<[Rect; 2]>,
 }
 
@@ -926,20 +907,23 @@ fn unit_art(rects: &Manifest) -> Result<Vec<UnitArt>> {
             let stem = unit_stem(kind);
             Ok(UnitArt {
                 base: variant_row(rects, stem, "")?,
-                moving: variant_rows(rects, stem, unit_move_suffixes(kind))?,
+                moving: if draws_body_moves(kind) {
+                    suffix_rows(rects, stem, &MOVE_SUFFIXES)?
+                } else {
+                    Vec::new()
+                },
                 action: numbered_rows(rects, stem, "action")?,
             })
         })
         .collect()
 }
 
-/// The two locomotion poses: tracked hulls ship tread frames, everything
-/// else ships move frames.
-fn unit_move_suffixes(kind: UnitKind) -> [&'static str; 2] {
-    match crate::look::unit(kind).move_rows {
-        crate::look::MoveRows::Tread => TREAD_SUFFIXES,
-        crate::look::MoveRows::Move => MOVE_SUFFIXES,
-    }
+/// Whether a kind draws its whole-body move poses: a rig draws its hull, a
+/// worker its body layer, and a tracked hull or the Maw holds still while
+/// its treads roll.
+fn draws_body_moves(kind: UnitKind) -> bool {
+    let look = crate::look::unit(kind);
+    !look.rig && look.tool.is_none() && look.belts.is_empty() && kind != UnitKind::Maw
 }
 
 /// A building's art at one rung of its upgrade ladder.
@@ -1043,290 +1027,6 @@ fn construction_rows(rects: &Manifest, stem: &str) -> Result<[[Rect; 2]; SITE_FR
     Ok(out)
 }
 
-/// Every key accepted in the generated production atlas, including legacy
-/// compatibility aliases that remain in the generator output.
-#[cfg(test)]
-fn atlas_keys(atlas: &Manifest) -> Vec<String> {
-    let mut keys: Vec<String> = SINGLE_KEYS
-        .iter()
-        .chain(VERB_ICON_KEYS.iter())
-        .chain(PAD_ICON_KEYS.iter())
-        .chain(GROUND_KEYS.iter())
-        .chain(GROUND_DETAIL_KEYS.iter())
-        .chain(ROCK_SLAB_KEYS.iter())
-        .chain(["decal_wreck", "scaffold_sparse"].iter())
-        .chain(THEME_PROP_KEYS.iter())
-        .chain(WRECK_PILE_KEYS.iter())
-        .chain(GROUND_BLOCKER_KEYS.iter())
-        .chain(DEBRIS_KEYS.iter())
-        .map(|key| (*key).to_string())
-        .collect();
-    keys.extend((0..5).map(|phase| format!("bombard_spades_{phase}")));
-    if atlas.contains_key("piledriver_anchors") {
-        keys.extend(variant_keys("piledriver_anchors", ""));
-        for suffix in
-            numbered_suffixes(atlas, "piledriver_anchors", "action").expect("complete anchors")
-        {
-            keys.extend(variant_keys("piledriver_anchors", &suffix));
-        }
-    }
-    keys.push("scout_radar".to_owned());
-    if atlas
-        .keys()
-        .any(|key| key.starts_with("rig_harvester_body_"))
-    {
-        for cargo in 0..6 {
-            keys.extend(variant_keys(
-                "rig_harvester_body",
-                &format!("_cargo{cargo}"),
-            ));
-        }
-    }
-    for stem in ["rig_excavator_body", "rig_scuttler_body"] {
-        if atlas.keys().any(|key| key.starts_with(stem)) {
-            for suffix in ["", "_move1", "_move2"] {
-                keys.extend(variant_keys(stem, suffix));
-            }
-        }
-    }
-    keys.extend((0..12).map(|index| format!("quarry_dressing_{index}")));
-    for (stem, action_count) in UnitKind::ALL
-        .into_iter()
-        .filter(|kind| crate::look::unit(*kind).rig)
-        .map(|kind| {
-            let actions =
-                numbered_suffixes(atlas, &rig_mount_stem(kind), "action").expect("complete rows");
-            (unit_stem(kind), actions.len())
-        })
-    {
-        for suffix in ["", "_move1", "_move2"] {
-            keys.extend(variant_keys(&format!("rig_{stem}_hull"), suffix));
-        }
-        keys.extend(variant_keys(&format!("rig_{stem}_mount"), ""));
-        for shadow in [
-            format!("rig_{stem}_shadow"),
-            format!("rig_{stem}_mount_shadow"),
-        ] {
-            if atlas.contains_key(&shadow) {
-                keys.push(shadow);
-            }
-        }
-        for action in 1..=action_count {
-            keys.extend(variant_keys(
-                &format!("rig_{stem}_mount"),
-                &format!("_action{action}"),
-            ));
-        }
-    }
-    for tier in 0..2 {
-        for part in ["base", "rotor"] {
-            keys.extend(variant_keys(&format!("rig_array_t{tier}_{part}"), ""));
-        }
-    }
-    keys.extend(strategic_rig_keys(atlas));
-    keys.extend(maw_rig_keys(atlas));
-    keys.extend(roc_rig_keys(atlas));
-
-    for kind in UnitKind::ALL {
-        let stem = unit_stem(kind);
-        keys.extend(variant_keys(stem, ""));
-        for suffix in unit_move_suffixes(kind) {
-            keys.extend(variant_keys(stem, suffix));
-        }
-        for suffix in numbered_suffixes(atlas, stem, "action").expect("complete rows") {
-            keys.extend(variant_keys(stem, &suffix));
-        }
-    }
-    for suffix in SCOOP_SUFFIXES {
-        keys.extend(variant_keys(unit_stem(UnitKind::Harvester), suffix));
-    }
-    for level in 0..HARVESTER_CARGO_LEVELS {
-        keys.extend(variant_keys("harvester", &format!("_cargo{level}")));
-        for suffix in TREAD_SUFFIXES.into_iter().chain(SCOOP_SUFFIXES) {
-            keys.extend(variant_keys("harvester", &format!("_cargo{level}{suffix}")));
-        }
-    }
-    for frame in 0..MANTLE_CHARGE_FRAMES {
-        keys.push(format!("mantle_charge{frame}"));
-    }
-    for level in 0..EXCAVATOR_CARGO_LEVELS {
-        keys.push(format!("excavator_cargo{level}"));
-    }
-    for kind in BuildingKind::ALL {
-        let defense = crate::look::defense(kind);
-        for tier in 0..kind.tiers().len() {
-            let hull = rung_stem(building_stem(kind), tier);
-            let mut families = vec![(hull.clone(), "work")];
-            if defense.is_some_and(|defense| defense.charge_rack) {
-                families.push((hull.clone(), "action"));
-            }
-            keys.extend(variant_keys(&hull, ""));
-            if let Some(defense) = defense {
-                let mount = rung_stem(defense.mount, tier);
-                keys.extend(variant_keys(&mount, ""));
-                families.push((mount, "action"));
-            }
-            for (stem, label) in families {
-                for suffix in numbered_suffixes(atlas, &stem, label).expect("complete rows") {
-                    keys.extend(variant_keys(&stem, &suffix));
-                }
-            }
-        }
-        let site_tiers = if matches!(kind, BuildingKind::Extractor | BuildingKind::Bastion) {
-            kind.tiers().len()
-        } else {
-            1
-        };
-        for tier in 0..site_tiers {
-            for stage in 0..SITE_STAGES {
-                for phase in 0..SITE_PHASES {
-                    keys.extend(variant_keys(
-                        &construction_stem(kind, tier),
-                        &format!("_site{stage}_{phase}"),
-                    ));
-                }
-            }
-        }
-    }
-    keys
-}
-
-/// The Roc's layers beyond its hull and guns: each fan's and dock's rows
-/// carry paint; the wall and yokes are untinted single rows.
-#[cfg(test)]
-fn roc_rig_keys(atlas: &Manifest) -> Vec<String> {
-    let mut keys = vec![
-        "rig_roc_wall".to_owned(),
-        "rig_roc_yoke".to_owned(),
-        "rig_roc_glow".to_owned(),
-    ];
-    keys.extend(variant_keys("rig_roc_wreck", ""));
-    keys.extend(variant_keys("rig_roc_ghost", ""));
-    let docks = (1..)
-        .map(|dock| format!("rig_roc_dock{dock}"))
-        .take_while(|stem| atlas.contains_key(&format!("{stem}_1")));
-    for stem in [
-        "rig_roc_fan_left".to_owned(),
-        "rig_roc_fan_right".to_owned(),
-        "rig_roc_hatch".to_owned(),
-    ]
-    .into_iter()
-    .chain(docks)
-    {
-        for suffix in numbered_suffixes(atlas, &stem, "").expect("complete rows") {
-            keys.extend(variant_keys(&stem, &suffix));
-        }
-    }
-    keys
-}
-
-/// The Maw's and its cradle's composition layers. The hull, drum, bridge
-/// and trolley carry paint; the rest are untinted single rows.
-#[cfg(test)]
-fn maw_rig_keys(atlas: &Manifest) -> Vec<String> {
-    let numbered = |stem: &str| -> Vec<String> {
-        let mut keys = Vec::new();
-        while let key = format!("{stem}_{}", keys.len() + 1)
-            && atlas.contains_key(&key)
-        {
-            keys.push(key);
-        }
-        keys
-    };
-    let mut keys = Vec::new();
-    for stem in ["rig_maw_hull", "rig_cradle_bridge", "rig_cradle_trolley"] {
-        keys.extend(variant_keys(stem, ""));
-    }
-    for stem in ["rig_maw_drum", "rig_cradle_trolley"] {
-        for suffix in numbered_suffixes(atlas, stem, "").expect("complete rows") {
-            keys.extend(variant_keys(stem, &suffix));
-        }
-    }
-    keys.extend(
-        [
-            "rig_maw_kiln",
-            "rig_maw_kiln_glow",
-            "rig_cradle_pad",
-            "rig_cradle_lamp",
-        ]
-        .map(str::to_owned),
-    );
-    for stem in [
-        "rig_maw_tread_left",
-        "rig_maw_tread_right",
-        "rig_maw_slats",
-        "rig_maw_arms",
-        "rig_maw_scrap",
-        "rig_cradle_lamp",
-    ] {
-        keys.extend(numbered(stem));
-    }
-    keys
-}
-
-/// The Spire's and Lattice's composition layers. Rows that carry paint
-/// ship an allegiance mask; the hook, plain sections, locks, clamps, arm,
-/// base and cover are untinted single rows.
-#[cfg(test)]
-fn strategic_rig_keys(atlas: &Manifest) -> Vec<String> {
-    let numbered = |stem: &str| -> Vec<String> {
-        let mut keys = Vec::new();
-        while let key = format!("{stem}_{}", keys.len() + 1)
-            && atlas.contains_key(&key)
-        {
-            keys.push(key);
-        }
-        keys
-    };
-    let mut keys = Vec::new();
-    for stem in [
-        "rig_spire_foundation",
-        "rig_spire_deck",
-        "rig_spire_cover",
-        "rig_spire_round",
-        "rig_spire_warhead",
-        "rig_lattice_pod",
-        "rig_lattice_interceptor",
-        "rig_lattice_launch",
-    ] {
-        keys.extend(variant_keys(stem, ""));
-    }
-    for stem in [
-        "rig_spire_nose",
-        "rig_spire_warhead",
-        "rig_lattice_launch",
-        "rig_lattice_nose_left",
-        "rig_lattice_nose_right",
-    ] {
-        for suffix in numbered_suffixes(atlas, stem, "").expect("complete rows") {
-            keys.extend(variant_keys(stem, &suffix));
-        }
-    }
-    for stem in [
-        "rig_spire_gantry",
-        "rig_spire_lock_lower",
-        "rig_spire_lock_upper",
-        "rig_lattice_base",
-        "rig_lattice_cover",
-        "rig_lattice_clamp",
-    ] {
-        keys.push(stem.to_owned());
-    }
-    for stem in [
-        "rig_spire_stack",
-        "rig_spire_gantry",
-        "rig_spire_lock_lower",
-        "rig_spire_lock_upper",
-        "rig_lattice_stack",
-        "rig_lattice_clamp",
-        "rig_lattice_arm_left",
-        "rig_lattice_arm_right",
-    ] {
-        keys.extend(numbered(stem));
-    }
-    keys
-}
-
 /// Where game data lives: inside a packaged bundle (see
 /// [`crate::paths::bundle_resources`]), or the workspace root for
 /// development runs.
@@ -1372,9 +1072,10 @@ impl Sprites {
             &resource_root().join("assets/sprites/atlas.json"),
         )?)
         .context("loading assets/sprites/atlas.json")?;
-        let rects: Manifest = serde_json::from_str(&manifest).context("parsing atlas manifest")?;
+        let rects = Manifest::parse(&manifest).context("parsing atlas manifest")?;
         let page_height = texture.height();
         let page_count = rects
+            .rects
             .values()
             .map(|row| atlas_page(Rect::new(row[0], row[1], row[2], row[3]), page_height).0 + 1)
             .max()
@@ -1390,19 +1091,7 @@ impl Sprites {
             textures.push(texture);
         }
 
-        let [
-            rock_skirt,
-            extractor_frame,
-            scrap_full,
-            scrap_mid,
-            scrap_low,
-            scrap_rich,
-            scorch,
-            wreck_pile,
-            air_shadow,
-            burst,
-        ] = pick(&rects, SINGLE_KEYS)?;
-        let entity_lod = crate::entity_lod::EntityLod::load(&rects, page_height)?;
+        let entity_lod = crate::entity_lod::EntityLod::load(&rects.rects, page_height)?;
         let ground_blend = crate::render::GroundBlend::load()?;
         let wordmark = Texture2D::from_image(
             &load_resource_image("assets/wordmark.png").context("loading assets/wordmark.png")?,
@@ -1410,52 +1099,11 @@ impl Sprites {
         wordmark.set_filter(FilterMode::Linear);
         Ok(Self {
             wordmark,
-            unit_rigs: unit_rigs(&rects)?,
-            bombard_spades: bombard_spade_rows(&rects)?,
-            piledriver_anchors: piledriver_anchor_rows(&rects)?,
-            array_rig: array_rig(&rects)?,
-            strategic_rigs: strategic_rigs(&rects)?,
-            maw_rigs: maw_rigs(&rects)?,
-            roc_rig: roc_rig(&rects)?,
-            scout_radar: rects
-                .get("scout_radar")
-                .map(|&[x, y, w, h]| Rect::new(x, y, w, h)),
             textures,
             entity_lod,
             ground_blend,
-            harvester_body: harvester_body_rows(&rects)?,
-            excavator_body: worker_body_rows(&rects, "rig_excavator_body")?,
-            scuttler_body: worker_body_rows(&rects, "rig_scuttler_body")?,
             page_height,
-            verb_icons: pick(&rects, VERB_ICON_KEYS)?,
-            pad_icons: pick(&rects, PAD_ICON_KEYS)?,
-            ground: pick(&rects, GROUND_KEYS)?,
-            ground_detail: pick(&rects, GROUND_DETAIL_KEYS)?,
-            quarry_dressing: quarry_dressing_rows(&rects)?,
-            rock_slabs: pick(&rects, ROCK_SLAB_KEYS)?,
-            extractor_frame,
-            rock_skirt,
-            wreck_decal: lookup(&rects, "decal_wreck")?,
-            theme_props: pick(&rects, THEME_PROP_KEYS)?,
-            ground_blockers: pick(&rects, GROUND_BLOCKER_KEYS)?,
-            scrap_full,
-            scrap_mid,
-            scrap_low,
-            scrap_rich,
-            scorch,
-            wreck_pile,
-            wreck_piles: pick(&rects, WRECK_PILE_KEYS)?,
-            air_shadow,
-            burst,
-            harvester_cargo: harvester_cargo_rows(&rects)?,
-            harvester_cargo_scoop: harvester_cargo_motion_rows(&rects, SCOOP_SUFFIXES)?,
-            harvester_cargo_tread: harvester_cargo_motion_rows(&rects, TREAD_SUFFIXES)?,
-            buildings: building_art(&rects)?,
-            units: unit_art(&rects)?,
-            scaffold: lookup(&rects, "scaffold_sparse")?,
-            debris: pick(&rects, DEBRIS_KEYS)?,
-            excavator_cargo: excavator_cargo_rows(&rects)?,
-            mantle_charge: mantle_charge_rows(&rects)?,
+            regions: Regions::read(&rects)?,
         })
     }
 
@@ -1464,11 +1112,9 @@ impl Sprites {
         &self.wordmark
     }
 
-    pub(crate) fn harvester_body(&self, cargo: usize) -> Option<(Rect, Rect)> {
-        self.harvester_body.as_ref().map(|rows| {
-            let row = rows[cargo.min(5)];
-            (row[BASE], row[ACCENT])
-        })
+    pub(crate) fn harvester_body(&self, cargo: usize) -> (Rect, Rect) {
+        let row = self.regions.harvester_body[cargo.min(5)];
+        (row[BASE], row[ACCENT])
     }
 
     pub(crate) fn worker_body(
@@ -1478,11 +1124,11 @@ impl Sprites {
         phase: usize,
     ) -> Option<(Rect, Rect)> {
         let rows = match crate::look::unit(kind).tool? {
-            crate::look::WorkerTool::Scoop => return self.harvester_body(cargo),
-            crate::look::WorkerTool::Drum => self.excavator_body.as_ref()?,
-            crate::look::WorkerTool::Shears => self.scuttler_body.as_ref()?,
+            crate::look::WorkerTool::Scoop => return Some(self.harvester_body(cargo)),
+            crate::look::WorkerTool::Drum => &self.regions.excavator_body,
+            crate::look::WorkerTool::Shears => &self.regions.scuttler_body,
         };
-        let row = rows[phase.min(2)];
+        let row = rows[phase.min(rows.len() - 1)];
         Some((row[BASE], row[ACCENT]))
     }
 
@@ -1583,47 +1229,47 @@ impl Sprites {
 
     /// A verb pictogram's atlas region.
     pub fn verb_icon(&self, icon: crate::panel::VerbIcon) -> Rect {
-        self.verb_icons[icon as usize]
+        self.regions.verb_icons[icon as usize]
     }
 
     /// A controller button icon's atlas region.
     pub(crate) fn pad_icon(&self, icon: crate::pad::PadIcon) -> Rect {
-        self.pad_icons[icon as usize]
+        self.regions.pad_icons[icon as usize]
     }
 
     /// A ground variant's atlas region.
     pub fn ground(&self, variant: usize) -> Rect {
-        self.ground[variant % self.ground.len()]
+        self.regions.ground[variant % self.regions.ground.len()]
     }
 
     /// A ground grit-and-crack overlay's atlas region.
     pub fn ground_detail(&self, variant: usize) -> Rect {
-        self.ground_detail[variant % self.ground_detail.len()]
+        self.regions.ground_detail[variant % self.regions.ground_detail.len()]
     }
 
     pub fn ground_detail_count(&self) -> usize {
-        self.ground_detail.len()
+        self.regions.ground_detail.len()
     }
 
-    pub(crate) fn quarry_dressing(&self, variant: usize) -> Option<Rect> {
-        self.quarry_dressing.map(|row| row[variant % row.len()])
+    pub(crate) fn quarry_dressing(&self, variant: usize) -> Rect {
+        self.regions.quarry_dressing[variant % self.regions.quarry_dressing.len()]
     }
 
     /// A layered rock slab's atlas region; its pixel size is the slab's
     /// canvas at 64 pixels per tile, centered on the slab.
     pub(crate) fn rock_slab(&self, size: usize, variant: usize) -> Rect {
-        self.rock_slabs
+        self.regions.rock_slabs
             [size.min(ROCK_SLAB_SIZES - 1) * ROCK_SLAB_VARIANTS + variant % ROCK_SLAB_VARIANTS]
     }
 
     /// A raised industrial obstacle's atlas region.
     pub fn ground_blocker(&self, variant: usize) -> Rect {
-        self.ground_blockers[variant % self.ground_blockers.len()]
+        self.regions.ground_blockers[variant % self.regions.ground_blockers.len()]
     }
 
     /// A building's art at its upgrade-ladder rung.
     fn rung(&self, kind: BuildingKind, tier: u8) -> &RungArt {
-        let rungs = &self.buildings[kind as usize];
+        let rungs = &self.regions.buildings[kind as usize];
         &rungs[usize::from(tier).min(rungs.len() - 1)]
     }
 
@@ -1671,65 +1317,65 @@ impl Sprites {
 
     /// The derelict Extractor frame bed (2x2 tiles).
     pub fn extractor_frame(&self) -> Rect {
-        self.extractor_frame
+        self.regions.extractor_frame
     }
 
     /// The soft shadow a rock casts on a neighboring ground tile
     /// (authored falling from the top edge; rotate toward the rock).
     pub fn rock_skirt(&self) -> Rect {
-        self.rock_skirt
+        self.regions.rock_skirt
     }
 
     /// The wreck decal's atlas region.
     pub fn wreck_decal(&self) -> Rect {
-        self.wreck_decal
+        self.regions.wreck_decal
     }
 
     /// A flat ground-dressing mark for a shipped map theme; only the first
     /// three of a theme's marks ship.
     pub fn theme_prop(&self, theme: &str, variant: usize) -> Option<Rect> {
         let row = theme_prop_row(theme)?;
-        (variant < 3).then(|| self.theme_props[row * 3 + variant])
+        (variant < 3).then(|| self.regions.theme_props[row * 3 + variant])
     }
 
     /// The scrap sprite region for a remaining amount: anything above a
     /// standard node renders as the rich pile, then thirds of standard.
     pub fn scrap(&self, amount: u32, standard_amount: u32) -> Rect {
         if amount > standard_amount {
-            self.scrap_rich
+            self.regions.scrap_rich
         } else if amount * 3 > standard_amount * 2 {
-            self.scrap_full
+            self.regions.scrap_full
         } else if amount * 3 > standard_amount {
-            self.scrap_mid
+            self.regions.scrap_mid
         } else {
-            self.scrap_low
+            self.regions.scrap_low
         }
     }
 
     /// The building-death scorch decal region.
     pub fn scorch(&self) -> Rect {
-        self.scorch
+        self.regions.scorch
     }
 
     /// A wreck salvage pile on open ground.
     pub fn wreck_pile(&self) -> Rect {
-        self.wreck_pile
+        self.regions.wreck_pile
     }
 
     /// The pile a wreck shows for the salvage it holds, so it steps down as
     /// it is stripped or decays. `shape` picks among a size's versions.
     pub fn wreck_pile_holding(&self, salvage: u32, shape: usize) -> Rect {
-        self.wreck_piles[wreck_pile_size(salvage) * 2 + shape % 2]
+        self.regions.wreck_piles[wreck_pile_size(salvage) * 2 + shape % 2]
     }
 
     /// The soft shadow a flyer casts on the ground.
     pub fn air_shadow(&self) -> Rect {
-        self.air_shadow
+        self.regions.air_shadow
     }
 
     /// The splash-detonation frame.
     pub fn burst(&self) -> Rect {
-        self.burst
+        self.regions.burst
     }
 
     /// The building sprite region for a kind.
@@ -1822,62 +1468,17 @@ impl Sprites {
         self.construction_row(kind, tier, stage, phase)[ACCENT]
     }
 
-    fn harvester_frame_row(&self, cargo: usize, pose: HarvesterPose) -> &[Rect; 2] {
-        let cargo = cargo.min(HARVESTER_CARGO_LEVELS - 1);
-        match pose {
-            HarvesterPose::Idle => &self.harvester_cargo[cargo],
-            HarvesterPose::Tread1 => &self.harvester_cargo_tread[cargo][0],
-            HarvesterPose::Tread2 => &self.harvester_cargo_tread[cargo][1],
-            HarvesterPose::Scoop1 => &self.harvester_cargo_scoop[cargo][0],
-            HarvesterPose::Scoop2 => &self.harvester_cargo_scoop[cargo][1],
-        }
-    }
-
-    /// A complete Harvester frame with its integral cargo meter. Cargo
-    /// values above four clamp to the full bay.
-    pub fn harvester_frame(&self, cargo: usize, pose: HarvesterPose) -> Rect {
-        self.harvester_frame_row(cargo, pose)[BASE]
-    }
-
-    /// The allegiance mask matched to [`Self::harvester_frame`].
-    pub fn harvester_frame_accent(&self, cargo: usize, pose: HarvesterPose) -> Rect {
-        self.harvester_frame_row(cargo, pose)[ACCENT]
-    }
-
-    fn excavator_frame_row(&self, pose: ExcavatorPose) -> &[Rect; 2] {
-        let art = &self.units[UnitKind::Excavator as usize];
-        match pose {
-            ExcavatorPose::Idle => &art.base,
-            ExcavatorPose::Tread1 => &art.moving[0],
-            ExcavatorPose::Tread2 => &art.moving[1],
-            ExcavatorPose::Work1 => &art.action[0],
-            ExcavatorPose::Work2 => &art.action[1],
-            ExcavatorPose::Work3 => &art.action[2],
-            ExcavatorPose::Work4 => &art.action[3],
-        }
-    }
-
-    /// A complete Excavator chassis pose beneath its independent cargo meter.
-    pub fn excavator_frame(&self, pose: ExcavatorPose) -> Rect {
-        self.excavator_frame_row(pose)[BASE]
-    }
-
-    /// The allegiance mask matched to [`Self::excavator_frame`].
-    pub fn excavator_frame_accent(&self, pose: ExcavatorPose) -> Rect {
-        self.excavator_frame_row(pose)[ACCENT]
-    }
-
     /// Centered charge bars and the next serial recharge.
     pub(crate) fn mantle_charge(&self, frame: usize) -> Rect {
-        self.mantle_charge[frame.min(MANTLE_CHARGE_FRAMES - 1)]
+        self.regions.mantle_charge[frame.min(MANTLE_CHARGE_FRAMES - 1)]
     }
     /// The recessed Excavator meter at one of five load-fraction levels.
     pub fn excavator_cargo(&self, cargo: usize) -> Rect {
-        self.excavator_cargo[cargo.min(EXCAVATOR_CARGO_LEVELS - 1)]
+        self.regions.excavator_cargo[cargo.min(EXCAVATOR_CARGO_LEVELS - 1)]
     }
 
     fn moving_unit_row(&self, kind: UnitKind, frame: usize) -> &[Rect; 2] {
-        let art = &self.units[kind as usize];
+        let art = &self.regions.units[kind as usize];
         frame
             .checked_sub(1)
             .and_then(|index| art.moving.get(index))
@@ -1897,20 +1498,20 @@ impl Sprites {
 
     /// The construction lattice.
     pub fn scaffold(&self) -> Rect {
-        self.scaffold
+        self.regions.scaffold
     }
 
     /// A death-scatter hull shard.
     pub fn debris(&self, variant: usize) -> Rect {
-        self.debris[variant % 3]
+        self.regions.debris[variant % 3]
     }
 
     fn unit_row(&self, kind: UnitKind) -> &[Rect; 2] {
-        &self.units[kind as usize].base
+        &self.regions.units[kind as usize].base
     }
 
     fn unit_action_row(&self, kind: UnitKind, frame: usize) -> Option<&[Rect; 2]> {
-        self.units[kind as usize].action.get(frame)
+        self.regions.units[kind as usize].action.get(frame)
     }
 
     /// A unit's zero-based authored action frame. Harvester and invalid frame
@@ -1932,33 +1533,33 @@ impl Sprites {
     }
 
     pub(crate) fn unit_rig(&self, kind: UnitKind) -> Option<&UnitRig> {
-        self.unit_rigs.get(&kind)
+        self.regions.unit_rigs.get(&kind)
     }
 
-    pub(crate) fn scout_radar(&self) -> Option<Rect> {
-        self.scout_radar
+    pub(crate) fn scout_radar(&self) -> Rect {
+        self.regions.scout_radar
     }
 
-    pub(crate) fn array_rig(&self) -> Option<&ArrayRig> {
-        self.array_rig.as_ref()
+    pub(crate) fn array_rig(&self) -> &ArrayRig {
+        &self.regions.array_rig
     }
 
-    pub(crate) fn strategic_rigs(&self) -> Option<&StrategicRigs> {
-        self.strategic_rigs.as_ref()
+    pub(crate) fn strategic_rigs(&self) -> &StrategicRigs {
+        &self.regions.strategic_rigs
     }
 
-    pub(crate) fn maw_rigs(&self) -> Option<&MawRigs> {
-        self.maw_rigs.as_ref()
+    pub(crate) fn maw_rigs(&self) -> &MawRigs {
+        &self.regions.maw_rigs
     }
 
-    pub(crate) fn roc_rig(&self) -> Option<&RocRig> {
-        self.roc_rig.as_ref()
+    pub(crate) fn roc_rig(&self) -> &RocRig {
+        &self.regions.roc_rig
     }
 
     /// A magazine's finished round, body then accent: the warhead seated on
     /// a Spire's deck or a Lattice's interceptor.
     pub(crate) fn round(&self, kind: aftermine_sim::BuildingKind) -> Option<[Rect; 2]> {
-        let rigs = self.strategic_rigs.as_ref()?;
+        let rigs = &self.regions.strategic_rigs;
         match kind {
             aftermine_sim::BuildingKind::Spire => Some(rigs.spire.round),
             aftermine_sim::BuildingKind::Lattice => Some(rigs.lattice.interceptor),
@@ -1966,24 +1567,23 @@ impl Sprites {
         }
     }
 
-    pub(crate) fn piledriver_anchors(&self, deployment: f32) -> Option<(Rect, Rect)> {
-        self.piledriver_anchors.as_ref().map(|rows| {
-            let index =
-                numeric::to_usize((deployment.clamp(0.0, 1.0) * (rows.len() - 1) as f32).round());
-            let row = rows[index];
-            (row[BASE], row[ACCENT])
-        })
+    pub(crate) fn piledriver_anchors(&self, deployment: f32) -> (Rect, Rect) {
+        let rows = &self.regions.piledriver_anchors;
+        let index =
+            numeric::to_usize((deployment.clamp(0.0, 1.0) * (rows.len() - 1) as f32).round());
+        let row = rows[index];
+        (row[BASE], row[ACCENT])
     }
 
     /// The spade row for a Bombard's deployment, from stowed (row 0) to
     /// fully braced (row 4).
-    pub(crate) fn bombard_spades(&self, brace_ticks: u8) -> Option<Rect> {
+    pub(crate) fn bombard_spades(&self, brace_ticks: u8) -> Rect {
         let deploy = UnitKind::Bombard
             .stats()
             .brace
             .map_or(1, |brace| u16::from(brace.deploy_ticks.max(1)));
         let row = (u16::from(brace_ticks) * 4).div_ceil(deploy).min(4);
-        self.bombard_spades.map(|rows| rows[usize::from(row)])
+        self.regions.bombard_spades[usize::from(row)]
     }
 
     /// The allegiance-accent mask over a unit's tintable regions: grayscale in the atlas, tinted at draw time.
@@ -2111,4 +1711,4 @@ mod contact_outline_tests;
 /// atlas that dropped a row, or a kind whose art was never generated,
 /// fails by name in the ordinary test run.
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

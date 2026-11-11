@@ -71,7 +71,7 @@ fn the_back_button_leaves_and_no_row_does() {
     for touch in [false, true] {
         let mut mouse = vec2(0.0, 0.0);
         let out = screen.update(
-            &crate::button::press_back(touch),
+            &crate::button::tests::press_back(touch),
             &mut mouse,
             &mut Vec::new(),
         );

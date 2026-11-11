@@ -4,7 +4,7 @@ use super::*;
 fn hud_copy_names_keys_only_on_desktop() {
     use crate::game::AlertKind;
     assert_eq!(idle_badge_text(3, "F1", false), "3 idle [F1]");
-    crate::platform::assert_touch_copy(&idle_badge_text(3, "F1", true));
+    crate::platform::tests::assert_touch_copy(&idle_badge_text(3, "F1", true));
     assert_eq!(
         alert_badge_text(AlertKind::Attack, "Tab", false),
         "under attack [Tab]"
@@ -21,28 +21,28 @@ fn hud_copy_names_keys_only_on_desktop() {
         ),
         "enemy Maw assembling [Tab]"
     );
-    crate::platform::assert_touch_copy(&alert_badge_text(AlertKind::Attack, "Tab", true));
-    crate::platform::assert_touch_copy(&alert_badge_text(
+    crate::platform::tests::assert_touch_copy(&alert_badge_text(AlertKind::Attack, "Tab", true));
+    crate::platform::tests::assert_touch_copy(&alert_badge_text(
         AlertKind::Assembly(aftermine_sim::UnitKind::Maw),
         "Tab",
         true,
     ));
-    for hands in crate::platform::ALL_HANDS {
+    for hands in crate::platform::tests::ALL_HANDS {
         let hint = concede_hint(hands);
         assert_eq!(hint.contains("{back}"), hands.keys, "{hint}");
         if !hands.keys {
-            crate::platform::assert_keyless_copy(hint);
+            crate::platform::tests::assert_keyless_copy(hint);
         }
         if hands.touch() {
-            crate::platform::assert_mouseless_copy(hint);
+            crate::platform::tests::assert_mouseless_copy(hint);
         }
     }
     // A controller names its own Menu button, since pad mode hides the
     // top bar's.
-    for hands in crate::platform::pad_hands() {
+    for hands in crate::platform::tests::pad_hands() {
         let hint = concede_hint(hands);
         assert!(hint.contains("{menu}"), "{hint}");
-        crate::platform::assert_touch_copy(&hint.replace("{menu}", "Menu"));
+        crate::platform::tests::assert_touch_copy(&hint.replace("{menu}", "Menu"));
     }
 }
 
@@ -316,7 +316,7 @@ fn army_tooltips_say_what_a_press_selects() {
         army_tooltip(ArmyReach::InView, 1, "Ctrl+S", true),
         "Select the 1 army unit in view"
     );
-    crate::platform::assert_touch_copy(&army_tooltip(ArmyReach::InView, 3, "Ctrl+S", true));
+    crate::platform::tests::assert_touch_copy(&army_tooltip(ArmyReach::InView, 3, "Ctrl+S", true));
     assert_eq!(army_tooltip(ArmyReach::All, 0, "", true), "No army units");
     assert_eq!(
         army_tooltip(ArmyReach::InView, 0, "", true),

@@ -1,7 +1,5 @@
 //! Compact player checkpoints with independently readable metadata.
 
-#[cfg(test)]
-use crate::game::Game;
 use crate::game::checkpoint::{GameCheckpoint, LanSave, RestoredGame, SaveCapture};
 use crate::numeric::Fit;
 use aftermine_sim::SIM_VERSION;
@@ -59,11 +57,6 @@ impl Unavailable {
             Unavailable::Unreadable => "This file is damaged",
         }
     }
-}
-
-#[cfg(test)]
-fn write(game: &Game, meta: ReplayMeta, path: &Path) -> Result<()> {
-    write_capture(game.capture_save(), meta, path)
 }
 
 pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path) -> Result<()> {
@@ -200,14 +193,6 @@ pub(crate) fn prepare(path: &Path) -> Result<Loaded> {
     Ok(loaded)
 }
 
-#[cfg(test)]
-pub(crate) fn prepare_load(path: &Path) -> Result<RestoredGame> {
-    match prepare(path)? {
-        Loaded::Local(game) => Ok(*game),
-        Loaded::Lan(_) => anyhow::bail!("a LAN match resumes from Match Setup with its players"),
-    }
-}
-
 /// The checked header and decompressed checkpoint bytes of a player save.
 fn read_payload(path: &Path) -> Result<(Header, Vec<u8>)> {
     let mut file =
@@ -240,11 +225,6 @@ fn read_payload(path: &Path) -> Result<(Header, Vec<u8>)> {
         "decoded payload length mismatch"
     );
     Ok((header, payload))
-}
-
-#[cfg(test)]
-pub fn load(path: &Path) -> Result<Game> {
-    prepare_load(path).map(RestoredGame::install)
 }
 
 pub fn inspect(path: &Path) -> Result<RecordInfo> {
@@ -298,4 +278,4 @@ fn inspect_reader(path: &Path, file: &mut (impl Read + Seek), len: u64) -> Resul
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

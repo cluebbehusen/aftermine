@@ -1,5 +1,17 @@
 use super::*;
 
+impl<Z: Copy + PartialEq> Press<Z> {
+    pub fn armed_touch(&self) -> Option<(u64, Z)> {
+        self.touch
+    }
+}
+
+impl<Z: Copy + PartialEq> ScrollPress<Z> {
+    pub fn armed_touch(&self) -> Option<(u64, Z)> {
+        self.press.armed_touch()
+    }
+}
+
 fn zone(p: Vec2, _touch: bool) -> Option<u8> {
     (p.x < 100.0).then_some(1)
 }

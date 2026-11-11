@@ -1,6 +1,25 @@
 use super::*;
 use crate::game::Game;
 
+impl BuildingRangeShape {
+    fn outer_bounds(self) -> (Vec2, Vec2) {
+        match self {
+            Self::Circle { center, radius } => {
+                let reach = vec2(radius, radius);
+                (center - reach, center + reach)
+            }
+            Self::FootprintOffset { min, max, radius } => {
+                let reach = vec2(radius, radius);
+                (min - reach, max + reach)
+            }
+            Self::FootprintSquare { min, max, radius } => {
+                let reach = vec2(radius, radius);
+                (min - reach, max + reach)
+            }
+        }
+    }
+}
+
 fn economy_support_game() -> Game {
     let mut scenario = aftermine_sim::Scenario::skirmish();
     let frames: Vec<_> = scenario
