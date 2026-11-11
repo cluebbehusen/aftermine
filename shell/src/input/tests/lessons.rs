@@ -517,6 +517,8 @@ fn the_build_lesson_plays_as_its_mouse_and_keys_card_says() {
         3,
         "Shift chains them"
     );
+    press(&mut game, &mut input, Key::Escape);
+    assert!(input.placing.is_none(), "Esc stops placing");
     run_to(&mut game, &input, Some("Set a rally point"));
 
     assert!(copy(&game, Pointer::Mouse, true).contains("press Y"));

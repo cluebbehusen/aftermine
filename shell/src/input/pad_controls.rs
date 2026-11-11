@@ -84,11 +84,6 @@ pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button:
         }
         PadButton::LeftTrigger => {
             input.queue_pads.remove(&pad);
-            if !input.queue_held() {
-                let placing = input.placing.is_some();
-                input.queue_released();
-                placed(input, placing);
-            }
         }
         _ => {}
     }
@@ -96,15 +91,11 @@ pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button:
 
 /// A placement a controller ended returns to the selection. Pad mode
 /// draws no palette, so one left open would blank the panel and turn Y
-/// into the build ring. Out of pad mode, as after a mouse placement made
-/// under a held LT, the palette is drawn and stays. An open build ring
-/// keeps it too, as LT let go over one leaves it: that ring closes
-/// construction as it closes.
+/// into the build ring. Out of pad mode the palette is drawn, so it stays.
 fn placed(input: &mut InputState, placing: bool) {
     if placing
         && input.placing.is_none()
         && super::hud_in_pad_mode(crate::platform::PLATFORM, input.pad_in_use.is_some())
-        && !super::pad_ring::building(input.ring.as_ref())
     {
         input.close_construction();
     }

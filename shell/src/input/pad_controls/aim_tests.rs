@@ -121,7 +121,7 @@ fn a_camera_jump_under_a_held_a_lays_nothing_on_the_way() {
 }
 
 #[test]
-fn a_held_left_trigger_keeps_placing_until_it_is_let_go() {
+fn a_held_left_trigger_queues_and_a_plain_a_after_it_ends_placement() {
     let (mut game, mut input) = placing(BARRICADE);
     feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
     rest_on(&mut game, &mut input, vec2(28.5, 18.5));
@@ -135,7 +135,13 @@ fn a_held_left_trigger_keeps_placing_until_it_is_let_go() {
     assert!(input.placing.is_some(), "a held LT keeps placing");
     assert!(input.build_menu);
     feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
-    assert!(input.placing.is_none(), "letting go ends the chain");
+    assert!(input.placing.is_some(), "letting go keeps placing");
+    assert!(input.build_menu);
+
+    rest_on(&mut game, &mut input, vec2(26.5, 18.5));
+    press(&mut game, &mut input, PadButton::South);
+    assert_eq!(builds(&game)[2..], [(TilePos::new(26, 18), false)]);
+    assert!(input.placing.is_none(), "a plain A ends placement");
     assert!(!input.construction_open(), "and closes construction");
 }
 

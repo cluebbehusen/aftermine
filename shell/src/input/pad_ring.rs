@@ -401,7 +401,7 @@ fn dismiss(input: &mut InputState) {
 
 /// Whether `open` stands in the build rings, whose palette closes with
 /// them.
-pub(super) fn building(open: Option<&PadRing>) -> bool {
+fn building(open: Option<&PadRing>) -> bool {
     open.is_some_and(|open| open.path.contains(&Branch::Build))
 }
 
