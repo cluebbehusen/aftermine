@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from tools import gen_sprites as gen
+from tools import sprite_kit as kit
 
 Registry = dict[str, Image.Image]
 
@@ -42,7 +42,7 @@ HULL_OPACITY = (96, 160, 224)
 
 def complete_hull(registry: Registry, stem: str, variant: str) -> Image.Image:
     """Returns the recognizable final hull, including a defense's mount."""
-    tag = gen.variant_tag(variant)
+    tag = kit.variant_tag(variant)
     hull = registry[f"{stem}{tag}"].convert("RGBA").copy()
     if mount_stem := DEFENSE_MOUNTS.get(stem):
         hull.alpha_composite(registry[f"{mount_stem}{tag}"].convert("RGBA"))
@@ -87,8 +87,8 @@ def construction_frame(
     top = _scaled(8, scale)
     bottom = height - _scaled(6, scale)
     crossbars = (_scaled(9, scale), _scaled(32, scale), height - _scaled(7, scale))
-    scaffold = (*gen.IRON_LIGHT, 232)
-    scaffold_shadow = (*gen.IRON_DARK, 244)
+    scaffold = (*kit.IRON_LIGHT, 232)
+    scaffold_shadow = (*kit.IRON_DARK, 244)
 
     for x in (left_post, right_post):
         draw.line((x, top, x, bottom), fill=scaffold_shadow, width=post_width + 2)
@@ -104,7 +104,7 @@ def construction_frame(
     contact_x = right_post - _scaled(8, scale)
     contact_y = crossbars[1] + _scaled(8, scale)
     contact_radius = max(1, _scaled(2, scale))
-    contact = gen.SCRAP_LIGHT if phase else gen.SCRAP_DARK
+    contact = kit.SCRAP_LIGHT if phase else kit.SCRAP_DARK
     draw.rectangle(
         (
             contact_x - contact_radius,
@@ -118,12 +118,12 @@ def construction_frame(
         spark = max(2, _scaled(3, scale))
         draw.line(
             (contact_x - spark, contact_y, contact_x + spark, contact_y),
-            fill=(*gen.SCRAP_LIGHT, 255),
+            fill=(*kit.SCRAP_LIGHT, 255),
             width=max(1, _scaled(1, scale)),
         )
         draw.line(
             (contact_x, contact_y - spark, contact_x, contact_y + spark),
-            fill=(*gen.PALETTES[variant]["light"], 255),
+            fill=(*kit.PALETTES[variant]["light"], 255),
             width=max(1, _scaled(1, scale)),
         )
     return frame
@@ -132,11 +132,11 @@ def construction_frame(
 def install_finalized_construction(registry: Registry, out: Path) -> None:
     """Installs the shared full-hull construction treatment."""
     out.mkdir(parents=True, exist_ok=True)
-    for variant in gen.PALETTES:
+    for variant in kit.PALETTES:
         for stem in BUILDING_STEMS:
             for stage in range(3):
                 for phase in range(2):
-                    name = f"{stem}{gen.variant_tag(variant)}_site{stage}_{phase}"
+                    name = f"{stem}{kit.variant_tag(variant)}_site{stage}_{phase}"
                     frame = construction_frame(registry, stem, variant, stage, phase)
-                    gen.save_sprite(frame, out, name)
+                    kit.save_sprite(frame, out, name)
                     registry[name] = frame

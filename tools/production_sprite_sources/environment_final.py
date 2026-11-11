@@ -8,16 +8,17 @@ from pathlib import Path
 
 from PIL import Image
 
-from tools import gen_sprites as gen
 from tools.production_sprite_sources import quarry_final
+from tools.production_sprite_sources.mechanical_final import install_props
 
 Registry = dict[str, Image.Image]
 
 
-def install_finalized_environment(registry: Registry, out: Path) -> None:
-    """Install every approved environment sprite into the production bank."""
+def install_finalized_environment(
+    registry: Registry, out: Path, ground_controls: Registry
+) -> None:
+    """Install every approved environment sprite into the production bank,
+    painting the finished ground over the plain `ground_controls`."""
 
-    quarry_final.install_quarry(registry, out, gen.GROUND_CONTROLS)
-    from tools.production_sprite_sources.mechanical_final import install_props
-
+    quarry_final.install_quarry(registry, out, ground_controls)
     install_props(registry, out)

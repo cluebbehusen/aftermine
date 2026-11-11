@@ -4,25 +4,27 @@ import math
 
 from PIL import Image
 
-from tools import gen_sprites as gen
-from tools.production_sprite_sources.mechanical_ground import (
+from tools import sprite_kit as kit
+from tools.production_sprite_sources.mechanical_ground import LIGHT
+from tools.sprite_kit import (
+    BRASS,
     DARK,
     DEEP,
     EDGE,
     IRON,
-    LIGHT,
     STEEL,
     VOID,
+    bolt,
     box,
     canvas,
     circle,
     finish,
     line,
+    plate,
     poly,
     vent,
 )
 
-BRASS = (130, 105, 66)
 HOT = (187, 109, 53)
 EMBER = (84, 44, 28)
 SPARK = (255, 214, 140)
@@ -32,45 +34,6 @@ AIRWORKS_SEAM = {1: EMBER, 2: (140, 82, 44)}
 AIRWORKS_DOOR_GAP = {0: 0, 1: 0, 2: 0, 3: 10, 4: 24}
 AIRWORKS_ARM_FOLD = {0: 0, 1: 0, 2: 0, 3: 8, 4: 15}
 AIRWORKS_LAMPS = {0: (), 1: (29,), 2: (91,), 3: (29, 91), 4: (29, 91)}
-
-
-def plate(d, bounds, fill=DARK, cut=5):
-    x, y, r, b = bounds
-    pts = [
-        (x + cut, y),
-        (r - cut, y),
-        (r, y + cut),
-        (r, b - cut),
-        (r - cut, b),
-        (x + cut, b),
-        (x, b - cut),
-        (x, y + cut),
-    ]
-    poly(d, pts, VOID)
-    poly(
-        d,
-        [
-            (x + cut, y + 2),
-            (r - cut, y + 2),
-            (r - 2, y + cut),
-            (r - 2, b - cut),
-            (r - cut, b - 2),
-            (x + cut, b - 2),
-            (x + 2, b - cut),
-            (x + 2, y + cut),
-        ],
-        fill,
-    )
-    line(
-        d,
-        [(x + 2, b - cut), (x + 2, y + cut), (x + cut, y + 2), (r - cut, y + 2)],
-        EDGE,
-    )
-
-
-def bolt(d, x, y):
-    box(d, (x - 2, y - 2, x + 2, y + 2), VOID, 1)
-    box(d, (x - 1, y - 1, x + 1, y), STEEL)
 
 
 def ram(d, a, b, size=5):
@@ -119,7 +82,7 @@ SPARKS = {
 
 def foundry(variant, work=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     # Short foundation feet and a broad rear beam anchor the assembly bed.
     plate(d, (8, 24, 120, 114), DEEP, 9)
     plate(d, (37, 7, 89, 37), DEEP, 5)
@@ -149,7 +112,7 @@ def foundry(variant, work=0):
     for x in (51, 59, 67):
         box(d, (x, 18, x + 5, 26), EMBER, 1)
         box(d, (x + 1, 21, x + 4, 26), HOT)
-        line(d, [(x + 1, 25), (x + 4, 25)], gen.SCRAP)
+        line(d, [(x + 1, 25), (x + 4, 25)], kit.SCRAP)
     box(d, (57, 28, 70, 42), DARK, 1)
     line(d, [(59, 30), (59, 40)], BRASS)
     # A machine under assembly, clamped into the bed.
@@ -190,7 +153,7 @@ def foundry(variant, work=0):
 
 def fabricator(variant, work=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     # Offset tool tower and horizontal feed explain the asymmetric footprint.
     poly(
         d,
@@ -358,7 +321,7 @@ def airworks_door(d, side, gap, paint):
 
 def airworks(variant, work=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     foundation(d, (9, 12, 119, 119))
     airworks_tank(d, 12, paint)
     airworks_tank(d, 105, paint)
@@ -376,7 +339,7 @@ def airworks(variant, work=0):
 
 def crucible(variant, work=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     # A pressure vessel in a square buttress, with a rear heat exchanger.
     foundation(d)
     plate(d, (18, 13, 110, 38), DARK, 5)
@@ -465,7 +428,7 @@ def repair_bay_cabinet(d, bounds, mount, drawers, paint, shade):
 
 def repair_bay(variant, work=0):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     poly(
         d,
         [
@@ -534,7 +497,7 @@ def repair_bay(variant, work=0):
 
 def array(variant, work=0, tier=0, part=None):
     im, d = canvas()
-    paint = gen.PALETTES[variant]["dark"]
+    paint = kit.PALETTES[variant]["dark"]
     foundation(d, (17, 19, 111, 110))
     plate(d, (23, 76, 105, 104), DARK, 4)
     box(d, (30, 83, 57, 96), paint, 2)

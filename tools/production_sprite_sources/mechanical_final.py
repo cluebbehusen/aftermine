@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from tools import gen_sprites as gen
+from tools import sprite_kit as kit
 from tools.production_sprite_sources import (
     mechanical_aircraft as aircraft,
 )
@@ -40,11 +40,11 @@ def install_machines(registry: dict[str, Image.Image], out: Path) -> None:
     """Install idle, movement, action and independently articulated layers."""
 
     def put(key, image):
-        gen.save_sprite(image, out, key)
+        kit.save_sprite(image, out, key)
         registry[key] = image
 
-    for variant in gen.PALETTES:
-        tag = gen.variant_tag(variant)
+    for variant in kit.PALETTES:
+        tag = kit.variant_tag(variant)
         for kind in (
             "sentinel",
             "warden",

@@ -5,16 +5,17 @@ from pathlib import Path
 
 from PIL import Image
 
-from tools import gen_sprites as gen
-from tools.production_sprite_sources.installed_defenses_final import bolt
-from tools.production_sprite_sources.specialists_final import (
+from tools import sprite_kit as kit
+from tools.sprite_kit import (
+    BRASS,
     DARK,
     EDGE,
     IRON,
     VOID,
+    bolt,
     box,
     canvas,
-    circle,
+    disk,
     finish,
     line,
     panel,
@@ -27,17 +28,12 @@ from tools.production_sprite_sources.specialists_final import (
 RADAR_UNFOLD_FRAMES = 40
 RADAR_SCAN_FRAMES = 80
 PAINT = {"base": (196, 87, 59), "probe": (53, 157, 179)}
-BRASS = (130, 105, 66)
 LIGHT = (225, 205, 163)
 
 
 def smooth(t):
     t = max(0, min(1, t))
     return t * t * (3 - 2 * t)
-
-
-def disk(d, x, y, r, c):
-    circle(d, (x - r, y - r, x + r, y + r), c)
 
 
 def brace(d, a, b, w=5):
@@ -157,10 +153,10 @@ def render_surveyor(
 
 def install_surveyor(registry: dict[str, Image.Image], out: Path) -> None:
     """Install the folded drive loop, unfold, and four-second dish rotation."""
-    for variant in gen.PALETTES:
-        stem = f"surveyor{gen.variant_tag(variant)}"
+    for variant in kit.PALETTES:
+        stem = f"surveyor{kit.variant_tag(variant)}"
         rig = "rig_surveyor"
-        tag = gen.variant_tag(variant)
+        tag = kit.variant_tag(variant)
         frames = {
             stem: render_surveyor(variant),
             f"{rig}_hull{tag}": _pack(_chassis(variant, 0)),
@@ -171,7 +167,7 @@ def install_surveyor(registry: dict[str, Image.Image], out: Path) -> None:
         # The rig draws the hull and the mount below, never a whole-body
         # action frame, so none is shipped.
         for key, image in frames.items():
-            gen.save_sprite(image, out, key)
+            kit.save_sprite(image, out, key)
             registry[key] = image
 
     mounts = {"": _pack(_reflector(0, 0), rim=False)}
@@ -187,5 +183,5 @@ def install_surveyor(registry: dict[str, Image.Image], out: Path) -> None:
     for suffix, image in mounts.items():
         for tag, layer in (("", image), ("_accent", Image.new("RGBA", image.size))):
             key = f"rig_surveyor_mount{tag}{suffix}"
-            gen.save_sprite(layer, out, key)
+            kit.save_sprite(layer, out, key)
             registry[key] = layer
