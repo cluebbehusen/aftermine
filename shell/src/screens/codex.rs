@@ -472,7 +472,7 @@ fn building_notes(kind: BuildingKind) -> Vec<String> {
             notes.push(format!("{} reveal it.", series(&charge_finders())));
         }
         BuildingKind::Array => notes.push(format!(
-            "Its radar reaches {} tiles. It reveals Scuttle Charges within {} tiles.",
+            "Its radar reaches {} tiles. It reveals Scuttle Charges within {} tiles where you also have sight.",
             base.radar.unwrap_or(0),
             aftermine_sim::stats::CHARGE_BASE_ARRAY_DETECT_RADIUS
         )),
@@ -590,7 +590,7 @@ fn upgrade_figures(kind: BuildingKind, tier: u8) -> Vec<String> {
             60 * u64::from(aftermine_sim::TICKS_PER_SECOND) / aftermine_sim::stats::REFINERY_PERIOD
         )),
         BuildingKind::Array => figures.push(format!(
-            "reveals Scuttle Charges within {} tiles",
+            "reveals Scuttle Charges within {} tiles where you also have sight",
             aftermine_sim::stats::CHARGE_ARRAY_DETECT_RADIUS
         )),
         _ => {}
