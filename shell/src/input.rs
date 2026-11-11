@@ -762,7 +762,7 @@ pub(crate) fn available_construction_scrap(
                     .construction_refund(game.presentation.human, replaced),
             );
     }
-    game.state.inspect_command_phase(game.pending, |view| {
+    game.with_staged(|view| {
         view.scrap(game.presentation.human)
             .unwrap_or(0)
             .saturating_add(view.construction_refund(game.presentation.human, replaced))
@@ -2219,19 +2219,22 @@ pub(crate) mod pad_ring;
 mod paint;
 pub(crate) use paint::{painting, preview as paint_preview};
 pub(crate) use select::Kept;
+#[cfg(test)]
+mod funnel_tests;
 pub(crate) mod reticle;
 mod select;
+
 #[cfg(test)]
 mod tests;
 mod touch;
 
 use dispatch::dispatch_action;
 use orders::{OrderReach, context_order, rally_at, rally_producers, rally_selected_producers};
-pub(crate) use select::army_units;
 pub use select::idle_harvesters;
 use select::{
     Reach, box_select, click_on_hud, click_select, cycle_idle_worker, select_all_of_kind_on_screen,
 };
+pub(crate) use select::{army_units, boxed_own_units};
 pub use touch::update_touch;
 pub(crate) use touch::{
     Pair, TOUCH_REST_MS, TouchBorn, TouchPoint, card_press_progress, group_press_progress,
@@ -2509,11 +2512,19 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                     // applies: an inspected ally or enemy takes no
                     // orders from the minimap either.
                     if !units.is_empty() && game.selection_commandable() {
-                        game.issue(Command::Advance {
-                            units,
-                            goal: tile,
-                            queue,
-                        });
+                        if orders::all_scout(game, &units) {
+                            game.issue(Command::Scout {
+                                units,
+                                goal: tile,
+                                queue,
+                            });
+                        } else {
+                            game.issue(Command::Advance {
+                                units,
+                                goal: tile,
+                                queue,
+                            });
+                        }
                         game.presentation
                             .ping_order(tile_center(tile), PingKind::Move, queue);
                     } else if units.is_empty() {
@@ -2678,10 +2689,10 @@ pub(super) fn world_order(
     }
 }
 
-/// A press on the ribbon row: QUEUE toggles, and the ribbon cancels its
-/// mode but keeps the selection. A patrol's ribbon is the exception: its
-/// Start and cross act, and its words do nothing, so a press meant for
-/// Start never throws the route away. It runs before every other target,
+/// A press on the ribbon row: QUEUE toggles, the ribbon's cross cancels its
+/// mode but keeps the selection, and its steppers and Start act. Its words
+/// do nothing, so a press meant for a button never throws the mode away,
+/// and it reaches nothing under them. It runs before every other target,
 /// for mouse and touch alike.
 pub(super) fn ribbon_row_press(
     game: &mut Game,
@@ -2718,19 +2729,14 @@ pub(super) fn ribbon_row_press(
                 .sounds_pending
                 .push((crate::game::SoundKind::Click, None));
         }
-    } else if hits(layout.patrol_cancel) {
-        input.patrol_route = None;
-        game.presentation
-            .sounds_pending
-            .push((crate::game::SoundKind::Click, None));
-    } else if input.patrol_route.is_some() && hits(layout.mode_ribbon) {
-        // The words of a patrol's ribbon only name the route.
-    } else if hits(layout.mode_ribbon) {
+    } else if hits(layout.ribbon_cancel) {
         if input.cancel_armed_mode() {
             game.presentation
                 .sounds_pending
                 .push((crate::game::SoundKind::Click, None));
         }
+    } else if hits(layout.mode_ribbon) {
+        // The ribbon's words only name the mode.
     } else {
         return false;
     }

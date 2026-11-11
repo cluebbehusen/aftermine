@@ -5,7 +5,37 @@
 //! networked order is still on its way, names an order in the program that
 //! command will actually edit.
 
-use aftermine_sim::{Building, BuildingId, Order, PlayerCommand, State, Tick, Unit, UnitId};
+use aftermine_sim::{
+    Building, BuildingId, CommandPhase, CommandPhaseView, Order, PlayerCommand, State, Tick, Unit,
+    UnitId,
+};
+
+/// The world as the staged commands leave it, shared by every read of it
+/// until a tick or another staged command: the staged batch only grows, or
+/// drains along with a tick, so its length tells its versions apart.
+pub(crate) struct StagedPhase {
+    tick: Tick,
+    pending: usize,
+    phase: CommandPhase,
+}
+
+impl StagedPhase {
+    pub(super) fn capture(state: &State, pending: &[PlayerCommand]) -> Self {
+        Self {
+            tick: state.current_tick(),
+            pending: pending.len(),
+            phase: state.command_phase(pending),
+        }
+    }
+
+    pub(super) fn is_current(&self, tick: Tick, pending: usize) -> bool {
+        self.tick == tick && self.pending == pending
+    }
+
+    pub(super) fn view(&self) -> CommandPhaseView<'_> {
+        self.phase.view()
+    }
+}
 
 /// One unit's order program, active order first.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,13 +91,18 @@ impl Projection {
         })
     }
 
-    /// Projects `units` through `pending`. Only a staged batch needs the
-    /// command phase; otherwise the programs are the world's own.
-    pub(super) fn capture(state: &State, pending: &[PlayerCommand], units: Vec<UnitId>) -> Self {
-        let (programs, sites) = if pending.is_empty() {
-            (programs(&units, |id| state.unit(id)), Vec::new())
-        } else {
-            state.inspect_command_phase(pending, |view| {
+    /// Projects `units` through the `pending` commands, whose command phase
+    /// `staged` reads. Only a staged batch needs it; otherwise the programs
+    /// are the world's own.
+    pub(super) fn capture(
+        state: &State,
+        pending: usize,
+        staged: Option<CommandPhaseView<'_>>,
+        units: Vec<UnitId>,
+    ) -> Self {
+        let (programs, sites) = match staged {
+            None => (programs(&units, |id| state.unit(id)), Vec::new()),
+            Some(view) => {
                 let programs = programs(&units, |id| view.unit(id));
                 let sites = view
                     .buildings()
@@ -80,12 +115,12 @@ impl Projection {
                     .cloned()
                     .collect();
                 (programs, sites)
-            })
+            }
         };
         Self {
             captured: Some(Captured {
                 tick: state.current_tick(),
-                pending: pending.len(),
+                pending,
                 units,
             }),
             programs,
@@ -125,3 +160,6 @@ fn programs<'u>(
     programs.dedup_by_key(|(id, _)| *id);
     programs
 }
+
+#[cfg(test)]
+mod tests;

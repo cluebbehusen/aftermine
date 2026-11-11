@@ -284,6 +284,18 @@ fn a_group_holds_units_or_buildings_and_drops_what_is_not_yours() {
         Some("Only your own structures join a control group")
     );
 
+    // Assigning over a saved group while inspecting a foreign pick keeps it.
+    let foundry = own_buildings(&game, Some(BuildingKind::Foundry));
+    game.presentation.selection.buildings.clone_from(&foundry);
+    dispatch_action(&mut game, &mut input, Action::AssignGroup(2));
+    game.presentation.selection.buildings = vec![enemy];
+    dispatch_action(&mut game, &mut input, Action::AssignGroup(2));
+    assert_eq!(
+        input.groups[1],
+        Group::Buildings(foundry),
+        "a refused assign leaves the saved group"
+    );
+
     // A building group replaced by units holds only the units.
     let turret = own_buildings(&game, Some(BuildingKind::Turret));
     game.presentation.selection.buildings.clone_from(&turret);

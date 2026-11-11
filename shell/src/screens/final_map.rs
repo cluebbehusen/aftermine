@@ -2,7 +2,7 @@
 
 use crate::action::{Action, ActionResolver, BindingMap, Context};
 use crate::camera::controls::{
-    MinimapPoint, RemoteCamera, ViewerHands, ViewerPads, event_point, held_pan, pan_toward,
+    MinimapPoint, RemoteCamera, ViewerHands, ViewerPads, held_pan, pan_toward,
 };
 use crate::game::Game;
 use crate::hint_line::HintLine;
@@ -72,9 +72,11 @@ impl FinalMapScreen {
                 } => return true,
                 _ => {
                     let minimap =
-                        event_point(event).map_or_else(MinimapPoint::default, |p| MinimapPoint {
-                            under: render::minimap_world_at(&game.view(), p),
-                            clamped: render::minimap_world_clamped(&game.view(), p),
+                        crate::press::position(event).map_or_else(MinimapPoint::default, |p| {
+                            MinimapPoint {
+                                under: render::minimap_world_at(&game.view(), p),
+                                clamped: render::minimap_world_clamped(&game.view(), p),
+                            }
                         });
                     self.hands.pointer(
                         event,

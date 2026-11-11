@@ -522,6 +522,40 @@ fn arriving_at_the_source_ends_a_route_hold() {
 }
 
 #[test]
+fn a_harvest_reports_the_piece_that_empties_its_node() {
+    let scenario = serde_json::json!({
+        "name": "last-piece", "mode": "sandbox",
+        "map": [".....", "..s..", "....."],
+        "players": [{"name": "F", "scrap": 0, "bot": false}],
+        "units": [{"player": 0, "kind": "harvester", "x": 3, "y": 1}]
+    });
+    let mut state = Scenario::from_json(&scenario.to_string())
+        .unwrap()
+        .build()
+        .unwrap();
+    let node = TilePos::new(2, 1);
+    while state.map.extract_scrap(node).is_some_and(|left| left > 2) {}
+    let worker = state.units[0].id;
+    let stats = UnitKind::Harvester.stats();
+    let ticks_per_scrap = stats.harvest.expect("a harvester harvests").ticks_per_scrap;
+    state.units[0].pos =
+        crate::geometry::work_approach_point(node.offset(1, 0), node, (1, 1), stats.radius);
+    let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
+    let chip = |state: &mut State| {
+        state.units[0].progress = ticks_per_scrap - 1;
+        harvest(state, &danger, worker, node, node, false, &mut Vec::new())
+    };
+    assert!(!chip(&mut state), "a piece is left");
+    assert_eq!(
+        state.map.scrap_at(node),
+        1,
+        "premise: the harvester chipped"
+    );
+    assert!(chip(&mut state), "the last piece opens the tile");
+    assert_eq!(state.map.scrap_at(node), 0);
+}
+
+#[test]
 fn mirrored_workers_replace_depleted_sources_in_their_local_frame() {
     let mirror = |pos: TilePos| TilePos::new(39 - pos.x, 23 - pos.y);
     let anchor = TilePos::new(7, 3);

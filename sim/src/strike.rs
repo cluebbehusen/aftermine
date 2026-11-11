@@ -11,21 +11,54 @@ use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use serde::{Deserialize, Serialize};
 
-/// A magazine building's rounds as one seat may know them: loaded rounds
-/// and a silo's deck are physical and show wherever the building is in
-/// sight; orders, assembly and the held strike stay with its team.
+/// A magazine building's rounds as one seat may know them. Loaded rounds,
+/// the round taking shape and a silo's deck are physical and show wherever
+/// the building is in sight; how many rounds are ordered, autofill and the
+/// held strike stay with its team.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KnownMagazine {
     /// The Spire or Lattice.
     pub building: BuildingId,
     /// Rounds ready.
     pub loaded: u8,
-    /// A silo's deck facing.
+    /// Ticks of work on the round being assembled, while one is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub heading: Option<u8>,
+    pub assembly: Option<u32>,
+    /// A silo's launch deck.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deck: Option<KnownDeck>,
     /// The team's own detail; `None` for a hostile building.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<MagazineDetail>,
+}
+
+impl KnownMagazine {
+    /// What anyone with `b` in sight sees of its magazine; `None` for a
+    /// building without one.
+    pub fn in_sight(b: &Building) -> Option<Self> {
+        let magazine = b.magazine?;
+        Some(Self {
+            building: b.id,
+            loaded: magazine.loaded,
+            assembly: (magazine.ordered > 0).then_some(magazine.progress),
+            deck: b.launcher.map(|launcher| KnownDeck {
+                heading: launcher.heading,
+                ready: launcher.ready,
+            }),
+            detail: None,
+        })
+    }
+}
+
+/// A silo's launch deck as anyone in sight sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KnownDeck {
+    /// Its facing.
+    pub heading: u8,
+    /// Ticks it has stood aligned on its strike, which its locks show
+    /// releasing.
+    #[serde(default, skip_serializing_if = "crate::is_default")]
+    pub ready: u8,
 }
 
 /// A team's own view of one of its magazines.
@@ -33,8 +66,6 @@ pub struct KnownMagazine {
 pub struct MagazineDetail {
     /// Paid rounds not yet assembled.
     pub ordered: u8,
-    /// Ticks of work on the round being assembled.
-    pub progress: u32,
     /// Whether it orders rounds on its own.
     pub autofill: bool,
     /// A silo's ordered strike, not yet launched.
@@ -96,15 +127,12 @@ impl State {
                     return None;
                 }
                 Some(KnownMagazine {
-                    building: b.id,
-                    loaded: magazine.loaded,
-                    heading: b.launcher.map(|launcher| launcher.heading),
                     detail: own_team.then(|| MagazineDetail {
                         ordered: magazine.ordered,
-                        progress: magazine.progress,
                         autofill: magazine.autofill,
                         target: b.launcher.and_then(|launcher| launcher.target),
                     }),
+                    ..KnownMagazine::in_sight(b)?
                 })
             })
             .collect()

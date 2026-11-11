@@ -65,7 +65,8 @@ pub(super) fn dispatch_action(
             if slot < input.groups.len() {
                 let own = super::Group::of_selection(&game.view());
                 let selection = &game.presentation.selection;
-                if own.len() < selection.units.len().max(selection.buildings.len()) {
+                let picked = selection.units.len().max(selection.buildings.len());
+                if own.len() < picked {
                     game.presentation.toast(match own {
                         super::Group::Units(_) => "Only your own units join a control group",
                         super::Group::Buildings(_) => {
@@ -78,7 +79,9 @@ pub(super) fn dispatch_action(
                 {
                     tutorial.note_group();
                 }
-                input.groups[slot] = own;
+                if picked == 0 || !own.is_empty() {
+                    input.groups[slot] = own;
+                }
             }
         }
         Action::ReturnCargo => {

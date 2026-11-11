@@ -39,7 +39,9 @@ const SKYHOOK_ACTION_TICKS: f32 = 8.0;
 const ROC_HATCH_TICKS: f32 = 16.0;
 const REPAIR_PULSE_TICKS: f32 = 12.0;
 const AIRWORKS_LAUNCH_TICKS: u64 = 16;
-const AIRWORKS_OPEN_TICKS: u32 = 12;
+/// The bay's opening is a fact anyone in sight may know, so its window is
+/// the one the fog-honest projections report.
+const AIRWORKS_OPEN_TICKS: u32 = aftermine_sim::observation::AIRWORKS_BAY_TICKS;
 pub(crate) const FLAKHOUND_REPORT_TICKS: f32 = 2.0;
 pub(crate) const FLAK_TURRET_REPORT_TICKS: f32 = 3.0;
 

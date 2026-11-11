@@ -576,6 +576,39 @@ fn a_modifier_held_on_another_screen_still_captures_its_chord() -> Result<()> {
     Ok(())
 }
 
+/// Waits until the settings file under `home` binds `key` to `action` in
+/// either slot. The shell writes settings off its frame thread, so killing it
+/// the moment a row shows a change could lose the write.
+fn wait_for_saved_binding(home: &std::path::Path, key: &str, action: &str) -> Result<()> {
+    let saved = || {
+        [
+            "Library/Application Support/Aftermine",
+            ".config/aftermine",
+            "AppData/Aftermine",
+        ]
+        .iter()
+        .filter_map(|dir| std::fs::read(home.join(dir).join("config.json")).ok())
+        .filter_map(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .any(|config| {
+            ["bindings", "secondary"].iter().any(|slot| {
+                config["bindings"][slot].as_array().is_some_and(|bindings| {
+                    bindings.iter().any(|binding| {
+                        binding["chord"]["key"] == key && binding["action"] == action
+                    })
+                })
+            })
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !saved() {
+        if Instant::now() >= deadline {
+            bail!("the settings file never bound {key} to {action}");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    Ok(())
+}
+
 #[test]
 #[ignore = "spawns a real window; run explicitly in the phase battery"]
 fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction() -> Result<()> {
@@ -591,6 +624,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
         rows.iter().any(|row| row.contains("Pan up: W | [I]")),
         "{rows:?}"
     );
+    wait_for_saved_binding(&guard.home, "i", "PanUp")?;
     drop(client);
     drop(guard.shell.take());
     let (shell, reconnected) = spawn_shell(&SpawnOptions {

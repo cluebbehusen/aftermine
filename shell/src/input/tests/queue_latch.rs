@@ -104,9 +104,11 @@ fn a_latched_queue_lasts_a_whole_placement_chain() {
     let (mut game, mut input, _) = armed_placement(kind);
     let chip = macroquad::math::Rect::new(160.0, 620.0, 96.0, 44.0);
     let ribbon = macroquad::math::Rect::new(500.0, 620.0, 240.0, 44.0);
+    let cancel = macroquad::math::Rect::new(700.0, 624.0, 36.0, 36.0);
     let mut layout = bare_layout(f32::INFINITY, 0.0);
     layout.queue_toggle = chip;
     layout.mode_ribbon = ribbon;
+    layout.ribbon_cancel = cancel;
     game.presentation.layout.set(layout);
     let foundry = game.state.buildings()[0].anchor;
 
@@ -126,8 +128,8 @@ fn a_latched_queue_lasts_a_whole_placement_chain() {
     assert!(matches!(input.queue_toggle, QueueToggle::Latched { .. }));
     assert!(input.placing.is_some(), "still placing");
 
-    tap_after(&mut game, &mut input, ribbon.center(), 1.0);
-    assert!(input.placing.is_none(), "the ribbon ends placement");
+    tap_after(&mut game, &mut input, cancel.center(), 1.0);
+    assert!(input.placing.is_none(), "the ribbon's cross ends placement");
     assert_eq!(input.queue_toggle, QueueToggle::Off, "and QUEUE with it");
 }
 

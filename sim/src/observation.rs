@@ -20,8 +20,8 @@ use chassis::Tick;
 use chassis::grid::TilePos;
 use serde::{Deserialize, Serialize};
 
-/// Schema version for serialized observation snapshots. Increment it when
-/// fields or their meaning change so tools can reject incompatible data.
+/// Schema version for serialized observation snapshots. It stays fixed
+/// before launch; `docs/versioning.md` says what it will gate after.
 pub const OBSERVATION_VERSION: u32 = 1;
 
 /// An own passenger that remains alive but is unavailable for new assignments.
@@ -166,6 +166,48 @@ pub struct BuildingObs {
     pub tier: u8,
 }
 
+/// Ticks before an aircraft leaves over which an Airworks opens its bay:
+/// opening through the first half, standing open through the second.
+pub const AIRWORKS_BAY_TICKS: u32 = 12;
+
+/// What a producer's machinery shows anyone who sees it at work. The unit
+/// in training and its progress never show, except that an Airworks opens
+/// its bay over the last [`AIRWORKS_BAY_TICKS`] before the aircraft leaves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Works {
+    /// Training the front of its queue.
+    Training,
+    /// An Airworks opening its bay for the aircraft it is finishing.
+    BayOpening,
+    /// An Airworks with its bay open for the aircraft about to leave.
+    BayOpen,
+}
+
+impl Works {
+    /// What `b`'s machinery shows; `None` while it stands idle, as it does
+    /// once its front unit is finished but not yet out.
+    pub fn of(b: &crate::state::Building) -> Option<Self> {
+        if !b.built() {
+            return None;
+        }
+        let unit = *b.queue.front()?;
+        let left = unit
+            .stats()
+            .train_ticks
+            .saturating_sub(b.training_progress());
+        if left == 0 {
+            None
+        } else if b.kind != BuildingKind::Airworks || left > AIRWORKS_BAY_TICKS {
+            Some(Self::Training)
+        } else if left > AIRWORKS_BAY_TICKS / 2 {
+            Some(Self::BayOpening)
+        } else {
+            Some(Self::BayOpen)
+        }
+    }
+}
+
 /// Serializable player knowledge, independent of derived navigation inputs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObservationData {
@@ -247,12 +289,17 @@ pub struct ObservationData {
     /// (y, x).
     pub incoming_shells: Vec<TilePos>,
     /// Magazines this seat may know of, in building-id order: its team's
-    /// in full, hostile ones' loaded rounds and deck while in sight.
+    /// in full, hostile ones' loaded rounds, round in assembly and deck
+    /// while in sight.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub magazines: Vec<crate::strike::KnownMagazine>,
     /// Warheads in flight this seat may know of, in id order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warheads: Vec<crate::strike::KnownWarhead>,
+    /// Producers at work that this seat sees, its own and allied ones
+    /// included, in building-id order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub works: Vec<(BuildingId, Works)>,
 }
 
 impl ObservationData {
@@ -384,6 +431,11 @@ impl ObservationData {
                     seen: true,
                     tier: b.tier,
                 });
+            } else {
+                continue;
+            }
+            if let Some(works) = Works::of(b) {
+                obs.works.push((b.id, works));
             }
         }
         // Retained mines can be memories even on currently visible ground.
@@ -448,14 +500,7 @@ impl ObservationData {
         // Blips carry a tile and a domain only, so they pass through
         // unfiltered.
         obs.blips = vision.contacts().to_vec();
-        obs.incoming_shells = state
-            .shells()
-            .iter()
-            .filter(|s| state.hostile(me, s.player))
-            .map(|s| TilePos::containing(s.impact))
-            .filter(|t| vision.visible(*t))
-            .collect();
-        obs.incoming_shells.sort_by_key(|p| (p.y, p.x));
+        obs.incoming_shells = incoming_shells(state, me);
         obs.magazines = state.known_magazines(me);
         obs.warheads = state.known_warheads(me);
         obs
@@ -497,8 +542,24 @@ impl ObservationData {
             incoming_shells: Vec::new(),
             magazines: Vec::new(),
             warheads: Vec::new(),
+            works: Vec::new(),
         }
     }
+}
+
+/// Impact tiles of the hostile shells in flight whose impact tile `me`
+/// sees, sorted by (y, x).
+pub fn incoming_shells(state: &State, me: PlayerId) -> Vec<TilePos> {
+    let vision = state.vision(me);
+    let mut tiles: Vec<TilePos> = state
+        .shells()
+        .iter()
+        .filter(|shell| state.hostile(me, shell.player))
+        .map(|shell| TilePos::containing(shell.impact))
+        .filter(|tile| vision.visible(*tile))
+        .collect();
+    tiles.sort_by_key(|tile| (tile.y, tile.x));
+    tiles
 }
 
 /// The public buildings hostile to `me`, sorted by (y, x, owner). Own and

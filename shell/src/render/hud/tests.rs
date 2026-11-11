@@ -245,6 +245,137 @@ fn the_placement_ribbon_says_what_a_click_would_do_and_holds_still() {
 }
 
 #[test]
+fn every_armed_ribbon_ends_in_a_cross_clear_of_its_words() {
+    let mut game = skirmish();
+    let human = game.presentation.human;
+    let harvester = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
+        .unwrap()
+        .id;
+    game.presentation.selection.units.push(harvester);
+    let arms: [fn(&mut InputState); 3] = [
+        |input| input.click_verb = Some(crate::input::ClickVerb::Hunt),
+        |input| {
+            input.build_menu = true;
+            input.arm_placement(aftermine_sim::BuildingKind::Turret);
+        },
+        |input| input.patrol_route = Some(Vec::new()),
+    ];
+    for arm in arms {
+        let mut input = InputState::new();
+        arm(&mut input);
+        let hud = layout(
+            &game.view(),
+            &input,
+            &BindingMap::classic(),
+            env(1133.0, 744.0),
+            None,
+            &fixed,
+        );
+        let ribbon = hud.geometry.ribbon.expect("an armed mode shows its ribbon");
+        let cancel = ribbon.cancel;
+        assert_eq!(hud.layout.ribbon_cancel, cancel);
+        assert!(
+            ribbon.rect.contains(cancel.center()) && cancel.right() <= ribbon.rect.right(),
+            "{cancel:?} in {:?}",
+            ribbon.rect
+        );
+        let words = ribbon.rect.x
+            + 10.0
+            + fixed(Face::Body, &ribbon.label, crate::theme::Type::Label.at(1.0));
+        assert!(
+            words <= cancel.x,
+            "{}: {words} runs into {cancel:?}",
+            ribbon.label
+        );
+    }
+}
+
+#[test]
+fn a_lesson_card_holds_a_full_dock_under_it_at_the_floor_size() {
+    use crate::tutorial::{CoachLine, Lesson, Tutorial};
+    let mut scenario = aftermine_sim::Scenario::skirmish();
+    scenario.players[0].scrap = 5000;
+    let mut game = Game::with_viewport(scenario, vec2(1133.0, 744.0)).unwrap();
+    let human = game.presentation.human;
+    let foundry = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.player == human)
+        .unwrap()
+        .id;
+    let train = aftermine_sim::PlayerCommand {
+        player: human,
+        command: aftermine_sim::Command::Train {
+            building: foundry,
+            kind: aftermine_sim::UnitKind::Harvester,
+        },
+    };
+    game.state
+        .tick(&vec![train; aftermine_sim::stats::QUEUE_CAP]);
+    game.presentation.selection.buildings.push(foundry);
+    let env = env(1133.0, 744.0);
+    let input = InputState::new();
+    // The tallest card any step shows with its red coach line, and one
+    // folded.
+    let card = |coach: Option<&CoachLine>, folded: bool| {
+        Lesson::ALL
+            .into_iter()
+            .flat_map(|lesson| {
+                let tutorial = Tutorial::begin_at(lesson, vec2(1133.0, 744.0))
+                    .unwrap()
+                    .tutorial
+                    .unwrap();
+                (0..lesson.steps().len()).map(move |at| {
+                    let mut tutorial = tutorial.clone().at_step(at);
+                    if folded {
+                        tutorial.toggle_collapsed();
+                    }
+                    crate::render::tutorial_card::layout(
+                        &tutorial,
+                        coach,
+                        &BindingMap::classic(),
+                        crate::platform::Hands::at_launch(crate::platform::Platform::Desktop),
+                        env,
+                        &fixed,
+                        crate::input::HudHands::Pointer,
+                    )
+                    .rect
+                })
+            })
+            .max_by(|a, b| a.bottom().total_cmp(&b.bottom()))
+            .unwrap()
+    };
+    let tall = card(Some(&CoachLine::Recovery), false);
+    let folded = card(None, true);
+    let mut stops = Vec::new();
+    for card in [tall, folded] {
+        let scene = crate::game::Scene {
+            corner_card: Some(card),
+            ..game.view()
+        };
+        let hud = layout(&scene, &input, &BindingMap::classic(), env, None, &fixed);
+        let (stop, _) = hud.layout.queue_stop;
+        assert!(stop.w > 0.0, "a queue offers Stop");
+        assert_eq!(hud.layout.queue_count, aftermine_sim::stats::QUEUE_CAP);
+        for (rect, _) in std::iter::once(&hud.layout.queue_stop)
+            .chain(&hud.layout.queue_slots[..hud.layout.queue_count])
+        {
+            assert!(rect.y >= card.bottom(), "{rect:?} under {card:?}");
+        }
+        stops.push(stop);
+    }
+    assert!(
+        stops[1].y < stops[0].y,
+        "a folded card gives the dock its room back"
+    );
+}
+
+#[test]
 fn the_patrol_ribbon_holds_still_and_lights_start_once_it_has_a_point() {
     let game = skirmish();
     let mut input = InputState::new();
@@ -261,26 +392,26 @@ fn the_patrol_ribbon_holds_still_and_lights_start_once_it_has_a_point() {
         assert_eq!(hud.layout.mode_ribbon, ribbon.rect);
         let buttons = ribbon.patrol.expect("patrol buttons");
         assert_eq!(hud.layout.patrol_start, buttons.start);
-        assert_eq!(hud.layout.patrol_cancel, buttons.cancel);
-        (ribbon.rect, buttons)
+        assert_eq!(hud.layout.ribbon_cancel, ribbon.cancel);
+        (ribbon.rect, buttons, ribbon.cancel)
     };
     input.patrol_route = Some(Vec::new());
-    let (empty, waiting) = ribbon(&input);
+    let (empty, waiting, cancel) = ribbon(&input);
     assert!(!waiting.ready, "Start waits for a point");
-    for button in [waiting.start, waiting.cancel] {
+    for button in [waiting.start, cancel] {
         assert!(empty.contains(button.center()), "{button:?} in {empty:?}");
         assert!(button.h <= empty.h);
     }
-    assert!(waiting.start.right() < waiting.cancel.x);
+    assert!(waiting.start.right() < cancel.x);
 
     input.patrol_route = Some(vec![chassis::grid::TilePos::new(3, 3)]);
-    let (one, ready) = ribbon(&input);
+    let (one, ready, _) = ribbon(&input);
     assert!(ready.ready);
     input.patrol_route = Some(vec![
         chassis::grid::TilePos::new(3, 3);
         aftermine_sim::stats::ORDER_QUEUE_CAP
     ]);
-    let (full, _) = ribbon(&input);
+    let (full, _, _) = ribbon(&input);
     assert_eq!(one, empty, "the ribbon holds still");
     assert_eq!(full, empty);
 }
