@@ -3878,8 +3878,11 @@ fn salvage_ledger_coherent(b: &Building) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaceRefusal {
-    /// The kind is scenario-authored, never player-buildable.
-    NotConstructible,
+    /// The seat gives no more orders: it surrendered or lost its last
+    /// Foundry, or the match is decided. Only
+    /// [`State::place_intent_refusal`] gives it; [`State::place_refusal`]
+    /// leaves the seat to command validation.
+    OutOfPlay,
     /// A footprint tile is not currently visible.
     Fog,
     /// A footprint tile is impassable ground.

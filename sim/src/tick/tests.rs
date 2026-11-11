@@ -81,6 +81,15 @@ fn command_phase_inspection_honors_a_frozen_result() {
         |projected| {
             assert!(!projected.accepts_commands(crate::PlayerId(0)));
             assert_eq!(
+                projected.place_intent_refusal(
+                    crate::PlayerId(0),
+                    crate::BuildingKind::Turret,
+                    TilePos::new(1, 1),
+                    &[],
+                ),
+                Some(crate::PlaceRefusal::OutOfPlay)
+            );
+            assert_eq!(
                 projected.scrap(crate::PlayerId(0)),
                 Some(state.player(crate::PlayerId(0)).scrap)
             );

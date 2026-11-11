@@ -1367,7 +1367,7 @@ fn widest_placement_status(
         PlaceRefusal::Terrain,
         PlaceRefusal::Building,
         PlaceRefusal::Unit,
-        PlaceRefusal::NotConstructible,
+        PlaceRefusal::OutOfPlay,
         PlaceRefusal::Prerequisite,
         PlaceRefusal::FrameRequired,
         PlaceRefusal::FrameBlocked,

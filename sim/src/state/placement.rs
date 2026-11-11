@@ -222,6 +222,9 @@ impl State {
         anchor: TilePos,
         units: &[UnitId],
     ) -> Option<PlaceRefusal> {
+        if !self.accepts_commands(player) {
+            return Some(PlaceRefusal::OutOfPlay);
+        }
         let released = crate::tick::construction::replaced_sites(self, player, units);
         if !self.prerequisites_met(player, kind) {
             return Some(PlaceRefusal::Prerequisite);

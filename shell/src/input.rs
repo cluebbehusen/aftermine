@@ -793,11 +793,7 @@ fn pending_build_projection_for(
 ) -> PendingBuildProjection {
     let replaced = replaced_build_units(game, queue);
     game.state.inspect_command_phase(batch, |state| {
-        let refusal = if state.accepts_commands(game.presentation.human) {
-            state.place_intent_refusal(game.presentation.human, kind, anchor, replaced)
-        } else {
-            Some(aftermine_sim::PlaceRefusal::NotConstructible)
-        };
+        let refusal = state.place_intent_refusal(game.presentation.human, kind, anchor, replaced);
         let refund = state.construction_refund(game.presentation.human, replaced);
         let crew: Vec<_> = state
             .units()
@@ -1237,7 +1233,7 @@ pub(crate) fn refusal_reason(refusal: aftermine_sim::PlaceRefusal) -> &'static s
         PlaceRefusal::Terrain => "impassable ground",
         PlaceRefusal::Building => "something already stands there",
         PlaceRefusal::Unit => "an enemy unit is holding that ground",
-        PlaceRefusal::NotConstructible => "that can't be built",
+        PlaceRefusal::OutOfPlay => "you can no longer give orders",
         PlaceRefusal::Prerequisite => "not unlocked yet",
         PlaceRefusal::FrameRequired => "Extractors only go on derelict frames",
         PlaceRefusal::FrameBlocked => "that ground belongs to a derelict frame",
