@@ -486,6 +486,12 @@ pub(crate) fn decide(
     };
     let mut candidates = investments::candidates(&situation);
     let danger = placement::Danger::of(observation, map, &persistent.memory);
+    // Units healing at a calm Repair Bay sit out every mission, so an island
+    // settlement's next purchase counts its escort, and the carriers that
+    // escort needs, without them, as the settlement will recruit it.
+    for unit in persistent.missions.healing(observation, &scratch, &ledger) {
+        ledger.dock(unit);
+    }
     sited(
         &Settlement::new(
             observation,
@@ -498,6 +504,7 @@ pub(crate) fn decide(
         &persistent.missions,
         &mut candidates,
         persistent.saving.investment(),
+        &ledger,
     );
     let share = share(observation, profile);
     persistent.saving.settle(
@@ -754,10 +761,9 @@ pub(crate) fn decide(
             &scratch,
         );
         if !short
-            && let Some((gap, by_air)) = persistent
-                .saving
-                .investment()
-                .and_then(|investment| settlement.capabilities(&persistent.missions, investment))
+            && let Some((gap, by_air)) = persistent.saving.investment().and_then(|investment| {
+                settlement.capabilities(&persistent.missions, investment, &ledger)
+            })
         {
             needs.coverage(gap, by_air);
         }
@@ -1021,13 +1027,14 @@ fn sited(
     missions: &Missions,
     candidates: &mut Vec<Candidate>,
     current: Option<Investment>,
+    ledger: &Ledger,
 ) {
     let mut found = false;
     candidates.retain_mut(|candidate| {
         if found && Some(candidate.investment) != current {
             return true;
         }
-        candidate.next = settlement.next(missions, candidate.investment);
+        candidate.next = settlement.next(missions, candidate.investment, ledger);
         let placeable = match candidate.next {
             Some((Step::Build(kind), _)) => {
                 !matches!(settlement.site(candidate.investment, kind), Site::Nowhere)

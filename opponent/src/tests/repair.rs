@@ -177,6 +177,38 @@ fn an_attack_leaves_a_unit_healing_at_a_bay() {
 }
 
 #[test]
+fn a_local_guard_leaves_a_unit_healing_at_a_bay() {
+    // A West expansion on the south of the field with Sentinels off to its
+    // east, an East Sentinel standing off it to post a guard there, and a
+    // wounded West Sentinel beside the expansion.
+    let guarded = |with_bay: bool| {
+        let mut scenario = field();
+        garrison(&mut scenario);
+        scenario
+            .buildings
+            .push(building(0, BuildingKind::Foundry, 20, 19));
+        for x in 25..28 {
+            scenario.units.push(unit(0, UnitKind::Sentinel, x, 20));
+        }
+        scenario.units.push(unit(1, UnitKind::Sentinel, 33, 21));
+        scenario.units.push(unit(0, UnitKind::Sentinel, 19, 21));
+        if with_bay {
+            scenario.buildings.push(bay(0, 16, 20));
+        }
+        let state = scenario.build().unwrap();
+        let (state, ids) = hurt(&state, &[((19, 21), 10)]);
+        let mut opponent = seat(&scenario, 0);
+        opponent.act(&state, &mut OwnEvents::default());
+        (opponent.guarded_units(), ids[0])
+    };
+    let (without, patient) = guarded(false);
+    assert!(without.contains(&patient), "premise: {without:?}");
+    let (with, patient) = guarded(true);
+    assert!(!with.is_empty(), "the guard still forms");
+    assert!(!with.contains(&patient), "{with:?}");
+}
+
+#[test]
 fn aircraft_heal_landed_or_hovering_in_reach() {
     for (kind, hp) in [(UnitKind::Condor, 100), (UnitKind::Talon, 30)] {
         let mut scenario = bay_arena();
