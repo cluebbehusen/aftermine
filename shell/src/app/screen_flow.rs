@@ -431,9 +431,7 @@ fn lobby_frame(
             app.config.last_join_address = Some(address.clone());
             app.config.set_name(&name);
             let install = app.config.install_id();
-            if let Err(err) = app.save_settings() {
-                app.notify_failure("Could not save settings", err);
-            }
+            app.save_settings();
             let commit = crate::build_identity().revision;
             *lobby = crate::screens::lobby::LobbyScreen::waiting(crate::netplay::Lobby::Client(
                 crate::netplay::ClientLobby::new(&address, &commit, name, install),
@@ -522,9 +520,7 @@ fn cold_open_frame(
         return Screen::ColdOpen(open);
     }
     app.config.cold_open_seen = true;
-    if let Err(err) = app.save_settings() {
-        eprintln!("could not save config: {err}");
-    }
+    app.save_settings();
     Screen::Home(HomeScreen::open())
 }
 
@@ -646,10 +642,8 @@ fn settings_frame(
         },
         _ => {}
     }
-    if up.dirty
-        && let Err(err) = app.save_settings()
-    {
-        app.notify_failure("Could not save settings", err);
+    if up.dirty {
+        app.save_settings();
     }
     page_backdrop();
     sc.draw(&app.sprites, app.input.mouse);
@@ -1041,14 +1035,11 @@ fn playing_frame(
     }
     if let Some(lesson) = Tutorial::advance_in(&mut app.game)
         && app.config.finish_lesson(lesson)
-        && let Err(err) = app.save_settings()
     {
-        app.notify_failure("Could not save settings", err);
+        app.save_settings();
     }
-    if mark_first_match(&mut app.config, &app.game)
-        && let Err(err) = app.save_settings()
-    {
-        app.notify_failure("Could not save settings", err);
+    if mark_first_match(&mut app.config, &app.game) {
+        app.save_settings();
     }
     let tips = tips_on(&app.config, &app.game);
     crate::tips::Tips::advance_in(&mut app.game, tips, render::reduced_motion());

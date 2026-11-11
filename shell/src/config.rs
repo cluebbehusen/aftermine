@@ -535,6 +535,7 @@ fn in_course_order(done: &[crate::tutorial::Lesson]) -> Vec<crate::tutorial::Les
 }
 
 pub mod sync;
+pub(crate) mod writer;
 
 #[cfg(test)]
 mod tests;
