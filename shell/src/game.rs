@@ -348,7 +348,6 @@ impl Game {
         // Replays load synchronously on the frame loop, and a structurally
         // valid file can still claim a duration long enough to freeze the
         // UI for minutes.
-        const MAX_LOAD_TICKS: u64 = aftermine_kit::MAX_REPLAY_TICKS;
         let _load = aftermine_kit::diagnostics::stage(Stage::ReplayLoad, 0);
         // Untrusted file: enforce the invariants recording guarantees, and
         // refuse cross-version saves outright, since resuming one would
@@ -364,9 +363,10 @@ impl Game {
         let mut state = scenario.build()?;
         let total = aftermine_kit::replay_duration(&replay);
         anyhow::ensure!(
-            total <= MAX_LOAD_TICKS,
-            "replay spans {total} ticks, beyond the {MAX_LOAD_TICKS}-tick interactive load limit \
-             (the headless driver replays without one)"
+            total <= aftermine_kit::MAX_REPLAY_TICKS,
+            "replay spans {total} ticks, beyond the {}-tick interactive load limit \
+             (the headless driver replays without one)",
+            aftermine_kit::MAX_REPLAY_TICKS
         );
         // The fast-forward lets bots observe every tick to rebuild controller
         // memory. Their generated commands are discarded because the record

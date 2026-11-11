@@ -55,7 +55,7 @@ pub struct Moment {
 }
 
 /// One player's sampled series and totals.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlayerStats {
     /// Seat index.
@@ -282,23 +282,7 @@ fn blank_players(seats: usize) -> Vec<PlayerStats> {
     (0..seats)
         .map(|seat| PlayerStats {
             seat: u8::try_from(seat).expect("seat indices fit in u8"),
-            scrap: Vec::new(),
-            army_value: Vec::new(),
-            wealth: Vec::new(),
-            scrap_earned: Vec::new(),
-            value_lost: Vec::new(),
-            kinds: Vec::new(),
-            scrap_collected: 0,
-            scrap_earned_total: 0,
-            value_lost_total: 0,
-            units_trained: 0,
-            units_built: BTreeMap::new(),
-            buildings_completed: 0,
-            structures_built: BTreeMap::new(),
-            units_lost: 0,
-            buildings_lost: 0,
-            buildings_salvaged: 0,
-            units_retired: 0,
+            ..PlayerStats::default()
         })
         .collect()
 }

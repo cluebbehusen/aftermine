@@ -2,7 +2,7 @@
 
 use crate::auto::{ShellGuard, build_shell_executable_for, isolate_home};
 use crate::client::Client;
-use aftermine_kit::runner::GameReplay;
+use aftermine_kit::GameReplay;
 use aftermine_protocol::{FrameProfileView, Reply, Request};
 use aftermine_sim::TICKS_PER_SECOND;
 use anyhow::{Context, Result, bail, ensure};
