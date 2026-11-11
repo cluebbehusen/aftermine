@@ -147,9 +147,15 @@ pub(super) fn settle(app: &mut App, from: ScreenKind, screen: &Screen) {
     enter(&mut app.game, screen);
     app.input.reset_transient();
     macroquad::miniquad::window::set_mouse_cursor(macroquad::miniquad::CursorIcon::Default);
-    if !screen.holds_live_match()
-        && let Some(link) = app.net.take()
-    {
+    if !screen.holds_live_match() {
+        leave_network(app);
+    }
+}
+
+/// Leaves the LAN match, if one is joined. Its last lines drain while the
+/// frame runs on.
+pub(super) fn leave_network(app: &mut App) {
+    if let Some(link) = app.net.take() {
         app.lingering = link.leave(&app.game, app.clock.elapsed());
         // Leaving surrenders the seat; there is nothing to take back.
         app.ticket.clear();

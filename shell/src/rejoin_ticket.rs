@@ -1,10 +1,12 @@
-//! The ticket a client keeps while it plays a LAN match, so that after the
-//! app is closed or killed, Home can offer to take the seat back. Home only
+//! The ticket a client keeps while it plays a LAN match, so that if the app
+//! stops without leaving the match, Home can offer to take the seat back. Home only
 //! offers it once the host confirms the seat still waits.
 
 use aftermine_net::{Connection, Token, Visit, VisitEnd, VisitEvent};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -68,6 +70,8 @@ pub(crate) fn read(path: &Path) -> Option<Ticket> {
 /// interleave with another.
 pub(crate) struct Keeper {
     writer: Option<Sender<Write>>,
+    /// Writes sent to the thread and not yet done.
+    unwritten: Arc<AtomicUsize>,
     /// The ticket last written this session, and when.
     kept: Option<(Ticket, Duration)>,
 }
@@ -75,16 +79,29 @@ pub(crate) struct Keeper {
 impl Keeper {
     /// Keeps the ticket at `path`; `None` keeps nothing.
     pub(crate) fn new(path: Option<PathBuf>) -> Self {
+        let unwritten = Arc::new(AtomicUsize::new(0));
         let writer = path.map(|path| {
             let (writer, wanted) = mpsc::channel::<Write>();
+            let unwritten = Arc::clone(&unwritten);
             thread::spawn(move || {
                 for write in wanted {
                     let _ = apply(&path, write);
+                    unwritten.fetch_sub(1, Ordering::Release);
                 }
             });
             writer
         });
-        Self { writer, kept: None }
+        Self {
+            writer,
+            unwritten,
+            kept: None,
+        }
+    }
+
+    /// Whether every write sent so far is done, or failed. The process
+    /// ending stops the writer, so a quit waits on this, briefly.
+    pub(crate) fn settled(&self) -> bool {
+        self.unwritten.load(Ordering::Acquire) == 0
     }
 
     /// Records the seat being played, refreshing its last contact every few
@@ -119,7 +136,10 @@ impl Keeper {
 
     fn send(&self, write: Write) {
         if let Some(writer) = &self.writer {
-            let _ = writer.send(write);
+            self.unwritten.fetch_add(1, Ordering::AcqRel);
+            if writer.send(write).is_err() {
+                self.unwritten.fetch_sub(1, Ordering::AcqRel);
+            }
         }
     }
 }

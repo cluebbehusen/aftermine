@@ -525,6 +525,10 @@ struct Queue {
     wanted: Option<Mode>,
     /// The pass under way.
     running: Option<Mode>,
+    /// A push was asked for that no pass has taken up yet.
+    unsent: bool,
+    /// The pass under way took up a push.
+    sending: bool,
     /// Records the game deleted since a pass last took them.
     deleted: Vec<PathBuf>,
     /// The player's answers since a pass last took them.
@@ -533,9 +537,25 @@ struct Queue {
     missing: Vec<String>,
 }
 
+impl Queue {
+    /// Marks the pass under way done. A pass cut short leaves the push it
+    /// took up to the pass that follows it.
+    fn end_pass(&mut self, again: bool) {
+        self.running = None;
+        if std::mem::take(&mut self.sending) && again {
+            self.unsent = true;
+        }
+    }
+}
+
 impl Shared {
     fn queue(&self) -> MutexGuard<'_, Queue> {
         self.queue.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn sent(&self) -> bool {
+        let queue = self.queue();
+        !queue.unsent && !queue.sending
     }
 
     /// Asks for a pass; a full pass covers a push.
@@ -543,6 +563,9 @@ impl Shared {
         let mut queue = self.queue();
         if queue.wanted != Some(Mode::Full) {
             queue.wanted = Some(mode);
+        }
+        if mode == Mode::Push {
+            queue.unsent = true;
         }
         self.wake.notify_one();
     }
@@ -604,6 +627,13 @@ pub(crate) fn syncing() -> bool {
     })
 }
 
+/// Whether every push asked for has run, so this device's changes have gone
+/// up or failed to. A quit waits on this, briefly, so the save it just made
+/// reaches the player's other devices.
+pub(crate) fn sent() -> bool {
+    MIRROR.get().is_none_or(Shared::sent)
+}
+
 /// Files missing from an iCloud Drive folder that the player has yet to
 /// decide on.
 pub(crate) fn missing() -> Vec<String> {
@@ -657,71 +687,76 @@ pub(crate) fn changes() -> u64 {
     })
 }
 
-/// Runs the passes asked for, one at a time, reporting failures rather
-/// than raising them: a mirror that cannot reach iCloud leaves records
-/// where they are.
+/// Runs the passes asked for, one at a time.
 fn serve(shared: &'static Shared) {
     loop {
-        let mode = {
-            let mut queue = shared.queue();
-            loop {
-                if let Some(mode) = queue.wanted.take() {
-                    queue.running = Some(mode);
-                    break mode;
-                }
-                queue = shared
-                    .wake
-                    .wait(queue)
-                    .unwrap_or_else(PoisonError::into_inner);
+        serve_one(shared, &CloudKit, Places::here);
+    }
+}
+
+/// Waits for a pass to be asked for and runs it, reporting a failure
+/// rather than raising it: a mirror that cannot reach iCloud leaves records
+/// where they are.
+fn serve_one(shared: &Shared, remote: &impl Remote, places: impl FnOnce() -> Option<Places>) {
+    let mode = {
+        let mut queue = shared.queue();
+        loop {
+            if let Some(mode) = queue.wanted.take() {
+                queue.running = Some(mode);
+                queue.sending = std::mem::take(&mut queue.unsent);
+                break mode;
             }
-        };
-        let result = Places::here().map(|places| pass(&CloudKit, &places, mode, shared));
-        let outcome = match result {
-            Some(Ok(outcome)) => Some(outcome),
-            Some(Err(error)) => {
-                eprintln!("iCloud mirror: {error}");
-                None
-            }
-            None => None,
-        };
-        let again = {
-            let mut queue = shared.queue();
-            queue.running = None;
-            match outcome {
-                Some(outcome) => {
-                    // A push has not looked at CloudKit, and a question answered
-                    // while this pass ran stays answered.
-                    if mode == Mode::Full {
-                        let answers = std::mem::take(&mut queue.answers);
-                        queue.missing = outcome
-                            .missing
-                            .into_iter()
-                            .filter(|name| {
-                                !answers.iter().any(|answer| match answer {
-                                    Answer::Delete(asked) | Answer::BringBack(asked) => {
-                                        asked == name
-                                    }
-                                })
-                            })
-                            .collect();
-                        queue.answers = answers;
-                    }
-                    shared
-                        .pending
-                        .store(outcome.pending, std::sync::atomic::Ordering::Relaxed);
-                    if outcome.changed {
-                        shared
-                            .changes
-                            .fetch_add(1, std::sync::atomic::Ordering::Release);
-                    }
-                    outcome.again
-                }
-                None => false,
-            }
-        };
-        if again {
-            shared.want(Mode::Full);
+            queue = shared
+                .wake
+                .wait(queue)
+                .unwrap_or_else(PoisonError::into_inner);
         }
+    };
+    let result = places().map(|places| pass(remote, &places, mode, shared));
+    let outcome = match result {
+        Some(Ok(outcome)) => Some(outcome),
+        Some(Err(error)) => {
+            eprintln!("iCloud mirror: {error}");
+            None
+        }
+        None => None,
+    };
+    let again = {
+        let mut queue = shared.queue();
+        let again = match outcome {
+            Some(outcome) => {
+                // A push has not looked at CloudKit, and a question answered
+                // while this pass ran stays answered.
+                if mode == Mode::Full {
+                    let answers = std::mem::take(&mut queue.answers);
+                    queue.missing = outcome
+                        .missing
+                        .into_iter()
+                        .filter(|name| {
+                            !answers.iter().any(|answer| match answer {
+                                Answer::Delete(asked) | Answer::BringBack(asked) => asked == name,
+                            })
+                        })
+                        .collect();
+                    queue.answers = answers;
+                }
+                shared
+                    .pending
+                    .store(outcome.pending, std::sync::atomic::Ordering::Relaxed);
+                if outcome.changed {
+                    shared
+                        .changes
+                        .fetch_add(1, std::sync::atomic::Ordering::Release);
+                }
+                outcome.again
+            }
+            None => false,
+        };
+        queue.end_pass(again);
+        again
+    };
+    if again {
+        shared.want(Mode::Full);
     }
 }
 

@@ -374,8 +374,9 @@ seconds while Home or the shelf is open, and after every save a pass sends this
 device's changes without fetching. Files arrive only while Home or the shelf is
 open or a load is waiting for them, never during a match. A load waits at most
 five seconds for a full pass under way, so a match does not resume from an older
-copy and then save over the newer one. A pass that changes local records makes
-the shelf scan again.
+copy and then save over the newer one. A quit waits at most five seconds for the
+pushes this device asked for, so the save it made reaches the player's other
+devices. A pass that changes local records makes the shelf scan again.
 
 Each record has a version: how far its match has been played, in ticks, or, once
 deleted, a delete record one tick past the save it deleted. The most ticks wins
