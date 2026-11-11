@@ -113,6 +113,10 @@ pub(crate) fn draw_selected_pile(game: &crate::game::Scene<'_>) {
     );
 }
 
+/// The faint amber an unverified site draws in, on the ground and on the
+/// minimap.
+pub(crate) const UNVERIFIED_SITE: Color = Color::new(1.0, 0.85, 0.45, 0.3);
+
 /// Paid provisional scaffolds remain faint amber footprints until their
 /// ground has been verified.
 pub(crate) fn draw_pending_founds(game: &crate::game::Scene<'_>, sprites: &Sprites) {
@@ -131,7 +135,7 @@ pub(crate) fn draw_pending_founds(game: &crate::game::Scene<'_>, sprites: &Sprit
         sprites.draw(
             screen.x,
             screen.y,
-            Color::new(1.0, 0.85, 0.45, 0.3),
+            UNVERIFIED_SITE,
             DrawTextureParams {
                 dest_size: Some(vec2(w as f32 * zoom, h as f32 * zoom)),
                 source: Some(sprites.construction(site.kind, 0, 0, 0)),
@@ -439,7 +443,7 @@ pub(super) fn strike_contact(
         }
         HitSurface::Unit(hit) => {
             if let Some(unit) = game.state.unit(hit.id)
-                && crate::strategic_markers::visible(game, unit)
+                && game.sees_unit(unit)
             {
                 let pose =
                     super::unit_body_pose(game, sprites, unit, game.presentation.tick_fraction());
@@ -536,10 +540,7 @@ fn payload_surface_contact(
 ) -> Vec2 {
     let point = match surface {
         Some(crate::game::HitSurface::Unit(hit)) => {
-            let unit = game
-                .state
-                .unit(hit.id)
-                .filter(|unit| crate::strategic_markers::visible(game, unit));
+            let unit = game.state.unit(hit.id).filter(|unit| game.sees_unit(unit));
             unit.and_then(|unit| {
                 let pose =
                     super::unit_body_pose(game, sprites, unit, game.presentation.tick_fraction());
@@ -569,9 +570,7 @@ fn payload_surface_contact(
             crate::game::ShotStyle::Rail,
         ),
     }
-    .filter(|point| {
-        game.presentation.all_seeing() || game.my_vision().visible(numeric::tile_at(*point))
-    });
+    .filter(|point| game.sees_tile(numeric::tile_at(*point)));
     point.unwrap_or(at)
 }
 
@@ -600,9 +599,7 @@ pub(super) fn impact_contact(
             crate::game::ShotStyle::Rail,
         ),
     }
-    .filter(|point| {
-        game.presentation.all_seeing() || game.my_vision().visible(numeric::tile_at(*point))
-    })
+    .filter(|point| game.sees_tile(numeric::tile_at(*point)))
     .unwrap_or(at)
 }
 
@@ -627,14 +624,7 @@ pub(super) fn building_contact(
     let hit = game
         .state
         .building(hit.id)
-        .filter(|building| {
-            game.presentation.all_seeing()
-                || building.player == game.presentation.human
-                || building.tiles().any(|tile| game.my_vision().visible(tile))
-                    && game
-                        .state
-                        .building_apparent(game.presentation.human, building)
-        })
+        .filter(|building| game.sees_building(building))
         .map_or(hit, |building| {
             crate::game::BuildingHit::capture(game.state, building)
         });
@@ -906,13 +896,7 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     // plus bars and site dressing.
     let (view_lo, view_hi) = game.presentation.camera.world_rect();
     for building in game.state.buildings().iter().filter(|b| !b.provisional()) {
-        if building.player != game.presentation.human
-            && !game.presentation.all_seeing()
-            && (!building.tiles().any(|t| game.my_vision().visible(t))
-                || !game
-                    .state
-                    .building_apparent(game.presentation.human, building))
-        {
+        if !game.sees_building(building) {
             continue;
         }
         let anchor = vec2(building.anchor.x as f32, building.anchor.y as f32);
@@ -1169,12 +1153,8 @@ fn draw_bomber_bombs(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             / total)
             .clamp(0.0, 1.0);
         let (position, direction) = condor_bomb_pose(launch, impact, release.heading, t);
-        if !game.presentation.all_seeing()
-            && game.state.hostile(game.presentation.human, shell.player)
-            && !game.my_vision().visible(TilePos::new(
-                numeric::to_i32(position.x.floor()),
-                numeric::to_i32(position.y.floor()),
-            ))
+        if game.state.hostile(game.presentation.human, shell.player)
+            && !game.sees_tile(numeric::tile_at(position))
         {
             continue;
         }
@@ -1510,7 +1490,7 @@ fn shot_visibility(
 
 #[expect(clippy::too_many_lines, reason = "draws every shell and effect kind")]
 pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
-    let sees = |p: Vec2| game.my_vision().visible(numeric::tile_at(p));
+    let sees = |p: Vec2| game.sees_tile(numeric::tile_at(p));
     // Shells render from sim state, aged by sim ticks: pause holds them
     // mid-air, speed changes track, and a replay loaded mid-flight
     // restores them.
@@ -1544,7 +1524,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         } else {
             flight_progress
         };
-        if !game.presentation.all_seeing() && !mine && !flat_seen(t) {
+        if !mine && !flat_seen(t) {
             continue;
         }
         let a = game.presentation.camera.to_screen(from);
@@ -1587,10 +1567,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             let back = center - direction * length * 0.5;
             let nose = center + direction * length * 0.5;
             let motor = missile_motor_strength(flight_progress, total);
-            if missile
-                && motor > 0.0
-                && (mine || game.presentation.all_seeing() || flat_seen(tail_t))
-            {
+            if missile && motor > 0.0 && (mine || flat_seen(tail_t)) {
                 let exhaust = back
                     - direction
                         * game.presentation.camera.zoom
@@ -1697,7 +1674,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         // A small shadow on the flat path makes the shell's low lift
         // legible.
         fill_circle(flat, radius * 0.7, Color::new(0.03, 0.03, 0.04, 0.35));
-        if game.presentation.all_seeing() || mine || flat_seen(tail_t) {
+        if mine || flat_seen(tail_t) {
             let before = at((t - 0.01).max(0.0));
             let after = at((t + 0.01).min(1.0));
             let travel = (after - before).normalize_or_zero();
@@ -1878,7 +1855,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     }
                     _ => strike_contact(game, sprites, surface, from, to, style),
                 }
-                .filter(|&contact| game.presentation.all_seeing() || sees(contact))
+                .filter(|&contact| sees(contact))
                 .unwrap_or(to);
                 let a = game.presentation.camera.to_screen(from);
                 let b = game.presentation.camera.to_screen(contact);
@@ -1886,11 +1863,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 let progress = (age / style.life()).clamp(0.0, 1.0);
                 let fade = 1.0 - progress;
                 let impact = shot_impact_progress(style, age);
-                let visibility = shot_visibility(
-                    style,
-                    game.presentation.all_seeing() || sees(from),
-                    game.presentation.all_seeing() || sees(to),
-                );
+                let visibility = shot_visibility(style, sees(from), sees(to));
                 if visibility == ShotVisibility::ImpactOnly {
                     if let Some(radius) = splash
                         && impact > 0.0
@@ -2187,7 +2160,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                         family: super::impacts::Family::payload(payload),
                         recipient: super::impacts::Recipient::of(surface),
                         at: game.presentation.camera.to_screen(contact),
-                        direction: if game.presentation.all_seeing() || sees(from) {
+                        direction: if sees(from) {
                             contact - from
                         } else {
                             Vec2::ZERO
@@ -2871,14 +2844,7 @@ fn range_occluders(game: &crate::game::Scene<'_>) -> Vec<(Vec2, Vec2)> {
     game.state
         .buildings()
         .iter()
-        .filter(|building| {
-            building.player == game.presentation.human
-                || game.presentation.all_seeing()
-                || (building.tiles().any(|tile| game.my_vision().visible(tile))
-                    && game
-                        .state
-                        .building_apparent(game.presentation.human, building))
-        })
+        .filter(|building| game.sees_building(building))
         .map(|building| {
             let (min, max) = building_screen_bounds(game, building);
             (min - margin, max + margin)

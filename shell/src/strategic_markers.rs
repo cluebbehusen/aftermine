@@ -130,12 +130,6 @@ pub(crate) fn replaces_units(zoom: f32) -> bool {
     marker_alpha(zoom) >= 1.0
 }
 
-pub(crate) fn visible(game: &Scene<'_>, unit: &Unit) -> bool {
-    unit.player == game.presentation.human
-        || game.presentation.all_seeing()
-        || game.my_vision().sees_unit(unit)
-}
-
 /// A unit marker the view shows: the unit, where it draws, and whether it is
 /// selected.
 type Shown<'a> = (&'a Unit, Vec2, bool);
@@ -150,7 +144,7 @@ fn shown_units<'a>(game: &Scene<'a>, alpha: f32) -> Vec<Shown<'a>> {
         .state
         .units()
         .iter()
-        .filter(|unit| visible(game, unit))
+        .filter(|unit| game.sees_unit(unit))
         .filter_map(|unit| {
             let pos = game.presentation.draw_pos(unit.id, unit.pos, alpha);
             if pos.x < lo.x - 2.0 || pos.y < lo.y - 2.0 || pos.x > hi.x + 2.0 || pos.y > hi.y + 2.0
@@ -262,13 +256,6 @@ fn draw_unit_markers(game: &Scene<'_>, alpha: f32, opacity: f32) {
     }
 }
 
-pub(crate) fn building_visible(game: &Scene<'_>, b: &aftermine_sim::Building) -> bool {
-    b.player == game.presentation.human
-        || game.presentation.all_seeing()
-        || (b.tiles().any(|t| game.my_vision().visible(t))
-            && game.state.building_apparent(game.presentation.human, b))
-}
-
 pub(crate) fn draw_buildings(game: &Scene<'_>) {
     let alpha = marker_alpha(game.presentation.camera.zoom);
     if alpha <= 0.0 {
@@ -294,7 +281,7 @@ fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
         .state
         .buildings()
         .iter()
-        .filter(|b| building_visible(game, b))
+        .filter(|b| game.sees_building(b))
     {
         markers.push((
             b.kind,
@@ -316,7 +303,7 @@ fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
             let observed = game
                 .state
                 .buildings_at(g.anchor)
-                .any(|b| b.kind == g.kind && b.player == g.owner && building_visible(game, b));
+                .any(|b| b.kind == g.kind && b.player == g.owner && game.sees_building(b));
             if observed {
                 continue;
             }
@@ -548,7 +535,7 @@ fn draw_frame_markers(game: &Scene<'_>, alpha: f32) {
 }
 
 pub(crate) fn known_resource(game: &Scene<'_>, pos: chassis::grid::TilePos) -> u32 {
-    if game.presentation.all_seeing() || game.my_vision().visible(pos) {
+    if game.sees_tile(pos) {
         game.state
             .map()
             .tile(pos)
@@ -561,12 +548,7 @@ pub(crate) fn known_resource(game: &Scene<'_>, pos: chassis::grid::TilePos) -> u
 }
 fn resource_marker_opacity(game: &Scene<'_>, pos: chassis::grid::TilePos) -> f32 {
     let age_opacity = crate::render::resource_memory_opacity(game, pos);
-    age_opacity
-        * if game.presentation.all_seeing() || game.my_vision().visible(pos) {
-            1.0
-        } else {
-            0.4
-        }
+    age_opacity * if game.sees_tile(pos) { 1.0 } else { 0.4 }
 }
 pub(crate) fn draw_resources(game: &Scene<'_>) {
     let p = prefs();

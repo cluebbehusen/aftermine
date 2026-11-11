@@ -298,12 +298,15 @@ impl<'a> Scene<'a> {
     }
     /// Whether the viewer sees `unit` now, as the renderer decides.
     pub(crate) fn sees_unit(&self, unit: &aftermine_sim::Unit) -> bool {
-        sees(
-            self.state,
-            self.presentation.human,
-            self.presentation.all_seeing(),
-            unit,
-        )
+        self.presentation.sees_unit(self.state, unit)
+    }
+    /// Whether the viewer sees `tile` now.
+    pub(crate) fn sees_tile(&self, tile: chassis::grid::TilePos) -> bool {
+        self.presentation.sees_tile(self.state, tile)
+    }
+    /// Whether the viewer sees `building` now, as the renderer decides.
+    pub(crate) fn sees_building(&self, building: &Building) -> bool {
+        self.presentation.sees_building(self.state, building)
     }
     /// What the local player knows of the salvage on `tile`.
     pub(crate) fn known_salvage(&self, tile: chassis::grid::TilePos) -> Option<Salvage> {
@@ -444,6 +447,29 @@ impl Presentation {
     /// stance but a seat in play. Chrome decides separately.
     pub fn all_seeing(&self) -> bool {
         self.overlay || self.stance != Stance::Seat
+    }
+
+    /// Whether the viewer sees `tile` now: every tile when all-seeing,
+    /// else what the seat's fog leaves visible.
+    pub(crate) fn sees_tile(&self, state: &State, tile: chassis::grid::TilePos) -> bool {
+        self.all_seeing() || state.vision(self.human).visible(tile)
+    }
+
+    /// Whether the viewer sees `unit` now, as the renderer decides.
+    pub(crate) fn sees_unit(&self, state: &State, unit: &aftermine_sim::Unit) -> bool {
+        sees(state, self.human, self.all_seeing(), unit)
+    }
+
+    /// Whether the viewer sees `building` now, as the renderer decides: its
+    /// own always, any when all-seeing, else one standing on a visible tile
+    /// that stealth does not hide.
+    pub(crate) fn sees_building(&self, state: &State, building: &Building) -> bool {
+        building.player == self.human
+            || self.all_seeing()
+            || (building
+                .tiles()
+                .any(|tile| state.vision(self.human).visible(tile))
+                && state.building_apparent(self.human, building))
     }
 
     /// Whether the picture carries a spectator's chrome instead of the
@@ -737,7 +763,7 @@ impl Presentation {
             let Some(bay) = unit.bay else {
                 continue;
             };
-            if !sees(state, self.human, self.all_seeing(), unit) {
+            if !self.sees_unit(state, unit) {
                 // Its bay comes back into view at rest, with no launch or
                 // landing to give away what happened out of sight.
                 self.dock_motion.insert(
@@ -765,9 +791,7 @@ impl Presentation {
             let landed: Vec<Vec2> = landed
                 .iter()
                 .filter_map(|drone| self.prev_pos.get(drone).copied())
-                .filter(|from| {
-                    self.all_seeing() || state.vision(self.human).visible(numeric::tile_at(*from))
-                })
+                .filter(|from| self.sees_tile(state, numeric::tile_at(*from)))
                 .collect();
             let docks = self
                 .dock_motion

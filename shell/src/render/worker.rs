@@ -23,9 +23,7 @@ fn contact(
     match target {
         WorkTarget::Building(id) => {
             let b = game.state.building(id)?;
-            if !game.presentation.all_seeing()
-                && !b.tiles().any(|tile| game.my_vision().visible(tile))
-            {
+            if !b.tiles().any(|tile| game.sees_tile(tile)) {
                 return None;
             }
             entities::building_contact(
@@ -44,7 +42,7 @@ fn contact(
             )
         }
         WorkTarget::Scrap(tile) | WorkTarget::Wreck(tile) => {
-            if !game.presentation.all_seeing() && !game.my_vision().visible(tile) {
+            if !game.sees_tile(tile) {
                 return None;
             }
             let wreck = matches!(target, WorkTarget::Wreck(_));
@@ -87,7 +85,7 @@ fn contact(
         }
         WorkTarget::Unit(id) => {
             let patient = game.state.unit(id)?;
-            if !crate::strategic_markers::visible(game, patient) {
+            if !game.sees_unit(patient) {
                 return None;
             }
             let pose = super::unit_body_pose(game, sprites, patient, alpha);

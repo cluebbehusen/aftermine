@@ -75,7 +75,7 @@ pub fn staleness_fade(age: f32) -> f32 {
 pub(crate) fn resource_memory_opacity(game: &Scene<'_>, pos: chassis::grid::TilePos) -> f32 {
     let mut seen = game.presentation.last_seen.borrow_mut();
     let now = game.presentation.fx_time();
-    if game.presentation.all_seeing() || game.my_vision().visible(pos) {
+    if game.sees_tile(pos) {
         seen.insert((pos.x, pos.y), now);
         1.0
     } else {
@@ -760,22 +760,14 @@ fn tracked_mount_angle(
     let position = match target {
         aftermine_sim::Target::Unit(id) => {
             let target = game.state.unit(id)?;
-            if target.player != game.presentation.human
-                && !game.presentation.all_seeing()
-                && !game.my_vision().sees_unit(target)
-            {
+            if !game.sees_unit(target) {
                 return None;
             }
             game.presentation.draw_pos(target.id, target.pos, alpha)
         }
         aftermine_sim::Target::Building(id) => {
             let target = game.state.building(id)?;
-            if !game.presentation.all_seeing()
-                && (!target.tiles().any(|tile| game.my_vision().visible(tile))
-                    || !game
-                        .state
-                        .building_apparent(game.presentation.human, target))
-            {
+            if !game.sees_building(target) {
                 return None;
             }
             let from = game.presentation.draw_pos(unit.id, unit.pos, alpha);
@@ -1334,7 +1326,7 @@ fn draw_unit_pass(
         if unit.domain() != domain {
             continue;
         }
-        if !crate::strategic_markers::visible(game, unit) {
+        if !game.sees_unit(unit) {
             continue;
         }
         let pos = roc::drone_draw_pos(game, unit, alpha)

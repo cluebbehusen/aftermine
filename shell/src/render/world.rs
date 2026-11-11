@@ -1050,7 +1050,7 @@ pub(super) fn draw_salvage(
     let paint = ground_paint(ground);
     for_each_tile(ground.map, view, |spot| {
         let (pos, tile) = (spot.pos, spot.tile);
-        let seen_now = game.presentation.all_seeing() || game.my_vision().visible(pos);
+        let seen_now = game.sees_tile(pos);
         let scrap = if seen_now {
             tile.scrap
         } else {

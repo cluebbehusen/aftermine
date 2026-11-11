@@ -255,16 +255,7 @@ fn sees_unit(game: &crate::game::Scene<'_>, unit: &aftermine_sim::Unit) -> bool 
 /// fog — or through stealth: an undetected buried charge must not be
 /// clickable on ground the player merely sees.
 pub(super) fn selectable_building(game: &Game, building: &aftermine_sim::Building) -> bool {
-    sees_building(&game.view(), building)
-}
-
-fn sees_building(game: &crate::game::Scene<'_>, building: &aftermine_sim::Building) -> bool {
-    building.player == game.presentation.human
-        || game.presentation.all_seeing()
-        || (building.tiles().any(|tile| game.my_vision().visible(tile))
-            && game
-                .state
-                .building_apparent(game.presentation.human, building))
+    game.view().sees_building(building)
 }
 
 impl Picked {
@@ -276,7 +267,7 @@ impl Picked {
             Self::Building(id, _) => game
                 .state
                 .building(id)
-                .is_some_and(|b| sees_building(game, b)),
+                .is_some_and(|b| game.sees_building(b)),
         }
     }
 }
@@ -437,7 +428,7 @@ pub(crate) fn kept(
     let buildings: Vec<&aftermine_sim::Building> = buildings
         .iter()
         .filter_map(|id| game.state.building(*id))
-        .filter(|building| sees_building(game, building))
+        .filter(|building| game.sees_building(building))
         .collect();
     let owned_units = |owner: PlayerId| {
         let mut ids: Vec<UnitId> = units

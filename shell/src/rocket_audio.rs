@@ -87,8 +87,7 @@ fn audible_motors(game: &Scene<'_>) -> Vec<Motor<RocketKey>> {
         );
         let at = from.lerp(impact, progress);
         if game.state.hostile(game.presentation.human, shell.player)
-            && !game.presentation.all_seeing()
-            && !game.my_vision().visible(numeric::tile_at(at))
+            && !game.sees_tile(numeric::tile_at(at))
         {
             continue;
         }

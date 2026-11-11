@@ -31,11 +31,7 @@ fn rotate(v: Vec2, angle: f32) -> Vec2 {
 }
 
 fn visible(game: &Scene<'_>, at: Vec2) -> bool {
-    game.presentation.all_seeing()
-        || game.my_vision().visible(chassis::grid::TilePos::new(
-            numeric::to_i32(at.x.floor()),
-            numeric::to_i32(at.y.floor()),
-        ))
+    game.sees_tile(numeric::tile_at(at))
 }
 
 pub(super) fn casualty_visible(game: &Scene<'_>, at: Vec2, body: UnitBody) -> bool {

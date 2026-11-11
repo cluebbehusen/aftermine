@@ -98,3 +98,96 @@ fn the_minimap_repaints_only_when_its_picture_can_change() {
     game.presentation.overlay = true;
     assert_eq!(stray_survives(&game), (true, false), "the overlay sees all");
 }
+
+#[test]
+fn unverified_sites_fill_the_minimap_as_the_world_draws_them() {
+    let row = ".".repeat(48);
+    let scenario = aftermine_sim::Scenario::from_json(
+        &serde_json::json!({
+            "name": "Blueprints",
+            "mode": "sandbox",
+            "map": vec![row; 10],
+            "players": [
+                {"name": "You", "scrap": 1000, "bot": false, "team": 0},
+                {"name": "Ally", "scrap": 1000, "bot": false, "team": 0}
+            ],
+            "units": [
+                {"player": 0, "kind": "harvester", "x": 40, "y": 2},
+                {"player": 1, "kind": "harvester", "x": 40, "y": 7}
+            ],
+            "buildings": []
+        })
+        .to_string(),
+    )
+    .expect("blueprints parse");
+    let mut game = crate::game::Game::with_viewport(scenario, VIEWPORT).expect("builds");
+    let workers: Vec<_> = game.state.units().iter().map(|unit| unit.id).collect();
+    let anchors = [
+        chassis::grid::TilePos::new(40, 1),
+        chassis::grid::TilePos::new(40, 6),
+    ];
+    // Blueprints go down only on ground their seat remembers but no longer
+    // sees, so walk both workers out of sight of where they started.
+    for (seat, worker) in workers.iter().enumerate() {
+        game.pending.push(aftermine_sim::PlayerCommand {
+            player: aftermine_sim::PlayerId::from_index(seat),
+            command: aftermine_sim::Command::Advance {
+                units: vec![*worker],
+                goal: chassis::grid::TilePos::new(2, anchors[seat].y + 1),
+                queue: false,
+            },
+        });
+    }
+    let fogged = |game: &crate::game::Game| {
+        anchors.iter().all(|anchor| {
+            (0..2).all(|seat| {
+                let vision = game.state.vision(aftermine_sim::PlayerId::from_index(seat));
+                (0..3).all(|dy| (0..3).all(|dx| !vision.visible(anchor.offset(dx, dy))))
+            })
+        })
+    };
+    for _ in 0..2000 {
+        if fogged(&game) {
+            break;
+        }
+        game.do_tick();
+    }
+    assert!(fogged(&game), "premise: both workers walked away");
+    for (seat, worker) in workers.iter().enumerate() {
+        game.pending.push(aftermine_sim::PlayerCommand {
+            player: aftermine_sim::PlayerId::from_index(seat),
+            command: aftermine_sim::Command::Build {
+                units: vec![*worker],
+                kind: aftermine_sim::BuildingKind::Fabricator,
+                anchor: anchors[seat],
+                queue: false,
+                defer: true,
+            },
+        });
+    }
+    game.do_tick();
+    let site = |seat: usize| {
+        game.state
+            .buildings()
+            .iter()
+            .find(|building| building.player == aftermine_sim::PlayerId::from_index(seat))
+            .cloned()
+            .expect("a blueprint per seat")
+    };
+    let (own, ally) = (site(0), site(1));
+    assert!(own.provisional() && ally.provisional(), "premise");
+    for overlay in [false, true] {
+        game.presentation.overlay = overlay;
+        let view = game.view();
+        assert_eq!(
+            structure_fill(&view, &own),
+            Some(crate::render::entities::UNVERIFIED_SITE),
+            "your own blueprint reads as unverified (overlay {overlay})"
+        );
+        assert_eq!(
+            structure_fill(&view, &ally),
+            None,
+            "an ally's blueprint draws nowhere (overlay {overlay})"
+        );
+    }
+}
