@@ -736,16 +736,13 @@ fn engage_on(
     }
     // A fight ends once it has gone its time without progress, not after a
     // fixed time.
-    let tally = Tally::of(observation, members, target.objective().owner);
     if let Task::Attack {
-        phase: AttackPhase::Engage { tally: last, .. },
+        phase: AttackPhase::Engage { tally, .. },
         ..
     } = &mut mission.task
+        && Tally::update(tally, observation, members, target.objective().owner)
     {
-        if last.is_some_and(|last| tally.progresses(last)) {
-            mission.since = now;
-        }
-        *last = Some(last.map_or(tally, |last| tally.since(last)));
+        mission.since = now;
     }
     let age = now - mission.since;
     if !all_idle && age < ENGAGE_TICKS {
@@ -812,6 +809,21 @@ pub(super) struct Tally {
 }
 
 impl Tally {
+    /// Updates `last`, what a fight against `owner` knew of the enemy, with
+    /// the enemy around `members` now. Returns whether the fight made
+    /// progress since.
+    pub(super) fn update(
+        last: &mut Option<Self>,
+        observation: &ObservationData,
+        members: &[&UnitObs],
+        owner: PlayerId,
+    ) -> bool {
+        let now = Self::of(observation, members, owner);
+        let progress = last.is_some_and(|last| now.progresses(last));
+        *last = Some(last.map_or(now, |last| now.since(last)));
+        progress
+    }
+
     /// The enemy around `members` now, in a fight against `owner`.
     fn of(observation: &ObservationData, members: &[&UnitObs], owner: PlayerId) -> Self {
         let buildings = observation

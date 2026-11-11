@@ -158,7 +158,12 @@ enum StrikePhase {
 enum LiftPhase {
     Load,
     Fly,
-    Fight { focus: Option<UnitId> },
+    Fight {
+        focus: Option<UnitId>,
+        /// What the fight last knew of the enemy, to tell whether it still
+        /// makes progress. `None` until its first decision.
+        tally: Option<attack::Tally>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -473,7 +478,7 @@ impl Task {
                 ..
             }
             | Self::Lift {
-                phase: LiftPhase::Fight { focus },
+                phase: LiftPhase::Fight { focus, .. },
                 ..
             }
             | Self::Strike {

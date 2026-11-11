@@ -1909,3 +1909,177 @@ fn a_mid_flight_roc_lift_checkpoint_resumes_identically() {
     }
     resumes_identically(&mut opponent, &scenario, &mut state, 600);
 }
+
+/// Spots on East's shore in sight of East's Foundry, short of a Sentinel's
+/// aggro.
+const ASHORE: [(i32, i32); 8] = [
+    (28, 10),
+    (29, 10),
+    (28, 11),
+    (29, 11),
+    (28, 12),
+    (29, 12),
+    (28, 13),
+    (29, 13),
+];
+
+/// The strait at tick 12 with eight more West Sentinels at `spots` on East's
+/// island, and their ids.
+fn ashore(spots: &[(i32, i32)]) -> (Scenario, State, Vec<UnitId>) {
+    let mut scenario = strait();
+    for (x, y) in spots {
+        scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+    }
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 12, &[]);
+    let mut riders: Vec<UnitId> = spots.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    riders.sort_unstable();
+    (scenario, state, riders)
+}
+
+/// A lift of `riders` fighting at East's Foundry since `since`, knowing
+/// `tally` of the enemy.
+fn landed(riders: &[UnitId], since: u64, tally: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "next": 1,
+        "list": [{
+            "id": 0,
+            "task": {
+                "task": "lift",
+                "target": {"owner": 1, "building": "foundry", "anchor": {"x": 35, "y": 11}},
+                "phase": {"fight": {"focus": null, "tally": tally}},
+            },
+            "since": since,
+            "units": riders,
+            "goal": {"x": 29, "y": 11},
+        }],
+    })
+}
+
+/// Whether `commands` send `units` at `building`.
+fn attacked(commands: &[PlayerCommand], units: &[UnitId], building: BuildingId) -> bool {
+    commands.iter().any(|command| {
+        command.command
+            == Command::Attack {
+                units: units.to_vec(),
+                target: AttackTarget::Building(building),
+                queue: false,
+            }
+    })
+}
+
+#[test]
+fn landed_riders_at_rest_short_of_a_target_they_know_go_at_it() {
+    let (scenario, state, riders) = ashore(&ASHORE);
+    let foundry = foundries(&state, PlayerId(1))[0];
+    let missions = landed(&riders, 0, &serde_json::Value::Null);
+    let mut opponent = super::attack::restaged(&scenario, &state, missions);
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let mission = lift(&trace.unwrap().missions).expect("the fight goes on");
+    assert_eq!((mission.kind, mission.phase), (east_start(), Phase::Fight));
+    assert!(attacked(&commands, &riders, foundry), "{commands:?}");
+}
+
+/// The riders of [`landed`] at tick 3,600, fighting since tick 0, still
+/// `busy` or at rest, with `tally` as what the fight last knew of East's
+/// buildings, offset from what West knows now.
+fn fighting_ashore(tally: Option<i64>, busy: bool) -> (Scenario, State, Opponent, Vec<UnitId>) {
+    let (scenario, mut state, riders) = ashore(&ASHORE);
+    advance_to(&mut state, 3_588, &[]);
+    let moving = if busy {
+        vec![run(0, riders.clone(), 28, 17)]
+    } else {
+        Vec::new()
+    };
+    advance_to(&mut state, 3_600, &moving);
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let buildings: i64 = observation
+        .enemy_buildings
+        .iter()
+        .map(|building| i64::from(building.hp))
+        .sum();
+    assert!(buildings > 0, "premise: East's Foundry is known");
+    let tally = tally.map_or(
+        serde_json::Value::Null,
+        |more| serde_json::json!({"buildings": buildings + more, "units": 0}),
+    );
+    let opponent = super::attack::restaged(&scenario, &state, landed(&riders, 0, &tally));
+    (scenario, state, opponent, riders)
+}
+
+#[test]
+fn a_lift_fight_goes_on_past_its_time_only_while_it_makes_progress() {
+    for (tally, goes_on, why) in [
+        (Some(1), true, "a building lost health"),
+        (Some(0), false, "nothing lost"),
+        (None, false, "the fight's first reading"),
+    ] {
+        let (_, state, mut opponent, riders) = fighting_ashore(tally, true);
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let mission = lift(&trace.unwrap().missions);
+        if goes_on {
+            assert_eq!(
+                mission.map(|mission| mission.phase),
+                Some(Phase::Fight),
+                "{why}"
+            );
+            let ordered = runs(&commands)
+                .into_iter()
+                .chain(hunts(&commands))
+                .any(|(units, _)| units.iter().any(|id| riders.contains(id)));
+            assert!(!ordered, "{why}: {commands:?}");
+        } else {
+            assert_eq!(mission, None, "{why}: the fight ends");
+        }
+    }
+}
+
+#[test]
+fn a_lift_fight_keeps_what_it_knew_and_resumes_identically() {
+    let (scenario, mut state, mut opponent, _) = fighting_ashore(Some(1), true);
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let json = serde_json::to_value(opponent.checkpoint()).unwrap();
+    assert!(
+        json["missions"]["list"][0]["task"]["phase"]["fight"]["tally"].is_object(),
+        "{json}"
+    );
+    state.tick(&commands);
+    resumes_identically(&mut opponent, &scenario, &mut state, 600);
+}
+
+#[test]
+fn riders_let_go_from_a_target_given_up_are_not_sent_back_at_it() {
+    // At rest beside East's Foundry after a fight that went its time
+    // without progress: the lift gives the Foundry up.
+    let (_, state, mut opponent, riders) = fighting_ashore(Some(0), false);
+    let foundry = foundries(&state, PlayerId(1))[0];
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert_eq!(lift(&trace.unwrap().missions), None, "the fight ends");
+    assert!(!attacked(&commands, &riders, foundry), "{commands:?}");
+}
+
+#[test]
+fn free_riders_on_a_targets_island_go_at_a_target_there() {
+    // Riders a lift let go: in sight of East's Foundry, they go at it; out
+    // of sight of its start, they walk there.
+    let (scenario, state, riders) = ashore(&ASHORE);
+    let foundry = foundries(&state, PlayerId(1))[0];
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    assert!(attacked(&commands, &riders, foundry), "{commands:?}");
+
+    let far = [(27, 21), (28, 21), (27, 22), (28, 22)];
+    let (scenario, state, riders) = ashore(&far);
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(
+        observation.enemy_buildings.is_empty(),
+        "premise: the start is out of sight"
+    );
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let size = BuildingKind::Foundry.size();
+    assert!(
+        hunts(&commands).iter().any(|(units, goal)| {
+            *units == riders && crate::frame::gap(EAST_START, size, *goal, (1, 1)) == 0
+        }),
+        "{commands:?}"
+    );
+}
