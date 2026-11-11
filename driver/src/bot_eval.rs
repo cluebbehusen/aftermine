@@ -65,53 +65,28 @@ impl EvaluationLeg {
     }
 }
 
-/// Exact evaluation-only command source for one seat: one configuration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct EvaluationController {
-    config: BotConfig,
-}
-
-impl EvaluationController {
-    /// The evaluation source for one configuration.
-    pub fn configured(config: BotConfig) -> Self {
-        Self { config }
-    }
-
-    pub(crate) fn config(self) -> BotConfig {
-        self.config
-    }
-
-    fn profile(self) -> ResolvedProfile {
-        ResolvedProfile::resolve(self.config)
-    }
-
-    fn seat_controller(
-        self,
-        player: PlayerId,
-        opponent_map: &OpponentMap<'_>,
-    ) -> Result<SeatController> {
-        SeatController::configured(player, self.config(), opponent_map)
-            .context("building an evaluation seat's map model")
-    }
-}
-
-/// One exact evaluation leg, including command sources that are intentionally
-/// not serializable into an ordinary match setup.
+/// One exact evaluation leg.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EvaluationPlan {
     /// Seat-pair leg.
     pub leg: EvaluationLeg,
-    /// Scenario used to build the state and replay.
+    /// Scenario used to build the state and replay; every seat is a
+    /// configured bot, so the replay records what drove each seat.
     pub scenario: Scenario,
-    /// Exact evaluation-only controller per seat.
-    pub controllers: Vec<EvaluationController>,
 }
 
 impl EvaluationPlan {
     /// Adapts an ordinary configured scenario to the evaluation runner;
     /// every seat must be a configured bot.
     pub fn from_scenario(scenario: Scenario, leg: EvaluationLeg) -> Result<Self> {
-        let controllers = scenario
+        let plan = Self { leg, scenario };
+        plan.controllers()?;
+        Ok(plan)
+    }
+
+    /// Every seat's bot configuration, by seat.
+    fn controllers(&self) -> Result<Vec<BotConfig>> {
+        self.scenario
             .players
             .iter()
             .enumerate()
@@ -119,35 +94,19 @@ impl EvaluationPlan {
                 (player.bot)
                     .then_some(player.bot_config)
                     .flatten()
-                    .map(EvaluationController::configured)
                     .with_context(|| format!("seat {seat} has no bot configuration"))
             })
-            .collect::<Result<_>>()?;
-        Ok(Self {
-            leg,
-            scenario,
-            controllers,
-        })
+            .collect()
     }
 
-    fn validate(&self) -> Result<()> {
-        ensure!(
-            self.controllers.len() == self.scenario.players.len(),
-            "evaluation plan has {} controllers for {} seats",
-            self.controllers.len(),
-            self.scenario.players.len()
-        );
-        Ok(())
-    }
-
-    fn seat_controllers(&self) -> Result<Vec<SeatController>> {
+    fn seat_controllers(&self, controllers: &[BotConfig]) -> Result<Vec<SeatController>> {
         let opponent_map = OpponentMap::new(&self.scenario);
-        self.controllers
+        controllers
             .iter()
-            .copied()
             .enumerate()
-            .map(|(seat, controller)| {
-                controller.seat_controller(PlayerId::from_index(seat), &opponent_map)
+            .map(|(seat, &config)| {
+                SeatController::configured(PlayerId::from_index(seat), config, &opponent_map)
+                    .context("building an evaluation seat's map model")
             })
             .collect()
     }
@@ -379,15 +338,11 @@ pub struct EvaluationRow {
     pub candidate: String,
     /// Scenario display name.
     pub scenario: String,
-    /// Stable digest of the complete configured scenario.
+    /// Stable digest of the complete configured scenario, every seat's bot
+    /// configuration included: legs that share it run the same match.
     pub scenario_fingerprint: String,
-    /// Stable digest of the scenario, leg, controller identities, and exact
-    /// player-facing configuration for this leg.
+    /// Stable digest of the scenario and the leg.
     pub evaluation_fingerprint: String,
-    /// Stable digest of only the scenario and exact controllers. The leg name
-    /// is excluded so legs that would run the same match are detected before
-    /// execution.
-    pub execution_fingerprint: String,
     /// Requested simulation tick ceiling.
     pub tick_limit: u64,
     /// Stalls of one reason on one unit that end the leg early; `None` when
@@ -452,9 +407,6 @@ pub type EvaluationTraceSink<'a> = &'a mut dyn FnMut(&EvaluationTraceRow) -> Res
 /// unit stalls `stall_loop_limit` times for the same reason; `None` never
 /// stops early. With `trace_sink`, every controlled seat's decision
 /// diagnostics go to it; the row and replay are the same either way.
-///
-/// Controller identities come from the evaluation plan and are recorded in
-/// replay provenance independently of the physical scenario configuration.
 pub fn evaluate_plan(
     plan: &EvaluationPlan,
     tick_limit: u64,
@@ -468,26 +420,23 @@ pub fn evaluate_plan(
         "bot evaluation stall-loop limit must be positive or disabled"
     );
     validate_candidate(candidate)?;
-    plan.validate()?;
+    let controllers = plan.controllers()?;
     let scenario = &plan.scenario;
     let scenario_fingerprint = scenario_fingerprint(scenario)?;
     let evaluation_fingerprint = evaluation_fingerprint(plan)?;
-    let execution_fingerprint = execution_fingerprint(plan)?;
 
     let mut state = scenario
         .build()
         .context("building bot evaluation scenario")?;
-    let mut bots = plan.seat_controllers()?;
+    let mut bots = plan.seat_controllers(&controllers)?;
     let mut replay = GameReplay::new(
         SIM_VERSION,
         crate::build_identity().label(),
         scenario.clone(),
     );
     replay.meta.kind = Some("bot-eval".into());
-    let controllers = serde_json::to_string(&plan.controllers)
-        .context("serializing replay controller provenance")?;
     replay.meta.description = Some(format!(
-        "bot-eval candidate={candidate}; scenario={scenario_fingerprint}; evaluation={evaluation_fingerprint}; execution={execution_fingerprint}; tick_limit={tick_limit}; leg={}; controllers={controllers}",
+        "bot-eval candidate={candidate}; scenario={scenario_fingerprint}; evaluation={evaluation_fingerprint}; tick_limit={tick_limit}; leg={}",
         plan.leg.name(),
     ));
     let mut evidence: Vec<SeatEvidence> =
@@ -596,20 +545,18 @@ pub fn evaluate_plan(
         scenario: scenario.name.clone(),
         scenario_fingerprint,
         evaluation_fingerprint,
-        execution_fingerprint,
         tick_limit,
         stall_loop_limit,
         leg: plan.leg,
-        seats: plan
-            .controllers
-            .iter()
+        seats: controllers
+            .into_iter()
             .zip(state.players())
             .enumerate()
-            .map(|(seat, (controller, player))| SeatConfiguration {
+            .map(|(seat, (config, player))| SeatConfiguration {
                 seat: u8::try_from(seat).expect("seat indices fit in u8"),
                 team: player.team,
-                config: controller.config(),
-                profile: controller.profile(),
+                config,
+                profile: ResolvedProfile::resolve(config),
             })
             .collect(),
         termination: if stall_loop.is_some() {
@@ -934,10 +881,9 @@ pub fn scenario_fingerprint(scenario: &Scenario) -> Result<String> {
     ))
 }
 
-/// Stable digest of the matchup, including evaluation-only
-/// command sources that are intentionally absent from an ordinary scenario.
+/// Stable digest of the plan: its configured scenario and its leg.
 pub fn evaluation_fingerprint(plan: &EvaluationPlan) -> Result<String> {
-    plan.validate()?;
+    plan.controllers()?;
     let configured = serde_json::to_vec(plan).context("serializing evaluation provenance")?;
     Ok(format!(
         "fnv1a64:{:016x}",
@@ -945,26 +891,16 @@ pub fn evaluation_fingerprint(plan: &EvaluationPlan) -> Result<String> {
     ))
 }
 
-/// Stable digest of the exact world and controller identities that execute.
-///
-/// Unlike [`evaluation_fingerprint`], this deliberately excludes the leg name.
-/// Two plans with this same digest would run the same match and must not be
-/// counted as independent evidence.
-pub fn execution_fingerprint(plan: &EvaluationPlan) -> Result<String> {
-    let configured = execution_identity_bytes(plan)?;
-    Ok(format!(
-        "fnv1a64:{:016x}",
-        chassis::hash::fnv1a(&configured)
-    ))
-}
-
-/// Rejects plans that resolve to the same executable matchup.
+/// Rejects plans that would run the same match: the leg name aside, their
+/// configured scenarios are identical, so they are not independent evidence.
 pub fn ensure_unique_execution_plans<'a>(
     plans: impl IntoIterator<Item = &'a EvaluationPlan>,
 ) -> Result<()> {
     let mut seen = BTreeMap::new();
     for plan in plans {
-        let identity = execution_identity_bytes(plan)?;
+        plan.controllers()?;
+        let identity = serde_json::to_vec(&plan.scenario)
+            .context("serializing executable evaluation identity")?;
         let label = format!("scenario {:?} {}", plan.scenario.name, plan.leg.name());
         if let Some(first) = seen.insert(identity, label.clone()) {
             anyhow::bail!(
@@ -973,12 +909,6 @@ pub fn ensure_unique_execution_plans<'a>(
         }
     }
     Ok(())
-}
-
-fn execution_identity_bytes(plan: &EvaluationPlan) -> Result<Vec<u8>> {
-    plan.validate()?;
-    serde_json::to_vec(&(&plan.scenario, &plan.controllers))
-        .context("serializing executable evaluation identity")
 }
 
 /// Stable digest of the exact tick-stamped commands in one recorded match.
@@ -1016,7 +946,7 @@ pub fn evaluation_replay_filename(
     plan: &EvaluationPlan,
 ) -> Result<String> {
     validate_candidate(candidate)?;
-    plan.validate()?;
+    plan.controllers()?;
     let configured = serde_json::to_vec(&(candidate, SIM_VERSION, tick_limit, plan))
         .context("serializing replay filename input")?;
     let digest = chassis::hash::fnv1a(&configured);

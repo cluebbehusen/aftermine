@@ -1,58 +1,26 @@
 use super::*;
-use crate::bot_eval::EvaluationController;
 use aftermine_sim::Scenario;
 use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use chassis::replay::Replay;
 
-fn seats(description: Option<String>) -> Vec<SeatPlayer> {
+#[test]
+fn seats_name_the_controllers_their_setup_records() {
+    let prime = BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 9);
     let mut scenario = Scenario::skirmish();
-    for player in &mut scenario.players {
-        player.bot = false;
-    }
+    scenario.players[0].bot = true;
+    scenario.players[0].bot_config = Some(prime);
+    scenario.players[1].bot = false;
+    scenario.players[1].bot_config = None;
     let mut replay: GameReplay = Replay::new(SIM_VERSION, "test", scenario);
     replay.meta.ticks = Some(12);
-    replay.meta.description = description;
-    ledger(Path::new("unit.json"), &replay)
+    let seats: Vec<SeatPlayer> = ledger(Path::new("unit.json"), &replay)
         .unwrap()
         .seats
         .into_iter()
         .map(|seat| seat.controller)
-        .collect()
-}
-
-#[test]
-fn evaluation_replays_name_the_controllers_that_drove_their_seats() {
-    let prime = BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 9);
-    let standard = BotConfig::new(BotDifficulty::Standard, BotStance::Turtle, 4);
-    let controllers = serde_json::to_string(&[
-        EvaluationController::configured(prime),
-        EvaluationController::configured(standard),
-    ])
-    .unwrap();
+        .collect();
     assert_eq!(
-        seats(Some(format!(
-            "bot-eval candidate=unit; leg=forward; controllers={controllers}"
-        ))),
-        [
-            SeatPlayer::Bot { config: prime },
-            SeatPlayer::Bot { config: standard }
-        ]
+        seats,
+        [SeatPlayer::Bot { config: prime }, SeatPlayer::Human]
     );
-    assert_eq!(
-        seats(Some(
-            "bot-eval candidate=unit; controllers=[not json".into()
-        )),
-        [SeatPlayer::Unknown, SeatPlayer::Unknown]
-    );
-    assert_eq!(
-        seats(Some(format!(
-            "bot-eval candidate=a; controllers=[]; leg=forward; controllers={controllers}"
-        ))),
-        [
-            SeatPlayer::Bot { config: prime },
-            SeatPlayer::Bot { config: standard }
-        ],
-        "the last marker holds the controllers"
-    );
-    assert_eq!(seats(None), [SeatPlayer::Human, SeatPlayer::Human]);
 }

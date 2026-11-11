@@ -94,7 +94,15 @@ fn a_ladder_writes_paired_rows_and_reports_them_against_the_gate() {
             assert_eq!(row["seats"][seat]["profile"]["difficulty"], *rung);
             assert_eq!(row["seats"][seat]["profile"]["personality_seed"], 9000);
         }
-        assert!(Path::new(row["replay"].as_str().unwrap()).exists());
+        let replay = row["replay"].as_str().unwrap();
+        assert!(Path::new(replay).exists());
+        let summary = succeeded(&driver(&["replay-summary".as_ref(), replay.as_ref()]));
+        for rung in rungs {
+            assert!(
+                summary.contains(&format!("bot ({rung} / balanced, personality seed 9000)")),
+                "the replay names each seat's difficulty: {summary}"
+            );
+        }
     }
     assert!(replays.join("legs.jsonl").exists());
 

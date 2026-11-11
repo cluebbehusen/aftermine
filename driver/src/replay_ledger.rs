@@ -8,7 +8,7 @@ use aftermine_kit::GameReplay;
 use aftermine_sim::SIM_VERSION;
 use aftermine_sim::scenario::BotConfig;
 use anyhow::{Context, Result, bail};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -45,8 +45,6 @@ pub enum SeatPlayer {
         /// The configuration.
         config: BotConfig,
     },
-    /// The recording names controllers it could not be read for.
-    Unknown,
 }
 
 /// One recorded game.
@@ -101,50 +99,20 @@ pub fn ledger(path: &Path, replay: &GameReplay) -> Result<GameLedger> {
 
 /// Who played each seat of `replay`, by seat.
 pub fn seat_players(replay: &GameReplay) -> Vec<SeatPlayer> {
-    let evaluated = evaluation_controllers(replay);
     replay
         .setup
         .players
         .iter()
-        .enumerate()
-        .map(|(seat, spec)| {
+        .map(|spec| {
             if spec.bot {
-                return SeatPlayer::Bot {
+                SeatPlayer::Bot {
                     config: spec.bot_config.unwrap_or_default(),
-                };
-            }
-            match &evaluated {
-                None => SeatPlayer::Human,
-                Some(Ok(controllers)) => {
-                    controllers
-                        .get(seat)
-                        .map_or(SeatPlayer::Unknown, |recorded| SeatPlayer::Bot {
-                            config: recorded.config,
-                        })
                 }
-                Some(Err(_)) => SeatPlayer::Unknown,
+            } else {
+                SeatPlayer::Human
             }
         })
         .collect()
-}
-
-/// A controller as an evaluation replay records it.
-#[derive(Deserialize)]
-struct RecordedController {
-    config: BotConfig,
-}
-
-/// The controllers an evaluation replay drove its seats with: evaluation
-/// clears the scenario's bot seats and records each seat's controller in
-/// the replay description instead. `None` for other recordings.
-fn evaluation_controllers(
-    replay: &GameReplay,
-) -> Option<serde_json::Result<Vec<RecordedController>>> {
-    let description = replay.meta.description.as_deref()?;
-    // The controllers come last, after fields such as the candidate that may
-    // themselves contain the marker.
-    let (_, controllers) = description.rsplit_once("; controllers=")?;
-    Some(serde_json::from_str(controllers))
 }
 
 /// Loads `path` as a replay or match recording, refusing a player save.
@@ -171,7 +139,6 @@ impl SeatPlayer {
     pub fn label(self) -> String {
         match self {
             SeatPlayer::Human => "human".to_owned(),
-            SeatPlayer::Unknown => "unknown controller".to_owned(),
             SeatPlayer::Bot { config } => format!("bot {}", config.difficulty),
         }
     }

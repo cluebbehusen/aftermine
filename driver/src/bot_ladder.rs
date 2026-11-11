@@ -206,7 +206,7 @@ pub fn expand(manifest: &LadderManifest, scenarios: &[Scenario]) -> Result<Vec<L
                     ] {
                         legs.push(LadderLeg {
                             label: label.clone(),
-                            plan: seated_plan(source, leg, rungs.into_iter().map(seat)),
+                            plan: seated_plan(source, leg, &rungs.map(seat))?,
                         });
                     }
                 }
