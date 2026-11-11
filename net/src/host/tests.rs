@@ -222,6 +222,37 @@ fn a_client_holding_the_host_back_for_the_progress_timeout_makes_the_match_wait(
 }
 
 #[test]
+fn a_client_held_at_the_lead_cap_stays_live_while_the_match_waits_for_another() {
+    // A falls a full lead behind and holds play; B then goes away, and A
+    // catches up while the match waits for B.
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    let b_gone = Duration::from_millis(2100);
+    let (mut a_acked, mut b_acked) = (0, 0);
+    let mut now = Duration::ZERO;
+    while now < b_gone + PROGRESS_TIMEOUT + secs(5) {
+        if now == b_gone {
+            host.disconnected(B, now);
+        }
+        step(&mut host, now, 0);
+        host.receive(A, &ClientMessage::Heartbeat.encode(), now);
+        let published = host.tick();
+        if now < b_gone {
+            ack_through(&mut host, B, b_acked + 1, published, now);
+            b_acked = published;
+        } else {
+            ack_through(&mut host, A, a_acked + 1, published, now);
+            a_acked = published;
+        }
+        assert!(host.poll(now).is_empty());
+        if now >= b_gone {
+            let waiting: Vec<PlayerId> = host.seats(now).iter().map(|notice| notice.seat).collect();
+            assert_eq!(waiting, [B], "at {now:?}");
+        }
+        now += Duration::from_millis(50);
+    }
+}
+
+#[test]
 fn time_spent_paused_never_counts_toward_the_progress_timeout() {
     let mut host = HostSession::new(HOST, &[A], secs(0));
     for _ in 0..LEAD_CAP {

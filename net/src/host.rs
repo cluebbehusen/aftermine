@@ -432,13 +432,7 @@ impl HostSession {
             return;
         }
         self.paused = paused;
-        for link in self
-            .clients
-            .iter_mut()
-            .filter_map(|client| client.link.as_mut())
-        {
-            link.blocked_since = None;
-        }
+        self.unblock();
     }
 
     /// Drops `seat` at the host's request: it surrenders, and its client
@@ -511,6 +505,8 @@ impl HostSession {
             "publish the sealed batch before sealing again"
         );
         if self.paused || self.course == Course::Halted || self.waiting() {
+            // While play is held for another reason, no client holds it back.
+            self.unblock();
             return None;
         }
         let tick = self.next_tick;
@@ -536,13 +532,7 @@ impl HostSession {
         if blocked {
             return None;
         }
-        for link in self
-            .clients
-            .iter_mut()
-            .filter_map(|client| client.link.as_mut())
-        {
-            link.blocked_since = None;
-        }
+        self.unblock();
         self.sealed = true;
         let mut budget = BATCH_COMMAND_BYTES;
         let fits = self
@@ -762,6 +752,17 @@ impl HostSession {
             }
         }
         self.prune_hashes();
+    }
+
+    /// Stops every client's progress clock: none is holding play back.
+    fn unblock(&mut self) {
+        for link in self
+            .clients
+            .iter_mut()
+            .filter_map(|client| client.link.as_mut())
+        {
+            link.blocked_since = None;
+        }
     }
 
     /// A seat still playing waits for its player from `now`.
