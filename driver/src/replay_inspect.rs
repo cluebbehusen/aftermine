@@ -293,7 +293,7 @@ fn command_activity(replay: &GameReplay, total: u64) -> Vec<SeatCommandActivity>
         entry.last_command_tick = Some(timed.tick);
         *entry
             .by_type
-            .entry(command_name(&timed.command.command).to_owned())
+            .entry(command_type(&timed.command.command))
             .or_default() += 1;
         if entry.command_ticks.last() != Some(&timed.tick) {
             entry.command_ticks.push(timed.tick);
@@ -368,44 +368,13 @@ fn longest_silence(command_ticks: &[u64], start: u64, total: u64) -> CommandSile
     best.expect("a nonempty command timeline always has a closing boundary")
 }
 
-fn command_name(command: &Command) -> &'static str {
-    match command {
-        Command::Run { .. } => "run",
-        Command::Attack { .. } => "attack",
-        Command::Hunt { .. } => "hunt",
-        Command::Harvest { .. } => "harvest",
-        Command::ReturnCargo { .. } => "return_cargo",
-        Command::Patrol { .. } => "patrol",
-        Command::Stop { .. } => "stop",
-        Command::Train { .. } => "train",
-        Command::Build { .. } => "build",
-        Command::Cancel { .. } => "cancel",
-        Command::Repair { .. } => "repair",
-        Command::Salvage { .. } => "salvage",
-        Command::CancelTrain { .. } => "cancel_train",
-        Command::SetRally { .. } => "set_rally",
-        Command::Surrender => "surrender",
-        Command::RepairUnit { .. } => "repair_unit",
-        Command::Advance { .. } => "advance",
-        Command::FocusFire { .. } => "focus_fire",
-        Command::CancelFound { .. } => "cancel_found",
-        Command::UpgradeBuilding { .. } => "upgrade_building",
-        Command::Load { .. } => "load",
-        Command::Unload { .. } => "unload",
-        Command::ClearFocus { .. } => "clear_focus",
-        Command::CancelOrder { .. } => "cancel_order",
-        Command::Accompany { .. } => "accompany",
-        Command::Retire { .. } => "retire",
-        Command::Scout { .. } => "scout",
-        Command::OrderRound { .. } => "order_round",
-        Command::CancelRound { .. } => "cancel_round",
-        Command::SetAutofill { .. } => "set_autofill",
-        Command::Launch { .. } => "launch",
-        Command::OrderDrone { .. } => "order_drone",
-        Command::CancelDrone { .. } => "cancel_drone",
-        Command::SetDroneAutofill { .. } => "set_drone_autofill",
-        Command::SetIdleWeld { .. } => "set_idle_weld",
-    }
+/// A command's wire name: the `type` tag serde gives it.
+fn command_type(command: &Command) -> String {
+    let value = serde_json::to_value(command).expect("commands serialize");
+    value["type"]
+        .as_str()
+        .expect("commands carry a string type tag")
+        .to_owned()
 }
 
 #[cfg(test)]
