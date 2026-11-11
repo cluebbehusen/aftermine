@@ -591,16 +591,6 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
         rows.iter().any(|row| row.contains("Pan up: W | [I]")),
         "{rows:?}"
     );
-    let capture = |client: &mut Client, name: &str| -> Result<()> {
-        if let Ok(dir) = std::env::var("AFTERMINE_CONTROL_QA_DIR") {
-            std::fs::create_dir_all(&dir)?;
-            client.call(Request::Screenshot {
-                path: Some(PathBuf::from(dir).join(name).to_string_lossy().into_owned()),
-            })?;
-        }
-        Ok(())
-    };
-    capture(&mut client, "controls.png")?;
     drop(client);
     drop(guard.shell.take());
     let (shell, reconnected) = spawn_shell(&SpawnOptions {
@@ -635,10 +625,8 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
     })?;
     client.call(Request::Pause)?;
     press_key(&mut client, Key::B)?;
-    capture(&mut client, "construction.png")?;
     press_key(&mut client, Key::R)?;
     press_key(&mut client, Key::Q)?;
-    capture(&mut client, "active-construction.png")?;
     client.call(Request::InjectEvent {
         event: RawEvent::MouseMove { x: 640.0, y: 400.0 },
     })?;

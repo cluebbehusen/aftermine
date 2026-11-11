@@ -26,42 +26,6 @@ fn tick_displacement(state: &mut aftermine_sim::State) -> u64 {
     total
 }
 
-/// Eight harvesters magnetized to one node: the doorstep crowd from
-/// the relaxer's own docstring. The steady state may jostle while
-/// extraction rotates the crew, but a SETTLED crowd — the parked blob
-/// below — must go fully stationary.
-#[test]
-#[ignore = "diagnostic: prints steady-state displacement for the jitter work"]
-fn crowded_harvest_steady_state() {
-    let units: Vec<_> = (0..8)
-        .map(|i| unit(0, UnitKind::Harvester, 2 + (i % 4), 5 + (i / 4)))
-        .collect();
-    let mut state = arena(units).build().unwrap();
-    let ids: Vec<_> = state.units().iter().map(|u| u.id).collect();
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: ids,
-            node: TilePos::new(11, 4),
-            queue: false,
-        },
-    )]);
-    for _ in 0..1_500 {
-        state.tick(&[]);
-    }
-    let mut samples = Vec::new();
-    for _ in 0..300 {
-        samples.push(tick_displacement(&mut state));
-    }
-    let nonzero = samples.iter().filter(|&&s| s > 0).count();
-    let mean: u64 = samples.iter().sum::<u64>() / samples.len() as u64;
-    println!("crowded harvest: {nonzero}/300 moving ticks, mean {mean} (millitile^2-ish)");
-}
-
-/// A parked blob: ten harvesters group-moved to a cluster, then left
-/// alone. Once arrival propagation settles them, every later tick must
-/// leave every position exactly where it was: settled machines do not
-/// vibrate.
 #[test]
 fn a_parked_crowd_goes_fully_stationary() {
     let units: Vec<_> = (0..10)
