@@ -4,6 +4,13 @@ use crate::input::Pointer;
 use crate::platform::Hands;
 use crate::tutorial::Lesson;
 
+impl CardLayout {
+    /// Every line of text on the card, in reading order.
+    pub(crate) fn text(&self) -> Vec<&str> {
+        self.lines.iter().map(|line| line.text.as_str()).collect()
+    }
+}
+
 /// Every glyph half as wide as the size: deterministic and headless.
 fn fixed(_: Face, text: &str, size: f32) -> f32 {
     text.chars().count() as f32 * size * 0.5
@@ -67,7 +74,7 @@ fn the_card_heads_its_step_and_keeps_every_line_inside_itself() {
 
 #[test]
 fn every_step_names_real_bindings_for_every_pair_of_hands() {
-    for hands in crate::platform::ALL_HANDS {
+    for hands in crate::platform::tests::ALL_HANDS {
         for lesson_kind in Lesson::ALL {
             for at in 0..lesson_kind.steps().len() {
                 let card = lay(&lesson(lesson_kind, at), None, hands, 1280.0);
@@ -209,7 +216,7 @@ fn both_cards_sit_in_the_top_left_corner_under_the_bar() {
 
 #[test]
 fn the_tip_card_heads_its_tip_names_real_bindings_and_keeps_inside_itself() {
-    for hands in crate::platform::ALL_HANDS {
+    for hands in crate::platform::tests::ALL_HANDS {
         for tip in Tip::ALL {
             for w in [640.0, 1280.0] {
                 let card = lay_tip(tip, hands, w);

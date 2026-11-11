@@ -118,7 +118,7 @@ fn enter_starts_the_selected_row_and_back_or_escape_leaves() {
     for touch in [false, true] {
         let mut list = LessonsScreen::open(&[], false);
         assert_eq!(
-            press(&mut list, &crate::button::press_back(touch)),
+            press(&mut list, &crate::button::tests::press_back(touch)),
             Out::Leave
         );
     }

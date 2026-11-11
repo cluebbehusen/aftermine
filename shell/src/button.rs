@@ -113,39 +113,5 @@ pub(crate) fn draw_back(mouse: Vec2) {
     draw(rect, "Back", crate::platform::hovers(rect, mouse), s);
 }
 
-/// A click (or, with `touch`, a tap) on the BACK button.
 #[cfg(test)]
-pub(crate) fn press_back(touch: bool) -> Vec<RawEvent> {
-    let p = corner_slot(0, crate::render::ui_scale()).center();
-    if touch {
-        vec![
-            RawEvent::TouchDown {
-                id: 9,
-                x: p.x,
-                y: p.y,
-            },
-            RawEvent::TouchUp {
-                id: 9,
-                x: p.x,
-                y: p.y,
-            },
-        ]
-    } else {
-        let button = aftermine_protocol::MouseButton::Left;
-        vec![
-            RawEvent::MouseDown {
-                button,
-                x: p.x,
-                y: p.y,
-            },
-            RawEvent::MouseUp {
-                button,
-                x: p.x,
-                y: p.y,
-            },
-        ]
-    }
-}
-
-#[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -1,9 +1,14 @@
 use super::*;
 use crate::game::GameReplay;
+use aftermine_sim::SIM_VERSION;
+
+fn scan(dir: &std::path::Path, out: &mut Vec<(RecordTime, ReplayEntry)>) {
+    scan_cancellable(dir, out, &|_| false, &|| false);
+}
 
 #[test]
 fn shelf_hints_offer_only_the_gestures_the_hands_in_use_have() {
-    use crate::platform::{ALL_HANDS, assert_copy_fits};
+    use crate::platform::tests::{ALL_HANDS, assert_copy_fits};
     assert_eq!(
         entry_hint(Some(("watches", "watch")), ALL_HANDS[0], false),
         "{confirm} watches | {delete} deletes"
@@ -474,7 +479,7 @@ fn a_chip_names_only_the_kinds_its_tab_does_not_imply() {
 
 #[test]
 fn shelf_hints_name_the_controllers_buttons_while_one_is_in_use() {
-    for hands in crate::platform::pad_hands() {
+    for hands in crate::platform::tests::pad_hands() {
         for (key_action, action) in [("watches", "watch"), ("loads paused", "load paused")] {
             let hint = entry_hint(Some((key_action, action)), hands, false);
             if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
@@ -488,14 +493,14 @@ fn shelf_hints_name_the_controllers_buttons_while_one_is_in_use() {
                     format!("{{confirm}} {key_action} | {{delete}} deletes")
                 );
             }
-            crate::platform::assert_pad_copy(hands, &hint);
+            crate::platform::tests::assert_pad_copy(hands, &hint);
         }
     }
 }
 
 #[test]
 fn a_remote_swipes_onto_a_rows_delete_where_a_controller_presses_its_own() {
-    for hands in crate::platform::pad_hands() {
+    for hands in crate::platform::tests::pad_hands() {
         let expected = if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
             "Swipe right to delete"
         } else {
@@ -517,9 +522,9 @@ fn on_a_rows_delete_the_hint_says_confirming_deletes() {
         problem,
         kind: RecordKind::Save,
     };
-    for hands in crate::platform::ALL_HANDS
+    for hands in crate::platform::tests::ALL_HANDS
         .into_iter()
-        .chain(crate::platform::pad_hands())
+        .chain(crate::platform::tests::pad_hands())
     {
         for problem in [None, Some(Unavailable::Unreadable)] {
             let hint = entry(problem).hint(hands, true);

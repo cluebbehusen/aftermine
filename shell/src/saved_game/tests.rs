@@ -1,6 +1,22 @@
 use super::*;
+use crate::game::Game;
 use aftermine_sim::{BuildingId, Command, PlayerId, Scenario, UnitKind};
 use std::path::PathBuf;
+
+fn write(game: &Game, meta: ReplayMeta, path: &Path) -> Result<()> {
+    write_capture(game.capture_save(), meta, path)
+}
+
+pub(crate) fn prepare_load(path: &Path) -> Result<RestoredGame> {
+    match prepare(path)? {
+        Loaded::Local(game) => Ok(*game),
+        Loaded::Lan(_) => anyhow::bail!("a LAN match resumes from Match Setup with its players"),
+    }
+}
+
+pub fn load(path: &Path) -> Result<Game> {
+    prepare_load(path).map(RestoredGame::install)
+}
 
 struct Fixture(PathBuf);
 impl Fixture {

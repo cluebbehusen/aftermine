@@ -4033,7 +4033,7 @@ fn patrol_is_exclusive_with_the_other_armed_verbs() {
 
 #[test]
 fn the_patrol_full_toast_names_only_what_the_hands_in_use_have() {
-    use crate::platform::{ALL_HANDS, assert_copy_fits, pad_hands};
+    use crate::platform::tests::{ALL_HANDS, assert_copy_fits, pad_hands};
     for hands in ALL_HANDS {
         let full = patrol_full_toast("R", hands);
         assert_copy_fits(hands, &full);

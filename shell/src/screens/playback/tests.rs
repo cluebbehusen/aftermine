@@ -1,7 +1,40 @@
 use super::*;
 use crate::camera::controls::RemoteMode;
 use crate::game::Game;
+use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
+
+impl PlaybackSession {
+    /// A session whose seeks land in one frame however slow the machine,
+    /// so tests never depend on the wall-clock budget.
+    pub fn from_replay(replay: GameReplay) -> Result<Self> {
+        let mut session = Self::from_recording(aftermine_kit::Recording {
+            replay,
+            keyframes: aftermine_kit::keyframes::Keyframes::default(),
+        })?;
+        session.seek_budget = std::time::Duration::MAX;
+        Ok(session)
+    }
+}
+
+impl PlaybackSession {
+    fn update(
+        &mut self,
+        bindings: &BindingMap,
+        events: &[RawEvent],
+        dt: f32,
+        viewport: Vec2,
+        prefs: crate::config::CameraPrefs,
+        mouse: &mut Vec2,
+    ) -> bool {
+        let time = FrameTime::measure(dt);
+        let leave = self.apply_input(bindings, events, time.presentation, viewport, prefs, mouse);
+        if !leave {
+            self.advance_frame(time, viewport);
+        }
+        leave
+    }
+}
 
 fn replay() -> GameReplay {
     // A short real replay: run the embedded skirmish headless and
@@ -273,7 +306,7 @@ fn pad_mode_leaves_the_transport_buttons_to_the_controller() {
     let viewport = vec2(1280.0, 800.0);
     assert!(transport_buttons(viewport, render::ui_scale(), true).is_empty());
     let [back, play, slower, faster] = buttons().map(|(rect, _)| rect.center());
-    for hands in crate::platform::pad_hands() {
+    for hands in crate::platform::tests::pad_hands() {
         crate::platform::set_hands(hands);
         let mut pb = session();
         let before = pb.presentation.camera.center;
@@ -1045,11 +1078,11 @@ fn the_hint_names_the_controllers_transport_while_one_is_in_use() {
         pad_hint(PadFamily::Xbox, true).copy(),
         "A pause | LB/RB seek | LT/RT speed | LS pan | RS zoom | B leave"
     );
-    for hands in crate::platform::pad_hands() {
+    for hands in crate::platform::tests::pad_hands() {
         let family = hands.pad.expect("pad hands");
         if family != PadFamily::Remote {
             for sticks in [false, true] {
-                crate::platform::assert_pad_copy(hands, &pad_hint(family, sticks).copy());
+                crate::platform::tests::assert_pad_copy(hands, &pad_hint(family, sticks).copy());
             }
         }
     }
@@ -1144,10 +1177,10 @@ fn the_hint_says_what_a_remotes_swipes_do_and_what_a_click_changes_them_to() {
     );
     pb.route_pads(&click, &pads, 0.0);
     assert_eq!(pb.remote.mode(), RemoteMode::Control);
-    crate::platform::assert_pad_copy(
+    crate::platform::tests::assert_pad_copy(
         crate::platform::Hands {
             pad: Some(aftermine_protocol::PadFamily::Remote),
-            ..crate::platform::ALL_HANDS[3]
+            ..crate::platform::tests::ALL_HANDS[3]
         },
         &hint(&pb),
     );

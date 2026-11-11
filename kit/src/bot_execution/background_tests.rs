@@ -151,7 +151,7 @@ fn mixed_controllers_background_and_serial_continue_identically() {
 
 #[test]
 fn own_events_are_consumed_only_when_a_decision_is_installed() {
-    let scenario = crate::controller::mixed_skirmish();
+    let scenario = crate::controller::tests::mixed_skirmish();
     let executor = BotExecutor::new(2);
     let mut state = Arc::new(scenario.build().unwrap());
     let mut bots = seat_controllers(&scenario).unwrap();

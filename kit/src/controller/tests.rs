@@ -1,5 +1,21 @@
 use super::*;
 
+/// Skirmish with a bot in both seats at different difficulties.
+pub(crate) fn mixed_skirmish() -> Scenario {
+    use aftermine_sim::scenario::{BotDifficulty, BotStance};
+    let mut scenario = Scenario::skirmish();
+    scenario.players[0].bot = true;
+    scenario.players[0].bot_config = Some(BotConfig::new(
+        BotDifficulty::Standard,
+        BotStance::Balanced,
+        3,
+    ));
+    scenario.players[1].bot = true;
+    scenario.players[1].bot_config =
+        Some(BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 4));
+    scenario
+}
+
 #[test]
 fn configured_seats_run_in_seat_order_as_their_own_opponent_would() {
     let mut scenario = mixed_skirmish();

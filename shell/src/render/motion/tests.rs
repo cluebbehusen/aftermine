@@ -153,7 +153,7 @@ fn a_parking_radar_unfolds_then_scans_until_it_drives() {
         assert_eq!(at(tick as f32 / 40.0), UnitFrame::Action(tick - 1));
     }
     assert_eq!(
-        crate::assets::unit_action_frames(UnitKind::Surveyor),
+        crate::assets::tests::unit_action_frames(UnitKind::Surveyor),
         RADAR_UNFOLD_FRAMES + RADAR_SCAN_FRAMES
     );
     for frame in 0..RADAR_SCAN_FRAMES {
@@ -503,7 +503,7 @@ fn buzzard_only_holds_its_gun_ready_near_the_end_of_cooldown() {
 fn every_unit_action_row_stays_inside_its_contract() {
     let action_counts = UnitKind::ALL
         .into_iter()
-        .map(|kind| (kind, crate::assets::unit_action_frames(kind)))
+        .map(|kind| (kind, crate::assets::tests::unit_action_frames(kind)))
         .filter(|(_, count)| *count > 0);
     for (kind, count) in action_counts {
         for progress in [0.0, 0.25, 0.5, 0.75, 1.0] {
@@ -653,7 +653,8 @@ fn bastion_body_and_mount_actions_never_drift() {
 
 #[test]
 fn defense_rows_cover_report_recovery_and_charge_boundaries() {
-    use crate::assets::{building_stem, rung_stem, shipped_frames};
+    use crate::assets::tests::shipped_frames;
+    use crate::assets::{building_stem, rung_stem};
     for kind in BuildingKind::ALL {
         let Some(look) = crate::look::defense(kind) else {
             assert_eq!(defense_preparation_frame(kind, 0.5), None, "{kind:?}");
@@ -753,7 +754,7 @@ fn mantle_charge_rows_do_not_show_a_ready_charge_before_the_sim_restores_it() {
 #[test]
 fn piledriver_reload_runs_through_every_pose_even_when_driving() {
     assert_eq!(
-        crate::assets::unit_action_frames(UnitKind::Piledriver),
+        crate::assets::tests::unit_action_frames(UnitKind::Piledriver),
         PILEDRIVER_RELOAD_FRAMES
     );
     for age in 0..100 {

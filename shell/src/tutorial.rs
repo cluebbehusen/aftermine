@@ -736,15 +736,6 @@ impl Tutorial {
     }
 }
 
-#[cfg(test)]
-impl Tutorial {
-    /// The same lesson standing at step `at`; the step count is finished.
-    pub(crate) fn at_step(mut self, at: usize) -> Self {
-        self.step = at;
-        self
-    }
-}
-
 /// The coach's price line: what the step buys, its cost, the bank, and
 /// how many Harvesters are mining.
 fn status_line(item: &str, cost: u32, bank: u32, mining: usize) -> String {

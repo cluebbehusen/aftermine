@@ -2,6 +2,16 @@ use super::*;
 use crate::netplay::{ClientLobby, Returning};
 use macroquad::prelude::vec2;
 
+impl LobbyScreen {
+    /// Listens with `scanner` instead of the shared discovery port.
+    pub fn with_scanner(mut self, scanner: Scanner) -> Self {
+        if let Face::Join { scan, .. } = &mut self.face {
+            *scan = Scan::Listening(Box::new(scanner));
+        }
+        self
+    }
+}
+
 fn feed(screen: &mut LobbyScreen, events: &[RawEvent]) -> Out {
     screen.update(events, &mut vec2(0.0, 0.0), &mut Vec::new())
 }
@@ -144,7 +154,7 @@ fn back_leaves_the_form_and_steps_out_of_a_join_onto_the_form() {
         let mut screen = LobbyScreen::join("Alex", "10.0.0.2");
         let mut sounds = Vec::new();
         let out = screen.update(
-            &crate::button::press_back(touch),
+            &crate::button::tests::press_back(touch),
             &mut vec2(0.0, 0.0),
             &mut sounds,
         );
@@ -155,7 +165,7 @@ fn back_leaves_the_form_and_steps_out_of_a_join_onto_the_form() {
     // A join that hangs on connecting steps back to the form, filled in,
     // by Back or Escape.
     let leaves: [Vec<RawEvent>; 2] = [
-        crate::button::press_back(false),
+        crate::button::tests::press_back(false),
         vec![RawEvent::KeyDown { key: Key::Escape }],
     ];
     for events in leaves {
@@ -185,7 +195,7 @@ fn back_leaves_the_form_and_steps_out_of_a_join_onto_the_form() {
     ))));
     assert_eq!(press(&mut screen, Key::Enter), Out::Stay);
     assert_eq!(
-        feed(&mut screen, &crate::button::press_back(true)),
+        feed(&mut screen, &crate::button::tests::press_back(true)),
         Out::Leave
     );
 }

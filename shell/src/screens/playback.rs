@@ -13,8 +13,6 @@ use crate::numeric::Fit;
 use crate::press::{Fed, Press};
 use crate::render::prim::{fill_rect, stroke_rect};
 use crate::{clock_label, render, theme};
-#[cfg(test)]
-use aftermine_protocol::Key;
 use aftermine_protocol::{MouseButton, PadButton, PadFamily, RawEvent};
 use aftermine_sim::SIM_VERSION;
 use anyhow::{Context, Result};
@@ -142,18 +140,6 @@ impl PlaybackSession {
     pub fn watch(recording: aftermine_kit::Recording) -> Result<Self> {
         let mut session = Self::from_recording(recording)?;
         session.engine.start_fill();
-        Ok(session)
-    }
-
-    /// A session whose seeks land in one frame however slow the machine,
-    /// so tests never depend on the wall-clock budget.
-    #[cfg(test)]
-    pub fn from_replay(replay: GameReplay) -> Result<Self> {
-        let mut session = Self::from_recording(aftermine_kit::Recording {
-            replay,
-            keyframes: aftermine_kit::keyframes::Keyframes::default(),
-        })?;
-        session.seek_budget = std::time::Duration::MAX;
         Ok(session)
     }
 
@@ -996,24 +982,6 @@ impl PlaybackSession {
         }
         self.presentation.camera.set_viewport(viewport);
         self.presentation.camera.update(time.presentation);
-    }
-
-    #[cfg(test)]
-    fn update(
-        &mut self,
-        bindings: &BindingMap,
-        events: &[RawEvent],
-        dt: f32,
-        viewport: Vec2,
-        prefs: crate::config::CameraPrefs,
-        mouse: &mut Vec2,
-    ) -> bool {
-        let time = FrameTime::measure(dt);
-        let leave = self.apply_input(bindings, events, time.presentation, viewport, prefs, mouse);
-        if !leave {
-            self.advance_frame(time, viewport);
-        }
-        leave
     }
 }
 

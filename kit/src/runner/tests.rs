@@ -4,7 +4,7 @@ use super::*;
 fn traced_step_preserves_the_authoritative_command_and_tick_path() {
     for (scenario, seats) in [
         (Scenario::skirmish(), vec![1]),
-        (crate::controller::mixed_skirmish(), vec![0, 1]),
+        (crate::controller::tests::mixed_skirmish(), vec![0, 1]),
     ] {
         let mut ordinary_state = scenario.build().unwrap();
         let mut traced_state = scenario.build().unwrap();

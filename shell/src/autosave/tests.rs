@@ -58,7 +58,7 @@ fn pending_tick_zero_input_is_saved_and_finished_matches_remain_recordings() {
     let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
         panic!("pending input must not be discarded")
     };
-    let mut restored = crate::saved_game::load(&path).unwrap();
+    let mut restored = crate::saved_game::tests::load(&path).unwrap();
     assert_eq!(*restored.pending, *game.pending);
     assert_eq!(restored.state.current_tick(), 0);
     assert_eq!(restored.do_tick().events, game.do_tick().events);

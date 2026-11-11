@@ -1322,18 +1322,6 @@ impl HostLobby {
         }
     }
 
-    /// Announces to `target` instead of the whole network.
-    #[cfg(test)]
-    pub(crate) fn advertise_to(&mut self, target: std::net::SocketAddr) {
-        self.advertiser = Advertiser::with_target(target).ok();
-    }
-
-    /// How many connections are open, joined or not.
-    #[cfg(test)]
-    pub(crate) fn connection_count(&self) -> usize {
-        self.connections.len()
-    }
-
     /// Accepts and reads connections and reports who joined and who left;
     /// a leaver's connection is already closed. No one is accepted while a
     /// start runs.

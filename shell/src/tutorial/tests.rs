@@ -6,6 +6,14 @@ use chassis::grid::TilePos;
 use chassis::rng::Pcg32;
 use macroquad::prelude::vec2;
 
+impl Tutorial {
+    /// The same lesson standing at step `at`; the step count is finished.
+    pub(crate) fn at_step(mut self, at: usize) -> Self {
+        self.step = at;
+        self
+    }
+}
+
 fn begin(lesson: Lesson) -> Game {
     Tutorial::begin_at(lesson, vec2(1280.0, 800.0)).expect("embedded lesson scenes build")
 }
@@ -596,10 +604,10 @@ fn every_lesson_string_is_ascii_and_names_only_what_the_hands_have() {
     // The bundled font cannot be trusted to cover typographic punctuation.
     let ascii = |line: &str| assert!(line.is_ascii(), "non-ASCII lesson text: {line}");
     ascii(CoachLine::Stuck.text());
-    for hands in crate::platform::ALL_HANDS {
+    for hands in crate::platform::tests::ALL_HANDS {
         let recovery = recovery_line(hands.touch());
         ascii(recovery);
-        crate::platform::assert_copy_fits(hands, recovery);
+        crate::platform::tests::assert_copy_fits(hands, recovery);
     }
     for lesson in Lesson::ALL {
         for line in [lesson.title(), lesson.outro()] {
@@ -607,10 +615,10 @@ fn every_lesson_string_is_ascii_and_names_only_what_the_hands_have() {
         }
         for step in lesson.steps() {
             ascii(step.title);
-            for hands in crate::platform::ALL_HANDS {
+            for hands in crate::platform::tests::ALL_HANDS {
                 for line in step.body(hands) {
                     ascii(line);
-                    crate::platform::assert_copy_fits(hands, line);
+                    crate::platform::tests::assert_copy_fits(hands, line);
                 }
             }
         }
@@ -618,8 +626,8 @@ fn every_lesson_string_is_ascii_and_names_only_what_the_hands_have() {
     // A row's story shows on the lesson list and the card before it,
     // whatever the hands.
     for row in Course::ALL {
-        for hands in crate::platform::ALL_HANDS {
-            crate::platform::assert_copy_fits(hands, row.briefing());
+        for hands in crate::platform::tests::ALL_HANDS {
+            crate::platform::tests::assert_copy_fits(hands, row.briefing());
         }
     }
 }

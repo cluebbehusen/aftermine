@@ -3,6 +3,15 @@ use crate::keyframes::{KEYFRAME_EVERY, KeyframeRecorder};
 use crate::runner;
 use aftermine_sim::Scenario;
 
+impl Playback {
+    /// Waits for the fill to finish the record.
+    fn finish_fill(&mut self) {
+        if let Some(worker) = self.fill.as_mut().and_then(|fill| fill.worker.take()) {
+            worker.join().expect("the fill finishes");
+        }
+    }
+}
+
 fn recorded_match() -> GameReplay {
     let mut scenario = Scenario::skirmish();
     crate::bench::all_bots(&mut scenario);
