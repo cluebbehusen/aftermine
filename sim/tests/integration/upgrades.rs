@@ -610,3 +610,16 @@ fn the_deep_array_waits_for_the_crucible_too() {
     assert_eq!(b.tier, 1);
     assert_eq!(b.kind.tier_name(b.tier), "deep array");
 }
+
+#[test]
+fn a_reclaimer_earns_its_stated_minute() {
+    let mut state = arena(2_000, false, true).build().unwrap();
+    let bank = state.player(PlayerId(0)).scrap;
+    for _ in 0..60 * u64::from(aftermine_sim::TICKS_PER_SECOND) {
+        state.tick(&[]);
+    }
+    assert_eq!(
+        state.player(PlayerId(0)).scrap - bank,
+        aftermine_sim::stats::passive_scrap_per_minute(0)
+    );
+}

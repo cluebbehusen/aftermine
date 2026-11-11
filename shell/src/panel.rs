@@ -579,7 +579,7 @@ pub fn building_economy_lines(kind: BuildingKind) -> Vec<String> {
     match kind {
         BuildingKind::Reclaimer => vec![format!(
             "Makes {} scrap/min.",
-            per_minute(aftermine_sim::stats::RECLAIMER_PERIOD)
+            aftermine_sim::stats::passive_scrap_per_minute(0)
         )],
         BuildingKind::Extractor => vec![format!(
             "Makes {remote} scrap/min, or {supported} scrap/min with your Foundry within {radius} tiles."
@@ -636,17 +636,17 @@ pub(crate) fn building_income(game: &Scene<'_>, building: &aftermine_sim::state:
     if let Some(income) = game.state.extractor_income(building.id) {
         return income.scrap_per_minute();
     }
-    let period = match building.kind {
-        BuildingKind::Reclaimer if building.tier == 0 => aftermine_sim::stats::RECLAIMER_PERIOD,
-        BuildingKind::Reclaimer => aftermine_sim::stats::REFINERY_PERIOD,
+    match building.kind {
+        BuildingKind::Reclaimer => aftermine_sim::stats::passive_scrap_per_minute(building.tier),
         BuildingKind::Foundry
             if game.state.current_tick() >= aftermine_sim::stats::FOUNDRY_DRIP_START_TICK =>
         {
-            aftermine_sim::stats::FOUNDRY_DRIP_PERIOD
+            (60 * u64::from(aftermine_sim::TICKS_PER_SECOND)
+                / aftermine_sim::stats::FOUNDRY_DRIP_PERIOD)
+                .fit::<u32>()
         }
-        _ => return 0,
-    };
-    (60 * u64::from(aftermine_sim::TICKS_PER_SECOND) / period).fit::<u32>()
+        _ => 0,
+    }
 }
 
 fn weapon_line(weapon: &WeaponStats) -> String {
