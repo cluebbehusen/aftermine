@@ -222,6 +222,61 @@ fn a_client_holding_the_host_back_for_the_progress_timeout_makes_the_match_wait(
 }
 
 #[test]
+fn a_client_held_at_the_lead_cap_stays_live_while_the_match_waits_for_another() {
+    // A falls a full lead behind and holds play; B then goes away, and A
+    // catches up while the match waits for B.
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    let b_gone = Duration::from_millis(2100);
+    let (mut a_acked, mut b_acked) = (0, 0);
+    let mut now = Duration::ZERO;
+    while now < b_gone + PROGRESS_TIMEOUT + secs(5) {
+        if now == b_gone {
+            host.disconnected(B, now);
+        }
+        step(&mut host, now, 0);
+        host.receive(A, &ClientMessage::Heartbeat.encode(), now);
+        let published = host.tick();
+        if now < b_gone {
+            ack_through(&mut host, B, b_acked + 1, published, now);
+            b_acked = published;
+        } else {
+            ack_through(&mut host, A, a_acked + 1, published, now);
+            a_acked = published;
+        }
+        assert!(host.poll(now).is_empty());
+        if now >= b_gone {
+            let waiting: Vec<PlayerId> = host.seats(now).iter().map(|notice| notice.seat).collect();
+            assert_eq!(waiting, [B], "at {now:?}");
+        }
+        now += Duration::from_millis(50);
+    }
+}
+
+#[test]
+fn a_seat_gone_silent_stops_the_progress_clock_of_one_stalling_in_the_same_poll() {
+    // A stops acknowledging and holds play from the start while it keeps
+    // heartbeating; B falls silent then, so both deadlines fall on one poll.
+    let mut host = HostSession::new(HOST, &[A, B], secs(0));
+    let mut b_acked = 0;
+    while step(&mut host, secs(0), 0).is_some() {
+        let published = host.tick();
+        ack_through(&mut host, B, b_acked + 1, published, secs(0));
+        b_acked = published;
+    }
+    for second in 1..=SILENCE_TIMEOUT.as_secs() {
+        host.receive(A, &ClientMessage::Heartbeat.encode(), secs(second));
+        assert!(step(&mut host, secs(second), 0).is_none());
+        host.poll(secs(second));
+    }
+    let waiting: Vec<PlayerId> = host
+        .seats(secs(10))
+        .iter()
+        .map(|notice| notice.seat)
+        .collect();
+    assert_eq!(waiting, [B], "A waits on B, not B on A");
+}
+
+#[test]
 fn time_spent_paused_never_counts_toward_the_progress_timeout() {
     let mut host = HostSession::new(HOST, &[A], secs(0));
     for _ in 0..LEAD_CAP {
@@ -870,6 +925,37 @@ fn a_resumed_session_seals_the_saved_orders_first_from_the_saved_tick() {
     host.receive(B, &ack_line(501, 7), secs(0));
     assert_eq!(host.poll(secs(0)), Vec::new());
     assert!(host.caught_up());
+}
+
+#[test]
+fn a_resumed_seat_whose_surrender_was_pending_is_out_and_seals_it_last() {
+    let mut host = HostSession::new(HOST, &[A], secs(0)).resumed(
+        500,
+        vec![
+            from(B, stop(1)),
+            from(B, Command::Surrender),
+            from(A, stop(2)),
+            from(HOST, stop(3)),
+        ],
+    );
+    assert_eq!(host.playing_seats(), [A]);
+    host.poll(secs(0));
+    assert!(!host.waiting(), "nobody waits for B");
+    assert!(host.seats(secs(0)).is_empty());
+    assert_eq!(
+        step(&mut host, secs(0), 7),
+        Some(vec![
+            from(HOST, stop(3)),
+            from(A, stop(2)),
+            from(B, stop(1)),
+            from(B, Command::Surrender),
+        ]),
+        "B's last orders and surrender seal behind the seats in play"
+    );
+    assert!(
+        host.take_outgoing().iter().all(|(seat, _)| *seat == A),
+        "B has no connection"
+    );
 }
 
 #[test]

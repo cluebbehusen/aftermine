@@ -218,15 +218,30 @@ impl HostSession {
 
     /// The same session, resuming a saved match whose world is at `tick`,
     /// with the orders it had not yet sealed queued in arrival order. Each
-    /// order must come from one of the session's human seats.
+    /// order must come from one of the session's human seats, or from a
+    /// seat that left before the save, whose surrender is among the orders:
+    /// that seat is out, and its orders seal behind the seats in play.
     #[must_use]
     pub fn resumed(mut self, tick: Tick, pending: Vec<PlayerCommand>) -> Self {
         assert_eq!(self.next_tick, 0, "a session resumes before it seals");
         for command in &pending {
+            let seat = command.player;
+            if self.humans.contains(&seat) {
+                continue;
+            }
             assert!(
-                self.humans.contains(&command.player),
+                pending.iter().any(
+                    |order| order.player == seat && matches!(order.command, Command::Surrender)
+                ),
                 "a pending order must come from a human seat"
             );
+            let at = self.humans.partition_point(|&human| human < seat);
+            self.humans.insert(at, seat);
+            self.clients.push(Client {
+                seat,
+                link: None,
+                standing: Standing::Out,
+            });
         }
         self.next_tick = tick;
         for link in self
@@ -417,13 +432,7 @@ impl HostSession {
             return;
         }
         self.paused = paused;
-        for link in self
-            .clients
-            .iter_mut()
-            .filter_map(|client| client.link.as_mut())
-        {
-            link.blocked_since = None;
-        }
+        self.unblock();
     }
 
     /// Drops `seat` at the host's request: it surrenders, and its client
@@ -496,6 +505,8 @@ impl HostSession {
             "publish the sealed batch before sealing again"
         );
         if self.paused || self.course == Course::Halted || self.waiting() {
+            // While play is held for another reason, no client holds it back.
+            self.unblock();
             return None;
         }
         let tick = self.next_tick;
@@ -521,13 +532,7 @@ impl HostSession {
         if blocked {
             return None;
         }
-        for link in self
-            .clients
-            .iter_mut()
-            .filter_map(|client| client.link.as_mut())
-        {
-            link.blocked_since = None;
-        }
+        self.unblock();
         self.sealed = true;
         let mut budget = BATCH_COMMAND_BYTES;
         let fits = self
@@ -672,15 +677,31 @@ impl HostSession {
                     *since = (*since + gap).min(now);
                 }
             }
+            if matches!(
+                client.standing,
+                Standing::Playing(Presence::Live | Presence::Quiet)
+            ) && now.saturating_sub(link.heard) >= SILENCE_TIMEOUT
+            {
+                link.blocked_since = None;
+                client.standing = Standing::Playing(Presence::Away { since: now });
+            }
+        }
+        // A seat gone silent holds play from now, so no other seat's
+        // progress clock may run out on this same poll.
+        if self.waiting() {
+            self.unblock();
+        }
+        for client in &mut self.clients {
+            let Some(link) = &mut client.link else {
+                continue;
+            };
             let silence = now.saturating_sub(link.heard);
             let stalled = link
                 .blocked_since
                 .is_some_and(|since| now.saturating_sub(since) >= PROGRESS_TIMEOUT);
             let caught_up = self.next_tick < link.acked + LEAD_CAP;
             match client.standing {
-                Standing::Playing(Presence::Live | Presence::Quiet)
-                    if silence >= SILENCE_TIMEOUT || stalled =>
-                {
+                Standing::Playing(Presence::Live | Presence::Quiet) if stalled => {
                     link.blocked_since = None;
                     client.standing = Standing::Playing(Presence::Away { since: now });
                 }
@@ -747,6 +768,17 @@ impl HostSession {
             }
         }
         self.prune_hashes();
+    }
+
+    /// Stops every client's progress clock: none is holding play back.
+    fn unblock(&mut self) {
+        for link in self
+            .clients
+            .iter_mut()
+            .filter_map(|client| client.link.as_mut())
+        {
+            link.blocked_since = None;
+        }
     }
 
     /// A seat still playing waits for its player from `now`.

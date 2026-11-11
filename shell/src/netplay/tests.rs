@@ -720,12 +720,25 @@ fn an_injected_desync_halts_both_machines() {
     let mut lan = Match::start(duel());
     lan.run(5);
     lan.client.0.state.tick(&[]);
-    let desync = End::Desync {
-        tick: aftermine_net::HASH_INTERVAL,
-    };
-    assert_eq!(lan.ends(), (desync, desync));
-    assert!(desync.notice().contains("Out of sync at 0:01"));
+    let (host, client) = lan.ends();
+    assert_eq!((host, client), desyncs(false));
+    assert_eq!(
+        host.notice(),
+        "Out of sync at 0:01.",
+        "an undecided host keeps a LAN save, not a replay"
+    );
+    assert_eq!(client.notice(), "Out of sync at 0:01. Replay saved.");
     assert_eq!(End::HostLost.notice(), "Lost connection to the host.");
+}
+
+/// The host's and the client's ends once the first report tick disagreed,
+/// the host's match decided or not.
+fn desyncs(decided: bool) -> (End, End) {
+    let desync = |replay| End::Desync {
+        tick: aftermine_net::HASH_INTERVAL,
+        replay,
+    };
+    (desync(decided), desync(true))
 }
 
 #[test]
@@ -742,10 +755,42 @@ fn a_desync_before_the_decisive_tick_still_halts_both_machines() {
     while lan.host.0.state.result().is_none() {
         lan.step_host();
     }
-    let desync = End::Desync {
-        tick: aftermine_net::HASH_INTERVAL,
-    };
-    assert_eq!(lan.ends(), (desync, desync));
+    let (host, client) = lan.ends();
+    assert_eq!((host, client), desyncs(true));
+    assert_eq!(
+        host.notice(),
+        "Out of sync at 0:01. Replay saved.",
+        "a decided host keeps a replay"
+    );
+}
+
+#[test]
+fn a_join_to_an_address_nobody_answers_gives_up_within_its_bound() {
+    // A documentation address (RFC 5737), which no host answers.
+    let silent = "192.0.2.1:4200";
+    let bound = Duration::from_millis(200);
+    let started = Instant::now();
+    let mut client = Lobby::Client(ClientLobby::within(
+        bound,
+        silent,
+        COMMIT,
+        name("Alex"),
+        InstallId::new(1),
+    ));
+    assert_eq!(client.status(), format!("Connecting to {silent}..."));
+    let reason = wait(|| {
+        assert!(client.poll(Duration::ZERO, viewport()).is_none());
+        client.failure().map(|(_, _, reason)| reason.to_owned())
+    });
+    assert!(
+        reason.starts_with(&format!("Cannot reach {silent}")),
+        "{reason}"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "gave up after {:?}, past its {bound:?} bound",
+        started.elapsed()
+    );
 }
 
 #[test]
@@ -1069,7 +1114,8 @@ fn only_an_ipv4_listener_other_machines_can_reach_advertises() {
 /// A client link to a host this test plays by hand, over loopback.
 fn hand_hosted(scenario: Scenario) -> (Game, Link, Connection) {
     let listener = Listener::bind("127.0.0.1:0").unwrap();
-    let client = Connection::connect(listener.local_addr().unwrap()).unwrap();
+    let client =
+        Connection::connect_any(listener.local_addr().unwrap(), Duration::from_secs(5)).unwrap();
     let host = wait(|| listener.try_accept().unwrap());
     let game = Game::networked(scenario, CLIENT, NetRole::Client, viewport()).unwrap();
     let home = Home {

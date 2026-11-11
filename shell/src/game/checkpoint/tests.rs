@@ -371,3 +371,60 @@ fn a_lan_save_waits_only_for_players_still_in_the_match() {
     assert_eq!(Game::local_seat(&alone.scenario), PlayerId(0));
     assert_eq!(alone.pending.to_vec(), vec![orders[0].clone()]);
 }
+
+#[test]
+fn a_seat_saved_with_its_surrender_still_to_seal_is_out_on_resume() {
+    let mut scenario = Scenario::from_json(include_str!(
+        "../../../../fixtures/scenarios/twin-forges.json"
+    ))
+    .unwrap();
+    for (seat, player) in scenario.players.iter_mut().enumerate() {
+        player.bot = seat == 3;
+        player.bot_config = player.bot.then_some(BotConfig::default());
+    }
+    let mut game = Game::with_viewport(scenario.clone(), vec2(1280.0, 720.0)).unwrap();
+    game.advance_ticks(2);
+    let order =
+        |player: PlayerId, command: Command| aftermine_sim::PlayerCommand { player, command };
+    let stop = || Command::Stop { units: Vec::new() };
+    // Seat 1 was dropped while the match waited, so its last order and its
+    // surrender were still unsealed.
+    let orders = vec![
+        order(PlayerId(0), stop()),
+        order(PlayerId(1), stop()),
+        order(PlayerId(1), Command::Surrender),
+        order(PlayerId(2), stop()),
+    ];
+    let installs = [
+        (PlayerId(1), aftermine_net::InstallId::new(1)),
+        (PlayerId(2), aftermine_net::InstallId::new(2)),
+    ];
+    let lan = LanManifest::new(&scenario, PlayerId(0), &installs);
+    let save = game
+        .capture_save()
+        .for_lan(orders.clone(), lan)
+        .checkpoint()
+        .unwrap()
+        .into_lan_save()
+        .unwrap();
+    assert_eq!(save.players(), &installs[1..], "the dropped player is out");
+    assert_eq!(save.joined(), &installs[..], "and still listed");
+
+    let (host, pending) = save.host_game(&[]).unwrap();
+    assert_eq!(pending, orders, "the surrender still seals");
+    assert!(
+        host.state.accepts_commands(PlayerId(1)),
+        "nothing is applied before the first tick"
+    );
+
+    let mut alone = save
+        .local_game(&[(PlayerId(2), BotDifficulty::Standard, BotStance::Balanced)])
+        .unwrap();
+    assert!(alone.scenario.players[1].bot);
+    assert_eq!(alone.pending.to_vec(), orders[..3].to_vec());
+    alone.advance_ticks(1);
+    assert!(
+        !alone.state.accepts_commands(PlayerId(1)),
+        "the bot on the seat does not play on"
+    );
+}

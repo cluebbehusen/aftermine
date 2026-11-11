@@ -60,6 +60,10 @@ pub(crate) enum End {
     Desync {
         /// The report tick that disagreed.
         tick: Tick,
+        /// Whether this machine's leave save keeps a replay: a client's
+        /// always does, a host's only once its match is decided, since an
+        /// undecided one stays a resumable LAN save.
+        replay: bool,
     },
 }
 
@@ -74,12 +78,14 @@ impl End {
             End::SeatGone => "You lost your seat while away.".to_owned(),
             End::Over => "That match is over.".to_owned(),
             End::TooLarge => "The match is too large to rejoin.".to_owned(),
-            End::Desync { tick } => {
-                format!(
-                    "Out of sync at {}. Replay saved.",
-                    crate::clock_label::ticks(tick)
-                )
-            }
+            End::Desync {
+                tick,
+                replay: false,
+            } => format!("Out of sync at {}.", crate::clock_label::ticks(tick)),
+            End::Desync { tick, replay: true } => format!(
+                "Out of sync at {}. Replay saved.",
+                crate::clock_label::ticks(tick)
+            ),
         }
     }
 }
@@ -255,6 +261,11 @@ const REJOIN_PAUSE: Duration = Duration::from_secs(1);
 
 /// How long one rejoin attempt waits to connect.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// How long a join waits for each address of the host to answer: longer
+/// than a rejoin attempt, since iOS can hold the first connect open behind
+/// its Local Network prompt.
+const JOIN_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A client taking its seat back.
 struct Rejoin {
@@ -727,7 +738,12 @@ impl HostLink {
                     }
                 }
                 HostEvent::Lost { seat } => self.peers.retain(|(peer, _)| *peer != seat),
-                HostEvent::Desync { tick, .. } => end = Some(End::Desync { tick }),
+                HostEvent::Desync { tick, .. } => {
+                    end = Some(End::Desync {
+                        tick,
+                        replay: game.state.result().is_some(),
+                    });
+                }
             }
         }
         game.presentation.net_notice = NetStatus::hosted(&self.session, now).notice(game);
@@ -975,7 +991,7 @@ impl ClientLink {
     fn end(&mut self, end: ClientEnd) -> End {
         self.connection = None;
         match end {
-            ClientEnd::Desync { tick } => End::Desync { tick },
+            ClientEnd::Desync { tick } => End::Desync { tick, replay: true },
             ClientEnd::HostSilent | ClientEnd::Protocol => End::HostLost,
             ClientEnd::Released(Release::Dropped) => End::Dropped,
             ClientEnd::Released(Release::Replaced) => End::Replaced,
@@ -1565,13 +1581,26 @@ enum Joining {
 impl ClientLobby {
     /// Starts connecting to the host at `address`, to join as `name`.
     pub(crate) fn new(address: &str, commit: &str, name: PlayerName, install: InstallId) -> Self {
+        Self::within(JOIN_TIMEOUT, address, commit, name, install)
+    }
+
+    /// Starts connecting to the host at `address`, giving each address it
+    /// names `bound` to answer.
+    fn within(
+        bound: Duration,
+        address: &str,
+        commit: &str,
+        name: PlayerName,
+        install: InstallId,
+    ) -> Self {
         let target = address.to_owned();
+        let connect = move || Connection::connect_any(target.as_str(), bound);
         Self {
             address: address.to_owned(),
             commit: commit.to_owned(),
             name,
             install,
-            state: Joining::Connecting(thread::spawn(move || Connection::connect(target))),
+            state: Joining::Connecting(thread::spawn(connect)),
         }
     }
 

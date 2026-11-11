@@ -33,6 +33,12 @@ fn saved_match() -> LanSave {
 
 /// The same match, with `surrendered` seats out of it when it was saved.
 fn saved_with(surrendered: &[PlayerId]) -> LanSave {
+    saved_pending(surrendered, Vec::new())
+}
+
+/// The same match, with `surrendered` seats out of it and `pending` the
+/// orders its session had not sealed when it was saved.
+fn saved_pending(surrendered: &[PlayerId], pending: Vec<aftermine_sim::PlayerCommand>) -> LanSave {
     let path = PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../scenarios/broad-front.json"
@@ -59,7 +65,7 @@ fn saved_with(surrendered: &[PlayerId]) -> LanSave {
         &[(PlayerId(1), SAM), (PlayerId(2), ALEX)],
     );
     game.capture_save()
-        .for_lan(Vec::new(), lan)
+        .for_lan(pending, lan)
         .checkpoint()
         .unwrap()
         .into_lan_save()
@@ -450,6 +456,41 @@ fn a_resume_without_a_player_who_was_out_still_saves_them() {
         serde_json::json!([[1, SAM.to_hex()], [2, InstallId::new(77).to_hex()]]),
         "the next save still lists the player who was out"
     );
+}
+
+#[test]
+fn a_player_dropped_before_the_save_is_out_once_the_resume_plays() {
+    // Sam was dropped while the match waited, so his surrender had yet to
+    // seal when it was saved.
+    let surrender = aftermine_sim::PlayerCommand {
+        player: PlayerId(1),
+        command: aftermine_sim::Command::Surrender,
+    };
+    let save = saved_pending(&[], vec![surrender]);
+    let saved_hash = save.host_game(&[]).unwrap().0.state.hash();
+    let (mut w, mut draft) = resuming_on(save, "127.0.0.1:0");
+    assert!(!draft.seats[1].open, "nobody waits for Sam's seat");
+    let mut clients = vec![join(&w, "Alex", ALEX)];
+    settle(&mut w, &mut draft, &mut clients, |w, _| {
+        member_at(w, 2).is_some()
+    });
+    w.setup_sel = 4;
+    assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Launch);
+    w.start_resume(&draft, Duration::ZERO).unwrap();
+    let mut machines = run_start(&mut w, &mut draft, &mut clients);
+    for (game, _) in &machines {
+        assert_eq!(
+            game.state.hash(),
+            saved_hash,
+            "every machine starts on the saved world"
+        );
+    }
+
+    play_on(&mut machines);
+    for (game, _) in &machines {
+        assert!(!game.state.accepts_commands(PlayerId(1)), "Sam is out");
+        assert_eq!(game.state.hash(), machines[0].0.state.hash());
+    }
 }
 
 fn sounds_of(w: &mut Wizard, draft: &mut NewMatchDraft, key: Key) -> Vec<SoundKind> {
