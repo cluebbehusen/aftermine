@@ -275,13 +275,10 @@ pub struct SeatLedger {
     pub worth: Vec<u64>,
     /// Tick the ledger began: zero for a match, later for a recording that
     /// starts from a saved world.
-    #[serde(default)]
     pub start: u64,
-    /// Tick the ledger ended; zero when a serialized row omits it.
-    #[serde(default)]
+    /// Tick the ledger ended.
     pub end: u64,
     /// Net worth at `end`.
-    #[serde(default)]
     pub final_worth: u64,
 }
 
@@ -1853,14 +1850,9 @@ fn life(totals: &KindLedger) -> String {
 pub const WORTH_TICKS: [u64; 4] = [6_000, 12_000, 18_000, 24_000];
 
 /// Per mille of all net worth that `team` held at each of [`WORTH_TICKS`],
-/// from each seat's ledger and team; `None` unless every seat has a ledger.
-pub fn team_shares(
-    ledgers: &[Option<&SeatLedger>],
-    teams: &[u8],
-    team: u8,
-) -> Option<[Option<u32>; 4]> {
-    let ledgers: Vec<&SeatLedger> = ledgers.iter().copied().collect::<Option<_>>()?;
-    Some(WORTH_TICKS.map(|tick| {
+/// from each seat's ledger and team.
+pub fn team_shares(ledgers: &[&SeatLedger], teams: &[u8], team: u8) -> [Option<u32>; 4] {
+    WORTH_TICKS.map(|tick| {
         let (mut own, mut all) = (0_u64, 0_u64);
         for (ledger, seat_team) in ledgers.iter().zip(teams) {
             let worth = worth_at(ledger, tick)?;
@@ -1870,7 +1862,7 @@ pub fn team_shares(
             }
         }
         (all > 0).then(|| u32::try_from(own * 1_000 / all).unwrap_or(1_000))
-    }))
+    })
 }
 
 /// A side's mean share of net worth at one tick over seat-swapped pairs.

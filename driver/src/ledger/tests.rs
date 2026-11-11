@@ -490,9 +490,8 @@ fn worth_shares_average_each_pair_before_pooling() {
             ..SeatLedger::default()
         },
     ];
-    let refs: Vec<Option<&SeatLedger>> = ledgers.iter().map(Some).collect();
-    assert_eq!(team_shares(&refs, &[0, 1], 0).unwrap()[0], Some(750));
-    assert_eq!(team_shares(&[Some(&ledgers[0]), None], &[0, 1], 0), None);
+    let refs: Vec<&SeatLedger> = ledgers.iter().collect();
+    assert_eq!(team_shares(&refs, &[0, 1], 0)[0], Some(750));
 }
 
 /// `scenario` built, with `edit` applied to its JSON form.

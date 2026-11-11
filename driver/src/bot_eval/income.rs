@@ -44,18 +44,16 @@ pub struct IncomeSample {
 /// times elapsed ticks, sampled every `period` ticks.
 pub(super) struct IncomeTracker {
     stats: LiveMatchStats,
-    watched: Vec<bool>,
     passive: Vec<u64>,
     window: Vec<Option<(u32, u64)>>,
     samples: Vec<Vec<IncomeSample>>,
 }
 
 impl IncomeTracker {
-    pub(super) fn new(state: &State, watched: Vec<bool>) -> Self {
-        let seats = watched.len();
+    pub(super) fn new(state: &State) -> Self {
+        let seats = state.players().len();
         Self {
             stats: LiveMatchStats::new(state),
-            watched,
             passive: vec![0; seats],
             window: vec![None; seats],
             samples: vec![Vec::new(); seats],
@@ -73,11 +71,11 @@ impl IncomeTracker {
         let window_start = INCOME_CHECKPOINTS.contains(&(now + INCOME_WINDOW_TICKS));
         let checkpoint = INCOME_CHECKPOINTS.contains(&now);
         let collected = (window_start || checkpoint).then(|| self.stats.snapshot(state));
-        for seat in 0..self.watched.len() {
+        for seat in 0..self.passive.len() {
             let player = PlayerId::from_index(seat);
             // A seat that is out while its team plays on would add samples
             // of an empty economy.
-            if !self.watched[seat] || state.player(player).eliminated_at.is_some() {
+            if state.player(player).eliminated_at.is_some() {
                 continue;
             }
             self.passive[seat] += u64::from(passive_per_minute(state, player)) * period;
@@ -103,7 +101,7 @@ impl IncomeTracker {
         }
     }
 
-    /// Checkpoint samples by seat; unwatched seats report none.
+    /// Checkpoint samples by seat.
     pub(super) fn finish(self) -> Vec<Vec<IncomeSample>> {
         self.samples
     }

@@ -81,14 +81,14 @@ fn failures(detectors: FailureDetectors) -> Vec<SeatFailures> {
 
 #[test]
 fn repeated_stalls_fire_on_the_fifth_inside_the_window_only() {
-    let mut detectors = FailureDetectors::new([true, false]);
+    let mut detectors = FailureDetectors::new(2);
     for tick in [100, 400, 700, 1_000] {
         detectors.record_stall(0, 7, "no_route", tick);
     }
     detectors.record_stall(0, 7, "transport_full", 1_050);
     detectors.record_stall(0, 8, "no_route", 1_050);
     detectors.record_stall(1, 7, "no_route", 1_050);
-    let mut spread = FailureDetectors::new([true]);
+    let mut spread = FailureDetectors::new(1);
     for tick in [0, 300, 600, 900, 1_200] {
         spread.record_stall(0, 7, "no_route", tick);
     }
@@ -110,11 +110,7 @@ fn repeated_stalls_fire_on_the_fifth_inside_the_window_only() {
             detail: "no_route".into(),
         }]
     );
-    assert_eq!(
-        failures[1],
-        SeatFailures::default(),
-        "seat one is unwatched"
-    );
+    assert_eq!(failures[1], SeatFailures::default(), "seat one stood idle");
 }
 
 #[test]
@@ -123,7 +119,7 @@ fn danger_holds_are_not_repeated_orders() {
         super::super::wire_name(&aftermine_sim::StallReason::DangerHold),
         EXEMPT_STALL_REASON
     );
-    let mut detectors = FailureDetectors::new([true]);
+    let mut detectors = FailureDetectors::new(1);
     for tick in 0..10 {
         detectors.record_stall(0, 7, EXEMPT_STALL_REASON, tick * 10);
     }
@@ -133,7 +129,7 @@ fn danger_holds_are_not_repeated_orders() {
 #[test]
 fn a_repeated_order_rearms_after_a_quiet_window() {
     let state = scenario(Vec::new(), 0).build().unwrap();
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     for tick in 0..5 {
         detectors.record_stall(0, 7, "no_route", tick * 10);
     }
@@ -145,7 +141,7 @@ fn a_repeated_order_rearms_after_a_quiet_window() {
     }
     assert_eq!(failures(detectors)[0].repeated_orders.incidents, 1);
 
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     for tick in 0..5 {
         detectors.record_stall(0, 7, "no_route", tick * 10);
     }
@@ -160,7 +156,7 @@ fn a_repeated_order_rearms_after_a_quiet_window() {
 fn an_unprogressing_site_is_abandoned_at_the_window_and_progress_rearms_it() {
     let scenario = scenario(fabricator(), 0);
     let stalled = staged(&scenario, site(40));
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     for now in (600..600 + FAILURE_WINDOW_TICKS).step_by(12) {
         detectors.check(&stalled, now, &[0, 0]);
     }
@@ -169,7 +165,7 @@ fn an_unprogressing_site_is_abandoned_at_the_window_and_progress_rearms_it() {
     let advanced = staged(&scenario, site(41));
     detectors.check(&advanced, 2_000, &[0, 0]);
     detectors.check(&advanced, 3_199, &[0, 0]);
-    let before_rearm = detectors.seats[0].as_ref().unwrap().failures.clone();
+    let before_rearm = detectors.seats[0].failures.clone();
     detectors.check(&advanced, 3_200, &[0, 0]);
     let failures = failures(detectors);
 
@@ -218,7 +214,7 @@ fn provisional_and_upgrading_works_are_not_abandoned_sites() {
         },
     );
     for state in [&provisional, &upgrading] {
-        let mut detectors = FailureDetectors::new([true, true]);
+        let mut detectors = FailureDetectors::new(2);
         detectors.check(state, 0, &[0, 0]);
         detectors.check(state, 5_000, &[0, 0]);
         assert_eq!(failures(detectors)[0].abandoned_sites.incidents, 0);
@@ -228,18 +224,10 @@ fn provisional_and_upgrading_works_are_not_abandoned_sites() {
 #[test]
 fn an_idle_affordable_seat_starves_at_the_window_and_protected_scrap_counts() {
     let state = scenario(Vec::new(), CHEAPEST_FOUNDRY_UNIT).build().unwrap();
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     detectors.check(&state, 0, &[0, 0]);
     detectors.check(&state, FAILURE_WINDOW_TICKS - 12, &[0, 0]);
-    assert_eq!(
-        detectors.seats[0]
-            .as_ref()
-            .unwrap()
-            .failures
-            .starved_production
-            .incidents,
-        0
-    );
+    assert_eq!(detectors.seats[0].failures.starved_production.incidents, 0);
     detectors.check(&state, FAILURE_WINDOW_TICKS, &[0, 0]);
     detectors.check(&state, 5 * FAILURE_WINDOW_TICKS, &[0, 0]);
     let finished = detectors.finish();
@@ -260,7 +248,7 @@ fn an_idle_affordable_seat_starves_at_the_window_and_protected_scrap_counts() {
     assert_eq!(foundry.kind, "foundry");
     assert_eq!(foundry.idle_ticks, 5 * FAILURE_WINDOW_TICKS);
 
-    let mut protected = FailureDetectors::new([true, true]);
+    let mut protected = FailureDetectors::new(2);
     protected.check(&state, 0, &[1, 0]);
     protected.check(&state, 2 * FAILURE_WINDOW_TICKS, &[1, 0]);
     let finished = protected.finish();
@@ -278,7 +266,7 @@ fn one_busy_producer_keeps_the_seat_from_starving() {
         let index = building_index(value, "fabricator");
         value["buildings"][index]["queue"] = serde_json::json!(["lancer"]);
     });
-    let mut detectors = FailureDetectors::new([true, false]);
+    let mut detectors = FailureDetectors::new(2);
     detectors.check(&state, 0, &[0, 0]);
     detectors.check(&state, 3 * FAILURE_WINDOW_TICKS, &[0, 0]);
     let finished = detectors.finish();
@@ -301,7 +289,7 @@ fn a_busy_or_unaffordable_seat_is_not_starved() {
         value["buildings"][index]["queue"] = serde_json::json!(["harvester"]);
     });
     for state in [&poor, &busy] {
-        let mut detectors = FailureDetectors::new([true, false]);
+        let mut detectors = FailureDetectors::new(2);
         detectors.check(state, 0, &[0, 0]);
         detectors.check(state, 3 * FAILURE_WINDOW_TICKS, &[0, 0]);
         let finished = detectors.finish();
@@ -348,10 +336,9 @@ fn a_mission_stuck_past_its_timeout_counts_once_per_phase() {
         units: 2,
         goal: chassis::grid::TilePos::new(4, 4),
     };
-    let mut detectors = FailureDetectors::new([true, false]);
+    let mut detectors = FailureDetectors::new(1);
     let overdue = 600 + FAILURE_WINDOW_TICKS;
     detectors.check_missions(0, overdue - 1, &[status(0)]);
-    detectors.check_missions(1, overdue, &[status(0)]);
     detectors.check_missions(0, overdue, &[status(0)]);
     detectors.check_missions(0, overdue + 12, &[status(0)]);
     detectors.check_missions(0, overdue + 12, &[status(overdue)]);
@@ -368,11 +355,6 @@ fn a_mission_stuck_past_its_timeout_counts_once_per_phase() {
             detail: "defend engage".into(),
         }
     );
-    assert_eq!(
-        seats[1].failures,
-        SeatFailures::default(),
-        "an unwatched seat"
-    );
 }
 
 #[test]
@@ -388,7 +370,7 @@ fn a_quiet_guard_has_no_stuck_deadline() {
         units: 10,
         goal: chassis::grid::TilePos::new(4, 4),
     };
-    let mut detectors = FailureDetectors::new([true]);
+    let mut detectors = FailureDetectors::new(1);
     for now in [0, 6_000, 60_000] {
         detectors.check_missions(0, now, &[status]);
     }
@@ -417,10 +399,7 @@ fn large() -> u32 {
 }
 
 fn idle_army(detectors: FailureDetectors) -> u64 {
-    failures(detectors)[0]
-        .idle_army
-        .as_ref()
-        .map_or(0, |tally| tally.incidents)
+    failures(detectors)[0].idle_army.incidents
 }
 
 fn run(detectors: &mut FailureDetectors, state: &State, ticks: std::ops::Range<u64>) {
@@ -432,31 +411,20 @@ fn run(detectors: &mut FailureDetectors, state: &State, ticks: std::ops::Range<u
 #[test]
 fn an_army_resting_at_home_is_idle_after_its_rest_and_the_window() {
     let state = army(large(), 4, 6, &[]).build().unwrap();
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     run(&mut detectors, &state, 0..IDLE_TICKS + FAILURE_WINDOW_TICKS);
-    assert_eq!(
-        detectors.seats[0]
-            .as_ref()
-            .unwrap()
-            .failures
-            .idle_army
-            .as_ref()
-            .unwrap()
-            .incidents,
-        0
-    );
+    assert_eq!(detectors.seats[0].failures.idle_army.incidents, 0);
     run(
         &mut detectors,
         &state,
         IDLE_TICKS + FAILURE_WINDOW_TICKS..3 * IDLE_TICKS,
     );
     let failures = failures(detectors);
-    let tally = failures[0].idle_army.as_ref().unwrap();
+    let tally = &failures[0].idle_army;
     assert_eq!(tally.incidents, 1, "one episode while it holds");
     assert_eq!(tally.examples[0].tick, IDLE_TICKS + FAILURE_WINDOW_TICKS);
     assert_eq!(
-        failures[1].idle_army.as_ref().unwrap().incidents,
-        0,
+        failures[1].idle_army.incidents, 0,
         "a seat without an army is never idle"
     );
 }
@@ -470,11 +438,11 @@ fn assigned_guards_are_busy_but_idle_surplus_is_still_reported() {
         .filter(|u| u.kind == UnitKind::Sentinel)
         .map(|u| u.id)
         .collect();
-    let mut all = FailureDetectors::new([true, false]);
+    let mut all = FailureDetectors::new(2);
     all.record_guards(0, &armed);
     run(&mut all, &state, 0..3 * IDLE_TICKS);
     assert_eq!(idle_army(all), 0);
-    let mut surplus = FailureDetectors::new([true, false]);
+    let mut surplus = FailureDetectors::new(2);
     surplus.record_guards(0, &armed[..large() as usize]);
     run(&mut surplus, &state, 0..3 * IDLE_TICKS);
     assert_eq!(idle_army(surplus), 1);
@@ -484,7 +452,7 @@ fn assigned_guards_are_busy_but_idle_surplus_is_still_reported() {
 fn moving_or_meeting_an_enemy_restarts_a_rest() {
     let settled = army(large(), 4, 6, &[]).build().unwrap();
     let moved = army(large(), 8, 6, &[]).build().unwrap();
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     run(&mut detectors, &settled, 0..3_000);
     run(&mut detectors, &moved, 3_000..3_000 + IDLE_TICKS);
     assert_eq!(idle_army(detectors), 0, "the army moved before its episode");
@@ -496,7 +464,7 @@ fn moving_or_meeting_an_enemy_restarts_a_rest() {
         y: 9,
     };
     let watched = army(large(), 4, 6, &[enemy]).build().unwrap();
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     run(&mut detectors, &watched, 0..3 * IDLE_TICKS);
     assert_eq!(idle_army(detectors), 0, "an enemy in reach keeps it busy");
 }
@@ -521,7 +489,7 @@ fn an_enemy_the_army_cannot_hit_does_not_keep_it_busy() {
         y: 9,
     });
     let state = scenario.build().unwrap();
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     run(&mut detectors, &state, 0..3 * IDLE_TICKS);
     assert_eq!(idle_army(detectors), 1, "anti-air beside a ground enemy");
 }
@@ -533,7 +501,7 @@ fn a_small_guard_or_a_won_match_is_not_an_idle_army() {
         value["players"][1]["eliminated_at"] = 0.into();
     });
     for state in [&guard, &won] {
-        let mut detectors = FailureDetectors::new([true, true]);
+        let mut detectors = FailureDetectors::new(2);
         run(&mut detectors, state, 0..3 * IDLE_TICKS);
         assert_eq!(idle_army(detectors), 0);
     }
@@ -573,7 +541,7 @@ fn trained(state: &State) -> Event {
 }
 
 fn deliveries(detectors: FailureDetectors) -> Deliveries {
-    detectors.finish()[0].deliveries.unwrap()
+    detectors.finish()[0].deliveries
 }
 
 #[test]
@@ -583,7 +551,7 @@ fn units_trained_on_severed_ground_are_delivered_lost_or_left_home() {
     let across = severed(&[sentinel(16)]).build().unwrap();
     let carried = severed(&[]).build().unwrap();
 
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     detectors.observe_events(&home, &[trained(&home)], 100);
     detectors.check(&carried, 3_000, &[0, 0]);
     detectors.check(&across, 4_000, &[0, 0]);
@@ -596,7 +564,7 @@ fn units_trained_on_severed_ground_are_delivered_lost_or_left_home() {
         "carried, then set down across the pit"
     );
 
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     let event = trained(&home);
     detectors.observe_events(&home, std::slice::from_ref(&event), 100);
     let Event::UnitTrained {
@@ -615,7 +583,7 @@ fn units_trained_on_severed_ground_are_delivered_lost_or_left_home() {
     detectors.observe_events(&home, std::slice::from_ref(&died), 200);
     assert_eq!(deliveries(detectors).lost, cost);
 
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     detectors.observe_events(&carried, &[event.clone(), died.clone()], 100);
     assert_eq!(
         deliveries(detectors).lost,
@@ -629,7 +597,7 @@ fn units_trained_on_severed_ground_are_delivered_lost_or_left_home() {
         player,
         at: TilePos::new(16, 9),
     };
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     detectors.observe_events(&home, std::slice::from_ref(&event), 100);
     detectors.observe_events(&across, &[unloaded, died], 110);
     assert_eq!(
@@ -641,13 +609,13 @@ fn units_trained_on_severed_ground_are_delivered_lost_or_left_home() {
         "set down across the pit, then killed before the next check"
     );
 
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     detectors.observe_events(&home, &[trained(&home)], 100);
     detectors.check(&home, 100 + DELIVERY_TICKS - 12, &[0, 0]);
     detectors.check(&home, 100 + DELIVERY_TICKS, &[0, 0]);
     assert_eq!(deliveries(detectors).undelivered, cost);
 
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     detectors.observe_events(&home, &[trained(&home)], 100);
     detectors.check(&carried, 100 + 2 * DELIVERY_TICKS, &[0, 0]);
     assert_eq!(
@@ -662,10 +630,10 @@ fn units_trained_on_connected_ground_are_not_followed() {
     let mut connected = scenario(Vec::new(), 0);
     connected.units.push(sentinel(6));
     let state = connected.build().unwrap();
-    let mut detectors = FailureDetectors::new([true, true]);
+    let mut detectors = FailureDetectors::new(2);
     detectors.observe_events(&state, &[trained(&state)], 100);
     detectors.check(&state, 100 + DELIVERY_TICKS, &[0, 0]);
     let finished = detectors.finish();
-    assert_eq!(finished[0].deliveries, Some(Deliveries::default()));
-    assert_eq!(finished[1].deliveries, Some(Deliveries::default()));
+    assert_eq!(finished[0].deliveries, Deliveries::default());
+    assert_eq!(finished[1].deliveries, Deliveries::default());
 }

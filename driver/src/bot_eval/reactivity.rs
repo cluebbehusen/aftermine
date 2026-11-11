@@ -166,17 +166,14 @@ pub struct SeatReactivity {
     /// missed when the machine stands up first, moot when the cradle falls or
     /// is cancelled.
     pub cradle: Reactions,
-    /// `aftermine-opponent` only: an attack, strike or raid entered its fight;
-    /// answered when it withdrew, missed when it vanished mid-fight having
-    /// lost at least half its units, moot otherwise.
-    #[serde(default)]
-    pub withdrawal: Option<Reactions>,
-    /// `aftermine-opponent` only, diagnostic: how often a newly formed attack,
-    /// strike or lift went after a different player than the one before it.
-    /// Raids, which go after whichever harvest line is least guarded, are
-    /// left out.
-    #[serde(default)]
-    pub target_switches: Option<u64>,
+    /// An attack, strike or raid entered its fight; answered when it
+    /// withdrew, missed when it vanished mid-fight having lost at least half
+    /// its units, moot otherwise.
+    pub withdrawal: Reactions,
+    /// Diagnostic: how often a newly formed attack, strike or lift went after
+    /// a different player than the one before it. Raids, which go after
+    /// whichever harvest line is least guarded, are left out.
+    pub target_switches: u64,
 }
 
 impl SeatReactivity {
@@ -194,34 +191,28 @@ impl SeatReactivity {
             (&mut self.restoration, &other.restoration),
             (&mut self.relief, &other.relief),
             (&mut self.cradle, &other.cradle),
+            (&mut self.withdrawal, &other.withdrawal),
         ] {
             mine.merge(theirs);
         }
-        if let Some(theirs) = &other.withdrawal {
-            self.withdrawal
-                .get_or_insert_with(Reactions::default)
-                .merge(theirs);
-        }
-        if let Some(theirs) = other.target_switches {
-            *self.target_switches.get_or_insert(0) += theirs;
-        }
+        self.target_switches += other.target_switches;
     }
 
     /// Each kind of situation by its report name.
-    pub fn items(&self) -> [(&'static str, Option<&Reactions>); 12] {
+    pub fn items(&self) -> [(&'static str, &Reactions); 12] {
         [
-            ("anti-air", Some(&self.anti_air)),
-            ("airworks", Some(&self.airworks)),
-            ("ground defense", Some(&self.ground_defense)),
-            ("air defense", Some(&self.air_defense)),
-            ("artillery", Some(&self.artillery)),
-            ("scouting", Some(&self.scouting)),
-            ("evacuation", Some(&self.evacuation)),
-            ("repair", Some(&self.repair)),
-            ("restoration", Some(&self.restoration)),
-            ("relief", Some(&self.relief)),
-            ("cradle", Some(&self.cradle)),
-            ("withdrawal", self.withdrawal.as_ref()),
+            ("anti-air", &self.anti_air),
+            ("airworks", &self.airworks),
+            ("ground defense", &self.ground_defense),
+            ("air defense", &self.air_defense),
+            ("artillery", &self.artillery),
+            ("scouting", &self.scouting),
+            ("evacuation", &self.evacuation),
+            ("repair", &self.repair),
+            ("restoration", &self.restoration),
+            ("relief", &self.relief),
+            ("cradle", &self.cradle),
+            ("withdrawal", &self.withdrawal),
         ]
     }
 }
@@ -303,16 +294,15 @@ struct SeatWatch {
     cradles: BTreeMap<u32, (Case, usize)>,
     /// Cradles whose case closed while they stand.
     cradles_done: BTreeSet<u32>,
-    fights: Option<BTreeMap<u64, Fight>>,
+    fights: BTreeMap<u64, Fight>,
     formed: BTreeSet<u64>,
     last_target: Option<PlayerId>,
     switches: u64,
 }
 
-/// Reactivity cases for one evaluation leg. Seats without a controller are
-/// not watched.
+/// Reactivity cases for one evaluation leg.
 pub(super) struct ReactivityDetectors {
-    seats: Vec<Option<SeatWatch>>,
+    seats: Vec<SeatWatch>,
     /// Each seat's first Foundry, as its start.
     starts: Option<Vec<Option<Start>>>,
 }
@@ -325,12 +315,9 @@ struct Start {
 }
 
 impl ReactivityDetectors {
-    pub(super) fn new(watched: impl IntoIterator<Item = bool>) -> Self {
+    pub(super) fn new(seats: usize) -> Self {
         Self {
-            seats: watched
-                .into_iter()
-                .map(|watched| watched.then(SeatWatch::default))
-                .collect(),
+            seats: (0..seats).map(|_| SeatWatch::default()).collect(),
             starts: None,
         }
     }
@@ -340,7 +327,7 @@ impl ReactivityDetectors {
     pub(super) fn observe_events(&mut self, state: &State, events: &[Event], now: u64) {
         for (player, target) in strikes(state, events) {
             // An eliminated seat's remnants no longer answer for it.
-            let Some(Some(watch)) = self
+            let Some(watch) = self
                 .seats
                 .get_mut(usize::from(player.0))
                 .filter(|_| state.accepts_commands(player))
@@ -380,7 +367,7 @@ impl ReactivityDetectors {
                 | Event::BuildCancelled { building, .. } => (building, false),
                 _ => continue,
             };
-            for watch in self.seats.iter_mut().flatten() {
+            for watch in &mut self.seats {
                 watch.cradles_done.remove(&cradle.0);
                 if let Some((case, _)) = watch.cradles.remove(&cradle.0) {
                     if stood_up {
@@ -413,7 +400,7 @@ impl ReactivityDetectors {
                     {
                         continue;
                     }
-                    if let Some(Some(watch)) = self.seats.get_mut(usize::from(victim.0))
+                    if let Some(watch) = self.seats.get_mut(usize::from(victim.0))
                         && !watch.shooters.contains_key(&shooter)
                     {
                         watch.found.artillery.open();
@@ -435,12 +422,12 @@ impl ReactivityDetectors {
                     }
                 }
                 Event::UnitDied { unit, player, .. } => {
-                    for watch in self.seats.iter_mut().flatten() {
+                    for watch in &mut self.seats {
                         if let Some(_case) = watch.shooters.remove(&Target::Unit(unit)) {
                             watch.found.artillery.lapse();
                         }
                     }
-                    if let Some(Some(watch)) = self.seats.get_mut(usize::from(player.0))
+                    if let Some(watch) = self.seats.get_mut(usize::from(player.0))
                         && let Some(flight) = watch.workers.remove(&unit.0)
                     {
                         watch.found.evacuation.miss(&flight.case);
@@ -449,12 +436,12 @@ impl ReactivityDetectors {
                 Event::BuildingDestroyed {
                     building, player, ..
                 } => {
-                    for watch in self.seats.iter_mut().flatten() {
+                    for watch in &mut self.seats {
                         if watch.shooters.remove(&Target::Building(building)).is_some() {
                             watch.found.artillery.lapse();
                         }
                     }
-                    let Some(Some(watch)) = self.seats.get_mut(usize::from(player.0)) else {
+                    let Some(watch) = self.seats.get_mut(usize::from(player.0)) else {
                         continue;
                     };
                     if watch.patients.remove(&building.0).is_some() {
@@ -480,7 +467,7 @@ impl ReactivityDetectors {
                     kind: BuildingKind::Extractor,
                     ..
                 } => {
-                    if let Some(Some(watch)) = self.seats.get_mut(usize::from(player.0))
+                    if let Some(watch) = self.seats.get_mut(usize::from(player.0))
                         && let Some(extractor) = state.building(building)
                     {
                         watch.extractors.insert(building.0, extractor.anchor);
@@ -493,14 +480,11 @@ impl ReactivityDetectors {
 
     /// Follows an `aftermine-opponent` seat's offensive missions at `now`.
     pub(super) fn check_missions(&mut self, seat: u8, now: u64, missions: &[MissionStatus]) {
-        let Some(Some(watch)) = self.seats.get_mut(usize::from(seat)) else {
+        let Some(watch) = self.seats.get_mut(usize::from(seat)) else {
             return;
         };
-        let fights = watch.fights.get_or_insert_with(BTreeMap::new);
-        let withdrawal = watch
-            .found
-            .withdrawal
-            .get_or_insert_with(Reactions::default);
+        let fights = &mut watch.fights;
+        let withdrawal = &mut watch.found.withdrawal;
         for mission in missions {
             let target = match mission.kind {
                 MissionKind::Attack { owner, .. }
@@ -576,9 +560,6 @@ impl ReactivityDetectors {
     pub(super) fn check(&mut self, state: &State, now: u64) {
         let starts = self.starts.get_or_insert_with(|| first_foundries(state));
         for (index, watch) in self.seats.iter_mut().enumerate() {
-            let Some(watch) = watch else {
-                continue;
-            };
             let player = PlayerId::from_index(index);
             if !state.accepts_commands(player) {
                 settle(watch);
@@ -667,19 +648,15 @@ impl ReactivityDetectors {
         }
     }
 
-    /// Each watched seat's cases, with those still open counted moot.
-    pub(super) fn finish(self) -> Vec<Option<SeatReactivity>> {
+    /// Each seat's cases, with those still open counted moot.
+    pub(super) fn finish(self) -> Vec<SeatReactivity> {
         self.seats
             .into_iter()
-            .map(|watch| {
-                watch.map(|mut watch| {
-                    settle(&mut watch);
-                    let mut found = watch.found;
-                    if watch.fights.is_some() {
-                        found.target_switches = Some(watch.switches);
-                    }
-                    found
-                })
+            .map(|mut watch| {
+                settle(&mut watch);
+                let mut found = watch.found;
+                found.target_switches = watch.switches;
+                found
             })
             .collect()
     }
@@ -728,11 +705,7 @@ fn settle(watch: &mut SeatWatch) {
     ] {
         reactions.moot += count as u64;
     }
-    if let Some(fights) = &mut watch.fights
-        && let Some(withdrawal) = &mut found.withdrawal
-    {
-        withdrawal.moot += std::mem::take(fights).len() as u64;
-    }
+    found.withdrawal.moot += std::mem::take(&mut watch.fights).len() as u64;
 }
 
 /// The player each strike in `events` came from, and what it went at: unit

@@ -103,28 +103,31 @@ pub struct EvaluationPlan {
     pub leg: EvaluationLeg,
     /// Scenario used to build the state and replay.
     pub scenario: Scenario,
-    /// Exact evaluation-only controller per seat; `None` is an empty chair.
-    pub controllers: Vec<Option<EvaluationController>>,
+    /// Exact evaluation-only controller per seat.
+    pub controllers: Vec<EvaluationController>,
 }
 
 impl EvaluationPlan {
-    /// Adapts an ordinary configured scenario to the evaluation runner.
-    pub fn from_scenario(scenario: Scenario, leg: EvaluationLeg) -> Self {
+    /// Adapts an ordinary configured scenario to the evaluation runner;
+    /// every seat must be a configured bot.
+    pub fn from_scenario(scenario: Scenario, leg: EvaluationLeg) -> Result<Self> {
         let controllers = scenario
             .players
             .iter()
-            .map(|player| {
+            .enumerate()
+            .map(|(seat, player)| {
                 (player.bot)
                     .then_some(player.bot_config)
                     .flatten()
                     .map(EvaluationController::configured)
+                    .with_context(|| format!("seat {seat} has no bot configuration"))
             })
-            .collect();
-        Self {
+            .collect::<Result<_>>()?;
+        Ok(Self {
             leg,
             scenario,
             controllers,
-        }
+        })
     }
 
     fn validate(&self) -> Result<()> {
@@ -143,10 +146,8 @@ impl EvaluationPlan {
             .iter()
             .copied()
             .enumerate()
-            .filter_map(|(seat, controller)| {
-                controller.map(|controller| {
-                    controller.seat_controller(PlayerId::from_index(seat), &opponent_map)
-                })
+            .map(|(seat, controller)| {
+                controller.seat_controller(PlayerId::from_index(seat), &opponent_map)
             })
             .collect()
     }
@@ -277,11 +278,10 @@ pub struct SeatConfiguration {
     pub seat: u8,
     /// Team the seat plays for; seats sharing one are allies.
     pub team: u8,
-    /// The seat's bot configuration, or `None` for an empty chair.
-    pub config: Option<BotConfig>,
+    /// The seat's bot configuration.
+    pub config: BotConfig,
     /// Fully resolved hidden personality, included for exact comparison.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub profile: Option<ResolvedProfile>,
+    pub profile: ResolvedProfile,
 }
 
 /// Compact command failure and QA evidence for one seat.
@@ -309,19 +309,17 @@ pub struct SeatEvidence {
     /// Diagnostic: producers that sat idle while the bank could pay for them.
     pub idle_producers: Vec<ProducerIdle>,
     /// Diagnostic: what became of armed ground units trained on severed
-    /// ground; absent for seats without a controller.
-    pub deliveries: Option<Deliveries>,
+    /// ground.
+    pub deliveries: Deliveries,
     /// Actual income against a saturation estimate at each checkpoint reached.
     pub income: Vec<IncomeSample>,
-    /// Situations the seat met and how it answered them; absent for seats
-    /// without a controller.
-    pub reactivity: Option<SeatReactivity>,
-    /// What the seat's units and buildings did, valued in scrap; absent for
-    /// seats without a controller.
-    pub ledger: Option<crate::ledger::SeatLedger>,
+    /// Situations the seat met and how it answered them.
+    pub reactivity: SeatReactivity,
+    /// What the seat's units and buildings did, valued in scrap.
+    pub ledger: crate::ledger::SeatLedger,
     /// What `aftermine-opponent` believed when it launched each attack, against
-    /// how the attack went; absent for other seats.
-    pub attacks: Option<AttackCalibration>,
+    /// how the attack went.
+    pub attacks: AttackCalibration,
 }
 
 impl SeatEvidence {
@@ -337,11 +335,11 @@ impl SeatEvidence {
             eliminated_at: None,
             failures: SeatFailures::default(),
             idle_producers: Vec::new(),
-            deliveries: None,
+            deliveries: Deliveries::default(),
             income: Vec::new(),
-            reactivity: None,
-            ledger: None,
-            attacks: None,
+            reactivity: SeatReactivity::default(),
+            ledger: crate::ledger::SeatLedger::default(),
+            attacks: AttackCalibration::default(),
         }
     }
 
@@ -494,12 +492,12 @@ pub fn evaluate_plan(
     ));
     let mut evidence: Vec<SeatEvidence> =
         (0..scenario.players.len()).map(SeatEvidence::new).collect();
-    let watched: Vec<bool> = plan.controllers.iter().map(Option::is_some).collect();
-    let mut failures = failures::FailureDetectors::new(watched.iter().copied());
-    let mut reactions = reactivity::ReactivityDetectors::new(watched.iter().copied());
-    let mut income = income::IncomeTracker::new(&state, watched.clone());
+    let seats = scenario.players.len();
+    let mut failures = failures::FailureDetectors::new(seats);
+    let mut reactions = reactivity::ReactivityDetectors::new(seats);
+    let mut income = income::IncomeTracker::new(&state);
     let mut ledger = crate::ledger::ImpactLedger::new(&state);
-    let mut attacks = calibration::AttackFollower::new(watched.clone());
+    let mut attacks = calibration::AttackFollower::new(seats);
 
     let mut stall_loop = None;
     'run: while state.current_tick() < tick_limit && state.result().is_none() {
@@ -573,7 +571,7 @@ pub fn evaluate_plan(
         .zip(calibrations)
         .enumerate()
     {
-        evidence.ledger = watched[seat].then_some(seat_ledger);
+        evidence.ledger = seat_ledger;
         evidence.attacks = calibration;
         evidence.eliminated_at = state.players()[seat].eliminated_at;
         evidence.failures = report.failures;
@@ -610,8 +608,8 @@ pub fn evaluate_plan(
             .map(|(seat, (controller, player))| SeatConfiguration {
                 seat: u8::try_from(seat).expect("seat indices fit in u8"),
                 team: player.team,
-                config: controller.map(EvaluationController::config),
-                profile: controller.map(EvaluationController::profile),
+                config: controller.config(),
+                profile: controller.profile(),
             })
             .collect(),
         termination: if stall_loop.is_some() {
