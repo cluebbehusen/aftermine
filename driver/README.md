@@ -114,3 +114,6 @@ Run the tests with `--ignored`, one at a time, and everything under
 cargo test -p aftermine-driver --test menu_ux --test session_parity --test pad_match --test pad_ring --locked -- --ignored --test-threads 1
 cargo run -p aftermine-driver --locked -- smoke --spawn
 ```
+
+CI's `native-window` job runs `menu_ux`, the live half of `session_parity` and
+`smoke --spawn` this way, as a trial outside the required checks.
