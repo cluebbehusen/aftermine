@@ -2652,25 +2652,7 @@ impl BuildingKind {
     /// upgrade ladder; this base row is for costs, footprints, and
     /// other tier-invariant questions.
     pub const fn base_stats(self) -> &'static BuildingStats {
-        match self {
-            BuildingKind::Foundry => &FOUNDRY,
-            BuildingKind::Turret => &TURRET,
-            BuildingKind::Fabricator => &FABRICATOR,
-            BuildingKind::FlakTurret => &FLAK_TURRET,
-            BuildingKind::Bastion => &BASTION,
-            BuildingKind::Array => &ARRAY,
-            BuildingKind::Reclaimer => &RECLAIMER,
-            BuildingKind::RepairBay => &REPAIR_BAY,
-            BuildingKind::Extractor => &EXTRACTOR,
-            BuildingKind::Airworks => &AIRWORKS,
-            BuildingKind::Crucible => &CRUCIBLE,
-            BuildingKind::Barricade => &BARRICADE,
-            BuildingKind::ScuttleCharge => &SCUTTLE_CHARGE,
-            BuildingKind::Spire => &SPIRE,
-            BuildingKind::Lattice => &LATTICE,
-            BuildingKind::MawCradle => &MAW_CRADLE,
-            BuildingKind::RocCradle => &ROC_CRADLE,
-        }
+        self.tiers()[0]
     }
 
     /// Whether harvesters can deliver their cargo here. The one funnel
