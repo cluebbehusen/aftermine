@@ -1632,6 +1632,71 @@ fn a_single_unit_exposes_static_combat_facts_but_a_group_does_not() {
 }
 
 #[test]
+fn a_walled_in_producer_says_so_on_its_queue() {
+    for gap in [false, true] {
+        let mut map = vec![".........."; 10];
+        map[4..8].copy_from_slice(&[
+            "....####..",
+            "....#..#..",
+            if gap { "....#....." } else { "....#..#.." },
+            "....####..",
+        ]);
+        let scenario = serde_json::from_value(serde_json::json!({
+            "name": "Walled in", "mode": "sandbox", "map": map,
+            "players": [
+                {"name": "You", "scrap": 1000, "bot": false},
+                {"name": "Target", "scrap": 0, "bot": true}
+            ],
+            "units": [],
+            "buildings": [{"player": 0, "kind": "foundry", "x": 5, "y": 5}]
+        }))
+        .unwrap();
+        let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
+        let foundry = human_foundry(&game);
+        game.presentation.selection.buildings = vec![foundry];
+        let panel = |game: &Game| {
+            build_for_palette(&game.view(), &BindingMap::classic(), false).expect("a panel")
+        };
+        let idle = panel(&game);
+        assert_ne!(idle.queue_label, "Walled in", "nothing queued");
+        game.state.tick(&[PlayerCommand {
+            player: game.presentation.human,
+            command: Command::Train {
+                building: foundry,
+                kind: UnitKind::Harvester,
+            },
+        }]);
+        let queued = panel(&game);
+        assert_eq!(
+            queued.queue_label == "Walled in",
+            !gap,
+            "said before the job finishes: {}",
+            queued.queue_label
+        );
+        assert_eq!(
+            queued.queue[0]
+                .desc
+                .iter()
+                .any(|line| line == WALLED_IN_DESC),
+            !gap,
+            "the held chip says why"
+        );
+        assert_eq!(
+            queued.info.status, idle.info.status,
+            "the info box keeps its lines"
+        );
+        for _ in 0..=UnitKind::Harvester.stats().train_ticks {
+            game.state.tick(&[]);
+        }
+        let held = !game.state.building(foundry).unwrap().queue.is_empty();
+        assert_eq!(held, !gap, "the simulation agrees");
+        if held {
+            assert_eq!(panel(&game).queue_label, "Walled in");
+        }
+    }
+}
+
+#[test]
 fn production_queue_time_counts_partial_head_and_marks_a_blocked_spawn_ready() {
     let queue = std::collections::VecDeque::from([UnitKind::Harvester, UnitKind::Sentinel]);
     assert_eq!(

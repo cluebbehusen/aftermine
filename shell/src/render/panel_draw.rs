@@ -491,7 +491,9 @@ fn queue_label_width(panel: &crate::panel::Panel, measure: impl Fn(&str) -> f32)
         let digits = seconds.ilog10() + 1;
         (digits + 1) as f32 * digit_width + measure(".s")
     };
-    time_width(ticks.sum()).max(measure("Ready"))
+    time_width(ticks.sum())
+        .max(measure("Ready"))
+        .max(measure(&panel.queue_label))
 }
 
 /// The grouped palette's Back column, which spans both rows.

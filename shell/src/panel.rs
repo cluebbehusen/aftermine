@@ -726,6 +726,25 @@ fn unit_speed_label(kind: UnitKind) -> String {
     )
 }
 
+/// Whether `b` holds its queue's head for want of somewhere to put it, by
+/// the test the simulation's production makes: Airworks aircraft leave
+/// through the roof, and everything else needs an open tile around the
+/// footprint. That ring lies in the owner's own sight.
+fn walled_in(state: &aftermine_sim::State, b: &aftermine_sim::Building) -> bool {
+    let Some(kind) = b.queue.front() else {
+        return false;
+    };
+    let domain = kind.stats().domain;
+    if b.kind == BuildingKind::Airworks && domain == aftermine_sim::stats::Domain::Air {
+        return false;
+    }
+    !aftermine_sim::geometry::rect_adjacent_tiles(b.anchor, b.kind.size())
+        .any(|tile| state.passable_for(domain, tile))
+}
+
+/// A walled-in queue head's tooltip line.
+const WALLED_IN_DESC: &str = "Walled in: it leaves once a tile beside the structure opens.";
+
 /// The production dock's heading: the time left on everything queued,
 /// or "Ready" while a finished head waits to leave.
 fn production_queue_label(
@@ -1644,6 +1663,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         if plural {
             panel.summary = building_summary(&selected.buildings);
         } else if let Some(building) = selected.buildings.first() {
+            let walled = walled_in(game.state, building);
             if let Some(target) = building.focus {
                 panel.queue_label = "Target".into();
                 panel.queue.push(order_card(
@@ -1659,6 +1679,8 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 ));
             } else if let Some(label) = magazine_queue(game, building, &mut panel.queue) {
                 panel.queue_label = label;
+            } else if walled {
+                panel.queue_label = "Walled in".into();
             } else {
                 panel.queue_label =
                     production_queue_label(&building.queue, building.training_progress())
@@ -1677,10 +1699,13 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     action: CardAction::CancelQueue(building.id, i.fit::<u8>()),
                     enabled: true,
                     why: None,
-                    desc: vec![format!(
+                    desc: [format!(
                         "{} to cancel; full refund.",
                         crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
-                    )],
+                    )]
+                    .into_iter()
+                    .chain((i == 0 && walled).then(|| WALLED_IN_DESC.to_string()))
+                    .collect(),
                     progress,
                     autocast: None,
                     hold: None,

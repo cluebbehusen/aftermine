@@ -129,6 +129,14 @@ fn production_dock_width_survives_countdowns_and_blocked_completion() {
     assert!(labels.iter().any(|label| label == "10s"));
     assert!(labels.iter().any(|label| label == "9.9s"));
     assert!(widths.iter().all(|width| *width == widths[0]));
+    let mut walled =
+        crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
+            .unwrap();
+    walled.queue_label = "Walled in".into();
+    assert!(
+        measure(&walled.queue_label) <= queue_label_width(&walled, measure),
+        "a label wider than every countdown still fits"
+    );
     assert_eq!(game.state.building(foundry).unwrap().queue.len(), 1);
 }
 
