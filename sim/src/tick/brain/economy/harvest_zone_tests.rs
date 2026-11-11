@@ -43,12 +43,21 @@ fn return_cargo_reuses_exhausted_floods_per_worker_and_safety_pass() {
     for (worker, searches) in state.units[..2].iter().zip([2, 1]) {
         let before = danger.route_search_count();
         assert_eq!(
-            return_cargo_destination(&state, &danger, worker.id, None),
+            return_cargo_destination(&state, &danger, &DropOffs::built(&state), worker.id, None),
             None
         );
         assert_eq!(danger.route_search_count() - before, searches);
     }
-    assert!(return_cargo_destination(&state, &danger, state.units[2].id, None).is_some());
+    assert!(
+        return_cargo_destination(
+            &state,
+            &danger,
+            &DropOffs::built(&state),
+            state.units[2].id,
+            None
+        )
+        .is_some()
+    );
 }
 
 #[test]
@@ -99,7 +108,7 @@ fn return_cargo_resets_reachability_before_ignoring_danger() {
     // pass that ignores danger must still search afresh and succeed.
     let before = danger.route_search_count();
     assert_eq!(
-        return_cargo_destination(&state, &danger, worker, None),
+        return_cargo_destination(&state, &danger, &DropOffs::built(&state), worker, None),
         Some(foundry.id)
     );
     assert_eq!(danger.route_search_count() - before, 1);
@@ -509,9 +518,11 @@ fn arriving_at_the_source_ends_a_route_hold() {
     state.units[0].worker_mut().danger_retry_at = Some(state.tick + 8);
     assert!(state.units[0].in_work_reach(node, (1, 1)), "premise");
     let danger = GroundSalvageDanger::capture(&state, PlayerId(0));
+    let drop_offs = DropOffs::built(&state);
     harvest(
         &mut state,
         &danger,
+        &drop_offs,
         worker,
         node,
         node,

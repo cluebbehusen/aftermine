@@ -157,6 +157,7 @@ pub(super) fn run(
     let mut harvest_danger_by_team: Vec<Option<crate::vision::GroundSalvageDanger>> =
         (0..state.players.len()).map(|_| None).collect();
     let mut reach = super::reach::Reach::new(state);
+    let drop_offs = economy::DropOffs::built(state);
     // Alternate direction by tick parity so no seat holds a standing
     // first-mover edge. With damage buffered, the remaining coupling (shared
     // scrap, own-side order state) is small, but in a mirror match any fixed
@@ -278,7 +279,16 @@ pub(super) fn run(
                 let danger = harvest_danger_by_team[team].get_or_insert_with(|| {
                     crate::vision::GroundSalvageDanger::capture(state, player)
                 });
-                harvest(state, danger, id, node, anchor, withdrawing, events);
+                harvest(
+                    state,
+                    danger,
+                    &drop_offs,
+                    id,
+                    node,
+                    anchor,
+                    withdrawing,
+                    events,
+                );
             }
             Order::Attack { .. } => combat::attack_known(
                 state,
@@ -412,7 +422,7 @@ pub(super) use combat::unit_weapon_reach;
 pub(in crate::tick) mod contact;
 mod economy;
 mod kiln;
-pub(super) use economy::return_cargo_destination;
+pub(super) use economy::{DropOffs, return_cargo_destination};
 pub(super) mod escort;
 mod locomotion;
 pub(super) mod logistics;

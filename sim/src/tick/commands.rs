@@ -1174,10 +1174,11 @@ fn apply_return_cargo(
         return Err(RejectReason::NoValidUnits);
     }
     let danger = crate::vision::GroundSalvageDanger::capture(state, player);
+    let drop_offs = super::brain::DropOffs::built(state);
     let deliveries: Vec<_> = workers
         .into_iter()
         .filter_map(|id| {
-            super::brain::return_cargo_destination(state, &danger, id, foundry)
+            super::brain::return_cargo_destination(state, &danger, &drop_offs, id, foundry)
                 .map(|destination| (id, destination))
         })
         .collect();

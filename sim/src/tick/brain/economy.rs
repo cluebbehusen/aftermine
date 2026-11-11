@@ -712,9 +712,11 @@ pub(super) fn salvage(
 /// The harvest loop: work one safe remembered source inside a fixed local
 /// zone, haul to a Foundry, and return to that same zone. Both nodes and
 /// wrecks are worked from a position beside the source.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn harvest(
     state: &mut State,
     danger: &GroundSalvageDanger,
+    drop_offs: &DropOffs,
     id: UnitId,
     node: TilePos,
     anchor: TilePos,
@@ -728,11 +730,11 @@ pub(super) fn harvest(
         return;
     };
     if unit.unloading().is_some() {
-        deliver(state, danger, id, events, withdrawing);
+        deliver(state, danger, drop_offs, id, events, withdrawing);
         return;
     }
     if withdrawing {
-        withdraw(state, danger, id, events);
+        withdraw(state, danger, drop_offs, id, events);
         return;
     }
 
@@ -751,15 +753,15 @@ pub(super) fn harvest(
         }
         begin_withdrawal(state, id, node, anchor);
         if carrying > 0 {
-            deliver(state, danger, id, events, true);
+            deliver(state, danger, drop_offs, id, events, true);
         } else {
-            withdraw(state, danger, id, events);
+            withdraw(state, danger, drop_offs, id, events);
         }
         return;
     }
 
     if carrying >= hstats.capacity {
-        deliver(state, danger, id, events, false);
+        deliver(state, danger, drop_offs, id, events, false);
         return;
     }
 
@@ -789,7 +791,7 @@ pub(super) fn harvest(
             SourceKind::Wreck => extract_wreck(state, id, node, hstats.ticks_per_scrap),
         }
     } else if !approach_source(state, danger, id, current, authoritative) {
-        source_route_failed(state, danger, id, node, anchor, events);
+        source_route_failed(state, danger, drop_offs, id, node, anchor, events);
     }
 }
 
@@ -1565,6 +1567,7 @@ fn begin_withdrawal(state: &mut State, id: UnitId, node: TilePos, anchor: TilePo
 fn source_route_failed(
     state: &mut State,
     danger: &GroundSalvageDanger,
+    drop_offs: &DropOffs,
     id: UnitId,
     node: TilePos,
     anchor: TilePos,
@@ -1577,9 +1580,9 @@ fn source_route_failed(
     let carrying = state.unit(id).expect("caller checked").carrying();
     begin_withdrawal(state, id, node, anchor);
     if carrying > 0 {
-        deliver(state, danger, id, events, true);
+        deliver(state, danger, drop_offs, id, events, true);
     } else {
-        withdraw(state, danger, id, events);
+        withdraw(state, danger, drop_offs, id, events);
     }
 }
 
@@ -1708,10 +1711,11 @@ fn finish_delivery(state: &mut State, id: UnitId, foundry: BuildingId) {
 pub(in crate::tick) fn return_cargo_destination(
     state: &State,
     danger: &GroundSalvageDanger,
+    drop_offs: &DropOffs,
     id: UnitId,
     requested: Option<BuildingId>,
 ) -> Option<BuildingId> {
-    let drop_offs = drop_offs_by_distance(state, id);
+    let drop_offs = drop_offs_by_distance(state, drop_offs, id);
     for avoid_danger in [true, false] {
         let mut scan = DropOffScan::default();
         if let Some(foundry_id) = drop_offs.iter().copied().find(|foundry_id| {
@@ -1797,17 +1801,18 @@ pub(super) fn return_cargo(
 fn deliver(
     state: &mut State,
     danger: &GroundSalvageDanger,
+    built: &DropOffs,
     id: UnitId,
     events: &mut Vec<Event>,
     withdrawing: bool,
 ) {
     let unit = state.unit(id).expect("caller checked");
-    let drop_offs = drop_offs_by_distance(state, id);
+    let drop_offs = drop_offs_by_distance(state, built, id);
     let active = unit
         .unloading()
         .map(|release| release.foundry)
         .filter(|foundry| drop_offs.contains(foundry));
-    let at_drop_off = active.or_else(|| drop_off_in_reach(state, unit));
+    let at_drop_off = active.or_else(|| drop_off_in_reach(state, built, unit));
     if let Some(foundry) = at_drop_off
         && state.in_building_work_reach(unit, foundry)
     {
@@ -1844,13 +1849,19 @@ fn deliver(
 /// Sticky withdrawal: a dry/unsafe worker reaches a built Foundry before
 /// becoming idle or starting the next queued order. If no Foundry is
 /// reachable, the queue still advances once instead of being erased.
-fn withdraw(state: &mut State, danger: &GroundSalvageDanger, id: UnitId, events: &mut Vec<Event>) {
+fn withdraw(
+    state: &mut State,
+    danger: &GroundSalvageDanger,
+    built: &DropOffs,
+    id: UnitId,
+    events: &mut Vec<Event>,
+) {
     if state.unit(id).expect("caller checked").carrying() > 0 {
-        deliver(state, danger, id, events, true);
+        deliver(state, danger, built, id, events, true);
         return;
     }
     let tile = state.unit(id).expect("caller checked").tile();
-    let drop_offs = drop_offs_by_distance(state, id);
+    let drop_offs = drop_offs_by_distance(state, built, id);
     if let Some(foundry) = drop_offs.iter().copied().find(|foundry_id| {
         let foundry = state
             .building(*foundry_id)
@@ -1874,12 +1885,59 @@ fn withdraw(state: &mut State, danger: &GroundSalvageDanger, id: UnitId, events:
     });
 }
 
+/// Each seat's standing drop-off structures, in building order, as they
+/// stood when captured. A phase captures its own: the brain phase only
+/// buffers construction and damage, and movement changes no building.
+pub(in crate::tick) struct DropOffs {
+    seats: Vec<Vec<BuildingId>>,
+}
+
+impl DropOffs {
+    /// The completed drop-offs, the only ones a delivery may use.
+    pub(in crate::tick) fn built(state: &State) -> Self {
+        Self::capture(state, crate::Building::built)
+    }
+
+    /// Every standing drop-off, finished or not.
+    pub(in crate::tick) fn standing(state: &State) -> Self {
+        Self::capture(state, |_| true)
+    }
+
+    fn capture(state: &State, keep: impl Fn(&crate::Building) -> bool) -> Self {
+        let mut seats = vec![Vec::new(); state.players.len()];
+        for building in state
+            .buildings
+            .iter()
+            .filter(|building| building.hp > 0 && building.kind.is_drop_off() && keep(building))
+        {
+            if let Some(seat) = seats.get_mut(building.player.0 as usize) {
+                seat.push(building.id);
+            }
+        }
+        Self { seats }
+    }
+
+    /// `player`'s drop-offs in building order, still standing.
+    pub(in crate::tick) fn of<'a>(
+        &'a self,
+        state: &'a State,
+        player: PlayerId,
+    ) -> impl Iterator<Item = &'a crate::Building> {
+        self.seats
+            .get(player.0 as usize)
+            .into_iter()
+            .flatten()
+            .filter_map(|&id| state.building(id))
+            .filter(|building| building.hp > 0)
+    }
+}
+
 /// The player's completed drop-off structures, nearest first. The one
 /// funnel deliveries and withdrawal consult — a kind joins the drop-off
 /// network by answering [`crate::stats::BuildingKind::is_drop_off`].
-fn drop_offs_by_distance(state: &State, id: UnitId) -> Vec<BuildingId> {
+fn drop_offs_by_distance(state: &State, built: &DropOffs, id: UnitId) -> Vec<BuildingId> {
     let unit = state.unit(id).expect("caller checked");
-    let mut drop_offs: Vec<_> = own_drop_offs(state, unit)
+    let mut drop_offs: Vec<_> = own_drop_offs(state, built, unit)
         .map(|building| drop_off_rank(unit, building))
         .collect();
     drop_offs.sort_unstable();
@@ -1890,8 +1948,12 @@ fn drop_offs_by_distance(state: &State, id: UnitId) -> Vec<BuildingId> {
 }
 
 /// The nearest completed drop-off this unit can unload at from where it stands.
-pub(super) fn drop_off_in_reach(state: &State, unit: &crate::Unit) -> Option<BuildingId> {
-    own_drop_offs(state, unit)
+pub(super) fn drop_off_in_reach(
+    state: &State,
+    drop_offs: &DropOffs,
+    unit: &crate::Unit,
+) -> Option<BuildingId> {
+    own_drop_offs(state, drop_offs, unit)
         .filter(|building| state.in_building_work_reach(unit, building.id))
         .map(|building| drop_off_rank(unit, building))
         .min()
@@ -1900,15 +1962,12 @@ pub(super) fn drop_off_in_reach(state: &State, unit: &crate::Unit) -> Option<Bui
 
 fn own_drop_offs<'a>(
     state: &'a State,
+    drop_offs: &'a DropOffs,
     unit: &crate::Unit,
 ) -> impl Iterator<Item = &'a crate::Building> {
-    let player = unit.player;
-    state.buildings.iter().filter(move |building| {
-        building.player == player
-            && building.hp > 0
-            && building.built()
-            && building.kind.is_drop_off()
-    })
+    drop_offs
+        .of(state, unit.player)
+        .filter(|building| building.built())
 }
 
 fn drop_off_rank(unit: &crate::Unit, building: &crate::Building) -> (chassis::fx::Fx, BuildingId) {

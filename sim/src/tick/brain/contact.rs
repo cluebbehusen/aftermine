@@ -509,8 +509,11 @@ pub(in crate::tick) fn collision_radius(unit: &crate::Unit) -> Fx {
         .min(clearance(unit) - const { Fx::lit("0.002") })
 }
 
+/// The surface bounding `unit`'s motion, if any. `drop_offs` are the
+/// standing drop-offs of this moment.
 pub(in crate::tick) fn surface_for(
     state: &State,
+    drop_offs: &economy::DropOffs,
     unit: &crate::Unit,
 ) -> Option<crate::building_contact::Surface> {
     if unit.domain() != Domain::Ground {
@@ -532,7 +535,7 @@ pub(in crate::tick) fn surface_for(
         } => Some(building),
         Order::ReturnCargo { foundry, .. } => Some(foundry),
         Order::Harvest { withdrawing, .. } if unit.carrying() > 0 => {
-            delivery_drop_off(state, unit, withdrawing)
+            delivery_drop_off(state, drop_offs, unit, withdrawing)
         }
         _ => None,
     };
@@ -558,20 +561,19 @@ pub(in crate::tick) fn surface_for(
 
 /// The drop-off whose surface bounds a loaded Harvest worker, if it is unloading,
 /// routing to one, or stopping beside one.
-fn delivery_drop_off(state: &State, unit: &crate::Unit, withdrawing: bool) -> Option<BuildingId> {
+fn delivery_drop_off(
+    state: &State,
+    drop_offs: &economy::DropOffs,
+    unit: &crate::Unit,
+    withdrawing: bool,
+) -> Option<BuildingId> {
     if let Some(release) = unit.unloading() {
         return Some(release.foundry);
     }
     if let Some(path) = &unit.path {
-        return state
-            .buildings()
-            .iter()
-            .find(|b| {
-                b.hp > 0
-                    && b.player == unit.player
-                    && b.kind.is_drop_off()
-                    && crate::tick::tile_adjacent_to_rect(path.goal, b.anchor, b.kind.size())
-            })
+        return drop_offs
+            .of(state, unit.player)
+            .find(|b| crate::tick::tile_adjacent_to_rect(path.goal, b.anchor, b.kind.size()))
             .map(|b| b.id);
     }
     // A delivery gives up its route on coming into reach, still rolling. A hull
@@ -583,7 +585,7 @@ fn delivery_drop_off(state: &State, unit: &crate::Unit, withdrawing: bool) -> Op
         .harvest
         .is_some_and(|h| unit.carrying() >= h.capacity);
     if withdrawing || full {
-        economy::drop_off_in_reach(state, unit)
+        economy::drop_off_in_reach(state, drop_offs, unit)
     } else {
         None
     }
