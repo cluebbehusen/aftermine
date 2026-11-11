@@ -218,7 +218,7 @@ fn assert_scenarios_preserve_state_integrity(paths: &[PathBuf]) {
     if let Some(dir) = &trace_dir {
         std::fs::create_dir_all(dir).unwrap();
     }
-    pool::fan_out(paths, |path| {
+    pool::fan_out_bounded(paths, std::num::NonZeroUsize::MAX, |path| {
         let scenario = all_bots(path);
         let trace = trace_dir
             .as_ref()
