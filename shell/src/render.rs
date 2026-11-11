@@ -542,10 +542,10 @@ pub(crate) fn draw_world(game: &crate::game::Scene<'_>, sprites: &Sprites, input
     measure(FramePass::TerrainBake, || {
         ground_cache.prepare(&ground, &view, &game.presentation.camera, sprites);
     });
-    clear_background(OUTSIDE);
+    // Boundary sight extends off-map, so the void must match opaque fog.
+    clear_background(FOG_UNEXPLORED);
     let alpha = game.clock.render_alpha();
     pass(FramePass::Terrain, || {
-        environment::draw_backdrop();
         ground_cache.draw(ground::Layer::Floor, &ground, &view, sprites);
     });
     pass(FramePass::Salvage, || {
