@@ -691,7 +691,7 @@ fn settings_frame(
     page_backdrop();
     sc.draw(&app.sprites, app.input.mouse);
     crate::button::draw_back(app.input.mouse);
-    if up.out == screens::settings::Out::OpenDiagnostics {
+    if up.out == screens::settings::Out::Leave {
         // Back to wherever this screen displaced: Home, or
         // the untouched pause menu still waiting on its
         // Settings row.
