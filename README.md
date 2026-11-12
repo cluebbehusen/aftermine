@@ -17,8 +17,8 @@ Aftermine requires a current Rust toolchain. From the repository root:
 cargo run -p aftermine-shell --release
 ```
 
-To play on an iPad, or on a Mac with saves in iCloud Drive, see
-[the iPad and Mac apps](shell/README.md#ipad-and-mac-apps).
+To play on an iPad or Apple TV, or on a Mac with saves in iCloud Drive, see
+[the iPad, Apple TV and Mac apps](shell/README.md#ipad-apple-tv-and-mac-apps).
 
 The main menu has the tutorial, match setup, LAN play, saved games and replays,
 the unit roster, settings and controls. Bots come in four difficulties and three
@@ -188,7 +188,8 @@ under [`.agents/skills/`](.agents/skills/).
 
 ## Project status
 
-Aftermine is playable on desktop and iPad and is in active development.
+Aftermine is playable on desktop, iPad and Apple TV and is in active
+development.
 
 Built with [Macroquad](https://macroquad.rs/),
 [`fixed`](https://crates.io/crates/fixed), and

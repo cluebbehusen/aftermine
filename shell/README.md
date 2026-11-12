@@ -58,6 +58,9 @@ cargo run -p aftermine-driver -- smoke --spawn
 A workspace build binds F1 to the debug overlay, which shows the whole world
 through the fog. A packaged copy never offers it, and a LAN match refuses it.
 
+Set `AFTERMINE_SOUND_BANK` to a folder of `.wav` files to audition sounds: each
+clip found there under its shipped name replaces the one in `assets/sounds/`.
+
 `assets/licenses/third-party.txt` holds the license notices of every third-party
 crate the game links, and every bundle ships it with the rest of `assets/`.
 Regenerate it with `sh tools/gen_notices.sh` when `Cargo.lock` changes.
