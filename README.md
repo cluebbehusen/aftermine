@@ -17,8 +17,8 @@ Aftermine requires a current Rust toolchain. From the repository root:
 cargo run -p aftermine-shell --release
 ```
 
-To play on an iPad, or on a Mac with saves in iCloud Drive, see
-[the iPad and Mac apps](shell/README.md#ipad-and-mac-apps).
+To play on an iPad or Apple TV, or on a Mac with saves in iCloud Drive, see
+[the iPad, Apple TV and Mac apps](shell/README.md#ipad-apple-tv-and-mac-apps).
 
 The main menu has the tutorial, match setup, LAN play, saved games and replays,
 the unit roster, settings and controls. Bots come in four difficulties and three
@@ -102,6 +102,25 @@ difficulty, stance and personality. New Match picks new personalities.
 Aftermine is pre-launch, so saves and replays from other builds are not
 supported. [`docs/versioning.md`](docs/versioning.md) explains what changes at
 launch.
+
+## LAN play
+
+Every machine must run a build of the same commit. The host switches match setup
+to LAN, which opens the other seats and shows the address to join. Other players
+pick Join match, enter a name, and choose the host from the list or type its
+address (the port defaults to 4200). The host can move or remove players and
+starts once every open seat is filled. Tailscale and other routed networks need
+the typed address.
+
+From the command line, `--host` opens match setup on a scenario with its LAN
+lobby already listening on that address. The host takes the first seat the
+scenario leaves to a human (`"bot": false`), and presses Start once the others
+have joined:
+
+```sh
+cargo run -p aftermine-shell --release -- --host 0.0.0.0:4200 --scenario duel.json
+cargo run -p aftermine-shell --release -- --join 192.168.1.20:4200
+```
 
 ## Architecture
 
@@ -188,7 +207,8 @@ under [`.agents/skills/`](.agents/skills/).
 
 ## Project status
 
-Aftermine is playable on desktop and iPad and is in active development.
+Aftermine is playable on desktop, iPad and Apple TV and is in active
+development.
 
 Built with [Macroquad](https://macroquad.rs/),
 [`fixed`](https://crates.io/crates/fixed), and

@@ -141,7 +141,6 @@ impl Selection {
     }
 }
 
-/// A transient visual effect (never sim-relevant).
 mod clock;
 mod fx;
 mod presentation;
@@ -560,13 +559,13 @@ impl Game {
     /// Records and executes one complete batch, then updates statistics,
     /// lesson evidence, and presentation.
     fn execute(&mut self, commands: &[PlayerCommand]) -> aftermine_sim::TickReport {
-        // Interpolation cache; pointless during suppressed bulk advances
-        // (advance_ticks rebuilds it once at the end).
         for command in commands {
             self.recorder
                 .record(self.state.current_tick(), command.clone());
         }
         self.tick_phase = TickPhase::Simulating;
+        // Interpolation cache; pointless during suppressed bulk advances
+        // (advance_ticks rebuilds it once at the end).
         if !self.suppress_presentation {
             self.presentation.remember_previous_tick(&self.state);
         }

@@ -34,7 +34,7 @@ pub const REPLAY_SUMMARY_SCHEMA_VERSION: u32 = 1;
 /// spacing, so two bases never merge.
 pub(crate) const BATTLE_RADIUS_TILES: i64 = 12;
 
-/// Time gate: a battle closes after this many ticks (30 seconds) without a
+/// Time gate: a battle closes after this many ticks (15 seconds) without a
 /// nearby loss, so reinforcement waves stay in one battle while assaults
 /// minutes apart read as separate battles.
 pub(crate) const BATTLE_QUIET_TICKS: u64 = 300;

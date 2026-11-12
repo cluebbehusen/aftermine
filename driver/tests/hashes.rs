@@ -12,8 +12,8 @@ mod contracts;
 
 /// The bless discipline as a pure decision: same-version hash movement on an
 /// existing row refuses unless overridden. A missing or other-version fixture
-/// licenses the bless; new and removed rows never block (maps come and go
-/// without a version change).
+/// licenses the bless; new and removed rows never block (contracts come and
+/// go without a version change).
 fn bless_gate(
     stored: Option<&Fixture>,
     actual: &BTreeMap<String, String>,

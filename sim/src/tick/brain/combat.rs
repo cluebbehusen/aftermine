@@ -1258,10 +1258,12 @@ fn route_to_stand(
     found
 }
 
-/// The nearest enemy this unit's weapons can cover, in its autonomous
-/// acquisition range, that it can fire on now or reach: units before
-/// buildings, ties to the lowest id. `None` for unarmed units, empty
-/// horizons, and everything outside the weapon masks.
+/// The enemy this unit picks for itself in its autonomous acquisition
+/// range, among those its weapons can cover and it can fire on now or
+/// reach: the least [`Pick`], ranked as [`crate::stats::TargetPriority`]
+/// describes, with exact ties going by bearing from the nose, then id.
+/// `None` for unarmed units, empty horizons, and everything outside the
+/// weapon masks.
 ///
 /// Unit candidates come from the phase's spatial `index`: everything within
 /// that range of `pos` stands within `floor(range) + 1` tiles Chebyshev of
@@ -1270,10 +1272,9 @@ fn route_to_stand(
 /// move it.
 ///
 /// It passes over every victim the `volley` buffered this tick already
-/// kills. A
-/// contact weapon passes over a structure it has no reachable stance to
-/// meet: it could only set out, find no stance, give the fight up, and pick
-/// the same structure again the next tick.
+/// kills. A contact weapon passes over a structure it has no reachable
+/// stance to meet: it could only set out, find no stance, give the fight
+/// up, and pick the same structure again the next tick.
 pub(super) fn acquire_reachable_target(
     state: &State,
     index: &super::super::spatial::UnitIndex,
@@ -1411,8 +1412,8 @@ fn repick(
     }
 }
 
-/// The nearest enemy this unit's weapons cover within its aggro range,
-/// judged as if it stood at `pos`, reach unchecked: what a landing aircraft
+/// The enemy this unit would pick within its aggro range, judged as if it
+/// stood at `pos`, reach unchecked: what a landing aircraft
 /// would find in reach once parked on its tile, not what it happens to pass
 /// on the way there.
 pub(super) fn acquire_target_from(
@@ -2955,9 +2956,10 @@ pub(super) fn retaliate(state: &mut State, victim: UnitId, attacker: Target) {
             }
             Some(Resume::Accompany(escorted))
         }
-        // A tethered homecoming answers fire: the walk home resumes through
-        // the leash once the attacker falls, so no resume goal is carried. A
-        // plain Run is the player's recall verb and never auto-engages.
+        // A tethered homecoming answers fire with no resume goal: once the
+        // attacker is gone, the guard drops its leash and holds where the
+        // fight ended, still stationed. A plain Run is the player's recall
+        // verb and never auto-engages.
         Order::Run { .. } if unit.leash.is_some() => None,
         // An attack aimed at something that just died in resolution is no
         // engagement; without this arm a surviving out-of-aggro shooter

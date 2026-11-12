@@ -67,13 +67,12 @@ Parsing and deserialization share one level check: touching ground meets only at
 overlapping levels, a cliff stands no higher than the ground beside it, and a
 layer at a single level is stored as a flat map, so every map has one form.
 
-Scenario mode defaults to an ordinary match. Sandbox mode makes Foundry anchors
-optional, permits allied-only or disconnected scenes, and disables automatic
-elimination and victory. Command, placement, ownership and cost checks still
-apply, and a sandbox seat can command units without a Foundry until it
-surrenders. Mode is serialized state: a sandbox cannot deserialize with
-elimination stamps or a final result, and session checkpoints require matching
-scenario and world modes.
+Scenario mode defaults to an ordinary match. Sandbox mode relaxes only what a
+match demands of its setup and its end, and never declares elimination or a
+result. Placement, ownership and cost checks still apply, but a seat without a
+Foundry keeps commanding until it surrenders. Mode is serialized state: a
+sandbox cannot deserialize with elimination stamps or a final result, and
+session checkpoints require matching scenario and world modes.
 
 All `State` fields are crate-private. Other crates get narrow immutable
 accessors and change the world only by passing commands to `tick`. Prediction is
@@ -119,11 +118,15 @@ Phase order is game behavior. `State::tick` performs:
    warheads, feed kilns, and resolve buffered damage, construction, salvage, and
    repair.
 6. Resolve boarding and unloading after every unit has decided, then stand up
-   the machine of every cradle whose last work landed.
-7. Evict pathless ground bodies from newly claimed blocking footprints.
-8. Follow paths, then resolve same-domain unit collisions. Parking radars unfold
-   a tick further on machines that did not drive themselves, and fold on any
-   that did.
+   the machine of every cradle whose last work landed, then dock arriving drones
+   and launch the docked drones of hosts on alert.
+7. Evict pathless ground bodies from newly claimed blocking footprints, then
+   send parked structural hulls aside for friendly ground bodies whose routes
+   they block.
+8. Follow paths, then resolve same-domain unit collisions. Ground bodies held
+   back by contact or a refused step long enough drop their routes. Parking
+   radars unfold a tick further on machines that did not drive themselves, and
+   fold on any that did.
 9. Retain large aircraft motion and resolve due crash impacts against current
    positions.
 10. Detonate armed Scuttle Charges under hostile post-movement bodies.
@@ -216,13 +219,9 @@ before returning to duty. Escort chains are loop-free: dispatch refuses an
 escort the target already follows, and the validator refuses a state holding a
 loop.
 
-`Tend` is a worker's walk that welds on its own initiative. A patrol gives
-workers tending legs, and an idle worker with idle welding on (`SetIdleWeld`, on
-by default) sets out from its post to weld an own wounded machine or damaged
-building nearby, read from a snapshot taken after the command phase. Tending
-never interrupts another order, an empty bank only pauses it, and a queued
-command replaces a trip as it would an idle program. A building with an active
-or queued salvage commitment is never a patient.
+`Tend` is a worker's walk that welds on its own initiative. It chooses patients
+from a snapshot taken after the command phase, never interrupts another order,
+and never takes a building with an active or queued salvage commitment.
 
 Walks carry a `Goal`: the clicked tile, the spread slot the unit aims for, and
 an optional endpoint. A tile goal must lie on the map, and an off-map one is
@@ -245,10 +244,8 @@ A producer's rally is a tile or an own unit, and units born under a unit rally
 escort it. The validator refuses a unit rally that names a unit out of play or
 another seat's unit.
 
-`Scout` legs plan from team knowledge only: visible armed enemies' reach,
-remembered defenses, radar contacts, recent incidents and known Scuttle Charges.
-A scout with no safe view for `SCOUT_HOLD_TICKS` ends its leg with
-`NoSafeVantage`.
+`Scout` legs plan from the scout's team knowledge only, so where a scout goes
+never reveals what its team cannot see.
 
 ## Movement and collision
 
@@ -267,12 +264,11 @@ the footprint, it crosses friendly footprints to the nearest ground that holds
 it while its order waits. Hostile footprints stay solid. A body on open ground
 that new footprints seal in stays there: walling in a unit is legal play.
 
-Routes ignore bodies, except that a small body steps round a friendly Maw
-standing in its way. A ground follower's lookahead never passes through a
-friendly ground body standing still, and a body whose progress is cancelled by
-contact for `STALL_REPLAN_TICKS` plans again. Only friendly bodies count,
-because steering around an unseen enemy would reveal it; hostile bodies meet
-only the collision resolver.
+Routing and steering treat only friendly bodies as obstacles, because steering
+around an unseen enemy would reveal it; hostile bodies meet only the collision
+resolver. Seen enemies shape Harvester and Scout routes only through the team's
+fog-honest danger knowledge. A body whose progress is cancelled by contact for
+`STALL_REPLAN_TICKS` plans again.
 
 A hull wider than the Breaker's radius claims body tiles around its centre tile.
 It routes only where all of them are passable, is seen when any of them is, and
@@ -289,11 +285,9 @@ chooser. When two claims overlap, the unit nearer its own position keeps its
 claim whatever its seat, so allied crowds cannot all yield to each other; an
 exact tie goes to the earlier unit of one seat.
 
-A cradle crew member routes to its pad round the cradle's other pads, by the far
-side of the cradle if need be, and keeps its ordinary route only when there is
-no such way and that route crosses no pad a crewmate already works from. It
-stops only on the pad it set out for, never sets out for or through a pad a
-crewmate already works from, and reports `NoRoute` when it can reach no other.
+A cradle crew member stops only on the pad it set out for, never sets out for or
+through a pad a crewmate already works from, and reports `NoRoute` when it can
+reach no other.
 
 Ground motor speed is serialized and validated. A pathless ground unit can still
 be braking, so group arrival and anchored collision priority require a motor
@@ -320,14 +314,10 @@ productive stationary unit holds its position against an approaching one.
 
 A delivery credits the bank exactly once, on the last tick of an uninterrupted
 unload of `UNLOAD_TICKS`. An interrupted or cancelled unload never loses cargo,
-and the deposit event reports what the bank actually credited. `ReturnCargo`
-prefers safe routes and keeps an explicit Foundry as its destination.
+and the deposit event reports what the bank actually credited.
 
-Recurring income runs in the production phase: Reclaimers and Refineries on
-their cadences, restored Extractors' fixed income, the Foundries' baseline drip,
-and Crucibles consuming wreck. A completed own Foundry within the support radius
-raises an Extractor's yield without stacking, and a Deep Bore triples both
-yields. Support is computed from the two footprints, so it adds no serialized
+Recurring income runs in the production phase. Foundry support for an Extractor
+never stacks and is computed from the two footprints, so it adds no serialized
 state. A seat with no machine that can harvest, in the world, aboard a transport
 or prepaid in a queue, draws a finite recovery entitlement.
 
@@ -360,8 +350,7 @@ cannot multiply one blast.
 
 An upgrade pays up front and takes the building offline as a site on its new
 tier. It refits at one progress tick per tick and cannot be sped up, paused,
-cancelled or left to decay. A Deep Bore upgrade starts only while a completed
-own Foundry stands within the support radius.
+cancelled or left to decay.
 
 An assembly cradle is paid in full when placed and never completes. At most
 `ASSEMBLY_CREW_CAP` workers hold it, and a newcomer is admitted only in place of
@@ -394,10 +383,9 @@ Buildings count as ground targets, and cooldowns are stored per weapon slot.
 
 A weapon fires only once its bearing is within a small tolerance of the target.
 Turret headings, gun bearings and mounted-gun bearings are serialized, and
-validation refuses one on a kind without that mount. A gun with nothing to aim
-at and its reload done turns back to its rest at its usual rate: a defense's
-toward the map centre, a ground turret's to the hull's nose, and a mounted gun's
-to the bearing it starts at. A Bastion's gun holds its bearing instead.
+validation refuses one on a kind without that mount. An idle gun rests relative
+to the map centre or its own hull, and a Bastion's holds its last bearing; none
+rests at an absolute bearing, so mirrored guns rest mirrored.
 
 `AttackTarget` resolves through team knowledge to a visible entity, a remembered
 or public building, or a radar contact. Explicit attacks may approach without
@@ -413,18 +401,13 @@ only to a clearly better victim, so equal victims never trade places. A defense
 takes the target it could fire on soonest, so it never swings between two
 targets that stand still.
 
-Direct ground-to-ground fire traces terrain: rock gives cover, buildings and
-scrap do not. Fire involving aircraft and indirect fire ignore rock. Peaks block
-everything. On tiered maps, direct fire needs both ends on a shared level (a
-ramp shares the levels on either side), higher ground between them blocks it,
-and indirect fire never lands above the shooter's highest level. Shots involving
-aircraft ignore levels. Splash and blasts stop at peaks and stay on their own
-level. Aircraft crashes and warheads ignore peaks and levels. All of these rules
-live in `sim/src/tick/fire.rs`.
+The rules for which terrain and levels block fire, splash and blasts live in
+`sim/src/tick/fire.rs`. Aircraft crashes and warheads ignore peaks and levels.
 
 Projectile weapons launch a serialized `Shell` toward an aim point fixed when it
 fires, and the shell is unguided after that. Predictive aim samples only state
-from before the unit brains run. On arrival a building takes only a direct hit.
+from before the unit brains run. On arrival a building takes only a direct hit,
+except a buried Scuttle Charge, which splash also reaches.
 
 Point defense stops projectiles, never hitscan fire and never warheads. Charges
 are its only limit, and shells are assigned to defenders greedily in one
@@ -436,18 +419,15 @@ capacity.
 
 ## Warheads
 
-A Spire and a Lattice each keep a magazine of prepaid rounds. Rounds are paid
-when ordered and refunded in full when cancelled or when the building is
-salvaged; loaded rounds and destroyed buildings refund nothing. Autofill buys a
+A Spire and a Lattice each keep a magazine of prepaid rounds. Autofill buys a
 round in the production phase, in building id order, only when the bank covers
 it without spending a stranded seat's recovery package.
 
 `Launch` holds a strike on any tile, seen or not, while a warhead is loaded. The
-deck turns toward it and launches once it has stood aligned for the silo's ready
-ticks. The warhead flies a straight line at a fixed speed, and validation
-requires its stored flight time to match its line. On arrival it bursts with one
-falloff splash against every hostile target, aircraft included, and its hits
-join the tick's buffered volley.
+warhead flies a straight line at a fixed speed, and validation requires its
+stored flight time to match its line. On arrival it bursts with one falloff
+splash against every hostile target, aircraft included, and its hits join the
+tick's buffered volley.
 
 Each team counts the ticks it has held each hostile warhead in true sight or
 allied radar. At one threshold the warhead is tracked, which reveals its silo;

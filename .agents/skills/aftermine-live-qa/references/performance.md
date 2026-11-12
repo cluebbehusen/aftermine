@@ -18,7 +18,7 @@ cargo test -p aftermine-shell --locked saved_game::tests::
 The size guards cover distinct failure modes:
 
 - The existing 500-unit mass-battle generator, with both seats controlled, and
-  the shipped seven-bot Skyhook scenario advance 24 ticks, then save through the
+  the seven-bot Skyhook fixture scenario advance 24 ticks, then save through the
   production format. Each file must remain within 1 MiB compressed and 8 MiB
   decoded. Both resume for another 24 ticks with identical commands and worlds.
   These are short staged scale checks, not late-game performance measurements.

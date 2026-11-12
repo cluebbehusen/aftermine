@@ -1,5 +1,5 @@
-//! The perceptual-diff screenshot suite: twelve canonical screens captured
-//! from a real automation-mode shell and compared against per-machine
+//! The perceptual-diff screenshot suite: canonical screens captured from a
+//! real automation-mode shell and compared against per-machine
 //! references on a tolerance metric.
 //!
 //! Pixel goldens do not survive GPU or font changes, so this is a local
@@ -44,9 +44,9 @@ impl Drop for ScratchHome {
 
 /// A throwaway HOME whose Aftermine config pins the presentation knobs the
 /// suite depends on: reduced motion (stills the Home backdrop drift),
-/// default scale, classic bindings (empty list resets to classic on
-/// load), 1280x800. Both the macOS and XDG locations are written so the
-/// suite behaves the same on either platform.
+/// default scale, the Classic bindings, 1280x800. The macOS, XDG and
+/// Windows locations are all written so the suite behaves the same on every
+/// platform.
 fn scratch_home() -> Result<ScratchHome> {
     let home = loop {
         let id = NEXT_HOME.fetch_add(1, Ordering::Relaxed);
@@ -215,7 +215,7 @@ impl Suite<'_> {
     }
 }
 
-/// Runs the twelve-shot walk. Spawns its own shell on `port`.
+/// Runs the shot walk. Spawns its own shell on `port`.
 pub fn run(port: u16, bless: bool, dir: &Path, threshold: f64) -> Result<()> {
     let home = scratch_home()?;
     let (guard, mut client) = auto::spawn_shell(&SpawnOptions {

@@ -1,7 +1,9 @@
 //! Command validation and application.
 //!
-//! Commands mutate intent (orders, queues) and nothing else; later phases do
-//! the work. Invalid commands are dropped with a
+//! Commands set intent (orders, queues, rallies, focus) and settle its
+//! bookkeeping at once: payments and refunds, placed sites, started upgrades
+//! and resignations. They never move or damage anything; later phases do the
+//! work. Invalid commands are dropped with a
 //! [`Event::CommandRejected`]. Per-unit problems (a dead id in an otherwise
 //! valid selection) are skipped silently, and [`canonical_units`] folds away
 //! repeated ids at dispatch before any handler sees the list.
