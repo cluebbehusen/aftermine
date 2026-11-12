@@ -579,7 +579,7 @@ shell.
 | ----------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
 | App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`       | Screen-flow step tables, screen tests, `driver/tests/menu_ux.rs` (run by hand)  |
 | Live tick and recording       | `shell/src/game.rs`                                                            | Game tests, `driver/src/smoke.rs`                                               |
-| Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests, `driver/tests/pad_match.rs`, `driver/tests/pad_ring.rs` |
+| Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests, plus real-window drills in `driver/tests/pad_wiring.rs` |
 | Saves                         | `shell/src/autosave.rs`, `shell/src/saves.rs`, `shell/src/app/persistence.rs`  | Module tests, the persistence step table                                        |
 | Diagnostic persistence        | `kit/src/diagnostics.rs`, `shell/src/diagnostic_report.rs`                     | Module tests                                                                    |
 | Playback and seeking          | `kit/src/playback.rs`, `shell/src/screens/playback.rs`                         | Playback tests                                                                  |

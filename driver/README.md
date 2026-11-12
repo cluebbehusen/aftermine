@@ -99,9 +99,9 @@ The native suites spawn a real shell window, so the workspace run skips them:
 
 - `tests/menu_ux.rs` walks menus, screen transitions, settings and the replay
   shelf by mouse, keyboard, controller and remote.
-- `tests/pad_match.rs` plays a match on a controller: selection, orders,
-  placement, targeted orders, pausing and the pause menu.
-- `tests/pad_ring.rs` drives the controller's command and group rings.
+- `tests/pad_wiring.rs` checks that controller presses reach a real window's
+  match: an order, a ring pick, a placement, the queue strip and the remote's
+  way to Pause.
 - The live half of `tests/session_parity.rs` runs one script through a spawned
   shell and the windowless session and requires identical replies.
 - `smoke --spawn` checks the debug socket, input funnel, camera, screenshots and
@@ -111,9 +111,10 @@ Run the tests with `--ignored`, one at a time, and everything under
 `xvfb-run -s "-screen 0 1280x800x24"` on Linux without a display:
 
 ```sh
-cargo test -p aftermine-driver --test menu_ux --test session_parity --test pad_match --test pad_ring --locked -- --ignored --test-threads 1
+cargo test -p aftermine-driver --test menu_ux --test session_parity --test pad_wiring --locked -- --ignored --test-threads 1
 cargo run -p aftermine-driver --locked -- smoke --spawn
 ```
 
-CI's `native-window` job runs `menu_ux`, the live half of `session_parity` and
-`smoke --spawn` this way, as a trial outside the required checks.
+CI's `native-window` job runs `menu_ux`, `pad_wiring`, the live half of
+`session_parity` and `smoke --spawn` this way, as a trial outside the required
+checks.
