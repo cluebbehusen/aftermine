@@ -1,4 +1,5 @@
 use super::*;
+use crate::tests::support::issue_tick;
 
 /// Runs `job` with `dir` holding both its record and the match's autosaves.
 fn run_at(job: SaveJob, dir: &Path) -> Result<Option<PathBuf>, SaveError> {
@@ -62,8 +63,7 @@ fn pending_tick_zero_input_is_saved_and_finished_matches_remain_recordings() {
     assert_eq!(*restored.pending, *game.pending);
     assert_eq!(restored.state.current_tick(), 0);
     assert_eq!(restored.do_tick().events, game.do_tick().events);
-    restored.issue(aftermine_sim::Command::Surrender);
-    restored.do_tick();
+    issue_tick(&mut restored, aftermine_sim::Command::Surrender);
     let Ok(Some(finished)) = write_record(&mut restored, &dir) else {
         panic!("finished record writes")
     };
@@ -554,8 +554,7 @@ fn a_decided_match_writes_its_record_and_drops_its_slot() {
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(aftermine_kit::keyframes::KEYFRAME_EVERY + 5);
     assert!(matches!(write_record(&mut game, &autosaves), Ok(Some(_))));
-    game.issue(aftermine_sim::Command::Surrender);
-    game.do_tick();
+    issue_tick(&mut game, aftermine_sim::Command::Surrender);
     assert!(game.state.result().is_some());
     let job = SaveJob::capture(&game, None);
     assert_eq!(job.kind, RecordKind::Match);
@@ -594,8 +593,7 @@ fn a_match_decided_right_after_its_resume_records_its_whole_history() {
         .restore()
         .unwrap()
         .install();
-    resumed.issue(aftermine_sim::Command::Surrender);
-    resumed.do_tick();
+    issue_tick(&mut resumed, aftermine_sim::Command::Surrender);
     assert!(resumed.state.result().is_some());
     let Ok(Some(record)) = write_record(&mut resumed, &root) else {
         panic!("the finished record lands");

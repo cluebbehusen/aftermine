@@ -1,5 +1,6 @@
 use super::*;
 use crate::numeric::Fit;
+use crate::tests::support::own_building;
 use aftermine_sim::Scenario;
 use macroquad::prelude::vec2;
 
@@ -146,13 +147,7 @@ fn funding_and_prerequisites_are_per_recipient_in_canonical_order() {
     assert_accepted(&mut game);
 
     let mut game = fixture(BuildingKind::Turret, &[0, 1], 1000);
-    let crucible = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Crucible)
-        .unwrap()
-        .id;
+    let crucible = own_building(&game, BuildingKind::Crucible);
     let mut json = serde_json::to_value(&*game.state).unwrap();
     json["buildings"]
         .as_array_mut()
@@ -481,13 +476,7 @@ fn stop_calls_off_an_armed_spire_selected_with_other_buildings() {
         target: chassis::grid::TilePos::new(0, 11),
     });
     assert_accepted(&mut game);
-    let fabricator = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Fabricator)
-        .unwrap()
-        .id;
+    let fabricator = own_building(&game, BuildingKind::Fabricator);
     game.presentation
         .selection
         .set_buildings([game.presentation.selection.buildings(), &[fabricator]].concat());

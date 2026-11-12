@@ -1,5 +1,5 @@
 use super::*;
-use crate::tests::support::{left_down, left_up, right_down, touch_down, touch_up};
+use crate::tests::support::{issue_tick, left_down, left_up, right_down, touch_down, touch_up};
 
 /// A finished lesson's card, laid out headless at 1280x800.
 fn finished_card() -> CardLayout {
@@ -335,8 +335,7 @@ fn the_first_match_launches_like_a_new_match_and_counts_once_it_ends() {
         .restore()
         .unwrap()
         .install();
-    resumed.issue(aftermine_sim::Command::Surrender);
-    resumed.do_tick();
+    issue_tick(&mut resumed, aftermine_sim::Command::Surrender);
     assert!(resumed.state.result().is_some());
     assert!(
         mark_first_match(&mut config, &resumed),
@@ -346,8 +345,7 @@ fn the_first_match_launches_like_a_new_match_and_counts_once_it_ends() {
     assert!(!mark_first_match(&mut config, &resumed), "it counts once");
 
     let mut other = Game::new(Scenario::skirmish()).unwrap();
-    other.issue(aftermine_sim::Command::Surrender);
-    other.do_tick();
+    issue_tick(&mut other, aftermine_sim::Command::Surrender);
     let mut fresh = config::Config::default();
     assert!(
         !mark_first_match(&mut fresh, &other),

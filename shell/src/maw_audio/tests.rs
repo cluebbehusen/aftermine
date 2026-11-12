@@ -1,22 +1,16 @@
 use super::*;
 use crate::game::Game;
-use aftermine_sim::{Event, PlayerId};
+use crate::tests::support::sandbox;
+use aftermine_sim::{BuildingKind, Event, PlayerId};
 use macroquad::prelude::Vec2;
 
 /// An open field of three seats with nobody's bot running, the camera over
 /// its middle and the picture showing each tick whole.
-fn field(units: &serde_json::Value, buildings: &serde_json::Value) -> (Game, UnitId) {
-    let scenario = serde_json::from_value(serde_json::json!({
-        "name": "Maw audio", "mode": "sandbox", "map": vec![".".repeat(40); 20],
-        "players": [
-            {"name": "West", "scrap": 0, "bot": false},
-            {"name": "East", "scrap": 0, "bot": false},
-            {"name": "North", "scrap": 0, "bot": false}
-        ],
-        "units": units,
-        "buildings": buildings
-    }))
-    .unwrap();
+fn field(
+    units: &[(u8, UnitKind, i32, i32)],
+    buildings: &[(u8, BuildingKind, i32, i32)],
+) -> (Game, UnitId) {
+    let scenario = sandbox(40, 20, 3, units, buildings);
     let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
     game.clock.paused = true;
     game.presentation.camera.center = Vec2::new(12.0, 10.0);
@@ -67,8 +61,8 @@ fn cut(report: &aftermine_sim::TickReport, maw: UnitId) -> bool {
 #[test]
 fn a_maw_s_drum_is_heard_from_its_first_hit_until_just_after_the_building_falls() {
     let (mut game, maw) = field(
-        &serde_json::json!([{"player": 0, "kind": "maw", "x": 8, "y": 10}]),
-        &serde_json::json!([{"player": 1, "kind": "fabricator", "x": 11, "y": 9}]),
+        &[(0, UnitKind::Maw, 8, 10)],
+        &[(1, BuildingKind::Fabricator, 11, 9)],
     );
     let mut hits = 0;
     let mut last_hit = 0;
@@ -126,8 +120,8 @@ fn a_hostile_maw_is_heard_only_while_it_is_seen() {
     // East's Maw cuts North's Fabricator at the far side of the field,
     // where West has no eyes.
     let (mut game, maw) = field(
-        &serde_json::json!([{"player": 1, "kind": "maw", "x": 30, "y": 10}]),
-        &serde_json::json!([{"player": 2, "kind": "fabricator", "x": 33, "y": 9}]),
+        &[(1, UnitKind::Maw, 30, 10)],
+        &[(2, BuildingKind::Fabricator, 33, 9)],
     );
     game.presentation.camera.center = Vec2::new(32.0, 10.0);
     while !cut(&game.do_tick(), maw) {
@@ -154,10 +148,7 @@ fn a_hostile_maw_is_heard_only_while_it_is_seen() {
 
 #[test]
 fn a_maw_s_kiln_hums_while_its_belt_runs_and_stops_with_the_belt() {
-    let (game, maw) = field(
-        &serde_json::json!([{"player": 0, "kind": "maw", "x": 12, "y": 10}]),
-        &serde_json::json!([]),
-    );
+    let (game, maw) = field(&[(0, UnitKind::Maw, 12, 10)], &[]);
     // Wounded, with a little wreck ahead of it.
     let mut wire = serde_json::to_value(&*game.state).unwrap();
     for unit in wire["units"].as_array_mut().unwrap() {

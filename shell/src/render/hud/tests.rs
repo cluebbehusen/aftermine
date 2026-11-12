@@ -1,7 +1,8 @@
 use super::*;
 use crate::action::BindingMap;
 use crate::game::Game;
-use crate::tests::support::{click, left_down, mouse_move};
+use crate::tests::support::{click, issue_tick, left_down, mouse_move, own_unit};
+use aftermine_sim::UnitKind;
 
 /// Every glyph half as wide as the size: deterministic and headless.
 fn fixed(_: Face, text: &str, size: f32) -> f32 {
@@ -128,8 +129,7 @@ fn a_seat_out_shows_no_idle_badge(game: &mut Game, ffa: bool) {
         badge(game).w > 0.0,
         "premise: the match opens with idle workers"
     );
-    game.issue(aftermine_sim::Command::Surrender);
-    game.do_tick();
+    issue_tick(game, aftermine_sim::Command::Surrender);
     assert!(!game.state.accepts_commands(human));
     assert_eq!(
         game.state.result().is_none(),
@@ -296,14 +296,7 @@ fn the_placement_ribbon_says_what_a_click_would_do_and_holds_still() {
 #[test]
 fn every_armed_ribbon_ends_in_a_cross_clear_of_its_words() {
     let mut game = skirmish();
-    let human = game.presentation.human;
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let arms: [fn(&mut InputState); 3] = [
         |input| input.armed = Some(crate::input::Armed::Verb(crate::input::ClickVerb::Hunt)),
@@ -470,14 +463,7 @@ fn the_patrol_ribbon_holds_still_and_lights_start_once_it_has_a_point() {
 #[test]
 fn a_finger_with_no_ghost_down_leaves_the_ribbon_one_row_tall() {
     let mut game = skirmish();
-    let human = game.presentation.human;
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let mut input = InputState::new();
     input.build_menu = true;
@@ -502,13 +488,7 @@ fn a_finger_with_no_ghost_down_leaves_the_ribbon_one_row_tall() {
 fn a_planned_row_counts_itself_in_the_ribbon() {
     let mut game = skirmish();
     let human = game.presentation.human;
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let foundry = game
         .state
@@ -561,13 +541,7 @@ fn a_planned_row_counts_itself_in_the_ribbon() {
 fn the_status_row_goes_blank_over_chrome_and_keeps_its_height() {
     let mut game = skirmish();
     let human = game.presentation.human;
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let foundry = game
         .state

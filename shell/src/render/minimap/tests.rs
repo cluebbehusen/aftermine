@@ -1,5 +1,6 @@
 use super::*;
 use crate::numeric;
+use crate::tests::support::sandbox;
 
 const VIEWPORT: Vec2 = vec2(1280.0, 800.0);
 
@@ -101,25 +102,18 @@ fn the_minimap_repaints_only_when_its_picture_can_change() {
 
 #[test]
 fn unverified_sites_fill_the_minimap_as_the_world_draws_them() {
-    let row = ".".repeat(48);
-    let scenario = aftermine_sim::Scenario::from_json(
-        &serde_json::json!({
-            "name": "Blueprints",
-            "mode": "sandbox",
-            "map": vec![row; 10],
-            "players": [
-                {"name": "You", "scrap": 1000, "bot": false, "team": 0},
-                {"name": "Ally", "scrap": 1000, "bot": false, "team": 0}
-            ],
-            "units": [
-                {"player": 0, "kind": "harvester", "x": 40, "y": 2},
-                {"player": 1, "kind": "harvester", "x": 40, "y": 7}
-            ],
-            "buildings": []
-        })
-        .to_string(),
-    )
-    .expect("blueprints parse");
+    let harvester = aftermine_sim::UnitKind::Harvester;
+    let mut scenario = sandbox(
+        48,
+        10,
+        2,
+        &[(0, harvester, 40, 2), (1, harvester, 40, 7)],
+        &[],
+    );
+    for player in &mut scenario.players {
+        player.scrap = 1000;
+        player.team = Some(0);
+    }
     let mut game = crate::game::Game::with_viewport(scenario, VIEWPORT).expect("builds");
     let workers: Vec<_> = game.state.units().iter().map(|unit| unit.id).collect();
     let anchors = [
