@@ -580,13 +580,7 @@ pub(crate) fn route_for_position(
                 );
                 goals::group_domain_goal(state, to, crate::stats::Domain::Air, reverse)?
             };
-            let sky_open = |t: TilePos| {
-                state
-                    .map
-                    .tile(t)
-                    .is_none_or(|tile| !tile.terrain.blocks_air())
-            };
-            if !chassis::path::line_blocked(from, to.center(), sky_open) {
+            if !chassis::path::line_blocked(from, to.center(), |t| state.map.sky_open(t)) {
                 return Some(vec![to]);
             }
             state.air_routes.route(from_tile, to, || {
@@ -615,14 +609,7 @@ pub(crate) fn rect_approach_origin(
     size: (i32, i32),
 ) -> TilePos {
     let first_foundry = state
-        .buildings
-        .iter()
-        .filter(|building| {
-            building.player == player
-                && !building.provisional()
-                && building.kind == crate::stats::BuildingKind::Foundry
-        })
-        .min_by_key(|building| building.id)
+        .first_foundry(player)
         .map(|foundry| (foundry.anchor, foundry.kind.size()));
     rect_approach_origin_for_map(
         (state.map.width(), state.map.height()),

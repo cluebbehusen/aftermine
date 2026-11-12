@@ -61,20 +61,29 @@ fn the_keyboard_follows_the_text_field_on_screen() {
 
     let mut pause = PauseScreen::open(false, true);
     assert_eq!(
-        Screen::Pause(PauseScreen::open(false, true)).keyboard(),
+        Screen::Pause(PauseScreen::open(false, true))
+            .form()
+            .map(|form| form.keyboard()),
         None
     );
     pause.begin_naming("Skirmish");
-    assert_eq!(Screen::Pause(pause).keyboard(), Some(Keyboard::Text));
+    assert_eq!(
+        Screen::Pause(pause).form().map(|form| form.keyboard()),
+        Some(Keyboard::Text)
+    );
     assert!(!Screen::Playing.text_entry());
 
     let lobby = |name| Screen::Lobby {
         screen: Box::new(LobbyScreen::join(name, "10.0.0.2")),
         back: Box::new(Screen::Home(HomeScreen::open())),
     };
-    assert_eq!(lobby("").keyboard(), Some(Keyboard::Text), "a name first");
     assert_eq!(
-        lobby("Connor").keyboard(),
+        lobby("").form().map(|form| form.keyboard()),
+        Some(Keyboard::Text),
+        "a name first"
+    );
+    assert_eq!(
+        lobby("Connor").form().map(|form| form.keyboard()),
         Some(Keyboard::Address),
         "then the address"
     );
@@ -144,7 +153,7 @@ fn quits_save_every_hidden_live_match() {
 #[test]
 fn the_waiting_screen_holds_the_lan_match() {
     use crate::screens::waiting::{Absent, WaitingScreen};
-    let waiting = Screen::Waiting(WaitingScreen::open(
+    let mut waiting = Screen::Waiting(WaitingScreen::open(
         vec![Absent {
             seat: aftermine_sim::PlayerId(1),
             name: "Alex".to_owned(),
@@ -153,7 +162,7 @@ fn the_waiting_screen_holds_the_lan_match() {
         true,
     ));
     assert!(waiting.holds_live_match());
-    assert_eq!(waiting.keyboard(), None);
+    assert_eq!(waiting.form().map(|form| form.keyboard()), None);
     assert_eq!(waiting.mode(), "waiting");
     assert_eq!(waiting.profile_mode(), "waiting");
 }
@@ -211,4 +220,93 @@ fn an_undecided_lan_match_keeps_the_screen_on_under_its_menus() {
         .keeps_screen_awake(&lan, false)
     );
     assert!(!Screen::Home(HomeScreen::open()).keeps_screen_awake(&lan, false));
+}
+
+#[test]
+fn veils_the_top_screen_and_the_silent_report_are_one_kind_each() {
+    let all = [
+        ScreenKind::ColdOpen,
+        ScreenKind::Home,
+        ScreenKind::Settings,
+        ScreenKind::Codex,
+        ScreenKind::Lessons,
+        ScreenKind::Wizard,
+        ScreenKind::Lobby,
+        ScreenKind::Playing,
+        ScreenKind::Playback,
+        ScreenKind::Replays,
+        ScreenKind::Results,
+        ScreenKind::FinalMap,
+        ScreenKind::Pause,
+        ScreenKind::Waiting,
+        ScreenKind::Busy,
+    ];
+    let where_true = |fact: fn(ScreenKind) -> bool| -> Vec<ScreenKind> {
+        all.into_iter().filter(|kind| fact(*kind)).collect()
+    };
+    assert_eq!(
+        where_true(ScreenKind::veils_match),
+        [ScreenKind::Pause, ScreenKind::Waiting]
+    );
+    assert_eq!(where_true(ScreenKind::top_screen), [ScreenKind::Home]);
+    assert_eq!(where_true(|kind| !kind.scored()), [ScreenKind::ColdOpen]);
+}
+
+#[test]
+fn motors_run_only_where_a_session_plays() {
+    let home = || Screen::Home(HomeScreen::open());
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
+    game.advance_ticks(20);
+    game.clock.paused = false;
+    assert!(Screen::Playing.motors_run(&game, false));
+    assert!(!Screen::Playing.motors_run(&game, true));
+    assert!(!Screen::Pause(PauseScreen::open(false, true)).motors_run(&game, false));
+    assert!(!home().motors_run(&game, false));
+    let mut playing = super::super::live_playback(&game).expect("viewer");
+    playing.clock.paused = false;
+    game.clock.paused = true;
+    assert!(
+        viewer(playing, home()).motors_run(&game, false),
+        "a replay plays its own motors over a paused match"
+    );
+}
+
+#[test]
+fn mirror_arrivals_land_only_where_saves_are_listed() {
+    assert!(Screen::Home(HomeScreen::open()).takes_mirror_arrivals());
+    assert!(!Screen::Playing.takes_mirror_arrivals());
+    assert!(!Screen::Pause(PauseScreen::open(false, true)).takes_mirror_arrivals());
+}
+
+#[test]
+fn match_effects_age_behind_the_report_and_under_a_lan_matchs_menus() {
+    let home = || Screen::Home(HomeScreen::open());
+    let pause = || Screen::Pause(PauseScreen::open(false, true));
+    for lan in [false, true] {
+        assert_eq!(
+            Screen::Results(ResultsScreen::open(lan)).effect_aging(lan),
+            EffectAging::Always
+        );
+        assert_eq!(Screen::Playing.effect_aging(lan), EffectAging::Held);
+    }
+    for screen in [home(), pause()] {
+        assert_eq!(screen.effect_aging(false), EffectAging::Held);
+        assert_eq!(screen.effect_aging(true), EffectAging::WallClock);
+    }
+}
+
+#[test]
+fn frame_scripts_run_on_home_the_live_match_or_the_viewer() {
+    let home = || Screen::Home(HomeScreen::open());
+    assert_eq!(Screen::Playing.frame_script(true), Ok(ScriptStart::Session));
+    assert_eq!(home().frame_script(false), Ok(ScriptStart::Backdrop));
+    assert!(
+        home().frame_script(true).is_err(),
+        "only the live match plays"
+    );
+    assert!(
+        Screen::Pause(PauseScreen::open(false, true))
+            .frame_script(false)
+            .is_err()
+    );
 }

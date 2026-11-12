@@ -2,7 +2,7 @@
 //! while its unit is carried, and it clears the tick its unit leaves play.
 
 use crate::common;
-use common::{cmd, open_arena, run, run_until, unit};
+use common::{assert_refused, cmd, open_arena, rejected, run, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::UnitSpec;
@@ -50,16 +50,6 @@ fn newborn(state: &mut State, building: BuildingId, kind: UnitKind) -> UnitId {
             _ => None,
         })
         .unwrap()
-}
-
-fn rejected(events: &[Event]) -> Vec<RejectReason> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            Event::CommandRejected { reason, .. } => Some(*reason),
-            _ => None,
-        })
-        .collect()
 }
 
 #[test]
@@ -173,12 +163,11 @@ fn a_unit_rally_refuses_foreign_and_absent_units() {
     let home = foundry(&state);
     let enemy = state.units()[1].id;
     for target in [enemy, UnitId(999)] {
-        let before = state.clone();
-        let report = state.tick(&[cmd(0, rally(home, Some(Rally::Unit(target))))]);
-        assert_eq!(rejected(&report.events), [RejectReason::InvalidTarget]);
-        let mut idle = before;
-        idle.tick(&[]);
-        assert_eq!(state.hash(), idle.hash(), "a refusal changes nothing");
+        assert_refused(
+            &mut state,
+            cmd(0, rally(home, Some(Rally::Unit(target)))),
+            RejectReason::InvalidTarget,
+        );
     }
     // A tile rally still behaves as before.
     let report = state.tick(&[cmd(0, rally(home, Some(Rally::Tile(TilePos::new(9, 9)))))]);

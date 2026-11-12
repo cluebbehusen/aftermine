@@ -4,12 +4,12 @@
 
 use super::orders::digit_action;
 use super::select::{cycle_idle_worker, idle_harvesters, select_army};
-use super::{ClickVerb, InputState, Pointer};
+use super::{Armed, ClickVerb, InputState, Pointer};
 use crate::action::Action;
 use crate::game::Game;
 use crate::numeric;
 use aftermine_sim::Command;
-use macroquad::prelude::{Vec2, vec2};
+use macroquad::prelude::Vec2;
 
 #[expect(clippy::too_many_lines, reason = "one arm per action")]
 pub(super) fn dispatch_action(
@@ -65,7 +65,7 @@ pub(super) fn dispatch_action(
             if slot < input.groups.len() {
                 let own = super::Group::of_selection(&game.view());
                 let selection = &game.presentation.selection;
-                let picked = selection.units.len().max(selection.buildings.len());
+                let picked = selection.units().len().max(selection.buildings().len());
                 if own.len() < picked {
                     game.presentation.toast(match own {
                         super::Group::Units(_) => "Only your own units join a control group",
@@ -90,7 +90,7 @@ pub(super) fn dispatch_action(
                     .toast("You can only command your own units");
                 return;
             }
-            if !game.presentation.selection.units.iter().any(|id| {
+            if !game.presentation.selection.units().iter().any(|id| {
                 game.state
                     .unit(*id)
                     .is_some_and(|unit| unit.kind.stats().harvest.is_some() && unit.carrying() > 0)
@@ -98,38 +98,37 @@ pub(super) fn dispatch_action(
                 game.presentation.toast("No scrap carried");
                 return;
             }
-            input.disarm_click_verbs();
-            input.patrol_route = None;
+            input.armed = None;
             game.issue(Command::ReturnCargo {
-                units: game.presentation.selection.units.clone(),
+                units: game.presentation.selection.units().to_vec(),
                 foundry: None,
                 repair: false,
             });
         }
         Action::Retire => {
-            if game.presentation.selection.units.is_empty() || !game.selection_commandable() {
+            if game.presentation.selection.units().is_empty() || !game.selection_commandable() {
                 game.presentation
                     .toast("You can only command your own units");
                 return;
             }
-            input.disarm_click_verbs();
+            input.armed = None;
             game.issue(Command::Retire {
-                units: game.presentation.selection.units.clone(),
+                units: game.presentation.selection.units().to_vec(),
                 queue: input.queue_held(),
             });
         }
         Action::StopOrScrap => {
             // Contextual: units selected halt in place; a selected own
             // unfinished site is scrapped for its refund.
-            if !game.presentation.selection.units.is_empty() && !game.selection_commandable() {
+            if !game.presentation.selection.units().is_empty() && !game.selection_commandable() {
                 game.presentation
                     .toast("You can only command your own units");
                 return;
             }
-            if game.presentation.selection.units.is_empty() {
+            if game.presentation.selection.units().is_empty() {
                 crate::building_actions::stop_or_scrap(game);
             } else {
-                let units = game.presentation.selection.units.clone();
+                let units = game.presentation.selection.units().to_vec();
                 game.issue(Command::Stop { units });
             }
         }
@@ -139,8 +138,7 @@ pub(super) fn dispatch_action(
                 game.presentation.toast("No warhead loaded");
                 return;
             }
-            input.disarm_click_verbs();
-            input.striking = Some(super::Strike::new(selected.silos()));
+            input.armed = Some(Armed::Strike(super::Strike::new(selected.silos())));
             if input.last_pointer == Pointer::Touch {
                 super::drop_aim_in_view(&game.view(), input);
             }
@@ -207,8 +205,7 @@ pub(super) fn dispatch_action(
         | Action::Unload
         | Action::Build(_) => super::activate_action_card(game, input, bindings, action),
         Action::BuildCategory(category) => {
-            input.disarm_click_verbs();
-            input.patrol_route = None;
+            input.armed = None;
             input.build_menu = true;
             input.build_category = Some(category);
         }
@@ -222,7 +219,7 @@ pub(super) fn dispatch_action(
         Action::ToggleBuildPalette => {
             if input.construction_open() {
                 if input.build_category.take().is_some() {
-                    input.disarm_click_verbs();
+                    input.armed = None;
                     input.build_menu = true;
                 } else {
                     input.close_construction();
@@ -230,12 +227,7 @@ pub(super) fn dispatch_action(
                 return;
             }
             input.close_construction();
-            let has_builder = game.presentation.selection.units.iter().any(|id| {
-                game.state.unit(*id).is_some_and(|u| {
-                    u.kind.stats().harvest.is_some() && u.player == game.presentation.human
-                })
-            });
-            if has_builder {
+            if game.view().selection_has_worker() {
                 input.build_menu = true;
                 input.stop_placing();
             } else {
@@ -262,8 +254,7 @@ pub(super) fn dispatch_action(
                     })
                     .map(|u| u.id);
                 if let Some(id) = pick {
-                    game.presentation.selection.units = vec![id];
-                    game.presentation.selection.buildings.clear();
+                    game.presentation.selection.set_units(vec![id]);
                     input.build_menu = true;
                     input.stop_placing();
                 } else {
@@ -280,14 +271,13 @@ pub(super) fn dispatch_action(
             // First press arms a route; the second sends the circuit. On
             // a selection already patrolling, the card is lit and a press
             // turns the patrol off: they stop where they are.
-            if input.patrol_route.is_some() {
+            if input.patrol_route().is_some() {
                 super::start_patrol(game, input);
             } else if crate::panel::selection_patrols(&game.view()) {
-                let units = game.presentation.selection.units.clone();
+                let units = game.presentation.selection.units().to_vec();
                 game.issue(Command::Stop { units });
-            } else if !game.presentation.selection.units.is_empty() {
-                input.disarm_click_verbs();
-                input.patrol_route = Some(Vec::new());
+            } else if !game.presentation.selection.units().is_empty() {
+                input.armed = Some(Armed::Patrol(Vec::new()));
             }
         }
         // The overlay sees through fog, so it is a development tool: a
@@ -306,7 +296,7 @@ pub(super) fn dispatch_action(
             if input.drop_stroke() {
                 return;
             }
-            if input.placing.is_some() {
+            if input.placing().is_some() {
                 input.stop_placing();
                 input.build_menu = true;
                 return;
@@ -319,22 +309,10 @@ pub(super) fn dispatch_action(
                 input.close_construction();
                 return;
             }
-            if input.click_verb.take().is_some() {
+            if input.armed.take().is_some() {
                 return;
             }
-            if !input.rallying.is_empty() {
-                input.rallying.clear();
-                return;
-            }
-            if input.striking.take().is_some() {
-                return;
-            }
-            if input.patrol_route.take().is_some() {
-                return;
-            }
-            game.presentation.selection.units.clear();
-            game.presentation.selection.buildings.clear();
-            game.presentation.selection.pile = None;
+            game.presentation.selection.clear();
         }
         Action::SetBookmark(slot) => {
             input.bookmarks[slot as usize] = Some(game.presentation.camera.center);
@@ -347,113 +325,48 @@ pub(super) fn dispatch_action(
                 super::reticle::look_at(game, input, center);
             }
         }
-        Action::Salvage => {
-            // A toggle, like the palette: pressing again stands down.
-            if input.armed(ClickVerb::Salvage) {
-                input.click_verb = None;
-                return;
-            }
-            let has_worker = game.presentation.selection.units.iter().any(|id| {
-                game.state.unit(*id).is_some_and(|u| {
-                    u.kind.stats().harvest.is_some() && u.player == game.presentation.human
-                })
-            });
-            if has_worker {
-                input.disarm_click_verbs();
-                input.click_verb = Some(ClickVerb::Salvage);
-            } else {
-                game.presentation.toast("No worker to salvage with");
-            }
-        }
-        Action::RepairUnit => {
-            // A toggle, like salvage: pressing again stands down.
-            if input.armed(ClickVerb::Weld) {
-                input.click_verb = None;
-                return;
-            }
-            let has_welder = game.presentation.selection.units.iter().any(|id| {
-                game.state.unit(*id).is_some_and(|u| {
-                    u.kind.stats().harvest.is_some() && u.player == game.presentation.human
-                })
-            });
-            if has_welder {
-                input.disarm_click_verbs();
-                input.click_verb = Some(ClickVerb::Weld);
-            } else {
-                game.presentation.toast("No worker selected to repair");
-            }
-        }
-        Action::Accompany => {
-            // A toggle, like weld: pressing again stands down.
-            if input.armed(ClickVerb::Accompany) {
-                input.click_verb = None;
-                return;
-            }
-            let has_own_unit = game.presentation.selection.units.iter().any(|id| {
-                game.state
-                    .unit(*id)
-                    .is_some_and(|u| u.player == game.presentation.human)
-            });
-            if has_own_unit {
-                input.disarm_click_verbs();
-                input.click_verb = Some(ClickVerb::Accompany);
-            } else {
-                game.presentation
-                    .toast("You can only command your own units");
-            }
-        }
-        Action::Run => {
-            // A toggle, like salvage: pressing again stands down.
-            if input.armed(ClickVerb::Run) {
-                input.click_verb = None;
-                return;
-            }
-            let has_own_unit = game.presentation.selection.units.iter().any(|id| {
-                game.state
-                    .unit(*id)
-                    .is_some_and(|u| u.player == game.presentation.human)
-            });
-            if has_own_unit {
-                input.disarm_click_verbs();
-                input.click_verb = Some(ClickVerb::Run);
-            } else {
-                game.presentation.toast("No units selected to run");
-            }
-        }
-        Action::Scout => {
-            if input.armed(ClickVerb::Scout) {
-                input.click_verb = None;
-                return;
-            }
-            let has_own_scout = game.presentation.selection.units.iter().any(|id| {
-                game.state
-                    .unit(*id)
-                    .is_some_and(|u| u.kind.stats().scouts && u.player == game.presentation.human)
-            });
-            if has_own_scout {
-                input.disarm_click_verbs();
-                input.click_verb = Some(ClickVerb::Scout);
-            } else {
-                game.presentation.toast("No Surveyor selected");
-            }
-        }
-        Action::Hunt => {
-            if input.armed(ClickVerb::Hunt) {
-                input.click_verb = None;
-                return;
-            }
-            let has_own_unit = game.presentation.selection.units.iter().any(|id| {
-                game.state
-                    .unit(*id)
-                    .is_some_and(|u| u.player == game.presentation.human)
-            });
-            if has_own_unit {
-                input.disarm_click_verbs();
-                input.click_verb = Some(ClickVerb::Hunt);
-            } else {
-                game.presentation.toast("No units selected to hunt");
-            }
-        }
+        Action::Salvage => toggle_verb(
+            game,
+            input,
+            ClickVerb::Salvage,
+            harvests,
+            "No worker to salvage with",
+        ),
+        Action::RepairUnit => toggle_verb(
+            game,
+            input,
+            ClickVerb::Weld,
+            harvests,
+            "No worker selected to repair",
+        ),
+        Action::Accompany => toggle_verb(
+            game,
+            input,
+            ClickVerb::Accompany,
+            |_| true,
+            "You can only command your own units",
+        ),
+        Action::Run => toggle_verb(
+            game,
+            input,
+            ClickVerb::Run,
+            |_| true,
+            "No units selected to run",
+        ),
+        Action::Scout => toggle_verb(
+            game,
+            input,
+            ClickVerb::Scout,
+            |unit| unit.kind.stats().scouts,
+            "No Surveyor selected",
+        ),
+        Action::Hunt => toggle_verb(
+            game,
+            input,
+            ClickVerb::Hunt,
+            |_| true,
+            "No units selected to hunt",
+        ),
         Action::CycleIdleWorker => cycle_idle_worker(game, input),
         Action::SelectArmy => select_army(game, input, false),
         Action::SelectArmyInView => select_army(game, input, true),
@@ -486,6 +399,29 @@ pub(super) fn dispatch_action(
     }
 }
 
+/// Arms the click `verb` for a selection holding an own unit `qualifies`
+/// accepts, else toasts `refusal`. Pressing an armed verb again stands it
+/// down.
+fn toggle_verb(
+    game: &mut Game,
+    input: &mut InputState,
+    verb: ClickVerb,
+    qualifies: impl Fn(&aftermine_sim::Unit) -> bool,
+    refusal: &'static str,
+) {
+    if input.is_armed(verb) {
+        input.armed = None;
+    } else if game.view().selection_has_own(qualifies) {
+        input.armed = Some(Armed::Verb(verb));
+    } else {
+        game.presentation.toast(refusal);
+    }
+}
+
+fn harvests(unit: &aftermine_sim::Unit) -> bool {
+    unit.kind.stats().harvest.is_some()
+}
+
 /// Presses the panel's All button for a selection of one kind; with no
 /// such offer, as when every one is already selected, the press is refused.
 /// The panel is built afresh rather than read from the published one: a key
@@ -510,7 +446,7 @@ pub(super) fn own_foundries(game: &crate::game::Scene<'_>) -> Vec<Vec2> {
     game.own_foundries()
         .map(|b| {
             let center = b.center();
-            vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>())
+            crate::game::world_vec(center)
         })
         .collect()
 }

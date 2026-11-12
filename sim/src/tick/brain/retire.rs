@@ -6,6 +6,7 @@
 use super::super::landing::{self, Pick};
 use super::super::reach::Reach;
 use super::locomotion::{Touchdown, approach_rect, fly_run_in};
+use super::{Stall, stall};
 use crate::event::{Event, StallReason};
 use crate::ids::{BuildingId, UnitId};
 use crate::state::{Order, State, Unit};
@@ -77,7 +78,7 @@ pub(super) fn retire(
         (crucible, pad)
     } else {
         let Some(next) = nearest_crucible(state, reach, id) else {
-            stall(state, id, StallReason::NoRoute, events);
+            stall(state, id, Stall::Drop, StallReason::NoRoute, events);
             return;
         };
         let unit = state.unit_mut(id).expect("caller checked");
@@ -113,7 +114,7 @@ pub(super) fn retire(
     // Walkers and hovering airframes alike head for a doorstep, chosen in
     // the approach's own frame so mirrored machines take mirrored ones.
     if !approach_rect(state, id, anchor, size) {
-        stall(state, id, StallReason::NoRoute, events);
+        stall(state, id, Stall::Drop, StallReason::NoRoute, events);
     }
 }
 
@@ -140,7 +141,7 @@ fn land_beside(
         pad
     } else {
         let Some(pad) = pad_beside(state, id, crucible) else {
-            stall(state, id, StallReason::NoOpenGround, events);
+            stall(state, id, Stall::Drop, StallReason::NoOpenGround, events);
             return;
         };
         set_pad(state, id, crucible, pad);
@@ -149,7 +150,7 @@ fn land_beside(
     match fly_run_in(state, id, pad) {
         Touchdown::Flying | Touchdown::Landed => {}
         Touchdown::Moved(next) => set_pad(state, id, crucible, next),
-        Touchdown::Stalled(reason) => stall(state, id, reason, events),
+        Touchdown::Stalled(reason) => stall(state, id, Stall::Drop, reason, events),
     }
 }
 
@@ -195,16 +196,4 @@ fn dismantle(unit: &mut Unit) {
     if unit.work_stopped() && unit.cargo.is_empty() {
         unit.progress = (unit.progress + 1).min(RETIRE_TICKS);
     }
-}
-
-fn stall(state: &mut State, id: UnitId, reason: StallReason, events: &mut Vec<Event>) {
-    let unit = state.unit_mut(id).expect("caller checked");
-    let (player, pos) = (unit.player, unit.pos);
-    unit.drop_active_order();
-    events.push(Event::OrderStalled {
-        unit: id,
-        player,
-        pos,
-        reason,
-    });
 }

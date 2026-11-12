@@ -112,13 +112,13 @@ fn support_links_exist_only_for_connected_own_endpoints() {
         .expect("supported foreign Extractor")
         .id;
 
-    game.presentation.selection.buildings = vec![supported];
+    game.presentation.selection.set_buildings(vec![supported]);
     let links = selected_economy_support_links(&game.view());
     assert!(!links.is_empty());
     assert!(links.iter().all(|link| link.extractor == supported));
 
     let foundry = links[0].foundry;
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     let from_foundry = selected_economy_support_links(&game.view());
     assert!(from_foundry.contains(&EconomySupportLink {
         extractor: supported,
@@ -129,10 +129,10 @@ fn support_links_exist_only_for_connected_own_endpoints() {
         "remote Extractors cannot gain a decorative connection"
     );
 
-    game.presentation.selection.buildings = vec![remote];
+    game.presentation.selection.set_buildings(vec![remote]);
     assert!(selected_economy_support_links(&game.view()).is_empty());
 
-    game.presentation.selection.buildings = vec![foreign];
+    game.presentation.selection.set_buildings(vec![foreign]);
     assert!(
         selected_economy_support_links(&game.view()).is_empty(),
         "foreign support state must not be disclosed by a link"
@@ -390,7 +390,7 @@ fn flakhound_and_sentinel_use_consistent_colors_and_marks_for_each_target_domain
             .find(|unit| unit.kind == kind)
             .unwrap()
             .id;
-        game.presentation.selection.units = vec![id];
+        game.presentation.selection.set_units(vec![id]);
         let mut indicators = Vec::new();
         visit_active_ranges(&game.view(), &InputState::new(), |indicator| {
             indicators.push(indicator);
@@ -809,12 +809,51 @@ fn separate_flak_yokes_report_at_their_authored_delays() {
 }
 
 #[test]
-fn forge_spot_reaches_its_target_before_the_effect_expires() {
-    assert_eq!(forge_spot_phases(0.0), (0.0, 0.0));
-    assert_eq!(forge_spot_phases(FORGE_SPOT_TRAVEL_FRACTION), (1.0, 0.0));
-    let (travel, impact) = forge_spot_phases(0.99);
-    assert_eq!(travel, 1.0);
-    assert!(impact > 0.9);
+fn a_round_reaches_its_target_before_the_effect_expires() {
+    use crate::game::ShotStyle;
+    for style in [
+        ShotStyle::Kinetic { heavy: false },
+        ShotStyle::Kinetic { heavy: true },
+        ShotStyle::ForgeSpot,
+        ShotStyle::Mortar,
+    ] {
+        let arrival = style.travel_time();
+        assert!(0.0 < arrival && arrival < style.life(), "{style:?}");
+        assert_eq!(shot_travel_progress(style, 0.0), 0.0);
+        assert_eq!(shot_travel_progress(style, arrival), 1.0);
+        assert_eq!(shot_impact_progress(style, arrival), 0.0);
+        let late = style.life() * 0.99;
+        assert_eq!(shot_travel_progress(style, late), 1.0);
+        assert!(shot_impact_progress(style, late) > 0.9, "{style:?}");
+    }
+}
+
+#[test]
+fn direct_contact_radius_follows_style_and_splash() {
+    use crate::game::ShotStyle;
+    for (style, splash, radius) in [
+        (ShotStyle::Rail, None, 0.75),
+        (ShotStyle::Rail, Some(1.4), 0.75),
+        (ShotStyle::ForgeSpot, None, 0.55),
+        (ShotStyle::Mortar, None, 0.9),
+        (ShotStyle::Mortar, Some(1.4), 1.4),
+    ] {
+        let contact = direct_contact(style, None, Vec2::ZERO, Vec2::ZERO, splash, 0.2, 7)
+            .expect("a direct style leaves a contact mark");
+        assert_eq!(contact.radius, radius, "{style:?} with splash {splash:?}");
+    }
+    assert!(
+        direct_contact(
+            ShotStyle::Kinetic { heavy: true },
+            None,
+            Vec2::ZERO,
+            Vec2::ZERO,
+            None,
+            0.0,
+            0
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -957,9 +996,9 @@ fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
         id(&game, aftermine_sim::UnitKind::Kestrel),
         id(&game, aftermine_sim::UnitKind::Surveyor),
     );
-    game.presentation.selection.units = vec![kestrel];
+    game.presentation.selection.set_units(vec![kestrel]);
     assert_eq!(radar_rings(&game), [14.0]);
-    game.presentation.selection.units = vec![surveyor];
+    game.presentation.selection.set_units(vec![surveyor]);
     assert!(radar_rings(&game).is_empty(), "folded at the start");
     let deploy = aftermine_sim::UnitKind::Surveyor
         .stats()
@@ -989,7 +1028,7 @@ fn a_selected_mantle_shows_its_intercept_reach_from_its_centre() {
         mantle.id,
         vec2(mantle.pos.x.to_num::<f32>(), mantle.pos.y.to_num::<f32>()),
     );
-    game.presentation.selection.units = vec![id];
+    game.presentation.selection.set_units(vec![id]);
     let mut indicators = Vec::new();
     visit_active_ranges(&game.view(), &InputState::new(), |indicator| {
         indicators.push(indicator);

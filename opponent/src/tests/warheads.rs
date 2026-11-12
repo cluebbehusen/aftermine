@@ -684,6 +684,77 @@ fn a_saved_for_round_is_ordered_and_a_resumed_seat_orders_it_alike() {
     assert_eq!(opponent.checkpoint(), twin.checkpoint());
 }
 
+/// West's next decision after it ordered the round it saved for, with the
+/// order `accepted` or cancelled for a refund: its commands and trace. West
+/// keeps a full workforce, so it buys no Harvester from what it protects,
+/// and both runs bank 300, under the price of whatever it saves for next,
+/// so what it protects outlasts the decision.
+fn after_a_round_order(accepted: bool) -> (Vec<PlayerCommand>, Trace) {
+    let mut scenario = strikes(&[(6, 14)], &PAIR, &[], &[(31, 4)]);
+    scenario.buildings.extend([
+        building(0, BuildingKind::Crucible, 6, 17),
+        building(0, BuildingKind::Fabricator, 9, 17),
+        building(0, BuildingKind::Airworks, 9, 14),
+    ]);
+    scenario.units.extend(workforce(0));
+    scenario.players[0].scrap = 1_000;
+    let mut state = scenario.build().unwrap();
+    let spire = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Spire)
+        .unwrap();
+    let (spire, anchor) = (spire.id, spire.anchor);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::OrderRound { building: spire },
+    }]);
+    if !accepted {
+        state.tick(&[PlayerCommand {
+            player: PlayerId(0),
+            command: Command::CancelRound {
+                building: spire,
+                index: 0,
+            },
+        }]);
+    }
+    advance_to(&mut state, 12, &[]);
+    let mut value = serde_json::to_value(&state).unwrap();
+    value["players"][0]["scrap"] = 300.into();
+    let state: State = serde_json::from_value(value).unwrap();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["saving"] = json!({
+            "protected": 0,
+            "target": {
+                "investment": Investment::Round(spire),
+                "attempt": {"step": Step::Round(spire), "anchor": anchor},
+            },
+        });
+        json["income"] = json!({"previous": null, "per_minute": 2_000});
+    });
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    (commands, trace.unwrap())
+}
+
+#[test]
+fn an_ordered_round_ends_its_saving_and_a_refunded_one_holds_the_bank_again() {
+    let ordered = |commands: &[PlayerCommand]| {
+        commands
+            .iter()
+            .any(|command| matches!(command.command, Command::OrderRound { .. }))
+    };
+    let (commands, trace) = after_a_round_order(true);
+    assert!(!ordered(&commands), "one round was enough: {commands:?}");
+    assert!(
+        trace.protected < 300,
+        "the next target's share grows from nothing: {trace:?}"
+    );
+    assert!(!trains(&commands).is_empty(), "production spends the rest");
+    let (commands, trace) = after_a_round_order(false);
+    assert_eq!(trace.protected, 300, "the whole bank is held: {trace:?}");
+    assert_eq!(trains(&commands), [], "{commands:?}");
+}
+
 /// West's defense investments with what it sees remembered.
 fn guards(scenario: &Scenario) -> Vec<(Investment, u32)> {
     guards_of(scenario, 0)

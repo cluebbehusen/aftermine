@@ -22,6 +22,70 @@ pub enum RecordKind {
 }
 
 impl RecordKind {
+    const ALL: [Self; 5] = [
+        Self::Autosave,
+        Self::Save,
+        Self::Match,
+        Self::LanSave,
+        Self::LanAutosave,
+    ];
+
+    /// The kinds a slot's autosave may be; a slot holds at most one.
+    pub(crate) const AUTOSAVES: [Self; 2] = [Self::Autosave, Self::LanAutosave];
+
+    /// What a record's metadata `kind` names; an untagged record is a
+    /// finished match.
+    pub(crate) fn of(meta: &chassis::replay::ReplayMeta) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|kind| meta.kind.as_deref() == Some(kind.key()))
+            .unwrap_or(Self::Match)
+    }
+
+    /// The `kind` tag its metadata carries, which its file names begin
+    /// with too.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            RecordKind::Autosave => "autosave",
+            RecordKind::Save => "save",
+            RecordKind::Match => "match",
+            RecordKind::LanSave => "lan",
+            RecordKind::LanAutosave => "lan-autosave",
+        }
+    }
+
+    /// Its file extension: a finished match is a recording, every other
+    /// kind a checkpoint.
+    pub(crate) fn extension(self) -> &'static str {
+        match self {
+            RecordKind::Match => "amreplay",
+            RecordKind::Autosave
+            | RecordKind::Save
+            | RecordKind::LanSave
+            | RecordKind::LanAutosave => "amsave",
+        }
+    }
+
+    /// The folder among `records` it is written to.
+    pub(crate) fn folder(self, records: &crate::paths::Records) -> Option<PathBuf> {
+        match self {
+            RecordKind::Save | RecordKind::LanSave => records.saves(),
+            RecordKind::Match => records.matches(),
+            RecordKind::Autosave | RecordKind::LanAutosave => records.autosaves(),
+        }
+    }
+
+    /// Whether the player named it, so it takes a file of its own rather
+    /// than its match's slot.
+    pub(crate) fn named(self) -> bool {
+        matches!(self, RecordKind::Save | RecordKind::LanSave)
+    }
+
+    /// Whether it holds a LAN match.
+    pub(crate) fn lan(self) -> bool {
+        matches!(self, RecordKind::LanSave | RecordKind::LanAutosave)
+    }
+
     /// Whether the shelf's verb for this record is Load. Autosaves and
     /// saves are live sessions: watching one fog-free mid-match would
     /// scout the enemy, so they resume instead.
@@ -48,16 +112,6 @@ impl RecordKind {
             RecordKind::LanAutosave => Some("LAN AUTO"),
             RecordKind::Save | RecordKind::Match => None,
         }
-    }
-}
-
-pub(crate) fn record_kind(meta: &chassis::replay::ReplayMeta) -> RecordKind {
-    match meta.kind.as_deref() {
-        Some("autosave") => RecordKind::Autosave,
-        Some("save") => RecordKind::Save,
-        Some("lan") => RecordKind::LanSave,
-        Some("lan-autosave") => RecordKind::LanAutosave,
-        _ => RecordKind::Match,
     }
 }
 
@@ -234,7 +288,7 @@ fn scan_cancellable(
         let Ok(replay) = crate::saved_game::inspect(&path) else {
             continue;
         };
-        let kind = record_kind(&replay.meta);
+        let kind = RecordKind::of(&replay.meta);
         // A record's own saved_at outranks mtime: a copied or synced
         // file reports the copy date, and only the metadata records when
         // the save was made.

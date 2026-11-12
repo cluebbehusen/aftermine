@@ -21,13 +21,14 @@ fn foundries(scrap: u32, extra: usize) -> Game {
             });
     }
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-    game.presentation.selection.buildings = game
-        .state
-        .buildings()
-        .iter()
-        .filter(|b| b.player == game.presentation.human)
-        .map(|b| b.id)
-        .collect();
+    game.presentation.selection.set_buildings(
+        game.state
+            .buildings()
+            .iter()
+            .filter(|b| b.player == game.presentation.human)
+            .map(|b| b.id)
+            .collect(),
+    );
     game
 }
 
@@ -94,8 +95,10 @@ fn grouped_training_queues_one_each_and_funds_the_shortest_staged_queue_when_sho
     let harvester = UnitKind::Harvester.stats().cost;
     let sentinel = UnitKind::Sentinel.stats().cost;
     let mut game = factories(3 * harvester + sentinel);
-    let ids = game.presentation.selection.buildings.clone();
-    game.presentation.selection.buildings = vec![ids[1], ids[0], ids[1]];
+    let ids = game.presentation.selection.buildings().to_vec();
+    game.presentation
+        .selection
+        .set_buildings(vec![ids[1], ids[0], ids[1]]);
     let before = game.state.hash();
     train(&mut game, slot(UnitKind::Harvester));
     train(&mut game, slot(UnitKind::Sentinel));
@@ -148,7 +151,7 @@ fn grouped_training_queues_one_each_and_funds_the_shortest_staged_queue_when_sho
 #[test]
 fn a_short_bank_funds_an_idle_producer_over_a_busy_lower_id() {
     let mut game = factories(UnitKind::Sentinel.stats().cost + UnitKind::Harvester.stats().cost);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     stage_train(&mut game, ids[0], &[UnitKind::Sentinel]);
     let batch = Production::inspect(&game.view())
         .batch(slot(UnitKind::Harvester))
@@ -164,7 +167,7 @@ fn grouped_training_ranks_remaining_time_before_queue_length() {
             + 2 * UnitKind::Surveyor.stats().cost
             + UnitKind::Harvester.stats().cost,
     );
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     stage_train(&mut game, ids[0], &[UnitKind::Sentinel]);
     stage_train(&mut game, ids[1], &[UnitKind::Surveyor, UnitKind::Surveyor]);
     assert!(
@@ -182,7 +185,7 @@ fn grouped_training_ranks_remaining_time_before_queue_length() {
 fn grouped_training_breaks_an_equal_queue_by_head_progress() {
     let cost = UnitKind::Harvester.stats().cost;
     let mut game = factories(3 * cost);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     stage_train(&mut game, ids[1], &[UnitKind::Harvester]);
     for _ in 0..3 {
         game.do_tick();
@@ -209,7 +212,7 @@ fn grouped_training_skips_full_and_upgrading_producers_before_ranking() {
             + cost,
         2,
     );
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     stage_train(
         &mut game,
         ids[1],
@@ -234,7 +237,7 @@ fn grouped_training_skips_full_and_upgrading_producers_before_ranking() {
 #[test]
 fn grouped_production_skips_full_queues_including_staged_purchases() {
     let mut game = factories(5000);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     for _ in 0..aftermine_sim::stats::QUEUE_CAP {
         game.issue(Command::Train {
             building: ids[0],
@@ -271,7 +274,7 @@ fn grouped_production_skips_full_queues_including_staged_purchases() {
 #[test]
 fn collective_cancellation_preserves_heads_and_repeated_clicks_use_updated_slots() {
     let mut game = factories(150);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     train(&mut game, 0);
     train(&mut game, 0);
     cancel_one(&mut game, UnitKind::Harvester);
@@ -318,7 +321,7 @@ fn collective_cancellation_preserves_heads_and_repeated_clicks_use_updated_slots
 #[test]
 fn the_stop_square_empties_every_selected_queue_with_full_refunds() {
     let mut game = factories(5000);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     let stop = |game: &Game| {
         crate::panel::build_for_palette(&game.view(), &BindingMap::classic(), false)
             .and_then(|panel| panel.stop)
@@ -364,7 +367,7 @@ fn the_stop_square_empties_every_selected_queue_with_full_refunds() {
 #[test]
 fn grouped_production_honors_foreign_ownership_tech_and_pending_elimination() {
     let mut game = factories(5000);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     let foreign = game
         .state
         .buildings()
@@ -372,10 +375,10 @@ fn grouped_production_honors_foreign_ownership_tech_and_pending_elimination() {
         .find(|b| b.player != game.presentation.human)
         .unwrap()
         .id;
-    game.presentation.selection.buildings = vec![foreign];
+    game.presentation.selection.set_buildings(vec![foreign]);
     train(&mut game, 0);
     assert!(game.pending.is_empty());
-    game.presentation.selection.buildings = ids;
+    game.presentation.selection.set_buildings(ids);
     // Excavators need a standing Fabricator.
     let batch = Production::inspect(&game.view())
         .batch(slot(UnitKind::Excavator))
@@ -390,7 +393,7 @@ fn grouped_production_honors_foreign_ownership_tech_and_pending_elimination() {
 #[test]
 fn grouped_production_observes_pending_invalid_purchases_and_refunds_without_charging_twice() {
     let mut game = factories(50);
-    let id = game.presentation.selection.buildings[0];
+    let id = game.presentation.selection.buildings()[0];
     game.stage(PlayerCommand {
         player: game.presentation.human,
         command: Command::Train {

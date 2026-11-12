@@ -1,6 +1,7 @@
 use super::*;
 use aftermine_sim::Scenario;
 use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode};
+use aftermine_sim::stats::{RECLAIMER_PERIOD, REFINERY_PERIOD};
 use aftermine_sim::{Command, PlayerCommand, stats::HarvestStats};
 use std::path::Path;
 

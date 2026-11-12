@@ -398,8 +398,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             width: numeric::to_u32(screen_width()),
             height: numeric::to_u32(screen_height()),
             dpi: f64::from(macroquad::miniquad::window::dpi_scale()),
-            paused: matches!(screen.kind(), ScreenKind::Pause | ScreenKind::Waiting)
-                || visible.paused(),
+            paused: screen.kind().veils_match() || visible.paused(),
             minimized: input::reported_minimized(),
         });
         let input_diagnostic_scope = visible_stage(&screen, &app, Stage::Input);
@@ -576,7 +575,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                     1.0,
                 )
                 .width;
-                let y = if screen.kind() == ScreenKind::Results {
+                let y = if screen.kind().notice_over_actions() {
                     screens::results::action_rects(1, vec2(screen_width(), screen_height()), s)[0].y
                         - 10.0 * s
                 } else {
@@ -598,8 +597,11 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         // which follows the focused text field: every way out of a field
         // hides it, its layout follows the field's kind, and a tap on a
         // field brings back one the player dismissed.
-        let refocus = screen.take_keyboard_request();
-        let wanted = screen.keyboard();
+        let mut form = screen.form();
+        let refocus = form
+            .as_deref_mut()
+            .is_some_and(crate::text_field::Form::take_keyboard_request);
+        let wanted = form.as_deref().map(crate::text_field::Form::keyboard);
         if !crate::platform::PLATFORM.desktop() {
             if let Some(kind) = wanted
                 && wanted != app.soft_keyboard
@@ -607,7 +609,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                 macroquad::miniquad::window::set_keyboard_type(kind.native());
             }
             if crate::platform::PLATFORM == crate::platform::Platform::Tv
-                && let Some(text) = screen.keyboard_text()
+                && let Some(text) = form.as_deref().map(crate::text_field::Form::keyboard_text)
                 && crate::text_field::keyboard_text_is_stale(app.keyboard_text.as_deref(), text)
             {
                 macroquad::miniquad::window::set_keyboard_text(text);
@@ -630,7 +632,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             screen.keeps_screen_awake(&app.game, held),
         );
         if let Some(pads) = &mut app.pads {
-            pads.offer_presses_to_system(matches!(screen, Screen::Home(_)));
+            pads.offer_presses_to_system(screen.kind().top_screen());
         }
         audio::frame(&mut app, &mut screen, time.presentation);
 
@@ -708,9 +710,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
 /// A LAN match runs under its menu and can end there; the report replaces a
 /// menu built for the running match.
 fn report_under_menu(game: &Game, screen: Screen) -> Screen {
-    let stale =
-        matches!(&screen, Screen::Pause(pause) if !pause.decided() && !pause.saving_failed());
-    if stale
+    if screen.built_for_running_match()
         && game.net_role().is_some()
         && game.state.result().is_some()
         && game.end_stats.is_some()
@@ -813,10 +813,12 @@ impl App {
         // Timing and failures belong to the match they were counted for.
         self.background = background_save::Schedule::default();
         self.game.clock.paused = how.paused;
-        if let Some(link) = how.net {
+        if self.game.net_role().is_some() {
             // A LAN match runs in real time with no debug overlay.
             self.game.clock.speed = 1.0;
             self.game.presentation.overlay = false;
+        }
+        if let Some(link) = how.net {
             self.net = Some(link);
         }
         self.performance.reset();
@@ -841,18 +843,14 @@ impl App {
     }
 
     /// Swaps in the match a rejoin restored, keeping the camera where the
-    /// player left it.
+    /// player left it and the link that restored it.
     fn rejoin(&mut self, mut fresh: Game) {
         std::mem::swap(
             &mut fresh.presentation.camera,
             &mut self.game.presentation.camera,
         );
-        self.game = keep_flags(fresh, &self.game);
-        // Timing and failures belong to the match they were counted for.
-        self.background = background_save::Schedule::default();
-        self.game.clock.speed = 1.0;
-        self.game.presentation.overlay = false;
-        self.input.reset_session();
+        let paused = self.game.clock.paused;
+        self.install(fresh, Install { paused, net: None });
     }
 
     /// Saves the settings, sending the ones that follow the player to
@@ -931,7 +929,8 @@ struct Notice {
 struct Install {
     /// Whether it opens paused.
     paused: bool,
-    /// The link carrying a LAN match.
+    /// The link carrying a new LAN match. A rejoin keeps the link already
+    /// running.
     net: Option<crate::netplay::Link>,
 }
 

@@ -186,6 +186,9 @@ one active `Order`, a bounded FIFO queue and a `looping` flag:
 - a walk whose goal cannot be reached completes on the reachable tile nearest
   it, reports `OrderStalled { NoRoute }` once unless the program loops, and the
   program continues;
+- a worker's run to a drop-off, delivering, withdrawing or returning cargo, that
+  finds none reachable advances the program as a finished order would, rotating
+  in a patrol, and reports `NoRoute` each time;
 - any other order that cannot be routed drops only itself, except that a refused
   chase the player ordered, an empty bank or a full sling clears the whole
   program;

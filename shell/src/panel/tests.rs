@@ -68,12 +68,20 @@ fn card_copy_names_only_what_the_hands_in_use_have() {
 #[test]
 fn stripping_hotkeys_clears_every_card_row() {
     let mut game = game();
-    game.presentation.selection.buildings = vec![human_foundry(&game)];
+    game.presentation
+        .selection
+        .set_buildings(vec![human_foundry(&game)]);
     let mut panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("hq panel");
     assert!(panel.cards.iter().any(|card| !card.hotkey.is_empty()));
     strip_hotkeys(&mut panel);
-    for card in panel.roster.iter().chain(&panel.cards).chain(&panel.queue) {
+    for card in panel
+        .roster
+        .iter()
+        .map(|chip| &chip.card)
+        .chain(&panel.cards)
+        .chain(&panel.queue)
+    {
         assert!(
             card.hotkey.is_empty(),
             "{} keeps {}",
@@ -97,8 +105,8 @@ fn stripping_hotkeys_clears_every_card_row() {
             queue: false,
         },
     }]);
-    game.presentation.selection.buildings.clear();
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.clear();
+    game.presentation.selection.set_units(vec![harvester]);
     let mut panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("unit panel");
     assert_eq!(
@@ -119,7 +127,7 @@ fn the_all_button_names_its_key_only_while_a_keyboard_is_in_use() {
         .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
         .expect("a harvester")
         .id;
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     let input = crate::input::InputState::new();
     for hands in crate::platform::tests::ALL_HANDS
         .into_iter()
@@ -236,13 +244,13 @@ fn own_extractors_name_current_income_without_exposing_foreign_support() {
         })
         .expect("a distant Extractor is remote");
 
-    game.presentation.selection.buildings = vec![supported];
+    game.presentation.selection.set_buildings(vec![supported]);
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("supported panel");
     assert_eq!(stat(&panel, "Income").value, "180 scrap/min");
     assert_eq!(stat(&panel, "Support").value, "Foundry");
 
-    game.presentation.selection.buildings = vec![remote];
+    game.presentation.selection.set_buildings(vec![remote]);
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("remote panel");
     assert_eq!(stat(&panel, "Income").value, "120 scrap/min");
@@ -264,7 +272,7 @@ fn own_extractors_name_current_income_without_exposing_foreign_support() {
         Some(aftermine_sim::ExtractorSupport::Supported),
         "the fixture needs private dynamic support to hide"
     );
-    game.presentation.selection.buildings = vec![foreign];
+    game.presentation.selection.set_buildings(vec![foreign]);
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("foreign panel");
     assert!(
@@ -332,7 +340,7 @@ fn recurring_income_tracks_real_output_upgrade_downtime_and_foundry_warmup() {
     }
     assert_eq!(game.state.building(reclaimer).unwrap().tier, 1);
     assert_eq!(rate(&game, reclaimer), 120);
-    game.presentation.selection.buildings = vec![reclaimer];
+    game.presentation.selection.set_buildings(vec![reclaimer]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     assert_eq!(panel.title, "Refinery");
     assert_eq!(
@@ -380,7 +388,7 @@ fn extractor_build_copy_names_both_rates_and_the_foundry_rule() {
         .find(|unit| unit.player == game.presentation.human && unit.kind == UnitKind::Harvester)
         .expect("starting Harvester")
         .id;
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), true).expect("advanced builds");
     let extractor_card = panel
@@ -436,7 +444,7 @@ fn verb_cards_wear_their_atlas_icons() {
             queue: false,
         },
     }]);
-    game.presentation.selection.units = vec![sentinel];
+    game.presentation.selection.set_units(vec![sentinel]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     let patrol = panel
         .cards
@@ -465,7 +473,7 @@ fn verb_cards_wear_their_atlas_icons() {
 fn the_foundry_panel_speaks_its_roster() {
     let mut game = game();
     let foundry = human_foundry(&game);
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     assert_eq!(panel.title, "Foundry");
     assert_eq!(panel.cards.len(), 7, "five units plus two rally controls");
@@ -507,7 +515,7 @@ fn the_foundry_panel_speaks_its_roster() {
 fn a_producer_always_exposes_set_reset_and_clear_rally_actions() {
     let mut game = game();
     let foundry = human_foundry(&game);
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     assert!(
         panel
@@ -555,13 +563,14 @@ fn a_multi_producer_panel_puts_shared_rally_before_production() {
             y: 3,
         });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("fixture builds");
-    game.presentation.selection.buildings = game
-        .state
-        .buildings()
-        .iter()
-        .filter(|building| building.player == game.presentation.human)
-        .map(|building| building.id)
-        .collect();
+    game.presentation.selection.set_buildings(
+        game.state
+            .buildings()
+            .iter()
+            .filter(|building| building.player == game.presentation.human)
+            .map(|building| building.id)
+            .collect(),
+    );
 
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false)
         .expect("multi-building panel");
@@ -590,7 +599,7 @@ fn a_non_producer_never_offers_a_rally_action() {
         .find(|building| building.kind == BuildingKind::Turret)
         .unwrap()
         .id;
-    game.presentation.selection.buildings = vec![turret];
+    game.presentation.selection.set_buildings(vec![turret]);
 
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("Turret panel");
@@ -642,7 +651,7 @@ fn an_upgrade_needs_no_harvester_and_explains_its_downtime() {
         .find(|building| building.kind == BuildingKind::Turret)
         .expect("fixture has a turret")
         .id;
-    game.presentation.selection.buildings = vec![turret];
+    game.presentation.selection.set_buildings(vec![turret]);
 
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("turret panel");
@@ -684,7 +693,7 @@ fn a_locked_card_names_an_upgrade_by_the_structure_it_upgrades() {
         .find(|unit| unit.player == game.presentation.human && unit.kind == UnitKind::Harvester)
         .expect("a harvester")
         .id;
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), true).expect("panel");
     let why = |title: &str| {
         panel
@@ -710,7 +719,7 @@ fn poverty_and_capacity_disable_cards_with_reasons() {
     scenario.players[0].scrap = 500;
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("skirmish builds");
     let foundry = human_foundry(&game);
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     // Queue harvesters until 50 scrap remains: the sentinel card
     // (75) must dim with the price named.
     for _ in 0..3 {
@@ -814,7 +823,7 @@ fn the_patrol_card_says_what_each_kind_of_unit_does_on_the_way() {
             "Armed units engage what they meet; workers repair what is damaged.",
         ),
     ] {
-        game.presentation.selection.units = selection;
+        game.presentation.selection.set_units(selection);
         let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
         let patrol = panel
             .cards
@@ -835,7 +844,7 @@ fn a_patrolling_selection_lights_patrol_and_its_dock_says_patrol() {
         .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
         .expect("the scenario fields a Sentinel")
         .id;
-    game.presentation.selection.units = vec![sentinel];
+    game.presentation.selection.set_units(vec![sentinel]);
     let patrol_card = |panel: &Panel| {
         panel
             .cards
@@ -888,7 +897,7 @@ fn the_harvester_panel_is_the_same_grammar() {
         })
         .expect("starting harvester")
         .id;
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     assert_eq!(panel.title, "Harvester");
     // Unarmed, it has no Run or Hunt, and an empty hopper has
@@ -1062,7 +1071,7 @@ fn build_chips_wear_the_works_they_are_raising() {
     let (mut game, harvester) = builder_game();
     let turret = place(&mut game, harvester, BuildingKind::Turret, false);
     let array = place(&mut game, harvester, BuildingKind::Array, true);
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     assert_eq!(panel.queue.len(), 2, "two legs of one program");
     // Two Build chips look different: each carries its own works,
@@ -1113,7 +1122,7 @@ fn build_chips_wear_the_works_they_are_raising() {
 #[test]
 fn the_orders_dock_offers_every_order_past_its_visible_slots() {
     let (mut game, harvester) = builder_game();
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     let here = game.state.unit(harvester).expect("harvester").tile();
     let goals: Vec<_> = (0..12)
         .map(|step| chassis::grid::TilePos::new(here.x + 2 + step % 2, here.y - 3 + step / 2))
@@ -1217,7 +1226,7 @@ fn a_site_chip_takes_the_selection_off_a_site_other_workers_hold() {
         defer,
     };
     let chip = |game: &mut Game, selected: &[UnitId]| {
-        game.presentation.selection.units = selected.to_vec();
+        game.presentation.selection.set_units(selected.to_vec());
         build_for_palette(&game.view(), &BindingMap::classic(), false)
             .expect("panel")
             .queue
@@ -1628,7 +1637,7 @@ fn a_foreign_program_is_never_enriched() {
     // on, rather than relying on what team sight shares.
     let (mut game, harvester) = builder_game();
     place(&mut game, harvester, BuildingKind::Turret, false);
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     let own = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     assert!(matches!(own.queue[0].icon, CardIcon::Order { .. }));
     let order = game.state.unit(harvester).expect("builder").order;
@@ -1716,7 +1725,13 @@ fn panel_copy_uses_only_supported_font_glyphs() {
         if let Some(text) = panel.info.reserved.as_ref().and_then(|l| l.text.as_ref()) {
             assert!(supported(text), "panel status: {text}");
         }
-        for card in panel.roster.iter().chain(&panel.cards).chain(&panel.queue) {
+        for card in panel
+            .roster
+            .iter()
+            .map(|chip| &chip.card)
+            .chain(&panel.cards)
+            .chain(&panel.queue)
+        {
             assert_card(card);
         }
     };
@@ -1739,7 +1754,10 @@ fn panel_copy_uses_only_supported_font_glyphs() {
     }
 
     let mut foundry_game = game();
-    foundry_game.presentation.selection.buildings = vec![human_foundry(&foundry_game)];
+    foundry_game
+        .presentation
+        .selection
+        .set_buildings(vec![human_foundry(&foundry_game)]);
     assert_panel(
         &build_for_palette(&foundry_game.view(), &BindingMap::classic(), false)
             .expect("Foundry panel"),
@@ -1747,15 +1765,21 @@ fn panel_copy_uses_only_supported_font_glyphs() {
 
     let (mut builder_game, harvester) = builder_game();
     let site = place(&mut builder_game, harvester, BuildingKind::Array, false);
-    builder_game.presentation.selection.units = vec![harvester];
+    builder_game
+        .presentation
+        .selection
+        .set_units(vec![harvester]);
     assert_panel(
         &build_for_palette(&builder_game.view(), &BindingMap::classic(), false)
             .expect("Harvester panel"),
     );
     let extractor = place(&mut builder_game, harvester, BuildingKind::Extractor, true);
-    builder_game.presentation.selection.units.clear();
+    builder_game.presentation.selection.clear();
     for site in [site, extractor] {
-        builder_game.presentation.selection.buildings = vec![site];
+        builder_game
+            .presentation
+            .selection
+            .set_buildings(vec![site]);
         assert_panel(
             &build_for_palette(&builder_game.view(), &BindingMap::classic(), false)
                 .expect("site panel"),
@@ -1772,8 +1796,8 @@ fn a_one_tile_sight_reads_in_the_singular() {
         y: 3,
     }]);
     let barricade = place(&mut game, harvester, BuildingKind::Barricade, false);
-    game.presentation.selection.units.clear();
-    game.presentation.selection.buildings = vec![barricade];
+    game.presentation.selection.clear();
+    game.presentation.selection.set_buildings(vec![barricade]);
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("Barricade panel");
     assert_eq!(stat(&panel, "Sight").value, "1 tile");
@@ -1788,8 +1812,8 @@ fn a_selected_bastion_shows_its_minimum_and_maximum_range() {
         y: 3,
     }]);
     let bastion = place(&mut game, harvester, BuildingKind::Bastion, false);
-    game.presentation.selection.units.clear();
-    game.presentation.selection.buildings = vec![bastion];
+    game.presentation.selection.clear();
+    game.presentation.selection.set_buildings(vec![bastion]);
 
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("Bastion panel");
@@ -1812,7 +1836,7 @@ fn a_single_unit_exposes_static_combat_facts_but_a_group_does_not() {
         .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
         .expect("starting sentinel")
         .id;
-    game.presentation.selection.units = vec![sentinel];
+    game.presentation.selection.set_units(vec![sentinel]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     assert_eq!(stat(&panel, "Ground").value, "10 dmg/hit");
     assert_eq!(
@@ -1833,7 +1857,9 @@ fn a_single_unit_exposes_static_combat_facts_but_a_group_does_not() {
         .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
         .expect("starting harvester")
         .id;
-    game.presentation.selection.units = vec![sentinel, harvester];
+    game.presentation
+        .selection
+        .set_units(vec![sentinel, harvester]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     assert!(
         panel.info.rows.is_empty(),
@@ -1879,7 +1905,7 @@ fn a_walled_in_producer_says_so_on_its_queue() {
         .unwrap();
         let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
         let foundry = human_foundry(&game);
-        game.presentation.selection.buildings = vec![foundry];
+        game.presentation.selection.set_buildings(vec![foundry]);
         let panel = |game: &Game| {
             build_for_palette(&game.view(), &BindingMap::classic(), false).expect("a panel")
         };
@@ -1949,7 +1975,7 @@ fn production_queue_time_counts_partial_head_and_marks_a_blocked_spawn_ready() {
 #[test]
 fn a_magazine_docks_its_ordered_rounds_and_keeps_its_facts_short() {
     let mut game = crate::building_actions::tests::fixture(BuildingKind::Lattice, &[0], 2000);
-    let lattice = game.presentation.selection.buildings[0];
+    let lattice = game.presentation.selection.buildings()[0];
     let stats = BuildingKind::Lattice.magazine().unwrap();
     // The battery autofills its first interceptor; a second is bought.
     game.do_tick();
@@ -2009,7 +2035,7 @@ fn an_allied_magazine_docks_its_rounds_read_only() {
         });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let lattice = game.state.buildings()[0].id;
-    game.presentation.selection.buildings = vec![lattice];
+    game.presentation.selection.set_buildings(vec![lattice]);
     // The ally's battery autofills its first interceptor.
     game.do_tick();
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
@@ -2087,7 +2113,7 @@ fn a_building_group_counts_what_stands_built_and_what_does_not() {
         .state
         .buildings()
         .iter()
-        .filter(|b| game.presentation.selection.buildings.contains(&b.id))
+        .filter(|b| game.presentation.selection.buildings().contains(&b.id))
         .cloned()
         .collect();
     assert_eq!(building_summary(&turrets), "4 built");
@@ -2103,7 +2129,7 @@ fn a_building_group_counts_what_stands_built_and_what_does_not() {
 #[test]
 fn a_spire_group_shows_its_warheads_under_its_buildings() {
     let mut game = crate::building_actions::tests::fixture(BuildingKind::Spire, &[0, 0, 0], 2000);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     let mut json = serde_json::to_value(&*game.state).unwrap();
     for b in json["buildings"].as_array_mut().unwrap() {
         if b["id"] == serde_json::json!(ids[0]) {
@@ -2139,42 +2165,46 @@ fn a_mixed_building_selection_offers_one_counted_chip_per_kind() {
     let mut game =
         crate::building_actions::tests::fixture(BuildingKind::Turret, &[2, 1, 2, 2, 1], 0);
     let human = game.presentation.human;
-    game.presentation.selection.buildings = game
-        .state
-        .buildings()
-        .iter()
-        .filter(|b| b.player == human && b.kind != BuildingKind::Foundry)
-        .map(|b| b.id)
-        .collect();
+    game.presentation.selection.set_buildings(
+        game.state
+            .buildings()
+            .iter()
+            .filter(|b| b.player == human && b.kind != BuildingKind::Foundry)
+            .map(|b| b.id)
+            .collect(),
+    );
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     assert_eq!(panel.title, "7 STRUCTURES");
-    let chips: Vec<(&str, CardAction)> = panel
+    let chips: Vec<(&str, usize, CardAction)> = panel
         .roster
         .iter()
-        .map(|card| (card.title.as_str(), card.action))
+        .map(|chip| (chip.card.title.as_str(), chip.count, chip.card.action))
         .collect();
     assert_eq!(
         chips,
         [
             (
                 "Crucible x1",
+                1,
                 CardAction::FilterBuilding(BuildingKind::Crucible)
             ),
             (
                 "Fabricator x1",
+                1,
                 CardAction::FilterBuilding(BuildingKind::Fabricator)
             ),
             (
                 "Turret x5",
+                5,
                 CardAction::FilterBuilding(BuildingKind::Turret)
             ),
         ]
     );
-    let turrets = &panel.roster[2];
+    let turrets = &panel.roster[2].card;
     assert_eq!(turrets.icon, CardIcon::Building(BuildingKind::Turret, 2));
     assert_eq!(turrets.desc[0], "3 Bulwark, 2 Heavy Turret");
     assert_eq!(
-        panel.roster[0].desc,
+        panel.roster[0].card.desc,
         roster_filter_desc(crate::platform::hands()),
         "one tier needs no breakdown"
     );
@@ -2183,14 +2213,14 @@ fn a_mixed_building_selection_offers_one_counted_chip_per_kind() {
 #[test]
 fn a_single_kind_offers_every_one_you_own_until_all_are_selected() {
     let mut game = crate::building_actions::tests::fixture(BuildingKind::Spire, &[0, 0, 0], 0);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     assert!(
         panel.select_all.is_none(),
         "every Spire is already selected"
     );
 
-    game.presentation.selection.buildings = vec![ids[1]];
+    game.presentation.selection.set_buildings(vec![ids[1]]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     assert!(panel.roster.is_empty(), "one kind needs no roster strip");
     let all = panel
@@ -2242,7 +2272,7 @@ fn a_single_unit_kind_offers_every_one_you_own_until_all_are_selected() {
         .filter(|u| u.player == human && u.kind == UnitKind::Sentinel)
         .map(|u| u.id)
         .collect();
-    game.presentation.selection.units = vec![sentinels[0]];
+    game.presentation.selection.set_units(vec![sentinels[0]]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     let all = panel
         .select_all
@@ -2264,14 +2294,16 @@ fn a_single_unit_kind_offers_every_one_you_own_until_all_are_selected() {
         .find(|u| u.kind == UnitKind::Lancer)
         .unwrap()
         .id;
-    game.presentation.selection.units.push(lancer);
+    game.presentation
+        .selection
+        .set_units([game.presentation.selection.units(), &[lancer]].concat());
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     assert!(
         panel.select_all.is_none(),
         "a mixed selection has its strip"
     );
 
-    game.presentation.selection.units = sentinels;
+    game.presentation.selection.set_units(sentinels);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     assert!(
         panel.select_all.is_none(),
@@ -2314,7 +2346,7 @@ fn a_roc_docks_its_drones_on_order_beside_its_program() {
     game.do_tick();
     game.issue(Command::OrderDrone { unit: roc });
     game.do_tick();
-    game.presentation.selection.units = vec![roc];
+    game.presentation.selection.set_units(vec![roc]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     let column = panel.drones.as_ref().expect("drones on order get a column");
     let chips: Vec<_> = column
@@ -2347,7 +2379,7 @@ fn a_roc_docks_its_drones_on_order_beside_its_program() {
     );
     assert_eq!(stat(&panel, "Drones").value, format!("0/{}", bay.capacity));
 
-    game.presentation.selection.units = vec![enemy];
+    game.presentation.selection.set_units(vec![enemy]);
     assert!(
         game.state.unit(enemy).unwrap().bay.unwrap().ordered > 0,
         "premise: the enemy bay is building too"
@@ -2361,4 +2393,43 @@ fn a_roc_docks_its_drones_on_order_beside_its_program() {
         stat(&panel, "Drones").value,
         format!("up to {}", bay.capacity)
     );
+}
+
+#[test]
+fn the_panel_types_its_rally_verb_and_what_its_dock_holds() {
+    let mut game = game();
+    let human = game.presentation.human;
+    let foundry = human_foundry(&game);
+    game.presentation.selection.set_buildings(vec![foundry]);
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert_eq!(panel.rally, Some(RallyVerb::Set));
+    assert_eq!(panel.cards[0].title, "Set rally");
+    assert_eq!(panel.dock, DockKind::Work);
+
+    game.state.tick(&[PlayerCommand {
+        player: human,
+        command: Command::SetRally {
+            building: foundry,
+            rally: Some(aftermine_sim::Rally::Tile(chassis::grid::TilePos::new(
+                8, 8,
+            ))),
+        },
+    }]);
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert_eq!(panel.rally, Some(RallyVerb::Reset));
+    assert_eq!(panel.cards[0].title, "Reset rally");
+
+    game.presentation.selection.clear();
+    game.presentation.selection.set_units(
+        game.state
+            .units()
+            .iter()
+            .filter(|unit| unit.player == human)
+            .map(|unit| unit.id)
+            .take(1)
+            .collect(),
+    );
+    let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
+    assert_eq!(panel.dock, DockKind::Orders);
+    assert_eq!(panel.rally, None);
 }

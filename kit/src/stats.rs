@@ -72,10 +72,9 @@ pub struct PlayerStats {
     pub scrap_earned: Vec<u32>,
     /// Total value lost by each sample point.
     pub value_lost: Vec<u32>,
-    /// Living units by kind name at each sample point. `BTreeMap` keys keep
-    /// the serialization deterministic.
-    #[serde(deserialize_with = "deserialize_kinds")]
-    pub kinds: Vec<BTreeMap<&'static str, u16>>,
+    /// Living units by kind at each sample point. `BTreeMap` keys keep the
+    /// serialization deterministic.
+    pub kinds: Vec<BTreeMap<UnitKind, u16>>,
     /// Scrap brought home by Harvesters across the whole match.
     pub scrap_collected: u32,
     /// Scrap earned across the whole match: deliveries plus what standing
@@ -256,28 +255,6 @@ impl MatchStats {
     }
 }
 
-fn deserialize_kinds<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Vec<BTreeMap<&'static str, u16>>, D::Error> {
-    Vec::<BTreeMap<String, u16>>::deserialize(deserializer)?
-        .into_iter()
-        .map(|sample| {
-            sample
-                .into_iter()
-                .map(|(name, count)| {
-                    aftermine_sim::UnitKind::ALL
-                        .into_iter()
-                        .find(|kind| kind.name() == name)
-                        .map(|kind| (kind.name(), count))
-                        .ok_or_else(|| {
-                            serde::de::Error::custom(format!("unknown unit kind {name}"))
-                        })
-                })
-                .collect()
-        })
-        .collect()
-}
-
 fn blank_players(seats: usize) -> Vec<PlayerStats> {
     (0..seats)
         .map(|seat| PlayerStats {
@@ -291,7 +268,7 @@ fn sample(state: &State, stats: &mut [PlayerStats], ticks: &mut Vec<u64>) {
     ticks.push(state.current_tick());
     let mut army = vec![0u32; stats.len()];
     let mut wealth: Vec<u32> = state.players().iter().map(|player| player.scrap).collect();
-    let mut counts: Vec<BTreeMap<&'static str, u16>> = vec![BTreeMap::new(); stats.len()];
+    let mut counts: Vec<BTreeMap<UnitKind, u16>> = vec![BTreeMap::new(); stats.len()];
     for unit in state.units() {
         let seat = usize::from(unit.player.0);
         // Riders have left the unit list but still belong to the seat.
@@ -307,7 +284,7 @@ fn sample(state: &State, stats: &mut [PlayerStats], ticks: &mut Vec<u64>) {
             if kind.can_fight() || kind.point_defense.is_some() {
                 army[seat] = army[seat].saturating_add(kind.cost);
             }
-            *counts[seat].entry(owned.name()).or_default() += 1;
+            *counts[seat].entry(owned).or_default() += 1;
         }
     }
     for building in state.buildings() {

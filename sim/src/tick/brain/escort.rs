@@ -97,22 +97,16 @@ impl Parties {
 /// mirrored slots.
 fn slot_frame(state: &State, owner: PlayerId) -> bool {
     let parity = owner.0 % 2 == 1;
-    state
-        .buildings()
-        .iter()
-        .find(|b| {
-            b.player == owner && !b.provisional() && b.kind == crate::stats::BuildingKind::Foundry
-        })
-        .map_or(parity, |home| {
-            let (w, h) = home.kind.size();
-            let dx = i64::from(home.anchor.x) * 2 + i64::from(w) - i64::from(state.map.width());
-            let dy = i64::from(home.anchor.y) * 2 + i64::from(h) - i64::from(state.map.height());
-            if (dx, dy) == (0, 0) {
-                parity
-            } else {
-                dy < 0 || (dy == 0 && dx < 0)
-            }
-        })
+    state.first_foundry(owner).map_or(parity, |home| {
+        let (w, h) = home.kind.size();
+        let dx = i64::from(home.anchor.x) * 2 + i64::from(w) - i64::from(state.map.width());
+        let dy = i64::from(home.anchor.y) * 2 + i64::from(h) - i64::from(state.map.height());
+        if (dx, dy) == (0, 0) {
+            parity
+        } else {
+            dy < 0 || (dy == 0 && dx < 0)
+        }
+    })
 }
 
 /// One tick of escort duty for `id`, escorting `escorted`.
@@ -222,11 +216,7 @@ fn patient(state: &State, party: &Party, id: UnitId, escorted: UnitId) -> Option
         state.unit(candidate).filter(|u| {
             u.id != id
                 && u.player == welder.player
-                && u.hp > 0
-                && u.hp < u.kind.stats().max_hp
-                && u.kind.stats().repairable()
-                && u.domain() == Domain::Ground
-                && !u.retiring()
+                && u.weldable()
                 && u.pos.dist_sq(party.pos) <= reach_sq
         })
     };
@@ -270,14 +260,7 @@ fn follow(state: &mut State, reach: &mut Reach, party: &Party, id: UnitId) {
     if settled(unit, endpoint) {
         return;
     }
-    let path = crate::tick::movement::route_round_hulls(state, unit, unit.pos, endpoint).map(
-        |waypoints| PathFollow {
-            final_point: None,
-            goal: endpoint,
-            waypoints,
-            next: 0,
-            clearing: false,
-        },
-    );
+    let path = crate::tick::movement::route_round_hulls(state, unit, unit.pos, endpoint)
+        .map(|waypoints| PathFollow::to(endpoint, waypoints));
     state.unit_mut(id).expect("caller checked").path = path;
 }

@@ -39,7 +39,7 @@ fn the_setup_hint_names_only_what_the_hands_in_use_have() {
         for one_team in [false, true] {
             for press in EVERY_PRESS {
                 let hint = setup_hint(one_team, press, hands);
-                crate::platform::tests::assert_copy_fits(hands, hint);
+                crate::platform::tests::assert_copy_fits(hands, &hint);
                 assert_eq!(hint.contains("{back}"), hands.keys, "{hint}");
             }
         }
@@ -52,7 +52,7 @@ fn the_setup_hints_spell_out_what_the_remotes_buttons_do() {
         pad: Some(aftermine_protocol::PadFamily::Remote),
         ..crate::platform::tests::ALL_HANDS[3]
     };
-    let filled = |template| crate::platform::tests::assert_pad_copy(hands, template);
+    let filled = |template: String| crate::platform::tests::assert_pad_copy(hands, &template);
     assert_eq!(
         filled(setup_hint(true, CursorPress::Start, hands)),
         "Every seat is on one team - Click a TEAM chip to change it - Back to leave"
@@ -107,7 +107,7 @@ fn the_setup_hints_spell_out_what_the_remotes_buttons_do() {
         assert_eq!(filled(setup_hint(false, press, hands)), expected);
     }
     assert_eq!(
-        filled(moving_hint(hands)),
+        filled(moving_hint(hands).to_owned()),
         "Click a seat to swap them there - Back to cancel"
     );
 }
@@ -135,7 +135,7 @@ fn the_setup_hint_follows_what_a_press_on_the_cursors_row_does() {
         CursorPress::MoveSelf,
         "the player's own row has no stance chip, so a press lands on the seat"
     );
-    assert_eq!(w.setup_cell, Cell::Stance, "the column stays sticky");
+    assert_eq!(w.cursor.cell(), Cell::Stance, "the column stays sticky");
 
     drive(&mut w, &mut draft, Key::Up);
     assert_eq!(at_cursor(&w, &draft), CursorPress::Switch);
@@ -146,18 +146,59 @@ fn start_loses_the_cursor_while_it_sits_on_the_switch() {
     let mut draft = NewMatchDraft::default();
     let mut w = Wizard::open(&draft);
     pick_first_map(&mut w, &mut draft);
-    let cards = draft
-        .scenario
-        .as_ref()
-        .expect("a map was picked")
-        .players
-        .len();
-    assert!(w.on_start(cards), "setup opens on Start");
+    assert_eq!(
+        w.cursor,
+        SetupCursor::Start { cell: Cell::Seat },
+        "setup opens on Start"
+    );
     drive(&mut w, &mut draft, Key::Down);
-    assert!(w.on_switch, "Down from Start wraps to the switch");
-    assert!(!w.on_start(cards), "Enter there toggles the lobby");
+    assert!(
+        matches!(w.cursor, SetupCursor::Switch { .. }),
+        "Down from Start wraps to the switch, and Enter there toggles the lobby"
+    );
     drive(&mut w, &mut draft, Key::Up);
-    assert!(w.on_start(cards));
+    assert_eq!(w.cursor, SetupCursor::Start { cell: Cell::Seat });
+}
+
+#[test]
+fn clicking_lan_on_entering_setup_lights_only_the_switch() {
+    let mut draft = NewMatchDraft::default();
+    let mut w = Wizard::open(&draft);
+    pick_first_map(&mut w, &mut draft);
+    w.lan_bind = "127.0.0.1:0".to_owned();
+    let layout = setup_layout_page(
+        draft.scenario.as_deref().expect("a map was picked"),
+        draft.seat_choice,
+        &w.open_flags(&draft),
+        crate::render::viewport(),
+        crate::render::ui_scale(),
+        0,
+    );
+    let lan = layout.switch[1].center();
+    let click = [
+        RawEvent::MouseDown {
+            button: MouseButton::Left,
+            x: lan.x,
+            y: lan.y,
+        },
+        RawEvent::MouseUp {
+            button: MouseButton::Left,
+            x: lan.x,
+            y: lan.y,
+        },
+    ];
+    w.update(&click, &mut vec2(0.0, 0.0), &mut draft, &mut Vec::new())
+        .expect("update");
+    assert!(w.lan.is_some(), "{:?}", w.notice);
+    assert_eq!(
+        w.cursor,
+        SetupCursor::Switch {
+            row: draft.seats.len(),
+            cell: Cell::Seat
+        },
+        "the switch takes the cursor from Start, so no card or Start stays lit"
+    );
+    w.close_lan(&mut draft);
 }
 
 #[test]
@@ -236,8 +277,8 @@ fn every_discovered_map_lands_on_setup_and_launches_as_authored() {
         assert_eq!(draft.seats.len(), expected_seats, "map {index} seat count");
         assert_eq!(draft.seat_choice, 0, "map {index} did not open on seat 0");
         assert_eq!(
-            wizard.setup_sel,
-            draft.seats.len(),
+            wizard.cursor,
+            SetupCursor::Start { cell: Cell::Seat },
             "map {index} did not preselect Start"
         );
         assert_eq!(
@@ -263,7 +304,7 @@ fn a_stale_seat_never_carries_across_maps() {
     let mut draft = NewMatchDraft::default();
     draft.set_scenario(team.clone(), path.clone());
     draft.seat_choice = 5;
-    let stance = cycle_stance(draft.seats[3].stance, 1);
+    let stance = next_choice(&BotStance::ALL, draft.seats[3].stance);
     draft.seats[3].stance = stance;
     draft.set_scenario(team, path);
     assert_eq!(draft.seat_choice, 5, "same map: the chair survives Back");
@@ -345,7 +386,11 @@ fn the_team_chip_cycles_through_ffa_and_every_team() {
     // team.
     drive(&mut w, &mut draft, Key::Home);
     drive(&mut w, &mut draft, Key::Right);
-    assert_eq!(w.setup_cell, Cell::Team, "the team chip is the last cell");
+    assert_eq!(
+        w.cursor.cell(),
+        Cell::Team,
+        "the team chip is the last cell"
+    );
     drive(&mut w, &mut draft, Key::Enter);
     assert_eq!(
         draft.seats[draft.seat_choice].team_choice, 1,
@@ -371,11 +416,11 @@ fn the_team_chip_cycles_through_ffa_and_every_team() {
     // Left from team walks the two visible bot controls before the
     // seat action. The hidden seeded identity is never exposed.
     drive(&mut w, &mut draft, Key::Left);
-    assert_eq!(w.setup_cell, Cell::Stance);
+    assert_eq!(w.cursor.cell(), Cell::Stance);
     drive(&mut w, &mut draft, Key::Left);
-    assert_eq!(w.setup_cell, Cell::Difficulty);
+    assert_eq!(w.cursor.cell(), Cell::Difficulty);
     drive(&mut w, &mut draft, Key::Left);
-    assert_eq!(w.setup_cell, Cell::Seat);
+    assert_eq!(w.cursor.cell(), Cell::Seat);
     drive(&mut w, &mut draft, Key::Enter);
     assert_eq!(
         draft.seat_choice, order[1],
@@ -391,25 +436,29 @@ fn setup_cells_wrap_past_the_dead_ones() {
     // Your own card has no difficulty or stance chip: the seat and team
     // cells are live.
     drive(&mut w, &mut draft, Key::Home);
-    assert_eq!(w.setup_cell, Cell::Seat);
+    assert_eq!(w.cursor.cell(), Cell::Seat);
     drive(&mut w, &mut draft, Key::Left);
     assert_eq!(
-        w.setup_cell,
+        w.cursor.cell(),
         Cell::Team,
         "left from the seat wraps to the team chip"
     );
     drive(&mut w, &mut draft, Key::Right);
     assert_eq!(
-        w.setup_cell,
+        w.cursor.cell(),
         Cell::Seat,
         "right from the team chip wraps to the seat"
     );
     drive(&mut w, &mut draft, Key::Right);
-    assert_eq!(w.setup_cell, Cell::Team, "the opponent chips are skipped");
+    assert_eq!(
+        w.cursor.cell(),
+        Cell::Team,
+        "the opponent chips are skipped"
+    );
     // An bot card has every cell.
     drive(&mut w, &mut draft, Key::Down);
     drive(&mut w, &mut draft, Key::Left);
-    assert_eq!(w.setup_cell, Cell::Stance);
+    assert_eq!(w.cursor.cell(), Cell::Stance);
 }
 
 #[test]
@@ -706,7 +755,11 @@ fn a_team_map_runs_the_setup_screen_and_reseats_without_permuting() {
     let seats = draft.seats.len();
     assert!(seats > 2, "the explicit fixture is a team map");
     assert_eq!(w.step, Step::Setup);
-    assert_eq!(w.setup_sel, seats, "Start preselected under the seat cards");
+    assert_eq!(
+        w.cursor.row(seats),
+        seats,
+        "Start preselected under the seat cards"
+    );
 
     // Walk to the second DISPLAY seat; Enter takes the chair
     // inline — no sub-screen.
@@ -765,7 +818,7 @@ fn keyboard_cycles_difficulty_and_stance_directly_and_independently() {
     drive(&mut wizard, &mut draft, Key::Home);
     drive(&mut wizard, &mut draft, Key::Down);
     drive(&mut wizard, &mut draft, Key::Right);
-    assert_eq!(wizard.setup_cell, Cell::Difficulty);
+    assert_eq!(wizard.cursor.cell(), Cell::Difficulty);
     drive(&mut wizard, &mut draft, Key::Enter);
 
     assert_eq!(wizard.mode_name(), "match_setup");
@@ -774,7 +827,7 @@ fn keyboard_cycles_difficulty_and_stance_directly_and_independently() {
     assert_eq!(draft.seats[opponent].team_choice, original.team_choice);
 
     drive(&mut wizard, &mut draft, Key::Right);
-    assert_eq!(wizard.setup_cell, Cell::Stance);
+    assert_eq!(wizard.cursor.cell(), Cell::Stance);
     drive(&mut wizard, &mut draft, Key::Enter);
     assert_eq!(draft.seats[opponent].difficulty, BotDifficulty::Veteran);
     assert_eq!(draft.seats[opponent].stance, BotStance::Aggressive);
@@ -793,9 +846,10 @@ fn direct_bot_control_activation_ends_the_input_batch() {
     let (mut wizard, mut draft) = explicit_team_setup();
     let order = seat_display_order(draft.scenario.as_deref().unwrap());
     let opponent = order[1];
-    wizard.setup_sel = 1;
-    wizard.setup_cell = Cell::Difficulty;
-    wizard.setup_page = 0;
+    wizard.cursor = SetupCursor::Seat {
+        row: 1,
+        cell: Cell::Difficulty,
+    };
 
     let mut mouse = Vec2::ZERO;
     let mut sounds = Vec::new();
@@ -814,7 +868,7 @@ fn direct_bot_control_activation_ends_the_input_batch() {
     assert_eq!(out, Out::Stay);
     assert_eq!(draft.seats[opponent].difficulty, BotDifficulty::Veteran);
     assert_eq!(draft.seats[opponent].stance, BotStance::Balanced);
-    assert_eq!(wizard.setup_cell, Cell::Difficulty);
+    assert_eq!(wizard.cursor.cell(), Cell::Difficulty);
     assert_eq!(wizard.mode_name(), "match_setup");
     assert_eq!(sounds, [(SoundKind::Click, None)]);
 }
@@ -827,8 +881,10 @@ fn mouse_and_touch_cycle_the_direct_bot_controls() {
     let order = seat_display_order(scenario);
     let row = 1;
     let opponent = order[row];
-    wizard.setup_sel = row;
-    wizard.setup_page = 0;
+    wizard.cursor = SetupCursor::Seat {
+        row,
+        cell: wizard.cursor.cell(),
+    };
     let setup = setup_layout(
         scenario,
         draft.seat_choice,
@@ -861,7 +917,7 @@ fn mouse_and_touch_cycle_the_direct_bot_controls() {
     assert_eq!(draft.seats[opponent].difficulty, BotDifficulty::Veteran);
     assert_eq!(draft.seats[opponent].stance, BotStance::Balanced);
     assert_eq!(wizard.mode_name(), "match_setup");
-    assert_eq!(wizard.setup_cell, Cell::Difficulty);
+    assert_eq!(wizard.cursor.cell(), Cell::Difficulty);
 
     wizard
         .update(
@@ -885,7 +941,7 @@ fn mouse_and_touch_cycle_the_direct_bot_controls() {
     assert_eq!(draft.seats[opponent].difficulty, BotDifficulty::Veteran);
     assert_eq!(draft.seats[opponent].stance, BotStance::Aggressive);
     assert_eq!(wizard.mode_name(), "match_setup");
-    assert_eq!(wizard.setup_cell, Cell::Stance);
+    assert_eq!(wizard.cursor.cell(), Cell::Stance);
     assert_eq!(sounds, [(SoundKind::Click, None); 2]);
 }
 
@@ -897,8 +953,10 @@ fn the_controller_chip_reaches_open_only_while_hosting() {
     let row = 1;
     let opponent = seat_display_order(&scenario)[row];
     let stance = draft.seats[opponent].stance;
-    wizard.setup_sel = row;
-    wizard.setup_cell = Cell::Difficulty;
+    wizard.cursor = SetupCursor::Seat {
+        row,
+        cell: Cell::Difficulty,
+    };
     let cycle = |wizard: &mut Wizard, draft: &mut NewMatchDraft| {
         (0..5)
             .map(|_| {
@@ -941,7 +999,7 @@ fn the_controller_chip_reaches_open_only_while_hosting() {
     assert!(wizard.ui_surface(&draft).1[row].contains("(open)"));
     drive(&mut wizard, &mut draft, Key::Right);
     assert_eq!(
-        wizard.setup_cell,
+        wizard.cursor.cell(),
         Cell::Team,
         "an open chair has no stance chip"
     );
@@ -954,7 +1012,7 @@ fn the_controller_chip_reaches_open_only_while_hosting() {
         &open,
         crate::render::viewport(),
         crate::render::ui_scale(),
-        wizard.setup_page,
+        wizard.cursor.page(draft.seats.len()),
     );
     let wide = card(&layout, row);
     assert!(wide.stance.is_none());
@@ -965,7 +1023,10 @@ fn the_controller_chip_reaches_open_only_while_hosting() {
 
     // Taking an open chair swaps: the human's old chair waits open.
     let before = draft.seat_choice;
-    wizard.setup_cell = Cell::Seat;
+    wizard.cursor = SetupCursor::Seat {
+        row,
+        cell: Cell::Seat,
+    };
     drive(&mut wizard, &mut draft, Key::Enter);
     assert_eq!(draft.seat_choice, opponent);
     assert!(draft.seats[before].open);
@@ -989,7 +1050,8 @@ fn compact_setup_pages_to_a_nonoverlapping_opponent_touch_target() {
     let mut wizard = Wizard::open(&draft);
     wizard.goto(Step::Setup, &mut draft);
     assert_eq!(
-        wizard.setup_page, 1,
+        wizard.cursor.page(draft.seats.len()),
+        1,
         "Start opens on the page that contains it"
     );
 
@@ -1001,7 +1063,7 @@ fn compact_setup_pages_to_a_nonoverlapping_opponent_touch_target() {
         &[],
         view,
         ui,
-        wizard.setup_page,
+        wizard.cursor.page(draft.seats.len()),
     );
     let previous = last_page
         .page_prev
@@ -1029,8 +1091,13 @@ fn compact_setup_pages_to_a_nonoverlapping_opponent_touch_target() {
             &mut sounds,
         )
         .unwrap();
-    assert_eq!(wizard.setup_page, 0);
-    assert_eq!(wizard.setup_sel, 0);
+    assert_eq!(
+        wizard.cursor,
+        SetupCursor::Seat {
+            row: 0,
+            cell: Cell::Seat
+        }
+    );
 
     let first_page = setup_layout_page(
         draft.scenario.as_deref().unwrap(),
@@ -1038,7 +1105,7 @@ fn compact_setup_pages_to_a_nonoverlapping_opponent_touch_target() {
         &[],
         view,
         ui,
-        wizard.setup_page,
+        wizard.cursor.page(draft.seats.len()),
     );
     let row = 1;
     let difficulty = card(&first_page, row).difficulty.unwrap();
@@ -1095,8 +1162,10 @@ fn compact_setup_touch_only_edges_activate_every_editable_chip() {
         let initial_team = draft.seats[seat].team_choice;
         let mut wizard = Wizard::open(&draft);
         wizard.goto(Step::Setup, &mut draft);
-        wizard.setup_sel = row;
-        wizard.setup_page = 0;
+        wizard.cursor = SetupCursor::Seat {
+            row,
+            cell: wizard.cursor.cell(),
+        };
 
         let layout = setup_layout_page(
             draft.scenario.as_deref().unwrap(),
@@ -1141,11 +1210,14 @@ fn compact_setup_touch_only_edges_activate_every_editable_chip() {
             Cell::Difficulty => {
                 assert_eq!(
                     draft.seats[seat].difficulty,
-                    cycle_difficulty(initial_difficulty, 1)
+                    next_choice(&BotDifficulty::ALL, initial_difficulty)
                 );
                 assert_eq!(draft.seats[seat].stance, initial_stance);
             }
-            Cell::Stance => assert_eq!(draft.seats[seat].stance, cycle_stance(initial_stance, 1)),
+            Cell::Stance => assert_eq!(
+                draft.seats[seat].stance,
+                next_choice(&BotStance::ALL, initial_stance)
+            ),
             Cell::Team => assert_eq!(
                 draft.seats[seat].team_choice,
                 (initial_team + 1) % (draft.seats.len() + 1)
@@ -1225,8 +1297,13 @@ fn setup_mouse_activation_requires_release_on_the_armed_cell() {
         (initial.team_choice + 1) % (draft.seats.len() + 1)
     );
     assert_eq!(draft.seats[seat].stance, initial.stance);
-    assert_eq!(wizard.setup_sel, row);
-    assert_eq!(wizard.setup_cell, Cell::Team);
+    assert_eq!(
+        wizard.cursor,
+        SetupCursor::Seat {
+            row,
+            cell: Cell::Team
+        }
+    );
 
     let out = wizard
         .update(
@@ -1406,8 +1483,13 @@ fn setup_touch_activation_belongs_to_its_first_finger_and_armed_cell() {
         (initial.team_choice + 1) % (draft.seats.len() + 1)
     );
     assert_eq!(draft.seats[seat].stance, initial.stance);
-    assert_eq!(wizard.setup_sel, row);
-    assert_eq!(wizard.setup_cell, Cell::Team);
+    assert_eq!(
+        wizard.cursor,
+        SetupCursor::Seat {
+            row,
+            cell: Cell::Team
+        }
+    );
     assert_eq!(sounds, vec![(SoundKind::Click, None)]);
 }
 
@@ -1559,7 +1641,7 @@ fn grid_entries(n: usize) -> Vec<ScenarioEntry> {
             label: format!("m{i}"),
             blurb: None,
             path: Some(PathBuf::from(format!("m{i}.json"))),
-            theme: String::new(),
+            theme: None,
         })
         .collect()
 }
@@ -1645,7 +1727,7 @@ fn the_setup_hints_name_a_controllers_buttons_while_one_is_in_use() {
         crate::platform::tests::assert_pad_copy(hands, moving_hint(hands));
         for one_team in [false, true] {
             for press in EVERY_PRESS {
-                crate::platform::tests::assert_pad_copy(hands, setup_hint(one_team, press, hands));
+                crate::platform::tests::assert_pad_copy(hands, &setup_hint(one_team, press, hands));
             }
         }
     }
@@ -1690,4 +1772,26 @@ fn a_seat_card_labels_the_viewer_s_seat_and_a_seat_on_the_move() {
         Some("MOVING")
     );
     assert_eq!(view(CardController::Open, false).tag(), None);
+}
+
+#[test]
+fn the_map_rings_a_seat_only_while_the_cursor_sits_on_its_card() {
+    assert_eq!(
+        SetupCursor::Seat {
+            row: 1,
+            cell: Cell::Team
+        }
+        .focused_row(),
+        Some(1)
+    );
+    assert_eq!(
+        SetupCursor::Switch {
+            row: 1,
+            cell: Cell::Seat
+        }
+        .focused_row(),
+        None,
+        "the switch holds the focus, so no seat is ringed"
+    );
+    assert_eq!(SetupCursor::Start { cell: Cell::Seat }.focused_row(), None);
 }

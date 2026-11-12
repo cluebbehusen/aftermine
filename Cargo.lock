@@ -99,7 +99,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "zstd",
 ]
 
 [[package]]

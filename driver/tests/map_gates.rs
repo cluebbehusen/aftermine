@@ -98,7 +98,7 @@ fn every_map_carries_complete_metadata() {
         assert!(meta.size.is_some(), "{name}: size badge missing");
         assert!(!meta.mode.is_empty(), "{name}: mode missing");
         assert!(meta.wealth.is_some(), "{name}: wealth badge missing");
-        assert!(!meta.theme.is_empty(), "{name}: theme missing");
+        assert!(meta.theme.is_some(), "{name}: theme missing");
     }
 }
 

@@ -512,10 +512,7 @@ pub(crate) fn investments(
             points(worth * fortification / OBSTACLE_POINTS),
         ));
     }
-    let fabricator = observation
-        .my_buildings
-        .iter()
-        .any(|building| building.kind == BuildingKind::Fabricator && building.built);
+    let fabricator = crate::investments::built(observation, BuildingKind::Fabricator);
     if fabricator && let Some((anchor, worth)) = guard.charge() {
         let kind = BuildingKind::ScuttleCharge;
         list.push((

@@ -4,7 +4,7 @@
 //! viewer sees the machine.
 
 use crate::game::{Scene, SoundKind};
-use crate::rocket_audio::{LoopBank, Motor, camera_gain, densest};
+use crate::loop_audio::{LoopBank, Motor, camera_gain, densest};
 use aftermine_sim::{UnitId, UnitKind};
 use macroquad::audio::Sound;
 

@@ -237,3 +237,24 @@ fn a_damaged_or_foreign_recording_is_refused() {
         assert!(result.is_err(), "{case} was accepted");
     }
 }
+
+#[test]
+fn resume_rebuilds_every_recorded_tick_within_the_bound() {
+    let recorded = recording(30);
+    let mut straight = recorded.replay.setup.build().unwrap();
+    let mut playback = ReplayPlayback::new(&recorded.replay);
+    while straight.current_tick() < 30 {
+        playback.step(&mut straight);
+    }
+    let mut seen = Vec::new();
+    let resumed = resume(&recorded.replay, |state, _| seen.push(state.current_tick())).unwrap();
+    assert_eq!(resumed.state.hash(), straight.hash());
+    assert_eq!(seen, (1..=30).collect::<Vec<_>>());
+
+    let mut endless = recorded.replay.clone();
+    endless.meta.ticks = Some(crate::MAX_REPLAY_TICKS + 1);
+    assert!(resume(&endless, |_, _| panic!("nothing runs")).is_err());
+    let mut foreign = recorded.replay;
+    foreign.meta.sim_version = SIM_VERSION + 1;
+    assert!(resume(&foreign, |_, _| panic!("nothing runs")).is_err());
+}

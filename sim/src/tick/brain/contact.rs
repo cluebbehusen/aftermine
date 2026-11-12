@@ -16,7 +16,7 @@ pub(super) fn approach(
     let b = state.building(building).expect("live target");
     let (anchor, size) = (b.anchor, b.kind.size());
     let unit = state.unit(id).expect("contact unit");
-    let (from, pos, player) = (unit.tile(), unit.pos, unit.player);
+    let (from, pos) = (unit.tile(), unit.pos);
     if pos.dist_sq(crate::geometry::footprint_contact(pos, anchor, size))
         > const { Fx::lit("6.25") }
     {
@@ -46,16 +46,8 @@ pub(super) fn approach(
     } else {
         Vec::new()
     };
-    let frame = crate::tick::rect_approach_origin(state, player, from, anchor, size);
     let choose = |mut candidates: Vec<crowding::Position>| {
-        candidates.sort_by_key(|candidate| {
-            crate::geometry::stance_rank(
-                pos,
-                (from, frame),
-                (anchor, size),
-                (candidate.goal, candidate.point),
-            )
-        });
+        crowding::sort_stances(state, unit, (anchor, size), &mut candidates);
         crowding::choose_admitted(
             state,
             index,

@@ -12,9 +12,9 @@ use super::{PendingFieldWeld, PendingHpGain, contact};
 use crate::event::Event;
 use crate::geometry::{footprint_contact, rect_adjacent_tiles};
 use crate::ids::{BuildingId, Target, UnitId};
-use crate::state::{Building, Goal, Order, State, Unit};
+use crate::state::{Building, Goal, Order, State};
 use crate::stats::UnitKind;
-use crate::stats::{Domain, ESCORT_ENGAGE_RADIUS, next_paid_unit_repair_debit};
+use crate::stats::{ESCORT_ENGAGE_RADIUS, next_paid_unit_repair_debit};
 use chassis::fx::Vec2Fx;
 use chassis::grid::TilePos;
 
@@ -62,7 +62,7 @@ pub(super) struct Wounded {
 impl Wounded {
     pub(super) fn capture(state: &State) -> Self {
         let mut machines: Vec<Vec<Machine>> = state.players.iter().map(|_| Vec::new()).collect();
-        for unit in state.units.iter().filter(|u| weldable(u)) {
+        for unit in state.units.iter().filter(|u| u.weldable()) {
             machines[usize::from(unit.player.0)].push(Machine {
                 id: unit.id,
                 kind: unit.kind,
@@ -91,16 +91,6 @@ impl Wounded {
             banks: state.players.iter().map(|player| player.scrap).collect(),
         }
     }
-}
-
-/// Whether a field weld may take this machine on: alive, wounded,
-/// repairable, on the ground, and not being dismantled.
-fn weldable(unit: &Unit) -> bool {
-    unit.hp > 0
-        && unit.hp < unit.kind.stats().max_hp
-        && unit.kind.stats().repairable()
-        && unit.domain() == Domain::Ground
-        && !unit.retiring()
 }
 
 /// Whether tending may repair this building: complete, standing, damaged,

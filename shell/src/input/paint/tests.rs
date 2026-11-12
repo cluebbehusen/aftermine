@@ -51,7 +51,7 @@ fn a_sweep_selects_what_the_reticle_crossed_once_a_comes_up() {
     let mut input = pad_input(&mut game);
     sweep_right(&mut game, &mut input, 26.5, 31.5, FRAME);
     assert!(
-        game.presentation.selection.units.is_empty(),
+        game.presentation.selection.units().is_empty(),
         "nothing selects while A is held"
     );
     let preview = preview(&game.view(), &input).expect("the sweep shows");
@@ -63,7 +63,7 @@ fn a_sweep_selects_what_the_reticle_crossed_once_a_comes_up() {
     );
     assert_eq!(preview.trail.len(), 1);
     feed(&mut game, &mut input, &[up(PadButton::South)]);
-    assert_eq!(game.presentation.selection.units, row(&game));
+    assert_eq!(game.presentation.selection.units(), row(&game));
     assert!(preview_gone(&game, &input));
 }
 
@@ -73,7 +73,7 @@ fn a_fast_stick_still_catches_everything_it_crosses() {
     let mut input = pad_input(&mut game);
     sweep_right(&mut game, &mut input, 22.5, 33.0, 0.5);
     feed(&mut game, &mut input, &[up(PadButton::South)]);
-    assert_eq!(game.presentation.selection.units, row(&game));
+    assert_eq!(game.presentation.selection.units(), row(&game));
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn a_press_that_never_leaves_its_spot_paints_nothing() {
     push_until(&mut game, &mut input, (0.3, 0.0), FRAME, |g| g.x >= 26.9);
     assert!(preview_gone(&game, &input));
     feed(&mut game, &mut input, &[up(PadButton::South)]);
-    assert!(game.presentation.selection.units.is_empty());
+    assert!(game.presentation.selection.units().is_empty());
 }
 
 #[test]
@@ -112,10 +112,10 @@ fn own_units_outrank_own_structures_and_foreign_units() {
     push_until(&mut game, &mut input, (1.0, 0.0), FRAME, |g| g.x >= 32.5);
     feed(&mut game, &mut input, &[up(PadButton::South)]);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         units_of(&game, 0, SENTINEL)
     );
-    assert!(game.presentation.selection.buildings.is_empty());
+    assert!(game.presentation.selection.buildings().is_empty());
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn with_nothing_own_caught_one_foreign_owner_is_kept_in_id_order() {
     feed(&mut game, &mut input, &[up(PadButton::South)]);
     let red = units_of(&game, 1, SENTINEL);
     assert_eq!(red.len(), 2);
-    assert_eq!(game.presentation.selection.units, red);
+    assert_eq!(game.presentation.selection.units(), red);
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn held_queue_adds_the_sweep_to_the_selection() {
     let below = unit_at(&game, 30, 23);
     rest_on(&mut game, &mut input, vec2(30.5, 23.5));
     press(&mut game, &mut input, PadButton::South);
-    assert_eq!(game.presentation.selection.units, vec![below]);
+    assert_eq!(game.presentation.selection.units(), vec![below]);
     feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
     sweep_right(&mut game, &mut input, 26.5, 31.5, FRAME);
     feed(
@@ -157,7 +157,7 @@ fn held_queue_adds_the_sweep_to_the_selection() {
     let mut all = row(&game);
     all.push(below);
     all.sort_unstable();
-    assert_eq!(game.presentation.selection.units, all);
+    assert_eq!(game.presentation.selection.units(), all);
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn an_empty_sweep_clears_the_selection_unless_queue_is_held() {
         let mut game = row_scene();
         let mut input = pad_input(&mut game);
         let below = unit_at(&game, 30, 23);
-        game.presentation.selection.units = vec![below];
+        game.presentation.selection.set_units(vec![below]);
         if queue {
             feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
         }
@@ -175,7 +175,11 @@ fn an_empty_sweep_clears_the_selection_unless_queue_is_held() {
         push_until(&mut game, &mut input, (1.0, 0.0), FRAME, |g| g.x >= 31.5);
         feed(&mut game, &mut input, &[up(PadButton::South)]);
         let expected = if queue { vec![below] } else { Vec::new() };
-        assert_eq!(game.presentation.selection.units, expected, "queue {queue}");
+        assert_eq!(
+            game.presentation.selection.units(),
+            expected,
+            "queue {queue}"
+        );
     }
 }
 
@@ -184,14 +188,14 @@ fn b_abandons_a_sweep_and_keeps_the_selection() {
     let mut game = row_scene();
     let mut input = pad_input(&mut game);
     let below = unit_at(&game, 30, 23);
-    game.presentation.selection.units = vec![below];
+    game.presentation.selection.set_units(vec![below]);
     sweep_right(&mut game, &mut input, 26.5, 31.5, FRAME);
     assert!(!preview_gone(&game, &input));
     press(&mut game, &mut input, PadButton::East);
     assert!(preview_gone(&game, &input));
     feed(&mut game, &mut input, &[up(PadButton::South)]);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         vec![below],
         "B backed out of the sweep alone"
     );
@@ -222,7 +226,7 @@ fn a_camera_jump_mid_sweep_paints_no_ground_between() {
         .iter()
         .map(|&(x, y)| unit_at(&game, x, y))
         .collect();
-    assert_eq!(game.presentation.selection.units, caught);
+    assert_eq!(game.presentation.selection.units(), caught);
 }
 
 #[test]
@@ -235,7 +239,7 @@ fn a_jump_before_the_sweep_begins_carries_the_press_along() {
     assert!(preview_gone(&game, &input), "the jump swept nothing");
     push_until(&mut game, &mut input, (1.0, 0.0), FRAME, |g| g.x >= 31.5);
     feed(&mut game, &mut input, &[up(PadButton::South)]);
-    assert_eq!(game.presentation.selection.units, row(&game));
+    assert_eq!(game.presentation.selection.units(), row(&game));
 }
 
 #[test]
@@ -267,7 +271,7 @@ fn another_pointer_or_a_lost_pad_ends_the_sweep() {
         feed(&mut game, &mut input, &[ending]);
         assert!(input.pad_press.is_none(), "{ending:?}");
         feed(&mut game, &mut input, &[up(PadButton::South)]);
-        assert!(game.presentation.selection.units.is_empty(), "{ending:?}");
+        assert!(game.presentation.selection.units().is_empty(), "{ending:?}");
     }
 }
 
@@ -285,7 +289,7 @@ fn only_the_pad_holding_a_ends_its_press() {
         }],
     );
     assert!(input.pad_press.is_some());
-    assert!(game.presentation.selection.units.is_empty());
+    assert!(game.presentation.selection.units().is_empty());
 }
 
 #[test]
@@ -347,7 +351,7 @@ fn holding_a_still_grows_the_brush_to_its_full_size() {
     assert_eq!(full.radius, BRUSH * input.ui, "it stops at its full size");
     assert_eq!(full.kept, Some(Kept::Units(PlayerId(0), near.clone())));
     feed(&mut game, &mut input, &[up(PadButton::South)]);
-    assert_eq!(game.presentation.selection.units, near);
+    assert_eq!(game.presentation.selection.units(), near);
 }
 
 #[test]
@@ -358,7 +362,7 @@ fn a_release_held_past_a_tap_paints_even_before_a_frame_draws_it() {
     rest_on(&mut game, &mut input, vec2(33.0, 20.5));
     press(&mut game, &mut input, PadButton::South);
     assert_eq!(
-        game.presentation.selection.units.len(),
+        game.presentation.selection.units().len(),
         1,
         "a tap picks one"
     );
@@ -367,7 +371,7 @@ fn a_release_held_past_a_tap_paints_even_before_a_frame_draws_it() {
     input.now += TAP_SECS * 1.5;
     feed(&mut game, &mut input, &[up(PadButton::South)]);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         units_of(&game, 0, SENTINEL),
         "a hold paints both"
     );

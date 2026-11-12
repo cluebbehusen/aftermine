@@ -40,20 +40,15 @@ pub(super) fn draw(
     zoom: f32,
 ) {
     let scale = size / CANVAS;
-    let (sin, cos) = rotation.sin_cos();
+    let turn = Vec2::from_angle(rotation);
     let layer = |source: Rect, color: Color, offset: Vec2, dest: f32| {
-        let at = offset * scale;
-        let at = center + vec2(at.x * cos - at.y * sin, at.x * sin + at.y * cos);
-        sprites.draw_unit(
-            at.x - dest * 0.5,
-            at.y - dest * 0.5,
-            color,
-            DrawTextureParams {
-                dest_size: Some(vec2(dest, dest)),
-                source: Some(source),
-                rotation,
-                ..Default::default()
-            },
+        let at = center + turn.rotate(offset * scale);
+        super::draw_layer(
+            sprites,
+            (source, color),
+            at,
+            vec2(dest, dest),
+            rotation,
             zoom,
         );
     };

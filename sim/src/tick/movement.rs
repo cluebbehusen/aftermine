@@ -272,24 +272,13 @@ fn open_escape(
     let radius = kind.stats().radius;
     let reach = crate::stats::hull_excess(radius).ceil().to_num::<i32>();
     for r in 1..=crate::stats::EVICT_SCAN_RADIUS + reach {
-        for dy in -r..=r {
-            for dx in -r..=r {
-                if dx.abs().max(dy.abs()) != r {
-                    continue;
-                }
-                let goal = from.offset(dx * direction, dy * direction);
-                if !crate::geometry::hull_open(goal, radius, |t| state.passable(t)) {
-                    continue;
-                }
-                if let Some(waypoints) = super::route_for(state, kind, from, goal) {
-                    return Some(PathFollow {
-                        final_point: None,
-                        goal,
-                        waypoints,
-                        next: 0,
-                        clearing: false,
-                    });
-                }
+        for (dx, dy) in super::goals::ring(r) {
+            let goal = from.offset(dx * direction, dy * direction);
+            if !crate::geometry::hull_open(goal, radius, |t| state.passable(t)) {
+                continue;
+            }
+            if let Some(waypoints) = super::route_for(state, kind, from, goal) {
+                return Some(PathFollow::to(goal, waypoints));
             }
         }
     }
@@ -333,11 +322,8 @@ fn clearing_route(state: &State, unit: &crate::state::Unit) -> Option<PathFollow
             }
             waypoints.reverse();
             return Some(PathFollow {
-                final_point: None,
-                goal: tile,
-                waypoints,
-                next: 0,
                 clearing: true,
+                ..PathFollow::to(tile, waypoints)
             });
         }
         for (dx, dy) in NEIGHBORS {
@@ -667,7 +653,7 @@ pub(super) fn run(state: &mut State) -> (Vec<Vec2Fx>, Vec<bool>) {
             continue;
         }
         let mut budget = capped(stats.speed, caps[slot]);
-        let sky_open = |tile| map.tile(tile).is_some_and(|t| !t.terrain.blocks_air());
+        let sky_open = |tile| map.sky_open(tile);
         while budget > Fx::ZERO {
             let Some(path) = &mut unit.path else { break };
             let Some(&waypoint) = path.waypoints.get(path.next as usize) else {
@@ -762,10 +748,7 @@ fn steer_turn_limited(
             break;
         }
         if let Some(&next) = path.waypoints.get(path.next as usize + 1)
-            && chassis::path::line_blocked(unit.pos, next.center(), |tile| {
-                map.tile(tile)
-                    .is_some_and(|map_tile| !map_tile.terrain.blocks_air())
-            })
+            && chassis::path::line_blocked(unit.pos, next.center(), |tile| map.sky_open(tile))
         {
             break;
         }
@@ -814,10 +797,7 @@ fn steer_turn_limited(
         bank_away(unit);
     }
     let ahead = map.clamp_to_envelope(unit.pos + chassis::compass::dir(unit.heading) * stats.speed);
-    let sky_open = |p: Vec2Fx| {
-        map.tile(TilePos::containing(p))
-            .is_some_and(|t| !t.terrain.blocks_air())
-    };
+    let sky_open = |p: Vec2Fx| map.sky_open(TilePos::containing(p));
     if sky_open(ahead) {
         unit.pos = ahead;
         return;

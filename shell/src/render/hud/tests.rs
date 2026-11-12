@@ -29,7 +29,7 @@ fn a_selected_foundry_lays_its_cards_inside_the_action_region() {
         .find(|building| building.player == human)
         .unwrap()
         .id;
-    game.presentation.selection.buildings.push(foundry);
+    game.presentation.selection.set_buildings(vec![foundry]);
     // iPad mini, iPad Pro 11", and Steam Deck: the floor and its neighbours.
     for (w, h) in [(1133.0, 744.0), (1210.0, 834.0), (1280.0, 800.0)] {
         let hud = layout(
@@ -184,7 +184,7 @@ fn a_busy_builder_keeps_its_orders_dock_over_the_construction_palette() {
             },
         }]);
     }
-    game.presentation.selection.units.push(id);
+    game.presentation.selection.set_units(vec![id]);
     let mut input = InputState::new();
     input.build_menu = true;
     // The layout floor, the Steam Deck, and a desktop window.
@@ -240,7 +240,7 @@ fn the_placement_ribbon_says_what_a_click_would_do_and_holds_still() {
             },
         }]);
     }
-    game.presentation.selection.units.push(id);
+    game.presentation.selection.set_units(vec![id]);
     let foundry = game
         .state
         .buildings()
@@ -303,14 +303,14 @@ fn every_armed_ribbon_ends_in_a_cross_clear_of_its_words() {
         .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
         .unwrap()
         .id;
-    game.presentation.selection.units.push(harvester);
+    game.presentation.selection.set_units(vec![harvester]);
     let arms: [fn(&mut InputState); 3] = [
-        |input| input.click_verb = Some(crate::input::ClickVerb::Hunt),
+        |input| input.armed = Some(crate::input::Armed::Verb(crate::input::ClickVerb::Hunt)),
         |input| {
             input.build_menu = true;
             input.arm_placement(aftermine_sim::BuildingKind::Turret);
         },
-        |input| input.patrol_route = Some(Vec::new()),
+        |input| input.armed = Some(crate::input::Armed::Patrol(Vec::new())),
     ];
     for arm in arms {
         let mut input = InputState::new();
@@ -365,7 +365,7 @@ fn a_lesson_card_holds_a_full_dock_under_it_at_the_floor_size() {
     };
     game.state
         .tick(&vec![train; aftermine_sim::stats::QUEUE_CAP]);
-    game.presentation.selection.buildings.push(foundry);
+    game.presentation.selection.set_buildings(vec![foundry]);
     let env = env(1133.0, 744.0);
     let input = InputState::new();
     // The tallest card any step shows with its red coach line, and one
@@ -443,7 +443,7 @@ fn the_patrol_ribbon_holds_still_and_lights_start_once_it_has_a_point() {
         assert_eq!(hud.layout.ribbon_cancel, ribbon.cancel);
         (ribbon.rect, buttons, ribbon.cancel)
     };
-    input.patrol_route = Some(Vec::new());
+    input.armed = Some(crate::input::Armed::Patrol(Vec::new()));
     let (empty, waiting, cancel) = ribbon(&input);
     assert!(!waiting.ready, "Start waits for a point");
     for button in [waiting.start, cancel] {
@@ -452,13 +452,15 @@ fn the_patrol_ribbon_holds_still_and_lights_start_once_it_has_a_point() {
     }
     assert!(waiting.start.right() < cancel.x);
 
-    input.patrol_route = Some(vec![chassis::grid::TilePos::new(3, 3)]);
+    input.armed = Some(crate::input::Armed::Patrol(vec![
+        chassis::grid::TilePos::new(3, 3),
+    ]));
     let (one, ready, _) = ribbon(&input);
     assert!(ready.ready);
-    input.patrol_route = Some(vec![
+    input.armed = Some(crate::input::Armed::Patrol(vec![
         chassis::grid::TilePos::new(3, 3);
         aftermine_sim::stats::ORDER_QUEUE_CAP
-    ]);
+    ]));
     let (full, _, _) = ribbon(&input);
     assert_eq!(one, empty, "the ribbon holds still");
     assert_eq!(full, empty);
@@ -475,7 +477,7 @@ fn a_finger_with_no_ghost_down_leaves_the_ribbon_one_row_tall() {
         .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
         .unwrap()
         .id;
-    game.presentation.selection.units.push(harvester);
+    game.presentation.selection.set_units(vec![harvester]);
     let mut input = InputState::new();
     input.build_menu = true;
     input.arm_placement(aftermine_sim::BuildingKind::Turret);
@@ -506,7 +508,7 @@ fn a_planned_row_counts_itself_in_the_ribbon() {
         .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
         .unwrap()
         .id;
-    game.presentation.selection.units.push(harvester);
+    game.presentation.selection.set_units(vec![harvester]);
     let foundry = game
         .state
         .buildings()
@@ -573,7 +575,7 @@ fn the_status_row_goes_blank_over_chrome_and_keeps_its_height() {
         .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
         .unwrap()
         .id;
-    game.presentation.selection.units.push(harvester);
+    game.presentation.selection.set_units(vec![harvester]);
     let foundry = game
         .state
         .buildings()
@@ -618,7 +620,8 @@ fn the_status_row_goes_blank_over_chrome_and_keeps_its_height() {
 fn the_select_all_button_sits_in_the_info_box_beside_the_title() {
     let mut game =
         crate::building_actions::tests::fixture(aftermine_sim::BuildingKind::Turret, &[0, 0, 0], 0);
-    game.presentation.selection.buildings.truncate(1);
+    let first = game.presentation.selection.buildings()[..1].to_vec();
+    game.presentation.selection.set_buildings(first);
     for (w, h) in [(1133.0, 744.0), (1280.0, 800.0)] {
         let hud = layout(
             &game.view(),
@@ -644,13 +647,14 @@ fn the_select_all_button_sits_in_the_info_box_beside_the_title() {
             "{rect:?} clears the edge and the portrait in {info:?} at {w}x{h}"
         );
     }
-    game.presentation.selection.buildings = game
-        .state
-        .buildings()
-        .iter()
-        .filter(|b| b.kind == aftermine_sim::BuildingKind::Turret)
-        .map(|b| b.id)
-        .collect();
+    game.presentation.selection.set_buildings(
+        game.state
+            .buildings()
+            .iter()
+            .filter(|b| b.kind == aftermine_sim::BuildingKind::Turret)
+            .map(|b| b.id)
+            .collect(),
+    );
     let hud = layout(
         &game.view(),
         &InputState::new(),
@@ -685,7 +689,7 @@ fn a_roc_s_drone_column_stands_beside_its_orders_dock() {
     let (id, home) = (roc.id, chassis::grid::TilePos::containing(roc.pos));
     // The bay autofills its first drone.
     game.do_tick();
-    game.presentation.selection.units = vec![id];
+    game.presentation.selection.set_units(vec![id]);
     let model = |game: &Game| {
         layout(
             &game.view(),
@@ -759,7 +763,9 @@ fn a_selection_of_every_kind_gets_a_roster_chip_for_each() {
         });
     }
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-    game.presentation.selection.units = game.state.units().iter().map(|u| u.id).collect();
+    game.presentation
+        .selection
+        .set_units(game.state.units().iter().map(|u| u.id).collect());
     for (w, h) in [(1133.0, 744.0), (1210.0, 834.0), (1280.0, 800.0)] {
         let hud = layout(
             &game.view(),
@@ -812,7 +818,7 @@ fn a_ring_fits_between_the_top_bar_and_the_panel_wherever_it_opens() {
         .unwrap()
         .id;
     // A producer's panel is the tallest band a ring opens over.
-    game.presentation.selection.buildings.push(foundry);
+    game.presentation.selection.set_buildings(vec![foundry]);
     for (w, h, ui) in [
         (1133.0, 744.0, 1.0),
         (1280.0, 800.0, 1.0),
@@ -869,7 +875,7 @@ fn foundry_selected() -> (Game, aftermine_sim::BuildingId) {
         .find(|building| building.player == human)
         .unwrap()
         .id;
-    game.presentation.selection.buildings.push(foundry);
+    game.presentation.selection.set_buildings(vec![foundry]);
     (game, foundry)
 }
 
@@ -988,7 +994,7 @@ fn the_click_that_ends_pad_mode_lands_on_the_hud_pad_mode_drew() {
     assert!(game.pending.is_empty(), "no hidden card took the click");
     input.settle_hud();
     assert!(!input.hud_pad, "the click ended pad mode");
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     relayout(&game, &input);
     crate::input::apply_events(
         &mut game,

@@ -42,7 +42,10 @@ their own hash. Ask each command for `--help`; the CLI is canonical.
 ## Locate the cost
 
 1. `driver tick-scan <replay>` ranks the costliest windows. Late, crowded
-   windows and isolated spikes usually tell different stories; check both.
+   windows and isolated spikes usually tell different stories; check both. A
+   single pass's maximum under load is no evidence of a spike, because
+   preemption counts as tick time. `--passes 5` reruns the replay and keeps each
+   tick's fastest time; use it before calling a tick slow.
 2. `driver tick-profile <replay> --from <tick> --ticks 50 --json` gives each
    function's inclusive and own share of the tick. `--focus <name>` breaks one
    function down. Rank by share, not time: shares hold steady on a busy machine.

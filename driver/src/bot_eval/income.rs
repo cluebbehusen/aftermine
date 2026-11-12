@@ -5,7 +5,7 @@
 
 use aftermine_kit::stats::LiveMatchStats;
 use aftermine_sim::stats::{
-    FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK, RECLAIMER_PERIOD, REFINERY_PERIOD,
+    FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK, passive_scrap_per_minute,
 };
 use aftermine_sim::{Building, BuildingKind, Event, ExtractorIncome, PlayerId, State, UnitKind};
 use chassis::fx::Fx;
@@ -174,12 +174,7 @@ fn passive_per_minute(state: &State, player: PlayerId) -> u32 {
         .iter()
         .filter(|building| building.player == player && building.built() && building.hp > 0)
         .map(|building| match building.kind {
-            BuildingKind::Reclaimer if building.tier == 0 => {
-                TICKS_PER_MINUTE / u32::try_from(RECLAIMER_PERIOD).expect("periods fit in u32")
-            }
-            BuildingKind::Reclaimer => {
-                TICKS_PER_MINUTE / u32::try_from(REFINERY_PERIOD).expect("periods fit in u32")
-            }
+            BuildingKind::Reclaimer => passive_scrap_per_minute(building.tier),
             BuildingKind::Extractor if !seat.resigned => state
                 .extractor_income(building.id)
                 .map_or(0, ExtractorIncome::scrap_per_minute),

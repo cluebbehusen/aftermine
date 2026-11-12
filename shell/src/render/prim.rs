@@ -6,6 +6,19 @@ use macroquad::prelude::{
     screen_dpi_scale,
 };
 
+/// A `size` rectangle centered on `center`, snapped to a `pixel` grid and
+/// never thinner than one pixel.
+pub(crate) fn pixel_rect(center: Vec2, size: Vec2, pixel: f32, color: Color) {
+    let origin = (center - size * 0.5) / pixel;
+    draw_rectangle(
+        origin.x.round() * pixel,
+        origin.y.round() * pixel,
+        (size.x / pixel).round().max(1.0) * pixel,
+        (size.y / pixel).round().max(1.0) * pixel,
+        color,
+    );
+}
+
 pub(crate) fn fill_rect(rect: Rect, color: Color) {
     draw_rectangle(rect.x, rect.y, rect.w, rect.h, color);
 }

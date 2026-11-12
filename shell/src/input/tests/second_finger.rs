@@ -56,7 +56,7 @@ fn foundry_train_card() -> (Game, aftermine_sim::BuildingId, Rect) {
         .find(|b| b.player == game.presentation.human)
         .expect("own Foundry")
         .id;
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     relayout::relayout(&game, &InputState::new());
     let layout = game.presentation.layout.get();
     let card = layout.cards[..layout.card_count]
@@ -126,11 +126,11 @@ fn a_second_finger_trains_from_a_card_while_the_first_rests_or_pans() {
         outlast_the_long_press(&mut game, &mut input);
         apply_events(&mut game, &mut input, &[touch_up(1, rest)]);
         assert_eq!(
-            game.presentation.selection.buildings,
+            game.presentation.selection.buildings(),
             vec![foundry],
             "pans {pans}: the resting finger selects nothing"
         );
-        assert!(game.presentation.selection.units.is_empty());
+        assert!(game.presentation.selection.units().is_empty());
         assert_eq!(game.pending.len(), 1, "pans {pans}: {:?}", game.pending);
     }
 }
@@ -150,7 +150,7 @@ fn a_second_finger_recalls_a_group_while_the_first_rests_on_open_ground() {
     apply_events(&mut game, &mut input, &[touch_down(1, rest)]);
     tap_beside(&mut game, &mut input, 2, slot.center());
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         vec![fighter],
         "the slot recalls"
     );
@@ -159,7 +159,7 @@ fn a_second_finger_recalls_a_group_while_the_first_rests_on_open_ground() {
     apply_events(&mut game, &mut input, &[touch_up(1, rest)]);
     assert!(game.pending.is_empty(), "no long-press: {:?}", game.pending);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         vec![fighter],
         "the resting finger's lift keeps the group"
     );
@@ -178,7 +178,7 @@ fn a_second_finger_held_on_a_slot_saves_the_selection_there() {
         .expect("own Harvester")
         .id;
     input.groups[0] = Group::Units(vec![harvester]);
-    game.presentation.selection.units = vec![fighter];
+    game.presentation.selection.set_units(vec![fighter]);
     let slot = group_one_slot(&game, &input);
     let rest = open_screen_point(&game, at + vec2(4.0, 2.0));
 
@@ -200,7 +200,7 @@ fn a_second_finger_held_on_a_slot_saves_the_selection_there() {
     apply_events(&mut game, &mut input, &[touch_up(2, slot.center())]);
     assert_eq!(input.last_recall, None, "and its lift recalls nothing");
     apply_events(&mut game, &mut input, &[touch_up(1, rest)]);
-    assert_eq!(game.presentation.selection.units, vec![fighter]);
+    assert_eq!(game.presentation.selection.units(), vec![fighter]);
     assert!(game.pending.is_empty(), "{:?}", game.pending);
 }
 
@@ -216,7 +216,7 @@ fn a_second_finger_held_on_the_weld_card_switches_auto_weld() {
         .find(|u| u.player == game.presentation.human && u.worker.is_some())
         .expect("own worker")
         .id;
-    game.presentation.selection.units = vec![worker];
+    game.presentation.selection.set_units(vec![worker]);
     relayout::relayout(&game, &input);
     let index = game
         .presentation
@@ -274,7 +274,7 @@ fn a_chrome_finger_whose_partner_leaves_first_still_presses_as_it_lifts() {
         input.now = 5.15;
         leave(&mut game, &mut input, 1, rest, cancelled);
         assert_eq!(
-            game.presentation.selection.buildings,
+            game.presentation.selection.buildings(),
             vec![foundry],
             "cancelled {cancelled}: the battlefield finger selects nothing"
         );
@@ -297,7 +297,7 @@ fn a_chrome_finger_whose_partner_leaves_first_still_presses_as_it_lifts() {
         input.now = 10.2;
         apply_events(&mut game, &mut input, &[touch_up(4, slot.center())]);
         assert_eq!(
-            game.presentation.selection.units,
+            game.presentation.selection.units(),
             vec![fighter],
             "cancelled {cancelled}: the slot recalls"
         );
@@ -309,9 +309,9 @@ fn a_second_finger_cancels_from_the_ribbon_cross_and_builds_from_the_check() {
     let mut game = headless_game();
     let mut input = InputState::new();
     let (fighter, at) = own_fighter(&game);
-    game.presentation.selection.units = vec![fighter];
+    game.presentation.selection.set_units(vec![fighter]);
     dispatch_action(&mut game, &mut input, Action::Hunt);
-    assert!(input.armed(ClickVerb::Hunt), "premise: Hunt is armed");
+    assert!(input.is_armed(ClickVerb::Hunt), "premise: Hunt is armed");
     relayout::relayout(&game, &input);
     let cross = game.presentation.layout.get().ribbon_cancel;
     assert!(cross.w > 0.0, "premise: the ribbon shows its cross");
@@ -322,7 +322,7 @@ fn a_second_finger_cancels_from_the_ribbon_cross_and_builds_from_the_check() {
     assert_eq!(input.armed_mode(), None, "the cross stands Hunt down");
     apply_events(&mut game, &mut input, &[touch_up(1, rest)]);
     assert!(game.pending.is_empty(), "{:?}", game.pending);
-    assert_eq!(game.presentation.selection.units, vec![fighter]);
+    assert_eq!(game.presentation.selection.units(), vec![fighter]);
 
     let kind = aftermine_sim::BuildingKind::Turret;
     let (mut game, mut input, _) = armed_placement(kind);
@@ -370,7 +370,7 @@ fn a_finger_off_chrome_beside_another_never_reaches_the_world() {
         &[touch_down(2, landing), touch_up(2, unit)],
     );
     assert!(
-        game.presentation.selection.units.is_empty(),
+        game.presentation.selection.units().is_empty(),
         "a chrome-born lift beside another selects nothing"
     );
 
@@ -423,7 +423,7 @@ fn minimap_ghost_and_handle_fingers_keep_their_jobs_beside_another() {
     );
     apply_events(&mut game, &mut input, &[touch_up(2, second)]);
     apply_events(&mut game, &mut input, &[touch_up(1, rest)]);
-    assert!(game.presentation.selection.units.is_empty());
+    assert!(game.presentation.selection.units().is_empty());
 
     // The ghost and its handle only move: a lift beside another builds
     // nothing, whatever the ghost's controls lie under.

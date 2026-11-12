@@ -238,3 +238,19 @@ fn wrecks_that_fall_on_a_cliff_are_gone() {
     assert_eq!(map.wreck_at(cliff), 0);
     assert_eq!(map.wreck_at(ramp), 5, "a ramp is ground and keeps salvage");
 }
+
+#[test]
+fn aircraft_overfly_everything_on_the_map_but_peaks() {
+    let (map, _) = Map::parse(&["#^~", "s1.", "..2"]).unwrap();
+    for (tile, open) in [
+        (TilePos::new(0, 0), true),
+        (TilePos::new(1, 0), false),
+        (TilePos::new(2, 0), true),
+        (TilePos::new(0, 1), true),
+        (TilePos::new(2, 2), true),
+        (TilePos::new(-1, 0), false),
+        (TilePos::new(0, 3), false),
+    ] {
+        assert_eq!(map.sky_open(tile), open, "{tile:?}");
+    }
+}

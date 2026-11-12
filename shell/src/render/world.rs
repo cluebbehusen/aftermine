@@ -507,22 +507,11 @@ struct ObstaclePlacement {
     variant: usize,
 }
 
-fn coordinate_hash(x: i32, y: i32, salt: u32) -> u32 {
-    let mut hash = 2_166_136_261u32;
-    for word in [x.cast_unsigned(), y.cast_unsigned(), salt] {
-        for byte in word.to_le_bytes() {
-            hash ^= u32::from(byte);
-            hash = hash.wrapping_mul(16_777_619);
-        }
-    }
-    hash
-}
-
 fn placement_for_group(
     group: TilePos,
     mut rock: impl FnMut(TilePos) -> bool,
 ) -> Option<ObstaclePlacement> {
-    let hash = coordinate_hash(group.x, group.y, 0x5155_4152);
+    let hash = super::environment::hash(group.x, group.y, 0x5155_4152);
     // Rock is slabs; about one 3x2 cell in six resolves into an abandoned
     // machine footprint instead.
     if !hash.is_multiple_of(3) || !(hash / 3).is_multiple_of(2) {
@@ -643,30 +632,16 @@ pub(super) fn draw_blockers(
     }
 }
 
-fn theme_code(theme: &str) -> Option<u32> {
-    // Stable layout salts, chosen so each shipped theme exercises its complete
-    // prop row without changing the shared density rule.
-    match theme {
-        "rusted-yard" => Some(1),
-        "cold-circuitry" => Some(2),
-        "quarry-dust" => Some(25),
-        "basalt" => Some(4),
-        "slag" => Some(5),
-        "verdigris" => Some(6),
-        _ => None,
-    }
-}
-
 /// Sparse dressing picked from a coordinate and its 180-degree partner.
 /// Both halves therefore choose the same art; the far half records a half-turn
 /// so rotatable surface marks preserve the shipped maps' visual symmetry.
 fn symmetric_theme_prop(
-    theme: &str,
+    theme: Option<aftermine_sim::scenario::Theme>,
     pos: TilePos,
     width: i32,
     height: i32,
 ) -> Option<ThemePropPlacement> {
-    let theme = theme_code(theme)?;
+    let salt = super::grade::prop_salt(theme?);
     if width <= 0 || height <= 0 {
         return None;
     }
@@ -680,22 +655,15 @@ fn symmetric_theme_prop(
     } else {
         (mirror, true)
     };
-    // FNV-1a over fixed-width words: stable across platforms and Rust
-    // versions, unlike DefaultHasher. Dimensions keep two differently sized
-    // maps from laying down the same visible stamp.
-    let mut hash = 2_166_136_261u32;
-    for word in [
-        theme,
+    // Dimensions keep two differently sized maps from laying down the same
+    // visible stamp.
+    let hash = super::environment::word_hash(&[
+        salt,
         canonical.x.cast_unsigned(),
         canonical.y.cast_unsigned(),
         width.cast_unsigned(),
         height.cast_unsigned(),
-    ] {
-        for byte in word.to_le_bytes() {
-            hash ^= u32::from(byte);
-            hash = hash.wrapping_mul(16_777_619);
-        }
-    }
+    ]);
     // One residue in eleven gives open ground enough history to establish a
     // map identity without turning every tile into visual noise. Residue five
     // keeps even the smallest shipped arenas above the density floor.
@@ -878,11 +846,7 @@ pub(super) fn draw_floor(
 ) {
     let zoom = view.zoom();
     let size = zoom.ceil() + 1.0; // slight overlap kills seam hairlines
-    let theme = ground
-        .scenario
-        .meta
-        .as_ref()
-        .map_or("", |m| m.theme.as_str());
+    let theme = ground.scenario.meta.as_ref().and_then(|meta| meta.theme);
     let map = ground.map;
     let (map_width, map_height) = (map.width(), map.height());
     // Quarry props vary by map, not by anything in play.
@@ -931,7 +895,7 @@ pub(super) fn draw_floor(
         let tint = paint(&spot).0;
         // Grit and cracks use a mixed hash so no shade repeats one texture;
         // FNV's low bits track coordinate parity, so read its high bits.
-        let detail = (coordinate_hash(x, y, 0x4752_4e44) >> 16) as usize;
+        let detail = (super::environment::hash(x, y, 0x4752_4e44) >> 16) as usize;
         let orientation = detail / sprites.ground_detail_count();
         sprites.draw(
             spot.screen.x.floor(),
@@ -972,7 +936,7 @@ pub(super) fn draw_floor(
         } else if let Some(placement) = prop_candidate {
             quiet_mark(placement)
                 .filter(|_| symmetric_safe_theme_prop_tile(&ground.scenario.map, pos))
-                .and_then(|variant| sprites.theme_prop(theme, variant))
+                .and_then(|variant| sprites.theme_prop(theme?, variant))
                 .map(|source| (source, placement.rotation(), WHITE))
         } else {
             None
@@ -1050,7 +1014,7 @@ pub(super) fn draw_salvage(
     let paint = ground_paint(ground);
     for_each_tile(ground.map, view, |spot| {
         let (pos, tile) = (spot.pos, spot.tile);
-        let seen_now = game.presentation.all_seeing() || game.my_vision().visible(pos);
+        let seen_now = game.sees_tile(pos);
         let scrap = if seen_now {
             tile.scrap
         } else {

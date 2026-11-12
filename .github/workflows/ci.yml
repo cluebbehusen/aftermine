@@ -144,6 +144,54 @@ jobs:
         shell: bash
         run: .github/coverage.sh
 
+  # The native suites and the smoke check open a real shell window, so the
+  # workspace test run skips them. This job runs them on a virtual X display
+  # with Mesa's software GL. It is a trial, kept out of the required checks
+  # until its time and flake rate are known.
+  native-window:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          # Matches rust-toolchain.toml.
+          toolchain: "1.99.0"
+      # Restores the check job's Linux cache, which holds the same debug
+      # dependencies, and saves none of its own.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: check
+          save-if: false
+      - name: Install Linux system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev pkg-config libudev-dev xvfb xauth libgl1-mesa-dri
+      # With no sound card the shell's audio thread panics opening the
+      # default device. A null device takes the samples instead. It goes in
+      # the system file because the harness gives each shell its own HOME.
+      - name: Route sound to a null device
+        run: echo 'pcm.!default { type null }' | sudo tee /etc/asound.conf
+      # Built first so the steps below time the runs alone. Each command
+      # matches one those steps or the harness runs, leaving them nothing to
+      # compile.
+      - name: Build
+        id: build
+        run: |
+          cargo build -p aftermine-shell --locked
+          cargo build -p aftermine-driver --locked
+          cargo test -p aftermine-driver --test menu_ux --test session_parity --locked --no-run
+      - name: Native suites
+        run: xvfb-run -a -s "-screen 0 1280x800x24" cargo test -p aftermine-driver --test menu_ux --test session_parity --locked --no-fail-fast -- --ignored --test-threads 1
+        env:
+          RUST_BACKTRACE: "1"
+      # Runs even when a suite fails, so each trial run reports both.
+      - name: Smoke
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: xvfb-run -a -s "-screen 0 1280x800x24" cargo run -p aftermine-driver --locked -- smoke --spawn
+
   markdown:
     runs-on: ubuntu-latest
     steps:

@@ -98,7 +98,7 @@ fn draw_queued_mark(center: Vec2, arm: f32, color: Color) {
 
 /// An inspected salvage tile wears a selected building's outline.
 pub(crate) fn draw_selected_pile(game: &crate::game::Scene<'_>) {
-    let Some(tile) = game.presentation.selection.pile else {
+    let Some(tile) = game.presentation.selection.pile() else {
         return;
     };
     let zoom = game.presentation.camera.zoom;
@@ -112,6 +112,10 @@ pub(crate) fn draw_selected_pile(game: &crate::game::Scene<'_>) {
         BONE,
     );
 }
+
+/// The faint amber an unverified site draws in, on the ground and on the
+/// minimap.
+pub(crate) const UNVERIFIED_SITE: Color = Color::new(1.0, 0.85, 0.45, 0.3);
 
 /// Paid provisional scaffolds remain faint amber footprints until their
 /// ground has been verified.
@@ -131,7 +135,7 @@ pub(crate) fn draw_pending_founds(game: &crate::game::Scene<'_>, sprites: &Sprit
         sprites.draw(
             screen.x,
             screen.y,
-            Color::new(1.0, 0.85, 0.45, 0.3),
+            UNVERIFIED_SITE,
             DrawTextureParams {
                 dest_size: Some(vec2(w as f32 * zoom, h as f32 * zoom)),
                 source: Some(sprites.construction(site.kind, 0, 0, 0)),
@@ -263,7 +267,7 @@ pub(crate) fn decor_units(game: &crate::game::Scene<'_>) -> Vec<aftermine_sim::U
     ids.extend(
         game.presentation
             .selection
-            .units
+            .units()
             .iter()
             .copied()
             .filter(|id| Some(*id) != subject),
@@ -278,7 +282,7 @@ pub(crate) fn decor_units(game: &crate::game::Scene<'_>) -> Vec<aftermine_sim::U
 /// the loop Start will send.
 pub(crate) fn draw_breadcrumbs(game: &crate::game::Scene<'_>, input: &InputState) {
     let dot = |p: Vec2, color: Color| fill_circle(p, 3.0, color);
-    if let Some(route) = &input.patrol_route {
+    if let Some(route) = input.patrol_route() {
         let points: Vec<Vec2> = route
             .iter()
             .map(|tile| {
@@ -322,7 +326,7 @@ pub(crate) fn draw_breadcrumbs(game: &crate::game::Scene<'_>, input: &InputState
         let start = game
             .presentation
             .camera
-            .to_screen(vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>()));
+            .to_screen(crate::game::world_vec(unit.pos));
         let s = ui_scale();
         let numbered = is_subject && program.orders.len() > 1;
         let mut prev = start;
@@ -439,7 +443,7 @@ pub(super) fn strike_contact(
         }
         HitSurface::Unit(hit) => {
             if let Some(unit) = game.state.unit(hit.id)
-                && crate::strategic_markers::visible(game, unit)
+                && game.sees_unit(unit)
             {
                 let pose =
                     super::unit_body_pose(game, sprites, unit, game.presentation.tick_fraction());
@@ -503,10 +507,7 @@ fn payload_contact(
     index: usize,
 ) -> (Vec2, Option<crate::game::HitSurface>) {
     let shell = &game.state.shells()[index];
-    let at = vec2(
-        shell.impact.x.to_num::<f32>(),
-        shell.impact.y.to_num::<f32>(),
-    );
+    let at = crate::game::world_vec(shell.impact);
     let target = game
         .presentation
         .projectile_releases
@@ -536,10 +537,7 @@ fn payload_surface_contact(
 ) -> Vec2 {
     let point = match surface {
         Some(crate::game::HitSurface::Unit(hit)) => {
-            let unit = game
-                .state
-                .unit(hit.id)
-                .filter(|unit| crate::strategic_markers::visible(game, unit));
+            let unit = game.state.unit(hit.id).filter(|unit| game.sees_unit(unit));
             unit.and_then(|unit| {
                 let pose =
                     super::unit_body_pose(game, sprites, unit, game.presentation.tick_fraction());
@@ -569,9 +567,7 @@ fn payload_surface_contact(
             crate::game::ShotStyle::Rail,
         ),
     }
-    .filter(|point| {
-        game.presentation.all_seeing() || game.my_vision().visible(numeric::tile_at(*point))
-    });
+    .filter(|point| game.sees_tile(numeric::tile_at(*point)));
     point.unwrap_or(at)
 }
 
@@ -600,9 +596,7 @@ pub(super) fn impact_contact(
             crate::game::ShotStyle::Rail,
         ),
     }
-    .filter(|point| {
-        game.presentation.all_seeing() || game.my_vision().visible(numeric::tile_at(*point))
-    })
+    .filter(|point| game.sees_tile(numeric::tile_at(*point)))
     .unwrap_or(at)
 }
 
@@ -627,14 +621,7 @@ pub(super) fn building_contact(
     let hit = game
         .state
         .building(hit.id)
-        .filter(|building| {
-            game.presentation.all_seeing()
-                || building.player == game.presentation.human
-                || building.tiles().any(|tile| game.my_vision().visible(tile))
-                    && game
-                        .state
-                        .building_apparent(game.presentation.human, building)
-        })
+        .filter(|building| game.sees_building(building))
         .map_or(hit, |building| {
             crate::game::BuildingHit::capture(game.state, building)
         });
@@ -904,22 +891,15 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     }
     // Frustum cull by anchor with a margin covering the widest footprint
     // plus bars and site dressing.
-    let (view_lo, view_hi) = game.presentation.camera.world_rect();
     for building in game.state.buildings().iter().filter(|b| !b.provisional()) {
-        if building.player != game.presentation.human
-            && !game.presentation.all_seeing()
-            && (!building.tiles().any(|t| game.my_vision().visible(t))
-                || !game
-                    .state
-                    .building_apparent(game.presentation.human, building))
-        {
+        if !game.sees_building(building) {
             continue;
         }
         let anchor = vec2(building.anchor.x as f32, building.anchor.y as f32);
-        if anchor.x < view_lo.x - BUILDING_CULL_MARGIN
-            || anchor.y < view_lo.y - BUILDING_CULL_MARGIN
-            || anchor.x > view_hi.x + BUILDING_CULL_MARGIN
-            || anchor.y > view_hi.y + BUILDING_CULL_MARGIN
+        if !game
+            .presentation
+            .camera
+            .in_view(anchor, BUILDING_CULL_MARGIN)
         {
             continue;
         }
@@ -1056,7 +1036,12 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 BONE,
             );
         }
-        if game.presentation.selection.buildings.contains(&building.id) {
+        if game
+            .presentation
+            .selection
+            .buildings()
+            .contains(&building.id)
+        {
             stroke_rect(
                 Rect::new(screen.x - 2.0, screen.y - 2.0, dest.x + 4.0, dest.y + 4.0),
                 3.0,
@@ -1159,22 +1144,14 @@ fn draw_bomber_bombs(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         let Some(release) = bomber_release(game, index) else {
             continue;
         };
-        let launch = vec2(
-            shell.launch.x.to_num::<f32>(),
-            shell.launch.y.to_num::<f32>(),
-        );
+        let launch = crate::game::world_vec(shell.launch);
         let (impact, _) = payload_contact(game, sprites, index);
         let total = payload_flight_ticks(game, index);
-        let t = (crate::audio_timeline::projectile_elapsed_ticks(now, shell.arrival, total)
-            / total)
+        let t = (crate::game::projectile_elapsed_ticks(now, shell.arrival, total) / total)
             .clamp(0.0, 1.0);
         let (position, direction) = condor_bomb_pose(launch, impact, release.heading, t);
-        if !game.presentation.all_seeing()
-            && game.state.hostile(game.presentation.human, shell.player)
-            && !game.my_vision().visible(TilePos::new(
-                numeric::to_i32(position.x.floor()),
-                numeric::to_i32(position.y.floor()),
-            ))
+        if game.state.hostile(game.presentation.human, shell.player)
+            && !game.sees_tile(numeric::tile_at(position))
         {
             continue;
         }
@@ -1342,7 +1319,7 @@ pub(crate) fn missile_travel_progress(progress: f32, total_ticks: f32, distance:
     if distance <= f32::EPSILON {
         return progress;
     }
-    let ejection_ticks = crate::audio_timeline::missile_ejection_ticks(total_ticks);
+    let ejection_ticks = crate::game::missile_ejection_ticks(total_ticks);
     let ejection_distance = 0.45_f32.min(distance * 0.12);
     let ejection_speed = ejection_distance / ejection_ticks;
     let elapsed = progress * total_ticks;
@@ -1365,7 +1342,7 @@ pub(crate) fn missile_travel_progress(progress: f32, total_ticks: f32, distance:
 }
 
 fn missile_motor_strength(progress: f32, total_ticks: f32) -> f32 {
-    let ejection_ticks = crate::audio_timeline::missile_ejection_ticks(total_ticks);
+    let ejection_ticks = crate::game::missile_ejection_ticks(total_ticks);
     let ramp_ticks = 2.0_f32.min((total_ticks - ejection_ticks) * 0.25);
     ((progress * total_ticks - ejection_ticks) / ramp_ticks).clamp(0.0, 1.0)
 }
@@ -1377,8 +1354,7 @@ fn shell_tail_start(progress: f32, world_distance: f32) -> f32 {
     (progress - 0.14 / world_distance).max(0.0)
 }
 
-const FLAK_ROUND_TRAVEL: f32 = 0.10;
-const FORGE_SPOT_TRAVEL_FRACTION: f32 = 0.60;
+use crate::game::FLAK_ROUND_TRAVEL;
 
 fn flak_round_progress(age: f32, yoke_delay: crate::game::FlakYokeDelay) -> [Option<f32>; 2] {
     let round = |delay: f32| {
@@ -1436,38 +1412,51 @@ fn flak_barrel_rounds(
     })
 }
 
-fn forge_spot_phases(progress: f32) -> (f32, f32) {
-    let progress = progress.clamp(0.0, 1.0);
-    let travel = (progress / FORGE_SPOT_TRAVEL_FRACTION).clamp(0.0, 1.0);
-    let impact = ((progress - FORGE_SPOT_TRAVEL_FRACTION) / (1.0 - FORGE_SPOT_TRAVEL_FRACTION))
-        .clamp(0.0, 1.0);
-    (travel, impact)
-}
-
-fn direct_phases(style: crate::game::ShotStyle, age: f32) -> (f32, f32) {
-    let travel_time = match style {
-        crate::game::ShotStyle::ForgeSpot => 0.12,
-        crate::game::ShotStyle::Mortar => 0.144,
-        _ => return forge_spot_phases(age / style.life()),
-    };
-    (
-        (age / travel_time).clamp(0., 1.),
-        ((age - travel_time) / (style.life() - travel_time)).clamp(0., 1.),
-    )
-}
-
-fn shot_impact_progress(style: crate::game::ShotStyle, age: f32) -> f32 {
-    use crate::game::ShotStyle;
-    match style {
-        ShotStyle::Contact | ShotStyle::Rail => (age / style.life()).clamp(0.0, 1.0),
-        ShotStyle::ForgeSpot | ShotStyle::Mortar | ShotStyle::Kinetic { .. } => {
-            direct_phases(style, age).1
-        }
-        ShotStyle::FlakBurst { yoke_delay, .. } => {
-            let arrival = yoke_delay.seconds() + FLAK_ROUND_TRAVEL;
-            ((age - arrival) / (style.life() - arrival)).clamp(0.0, 1.0)
-        }
+/// How far a round of `style` has flown at `age`, 0 to 1; a shot with no
+/// flight has already arrived.
+fn shot_travel_progress(style: crate::game::ShotStyle, age: f32) -> f32 {
+    let travel = style.travel_time();
+    if travel <= 0.0 {
+        return 1.0;
     }
+    (age / travel).clamp(0.0, 1.0)
+}
+
+/// How far the impact of a shot of `style` has played at `age`, 0 to 1.
+fn shot_impact_progress(style: crate::game::ShotStyle, age: f32) -> f32 {
+    let travel = style.travel_time();
+    ((age - travel) / (style.life() - travel)).clamp(0.0, 1.0)
+}
+
+/// The contact mark a direct shot of `style` leaves at `at`, the same
+/// size whether or not its shooter is seen. `direction` runs along the
+/// shot, and is zero when the shooter is hidden so the mark never points
+/// at it.
+fn direct_contact(
+    style: crate::game::ShotStyle,
+    surface: Option<crate::game::HitSurface>,
+    at: Vec2,
+    direction: Vec2,
+    splash: Option<f32>,
+    age: f32,
+    seed: u32,
+) -> Option<super::impacts::Contact> {
+    use crate::game::ShotStyle;
+    let family = super::impacts::Family::direct(style)?;
+    let radius = match style {
+        ShotStyle::Rail => 0.75,
+        ShotStyle::Mortar => splash.unwrap_or(0.9),
+        _ => splash.unwrap_or(0.55),
+    };
+    Some(super::impacts::Contact {
+        family,
+        recipient: super::impacts::Recipient::of(surface),
+        at,
+        direction,
+        radius,
+        age: age - style.travel_time(),
+        seed,
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1510,7 +1499,7 @@ fn shot_visibility(
 
 #[expect(clippy::too_many_lines, reason = "draws every shell and effect kind")]
 pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
-    let sees = |p: Vec2| game.my_vision().visible(numeric::tile_at(p));
+    let sees = |p: Vec2| game.sees_tile(numeric::tile_at(p));
     // Shells render from sim state, aged by sim ticks: pause holds them
     // mid-air, speed changes track, and a replay loaded mid-flight
     // restores them.
@@ -1519,10 +1508,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         if bomber_release(game, index).is_some() {
             continue;
         }
-        let launch = vec2(
-            shell.launch.x.to_num::<f32>(),
-            shell.launch.y.to_num::<f32>(),
-        );
+        let launch = crate::game::world_vec(shell.launch);
         let (to, _) = payload_contact(game, sprites, index);
         // Indirect building fire is Bastion fire. Its sim launch stays at
         // the stable footprint center; presentation advances that point to
@@ -1537,14 +1523,14 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         // Reconstruct flight length the way the launch computed it, so
         // the shell lands exactly when the sim resolves the hit.
         let total = payload_flight_ticks(game, index);
-        let elapsed = crate::audio_timeline::projectile_elapsed_ticks(now, shell.arrival, total);
+        let elapsed = crate::game::projectile_elapsed_ticks(now, shell.arrival, total);
         let flight_progress = (elapsed / total).clamp(0.0, 1.0);
         let t = if shell.kind == aftermine_sim::ProjectileKind::Missile {
             missile_travel_progress(flight_progress, total, from.distance(to))
         } else {
             flight_progress
         };
-        if !game.presentation.all_seeing() && !mine && !flat_seen(t) {
+        if !mine && !flat_seen(t) {
             continue;
         }
         let a = game.presentation.camera.to_screen(from);
@@ -1587,10 +1573,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             let back = center - direction * length * 0.5;
             let nose = center + direction * length * 0.5;
             let motor = missile_motor_strength(flight_progress, total);
-            if missile
-                && motor > 0.0
-                && (mine || game.presentation.all_seeing() || flat_seen(tail_t))
-            {
+            if missile && motor > 0.0 && (mine || flat_seen(tail_t)) {
                 let exhaust = back
                     - direction
                         * game.presentation.camera.zoom
@@ -1697,7 +1680,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         // A small shadow on the flat path makes the shell's low lift
         // legible.
         fill_circle(flat, radius * 0.7, Color::new(0.03, 0.03, 0.04, 0.35));
-        if game.presentation.all_seeing() || mine || flat_seen(tail_t) {
+        if mine || flat_seen(tail_t) {
             let before = at((t - 0.01).max(0.0));
             let after = at((t + 0.01).min(1.0));
             let travel = (after - before).normalize_or_zero();
@@ -1878,7 +1861,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     }
                     _ => strike_contact(game, sprites, surface, from, to, style),
                 }
-                .filter(|&contact| game.presentation.all_seeing() || sees(contact))
+                .filter(|&contact| sees(contact))
                 .unwrap_or(to);
                 let a = game.presentation.camera.to_screen(from);
                 let b = game.presentation.camera.to_screen(contact);
@@ -1886,11 +1869,19 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 let progress = (age / style.life()).clamp(0.0, 1.0);
                 let fade = 1.0 - progress;
                 let impact = shot_impact_progress(style, age);
-                let visibility = shot_visibility(
-                    style,
-                    game.presentation.all_seeing() || sees(from),
-                    game.presentation.all_seeing() || sees(to),
-                );
+                let visibility = shot_visibility(style, sees(from), sees(to));
+                let contact = |direction: Vec2| {
+                    direct_contact(
+                        style,
+                        surface,
+                        b,
+                        direction,
+                        splash,
+                        age,
+                        super::impacts::seed(to, completed_tick),
+                    )
+                    .map(|contact| super::impacts::draw(contact, game.presentation.camera.zoom))
+                };
                 if visibility == ShotVisibility::ImpactOnly {
                     if let Some(radius) = splash
                         && impact > 0.0
@@ -1903,24 +1894,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                             impact,
                         );
                     }
-                    if let Some(family) = super::impacts::Family::direct(style) {
-                        let arrival = match style {
-                            ShotStyle::Rail => 0.,
-                            ShotStyle::ForgeSpot => 0.12,
-                            _ => 0.144,
-                        };
-                        super::impacts::draw(
-                            super::impacts::Contact {
-                                family,
-                                recipient: super::impacts::Recipient::of(surface),
-                                at: b,
-                                direction: Vec2::ZERO,
-                                radius: splash.unwrap_or(0.55),
-                                age: age - arrival,
-                                seed: super::impacts::seed(to, completed_tick),
-                            },
-                            game.presentation.camera.zoom,
-                        );
+                    if contact(Vec2::ZERO).is_some() {
                         continue;
                     }
                     if style == ShotStyle::Contact {
@@ -1974,14 +1948,14 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                     ShotStyle::Contact => {}
                     ShotStyle::Kinetic { .. } | ShotStyle::Mortar => {
                         let heavy = !matches!(style, ShotStyle::Kinetic { heavy: false });
-                        let (travel, impact) = direct_phases(style, age);
+                        let travel = shot_travel_progress(style, age);
                         let direction = (b - a).normalize_or_zero();
                         let zoom = game.presentation.camera.zoom;
                         let round = a.lerp(b, travel);
                         let length = zoom * if heavy { 0.19 } else { 0.09 };
                         let tail = round - direction * length.min(round.distance(a));
                         let alpha = if style == ShotStyle::Mortar {
-                            (1. - (age - 0.144).max(0.) / 0.05).clamp(0., 1.)
+                            (1. - (age - style.travel_time()).max(0.) / 0.05).clamp(0., 1.)
                         } else {
                             1. - impact
                         };
@@ -1991,20 +1965,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                             (zoom * if heavy { 0.065 } else { 0.03 }).max(1.0),
                             Color::new(0.91, 0.79, 0.57, alpha),
                         );
-                        if style == ShotStyle::Mortar {
-                            super::impacts::draw(
-                                super::impacts::Contact {
-                                    family: super::impacts::Family::Mortar,
-                                    recipient: super::impacts::Recipient::of(surface),
-                                    at: b,
-                                    direction,
-                                    radius: splash.unwrap_or(0.9),
-                                    age: age - 0.144,
-                                    seed: super::impacts::seed(to, completed_tick),
-                                },
-                                zoom,
-                            );
-                        } else if impact > 0.0 {
+                        if contact(direction).is_none() && impact > 0.0 {
                             let normal = vec2(-direction.y, direction.x);
                             for side in [-1.0, 0.0, 1.0] {
                                 let spread = (-direction + normal * side * 1.4).normalize_or_zero();
@@ -2017,38 +1978,16 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                         }
                     }
                     ShotStyle::ForgeSpot => {
-                        let (travel, _) = direct_phases(style, age);
-                        let round = a.lerp(b, travel);
-                        let round_alpha = (1. - (age - 0.12).max(0.) / 0.05).clamp(0., 1.);
+                        let round = a.lerp(b, shot_travel_progress(style, age));
+                        let round_alpha =
+                            (1. - (age - style.travel_time()).max(0.) / 0.05).clamp(0., 1.);
                         fill_circle(round, 3.8, Color::new(1.0, 0.38, 0.10, 0.20 * round_alpha));
                         fill_circle(round, 2.3, Color::new(0.42, 0.19, 0.09, round_alpha));
                         fill_circle(round, 1.35, Color::new(1.0, 0.85, 0.52, round_alpha));
-                        super::impacts::draw(
-                            super::impacts::Contact {
-                                family: super::impacts::Family::Orb,
-                                recipient: super::impacts::Recipient::of(surface),
-                                at: b,
-                                direction: b - a,
-                                radius: splash.unwrap_or(0.55),
-                                age: age - 0.12,
-                                seed: super::impacts::seed(to, completed_tick),
-                            },
-                            game.presentation.camera.zoom,
-                        );
+                        contact(b - a);
                     }
                     ShotStyle::Rail => {
-                        super::impacts::draw(
-                            super::impacts::Contact {
-                                family: super::impacts::Family::Rail,
-                                recipient: super::impacts::Recipient::of(surface),
-                                at: b,
-                                direction: b - a,
-                                radius: 0.75,
-                                age,
-                                seed: super::impacts::seed(to, completed_tick),
-                            },
-                            game.presentation.camera.zoom,
-                        );
+                        contact(b - a);
                         line_between(
                             a,
                             b,
@@ -2187,7 +2126,7 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                         family: super::impacts::Family::payload(payload),
                         recipient: super::impacts::Recipient::of(surface),
                         at: game.presentation.camera.to_screen(contact),
-                        direction: if game.presentation.all_seeing() || sees(from) {
+                        direction: if sees(from) {
                             contact - from
                         } else {
                             Vec2::ZERO
@@ -2673,8 +2612,8 @@ struct EconomySupportLink {
 
 fn selected_economy_support_links(game: &crate::game::Scene<'_>) -> Vec<EconomySupportLink> {
     let Some(aftermine_sim::Target::Building(selected)) = range_subject(
-        &game.presentation.selection.units,
-        &game.presentation.selection.buildings,
+        game.presentation.selection.units(),
+        game.presentation.selection.buildings(),
     ) else {
         return Vec::new();
     };
@@ -2783,7 +2722,7 @@ pub(crate) fn draw_repair_tethers(game: &crate::game::Scene<'_>) {
         };
         stroke_patterned_path(&[from, to], stroke, 1.8 * scale, color, scale, &[]);
     }
-    for &id in &game.presentation.selection.buildings {
+    for &id in game.presentation.selection.buildings() {
         let Some(bay) = game
             .state
             .building(id)
@@ -2871,14 +2810,7 @@ fn range_occluders(game: &crate::game::Scene<'_>) -> Vec<(Vec2, Vec2)> {
     game.state
         .buildings()
         .iter()
-        .filter(|building| {
-            building.player == game.presentation.human
-                || game.presentation.all_seeing()
-                || (building.tiles().any(|tile| game.my_vision().visible(tile))
-                    && game
-                        .state
-                        .building_apparent(game.presentation.human, building))
-        })
+        .filter(|building| game.sees_building(building))
         .map(|building| {
             let (min, max) = building_screen_bounds(game, building);
             (min - margin, max + margin)
@@ -2938,8 +2870,8 @@ fn visit_active_building_ranges(
     mut visit: impl FnMut(BuildingRange),
 ) {
     if let Some(aftermine_sim::Target::Building(id)) = range_subject(
-        &game.presentation.selection.units,
-        &game.presentation.selection.buildings,
+        game.presentation.selection.units(),
+        game.presentation.selection.buildings(),
     ) && let Some(building) = game.state.building(id)
     {
         visit_building_ranges(
@@ -3029,7 +2961,7 @@ fn draw_economy_support_links(
     endpoints.dedup();
     let footprints = endpoints
         .into_iter()
-        .filter(|id| !game.presentation.selection.buildings.contains(id))
+        .filter(|id| !game.presentation.selection.buildings().contains(id))
         .filter_map(|id| game.state.building(id))
         .map(|building| (building.anchor, building.kind.size()));
     for bracket in support_brackets::junctions(footprints, game.presentation.camera.zoom, scale) {
@@ -3076,12 +3008,12 @@ fn visit_active_ranges(
         });
     });
     if let Some(aftermine_sim::Target::Unit(id)) = range_subject(
-        &game.presentation.selection.units,
-        &game.presentation.selection.buildings,
+        game.presentation.selection.units(),
+        game.presentation.selection.buildings(),
     ) && let Some(unit) = game.state.unit(id)
         && unit.player == game.presentation.human
     {
-        let center = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
+        let center = crate::game::world_vec(unit.pos);
         let stats = unit.kind.stats();
         for weapon in stats.weapons {
             let kind = weapon_range_kind(weapon);
@@ -3253,11 +3185,11 @@ pub(crate) fn draw_range_ground(game: &crate::game::Scene<'_>, input: &InputStat
 
 pub(crate) fn draw_range_rings(game: &crate::game::Scene<'_>, input: &InputState) {
     if range_subject(
-        &game.presentation.selection.units,
-        &game.presentation.selection.buildings,
+        game.presentation.selection.units(),
+        game.presentation.selection.buildings(),
     )
     .is_none()
-        && input.placing.is_none()
+        && input.placing().is_none()
     {
         return;
     }
@@ -3339,7 +3271,7 @@ pub(crate) fn draw_rally_marker(game: &crate::game::Scene<'_>, alpha: f32) {
     for (building, rally) in game
         .presentation
         .selection
-        .buildings
+        .buildings()
         .iter()
         .filter_map(|id| game.state.building(*id))
         .filter(|building| building.player == game.presentation.human)
@@ -3404,7 +3336,7 @@ fn draw_press_ring(at: Vec2, progress: f32) {
 }
 
 pub(crate) fn draw_drag_rect(game: &crate::game::Scene<'_>, input: &InputState) {
-    let Some(origin) = input.drag_origin else {
+    let Some(origin) = input.drag_origin() else {
         return;
     };
     let now = input.mouse;
@@ -3521,7 +3453,7 @@ fn draw_selection_rect(game: &crate::game::Scene<'_>, corner: Vec2, other: Vec2,
     let a = game.presentation.camera.to_world(lo);
     let b = game.presentation.camera.to_world(lo + size);
     for unit in crate::input::boxed_own_units(game, a, b) {
-        let p = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
+        let p = crate::game::world_vec(unit.pos);
         let screen = game.presentation.camera.to_screen(p);
         stroke_circle(
             screen,

@@ -17,7 +17,7 @@ use crate::screens::settings::SettingsScreen;
 use crate::screens::shelf::Shelf;
 use crate::screens::waiting::WaitingScreen;
 use crate::screens::wizard::Wizard;
-use crate::text_field::Keyboard;
+use crate::text_field::Form;
 
 /// Which screen owns input this frame, holding that screen's state.
 /// Match choices live in the [`crate::screens::wizard::NewMatchDraft`] on
@@ -131,6 +131,94 @@ impl ScreenKind {
         }
     }
 
+    /// Whether the screen veils the live match it holds, which diagnostics
+    /// then report as paused.
+    pub(super) const fn veils_match(self) -> bool {
+        match self {
+            Self::Pause | Self::Waiting => true,
+            Self::ColdOpen
+            | Self::Home
+            | Self::Settings
+            | Self::Codex
+            | Self::Lessons
+            | Self::Wizard
+            | Self::Lobby
+            | Self::Playing
+            | Self::Playback
+            | Self::Replays
+            | Self::Results
+            | Self::FinalMap
+            | Self::Busy => false,
+        }
+    }
+
+    /// Whether the system may act on a controller's presses: only on Home,
+    /// the top screen.
+    pub(super) const fn top_screen(self) -> bool {
+        match self {
+            Self::Home => true,
+            Self::ColdOpen
+            | Self::Settings
+            | Self::Codex
+            | Self::Lessons
+            | Self::Wizard
+            | Self::Lobby
+            | Self::Playing
+            | Self::Playback
+            | Self::Replays
+            | Self::Results
+            | Self::FinalMap
+            | Self::Pause
+            | Self::Waiting
+            | Self::Busy => false,
+        }
+    }
+
+    /// Whether the soundtrack plays: the report before the first Home is
+    /// silent, and the score starts at the cut.
+    pub(super) const fn scored(self) -> bool {
+        match self {
+            Self::ColdOpen => false,
+            Self::Home
+            | Self::Settings
+            | Self::Codex
+            | Self::Lessons
+            | Self::Wizard
+            | Self::Lobby
+            | Self::Playing
+            | Self::Playback
+            | Self::Replays
+            | Self::Results
+            | Self::FinalMap
+            | Self::Pause
+            | Self::Waiting
+            | Self::Busy => true,
+        }
+    }
+
+    /// Whether the menu notice line sits over the screen's action buttons
+    /// rather than at the foot of the window: on the report, whose buttons
+    /// hold the foot.
+    pub(super) const fn notice_over_actions(self) -> bool {
+        match self {
+            Self::Results => true,
+            Self::ColdOpen
+            | Self::Home
+            | Self::Settings
+            | Self::Codex
+            | Self::Lessons
+            | Self::Wizard
+            | Self::Lobby
+            | Self::Playing
+            | Self::Playback
+            | Self::Replays
+            | Self::FinalMap
+            | Self::Pause
+            | Self::Waiting
+            | Self::Busy => false,
+        }
+    }
+
     /// The performance display's context; zero turns it off.
     pub(super) const fn performance_context(self) -> u8 {
         match self {
@@ -151,6 +239,28 @@ impl ScreenKind {
             | Self::Busy => 0,
         }
     }
+}
+
+/// How the live match's effects age under a screen while the frame loop
+/// runs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EffectAging {
+    /// The screen ages them through its own clock, or they hold still.
+    Held,
+    /// With presentation time: the decided match the report draws behind it.
+    Always,
+    /// While the match's clock runs: a LAN match ticking under a menu.
+    WallClock,
+}
+
+/// How a frame script starts on the screen that admits it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ScriptStart {
+    /// Home: from its backdrop's checkpoint, so every script draws the same
+    /// frames however long Home has been open.
+    Backdrop,
+    /// The live match or the viewer, as they stand.
+    Session,
 }
 
 /// The session a screen shows: the live match, or a replay viewer's own.
@@ -196,6 +306,14 @@ impl<'a> Visible<'a> {
             Self::Replay(session) => session.clock.paused,
         }
     }
+
+    /// The scene on screen.
+    pub(super) fn view(self) -> crate::game::Scene<'a> {
+        match self {
+            Self::Live(game) => game.view(),
+            Self::Replay(session) => session.view(),
+        }
+    }
 }
 
 impl Screen {
@@ -224,7 +342,20 @@ impl Screen {
     pub(super) fn visible<'a>(&'a self, live: &'a Game) -> Visible<'a> {
         match self {
             Self::Playback { session, .. } => Visible::Replay(session),
-            _ => Visible::Live(live),
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Playing
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Pause(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => Visible::Live(live),
         }
     }
 
@@ -236,7 +367,20 @@ impl Screen {
     ) -> &'a mut Presentation {
         match self {
             Self::Playback { session, .. } => &mut session.presentation,
-            _ => &mut live.presentation,
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Playing
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Pause(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => &mut live.presentation,
         }
     }
 
@@ -247,7 +391,20 @@ impl Screen {
     ) -> &'a mut dyn aftermine_protocol::DebugSession {
         match self {
             Self::Playback { session, .. } => &mut **session,
-            _ => live,
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Playing
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Pause(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => live,
         }
     }
 
@@ -258,7 +415,306 @@ impl Screen {
             Self::Settings { back, .. } | Self::Codex { back, .. } | Self::Lessons { back, .. } => {
                 back.over_pause()
             }
-            _ => false,
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Playing
+            | Self::Playback { .. }
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => false,
+        }
+    }
+
+    /// How the live match's effects age under this screen. Playing and the
+    /// viewer advance their own clocks, and the pause menu freezes the
+    /// battlefield behind it; a `lan` match keeps ticking under every menu,
+    /// so its effects age there too.
+    pub(super) fn effect_aging(&self, lan: bool) -> EffectAging {
+        match self {
+            Self::Results(_) => EffectAging::Always,
+            Self::Playing => EffectAging::Held,
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Playback { .. }
+            | Self::Replays(_)
+            | Self::FinalMap(_)
+            | Self::Pause(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => {
+                if lan {
+                    EffectAging::WallClock
+                } else {
+                    EffectAging::Held
+                }
+            }
+        }
+    }
+
+    /// Whether a frame script may run on this screen, and how it starts.
+    /// Only the live match may play during one.
+    pub(super) fn frame_script(&self, plays: bool) -> Result<ScriptStart, &'static str> {
+        const ONLY_LIVE_PLAYS: &str = "only the live match can play during a frame script";
+        match self {
+            Self::Playing => Ok(ScriptStart::Session),
+            Self::Playback { session, .. } if session.engine.filling() => {
+                Err("the viewer is still filling in its record; retry shortly")
+            }
+            Self::Playback { .. } | Self::Home(_) if plays => Err(ONLY_LIVE_PLAYS),
+            Self::Playback { .. } => Ok(ScriptStart::Session),
+            Self::Home(_) => Ok(ScriptStart::Backdrop),
+            Self::ColdOpen(_)
+            | Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Pause(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => Err(if plays {
+                ONLY_LIVE_PLAYS
+            } else {
+                "frame scripts run on Home, the live match or the viewer"
+            }),
+        }
+    }
+
+    /// Whether the binding editor is up: it reads raw keys under the classic
+    /// map, so a botched rebind can never lock the player out.
+    pub(super) fn edits_bindings(&self) -> bool {
+        match self {
+            Self::Settings { screen, .. } => screen.edits_bindings(),
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Playing
+            | Self::Playback { .. }
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Pause(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => false,
+        }
+    }
+
+    /// Whether the Controls tab is listening for a chord to bind, which only
+    /// the keyboard can answer.
+    pub(super) fn captures_chord(&self) -> bool {
+        match self {
+            Self::Settings { screen, .. } => screen.capturing(),
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Playing
+            | Self::Playback { .. }
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Pause(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => false,
+        }
+    }
+
+    /// Whether this is a menu built for a match still running, which the
+    /// report replaces once a LAN match ends under it.
+    pub(super) fn built_for_running_match(&self) -> bool {
+        match self {
+            Self::Pause(pause) => !pause.decided() && !pause.saving_failed(),
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Playing
+            | Self::Playback { .. }
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => false,
+        }
+    }
+
+    /// What the soundtrack scores under this screen: the match on screen,
+    /// held under a menu or a paused viewer, or the menus' own music.
+    pub(super) fn soundtrack_scene(&self, live: &Game) -> crate::soundtrack::Scene {
+        use crate::soundtrack::match_scene;
+        match self {
+            Self::Playing | Self::Results(_) => match_scene(&live.view(), false),
+            Self::Playback { session, .. } => match_scene(
+                &session.view(),
+                session.clock.paused || session.seeking.is_some(),
+            ),
+            Self::FinalMap(_) | Self::Busy(_) | Self::Pause(_) | Self::Waiting(_) => {
+                match_scene(&live.view(), true)
+            }
+            Self::Settings { .. } | Self::Codex { .. } | Self::Lessons { .. }
+                if self.over_pause() =>
+            {
+                match_scene(&live.view(), true)
+            }
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Lobby { .. }
+            | Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Replays(_) => crate::soundtrack::Scene::Menu,
+        }
+    }
+
+    /// Draws a save's `status` on this screen, under the save that covers
+    /// it, where the screen has a line for one: the pause menu's own.
+    /// Returns whether it drew.
+    pub(super) fn draw_saving(&self, sprites: &crate::assets::Sprites, status: &str) -> bool {
+        match self {
+            Self::Pause(pause) => {
+                pause.draw_saving(sprites, status);
+                true
+            }
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Playing
+            | Self::Playback { .. }
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => false,
+        }
+    }
+
+    /// Whether rocket, warhead and Maw motors run in the session on screen:
+    /// a replay playing, or live play the clock runs and no lost controller
+    /// holds.
+    pub(super) fn motors_run(&self, live: &Game, held: bool) -> bool {
+        match self {
+            Self::Playback { session, .. } => !session.clock.paused && session.seeking.is_none(),
+            Self::Playing => !live.clock.paused && !held,
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Pause(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => false,
+        }
+    }
+
+    /// Whether saves the cloud mirror brings in may land now: on the screens
+    /// that list them, and under a load still waiting for the list.
+    pub(super) fn takes_mirror_arrivals(&self) -> bool {
+        match self {
+            Self::Home(_) | Self::Replays(_) => true,
+            Self::Busy(busy) => busy.awaits_catalog(),
+            Self::ColdOpen(_)
+            | Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Playing
+            | Self::Playback { .. }
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Pause(_)
+            | Self::Waiting(_) => false,
+        }
+    }
+
+    /// Hands a fresh catalog of saves to the screen that lists them.
+    pub(super) fn take_catalog(&mut self, catalog: crate::saves::Catalog) {
+        match self {
+            Self::Home(home) => {
+                // A rescan that changes nothing leaves the menu, and any
+                // press on it, alone.
+                let resumable = catalog.continuable().next().is_some();
+                if !home.catalog_ready || home.resumable() != resumable {
+                    home.set_catalog(resumable);
+                }
+            }
+            Self::Replays(shelf) => shelf.set_catalog(catalog.entries, catalog.downloading),
+            Self::ColdOpen(_)
+            | Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Playing
+            | Self::Playback { .. }
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Pause(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => {}
+        }
+    }
+
+    /// Delivers a notice to the screen that is up: the HUD's toast strip in
+    /// live play or a replay, the Settings and pause menus' own notice
+    /// lines, and the shared menu line everywhere else, including the
+    /// waiting screen, which covers the HUD. The final map has no running
+    /// clock to age a toast, so its notices wait on the menu line for the
+    /// report it returns to.
+    pub(super) fn deliver_notice(
+        &mut self,
+        live: &mut Game,
+        menu_notice: &mut Option<super::screen_flow::MenuNotice>,
+        super::Notice { text, danger }: super::Notice,
+    ) {
+        match self {
+            Self::Playing => live.presentation.toast(text),
+            Self::Playback { session, .. } => session.presentation.toast(text),
+            Self::Settings { screen, .. } => {
+                screen.notice = Some(crate::screens::settings::Notice { text, danger });
+            }
+            Self::Pause(pause) => pause.show_notice(text),
+            Self::ColdOpen(_)
+            | Self::Home(_)
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Lobby { .. }
+            | Self::Replays(_)
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Waiting(_)
+            | Self::Busy(_) => {
+                *menu_notice = Some(super::screen_flow::MenuNotice::new(text));
+            }
         }
     }
 
@@ -314,34 +770,13 @@ impl Screen {
         }
     }
 
-    /// The keyboard a text field on screen asks for: the save-name field,
-    /// the player-name field, or the Join form.
-    pub(super) fn keyboard(&self) -> Option<Keyboard> {
+    /// The text form on screen, which takes typed input and the system
+    /// keyboard while it is up.
+    pub(super) fn form(&mut self) -> Option<&mut Form> {
         match self {
-            Self::Pause(pause) => pause.keyboard(),
-            Self::Lobby { screen, .. } => screen.keyboard(),
-            Self::Settings { screen, .. } => screen.keyboard(),
-            Self::ColdOpen(_)
-            | Self::Home(_)
-            | Self::Wizard(_)
-            | Self::Codex { .. }
-            | Self::Lessons { .. }
-            | Self::Playing
-            | Self::Playback { .. }
-            | Self::Replays(_)
-            | Self::Results(_)
-            | Self::FinalMap(_)
-            | Self::Waiting(_)
-            | Self::Busy(_) => None,
-        }
-    }
-
-    /// The text the on-screen keyboard should show for the field on screen.
-    pub(super) fn keyboard_text(&self) -> Option<&str> {
-        match self {
-            Self::Pause(pause) => pause.keyboard_text(),
-            Self::Lobby { screen, .. } => screen.keyboard_text(),
-            Self::Settings { screen, .. } => screen.keyboard_text(),
+            Self::Pause(pause) => pause.form(),
+            Self::Lobby { screen, .. } => screen.form(),
+            Self::Settings { screen, .. } => screen.form(),
             Self::ColdOpen(_)
             | Self::Home(_)
             | Self::Wizard(_)
@@ -358,30 +793,8 @@ impl Screen {
     }
 
     /// Whether a text field owns input.
-    pub(super) fn text_entry(&self) -> bool {
-        self.keyboard().is_some()
-    }
-
-    /// Whether the text field on screen asked to bring back the on-screen
-    /// keyboard this frame.
-    pub(super) fn take_keyboard_request(&mut self) -> bool {
-        match self {
-            Self::Pause(pause) => pause.take_keyboard_request(),
-            Self::Lobby { screen, .. } => screen.take_keyboard_request(),
-            Self::Settings { screen, .. } => screen.take_keyboard_request(),
-            Self::ColdOpen(_)
-            | Self::Home(_)
-            | Self::Wizard(_)
-            | Self::Codex { .. }
-            | Self::Lessons { .. }
-            | Self::Playing
-            | Self::Playback { .. }
-            | Self::Replays(_)
-            | Self::Results(_)
-            | Self::FinalMap(_)
-            | Self::Waiting(_)
-            | Self::Busy(_) => false,
-        }
+    pub(super) fn text_entry(&mut self) -> bool {
+        self.form().is_some()
     }
 
     /// The diagnostics' coarse name for the screen.

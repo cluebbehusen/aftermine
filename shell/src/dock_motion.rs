@@ -44,11 +44,6 @@ pub(crate) struct Landing {
     pub(crate) progress: f32,
 }
 
-fn ramp(t: f32, a: f32, b: f32) -> f32 {
-    let u = ((t - a) / (b - a)).clamp(0.0, 1.0);
-    u * u * (3.0 - 2.0 * u)
-}
-
 impl DockMotion {
     /// Docks at rest with `docked` drones aboard.
     pub(crate) fn settled(docked: u8) -> Self {
@@ -115,9 +110,9 @@ impl DockMotion {
     pub(crate) fn spread(&self, dock: usize, now: f32) -> f32 {
         let age = self.age(dock, now);
         if self.docks[dock].occupied {
-            1.0 - ramp(age, CLOSE_DELAY, CLOSE_DELAY + CLOSE_TICKS)
+            1.0 - crate::numeric::ramp(age, CLOSE_DELAY, CLOSE_DELAY + CLOSE_TICKS)
         } else {
-            ramp(age, 0.0, OPEN_TICKS)
+            crate::numeric::ramp(age, 0.0, OPEN_TICKS)
         }
     }
 
@@ -134,7 +129,7 @@ impl DockMotion {
         let age = now - dock.since? as f32;
         (age < LAND_TICKS).then(|| Landing {
             from,
-            progress: ramp(age, 0.0, LAND_TICKS),
+            progress: crate::numeric::ramp(age, 0.0, LAND_TICKS),
         })
     }
 }
@@ -142,7 +137,7 @@ impl DockMotion {
 /// How far a drone launched `age` ticks ago has risen from its dock to
 /// where the simulation has it, from 0 to 1.
 pub(crate) fn launch_progress(age: f32) -> f32 {
-    ramp(age, 0.0, LAUNCH_TICKS)
+    crate::numeric::ramp(age, 0.0, LAUNCH_TICKS)
 }
 
 #[cfg(test)]

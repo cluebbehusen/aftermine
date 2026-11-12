@@ -94,9 +94,28 @@ pub struct ScenarioMeta {
     /// mirror — the class free-for-all layouts live in.
     #[serde(default)]
     pub symmetry: String,
-    /// Tileset/theme key for grading and previews.
-    #[serde(default)]
-    pub theme: String,
+    /// How the shell grades and dresses the ground, and tints previews.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<Theme>,
+}
+
+/// A map's look: the grade and ground props the shell draws it with. A
+/// scenario naming any other theme fails to load.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Theme {
+    /// Warm rust and oxide.
+    RustedYard,
+    /// Cold blue steel.
+    ColdCircuitry,
+    /// Pale quarry stone.
+    QuarryDust,
+    /// Dark volcanic rock.
+    Basalt,
+    /// Red furnace waste.
+    Slag,
+    /// Green weathered copper.
+    Verdigris,
 }
 
 /// How far apart a map's rival Foundries start.

@@ -1761,9 +1761,9 @@ pub struct ScenarioEntry {
     pub blurb: Option<String>,
     /// File path; `None` means the embedded skirmish.
     pub path: Option<PathBuf>,
-    /// Theme key from the authored metadata — the preview panel grades
-    /// its thumbnail with the same tint the match will wear.
-    pub theme: String,
+    /// The authored theme: the preview panel grades its thumbnail with the
+    /// same tint the match will wear.
+    pub theme: Option<aftermine_sim::scenario::Theme>,
 }
 
 /// Lists playable scenarios: everything parseable under `scenarios/`, or
@@ -1781,11 +1781,7 @@ pub fn discover_scenarios() -> Vec<ScenarioEntry> {
         for path in paths {
             if let Ok(scenario) = Scenario::load(&path) {
                 let blurb = scenario.meta.as_ref().map(browser_blurb);
-                let theme = scenario
-                    .meta
-                    .as_ref()
-                    .map(|m| m.theme.clone())
-                    .unwrap_or_default();
+                let theme = scenario.meta.as_ref().and_then(|meta| meta.theme);
                 entries.push(ScenarioEntry {
                     seats: scenario.players.len(),
                     teams: team_count(scenario.players.iter().map(|p| p.team)),
@@ -1804,7 +1800,7 @@ pub fn discover_scenarios() -> Vec<ScenarioEntry> {
             label: Scenario::skirmish().name,
             blurb: None,
             path: None,
-            theme: String::new(),
+            theme: None,
         });
     }
     // Sections: 1v1 first (a first Play+Enter must never launch a team

@@ -1,5 +1,8 @@
 use super::*;
-use aftermine_protocol::{PassCostView, PassDrawCallsView, PassTimingView, SlowFrameView};
+use aftermine_protocol::{
+    PassCostView, PassDrawCallsView, PassTimingView, SlowFrameView, UnitView,
+};
+use aftermine_sim::UnitKind;
 
 fn timing(mean_ms: f64) -> TimingSummary {
     TimingSummary {
@@ -88,7 +91,7 @@ fn report(workloads: Vec<WorkloadResult>) -> GraphicsReport {
 #[test]
 fn every_workload_has_a_unique_name_and_shares_a_shell_with_its_source() {
     let all = workloads();
-    assert_eq!(all.len(), 1 + 4 * Shot::MATCH.len() + 1);
+    assert_eq!(all.len(), 1 + 4 * Shot::MATCH.len() + 1 + 2 + 1);
     let names: std::collections::BTreeSet<_> = all.iter().map(|w| w.name.as_str()).collect();
     assert_eq!(names.len(), all.len());
     let mut seen = Vec::new();
@@ -101,7 +104,117 @@ fn every_workload_has_a_unique_name_and_shares_a_shell_with_its_source() {
     let running: Vec<_> = all.iter().filter(|w| w.running).collect();
     assert_eq!(running.len(), 1);
     assert_eq!(running[0].name, "large-fogged-running");
-    assert_eq!(running[0].source, Source::Match(Size::Large, View::Fogged));
+    assert_eq!(running[0].source, Source::Match(Scene::Large, View::Fogged));
+}
+
+#[test]
+fn match_views_hold_near_far_and_the_zooms_between() {
+    let names: Vec<String> = Shot::MATCH
+        .iter()
+        .filter(|shot| matches!(shot, Shot::Hold(_)))
+        .map(|shot| shot.name())
+        .collect();
+    assert_eq!(names, ["near", "hold-20", "hold-13.5", "far"]);
+    let between = |zoom: f64| FAR_ZOOM < zoom && zoom < NEAR_ZOOM;
+    assert!(between(BLEND_ZOOM) && between(FEATHER_ZOOM));
+    const {
+        assert!(
+            13.0 < FEATHER_ZOOM && FEATHER_ZOOM < 14.0,
+            "tiles must alternate between 13 and 14 pixels"
+        );
+    }
+    let holds = select(Some("small-fogged-hold-")).expect("matches");
+    assert_eq!(holds.len(), 2);
+}
+
+#[test]
+fn the_mass_battle_fits_in_view_with_every_unit_standing() {
+    let mass = Scene::Mass.scenario(Path::new(".")).expect("generated");
+    assert_eq!(mass.units.len(), 2 * MASS_PER_SIDE as usize);
+    assert!(
+        mass.players.iter().all(|seat| !seat.bot),
+        "no seat may order its army away"
+    );
+    let state = mass.build().expect("builds");
+    let width = f64::from(WINDOW[0]) / MASS_ZOOM;
+    let height = f64::from(WINDOW[1]) / MASS_ZOOM;
+    assert!(
+        f64::from(state.map().width()) <= width && f64::from(state.map().height()) <= height,
+        "the field must fit a {width:.0}x{height:.0}-tile view"
+    );
+    let workload = select(Some("mass-fogged-hold-12")).expect("matches");
+    assert_eq!(workload[0].name, "mass-fogged-hold-12");
+    assert_eq!(
+        script(&workload[0], [0.0, 0.0]).motion,
+        CameraMotion::Hold {
+            center: [0.0, 0.0],
+            zoom: MASS_ZOOM,
+            frames: HOLD_FRAMES,
+        }
+    );
+}
+
+#[test]
+fn a_large_selection_is_set_up_against_an_unselected_control() {
+    let mass = select(Some("mass-")).expect("matches");
+    let shape: Vec<_> = mass
+        .iter()
+        .map(|workload| (workload.name.as_str(), workload.setup))
+        .collect();
+    assert_eq!(
+        shape,
+        [
+            ("mass-fogged-hold-12", Setup::None),
+            ("mass-fogged-hold-12-selected", Setup::SelectArmy),
+        ]
+    );
+    assert_eq!(mass[0].shot, mass[1].shot);
+    assert!(!mass[0].changes_its_shell());
+    assert!(
+        mass[1].changes_its_shell(),
+        "a selection would leak into the next workload"
+    );
+    let set_up: Vec<_> = workloads()
+        .into_iter()
+        .filter(|workload| workload.setup != Setup::None)
+        .map(|workload| workload.name)
+        .collect();
+    assert_eq!(set_up, ["mass-fogged-hold-12-selected"]);
+}
+
+#[test]
+fn selecting_the_army_presses_the_chord_the_profiling_config_binds() {
+    let config: serde_json::Value =
+        serde_json::from_str(include_str!("../quiet_config.json")).expect("parses");
+    let bound: Vec<_> = config["bindings"]["bindings"]
+        .as_array()
+        .expect("bindings")
+        .iter()
+        .filter(|binding| binding["action"] == "SelectArmy")
+        .map(|binding| binding["chord"].clone())
+        .collect();
+    assert_eq!(
+        bound,
+        [serde_json::json!({"key": "a", "ctrl": true, "shift": false})]
+    );
+    let events: Vec<_> = Setup::SelectArmy
+        .requests()
+        .into_iter()
+        .map(|request| match request {
+            Request::InjectEvent { event } => event,
+            other => panic!("a chord only injects input, not {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        events,
+        [
+            RawEvent::KeyDown { key: Key::Ctrl },
+            RawEvent::KeyDown { key: Key::A },
+            RawEvent::KeyUp { key: Key::A },
+            RawEvent::KeyUp { key: Key::Ctrl },
+        ]
+    );
+    assert!(Setup::None.requests().is_empty());
 }
 
 #[test]
@@ -122,6 +235,7 @@ fn shots_become_the_camera_motions_they_name() {
             source: Source::Home,
             shot,
             running: false,
+            setup: Setup::None,
         };
         script(&workload, center).motion
     };
@@ -131,9 +245,9 @@ fn shots_become_the_camera_motions_they_name() {
             frames: HOLD_FRAMES
         }
     );
-    for (shot, zoom) in [(Shot::Near, NEAR_ZOOM), (Shot::Far, FAR_ZOOM)] {
+    for zoom in [NEAR_ZOOM, BLEND_ZOOM, FEATHER_ZOOM, FAR_ZOOM] {
         assert_eq!(
-            motion(shot),
+            motion(Shot::Hold(zoom)),
             CameraMotion::Hold {
                 center,
                 zoom,
@@ -201,6 +315,56 @@ fn the_camera_starts_on_seat_zeros_own_forces() {
         .buildings
         .retain(|building| building.player != 0);
     assert_eq!(seat_focus(&without_seat), None);
+}
+
+#[test]
+fn the_sky_view_frames_the_densest_airborne_flyers() {
+    let state = aftermine_sim::Scenario::skirmish().build().expect("builds");
+    let mut view = StateView::capture(&state, StateFilter::default());
+    let template = view.units[0].clone();
+    let unit = |kind, pos: [f64; 2], landed| UnitView {
+        kind,
+        pos,
+        landed,
+        ..template.clone()
+    };
+    assert_eq!(densest_flyers(&view, NEAR_ZOOM), None, "no flyers yet");
+
+    let width = f64::from(WINDOW[0]) / NEAR_ZOOM;
+    let height = f64::from(WINDOW[1]) / NEAR_ZOOM;
+    let apart = |[x, y]: [f64; 2], views: f64| [x + views * width, y + views * height];
+    let spread = [10.0, 10.0];
+    let pair = [100.0, 50.0];
+    let crowd = [200.0, 80.0];
+    view.units = vec![
+        // 0.6 of a view apart on both axes: each sees only itself, though a
+        // view twice as large would hold all three around the middle one.
+        unit(UnitKind::Talon, spread, false),
+        unit(UnitKind::Talon, apart(spread, 0.6), false),
+        unit(UnitKind::Talon, apart(spread, 1.2), false),
+        // 0.4 of a view apart: one view holds both, though a view half as
+        // large would split them.
+        unit(UnitKind::Condor, pair, false),
+        unit(UnitKind::Skyhook, apart(pair, 0.4), false),
+        unit(UnitKind::Sentinel, crowd, false),
+        unit(UnitKind::Sentinel, crowd, false),
+        unit(UnitKind::Sentinel, crowd, false),
+        unit(UnitKind::Kestrel, crowd, true),
+        unit(UnitKind::Kestrel, crowd, true),
+        unit(UnitKind::Kestrel, crowd, true),
+    ];
+    assert_eq!(
+        densest_flyers(&view, NEAR_ZOOM),
+        Some(pair),
+        "the pair shares one view, and its first flyer is listed before its \
+         second; ground units and landed airframes don't count"
+    );
+
+    let sky = select(Some("skyhook-")).expect("matches");
+    assert_eq!(sky.len(), 1);
+    assert_eq!(sky[0].name, "skyhook-open-near");
+    assert_eq!(sky[0].source, Source::Match(Scene::Skyhook, View::Open));
+    assert_eq!(sky[0].shot, Shot::Hold(NEAR_ZOOM));
 }
 
 #[test]

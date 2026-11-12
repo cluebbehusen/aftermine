@@ -5,7 +5,7 @@
 use crate::game::SoundKind;
 use crate::game::network::NetRole;
 use crate::menu::{Answer, Label, Menu};
-use crate::text_field::{Edit, Field, Form, Keyboard};
+use crate::text_field::{Edit, Field, Form};
 use aftermine_protocol::RawEvent;
 use macroquad::prelude::Vec2;
 
@@ -306,22 +306,6 @@ impl PauseScreen {
         }
     }
 
-    /// Consumes a request to raise the on-screen keyboard again.
-    pub fn keyboard_text(&self) -> Option<&str> {
-        match &self.face {
-            Face::Naming(form) => Some(form.keyboard_text()),
-            _ => None,
-        }
-    }
-
-    /// Consumes a request to raise the on-screen keyboard again.
-    pub fn take_keyboard_request(&mut self) -> bool {
-        match &mut self.face {
-            Face::Naming(field) => field.take_keyboard_request(),
-            Face::Rows | Face::Confirm(_) | Face::SaveFailed(_) => false,
-        }
-    }
-
     /// Draws the menu while a save this screen asked for runs: the same
     /// dialog, dimmed, saying so, so leaving never flashes another screen.
     pub fn draw_saving(&self, sprites: &crate::assets::Sprites, line: &str) {
@@ -474,10 +458,10 @@ impl PauseScreen {
         matches!(self.face, Face::SaveFailed(_))
     }
 
-    /// The keyboard the save-name field asks for while it is up.
-    pub fn keyboard(&self) -> Option<Keyboard> {
-        match &self.face {
-            Face::Naming(form) => Some(form.keyboard()),
+    /// The save-name form, while it is up.
+    pub fn form(&mut self) -> Option<&mut Form> {
+        match &mut self.face {
+            Face::Naming(form) => Some(form),
             Face::Rows | Face::Confirm(_) | Face::SaveFailed(_) => None,
         }
     }

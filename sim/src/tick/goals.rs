@@ -185,13 +185,7 @@ pub(super) fn spread_scan_reversed(state: &State, center: TilePos, ids: &[UnitId
         .expect("a spread has at least one accepted unit")
         .player;
     let foundry = state
-        .buildings
-        .iter()
-        .find(|building| {
-            building.player == player
-                && !building.provisional()
-                && building.kind == crate::stats::BuildingKind::Foundry
-        })
+        .first_foundry(player)
         .map(|building| (building.anchor, building.kind.size()));
     super::group_spread_scan_reversed(
         center,

@@ -1,6 +1,7 @@
 //! Weapon contact and recipient material at one cosmetic impact origin.
 
 use crate::game::{HitSurface, ShotStyle};
+use crate::render::prim::pixel_rect;
 use aftermine_sim::ProjectileKind;
 use macroquad::prelude::*;
 
@@ -61,17 +62,6 @@ pub(super) struct Contact {
     pub radius: f32,
     pub age: f32,
     pub seed: u32,
-}
-
-fn block(center: Vec2, size: Vec2, pixel: f32, color: Color) {
-    let origin = ((center - size * 0.5) / pixel).round() * pixel;
-    draw_rectangle(
-        origin.x,
-        origin.y,
-        (size.x / pixel).round().max(1.) * pixel,
-        (size.y / pixel).round().max(1.) * pixel,
-        color,
-    );
 }
 
 fn noise(seed: u32, i: u32) -> f32 {
@@ -144,7 +134,7 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
                 (vec2(0.06, -0.16), vec2(0.38, 0.65)),
                 (vec2(0.25, -0.06), vec2(0.32, 0.30)),
             ] {
-                block(
+                pixel_rect(
                     at + offset * size,
                     shape * size,
                     pixel,
@@ -152,7 +142,7 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
                 );
             }
         }
-        block(
+        pixel_rect(
             at,
             vec2(size * 0.45, size * 0.30),
             pixel,
@@ -161,7 +151,7 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
         if family == Family::Rocket {
             for i in 0..3 {
                 let offset = vec2(noise(seed, i) - 0.5, -noise(seed, i + 4) * 0.7);
-                block(
+                pixel_rect(
                     at + offset * size,
                     Vec2::splat(size * 0.65),
                     pixel,
@@ -198,7 +188,7 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
             } else {
                 vec2(0.045, 0.03)
             } * scale;
-            block(position, size, pixel, color);
+            pixel_rect(position, size, pixel, color);
         }
     }
 
@@ -213,7 +203,7 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
             let travel = radius * zoom * (0.08 + t * 0.62);
             let offset = vec2(angle.cos(), angle.sin() * 0.50) * travel;
             let size = scale * (0.10 + t * 0.15);
-            block(
+            pixel_rect(
                 at + offset,
                 vec2(size * 1.5, size * 0.65),
                 pixel,
@@ -228,7 +218,7 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
                 (noise(seed, i + 50) - 0.5) * scale * 0.20,
                 -scale * t * (0.35 + noise(seed, i + 53) * 0.4),
             );
-            block(
+            pixel_rect(
                 at + offset,
                 vec2(scale * 0.08, scale * 0.16),
                 pixel,
@@ -243,7 +233,7 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
                 (noise(seed, i + 61) - 0.5) * scale * 0.25,
                 -scale * (t * 0.60 + i as f32 * 0.08),
             );
-            block(
+            pixel_rect(
                 at + offset,
                 vec2(scale * (0.14 + t * 0.13), scale * 0.18),
                 pixel,

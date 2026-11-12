@@ -1,8 +1,9 @@
 //! Occupied work and firing positions share admission and yielding.
+use super::reach;
 use super::spatial::UnitIndex;
 use crate::{State, Unit, UnitId};
 use chassis::fx::{Fx, Vec2Fx};
-use chassis::grid::{CARDINALS, TilePos};
+use chassis::grid::TilePos;
 use std::collections::BTreeSet;
 
 pub(crate) fn spacing(a: &Unit, b: &Unit) -> Fx {
@@ -136,6 +137,27 @@ pub(crate) struct Position {
     pub point: Vec2Fx,
 }
 
+/// Puts `unit`'s candidate positions for meeting the footprint at `anchor`
+/// in their geometric tie order: [`crate::geometry::stance_rank`] in the
+/// frame of the unit's approach to the footprint.
+pub(in crate::tick) fn sort_stances(
+    state: &State,
+    unit: &Unit,
+    (anchor, size): (TilePos, (i32, i32)),
+    candidates: &mut [Position],
+) {
+    let from = unit.tile();
+    let frame = super::rect_approach_origin(state, unit.player, from, anchor, size);
+    candidates.sort_by_key(|candidate| {
+        crate::geometry::stance_rank(
+            unit.pos,
+            (from, frame),
+            (anchor, size),
+            (candidate.goal, candidate.point),
+        )
+    });
+}
+
 /// Callers supply legal candidates in their geometric tie order and their own route predicate.
 pub(in crate::tick) fn choose(
     state: &State,
@@ -210,6 +232,7 @@ pub(in crate::tick) fn choose_admitted(
             candidates = waiting;
         }
     }
+    let (width, height) = (state.map().width(), state.map().height());
     let mut failed = BTreeSet::new();
     let mut reachable = None;
     for (at, candidate) in candidates.into_iter().enumerate() {
@@ -220,38 +243,15 @@ pub(in crate::tick) fn choose_admitted(
             continue;
         }
         if failed.len() == 4 && reachable.is_none() {
-            let width = state.map().width();
-            let height = state.map().height();
             let labels = chassis::path::cardinal_components(width, height, &open);
-            let label = |tile: TilePos| {
-                if tile.x < 0 || tile.y < 0 || tile.x >= width || tile.y >= height {
-                    0
-                } else {
-                    labels[tile.row_major(width)]
-                }
-            };
-            let from = state.unit(id).expect("position owner").tile();
-            let mut accessible = BTreeSet::new();
-            let own = label(from);
-            if own != 0 {
-                accessible.insert(own);
-            } else {
-                for (dx, dy) in CARDINALS {
-                    let next = label(from.offset(dx, dy));
-                    if next != 0 {
-                        accessible.insert(next);
-                    }
-                }
-            }
-            reachable = Some((labels, accessible));
+            let set = reach::label_set(
+                &|tile| reach::label_at(&labels, width, height, tile),
+                unit.tile(),
+            );
+            reachable = Some((labels, set));
         }
-        if reachable.as_ref().is_some_and(|(labels, accessible)| {
-            let tile = candidate.goal;
-            tile.x < 0
-                || tile.y < 0
-                || tile.x >= state.map().width()
-                || tile.y >= state.map().height()
-                || !accessible.contains(&labels[tile.row_major(state.map().width())])
+        if reachable.as_ref().is_some_and(|(labels, set)| {
+            !reach::within(set, reach::label_at(labels, width, height, candidate.goal))
         }) {
             continue;
         }
@@ -260,11 +260,8 @@ pub(in crate::tick) fn choose_admitted(
                 waypoints.push(candidate.goal);
             }
             return Some(crate::state::PathFollow {
-                goal: candidate.goal,
                 final_point: Some(candidate.point),
-                waypoints,
-                next: 0,
-                clearing: false,
+                ..crate::state::PathFollow::to(candidate.goal, waypoints)
             });
         }
         failed.insert(candidate.goal);

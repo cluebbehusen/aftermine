@@ -8,6 +8,7 @@
 //! stale, so board and unload only buffer intent here, like damage;
 //! [`resolve`] mutates the list after the last brain has decided.
 
+use super::{Stall, stall};
 use crate::event::{Event, StallReason};
 use crate::ids::UnitId;
 use crate::state::{Order, PathFollow, Rider, State, Unit};
@@ -83,14 +84,7 @@ pub(super) fn board(
     let carrier_pos = carrier.pos;
     let reach = crate::stats::load_reach(carrier.kind.stats());
     if cargo_load(carrier) + my_size > capacity {
-        let unit = state.unit_mut(id).expect("caller checked");
-        unit.clear_program();
-        events.push(Event::OrderStalled {
-            unit: id,
-            player,
-            pos,
-            reason: StallReason::TransportFull,
-        });
+        stall(state, id, Stall::Clear, StallReason::TransportFull, events);
         return;
     }
     if pos.dist_sq(carrier_pos) <= reach * reach {
@@ -119,22 +113,9 @@ pub(super) fn board(
     let rider = state.unit(id).expect("caller checked");
     if let Some((goal, waypoints)) = boarding_route(state, rider, (carrier_pos, reach)) {
         let unit = state.unit_mut(id).expect("caller checked");
-        unit.path = Some(PathFollow {
-            final_point: None,
-            goal,
-            waypoints,
-            next: 0,
-            clearing: false,
-        });
+        unit.path = Some(PathFollow::to(goal, waypoints));
     } else {
-        let unit = state.unit_mut(id).expect("caller checked");
-        unit.drop_active_order();
-        events.push(Event::OrderStalled {
-            unit: id,
-            player,
-            pos,
-            reason: StallReason::NoRoute,
-        });
+        stall(state, id, Stall::Drop, StallReason::NoRoute, events);
     }
 }
 

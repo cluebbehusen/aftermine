@@ -241,6 +241,57 @@ fn a_restore_that_disagrees_or_stalls_leaves_the_match_waiting() {
 }
 
 #[test]
+fn a_connection_closed_mid_restore_leaves_the_match_waiting() {
+    let mut session = session();
+    session.disconnected(A, secs(0));
+    let mut call = Call::new(desk(), Visit::rejoin(COMMIT, token(A), secs(0)), secs(0));
+    call.settle(&mut session, secs(0));
+    let tick = session.tick();
+    call.desk
+        .send_snapshot(&mut session, call.visitor, tick, 77, &[1, 2, 3], secs(0));
+    call.settle(&mut session, secs(0));
+    assert!(session.is_rejoining(A), "premise: the restore is under way");
+    call.desk.disconnected(&mut session, call.visitor);
+    assert!(session.waiting() && !session.is_rejoining(A));
+    assert!(call.desk.visitors.is_empty());
+    assert_eq!(
+        call.desk.poll(&mut session, secs(0) + START_TIMEOUT),
+        [],
+        "nothing is left to time out"
+    );
+}
+
+#[test]
+fn a_second_rejoin_for_a_seat_turns_the_first_visitor_away() {
+    let mut session = session();
+    session.disconnected(A, secs(0));
+    let mut first = Call::new(desk(), Visit::rejoin(COMMIT, token(A), secs(0)), secs(0));
+    first.settle(&mut session, secs(0));
+    assert!(session.is_rejoining(A), "premise: the first rejoin began");
+    let mut second = Call::new(
+        first.desk,
+        Visit::rejoin(COMMIT, token(A), secs(0)),
+        secs(0),
+    );
+    second.settle(&mut session, secs(0));
+    assert_eq!(
+        second.events,
+        [
+            DeskEvent::Done {
+                visitor: first.visitor
+            },
+            DeskEvent::Snapshot {
+                visitor: second.visitor,
+                seat: A
+            },
+        ]
+    );
+    assert!(session.waiting() && session.is_rejoining(A));
+    let visitors: Vec<VisitorId> = second.desk.visitors.iter().map(|v| v.id).collect();
+    assert_eq!(visitors, [second.visitor]);
+}
+
+#[test]
 fn a_seat_dropped_mid_rejoin_turns_the_visitor_away() {
     let mut session = session();
     session.disconnected(A, secs(0));

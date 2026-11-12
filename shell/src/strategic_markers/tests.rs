@@ -97,7 +97,7 @@ fn enemy_mine_marker_stays_hidden_on_visible_ground() {
         .find(|b| b.kind == aftermine_sim::BuildingKind::ScuttleCharge)
         .unwrap();
     assert!(game.my_vision().visible(mine.anchor));
-    assert!(!building_visible(&game.view(), mine));
+    assert!(!game.view().sees_building(mine));
 }
 #[test]
 fn earlier_transition_reaches_full_opacity_before_the_old_transition_starts() {
@@ -113,7 +113,7 @@ fn markers_do_not_reveal_unseen_buildings_or_resources() {
     let game = crate::game::Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     for b in game.state.buildings() {
         assert_eq!(
-            building_visible(&game.view(), b),
+            game.view().sees_building(b),
             b.player == game.presentation.human
         );
     }
@@ -141,15 +141,15 @@ fn strategic_markers_obey_player_sight_and_explicit_debug_visibility() {
     let source = include_str!("../../../fixtures/scenarios/skirmish.json");
     let scenario: aftermine_sim::scenario::Scenario = serde_json::from_str(source).unwrap();
     let mut game = crate::game::Game::with_viewport(scenario.clone(), vec2(1280.0, 800.0)).unwrap();
-    assert!(visible(&game.view(), &game.state.units()[0]));
-    assert!(!visible(&game.view(), &game.state.units()[4]));
+    assert!(game.view().sees_unit(&game.state.units()[0]));
+    assert!(!game.view().sees_unit(&game.state.units()[4]));
     game.presentation.overlay = true;
-    assert!(visible(&game.view(), &game.state.units()[4]));
+    assert!(game.view().sees_unit(&game.state.units()[4]));
     let mut nearby = scenario;
     nearby.units[4].x = 10;
     nearby.units[4].y = 9;
     let game = crate::game::Game::with_viewport(nearby, vec2(1280.0, 800.0)).unwrap();
-    assert!(visible(&game.view(), &game.state.units()[4]));
+    assert!(game.view().sees_unit(&game.state.units()[4]));
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn selected_markers_draw_after_the_rest_in_unit_order() {
     }
     let mut game = crate::game::Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let ids: Vec<_> = game.state.units().iter().map(|unit| unit.id).collect();
-    game.presentation.selection.units = vec![ids[0], ids[2]];
+    game.presentation.selection.set_units(vec![ids[0], ids[2]]);
     let shown: Vec<_> = shown_units(&game.view(), 1.0)
         .into_iter()
         .map(|(unit, _, selected)| (unit.id, selected))

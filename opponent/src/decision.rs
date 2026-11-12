@@ -383,10 +383,7 @@ pub(crate) fn decide(
         (&foundries, &meals),
         &scratch,
     );
-    let airworks = observation
-        .my_buildings
-        .iter()
-        .any(|building| building.kind == BuildingKind::Airworks && building.built);
+    let airworks = crate::investments::built(observation, BuildingKind::Airworks);
     let income = persistent.income.per_minute();
     // A seat whose ground reaches no enemy delivers ground units only by
     // lift, so until an Airworks stands its army is aircraft, and line units
@@ -1221,9 +1218,7 @@ fn producers(observation: &ObservationData, frame: HomeFrame, interval: u64) -> 
         .iter()
         .zip(&observation.my_queues)
         .enumerate()
-        .filter(|(_, (building, _))| {
-            building.built && !building.kind.base_stats().produces.is_empty()
-        })
+        .filter(|(_, (building, _))| crate::investments::built_producer(building))
         .map(|(index, (building, queue))| {
             let queued: u64 = queue
                 .iter()

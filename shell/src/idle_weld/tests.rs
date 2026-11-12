@@ -38,7 +38,7 @@ fn the_autocast_reads_on_only_while_every_selected_worker_welds_idle() {
     let human = game.presentation.human;
     let own = workers(&game, human);
     assert!(own.len() >= 2, "premise: the skirmish starts with a crew");
-    game.presentation.selection.units = own.clone();
+    game.presentation.selection.set_units(own.clone());
     assert_eq!(state(&game), Some(AutocastState::On));
     assert_eq!(switch(&game), Some((own.clone(), false)));
 
@@ -65,7 +65,7 @@ fn the_autocast_reads_on_only_while_every_selected_worker_welds_idle() {
 fn a_staged_switch_shows_before_the_tick_runs() {
     let mut game = game();
     let own = workers(&game, game.presentation.human);
-    game.presentation.selection.units = vec![own[0]];
+    game.presentation.selection.set_units(vec![own[0]]);
     let command = SelectedWorkers::inspect(&game.view()).toggle().unwrap();
     game.issue(command);
     assert_eq!(state(&game), Some(AutocastState::Off));
@@ -82,9 +82,9 @@ fn only_the_viewers_own_workers_take_the_switch() {
     let human = game.presentation.human;
     let own = workers(&game, human)[0];
     let foreign = workers(&game, PlayerId(1 - human.0))[0];
-    game.presentation.selection.units = vec![own, foreign];
+    game.presentation.selection.set_units(vec![own, foreign]);
     assert_eq!(switch(&game), Some((vec![own], false)));
-    game.presentation.selection.units = vec![foreign];
+    game.presentation.selection.set_units(vec![foreign]);
     assert_eq!(state(&game), None);
     assert_eq!(switch(&game), None);
 }

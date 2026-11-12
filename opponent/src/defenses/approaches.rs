@@ -8,6 +8,7 @@ use super::{
 };
 use crate::composition;
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring, tiles_of};
+use crate::investments::built_foundries;
 use crate::map::{MapModel, UNREACHABLE};
 use crate::memory::{Memory, SeenUnit};
 use crate::workers;
@@ -57,10 +58,7 @@ impl<'a> Guard<'a> {
         stakes: Stakes,
     ) -> Option<Self> {
         let frame = HomeFrame::of(observation, map)?;
-        let foundries: Vec<TilePos> = observation
-            .my_buildings
-            .iter()
-            .filter(|building| building.kind == BuildingKind::Foundry && building.built)
+        let foundries: Vec<TilePos> = built_foundries(&observation.my_buildings)
             .map(|building| building.anchor)
             .collect();
         let covers: Vec<Cover> = observation
@@ -404,11 +402,7 @@ fn grounds(map: &MapModel, anchor: TilePos, size: (i32, i32)) -> Vec<u32> {
 /// first: its Foundries, tech and production buildings, Extractors (more
 /// beside a Foundry) and Reclaimers.
 fn buildings(observation: &ObservationData, frame: HomeFrame) -> Vec<Asset> {
-    let foundries: Vec<&BuildingObs> = observation
-        .my_buildings
-        .iter()
-        .filter(|building| building.kind == BuildingKind::Foundry && building.built)
-        .collect();
+    let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
     let mut assets: Vec<Asset> = observation
         .my_buildings
         .iter()
@@ -451,11 +445,7 @@ fn buildings(observation: &ObservationData, frame: HomeFrame) -> Vec<Asset> {
 /// defenses nearest it on that ground.
 fn bases(observation: &ObservationData, map: &MapModel, frame: HomeFrame) -> Vec<Asset> {
     let size = |building: &BuildingObs| building.kind.size();
-    let foundries: Vec<&BuildingObs> = observation
-        .my_buildings
-        .iter()
-        .filter(|building| building.kind == BuildingKind::Foundry && building.built)
-        .collect();
+    let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
     let start = map.start(observation.me);
     let founded = |anchor: TilePos| {
         Some(anchor) == start

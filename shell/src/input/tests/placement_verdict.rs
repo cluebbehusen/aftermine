@@ -28,7 +28,7 @@ fn builder_with(scrap: u32) -> (Game, InputState, UnitId) {
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let mut input = InputState::new();
     let builder = game.state.units()[0].id;
-    game.presentation.selection.units = vec![builder];
+    game.presentation.selection.set_units(vec![builder]);
     input.arm_placement(aftermine_sim::BuildingKind::Turret);
     input.build_menu = true;
     (game, input, builder)
@@ -83,7 +83,7 @@ fn an_unaffordable_spot_is_short_by_the_missing_scrap_and_refuses_the_click() {
         .to_screen(vec2(anchor.x as f32 + 0.5, anchor.y as f32 + 0.5));
     apply_events(&mut game, &mut input, &[left_down(p), left_up(p)]);
     assert!(game.pending.is_empty(), "a short click stages nothing");
-    assert!(input.placing.is_some(), "and keeps placing");
+    assert!(input.placing().is_some(), "and keeps placing");
     assert!(
         game.presentation
             .sounds_pending
@@ -160,7 +160,9 @@ fn a_visible_pocket_the_founder_cannot_reach_is_refused() {
     .expect("pocket parses");
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let mut input = InputState::new();
-    game.presentation.selection.units = vec![game.state.units()[0].id];
+    game.presentation
+        .selection
+        .set_units(vec![game.state.units()[0].id]);
     input.arm_placement(aftermine_sim::BuildingKind::Barricade);
     let pocket = TilePos::new(9, 3);
     assert!(
@@ -189,7 +191,7 @@ fn a_visible_pocket_the_founder_cannot_reach_is_refused() {
     let report = game.state.clone().tick(&[PlayerCommand {
         player: game.presentation.human,
         command: Command::Build {
-            units: game.presentation.selection.units.clone(),
+            units: game.presentation.selection.units().to_vec(),
             kind: aftermine_sim::BuildingKind::Barricade,
             anchor: pocket,
             queue: false,
@@ -247,7 +249,9 @@ fn an_own_charge_in_the_only_way_out_does_not_seal_the_founder_in() {
     )
     .expect("mined door parses");
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
-    game.presentation.selection.units = vec![game.state.units()[0].id];
+    game.presentation
+        .selection
+        .set_units(vec![game.state.units()[0].id]);
     let door = TilePos::new(6, 5);
     assert!(
         game.state.passable(door),
@@ -266,7 +270,7 @@ fn an_own_charge_in_the_only_way_out_does_not_seal_the_founder_in() {
     let report = game.state.clone().tick(&[PlayerCommand {
         player: game.presentation.human,
         command: Command::Build {
-            units: game.presentation.selection.units.clone(),
+            units: game.presentation.selection.units().to_vec(),
             kind: aftermine_sim::BuildingKind::Barricade,
             anchor: outside,
             queue: false,

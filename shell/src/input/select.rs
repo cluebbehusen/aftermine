@@ -5,7 +5,7 @@
 //! own+ally selection would refuse every command under own-gating. Fog
 //! and ownership rules for orders live in `orders`.
 
-use crate::game::Game;
+use crate::game::{Game, world_vec};
 use crate::numeric;
 use aftermine_sim::{BuildingId, PlayerId, UnitId};
 use macroquad::prelude::{Vec2, vec2};
@@ -37,16 +37,12 @@ pub(super) fn in_army(unit: &aftermine_sim::Unit) -> bool {
 /// only those inside the camera's view, the same bounds a double-click
 /// sweeps.
 pub(crate) fn army_units(game: &crate::game::Scene<'_>, in_view: bool) -> Vec<UnitId> {
-    let (lo, hi) = game.presentation.camera.world_rect();
     let mut ids: Vec<UnitId> = game
         .state
         .units()
         .iter()
         .filter(|u| u.player == game.presentation.human && in_army(u))
-        .filter(|u| {
-            let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-            !in_view || (p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y)
-        })
+        .filter(|u| !in_view || game.presentation.camera.in_view(world_vec(u.pos), 0.0))
         .map(|u| u.id)
         .collect();
     ids.sort_unstable();
@@ -65,10 +61,7 @@ pub(super) fn select_army(game: &mut Game, input: &mut super::InputState, in_vie
         return;
     }
     input.close_construction();
-    let selection = &mut game.presentation.selection;
-    selection.units = ids;
-    selection.buildings.clear();
-    selection.pile = None;
+    game.presentation.selection.set_units(ids);
 }
 
 /// Selects the next idle harvester after the current selection (id
@@ -85,7 +78,7 @@ pub(super) fn cycle_idle_worker(game: &mut Game, input: &mut super::InputState) 
             .push((crate::game::SoundKind::Denied, None));
         return;
     };
-    let next = match game.presentation.selection.units.as_slice() {
+    let next = match game.presentation.selection.units() {
         [current] => idle
             .iter()
             .copied()
@@ -93,10 +86,9 @@ pub(super) fn cycle_idle_worker(game: &mut Game, input: &mut super::InputState) 
             .unwrap_or(first),
         _ => first,
     };
-    game.presentation.selection.units = vec![next];
-    game.presentation.selection.buildings.clear();
+    game.presentation.selection.set_units(vec![next]);
     let unit = game.state.unit(next).expect("listed above");
-    let at = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
+    let at = world_vec(unit.pos);
     super::reticle::look_at(game, input, at);
 }
 
@@ -173,7 +165,7 @@ pub(super) fn pick(game: &Game, screen: Vec2, ui: f32, reach: Reach) -> Option<P
         .iter()
         .filter(|u| selectable(game, u))
         .filter_map(|u| {
-            let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
+            let p = world_vec(u.pos);
             let distance = p.distance(world);
             let radius = if salvage_here {
                 super::unit_pick_radius(u.kind)
@@ -255,16 +247,7 @@ fn sees_unit(game: &crate::game::Scene<'_>, unit: &aftermine_sim::Unit) -> bool 
 /// fog — or through stealth: an undetected buried charge must not be
 /// clickable on ground the player merely sees.
 pub(super) fn selectable_building(game: &Game, building: &aftermine_sim::Building) -> bool {
-    sees_building(&game.view(), building)
-}
-
-fn sees_building(game: &crate::game::Scene<'_>, building: &aftermine_sim::Building) -> bool {
-    building.player == game.presentation.human
-        || game.presentation.all_seeing()
-        || (building.tiles().any(|tile| game.my_vision().visible(tile))
-            && game
-                .state
-                .building_apparent(game.presentation.human, building))
+    game.view().sees_building(building)
 }
 
 impl Picked {
@@ -276,7 +259,7 @@ impl Picked {
             Self::Building(id, _) => game
                 .state
                 .building(id)
-                .is_some_and(|b| sees_building(game, b)),
+                .is_some_and(|b| game.sees_building(b)),
         }
     }
 }
@@ -291,62 +274,51 @@ pub(super) fn click_select(game: &mut Game, screen: Vec2, additive: bool, ui: f3
 /// miss clears it, or inspects known salvage under `screen`, and an
 /// additive miss leaves it alone.
 pub(super) fn select_picked(game: &mut Game, picked: Option<Picked>, screen: Vec2, additive: bool) {
-    if !additive {
-        game.presentation.selection.buildings.clear();
-    }
-    if picked.is_some() {
-        game.presentation.selection.pile = None;
-    }
     if let Some(Picked::Unit(id, owner)) = picked {
-        game.presentation.selection.buildings.clear();
         let current_owner = game
             .presentation
             .selection
-            .units
+            .units()
             .first()
             .and_then(|u| game.state.unit(*u))
             .map(|u| u.player);
         if additive && current_owner == Some(owner) {
             // Shift-click toggles membership within one allegiance.
-            let units = &mut game.presentation.selection.units;
+            let mut units = game.presentation.selection.units().to_vec();
             match units.binary_search(&id) {
                 Ok(index) => {
                     units.remove(index);
                 }
                 Err(index) => units.insert(index, id),
             }
+            game.presentation.selection.set_units(units);
         } else {
             // A different owner replaces the selection, keeping it to one
             // allegiance.
-            game.presentation.selection.units = vec![id];
+            game.presentation.selection.set_units(vec![id]);
         }
         return;
     }
     // …then a building under the cursor (any owner whose ground shows).
     if let Some(Picked::Building(id, owner)) = picked {
-        game.presentation.selection.units.clear();
         let current_owner = game
             .presentation
             .selection
-            .buildings
+            .buildings()
             .first()
             .and_then(|id| game.state.building(*id))
             .map(|selected| selected.player);
         if additive && current_owner == Some(owner) {
-            if let Some(index) = game
-                .presentation
-                .selection
-                .buildings
-                .iter()
-                .position(|selected| *selected == id)
-            {
-                game.presentation.selection.buildings.remove(index);
+            let mut buildings = game.presentation.selection.buildings().to_vec();
+            if let Some(index) = buildings.iter().position(|selected| *selected == id) {
+                buildings.remove(index);
             } else {
-                game.presentation.selection.buildings.push(id);
-                game.presentation.selection.buildings.sort_unstable();
+                buildings.push(id);
+                buildings.sort_unstable();
             }
+            game.presentation.selection.set_buildings(buildings);
         } else {
-            game.presentation.selection.buildings = vec![id];
+            game.presentation.selection.set_buildings(vec![id]);
         }
         return;
     }
@@ -354,11 +326,13 @@ pub(super) fn select_picked(game: &mut Game, picked: Option<Picked>, screen: Vec
         return; // shift-miss leaves the selection alone
     }
     // …otherwise inspect the salvage under it, or clear.
-    game.presentation.selection.units.clear();
-    game.presentation.selection.buildings.clear();
     let world = game.presentation.camera.to_world(screen);
     let tile = numeric::tile_at(world);
-    game.presentation.selection.pile = game.view().known_salvage(tile).is_some().then_some(tile);
+    game.presentation.selection = if game.view().known_salvage(tile).is_some() {
+        crate::game::Selection::Pile(tile)
+    } else {
+        crate::game::Selection::Empty
+    };
 }
 
 /// The viewer's own units a box between world corners `a` and `b` covers
@@ -370,7 +344,7 @@ pub(crate) fn boxed_own_units<'a>(
 ) -> impl Iterator<Item = &'a aftermine_sim::Unit> {
     let (lo, hi) = (a.min(b), a.max(b));
     game.state.units().iter().filter(move |unit| {
-        let p = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
+        let p = world_vec(unit.pos);
         unit.player == game.presentation.human
             && sees_unit(game, unit)
             && p.x >= lo.x
@@ -389,7 +363,7 @@ pub(super) fn box_select(game: &mut Game, a_screen: Vec2, b_screen: Vec2, additi
         .state
         .units()
         .iter()
-        .filter(|u| inside(vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>())))
+        .filter(|u| inside(world_vec(u.pos)))
         .map(|u| u.id)
         .collect();
     // Building centers are the pick points, matching units and avoiding
@@ -400,7 +374,7 @@ pub(super) fn box_select(game: &mut Game, a_screen: Vec2, b_screen: Vec2, additi
         .iter()
         .filter(|building| {
             let center = building.center();
-            inside(vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>()))
+            inside(world_vec(center))
         })
         .map(|building| building.id)
         .collect();
@@ -437,7 +411,7 @@ pub(crate) fn kept(
     let buildings: Vec<&aftermine_sim::Building> = buildings
         .iter()
         .filter_map(|id| game.state.building(*id))
-        .filter(|building| sees_building(game, building))
+        .filter(|building| game.sees_building(building))
         .collect();
     let owned_units = |owner: PlayerId| {
         let mut ids: Vec<UnitId> = units
@@ -494,7 +468,7 @@ pub(super) fn select_swept(
             if additive {
                 ids.extend(
                     selection
-                        .units
+                        .units()
                         .iter()
                         .copied()
                         .filter(|id| state.unit(*id).is_some_and(|u| u.player == owner)),
@@ -502,14 +476,13 @@ pub(super) fn select_swept(
                 ids.sort_unstable();
                 ids.dedup();
             }
-            selection.units = ids;
-            selection.buildings.clear();
+            selection.set_units(ids);
         }
         Some(Kept::Buildings(owner, mut ids)) => {
             if additive {
                 ids.extend(
                     selection
-                        .buildings
+                        .buildings()
                         .iter()
                         .copied()
                         .filter(|id| state.building(*id).is_some_and(|b| b.player == owner)),
@@ -517,15 +490,10 @@ pub(super) fn select_swept(
                 ids.sort_unstable();
                 ids.dedup();
             }
-            selection.units.clear();
-            selection.buildings = ids;
+            selection.set_buildings(ids);
         }
         None if additive => {}
-        None => {
-            selection.units.clear();
-            selection.buildings.clear();
-            selection.pile = None;
-        }
+        None => selection.clear(),
     }
 }
 
@@ -541,29 +509,26 @@ pub(super) fn select_all_of_kind_on_screen(game: &mut Game, screen: Vec2, ui: f3
 /// Selects every unit or building on screen of `picked`'s kind and owner,
 /// as a double-click on it does.
 pub(super) fn select_all_like(game: &mut Game, picked: Picked) {
-    let (lo, hi) = game.presentation.camera.world_rect();
-    let on_screen = |p: Vec2| p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y;
     match picked {
         Picked::Unit(id, owner) => {
             let Some(kind) = game.state.unit(id).map(|unit| unit.kind) else {
                 return;
             };
-            game.presentation.selection.buildings.clear();
-            game.presentation.selection.units = game
+            let units = game
                 .state
                 .units()
                 .iter()
                 .filter(|u| u.player == owner && u.kind == kind && selectable(game, u))
-                .filter(|u| on_screen(vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>())))
+                .filter(|u| game.presentation.camera.in_view(world_vec(u.pos), 0.0))
                 .map(|u| u.id)
                 .collect();
+            game.presentation.selection.set_units(units);
         }
         Picked::Building(id, owner) => {
             let Some(kind) = game.state.building(id).map(|building| building.kind) else {
                 return;
             };
-            game.presentation.selection.units.clear();
-            game.presentation.selection.buildings = game
+            let buildings = game
                 .state
                 .buildings()
                 .iter()
@@ -573,11 +538,13 @@ pub(super) fn select_all_like(game: &mut Game, picked: Picked) {
                         && selectable_building(game, building)
                 })
                 .filter(|building| {
-                    let center = building.center();
-                    on_screen(vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>()))
+                    game.presentation
+                        .camera
+                        .in_view(world_vec(building.center()), 0.0)
                 })
                 .map(|building| building.id)
                 .collect();
+            game.presentation.selection.set_buildings(buildings);
         }
     }
 }
@@ -603,7 +570,7 @@ pub(super) fn swept_by_pad(
         .iter()
         .filter(|u| selectable(game, u))
         .filter(|u| {
-            let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
+            let p = world_vec(u.pos);
             segment_distance(p, from, to) <= reach.max(super::unit_pick_radius(u.kind))
                 && uncovered(p)
         })

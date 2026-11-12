@@ -193,9 +193,9 @@ fn queue_is_offered_only_to_units_or_while_on() {
         .find(|b| b.player == game.presentation.human)
         .expect("an own Foundry")
         .id;
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     assert!(!shown(&game, &input), "buildings queue nothing");
-    game.presentation.selection.buildings.clear();
+    game.presentation.selection.clear();
     let own = game
         .state
         .units()
@@ -203,13 +203,13 @@ fn queue_is_offered_only_to_units_or_while_on() {
         .find(|u| u.player == game.presentation.human)
         .expect("an own unit")
         .id;
-    game.presentation.selection.units = vec![own];
+    game.presentation.selection.set_units(vec![own]);
     assert!(shown(&game, &input), "an own unit");
     assert!(
         !queue_toggle_shown(&game.view(), &input, false),
         "desktop has Shift"
     );
-    game.presentation.selection.units.clear();
+    game.presentation.selection.clear();
     input.queue_toggle = crate::input::QueueToggle::Locked;
     assert!(shown(&game, &input), "QUEUE on can always be turned off");
     game.presentation.stance = crate::game::Stance::Spectator;
@@ -443,15 +443,15 @@ fn the_queue_flag_shows_while_orders_queue_for_own_units() {
         .expect("an own Foundry")
         .id;
 
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     feed(&mut game, &mut input, RawEvent::KeyDown { key: Key::Shift });
     assert_eq!(
         flag(&game, &input),
         None,
         "Shift with a structure is a hotkey or an added pick, not a queue"
     );
-    game.presentation.selection.buildings.clear();
-    game.presentation.selection.units = vec![own];
+    game.presentation.selection.clear();
+    game.presentation.selection.set_units(vec![own]);
     let held = flag(&game, &input).expect("Shift queues a unit's orders");
     assert_eq!(held.span, QueueSpan::On);
     assert_eq!(
@@ -491,7 +491,7 @@ fn the_queue_flag_shows_while_orders_queue_for_own_units() {
     assert_eq!(once.span, QueueSpan::Once);
     assert_eq!(once.tab, held.tab, "the tab holds still as QUEUE locks");
     input.queue_toggle = QueueToggle::Locked;
-    game.presentation.selection.units.clear();
+    game.presentation.selection.clear();
     assert_eq!(
         flag(&game, &input).map(|f| f.span),
         Some(QueueSpan::On),

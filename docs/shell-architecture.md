@@ -56,6 +56,9 @@ answers every per-screen question with one exhaustive match each.
 the old screen's exit step and the new one's enter step. Every new match,
 however it starts, arrives through `App::install`. Screen update logic accepts
 injected viewport and input state, so navigation is tested without a GPU window.
+No test can build an `App`, so a frame function draws and applies what pure
+steps decide: where a finished save or load goes, what a pause choice does and
+how match setup's Start launches.
 
 The New Match draft records each seat's difficulty and stance. Launch writes
 distinct personality seeds into the `Scenario`; ordinary launches draw them from
@@ -574,10 +577,10 @@ shell.
 
 | Contract                      | Primary source                                                                 | Behavioral evidence                                                             |
 | ----------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`       | Screen tests, `driver/tests/menu_ux.rs`                                         |
+| App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`       | Screen-flow step tables, screen tests, `driver/tests/menu_ux.rs` (run by hand)  |
 | Live tick and recording       | `shell/src/game.rs`                                                            | Game tests, `driver/src/smoke.rs`                                               |
 | Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests, `driver/tests/pad_match.rs`, `driver/tests/pad_ring.rs` |
-| Saves                         | `shell/src/autosave.rs`, `shell/src/saves.rs`                                  | Module tests                                                                    |
+| Saves                         | `shell/src/autosave.rs`, `shell/src/saves.rs`, `shell/src/app/persistence.rs`  | Module tests, the persistence step table                                        |
 | Diagnostic persistence        | `kit/src/diagnostics.rs`, `shell/src/diagnostic_report.rs`                     | Module tests                                                                    |
 | Playback and seeking          | `kit/src/playback.rs`, `shell/src/screens/playback.rs`                         | Playback tests                                                                  |
 | Protocol capabilities and fog | `protocol/src/session.rs`, `protocol/src/view.rs`, `shell/src/debug_server.rs` | Protocol tests, `driver/tests/session_parity.rs`                                |

@@ -4,7 +4,7 @@
 //! retiring machine, recovery, refusals, and mirrored retirements.
 
 use crate::common;
-use common::{cmd, run_until, unit};
+use common::{assert_refused, cmd, rejected, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
@@ -96,16 +96,6 @@ fn retire(units: Vec<UnitId>) -> Command {
         units,
         queue: false,
     }
-}
-
-fn rejected(events: &[Event]) -> Vec<RejectReason> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            Event::CommandRejected { reason, .. } => Some(*reason),
-            _ => None,
-        })
-        .collect()
 }
 
 fn retired(events: &[Event], id: UnitId) -> Option<(u32, u32)> {
@@ -655,12 +645,7 @@ fn only_carried_scrap_rearms_recovery() {
 #[test]
 fn retire_refuses_without_a_reachable_own_crucible() {
     let refusal = |state: &mut State, units: Vec<UnitId>, reason: RejectReason| {
-        let before = state.clone();
-        let report = state.tick(&[cmd(0, retire(units))]);
-        assert_eq!(rejected(&report.events), [reason]);
-        let mut idle = before;
-        idle.tick(&[]);
-        assert_eq!(state.hash(), idle.hash(), "a refusal changes nothing");
+        assert_refused(state, cmd(0, retire(units)), reason);
     };
     let mut state = build(
         vec![

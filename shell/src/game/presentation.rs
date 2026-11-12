@@ -76,8 +76,6 @@ pub struct Presentation {
     pub(super) fx_previous: fx::PreviousEffects,
     /// Live effects.
     pub fx: Vec<Effect>,
-    /// Retains projectile identity across the impact tick.
-    pub(crate) audio_timeline: crate::audio_timeline::AudioTimeline,
     /// Clips queued by this frame's ticks; the main loop drains and plays.
     pub sounds_pending: Vec<(SoundKind, Option<Vec2>)>,
     /// Blasts this frame's ticks set off where this seat did not witness them.
@@ -259,10 +257,24 @@ impl<'a> Scene<'a> {
     pub fn selection_commandable(&self) -> bool {
         self.presentation
             .selection
-            .units
+            .units()
             .first()
             .and_then(|id| self.state.unit(*id))
             .is_none_or(|u| u.player == self.presentation.human)
+    }
+    /// Whether the selection holds one of the human's own units that
+    /// `accepts`.
+    pub(crate) fn selection_has_own(&self, accepts: impl Fn(&aftermine_sim::Unit) -> bool) -> bool {
+        self.presentation.selection.units().iter().any(|id| {
+            self.state
+                .unit(*id)
+                .is_some_and(|unit| unit.player == self.presentation.human && accepts(unit))
+        })
+    }
+    /// Whether the selection holds one of the human's own workers: the
+    /// units that build, harvest, salvage and weld.
+    pub(crate) fn selection_has_worker(&self) -> bool {
+        self.selection_has_own(|unit| unit.kind.stats().harvest.is_some())
     }
     /// The human's built Foundries, in id order: where Center on Foundry
     /// cycles.
@@ -284,12 +296,15 @@ impl<'a> Scene<'a> {
     }
     /// Whether the viewer sees `unit` now, as the renderer decides.
     pub(crate) fn sees_unit(&self, unit: &aftermine_sim::Unit) -> bool {
-        sees(
-            self.state,
-            self.presentation.human,
-            self.presentation.all_seeing(),
-            unit,
-        )
+        self.presentation.sees_unit(self.state, unit)
+    }
+    /// Whether the viewer sees `tile` now.
+    pub(crate) fn sees_tile(&self, tile: chassis::grid::TilePos) -> bool {
+        self.presentation.sees_tile(self.state, tile)
+    }
+    /// Whether the viewer sees `building` now, as the renderer decides.
+    pub(crate) fn sees_building(&self, building: &Building) -> bool {
+        self.presentation.sees_building(self.state, building)
     }
     /// What the local player knows of the salvage on `tile`.
     pub(crate) fn known_salvage(&self, tile: chassis::grid::TilePos) -> Option<Salvage> {
@@ -308,7 +323,7 @@ impl<'a> Scene<'a> {
     /// Callers drop the borrow before asking again.
     pub(crate) fn projection(&self) -> std::cell::Ref<'a, super::projection::Projection> {
         use super::projection::Projection;
-        let units = &self.presentation.selection.units;
+        let units = self.presentation.selection.units();
         let cache = &self.presentation.projection;
         if !cache
             .borrow()
@@ -316,10 +331,10 @@ impl<'a> Scene<'a> {
         {
             let pending = self.pending.len();
             let fresh = if self.pending.is_empty() {
-                Projection::capture(self.state, pending, None, units.clone())
+                Projection::capture(self.state, pending, None, units.to_vec())
             } else {
                 self.with_staged(|view| {
-                    Projection::capture(self.state, pending, Some(view), units.clone())
+                    Projection::capture(self.state, pending, Some(view), units.to_vec())
                 })
             };
             cache.replace(fresh);
@@ -398,7 +413,6 @@ impl Presentation {
             projectile_releases: projectiles::ProjectileReleases::default(),
             fx_previous: fx::PreviousEffects::default(),
             fx: Vec::new(),
-            audio_timeline: crate::audio_timeline::AudioTimeline::default(),
             sounds_pending: Vec::new(),
             fogged_blasts: Vec::new(),
             last_seen: std::cell::RefCell::new(HashMap::new()),
@@ -430,6 +444,29 @@ impl Presentation {
     /// stance but a seat in play. Chrome decides separately.
     pub fn all_seeing(&self) -> bool {
         self.overlay || self.stance != Stance::Seat
+    }
+
+    /// Whether the viewer sees `tile` now: every tile when all-seeing,
+    /// else what the seat's fog leaves visible.
+    pub(crate) fn sees_tile(&self, state: &State, tile: chassis::grid::TilePos) -> bool {
+        self.all_seeing() || state.vision(self.human).visible(tile)
+    }
+
+    /// Whether the viewer sees `unit` now, as the renderer decides.
+    pub(crate) fn sees_unit(&self, state: &State, unit: &aftermine_sim::Unit) -> bool {
+        sees(state, self.human, self.all_seeing(), unit)
+    }
+
+    /// Whether the viewer sees `building` now, as the renderer decides: its
+    /// own always, any when all-seeing, else one standing on a visible tile
+    /// that stealth does not hide.
+    pub(crate) fn sees_building(&self, state: &State, building: &Building) -> bool {
+        building.player == self.human
+            || self.all_seeing()
+            || (building
+                .tiles()
+                .any(|tile| state.vision(self.human).visible(tile))
+                && state.building_apparent(self.human, building))
     }
 
     /// Whether the picture carries a spectator's chrome instead of the
@@ -671,7 +708,6 @@ impl Presentation {
         self.animations.reset_workers(state);
         self.animations.observe_radars(state);
         self.animations.observe_braces(state);
-        self.audio_timeline.clear();
         self.track_motion.clear();
         self.maw_motion.clear();
         self.dock_motion.clear();
@@ -723,7 +759,7 @@ impl Presentation {
             let Some(bay) = unit.bay else {
                 continue;
             };
-            if !sees(state, self.human, self.all_seeing(), unit) {
+            if !self.sees_unit(state, unit) {
                 // Its bay comes back into view at rest, with no launch or
                 // landing to give away what happened out of sight.
                 self.dock_motion.insert(
@@ -751,9 +787,7 @@ impl Presentation {
             let landed: Vec<Vec2> = landed
                 .iter()
                 .filter_map(|drone| self.prev_pos.get(drone).copied())
-                .filter(|from| {
-                    self.all_seeing() || state.vision(self.human).visible(numeric::tile_at(*from))
-                })
+                .filter(|from| self.sees_tile(state, numeric::tile_at(*from)))
                 .collect();
             let docks = self
                 .dock_motion
@@ -890,7 +924,7 @@ impl Presentation {
                 || self
                     .aim_units
                     .get(&unit.id.0)
-                    .is_some_and(|(_, at)| self.fx_clock - at < 1.2));
+                    .is_some_and(|(_, at)| self.fx_clock - at < super::AIM_HOLD_SECS));
         !aiming && (propulsion != Vec2::ZERO || matches!(unit.order, aftermine_sim::Order::Idle))
     }
 
@@ -947,7 +981,6 @@ impl Presentation {
     /// airframes were parked for the death effect's fall-or-scatter
     /// choice.
     pub(crate) fn remember_previous_tick(&mut self, state: &State) {
-        self.audio_timeline.remember_arrivals(state);
         self.fx_previous = fx::PreviousEffects::capture(self, state);
         self.prev_heading = state
             .units()

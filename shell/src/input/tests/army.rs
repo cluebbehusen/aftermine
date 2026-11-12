@@ -105,11 +105,11 @@ fn ctrl_a_selects_the_army_and_ctrl_s_the_part_in_view() {
     let mut game = army_game();
     let mut input = InputState::new();
     let harvester = own(&game, &[UnitKind::Harvester]);
-    game.presentation.selection.units.clone_from(&harvester);
+    game.presentation.selection.set_units(harvester.clone());
     let center = game.presentation.camera.center;
     apply_events(&mut game, &mut input, &ctrl_chord(Key::A));
-    assert_eq!(game.presentation.selection.units, own(&game, &ARMY));
-    assert!(game.presentation.selection.buildings.is_empty());
+    assert_eq!(game.presentation.selection.units(), own(&game, &ARMY));
+    assert!(game.presentation.selection.buildings().is_empty());
     assert_eq!(
         game.presentation.camera.center, center,
         "Ctrl+A is not a held pan"
@@ -125,7 +125,7 @@ fn ctrl_a_selects_the_army_and_ctrl_s_the_part_in_view() {
         .id;
     let mut in_view = own(&game, &ARMY);
     in_view.retain(|id| *id != far);
-    assert_eq!(game.presentation.selection.units, in_view);
+    assert_eq!(game.presentation.selection.units(), in_view);
     assert!(game.pending.is_empty(), "selection issues no command");
 }
 
@@ -135,9 +135,9 @@ fn with_no_army_in_view_the_press_is_refused_and_the_selection_stays() {
     let mut input = InputState::new();
     game.presentation.camera.center = vec2(40.0, 4.0);
     let harvester = own(&game, &[UnitKind::Harvester]);
-    game.presentation.selection.units.clone_from(&harvester);
+    game.presentation.selection.set_units(harvester.clone());
     apply_events(&mut game, &mut input, &ctrl_chord(Key::S));
-    assert_eq!(game.presentation.selection.units, harvester);
+    assert_eq!(game.presentation.selection.units(), harvester);
     assert!(denied(&game));
 }
 
@@ -146,7 +146,7 @@ fn selecting_the_army_closes_the_build_palette() {
     let mut game = army_game();
     let mut input = InputState::new();
     let harvester = own(&game, &[UnitKind::Harvester]);
-    game.presentation.selection.units.clone_from(&harvester);
+    game.presentation.selection.set_units(harvester.clone());
     dispatch_action(&mut game, &mut input, Action::ToggleBuildPalette);
     assert!(input.build_menu, "premise: the palette is open");
     dispatch_action(&mut game, &mut input, Action::SelectArmy);
@@ -175,18 +175,18 @@ fn the_strip_buttons_answer_clicks_and_never_reach_the_world() {
     let strip = publish_strip(&game);
     let p = strip.all.center();
     apply_events(&mut game, &mut input, &click(p.x, p.y));
-    assert_eq!(game.presentation.selection.units, own(&game, &ARMY));
+    assert_eq!(game.presentation.selection.units(), own(&game, &ARMY));
     let p = strip.in_view.center();
     apply_events(&mut game, &mut input, &click(p.x, p.y));
     assert_eq!(
-        game.presentation.selection.units.len(),
+        game.presentation.selection.units().len(),
         ARMY.len(),
         "the far Sentinel is out of view"
     );
     // The plate's margin is chrome: a near miss selects nothing under it.
     let margin = vec2(strip.plate.x + 2.0, strip.plate.center().y);
     apply_events(&mut game, &mut input, &click(margin.x, margin.y));
-    assert_eq!(game.presentation.selection.units.len(), ARMY.len());
+    assert_eq!(game.presentation.selection.units().len(), ARMY.len());
     assert!(game.pending.is_empty());
 }
 
@@ -196,11 +196,11 @@ fn a_tap_presses_only_the_button_its_finger_landed_on() {
     let mut input = InputState::new();
     let strip = publish_strip(&game);
     tap(&mut game, &mut input, strip.in_view.center());
-    assert_eq!(game.presentation.selection.units.len(), ARMY.len());
+    assert_eq!(game.presentation.selection.units().len(), ARMY.len());
 
     // A still finger that lands on the wide button's edge and lifts across
     // the gap on the square presses neither.
-    game.presentation.selection.units.clear();
+    game.presentation.selection.clear();
     let y = strip.all.center().y;
     input.now += 1.0;
     apply_events(
@@ -214,5 +214,5 @@ fn a_tap_presses_only_the_button_its_finger_landed_on() {
         &mut input,
         &[touch_up(1, vec2(strip.in_view.x + 1.0, y))],
     );
-    assert!(game.presentation.selection.units.is_empty());
+    assert!(game.presentation.selection.units().is_empty());
 }

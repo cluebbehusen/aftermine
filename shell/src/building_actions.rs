@@ -3,7 +3,7 @@
 use crate::action::{Action, BindingMap};
 use crate::game::{Game, Scene};
 use crate::numeric::Fit;
-use crate::panel::{Card, CardAction, CardIcon, VerbIcon, tick_time_label};
+use crate::panel::{Card, CardAction, CardIcon, RallyVerb, VerbIcon, tick_time_label};
 use crate::typography::entity_name;
 use aftermine_sim::stats::Prerequisite;
 use aftermine_sim::{Building, BuildingId, BuildingKind, Command};
@@ -85,7 +85,7 @@ pub(crate) struct UpgradeBatch {
 
 impl SelectedBuildings {
     pub fn inspect(game: &Scene<'_>) -> Self {
-        Self::inspect_ids(game, &game.presentation.selection.buildings)
+        Self::inspect_ids(game, game.presentation.selection.buildings())
     }
 
     /// Whether the viewer has a completed building that answers `need`.
@@ -142,6 +142,22 @@ impl SelectedBuildings {
         self.buildings
             .first()
             .is_some_and(|first| self.buildings.iter().all(|b| b.kind == first.kind))
+    }
+
+    /// What the rally card does for these producers: set a first rally,
+    /// or reset one already set. None when nothing selected produces.
+    pub(crate) fn rally_verb(&self) -> Option<RallyVerb> {
+        let mut producers = self
+            .buildings
+            .iter()
+            .filter(|b| self.accepts && b.built() && !b.stats().produces.is_empty())
+            .peekable();
+        producers.peek()?;
+        Some(if producers.any(|b| b.rally.is_some()) {
+            RallyVerb::Reset
+        } else {
+            RallyVerb::Set
+        })
     }
 
     pub fn producers(&self) -> Vec<BuildingId> {
@@ -393,24 +409,22 @@ impl SelectedBuildings {
         if silo {
             let ready = self.ready_silos().len();
             cards.push(Card {
-                icon: CardIcon::Verb(VerbIcon::Attack),
-                title: if ready > 0 {
-                    format!("Launch ({ready} loaded)")
-                } else {
-                    "Launch".into()
-                },
-                cost: None,
                 hotkey: bindings.labels(Action::Launch),
-                action: CardAction::Dispatch(Action::Launch),
                 enabled: ready > 0,
                 why: (ready == 0).then(|| "no warhead loaded".into()),
                 desc: vec![
                     "Pick any spot, seen or not.".into(),
                     "Stop calls off a strike that has not launched.".into(),
                 ],
-                progress: None,
-                autocast: None,
-                hold: None,
+                ..Card::new(
+                    CardIcon::Verb(VerbIcon::Attack),
+                    if ready > 0 {
+                        format!("Launch ({ready} loaded)")
+                    } else {
+                        "Launch".into()
+                    },
+                    CardAction::Dispatch(Action::Launch),
+                )
             });
         }
         let order = self.round_order();
@@ -428,52 +442,46 @@ impl SelectedBuildings {
             ));
         }
         cards.push(Card {
-            icon: CardIcon::Round(first.kind),
-            title: "Order".into(),
             cost: Some(stats.round_cost),
             hotkey: bindings.labels(Action::OrderRound),
-            action: CardAction::Dispatch(Action::OrderRound),
             enabled: order.is_ok(),
             why: order.err(),
             desc,
-            progress: None,
-            autocast: None,
             hold: fill.is_some().then_some(CardAction::FillRounds),
+            ..Card::new(
+                CardIcon::Round(first.kind),
+                "Order",
+                CardAction::Dispatch(Action::OrderRound),
+            )
         });
         let cancel = self.round_cancel();
         cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Cancel),
-            title: "Cancel".into(),
-            cost: None,
             hotkey: bindings.labels(Action::CancelRound),
-            action: CardAction::Dispatch(Action::CancelRound),
             enabled: cancel.is_some(),
             why: cancel.is_none().then(|| format!("no {noun} on order")),
             desc: vec![
                 format!("Refunds the latest paid {noun} in full."),
                 "Also turns autofill off, so it is not bought again.".into(),
             ],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Verb(VerbIcon::Cancel),
+                "Cancel",
+                CardAction::Dispatch(Action::CancelRound),
+            )
         });
         let on = magazines
             .iter()
             .all(|b| b.magazine.is_some_and(|m| m.autofill));
         cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Patrol),
-            title: format!("Autofill: {}", if on { "on" } else { "off" }),
-            cost: None,
             hotkey: bindings.labels(Action::ToggleAutofill),
-            action: CardAction::Dispatch(Action::ToggleAutofill),
-            enabled: true,
-            why: None,
             desc: vec![format!(
                 "While on, orders the next {noun} whenever there is room and scrap."
             )],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Verb(VerbIcon::Patrol),
+                format!("Autofill: {}", if on { "on" } else { "off" }),
+                CardAction::Dispatch(Action::ToggleAutofill),
+            )
         });
     }
 
@@ -486,12 +494,6 @@ impl SelectedBuildings {
         let bought = fill.recipients.len();
         let noun = round_noun(first.kind);
         Some(Card {
-            icon: CardIcon::Round(first.kind),
-            title: if bought == fill.wanted {
-                format!("Fill {bought}")
-            } else {
-                format!("Fill {bought}/{}", fill.wanted)
-            },
             cost: Some(if bought > 0 {
                 fill.cost
             } else {
@@ -499,16 +501,21 @@ impl SelectedBuildings {
             }),
             // Shift+O is a different binding, so no key fills.
             hotkey: String::new(),
-            action: CardAction::Dispatch(Action::OrderRound),
             enabled: bought > 0,
             why: (bought == 0).then(|| format!("needs {} scrap", stats.round_cost)),
             desc: vec![format!(
                 "One {noun} for every empty slot, paid now; {bought} of {} affordable.",
                 fill.wanted
             )],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Round(first.kind),
+                if bought == fill.wanted {
+                    format!("Fill {bought}")
+                } else {
+                    format!("Fill {bought}/{}", fill.wanted)
+                },
+                CardAction::Dispatch(Action::OrderRound),
+            )
         })
     }
 
@@ -582,20 +589,10 @@ impl SelectedBuildings {
         let mut cards = Vec::new();
         let producers = self.producers();
         let plural = self.buildings.len() > 1;
-        if !producers.is_empty() {
-            let any_rally = self
-                .buildings
-                .iter()
-                .any(|b| producers.contains(&b.id) && b.rally.is_some());
+        if let Some(verb) = self.rally_verb() {
             let noun = if plural { "rallies" } else { "rally" };
             cards.push(Card {
-                icon: CardIcon::Verb(VerbIcon::Rally),
-                title: format!("{} {noun}", if any_rally { "Reset" } else { "Set" }),
-                cost: None,
                 hotkey: bindings.labels(Action::SetRally),
-                action: CardAction::ArmRally,
-                enabled: true,
-                why: None,
                 desc: (producers.len() > 1)
                     .then(|| format!("Set one rally point for {}.", producers.len()))
                     .into_iter()
@@ -604,22 +601,22 @@ impl SelectedBuildings {
                         "a friendly unit has every new unit escort it.".to_string(),
                     ])
                     .collect(),
-                progress: None,
-                autocast: None,
-                hold: None,
+                ..Card::new(
+                    CardIcon::Verb(VerbIcon::Rally),
+                    format!("{} {noun}", verb.label()),
+                    CardAction::ArmRally,
+                )
             });
             cards.push(Card {
-                icon: CardIcon::Verb(VerbIcon::Rally),
-                title: format!("Clear {noun}"),
-                cost: None,
                 hotkey: bindings.labels(Action::ClearRally),
-                action: CardAction::ClearRally,
-                enabled: any_rally,
-                why: (!any_rally).then(|| "no rally points set".into()),
+                enabled: verb == RallyVerb::Reset,
+                why: (verb == RallyVerb::Set).then(|| "no rally points set".into()),
                 desc: vec!["New units wait at the structure.".into()],
-                progress: None,
-                autocast: None,
-                hold: None,
+                ..Card::new(
+                    CardIcon::Verb(VerbIcon::Rally),
+                    format!("Clear {noun}"),
+                    CardAction::ClearRally,
+                )
             });
         }
         self.magazine_cards(bindings, &mut cards);
@@ -627,19 +624,15 @@ impl SelectedBuildings {
         let sites = self.sites();
         if !sites.is_empty() {
             cards.push(Card {
-                icon: CardIcon::Verb(VerbIcon::Cancel),
-                title: if sites.len() > 1 { format!("Scrap {} sites", sites.len()) } else { "Scrap site".into() },
-                cost: None,
                 // Beside a defense X clears its target, and beside a
                 // producer keys read as production, where X does nothing.
                 hotkey: if defenses.is_empty() && producers.is_empty() { bindings.labels(Action::StopOrScrap) } else { String::new() },
-                action: CardAction::ScrapSites,
-                enabled: true,
-                why: None,
                 desc: vec!["Abandon fresh construction sites; full refund before work starts, partial refund afterward.".into()],
-                progress: None,
-                autocast: None,
-                hold: None,
+                ..Card::new(
+                    CardIcon::Verb(VerbIcon::Cancel),
+                    if sites.len() > 1 { format!("Scrap {} sites", sites.len()) } else { "Scrap site".into() },
+                    CardAction::ScrapSites,
+                )
             });
         }
         // A single upgrading works retains its progress card. Group actions
@@ -649,21 +642,18 @@ impl SelectedBuildings {
             && b.tier > 0
         {
             cards.push(Card {
-                icon: CardIcon::Verb(VerbIcon::Cancel),
-                title: "Upgrading".into(),
-                cost: None,
-                hotkey: String::new(),
-                action: CardAction::None,
                 enabled: false,
                 why: Some("upgrades cannot be cancelled".into()),
-                desc: Vec::new(),
                 progress: Some(
                     (b.construction_progress().unwrap_or(0) as f32
                         / b.stats().construction.build_ticks.max(1) as f32)
                         .clamp(0.0, 1.0),
                 ),
-                autocast: None,
-                hold: None,
+                ..Card::new(
+                    CardIcon::Verb(VerbIcon::Cancel),
+                    "Upgrading",
+                    CardAction::None,
+                )
             });
         } else if let Some(batch) = self.upgrade_batch() {
             let first = self
@@ -704,26 +694,12 @@ impl SelectedBuildings {
                 }
             }
             cards.push(Card {
-                icon: CardIcon::Building(first.kind, first.tier),
-                title: if plural {
-                    format!(
-                        "Upgrade {}/{}",
-                        batch.recipients.len(),
-                        self.buildings.len()
-                    )
-                } else {
-                    format!(
-                        "Upgrade: {}",
-                        entity_name(first.kind.tier_name(first.tier + 1))
-                    )
-                },
                 cost: Some(if plural {
                     batch.cost
                 } else {
                     first.kind.upgrade_from(first.tier).unwrap().cost
                 }),
                 hotkey: bindings.labels(Action::Upgrade),
-                action: CardAction::Upgrade,
                 enabled: !batch.recipients.is_empty(),
                 why: batch
                     .recipients
@@ -731,9 +707,22 @@ impl SelectedBuildings {
                     .then_some(batch.reason)
                     .flatten(),
                 desc,
-                progress: None,
-                autocast: None,
-                hold: None,
+                ..Card::new(
+                    CardIcon::Building(first.kind, first.tier),
+                    if plural {
+                        format!(
+                            "Upgrade {}/{}",
+                            batch.recipients.len(),
+                            self.buildings.len()
+                        )
+                    } else {
+                        format!(
+                            "Upgrade: {}",
+                            entity_name(first.kind.tier_name(first.tier + 1))
+                        )
+                    },
+                    CardAction::Upgrade,
+                )
             });
         }
         cards
@@ -799,8 +788,7 @@ pub(crate) fn scrap_sites(game: &mut Game) {
     }
     game.presentation
         .selection
-        .buildings
-        .retain(|id| !sites.contains(id));
+        .retain_buildings(|id| !sites.contains(id));
 }
 
 pub(crate) fn stop_or_scrap(game: &mut Game) {

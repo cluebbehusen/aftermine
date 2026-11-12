@@ -538,237 +538,126 @@ fn a_decided_state_may_age_past_an_incident_expiry() {
         .expect("decided worlds stop refreshing vision while their clock may still advance");
 }
 
-/// Contiguous index per checklist row, in declaration order. The
-/// exhaustive match is the forcing chain: a new `StateIntegrityError`
-/// variant fails to compile here until it takes an index, and the
-/// coverage assertion below stays red until a forgery earns its
-/// message.
-fn row_index(e: &StateIntegrityError) -> usize {
-    use StateIntegrityError as E;
-    match e {
-        E::NoPlayers => 0,
-        E::TooManyPlayers => 1,
-        E::ForeignTeam(_) => 2,
-        E::InvalidRecoveryLedger(_) => 3,
-        E::UnknownVictoryTeam(_) => 4,
-        E::MalformedMapGrid => 5,
-        E::MapTooLarge { .. } => 6,
-        E::VisionTableMismatch => 7,
-        E::MalformedVisionGrid => 8,
-        E::UnsortedUnits => 9,
-        E::UnsortedBuildings => 10,
-        E::StaleUnitCounter => 11,
-        E::StaleBuildingCounter => 12,
-        E::TickBeyondEnvelope => 13,
-        E::EliminationBeyondEnvelope(_) => 14,
-        E::IdCounterBeyondEnvelope => 15,
-        E::ForeignUnitOwner(_) => 16,
-        E::UnitHpOutOfRange(_) => 17,
-        E::UnitProgressOutOfRange(_) => 18,
-        E::UnitCooldownOutOfRange(_) => 19,
-        E::OverlongUnitQueue(_) => 20,
-        E::UnitOutsideEnvelope(_) => 21,
-        E::HarvestSourceOutsideZone(_) => 22,
-        E::UnmintedOrderTarget(_) => 23,
-        E::ForeignBuildingOwner(_) => 24,
-        E::BuildingHpOutOfRange(_) => 25,
-        E::BuildingProgressOutOfRange(_) => 26,
-        E::InvalidBuildingPhase(_) => 27,
-        E::BuildingCooldownOutOfRange(_) => 28,
-        E::UnmintedBuildingFocus(_) => 29,
-        E::InvalidBuildingFocus(_) => 30,
-        E::OverlongBuildingQueue(_) => 31,
-        E::UnproducibleQueueEntry(_) => 32,
-        E::BuildingOutsideEnvelope(_) => 33,
-        E::IncoherentSalvageLedger(_) => 34,
-        E::TierBeyondLadder(_) => 35,
-        E::OverlappingBuildings(..) => 36,
-        E::CargoBeyondCapacity(_) => 52,
-        E::UncarriableCargo(_) => 53,
-        E::CargoHpOutOfRange(_) => 54,
-        E::AliasedCargoId => 57,
-        E::ForeignShellOwner(_) => 37,
-        E::ShellOutsideEnvelope(_) => 38,
-        E::UnmintedShellShooter(_) => 39,
-        E::ForeignGhostOwner(_) => 40,
-        E::FriendlyGhost(_) => 41,
-        E::GhostOutsideEnvelope(_) => 42,
-        E::UnsortedGhosts(_) => 43,
-        E::ContactOutsideEnvelope(_) => 44,
-        E::UnsortedContacts(_) => 45,
-        E::OverlongSalvageIncidentMemory(_) => 46,
-        E::SalvageIncidentOutsideEnvelope(_) => 47,
-        E::ExpiredSalvageIncident(_) => 48,
-        E::SalvageIncidentExpiryBeyondHorizon(_) => 49,
-        E::UnsortedSalvageIncidents(_) => 50,
-        E::EliminationInTheFuture(_) => 58,
-        E::CargoCooldownOutOfRange(_) => 60,
-        E::LandedOffCenter(_) => 62,
-        E::LandedWithPath(_) => 63,
-        E::LandedUnescapable(_) => 64,
-        E::LandedOnUnstandableGround(_) => 65,
-        E::LandedOverlap(..) => 66,
-        E::ShellLaunchedAfterArrival(_) => 67,
-        E::InvalidUnitBraces(_) => 68,
-        E::InvalidGroundSpeed(_) => 70,
-        E::InvalidAirMotion(_) => 71,
-        E::InvalidAircraftCrash(_) => 72,
-        E::InvalidContactTracking(_) => 73,
-        E::InvalidProvisionalSite(_) => 74,
-        E::InvalidReturnCargo(_) => 75,
-        E::ScrapBeyondCapacity(_) => 76,
-        E::InvalidStallTicks(_) => 77,
-        E::InvalidLeashClock(_) => 78,
-        E::SandboxElimination => 69,
-        E::NonCanonicalGoal(_) => 61,
-        E::InvalidUnloading(_) => 59,
-        E::UnitPartMismatch(_) => 51,
-        E::InvalidWorkEndpoint(_) => 56,
-        E::InvalidDangerRetry(_) => 55,
-        E::GhostTierBeyondLadder(_) => 79,
-        E::GhostHpOutOfRange(_) => 80,
-        E::DamageStampInTheFuture(_) => 81,
-        E::PointDefenseOutOfRange(_) => 82,
-        E::InvalidEscort(_) => 83,
-        E::InvalidRally(_) => 84,
-        E::InvalidRetirement(_) => 85,
-        E::InvalidScoutOrder(_) => 86,
-        E::InvalidRadarDeploy(_) => 87,
-        E::InvalidMagazine(_) => 88,
-        E::InvalidLauncher(_) => 89,
-        E::UnsortedWarheads => 90,
-        E::StaleWarheadCounter => 91,
-        E::ForeignWarheadOwner(_) => 92,
-        E::InvalidWarheadFlight(_) => 93,
-        E::InvalidWarheadTracking(_) => 94,
-        E::CrewBeyondCap(_) => 95,
-        E::MountsOutOfRange(_) => 96,
-        E::InvalidDroneBay(_) => 97,
-        E::StrayDrone(_) => 98,
-        E::InvalidTend(_) => 99,
-        E::GunMismatch(_) => 100,
-        E::InvalidClearingRoute(_) => 101,
-        E::InvalidMarch(_) => 102,
-    }
+/// Every `StateIntegrityError` variant with one rendered example, each
+/// aimed at seat p0 and entity 0. The table expands to an exhaustive match,
+/// so a new variant does not compile until it has a row, and to the
+/// examples that the forgeries' fragments are matched against.
+macro_rules! checklist {
+    ($($variant:ident $(($($arg:expr),+))? $({ $($field:ident: $value:expr),+ })?,)+) => {
+        fn checklist() -> Vec<StateIntegrityError> {
+            use StateIntegrityError as E;
+            let _every_variant_has_a_row = |e: E| match e {
+                $(E::$variant { .. } => {})+
+            };
+            vec![$(E::$variant $(($($arg),+))? $({ $($field: $value),+ })?),+]
+        }
+    };
 }
 
-const ROWS: usize = 103;
-
-/// One rendered message per row, with the entity ids the forgeries
-/// provoke (everything targets seat p0 and entity 0). A fixture's
-/// expected fragment must be a substring of exactly its row's message,
-/// which is what lets string-matched forgeries prove enum-level
-/// coverage.
-fn row_examples() -> Vec<StateIntegrityError> {
-    use StateIntegrityError as E;
-    vec![
-        E::NoPlayers,
-        E::TooManyPlayers,
-        E::ForeignTeam(PlayerId(0)),
-        E::InvalidRecoveryLedger(PlayerId(0)),
-        E::UnknownVictoryTeam(0),
-        E::MalformedMapGrid,
-        E::MapTooLarge {
-            width: 300,
-            height: 1,
-        },
-        E::VisionTableMismatch,
-        E::MalformedVisionGrid,
-        E::UnsortedUnits,
-        E::UnsortedBuildings,
-        E::StaleUnitCounter,
-        E::StaleBuildingCounter,
-        E::TickBeyondEnvelope,
-        E::EliminationBeyondEnvelope(PlayerId(0)),
-        E::IdCounterBeyondEnvelope,
-        E::ForeignUnitOwner(UnitId(0)),
-        E::UnitHpOutOfRange(UnitId(0)),
-        E::UnitProgressOutOfRange(UnitId(0)),
-        E::UnitCooldownOutOfRange(UnitId(0)),
-        E::OverlongUnitQueue(UnitId(0)),
-        E::UnitOutsideEnvelope(UnitId(0)),
-        E::HarvestSourceOutsideZone(UnitId(0)),
-        E::UnmintedOrderTarget(UnitId(0)),
-        E::ForeignBuildingOwner(BuildingId(0)),
-        E::BuildingHpOutOfRange(BuildingId(0)),
-        E::BuildingProgressOutOfRange(BuildingId(0)),
-        E::InvalidBuildingPhase(BuildingId(0)),
-        E::BuildingCooldownOutOfRange(BuildingId(0)),
-        E::UnmintedBuildingFocus(BuildingId(0)),
-        E::InvalidBuildingFocus(BuildingId(0)),
-        E::OverlongBuildingQueue(BuildingId(0)),
-        E::UnproducibleQueueEntry(BuildingId(0)),
-        E::BuildingOutsideEnvelope(BuildingId(0)),
-        E::IncoherentSalvageLedger(BuildingId(0)),
-        E::TierBeyondLadder(BuildingId(0)),
-        E::OverlappingBuildings(BuildingId(0), BuildingId(1)),
-        E::ForeignShellOwner(0),
-        E::ShellOutsideEnvelope(0),
-        E::UnmintedShellShooter(0),
-        E::ForeignGhostOwner(PlayerId(0)),
-        E::FriendlyGhost(PlayerId(0)),
-        E::GhostOutsideEnvelope(PlayerId(0)),
-        E::UnsortedGhosts(PlayerId(0)),
-        E::ContactOutsideEnvelope(PlayerId(0)),
-        E::UnsortedContacts(PlayerId(0)),
-        E::OverlongSalvageIncidentMemory(PlayerId(0)),
-        E::SalvageIncidentOutsideEnvelope(PlayerId(0)),
-        E::ExpiredSalvageIncident(PlayerId(0)),
-        E::SalvageIncidentExpiryBeyondHorizon(PlayerId(0)),
-        E::UnsortedSalvageIncidents(PlayerId(0)),
-        E::UnitPartMismatch(UnitId(0)),
-        E::CargoBeyondCapacity(UnitId(0)),
-        E::UncarriableCargo(UnitId(0)),
-        E::CargoHpOutOfRange(UnitId(0)),
-        E::InvalidDangerRetry(UnitId(0)),
-        E::InvalidWorkEndpoint(UnitId(0)),
-        E::AliasedCargoId,
-        E::EliminationInTheFuture(PlayerId(0)),
-        E::InvalidUnloading(UnitId(0)),
-        E::CargoCooldownOutOfRange(UnitId(0)),
-        E::NonCanonicalGoal(UnitId(0)),
-        E::LandedOffCenter(UnitId(0)),
-        E::LandedWithPath(UnitId(0)),
-        E::LandedUnescapable(UnitId(0)),
-        E::LandedOnUnstandableGround(UnitId(0)),
-        E::LandedOverlap(UnitId(0), UnitId(1)),
-        E::ShellLaunchedAfterArrival(0),
-        E::InvalidUnitBraces(UnitId(0)),
-        E::SandboxElimination,
-        E::InvalidGroundSpeed(UnitId(0)),
-        E::InvalidAirMotion(UnitId(0)),
-        E::InvalidAircraftCrash(0),
-        E::InvalidContactTracking(PlayerId(0)),
-        E::InvalidProvisionalSite(BuildingId(0)),
-        E::InvalidReturnCargo(UnitId(0)),
-        E::ScrapBeyondCapacity(UnitId(0)),
-        E::InvalidStallTicks(UnitId(0)),
-        E::InvalidLeashClock(UnitId(0)),
-        E::GhostTierBeyondLadder(PlayerId(0)),
-        E::GhostHpOutOfRange(PlayerId(0)),
-        E::DamageStampInTheFuture(UnitId(0)),
-        E::PointDefenseOutOfRange(UnitId(0)),
-        E::InvalidEscort(UnitId(0)),
-        E::InvalidRally(BuildingId(0)),
-        E::InvalidRetirement(UnitId(0)),
-        E::InvalidScoutOrder(UnitId(0)),
-        E::InvalidRadarDeploy(UnitId(0)),
-        E::InvalidMagazine(BuildingId(0)),
-        E::InvalidLauncher(BuildingId(0)),
-        E::UnsortedWarheads,
-        E::StaleWarheadCounter,
-        E::ForeignWarheadOwner(0),
-        E::InvalidWarheadFlight(0),
-        E::InvalidWarheadTracking(PlayerId(0)),
-        E::CrewBeyondCap(BuildingId(0)),
-        E::MountsOutOfRange(UnitId(0)),
-        E::InvalidDroneBay(UnitId(0)),
-        E::StrayDrone(UnitId(0)),
-        E::InvalidTend(UnitId(0)),
-        E::GunMismatch(BuildingId(0)),
-        E::InvalidClearingRoute(UnitId(0)),
-        E::InvalidMarch(UnitId(0)),
-    ]
+checklist! {
+    NoPlayers,
+    TooManyPlayers,
+    ForeignTeam(PlayerId(0)),
+    InvalidRecoveryLedger(PlayerId(0)),
+    UnknownVictoryTeam(0),
+    MalformedMapGrid,
+    MapTooLarge { width: 300, height: 1 },
+    VisionTableMismatch,
+    MalformedVisionGrid,
+    UnsortedUnits,
+    UnsortedBuildings,
+    StaleUnitCounter,
+    StaleBuildingCounter,
+    TickBeyondEnvelope,
+    EliminationBeyondEnvelope(PlayerId(0)),
+    IdCounterBeyondEnvelope,
+    ForeignUnitOwner(UnitId(0)),
+    UnitHpOutOfRange(UnitId(0)),
+    UnitProgressOutOfRange(UnitId(0)),
+    UnitCooldownOutOfRange(UnitId(0)),
+    OverlongUnitQueue(UnitId(0)),
+    UnitOutsideEnvelope(UnitId(0)),
+    HarvestSourceOutsideZone(UnitId(0)),
+    UnmintedOrderTarget(UnitId(0)),
+    ForeignBuildingOwner(BuildingId(0)),
+    BuildingHpOutOfRange(BuildingId(0)),
+    BuildingProgressOutOfRange(BuildingId(0)),
+    InvalidBuildingPhase(BuildingId(0)),
+    BuildingCooldownOutOfRange(BuildingId(0)),
+    UnmintedBuildingFocus(BuildingId(0)),
+    InvalidBuildingFocus(BuildingId(0)),
+    OverlongBuildingQueue(BuildingId(0)),
+    UnproducibleQueueEntry(BuildingId(0)),
+    BuildingOutsideEnvelope(BuildingId(0)),
+    IncoherentSalvageLedger(BuildingId(0)),
+    TierBeyondLadder(BuildingId(0)),
+    OverlappingBuildings(BuildingId(0), BuildingId(1)),
+    ForeignShellOwner(0),
+    ShellOutsideEnvelope(0),
+    UnmintedShellShooter(0),
+    ForeignGhostOwner(PlayerId(0)),
+    FriendlyGhost(PlayerId(0)),
+    GhostOutsideEnvelope(PlayerId(0)),
+    UnsortedGhosts(PlayerId(0)),
+    ContactOutsideEnvelope(PlayerId(0)),
+    UnsortedContacts(PlayerId(0)),
+    OverlongSalvageIncidentMemory(PlayerId(0)),
+    SalvageIncidentOutsideEnvelope(PlayerId(0)),
+    ExpiredSalvageIncident(PlayerId(0)),
+    SalvageIncidentExpiryBeyondHorizon(PlayerId(0)),
+    UnsortedSalvageIncidents(PlayerId(0)),
+    UnitPartMismatch(UnitId(0)),
+    CargoBeyondCapacity(UnitId(0)),
+    UncarriableCargo(UnitId(0)),
+    CargoHpOutOfRange(UnitId(0)),
+    InvalidDangerRetry(UnitId(0)),
+    InvalidWorkEndpoint(UnitId(0)),
+    AliasedCargoId,
+    EliminationInTheFuture(PlayerId(0)),
+    InvalidUnloading(UnitId(0)),
+    CargoCooldownOutOfRange(UnitId(0)),
+    NonCanonicalGoal(UnitId(0)),
+    LandedOffCenter(UnitId(0)),
+    LandedWithPath(UnitId(0)),
+    LandedUnescapable(UnitId(0)),
+    LandedOnUnstandableGround(UnitId(0)),
+    LandedOverlap(UnitId(0), UnitId(1)),
+    ShellLaunchedAfterArrival(0),
+    InvalidUnitBraces(UnitId(0)),
+    SandboxElimination,
+    InvalidGroundSpeed(UnitId(0)),
+    InvalidAirMotion(UnitId(0)),
+    InvalidAircraftCrash(0),
+    InvalidContactTracking(PlayerId(0)),
+    InvalidProvisionalSite(BuildingId(0)),
+    InvalidReturnCargo(UnitId(0)),
+    ScrapBeyondCapacity(UnitId(0)),
+    InvalidStallTicks(UnitId(0)),
+    InvalidLeashClock(UnitId(0)),
+    GhostTierBeyondLadder(PlayerId(0)),
+    GhostHpOutOfRange(PlayerId(0)),
+    DamageStampInTheFuture(UnitId(0)),
+    PointDefenseOutOfRange(UnitId(0)),
+    InvalidEscort(UnitId(0)),
+    InvalidRally(BuildingId(0)),
+    InvalidRetirement(UnitId(0)),
+    InvalidScoutOrder(UnitId(0)),
+    InvalidRadarDeploy(UnitId(0)),
+    InvalidMagazine(BuildingId(0)),
+    InvalidLauncher(BuildingId(0)),
+    UnsortedWarheads,
+    StaleWarheadCounter,
+    ForeignWarheadOwner(0),
+    InvalidWarheadFlight(0),
+    InvalidWarheadTracking(PlayerId(0)),
+    CrewBeyondCap(BuildingId(0)),
+    MountsOutOfRange(UnitId(0)),
+    InvalidDroneBay(UnitId(0)),
+    StrayDrone(UnitId(0)),
+    InvalidTend(UnitId(0)),
+    GunMismatch(BuildingId(0)),
+    InvalidClearingRoute(UnitId(0)),
+    InvalidMarch(UnitId(0)),
 }
 
 /// One forgery: what it is called, the single poke that makes it, and
@@ -2366,7 +2255,7 @@ fn every_checklist_row_refuses_its_forgery() {
                 *d = strike();
                 d["warheads"][0]["player"] = json!(9);
             },
-            "is owned by a player outside the table",
+            "warhead 0 is owned by a player outside the table",
         ),
         (
             "a warhead that lands later than its line takes",
@@ -2425,24 +2314,13 @@ fn every_checklist_row_refuses_its_forgery() {
         ),
     ];
 
-    // Enum-level coverage: the examples must map onto their own indices
-    // (a duplicated index in row_index reads as a hole here), and every
-    // row's rendered message must be earned by at least one forgery's
-    // fragment.
-    let examples = row_examples();
-    assert_eq!(examples.len(), ROWS, "one example per checklist row");
-    for (i, e) in examples.iter().enumerate() {
-        assert_eq!(
-            row_index(e),
-            i,
-            "row_index and row_examples disagree at {i}"
-        );
-    }
-    // Ids differ between fixtures (whichever entity the poke hits) and
-    // examples (always entity 0), so the match ignores digits and
-    // anchors on the words.
+    // Enum-level coverage: every fragment names exactly one row, and every
+    // row is named by at least one fragment. Ids differ between fixtures
+    // (whichever entity the poke hits) and examples (always entity 0), so
+    // the match ignores digits and anchors on the words.
+    let examples = checklist();
     let no_digits = |s: &str| s.replace(|c: char| c.is_ascii_digit(), "");
-    let mut covered = [false; ROWS];
+    let mut covered = vec![false; examples.len()];
     for (label, _, expected) in &fixtures {
         let rows: Vec<usize> = examples
             .iter()
@@ -2450,13 +2328,13 @@ fn every_checklist_row_refuses_its_forgery() {
             .filter(|(_, e)| no_digits(&e.to_string()).contains(&no_digits(expected)))
             .map(|(i, _)| i)
             .collect();
-        assert!(
-            !rows.is_empty(),
-            "{label}: fragment '{expected}' matches no checklist row's message"
-        );
-        for i in rows {
-            covered[i] = true;
-        }
+        let [row] = rows[..] else {
+            let messages: Vec<String> = rows.iter().map(|&i| examples[i].to_string()).collect();
+            panic!(
+                "{label}: fragment '{expected}' must match exactly one checklist row, not {messages:?}"
+            );
+        };
+        covered[row] = true;
     }
     if let Some(row) = covered.iter().position(|c| !c) {
         panic!(

@@ -47,7 +47,7 @@ pub(super) fn press(
         PadButton::West => order(game, input, bindings, pad),
         PadButton::East => back(game, input, bindings, pad),
         // Launch takes the bumpers over, as the strike ribbon's steppers.
-        PadButton::LeftShoulder | PadButton::RightShoulder if input.striking.is_some() => {
+        PadButton::LeftShoulder | PadButton::RightShoulder if input.striking().is_some() => {
             super::step_salvo(&game.view(), input, button == PadButton::RightShoulder);
         }
         PadButton::LeftShoulder => {
@@ -73,7 +73,7 @@ pub(super) fn press(
 pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button: PadButton) {
     match button {
         PadButton::South => {
-            let placing = input.placing.is_some();
+            let placing = input.placing().is_some();
             if super::finish_stroke(game, input, Presser::Pad(pad)) {
                 placed(input, placing);
                 return;
@@ -94,7 +94,7 @@ pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button:
 /// into the build ring. Out of pad mode the palette is drawn, so it stays.
 fn placed(input: &mut InputState, placing: bool) {
     if placing
-        && input.placing.is_none()
+        && input.placing().is_none()
         && super::hud_in_pad_mode(crate::platform::PLATFORM, input.pad_in_use.is_some())
     {
         input.close_construction();
@@ -169,7 +169,7 @@ fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u6
         return;
     }
     if input.armed_mode().is_some() {
-        let placing = input.placing.is_some();
+        let placing = input.placing().is_some();
         super::armed_click(game, input, bindings, point, Presser::Pad(pad));
         super::finish_stroke(game, input, Presser::Pad(pad));
         placed(input, placing);
@@ -191,10 +191,10 @@ fn back(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u64
     if paint::abandon(input) {
         return;
     }
-    let placing = input.placing.is_some();
+    let placing = input.placing().is_some();
     let staged = input.placement_staged();
     super::dispatch_action(game, input, bindings, Action::Back);
-    if placing && input.placing.is_none() {
+    if placing && input.placing().is_none() {
         if staged {
             placed(input, placing);
         } else {
@@ -271,8 +271,8 @@ fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
     let selection = &game.presentation.selection;
     // Units RT narrowed to that all died leave nothing selected; the walk
     // goes on over their group.
-    let on_units = !selection.units.is_empty()
-        || (selection.buildings.is_empty() && matches!(last, Some(Narrowed::Units { .. })));
+    let on_units = !selection.units().is_empty()
+        || (selection.buildings().is_empty() && matches!(last, Some(Narrowed::Units { .. })));
     if on_units {
         let alive = |ids: &[UnitId]| -> Vec<UnitId> {
             ids.iter()
@@ -285,7 +285,7 @@ fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
             _ => None,
         };
         let kind_of = |id| state.unit(id).map(|unit| unit.kind);
-        match cycle(alive(&selection.units), last, kind_of, |ids, left| {
+        match cycle(alive(selection.units()), last, kind_of, |ids, left| {
             crate::panel::kind_counts(ids.iter().filter_map(|id| kind_of(*id)).chain(left))
                 .into_iter()
                 .map(|(kind, _)| kind)
@@ -295,10 +295,10 @@ fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
                 super::dispatch_action(game, input, bindings, Action::SelectAllOfKind);
             }
             Cycle::Narrow { group, kind, ids } => {
-                game.presentation.selection.units = ids;
+                game.presentation.selection.set_units(ids);
                 input.narrowed = Some(Narrowed::Units { group, kind });
             }
-            Cycle::Whole(group) => game.presentation.selection.units = group,
+            Cycle::Whole(group) => game.presentation.selection.set_units(group),
         }
     } else {
         let alive = |ids: &[BuildingId]| -> Vec<BuildingId> {
@@ -312,17 +312,17 @@ fn by_kind(game: &mut Game, input: &mut InputState, bindings: &BindingMap) {
             _ => None,
         };
         let kind_of = |id| state.building(id).map(|b| b.kind);
-        match cycle(alive(&selection.buildings), last, kind_of, |ids, left| {
+        match cycle(alive(selection.buildings()), last, kind_of, |ids, left| {
             crate::panel::building_kinds(ids.iter().filter_map(|id| kind_of(*id)).chain(left))
         }) {
             Cycle::OneKind => {
                 super::dispatch_action(game, input, bindings, Action::SelectAllOfKind);
             }
             Cycle::Narrow { group, kind, ids } => {
-                game.presentation.selection.buildings = ids;
+                game.presentation.selection.set_buildings(ids);
                 input.narrowed = Some(Narrowed::Buildings { group, kind });
             }
-            Cycle::Whole(group) => game.presentation.selection.buildings = group,
+            Cycle::Whole(group) => game.presentation.selection.set_buildings(group),
         }
     }
 }

@@ -8,10 +8,7 @@ use crate::map::Map;
 use crate::state::Unit;
 
 fn clear_segment(map: &Map, from: Vec2Fx, to: Vec2Fx) -> bool {
-    let open = |tile| {
-        map.tile(tile)
-            .is_some_and(|cell| !cell.terrain.blocks_air())
-    };
+    let open = |tile| map.sky_open(tile);
     map.clamp_to_envelope(to) == to
         && open(TilePos::containing(to))
         && !chassis::path::line_blocked(from, to, open)

@@ -152,7 +152,9 @@ fn u_drops_every_loaded_sling_in_a_mixed_selection_where_it_hovers() {
         ..
     } = fleet();
     let mut input = InputState::new();
-    game.presentation.selection.units = vec![roc, loaded, empty, lancer];
+    game.presentation
+        .selection
+        .set_units(vec![roc, loaded, empty, lancer]);
     let card = unload_card(&game);
     assert!(card.enabled);
     assert_eq!(card.hotkey, "U");
@@ -188,7 +190,7 @@ fn shift_u_queues_each_drop_where_its_route_ends() {
         target: lancer,
         queue: true,
     });
-    game.presentation.selection.units = vec![roc, loaded];
+    game.presentation.selection.set_units(vec![roc, loaded]);
     press(
         &mut game,
         &mut input,
@@ -221,7 +223,7 @@ fn shift_u_drops_a_patrolling_sling_now_instead_of_joining_its_circuit() {
         units: vec![roc],
         waypoints: vec![TilePos::new(9, 3), TilePos::new(5, 3)],
     });
-    game.presentation.selection.units = vec![roc, loaded];
+    game.presentation.selection.set_units(vec![roc, loaded]);
     press(
         &mut game,
         &mut input,
@@ -258,7 +260,7 @@ fn empty_slings_offer_a_refused_card_and_order_nothing() {
     let Fleet {
         mut game, empty, ..
     } = fleet();
-    game.presentation.selection.units = vec![empty];
+    game.presentation.selection.set_units(vec![empty]);
     let card = unload_card(&game);
     assert!(!card.enabled);
     assert_eq!(card.why.as_deref(), Some("nothing is aboard"));
@@ -277,7 +279,7 @@ fn a_worker_in_the_selection_keeps_the_card_but_not_its_key() {
         ..
     } = fleet();
     let mut input = InputState::new();
-    game.presentation.selection.units = vec![roc, harvester];
+    game.presentation.selection.set_units(vec![roc, harvester]);
     let card = unload_card(&game);
     assert!(card.enabled);
     assert_eq!(card.hotkey, "", "U returns cargo for a worker selection");
@@ -295,7 +297,7 @@ fn only_the_viewers_own_transports_unload() {
         .find(|u| u.player != game.presentation.human)
         .expect("the fleet fields a foreign Skyhook")
         .id;
-    game.presentation.selection.units = vec![roc, foreign];
+    game.presentation.selection.set_units(vec![roc, foreign]);
     assert_eq!(
         SelectedTransports::inspect(&game.view()).unload(&game.view(), false),
         [unload(roc, here(&game, roc), false)]

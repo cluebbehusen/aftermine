@@ -1483,3 +1483,99 @@ fn a_base_with_nothing_left_to_mine_keeps_a_builder() {
         "{commands:?}"
     );
 }
+
+/// A settlement whose builder has landed beside the island Foundry site, with
+/// its four Sentinels standing idle off the landing, and an East Sentinel
+/// known beside the site when `threat` holds: the decision's commands, the
+/// escorts, and whether the settlement still runs.
+fn landed(threat: bool) -> (Vec<PlayerCommand>, Vec<UnitId>, bool) {
+    let mut scenario = island();
+    scenario.units.push(harvester(0, 34, 25));
+    scenario
+        .units
+        .extend((30..34).map(|x| unit(0, UnitKind::Sentinel, x, 26)));
+    if threat {
+        scenario.units.push(unit(1, UnitKind::Sentinel, 43, 30));
+    }
+    let state = scenario.build().unwrap();
+    let escorts: Vec<UnitId> = (30..34).map(|x| at(&state, x, 26)).collect();
+    let mut bot = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"]["next"] = 1.into();
+        json["missions"]["list"] = serde_json::json!([{
+            "id": 0,
+            "since": 0,
+            "units": escorts,
+            "goal": {"x": 34, "y": 25},
+            "task": {
+                "task": "settle",
+                "target": {"foundry": {"site": 0, "anchor": {"x": 37, "y": 28}}},
+                "phase": "found",
+            },
+        }]);
+        json["memory"]["units"] = remembered(
+            state
+                .units()
+                .iter()
+                .filter(|u| u.player == PlayerId(1))
+                .map(|u| (u.id.0, u.kind, u.tile(), 0)),
+        );
+    });
+    let commands = bot.act(&state, &mut OwnEvents::default());
+    let settling = bot
+        .missions()
+        .iter()
+        .any(|m| matches!(m.kind, MissionKind::Settle { .. }));
+    (commands, escorts, settling)
+}
+
+#[test]
+fn an_escort_holds_the_landing_while_a_known_enemy_stands_near() {
+    let (commands, escorts, settling) = landed(true);
+    assert!(settling, "the settlement holds its escort");
+    assert!(
+        hunts(&commands).contains(&(escorts, TilePos::new(34, 25))),
+        "the idle escort goes back to the landing: {commands:?}"
+    );
+    let (_, _, settling) = landed(false);
+    assert!(
+        !settling,
+        "premise: with no enemy near, the escort is let go"
+    );
+}
+
+#[test]
+fn a_missing_airworks_then_a_missing_carrier_is_the_islands_next_purchase() {
+    for (airworks, next) in [
+        (false, Step::Build(BuildingKind::Airworks)),
+        (true, Step::Train(UnitKind::Skyhook)),
+    ] {
+        let mut scenario = island();
+        scenario.units.retain(|u| u.kind != UnitKind::Skyhook);
+        if !airworks {
+            scenario
+                .buildings
+                .retain(|b| b.kind != BuildingKind::Airworks);
+        }
+        let state = scenario.build().unwrap();
+        let config = BotConfig::new(BotDifficulty::Standard, BotStance::Balanced, 0);
+        let (commands, trace) =
+            seat_with(&scenario, 0, config).act_traced(&state, &mut OwnEvents::default());
+        let target = trace.unwrap().target.unwrap();
+        assert!(
+            matches!(
+                target.investment,
+                Investment::Expansion(_) | Investment::Extractor(_)
+            ),
+            "premise: the seat saves for a building on the island: {target:?}"
+        );
+        assert_eq!(target.next.map(|n| n.step), Some(next), "{target:?}");
+        let bought = match next {
+            Step::Build(kind) => builds(&commands).iter().any(|(built, _)| *built == kind),
+            Step::Train(kind) => trains(&commands)
+                .iter()
+                .any(|(_, trained)| *trained == kind),
+            _ => unreachable!(),
+        };
+        assert!(bought, "{next:?} is bought now: {commands:?}");
+    }
+}

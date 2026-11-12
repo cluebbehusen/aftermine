@@ -9,17 +9,6 @@ const PERIOD: f32 = 60.0;
 /// How long a failed background save waits before trying again.
 pub(super) const RETRY: Duration = Duration::from_secs(10);
 
-/// Why a background save is owed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Reason {
-    /// The match is decided and its record is not written yet.
-    Decided,
-    /// The window went inactive, after which the platform may end the app.
-    Inactive,
-    /// A minute of live play passed since the last save began.
-    Periodic,
-}
-
 /// What one presented frame tells the schedule.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Frame {
@@ -56,23 +45,13 @@ impl Schedule {
         }
     }
 
-    /// The save owed at `now`. `decided` means a decided match still lacks
-    /// its record; `resumable` means an undecided match this machine can
-    /// resume has unsaved content.
-    pub(super) fn due(&self, decided: bool, resumable: bool, now: Duration) -> Option<Reason> {
-        if self.retry_at.is_some_and(|at| now < at) {
-            None
-        } else if decided {
-            Some(Reason::Decided)
-        } else if !resumable {
-            None
-        } else if self.inactive {
-            Some(Reason::Inactive)
-        } else if self.played >= PERIOD {
-            Some(Reason::Periodic)
-        } else {
-            None
-        }
+    /// Whether a save is owed at `now`: once a retry delay passes, for a
+    /// decided match that still lacks its record, or for an undecided
+    /// match this machine can resume (`resumable`) with unsaved content
+    /// once the window went inactive or a minute of live play passed.
+    pub(super) fn due(&self, decided: bool, resumable: bool, now: Duration) -> bool {
+        self.retry_at.is_none_or(|at| now >= at)
+            && (decided || (resumable && (self.inactive || self.played >= PERIOD)))
     }
 
     /// Whether the window went inactive since the last save began.

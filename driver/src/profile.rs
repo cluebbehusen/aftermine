@@ -1,7 +1,6 @@
 //! Reproducible profiling of a resumed match in the actual GPU-backed shell.
 
-use crate::auto::{ShellGuard, build_shell_executable_for, isolate_home};
-use crate::client::Client;
+use crate::auto::{build_shell_executable_for, isolate_home, launch};
 use aftermine_kit::GameReplay;
 use aftermine_protocol::{FrameProfileView, Reply, Request};
 use aftermine_sim::TICKS_PER_SECOND;
@@ -105,11 +104,7 @@ pub fn run(options: &ProfileOptions<'_>) -> Result<ProfileReport> {
         .env("AFTERMINE_RESOURCE_ROOT", &root)
         .current_dir(&workspace.directory);
     isolate_home(&mut command, &workspace.directory);
-    let child = command
-        .spawn()
-        .context("spawning profiled Aftermine shell")?;
-    let _guard = ShellGuard::new(child);
-    let mut client = connect(options.port)?;
+    let (_shell, mut client) = launch(command, options.port, Duration::from_secs(60))?;
 
     let actual_from = client.status()?.tick;
     ensure!(
@@ -291,23 +286,6 @@ impl Drop for ProfileWorkspace {
     fn drop(&mut self) {
         std::fs::remove_dir_all(&self.directory).ok();
     }
-}
-
-fn connect(port: u16) -> Result<Client> {
-    connect_within(port, Duration::from_secs(60))
-}
-
-/// Connects to a shell that is still starting up, waiting up to `patience`.
-pub(crate) fn connect_within(port: u16, patience: Duration) -> Result<Client> {
-    let address = format!("127.0.0.1:{port}");
-    let deadline = Instant::now() + patience;
-    while Instant::now() < deadline {
-        if let Ok(client) = Client::connect(&address) {
-            return Ok(client);
-        }
-        std::thread::sleep(Duration::from_millis(250));
-    }
-    bail!("profiled shell never came up on {address}")
 }
 
 pub(crate) fn expect_ok(reply: &Reply, operation: &str) -> Result<()> {

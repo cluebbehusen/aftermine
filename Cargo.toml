@@ -84,8 +84,11 @@ debug = "line-tables-only"
 # Release keeps line tables permanently: sampling profilers stay usable
 # without env-toggled rebuilds, and a toggle invalidates the entire
 # release fingerprint set — the artifact churn that inflates target/.
+# Thin LTO inlines across crates for about 3% fewer instructions at almost
+# no build cost; fat LTO saved little more and nearly tripled build time.
 [profile.release]
 debug = "line-tables-only"
+lto = "thin"
 
 [profile.dev.package."*"]
 opt-level = 3

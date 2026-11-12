@@ -223,128 +223,120 @@ enum CursorPress {
     Card(Cell),
 }
 
-/// The setup screen's coaching line. The keyboard hint follows the
-/// cursor; a pointer moves the cursor anyway, so its hint is one line.
-fn setup_hint(one_team: bool, press: CursorPress, hands: crate::platform::Hands) -> &'static str {
-    if hands.pad == Some(aftermine_protocol::PadFamily::Remote) {
-        if one_team {
-            return "Every seat is on one team - {confirm} a TEAM chip to change it - {back} to leave";
+/// What the arrows reach beside a cursor press, for its coaching line.
+#[derive(Clone, Copy)]
+enum Arrows {
+    /// Nothing: the press is all the line names.
+    Still,
+    /// The rows, up and down.
+    Rows,
+    /// The cells along a seat card.
+    Cells,
+    /// These cells along the card.
+    Reach(&'static str),
+}
+
+/// A cursor press's coaching: the act as the remote's line words it, as
+/// the other lines word it, and what the arrows reach beside it.
+fn press_words(press: CursorPress) -> (Option<(&'static str, &'static str)>, Arrows) {
+    let (to, does, arrows) = match press {
+        CursorPress::Nothing => return (None, Arrows::Rows),
+        CursorPress::Switch => (
+            "switch between Local and LAN",
+            "switches between Local and LAN",
+            Arrows::Still,
+        ),
+        CursorPress::Start => ("start the match", "starts the match", Arrows::Still),
+        CursorPress::MoveSelf => (
+            "move to another seat",
+            "moves to another seat",
+            Arrows::Reach("team"),
+        ),
+        CursorPress::MovePlayer => ("pick up this player", "picks up this player", Arrows::Cells),
+        CursorPress::RemovePlayer => ("remove this player", "removes this player", Arrows::Cells),
+        CursorPress::TakeOpenSeat => ("take this seat", "takes this seat", Arrows::Cells),
+        CursorPress::BotForChair => (
+            "give this seat to a bot",
+            "gives this seat to a bot",
+            Arrows::Cells,
+        ),
+        CursorPress::Card(Cell::Difficulty) => {
+            ("change difficulty", "cycles difficulty", Arrows::Cells)
         }
-        return match press {
-            CursorPress::Switch => "{confirm} to switch between Local and LAN - {back} to leave",
-            CursorPress::Start => "{confirm} to start the match - {back} to leave",
-            CursorPress::Nothing => "{dpad} to move - {back} to leave",
-            CursorPress::MoveSelf => {
-                "{confirm} to move to another seat - {dpad} to reach team - {back} to leave"
-            }
-            CursorPress::MovePlayer => {
-                "{confirm} to pick up this player - {dpad} to move - {back} to leave"
-            }
-            CursorPress::RemovePlayer => {
-                "{confirm} to remove this player - {dpad} to move - {back} to leave"
-            }
-            CursorPress::TakeOpenSeat => {
-                "{confirm} to take this seat - {dpad} to move - {back} to leave"
-            }
-            CursorPress::BotForChair => {
-                "{confirm} to give this seat to a bot - {dpad} to move - {back} to leave"
-            }
-            CursorPress::Card(Cell::Difficulty) => {
-                "{confirm} to change difficulty - {dpad} to move - {back} to leave"
-            }
-            CursorPress::Card(Cell::Stance) => {
-                "{confirm} to change stance - {dpad} to move - {back} to leave"
-            }
-            CursorPress::Card(Cell::Team) => {
-                "{confirm} to change team - {dpad} to move - {back} to leave"
-            }
-            CursorPress::Card(Cell::Seat) => {
-                "{confirm} to take this seat - {dpad} to reach difficulty, stance, and team - {back} to leave"
-            }
-        };
-    }
-    if hands.pad.is_some() {
-        if one_team {
-            return "Every seat is on one team - change a TEAM chip - {back} back";
+        CursorPress::Card(Cell::Stance) => ("change stance", "cycles stance", Arrows::Cells),
+        CursorPress::Card(Cell::Team) => ("change team", "cycles the chip", Arrows::Cells),
+        CursorPress::Card(Cell::Seat) => (
+            "take this seat",
+            "takes this seat",
+            Arrows::Reach("difficulty, stance, and team"),
+        ),
+    };
+    (Some((to, does)), arrows)
+}
+
+/// The setup screen's coaching line. The keyboard and controller hints
+/// follow the cursor; a pointer moves the cursor anyway, so its hint is one
+/// line.
+fn setup_hint(one_team: bool, press: CursorPress, hands: crate::platform::Hands) -> String {
+    use aftermine_protocol::PadFamily;
+    match (hands.pad, hands.keys, hands.touch(), one_team) {
+        (Some(PadFamily::Remote), .., true) => {
+            "Every seat is on one team - {confirm} a TEAM chip to change it - {back} to leave"
         }
-        return match press {
-            CursorPress::Switch => "{confirm} switches between Local and LAN - {back} back",
-            CursorPress::Start => "{confirm} starts the match - {back} back",
-            CursorPress::Nothing => "{dpad} moves - {back} back",
-            CursorPress::MoveSelf => {
-                "{confirm} moves to another seat - {dpad} reaches team - {back} back"
-            }
-            CursorPress::MovePlayer => {
-                "{confirm} picks up this player - {dpad} moves - {back} back"
-            }
-            CursorPress::RemovePlayer => {
-                "{confirm} removes this player - {dpad} moves - {back} back"
-            }
-            CursorPress::TakeOpenSeat => "{confirm} takes this seat - {dpad} moves - {back} back",
-            CursorPress::BotForChair => {
-                "{confirm} gives this seat to a bot - {dpad} moves - {back} back"
-            }
-            CursorPress::Card(Cell::Difficulty) => {
-                "{confirm} cycles difficulty - {dpad} moves - {back} back"
-            }
-            CursorPress::Card(Cell::Stance) => {
-                "{confirm} cycles stance - {dpad} moves - {back} back"
-            }
-            CursorPress::Card(Cell::Team) => {
-                "{confirm} cycles the chip - {dpad} moves - {back} back"
-            }
-            CursorPress::Card(Cell::Seat) => {
-                "{confirm} takes this seat - {dpad} reaches difficulty, stance, and team - {back} back"
-            }
-        };
-    }
-    match (hands.touch(), hands.keys, one_team) {
-        (true, false, true) => {
-            "every seat is on one team, nobody to fight - tap a TEAM chip to regroup"
+        (Some(_), .., true) | (None, true, false, true) => {
+            "Every seat is on one team - change a TEAM chip - {back} back"
         }
-        (true, false, false) => "tap a seat to take it - tap a chip to change it",
-        (true, true, true) => {
+        (None, true, true, true) => {
             "every seat is on one team, nobody to fight - tap a TEAM chip to regroup - {back} back"
         }
-        (true, true, false) => "tap a seat to take it - tap a chip to change it - {back} back",
-        (false, false, true) => {
+        (None, false, true, true) => {
+            "every seat is on one team, nobody to fight - tap a TEAM chip to regroup"
+        }
+        (None, false, false, true) => {
             "every seat is on one team, nobody to fight - click a TEAM chip to regroup"
         }
-        (false, false, false) => "click a seat to take it - click a chip to change it",
-        (false, true, true) => "Every seat is on one team - change a TEAM chip - {back} back",
-        (false, true, false) => match press {
-            CursorPress::Switch => "{confirm} switches between Local and LAN - {back} back",
-            CursorPress::Start => "{confirm} starts the match - {back} back",
-            CursorPress::Nothing => "{up}/{down} move - {back} back",
-            CursorPress::MoveSelf => {
-                "{confirm} moves to another seat - {left}/{right} reach team - {back} back"
-            }
-            CursorPress::MovePlayer => {
-                "{confirm} picks up this player - {left}/{right} move - {back} back"
-            }
-            CursorPress::RemovePlayer => {
-                "{confirm} removes this player - {left}/{right} move - {back} back"
-            }
-            CursorPress::TakeOpenSeat => {
-                "{confirm} takes this seat - {left}/{right} move - {back} back"
-            }
-            CursorPress::BotForChair => {
-                "{confirm} gives this seat to a bot - {left}/{right} move - {back} back"
-            }
-            CursorPress::Card(Cell::Difficulty) => {
-                "{confirm} cycles difficulty - {left}/{right} move - {back} back"
-            }
-            CursorPress::Card(Cell::Stance) => {
-                "{confirm} cycles stance - {left}/{right} move - {back} back"
-            }
-            CursorPress::Card(Cell::Team) => {
-                "{confirm} cycles the chip - {left}/{right} move - {back} back"
-            }
-            CursorPress::Card(Cell::Seat) => {
-                "{confirm} takes this seat - {left}/{right} reach difficulty, stance, and team - {back} back"
-            }
-        },
+        (None, true, true, false) => {
+            "tap a seat to take it - tap a chip to change it - {back} back"
+        }
+        (None, false, true, false) => "tap a seat to take it - tap a chip to change it",
+        (None, false, false, false) => "click a seat to take it - click a chip to change it",
+        (Some(_), .., false) | (None, true, false, false) => return cursor_hint(press, hands.pad),
     }
+    .to_owned()
+}
+
+/// The coaching line for a press at the cursor, for the remote, another
+/// controller, or keys.
+fn cursor_hint(press: CursorPress, pad: Option<aftermine_protocol::PadFamily>) -> String {
+    let remote = pad == Some(aftermine_protocol::PadFamily::Remote);
+    let (act, arrows) = press_words(press);
+    let act = act.map(|(to, does)| {
+        if remote {
+            format!("{{confirm}} to {to}")
+        } else {
+            format!("{{confirm}} {does}")
+        }
+    });
+    let arrows = match (arrows, remote, pad.is_some()) {
+        (Arrows::Still, ..) => None,
+        (Arrows::Rows | Arrows::Cells, true, _) => Some("{dpad} to move".to_owned()),
+        (Arrows::Reach(cells), true, _) => Some(format!("{{dpad}} to reach {cells}")),
+        (Arrows::Rows | Arrows::Cells, false, true) => Some("{dpad} moves".to_owned()),
+        (Arrows::Reach(cells), false, true) => Some(format!("{{dpad}} reaches {cells}")),
+        (Arrows::Rows, false, false) => Some("{up}/{down} move".to_owned()),
+        (Arrows::Cells, false, false) => Some("{left}/{right} move".to_owned()),
+        (Arrows::Reach(cells), false, false) => Some(format!("{{left}}/{{right}} reach {cells}")),
+    };
+    let back = if remote {
+        "{back} to leave"
+    } else {
+        "{back} back"
+    };
+    act.into_iter()
+        .chain(arrows)
+        .chain([back.to_owned()])
+        .collect::<Vec<_>>()
+        .join(" - ")
 }
 
 /// Whether a press on `seat`'s card can use `cell`.
@@ -415,30 +407,21 @@ pub struct Wizard {
     pub entries: Vec<ScenarioEntry>,
     /// The map grid's state.
     pub browser: Browser,
-    /// Setup cursor over the DISPLAY order: seats grouped by team,
-    /// then the Start button.
-    pub setup_sel: usize,
-    /// Which cell of the selected seat card the cursor is on: 0 the
-    /// seat itself, then its controls left to right: 1 difficulty,
-    /// 2 stance, and 3 team. The two bot controls are absent
-    /// from the human's row.
-    pub setup_cell: Cell,
+    /// The setup cursor over the switch, the seat cards in display order
+    /// and Start.
+    pub(crate) cursor: SetupCursor,
     /// Setup zone armed by a press; activation on release inside the
     /// same zone.
     setup_press: Press<SetupZone>,
     /// The corner Back button: Home from the grid, the grid from setup.
     back: crate::button::BackButton,
-    /// Compact setup page. Full-height layouts always clamp this to zero.
-    setup_page: usize,
     /// The LAN lobby while this setup screen hosts one.
     lan: Option<Box<LanHost>>,
-    /// The cursor sits on the LOCAL | LAN switch above the cards.
-    on_switch: bool,
     /// The seat whose occupant was picked up, waiting for the seat to
     /// swap with.
     moving: Option<usize>,
     /// A confirmation over the setup screen.
-    overlay: Option<Overlay>,
+    overlay: Option<Confirmation>,
     notice: Option<Notice>,
     /// Where a lobby listens.
     pub(crate) lan_bind: String,
@@ -617,6 +600,60 @@ impl Cell {
             Self::Stance => 2,
             Self::Team => 3,
         }
+    }
+}
+
+/// Where the setup screen's keyboard and controller cursor sits. Every
+/// place keeps the card cell last stood on, so a walk over Start or the
+/// switch comes back to the same column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SetupCursor {
+    /// The LOCAL | LAN switch above the cards. It keeps the row it came
+    /// from, which the page and the paging keys follow.
+    Switch { row: usize, cell: Cell },
+    /// A seat card, its `row` in display order.
+    Seat { row: usize, cell: Cell },
+    /// The Start button below the cards.
+    Start { cell: Cell },
+}
+
+impl SetupCursor {
+    /// The card at `row`, or Start once `row` is past the `cards`.
+    fn at(row: usize, cell: Cell, cards: usize) -> Self {
+        if row < cards {
+            Self::Seat { row, cell }
+        } else {
+            Self::Start { cell }
+        }
+    }
+
+    fn cell(self) -> Cell {
+        match self {
+            Self::Switch { cell, .. } | Self::Seat { cell, .. } | Self::Start { cell } => cell,
+        }
+    }
+
+    /// The seat row the map preview rings: only a seat card holds the
+    /// focus, so the switch and Start ring none.
+    fn focused_row(self) -> Option<usize> {
+        match self {
+            Self::Seat { row, .. } => Some(row),
+            Self::Switch { .. } | Self::Start { .. } => None,
+        }
+    }
+
+    /// The row the page follows among `cards` seat cards, Start counting
+    /// as the row past them.
+    fn row(self, cards: usize) -> usize {
+        match self {
+            Self::Switch { row, .. } | Self::Seat { row, .. } => row.min(cards),
+            Self::Start { .. } => cards,
+        }
+    }
+
+    /// The compact page the cursor shows, before a layout clamps it.
+    fn page(self, cards: usize) -> usize {
+        self.row(cards) / COMPACT_PAGE_ITEMS
     }
 }
 
@@ -910,16 +947,10 @@ fn compact_setup_layout(
 fn cycle_controller(plan: &mut SeatPlan, lan: bool) {
     if plan.open {
         plan.open = false;
-    } else if Some(&plan.difficulty) == BotDifficulty::ALL.last() {
-        if lan {
-            plan.open = true;
-            plan.difficulty = BotDifficulty::ALL[0];
-        } else {
-            plan.difficulty = BotDifficulty::ALL[0];
-        }
-    } else {
-        plan.difficulty = cycle_difficulty(plan.difficulty, 1);
+        return;
     }
+    plan.open = lan && Some(&plan.difficulty) == BotDifficulty::ALL.last();
+    plan.difficulty = next_choice(&BotDifficulty::ALL, plan.difficulty);
 }
 
 /// Swaps who plays seats `a` and `b`: the human's chair, a bot with its
@@ -1039,10 +1070,11 @@ fn reseated(notice: &mut Option<Notice>) {
     }
 }
 
-/// Something over the setup screen that takes its input.
-enum Overlay {
-    /// Asking before a step that drops players; Cancel sits preselected.
-    Confirm { ask: Confirm, menu: Menu<bool> },
+/// A question over the setup screen, which takes its input, before a step
+/// that drops players; Cancel sits preselected.
+struct Confirmation {
+    ask: Confirm,
+    menu: Menu<bool>,
 }
 
 /// A step that asks first.
@@ -1054,32 +1086,13 @@ enum Confirm {
     Close { to_map: bool },
 }
 
-fn cycle_difficulty(current: BotDifficulty, direction: i8) -> BotDifficulty {
-    let index = BotDifficulty::ALL
+/// The choice after `current` among `all`, wrapping to the first.
+fn next_choice<T: Copy + PartialEq>(all: &[T], current: T) -> T {
+    let index = all
         .iter()
         .position(|candidate| *candidate == current)
-        .expect("every difficulty is in ALL");
-    let len = BotDifficulty::ALL.len();
-    let next = if direction < 0 {
-        index.checked_sub(1).unwrap_or(len - 1)
-    } else {
-        (index + 1) % len
-    };
-    BotDifficulty::ALL[next]
-}
-
-fn cycle_stance(current: BotStance, direction: i8) -> BotStance {
-    let index = BotStance::ALL
-        .iter()
-        .position(|candidate| *candidate == current)
-        .expect("every stance is in ALL");
-    let len = BotStance::ALL.len();
-    let next = if direction < 0 {
-        index.checked_sub(1).unwrap_or(len - 1)
-    } else {
-        (index + 1) % len
-    };
-    BotStance::ALL[next]
+        .expect("every choice is listed");
+    all[(index + 1) % all.len()]
 }
 
 /// Every Foundry anchor authored on an ASCII map: `(seat, (x, y))` for
@@ -1143,7 +1156,12 @@ pub fn draw_seat_markers(
 
 /// Draws a map preview centered in `area`, graded with the map's theme,
 /// and returns where the map itself landed.
-pub(crate) fn draw_preview(preview: &Preview<'_>, theme: &str, area: Rect, ui: f32) -> Rect {
+pub(crate) fn draw_preview(
+    preview: &Preview<'_>,
+    theme: Option<aftermine_sim::scenario::Theme>,
+    area: Rect,
+    ui: f32,
+) -> Rect {
     let rect = preview.rect(area);
     draw_rectangle(
         rect.x - 8.0 * ui,
@@ -1152,7 +1170,7 @@ pub(crate) fn draw_preview(preview: &Preview<'_>, theme: &str, area: Rect, ui: f
         rect.h + 16.0 * ui,
         SURFACE_MENU,
     );
-    preview.draw(area, crate::render::theme_tint(theme))
+    preview.draw(area, crate::render::grade::tint(theme))
 }
 
 /// Who a seat card's controller chip names.
@@ -1393,13 +1411,13 @@ impl Wizard {
             step: Step::Map,
             entries,
             browser,
-            setup_sel: 0,
-            setup_cell: Cell::Seat,
+            cursor: SetupCursor::Seat {
+                row: 0,
+                cell: Cell::Seat,
+            },
             setup_press: Press::default(),
             back: crate::button::BackButton::default(),
-            setup_page: 0,
             lan: None,
-            on_switch: false,
             moving: None,
             overlay: None,
             notice: None,
@@ -1489,7 +1507,6 @@ impl Wizard {
         self.step = step;
         self.back.cancel();
         self.moving = None;
-        self.on_switch = false;
         self.notice = None;
         match step {
             Step::Map => {
@@ -1503,9 +1520,7 @@ impl Wizard {
             Step::Setup => {
                 // Start preselected: Enter-Enter from the grid plays
                 // the map as authored.
-                self.setup_sel = draft.seats.len();
-                self.setup_page = self.setup_sel / COMPACT_PAGE_ITEMS;
-                self.setup_cell = Cell::Seat;
+                self.cursor = SetupCursor::Start { cell: Cell::Seat };
                 self.setup_press.cancel();
             }
         }
@@ -1601,7 +1616,6 @@ impl Wizard {
         let start_index = order.len();
         let view = crate::render::viewport();
         let ui = crate::render::ui_scale();
-        self.setup_page = self.setup_sel.min(start_index) / COMPACT_PAGE_ITEMS;
         let open = self.open_flags(draft);
         let lan_on = self.lan.is_some();
         let layout = setup_layout_page(
@@ -1610,9 +1624,8 @@ impl Wizard {
             &open,
             view,
             ui,
-            self.setup_page,
+            self.cursor.page(start_index),
         );
-        self.setup_page = layout.page;
         // A resume fixes the map's bots and teams and the host's seat: only
         // the reserved seats change hands.
         let resuming = self.resume.is_some();
@@ -1666,16 +1679,18 @@ impl Wizard {
                 if let Some(p) = crate::press::position(event) {
                     *mouse = p;
                 }
-                self.on_switch = matches!(zone, SetupZone::Switch(_));
+                let (row, kept) = (self.cursor.row(start_index), self.cursor.cell());
                 match zone {
                     SetupZone::Card { row, cell } => {
-                        self.setup_sel = row;
-                        if cell_live(row, cell) {
-                            self.setup_cell = cell;
-                        }
+                        self.cursor = SetupCursor::Seat {
+                            row,
+                            cell: if cell_live(row, cell) { cell } else { kept },
+                        };
                     }
-                    SetupZone::Start => self.setup_sel = start_index,
-                    SetupZone::Switch(_) | SetupZone::PrevPage | SetupZone::NextPage => {}
+                    SetupZone::Start => self.cursor = SetupCursor::Start { cell: kept },
+                    SetupZone::Switch(_) => self.cursor = SetupCursor::Switch { row, cell: kept },
+                    // Paging places the cursor as it activates, below.
+                    SetupZone::PrevPage | SetupZone::NextPage => {}
                 }
                 activate = Some(zone);
                 break;
@@ -1685,15 +1700,13 @@ impl Wizard {
                     return self.back_from_setup(draft).then_some(Out::Home);
                 }
                 RawEvent::KeyDown { key: Key::Enter } => {
-                    activate = Some(if self.on_switch {
-                        SetupZone::Switch(!lan_on)
-                    } else if self.setup_sel >= start_index {
-                        SetupZone::Start
-                    } else {
-                        SetupZone::Card {
-                            row: self.setup_sel,
-                            cell: self.pressed_cell(draft, &open, order[self.setup_sel]),
-                        }
+                    activate = Some(match self.cursor {
+                        SetupCursor::Switch { .. } => SetupZone::Switch(!lan_on),
+                        SetupCursor::Start { .. } => SetupZone::Start,
+                        SetupCursor::Seat { row, .. } => SetupZone::Card {
+                            row,
+                            cell: self.pressed_cell(draft, &open, order[row]),
+                        },
                     });
                     break;
                 }
@@ -1703,17 +1716,17 @@ impl Wizard {
                     };
                     // The switch is the line above the first card; Home,
                     // End, and paging stay on the cards and Start.
+                    let (row, cell) = (self.cursor.row(start_index), self.cursor.cell());
                     let target = if matches!(nav, Nav::Up | Nav::Down) {
-                        let line = if self.on_switch {
-                            0
-                        } else {
-                            self.setup_sel + 1
+                        let line = match self.cursor {
+                            SetupCursor::Switch { .. } => 0,
+                            SetupCursor::Seat { .. } | SetupCursor::Start { .. } => row + 1,
                         };
                         step_line(start_index + 2, line, nav, Axis::Vertical, 1, |_| true)
                     } else {
                         step_line(
                             start_index + 1,
-                            self.setup_sel,
+                            row,
                             nav,
                             Axis::Vertical,
                             COMPACT_PAGE_ITEMS,
@@ -1722,22 +1735,24 @@ impl Wizard {
                         .map(|row| row + 1)
                     };
                     if let Some(line) = target {
-                        self.on_switch = line == 0;
-                        if let Some(row) = line.checked_sub(1) {
-                            self.setup_sel = row;
-                            self.setup_page = row / COMPACT_PAGE_ITEMS;
-                        }
-                    } else if !self.on_switch
-                        && let Some(cell) = step_line(
+                        self.cursor = match line.checked_sub(1) {
+                            Some(row) => SetupCursor::at(row, cell, start_index),
+                            None => SetupCursor::Switch { row, cell },
+                        };
+                    } else if let SetupCursor::Seat { row, cell } = self.cursor
+                        && let Some(next) = step_line(
                             Cell::ALL.len(),
-                            self.setup_cell.index(),
+                            cell.index(),
                             nav,
                             Axis::Horizontal,
                             1,
-                            |cell| cell_live(self.setup_sel, Cell::ALL[cell]),
+                            |cell| cell_live(row, Cell::ALL[cell]),
                         )
                     {
-                        self.setup_cell = Cell::ALL[cell];
+                        self.cursor = SetupCursor::Seat {
+                            row,
+                            cell: Cell::ALL[next],
+                        };
                     }
                 }
                 RawEvent::MouseMove { x, y } => *mouse = vec2(x, y),
@@ -1753,15 +1768,13 @@ impl Wizard {
         self.setup_press.cancel();
         match zone {
             SetupZone::PrevPage => {
-                self.setup_page = self.setup_page.saturating_sub(1);
-                self.setup_sel = self.setup_page * COMPACT_PAGE_ITEMS;
-                self.setup_cell = Cell::Seat;
+                let page = layout.page.saturating_sub(1);
+                self.cursor = SetupCursor::at(page * COMPACT_PAGE_ITEMS, Cell::Seat, start_index);
                 sounds.push((SoundKind::Click, None));
             }
             SetupZone::NextPage => {
-                self.setup_page = (self.setup_page + 1).min(layout.page_count - 1);
-                self.setup_sel = (self.setup_page * COMPACT_PAGE_ITEMS).min(start_index);
-                self.setup_cell = Cell::Seat;
+                let page = (layout.page + 1).min(layout.page_count - 1);
+                self.cursor = SetupCursor::at(page * COMPACT_PAGE_ITEMS, Cell::Seat, start_index);
                 sounds.push((SoundKind::Click, None));
             }
             SetupZone::Switch(_) if resuming => {
@@ -1838,7 +1851,7 @@ impl Wizard {
                         }
                         None => cycle_controller(plan, lan_on || resuming),
                     },
-                    Cell::Stance => plan.stance = cycle_stance(plan.stance, 1),
+                    Cell::Stance => plan.stance = next_choice(&BotStance::ALL, plan.stance),
                     // FFA, then every team up to the seat count
                     // (start_index is the full roster's length),
                     // wrapping back to FFA.
@@ -1864,15 +1877,15 @@ impl Wizard {
         let view = crate::render::viewport();
         let ui = crate::render::ui_scale();
         let open = self.open_flags(draft);
+        let order = seat_display_order(scenario);
         let layout = setup_layout_page(
             scenario,
             draft.seat_choice,
             &open,
             view,
             ui,
-            self.setup_page,
+            self.cursor.page(order.len()),
         );
-        let order = seat_display_order(scenario);
 
         let compact = layout.page_count > 1;
         if compact {
@@ -1942,14 +1955,17 @@ impl Wizard {
                 name: scenario.players[seat].name.as_str(),
                 controller,
                 team: team_chip_label(plan.team_choice),
-                focus: (self.setup_sel == pos && !self.on_switch).then_some(self.setup_cell),
+                focus: match self.cursor {
+                    SetupCursor::Seat { row, cell } if row == pos => Some(cell),
+                    _ => None,
+                },
                 moving: self.moving == Some(seat),
             };
             draw_seat_card(card, &view, ui);
         }
         // Start button, disabled for an all-one-team draft.
         let one_team = draft_one_team(draft);
-        let start_selected = self.on_start(layout.cards.len());
+        let start_selected = matches!(self.cursor, SetupCursor::Start { .. });
         if let Some(start) = layout.start {
             draw_rectangle(start.x, start.y, start.w, start.h, SURFACE_MENU);
             stroke_rect(
@@ -2024,18 +2040,18 @@ impl Wizard {
         let preview = match self.picked_entry(draft).filter(|_| self.resume.is_none()) {
             Some(entry) => previews
                 .get(entry, layout.preview)
-                .map(|preview| (preview, entry.theme.as_str())),
-            None => previews.get_map(scenario, layout.preview).map(|preview| {
-                let theme = scenario
-                    .meta
-                    .as_ref()
-                    .map_or("", |meta| meta.theme.as_str());
-                (preview, theme)
-            }),
+                .map(|preview| (preview, entry.theme)),
+            None => previews
+                .get_map(scenario, layout.preview)
+                .map(|preview| (preview, scenario.meta.as_ref().and_then(|meta| meta.theme))),
         };
         if let Some((preview, theme)) = preview {
             let drawn = draw_preview(&preview, theme, layout.preview, ui);
-            let focus = (self.setup_sel < order.len()).then(|| order[self.setup_sel]);
+            let focus = self
+                .cursor
+                .focused_row()
+                .and_then(|row| order.get(row))
+                .copied();
             draw_seat_markers(scenario, &styles, drawn, draft.seat_choice, focus, ui);
         }
 
@@ -2052,7 +2068,7 @@ impl Wizard {
             } else {
                 let press = self.cursor_press(draft, &open, &order);
                 (
-                    crate::menu::hint_line(setup_hint(one_team, press, hands)),
+                    crate::menu::hint_line(&setup_hint(one_team, press, hands)),
                     one_team,
                 )
             };
@@ -2106,7 +2122,7 @@ impl Wizard {
                 if active { TEXT_PRIMARY } else { TEXT_SECONDARY },
             );
         }
-        if self.on_switch {
+        if matches!(self.cursor, SetupCursor::Switch { .. }) {
             let [left, right] = layout.switch;
             stroke_rect(
                 Rect::new(left.x, left.y, right.x + right.w - left.x, left.h),
@@ -2144,36 +2160,32 @@ impl Wizard {
 
     /// Draws a confirmation over a veil.
     fn draw_overlay(&self, sprites: &crate::assets::Sprites) {
-        let Some(overlay) = &self.overlay else {
+        let Some(Confirmation { ask, menu }) = &self.overlay else {
             return;
         };
         let view = crate::render::viewport();
         draw_rectangle(0.0, 0.0, view.x, view.y, crate::theme::VEIL);
-        match overlay {
-            Overlay::Confirm { ask, menu } => {
-                let line = match ask {
-                    Confirm::Kick { .. } => String::new(),
-                    Confirm::Close { .. } => {
-                        let players = self
-                            .lan
-                            .as_ref()
-                            .map_or(0, |lan| lan.members.iter().flatten().count());
-                        match players {
-                            1 => "1 player will be disconnected".to_owned(),
-                            n => format!("{n} players will be disconnected"),
-                        }
-                    }
-                };
-                menu.draw(sprites, &line);
+        let line = match ask {
+            Confirm::Kick { .. } => String::new(),
+            Confirm::Close { .. } => {
+                let players = self
+                    .lan
+                    .as_ref()
+                    .map_or(0, |lan| lan.members.iter().flatten().count());
+                match players {
+                    1 => "1 player will be disconnected".to_owned(),
+                    n => format!("{n} players will be disconnected"),
+                }
             }
-        }
+        };
+        menu.draw(sprites, &line);
     }
 
     /// The debug protocol's stable mode name for the current step, which
     /// automation scripts depend on.
     pub fn mode_name(&self) -> &'static str {
         match (&self.overlay, self.step) {
-            (Some(Overlay::Confirm { .. }), _) => "confirm_lobby",
+            (Some(_), _) => "confirm_lobby",
             (None, Step::Map) => "main_menu",
             (None, Step::Setup) => "match_setup",
         }
@@ -2184,7 +2196,7 @@ impl Wizard {
     /// lists the seats, Start, and last the LOCAL | LAN switch.
     pub fn ui_surface(&self, draft: &NewMatchDraft) -> (String, Vec<String>, usize) {
         match (&self.overlay, self.step) {
-            (Some(Overlay::Confirm { menu, .. }), _) => {
+            (Some(Confirmation { menu, .. }), _) => {
                 let view = menu.view();
                 (view.title, view.items, view.selected)
             }
@@ -2210,10 +2222,10 @@ impl Wizard {
                     "Mode: {}",
                     if self.lan.is_some() { "LAN" } else { "Local" }
                 ));
-                let selected = if self.on_switch {
-                    items.len() - 1
-                } else {
-                    self.setup_sel
+                let selected = match self.cursor {
+                    SetupCursor::Switch { .. } => items.len() - 1,
+                    SetupCursor::Seat { row, .. } => row,
+                    SetupCursor::Start { .. } => items.len() - 2,
                 };
                 ("MATCH SETUP".to_string(), items, selected)
             }
@@ -2286,7 +2298,7 @@ impl Wizard {
                     &open,
                     view,
                     ui,
-                    self.setup_page,
+                    self.cursor.page(scenario.players.len()),
                 )
                 .visible_range
             }),
@@ -2325,7 +2337,7 @@ fn seat_for_joiner(
 }
 
 /// A confirmation for `ask`; Cancel sits preselected.
-fn confirm_overlay(ask: Confirm, name: Option<&PlayerName>) -> Overlay {
+fn confirm_overlay(ask: Confirm, name: Option<&PlayerName>) -> Confirmation {
     let (title, yes) = match ask {
         Confirm::Kick { .. } => (
             format!(
@@ -2343,7 +2355,7 @@ fn confirm_overlay(ask: Confirm, name: Option<&PlayerName>) -> Overlay {
         [(Label::from("Cancel"), false), (Label::from(yes), true)],
     );
     menu.select(0);
-    Overlay::Confirm { ask, menu }
+    Confirmation { ask, menu }
 }
 
 impl Wizard {
@@ -2381,36 +2393,32 @@ impl Wizard {
     /// The cell a press on `seat`'s card uses: the sticky column falls back
     /// to the seat zone on rows where its cell is dead.
     fn pressed_cell(&self, draft: &NewMatchDraft, open: &[bool], seat: usize) -> Cell {
+        let cell = self.cursor.cell();
         let live = seat_cell_live(
-            self.setup_cell,
+            cell,
             seat,
             draft.seat_choice,
             open,
             &self.movable_seats(draft),
             self.resume.is_some(),
         );
-        if live { self.setup_cell } else { Cell::Seat }
-    }
-
-    /// Whether the cursor sits on Start, past `cards` seat cards: the
-    /// switch above the cards keeps the row it came from.
-    fn on_start(&self, cards: usize) -> bool {
-        !self.on_switch && self.setup_sel >= cards
+        if live { cell } else { Cell::Seat }
     }
 
     /// What a press at the cursor does.
     fn cursor_press(&self, draft: &NewMatchDraft, open: &[bool], order: &[usize]) -> CursorPress {
-        if self.on_switch {
+        let seat = match self.cursor {
             // A saved LAN match resumes only with its players, so an open
             // lobby stays open.
-            return if self.resume.is_some() && self.lan.is_some() {
-                CursorPress::Nothing
-            } else {
-                CursorPress::Switch
-            };
-        }
-        let Some(&seat) = order.get(self.setup_sel) else {
-            return CursorPress::Start;
+            SetupCursor::Switch { .. } if self.resume.is_some() && self.lan.is_some() => {
+                return CursorPress::Nothing;
+            }
+            SetupCursor::Switch { .. } => return CursorPress::Switch,
+            SetupCursor::Start { .. } => return CursorPress::Start,
+            SetupCursor::Seat { row, .. } => match order.get(row) {
+                Some(&seat) => seat,
+                None => return CursorPress::Start,
+            },
         };
         let held = self.holds_member(seat);
         match self.pressed_cell(draft, open, seat) {
@@ -2677,7 +2685,7 @@ impl Wizard {
         draft: &mut NewMatchDraft,
         sounds: &mut Vec<(SoundKind, Option<Vec2>)>,
     ) {
-        let Some(Overlay::Confirm { ask, menu }) = self.overlay.as_mut() else {
+        let Some(Confirmation { ask, menu }) = self.overlay.as_mut() else {
             return;
         };
         let ask = *ask;

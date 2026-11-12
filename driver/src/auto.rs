@@ -1,12 +1,15 @@
-//! Driving vocabulary for the automation-mode shell, shared by the
-//! screenshot suite and the menu UX battery: spawn a real window that
-//! ignores hardware input, read the shell's own UI report, and walk
-//! menus by row label — never by index, because Home's rows shift with
-//! resumable state on the host machine.
+//! Launching and driving a real shell window. `launch` is the one way the
+//! driver starts a shell it then talks to, for the smoke check, profiling,
+//! the screenshot suite and the native test suites. The rest is driving
+//! vocabulary for the automation-mode shell, which ignores hardware input:
+//! read the shell's own UI report, and walk menus by row label — never by
+//! index, because Home's rows shift with resumable state on the host
+//! machine.
 
 use crate::client::Client;
 use aftermine_protocol::{Key, PadButton, PadFamily, RawEvent, Request, UiView};
 use anyhow::{Context, Result, bail};
+use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -15,8 +18,9 @@ use std::time::{Duration, Instant};
 pub struct ShellGuard(std::process::Child);
 
 impl ShellGuard {
-    pub(crate) fn new(child: std::process::Child) -> Self {
-        Self(child)
+    /// The shell's process id.
+    pub(crate) fn id(&self) -> u32 {
+        self.0.id()
     }
 }
 
@@ -117,8 +121,8 @@ pub(crate) fn write_home_config(home: &std::path::Path, text: &str) -> Result<()
     Ok(())
 }
 
-/// Builds and spawns an automation-mode shell, then connects while the
-/// window boots. The window is pinned to 1280x800 because both suites
+/// Builds and spawns an automation-mode shell, then connects once it
+/// answers. The window is pinned to 1280x800 because the suites driving it
 /// depend on stable geometry and a persisted config may carry another size.
 pub fn spawn_shell(opts: &SpawnOptions) -> Result<(ShellGuard, Client)> {
     // Read-only resources stay rooted at the workspace even when the
@@ -150,16 +154,43 @@ pub fn spawn_shell(opts: &SpawnOptions) -> Result<(ShellGuard, Client)> {
     } else {
         command.current_dir(root);
     }
-    let child = command.spawn().context("spawning built Aftermine shell")?;
-    let guard = ShellGuard::new(child);
-    let addr = format!("127.0.0.1:{}", opts.port);
-    for _ in 0..240 {
-        if let Ok(client) = Client::connect(&addr) {
-            return Ok((guard, client));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(500));
+    launch(command, opts.port, Duration::from_secs(120))
+}
+
+/// Spawns `command`, a shell told to serve the debug protocol on `port`, and
+/// connects once it answers there, waiting up to `patience`.
+///
+/// A port that already answers is refused before anything spawns: the
+/// client would reach that server, not the new shell. A shell that exits
+/// before it answers is reported with its exit status as soon as it is
+/// gone.
+pub(crate) fn launch(
+    mut command: std::process::Command,
+    port: u16,
+    patience: Duration,
+) -> Result<(ShellGuard, Client)> {
+    const POLL: Duration = Duration::from_millis(250);
+    let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    if TcpStream::connect_timeout(&address, Duration::from_secs(1)).is_ok() {
+        bail!("a server already answers on {address}; stop it or choose another port");
     }
-    bail!("shell never came up on {addr}");
+    let mut shell = ShellGuard(command.spawn().context("spawning the Aftermine shell")?);
+    let deadline = Instant::now() + patience;
+    loop {
+        if let Some(status) = shell.0.try_wait().context("checking on the shell")? {
+            bail!("the shell exited before it answered on {address} ({status})");
+        }
+        if let Ok(client) = Client::connect(&address.to_string()) {
+            return Ok((shell, client));
+        }
+        if Instant::now() >= deadline {
+            bail!(
+                "the shell never answered on {address} within {}s",
+                patience.as_secs()
+            );
+        }
+        std::thread::sleep(POLL);
+    }
 }
 
 /// The shell's own report of what screen it shows.

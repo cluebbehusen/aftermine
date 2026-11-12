@@ -153,26 +153,20 @@ fn a_pocketed_founder_with_a_full_queue_is_not_moved_or_charged() {
         )
     }));
     state.tick(&commands);
-    let mut control = state.clone();
-    control.tick(&[]);
-    let report = state.tick(&[cmd(
-        0,
-        Command::Build {
-            units: vec![founder],
-            kind: BuildingKind::Fabricator,
-            anchor: TilePos::new(5, 3),
-            queue: true,
-            defer: false,
-        },
-    )]);
-    assert!(report.events.iter().any(|e| matches!(
-        e,
-        Event::CommandRejected {
-            reason: RejectReason::QueueFull,
-            ..
-        }
-    )));
-    assert_eq!(state.hash(), control.hash());
+    assert_refused(
+        &mut state,
+        cmd(
+            0,
+            Command::Build {
+                units: vec![founder],
+                kind: BuildingKind::Fabricator,
+                anchor: TilePos::new(5, 3),
+                queue: true,
+                defer: false,
+            },
+        ),
+        RejectReason::QueueFull,
+    );
 }
 
 #[test]
@@ -899,56 +893,31 @@ fn a_rejected_build_leaves_no_trace_on_the_hash() {
         buildings: Vec::new(),
         meta: None,
     };
-    let mut with_reject = scenario.build().unwrap();
-    let mut pristine = scenario.build().unwrap();
-    let builder = with_reject.units()[0].id;
-    let report = with_reject.tick(&[cmd(
-        0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(6, 3),
-            queue: false,
-            defer: false,
-        },
-    )]);
-    assert!(report.events.iter().any(|e| matches!(
-        e,
-        Event::CommandRejected {
-            reason: RejectReason::UnreachableGoal,
-            ..
-        }
-    )));
-    pristine.tick(&[]);
-    assert_eq!(
-        with_reject.hash(),
-        pristine.hash(),
-        "a rejected command must not move the state hash (id counter leak)"
+    let mut state = scenario.build().unwrap();
+    let mut pristine = state.clone();
+    let builder = state.units()[0].id;
+    let turret = |anchor| {
+        cmd(
+            0,
+            Command::Build {
+                units: vec![builder],
+                kind: BuildingKind::Turret,
+                anchor,
+                queue: false,
+                defer: false,
+            },
+        )
+    };
+    assert_refused(
+        &mut state,
+        turret(TilePos::new(6, 3)),
+        RejectReason::UnreachableGoal,
     );
     // And the next building anywhere gets the same id in both worlds.
-    let a = with_reject.tick(&[cmd(
-        0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(3, 4),
-            queue: false,
-            defer: false,
-        },
-    )]);
-    let _ = a;
-    let b = pristine.tick(&[cmd(
-        0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(3, 4),
-            queue: false,
-            defer: false,
-        },
-    )]);
-    let _ = b;
-    assert_eq!(with_reject.hash(), pristine.hash());
+    pristine.tick(&[]);
+    state.tick(&[turret(TilePos::new(3, 4))]);
+    pristine.tick(&[turret(TilePos::new(3, 4))]);
+    assert_eq!(state.hash(), pristine.hash());
 }
 
 #[test]
@@ -1785,22 +1754,19 @@ fn a_rejected_under_feet_build_leaves_no_trace_on_the_hash() {
         ));
     }
     state.tick(&fill);
-    let mut twin = state.clone();
-    twin.tick(&[]);
-    state.tick(&[cmd(
-        0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(5, 6),
-            queue: true,
-            defer: false,
-        },
-    )]);
-    assert_eq!(
-        state.hash(),
-        twin.hash(),
-        "a rejected build moved the state hash"
+    assert_refused(
+        &mut state,
+        cmd(
+            0,
+            Command::Build {
+                units: vec![builder],
+                kind: BuildingKind::Turret,
+                anchor: TilePos::new(5, 6),
+                queue: true,
+                defer: false,
+            },
+        ),
+        RejectReason::QueueFull,
     );
 }
 
@@ -3200,33 +3166,23 @@ fn a_stopped_pending_found_spends_nothing() {
 fn a_rejected_deferred_build_leaves_no_trace_on_the_hash() {
     use aftermine_sim::stats::BuildingKind;
     let scenario = arena(vec![unit(0, UnitKind::Harvester, 4, 6)]);
-    let mut with_reject = scenario.build().unwrap();
-    let mut pristine = scenario.build().unwrap();
-    let builder = with_reject.units()[0].id;
+    let mut state = scenario.build().unwrap();
+    let builder = state.units()[0].id;
     let unscouted = TilePos::new(12, 1);
-    assert!(!with_reject.vision(PlayerId(0)).explored(unscouted));
-    let report = with_reject.tick(&[cmd(
-        0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: unscouted,
-            queue: false,
-            defer: true,
-        },
-    )]);
-    assert!(report.events.iter().any(|e| matches!(
-        e,
-        Event::CommandRejected {
-            reason: RejectReason::BadSite,
-            ..
-        }
-    )));
-    pristine.tick(&[]);
-    assert_eq!(
-        with_reject.hash(),
-        pristine.hash(),
-        "a rejected deferred build must not move the state hash"
+    assert!(!state.vision(PlayerId(0)).explored(unscouted));
+    assert_refused(
+        &mut state,
+        cmd(
+            0,
+            Command::Build {
+                units: vec![builder],
+                kind: BuildingKind::Turret,
+                anchor: unscouted,
+                queue: false,
+                defer: true,
+            },
+        ),
+        RejectReason::BadSite,
     );
 }
 

@@ -184,3 +184,16 @@ fn a_shell_shot_down_takes_its_own_release_record_with_it() {
     let flight = releases.flight(&[survivor], 0).unwrap();
     assert_eq!(flight.target, Some(Target::Unit(UnitId(2))));
 }
+
+#[test]
+fn missile_pose_and_cues_share_the_post_tick_launch_origin() {
+    assert_eq!(projectile_elapsed_ticks(11.0, 30, 20.0), 0.0);
+    assert_eq!(
+        projectile_elapsed_ticks(14.0, 30, 20.0),
+        missile_ejection_ticks(20.0)
+    );
+    assert_eq!(projectile_elapsed_ticks(31.0, 30, 20.0), 20.0);
+    for total in [1.0, 4.0, 20.0] {
+        assert!(missile_ejection_ticks(total) < total);
+    }
+}

@@ -3,7 +3,7 @@
 use crate::game::{Game, Scene};
 use crate::panel::CardIcon;
 use aftermine_sim::{BuildingId, UnitId};
-use macroquad::prelude::{Vec2, vec2};
+use macroquad::prelude::Vec2;
 
 /// A saved control group. Like a selection, it holds units or buildings,
 /// never both, so every command path that reads a selection reads a
@@ -25,10 +25,10 @@ impl Group {
     /// holds no units.
     pub(crate) fn of_selection(game: &Scene<'_>) -> Self {
         let selection = &game.presentation.selection;
-        if selection.units.is_empty() && !selection.buildings.is_empty() {
-            Self::Buildings(selection.buildings.clone())
+        if selection.units().is_empty() && !selection.buildings().is_empty() {
+            Self::Buildings(selection.buildings().to_vec())
         } else {
-            Self::Units(selection.units.clone())
+            Self::Units(selection.units().to_vec())
         }
         .live(game)
     }
@@ -83,14 +83,11 @@ impl Group {
     pub(crate) fn select(&self, game: &mut Game) {
         let selection = &mut game.presentation.selection;
         match self {
-            Self::Units(ids) => {
-                selection.units.clone_from(ids);
-                selection.buildings.clear();
-            }
+            Self::Units(ids) => selection.set_units(ids.clone()),
             Self::Buildings(ids) => {
-                selection.units.clear();
-                selection.buildings.clone_from(ids);
-                selection.buildings.sort_unstable();
+                let mut ids = ids.clone();
+                ids.sort_unstable();
+                selection.set_buildings(ids);
             }
         }
     }
@@ -101,14 +98,14 @@ impl Group {
             Self::Units(ids) => ids
                 .iter()
                 .filter_map(|id| game.state.unit(*id))
-                .map(|u| vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>()))
+                .map(|u| crate::game::world_vec(u.pos))
                 .collect(),
             Self::Buildings(ids) => ids
                 .iter()
                 .filter_map(|id| game.state.building(*id))
                 .map(|b| {
                     let center = b.center();
-                    vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>())
+                    crate::game::world_vec(center)
                 })
                 .collect(),
         };

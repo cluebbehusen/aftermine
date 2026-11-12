@@ -148,25 +148,32 @@ fn tick_scan_ranks_hundred_tick_windows_by_default() {
         replay,
         window,
         top,
+        passes,
         json,
     } = cli.cmd
     else {
         panic!("tick-scan parsed as another command")
     };
     assert_eq!(
-        (replay.as_str(), window, top, json),
-        ("match.json", 100, 10, false)
+        (replay.as_str(), window, top, passes, json),
+        ("match.json", 100, 10, 1, false)
     );
-    assert!(
-        Cli::try_parse_from([
-            "aftermine-driver",
-            "tick-scan",
-            "match.json",
-            "--window",
-            "0"
-        ])
-        .is_err()
-    );
+    for refused in ["--window", "--passes"] {
+        assert!(
+            Cli::try_parse_from(["aftermine-driver", "tick-scan", "match.json", refused, "0"])
+                .is_err(),
+            "{refused} 0"
+        );
+    }
+    let cli = Cli::try_parse_from([
+        "aftermine-driver",
+        "tick-scan",
+        "match.json",
+        "--passes",
+        "5",
+    ])
+    .expect("passes parse");
+    assert!(matches!(cli.cmd, Cmd::TickScan { passes: 5, .. }));
 }
 
 #[test]

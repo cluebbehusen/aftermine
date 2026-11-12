@@ -756,3 +756,57 @@ fn a_clearance_weighs_the_anti_air_it_sweeps_whoever_the_lift_goes_after() {
         assert_eq!(sent, !goes_on, "{why}: {commands:?}");
     }
 }
+
+/// East's Foundry, the building a lift over the strait goes after.
+const EAST_FOUNDRY: TilePos = TilePos::new(35, 11);
+
+/// West's lone Roc at home at tick 1,200, in a clearance aimed at `aim` whose
+/// fight there began at tick 0 and has made no progress since, with the
+/// decision's commands and the clearance it leaves.
+fn roc_done_fighting_at(aim: TilePos) -> (UnitId, Vec<PlayerCommand>, Option<MissionStatus>) {
+    let scenario = lone_roc();
+    let mut state = scenario.build().unwrap();
+    let roc = at(&state, ROC_HOME.0, ROC_HOME.1);
+    advance_to(&mut state, 1_200, &[]);
+    let missions = serde_json::json!({
+        "next": 1,
+        "list": [{
+            "id": 0,
+            "task": {
+                "task": "clear",
+                "aim": aim,
+                "phase": {"engage": {"focus": null, "tally": null, "progressed": 0}},
+            },
+            "since": 0,
+            "units": [roc],
+            "goal": {"x": aim.x, "y": aim.y + 2},
+        }],
+    });
+    let mut opponent = super::attack::restaged(&scenario, &state, missions);
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    (roc, commands, clear(&trace.unwrap().missions))
+}
+
+#[test]
+fn a_free_roc_sweeps_the_lift_target_until_it_falls_then_the_next() {
+    // Still standing, the target is swept again rather than left behind.
+    // Gone, the Roc goes at the next building the lift would take.
+    for (aim, why) in [
+        (EAST_FOUNDRY, "the target stands"),
+        (TilePos::new(30, 20), "the target fell"),
+    ] {
+        let (roc, commands, mission) = roc_done_fighting_at(aim);
+        assert_eq!(
+            mission.map(|mission| (mission.kind, mission.phase)),
+            Some((MissionKind::Clear { aim: EAST_FOUNDRY }, Phase::Travel)),
+            "{why}: {commands:?}"
+        );
+        assert!(
+            hunts(&commands)
+                .iter()
+                .chain(&runs(&commands))
+                .any(|(units, _)| units == &[roc]),
+            "{why}: the Roc sets out: {commands:?}"
+        );
+    }
+}

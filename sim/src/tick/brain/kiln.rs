@@ -4,12 +4,7 @@ use super::PendingUnitHeal;
 use crate::ids::UnitId;
 use crate::state::State;
 use crate::stats::{KILN_BITE_PERIOD, Mend};
-use chassis::fx::Fx;
 use chassis::grid::TilePos;
-
-/// A wreck's rank for a kiln's bite, lowest first: distance from the hull's
-/// centre, then the richer wreck, then tile order in the machine's frame.
-type FuelKey = (Fx, std::cmp::Reverse<u32>, (i32, i32));
 
 impl State {
     /// The wreck tile a wounded kiln machine bites next, if any: within its
@@ -32,26 +27,15 @@ impl State {
             low = TilePos::new(low.x.min(tile.x), low.y.min(tile.y));
             high = TilePos::new(high.x.max(tile.x), high.y.max(tile.y));
         }
-        let mut fuel: Option<(FuelKey, TilePos)> = None;
-        for y in low.y - kiln.reach..=high.y + kiln.reach {
-            for x in low.x - kiln.reach..=high.x + kiln.reach {
-                let tile = TilePos::new(x, y);
-                let amount = self.map.wreck_at(tile);
-                if amount == 0 {
-                    continue;
-                }
-                let order = if rotated { (-y, -x) } else { (y, x) };
-                let key = (
-                    unit.pos.dist_sq(tile.center()),
-                    std::cmp::Reverse(amount),
-                    order,
-                );
-                if fuel.as_ref().is_none_or(|(best, _)| key < *best) {
-                    fuel = Some((key, tile));
-                }
-            }
-        }
-        fuel.map(|(_, tile)| tile)
+        super::first_fuel(
+            self,
+            (
+                low.offset(-kiln.reach, -kiln.reach),
+                high.offset(kiln.reach, kiln.reach),
+            ),
+            rotated,
+            |tile| Some(unit.pos.dist_sq(tile.center())),
+        )
     }
 }
 

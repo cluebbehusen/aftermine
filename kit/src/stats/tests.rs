@@ -781,3 +781,17 @@ fn checkpoints_refuse_malformed_series_and_moments() {
     assert!(state.current_tick() < unordered.final_tick);
     assert!(unordered.validate_checkpoint(&state).is_err());
 }
+
+#[test]
+fn unit_counts_key_by_kind_and_refuse_an_unknown_one() {
+    let state = Scenario::skirmish().build().expect("skirmish builds");
+    let stats = LiveMatchStats::new(&state).snapshot(&state);
+    let harvesters = stats.players[0].kinds[0][&UnitKind::Harvester];
+    assert!(harvesters > 0);
+    let mut wire = serde_json::to_value(&stats).unwrap();
+    assert_eq!(wire["players"][0]["kinds"][0]["harvester"], harvesters);
+    let back: MatchStats = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(back, stats);
+    wire["players"][0]["kinds"][0]["dreadnought"] = serde_json::json!(1);
+    assert!(serde_json::from_value::<MatchStats>(wire).is_err());
+}

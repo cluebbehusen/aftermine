@@ -472,7 +472,10 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     assert!(!up.dirty);
     assert_eq!(s.mode_name(), "player_name");
     assert!(!s.edits_bindings(), "the form edits text, not bindings");
-    assert_eq!(s.keyboard(), Some(Keyboard::Text));
+    assert_eq!(
+        s.form().map(|form| form.keyboard()),
+        Some(crate::text_field::Keyboard::Text)
+    );
     assert_eq!(s.menu.view().items, vec!["Anvil_"]);
 
     // Saving the default unchanged leaves it a default, which never syncs.
@@ -495,7 +498,7 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     assert!(saved.dirty);
     assert_eq!(config.player_name.as_deref(), Some("Connor"));
     assert_eq!(s.mode_name(), "settings");
-    assert_eq!(s.keyboard(), None);
+    assert_eq!(s.form().map(|form| form.keyboard()), None);
     assert_eq!(label(&s, name), "Name: Connor");
     assert_eq!(s.menu.selected, index(&s, name), "back on the row");
 
@@ -508,7 +511,10 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     assert_eq!(config.player_name.as_deref(), Some("Connor"));
     drive(&mut s, &mut config, &press(Key::Enter), false);
     assert_eq!(s.menu.view().items, vec!["Connor_"], "prefilled");
-    assert!(!s.take_keyboard_request());
+    assert!(
+        !s.form()
+            .is_some_and(crate::text_field::Form::take_keyboard_request)
+    );
     let back = crate::button::tests::press_back(true);
     let up = drive(&mut s, &mut config, &back, false);
     assert_eq!(up.out, Out::Stay);
@@ -820,7 +826,7 @@ fn x_unbinds_and_reset_restores_the_classic_map() {
 fn a_whole_profile_asks_first_and_every_way_out_keeps_the_rebinds() {
     crate::render::set_viewport(1280.0, 800.0);
     crate::render::set_user_scale(1.0);
-    for profile in [Profile::Classic, Profile::LeftHanded] {
+    for profile in [Profile::CLASSIC, Profile::LEFT_HANDED] {
         let mut config = Config::default();
         assert!(config.bindings.rebind_slot(
             Action::Patrol,
@@ -838,7 +844,7 @@ fn a_whole_profile_asks_first_and_every_way_out_keeps_the_rebinds() {
             ("Escape", press(Key::Escape)),
             ("the BACK button", crate::button::tests::press_back(true)),
         ] {
-            focus(&mut s, profile.item());
+            focus(&mut s, profile.item);
             let up = drive(&mut s, &mut config, &press(Key::Enter), false);
             assert_eq!(s.face, Face::Confirming(profile));
             assert_eq!(s.mode_name(), "confirm_bindings");
@@ -860,7 +866,7 @@ fn a_whole_profile_asks_first_and_every_way_out_keeps_the_rebinds() {
             );
             assert_eq!(
                 s.menu.value(),
-                Some(&profile.item()),
+                Some(&profile.item),
                 "{way} returns to the row that asked"
             );
         }
@@ -868,10 +874,10 @@ fn a_whole_profile_asks_first_and_every_way_out_keeps_the_rebinds() {
         assert!(up.dirty);
         assert_eq!(config.bindings, profile.bindings());
         assert_eq!(s.face, Face::Tab(Tab::Controls));
-        assert_eq!(s.menu.value(), Some(&profile.item()));
+        assert_eq!(s.menu.value(), Some(&profile.item));
         assert_eq!(
             s.notice.as_ref().map(|notice| notice.text.as_str()),
-            Some(profile.applied()),
+            Some(profile.applied),
             "the notice line says the profile is in place"
         );
     }
@@ -888,9 +894,9 @@ fn every_way_out_of_the_profile_dialog_clicks() {
         ("Escape", press(Key::Escape)),
         ("the BACK button", crate::button::tests::press_back(true)),
     ] {
-        focus(&mut s, Profile::LeftHanded.item());
+        focus(&mut s, Profile::LEFT_HANDED.item);
         drive(&mut s, &mut config, &press(Key::Enter), false);
-        assert_eq!(s.face, Face::Confirming(Profile::LeftHanded));
+        assert_eq!(s.face, Face::Confirming(Profile::LEFT_HANDED));
         let (mut mouse, mut sounds) = (vec2(0.0, 0.0), Vec::new());
         s.update(&events, &mut mouse, &mut sounds, &mut config, false, false);
         assert_eq!(s.face, Face::Tab(Tab::Controls), "{way} closes the dialog");
@@ -903,7 +909,7 @@ fn a_second_tap_on_a_profile_row_never_applies_it() {
     for (width, height) in [(1180.0, 820.0), (640.0, 400.0)] {
         crate::render::set_viewport(width, height);
         crate::render::set_user_scale(1.0);
-        for profile in [Profile::Classic, Profile::LeftHanded] {
+        for profile in [Profile::CLASSIC, Profile::LEFT_HANDED] {
             let mut config = Config::default();
             assert!(config.bindings.rebind_slot(
                 Action::Patrol,
@@ -918,7 +924,7 @@ fn a_second_tap_on_a_profile_row_never_applies_it() {
             let mut s = on(Tab::Controls, &config);
             let row = s
                 .menu
-                .item_rect(index(&s, profile.item()))
+                .item_rect(index(&s, profile.item))
                 .expect("the profile rows open in view")
                 .center();
             drive(&mut s, &mut config, &tap(row), false);

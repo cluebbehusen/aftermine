@@ -490,7 +490,7 @@ fn besieged<'a>(
     claimed: &[UnitId],
     claimed_batteries: &[TilePos],
 ) -> Vec<(&'a BuildingObs, Siege<'a>)> {
-    let foundries = built_foundries(buildings, frame);
+    let foundries = foundries_from_home(buildings, frame);
     let mut groups: Vec<(&BuildingObs, Siege)> = foundries
         .iter()
         .map(|foundry| (*foundry, Siege::default()))
@@ -560,11 +560,8 @@ fn besieged<'a>(
 }
 
 /// The built Foundries among `buildings`, nearest home first.
-fn built_foundries(buildings: &[BuildingObs], frame: HomeFrame) -> Vec<&BuildingObs> {
-    let mut foundries: Vec<&BuildingObs> = buildings
-        .iter()
-        .filter(|building| building.kind == BuildingKind::Foundry && building.built)
-        .collect();
+fn foundries_from_home(buildings: &[BuildingObs], frame: HomeFrame) -> Vec<&BuildingObs> {
+    let mut foundries: Vec<&BuildingObs> = crate::investments::built_foundries(buildings).collect();
     foundries.sort_by_key(|foundry| {
         (
             frame.rank(frame.home, footprint_centre(foundry.kind, foundry.anchor)),
@@ -651,7 +648,7 @@ fn unseen<'a>(
     if impacts.is_empty() {
         return Vec::new();
     }
-    let foundries = built_foundries(&observation.my_buildings, frame);
+    let foundries = foundries_from_home(&observation.my_buildings, frame);
     let nearest = |impact: TilePos| {
         foundries.iter().copied().min_by_key(|foundry| {
             (

@@ -91,11 +91,8 @@ pub(crate) fn candidates(
 /// Whether a completed own Foundry supports an Extractor on `frame`, by the
 /// simulation's own reach.
 pub(crate) fn supported(observation: &ObservationData, frame: TilePos) -> bool {
-    observation.my_buildings.iter().any(|building| {
-        building.kind == BuildingKind::Foundry
-            && building.built
-            && foundry_supports(building.anchor, frame)
-    })
+    crate::investments::built_foundries(&observation.my_buildings)
+        .any(|foundry| foundry_supports(foundry.anchor, frame))
 }
 
 /// Whether the seat holds a Deep Bore, standing or still refitting, or an
@@ -112,10 +109,8 @@ pub(crate) fn bore_within_reach(observation: &ObservationData) -> bool {
 /// Whether the seat already has a built Foundry or a worker on `ground`, so
 /// building there needs no lift.
 fn settled(observation: &ObservationData, map: &MapModel, ground: Option<u32>) -> bool {
-    observation
-        .my_buildings
-        .iter()
-        .any(|b| b.kind == BuildingKind::Foundry && b.built && map.component(b.anchor) == ground)
+    crate::investments::built_foundries(&observation.my_buildings)
+        .any(|b| map.component(b.anchor) == ground)
         || observation
             .my_units
             .iter()
@@ -125,15 +120,9 @@ fn settled(observation: &ObservationData, map: &MapModel, ground: Option<u32>) -
 /// What the seat still lacks to lift a builder: an Airworks and its
 /// Fabricator, and a first carrier.
 fn lift_cost(observation: &ObservationData) -> u32 {
-    let built = |kind| {
-        observation
-            .my_buildings
-            .iter()
-            .any(|b| b.kind == kind && b.built)
-    };
     let tech: u32 = [BuildingKind::Fabricator, BuildingKind::Airworks]
         .into_iter()
-        .filter(|kind| !built(*kind))
+        .filter(|kind| !crate::investments::built(observation, *kind))
         .map(construction_cost)
         .sum();
     let carrier = observation
@@ -212,11 +201,7 @@ pub(crate) fn value(
     let frames = i64::try_from(frames).expect("frame counts fit in i64");
     // Once a Crucible stands, a Foundry here would let own remote Extractors
     // in its reach become Deep Bores.
-    let deepens = if observation
-        .my_buildings
-        .iter()
-        .any(|building| building.kind == BuildingKind::Crucible && building.built)
-    {
+    let deepens = if crate::investments::built(observation, BuildingKind::Crucible) {
         observation
             .my_buildings
             .iter()
@@ -283,14 +268,8 @@ fn distance(observation: &ObservationData, map: &MapModel, anchor: TilePos) -> u
     if distance != UNREACHABLE {
         return distance;
     }
-    let from = observation
-        .my_buildings
-        .iter()
-        .filter(|b| {
-            b.kind == BuildingKind::Foundry
-                && b.built
-                && map.component(b.anchor) == map.component(anchor)
-        })
+    let from = crate::investments::built_foundries(&observation.my_buildings)
+        .filter(|b| map.component(b.anchor) == map.component(anchor))
         .map(|b| b.anchor.chebyshev(anchor))
         .min()
         .or_else(|| map.start(observation.me).map(|home| home.chebyshev(anchor)));

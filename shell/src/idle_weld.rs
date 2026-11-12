@@ -16,7 +16,7 @@ pub struct SelectedWorkers {
 impl SelectedWorkers {
     pub fn inspect(game: &Scene<'_>) -> Self {
         let human = game.presentation.human;
-        let selection = &game.presentation.selection.units;
+        let selection = game.presentation.selection.units();
         crate::unit_bays::with_pending(game, |units, _, accepts| Self {
             workers: units
                 .iter()

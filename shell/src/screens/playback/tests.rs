@@ -347,7 +347,7 @@ fn the_stats_button_shows_and_hides_the_overlay_by_click_and_by_tap() {
 #[test]
 fn the_composition_legend_names_kinds_as_players_read_them() {
     for kind in aftermine_sim::stats::UnitKind::ALL {
-        let label = legend_label(kind.name());
+        let label = legend_label(kind);
         assert_eq!(label, crate::typography::entity_name(kind.name()));
         assert!(label.starts_with(char::is_uppercase), "{label}");
     }
@@ -1240,4 +1240,20 @@ fn a_remote_pauses_with_play_pause_and_its_click_only_changes_mode() {
         "another controller's A still pauses and plays"
     );
     assert!(run(&mut pb, &press(7, crate::pad::BACK)), "Back leaves");
+}
+
+#[test]
+fn the_composition_band_breaks_ties_by_name() {
+    use aftermine_sim::UnitKind;
+    let peak = [
+        (UnitKind::Sentinel, 4),
+        (UnitKind::Lancer, 4),
+        (UnitKind::Harvester, 9),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        ranked_kinds(peak),
+        [UnitKind::Harvester, UnitKind::Lancer, UnitKind::Sentinel]
+    );
 }

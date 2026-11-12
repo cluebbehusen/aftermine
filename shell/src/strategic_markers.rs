@@ -130,12 +130,6 @@ pub(crate) fn replaces_units(zoom: f32) -> bool {
     marker_alpha(zoom) >= 1.0
 }
 
-pub(crate) fn visible(game: &Scene<'_>, unit: &Unit) -> bool {
-    unit.player == game.presentation.human
-        || game.presentation.all_seeing()
-        || game.my_vision().sees_unit(unit)
-}
-
 /// A unit marker the view shows: the unit, where it draws, and whether it is
 /// selected.
 type Shown<'a> = (&'a Unit, Vec2, bool);
@@ -143,18 +137,16 @@ type Shown<'a> = (&'a Unit, Vec2, bool);
 /// The unit markers in view, unselected ones first so a selection's rings
 /// draw over its neighbours, each part in the world's unit order.
 fn shown_units<'a>(game: &Scene<'a>, alpha: f32) -> Vec<Shown<'a>> {
-    let (lo, hi) = game.presentation.camera.world_rect();
-    let selection = &game.presentation.selection.units;
+    let selection = game.presentation.selection.units();
     let mut chosen = Vec::new();
     let mut shown: Vec<Shown<'a>> = game
         .state
         .units()
         .iter()
-        .filter(|unit| visible(game, unit))
+        .filter(|unit| game.sees_unit(unit))
         .filter_map(|unit| {
             let pos = game.presentation.draw_pos(unit.id, unit.pos, alpha);
-            if pos.x < lo.x - 2.0 || pos.y < lo.y - 2.0 || pos.x > hi.x + 2.0 || pos.y > hi.y + 2.0
-            {
+            if !game.presentation.camera.in_view(pos, 2.0) {
                 return None;
             }
             if selection.binary_search(&unit.id).is_ok() {
@@ -262,13 +254,6 @@ fn draw_unit_markers(game: &Scene<'_>, alpha: f32, opacity: f32) {
     }
 }
 
-pub(crate) fn building_visible(game: &Scene<'_>, b: &aftermine_sim::Building) -> bool {
-    b.player == game.presentation.human
-        || game.presentation.all_seeing()
-        || (b.tiles().any(|t| game.my_vision().visible(t))
-            && game.state.building_apparent(game.presentation.human, b))
-}
-
 pub(crate) fn draw_buildings(game: &Scene<'_>) {
     let alpha = marker_alpha(game.presentation.camera.zoom);
     if alpha <= 0.0 {
@@ -279,7 +264,6 @@ pub(crate) fn draw_buildings(game: &Scene<'_>) {
 
 fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
     let scale = prefs().scale;
-    let (lo, hi) = game.presentation.camera.world_rect();
     // A Spire's deck art is too small to read here, so its marker says
     // whether it holds a warhead, as far as the viewer may know.
     let loaded: Vec<_> = game
@@ -294,7 +278,7 @@ fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
         .state
         .buildings()
         .iter()
-        .filter(|b| building_visible(game, b))
+        .filter(|b| game.sees_building(b))
     {
         markers.push((
             b.kind,
@@ -302,7 +286,7 @@ fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
             b.anchor,
             b.built(),
             false,
-            game.presentation.selection.buildings.contains(&b.id),
+            game.presentation.selection.buildings().contains(&b.id),
             if game.presentation.all_seeing() {
                 b.launcher.is_some() && b.magazine.is_some_and(|m| m.loaded > 0)
             } else {
@@ -316,7 +300,7 @@ fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
             let observed = game
                 .state
                 .buildings_at(g.anchor)
-                .any(|b| b.kind == g.kind && b.player == g.owner && building_visible(game, b));
+                .any(|b| b.kind == g.kind && b.player == g.owner && game.sees_building(b));
             if observed {
                 continue;
             }
@@ -344,11 +328,7 @@ fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
             anchor.x as f32 + w as f32 * 0.5,
             anchor.y as f32 + h as f32 * 0.5,
         );
-        if world.x < lo.x - 3.0
-            || world.y < lo.y - 3.0
-            || world.x > hi.x + 3.0
-            || world.y > hi.y + 3.0
-        {
+        if !game.presentation.camera.in_view(world, 3.0) {
             continue;
         }
         let pen = Pen {
@@ -518,15 +498,9 @@ pub(crate) fn draw_extractor_frames(game: &Scene<'_>) {
 
 fn draw_frame_markers(game: &Scene<'_>, alpha: f32) {
     let scale = prefs().scale;
-    let (lo, hi) = game.presentation.camera.world_rect();
     for &frame in game.state.map().extractor_frames() {
         let pos = vec2(frame.x as f32 + 1.0, frame.y as f32 + 1.0);
-        if pos.x < lo.x - 2.0
-            || pos.y < lo.y - 2.0
-            || pos.x > hi.x + 2.0
-            || pos.y > hi.y + 2.0
-            || !extractor_frame_visible(game, frame)
-        {
+        if !game.presentation.camera.in_view(pos, 2.0) || !extractor_frame_visible(game, frame) {
             continue;
         }
         let pen = Pen {
@@ -548,7 +522,7 @@ fn draw_frame_markers(game: &Scene<'_>, alpha: f32) {
 }
 
 pub(crate) fn known_resource(game: &Scene<'_>, pos: chassis::grid::TilePos) -> u32 {
-    if game.presentation.all_seeing() || game.my_vision().visible(pos) {
+    if game.sees_tile(pos) {
         game.state
             .map()
             .tile(pos)
@@ -561,12 +535,7 @@ pub(crate) fn known_resource(game: &Scene<'_>, pos: chassis::grid::TilePos) -> u
 }
 fn resource_marker_opacity(game: &Scene<'_>, pos: chassis::grid::TilePos) -> f32 {
     let age_opacity = crate::render::resource_memory_opacity(game, pos);
-    age_opacity
-        * if game.presentation.all_seeing() || game.my_vision().visible(pos) {
-            1.0
-        } else {
-            0.4
-        }
+    age_opacity * if game.sees_tile(pos) { 1.0 } else { 0.4 }
 }
 pub(crate) fn draw_resources(game: &Scene<'_>) {
     let p = prefs();

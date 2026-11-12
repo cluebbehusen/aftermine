@@ -87,11 +87,11 @@ fn credit(state: &mut State, player: PlayerId, amount: u32, events: &mut Vec<Eve
 pub(super) fn run(state: &mut State, events: &mut Vec<Event>) {
     // Every built Reclaimer credits one scrap per period. Credits are
     // per-player sums, so order does not matter.
-    for (period, tier) in [
-        (crate::stats::RECLAIMER_PERIOD, 0u8),
-        (crate::stats::REFINERY_PERIOD, 1u8),
-    ] {
-        if !state.tick.is_multiple_of(period) {
+    for tier in [0u8, 1] {
+        if !state
+            .tick
+            .is_multiple_of(crate::stats::reclaimer_period(tier))
+        {
             continue;
         }
         let credits: Vec<PlayerId> = state

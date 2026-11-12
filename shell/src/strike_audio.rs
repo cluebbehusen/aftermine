@@ -4,8 +4,8 @@
 //! or in an omniscient view (see [`crate::render::sky::missile_seen`]).
 
 use crate::game::{EffectKind, INTERCEPT_OVERLAP_TICKS, Scene, SoundKind, TICK_DT};
+use crate::loop_audio::{LoopBank, Motor, camera_gain, densest};
 use crate::render::sky::{missile_seen, warhead_track};
-use crate::rocket_audio::{LoopBank, Motor, camera_gain, densest};
 use aftermine_sim::WarheadId;
 use macroquad::audio::Sound;
 

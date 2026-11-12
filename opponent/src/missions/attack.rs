@@ -219,9 +219,7 @@ impl Missions {
             .my_buildings
             .iter()
             .zip(&observation.my_queues)
-            .filter(|(building, _)| {
-                building.built && !building.kind.base_stats().produces.is_empty()
-            })
+            .filter(|(building, _)| crate::investments::built_producer(building))
             .peekable();
         let idle = producers.peek().is_some() && producers.all(|(_, queue)| queue.is_empty());
         let underway = self.list.iter().any(|mission| {

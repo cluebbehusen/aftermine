@@ -56,19 +56,89 @@ impl Deref for PendingCommands {
     }
 }
 
-/// What the player currently has selected.
-#[derive(Default)]
-pub struct Selection {
-    /// Selected units, single-allegiance by construction (own for
-    /// command, ally or enemy for read-only inspection).
-    pub units: Vec<UnitId>,
-    /// Selected buildings of one owner (mutually exclusive with units
-    /// in practice), kept in id order. Commands validate ownership at
-    /// their own gates.
-    pub buildings: Vec<BuildingId>,
-    /// An inspected salvage tile: held only while nothing else is
-    /// selected and the viewer knows the tile still holds salvage.
-    pub pile: Option<chassis::grid::TilePos>,
+/// What the player currently has selected: one of units, structures or a
+/// salvage tile, never two at once.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Selection {
+    #[default]
+    Empty,
+    /// Units of one allegiance (own for command, ally or enemy for
+    /// read-only inspection); never empty.
+    Units(Vec<UnitId>),
+    /// Structures of one owner, kept in id order; never empty. Commands
+    /// validate ownership at their own gates.
+    Buildings(Vec<BuildingId>),
+    /// An inspected salvage tile, held only while the viewer knows it
+    /// still holds salvage.
+    Pile(chassis::grid::TilePos),
+}
+
+impl Selection {
+    /// The selected units; empty unless units are selected.
+    pub fn units(&self) -> &[UnitId] {
+        match self {
+            Self::Units(ids) => ids,
+            _ => &[],
+        }
+    }
+
+    /// The selected structures; empty unless structures are selected.
+    pub fn buildings(&self) -> &[BuildingId] {
+        match self {
+            Self::Buildings(ids) => ids,
+            _ => &[],
+        }
+    }
+
+    /// The inspected salvage tile, while one is selected.
+    pub fn pile(&self) -> Option<chassis::grid::TilePos> {
+        match self {
+            Self::Pile(tile) => Some(*tile),
+            _ => None,
+        }
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::Empty;
+    }
+
+    /// Selects `ids`, or nothing when there are none.
+    pub fn set_units(&mut self, ids: Vec<UnitId>) {
+        *self = if ids.is_empty() {
+            Self::Empty
+        } else {
+            Self::Units(ids)
+        };
+    }
+
+    /// Selects `ids`, or nothing when there are none.
+    pub fn set_buildings(&mut self, ids: Vec<BuildingId>) {
+        *self = if ids.is_empty() {
+            Self::Empty
+        } else {
+            Self::Buildings(ids)
+        };
+    }
+
+    /// Keeps the selected units `keep` accepts.
+    pub fn retain_units(&mut self, keep: impl FnMut(&UnitId) -> bool) {
+        if let Self::Units(ids) = self {
+            ids.retain(keep);
+            if ids.is_empty() {
+                self.clear();
+            }
+        }
+    }
+
+    /// Keeps the selected structures `keep` accepts.
+    pub fn retain_buildings(&mut self, keep: impl FnMut(&BuildingId) -> bool) {
+        if let Self::Buildings(ids) = self {
+            ids.retain(keep);
+            if ids.is_empty() {
+                self.clear();
+            }
+        }
+    }
 }
 
 /// A transient visual effect (never sim-relevant).
@@ -83,11 +153,11 @@ pub(crate) mod checkpoint;
 pub(crate) mod network;
 mod projectiles;
 pub(crate) mod projection;
-pub(crate) use projectiles::LaunchPose;
+pub(crate) use projectiles::{LaunchPose, missile_ejection_ticks, projectile_elapsed_ticks};
 
 pub(crate) use fx::{
-    BuildingHit, HitSurface, INTERCEPT_OVERLAP_TICKS, InterceptFlight, UnitBody, UnitHit,
-    WARHEAD_BURST,
+    BuildingHit, FLAK_ROUND_TRAVEL, HitSurface, INTERCEPT_OVERLAP_TICKS, InterceptFlight, UnitBody,
+    UnitHit, WARHEAD_BURST,
 };
 pub use fx::{Effect, EffectKind, FlakYokeDelay, PingKind, ShotStyle, SoundKind};
 
@@ -340,53 +410,20 @@ impl Game {
         // valid file can still claim a duration long enough to freeze the
         // UI for minutes.
         let _load = aftermine_kit::diagnostics::stage(Stage::ReplayLoad, 0);
-        // Untrusted file: enforce the invariants recording guarantees, and
-        // refuse cross-version saves outright, since resuming one would
-        // keep recording onto a log that can no longer reproduce.
-        replay
-            .validate(Some(SIM_VERSION))
-            .map_err(|err| anyhow::anyhow!("{err}"))?;
-        anyhow::ensure!(
-            replay.origin.is_none(),
-            "live continuation requires a session checkpoint for this replay origin"
-        );
-        let scenario = replay.setup.clone();
-        let mut state = scenario.build()?;
-        let total = aftermine_kit::replay_duration(&replay);
-        anyhow::ensure!(
-            total <= aftermine_kit::MAX_REPLAY_TICKS,
-            "replay spans {total} ticks, beyond the {}-tick interactive load limit \
-             (the headless driver replays without one)",
-            aftermine_kit::MAX_REPLAY_TICKS
-        );
-        // The fast-forward lets bots observe every tick to rebuild controller
-        // memory. Their generated commands are discarded because the record
-        // remains authoritative.
-        let mut bots = seat_controllers(&scenario)?;
-        let mut cursor = replay.cursor();
-        let mut live_stats = aftermine_kit::stats::LiveMatchStats::new(&state);
+        let mut game = Self::new(replay.setup.clone())?;
+        let mut live_stats = aftermine_kit::stats::LiveMatchStats::new(&game.state);
         let mut projectile_releases = projectiles::ProjectileReleases::default();
-        let mut game = Self::new(scenario)?;
         let mut boundary_fog = game.presentation.boundary_fog.clone();
-        for _ in 0..total {
-            aftermine_kit::diagnostics::progress(state.current_tick());
-            let _ = aftermine_kit::bot_execution::commands(&state, &mut bots);
-            let commands: Vec<PlayerCommand> = cursor
-                .take_tick(state.current_tick())
-                .iter()
-                .map(|t| t.command.clone())
-                .collect();
-            let report = state.tick(&commands);
-            aftermine_kit::controller::record_events(&mut bots, &report);
-            game.keyframes.observe(&state);
-            boundary_fog.observe(&state, game.presentation.human);
-            projectile_releases.observe(&state, &report.events);
-            live_stats.observe(&state, &report.events);
-        }
-        anyhow::ensure!(
-            cursor.is_finished(),
-            "replay duration metadata does not cover its own commands"
-        );
+        let human = game.presentation.human;
+        let keyframes = &mut game.keyframes;
+        let aftermine_kit::Resumed { state, bots } =
+            aftermine_kit::resume(&replay, |state, report| {
+                aftermine_kit::diagnostics::progress(state.current_tick());
+                keyframes.observe(state);
+                boundary_fog.observe(state, human);
+                projectile_releases.observe(state, &report.events);
+                live_stats.observe(state, &report.events);
+            })?;
         game.replace_state_after_jump(&state);
         game.presentation.boundary_fog = boundary_fog;
         game.presentation.projectile_releases = projectile_releases;
@@ -591,7 +628,7 @@ impl Game {
         let all_seeing = self.presentation.all_seeing();
         {
             let state = &self.state;
-            self.presentation.selection.units.retain(|id| {
+            self.presentation.selection.retain_units(|id| {
                 state.unit(*id).is_some_and(|u| {
                     !state.hostile(human, u.player) || all_seeing || {
                         state.vision(human).sees_unit(u)
@@ -599,7 +636,7 @@ impl Game {
                 })
             });
         }
-        self.presentation.selection.buildings.retain(|id| {
+        self.presentation.selection.retain_buildings(|id| {
             self.state.building(*id).is_some_and(|building| {
                 !self.state.hostile(human, building.player)
                     || all_seeing
@@ -609,10 +646,10 @@ impl Game {
                         && self.state.building_apparent(human, building))
             })
         });
-        if let Some(tile) = self.presentation.selection.pile
+        if let Some(tile) = self.presentation.selection.pile()
             && presentation::known_salvage(&self.state, human, all_seeing, tile).is_none()
         {
-            self.presentation.selection.pile = None;
+            self.presentation.selection.clear();
         }
         report
     }
@@ -766,6 +803,12 @@ pub(crate) fn gun_turns_off_hull(kind: UnitKind) -> bool {
             .is_some_and(|brace| brace.traverse.is_some())
 }
 
+/// How long, in seconds, a body that fired without a turret holds its aim
+/// before it may turn back to its facing.
+pub(crate) const AIM_HOLD_SECS: f32 = 1.2;
+
+/// The signed turn from angle `from` to angle `to` the short way, in
+/// radians within `[-PI, PI)`.
 pub(crate) fn angle_delta(from: f32, to: f32) -> f32 {
     (to - from + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }

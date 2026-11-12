@@ -4,7 +4,7 @@ pub mod bench;
 pub mod bot_execution;
 pub mod build;
 pub mod checkpoint;
-mod compression;
+pub mod compression;
 pub mod controller;
 pub mod fights;
 pub mod history;
@@ -31,8 +31,8 @@ pub const MAX_REPLAY_TICKS: u64 = 2_000_000;
 pub type GameReplay = chassis::replay::Replay<Scenario, PlayerCommand, recording::WorldOrigin>;
 
 pub use replay::{
-    Recording, ReplayPlayback, bounded_replay_duration, load_recording, load_replay,
-    replay_duration, save_recording,
+    Recording, ReplayPlayback, Resumed, bounded_replay_duration, load_recording, load_replay,
+    replay_duration, resume, save_recording,
 };
 
 pub mod diagnostics;

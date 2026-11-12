@@ -12,7 +12,9 @@ fn selected(kind: UnitKind, foreign: bool) -> Panel {
         y: 7,
     }];
     let mut game = Game::with_viewport(scenario, macroquad::prelude::vec2(640.0, 400.0)).unwrap();
-    game.presentation.selection.units = game.state.units().iter().map(|u| u.id).collect();
+    game.presentation
+        .selection
+        .set_units(game.state.units().iter().map(|u| u.id).collect());
     build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap()
 }
 
@@ -154,7 +156,9 @@ fn scouts_list_their_radar_and_a_surveyor_unfolds_it_without_a_status_line() {
         y: 5,
     }];
     let mut game = Game::with_viewport(scenario, macroquad::prelude::vec2(640.0, 400.0)).unwrap();
-    game.presentation.selection.units = game.state.units().iter().map(|u| u.id).collect();
+    game.presentation
+        .selection
+        .set_units(game.state.units().iter().map(|u| u.id).collect());
     // The unfolding rig and the radar ring say what its state is.
     let quiet = |game: &Game| {
         let info = build_for_palette(&game.view(), &BindingMap::classic(), false)
@@ -270,4 +274,26 @@ fn only_a_lattice_keeps_a_status_line_while_it_is_blank() {
         );
         assert!(info.status.is_empty(), "{kind:?}: {:?}", info.status);
     }
+}
+
+#[test]
+fn rows_speak_the_rosters_words() {
+    let row = |panel: &Panel, label: &str| {
+        panel
+            .info
+            .rows
+            .iter()
+            .find(|r| r.label == label)
+            .map(|r| r.value.clone())
+    };
+    let skyhook = UnitKind::Skyhook.stats().transport_capacity;
+    assert_eq!(
+        row(&selected(UnitKind::Skyhook, false), "Cargo"),
+        Some(format!("0/{skyhook} slots"))
+    );
+    assert_eq!(
+        row(&selected(UnitKind::Skyhook, true), "Cargo"),
+        Some(format!("{skyhook} slots"))
+    );
+    assert!(row(&selected(UnitKind::Surveyor, false), "Charge detection").is_some());
 }

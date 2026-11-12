@@ -238,11 +238,15 @@ fn rally_context_rect(first_button: Rect, scale: f32) -> Rect {
     )
 }
 
-fn draw_rally_control(card: &crate::panel::Card, rect: Rect, scale: f32) {
+fn draw_rally_control(
+    card: &crate::panel::Card,
+    verb: Option<crate::panel::RallyVerb>,
+    rect: Rect,
+    scale: f32,
+) {
     let label = match card.action {
         crate::panel::CardAction::ClearRally => "Clear",
-        _ if card.title.starts_with("Reset") => "Reset",
-        _ => "Set",
+        _ => verb.unwrap_or(crate::panel::RallyVerb::Set).label(),
     };
     let color = if card.enabled {
         TEXT_PRIMARY
@@ -283,14 +287,11 @@ fn draw_rally_control(card: &crate::panel::Card, rect: Rect, scale: f32) {
 
 /// The words on a strip chip's face: its count alone when chips are
 /// small.
-fn roster_face(card: &crate::panel::Card, small: bool) -> std::borrow::Cow<'_, str> {
+fn roster_face(chip: &crate::panel::RosterChip, small: bool) -> std::borrow::Cow<'_, str> {
     if small {
-        card.title
-            .rsplit_once(" x")
-            .map_or(card.title.as_str(), |(_, count)| count)
-            .into()
+        chip.count.to_string().into()
     } else {
-        card.title.as_str().into()
+        chip.card.title.as_str().into()
     }
 }
 
@@ -1297,8 +1298,8 @@ impl PanelLayout {
                 if let (Some(all), Some(rect)) = (&panel.select_all, selection.select_all) {
                     geometry.select_all = (rect, all.card.action);
                 }
-                for (card, rect) in panel.roster.iter().zip(&selection.roster) {
-                    geometry.roster_slots[geometry.roster_count] = (*rect, card.action);
+                for (chip, rect) in panel.roster.iter().zip(&selection.roster) {
+                    geometry.roster_slots[geometry.roster_count] = (*rect, chip.card.action);
                     geometry.roster_count += 1;
                 }
                 for (card, rect) in panel.cards.iter().zip(&selection.card_rects) {
@@ -1650,7 +1651,7 @@ pub(crate) fn draw_panel(
     // verbs. It reads as "what is in my hand" before "what can it do".
     if !roster.is_empty() {
         let label_y = top + measured.roster_y - 4.0 * s;
-        let heading = match panel.roster.first().map(|card| card.action) {
+        let heading = match panel.roster.first().map(|chip| chip.card.action) {
             Some(CardAction::FilterBuilding(_)) => "SELECTED STRUCTURES",
             _ => "SELECTED UNITS",
         };
@@ -1661,7 +1662,8 @@ pub(crate) fn draw_panel(
             crate::theme::Type::Small.at(s),
             TEXT_SECONDARY,
         );
-        for (card, &rect) in panel.roster.iter().zip(roster) {
+        for (chip, &rect) in panel.roster.iter().zip(roster) {
+            let card = &chip.card;
             let hovered = hovers(input, rect);
             fill_rect(
                 rect,
@@ -1696,7 +1698,7 @@ pub(crate) fn draw_panel(
                 &card.icon,
                 WHITE,
             );
-            let face = roster_face(card, small);
+            let face = roster_face(chip, small);
             let label = face.as_ref();
             let mut size = crate::theme::Type::Caption.at(s);
             let mut dims = measure_text(label, None, numeric::font_size(size), 1.0);
@@ -1728,10 +1730,10 @@ pub(crate) fn draw_panel(
         // An armed placement or rally lights its card, and so does a
         // running patrol; a route still being picked is not one yet.
         let selected = matches!(card.action, CardAction::ArmBuild(kind) if input.placing_kind() == Some(kind))
-            || (card.action == CardAction::ArmRally && !input.rallying.is_empty())
+            || (card.action == CardAction::ArmRally && !input.rallying().is_empty())
             || (card.action == CardAction::Dispatch(crate::action::Action::Patrol)
                 && panel.patrolling
-                && input.patrol_route.is_none());
+                && input.patrol_route().is_none());
         let bg = if selected {
             crate::theme::CARD_ARMED
         } else if hovered && card.enabled {
@@ -1761,7 +1763,7 @@ pub(crate) fn draw_panel(
             Color::new(1.0, 1.0, 1.0, 0.35)
         };
         if matches!(card.action, CardAction::ArmRally | CardAction::ClearRally) {
-            draw_rally_control(card, rect, s);
+            draw_rally_control(card, panel.rally, rect, s);
             continue;
         }
         // A tile stacks its icon over a centered title. A card with a cost
@@ -2041,7 +2043,7 @@ fn draw_dock(
             );
         }
     }
-    let orders_dock = panel.queue_label == "Orders";
+    let orders_dock = panel.dock == crate::panel::DockKind::Orders;
     for (i, (card, &rect)) in panel.queue.iter().zip(chips).enumerate() {
         // The active order or production head wears the bright border;
         // a ready-but-blocked head remains the queue's current job.

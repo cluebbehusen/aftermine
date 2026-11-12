@@ -463,6 +463,67 @@ fn a_seat_saves_for_the_dear_unit_its_line_prefers_and_trains_it() {
     assert_eq!(trace.unwrap().protected, 0, "the purchase spent it");
 }
 
+/// West's trace from the decision after it trained the Breaker it saved
+/// for, with the purchase `accepted` into the Crucible's queue or cancelled
+/// for a refund. Both runs bank 100, under the price of whatever the seat
+/// saves for next, so what it protects outlasts the decision.
+fn after_a_breaker_purchase(accepted: bool) -> Trace {
+    let scenario = outlined(1_400);
+    let mut state = scenario.build().unwrap();
+    let crucible = crucible(&state);
+    let anchor = state.building(crucible).unwrap().anchor;
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Train {
+            building: crucible,
+            kind: UnitKind::Breaker,
+        },
+    }]);
+    if !accepted {
+        state.tick(&[PlayerCommand {
+            player: PlayerId(0),
+            command: Command::CancelTrain {
+                building: crucible,
+                index: 0,
+            },
+        }]);
+    }
+    advance_to(
+        &mut state,
+        crate::decision_interval(BotDifficulty::Standard),
+        &[],
+    );
+    let mut value = serde_json::to_value(&state).unwrap();
+    value["players"][0]["scrap"] = 100.into();
+    let state: State = serde_json::from_value(value).unwrap();
+    let seat = seat_with(&scenario, 0, thrifty());
+    let mut opponent = restored_with(&seat, &scenario, &state, |json| {
+        json["saving"] = serde_json::json!({
+            "protected": 0,
+            "target": {
+                "investment": {"unit": "breaker"},
+                "attempt": {"step": {"train": "breaker"}, "anchor": anchor},
+            },
+        });
+    });
+    let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    trace.unwrap()
+}
+
+#[test]
+fn a_queued_unit_ends_its_saving_and_a_refunded_one_holds_the_bank_again() {
+    let breaker = Some(Investment::Unit(UnitKind::Breaker));
+    let trace = after_a_breaker_purchase(true);
+    assert_ne!(trace.target.map(|t| t.investment), breaker, "{trace:?}");
+    assert!(
+        trace.protected < 100,
+        "the next target's share grows from nothing: {trace:?}"
+    );
+    let trace = after_a_breaker_purchase(false);
+    assert_eq!(trace.target.map(|t| t.investment), breaker, "{trace:?}");
+    assert_eq!(trace.protected, 100, "the whole bank waits for the Breaker");
+}
+
 #[test]
 fn a_producer_saved_for_queues_nothing_else_first() {
     // Line wanted against East's army out of reach of West's buildings, and
