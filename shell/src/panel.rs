@@ -223,6 +223,24 @@ pub struct Card {
 }
 
 impl Card {
+    /// An enabled card with no cost, hotkey, tooltip body, meter or second
+    /// act; struct update fills in the rest.
+    pub(crate) fn new(icon: CardIcon, title: impl Into<String>, action: CardAction) -> Self {
+        Self {
+            icon,
+            title: title.into(),
+            cost: None,
+            hotkey: String::new(),
+            action,
+            enabled: true,
+            why: None,
+            desc: Vec::new(),
+            progress: None,
+            autocast: None,
+            hold: None,
+        }
+    }
+
     /// What a right-click or a long press on the card does: switch its
     /// autocast, else its second act.
     pub(crate) fn second_act(&self) -> Option<CardAction> {
@@ -346,6 +364,34 @@ pub struct DroneColumn {
 }
 
 impl Panel {
+    /// A panel with no summary, readouts, cards or dock contents yet.
+    fn new(
+        title: String,
+        portrait: CardIcon,
+        owner: macroquad::prelude::Color,
+        dock: DockKind,
+    ) -> Self {
+        Self {
+            info: info::SelectionInfo::default(),
+            title,
+            summary: String::new(),
+            portrait,
+            owner,
+            roster: Vec::new(),
+            select_all: None,
+            cards: Vec::new(),
+            queue: Vec::new(),
+            queue_groups: Vec::new(),
+            queue_label: String::new(),
+            dock,
+            rally: None,
+            stop: None,
+            drones: None,
+            absent: Vec::new(),
+            patrolling: false,
+        }
+    }
+
     /// The card drawn in `row` at `index`.
     pub(crate) fn card(&self, row: crate::layout::CardRow, index: usize) -> Option<&Card> {
         match row {
@@ -424,17 +470,12 @@ impl SelectAll {
         (owned > selected).then(|| Self {
             owned,
             card: Card {
-                icon,
-                title: format!("Select all {owned} {}", plural_name(&entity_name(name))),
-                cost: None,
                 hotkey: chord(bindings, Action::SelectAllOfKind),
-                action,
-                enabled: true,
-                why: None,
-                desc: Vec::new(),
-                progress: None,
-                autocast: None,
-                hold: None,
+                ..Card::new(
+                    icon,
+                    format!("Select all {owned} {}", plural_name(&entity_name(name))),
+                    action,
+                )
             },
         })
     }
@@ -841,21 +882,17 @@ fn magazine_queue(
         crate::typography::sentence_case(crate::building_actions::round_noun(building.kind));
     for index in 0..magazine.ordered {
         queue.push(Card {
-            icon: CardIcon::Round(building.kind),
-            title: title.clone(),
-            cost: None,
-            hotkey: String::new(),
-            action: if own {
-                CardAction::CancelRound(building.id, index)
-            } else {
-                CardAction::None
-            },
-            enabled: true,
-            why: None,
             desc: if own { refund_chip_desc() } else { Vec::new() },
             progress: (index == 0).then(|| (progress as f32 / round_ticks as f32).clamp(0.0, 1.0)),
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Round(building.kind),
+                title.clone(),
+                if own {
+                    CardAction::CancelRound(building.id, index)
+                } else {
+                    CardAction::None
+                },
+            )
         });
     }
     Some(tick_time_label(
@@ -1154,21 +1191,17 @@ fn order_card(
         ),
     };
     Card {
-        icon: face,
-        title: if active {
-            format!("{head} (now)")
-        } else {
-            head
-        },
-        cost: None,
-        hotkey: String::new(),
-        action: CardAction::None,
-        enabled: true,
-        why: None,
         desc,
         progress,
-        autocast: None,
-        hold: None,
+        ..Card::new(
+            face,
+            if active {
+                format!("{head} (now)")
+            } else {
+                head
+            },
+            CardAction::None,
+        )
     }
 }
 
@@ -1324,17 +1357,9 @@ fn chord(bindings: &BindingMap, action: Action) -> String {
 /// The Stop button above the dock for whatever `action` stops.
 fn stop_card(action: CardAction, hotkey: String, desc: &str) -> Card {
     Card {
-        icon: CardIcon::Verb(VerbIcon::Stop),
-        title: "Stop".into(),
-        cost: None,
         hotkey,
-        action,
-        enabled: true,
-        why: None,
         desc: vec![desc.into()],
-        progress: None,
-        autocast: None,
-        hold: None,
+        ..Card::new(CardIcon::Verb(VerbIcon::Stop), "Stop", action)
     }
 }
 
@@ -1560,17 +1585,12 @@ fn building_roster(buildings: &[aftermine_sim::Building]) -> Vec<RosterChip> {
             RosterChip {
                 count: tiers.len(),
                 card: Card {
-                    icon: CardIcon::Building(kind, tiers[0]),
-                    title: format!("{} x{}", entity_name(kind.name()), tiers.len()),
-                    cost: None,
-                    hotkey: String::new(),
-                    action: CardAction::FilterBuilding(kind),
-                    enabled: true,
-                    why: None,
                     desc,
-                    progress: None,
-                    autocast: None,
-                    hold: None,
+                    ..Card::new(
+                        CardIcon::Building(kind, tiers[0]),
+                        format!("{} x{}", entity_name(kind.name()), tiers.len()),
+                        CardAction::FilterBuilding(kind),
+                    )
                 },
             }
         })
@@ -1640,25 +1660,12 @@ fn transport_load_desc(touch_only: bool) -> &'static str {
 fn pile_panel(game: &Scene<'_>, tile: chassis::grid::TilePos) -> Option<Panel> {
     let salvage = game.known_salvage(tile)?;
     let wreck = matches!(salvage, crate::game::Salvage::Wreck(_));
-    Some(Panel {
-        info: info::SelectionInfo::default(),
-        title: if wreck { "Wreck" } else { "Scrap pile" }.into(),
-        summary: String::new(),
-        portrait: CardIcon::Salvage { wreck },
-        owner: crate::render::seat_identity_color(game, game.presentation.human),
-        roster: Vec::new(),
-        select_all: None,
-        cards: Vec::new(),
-        queue: Vec::new(),
-        queue_groups: Vec::new(),
-        queue_label: String::new(),
-        dock: DockKind::Work,
-        rally: None,
-        stop: None,
-        drones: None,
-        absent: Vec::new(),
-        patrolling: false,
-    })
+    Some(Panel::new(
+        if wreck { "Wreck" } else { "Scrap pile" }.into(),
+        CardIcon::Salvage { wreck },
+        crate::render::seat_identity_color(game, game.presentation.human),
+        DockKind::Work,
+    ))
 }
 
 #[expect(
@@ -1680,52 +1687,34 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         let plural = selected_buildings.len() > 1;
         let homogeneous = selected_buildings.iter().all(|b| b.kind == first.kind);
         let mut panel = Panel {
-            info: info::SelectionInfo::default(),
-            title: if !plural {
-                entity_name(first.kind.tier_name(first.tier))
-            } else if homogeneous {
-                format!(
-                    "{} x {}",
-                    entity_name(first.kind.name()),
-                    selected_buildings.len()
-                )
-            } else {
-                format!("{} STRUCTURES", selected_buildings.len())
-            },
-            summary: String::new(),
-            portrait: CardIcon::Building(first.kind, first.tier),
-            owner: crate::render::seat_identity_color(game, owner),
-            roster: Vec::new(),
-            select_all: None,
-            cards: Vec::new(),
-            queue: Vec::new(),
-            queue_groups: Vec::new(),
             queue_label: "Queue".into(),
-            dock: DockKind::Work,
-            rally: None,
-            stop: None,
-            drones: None,
-            absent: Vec::new(),
-            patrolling: false,
+            ..Panel::new(
+                if !plural {
+                    entity_name(first.kind.tier_name(first.tier))
+                } else if homogeneous {
+                    format!(
+                        "{} x {}",
+                        entity_name(first.kind.name()),
+                        selected_buildings.len()
+                    )
+                } else {
+                    format!("{} STRUCTURES", selected_buildings.len())
+                },
+                CardIcon::Building(first.kind, first.tier),
+                crate::render::seat_identity_color(game, owner),
+                DockKind::Work,
+            )
         };
         if selected_buildings
             .iter()
             .any(|b| b.player != game.presentation.human)
         {
             if !plural && !game.state.hostile(game.presentation.human, owner) {
-                panel.cards.push(Card {
-                    icon: CardIcon::Verb(VerbIcon::Idle),
-                    title: "Ally structure".into(),
-                    cost: None,
-                    hotkey: String::new(),
-                    action: CardAction::None,
-                    enabled: true,
-                    why: None,
-                    desc: Vec::new(),
-                    progress: None,
-                    autocast: None,
-                    hold: None,
-                });
+                panel.cards.push(Card::new(
+                    CardIcon::Verb(VerbIcon::Idle),
+                    "Ally structure",
+                    CardAction::None,
+                ));
                 if let Some(label) = magazine_queue(game, first, &mut panel.queue) {
                     panel.queue_label = label;
                 }
@@ -1769,13 +1758,6 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                         .clamp(0.0, 1.0)
                 });
                 panel.queue.push(Card {
-                    icon: CardIcon::Unit(kind),
-                    title: entity_name(kind.name()),
-                    cost: None,
-                    hotkey: String::new(),
-                    action: CardAction::CancelQueue(building.id, i.fit::<u8>()),
-                    enabled: true,
-                    why: None,
                     desc: [format!(
                         "{} to cancel; full refund.",
                         crate::platform::tap_or_click_capitalized(crate::platform::hands().touch())
@@ -1784,8 +1766,11 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     .chain((i == 0 && walled).then(|| WALLED_IN_DESC.to_string()))
                     .collect(),
                     progress,
-                    autocast: None,
-                    hold: None,
+                    ..Card::new(
+                        CardIcon::Unit(kind),
+                        entity_name(kind.name()),
+                        CardAction::CancelQueue(building.id, i.fit::<u8>()),
+                    )
                 });
             }
         }
@@ -1832,12 +1817,6 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
     let has_fighter = armed > 0;
     let has_scout = units.iter().any(|u| u.kind.stats().scouts);
     let mut panel = Panel {
-        info: info::SelectionInfo::default(),
-        title: if units.len() == 1 {
-            entity_name(first.kind.name())
-        } else {
-            format!("{} UNITS", units.len())
-        },
         summary: if units.len() == 1 {
             String::new()
         } else {
@@ -1857,20 +1836,17 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 kinds.join(", ")
             }
         },
-        portrait: CardIcon::Unit(first.kind),
-        owner: crate::render::seat_identity_color(game, owner),
-        roster: Vec::new(),
-        select_all: None,
-        cards: Vec::new(),
-        queue: Vec::new(),
-        queue_groups: Vec::new(),
         queue_label: "Orders".to_string(),
-        dock: DockKind::Orders,
-        rally: None,
-        stop: None,
-        drones: None,
-        absent: Vec::new(),
-        patrolling: false,
+        ..Panel::new(
+            if units.len() == 1 {
+                entity_name(first.kind.name())
+            } else {
+                format!("{} UNITS", units.len())
+            },
+            CardIcon::Unit(first.kind),
+            crate::render::seat_identity_color(game, owner),
+            DockKind::Orders,
+        )
     };
     if units.len() == 1 && !game.state.hostile(game.presentation.human, owner) {
         panel.drones = crate::unit_bays::column(game, first.id);
@@ -1906,17 +1882,12 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 panel.roster.push(RosterChip {
                     count: n,
                     card: Card {
-                        icon: CardIcon::Unit(kind),
-                        title: format!("{} x{n}", entity_name(kind.name())),
-                        cost: None,
-                        hotkey: String::new(),
-                        action: CardAction::FilterKind(kind),
-                        enabled: true,
-                        why: None,
                         desc: roster_filter_desc(crate::platform::hands()),
-                        progress: None,
-                        autocast: None,
-                        hold: None,
+                        ..Card::new(
+                            CardIcon::Unit(kind),
+                            format!("{} x{n}", entity_name(kind.name())),
+                            CardAction::FilterKind(kind),
+                        )
                     },
                 });
             }
@@ -1944,61 +1915,43 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
     // selections and Run's for sending a scout anywhere on purpose.
     if has_scout {
         panel.cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Move),
-            title: "Scout".into(),
-            cost: None,
             hotkey: chord(bindings, Action::Scout),
-            action: CardAction::Dispatch(Action::Scout),
-            enabled: true,
-            why: None,
             desc: vec!["Moves to see the spot, staying out of known enemy range.".into()],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Verb(VerbIcon::Move),
+                "Scout",
+                CardAction::Dispatch(Action::Scout),
+            )
         });
     }
     // Run and Hunt only differ from a plain move for a machine that can
     // shoot or one that scouts by default. Patrol stays for everyone.
     if has_fighter || has_scout {
         panel.cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Run),
-            title: "Run".into(),
-            cost: None,
             hotkey: chord(bindings, Action::Run),
-            action: CardAction::Dispatch(Action::Run),
-            enabled: true,
-            why: None,
             desc: vec!["Move at full speed without stopping to fight.".into()],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Verb(VerbIcon::Run),
+                "Run",
+                CardAction::Dispatch(Action::Run),
+            )
         });
     }
     if has_fighter {
         panel.cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Hunt),
-            title: "Hunt".into(),
-            cost: None,
             hotkey: chord(bindings, Action::Hunt),
-            action: CardAction::Dispatch(Action::Hunt),
-            enabled: true,
-            why: None,
             desc: vec!["Move, stopping to chase and fight enemies.".into()],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Verb(VerbIcon::Hunt),
+                "Hunt",
+                CardAction::Dispatch(Action::Hunt),
+            )
         });
     }
     panel.patrolling = selection_patrols(game);
     let hands = crate::platform::hands();
     panel.cards.push(Card {
-        icon: CardIcon::Verb(VerbIcon::Patrol),
-        title: "Patrol".into(),
-        cost: None,
         hotkey: chord(bindings, Action::Patrol),
-        action: CardAction::Dispatch(Action::Patrol),
-        enabled: true,
-        why: None,
         desc: vec![
             if panel.patrolling {
                 patrolling_desc(hands)
@@ -2012,39 +1965,33 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             )
             .into(),
         ],
-        progress: None,
-        autocast: None,
-        hold: None,
+        ..Card::new(
+            CardIcon::Verb(VerbIcon::Patrol),
+            "Patrol",
+            CardAction::Dispatch(Action::Patrol),
+        )
     });
     panel.cards.push(Card {
-        icon: CardIcon::Verb(VerbIcon::Accompany),
-        title: "Accompany".into(),
-        cost: None,
         hotkey: chord(bindings, Action::Accompany),
-        action: CardAction::Dispatch(Action::Accompany),
-        enabled: true,
-        why: None,
         desc: vec!["Pick a friendly unit for the rest to escort.".into()],
-        progress: None,
-        autocast: None,
-        hold: None,
+        ..Card::new(
+            CardIcon::Verb(VerbIcon::Accompany),
+            "Accompany",
+            CardAction::Dispatch(Action::Accompany),
+        )
     });
     if has_builder {
         panel.cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Salvage),
-            title: "Salvage".into(),
-            cost: None,
             hotkey: chord(bindings, Action::Salvage),
-            action: CardAction::Dispatch(Action::Salvage),
-            enabled: true,
-            why: None,
             desc: vec![
                 "Select a completed friendly structure to dismantle".into(),
                 "for a partial refund. Foundries cannot be salvaged.".into(),
             ],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Verb(VerbIcon::Salvage),
+                "Salvage",
+                CardAction::Dispatch(Action::Salvage),
+            )
         });
     }
     if has_builder {
@@ -2061,17 +2008,14 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             ));
         }
         panel.cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Repair),
-            title: "Repair".into(),
-            cost: None,
             hotkey: chord(bindings, Action::RepairUnit),
-            action: CardAction::Dispatch(Action::RepairUnit),
-            enabled: true,
-            why: None,
             desc,
-            progress: None,
             autocast,
-            hold: None,
+            ..Card::new(
+                CardIcon::Verb(VerbIcon::Repair),
+                "Repair",
+                CardAction::Dispatch(Action::RepairUnit),
+            )
         });
     }
     // No Crucible takes an assembled machine apart.
@@ -2083,20 +2027,18 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 && b.kind == aftermine_sim::BuildingKind::Crucible
         });
         panel.cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Retire),
-            title: "Retire".into(),
-            cost: None,
             hotkey: chord(bindings, Action::Retire),
-            action: CardAction::Dispatch(Action::Retire),
             enabled: crucible,
             why: (!crucible).then(|| "needs a completed Crucible".to_string()),
             desc: vec![
                 "Send the selection to the nearest Crucible to be dismantled.".into(),
                 "Refunds half the cost, scaled by remaining health.".into(),
             ],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Verb(VerbIcon::Retire),
+                "Retire",
+                CardAction::Dispatch(Action::Retire),
+            )
         });
     }
     crate::unit_bays::SelectedBays::inspect(game).cards(bindings, &mut panel.cards);
@@ -2107,16 +2049,12 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         let loaded = transports.any_loaded();
         let hands = crate::platform::hands();
         panel.cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Move),
-            title: "Unload here".into(),
-            cost: None,
             // A worker in the selection takes the key for Return Cargo.
             hotkey: if has_builder {
                 String::new()
             } else {
                 chord(bindings, Action::Unload)
             },
-            action: CardAction::Unload,
             enabled: loaded,
             why: (!loaded).then(|| "nothing is aboard".to_string()),
             desc: vec![
@@ -2124,9 +2062,11 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                 unload_queue_desc(hands).into(),
                 transport_load_desc(hands.touch()).into(),
             ],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Verb(VerbIcon::Move),
+                "Unload here",
+                CardAction::Unload,
+            )
         });
     }
     if has_builder {
@@ -2141,17 +2081,12 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             panel.portrait = CardIcon::Verb(VerbIcon::Build);
         } else {
             panel.cards.push(Card {
-                icon: CardIcon::Verb(VerbIcon::Build),
-                title: "Build".into(),
-                cost: None,
                 hotkey: palette_key,
-                action: CardAction::Dispatch(Action::ToggleBuildPalette),
-                enabled: true,
-                why: None,
-                desc: Vec::new(),
-                progress: None,
-                autocast: None,
-                hold: None,
+                ..Card::new(
+                    CardIcon::Verb(VerbIcon::Build),
+                    "Build",
+                    CardAction::Dispatch(Action::ToggleBuildPalette),
+                )
             });
         }
         for kind in crate::action::BUILD_CATEGORIES
@@ -2180,8 +2115,6 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             desc.extend(building_economy_lines(kind));
             desc.extend(cradle_crew_line(kind));
             panel.cards.push(Card {
-                icon: CardIcon::Building(kind, 0),
-                title: entity_name(kind.name()),
                 cost: Some(cost),
                 hotkey: format!(
                     "{} > {}",
@@ -2190,32 +2123,25 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
                     ))),
                     bindings.label(Action::Build(kind))
                 ),
-                action: CardAction::ArmBuild(kind),
                 enabled,
                 why,
                 desc,
-                progress: None,
-                autocast: None,
-                hold: None,
+                ..Card::new(
+                    CardIcon::Building(kind, 0),
+                    entity_name(kind.name()),
+                    CardAction::ArmBuild(kind),
+                )
             });
         }
         if build_menu_open {
             // Esc and B step back through placement and category first;
             // the card leaves the palette outright, which touch has no
             // other way to do without dropping the selection.
-            panel.cards.push(Card {
-                icon: CardIcon::Verb(VerbIcon::Cancel),
-                title: "Back".into(),
-                cost: None,
-                hotkey: String::new(),
-                action: CardAction::ClosePalette,
-                enabled: true,
-                why: None,
-                desc: Vec::new(),
-                progress: None,
-                autocast: None,
-                hold: None,
-            });
+            panel.cards.push(Card::new(
+                CardIcon::Verb(VerbIcon::Cancel),
+                "Back",
+                CardAction::ClosePalette,
+            ));
         }
     }
     // Return cargo comes and goes as workers load and unload, so it goes
@@ -2277,17 +2203,13 @@ fn unit_stop_card(bindings: &BindingMap) -> Card {
 /// The Harvesters' Return cargo card.
 fn return_cargo_card(bindings: &BindingMap) -> Card {
     Card {
-        icon: CardIcon::Verb(VerbIcon::Harvest),
-        title: "Return cargo".into(),
-        cost: None,
         hotkey: chord(bindings, Action::ReturnCargo),
-        action: CardAction::Dispatch(Action::ReturnCargo),
-        enabled: true,
-        why: None,
         desc: vec!["Cancel current and queued work, deliver scrap to the nearest reachable Foundry, then stay there.".into()],
-        progress: None,
-        autocast: None,
-        hold: None,
+        ..Card::new(
+            CardIcon::Verb(VerbIcon::Harvest),
+            "Return cargo",
+            CardAction::Dispatch(Action::ReturnCargo),
+        )
     }
 }
 

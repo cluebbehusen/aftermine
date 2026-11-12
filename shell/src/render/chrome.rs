@@ -495,17 +495,13 @@ fn group_tooltip(
         GroupSlot::Empty(_) => return None,
     };
     Some(crate::panel::Card {
-        icon: crate::panel::CardIcon::Verb(crate::panel::VerbIcon::Cancel),
-        title,
-        cost: None,
         hotkey,
-        action: crate::panel::CardAction::None,
-        enabled: true,
-        why: None,
         desc,
-        progress: None,
-        autocast: None,
-        hold: None,
+        ..crate::panel::Card::new(
+            crate::panel::CardIcon::Verb(crate::panel::VerbIcon::Cancel),
+            title,
+            crate::panel::CardAction::None,
+        )
     })
 }
 

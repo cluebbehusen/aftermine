@@ -3711,18 +3711,12 @@ fn a_card_that_changes_under_a_resting_finger_activates_nothing() {
         .id;
     game.presentation.selection.units.clear();
     game.presentation.selection.buildings = vec![foundry];
-    let chip = |kind: UnitKind, index: u8| crate::panel::Card {
-        icon: crate::panel::CardIcon::Unit(kind),
-        title: format!("{kind:?}"),
-        cost: None,
-        hotkey: String::new(),
-        action: crate::panel::CardAction::CancelQueue(foundry, index),
-        enabled: true,
-        why: None,
-        desc: Vec::new(),
-        progress: None,
-        autocast: None,
-        hold: None,
+    let chip = |kind: UnitKind, index: u8| {
+        crate::panel::Card::new(
+            crate::panel::CardIcon::Unit(kind),
+            format!("{kind:?}"),
+            crate::panel::CardAction::CancelQueue(foundry, index),
+        )
     };
     let slot = macroquad::math::Rect::new(20.0, 600.0, 48.0, 48.0);
     let mut layout = bare_layout(680.0, 500.0);

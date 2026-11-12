@@ -171,17 +171,13 @@ fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
     for _ in 0..3 {
         let last = panel.cards.last().unwrap();
         let extra = crate::panel::Card {
-            icon: last.icon,
-            title: last.title.clone(),
             cost: last.cost,
             hotkey: last.hotkey.clone(),
-            action: last.action,
             enabled: last.enabled,
             why: last.why.clone(),
             desc: last.desc.clone(),
             progress: last.progress,
-            autocast: None,
-            hold: None,
+            ..crate::panel::Card::new(last.icon, last.title.clone(), last.action)
         };
         panel.cards.push(extra);
     }
@@ -368,19 +364,11 @@ const SUPPORTED: [(f32, f32); 6] = [
 ];
 
 fn command(action: crate::panel::CardAction) -> crate::panel::Card {
-    crate::panel::Card {
-        icon: crate::panel::CardIcon::Verb(crate::panel::VerbIcon::Move),
-        title: String::new(),
-        cost: None,
-        hotkey: String::new(),
+    crate::panel::Card::new(
+        crate::panel::CardIcon::Verb(crate::panel::VerbIcon::Move),
+        "",
         action,
-        enabled: true,
-        why: None,
-        desc: Vec::new(),
-        progress: None,
-        autocast: None,
-        hold: None,
-    }
+    )
 }
 
 #[test]
@@ -1450,19 +1438,11 @@ fn an_extractor_keeps_its_picture_still_as_it_finishes_building_and_upgrading() 
 fn a_small_roster_chip_shows_its_count_alone() {
     let chip = crate::panel::RosterChip {
         count: 12,
-        card: crate::panel::Card {
-            icon: crate::panel::CardIcon::Unit(aftermine_sim::UnitKind::Sentinel),
-            title: "Sentinel x12".into(),
-            cost: None,
-            hotkey: String::new(),
-            action: crate::panel::CardAction::FilterKind(aftermine_sim::UnitKind::Sentinel),
-            enabled: true,
-            why: None,
-            desc: Vec::new(),
-            progress: None,
-            autocast: None,
-            hold: None,
-        },
+        card: crate::panel::Card::new(
+            crate::panel::CardIcon::Unit(aftermine_sim::UnitKind::Sentinel),
+            "Sentinel x12",
+            crate::panel::CardAction::FilterKind(aftermine_sim::UnitKind::Sentinel),
+        ),
     };
     assert_eq!(roster_face(&chip, true), "12");
     assert_eq!(roster_face(&chip, false), "Sentinel x12");

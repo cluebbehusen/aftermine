@@ -148,18 +148,14 @@ impl Slice {
     fn group(game: &Scene<'_>, number: u8, group: &Group) -> Self {
         let live = group.live(game);
         let card = Card {
-            // An empty slot draws no face, only its number.
-            icon: live.lead(game).unwrap_or(CardIcon::Verb(VerbIcon::Idle)),
-            title: format!("Group {number}"),
-            cost: None,
-            hotkey: String::new(),
-            action: CardAction::None,
             enabled: !live.is_empty(),
-            why: None,
             desc: vec![members(game, &live)],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                // An empty slot draws no face, only its number.
+                live.lead(game).unwrap_or(CardIcon::Verb(VerbIcon::Idle)),
+                format!("Group {number}"),
+                CardAction::None,
+            )
         };
         Self {
             card,
@@ -452,17 +448,8 @@ fn gathering(icon: CardIcon, title: &str, within: &[Slice]) -> Card {
         .map(|slice| slice.card.title.as_str())
         .collect();
     Card {
-        icon,
-        title: title.to_string(),
-        cost: None,
-        hotkey: String::new(),
-        action: CardAction::None,
-        enabled: true,
-        why: None,
         desc: vec![format!("{}.", names.join(", "))],
-        progress: None,
-        autocast: None,
-        hold: None,
+        ..Card::new(icon, title, CardAction::None)
     }
 }
 
