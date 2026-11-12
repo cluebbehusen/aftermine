@@ -133,10 +133,11 @@ fn whole_pixels(center: Vec2, zoom: f32, viewport: Vec2) -> (Vec2, Vec2) {
     ((whole + half) / zoom, pixels - whole)
 }
 
-const NO_TIME: FrameTime = FrameTime {
-    presentation: 0.0,
-    raw: 0.0,
-};
+/// A frame that covers no time. The backdrop plays at 1x and seeks only to
+/// its checkpoint, a stored world, so the frame's rate never matters to it.
+fn no_time() -> FrameTime {
+    FrameTime::measure(0.0, None)
+}
 
 impl HomeBackdrop {
     /// Opens scene `index` at its checkpoint, framed on its fiercest fight.
@@ -151,7 +152,7 @@ impl HomeBackdrop {
         let (mut session, checkpoint) = PlaybackSession::from_checkpoint(recording)?;
         let viewport = crate::render::viewport();
         // The seek restores the stored world on its first step.
-        session.advance_frame(NO_TIME, viewport);
+        session.advance_frame(no_time(), viewport);
         let mut backdrop = Self {
             session,
             checkpoint,
@@ -191,19 +192,16 @@ impl HomeBackdrop {
         let viewport = crate::render::viewport();
         if self.session.ticks_left() == 0 {
             self.session.seek_to(self.checkpoint);
-            self.session.advance_frame(NO_TIME, viewport);
+            self.session.advance_frame(no_time(), viewport);
             self.age = 0.0;
             self.frame(viewport);
         } else if viewport != self.framed_for {
             self.frame(viewport);
         }
         let time = if still {
-            NO_TIME
+            no_time()
         } else {
-            FrameTime {
-                presentation: dt,
-                raw: dt,
-            }
+            FrameTime::measure(dt, None)
         };
         self.session.advance_frame(time, viewport);
         // Nothing plays these, so they would pile up for as long as Home shows.

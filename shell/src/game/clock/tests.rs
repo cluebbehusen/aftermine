@@ -21,12 +21,25 @@ fn owed_ticks_follow_speed_and_stop_at_a_frames_cap() {
         speed: 2.0,
         ..Clock::default()
     };
-    assert_eq!(clock.due_ticks(TICK_DT * 1.5), 3);
+    assert_eq!(clock.due_ticks(TICK_DT * 1.5, 24), 3);
     assert!(clock.accum < TICK_DT, "only the fraction stays owed");
     let mut hitch = Clock::default();
-    assert_eq!(
-        hitch.due_ticks(TICK_DT * 100.0),
-        u64::from(MAX_TICKS_PER_FRAME)
-    );
+    assert_eq!(hitch.due_ticks(TICK_DT * 100.0, 24), 24);
     assert!(hitch.accum < TICK_DT, "debt past the cap is dropped");
+}
+
+#[test]
+fn the_top_speed_keeps_up_at_thirty_frames_a_second() {
+    let thirty = crate::pacing::Refresh::from_hz(120.0).unwrap().every(4);
+    let frame = crate::frame_time::FrameTime::measure(1.0 / 30.0, Some(thirty));
+    // Half a tick owed first, so float rounding cannot leave a frame short.
+    let mut clock = Clock {
+        speed: 64.0,
+        accum: TICK_DT * 0.5,
+        ..Clock::default()
+    };
+    let ran: u64 = (0..30)
+        .map(|_| clock.due_ticks(frame.raw, frame.catch_up))
+        .sum();
+    assert_eq!(ran, 1280, "a second's ticks at 64x");
 }

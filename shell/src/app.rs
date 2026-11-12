@@ -168,6 +168,9 @@ struct App {
     clock: std::time::Instant,
     /// The display's refresh, once the platform reports one.
     refresh: Option<crate::pacing::Refresh>,
+    /// The rate frames present at, which sizes each frame's catch-up work;
+    /// none while the refresh is unknown.
+    paced: Option<crate::pacing::Rate>,
 }
 
 /// A viewer over the live match's record so far; the match waits untouched.
@@ -375,6 +378,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         autosave_retry: None,
         clock: std::time::Instant::now(),
         refresh: None,
+        paced: None,
     };
     // A rerun pass re-enters the loop inside the same presented frame;
     // the frame's starting screen is the one recorded before it.
@@ -428,11 +432,14 @@ pub(crate) async fn run(args: Args) -> Result<()> {
 
         drop(input_diagnostic_scope);
         // After the requests, so a script's first frame already takes its step.
-        let time = FrameTime::measure(if app.frame_profiler.scripted() {
-            crate::frame_script::FRAME_SECONDS
-        } else {
-            get_frame_time()
-        });
+        let time = FrameTime::measure(
+            if app.frame_profiler.scripted() {
+                crate::frame_script::FRAME_SECONDS
+            } else {
+                get_frame_time()
+            },
+            app.paced,
+        );
         if first_pass
             && let Some(paused) = app
                 .frame_profiler

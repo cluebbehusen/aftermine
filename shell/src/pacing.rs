@@ -7,6 +7,7 @@
 //! wall time, so no frame rate changes an outcome.
 
 use crate::config::FrameRate;
+use std::time::Duration;
 
 /// A frequency, in millihertz so a 59.94 Hz display keeps its fraction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -24,6 +25,17 @@ const MOST_REFRESHES: u32 = 4;
 /// number picks itself again.
 const HALF_FRAME: u32 = 500;
 
+/// The rate assumed where the display's is unknown.
+const NOMINAL: Rate = Rate(60_000);
+
+/// The fastest any session's clock runs.
+const TOP_SPEED: u32 = 64;
+
+/// The fewest ticks a frame may catch up: the top speed's share of a 60 Hz
+/// frame, with an eighth to spare. A LAN match runs at 1x and never owes
+/// more.
+pub(crate) const LEAST_CATCH_UP: u32 = 24;
+
 impl Rate {
     /// Whole frames a second, rounded half up: 29.97 reads as 30.
     pub(crate) fn fps(self) -> u32 {
@@ -33,6 +45,11 @@ impl Rate {
     /// How the rate reads to a player.
     pub(crate) fn label(self) -> String {
         fps_label(self.fps())
+    }
+
+    /// The time between frames.
+    fn period(self) -> Duration {
+        Duration::from_secs(1000) / self.0
     }
 }
 
@@ -123,6 +140,23 @@ pub(crate) fn label(setting: FrameRate, refresh: Option<Refresh>) -> String {
         (None, FrameRate::Capped(fps)) => fps_label(fps),
         (None, FrameRate::Full) => "Full".to_owned(),
     }
+}
+
+/// The most ticks a frame at `paced` may catch up: the top speed's share of
+/// the frame with an eighth to spare, so 64x keeps up at the slowest choice,
+/// and never fewer than [`LEAST_CATCH_UP`]. An unknown rate counts as
+/// 60 Hz. Expensive ticks can still overrun the frame.
+pub(crate) fn catch_up_ticks(paced: Option<Rate>) -> u32 {
+    // Tick-millihertz the top speed owes, an eighth over.
+    let owed = TOP_SPEED * aftermine_sim::TICKS_PER_SECOND * 1000 * 9 / 8;
+    owed.div_ceil(paced.unwrap_or(NOMINAL).0)
+        .max(LEAST_CATCH_UP)
+}
+
+/// The wall time a frame at `paced` may spend on a seek: half the frame,
+/// leaving the rest for drawing. An unknown rate counts as 60 Hz.
+pub(crate) fn seek_budget(paced: Option<Rate>) -> Duration {
+    paced.unwrap_or(NOMINAL).period() / 2
 }
 
 #[cfg(test)]

@@ -21,10 +21,6 @@ use macroquad::prelude::*;
 /// Ticks a seek simulates between checks of its frame's time.
 const SEEK_SLICE: u64 = 16;
 
-/// Frame time a seek in flight may take, leaving the rest of a 60 Hz frame
-/// for drawing.
-const SEEK_BUDGET: std::time::Duration = std::time::Duration::from_millis(8);
-
 /// Replay engine, presentation, and viewer transport controls.
 pub struct PlaybackSession {
     pub engine: aftermine_kit::playback::Playback,
@@ -37,8 +33,6 @@ pub struct PlaybackSession {
     /// A seek in flight: the target tick, chipped away a slice of time
     /// per frame so the render thread never freezes on a long jump.
     pub seeking: Option<u64>,
-    /// Wall time a frame spends on a seek in flight, past its first slice.
-    seek_budget: std::time::Duration,
     /// The transport buttons' press.
     buttons: Press<Zone>,
     /// The finger scrubbing the timeline, if one landed on the bar.
@@ -187,7 +181,6 @@ impl PlaybackSession {
             resolver: ActionResolver::default(),
             scrubbing: false,
             seeking: None,
-            seek_budget: SEEK_BUDGET,
             buttons: Press::default(),
             scrub_finger: None,
             hands: ViewerHands::default(),
@@ -981,7 +974,7 @@ impl PlaybackSession {
                     self.seeking = None;
                     break;
                 }
-                if started.elapsed() >= self.seek_budget {
+                if started.elapsed() >= time.seek_budget {
                     break;
                 }
             }
@@ -992,7 +985,7 @@ impl PlaybackSession {
         } else if !self.clock.paused && !self.engine.at_end() {
             // One tick at a time: fog is per-tick truth, so each tick's
             // sounds are judged by that tick's sight.
-            for _ in 0..self.clock.due_ticks(time.raw) {
+            for _ in 0..self.clock.due_ticks(time.raw, time.catch_up) {
                 self.presentation.remember_previous_tick(&self.engine.state);
                 let events = self.engine.advance(1);
                 self.presentation.observe_tick(

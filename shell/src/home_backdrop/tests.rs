@@ -54,13 +54,9 @@ fn a_scene_starts_over_at_its_end() {
     let checkpoint = backdrop.checkpoint;
     backdrop.session.seek_to(u64::MAX);
     while backdrop.session.ticks_left() > 0 {
-        backdrop.session.advance_frame(
-            FrameTime {
-                presentation: 0.0,
-                raw: 0.0,
-            },
-            crate::render::viewport(),
-        );
+        backdrop
+            .session
+            .advance_frame(FrameTime::measure(0.0, None), crate::render::viewport());
     }
     backdrop.age = 30.0;
     backdrop.session.presentation.camera.center += vec2(30.0, 30.0);

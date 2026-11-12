@@ -2,7 +2,8 @@
 //! batches assembled by the session host instead of draining its own
 //! staged commands.
 
-use super::{Game, MAX_TICKS_PER_FRAME, TICK_DT};
+use super::{Game, TICK_DT};
+use crate::pacing::LEAST_CATCH_UP;
 use aftermine_kit::world_snapshot::WorldSnapshot;
 use aftermine_net::{ClientSession, HostSession};
 use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
@@ -132,7 +133,7 @@ impl Game {
         if self.clock.paused {
             return;
         }
-        self.pace(dt, |game| {
+        self.pace(dt, LEAST_CATCH_UP, |game| {
             game.guard_tick(|game| {
                 if game.state.result().is_some() {
                     return false;
@@ -157,9 +158,9 @@ impl Game {
     /// has arrived, then catches up until at most `keep` batches wait. The
     /// host's pause reaches a client only as batches that stop arriving.
     pub(crate) fn client_frame(&mut self, session: &mut ClientSession, dt: f32, keep: usize) {
-        self.pace(dt, |game| game.run_next(session));
+        self.pace(dt, LEAST_CATCH_UP, |game| game.run_next(session));
         let mut extra = 0;
-        while session.backlog() > keep && extra < MAX_TICKS_PER_FRAME && self.run_next(session) {
+        while session.backlog() > keep && extra < LEAST_CATCH_UP && self.run_next(session) {
             extra += 1;
         }
     }

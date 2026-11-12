@@ -1048,7 +1048,7 @@ fn playing_frame(
     } else {
         let stop_tick = app.frame_profiler.stop_tick();
         let stopped = measure(FramePass::Sim, || {
-            advance_live_match(&mut app.game, time.raw, stop_tick, leaving || held)
+            advance_live_match(&mut app.game, time, stop_tick, leaving || held)
         });
         if !held {
             app.game.update_wall_clock_fx(time.presentation);
@@ -1139,8 +1139,15 @@ fn under_card(game: &Game, card: Option<macroquad::math::Rect>) -> crate::game::
 /// pause menu freezes the match on the gesture, so a suspension's gap is
 /// never caught up behind it, and a hold banks no time to catch up. A LAN
 /// match's link runs its ticks before the screen frame.
-fn advance_live_match(game: &mut Game, raw_dt: f32, stop_tick: Option<u64>, skip: bool) -> bool {
-    !skip && game.net_role().is_none() && game.advance_wall_clock(raw_dt, stop_tick)
+fn advance_live_match(
+    game: &mut Game,
+    time: FrameTime,
+    stop_tick: Option<u64>,
+    skip: bool,
+) -> bool {
+    !skip
+        && game.net_role().is_none()
+        && game.advance_wall_clock(time.raw, time.catch_up, stop_tick)
 }
 
 /// Lays the HUD out for the scene as it stands, so input hit-tests the
