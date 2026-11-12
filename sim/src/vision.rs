@@ -282,7 +282,8 @@ impl Vision {
         &self.contacts
     }
 
-    /// Continuous mobile contacts, including identified units in true sight.
+    /// Continuous contacts: every radar return, structures' included, and
+    /// identified units in true sight.
     pub fn tracks(&self) -> &[ContactTrack] {
         &self.tracking.tracks
     }

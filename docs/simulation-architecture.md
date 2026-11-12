@@ -119,11 +119,15 @@ Phase order is game behavior. `State::tick` performs:
    warheads, feed kilns, and resolve buffered damage, construction, salvage, and
    repair.
 6. Resolve boarding and unloading after every unit has decided, then stand up
-   the machine of every cradle whose last work landed.
-7. Evict pathless ground bodies from newly claimed blocking footprints.
-8. Follow paths, then resolve same-domain unit collisions. Parking radars unfold
-   a tick further on machines that did not drive themselves, and fold on any
-   that did.
+   the machine of every cradle whose last work landed, then dock arriving drones
+   and launch the docked drones of hosts on alert.
+7. Evict pathless ground bodies from newly claimed blocking footprints, then
+   send parked structural hulls aside for friendly ground bodies whose routes
+   they block.
+8. Follow paths, then resolve same-domain unit collisions. Ground bodies held
+   back by contact or a refused step long enough drop their routes. Parking
+   radars unfold a tick further on machines that did not drive themselves, and
+   fold on any that did.
 9. Retain large aircraft motion and resolve due crash impacts against current
    positions.
 10. Detonate armed Scuttle Charges under hostile post-movement bodies.
@@ -424,7 +428,8 @@ live in `sim/src/tick/fire.rs`.
 
 Projectile weapons launch a serialized `Shell` toward an aim point fixed when it
 fires, and the shell is unguided after that. Predictive aim samples only state
-from before the unit brains run. On arrival a building takes only a direct hit.
+from before the unit brains run. On arrival a building takes only a direct hit,
+except a buried Scuttle Charge, which splash also reaches.
 
 Point defense stops projectiles, never hitscan fire and never warheads. Charges
 are its only limit, and shells are assigned to defenders greedily in one
