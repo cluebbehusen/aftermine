@@ -86,7 +86,7 @@ fn production_dock_width_survives_countdowns_and_blocked_completion() {
         })
         .unwrap()
         .id;
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     let train = aftermine_sim::PlayerCommand {
         player: game.presentation.human,
         command: aftermine_sim::Command::Train {
@@ -152,7 +152,7 @@ fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
             y: 3,
         });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-    game.presentation.selection.buildings = vec![
+    game.presentation.selection.set_buildings(vec![
         game.state
             .buildings()
             .iter()
@@ -162,7 +162,7 @@ fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
             })
             .unwrap()
             .id,
-    ];
+    ]);
     let mut panel =
         crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
             .unwrap();
@@ -171,17 +171,13 @@ fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
     for _ in 0..3 {
         let last = panel.cards.last().unwrap();
         let extra = crate::panel::Card {
-            icon: last.icon,
-            title: last.title.clone(),
             cost: last.cost,
             hotkey: last.hotkey.clone(),
-            action: last.action,
             enabled: last.enabled,
             why: last.why.clone(),
             desc: last.desc.clone(),
             progress: last.progress,
-            autocast: None,
-            hold: None,
+            ..crate::panel::Card::new(last.icon, last.title.clone(), last.action)
         };
         panel.cards.push(extra);
     }
@@ -249,7 +245,7 @@ fn production_cards_stay_inside_the_band_across_layouts_and_actions() {
                 })
                 .unwrap()
                 .id;
-            game.presentation.selection.buildings = vec![building];
+            game.presentation.selection.set_buildings(vec![building]);
             if full_queue {
                 let unit = *kind.base_stats().produces.first().unwrap();
                 for _ in 0..aftermine_sim::stats::QUEUE_CAP {
@@ -368,19 +364,11 @@ const SUPPORTED: [(f32, f32); 6] = [
 ];
 
 fn command(action: crate::panel::CardAction) -> crate::panel::Card {
-    crate::panel::Card {
-        icon: crate::panel::CardIcon::Verb(crate::panel::VerbIcon::Move),
-        title: String::new(),
-        cost: None,
-        hotkey: String::new(),
+    crate::panel::Card::new(
+        crate::panel::CardIcon::Verb(crate::panel::VerbIcon::Move),
+        "",
         action,
-        enabled: true,
-        why: None,
-        desc: Vec::new(),
-        progress: None,
-        autocast: None,
-        hold: None,
-    }
+    )
 }
 
 #[test]
@@ -560,7 +548,7 @@ fn rally_changes_preserve_single_and_grouped_production_geometry() {
                 .map(|b| b.id)
                 .collect(),
         ] {
-            game.presentation.selection.buildings = selection.clone();
+            game.presentation.selection.set_buildings(selection.clone());
             let geometry = |game: &Game| {
                 let panel =
                     crate::panel::build_for_palette(&game.view(), &BindingMap::classic(), false)
@@ -739,7 +727,9 @@ fn a_mixed_small_window_selection_keeps_roster_and_queue_in_the_corner() {
         });
     }
     let mut game = Game::with_viewport(scenario, vec2(640.0, 400.0)).unwrap();
-    game.presentation.selection.units = game.state.units().iter().map(|u| u.id).collect();
+    game.presentation
+        .selection
+        .set_units(game.state.units().iter().map(|u| u.id).collect());
     let panel =
         crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
             .unwrap();
@@ -815,7 +805,8 @@ fn a_tile_icon_drops_below_a_hotkey_that_reaches_its_column() {
 fn the_select_all_button_widens_the_title_row_and_grows_for_fingertips() {
     let mut game =
         crate::building_actions::tests::fixture(aftermine_sim::BuildingKind::Turret, &[0, 0, 0], 0);
-    game.presentation.selection.buildings.truncate(1);
+    let first = game.presentation.selection.buildings()[..1].to_vec();
+    game.presentation.selection.set_buildings(first);
     let mut panel =
         crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
             .unwrap();
@@ -874,7 +865,7 @@ fn pad_mode_names_the_ring_buttons_where_the_ring_has_commands() {
         .find(|u| u.player == game.presentation.human)
         .expect("an own unit")
         .id;
-    game.presentation.selection.units = vec![own];
+    game.presentation.selection.set_units(vec![own]);
     let panel = crate::panel::build_for_palette(&game.view(), &bindings, false).expect("own panel");
     for family in [PadFamily::Xbox, PadFamily::PlayStation, PadFamily::Switch] {
         let legend = pad_legend(&panel, Some(family))
@@ -904,7 +895,7 @@ fn pad_mode_names_the_ring_buttons_where_the_ring_has_commands() {
         })
         .expect("an ally Foundry")
         .id;
-    allied.presentation.selection.buildings = vec![ally];
+    allied.presentation.selection.set_buildings(vec![ally]);
     let chip =
         crate::panel::build_for_palette(&allied.view(), &bindings, false).expect("ally panel");
     assert!(!chip.cards.is_empty());
@@ -932,7 +923,7 @@ fn the_pad_legend_starts_clear_of_the_info_plate() {
         .find(|u| u.player == game.presentation.human)
         .expect("an own unit")
         .id;
-    game.presentation.selection.units = vec![own];
+    game.presentation.selection.set_units(vec![own]);
     let bindings = crate::action::BindingMap::classic();
     let build =
         || crate::panel::build_for_palette(&game.view(), &bindings, false).expect("own panel");
@@ -1003,7 +994,7 @@ fn harvester_with_orders(orders: usize) -> Game {
         })
         .collect();
     game.state.tick(&walks);
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     game
 }
 
@@ -1228,7 +1219,7 @@ fn a_structure_keeps_its_picture_still_as_it_finishes_building_and_upgrading() {
         .find(|b| b.player == human && b.kind == BuildingKind::Turret)
         .expect("the Turret's site")
         .id;
-    game.presentation.selection.buildings = vec![turret];
+    game.presentation.selection.set_buildings(vec![turret]);
     let finish = |game: &mut Game, label: &str| {
         let start = card_frame(game);
         let mut labels = Vec::new();
@@ -1263,7 +1254,7 @@ fn an_aircraft_keeps_its_picture_still_as_it_lands() {
     }];
     let mut game = Game::with_viewport(scenario, vec2(1133.0, 744.0)).unwrap();
     let condor = game.state.units()[0].id;
-    game.presentation.selection.units = vec![condor];
+    game.presentation.selection.set_units(vec![condor]);
     assert_eq!(health_label(&game), "Health");
     let start = card_frame(&game);
     let mut ticks = 0;
@@ -1326,7 +1317,7 @@ fn a_lattice_keeps_its_picture_and_dock_still_as_warheads_come_and_go() {
             .id
     };
     let (spire, lattice) = (id(BuildingKind::Spire), id(BuildingKind::Lattice));
-    game.presentation.selection.buildings = vec![lattice];
+    game.presentation.selection.set_buildings(vec![lattice]);
     let line = |game: &Game| selection_info(game).reserved.and_then(|line| line.text);
     assert_eq!(line(&game), None, "quiet skies leave the line blank");
     let start = card_frame(&game);
@@ -1403,7 +1394,7 @@ fn an_extractor_keeps_its_picture_still_as_it_finishes_building_and_upgrading() 
         .find(|b| b.kind == BuildingKind::Extractor)
         .expect("the Extractor's site")
         .id;
-    game.presentation.selection.buildings = vec![extractor];
+    game.presentation.selection.set_buildings(vec![extractor]);
     let rows = |game: &Game| {
         let info = selection_info(game);
         ["Income", "Support"].map(|label| {
@@ -1450,19 +1441,11 @@ fn an_extractor_keeps_its_picture_still_as_it_finishes_building_and_upgrading() 
 fn a_small_roster_chip_shows_its_count_alone() {
     let chip = crate::panel::RosterChip {
         count: 12,
-        card: crate::panel::Card {
-            icon: crate::panel::CardIcon::Unit(aftermine_sim::UnitKind::Sentinel),
-            title: "Sentinel x12".into(),
-            cost: None,
-            hotkey: String::new(),
-            action: crate::panel::CardAction::FilterKind(aftermine_sim::UnitKind::Sentinel),
-            enabled: true,
-            why: None,
-            desc: Vec::new(),
-            progress: None,
-            autocast: None,
-            hold: None,
-        },
+        card: crate::panel::Card::new(
+            crate::panel::CardIcon::Unit(aftermine_sim::UnitKind::Sentinel),
+            "Sentinel x12",
+            crate::panel::CardAction::FilterKind(aftermine_sim::UnitKind::Sentinel),
+        ),
     };
     assert_eq!(roster_face(&chip, true), "12");
     assert_eq!(roster_face(&chip, false), "Sentinel x12");

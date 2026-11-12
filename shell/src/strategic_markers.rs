@@ -137,7 +137,7 @@ type Shown<'a> = (&'a Unit, Vec2, bool);
 /// The unit markers in view, unselected ones first so a selection's rings
 /// draw over its neighbours, each part in the world's unit order.
 fn shown_units<'a>(game: &Scene<'a>, alpha: f32) -> Vec<Shown<'a>> {
-    let selection = &game.presentation.selection.units;
+    let selection = game.presentation.selection.units();
     let mut chosen = Vec::new();
     let mut shown: Vec<Shown<'a>> = game
         .state
@@ -286,7 +286,7 @@ fn draw_building_markers(game: &Scene<'_>, alpha: f32) {
             b.anchor,
             b.built(),
             false,
-            game.presentation.selection.buildings.contains(&b.id),
+            game.presentation.selection.buildings().contains(&b.id),
             if game.presentation.all_seeing() {
                 b.launcher.is_some() && b.magazine.is_some_and(|m| m.loaded > 0)
             } else {

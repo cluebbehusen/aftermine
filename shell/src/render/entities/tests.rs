@@ -112,13 +112,13 @@ fn support_links_exist_only_for_connected_own_endpoints() {
         .expect("supported foreign Extractor")
         .id;
 
-    game.presentation.selection.buildings = vec![supported];
+    game.presentation.selection.set_buildings(vec![supported]);
     let links = selected_economy_support_links(&game.view());
     assert!(!links.is_empty());
     assert!(links.iter().all(|link| link.extractor == supported));
 
     let foundry = links[0].foundry;
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     let from_foundry = selected_economy_support_links(&game.view());
     assert!(from_foundry.contains(&EconomySupportLink {
         extractor: supported,
@@ -129,10 +129,10 @@ fn support_links_exist_only_for_connected_own_endpoints() {
         "remote Extractors cannot gain a decorative connection"
     );
 
-    game.presentation.selection.buildings = vec![remote];
+    game.presentation.selection.set_buildings(vec![remote]);
     assert!(selected_economy_support_links(&game.view()).is_empty());
 
-    game.presentation.selection.buildings = vec![foreign];
+    game.presentation.selection.set_buildings(vec![foreign]);
     assert!(
         selected_economy_support_links(&game.view()).is_empty(),
         "foreign support state must not be disclosed by a link"
@@ -390,7 +390,7 @@ fn flakhound_and_sentinel_use_consistent_colors_and_marks_for_each_target_domain
             .find(|unit| unit.kind == kind)
             .unwrap()
             .id;
-        game.presentation.selection.units = vec![id];
+        game.presentation.selection.set_units(vec![id]);
         let mut indicators = Vec::new();
         visit_active_ranges(&game.view(), &InputState::new(), |indicator| {
             indicators.push(indicator);
@@ -996,9 +996,9 @@ fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
         id(&game, aftermine_sim::UnitKind::Kestrel),
         id(&game, aftermine_sim::UnitKind::Surveyor),
     );
-    game.presentation.selection.units = vec![kestrel];
+    game.presentation.selection.set_units(vec![kestrel]);
     assert_eq!(radar_rings(&game), [14.0]);
-    game.presentation.selection.units = vec![surveyor];
+    game.presentation.selection.set_units(vec![surveyor]);
     assert!(radar_rings(&game).is_empty(), "folded at the start");
     let deploy = aftermine_sim::UnitKind::Surveyor
         .stats()
@@ -1028,7 +1028,7 @@ fn a_selected_mantle_shows_its_intercept_reach_from_its_centre() {
         mantle.id,
         vec2(mantle.pos.x.to_num::<f32>(), mantle.pos.y.to_num::<f32>()),
     );
-    game.presentation.selection.units = vec![id];
+    game.presentation.selection.set_units(vec![id]);
     let mut indicators = Vec::new();
     visit_active_ranges(&game.view(), &InputState::new(), |indicator| {
         indicators.push(indicator);

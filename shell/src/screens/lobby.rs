@@ -195,27 +195,11 @@ impl LobbyScreen {
         started
     }
 
-    /// The keyboard the focused field asks for, while the form is up.
-    pub fn keyboard(&self) -> Option<Keyboard> {
-        match &self.face {
-            Face::Join { form, .. } => Some(form.keyboard()),
-            Face::Waiting(_) => None,
-        }
-    }
-
-    /// The text the on-screen keyboard should show, while the form is up.
-    pub fn keyboard_text(&self) -> Option<&str> {
-        match &self.face {
-            Face::Join { form, .. } => Some(form.keyboard_text()),
-            Face::Waiting(_) => None,
-        }
-    }
-
-    /// Consumes a request to raise the on-screen keyboard again.
-    pub fn take_keyboard_request(&mut self) -> bool {
+    /// The join form, while it is up.
+    pub fn form(&mut self) -> Option<&mut Form> {
         match &mut self.face {
-            Face::Join { form, .. } => form.take_keyboard_request(),
-            Face::Waiting(_) => false,
+            Face::Join { form, .. } => Some(form),
+            Face::Waiting(_) => None,
         }
     }
 

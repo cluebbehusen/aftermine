@@ -389,7 +389,7 @@ fn hold_rows(info: &mut SelectionInfo, game: &Scene<'_>, u: &aftermine_sim::Unit
 pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
     use StatIcon::{Capability as Cap, Verb};
     let mut info = SelectionInfo::default();
-    if let Some(tile) = game.presentation.selection.pile {
+    if let Some(tile) = game.presentation.selection.pile() {
         if let Some(salvage) = game.known_salvage(tile) {
             info.row(
                 "Scrap left",
@@ -411,10 +411,10 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         }
         return info;
     }
-    if game.presentation.selection.buildings.len() == 1 {
+    if game.presentation.selection.buildings().len() == 1 {
         let Some(b) = game
             .state
-            .building(game.presentation.selection.buildings[0])
+            .building(game.presentation.selection.buildings()[0])
         else {
             return info;
         };
@@ -530,8 +530,8 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
             | BuildingKind::Barricade => {}
         }
         info.weapons(stats.weapons, false);
-    } else if game.presentation.selection.units.len() == 1 {
-        let Some(u) = game.state.unit(game.presentation.selection.units[0]) else {
+    } else if game.presentation.selection.units().len() == 1 {
+        let Some(u) = game.state.unit(game.presentation.selection.units()[0]) else {
             return info;
         };
         let stats = u.kind.stats();
@@ -612,7 +612,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         if !panel.summary.is_empty() {
             info.status.push(panel.summary.clone());
         }
-        if !game.presentation.selection.buildings.is_empty() {
+        if !game.presentation.selection.buildings().is_empty() {
             info.status
                 .extend(crate::building_actions::SelectedBuildings::inspect(game).ammunition());
         }
@@ -621,7 +621,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         } else if let Some(b) = game
             .presentation
             .selection
-            .buildings
+            .buildings()
             .first()
             .and_then(|id| game.state.building(*id))
         {

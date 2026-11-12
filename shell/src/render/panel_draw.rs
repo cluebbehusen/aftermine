@@ -1730,10 +1730,10 @@ pub(crate) fn draw_panel(
         // An armed placement or rally lights its card, and so does a
         // running patrol; a route still being picked is not one yet.
         let selected = matches!(card.action, CardAction::ArmBuild(kind) if input.placing_kind() == Some(kind))
-            || (card.action == CardAction::ArmRally && !input.rallying.is_empty())
+            || (card.action == CardAction::ArmRally && !input.rallying().is_empty())
             || (card.action == CardAction::Dispatch(crate::action::Action::Patrol)
                 && panel.patrolling
-                && input.patrol_route.is_none());
+                && input.patrol_route().is_none());
         let bg = if selected {
             crate::theme::CARD_ARMED
         } else if hovered && card.enabled {

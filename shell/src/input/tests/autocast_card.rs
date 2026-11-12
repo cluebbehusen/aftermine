@@ -32,7 +32,7 @@ fn selected_worker(game: &mut Game) -> aftermine_sim::UnitId {
         .find(|u| u.player == game.presentation.human && u.worker.is_some())
         .expect("the skirmish starts with a crew")
         .id;
-    game.presentation.selection.units = vec![worker];
+    game.presentation.selection.set_units(vec![worker]);
     worker
 }
 

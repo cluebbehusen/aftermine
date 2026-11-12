@@ -51,3 +51,18 @@ fn a_client_cannot_rejoin_a_seat_the_match_lacks() {
     snapshot = decode(&encode(&snapshot).unwrap()).unwrap();
     assert!(Game::rejoined(snapshot, PlayerId(9), vec2(1280.0, 800.0)).is_err());
 }
+
+#[test]
+fn a_snapshot_frame_carries_its_checksum_and_nothing_after_it() {
+    let host = hosted();
+    let bytes = encode(&host.world_snapshot().unwrap()).unwrap();
+    let mut trailing = bytes.clone();
+    // An empty skippable frame, which a decoder reading on would pass over.
+    trailing.extend([0x50, 0x2a, 0x4d, 0x18, 0, 0, 0, 0]);
+    assert!(decode(&trailing).is_err(), "nothing may follow the frame");
+    // The same frame with its checksum flag cleared and its checksum gone.
+    let mut unchecked = bytes;
+    unchecked[8 + 4] &= !4;
+    unchecked.truncate(unchecked.len() - 4);
+    assert!(decode(&unchecked).is_err(), "the frame carries a checksum");
+}

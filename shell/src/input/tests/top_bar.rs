@@ -39,7 +39,7 @@ fn a_saved_group_recalls_by_click_and_a_quick_second_click_centers_it() {
     input.now = 10.0;
     let at = rects[0].center();
     apply_events(&mut game, &mut input, &click(at.x, at.y));
-    assert_eq!(game.presentation.selection.units, vec![fighter]);
+    assert_eq!(game.presentation.selection.units(), vec![fighter]);
     assert_eq!(
         game.presentation.camera.center, far,
         "one recall leaves the camera"
@@ -58,7 +58,7 @@ fn ctrl_click_saves_the_selection_to_any_slot_and_plus_saves_it_plainly() {
     let mut game = headless_game();
     let mut input = InputState::new();
     let own = own_units(&game);
-    game.presentation.selection.units = vec![own[0]];
+    game.presentation.selection.set_units(vec![own[0]]);
     let rects = publish_strip(
         &mut game,
         [
@@ -111,14 +111,14 @@ fn the_strip_counts_live_own_units_and_offers_only_a_new_selection() {
     assert_eq!(input.group_counts(&game.view()), [1, 0, 0, 0, 0]);
 
     assert_eq!(input.group_on_offer(&game.view()), None, "nothing selected");
-    game.presentation.selection.units = vec![own[0]];
+    game.presentation.selection.set_units(vec![own[0]]);
     assert_eq!(input.selected_group(&game.view()), Some(1));
     assert_eq!(
         input.group_on_offer(&game.view()),
         None,
         "the selection already is group 1"
     );
-    game.presentation.selection.units = vec![own[1]];
+    game.presentation.selection.set_units(vec![own[1]]);
     assert_eq!(input.selected_group(&game.view()), None);
     assert_eq!(
         input.group_on_offer(&game.view()),
@@ -143,7 +143,7 @@ fn a_tap_on_a_slot_recalls_like_a_click() {
         &mut input,
         vec2(rects[2].center().x, rects[2].y + rects[2].h + 3.0),
     );
-    assert_eq!(game.presentation.selection.units, vec![fighter]);
+    assert_eq!(game.presentation.selection.units(), vec![fighter]);
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn a_long_press_on_a_slot_saves_the_selection_there_without_recalling() {
     let mut input = InputState::new();
     let own = own_units(&game);
     input.groups[0] = Group::Units(vec![own[0]]);
-    game.presentation.selection.units = vec![own[1]];
+    game.presentation.selection.set_units(vec![own[1]]);
     let rects = publish_strip(
         &mut game,
         [Some(GroupSlot::Recall(1)), None, None, None, None],
@@ -180,10 +180,10 @@ fn a_long_press_on_a_slot_saves_the_selection_there_without_recalling() {
         input.last_recall, None,
         "the lift after the hold recalls nothing"
     );
-    assert_eq!(game.presentation.selection.units, vec![own[1]]);
+    assert_eq!(game.presentation.selection.units(), vec![own[1]]);
 
     // With nothing selected, the hold clears the group.
-    game.presentation.selection.units.clear();
+    game.presentation.selection.clear();
     input.now = 10.0;
     apply_events(&mut game, &mut input, &[touch_down(2, at)]);
     input.now = 11.0;

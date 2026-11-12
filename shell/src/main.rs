@@ -36,6 +36,7 @@ mod idle_weld;
 mod input;
 mod layout;
 mod look;
+mod loop_audio;
 mod maw_audio;
 mod maw_motion;
 mod menu;

@@ -25,7 +25,9 @@ fn placing(kind: BuildingKind) -> (Game, InputState) {
         &[(0, BuildingKind::Turret, 31, 20)],
     );
     let mut input = pad_input(&mut game);
-    game.presentation.selection.units = vec![unit_at(&game, 32, 23)];
+    game.presentation
+        .selection
+        .set_units(vec![unit_at(&game, 32, 23)]);
     input.build_menu = true;
     input.build_category = Some(crate::action::building_category(kind));
     input.arm_placement(kind);
@@ -62,13 +64,13 @@ fn a_places_a_structure_centered_on_the_reticle_where_the_ghost_shows() {
     assert!(spot.verdict.builds(), "{:?}", spot.verdict);
     press(&mut game, &mut input, PadButton::South);
     assert_eq!(builds(&game), [(spot.anchor, false)]);
-    assert!(input.placing.is_none(), "one placement ends the mode");
+    assert!(input.placing().is_none(), "one placement ends the mode");
     assert!(
         !input.construction_open(),
         "and closes the palette pad mode doesn't draw"
     );
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         vec![unit_at(&game, 32, 23)],
         "A placed rather than selected"
     );
@@ -97,7 +99,7 @@ fn a_held_a_drags_a_row_that_skips_a_refused_cell_and_stages_on_release() {
             (TilePos::new(33, 20), true),
         ]
     );
-    assert!(input.placing.is_none());
+    assert!(input.placing().is_none());
     assert!(!input.construction_open());
 }
 
@@ -132,16 +134,16 @@ fn a_held_left_trigger_queues_and_a_plain_a_after_it_ends_placement() {
         builds(&game),
         [(TilePos::new(28, 18), true), (TilePos::new(30, 18), true)]
     );
-    assert!(input.placing.is_some(), "a held LT keeps placing");
+    assert!(input.placing().is_some(), "a held LT keeps placing");
     assert!(input.build_menu);
     feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
-    assert!(input.placing.is_some(), "letting go keeps placing");
+    assert!(input.placing().is_some(), "letting go keeps placing");
     assert!(input.build_menu);
 
     rest_on(&mut game, &mut input, vec2(26.5, 18.5));
     press(&mut game, &mut input, PadButton::South);
     assert_eq!(builds(&game)[2..], [(TilePos::new(26, 18), false)]);
-    assert!(input.placing.is_none(), "a plain A ends placement");
+    assert!(input.placing().is_none(), "a plain A ends placement");
     assert!(!input.construction_open(), "and closes construction");
 }
 
@@ -165,7 +167,7 @@ fn x_places_one_structure_but_waits_while_a_lays_a_row() {
     rest_on(&mut game, &mut input, vec2(29.5, 20.5));
     press(&mut game, &mut input, PadButton::West);
     assert_eq!(builds(&game), [(TilePos::new(29, 20), false)]);
-    assert!(input.placing.is_none(), "X is a tap of A");
+    assert!(input.placing().is_none(), "X is a tap of A");
     assert!(!input.construction_open());
 
     let (mut game, mut input) = placing(BARRICADE);
@@ -199,7 +201,7 @@ fn b_drops_a_held_row_then_walks_out_of_placement() {
     };
     publish(&game, &input);
     press(&mut game, &mut input, PadButton::East);
-    assert!(input.placing.is_none());
+    assert!(input.placing().is_none());
     assert!(input.build_menu);
     assert_eq!(heading(&game, &input).as_deref(), Some("DEFENSE"));
     press(&mut game, &mut input, PadButton::East);
@@ -210,9 +212,9 @@ fn b_drops_a_held_row_then_walks_out_of_placement() {
     assert_eq!(heading(&game, &input).as_deref(), Some("COMMANDS"));
     press(&mut game, &mut input, PadButton::East);
     assert!(input.ring.is_none());
-    assert_eq!(game.presentation.selection.units.len(), 1);
+    assert_eq!(game.presentation.selection.units().len(), 1);
     press(&mut game, &mut input, PadButton::East);
-    assert!(game.presentation.selection.units.is_empty());
+    assert!(game.presentation.selection.units().is_empty());
 }
 
 #[test]
@@ -223,15 +225,15 @@ fn b_out_of_a_queued_chain_returns_to_the_selection() {
     press(&mut game, &mut input, PadButton::South);
     feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
     assert_eq!(builds(&game), [(TilePos::new(28, 18), true)]);
-    assert!(input.placing.is_some(), "premise: still placing");
+    assert!(input.placing().is_some(), "premise: still placing");
 
     // The build ring has a card to show, yet B leaves it shut.
     publish(&game, &input);
     press(&mut game, &mut input, PadButton::East);
-    assert!(input.placing.is_none());
+    assert!(input.placing().is_none());
     assert!(input.ring.is_none(), "no build ring opens");
     assert!(!input.construction_open(), "construction closes");
-    assert_eq!(game.presentation.selection.units.len(), 1);
+    assert_eq!(game.presentation.selection.units().len(), 1);
     assert_eq!(builds(&game).len(), 1, "and the chain stands");
 }
 
@@ -242,7 +244,7 @@ fn b_out_of_a_placement_with_no_build_ring_left_closes_construction() {
     press(&mut game, &mut input, PadButton::East);
     assert!(input.ring.is_none());
     assert!(!input.construction_open());
-    assert_eq!(game.presentation.selection.units.len(), 1);
+    assert_eq!(game.presentation.selection.units().len(), 1);
 }
 
 /// Publishes the panel as the HUD's layout pass does before input.
@@ -353,7 +355,7 @@ fn sentinel() -> (Game, InputState, UnitId) {
     let mut game = scene(&[(0, UnitKind::Sentinel, 30, 20)], &[]);
     let input = pad_input(&mut game);
     let unit = unit_at(&game, 30, 20);
-    game.presentation.selection.units = vec![unit];
+    game.presentation.selection.set_units(vec![unit]);
     (game, input, unit)
 }
 
@@ -372,7 +374,7 @@ fn a_or_x_confirms_hunt_run_and_patrol_at_the_reticle() {
         }]
     );
     assert!(input.armed_mode().is_none(), "the order spent the mode");
-    assert_eq!(game.presentation.selection.units, vec![unit]);
+    assert_eq!(game.presentation.selection.units(), vec![unit]);
 
     let (mut game, mut input, unit) = sentinel();
     dispatch(&mut game, &mut input, Action::Run);
@@ -421,7 +423,7 @@ fn a_held_left_trigger_keeps_a_targeted_order_armed() {
             queue: true,
         })
     );
-    assert!(input.armed(ClickVerb::Hunt));
+    assert!(input.is_armed(ClickVerb::Hunt));
 }
 
 /// Loads one warhead into Spire `id` through the state's own
@@ -444,7 +446,7 @@ fn a_launches_at_the_reticle() {
     let mut input = pad_input(&mut game);
     let spire = building_at(&game, 20, 10);
     load_warhead(&mut game, spire);
-    game.presentation.selection.buildings = vec![spire];
+    game.presentation.selection.set_buildings(vec![spire]);
     dispatch(&mut game, &mut input, Action::Launch);
     rest_on(&mut game, &mut input, vec2(40.5, 30.5));
     press(&mut game, &mut input, PadButton::South);
@@ -455,7 +457,7 @@ fn a_launches_at_the_reticle() {
             target: TilePos::new(40, 30),
         }]
     );
-    assert!(input.striking.is_none(), "its one warhead is spent");
+    assert!(input.striking().is_none(), "its one warhead is spent");
 }
 
 #[test]
@@ -472,7 +474,7 @@ fn launch_takes_the_bumpers_over_to_fire_fewer_or_more() {
     for &spire in &spires {
         load_warhead(&mut game, spire);
     }
-    game.presentation.selection.buildings = spires.clone();
+    game.presentation.selection.set_buildings(spires.clone());
     dispatch(&mut game, &mut input, Action::Launch);
     let salvo = |game: &Game, input: &InputState| {
         crate::input::salvo_readout(&game.view(), input).map(|(fires, _)| fires)
@@ -488,7 +490,7 @@ fn launch_takes_the_bumpers_over_to_fire_fewer_or_more() {
         assert_eq!(salvo(&game, &input), Some(fires), "{bumper:?}");
     }
     assert!(
-        game.presentation.selection.units.is_empty(),
+        game.presentation.selection.units().is_empty(),
         "the bumpers selected no army while Launch was armed"
     );
     rest_on(&mut game, &mut input, vec2(40.5, 30.5));
@@ -501,10 +503,10 @@ fn launch_takes_the_bumpers_over_to_fire_fewer_or_more() {
             .map(|&building| Command::Launch { building, target })
             .collect::<Vec<_>>()
     );
-    assert!(input.striking.is_none(), "both warheads are spent");
+    assert!(input.striking().is_none(), "both warheads are spent");
     press(&mut game, &mut input, PadButton::LeftShoulder);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         vec![unit_at(&game, 30, 30)],
         "with Launch done, LB selects the army again"
     );
@@ -519,7 +521,7 @@ fn x_sets_a_rally_on_the_ground_or_onto_a_unit_the_reticle_reaches() {
     let mut input = pad_input(&mut game);
     let fabricator = building_at(&game, 20, 25);
     let escort = unit_at(&game, 30, 20);
-    game.presentation.selection.buildings = vec![fabricator];
+    game.presentation.selection.set_buildings(vec![fabricator]);
     let rallies = |game: &Game| -> Vec<Option<Rally>> {
         game.pending
             .iter()
@@ -530,11 +532,11 @@ fn x_sets_a_rally_on_the_ground_or_onto_a_unit_the_reticle_reaches() {
             .collect()
     };
 
-    input.rallying = vec![fabricator];
+    input.armed = Some(crate::input::Armed::Rally(vec![fabricator]));
     rest_on(&mut game, &mut input, vec2(36.5, 24.5));
     press(&mut game, &mut input, PadButton::West);
     assert_eq!(rallies(&game), [Some(Rally::Tile(TilePos::new(36, 24)))]);
-    assert!(input.rallying.is_empty(), "a rally takes one pick");
+    assert!(input.rallying().is_empty(), "a rally takes one pick");
 
     // Off the Sentinel's body but inside the reticle's reach, as X's
     // contextual order reaches.
@@ -542,7 +544,7 @@ fn x_sets_a_rally_on_the_ground_or_onto_a_unit_the_reticle_reaches() {
     let off = f32::midpoint(unit_pick_radius(UnitKind::Sentinel), reach);
     assert!(unit_pick_radius(UnitKind::Sentinel) < off && off < reach);
     game.pending.clear();
-    input.rallying = vec![fabricator];
+    input.armed = Some(crate::input::Armed::Rally(vec![fabricator]));
     rest_on(&mut game, &mut input, vec2(30.5 + off, 20.5));
     press(&mut game, &mut input, PadButton::South);
     assert_eq!(rallies(&game), [Some(Rally::Unit(escort))]);
@@ -577,7 +579,7 @@ fn repair_escort_and_salvage_take_what_the_reticle_brackets() {
     let turret = building_at(&game, 30, 24);
     wound_unit(&mut game, lancer, 10);
     wound_building(&mut game, turret, 10);
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     // Off the Lancer's body but inside the reticle's reach.
     let reach = 24.0 / ZOOM;
     let off = f32::midpoint(unit_pick_radius(UnitKind::Lancer), reach);
@@ -642,14 +644,13 @@ fn a_controller_taking_over_from_a_finger_drops_its_ghost_and_aim() {
     let mut input = pad_input(&mut game);
     let spire = building_at(&game, 20, 10);
     load_warhead(&mut game, spire);
-    game.presentation.selection.buildings = vec![spire];
+    game.presentation.selection.set_buildings(vec![spire]);
     dispatch(&mut game, &mut input, Action::Launch);
     rest_on(&mut game, &mut input, vec2(40.5, 30.5));
     super::super::drop_aim_in_view(&game.view(), &mut input);
     assert!(
         input
-            .striking
-            .as_ref()
+            .striking()
             .and_then(crate::input::Strike::aim)
             .is_some()
     );
@@ -675,14 +676,14 @@ fn salvage_refuses_the_foundry_the_reticle_rests_on_rather_than_strip_its_neighb
     let mut input = pad_input(&mut game);
     let harvester = unit_at(&game, 26, 20);
     let barricade = building_at(&game, 32, 24);
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     dispatch(&mut game, &mut input, Action::Salvage);
     // On the Foundry, with the Barricade inside the reticle's reach.
     rest_on(&mut game, &mut input, vec2(31.6, 24.5));
     press(&mut game, &mut input, PadButton::South);
     assert!(denied(&game));
     assert!(game.pending.is_empty(), "{:?}", commands(&game));
-    assert!(input.armed(ClickVerb::Salvage), "the mode stands");
+    assert!(input.is_armed(ClickVerb::Salvage), "the mode stands");
 
     rest_on(&mut game, &mut input, vec2(32.5, 24.5));
     press(&mut game, &mut input, PadButton::South);

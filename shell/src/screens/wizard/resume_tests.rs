@@ -182,8 +182,7 @@ fn the_setup_hint_says_when_a_press_does_nothing_on_a_resume() {
     let (mut w, mut draft) = resuming();
     let order = seat_display_order(draft.scenario.as_deref().unwrap());
     let press_at = |w: &mut Wizard, draft: &NewMatchDraft, row: usize, cell: Cell| {
-        w.setup_sel = row;
-        w.setup_cell = cell;
+        w.cursor = SetupCursor::Seat { row, cell };
         w.cursor_press(draft, &w.open_flags(draft), &order)
     };
     for row in [0, 1, 3] {
@@ -198,13 +197,15 @@ fn the_setup_hint_says_when_a_press_does_nothing_on_a_resume() {
         CursorPress::BotForChair,
         "a missing player's chair can go to a bot"
     );
-    w.on_switch = true;
+    w.cursor = SetupCursor::Switch {
+        row: 0,
+        cell: Cell::Seat,
+    };
     assert_eq!(
-        press_at(&mut w, &draft, 0, Cell::Seat),
+        w.cursor_press(&draft, &w.open_flags(&draft), &order),
         CursorPress::Nothing,
         "the lobby stays open"
     );
-    w.on_switch = false;
 
     let mut clients = vec![join(&w, "Alex", ALEX)];
     settle(&mut w, &mut draft, &mut clients, |w, _| {
@@ -237,8 +238,7 @@ fn a_resume_reserves_each_players_seat_and_fixes_everything_else() {
     let teams: Vec<usize> = draft.seats.iter().map(|plan| plan.team_choice).collect();
     let bot = draft.seats[3];
     for (row, cell) in [(3, Cell::Team), (3, Cell::Difficulty), (0, Cell::Seat)] {
-        w.setup_sel = row;
-        w.setup_cell = cell;
+        w.cursor = SetupCursor::Seat { row, cell };
         drive(&mut w, &mut draft, Key::Enter);
     }
     assert_eq!(
@@ -254,10 +254,14 @@ fn a_resume_reserves_each_players_seat_and_fixes_everything_else() {
     assert!(w.moving.is_none());
 
     // The switch cannot make it a local match.
-    w.on_switch = true;
+    let before = w.cursor;
+    w.cursor = SetupCursor::Switch {
+        row: 0,
+        cell: Cell::Seat,
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert!(w.lan.is_some());
-    w.on_switch = false;
+    w.cursor = before;
 
     // Back leaves for Home and gives New Match its draft back.
     assert_eq!(drive(&mut w, &mut draft, Key::Escape), Out::Home);
@@ -294,10 +298,15 @@ fn returning_players_find_their_seats_by_install_then_name_then_order() {
     assert!(member_at(&w, 3).is_none());
 
     // The host can still swap the two players.
-    w.setup_sel = 1;
-    w.setup_cell = Cell::Seat;
+    w.cursor = SetupCursor::Seat {
+        row: 1,
+        cell: Cell::Seat,
+    };
     drive(&mut w, &mut draft, Key::Enter);
-    w.setup_sel = 2;
+    w.cursor = SetupCursor::Seat {
+        row: 2,
+        cell: w.cursor.cell(),
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert!(w.ui_surface(&draft).1[1].contains("(player Zed)"));
 }
@@ -324,7 +333,9 @@ fn a_resume_starts_every_machine_on_the_saved_world() {
     settle(&mut w, &mut draft, &mut clients, |w, _| {
         member_at(w, 1).is_some() && member_at(w, 2).is_some()
     });
-    w.setup_sel = 4;
+    w.cursor = SetupCursor::Start {
+        cell: w.cursor.cell(),
+    };
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Launch);
     assert!(w.hosting_players());
     w.start_resume(&draft, Duration::ZERO).unwrap();
@@ -356,17 +367,23 @@ fn a_missing_player_can_go_to_a_bot_and_the_host_can_resume_alone() {
         member_at(w, 2).is_some()
     });
     // North East waits for Sam until the host hands it to a bot.
-    w.setup_sel = 4;
+    w.cursor = SetupCursor::Start {
+        cell: w.cursor.cell(),
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert!(
         w.notice
             .is_some_and(|notice| notice.to_string().contains("still open"))
     );
-    w.setup_sel = 2;
-    w.setup_cell = Cell::Difficulty;
+    w.cursor = SetupCursor::Seat {
+        row: 2,
+        cell: Cell::Difficulty,
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert!(!draft.seats[1].open);
-    w.setup_sel = 4;
+    w.cursor = SetupCursor::Start {
+        cell: w.cursor.cell(),
+    };
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Launch);
     w.start_resume(&draft, Duration::ZERO).unwrap();
     let mut machines = run_start(&mut w, &mut draft, &mut clients);
@@ -379,11 +396,15 @@ fn a_missing_player_can_go_to_a_bot_and_the_host_can_resume_alone() {
     // With both players' seats given to bots, the host plays on alone.
     let (mut w, mut draft) = resuming();
     for row in [1, 2] {
-        w.setup_sel = row;
-        w.setup_cell = Cell::Difficulty;
+        w.cursor = SetupCursor::Seat {
+            row,
+            cell: Cell::Difficulty,
+        };
         drive(&mut w, &mut draft, Key::Enter);
     }
-    w.setup_sel = 4;
+    w.cursor = SetupCursor::Start {
+        cell: w.cursor.cell(),
+    };
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Launch);
     assert!(!w.hosting_players());
     let alone = w.resume_alone(&draft).unwrap();
@@ -402,7 +423,9 @@ fn the_saved_players_keep_their_seats_while_the_lobby_cannot_open() {
     );
     let rows = w.ui_surface(&draft).1;
     assert!(rows[1].contains("(was Alex)"), "{rows:?}");
-    w.setup_sel = 4;
+    w.cursor = SetupCursor::Start {
+        cell: w.cursor.cell(),
+    };
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Stay);
     assert_eq!(
         w.notice.map(|notice| notice.to_string()).as_deref(),
@@ -442,7 +465,9 @@ fn a_resume_without_a_player_who_was_out_still_saves_them() {
     settle(&mut w, &mut draft, &mut clients, |w, _| {
         member_at(w, 2).is_some()
     });
-    w.setup_sel = 4;
+    w.cursor = SetupCursor::Start {
+        cell: w.cursor.cell(),
+    };
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Launch);
     w.start_resume(&draft, Duration::ZERO).unwrap();
     let machines = run_start(&mut w, &mut draft, &mut clients);
@@ -472,7 +497,9 @@ fn a_player_dropped_before_the_save_is_out_once_the_resume_plays() {
     settle(&mut w, &mut draft, &mut clients, |w, _| {
         member_at(w, 2).is_some()
     });
-    w.setup_sel = 4;
+    w.cursor = SetupCursor::Start {
+        cell: w.cursor.cell(),
+    };
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Launch);
     w.start_resume(&draft, Duration::ZERO).unwrap();
     let mut machines = run_start(&mut w, &mut draft, &mut clients);
@@ -508,12 +535,18 @@ fn a_picked_up_player_cannot_be_dropped_on_a_fixed_seat() {
             member_at(w, 1).is_some() && member_at(w, 2).is_some()
         });
         let sam = member_at(&w, 1);
-        w.setup_sel = 2;
-        w.setup_cell = Cell::Seat;
+        w.cursor = SetupCursor::Seat {
+            row: 2,
+            cell: Cell::Seat,
+        };
         drive(&mut w, &mut draft, Key::Enter);
         assert_eq!(w.moving, Some(1), "Sam is picked up");
 
-        w.setup_sel = fixed;
+        w.cursor = SetupCursor::Seat {
+            row: fixed,
+
+            cell: w.cursor.cell(),
+        };
         assert!(
             sounds_of(&mut w, &mut draft, Key::Enter).contains(&SoundKind::Denied),
             "{what} refuses Sam"
@@ -522,10 +555,15 @@ fn a_picked_up_player_cannot_be_dropped_on_a_fixed_seat() {
         assert_eq!(member_at(&w, 1), sam);
 
         // Put back on his own seat, he starts there.
-        w.setup_sel = 2;
+        w.cursor = SetupCursor::Seat {
+            row: 2,
+            cell: w.cursor.cell(),
+        };
         drive(&mut w, &mut draft, Key::Enter);
         assert!(w.moving.is_none());
-        w.setup_sel = 4;
+        w.cursor = SetupCursor::Start {
+            cell: w.cursor.cell(),
+        };
         assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Launch);
         w.start_resume(&draft, Duration::ZERO).unwrap();
         let machines = run_start(&mut w, &mut draft, &mut clients);

@@ -98,7 +98,7 @@ fn draw_queued_mark(center: Vec2, arm: f32, color: Color) {
 
 /// An inspected salvage tile wears a selected building's outline.
 pub(crate) fn draw_selected_pile(game: &crate::game::Scene<'_>) {
-    let Some(tile) = game.presentation.selection.pile else {
+    let Some(tile) = game.presentation.selection.pile() else {
         return;
     };
     let zoom = game.presentation.camera.zoom;
@@ -267,7 +267,7 @@ pub(crate) fn decor_units(game: &crate::game::Scene<'_>) -> Vec<aftermine_sim::U
     ids.extend(
         game.presentation
             .selection
-            .units
+            .units()
             .iter()
             .copied()
             .filter(|id| Some(*id) != subject),
@@ -282,7 +282,7 @@ pub(crate) fn decor_units(game: &crate::game::Scene<'_>) -> Vec<aftermine_sim::U
 /// the loop Start will send.
 pub(crate) fn draw_breadcrumbs(game: &crate::game::Scene<'_>, input: &InputState) {
     let dot = |p: Vec2, color: Color| fill_circle(p, 3.0, color);
-    if let Some(route) = &input.patrol_route {
+    if let Some(route) = input.patrol_route() {
         let points: Vec<Vec2> = route
             .iter()
             .map(|tile| {
@@ -1036,7 +1036,12 @@ pub(crate) fn draw_buildings(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 BONE,
             );
         }
-        if game.presentation.selection.buildings.contains(&building.id) {
+        if game
+            .presentation
+            .selection
+            .buildings()
+            .contains(&building.id)
+        {
             stroke_rect(
                 Rect::new(screen.x - 2.0, screen.y - 2.0, dest.x + 4.0, dest.y + 4.0),
                 3.0,
@@ -2607,8 +2612,8 @@ struct EconomySupportLink {
 
 fn selected_economy_support_links(game: &crate::game::Scene<'_>) -> Vec<EconomySupportLink> {
     let Some(aftermine_sim::Target::Building(selected)) = range_subject(
-        &game.presentation.selection.units,
-        &game.presentation.selection.buildings,
+        game.presentation.selection.units(),
+        game.presentation.selection.buildings(),
     ) else {
         return Vec::new();
     };
@@ -2717,7 +2722,7 @@ pub(crate) fn draw_repair_tethers(game: &crate::game::Scene<'_>) {
         };
         stroke_patterned_path(&[from, to], stroke, 1.8 * scale, color, scale, &[]);
     }
-    for &id in &game.presentation.selection.buildings {
+    for &id in game.presentation.selection.buildings() {
         let Some(bay) = game
             .state
             .building(id)
@@ -2865,8 +2870,8 @@ fn visit_active_building_ranges(
     mut visit: impl FnMut(BuildingRange),
 ) {
     if let Some(aftermine_sim::Target::Building(id)) = range_subject(
-        &game.presentation.selection.units,
-        &game.presentation.selection.buildings,
+        game.presentation.selection.units(),
+        game.presentation.selection.buildings(),
     ) && let Some(building) = game.state.building(id)
     {
         visit_building_ranges(
@@ -2956,7 +2961,7 @@ fn draw_economy_support_links(
     endpoints.dedup();
     let footprints = endpoints
         .into_iter()
-        .filter(|id| !game.presentation.selection.buildings.contains(id))
+        .filter(|id| !game.presentation.selection.buildings().contains(id))
         .filter_map(|id| game.state.building(id))
         .map(|building| (building.anchor, building.kind.size()));
     for bracket in support_brackets::junctions(footprints, game.presentation.camera.zoom, scale) {
@@ -3003,8 +3008,8 @@ fn visit_active_ranges(
         });
     });
     if let Some(aftermine_sim::Target::Unit(id)) = range_subject(
-        &game.presentation.selection.units,
-        &game.presentation.selection.buildings,
+        game.presentation.selection.units(),
+        game.presentation.selection.buildings(),
     ) && let Some(unit) = game.state.unit(id)
         && unit.player == game.presentation.human
     {
@@ -3180,11 +3185,11 @@ pub(crate) fn draw_range_ground(game: &crate::game::Scene<'_>, input: &InputStat
 
 pub(crate) fn draw_range_rings(game: &crate::game::Scene<'_>, input: &InputState) {
     if range_subject(
-        &game.presentation.selection.units,
-        &game.presentation.selection.buildings,
+        game.presentation.selection.units(),
+        game.presentation.selection.buildings(),
     )
     .is_none()
-        && input.placing.is_none()
+        && input.placing().is_none()
     {
         return;
     }
@@ -3266,7 +3271,7 @@ pub(crate) fn draw_rally_marker(game: &crate::game::Scene<'_>, alpha: f32) {
     for (building, rally) in game
         .presentation
         .selection
-        .buildings
+        .buildings()
         .iter()
         .filter_map(|id| game.state.building(*id))
         .filter(|building| building.player == game.presentation.human)
@@ -3331,7 +3336,7 @@ fn draw_press_ring(at: Vec2, progress: f32) {
 }
 
 pub(crate) fn draw_drag_rect(game: &crate::game::Scene<'_>, input: &InputState) {
-    let Some(origin) = input.drag_origin else {
+    let Some(origin) = input.drag_origin() else {
         return;
     };
     let now = input.mouse;

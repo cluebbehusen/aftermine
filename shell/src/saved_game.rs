@@ -2,11 +2,12 @@
 
 use crate::game::checkpoint::{GameCheckpoint, LanSave, RestoredGame, SaveCapture};
 use crate::numeric::Fit;
+use crate::saves::RecordKind;
 use aftermine_sim::SIM_VERSION;
 use anyhow::{Context, Result, ensure};
 use chassis::replay::ReplayMeta;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 const VERSION: u32 = 1;
@@ -60,7 +61,7 @@ impl Unavailable {
 
 pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path) -> Result<()> {
     ensure!(
-        capture.is_lan() == lan_kind(meta.kind.as_deref()),
+        capture.is_lan() == RecordKind::of(&meta).lan(),
         "save kind does not match the match"
     );
     let checkpoint = capture.checkpoint()?;
@@ -74,10 +75,7 @@ pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path)
     let (map, tick) = checkpoint.metadata();
     let teams = crate::menu::team_sizes(checkpoint.team_tags());
     ensure!(meta.ticks == Some(tick), "save metadata mismatch");
-    let mut encoder = zstd::stream::Encoder::new(Vec::new(), LEVEL)?;
-    encoder.include_checksum(true)?;
-    encoder.write_all(&payload)?;
-    let compressed = encoder.finish()?;
+    let compressed = aftermine_kit::compression::compress(&payload, None, LEVEL)?;
     let header = Header {
         version: VERSION,
         meta,
@@ -136,10 +134,7 @@ fn check_header(header: &Header) -> Result<()> {
         header.meta.sim_version
     );
     ensure!(
-        matches!(
-            header.meta.kind.as_deref(),
-            Some("save" | "autosave" | "lan" | "lan-autosave")
-        ),
+        RecordKind::of(&header.meta) != RecordKind::Match,
         "invalid save kind"
     );
     let max = aftermine_sim::scenario::MAX_PLAYERS;
@@ -152,11 +147,6 @@ fn check_header(header: &Header) -> Result<()> {
         "invalid save teams"
     );
     Ok(())
-}
-
-/// Whether a save of `kind` holds a LAN match.
-fn lan_kind(kind: Option<&str>) -> bool {
-    matches!(kind, Some("lan" | "lan-autosave"))
 }
 
 /// A save, checked and ready: a local match to install, or a LAN match
@@ -172,7 +162,7 @@ pub(crate) fn prepare(path: &Path) -> Result<Loaded> {
     let checkpoint: GameCheckpoint = ciborium::from_reader(&mut reader)?;
     ensure!(reader.is_empty(), "trailing checkpoint payload");
     ensure!(
-        checkpoint.is_lan() == lan_kind(header.meta.kind.as_deref()),
+        checkpoint.is_lan() == RecordKind::of(&header.meta).lan(),
         "save kind does not match the match"
     );
     let slot = crate::autosave::SaveSlot::adopt(path, &crate::paths::records().autosave_folders());
@@ -209,23 +199,12 @@ fn read_payload(path: &Path) -> Result<(Header, Vec<u8>)> {
         compressed.len() as u64 == header.compressed_bytes,
         "save payload length mismatch"
     );
-    ensure!(
-        compressed
-            .get(4)
-            .is_some_and(|descriptor| descriptor & 4 != 0),
-        "save frame has no checksum"
-    );
-    let frame_len = zstd::zstd_safe::find_frame_compressed_size(&compressed)
-        .map_err(|code| anyhow::anyhow!("invalid compressed frame: {code}"))?;
-    ensure!(frame_len == compressed.len(), "trailing compressed payload");
-    let mut payload = Vec::new();
-    zstd::stream::read::Decoder::new(compressed.as_slice())?
-        .take(header.decoded_bytes + 1)
-        .read_to_end(&mut payload)?;
-    ensure!(
-        payload.len() as u64 == header.decoded_bytes,
-        "decoded payload length mismatch"
-    );
+    let payload = aftermine_kit::compression::decompress(
+        &compressed,
+        header.decoded_bytes,
+        MAX_BYTES as u64,
+        None,
+    )?;
     Ok((header, payload))
 }
 

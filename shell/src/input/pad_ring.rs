@@ -235,7 +235,7 @@ fn swap(game: &mut Game, input: &mut InputState, kind: RingKind) {
         deny(game);
         return;
     }
-    if building && input.placing.is_none() {
+    if building && input.placing().is_none() {
         input.close_construction();
     }
 }
@@ -394,7 +394,7 @@ fn back(input: &mut InputState, pad: u64) {
 /// Closes every ring without a pick: a palette the rings opened closes
 /// with them, unless a placement is armed.
 fn dismiss(input: &mut InputState) {
-    if building(input.ring.as_ref()) && input.placing.is_none() {
+    if building(input.ring.as_ref()) && input.placing().is_none() {
         input.close_construction();
     }
     close(input);

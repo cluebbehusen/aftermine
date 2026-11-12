@@ -174,17 +174,16 @@ impl Production {
                     }
                 }
                 Some(Card {
-                    icon: CardIcon::Unit(kind),
-                    title: entity_name(kind.name()),
                     cost: Some(kind.stats().cost),
                     hotkey: bindings.labels(Action::TrainSlot(slot.fit::<u8>())),
-                    action: CardAction::Dispatch(Action::TrainSlot(slot.fit::<u8>())),
                     enabled: count > 0,
                     why: (count == 0).then_some(batch.reason).flatten(),
                     desc,
-                    progress: None,
-                    autocast: None,
-                    hold: None,
+                    ..Card::new(
+                        CardIcon::Unit(kind),
+                        entity_name(kind.name()),
+                        CardAction::Dispatch(Action::TrainSlot(slot.fit::<u8>())),
+                    )
                 })
             })
             .collect()
@@ -270,17 +269,12 @@ impl Production {
                 });
             }
             cards.push(Card {
-                icon: CardIcon::Unit(kind),
-                title: format!("{} x {count}", entity_name(kind.name())),
-                cost: None,
-                hotkey: String::new(),
-                action: CardAction::CancelProduction(kind),
-                enabled: true,
-                why: None,
                 desc,
-                progress: None,
-                autocast: None,
-                hold: None,
+                ..Card::new(
+                    CardIcon::Unit(kind),
+                    format!("{} x {count}", entity_name(kind.name())),
+                    CardAction::CancelProduction(kind),
+                )
             });
             groups.push(QueueGroup {
                 count,

@@ -7,7 +7,7 @@ use anyhow::{Context, Result, ensure};
 
 /// Compresses `raw` into one checksummed frame, against `dictionary`'s raw
 /// content when given.
-pub(crate) fn compress(raw: &[u8], dictionary: Option<&[u8]>, level: i32) -> Result<Vec<u8>> {
+pub fn compress(raw: &[u8], dictionary: Option<&[u8]>, level: i32) -> Result<Vec<u8>> {
     let mut compressor = match dictionary {
         Some(dictionary) => zstd::bulk::Compressor::with_dictionary(level, dictionary)?,
         None => zstd::bulk::Compressor::new(level)?,
@@ -18,7 +18,7 @@ pub(crate) fn compress(raw: &[u8], dictionary: Option<&[u8]>, level: i32) -> Res
 
 /// Decompresses one frame that must decode to exactly `decoded` bytes, at
 /// most `max`, against the same `dictionary` it was compressed with.
-pub(crate) fn decompress(
+pub fn decompress(
     bytes: &[u8],
     decoded: u64,
     max: u64,

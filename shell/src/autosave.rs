@@ -2,10 +2,10 @@
 //!
 //! Failure is a first-class outcome here: a quit path that cannot
 //! write its record must be able to say so before the process exits,
-//! which is why [`SaveJob::run`] reports [`SaveOutcome`] and [`SaveError`]
-//! instead of a bool.
+//! which is why [`SaveJob::run`] reports a [`SaveError`] instead of a bool.
 
 use crate::game::Game;
+use crate::saves::RecordKind;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -17,19 +17,6 @@ const KEEP_MATCHES: usize = 20;
 /// A temp older than this is an orphan from a crashed save, not a
 /// write in flight.
 const TEMP_ORPHAN_AGE: Duration = Duration::from_secs(3600);
-/// What a successful [`SaveJob::run`] call actually did.
-#[derive(Debug)]
-pub enum SaveOutcome {
-    /// A record landed at this path. Runtime quit flows need only the
-    /// success; filesystem contract tests inspect the exact destination.
-    #[cfg_attr(not(test), allow(dead_code))]
-    Wrote(PathBuf),
-    /// An unstarted game has nothing worth a file.
-    NothingToSave,
-    /// This session already wrote its record.
-    AlreadySaved,
-}
-
 /// Why a save could not land — own-machine facts carrying the path
 /// that refused, so the failure is diagnosable and reportable.
 #[derive(Debug, thiserror::Error)]
@@ -74,7 +61,7 @@ impl SaveError {
 /// suffixes have no cutoff.
 fn publish_named(
     dir: &Path,
-    prefix: &str,
+    kind: RecordKind,
     tick: u64,
     write: impl FnOnce(&Path) -> anyhow::Result<()>,
 ) -> Result<PathBuf, SaveError> {
@@ -82,10 +69,11 @@ fn publish_named(
     let time = now_unix();
     let mut n = 0u64;
     loop {
+        let (key, extension) = (kind.key(), kind.extension());
         let path = if n == 0 {
-            dir.join(format!("{prefix}-{tick:010}-{time}.amsave"))
+            dir.join(format!("{key}-{tick:010}-{time}.{extension}"))
         } else {
-            dir.join(format!("{prefix}-{tick:010}-{time}-{n}.amsave"))
+            dir.join(format!("{key}-{tick:010}-{time}-{n}.{extension}"))
         };
         let published = aftermine_apple_bridge::coordinate(
             &path,
@@ -129,9 +117,6 @@ fn now_unix() -> u64 {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SaveSlot(String);
 
-/// Autosave kinds; a slot holds at most one of them.
-const AUTOSAVE_KINDS: [&str; 2] = ["autosave", "lan-autosave"];
-
 impl SaveSlot {
     /// A new match's slot, distinct from every slot this process made.
     pub(crate) fn fresh() -> Self {
@@ -157,26 +142,28 @@ impl SaveSlot {
             return None;
         }
         let name = path.file_name()?.to_str()?;
-        AUTOSAVE_KINDS
-            .iter()
-            .find_map(|kind| name.strip_prefix(kind)?.strip_prefix('-'))
-            .and_then(|rest| rest.strip_suffix(".amsave"))
+        RecordKind::AUTOSAVES
+            .into_iter()
+            .find_map(|kind| {
+                name.strip_prefix(kind.key())?
+                    .strip_prefix('-')?
+                    .strip_suffix(kind.extension())?
+                    .strip_suffix('.')
+            })
             .filter(|id| !id.is_empty())
             .map(|id| Self(id.to_owned()))
     }
 
-    fn file(&self, kind: &str) -> String {
-        let extension = if kind == "match" {
-            "amreplay"
-        } else {
-            "amsave"
-        };
-        format!("{kind}-{}.{extension}", self.0)
+    fn file(&self, kind: RecordKind) -> String {
+        format!("{}-{}.{}", kind.key(), self.0, kind.extension())
     }
 
-    /// Removes this slot's autosaves in `dir` other than `kept`.
-    fn clear_autosaves(&self, dir: &Path, kept: &str) {
-        for kind in AUTOSAVE_KINDS.into_iter().filter(|kind| *kind != kept) {
+    /// Removes this slot's autosaves in `dir` other than one of `kept`.
+    fn clear_autosaves(&self, dir: &Path, kept: Option<RecordKind>) {
+        for kind in RecordKind::AUTOSAVES
+            .into_iter()
+            .filter(|kind| Some(*kind) != kept)
+        {
             remove(&dir.join(self.file(kind)));
         }
     }
@@ -185,7 +172,7 @@ impl SaveSlot {
     /// abandoned or saved by name, or one whose autosave moved to another
     /// folder.
     fn discard(&self, dir: &Path) {
-        self.clear_autosaves(dir, "");
+        self.clear_autosaves(dir, None);
     }
 }
 
@@ -240,30 +227,24 @@ pub(crate) struct SaveMark {
 /// included, is never touched.
 fn rotate(dir: &Path) {
     chassis::fsx::sweep_temps(dir, TEMP_ORPHAN_AGE);
-    rotate_prefix(dir, "autosave-", KEEP_AUTOSAVES);
-    rotate_prefix(dir, "lan-autosave-", KEEP_AUTOSAVES);
-    rotate_prefix(dir, "match-", KEEP_MATCHES);
+    rotate_kind(dir, RecordKind::Autosave, KEEP_AUTOSAVES);
+    rotate_kind(dir, RecordKind::LanAutosave, KEEP_AUTOSAVES);
+    rotate_kind(dir, RecordKind::Match, KEEP_MATCHES);
 }
 
-fn rotate_prefix(dir: &Path, prefix: &str, keep: usize) {
+fn rotate_kind(dir: &Path, kind: RecordKind, keep: usize) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
+    let prefix = format!("{}-", kind.key());
     let mut files: Vec<PathBuf> = entries
         .filter_map(std::result::Result::ok)
         .map(|e| e.path())
-        .filter(|p| {
-            p.extension().and_then(|e| e.to_str())
-                == Some(if prefix == "match-" {
-                    "amreplay"
-                } else {
-                    "amsave"
-                })
-        })
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some(kind.extension()))
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with(prefix))
+                .is_some_and(|n| n.starts_with(&prefix))
         })
         .collect();
     // Newest last by modification time; ties by name for determinism.
@@ -299,14 +280,6 @@ pub(crate) enum SaveData {
     ),
 }
 
-/// The folder a save lands in, resolved when it runs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Folder {
-    Saves,
-    Matches,
-    Autosaves,
-}
-
 /// Writes `path` whole while iCloud holds off syncing it.
 fn replace(path: &Path, write: impl FnOnce(&Path) -> anyhow::Result<()>) -> anyhow::Result<()> {
     aftermine_apple_bridge::coordinate(path, aftermine_apple_bridge::Access::Replace, write)?
@@ -315,12 +288,11 @@ fn replace(path: &Path, write: impl FnOnce(&Path) -> anyhow::Result<()>) -> anyh
 pub(crate) struct SaveJob {
     data: Option<SaveData>,
     meta: chassis::replay::ReplayMeta,
-    folder: Folder,
+    kind: RecordKind,
     /// The match's slot and what this save holds. An unnamed save lands in
     /// the slot; a named save gets a fresh file in the saves folder and
     /// removes the slot's autosaves if it has a mark.
     mark: Option<SaveMark>,
-    already_saved: bool,
 }
 
 impl SaveJob {
@@ -334,29 +306,26 @@ impl SaveJob {
             !(named && game.tutorial.is_some()),
             "lessons offer no named save"
         );
-        let already_saved = game.is_saved();
         // A lesson restarts in seconds, so it is never saved.
         let needed = game.tutorial.is_none()
             && (named
-                || (!already_saved
+                || (!game.is_saved()
                     && (game.state.current_tick() != 0 || !game.pending.is_empty())));
         // A LAN match resumes only through its host's LAN save
         // (`SaveJob::lan`), so any other save of one keeps the watch-only
         // record a decided match keeps.
         let recording = game.state.result().is_some() || game.net_role().is_some();
+        let kind = if named {
+            RecordKind::Save
+        } else if recording {
+            RecordKind::Match
+        } else {
+            RecordKind::Autosave
+        };
         let mut meta = game.recorder.meta.clone();
         meta.ticks = Some(game.state.current_tick());
         meta.saved_at = Some(now_unix());
-        meta.kind = Some(
-            if named {
-                "save"
-            } else if recording {
-                "match"
-            } else {
-                "autosave"
-            }
-            .into(),
-        );
+        meta.kind = Some(kind.key().into());
         if let Some(name) = name {
             meta.description = Some(name.into());
         }
@@ -376,20 +345,13 @@ impl SaveJob {
         Self {
             data,
             meta,
-            folder: if named {
-                Folder::Saves
-            } else if recording {
-                Folder::Matches
-            } else {
-                Folder::Autosaves
-            },
+            kind,
             // A named save stands in for the match's autosave, but not for
             // the recording a decided or LAN match still owes.
             mark: (!(named && recording)).then(|| SaveMark {
                 slot: game.slot.clone(),
                 key: game.save_key(),
             }),
-            already_saved,
         }
     }
 
@@ -401,24 +363,24 @@ impl SaveJob {
         name: Option<&str>,
     ) -> Self {
         let named = name.is_some();
+        let kind = if named {
+            RecordKind::LanSave
+        } else {
+            RecordKind::LanAutosave
+        };
         let mut meta = game.recorder.meta.clone();
         meta.ticks = Some(game.state.current_tick());
         meta.saved_at = Some(now_unix());
-        meta.kind = Some(if named { "lan" } else { "lan-autosave" }.into());
+        meta.kind = Some(kind.key().into());
         meta.description = name.map(Into::into);
         Self {
             data: Some(SaveData::Checkpoint(capture)),
             meta,
-            folder: if named {
-                Folder::Saves
-            } else {
-                Folder::Autosaves
-            },
+            kind,
             mark: (!named).then(|| SaveMark {
                 slot: game.slot.clone(),
                 key: game.save_key(),
             }),
-            already_saved: false,
         }
     }
 
@@ -427,15 +389,12 @@ impl SaveJob {
         self.mark.clone()
     }
 
-    /// Writes the record. Where it lands may wait on the first iCloud
-    /// lookup, so the save worker runs this.
-    pub(crate) fn run(self) -> Result<SaveOutcome, SaveError> {
+    /// Writes the record, returning where it landed; an unstarted game, or
+    /// one whose record is already written, writes nothing. Where it lands
+    /// may wait on the first iCloud lookup, so the save worker runs this.
+    pub(crate) fn run(self) -> Result<Option<PathBuf>, SaveError> {
         let records = crate::paths::records();
-        let dir = match self.folder {
-            Folder::Saves => records.saves(),
-            Folder::Matches => records.matches(),
-            Folder::Autosaves => records.autosaves(),
-        };
+        let dir = self.kind.folder(&records);
         self.run_in(dir, &records.autosave_folders())
     }
 
@@ -445,61 +404,54 @@ impl SaveJob {
         self,
         dir: Option<PathBuf>,
         autosaves: &[PathBuf],
-    ) -> Result<SaveOutcome, SaveError> {
-        let outcome = if let Some(data) = self.data {
-            let dir = dir.ok_or(SaveError::NoDataDir)?;
-            std::fs::create_dir_all(&dir).map_err(|source| SaveError::CreateDir {
-                path: dir.clone(),
-                source,
-            })?;
-            let kind = self.meta.kind.as_deref().unwrap();
-            let meta = self.meta.clone();
-            let write = |path: &Path| match data {
-                SaveData::Checkpoint(capture) => {
-                    crate::saved_game::write_capture(capture, meta, path)
-                }
-                SaveData::Recording(mut replay, mut keyframes, history) => {
-                    if let Some(history) = history {
-                        history.wait(&mut replay, &mut keyframes);
-                    }
-                    aftermine_kit::save_recording(path, &replay, &keyframes.wait())
-                        .map_err(Into::into)
-                }
-            };
-            let path = match &self.mark {
-                Some(mark) if self.folder != Folder::Saves => {
-                    let path = dir.join(mark.slot.file(kind));
-                    replace(&path, write).map_err(|source| SaveError::Write {
-                        path: path.clone(),
-                        source,
-                    })?;
-                    for folder in autosaves {
-                        if *folder == dir {
-                            mark.slot.clear_autosaves(folder, kind);
-                        } else {
-                            mark.slot.discard(folder);
-                        }
-                    }
-                    rotate(&dir);
-                    path
-                }
-                mark => {
-                    let path = publish_named(&dir, kind, self.meta.ticks.unwrap(), write)?;
-                    if let Some(mark) = mark {
-                        for folder in autosaves {
-                            mark.slot.discard(folder);
-                        }
-                    }
-                    path
-                }
-            };
-            SaveOutcome::Wrote(path)
-        } else if self.already_saved {
-            SaveOutcome::AlreadySaved
-        } else {
-            SaveOutcome::NothingToSave
+    ) -> Result<Option<PathBuf>, SaveError> {
+        let Some(data) = self.data else {
+            return Ok(None);
         };
-        Ok(outcome)
+        let dir = dir.ok_or(SaveError::NoDataDir)?;
+        std::fs::create_dir_all(&dir).map_err(|source| SaveError::CreateDir {
+            path: dir.clone(),
+            source,
+        })?;
+        let kind = self.kind;
+        let meta = self.meta.clone();
+        let write = |path: &Path| match data {
+            SaveData::Checkpoint(capture) => crate::saved_game::write_capture(capture, meta, path),
+            SaveData::Recording(mut replay, mut keyframes, history) => {
+                if let Some(history) = history {
+                    history.wait(&mut replay, &mut keyframes);
+                }
+                aftermine_kit::save_recording(path, &replay, &keyframes.wait()).map_err(Into::into)
+            }
+        };
+        let path = match &self.mark {
+            Some(mark) if !kind.named() => {
+                let path = dir.join(mark.slot.file(kind));
+                replace(&path, write).map_err(|source| SaveError::Write {
+                    path: path.clone(),
+                    source,
+                })?;
+                for folder in autosaves {
+                    if *folder == dir {
+                        mark.slot.clear_autosaves(folder, Some(kind));
+                    } else {
+                        mark.slot.discard(folder);
+                    }
+                }
+                rotate(&dir);
+                path
+            }
+            mark => {
+                let path = publish_named(&dir, kind, self.meta.ticks.unwrap(), write)?;
+                if let Some(mark) = mark {
+                    for folder in autosaves {
+                        mark.slot.discard(folder);
+                    }
+                }
+                path
+            }
+        };
+        Ok(Some(path))
     }
 }
 

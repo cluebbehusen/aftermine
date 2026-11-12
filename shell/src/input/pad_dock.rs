@@ -195,7 +195,7 @@ pub(super) fn update(game: &Game, input: &mut InputState) {
         return;
     };
     let selection = &game.presentation.selection;
-    if focus.selection.0 != selection.units || focus.selection.1 != selection.buildings {
+    if focus.selection.0 != selection.units() || focus.selection.1 != selection.buildings() {
         close(input);
         return;
     }
@@ -247,7 +247,7 @@ fn open(game: &mut Game, input: &mut InputState) {
     let selection = &game.presentation.selection;
     input.dock = Some(DockFocus {
         lit: first.hit,
-        selection: (selection.units.clone(), selection.buildings.clone()),
+        selection: (selection.units().to_vec(), selection.buildings().to_vec()),
     });
 }
 

@@ -495,17 +495,13 @@ fn group_tooltip(
         GroupSlot::Empty(_) => return None,
     };
     Some(crate::panel::Card {
-        icon: crate::panel::CardIcon::Verb(crate::panel::VerbIcon::Cancel),
-        title,
-        cost: None,
         hotkey,
-        action: crate::panel::CardAction::None,
-        enabled: true,
-        why: None,
         desc,
-        progress: None,
-        autocast: None,
-        hold: None,
+        ..crate::panel::Card::new(
+            crate::panel::CardIcon::Verb(crate::panel::VerbIcon::Cancel),
+            title,
+            crate::panel::CardAction::None,
+        )
     })
 }
 
@@ -693,7 +689,7 @@ pub(crate) fn draw_reticle(game: &crate::game::Scene<'_>, input: &InputState) {
     let s = ui_scale();
     let camera = &game.presentation.camera;
     let shade = Color::new(0.05, 0.05, 0.07, 0.6);
-    if crate::input::painting(input) || input.placing.is_some() {
+    if crate::input::painting(input) || input.placing().is_some() {
         for (thickness, color) in [(3.5 * s, shade), (1.5 * s, BONE)] {
             fill_circle(input.reticle.point(), thickness, color);
         }
@@ -921,7 +917,7 @@ fn commands_units(game: &crate::game::Scene<'_>) -> bool {
     let human = game.presentation.human;
     game.presentation
         .selection
-        .units
+        .units()
         .iter()
         .any(|id| game.state.unit(*id).is_some_and(|u| u.player == human))
 }
@@ -1174,7 +1170,7 @@ pub(crate) fn draw_ghost_controls(game: &crate::game::Scene<'_>, input: &InputSt
     if layout.ghost_confirm.w > 0.0 {
         let rect = layout.ghost_confirm;
         plate(rect);
-        let builds = input.striking.is_some()
+        let builds = input.striking().is_some()
             || !input.planned_stamps().is_empty()
             || crate::input::preview_spot(game, input).is_some_and(|spot| spot.verdict.builds());
         let mark = if builds {

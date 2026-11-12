@@ -64,7 +64,7 @@ fn flying(units: &[Unit], host: UnitId) -> u8 {
 impl SelectedBays {
     pub fn inspect(game: &Scene<'_>) -> Self {
         let human = game.presentation.human;
-        let selection = &game.presentation.selection.units;
+        let selection = game.presentation.selection.units();
         with_pending(game, |units, scrap, accepts| Self {
             hosts: units
                 .iter()
@@ -145,51 +145,44 @@ impl SelectedBays {
         };
         let order = self.order();
         cards.push(Card {
-            icon: CardIcon::Unit(first.stats.drone),
-            title: "Order drone".into(),
             cost: Some(first.stats.cost),
             hotkey: bindings.labels(Action::OrderRound),
-            action: CardAction::Dispatch(Action::OrderRound),
             enabled: order.is_ok(),
             why: order.err(),
             desc: vec![format!(
                 "Built one at a time in {}.",
                 tick_time_label(first.stats.build_ticks)
             )],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Unit(first.stats.drone),
+                "Order drone",
+                CardAction::Dispatch(Action::OrderRound),
+            )
         });
         let cancel = self.cancel();
         cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Cancel),
-            title: "Cancel".into(),
-            cost: None,
             hotkey: bindings.labels(Action::CancelRound),
-            action: CardAction::Dispatch(Action::CancelRound),
             enabled: cancel.is_some(),
             why: cancel.is_none().then(|| "no drone on order".into()),
             desc: vec![
                 "Refunds the latest paid drone in full.".into(),
                 "Also turns autofill off, so it is not bought again.".into(),
             ],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Verb(VerbIcon::Cancel),
+                "Cancel",
+                CardAction::Dispatch(Action::CancelRound),
+            )
         });
         let on = self.hosts.iter().all(|host| host.autofill);
         cards.push(Card {
-            icon: CardIcon::Verb(VerbIcon::Patrol),
-            title: format!("Autofill: {}", if on { "on" } else { "off" }),
-            cost: None,
             hotkey: bindings.labels(Action::ToggleAutofill),
-            action: CardAction::Dispatch(Action::ToggleAutofill),
-            enabled: true,
-            why: None,
             desc: vec!["While on, orders the next drone whenever there is room and scrap.".into()],
-            progress: None,
-            autocast: None,
-            hold: None,
+            ..Card::new(
+                CardIcon::Verb(VerbIcon::Patrol),
+                format!("Autofill: {}", if on { "on" } else { "off" }),
+                CardAction::Dispatch(Action::ToggleAutofill),
+            )
         });
     }
 }
@@ -218,17 +211,6 @@ pub fn column(game: &Scene<'_>, host: UnitId) -> Option<DroneColumn> {
         let build = stats.build_ticks.max(1);
         let chips = (0..bay.ordered)
             .map(|index| Card {
-                icon: CardIcon::Unit(stats.drone),
-                title: crate::typography::entity_name(stats.drone.name()),
-                cost: None,
-                hotkey: String::new(),
-                action: if own {
-                    CardAction::CancelDrone(host, index)
-                } else {
-                    CardAction::None
-                },
-                enabled: true,
-                why: None,
                 desc: if own {
                     crate::panel::refund_chip_desc()
                 } else {
@@ -236,8 +218,15 @@ pub fn column(game: &Scene<'_>, host: UnitId) -> Option<DroneColumn> {
                 },
                 progress: (index == 0)
                     .then(|| (bay.progress as f32 / build as f32).clamp(0.0, 1.0)),
-                autocast: None,
-                hold: None,
+                ..Card::new(
+                    CardIcon::Unit(stats.drone),
+                    crate::typography::entity_name(stats.drone.name()),
+                    if own {
+                        CardAction::CancelDrone(host, index)
+                    } else {
+                        CardAction::None
+                    },
+                )
             })
             .collect();
         Some(DroneColumn {

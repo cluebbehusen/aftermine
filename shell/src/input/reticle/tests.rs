@@ -363,7 +363,7 @@ fn the_dpad_jumps_like_its_keys_and_the_reticle_lands_on_what_it_framed() {
     let mut cameras = Vec::new();
     for _ in 0..3 {
         feed(&mut game, &mut input, &[press(PadButton::DpadDown)]);
-        let picked = game.presentation.selection.units.clone();
+        let picked = game.presentation.selection.units().to_vec();
         assert_eq!(picked.len(), 1);
         let harvester = at(game.state.unit(picked[0]).expect("selected"));
         assert!((under_reticle(&game, &input) - harvester).length() < 1e-3);
@@ -386,7 +386,7 @@ fn the_dpad_jumps_like_its_keys_and_the_reticle_lands_on_what_it_framed() {
     // The right-stick click: the selection's center.
     let sentinel = own(&game, UnitKind::Sentinel);
     let (id, spot) = (sentinel.id, at(sentinel));
-    game.presentation.selection.units = vec![id];
+    game.presentation.selection.set_units(vec![id]);
     feed(&mut game, &mut input, &[press(PadButton::RightStick)]);
     assert!((under_reticle(&game, &input) - spot).length() < 1e-3);
 
@@ -453,9 +453,9 @@ fn every_jump_takes_the_drift_with_it() {
     // A control group recalled twice quickly: the reticle rests on it.
     let sentinel = own(&game, UnitKind::Sentinel);
     let (id, spot) = (sentinel.id, at(sentinel));
-    game.presentation.selection.units = vec![id];
+    game.presentation.selection.set_units(vec![id]);
     dispatch_action(&mut game, &mut input, &classic, Action::AssignGroup(1));
-    game.presentation.selection.units.clear();
+    game.presentation.selection.clear();
     drift_at_edge(&mut game, &mut input);
     dispatch_action(&mut game, &mut input, &classic, Action::Slot(1));
     dispatch_action(&mut game, &mut input, &classic, Action::Slot(1));

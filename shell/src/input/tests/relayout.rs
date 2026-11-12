@@ -30,7 +30,7 @@ fn builder_in_hand() -> Game {
         .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
         .expect("the human starts with a harvester")
         .id;
-    game.presentation.selection.units.push(builder);
+    game.presentation.selection.set_units(vec![builder]);
     relayout(&game, &InputState::new());
     game
 }

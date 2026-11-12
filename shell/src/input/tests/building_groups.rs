@@ -12,7 +12,9 @@ use macroquad::math::Rect;
 fn base(turrets: usize) -> Game {
     let mut game =
         crate::building_actions::tests::fixture(BuildingKind::Turret, &vec![0; turrets], 0);
-    game.presentation.selection.buildings = own_buildings(&game, None);
+    game.presentation
+        .selection
+        .set_buildings(own_buildings(&game, None));
     game
 }
 
@@ -74,18 +76,20 @@ fn a_kind_chip_keeps_its_kind_and_shift_or_ctrl_drops_it() {
     let at = chip(&publish_strip(&mut game, &input), turrets);
     apply_events(&mut game, &mut input, &click(at.x, at.y));
     assert_eq!(
-        game.presentation.selection.buildings,
+        game.presentation.selection.buildings(),
         own_buildings(&game, Some(BuildingKind::Turret))
     );
 
     for modifier in [Key::Shift, Key::Ctrl] {
-        game.presentation.selection.buildings = own_buildings(&game, None);
+        game.presentation
+            .selection
+            .set_buildings(own_buildings(&game, None));
         let at = chip(&publish_strip(&mut game, &input), turrets);
         apply_events(&mut game, &mut input, &[key_down(modifier)]);
         apply_events(&mut game, &mut input, &click(at.x, at.y));
         apply_events(&mut game, &mut input, &[key_up(modifier)]);
         assert_eq!(
-            game.presentation.selection.buildings,
+            game.presentation.selection.buildings(),
             others(&game, BuildingKind::Turret),
             "{modifier:?} drops the Turrets"
         );
@@ -104,7 +108,7 @@ fn a_tap_with_queue_lit_drops_a_kind() {
     input.toggle_queue();
     tap(&mut game, &mut input, at);
     assert_eq!(
-        game.presentation.selection.buildings,
+        game.presentation.selection.buildings(),
         others(&game, BuildingKind::Crucible)
     );
 }
@@ -128,7 +132,7 @@ fn the_all_button_selects_every_one_you_own_by_click_or_tap() {
     let turrets = own_buildings(&game, Some(BuildingKind::Turret));
     for touch in [false, true] {
         let mut input = InputState::new();
-        game.presentation.selection.buildings = vec![turrets[2]];
+        game.presentation.selection.set_buildings(vec![turrets[2]]);
         let at = publish_select_all(&mut game, &input);
         if touch {
             tap(&mut game, &mut input, at);
@@ -136,7 +140,8 @@ fn the_all_button_selects_every_one_you_own_by_click_or_tap() {
             apply_events(&mut game, &mut input, &click(at.x, at.y));
         }
         assert_eq!(
-            game.presentation.selection.buildings, turrets,
+            game.presentation.selection.buildings(),
+            turrets,
             "touch {touch}"
         );
         let panel = crate::panel::build_for_input(&game.view(), &classic(), &input).unwrap();
@@ -154,16 +159,16 @@ fn i_gathers_every_one_you_own_as_the_all_button_does() {
     let mut game = base(3);
     let turrets = own_buildings(&game, Some(BuildingKind::Turret));
     let mut input = InputState::new();
-    game.presentation.selection.buildings = vec![turrets[2]];
+    game.presentation.selection.set_buildings(vec![turrets[2]]);
     apply_events(&mut game, &mut input, &press_i());
-    assert_eq!(game.presentation.selection.buildings, turrets);
+    assert_eq!(game.presentation.selection.buildings(), turrets);
     assert!(!super::pad_scene::denied(&game));
     apply_events(&mut game, &mut input, &press_i());
     assert!(
         super::pad_scene::denied(&game),
         "with every one selected there is no button to press"
     );
-    assert_eq!(game.presentation.selection.buildings, turrets);
+    assert_eq!(game.presentation.selection.buildings(), turrets);
     assert!(game.pending.is_empty(), "gathering issues no command");
 }
 
@@ -199,14 +204,14 @@ fn i_gathers_the_kind_a_key_earlier_in_its_batch_selected() {
     let lancers = own(&game, UnitKind::Lancer);
     let mut input = InputState::new();
     input.groups[0] = Group::Units(vec![lancers[0]]);
-    game.presentation.selection.units = vec![sentinels[0]];
+    game.presentation.selection.set_units(vec![sentinels[0]]);
     // The frame's panel, laid out before the batch, offers the Sentinels.
     *game.presentation.panel_model.borrow_mut() =
         crate::panel::build_for_input(&game.view(), &classic(), &input);
     let mut batch = vec![key_down(Key::Num1), key_up(Key::Num1)];
     batch.extend(press_i());
     apply_events(&mut game, &mut input, &batch);
-    assert_eq!(game.presentation.selection.units, lancers);
+    assert_eq!(game.presentation.selection.units(), lancers);
 }
 
 #[test]
@@ -253,7 +258,7 @@ fn the_all_button_gathers_units_but_not_the_ones_riding_a_transport() {
         "premise: one Sentinel rides as cargo"
     );
     let mut input = InputState::new();
-    game.presentation.selection.units = vec![sentinels[1]];
+    game.presentation.selection.set_units(vec![sentinels[1]]);
     let at = publish_select_all(&mut game, &input);
     let title = game
         .presentation
@@ -272,7 +277,7 @@ fn the_all_button_gathers_units_but_not_the_ones_riding_a_transport() {
         "the rider and the enemy's do not count"
     );
     apply_events(&mut game, &mut input, &click(at.x, at.y));
-    assert_eq!(game.presentation.selection.units, sentinels[..2]);
+    assert_eq!(game.presentation.selection.units(), &sentinels[..2]);
     assert!(game.pending.is_empty(), "gathering issues no command");
 }
 
@@ -281,7 +286,7 @@ fn a_group_saves_and_recalls_buildings_and_a_second_press_centers_them() {
     let mut game = base(2);
     let mut input = InputState::new();
     let turrets = own_buildings(&game, Some(BuildingKind::Turret));
-    game.presentation.selection.buildings.clone_from(&turrets);
+    game.presentation.selection.set_buildings(turrets.clone());
     assert_eq!(input.group_on_offer(&game.view()), Some(1));
     apply_events(
         &mut game,
@@ -301,7 +306,9 @@ fn a_group_saves_and_recalls_buildings_and_a_second_press_centers_them() {
         Some(crate::panel::CardIcon::Building(BuildingKind::Turret, 0))
     );
 
-    game.presentation.selection.buildings = own_buildings(&game, Some(BuildingKind::Crucible));
+    game.presentation
+        .selection
+        .set_buildings(own_buildings(&game, Some(BuildingKind::Crucible)));
     let far = vec2(30.0, 2.0);
     game.presentation.camera.center = far;
     input.now = 10.0;
@@ -310,8 +317,8 @@ fn a_group_saves_and_recalls_buildings_and_a_second_press_centers_them() {
         &mut input,
         &[key_down(Key::Num1), key_up(Key::Num1)],
     );
-    assert_eq!(game.presentation.selection.buildings, turrets);
-    assert!(game.presentation.selection.units.is_empty());
+    assert_eq!(game.presentation.selection.buildings(), turrets);
+    assert!(game.presentation.selection.units().is_empty());
     assert_eq!(
         game.presentation.camera.center, far,
         "one recall leaves the camera"
@@ -340,7 +347,7 @@ fn a_group_holds_units_or_buildings_and_drops_what_is_not_yours() {
         .find(|b| b.player != game.presentation.human)
         .expect("the target's Foundry")
         .id;
-    game.presentation.selection.buildings = vec![enemy];
+    game.presentation.selection.set_buildings(vec![enemy]);
     dispatch_action(&mut game, &mut input, Action::AssignGroup(2));
     assert!(input.groups[1].is_empty());
     assert_eq!(
@@ -350,9 +357,9 @@ fn a_group_holds_units_or_buildings_and_drops_what_is_not_yours() {
 
     // Assigning over a saved group while inspecting a foreign pick keeps it.
     let foundry = own_buildings(&game, Some(BuildingKind::Foundry));
-    game.presentation.selection.buildings.clone_from(&foundry);
+    game.presentation.selection.set_buildings(foundry.clone());
     dispatch_action(&mut game, &mut input, Action::AssignGroup(2));
-    game.presentation.selection.buildings = vec![enemy];
+    game.presentation.selection.set_buildings(vec![enemy]);
     dispatch_action(&mut game, &mut input, Action::AssignGroup(2));
     assert_eq!(
         input.groups[1],
@@ -362,10 +369,10 @@ fn a_group_holds_units_or_buildings_and_drops_what_is_not_yours() {
 
     // A building group replaced by units holds only the units.
     let turret = own_buildings(&game, Some(BuildingKind::Turret));
-    game.presentation.selection.buildings.clone_from(&turret);
+    game.presentation.selection.set_buildings(turret.clone());
     dispatch_action(&mut game, &mut input, Action::AssignGroup(3));
     assert_eq!(input.groups[2], Group::Buildings(turret));
-    game.presentation.selection.buildings.clear();
+    game.presentation.selection.clear();
     dispatch_action(&mut game, &mut input, Action::AssignGroup(3));
     assert!(
         input.groups[2].is_empty(),

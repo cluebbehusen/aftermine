@@ -332,7 +332,7 @@ fn the_raid_leaves_damage_to_weld_and_wrecks_to_collect() {
 #[test]
 fn steps_advance_in_order_and_skip_what_is_already_done() {
     let mut game = begin(Lesson::Command);
-    game.presentation.selection.units = own(&game, None);
+    game.presentation.selection.set_units(own(&game, None));
     tutorial_mut(&mut game).toggle_collapsed();
     assert_eq!(Tutorial::advance_in(&mut game), None);
     assert_eq!(
@@ -902,7 +902,7 @@ fn play(game: &mut Game) {
     };
     match goal {
         Goal::Look(_) => game.presentation.camera.zoom *= 2.0,
-        Goal::Select(_) => game.presentation.selection.units = own(game, None),
+        Goal::Select(_) => game.presentation.selection.set_units(own(game, None)),
         Goal::Find if Seat::of(game).units().any(|u| u.kind.stats().scouts) => {
             let seat = Seat::of(game);
             let goal = seat.hostile_buildings().next().map(|b| b.anchor);
@@ -1241,7 +1241,7 @@ fn meddle(game: &mut Game, rng: &mut Pcg32) -> Vec<Command> {
         rng.next_below(9) as f32 - 4.0,
         rng.next_below(9) as f32 - 4.0,
     );
-    game.presentation.selection.units = selection;
+    game.presentation.selection.set_units(selection);
     game.presentation.camera.pan(pan);
     commands
 }

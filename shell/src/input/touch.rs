@@ -136,7 +136,7 @@ fn world_hold(input: &InputState) -> Option<TouchPoint> {
         return None;
     };
     let claimed =
-        input.placing.is_some() || input.striking.is_some() || input.patrol_route.is_some();
+        input.placing().is_some() || input.striking().is_some() || input.patrol_route().is_some();
     (finger.born == TouchBorn::World && finger.still() && !claimed).then_some(*finger)
 }
 
@@ -179,7 +179,7 @@ fn held_long(input: &InputState, finger: &TouchPoint) -> bool {
 /// Whether an armed mode takes a minimap tap as its target (a rally
 /// point or a patrol waypoint), so the minimap must not steer under it.
 fn minimap_targets(input: &InputState) -> bool {
-    !input.rallying.is_empty() || input.striking.is_some() || input.patrol_route.is_some()
+    !input.rallying().is_empty() || input.striking().is_some() || input.patrol_route().is_some()
 }
 
 /// Points the camera at the minimap spot under a steering finger.
@@ -588,7 +588,7 @@ fn lift_presses(input: &InputState, finger: &TouchPoint, card: PressedCard) -> b
 /// a tap that picks nothing only closes the palette.
 fn world_tap(game: &mut Game, input: &mut InputState, p: Vec2, double: bool) {
     let picked = select::pick(game, p, input.ui, select::Reach::TOUCH);
-    if picked.is_none() && input.build_menu && input.placing.is_none() {
+    if picked.is_none() && input.build_menu && input.placing().is_none() {
         // Tapping away from the open palette dismisses it and keeps the
         // builder: touch has no Esc, and a deselect would lose the crew.
         input.close_construction();
@@ -663,7 +663,7 @@ fn held_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action:
     // the gesture: a hidden hostile or an undetected charge never flips
     // an order into a select, which would make occupancy observable.
     let on_entity = select::pick(game, tp.at, input.ui, select::Reach::TOUCH).is_some();
-    if on_entity && game.presentation.selection.units.is_empty() {
+    if on_entity && game.presentation.selection.units().is_empty() {
         select::click_select(game, tp.at, false, input.ui, select::Reach::TOUCH);
     } else {
         orders::context_order(game, tp.at, input.queue_held(), orders::OrderReach::EXACT);

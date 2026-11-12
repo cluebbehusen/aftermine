@@ -26,7 +26,7 @@ impl SelectedTransports {
     pub fn inspect(game: &Scene<'_>) -> Self {
         let human = game.presentation.human;
         let accepts = game.state.accepts_commands(human);
-        let selection = &game.presentation.selection.units;
+        let selection = game.presentation.selection.units();
         Self {
             slings: game
                 .state

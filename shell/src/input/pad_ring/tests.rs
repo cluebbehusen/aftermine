@@ -106,7 +106,7 @@ fn opened_on(units: &[(u8, UnitKind, i32, i32)]) -> (Game, InputState) {
         .collect();
     selected.sort_unstable();
     selected.dedup();
-    game.presentation.selection.units = selected;
+    game.presentation.selection.set_units(selected);
     frame(&mut game, &mut input);
     tap(&mut game, &mut input, PadButton::North);
     frame(&mut game, &mut input);
@@ -128,13 +128,14 @@ fn harvester() -> (Game, InputState) {
 fn foundry() -> (Game, InputState) {
     let mut game = scene(&[], &[(0, BuildingKind::Foundry, 30, 18)]);
     let mut input = pad_input(&mut game);
-    game.presentation.selection.buildings = game
-        .state
-        .buildings()
-        .iter()
-        .filter(|b| b.kind == BuildingKind::Foundry)
-        .map(|b| b.id)
-        .collect();
+    game.presentation.selection.set_buildings(
+        game.state
+            .buildings()
+            .iter()
+            .filter(|b| b.kind == BuildingKind::Foundry)
+            .map(|b| b.id)
+            .collect(),
+    );
     frame(&mut game, &mut input);
     tap(&mut game, &mut input, PadButton::North);
     frame(&mut game, &mut input);
@@ -158,7 +159,7 @@ fn toasted(game: &Game, text: &str) -> bool {
 #[test]
 fn y_opens_the_ring_and_b_closes_it_keeping_the_selection() {
     let (mut game, mut input) = sentinels();
-    let selected = game.presentation.selection.units.clone();
+    let selected = game.presentation.selection.units().to_vec();
     // Idle units keep Stop's place, grayed, so it never moves.
     assert_eq!(
         titles(&game, &input),
@@ -167,7 +168,7 @@ fn y_opens_the_ring_and_b_closes_it_keeping_the_selection() {
     assert_eq!(heading(&game, &input).as_deref(), Some("COMMANDS"));
     tap(&mut game, &mut input, PadButton::East);
     assert!(input.ring.is_none());
-    assert_eq!(game.presentation.selection.units, selected);
+    assert_eq!(game.presentation.selection.units(), selected);
 }
 
 #[test]
@@ -211,7 +212,7 @@ fn a_grayed_slice_explains_itself_and_stages_nothing() {
 fn stop_stages_the_cards_own_order_once_the_units_are_busy() {
     let (mut game, mut input) = sentinels();
     tap(&mut game, &mut input, PadButton::East);
-    let units = game.presentation.selection.units.clone();
+    let units = game.presentation.selection.units().to_vec();
     game.issue(Command::Advance {
         units: units.clone(),
         goal: chassis::grid::TilePos::new(40, 30),
@@ -280,10 +281,12 @@ fn other_buttons_wait_while_the_left_trigger_still_queues() {
         &[],
     );
     let mut input = pad_input(&mut game);
-    game.presentation.selection.units = units_of(&game, 0, UnitKind::Harvester);
+    game.presentation
+        .selection
+        .set_units(units_of(&game, 0, UnitKind::Harvester));
     frame(&mut game, &mut input);
     tap(&mut game, &mut input, PadButton::North);
-    let selected = game.presentation.selection.units.clone();
+    let selected = game.presentation.selection.units().to_vec();
     for button in [
         PadButton::LeftShoulder,
         PadButton::RightShoulder,
@@ -293,7 +296,7 @@ fn other_buttons_wait_while_the_left_trigger_still_queues() {
         tap(&mut game, &mut input, button);
     }
     assert!(input.ring.is_some());
-    assert_eq!(game.presentation.selection.units, selected);
+    assert_eq!(game.presentation.selection.units(), selected);
     feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
     assert!(input.queue_held());
     feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
@@ -344,7 +347,7 @@ fn another_hand_or_a_lost_controller_closes_the_ring() {
 #[test]
 fn a_ring_left_with_nothing_closes() {
     let (mut game, mut input) = sentinels();
-    game.presentation.selection.units.clear();
+    game.presentation.selection.clear();
     frame(&mut game, &mut input);
     assert!(input.ring.is_none());
 }
@@ -455,13 +458,13 @@ fn letting_go_of_lt_under_an_open_build_ring_keeps_placing_and_its_category() {
         macroquad::prelude::vec2(26.5, 20.5),
     );
     tap(&mut game, &mut input, PadButton::South);
-    assert!(input.placing.is_some(), "a held LT keeps placing");
+    assert!(input.placing().is_some(), "a held LT keeps placing");
     tap(&mut game, &mut input, PadButton::North);
     frame(&mut game, &mut input);
     assert_eq!(heading(&game, &input).as_deref(), Some("DEFENSE"));
     feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
     frame(&mut game, &mut input);
-    assert!(input.placing.is_some(), "letting go keeps placing");
+    assert!(input.placing().is_some(), "letting go keeps placing");
     assert_eq!(
         heading(&game, &input).as_deref(),
         Some("DEFENSE"),
@@ -469,7 +472,7 @@ fn letting_go_of_lt_under_an_open_build_ring_keeps_placing_and_its_category() {
     );
     tap(&mut game, &mut input, PadButton::North);
     assert!(input.ring.is_none());
-    assert!(input.placing.is_some(), "closing the ring keeps placing");
+    assert!(input.placing().is_some(), "closing the ring keeps placing");
 
     // LT is up, so A is a plain placement, which ends the mode.
     super::super::tests::pad_scene::rest_on(
@@ -485,7 +488,7 @@ fn letting_go_of_lt_under_an_open_build_ring_keeps_placing_and_its_category() {
         "A placed a plain Barricade: {:?}",
         game.pending
     );
-    assert!(input.placing.is_none(), "and ended placement");
+    assert!(input.placing().is_none(), "and ended placement");
     assert!(!input.construction_open(), "closing construction with it");
 }
 
@@ -535,7 +538,7 @@ fn holding_b_out_of_a_placement_closes_every_ring() {
     pick(&mut game, &mut input, "Build");
     pick(&mut game, &mut input, "Defense");
     pick(&mut game, &mut input, "Barricade");
-    assert!(input.placing.is_some());
+    assert!(input.placing().is_some());
     feed(&mut game, &mut input, &[down(PadButton::East)]);
     frame(&mut game, &mut input);
     assert_eq!(heading(&game, &input).as_deref(), Some("DEFENSE"));
@@ -604,7 +607,9 @@ fn a_mixed_selection_keeps_its_harvesters_cards_behind_one_slice() {
     );
     // When the Harvesters leave the selection, their ring falls back to
     // the first.
-    game.presentation.selection.units = units_of(&game, 0, UnitKind::Sentinel);
+    game.presentation
+        .selection
+        .set_units(units_of(&game, 0, UnitKind::Sentinel));
     frame(&mut game, &mut input);
     assert_eq!(heading(&game, &input).as_deref(), Some("COMMANDS"));
 }
@@ -674,13 +679,14 @@ fn grouped_magazines_count_staged_rounds_and_x_cancels_one() {
         ],
     );
     let mut input = pad_input(&mut game);
-    game.presentation.selection.buildings = game
-        .state
-        .buildings()
-        .iter()
-        .filter(|b| b.kind == BuildingKind::Lattice)
-        .map(|b| b.id)
-        .collect();
+    game.presentation.selection.set_buildings(
+        game.state
+            .buildings()
+            .iter()
+            .filter(|b| b.kind == BuildingKind::Lattice)
+            .map(|b| b.id)
+            .collect(),
+    );
     frame(&mut game, &mut input);
     tap(&mut game, &mut input, PadButton::North);
     frame(&mut game, &mut input);
@@ -772,12 +778,16 @@ fn x_saves_the_selection_to_the_pointed_group_and_closes_the_ring() {
     let mut input = pad_input(&mut game);
     let sentinels = units_of(&game, 0, UnitKind::Sentinel);
     let scuttler = units_of(&game, 0, UnitKind::Scuttler);
-    game.presentation.selection.units = [sentinels.clone(), scuttler].concat();
+    game.presentation
+        .selection
+        .set_units([sentinels.clone(), scuttler].concat());
     open_groups(&mut game, &mut input);
     aim(&mut game, &mut input, "Group 2");
     tap(&mut game, &mut input, PadButton::West);
     assert!(input.ring.is_none());
-    assert!(input.groups[1].same_members(&Group::Units(game.presentation.selection.units.clone())));
+    assert!(
+        input.groups[1].same_members(&Group::Units(game.presentation.selection.units().to_vec()))
+    );
     open_groups(&mut game, &mut input);
     // The slice wears the kind most members share, how many it holds,
     // and its members by kind, the most numerous first.
@@ -796,7 +806,7 @@ fn a_recalls_the_pointed_group_and_an_empty_one_refuses() {
     let sentinels = units_of(&game, 0, UnitKind::Sentinel);
     let scuttler = units_of(&game, 0, UnitKind::Scuttler);
     input.groups[0] = Group::Units(sentinels.clone());
-    game.presentation.selection.units.clone_from(&scuttler);
+    game.presentation.selection.set_units(scuttler.clone());
     open_groups(&mut game, &mut input);
     aim(&mut game, &mut input, "Group 3");
     tap(&mut game, &mut input, PadButton::South);
@@ -805,10 +815,10 @@ fn a_recalls_the_pointed_group_and_an_empty_one_refuses() {
         input.ring.is_some(),
         "a refused recall leaves the ring open"
     );
-    assert_eq!(game.presentation.selection.units, scuttler);
+    assert_eq!(game.presentation.selection.units(), scuttler);
     pick(&mut game, &mut input, "Group 1");
     assert!(input.ring.is_none());
-    assert_eq!(game.presentation.selection.units, sentinels);
+    assert_eq!(game.presentation.selection.units(), sentinels);
 }
 
 #[test]
@@ -817,14 +827,16 @@ fn x_keeps_only_own_units_and_with_nothing_selected_empties_the_group() {
     let mut input = pad_input(&mut game);
     let own = units_of(&game, 0, UnitKind::Sentinel);
     let enemy = units_of(&game, 1, UnitKind::Sentinel);
-    game.presentation.selection.units = [own.clone(), enemy].concat();
+    game.presentation
+        .selection
+        .set_units([own.clone(), enemy].concat());
     open_groups(&mut game, &mut input);
     aim(&mut game, &mut input, "Group 1");
     tap(&mut game, &mut input, PadButton::West);
     assert_eq!(input.groups[0], Group::Units(own));
     assert!(toasted(&game, "Only your own units join a control group"));
     // As Ctrl and a number does, X with nothing selected clears the group.
-    game.presentation.selection.units.clear();
+    game.presentation.selection.clear();
     open_groups(&mut game, &mut input);
     aim(&mut game, &mut input, "Group 1");
     tap(&mut game, &mut input, PadButton::West);
@@ -875,7 +887,7 @@ fn each_rings_button_opens_it_in_the_others_place_and_closes_its_own() {
     tap(&mut game, &mut input, PadButton::East);
     assert!(input.ring.is_none(), "B closes the group ring");
     // With no command ring to offer, Y over the group ring keeps it.
-    game.presentation.selection.units.clear();
+    game.presentation.selection.clear();
     open_groups(&mut game, &mut input);
     tap(&mut game, &mut input, PadButton::North);
     frame(&mut game, &mut input);
@@ -924,7 +936,9 @@ fn a_spectator_has_no_group_ring() {
 fn lattice() -> (Game, InputState) {
     let mut game = scene(&[], &[(0, BuildingKind::Lattice, 30, 18)]);
     let mut input = pad_input(&mut game);
-    game.presentation.selection.buildings = game.state.buildings().iter().map(|b| b.id).collect();
+    game.presentation
+        .selection
+        .set_buildings(game.state.buildings().iter().map(|b| b.id).collect());
     frame(&mut game, &mut input);
     tap(&mut game, &mut input, PadButton::North);
     frame(&mut game, &mut input);
@@ -1022,13 +1036,30 @@ fn a_ring_for_one_kind_never_needs_more() {
         );
     for (name, mut game) in scenes {
         let mut input = pad_input(&mut game);
+        let units: Vec<_> = game.state.units().iter().map(|u| u.id).collect();
         let selection = &mut game.presentation.selection;
-        selection.units = game.state.units().iter().map(|u| u.id).collect();
-        selection.buildings = game.state.buildings().iter().map(|b| b.id).collect();
+        if units.is_empty() {
+            selection.set_buildings(game.state.buildings().iter().map(|b| b.id).collect());
+        } else {
+            selection.set_units(units);
+        }
+        assert_ne!(
+            *selection,
+            crate::game::Selection::Empty,
+            "the lone {name} is selected"
+        );
         frame(&mut game, &mut input);
         tap(&mut game, &mut input, PadButton::North);
         frame(&mut game, &mut input);
         let Some(ring) = current(&game.view(), &input) else {
+            // A structure with nothing to order offers no ring.
+            let panel = game.presentation.panel_model.borrow();
+            assert!(
+                panel
+                    .as_ref()
+                    .is_some_and(|panel| panel.cards.is_empty() && panel.stop.is_none()),
+                "a lone {name} has orders but opens no ring"
+            );
             continue;
         };
         let titles: Vec<&str> = ring

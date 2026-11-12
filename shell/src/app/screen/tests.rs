@@ -61,20 +61,29 @@ fn the_keyboard_follows_the_text_field_on_screen() {
 
     let mut pause = PauseScreen::open(false, true);
     assert_eq!(
-        Screen::Pause(PauseScreen::open(false, true)).keyboard(),
+        Screen::Pause(PauseScreen::open(false, true))
+            .form()
+            .map(|form| form.keyboard()),
         None
     );
     pause.begin_naming("Skirmish");
-    assert_eq!(Screen::Pause(pause).keyboard(), Some(Keyboard::Text));
+    assert_eq!(
+        Screen::Pause(pause).form().map(|form| form.keyboard()),
+        Some(Keyboard::Text)
+    );
     assert!(!Screen::Playing.text_entry());
 
     let lobby = |name| Screen::Lobby {
         screen: Box::new(LobbyScreen::join(name, "10.0.0.2")),
         back: Box::new(Screen::Home(HomeScreen::open())),
     };
-    assert_eq!(lobby("").keyboard(), Some(Keyboard::Text), "a name first");
     assert_eq!(
-        lobby("Connor").keyboard(),
+        lobby("").form().map(|form| form.keyboard()),
+        Some(Keyboard::Text),
+        "a name first"
+    );
+    assert_eq!(
+        lobby("Connor").form().map(|form| form.keyboard()),
         Some(Keyboard::Address),
         "then the address"
     );
@@ -144,7 +153,7 @@ fn quits_save_every_hidden_live_match() {
 #[test]
 fn the_waiting_screen_holds_the_lan_match() {
     use crate::screens::waiting::{Absent, WaitingScreen};
-    let waiting = Screen::Waiting(WaitingScreen::open(
+    let mut waiting = Screen::Waiting(WaitingScreen::open(
         vec![Absent {
             seat: aftermine_sim::PlayerId(1),
             name: "Alex".to_owned(),
@@ -153,7 +162,7 @@ fn the_waiting_screen_holds_the_lan_match() {
         true,
     ));
     assert!(waiting.holds_live_match());
-    assert_eq!(waiting.keyboard(), None);
+    assert_eq!(waiting.form().map(|form| form.keyboard()), None);
     assert_eq!(waiting.mode(), "waiting");
     assert_eq!(waiting.profile_mode(), "waiting");
 }

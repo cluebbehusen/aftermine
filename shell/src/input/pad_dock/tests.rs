@@ -60,7 +60,7 @@ fn foundry() -> (Game, InputState, BuildingId) {
         });
     }
     game.do_tick();
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     frame(&mut game, &mut input);
     (game, input, foundry)
 }
@@ -109,7 +109,7 @@ fn the_left_stick_click_lights_the_chip_nearest_the_band_and_a_cancels_it() {
         "A cancels the lit chip as a click does"
     );
     assert_eq!(
-        game.presentation.selection.buildings,
+        game.presentation.selection.buildings(),
         vec![foundry],
         "and its release never selects at the reticle"
     );
@@ -216,7 +216,7 @@ fn b_or_another_click_closes_it_and_y_hands_over_to_the_ring() {
     tap(&mut game, &mut input, PadButton::East);
     assert!(input.dock.is_none(), "B closes the strip");
     assert_eq!(
-        game.presentation.selection.buildings.len(),
+        game.presentation.selection.buildings().len(),
         1,
         "and keeps the selection"
     );
@@ -288,7 +288,7 @@ fn it_closes_when_the_dock_empties_the_selection_changes_or_another_hand_takes_o
 
     let (mut game, mut input, _) = foundry();
     tap(&mut game, &mut input, PadButton::LeftStick);
-    game.presentation.selection.buildings.clear();
+    game.presentation.selection.clear();
     frame(&mut game, &mut input);
     assert!(input.dock.is_none(), "the selection changed");
 

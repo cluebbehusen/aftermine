@@ -257,7 +257,7 @@ impl<'a> Scene<'a> {
     pub fn selection_commandable(&self) -> bool {
         self.presentation
             .selection
-            .units
+            .units()
             .first()
             .and_then(|id| self.state.unit(*id))
             .is_none_or(|u| u.player == self.presentation.human)
@@ -265,7 +265,7 @@ impl<'a> Scene<'a> {
     /// Whether the selection holds one of the human's own units that
     /// `accepts`.
     pub(crate) fn selection_has_own(&self, accepts: impl Fn(&aftermine_sim::Unit) -> bool) -> bool {
-        self.presentation.selection.units.iter().any(|id| {
+        self.presentation.selection.units().iter().any(|id| {
             self.state
                 .unit(*id)
                 .is_some_and(|unit| unit.player == self.presentation.human && accepts(unit))
@@ -323,7 +323,7 @@ impl<'a> Scene<'a> {
     /// Callers drop the borrow before asking again.
     pub(crate) fn projection(&self) -> std::cell::Ref<'a, super::projection::Projection> {
         use super::projection::Projection;
-        let units = &self.presentation.selection.units;
+        let units = self.presentation.selection.units();
         let cache = &self.presentation.projection;
         if !cache
             .borrow()
@@ -331,10 +331,10 @@ impl<'a> Scene<'a> {
         {
             let pending = self.pending.len();
             let fresh = if self.pending.is_empty() {
-                Projection::capture(self.state, pending, None, units.clone())
+                Projection::capture(self.state, pending, None, units.to_vec())
             } else {
                 self.with_staged(|view| {
-                    Projection::capture(self.state, pending, Some(view), units.clone())
+                    Projection::capture(self.state, pending, Some(view), units.to_vec())
                 })
             };
             cache.replace(fresh);
