@@ -253,11 +253,8 @@ impl Missions {
         if hungry.is_empty() {
             return Vec::new();
         }
-        let homes: Vec<&BuildingObs> = observation
-            .my_buildings
-            .iter()
-            .filter(|building| building.kind == BuildingKind::Foundry && building.built)
-            .collect();
+        let homes: Vec<&BuildingObs> =
+            crate::investments::built_foundries(&observation.my_buildings).collect();
         let mut routes = Routes::new(map, frame, scratch, &homes)
             .around_incidents(&observation.salvage_incidents);
         let fields: Vec<(TilePos, u32)> = observation

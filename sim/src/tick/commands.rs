@@ -349,46 +349,38 @@ fn apply_set_idle_weld(
     Ok(())
 }
 
-/// Iterates the subset of `ids` that exist and belong to `player`, applying
-/// `f`. Returns how many units accepted the order.
-fn for_owned_units(
+/// Hands each unit of `ids` that exists and belongs to `player` the order
+/// `order_for` gives it; `None` passes over a unit the verb cannot command.
+/// A command no unit accepts is `NoValidUnits`, and one every accepting
+/// unit's full queue refused is `QueueFull`.
+fn assign_each(
     state: &mut State,
     player: PlayerId,
     ids: &[UnitId],
-    mut f: impl FnMut(&mut crate::state::Unit),
-) -> usize {
-    let mut applied = 0;
+    queue: bool,
+    order_for: impl Fn(&Unit) -> Option<Order>,
+) -> Result<(), RejectReason> {
+    let (mut accepted, mut landed) = (0, 0);
     for &id in ids {
-        if let Some(unit) = state.unit_mut(id)
-            && unit.player == player
-        {
-            f(unit);
-            applied += 1;
-        }
+        let Some(unit) = state.unit_mut(id).filter(|unit| unit.player == player) else {
+            continue;
+        };
+        let Some(order) = order_for(unit) else {
+            continue;
+        };
+        accepted += 1;
+        landed += usize::from(assign(unit, order, queue));
     }
-    applied
+    if accepted == 0 {
+        return Err(RejectReason::NoValidUnits);
+    }
+    (landed > 0).then_some(()).ok_or(RejectReason::QueueFull)
 }
 
-/// [`for_owned_units`] narrowed to the workers — Harvest, Salvage and the
-/// Repair verbs address machines with harvest gear, and each reports
-/// `NoValidUnits` when the selection holds none.
-fn for_owned_workers(
-    state: &mut State,
-    player: PlayerId,
-    ids: &[UnitId],
-    mut f: impl FnMut(&mut crate::state::Unit),
-) -> usize {
-    let mut applied = 0;
-    for &id in ids {
-        if let Some(unit) = state.unit_mut(id)
-            && unit.player == player
-            && unit.kind.stats().harvest.is_some()
-        {
-            f(unit);
-            applied += 1;
-        }
-    }
-    applied
+/// Whether `unit` carries harvest gear: Harvest, Salvage and the Repair
+/// verbs address only these.
+fn worker(unit: &Unit) -> bool {
+    unit.kind.stats().harvest.is_some()
 }
 
 /// The units of `ids` that exist and belong to `player` — the deterministic
@@ -575,22 +567,12 @@ fn apply_scout(
     if !on_map(state, goal) {
         return Err(RejectReason::OutOfBounds);
     }
-    let (mut accepted, mut landed) = (0, 0);
-    for &id in units {
-        if let Some(unit) = state.unit_mut(id)
-            && unit.player == player
-            && unit.kind.stats().scouts
-        {
-            accepted += 1;
-            if assign(unit, Order::Scout { tile: goal }, queue) {
-                landed += 1;
-            }
-        }
-    }
-    if accepted == 0 {
-        return Err(RejectReason::NoValidUnits);
-    }
-    (landed > 0).then_some(()).ok_or(RejectReason::QueueFull)
+    assign_each(state, player, units, queue, |unit| {
+        unit.kind
+            .stats()
+            .scouts
+            .then_some(Order::Scout { tile: goal })
+    })
 }
 
 fn apply_attack(
@@ -625,33 +607,20 @@ fn apply_attack(
         let reverse = spread_scan_reversed(state, target_tile, &ids);
         Some(goals::issue(state, player, target_tile, domain, reverse).goal(0))
     });
-    let mut landed = 0;
-    let applied = for_owned_units(state, player, units, |u| {
-        let stats = u.kind.stats();
-        if covers(stats) {
-            if assign(
-                u,
-                Order::Attack {
-                    target,
-                    resume: None,
-                    pursue: true,
-                },
-                queue,
-            ) {
-                landed += 1;
+    assign_each(state, player, units, queue, |unit| {
+        let stats = unit.kind.stats();
+        Some(if covers(stats) {
+            Order::Attack {
+                target,
+                resume: None,
+                pursue: true,
             }
-        } else if let Some(goal) = walk_goals[usize::from(stats.domain == Domain::Air)]
-            && assign(u, Order::Run { goal }, queue)
-        {
-            landed += 1;
-        }
-    });
-    if applied > 0 && landed == 0 {
-        return Err(RejectReason::QueueFull);
-    }
-    (applied > 0)
-        .then_some(())
-        .ok_or(RejectReason::NoValidUnits)
+        } else {
+            Order::Run {
+                goal: walk_goals[usize::from(stats.domain == Domain::Air)]?,
+            }
+        })
+    })
 }
 
 fn apply_hunt(
@@ -725,24 +694,13 @@ fn apply_harvest(
     if !known {
         return Err(RejectReason::NotANode);
     }
-    let mut landed = 0;
-    let applied = for_owned_workers(state, player, units, |unit| {
-        if assign(
-            unit,
-            Order::Harvest {
-                node,
-                anchor: node,
-                withdrawing: false,
-            },
-            queue,
-        ) {
-            landed += 1;
-        }
-    });
-    if applied == 0 {
-        return Err(RejectReason::NoValidUnits);
-    }
-    (landed > 0).then_some(()).ok_or(RejectReason::QueueFull)
+    assign_each(state, player, units, queue, |unit| {
+        worker(unit).then_some(Order::Harvest {
+            node,
+            anchor: node,
+            withdrawing: false,
+        })
+    })
 }
 
 /// Walk a looping circuit as one program: each leg spreads the group over
@@ -901,11 +859,7 @@ fn apply_build_inner(
     // founder.
     let crew: Vec<UnitId> = accepted_units(state, player, units)
         .into_iter()
-        .filter(|id| {
-            state
-                .unit(*id)
-                .is_some_and(|u| u.kind.stats().harvest.is_some())
-        })
+        .filter(|id| state.unit(*id).is_some_and(worker))
         .collect();
     let &builder = crew.first().ok_or(RejectReason::NoValidUnits)?;
 
@@ -1154,7 +1108,7 @@ fn apply_return_cargo(
         if building.player != player {
             return Err(RejectReason::NotYourBuilding);
         }
-        if !building.built() || building.hp == 0 || !building.kind.is_drop_off() {
+        if !building.built() || !building.kind.is_drop_off() {
             return Err(RejectReason::InvalidTarget);
         }
     }
@@ -1162,12 +1116,9 @@ fn apply_return_cargo(
         .iter()
         .copied()
         .filter(|id| {
-            state.unit(*id).is_some_and(|unit| {
-                unit.player == player
-                    && unit.hp > 0
-                    && unit.kind.stats().harvest.is_some()
-                    && unit.carrying() > 0
-            })
+            state
+                .unit(*id)
+                .is_some_and(|unit| unit.player == player && worker(unit) && unit.carrying() > 0)
         })
         .collect();
     if workers.is_empty() {
@@ -1215,18 +1166,9 @@ fn apply_repair(
     if !b.built() || b.hp >= b.stats().max_hp {
         return Err(RejectReason::InvalidTarget);
     }
-    let mut landed = 0;
-    let applied = for_owned_workers(state, player, units, |unit| {
-        if assign(unit, Order::Repair { building }, queue) {
-            landed += 1;
-        }
-    });
-    if applied == 0 {
-        return Err(RejectReason::NoValidUnits);
-    }
-    if landed == 0 {
-        return Err(RejectReason::QueueFull);
-    }
+    assign_each(state, player, units, queue, |unit| {
+        worker(unit).then_some(Order::Repair { building })
+    })?;
     // Evict only on a command that landed: a rejected command must leave
     // the world untouched. Running it after the assignment is safe because
     // the purge only matches the opposing verb.
@@ -1253,18 +1195,9 @@ fn apply_salvage(
     if !b.built() || b.kind == crate::stats::BuildingKind::Foundry {
         return Err(RejectReason::InvalidTarget);
     }
-    let mut landed = 0;
-    let applied = for_owned_workers(state, player, units, |unit| {
-        if assign(unit, Order::Salvage { building }, queue) {
-            landed += 1;
-        }
-    });
-    if applied == 0 {
-        return Err(RejectReason::NoValidUnits);
-    }
-    if landed == 0 {
-        return Err(RejectReason::QueueFull);
-    }
+    assign_each(state, player, units, queue, |unit| {
+        worker(unit).then_some(Order::Salvage { building })
+    })?;
     purge_opposing_verb(state, player, building, Verb::Repair);
     Ok(())
 }
@@ -1282,32 +1215,12 @@ fn apply_repair_unit(
     queue: bool,
 ) -> Result<(), RejectReason> {
     let t = state.unit(target).ok_or(RejectReason::InvalidTarget)?;
-    let stats = t.kind.stats();
-    // A parked airframe is a ground body a welder can reach; an airborne
-    // one is not.
-    if t.player != player
-        || t.hp == 0
-        || t.hp >= stats.max_hp
-        || !stats.repairable()
-        || t.domain() != Domain::Ground
-        || t.retiring()
-    {
+    if t.player != player || !t.weldable() {
         return Err(RejectReason::InvalidTarget);
     }
-    let crew: Vec<UnitId> = units.iter().copied().filter(|&id| id != target).collect();
-    let mut landed = 0;
-    let applied = for_owned_workers(state, player, &crew, |unit| {
-        if assign(unit, Order::RepairUnit { unit: target }, queue) {
-            landed += 1;
-        }
-    });
-    if applied == 0 {
-        return Err(RejectReason::NoValidUnits);
-    }
-    if landed == 0 {
-        return Err(RejectReason::QueueFull);
-    }
-    Ok(())
+    assign_each(state, player, units, queue, |unit| {
+        (unit.id != target && worker(unit)).then_some(Order::RepairUnit { unit: target })
+    })
 }
 
 /// Sends units to escort an own unit in the world. A unit the target
@@ -1321,35 +1234,18 @@ fn apply_accompany(
     queue: bool,
 ) -> Result<(), RejectReason> {
     let t = state.unit(target).ok_or(RejectReason::InvalidTarget)?;
-    if t.player != player || t.hp == 0 || t.host.is_some() {
+    if t.player != player || t.host.is_some() {
         return Err(RejectReason::InvalidTarget);
     }
     let followed = followed_from(state, target);
-    let escorts: Vec<UnitId> = units
-        .iter()
-        .copied()
-        .filter(|id| *id != target && followed.binary_search(id).is_err())
-        .collect();
-    let mut landed = 0;
-    let applied = for_owned_units(state, player, &escorts, |unit| {
-        if assign(
-            unit,
+    assign_each(state, player, units, queue, |unit| {
+        (unit.id != target && followed.binary_search(&unit.id).is_err()).then_some(
             Order::Accompany {
                 unit: target,
                 weld: None,
             },
-            queue,
-        ) {
-            landed += 1;
-        }
-    });
-    if applied == 0 {
-        return Err(RejectReason::NoValidUnits);
-    }
-    if landed == 0 {
-        return Err(RejectReason::QueueFull);
-    }
-    Ok(())
+        )
+    })
 }
 
 /// Sends own units each to the nearest own completed Crucible it can reach,
@@ -1360,12 +1256,11 @@ fn apply_retire(
     units: &[UnitId],
     queue: bool,
 ) -> Result<(), RejectReason> {
-    if !state.buildings().iter().any(|b| {
-        b.player == player
-            && b.hp > 0
-            && b.built()
-            && b.kind == crate::stats::BuildingKind::Crucible
-    }) {
+    if !state
+        .buildings()
+        .iter()
+        .any(|b| b.player == player && b.built() && b.kind == crate::stats::BuildingKind::Crucible)
+    {
         return Err(RejectReason::MissingPrerequisite);
     }
     let own: Vec<UnitId> = accepted_units(state, player, units)
@@ -1376,9 +1271,9 @@ fn apply_retire(
         return Err(RejectReason::NoValidUnits);
     }
     let mut reach = super::reach::Reach::new(state);
-    let routed: Vec<(UnitId, crate::ids::BuildingId)> = own
-        .into_iter()
-        .filter_map(|id| {
+    let routed: std::collections::BTreeMap<UnitId, BuildingId> = own
+        .iter()
+        .filter_map(|&id| {
             super::brain::retire::nearest_crucible(state, &mut reach, id)
                 .map(|crucible| (id, crucible))
         })
@@ -1386,20 +1281,13 @@ fn apply_retire(
     if routed.is_empty() {
         return Err(RejectReason::UnreachableGoal);
     }
-    let mut landed = 0;
-    for (id, crucible) in routed {
-        let order = Order::Retire {
+    assign_each(state, player, &own, queue, |unit| {
+        let &crucible = routed.get(&unit.id)?;
+        Some(Order::Retire {
             crucible,
             pad: None,
-        };
-        if assign(state.unit_mut(id).expect("accepted unit"), order, queue) {
-            landed += 1;
-        }
-    }
-    if landed == 0 {
-        return Err(RejectReason::QueueFull);
-    }
-    Ok(())
+        })
+    })
 }
 
 /// Every unit `from` escorts, directly or through a chain of escorts, by any
@@ -1436,30 +1324,13 @@ fn apply_load(
     queue: bool,
 ) -> Result<(), RejectReason> {
     let t = state.unit(transport).ok_or(RejectReason::InvalidTarget)?;
-    if t.player != player || t.hp == 0 || t.kind.stats().transport_capacity == 0 || t.retiring() {
+    if t.player != player || t.kind.stats().transport_capacity == 0 || t.retiring() {
         return Err(RejectReason::InvalidTarget);
     }
-    let mut landed = 0;
-    let mut applied = 0;
-    for &id in units {
-        if id == transport {
-            continue;
-        }
-        if let Some(unit) = state.unit_mut(id)
-            && unit.player == player
-            && unit.hp > 0
-            && unit.kind.stats().transport_size > 0
-        {
-            applied += 1;
-            if assign(unit, Order::Board { transport }, queue) {
-                landed += 1;
-            }
-        }
-    }
-    if applied == 0 {
-        return Err(RejectReason::NoValidUnits);
-    }
-    (landed > 0).then_some(()).ok_or(RejectReason::QueueFull)
+    assign_each(state, player, units, queue, |unit| {
+        (unit.id != transport && unit.kind.stats().transport_size > 0)
+            .then_some(Order::Board { transport })
+    })
 }
 
 /// Flies a transport to a drop point and unloads there. An empty sling
@@ -1475,7 +1346,7 @@ fn apply_unload(
         return Err(RejectReason::OutOfBounds);
     }
     let t = state.unit(transport).ok_or(RejectReason::InvalidTarget)?;
-    if t.player != player || t.hp == 0 || t.kind.stats().transport_capacity == 0 {
+    if t.player != player || t.kind.stats().transport_capacity == 0 {
         return Err(RejectReason::InvalidTarget);
     }
     // The drop point snaps like a lone unit's move, so it names sky the
@@ -1524,13 +1395,15 @@ fn purge_opposing_verb(
 }
 
 fn apply_stop(state: &mut State, player: PlayerId, units: &[UnitId]) -> Result<(), RejectReason> {
-    let applied = for_owned_units(state, player, units, |u| {
-        end_station_keeping(u);
-        u.clear_program();
-    });
-    (applied > 0)
-        .then_some(())
-        .ok_or(RejectReason::NoValidUnits)
+    let mut applied = false;
+    for &id in units {
+        if let Some(unit) = state.unit_mut(id).filter(|unit| unit.player == player) {
+            end_station_keeping(unit);
+            unit.clear_program();
+            applied = true;
+        }
+    }
+    applied.then_some(()).ok_or(RejectReason::NoValidUnits)
 }
 
 fn apply_cancel_train(
@@ -1710,7 +1583,7 @@ fn apply_set_rally(
     if let Some(Rally::Unit(unit)) = rally
         && state
             .escorted(unit)
-            .is_none_or(|body| body.player != player || body.hp == 0 || body.host.is_some())
+            .is_none_or(|body| body.player != player || body.host.is_some())
     {
         return Err(RejectReason::InvalidTarget);
     }

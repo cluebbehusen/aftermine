@@ -209,13 +209,7 @@ fn route_first(
             let waypoints = crate::tick::movement::round_standing_hulls(
                 state, scout, scout.pos, waypoints, step,
             );
-            return Some(Route::Path(PathFollow {
-                final_point: None,
-                goal: candidate,
-                waypoints,
-                next: 0,
-                clearing: false,
-            }));
+            return Some(Route::Path(PathFollow::to(candidate, waypoints)));
         }
         explored = danger.last_route_exhausted();
         if !explored {

@@ -436,6 +436,20 @@ pub struct PathFollow {
     pub clearing: bool,
 }
 
+impl PathFollow {
+    /// A fresh walk along `waypoints` to the tile `goal`, with no exact
+    /// endpoint.
+    pub(crate) fn to(goal: TilePos, waypoints: Vec<TilePos>) -> Self {
+        Self {
+            final_point: None,
+            goal,
+            waypoints,
+            next: 0,
+            clearing: false,
+        }
+    }
+}
+
 /// A point defender's ready charges and its progress toward the next one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1060,6 +1074,18 @@ impl Unit {
         } else {
             self.kind.stats().domain
         }
+    }
+
+    /// Whether a field weld may take this machine on: alive, wounded,
+    /// repairable, on the ground, and not being dismantled. A parked
+    /// airframe is a ground body a welder can reach; an airborne one is not.
+    pub(crate) fn weldable(&self) -> bool {
+        let stats = self.kind.stats();
+        self.hp > 0
+            && self.hp < stats.max_hp
+            && stats.repairable()
+            && self.domain() == crate::stats::Domain::Ground
+            && !self.retiring()
     }
 
     /// Whether a landed airframe's program leaves it on the ground: idle,
@@ -1941,6 +1967,15 @@ impl State {
             extractor.tier,
             self.foundry_support(extractor),
         ))
+    }
+
+    /// `player`'s earliest Foundry that is more than a provisional plan: the
+    /// one thing a half-turn of the map exchanges between mirrored seats, so
+    /// tie frames that have no other bearing turn on it.
+    pub(crate) fn first_foundry(&self, player: PlayerId) -> Option<&Building> {
+        self.buildings
+            .iter()
+            .find(|b| b.player == player && !b.provisional() && b.kind == BuildingKind::Foundry)
     }
 
     /// Whether a completed own Foundry supports a completed, living
@@ -3470,9 +3505,7 @@ impl State {
     pub fn passable_for(&self, domain: crate::stats::Domain, pos: TilePos) -> bool {
         match domain {
             crate::stats::Domain::Ground => self.passable(pos),
-            crate::stats::Domain::Air => {
-                self.map.tile(pos).is_some_and(|t| !t.terrain.blocks_air())
-            }
+            crate::stats::Domain::Air => self.map.sky_open(pos),
         }
     }
 

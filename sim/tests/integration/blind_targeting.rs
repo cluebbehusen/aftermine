@@ -1219,3 +1219,130 @@ fn mirrored_guns_shell_the_mirrored_one_of_two_equally_near_blips() {
     );
     assert_eq!(landing(true), centre - landing(false));
 }
+
+/// A Breaker's hit on a structure splashes a hostile buried charge beside
+/// it, though its seat never knew the charge was there.
+#[test]
+fn a_breaker_hit_beside_a_buried_charge_destroys_the_charge() {
+    let mut scenario = open_arena(40, 30, vec![unit(0, UnitKind::Breaker, 8, 8)]);
+    scenario.buildings = vec![
+        common::building(1, BuildingKind::Barricade, 12, 8),
+        common::building(1, BuildingKind::ScuttleCharge, 12, 9),
+    ];
+    let mut state = scenario.build().unwrap();
+    let breaker = state.units()[0].id;
+    let find = |state: &aftermine_sim::State, kind| {
+        state
+            .buildings()
+            .iter()
+            .find(|b| b.kind == kind)
+            .map(|b| b.id)
+    };
+    let barricade = find(&state, BuildingKind::Barricade).unwrap();
+    let charge = find(&state, BuildingKind::ScuttleCharge).unwrap();
+    assert!(!state.building_apparent(PlayerId(0), state.building(charge).unwrap()));
+    state.tick(&[cmd(
+        0,
+        Command::Attack {
+            units: vec![breaker],
+            target: Target::Building(barricade).into(),
+            queue: false,
+        },
+    )]);
+    let events = run_until(&mut state, 600, |_, events| {
+        events.iter().any(|e| {
+            matches!(
+                e,
+                Event::AttackHit {
+                    target: Some(Target::Building(hit)),
+                    ..
+                } if *hit == barricade
+            )
+        })
+    });
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, Event::ChargeDetonated { .. }))
+    );
+    assert!(state.building(charge).is_none());
+    assert!(state.building(barricade).is_some());
+}
+
+/// A Breaker shooting at a remembered charge's footprint after the charge
+/// is gone still bursts there: a hostile machine standing on the empty mark
+/// takes the splash.
+#[test]
+fn a_breaker_splashes_a_remembered_charge_mark_whose_charge_is_gone() {
+    let mut scenario = open_arena(
+        40,
+        30,
+        vec![
+            unit(0, UnitKind::Breaker, 4, 8),
+            unit(0, UnitKind::Surveyor, 12, 8),
+            unit(1, UnitKind::Harvester, 14, 11),
+        ],
+    );
+    scenario.buildings = vec![common::building(1, BuildingKind::ScuttleCharge, 14, 8)];
+    let mut state = scenario.build().unwrap();
+    let (breaker, surveyor, harvester) = (
+        state.units()[0].id,
+        state.units()[1].id,
+        state.units()[2].id,
+    );
+    let charge = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::ScuttleCharge)
+        .unwrap()
+        .id;
+    let mark = state
+        .attack_objective(PlayerId(0), Target::Building(charge).into())
+        .expect("the Surveyor detects the charge");
+    state.tick(&[cmd(
+        0,
+        Command::Run {
+            units: vec![surveyor],
+            goal: TilePos::new(2, 20),
+            queue: false,
+        },
+    )]);
+    run_until(&mut state, 300, |state, _| {
+        !state.building_apparent(PlayerId(0), state.building(charge).unwrap())
+    });
+    state.tick(&[cmd(
+        0,
+        Command::Attack {
+            units: vec![breaker],
+            target: mark,
+            queue: false,
+        },
+    )]);
+    run_until(&mut state, 600, |state, _| state.building(charge).is_none());
+    assert!(state.attack_view(PlayerId(0), mark).is_some());
+    let hp = state.unit(harvester).unwrap().hp;
+    state.tick(&[cmd(
+        1,
+        Command::Run {
+            units: vec![harvester],
+            goal: TilePos::new(14, 8),
+            queue: false,
+        },
+    )]);
+    let events = run_until(&mut state, 600, |state, _| {
+        state.unit(harvester).is_none_or(|u| u.hp < hp)
+    });
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::AttackHit {
+            attacker,
+            target: None,
+            ..
+        } if *attacker == breaker
+    )));
+    assert!(state.building(charge).is_none());
+    assert!(matches!(
+        state.unit(breaker).unwrap().order,
+        Order::Attack { target, .. } if target == mark
+    ));
+}

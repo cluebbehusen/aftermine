@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 /// Up to four component labels a unit can route into, ascending and padded
 /// with zeros. An empty set means the unit is sealed in.
-type LabelSet = [u32; 4];
+pub(super) type LabelSet = [u32; 4];
 
 /// Reachability answers for one brain phase.
 ///
@@ -182,10 +182,7 @@ impl Reach {
         if set[0] == 0 {
             return None;
         }
-        let member = |tile: TilePos| {
-            let l = label(tile);
-            l != 0 && set.contains(&l)
-        };
+        let member = |tile: TilePos| within(&set, label(tile));
         if member(target) {
             return Some(target);
         }
@@ -232,10 +229,7 @@ impl Reach {
             return false;
         }
         let set = label_set(&label, from);
-        tiles.into_iter().any(|tile| {
-            let l = label(tile);
-            l != 0 && set.contains(&l)
-        })
+        tiles.into_iter().any(|tile| within(&set, label(tile)))
     }
 
     /// Whether unit `id` touches a parked body of its own layer that
@@ -378,7 +372,7 @@ pub(super) fn touching(a: &crate::state::Unit, b: &crate::state::Unit) -> bool {
 }
 
 /// A tile's component label; off-map tiles read as closed.
-fn label_at(labels: &[u32], width: i32, height: i32, tile: TilePos) -> u32 {
+pub(super) fn label_at(labels: &[u32], width: i32, height: i32, tile: TilePos) -> u32 {
     if tile.x < 0 || tile.y < 0 || tile.x >= width || tile.y >= height {
         return 0;
     }
@@ -388,7 +382,7 @@ fn label_at(labels: &[u32], width: i32, height: i32, tile: TilePos) -> u32 {
 /// The components a route from `from` can enter: its own, or, when it stands
 /// on a closed tile, those of its open cardinal neighbours. A* never cuts a
 /// corner, so a diagonal neighbour alone opens nothing.
-fn label_set(label: &impl Fn(TilePos) -> u32, from: TilePos) -> LabelSet {
+pub(super) fn label_set(label: &impl Fn(TilePos) -> u32, from: TilePos) -> LabelSet {
     let mut set = [0; 4];
     let own = label(from);
     if own != 0 {
@@ -407,6 +401,11 @@ fn label_set(label: &impl Fn(TilePos) -> u32, from: TilePos) -> LabelSet {
     set
 }
 
+/// Whether a tile labelled `label` lies in a component of `set`.
+pub(super) fn within(set: &LabelSet, label: u32) -> bool {
+    label != 0 && set.contains(&label)
+}
+
 /// The half-turn frame for a unit's endpoint scan: the unit's approach to
 /// the target, falling back to its owner's first Foundry when it stands on
 /// the target itself.
@@ -417,13 +416,7 @@ fn scan_reversed(
     from: TilePos,
 ) -> bool {
     let foundry = state
-        .buildings
-        .iter()
-        .find(|building| {
-            building.player == player
-                && !building.provisional()
-                && building.kind == crate::stats::BuildingKind::Foundry
-        })
+        .first_foundry(player)
         .map(|building| (building.anchor, building.kind.size()));
     super::group_spread_scan_reversed(
         center,

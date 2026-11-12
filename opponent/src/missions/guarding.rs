@@ -10,7 +10,6 @@ use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
 use crate::map::MapModel;
 use crate::memory::Memory;
-use aftermine_sim::geometry::foundry_supports;
 use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::scenario::BotStance;
 use aftermine_sim::stats::Domain;
@@ -59,13 +58,7 @@ fn assets<'a>(
             .my_buildings
             .iter()
             .filter(|b| b.kind == BuildingKind::Extractor)
-            .filter(|b| {
-                !observation.my_buildings.iter().any(|f| {
-                    f.kind == BuildingKind::Foundry
-                        && f.built
-                        && foundry_supports(f.anchor, b.anchor)
-                })
-            }),
+            .filter(|b| !crate::expansion::supported(observation, b.anchor)),
     );
     bases
 }

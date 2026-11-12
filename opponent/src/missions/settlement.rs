@@ -168,10 +168,7 @@ impl<'a> Settlement<'a> {
     /// nearest.
     fn source(&self, target: Target) -> Option<TilePos> {
         let centre = footprint_centre(target.kind(), target.anchor());
-        self.observation
-            .my_buildings
-            .iter()
-            .filter(|b| b.kind == BuildingKind::Foundry && b.built)
+        investments::built_foundries(&self.observation.my_buildings)
             .min_by_key(|b| {
                 (
                     !self.manned(self.map.component(b.anchor)),
@@ -221,12 +218,7 @@ impl<'a> Settlement<'a> {
         if !self.by_air(source, target) {
             return Some(basic);
         }
-        if !self
-            .observation
-            .my_buildings
-            .iter()
-            .any(|b| b.kind == BuildingKind::Airworks && b.built)
-        {
+        if !investments::built(self.observation, BuildingKind::Airworks) {
             return investments::step(
                 self.observation,
                 frame,

@@ -229,10 +229,7 @@ impl<'a> Delivery<'a> {
     /// down. Carriers with nowhere safer still come down under fire rather
     /// than hold their passengers aloft.
     pub(super) fn pad(&self, from: TilePos) -> Option<TilePos> {
-        self.observation
-            .my_buildings
-            .iter()
-            .filter(|b| b.kind == BuildingKind::Foundry && b.built)
+        crate::investments::built_foundries(&self.observation.my_buildings)
             .flat_map(|b| ring(b.anchor, b.kind.size()))
             .filter(|tile| self.open(*tile, self.map.component(*tile)))
             .min_by_key(|tile| {

@@ -589,6 +589,12 @@ impl Map {
         self.grid.get(pos)
     }
 
+    /// Whether aircraft may fly over `pos`: any tile on the map but a peak.
+    /// Off the map is closed sky.
+    pub fn sky_open(&self, pos: TilePos) -> bool {
+        self.grid.get(pos).is_some_and(|t| !t.terrain.blocks_air())
+    }
+
     /// Whether terrain alone allows standing on `pos` (buildings are
     /// [`crate::State`]'s concern).
     pub fn terrain_passable(&self, pos: TilePos) -> bool {

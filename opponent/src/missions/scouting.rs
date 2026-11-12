@@ -206,10 +206,7 @@ impl Missions {
             return 0;
         }
         let taken = held(self, None);
-        let air = observation
-            .my_buildings
-            .iter()
-            .any(|building| building.kind == BuildingKind::Airworks && building.built);
+        let air = crate::investments::built(observation, BuildingKind::Airworks);
         let reach = goals.of(air);
         scouted
             .iter()

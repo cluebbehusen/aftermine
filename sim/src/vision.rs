@@ -1802,12 +1802,7 @@ fn radar_return(
         i64::from(anchor.y) * 2 + i64::from(size.1),
     );
     let toward_home = state
-        .buildings
-        .iter()
-        .filter(|b| {
-            b.player == building.player && !b.provisional() && b.kind == BuildingKind::Foundry
-        })
-        .min_by_key(|b| b.id)
+        .first_foundry(building.player)
         .map(|foundry| {
             let (w, h) = foundry.kind.size();
             (

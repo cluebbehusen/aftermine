@@ -18,8 +18,8 @@ use super::super::flight;
 use super::super::landing;
 use super::super::movement::route_round_hulls;
 use super::super::route_for;
-use super::PendingHit;
 use super::locomotion::{approach_rect, walk};
+use super::{PendingHit, Stall, bearing_from, stall};
 use crate::event::{Event, StallReason, UnitLaunchPose};
 use crate::ids::{PlayerId, Target, UnitId};
 use crate::state::{Motor, Order, PathFollow, Resume, State};
@@ -37,24 +37,24 @@ fn target_domain(state: &State, target: Target) -> Domain {
     }
 }
 
-/// The bearing of `aim` from `from` against `heading`: the frame an exact
-/// distance tie between victims goes round in, which a half turn of the
-/// field preserves.
-fn bearing_from(from: Vec2Fx, heading: u8, aim: Vec2Fx) -> u8 {
-    let toward = aim - from;
-    if toward == Vec2Fx::ZERO {
-        0
-    } else {
-        chassis::compass::heading_of(toward).wrapping_sub(heading)
-    }
-}
-
 /// Whether `weapon` reaches a target `distance_sq` from it whose hull
 /// reaches `excess` past a small body's, so a wide machine is hit at its
 /// edge rather than only at its centre.
 fn within_weapon_reach(weapon: &WeaponStats, distance_sq: chassis::fx::Fx, excess: Fx) -> bool {
     let range = weapon.range + excess;
     distance_sq <= range * range && distance_sq >= weapon.minimum_range * weapon.minimum_range
+}
+
+/// Whether `player` sees `target` to fire on it: a unit at its own tile, a
+/// building on any footprint tile and only while its stealth does not hide
+/// it, matching attack validation.
+fn sees_target(state: &State, player: PlayerId, target: Target) -> bool {
+    match target {
+        Target::Unit(uid) => state.unit(uid).is_some_and(|u| state.sees_unit(player, u)),
+        Target::Building(bid) => state.building(bid).is_some_and(|b| {
+            b.tiles().any(|t| state.can_see(player, t)) && state.building_apparent(player, b)
+        }),
+    }
 }
 
 /// Whether a hit on `victim` counts as a hit on a structure: a building, or
@@ -545,52 +545,23 @@ pub(super) fn land_shells(state: &mut State, hits: &mut Vec<PendingHit>, events:
             ));
         }
         let Some(radius) = shell.splash else { continue };
-        let radius_sq = radius * radius;
         // A blast spreads along the level it lands on, never up or down a
         // cliff, and a direct hit's blast stands on the building.
         let footing = direct.map_or_else(|| landing_tile(shell.launch, shell.impact), |b| b.anchor);
-        // Buried charges take splash, as in `buffer_shot`.
-        if shell.targets.ground {
-            for b in &state.buildings {
-                if b.hp == 0
-                    || b.provisional()
-                    || !b.kind.is_stealthy()
-                    || !state.hostile(shell.player, b.player)
-                    || direct.is_some_and(|d| d.id == b.id)
-                    || b.center().dist_sq(shell.impact) > radius_sq
-                    || !blast_catches_charge(state, shell.impact, footing, b)
-                {
-                    continue;
-                }
-                hits.push(PendingHit::along(
-                    state,
-                    shell.shooter,
-                    Target::Building(b.id),
-                    shell.damage,
-                    shell.launch,
-                    shell.impact,
-                ));
-            }
-        }
-        for u in &state.units {
-            let reach = radius + crate::stats::hull_excess(u.kind.stats().radius);
-            if u.hp == 0
-                || !state.hostile(shell.player, u.player)
-                || !shell.targets.covers(u.domain())
-                || u.pos.dist_sq(shell.impact) > reach * reach
-                || !blast_catches(state, shell.impact, footing, u)
-            {
-                continue;
-            }
-            hits.push(PendingHit::along(
-                state,
-                shell.shooter,
-                Target::Unit(u.id),
-                shell.damage,
-                shell.launch,
-                shell.impact,
-            ));
-        }
+        buffer_splash(
+            state,
+            (shell.shooter, shell.player),
+            shell.launch,
+            Blast {
+                at: shell.impact,
+                footing,
+                radius,
+                damage: shell.damage,
+                targets: shell.targets,
+            },
+            direct.map(|b| Target::Building(b.id)),
+            hits,
+        );
     }
 }
 
@@ -752,15 +723,8 @@ fn cut_alongside(
     }
 }
 
-/// Buffers a shot: the direct hit, plus, for splash weapons, one hit on
-/// every other hostile unit inside the radius that the weapon can cover and
-/// on hostile buried charges. Other buildings only take the direct hit.
-///
-/// Splash skips the owner-sight fire gate the aimed paths enforce: the gate
-/// governs choosing a victim, and splash hits whatever stands in the blast.
-/// No information leaks: a bystander's owner learns only that its own body
-/// took damage, and retaliation stays gated on the victim seeing the
-/// shooter.
+/// Buffers a shot: the direct hit, plus, for a splash weapon, its blast
+/// around the victim (see [`buffer_splash`]).
 fn buffer_shot(
     state: &State,
     attacker: Target,
@@ -783,7 +747,6 @@ fn buffer_shot(
         from,
         aim,
     ));
-    let Some(radius) = weapon.splash else { return };
     // The blast stands where the victim does (see `land_shells`).
     let footing = match victim {
         Target::Building(id) => state
@@ -791,50 +754,91 @@ fn buffer_shot(
             .map_or(TilePos::containing(aim), |b| b.anchor),
         Target::Unit(_) => TilePos::containing(aim),
     };
+    if let Some(blast) = Blast::of(weapon, aim, footing) {
+        buffer_splash(
+            state,
+            (attacker, attacker_owner),
+            from,
+            blast,
+            Some(victim),
+            hits,
+        );
+    }
+}
+
+/// The burst a splash weapon's shot makes where it lands.
+#[derive(Clone, Copy)]
+struct Blast {
+    at: Vec2Fx,
+    /// The tile whose level the burst spreads along.
+    footing: TilePos,
+    radius: Fx,
+    damage: u32,
+    targets: crate::stats::DomainMask,
+}
+
+impl Blast {
+    /// The burst of `weapon`'s shot at `at` on `footing`, if it splashes.
+    fn of(weapon: &WeaponStats, at: Vec2Fx, footing: TilePos) -> Option<Self> {
+        Some(Self {
+            at,
+            footing,
+            radius: weapon.splash?,
+            damage: weapon.damage,
+            targets: weapon.targets,
+        })
+    }
+}
+
+/// Buffers one hit of `blast` on every hostile body it catches but
+/// `spared`, which took the direct hit: each unit of a domain it covers,
+/// a wide hull once the burst reaches its edge, and each buried charge
+/// whose centre it reaches. Other buildings only ever take a direct hit;
+/// a buried charge takes splash, detected or not, so saturation fire can
+/// clear a minefield.
+///
+/// Splash skips the owner-sight fire gate the aimed paths enforce: the gate
+/// governs choosing a victim, and splash hits whatever stands in the blast.
+/// No information leaks: a bystander's owner learns only that its own body
+/// took damage, and retaliation stays gated on the victim seeing the
+/// shooter.
+fn buffer_splash(
+    state: &State,
+    (shooter, player): (Target, PlayerId),
+    origin: Vec2Fx,
+    blast: Blast,
+    spared: Option<Target>,
+    hits: &mut Vec<PendingHit>,
+) {
+    let hit = |victim| PendingHit::along(state, shooter, victim, blast.damage, origin, blast.at);
     for u in &state.units {
-        // A wide hull is caught once the blast reaches its edge.
-        let reach = radius + crate::stats::hull_excess(u.kind.stats().radius);
+        let reach = blast.radius + crate::stats::hull_excess(u.kind.stats().radius);
         if u.hp == 0
-            || !state.hostile(attacker_owner, u.player)
-            || Target::Unit(u.id) == victim
-            || !weapon.targets.covers(u.domain())
-            || u.pos.dist_sq(aim) > reach * reach
-            || !blast_catches(state, aim, footing, u)
+            || !state.hostile(player, u.player)
+            || spared == Some(Target::Unit(u.id))
+            || !blast.targets.covers(u.domain())
+            || u.pos.dist_sq(blast.at) > reach * reach
+            || !blast_catches(state, blast.at, blast.footing, u)
         {
             continue;
         }
-        hits.push(PendingHit::along(
-            state,
-            attacker,
-            Target::Unit(u.id),
-            weapon.damage,
-            from,
-            aim,
-        ));
+        hits.push(hit(Target::Unit(u.id)));
     }
-    // The one building exception to direct-hits-only: a buried charge takes
-    // splash, detected or not, so saturation fire can clear a minefield.
-    if weapon.targets.ground {
-        for b in &state.buildings {
-            if b.hp == 0
-                || b.provisional()
-                || !b.kind.is_stealthy()
-                || !state.hostile(attacker_owner, b.player)
-                || Target::Building(b.id) == victim
-                || b.center().dist_sq(aim) > radius * radius
-                || !blast_catches_charge(state, aim, footing, b)
-            {
-                continue;
-            }
-            hits.push(PendingHit::along(
-                state,
-                attacker,
-                Target::Building(b.id),
-                weapon.damage,
-                from,
-                aim,
-            ));
+    if !blast.targets.ground {
+        return;
+    }
+    for b in &state.buildings {
+        if b.hp == 0
+            || b.provisional()
+            || !b.kind.is_stealthy()
+            || !state.hostile(player, b.player)
+            || spared == Some(Target::Building(b.id))
+            || b.center().dist_sq(blast.at) > blast.radius * blast.radius
+            || !blast_catches_charge(state, blast.at, blast.footing, b)
+        {
+            continue;
         }
+        hits.push(hit(Target::Building(b.id)));
     }
 }
 
@@ -1153,15 +1157,10 @@ fn chase_stand_ins(
 ) -> Vec<TilePos> {
     let mut out = Vec::new();
     for r in 1..=crate::stats::CHASE_STAND_RADIUS {
-        for dy in -r..=r {
-            for dx in -r..=r {
-                if dx.abs().max(dy.abs()) != r {
-                    continue;
-                }
-                let t = around.offset(dx, dy);
-                if state.passable_for(domain, t) && t.center().dist_sq(aim) <= range * range {
-                    out.push(t);
-                }
+        for (dx, dy) in crate::tick::goals::ring(r) {
+            let t = around.offset(dx, dy);
+            if state.passable_for(domain, t) && t.center().dist_sq(aim) <= range * range {
+                out.push(t);
             }
         }
     }
@@ -1251,13 +1250,8 @@ fn route_to_stand(
         )
     });
     let path = candidates.into_iter().find_map(|goal| {
-        route_round_hulls(state, unit, from_tile.center(), goal).map(|waypoints| PathFollow {
-            final_point: None,
-            goal,
-            waypoints,
-            next: 0,
-            clearing: false,
-        })
+        route_round_hulls(state, unit, from_tile.center(), goal)
+            .map(|waypoints| PathFollow::to(goal, waypoints))
     });
     let found = path.is_some();
     state.unit_mut(id).expect("caller checked").path = path;
@@ -2128,23 +2122,9 @@ fn sapper_attack(
     };
     if let Some((goal, waypoints)) = routed {
         let unit = state.unit_mut(id).expect("caller checked");
-        unit.path = Some(PathFollow {
-            final_point: None,
-            goal,
-            waypoints,
-            next: 0,
-            clearing: false,
-        });
+        unit.path = Some(PathFollow::to(goal, waypoints));
     } else {
-        let unit = state.unit_mut(id).expect("caller checked");
-        let (player, upos) = (unit.player, unit.pos);
-        unit.clear_program();
-        events.push(Event::OrderStalled {
-            unit: id,
-            player,
-            pos: upos,
-            reason: StallReason::NoRoute,
-        });
+        stall(state, id, Stall::Clear, StallReason::NoRoute, events);
     }
 }
 
@@ -2233,12 +2213,7 @@ fn bomber_attack(
 
     // Release gate: cold bay, in range, spotted, clear arc, and the
     // victim dead ahead. The sight and trace rules are the shared ones.
-    let seen = match target {
-        Target::Unit(uid) => state.unit(uid).is_some_and(|u| state.sees_unit(me, u)),
-        Target::Building(bid) => state.building(bid).is_some_and(|b| {
-            b.tiles().any(|t| state.can_see(me, t)) && state.building_apparent(me, b)
-        }),
-    };
+    let seen = sees_target(state, me, target);
     let to_target = aim_point - pos;
     let in_range =
         within_weapon_reach(weapon, pos.dist_sq(aim_point), target_excess(state, target));
@@ -2297,13 +2272,7 @@ fn bomber_attack(
         // chase below lines up the next run.
         let egress = egress_goal(state, pos, heading, stats);
         let unit = state.unit_mut(id).expect("caller checked");
-        unit.path = egress.map(|goal| PathFollow {
-            final_point: None,
-            goal,
-            waypoints: vec![goal],
-            next: 0,
-            clearing: false,
-        });
+        unit.path = egress.map(|goal| PathFollow::to(goal, vec![goal]));
         // A bomb away refreshes the leash patience, as a ground guard's
         // reaching its firing stance does.
         if resume.is_none()
@@ -2323,13 +2292,7 @@ fn bomber_attack(
             && let Some(goal) = egress_goal(state, pos, heading, stats)
         {
             let unit = state.unit_mut(id).expect("caller checked");
-            unit.path = Some(PathFollow {
-                final_point: None,
-                goal,
-                waypoints: vec![goal],
-                next: 0,
-                clearing: false,
-            });
+            unit.path = Some(PathFollow::to(goal, vec![goal]));
         }
         return;
     }
@@ -2349,13 +2312,7 @@ fn bomber_attack(
     if (in_range || inside_ring) && state.unit(id).expect("caller checked").path.is_none() {
         let departure = egress_goal(state, pos, heading, stats);
         let unit = state.unit_mut(id).expect("caller checked");
-        unit.path = departure.map(|waypoint| PathFollow {
-            final_point: None,
-            goal: target_tile,
-            waypoints: vec![waypoint],
-            next: 0,
-            clearing: false,
-        });
+        unit.path = departure.map(|waypoint| PathFollow::to(target_tile, vec![waypoint]));
         return;
     }
 
@@ -2394,13 +2351,7 @@ fn bomber_attack(
             landing::RunIn::Attack,
         ) {
             let unit = state.unit_mut(id).expect("caller checked");
-            unit.path = Some(PathFollow {
-                final_point: None,
-                goal: target_tile,
-                waypoints,
-                next: 0,
-                clearing: false,
-            });
+            unit.path = Some(PathFollow::to(target_tile, waypoints));
         } else if resume.is_some() {
             // A fight its hunt, patrol or escort picked ends quietly, as
             // `stall_attack` ends one, and the program goes on.
@@ -2409,15 +2360,7 @@ fn bomber_attack(
                 .expect("caller checked")
                 .complete_attack(resume);
         } else {
-            let unit = state.unit_mut(id).expect("caller checked");
-            let (player, upos) = (unit.player, unit.pos);
-            unit.clear_program();
-            events.push(Event::OrderStalled {
-                unit: id,
-                player,
-                pos: upos,
-                reason: StallReason::NoRoute,
-            });
+            stall(state, id, Stall::Clear, StallReason::NoRoute, events);
         }
     }
 }
@@ -2453,10 +2396,7 @@ fn egress_goal(
                 && tile.center().dist_sq(pos) > accept_sq
                 && flight::escapable(state.map(), tile.center(), leg_heading, radius)
                 && !chassis::path::line_blocked(pos, tile.center(), |crossed| {
-                    state
-                        .map()
-                        .tile(crossed)
-                        .is_some_and(|terrain| !terrain.terrain.blocks_air())
+                    state.map().sky_open(crossed)
                 })
             {
                 return Some(tile);
@@ -2568,16 +2508,9 @@ pub(super) fn attack(
     // In range only counts with a clear line (see `crate::tick::fire`) and
     // with sight. The owner must currently see the victim's tile, so a gun
     // that outranges its own vision fires on a spotter's sight. Scrap piles
-    // do not block fire. With no shot, keep approaching.
-    // Sight of any footprint tile serves for a building (matching attack
-    // validation); a unit is seen at its own tile. The line trace runs
-    // only once in range — it is not built for cross-map endpoints.
-    let seen = match target {
-        Target::Unit(uid) => state.unit(uid).is_some_and(|u| state.sees_unit(me, u)),
-        Target::Building(bid) => state.building(bid).is_some_and(|b| {
-            b.tiles().any(|t| state.can_see(me, t)) && state.building_apparent(me, b)
-        }),
-    };
+    // do not block fire. With no shot, keep approaching. The line trace
+    // runs only once in range — it is not built for cross-map endpoints.
+    let seen = sees_target(state, me, target);
     // A wide cutter cuts a building where its drum presses flat against one
     // of its sides: its target's, or short of that, any other it cuts and
     // sees. The stroke lands where the drum meets the side.
@@ -2784,13 +2717,7 @@ pub(super) fn attack(
                 match routed {
                     Some((goal, waypoints)) => {
                         let unit = state.unit_mut(id).expect("caller checked");
-                        unit.path = Some(PathFollow {
-                            final_point: None,
-                            goal,
-                            waypoints,
-                            next: 0,
-                            clearing: false,
-                        });
+                        unit.path = Some(PathFollow::to(goal, waypoints));
                         Ok(())
                     }
                     // NoFiringPosition derives from the victim's footing;
@@ -2859,19 +2786,12 @@ fn stall_attack(
         unit.path = None;
         return;
     }
-    let (player, pos) = (unit.player, unit.pos);
     // A chase that could not be prosecuted leaves the unit stationed,
     // so its next idle acquisition tethers and the leash cooldown
     // paces re-acquisition instead of the same refused chase firing
     // every tick.
     unit.settled = crate::stats::LEASH_STATION_TICKS;
-    unit.clear_program();
-    events.push(Event::OrderStalled {
-        unit: id,
-        player,
-        pos,
-        reason,
-    });
+    stall(state, id, Stall::Clear, reason, events);
 }
 
 /// The sidearm's opportunist victim: the nearest hostile unit the weapon
@@ -3104,7 +3024,7 @@ fn approach_firing_area(
 ) -> bool {
     let unit = state.unit(id).expect("attacker");
     let b = state.building(building).expect("visible building");
-    let (from, player, pos) = (unit.tile(), unit.player, unit.pos);
+    let pos = unit.pos;
     let domain = unit.domain();
     let legal = |point: Vec2Fx| {
         let aim = b.closest_point_to(point);
@@ -3127,7 +3047,6 @@ fn approach_firing_area(
     }
     let r = weapon.range.ceil().to_num::<i32>();
     let (w, h) = b.kind.size();
-    let frame = crate::tick::rect_approach_origin(state, player, from, b.anchor, (w, h));
     let mut points = Vec::new();
     for y in ((b.anchor.y - r).max(0) * 2)..((b.anchor.y + h + r).min(state.map.height()) * 2) {
         for x in ((b.anchor.x - r).max(0) * 2)..((b.anchor.x + w + r).min(state.map.width()) * 2) {
@@ -3148,21 +3067,14 @@ fn approach_firing_area(
             points.push(point);
         }
     }
-    points.sort_by_key(|&point| {
-        crate::geometry::stance_rank(
-            pos,
-            (from, frame),
-            (b.anchor, (w, h)),
-            (TilePos::containing(point), point),
-        )
-    });
-    let candidates = points
+    let mut candidates: Vec<_> = points
         .into_iter()
         .map(|point| crate::tick::crowding::Position {
             goal: TilePos::containing(point),
             point,
         })
         .collect();
+    crate::tick::crowding::sort_stances(state, unit, (b.anchor, (w, h)), &mut candidates);
     let path = crate::tick::crowding::choose(
         state,
         index,

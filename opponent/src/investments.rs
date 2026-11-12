@@ -546,10 +546,7 @@ fn foundries(map: &MapModel, observation: &ObservationData) -> Vec<TilePos> {
                 .iter()
                 .any(|unit| workers::worker(unit.kind) && map.component(unit.tile) == ground)
     };
-    let mut foundries: Vec<TilePos> = observation
-        .my_buildings
-        .iter()
-        .filter(|building| building.kind == BuildingKind::Foundry && building.built)
+    let mut foundries: Vec<TilePos> = built_foundries(&observation.my_buildings)
         .map(|building| building.anchor)
         .collect();
     if foundries.iter().any(|anchor| crewed(*anchor)) {
@@ -701,11 +698,24 @@ fn owned(observation: &ObservationData, kind: BuildingKind) -> usize {
         .count()
 }
 
-fn built(observation: &ObservationData, kind: BuildingKind) -> bool {
+/// Whether the seat has a completed building of `kind`.
+pub(crate) fn built(observation: &ObservationData, kind: BuildingKind) -> bool {
     observation
         .my_buildings
         .iter()
         .any(|building| building.kind == kind && building.built)
+}
+
+/// The completed Foundries among `buildings`, in their order.
+pub(crate) fn built_foundries(buildings: &[BuildingObs]) -> impl Iterator<Item = &BuildingObs> {
+    buildings
+        .iter()
+        .filter(|building| building.kind == BuildingKind::Foundry && building.built)
+}
+
+/// Whether `building` is a completed producer of units.
+pub(crate) fn built_producer(building: &BuildingObs) -> bool {
+    building.built && !building.kind.base_stats().produces.is_empty()
 }
 
 /// Whether the seat meets `need`: a completed own building of its kind at
