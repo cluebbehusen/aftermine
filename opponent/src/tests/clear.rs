@@ -417,42 +417,51 @@ fn a_lone_roc_leaves_home_whatever_the_reserve_keeps() {
 }
 
 #[test]
-fn a_roc_clears_the_flak_and_then_takes_the_target_it_guards() {
+fn a_roc_sets_out_for_the_target_the_flak_guards_and_engages_there() {
     let mut scenario = lone_roc();
     for (x, y) in [(32, 8), (32, 14), (38, 8), (38, 14)] {
         scenario
             .buildings
             .push(building(1, BuildingKind::FlakTurret, x, y));
     }
-    let east = TilePos::new(35, 11);
     let mut state = scenario.build().unwrap();
     let roc = at(&state, ROC_HOME.0, ROC_HOME.1);
+    let target = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(1) && b.kind == BuildingKind::Foundry)
+        .unwrap()
+        .anchor;
     let mut opponent = seat(&scenario, 0);
-    let mut hunted = false;
-    let foundry = |state: &State| {
-        state
-            .buildings()
-            .iter()
-            .any(|b| b.player == PlayerId(1) && b.kind == BuildingKind::Foundry)
-    };
-    let flak = |state: &State| {
-        state
-            .buildings()
-            .iter()
-            .filter(|b| b.kind == BuildingKind::FlakTurret)
-            .count()
-    };
-    assert_eq!(flak(&state), 4, "premise");
-    while state.current_tick() < 12_000 && foundry(&state) {
-        let commands = opponent.act(&state, &mut OwnEvents::default());
-        hunted |= hunts(&commands)
-            .iter()
-            .any(|(units, _)| units.contains(&roc));
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let mission = clear(&trace.unwrap().missions).expect("a clearance forms");
+    assert_eq!(
+        (mission.kind, mission.phase),
+        (MissionKind::Clear { aim: target }, Phase::Travel),
+        "it sets out for the building the flak guards"
+    );
+    assert!(
+        hunts(&commands).contains(&(vec![roc], target)),
+        "on attack-move: {commands:?}"
+    );
+    state.tick(&commands);
+    loop {
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         state.tick(&commands);
+        let Some(trace) = trace else {
+            continue;
+        };
+        let now = clear(&trace.missions).expect("the clearance holds");
+        assert_eq!((now.id, now.kind), (mission.id, mission.kind));
+        if now.phase != Phase::Travel {
+            assert_eq!(now.phase, Phase::Engage, "it fights there");
+            break;
+        }
+        assert!(
+            trace.tick - now.since <= now.timeout.expect("travel has a deadline"),
+            "it arrives within its own travel time"
+        );
     }
-    assert!(hunted, "it goes on attack-move");
-    assert!(!foundry(&state), "East's Foundry at {east:?} falls");
-    assert!(state.unit(roc).is_some(), "a Roc takes that fire");
 }
 
 #[test]
