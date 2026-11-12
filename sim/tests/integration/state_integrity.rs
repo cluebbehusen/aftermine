@@ -13,7 +13,7 @@
 //! boundary across the full authored roster.
 
 use crate::common;
-use common::cmd;
+use common::{cmd, orders};
 
 use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
 use aftermine_sim::stats::{BuildingKind, QUEUE_CAP};
@@ -144,19 +144,11 @@ fn snapshot() -> Value {
     state.tick(&[
         cmd(
             0,
-            Command::Harvest {
-                units: vec![harvester],
-                node: chassis::grid::TilePos::new(5, 3),
-                queue: false,
-            },
+            orders::harvest([harvester], chassis::grid::TilePos::new(5, 3)),
         ),
         cmd(
             0,
-            Command::Hunt {
-                units: vec![bombard],
-                goal: chassis::grid::TilePos::new(12, 6),
-                queue: false,
-            },
+            orders::hunt([bombard], chassis::grid::TilePos::new(12, 6)),
         ),
     ]);
     run(&mut state, 20);
@@ -248,13 +240,11 @@ fn cradle() -> Value {
         .collect();
     let report = state.tick(&[cmd(
         0,
-        Command::Build {
-            units: crew,
-            kind: BuildingKind::MawCradle,
-            anchor: chassis::grid::TilePos::new(7, 1),
-            queue: false,
-            defer: false,
-        },
+        orders::build(
+            crew,
+            BuildingKind::MawCradle,
+            chassis::grid::TilePos::new(7, 1),
+        ),
     )]);
     assert!(
         !report
@@ -305,14 +295,7 @@ fn ground_motor_speed_is_validated_and_survives_continuation() {
     use chassis::grid::TilePos;
     let mut state = arena().build().unwrap();
     let id = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![id],
-            goal: TilePos::new(8, 5),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([id], TilePos::new(8, 5)))]);
     for _ in 0..20 {
         state.tick(&[]);
     }
@@ -502,14 +485,7 @@ fn tending_walks_and_switched_off_workers_are_legal() {
             enabled: false,
         },
     )]);
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![rider],
-            transport,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([rider], transport))]);
     run(&mut state, 100);
     let ride = doc(&state);
     assert_eq!(ride["units"][0]["cargo"][0]["idle_weld_off"], json!(true));
@@ -718,14 +694,7 @@ fn scrap_load_is_bounded_for_walking_and_carried_units() {
             if carried {
                 let rider = state.units()[0].id;
                 let transport = state.units()[1].id;
-                state.tick(&[cmd(
-                    0,
-                    Command::Load {
-                        units: vec![rider],
-                        transport,
-                        queue: false,
-                    },
-                )]);
+                state.tick(&[cmd(0, orders::load([rider], transport))]);
                 for _ in 0..100 {
                     if state.unit(rider).is_none() {
                         break;
@@ -2446,57 +2415,20 @@ fn a_full_verb_run_stays_valid_every_tick() {
         (
             0,
             vec![
-                cmd(
-                    0,
-                    Command::Harvest {
-                        units: vec![harvester],
-                        node: tile(5, 3),
-                        queue: false,
-                    },
-                ),
-                cmd(
-                    0,
-                    Command::Hunt {
-                        units: vec![bombard],
-                        goal: tile(13, 6),
-                        queue: false,
-                    },
-                ),
+                cmd(0, orders::harvest([harvester], tile(5, 3))),
+                cmd(0, orders::hunt([bombard], tile(13, 6))),
                 cmd(
                     1,
-                    Command::Patrol {
-                        units: vec![sentinel],
-                        waypoints: vec![tile(15, 3), tile(15, 7), tile(13, 6)],
-                    },
+                    orders::patrol([sentinel], [tile(15, 3), tile(15, 7), tile(13, 6)]),
                 ),
-                cmd(
-                    0,
-                    Command::Train {
-                        building: fabricator,
-                        kind: UnitKind::Lancer,
-                    },
-                ),
+                cmd(0, orders::train(fabricator, UnitKind::Lancer)),
                 // Its owner has never seen this tile, so the goal waits for
                 // exposure and then takes a slot beside the turret site
                 // placed there at tick 40.
-                cmd(
-                    1,
-                    Command::Run {
-                        units: vec![stray],
-                        goal: tile(3, 4),
-                        queue: false,
-                    },
-                ),
+                cmd(1, orders::run([stray], tile(3, 4))),
                 // In handoff reach and well clear of every enemy, so the
                 // flight hands over to a landing at once.
-                cmd(
-                    0,
-                    Command::Run {
-                        units: vec![condor],
-                        goal: tile(6, 6),
-                        queue: false,
-                    },
-                ),
+                cmd(0, orders::run([condor], tile(6, 6))),
             ],
         ),
         (
@@ -2505,23 +2437,10 @@ fn a_full_verb_run_stays_valid_every_tick() {
                 // Explored, so the goal resolves to the open tile at issue;
                 // the site placed right after covers it before the walker
                 // arrives, so the walk ends beside it.
+                cmd(0, orders::run([walker], tile(3, 4))),
                 cmd(
                     0,
-                    Command::Run {
-                        units: vec![walker],
-                        goal: tile(3, 4),
-                        queue: false,
-                    },
-                ),
-                cmd(
-                    0,
-                    Command::Build {
-                        units: vec![harvester],
-                        kind: BuildingKind::Turret,
-                        anchor: tile(3, 4),
-                        queue: false,
-                        defer: false,
-                    },
+                    orders::build([harvester], BuildingKind::Turret, tile(3, 4)),
                 ),
             ],
         ),
@@ -2529,45 +2448,12 @@ fn a_full_verb_run_stays_valid_every_tick() {
             120,
             vec![cmd(
                 0,
-                Command::SetRally {
-                    building: fabricator,
-                    rally: Some(aftermine_sim::Rally::Tile(tile(5, 3))),
-                },
+                orders::set_rally(fabricator, Some(aftermine_sim::Rally::Tile(tile(5, 3)))),
             )],
         ),
-        (
-            420,
-            vec![cmd(
-                0,
-                Command::Salvage {
-                    units: vec![harvester],
-                    building: fabricator,
-                    queue: false,
-                },
-            )],
-        ),
-        (
-            520,
-            vec![cmd(
-                0,
-                Command::Repair {
-                    units: vec![harvester],
-                    building: fabricator,
-                    queue: false,
-                },
-            )],
-        ),
-        (
-            700,
-            vec![cmd(
-                0,
-                Command::Accompany {
-                    units: vec![walker],
-                    target: harvester,
-                    queue: false,
-                },
-            )],
-        ),
+        (420, vec![cmd(0, orders::salvage([harvester], fabricator))]),
+        (520, vec![cmd(0, orders::repair([harvester], fabricator))]),
+        (700, vec![cmd(0, orders::accompany([walker], harvester))]),
         // The parked bomber lifts off, lands beside the Crucible, and is
         // taken apart there.
         (

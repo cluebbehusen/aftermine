@@ -11,7 +11,7 @@
 use crate::common;
 
 use aftermine_sim::stats::LEASH_RADIUS;
-use aftermine_sim::{Command, Order, State, Target, UnitId, UnitKind};
+use aftermine_sim::{Order, State, Target, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
 use common::*;
@@ -70,22 +70,8 @@ fn a_victorious_guard_immediately_reacquires_and_remains_stationed() {
     let second = state.units()[2].id;
     settle(&mut state, 60);
     state.tick(&[
-        cmd(
-            1,
-            Command::Run {
-                units: vec![first],
-                goal: TilePos::new(13, 10),
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Run {
-                units: vec![second],
-                goal: TilePos::new(13, 11),
-                queue: false,
-            },
-        ),
+        cmd(1, orders::run([first], TilePos::new(13, 10))),
+        cmd(1, orders::run([second], TilePos::new(13, 11))),
     ]);
     for _ in 0..600 {
         let report = state.tick(&[]);
@@ -136,30 +122,9 @@ fn a_guard_breaks_off_at_the_leash_and_walks_home() {
     // killed, and the winner then holds its ground instead of walking
     // home (a different, also-correct outcome).
     settle(&mut state, 60);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![bait],
-            goal: TilePos::new(38, 8),
-            queue: false,
-        },
-    )]);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![bait],
-            goal: TilePos::new(38, 18),
-            queue: true,
-        },
-    )]);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![bait],
-            goal: TilePos::new(3, 18),
-            queue: true,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([bait], TilePos::new(38, 8)))]);
+    state.tick(&[cmd(1, orders::run([bait], TilePos::new(38, 18)).queued())]);
+    state.tick(&[cmd(1, orders::run([bait], TilePos::new(3, 18)).queued())]);
     let mut max_drift = 0i64;
     let mut returned_at = None;
     for t in 1..3_000u64 {
@@ -219,10 +184,7 @@ fn a_dancing_harasser_cannot_hold_the_post_forever() {
     settle(&mut state, 60);
     state.tick(&[cmd(
         1,
-        Command::Patrol {
-            units: vec![bait],
-            waypoints: vec![TilePos::new(10, 7), TilePos::new(30, 7)],
-        },
+        orders::patrol([bait], [TilePos::new(10, 7), TilePos::new(30, 7)]),
     )]);
     let mut max_drift = 0i64;
     for _ in 0..6_000u64 {
@@ -237,14 +199,7 @@ fn a_dancing_harasser_cannot_hold_the_post_forever() {
         "even a dancer cannot drag the guard far past the tether ({max_drift} milli)"
     );
     // And the moment the bait actually leaves, the post is recovered.
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![bait],
-            goal: TilePos::new(38, 18),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([bait], TilePos::new(38, 18)))]);
     let mut recovered = false;
     for _ in 0..1_200u64 {
         state.tick(&[]);
@@ -308,22 +263,8 @@ fn a_returning_guard_answers_fire() {
     // home without firing back is SC2's documented vulnerability
     // window, reproduced.
     settle(&mut state, 60);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![bait],
-            goal: TilePos::new(9, 10),
-            queue: false,
-        },
-    )]);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![bait],
-            goal: TilePos::new(38, 10),
-            queue: true,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([bait], TilePos::new(9, 10)))]);
+    state.tick(&[cmd(1, orders::run([bait], TilePos::new(38, 10)).queued())]);
     let mut answered = false;
     for _ in 0..3_000u64 {
         state.tick(&[]);
@@ -380,22 +321,8 @@ fn a_player_attack_is_never_leashed() {
     let hunter = state.units()[0].id;
     let prey = state.units()[1].id;
     state.tick(&[
-        cmd(
-            0,
-            Command::Attack {
-                units: vec![hunter],
-                target: Target::Unit(prey).into(),
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Run {
-                units: vec![prey],
-                goal: TilePos::new(37, 10),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::attack([hunter], Target::Unit(prey))),
+        cmd(1, orders::run([prey], TilePos::new(37, 10))),
     ]);
     for _ in 0..2_500u64 {
         state.tick(&[]);
@@ -459,14 +386,7 @@ fn reissuing_the_selfsame_attack_clears_the_tether() {
     // Stationed, then the prey wanders in and the guard picks the
     // fight itself.
     settle(&mut state, 60);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![prey],
-            goal: TilePos::new(22, 10),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([prey], TilePos::new(22, 10)))]);
     tick_until_tethered(&mut state, guard);
     let u = state.units().iter().find(|u| u.id == guard).unwrap();
     assert!(
@@ -476,14 +396,7 @@ fn reissuing_the_selfsame_attack_clears_the_tether() {
     // The player orders the same fight: the order compares equal (the
     // no-op path, so path and progress survive), but the tether must
     // clear because the fight is now a player commitment.
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![guard],
-            target: Target::Unit(prey).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([guard], Target::Unit(prey)))]);
     let u = state.units().iter().find(|u| u.id == guard).unwrap();
     assert!(
         matches!(u.order, Order::Attack { target, .. } if state.attack_view(u.player, target).and_then(|v| v.entity) == Some(Target::Unit(prey))),
@@ -513,21 +426,11 @@ fn patrol_drops_the_tether_like_any_command() {
     let guard = state.units()[0].id;
     let prey = state.units()[1].id;
     settle(&mut state, 60);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![prey],
-            goal: TilePos::new(22, 10),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([prey], TilePos::new(22, 10)))]);
     tick_until_tethered(&mut state, guard);
     state.tick(&[cmd(
         0,
-        Command::Patrol {
-            units: vec![guard],
-            waypoints: vec![TilePos::new(5, 5), TilePos::new(35, 15)],
-        },
+        orders::patrol([guard], [TilePos::new(5, 5), TilePos::new(35, 15)]),
     )]);
     let u = state.units().iter().find(|u| u.id == guard).unwrap();
     assert!(u.leash.is_none(), "the patrol order cleared the tether");
@@ -553,27 +456,13 @@ fn stop_drops_the_tether() {
     // the far wall so the Stop lands with nothing left in aggro —
     // otherwise idle() legitimately re-engages the same tick.
     settle(&mut state, 60);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![prey],
-            goal: TilePos::new(22, 10),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([prey], TilePos::new(22, 10)))]);
     tick_until_tethered(&mut state, guard);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![prey],
-            goal: TilePos::new(38, 10),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([prey], TilePos::new(38, 10)))]);
     for _ in 0..200 {
         state.tick(&[]);
     }
-    state.tick(&[cmd(0, Command::Stop { units: vec![guard] })]);
+    state.tick(&[cmd(0, orders::stop([guard]))]);
     let u = state.units().iter().find(|u| u.id == guard).unwrap();
     assert!(u.leash.is_none(), "Stop is a command like any other");
     assert_eq!(u.order, Order::Idle);

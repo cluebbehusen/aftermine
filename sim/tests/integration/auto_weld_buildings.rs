@@ -5,7 +5,10 @@
 //! buildings tending leaves alone.
 
 use crate::common;
-use common::{building, cmd, open_arena, open_arena_with, run, run_until, unit};
+use common::{
+    CommandExt, building, building_id, cmd, open_arena, open_arena_with, orders, run, run_until,
+    unit,
+};
 
 use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
 use aftermine_sim::stats::BuildingKind;
@@ -27,12 +30,7 @@ fn ids(state: &State) -> Vec<UnitId> {
 }
 
 fn site(state: &State, kind: BuildingKind, x: i32, y: i32) -> BuildingId {
-    state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == kind && b.anchor == TilePos::new(x, y))
-        .unwrap()
-        .id
+    building_id(state, |b| b.kind == kind && b.anchor == TilePos::new(x, y))
 }
 
 /// Rewrites one building's hp, the way a save would carry it.
@@ -121,14 +119,7 @@ fn tending_bills_a_building_exactly_as_a_repair_crew_does() {
     let (crewed, _) = scene();
     let welder = ids(&crewed)[0];
     let mut crewed = common::idle_welds_off(&crewed, &[welder]);
-    crewed.tick(&[cmd(
-        0,
-        Command::Repair {
-            units: vec![welder],
-            building: turret,
-            queue: false,
-        },
-    )]);
+    crewed.tick(&[cmd(0, orders::repair([welder], turret))]);
     run_until(&mut crewed, 2_000, |s, _| {
         hp(s, turret) == max_hp(s, turret)
     });
@@ -223,10 +214,7 @@ fn the_idle_switch_covers_buildings_and_a_patrol_always_repairs() {
 
     state.tick(&[cmd(
         0,
-        Command::Patrol {
-            units: vec![welder],
-            waypoints: vec![TilePos::new(4, 10), TilePos::new(24, 10)],
-        },
+        orders::patrol([welder], [TilePos::new(4, 10), TilePos::new(24, 10)]),
     )]);
     let events = run_until(&mut state, 2_000, |s, _| hp(s, turret) == max_hp(s, turret));
     let unit = state.unit(welder).unwrap();
@@ -265,14 +253,7 @@ fn a_building_bound_for_salvage_is_no_patient() {
 
     // A refused teardown changes nothing.
     let events = state
-        .tick(&[cmd(
-            0,
-            Command::Salvage {
-                units: vec![sentinel],
-                building: turret,
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::salvage([sentinel], turret))])
         .events;
     assert!(
         events
@@ -283,22 +264,8 @@ fn a_building_bound_for_salvage_is_no_patient() {
 
     // An accepted one takes the building from its tender that same tick,
     // and a queued one keeps it from being taken on again.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![stripper],
-            goal: TilePos::new(4, 14),
-            queue: false,
-        },
-    )]);
-    state.tick(&[cmd(
-        0,
-        Command::Salvage {
-            units: vec![stripper],
-            building: turret,
-            queue: true,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([stripper], TilePos::new(4, 14)))]);
+    state.tick(&[cmd(0, orders::salvage([stripper], turret).queued())]);
     assert_eq!(patient(&state, tender), None);
     for _ in 0..20 {
         state.tick(&[]);
@@ -330,25 +297,14 @@ fn foreign_hidden_unfinished_and_whole_buildings_are_no_patients() {
     let mut state = common::idle_welds_off(&state, &[builder]);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Barricade,
-            anchor: TilePos::new(9, 12),
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Barricade, TilePos::new(9, 12)),
     )]);
     run_until(&mut state, 400, |s, _| {
         s.buildings().iter().any(|b| {
             b.kind == BuildingKind::Barricade && b.construction_progress().is_some_and(|p| p > 0)
         })
     });
-    state.tick(&[cmd(
-        0,
-        Command::Stop {
-            units: vec![builder],
-        },
-    )]);
+    state.tick(&[cmd(0, orders::stop([builder]))]);
     let barricade = site(&state, BuildingKind::Barricade, 9, 12);
     assert!(!state.building(barricade).unwrap().built(), "premise");
     wound(&mut state, enemy, 30);

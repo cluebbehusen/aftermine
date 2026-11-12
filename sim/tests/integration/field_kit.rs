@@ -3,7 +3,7 @@
 
 use crate::common;
 use common::wide_open_map as open_map;
-use common::{building, cmd, players, run_until, unit};
+use common::{building, building_id, cmd, orders, players, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
@@ -58,12 +58,7 @@ fn hidden_charge_reports_damage_to_its_victim_for_lethal_and_nonlethal_blasts() 
         .unwrap();
         let victim = state.units()[0].id;
         let pos = state.units()[0].pos;
-        let charge = state
-            .buildings()
-            .iter()
-            .find(|b| b.kind == BuildingKind::ScuttleCharge)
-            .unwrap()
-            .id;
+        let charge = building_id(&state, |b| b.kind == BuildingKind::ScuttleCharge);
         assert!(!state.building_apparent(PlayerId(0), state.building(charge).unwrap()));
         let report = state.tick(&[]);
         let damage: Vec<_> = report
@@ -112,25 +107,13 @@ fn a_charge_is_invisible_until_scouted() {
     .build()
     .unwrap();
     let warden = state.units()[0].id;
-    let charge = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::ScuttleCharge)
-        .unwrap()
-        .id;
+    let charge = building_id(&state, |b| b.kind == BuildingKind::ScuttleCharge);
     state.tick(&[]);
     assert!(
         state.vision(PlayerId(0)).ghosts().is_empty(),
         "an undetected charge must never enter ghost memory"
     );
-    let report = state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![warden],
-            target: Target::Building(charge).into(),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::attack([warden], Target::Building(charge)))]);
     assert!(
         report.events.iter().any(|e| matches!(
             e,
@@ -161,25 +144,13 @@ fn a_charge_is_invisible_until_scouted() {
     .build()
     .unwrap();
     let warden = scouted.units()[0].id;
-    let charge = scouted
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::ScuttleCharge)
-        .unwrap()
-        .id;
+    let charge = building_id(&scouted, |b| b.kind == BuildingKind::ScuttleCharge);
     scouted.tick(&[]);
     assert!(
         !scouted.vision(PlayerId(0)).ghosts().is_empty(),
         "a scouted charge is honest knowledge"
     );
-    let report = scouted.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![warden],
-            target: Target::Building(charge).into(),
-            queue: false,
-        },
-    )]);
+    let report = scouted.tick(&[cmd(0, orders::attack([warden], Target::Building(charge)))]);
     assert!(
         !report
             .events
@@ -295,16 +266,7 @@ fn a_mast_under_construction_detects_nothing() {
     .build()
     .unwrap();
     let builder = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Array,
-            anchor: mast,
-            queue: false,
-            defer: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::build([builder], BuildingKind::Array, mast))]);
     assert!(
         state
             .buildings()
@@ -363,12 +325,7 @@ fn the_deep_array_upgrade_buys_the_wide_ring() {
     )
     .build()
     .unwrap();
-    let mast_id = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == mast)
-        .expect("the mast stands")
-        .id;
+    let mast_id = building_id(&state, |b| b.anchor == mast);
     state.tick(&[]);
     assert!(
         !apparent(&state, 0, far),
@@ -418,14 +375,7 @@ fn a_charge_detonates_under_hostile_treads() {
     .build()
     .unwrap();
     let warden = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![warden],
-            goal: TilePos::new(16, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([warden], TilePos::new(16, 4)))]);
     let mut boomed = false;
     for _ in 0..400 {
         let report = state.tick(&[]);
@@ -467,16 +417,7 @@ fn building_at(state: &State, kind: BuildingKind, anchor: TilePos) -> aftermine_
 /// Orders `builder` to place a `kind` site at `anchor`, asserting the order
 /// is taken.
 fn place(state: &mut State, builder: aftermine_sim::UnitId, kind: BuildingKind, anchor: TilePos) {
-    let report = state.tick(&[cmd(
-        0,
-        Command::Build {
-            units: vec![builder],
-            kind,
-            anchor,
-            queue: false,
-            defer: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::build([builder], kind, anchor))]);
     assert_eq!(common::rejected(&report.events), []);
 }
 
@@ -501,14 +442,7 @@ fn discovering_a_charge_under_an_unstarted_site_refunds_it() {
     let site = building_at(&state, BuildingKind::Barricade, charge_tile);
     let cost = BuildingKind::Barricade.base_stats().construction.cost;
     assert_eq!(state.player(PlayerId(0)).scrap, 800 - cost);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![surveyor],
-            goal: TilePos::new(11, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([surveyor], TilePos::new(11, 4)))]);
     let events = run_until(&mut state, 300, |_, events| {
         events
             .iter()
@@ -609,21 +543,9 @@ fn saturation_fire_clears_a_field_without_detonation() {
     .build()
     .unwrap();
     let gun = state.units()[0].id;
-    let wall = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Barricade)
-        .unwrap()
-        .id;
+    let wall = building_id(&state, |b| b.kind == BuildingKind::Barricade);
     state.tick(&[]);
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![gun],
-            target: Target::Building(wall).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([gun], Target::Building(wall)))]);
     let mut charge_died = false;
     let mut detonated = false;
     for _ in 0..600 {
@@ -666,21 +588,9 @@ fn the_sapper_cracks_the_wall_and_is_consumed() {
     .unwrap();
     let sapper = state.units()[0].id;
     let bystander = state.units()[2].id;
-    let wall = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Barricade)
-        .unwrap()
-        .id;
+    let wall = building_id(&state, |b| b.kind == BuildingKind::Barricade);
     state.tick(&[]);
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![sapper],
-            target: Target::Building(wall).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([sapper], Target::Building(wall)))]);
     let mut splash_distance = None;
     for _ in 0..400 {
         let bystander_pos = state.unit(bystander).unwrap().pos;
@@ -752,14 +662,7 @@ fn a_barricade_closes_the_corridor() {
     .build()
     .unwrap();
     let walker = state.units()[0].id;
-    let report = state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![walker],
-            goal: TilePos::new(20, 4),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::run([walker], TilePos::new(20, 4)))]);
     assert!(
         !report
             .events

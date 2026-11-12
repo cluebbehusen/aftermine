@@ -2,12 +2,13 @@
 //! inside their arcs, the helm rules that turn its hull for them, its
 //! transport and crash, and its cradle.
 
-use crate::common::{building, cmd, face_toward, open_arena, players, run, unit};
+use crate::common::{
+    building, building_id, cmd, face_toward, open_arena, orders, players, run, unit,
+};
 use aftermine_sim::scenario::UnitSpec;
 use aftermine_sim::state::IdleFacing;
 use aftermine_sim::{
-    AttackTarget, BuildingKind, Command, Event, Order, PlayerId, Scenario, State, Target, UnitId,
-    UnitKind,
+    AttackTarget, BuildingKind, Event, Order, PlayerId, Scenario, State, Target, UnitId, UnitKind,
 };
 use chassis::compass::{dir, heading_of};
 use chassis::fx::{Fx, Vec2Fx};
@@ -170,16 +171,7 @@ fn a_moving_roc_never_turns_for_an_enemy_and_fires_on_the_way() {
     let id = roc(&state);
     let goal = TilePos::new(24, 8);
     let events = {
-        let mut all = state
-            .tick(&[cmd(
-                0,
-                Command::Run {
-                    units: vec![id],
-                    goal,
-                    queue: false,
-                },
-            )])
-            .events;
+        let mut all = state.tick(&[cmd(0, orders::run([id], goal))]).events;
         all.extend(run(&mut state, 160));
         all
     };
@@ -203,14 +195,7 @@ fn an_attack_turns_the_roc_nose_on_and_holds_station() {
     let breaker = ids(&state, 1, UnitKind::Breaker)[0];
     let pos = state.unit(id).unwrap().pos;
     facing(&mut state, id, pos + Vec2Fx::new(Fx::from_num(4), Fx::ZERO));
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![id],
-            target: AttackTarget::Unit(breaker),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([id], AttackTarget::Unit(breaker)))]);
     let events = run(&mut state, 90);
     let unit = state.unit(id).unwrap();
     let toward = heading_of(state.unit(breaker).unwrap().pos - unit.pos);
@@ -241,14 +226,7 @@ fn an_attack_closes_until_both_guns_reach() {
     ]);
     let id = roc(&state);
     let breaker = ids(&state, 1, UnitKind::Breaker)[0];
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![id],
-            target: AttackTarget::Unit(breaker),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([id], AttackTarget::Unit(breaker)))]);
     let mut fired_at = None;
     for _ in 0..600 {
         let events = state.tick(&[]).events;
@@ -279,14 +257,7 @@ fn an_attack_on_a_target_under_the_hull_flies_forward_then_fires() {
     let breaker = ids(&state, 1, UnitKind::Breaker)[0];
     let pos = state.unit(id).unwrap().pos;
     facing(&mut state, id, pos + Vec2Fx::new(Fx::from_num(4), Fx::ZERO));
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![id],
-            target: AttackTarget::Unit(breaker),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([id], AttackTarget::Unit(breaker)))]);
     let events = run(&mut state, 240);
     assert!(
         shots(&events, id)
@@ -305,14 +276,7 @@ fn an_attack_move_stops_to_fight_what_it_meets_and_then_flies_on() {
     let id = roc(&state);
     let lancer = ids(&state, 1, UnitKind::Lancer)[0];
     let goal = TilePos::new(26, 10);
-    state.tick(&[cmd(
-        0,
-        Command::Hunt {
-            units: vec![id],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::hunt([id], goal))]);
     let mut stopped = false;
     for _ in 0..400 {
         state.tick(&[]);
@@ -368,14 +332,7 @@ fn an_ordered_target_outranks_a_hostile_that_can_hit_the_hull() {
     let breaker = ids(&state, 1, UnitKind::Breaker)[0];
     let pos = state.unit(id).unwrap().pos;
     facing(&mut state, id, pos + Vec2Fx::new(Fx::from_num(4), Fx::ZERO));
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![id],
-            target: AttackTarget::Unit(breaker),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([id], AttackTarget::Unit(breaker)))]);
     let events = run(&mut state, 20);
     let fired = shots(&events, id);
     assert!(!fired.is_empty());
@@ -475,22 +432,8 @@ fn half_turned_rocs_hunt_the_half_turned_one_of_two_equally_near_machines() {
     facing(&mut state, east, pos + dir(128) * Fx::from_num(4));
     let (goal, turned) = (TilePos::new(26, 10), mirror(26, 10));
     state.tick(&[
-        cmd(
-            0,
-            Command::Hunt {
-                units: vec![west],
-                goal,
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Hunt {
-                units: vec![east],
-                goal: TilePos::new(turned.0, turned.1),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::hunt([west], goal)),
+        cmd(1, orders::hunt([east], TilePos::new(turned.0, turned.1))),
     ]);
     run(&mut state, 3);
     let (wh, eh) = (
@@ -505,14 +448,7 @@ fn half_turned_rocs_hunt_the_half_turned_one_of_two_equally_near_machines() {
 }
 
 fn load(state: &mut State, riders: Vec<UnitId>, transport: UnitId) {
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: riders,
-            transport,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load(riders, transport))]);
 }
 
 /// A state with `id`'s health forged.
@@ -673,16 +609,7 @@ fn roc_yard(airworks: bool) -> State {
 fn raise_roc(state: &mut State) -> Vec<Event> {
     let crew = ids(state, 0, UnitKind::Excavator);
     state
-        .tick(&[cmd(
-            0,
-            Command::Build {
-                units: crew,
-                kind: BuildingKind::RocCradle,
-                anchor: CRADLE,
-                queue: false,
-                defer: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::build(crew, BuildingKind::RocCradle, CRADLE))])
         .events
 }
 
@@ -818,12 +745,7 @@ fn no_gun_fires_through_a_peak_at_a_building_flush_against_it() {
     .build()
     .unwrap();
     let roc = roc(&state);
-    let west = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(1))
-        .unwrap()
-        .id;
+    let west = building_id(&state, |b| b.player == PlayerId(1));
     let hp = state.building(west).unwrap().hp;
     for _ in 0..120 {
         let events = state.tick(&[]).events;

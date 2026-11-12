@@ -3,12 +3,10 @@
 use crate::common;
 
 use aftermine_sim::command::RejectReason;
-use aftermine_sim::{
-    BuildingId, BuildingKind, Command, Event, PlayerId, State, Target, UnitId, UnitKind,
-};
+use aftermine_sim::{BuildingId, BuildingKind, Event, PlayerId, State, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
 
-use common::{aim_defense_at, building, cmd, open_arena, open_arena_with, run_until, unit};
+use common::{aim_defense_at, building, cmd, open_arena, open_arena_with, orders, run_until, unit};
 
 fn building_id(state: &State, player: u8, kind: BuildingKind, nth: usize) -> BuildingId {
     state
@@ -63,13 +61,7 @@ fn focus_fire_canonicalizes_a_multi_defense_selection_deterministically() {
     let target = Target::Unit(unit_ids(&base, 1)[0]);
 
     let mut canonical = base.clone();
-    let canonical_report = canonical.tick(&[cmd(
-        0,
-        Command::FocusFire {
-            buildings: defenses.to_vec(),
-            target: target.into(),
-        },
-    )]);
+    let canonical_report = canonical.tick(&[cmd(0, orders::focus_fire(defenses.to_vec(), target))]);
     assert!(
         !canonical_report
             .events
@@ -80,10 +72,7 @@ fn focus_fire_canonicalizes_a_multi_defense_selection_deterministically() {
     let mut repeated = base;
     repeated.tick(&[cmd(
         0,
-        Command::FocusFire {
-            buildings: vec![defenses[1], defenses[0], defenses[1]],
-            target: target.into(),
-        },
+        orders::focus_fire([defenses[1], defenses[0], defenses[1]], target),
     )]);
 
     assert_eq!(repeated.hash(), canonical.hash());
@@ -102,26 +91,14 @@ fn focus_fire_validation_is_atomic_for_mixed_or_foreign_buildings() {
     let first = Target::Unit(targets[0]);
     let replacement = Target::Unit(targets[1]);
 
-    state.tick(&[cmd(
-        0,
-        Command::FocusFire {
-            buildings: vec![turret],
-            target: first.into(),
-        },
-    )]);
+    state.tick(&[cmd(0, orders::focus_fire([turret], first))]);
     assert_eq!(focus_entity(&state, turret), Some(first));
 
     for (invalid, reason) in [
         (own_foundry, RejectReason::InvalidTarget),
         (foreign_foundry, RejectReason::NotYourBuilding),
     ] {
-        let report = state.tick(&[cmd(
-            0,
-            Command::FocusFire {
-                buildings: vec![turret, invalid],
-                target: replacement.into(),
-            },
-        )]);
+        let report = state.tick(&[cmd(0, orders::focus_fire([turret, invalid], replacement))]);
         assert!(report.events.contains(&Event::CommandRejected {
             player: PlayerId(0),
             reason,
@@ -154,13 +131,7 @@ fn focus_fire_rejects_hidden_and_wrong_domain_targets() {
     let targets = unit_ids(&state, 1);
 
     for (defense, target) in [(turret, targets[0]), (flak, targets[1])] {
-        let report = state.tick(&[cmd(
-            0,
-            Command::FocusFire {
-                buildings: vec![defense],
-                target: Target::Unit(target).into(),
-            },
-        )]);
+        let report = state.tick(&[cmd(0, orders::focus_fire([defense], Target::Unit(target)))]);
         assert!(report.events.contains(&Event::CommandRejected {
             player: PlayerId(0),
             reason: RejectReason::InvalidTarget,
@@ -189,10 +160,7 @@ fn a_reachable_focus_preempts_the_nearest_ordinary_target() {
 
     let report = state.tick(&[cmd(
         0,
-        Command::FocusFire {
-            buildings: vec![turret],
-            target: Target::Unit(targets[1]).into(),
-        },
+        orders::focus_fire([turret], Target::Unit(targets[1])),
     )]);
     assert!(report.events.iter().any(|event| matches!(
         event,
@@ -226,10 +194,7 @@ fn an_out_of_range_focus_is_retained_while_the_defense_fires_normally() {
 
     let report = state.tick(&[cmd(
         0,
-        Command::FocusFire {
-            buildings: vec![turret],
-            target: Target::Unit(targets[1]).into(),
-        },
+        orders::focus_fire([turret], Target::Unit(targets[1])),
     )]);
     assert!(report.events.iter().any(|event| matches!(
         event,
@@ -260,21 +225,8 @@ fn focus_clears_as_soon_as_fresh_true_sight_loses_the_target() {
     assert!(state.can_see(PlayerId(0), state.unit(target).unwrap().tile()));
 
     state.tick(&[
-        cmd(
-            0,
-            Command::FocusFire {
-                buildings: vec![turret],
-                target: Target::Unit(target).into(),
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![spotter],
-                goal: TilePos::new(5, 14),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::focus_fire([turret], Target::Unit(target))),
+        cmd(0, orders::run([spotter], TilePos::new(5, 14))),
     ]);
     run_until(&mut state, 500, |state, _| {
         focus_entity(state, turret).is_none()
@@ -289,13 +241,7 @@ fn lethal_focus_fire_does_not_leave_a_dangling_preference() {
     let mut state = scenario.build().unwrap();
     let turret = building_id(&state, 0, BuildingKind::Turret, 0);
     let target = unit_ids(&state, 1)[0];
-    state.tick(&[cmd(
-        0,
-        Command::FocusFire {
-            buildings: vec![turret],
-            target: Target::Unit(target).into(),
-        },
-    )]);
+    state.tick(&[cmd(0, orders::focus_fire([turret], Target::Unit(target)))]);
 
     run_until(&mut state, 500, |state, _| state.unit(target).is_none());
     assert_eq!(focus_entity(&state, turret), None);
@@ -320,10 +266,7 @@ fn a_bastion_focuses_a_visible_building_ahead_of_an_ordinary_unit() {
 
     let report = state.tick(&[cmd(
         0,
-        Command::FocusFire {
-            buildings: vec![bastion],
-            target: Target::Building(target).into(),
-        },
+        orders::focus_fire([bastion], Target::Building(target)),
     )]);
     assert!(report.events.iter().any(|event| matches!(
         event,
@@ -354,10 +297,7 @@ fn a_direct_fire_turret_can_focus_a_hostile_building() {
 
     let report = state.tick(&[cmd(
         0,
-        Command::FocusFire {
-            buildings: vec![turret],
-            target: Target::Building(target).into(),
-        },
+        orders::focus_fire([turret], Target::Building(target)),
     )]);
     assert!(report.events.iter().any(|event| matches!(
         event,
@@ -384,10 +324,7 @@ fn focused_defense_does_not_fire_when_the_footprint_aim_lands_on_a_peak() {
 
     let report = state.tick(&[cmd(
         0,
-        Command::FocusFire {
-            buildings: vec![turret],
-            target: Target::Building(target).into(),
-        },
+        orders::focus_fire([turret], Target::Building(target)),
     )]);
 
     assert!(!report.events.iter().any(|event| matches!(
@@ -411,13 +348,7 @@ fn missing_focus_field_deserializes_as_no_preference() {
     let mut state = two_turret_state();
     let turret = building_id(&state, 0, BuildingKind::Turret, 0);
     let target = Target::Unit(unit_ids(&state, 1)[0]);
-    state.tick(&[cmd(
-        0,
-        Command::FocusFire {
-            buildings: vec![turret],
-            target: target.into(),
-        },
-    )]);
+    state.tick(&[cmd(0, orders::focus_fire([turret], target))]);
     let mut document = serde_json::to_value(&state).unwrap();
     for building in document["buildings"].as_array_mut().unwrap() {
         building.as_object_mut().unwrap().remove("focus");
@@ -455,10 +386,7 @@ fn peak_obstruction_keeps_focus_but_allows_a_clear_fallback() {
 
     let report = state.tick(&[cmd(
         0,
-        Command::FocusFire {
-            buildings: vec![turret],
-            target: Target::Unit(targets[1]).into(),
-        },
+        orders::focus_fire([turret], Target::Unit(targets[1])),
     )]);
     assert!(report.events.iter().any(|event| matches!(
         event,

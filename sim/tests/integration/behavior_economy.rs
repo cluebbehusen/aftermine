@@ -27,14 +27,7 @@ fn harvester_gathers_and_deposits() {
         .build()
         .unwrap();
     let worker = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: TilePos::new(11, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], TilePos::new(11, 4)))]);
     // Walk there, extract 10 scrap (100 ticks), walk home, drop.
     let events = run_until(&mut state, 600, |_, events| {
         events.iter().any(|event| {
@@ -62,13 +55,7 @@ fn train_costs_scrap_and_spawns_after_build_time() {
     let mut state = arena(vec![]).build().unwrap();
     let foundry = state.buildings()[0].id;
     let before = state.player(PlayerId(0)).scrap;
-    state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: foundry,
-            kind: UnitKind::Harvester,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::train(foundry, UnitKind::Harvester))]);
     assert_eq!(
         state.player(PlayerId(0)).scrap,
         before - UnitKind::Harvester.stats().cost,
@@ -101,13 +88,7 @@ fn airworks_spawns_aircraft_above_its_roof_bay() {
     let airworks_id = airworks.id;
     let airworks_center = airworks.center();
 
-    state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: airworks_id,
-            kind: UnitKind::Kestrel,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::train(airworks_id, UnitKind::Kestrel))]);
     let events = run_until(
         &mut state,
         u64::from(UnitKind::Kestrel.stats().train_ticks) + 1,
@@ -191,19 +172,8 @@ fn spending_the_recovery_package_does_not_refill_the_entitlement() {
     }
     assert_eq!(package(&state).map(|(_, allowance)| allowance), Some(0));
 
-    let foundry = state
-        .buildings()
-        .iter()
-        .find(|building| building.player == PlayerId(0))
-        .unwrap()
-        .id;
-    state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: foundry,
-            kind: UnitKind::Sentinel,
-        },
-    )]);
+    let foundry = building_id(&state, |building| building.player == PlayerId(0));
+    state.tick(&[cmd(0, orders::train(foundry, UnitKind::Sentinel))]);
     assert_eq!(
         state.player(PlayerId(0)).scrap,
         UnitKind::Harvester.stats().cost
@@ -239,28 +209,13 @@ fn first_tick_spending_cannot_expand_a_recovery_entitlement() {
     let mut state = scenario.build().unwrap();
     // The closed tree trains the Scuttler at the Foundry, the only
     // producer standing on the first tick anyway.
-    let foundry = state
-        .buildings()
-        .iter()
-        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Foundry)
-        .unwrap()
-        .id;
+    let foundry = building_id(&state, |building| {
+        building.player == PlayerId(0) && building.kind == BuildingKind::Foundry
+    });
 
     state.tick(&[
-        cmd(
-            0,
-            Command::Train {
-                building: foundry,
-                kind: UnitKind::Scuttler,
-            },
-        ),
-        cmd(
-            0,
-            Command::Train {
-                building: foundry,
-                kind: UnitKind::Scuttler,
-            },
-        ),
+        cmd(0, orders::train(foundry, UnitKind::Scuttler)),
+        cmd(0, orders::train(foundry, UnitKind::Scuttler)),
     ]);
 
     let seat = state.player(PlayerId(0));
@@ -304,14 +259,7 @@ fn any_harvesting_machine_keeps_its_seat_off_recovery() {
     scenario.players[0].scrap = 0;
     let mut state = scenario.build().unwrap();
     let (sky, worker) = (state.units()[0].id, state.units()[1].id);
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![worker],
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([worker], sky))]);
     run_until(&mut state, 200, |state, _| state.unit(worker).is_none());
     for _ in 0..20 {
         state.tick(&[]);
@@ -350,19 +298,8 @@ fn a_prepaid_worker_death_preserves_only_the_unspent_recovery_remainder() {
     while state.player(PlayerId(0)).scrap < UnitKind::Harvester.stats().cost {
         state.tick(&[]);
     }
-    let foundry = state
-        .buildings()
-        .iter()
-        .find(|building| building.player == PlayerId(0))
-        .unwrap()
-        .id;
-    state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: foundry,
-            kind: UnitKind::Harvester,
-        },
-    )]);
+    let foundry = building_id(&state, |building| building.player == PlayerId(0));
+    state.tick(&[cmd(0, orders::train(foundry, UnitKind::Harvester))]);
     let remainder = FOUNDRY_RECOVERY_RESERVE - UnitKind::Harvester.stats().cost;
     assert_eq!(
         package(&state).map(|(_, allowance)| allowance),
@@ -416,14 +353,7 @@ fn a_real_harvester_deposit_rearms_one_future_recovery_cycle() {
     scenario.players[0].scrap = 0;
     let mut state = scenario.build().unwrap();
     let worker = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: TilePos::new(11, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], TilePos::new(11, 4)))]);
     run_until(&mut state, 600, |_, events| {
         events.iter().any(|event| {
             matches!(
@@ -492,19 +422,8 @@ fn every_standing_foundry_smelts_the_drip_after_the_warmup() {
     let mut queued = arena(Vec::new());
     queued.players[0].scrap = UnitKind::Harvester.stats().cost;
     let mut queued = queued.build().unwrap();
-    let foundry = queued
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(0))
-        .unwrap()
-        .id;
-    queued.tick(&[cmd(
-        0,
-        Command::Train {
-            building: foundry,
-            kind: UnitKind::Harvester,
-        },
-    )]);
+    let foundry = building_id(&queued, |b| b.player == PlayerId(0));
+    queued.tick(&[cmd(0, orders::train(foundry, UnitKind::Harvester))]);
     assert_eq!(queued.player(PlayerId(0)).scrap, 0);
     while queued.current_tick() < FOUNDRY_DRIP_START_TICK - 1 {
         queued.tick(&[]);
@@ -554,18 +473,12 @@ fn rally_routes_fresh_units_by_role() {
     state.tick(&[
         cmd(
             0,
-            Command::SetRally {
-                building: foundry,
-                rally: Some(aftermine_sim::Rally::Tile(TilePos::new(11, 4))),
-            },
+            orders::set_rally(
+                foundry,
+                Some(aftermine_sim::Rally::Tile(TilePos::new(11, 4))),
+            ),
         ),
-        cmd(
-            0,
-            Command::Train {
-                building: foundry,
-                kind: UnitKind::Harvester,
-            },
-        ),
+        cmd(0, orders::train(foundry, UnitKind::Harvester)),
     ]);
     let scrap_before = state.player(PlayerId(0)).scrap;
     run_until(&mut state, 700, |s, _| {
@@ -576,18 +489,12 @@ fn rally_routes_fresh_units_by_role() {
     state.tick(&[
         cmd(
             0,
-            Command::SetRally {
-                building: foundry,
-                rally: Some(aftermine_sim::Rally::Tile(TilePos::new(10, 6))),
-            },
+            orders::set_rally(
+                foundry,
+                Some(aftermine_sim::Rally::Tile(TilePos::new(10, 6))),
+            ),
         ),
-        cmd(
-            0,
-            Command::Train {
-                building: foundry,
-                kind: UnitKind::Sentinel,
-            },
-        ),
+        cmd(0, orders::train(foundry, UnitKind::Sentinel)),
     ]);
     run_until(&mut state, 300, |s, _| {
         s.units().iter().any(|u| {
@@ -603,10 +510,7 @@ fn rally_on_foreign_building_is_rejected() {
     let theirs = state.buildings()[1].id;
     let report = state.tick(&[cmd(
         0,
-        Command::SetRally {
-            building: theirs,
-            rally: Some(aftermine_sim::Rally::Tile(TilePos::new(5, 5))),
-        },
+        orders::set_rally(theirs, Some(aftermine_sim::Rally::Tile(TilePos::new(5, 5)))),
     )]);
     assert!(report.events.contains(&Event::CommandRejected {
         player: PlayerId(0),
@@ -623,21 +527,10 @@ fn rally_rejects_non_producers_and_unfinished_producers() {
         .push(common::building(0, BuildingKind::Turret, 8, 2));
     let mut state = scenario.build().unwrap();
     let worker = state.units()[0].id;
-    let turret = state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let turret = building_id(&state, |building| building.kind == BuildingKind::Turret);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![worker],
-            kind: BuildingKind::Fabricator,
-            anchor: TilePos::new(4, 6),
-            queue: false,
-            defer: false,
-        },
+        orders::build([worker], BuildingKind::Fabricator, TilePos::new(4, 6)),
     )]);
     let site = state
         .buildings()
@@ -650,10 +543,10 @@ fn rally_rejects_non_producers_and_unfinished_producers() {
     for building in [turret, site] {
         let report = state.tick(&[cmd(
             0,
-            Command::SetRally {
+            orders::set_rally(
                 building,
-                rally: Some(aftermine_sim::Rally::Tile(TilePos::new(10, 5))),
-            },
+                Some(aftermine_sim::Rally::Tile(TilePos::new(10, 5))),
+            ),
         )]);
         assert!(report.events.contains(&Event::CommandRejected {
             player: PlayerId(0),
@@ -669,13 +562,7 @@ fn train_rejects_poverty_and_foreign_buildings() {
     let (mine, theirs) = (state.buildings()[0].id, state.buildings()[1].id);
 
     // Not my building.
-    let report = state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: theirs,
-            kind: UnitKind::Sentinel,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::train(theirs, UnitKind::Sentinel))]);
     assert!(report.events.contains(&Event::CommandRejected {
         player: PlayerId(0),
         reason: RejectReason::NotYourBuilding,
@@ -683,26 +570,14 @@ fn train_rejects_poverty_and_foreign_buildings() {
 
     // Not enough scrap: 200 banked, sentinels cost 75 → third fails.
     for _ in 0..2 {
-        let r = state.tick(&[cmd(
-            0,
-            Command::Train {
-                building: mine,
-                kind: UnitKind::Sentinel,
-            },
-        )]);
+        let r = state.tick(&[cmd(0, orders::train(mine, UnitKind::Sentinel))]);
         assert!(
             !r.events
                 .iter()
                 .any(|e| matches!(e, Event::CommandRejected { .. }))
         );
     }
-    let report = state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: mine,
-            kind: UnitKind::Sentinel,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::train(mine, UnitKind::Sentinel))]);
     assert!(report.events.contains(&Event::CommandRejected {
         player: PlayerId(0),
         reason: RejectReason::NotEnoughScrap,
@@ -715,14 +590,7 @@ fn deposits_saturate_a_full_bank() {
     scenario.players[0].scrap = u32::MAX - 5;
     let mut state = scenario.build().unwrap();
     let worker = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: TilePos::new(11, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], TilePos::new(11, 4)))]);
     run_until(&mut state, 800, |s, _| {
         s.player(PlayerId(0)).scrap == u32::MAX
     });
@@ -734,13 +602,7 @@ fn foundry_refuses_kinds_it_cannot_produce() {
     // that needs the Fabricator.
     let mut state = arena(vec![]).build().unwrap();
     let foundry = state.buildings()[0].id;
-    let report = state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: foundry,
-            kind: UnitKind::Lancer,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::train(foundry, UnitKind::Lancer))]);
     assert!(report.events.iter().any(|e| matches!(
         e,
         Event::CommandRejected {
@@ -763,28 +625,11 @@ fn fabricator_gates_the_advanced_roster() {
     let anchor = TilePos::new(5, 5);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Fabricator,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Fabricator, anchor),
     )]);
-    let fab = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let fab = building_id(&state, |b| b.anchor == anchor);
     // Unfinished: no training yet.
-    let report = state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: fab,
-            kind: UnitKind::Lancer,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::train(fab, UnitKind::Lancer))]);
     assert!(report.events.iter().any(|e| matches!(
         e,
         Event::CommandRejected {
@@ -797,20 +642,8 @@ fn fabricator_gates_the_advanced_roster() {
     });
     // Finished: lancers roll out; sentinels are still Foundry-only.
     let report = state.tick(&[
-        cmd(
-            0,
-            Command::Train {
-                building: fab,
-                kind: UnitKind::Lancer,
-            },
-        ),
-        cmd(
-            0,
-            Command::Train {
-                building: fab,
-                kind: UnitKind::Sentinel,
-            },
-        ),
+        cmd(0, orders::train(fab, UnitKind::Lancer)),
+        cmd(0, orders::train(fab, UnitKind::Sentinel)),
     ]);
     assert!(report.events.iter().any(|e| matches!(
         e,
@@ -845,27 +678,14 @@ fn harvesters_deposit_only_at_built_foundries() {
     let anchor = TilePos::new(10, 3); // touching the node at (11,4)
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![worker],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([worker], BuildingKind::Turret, anchor),
     )]);
     run_until(&mut state, 700, |s, _| {
         s.buildings()
             .iter()
             .any(|b| b.anchor == anchor && b.built())
     });
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: TilePos::new(11, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], TilePos::new(11, 4)))]);
     let foundry = state
         .buildings()
         .iter()
@@ -898,28 +718,11 @@ fn cancel_train_refunds_and_resets_the_head() {
     let mut state = arena(vec![unit(0, UnitKind::Harvester, 4, 6)])
         .build()
         .unwrap();
-    let foundry = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(0))
-        .unwrap()
-        .id;
+    let foundry = building_id(&state, |b| b.player == PlayerId(0));
     let bank = state.players()[0].scrap;
     state.tick(&[
-        cmd(
-            0,
-            Command::Train {
-                building: foundry,
-                kind: UnitKind::Harvester,
-            },
-        ),
-        cmd(
-            0,
-            Command::Train {
-                building: foundry,
-                kind: UnitKind::Sentinel,
-            },
-        ),
+        cmd(0, orders::train(foundry, UnitKind::Harvester)),
+        cmd(0, orders::train(foundry, UnitKind::Sentinel)),
     ]);
     for _ in 0..10 {
         state.tick(&[]);
@@ -1034,14 +837,7 @@ fn a_surrendered_seat_earns_nothing_from_reclaimers_or_deliveries() {
     let mut state = scenario.build().unwrap();
     let worker = state.units()[0].id;
     state.tick(&[
-        cmd(
-            0,
-            Command::Harvest {
-                units: vec![worker],
-                node: TilePos::new(11, 4),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::harvest([worker], TilePos::new(11, 4))),
         cmd(0, Command::Surrender),
     ]);
     let bank = state.player(PlayerId(0)).scrap;
@@ -1062,19 +858,10 @@ fn a_surrendered_seat_earns_nothing_from_reclaimers_or_deliveries() {
 #[test]
 fn a_factory_trains_onto_open_ground_past_a_doorstep_sealed_in_rock() {
     let train = |state: &mut State| {
-        let foundry = state
-            .buildings()
-            .iter()
-            .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
-            .unwrap()
-            .id;
-        state.tick(&[cmd(
-            0,
-            Command::Train {
-                building: foundry,
-                kind: UnitKind::Harvester,
-            },
-        )]);
+        let foundry = building_id(state, |b| {
+            b.player == PlayerId(0) && b.kind == BuildingKind::Foundry
+        });
+        state.tick(&[cmd(0, orders::train(foundry, UnitKind::Harvester))]);
         let mut born = None;
         run_until(state, 600, |s, events| {
             born = events.iter().find_map(|e| match e {

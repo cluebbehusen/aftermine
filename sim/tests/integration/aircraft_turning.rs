@@ -5,7 +5,7 @@ use crate::common;
 use aftermine_sim::{Command, Event, Order, State, Target, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use common::{cmd, open_arena, open_arena_with, unit};
+use common::{cmd, open_arena, open_arena_with, orders, unit};
 
 const CRUISERS: [UnitKind; 2] = [UnitKind::Talon, UnitKind::Kestrel];
 
@@ -173,14 +173,7 @@ fn cruising_fighters_turn_to_targets_without_becoming_bombers() {
         let mut fired = false;
         for tick in 0..100 {
             let commands = if tick == 0 {
-                vec![cmd(
-                    0,
-                    Command::Attack {
-                        units: vec![id],
-                        target: Target::Unit(target).into(),
-                        queue: false,
-                    },
-                )]
+                vec![cmd(0, orders::attack([id], Target::Unit(target)))]
             } else {
                 vec![]
             };
@@ -272,14 +265,7 @@ fn advance_keeps_its_course_and_only_fires_forward() {
         );
         let id = state.units()[0].id;
         let start = state.units()[0].pos;
-        let report = state.tick(&[cmd(
-            0,
-            Command::Advance {
-                units: vec![id],
-                goal: TilePos::new(60, 26),
-                queue: false,
-            },
-        )]);
+        let report = state.tick(&[cmd(0, orders::advance([id], TilePos::new(60, 26)))]);
         let fired = report
             .events
             .iter()
@@ -305,10 +291,7 @@ fn stop_interrupts_a_banked_patrol_and_holds_position() {
         let id = state.units()[0].id;
         state.tick(&[cmd(
             0,
-            Command::Patrol {
-                units: vec![id],
-                waypoints: vec![TilePos::new(30, 26), TilePos::new(20, 26)],
-            },
+            orders::patrol([id], [TilePos::new(30, 26), TilePos::new(20, 26)]),
         )]);
         let mut crossed = false;
         for _ in 0..300 {
@@ -318,7 +301,7 @@ fn stop_interrupts_a_banked_patrol_and_holds_position() {
         assert!(crossed);
         assert!(state.units()[0].looping);
         let before = state.units()[0].pos;
-        state.tick(&[cmd(0, Command::Stop { units: vec![id] })]);
+        state.tick(&[cmd(0, orders::stop([id]))]);
         assert_eq!(state.units()[0].pos, before);
         for _ in 0..100 {
             state.tick(&[]);

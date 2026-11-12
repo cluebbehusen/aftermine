@@ -2,11 +2,11 @@
 //! charge each, while hitscan fire passes through. Public API only.
 
 use crate::common;
-use common::{cmd, open_arena, players, run, run_until, unit};
+use common::{cmd, open_arena, orders, players, run, run_until, unit};
 
 use aftermine_sim::scenario::{PlayerSpec, UnitSpec};
 use aftermine_sim::{
-    AttackTarget, Command, Event, PlayerId, ProjectileKind, Scenario, State, UnitId, UnitKind,
+    AttackTarget, Event, PlayerId, ProjectileKind, Scenario, State, UnitId, UnitKind,
 };
 use chassis::grid::TilePos;
 
@@ -18,14 +18,7 @@ fn range(units: Vec<UnitSpec>) -> Scenario {
 }
 
 fn attack(state: &mut State, player: u8, units: Vec<UnitId>, target: AttackTarget) {
-    state.tick(&[cmd(
-        player,
-        Command::Attack {
-            units,
-            target,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(player, orders::attack(units, target))]);
 }
 
 fn charges(state: &State, id: UnitId) -> u8 {
@@ -237,14 +230,7 @@ fn a_carried_mantle_freezes_its_recharge_and_keeps_it_through_saves() {
     let mut doc = serde_json::to_value(&state).unwrap();
     doc["units"][0]["point_defense"] = serde_json::json!({"charges": 1, "recharge": 10});
     state = serde_json::from_value(doc).unwrap();
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![mantle],
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([mantle], sky))]);
     run_until(&mut state, 200, |state, _| state.unit(mantle).is_none());
     let aboard = state.unit(sky).unwrap().cargo[0].point_defense.unwrap();
     run(&mut state, 200);
@@ -255,14 +241,7 @@ fn a_carried_mantle_freezes_its_recharge_and_keeps_it_through_saves() {
     );
     let restored: State = serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
     assert_eq!(restored.hash(), state.hash());
-    state.tick(&[cmd(
-        0,
-        Command::Unload {
-            transport: sky,
-            at: TilePos::new(12, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::unload(sky, TilePos::new(12, 6)))]);
     run_until(&mut state, 400, |state, _| state.unit(mantle).is_some());
     assert_eq!(
         state.unit(mantle).unwrap().point_defense,
@@ -315,19 +294,11 @@ fn mirrored_point_defense_resolves_mirrored() {
     state.tick(&[
         cmd(
             0,
-            Command::Attack {
-                units: west_guns,
-                target: AttackTarget::Unit(east_mantle),
-                queue: false,
-            },
+            orders::attack(west_guns, AttackTarget::Unit(east_mantle)),
         ),
         cmd(
             1,
-            Command::Attack {
-                units: east_guns,
-                target: AttackTarget::Unit(west_mantle),
-                queue: false,
-            },
+            orders::attack(east_guns, AttackTarget::Unit(west_mantle)),
         ),
     ]);
     let events = run(&mut state, 900);

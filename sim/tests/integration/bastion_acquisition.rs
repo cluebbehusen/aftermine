@@ -3,7 +3,7 @@
 use crate::common;
 use chassis::grid::as_index;
 
-use aftermine_sim::{BuildingId, BuildingKind, Command, Event, PlayerId, Target, UnitKind};
+use aftermine_sim::{BuildingId, BuildingKind, Event, PlayerId, Target, UnitKind};
 use chassis::grid::TilePos;
 
 use common::*;
@@ -184,14 +184,7 @@ fn bastion_does_not_read_a_path_established_later_this_tick() {
     let before = state.unit(target).unwrap().hp;
     aim_defense_at(&mut state, bastion, Target::Unit(target));
 
-    let report = state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![target],
-            goal: TilePos::new(13, 12),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(1, orders::run([target], TilePos::new(13, 12)))]);
     let aim = bastion_launch(&report.events, bastion).expect("the visible target is in range");
     assert_eq!(
         aim, current,
@@ -223,14 +216,7 @@ fn bastion_keeps_a_legal_aim_when_prediction_enters_its_dead_zone() {
     assert!(center.dist_sq(current) >= minimum * minimum);
     aim_defense_at(&mut state, bastion, Target::Unit(target));
 
-    let report = state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![target],
-            goal: TilePos::new(7, 7),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(1, orders::run([target], TilePos::new(7, 7)))]);
     let aim = bastion_launch(&report.events, bastion).expect("the legal target is fired upon");
     assert_eq!(
         aim, current,
@@ -259,27 +245,10 @@ fn radar_contacts_enable_bastion_fire_without_acquiring_building_ghosts() {
     ];
     let mut state = scenario.build().unwrap();
     let bastion = building_id(&state, PlayerId(0), BuildingKind::Bastion);
-    let scout = state
-        .units()
-        .iter()
-        .find(|unit| unit.player == PlayerId(0))
-        .unwrap()
-        .id;
-    let radar_target = state
-        .units()
-        .iter()
-        .find(|unit| unit.player == PlayerId(1))
-        .unwrap()
-        .id;
+    let scout = unit_id(&state, |unit| unit.player == PlayerId(0));
+    let radar_target = unit_id(&state, |unit| unit.player == PlayerId(1));
 
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(2, 14),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(2, 14)))]);
     for _ in 0..300 {
         state.tick(&[]);
         let radar_tile = state.unit(radar_target).unwrap().tile();

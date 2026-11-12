@@ -3,13 +3,13 @@
 //! goes around or lifts off again.
 
 use crate::common;
-use common::{building, cmd, players, unit};
+use common::{CommandExt, building, cmd, orders, players, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
 use aftermine_sim::state::Order;
 use aftermine_sim::stats::{AUTO_LAND_IDLE_TICKS, BuildingKind};
-use aftermine_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitKind};
+use aftermine_sim::{Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitKind};
 
 use chassis::fx::{Fx, HALF};
 use chassis::grid::TilePos;
@@ -61,14 +61,7 @@ fn arena(units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scenario {
 }
 
 fn land(player: u8, unit: aftermine_sim::ids::UnitId, x: i32, y: i32) -> PlayerCommand {
-    cmd(
-        player,
-        Command::Run {
-            units: vec![unit],
-            goal: TilePos::new(x, y),
-            queue: false,
-        },
-    )
+    cmd(player, orders::run([unit], TilePos::new(x, y)))
 }
 
 /// What a watched flight did.
@@ -211,14 +204,7 @@ fn takeoff_resumes_flight_from_the_parked_heading() {
     state.tick(&[]);
     land_at(&mut state, condor, 16, 8);
     let parked_heading = state.unit(condor).unwrap().heading;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![condor],
-            goal: TilePos::new(4, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([condor], TilePos::new(4, 4)))]);
     let unit = state.unit(condor).unwrap();
     assert!(!unit.landed(), "the move order lifts the airframe off");
     let delta = i16::from(unit.heading.wrapping_sub(parked_heading).cast_signed()).abs();
@@ -301,16 +287,7 @@ fn flak_ignores_a_parked_condor() {
     let lancer = state.units()[2].id;
     state.tick(&[]);
     land_at(&mut state, condor, 16, 8);
-    let attack = || {
-        cmd(
-            1,
-            Command::Attack {
-                units: vec![flak, lancer],
-                target: Target::Unit(condor).into(),
-                queue: false,
-            },
-        )
-    };
+    let attack = || cmd(1, orders::attack([flak, lancer], Target::Unit(condor)));
     state.tick(&[attack()]);
     assert!(
         matches!(state.unit(flak).unwrap().order, Order::Run { .. }),
@@ -325,14 +302,7 @@ fn flak_ignores_a_parked_condor() {
         "a ground gun could not attack the parked airframe: {:?}",
         state.unit(lancer).unwrap().order
     );
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![condor],
-            goal: TilePos::new(8, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([condor], TilePos::new(8, 4)))]);
     assert!(
         !state.unit(condor).unwrap().landed(),
         "the move lifts it off"
@@ -368,14 +338,7 @@ fn a_parked_condor_scrambles_at_an_enemy_in_reach() {
     let harvester = state.units()[1].id;
     state.tick(&[]);
     land_at(&mut state, condor, 16, 8);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![harvester],
-            goal: TilePos::new(15, 9),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([harvester], TilePos::new(15, 9)))]);
     let mut scrambled = false;
     for _ in 0..600 {
         state.tick(&[]);
@@ -440,14 +403,7 @@ fn a_tile_filled_during_the_approach_sends_the_landing_around() {
     state.tick(&[]);
     state.tick(&[
         land(0, condor, 16, 8),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![sentinel],
-                goal: TilePos::new(16, 8),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([sentinel], TilePos::new(16, 8))),
     ]);
     let flight = fly_and_watch(&mut state, condor, 1_500, true);
     assert!(flight.landed_at.is_some(), "the Condor never found ground");
@@ -479,13 +435,7 @@ fn a_site_claimed_under_a_parked_condor_lifts_it_off() {
     land_at(&mut state, condor, 16, 8);
     let report = state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![harvester],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(16, 8),
-            queue: false,
-            defer: false,
-        },
+        orders::build([harvester], BuildingKind::Turret, TilePos::new(16, 8)),
     )]);
     assert!(
         !report
@@ -526,14 +476,7 @@ fn a_wall_side_tile_is_landed_and_left_without_touching_the_wall() {
     assert_eq!(state.unit(condor).unwrap().tile(), TilePos::new(22, 8));
     // Whatever heading it parked on one tile from the east wall, the
     // takeoff from it must fly clear without ever pressing on the wall.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![condor],
-            goal: TilePos::new(6, 8),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([condor], TilePos::new(6, 8)))]);
     let flight = fly_and_watch(&mut state, condor, 400, false);
     assert_eq!(
         flight.pinned, 0,
@@ -565,14 +508,7 @@ fn a_corner_tile_is_snapped_to_ground_the_airframe_can_leave() {
         TilePos::new(22, 14),
         "the corner itself is unlandable"
     );
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![condor],
-            goal: TilePos::new(6, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([condor], TilePos::new(6, 6)))]);
     let flight = fly_and_watch(&mut state, condor, 400, false);
     assert_eq!(
         flight.pinned, 0,
@@ -598,13 +534,7 @@ fn an_enemy_cannot_found_over_a_parked_condor() {
     land_at(&mut state, condor, 16, 8);
     let report = state.tick(&[cmd(
         1,
-        Command::Build {
-            units: vec![harvester],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(16, 8),
-            queue: false,
-            defer: false,
-        },
+        orders::build([harvester], BuildingKind::Turret, TilePos::new(16, 8)),
     )]);
     assert!(
         report.events.iter().any(|e| matches!(
@@ -683,22 +613,8 @@ fn a_landing_survives_a_save_and_load_mid_approach_and_parked() {
     }
     assert!(state.unit(condor).unwrap().landed(), "never landed");
     let mut restored = round_trip(&state);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![condor],
-            goal: TilePos::new(4, 4),
-            queue: false,
-        },
-    )]);
-    restored.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![condor],
-            goal: TilePos::new(4, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([condor], TilePos::new(4, 4)))]);
+    restored.tick(&[cmd(0, orders::run([condor], TilePos::new(4, 4)))]);
     for _ in 0..100 {
         state.tick(&[]);
         restored.tick(&[]);
@@ -727,14 +643,7 @@ fn a_parked_condor_can_be_welded_until_it_takes_off() {
     let max_hp = UnitKind::Condor.stats().max_hp;
     state.tick(&[]);
     // Fly past the flak to take some damage.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![condor],
-            goal: TilePos::new(16, 8),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([condor], TilePos::new(16, 8)))]);
     for _ in 0..300 {
         state.tick(&[]);
         if state.unit(condor).unwrap().hp < max_hp {
@@ -746,14 +655,7 @@ fn a_parked_condor_can_be_welded_until_it_takes_off() {
         "premise: the flak never scratched it"
     );
     // Airborne, it is no weld patient.
-    let report = state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: condor,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::repair_unit([welder], condor))]);
     assert!(
         report.events.iter().any(|e| matches!(
             e,
@@ -770,14 +672,7 @@ fn a_parked_condor_can_be_welded_until_it_takes_off() {
     let flight = fly_and_watch(&mut state, condor, 1_500, true);
     assert!(flight.landed_at.is_some(), "the Condor never parked");
     let hp_parked = state.unit(condor).unwrap().hp;
-    let report = state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: condor,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::repair_unit([welder], condor))]);
     assert!(
         !report
             .events
@@ -797,14 +692,7 @@ fn a_parked_condor_can_be_welded_until_it_takes_off() {
     }
     assert!(welded, "the torch never gained the parked Condor a point");
     // Takeoff ends the job instead of sending the welder chasing the sky.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![condor],
-            goal: TilePos::new(4, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([condor], TilePos::new(4, 4)))]);
     for _ in 0..5 {
         state.tick(&[]);
     }
@@ -861,14 +749,7 @@ fn a_right_click_far_from_any_enemy_ends_by_landing_on_the_tile() {
         .unwrap();
     let condor = state.units()[0].id;
     state.tick(&[]);
-    state.tick(&[cmd(
-        0,
-        Command::Advance {
-            units: vec![condor],
-            goal: TilePos::new(18, 11),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::advance([condor], TilePos::new(18, 11)))]);
     let flight = fly_and_watch(&mut state, condor, 1_500, true);
     assert!(flight.landed_at.is_some(), "the advance never set down");
     assert_eq!(flight.pinned, 0);
@@ -891,14 +772,7 @@ fn a_right_click_beside_an_enemy_stays_airborne_and_fights() {
     .unwrap();
     let condor = state.units()[0].id;
     state.tick(&[]);
-    state.tick(&[cmd(
-        0,
-        Command::Advance {
-            units: vec![condor],
-            goal: TilePos::new(16, 8),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::advance([condor], TilePos::new(16, 8)))]);
     let flight = fly_and_watch(&mut state, condor, 600, true);
     assert!(
         flight.landed_at.is_none(),
@@ -919,22 +793,8 @@ fn a_queued_stop_is_flown_over_and_only_the_last_one_landed_on() {
     let condor = state.units()[0].id;
     state.tick(&[]);
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![condor],
-                goal: TilePos::new(12, 8),
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![condor],
-                goal: TilePos::new(18, 12),
-                queue: true,
-            },
-        ),
+        cmd(0, orders::run([condor], TilePos::new(12, 8))),
+        cmd(0, orders::run([condor], TilePos::new(18, 12)).queued()),
     ]);
     let flight = fly_and_watch(&mut state, condor, 1_500, true);
     assert!(flight.landed_at.is_some(), "the program never set down");
@@ -977,14 +837,7 @@ fn an_unseen_enemy_never_pulls_a_landing_into_an_attack() {
     .unwrap();
     let condor = state.units()[0].id;
     state.tick(&[]);
-    state.tick(&[cmd(
-        0,
-        Command::Advance {
-            units: vec![condor],
-            goal: TilePos::new(16, 8),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::advance([condor], TilePos::new(16, 8)))]);
     let mut attacked = false;
     for _ in 0..900 {
         state.tick(&[]);
@@ -1034,30 +887,9 @@ fn two_condors_landing_inward_on_adjacent_tiles_keep_their_distance() {
     let west = state.units()[1].id;
     state.tick(&[]);
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![east],
-                goal: TilePos::new(22, 8),
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![east],
-                goal: TilePos::new(16, 8),
-                queue: true,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![west],
-                goal: TilePos::new(17, 8),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([east], TilePos::new(22, 8))),
+        cmd(0, orders::run([east], TilePos::new(16, 8)).queued()),
+        cmd(0, orders::run([west], TilePos::new(17, 8))),
     ]);
     for _ in 0..1_500 {
         state.tick(&[]);

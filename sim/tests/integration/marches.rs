@@ -23,14 +23,6 @@ fn column() -> (State, Vec<UnitId>) {
     (state, ids)
 }
 
-fn advance(units: &[UnitId], goal: TilePos, queue: bool) -> Command {
-    Command::Advance {
-        units: units.to_vec(),
-        goal,
-        queue,
-    }
-}
-
 /// The tick each of `ids` finished its walk, in `ids` order.
 fn arrivals(state: &mut State, ids: &[UnitId], command: Command) -> Vec<u64> {
     let start = state.current_tick();
@@ -75,16 +67,8 @@ fn march_of(state: &State, id: UnitId) -> Option<MarchId> {
 #[test]
 fn a_mixed_move_arrives_together_and_a_run_does_not() {
     let (state, ids) = column();
-    let run = trailing(
-        &mut state.clone(),
-        &ids,
-        Command::Run {
-            units: ids.clone(),
-            goal: GOAL,
-            queue: false,
-        },
-    );
-    let moved = trailing(&mut state.clone(), &ids, advance(&ids, GOAL, false));
+    let run = trailing(&mut state.clone(), &ids, orders::run(ids.clone(), GOAL));
+    let moved = trailing(&mut state.clone(), &ids, orders::advance(ids.clone(), GOAL));
     assert!(
         run > Fx::from_num(20),
         "Run leaves the Bombard behind: {run}"
@@ -92,16 +76,8 @@ fn a_mixed_move_arrives_together_and_a_run_does_not() {
     assert!(moved < Fx::from_num(4), "the move keeps together: {moved}");
     // Keeping together costs the slowest member almost nothing; the last
     // of it is the crowd it meets settling round the clicked tile.
-    let run = arrivals(
-        &mut state.clone(),
-        &ids,
-        Command::Run {
-            units: ids.clone(),
-            goal: GOAL,
-            queue: false,
-        },
-    );
-    let moved = arrivals(&mut state.clone(), &ids, advance(&ids, GOAL, false));
+    let run = arrivals(&mut state.clone(), &ids, orders::run(ids.clone(), GOAL));
+    let moved = arrivals(&mut state.clone(), &ids, orders::advance(ids.clone(), GOAL));
     assert!(
         moved[3] <= run[3] + 40,
         "the Bombard's walk: {moved:?} against {run:?}"
@@ -111,15 +87,7 @@ fn a_mixed_move_arrives_together_and_a_run_does_not() {
 #[test]
 fn a_mixed_hunt_arrives_together_too() {
     let (mut state, ids) = column();
-    let hunted = trailing(
-        &mut state,
-        &ids,
-        Command::Hunt {
-            units: ids.clone(),
-            goal: GOAL,
-            queue: false,
-        },
-    );
+    let hunted = trailing(&mut state, &ids, orders::hunt(ids.clone(), GOAL));
     assert!(hunted < Fx::from_num(4), "{hunted}");
 }
 
@@ -133,7 +101,7 @@ fn a_member_behind_hurries_to_arrive_with_the_rest() {
     let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
     let mut fastest = Fx::ZERO;
     let start = state.current_tick();
-    state.tick(&[cmd(0, advance(&ids, GOAL, false))]);
+    state.tick(&[cmd(0, orders::advance(ids.clone(), GOAL))]);
     let mut landed = [None, None];
     run_until(&mut state, 1_500, |s, _| {
         fastest = fastest.max(s.unit(ids[0]).unwrap().drive_speed());
@@ -161,16 +129,11 @@ fn a_member_behind_hurries_to_arrive_with_the_rest() {
 fn the_pace_lifts_when_the_slowest_member_leaves() {
     let (mut state, ids) = column();
     let (sentinel, bombard) = (ids[1], ids[3]);
-    state.tick(&[cmd(0, advance(&ids, GOAL, false))]);
+    state.tick(&[cmd(0, orders::advance(ids.clone(), GOAL))]);
     run(&mut state, 80);
     let pace = UnitKind::Bombard.stats().speed;
     assert!(state.unit(sentinel).unwrap().drive_speed() <= pace);
-    state.tick(&[cmd(
-        0,
-        Command::Stop {
-            units: vec![bombard],
-        },
-    )]);
+    state.tick(&[cmd(0, orders::stop([bombard]))]);
     run_until(&mut state, 60, |s, _| {
         s.unit(sentinel).unwrap().drive_speed() > UnitKind::Lancer.stats().speed
             || s.unit(ids[2]).unwrap().drive_speed() > pace
@@ -180,26 +143,22 @@ fn the_pace_lifts_when_the_slowest_member_leaves() {
 #[test]
 fn only_mixed_moves_and_hunts_march() {
     let (mut state, ids) = column();
-    state.tick(&[cmd(0, advance(&ids, GOAL, false))]);
+    state.tick(&[cmd(0, orders::advance(ids.clone(), GOAL))]);
     let march = march_of(&state, ids[0]);
     assert!(march.is_some());
     assert!(ids.iter().all(|id| march_of(&state, *id) == march));
     // A second leg is a march of its own.
-    state.tick(&[cmd(0, advance(&ids, TilePos::new(40, 12), true))]);
+    state.tick(&[cmd(
+        0,
+        orders::advance(ids.clone(), TilePos::new(40, 12)).queued(),
+    )]);
     let Order::Advance { goal } = state.unit(ids[1]).unwrap().queue[0] else {
         panic!("the leg queued");
     };
     assert!(goal.march.is_some() && goal.march != march);
 
     let (mut state, ids) = column();
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: ids.clone(),
-            goal: GOAL,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run(ids.clone(), GOAL))]);
     assert!(ids.iter().all(|id| march_of(&state, *id).is_none()));
 
     let units = vec![
@@ -210,7 +169,7 @@ fn only_mixed_moves_and_hunts_march() {
     ];
     let mut state = open_arena(64, 16, units).build().unwrap();
     let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
-    state.tick(&[cmd(0, advance(&ids, GOAL, false))]);
+    state.tick(&[cmd(0, orders::advance(ids.clone(), GOAL))]);
     assert!(
         ids.iter().all(|id| march_of(&state, *id).is_none()),
         "even Sentinels, a Condor that cannot slow and a lone Buzzard keep their own speed"
@@ -225,16 +184,8 @@ fn a_mixed_flight_arrives_together() {
     ];
     let mut state = open_arena(64, 16, units).build().unwrap();
     let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
-    let alone = arrivals(
-        &mut state.clone(),
-        &ids,
-        Command::Run {
-            units: ids.clone(),
-            goal: GOAL,
-            queue: false,
-        },
-    );
-    let together = arrivals(&mut state, &ids, advance(&ids, GOAL, false));
+    let alone = arrivals(&mut state.clone(), &ids, orders::run(ids.clone(), GOAL));
+    let together = arrivals(&mut state, &ids, orders::advance(ids.clone(), GOAL));
     assert!(spread(&alone) > 100, "{alone:?}");
     assert!(spread(&together) <= 30, "{together:?}");
 }
@@ -242,7 +193,7 @@ fn a_mixed_flight_arrives_together() {
 #[test]
 fn a_march_survives_a_save_mid_walk() {
     let (mut state, ids) = column();
-    state.tick(&[cmd(0, advance(&ids, GOAL, false))]);
+    state.tick(&[cmd(0, orders::advance(ids.clone(), GOAL))]);
     run(&mut state, 50);
     let mut restored: State = serde_json::from_str(&serde_json::to_string(&state).unwrap())
         .expect("a marching state loads");
@@ -257,12 +208,18 @@ fn a_march_survives_a_save_mid_walk() {
 #[test]
 fn a_refused_move_takes_no_march() {
     let (mut state, ids) = column();
-    state.tick(&[cmd(0, advance(&ids, GOAL, false))]);
+    state.tick(&[cmd(0, orders::advance(ids.clone(), GOAL))]);
     for _ in 0..aftermine_sim::stats::ORDER_QUEUE_CAP {
-        state.tick(&[cmd(0, advance(&ids, TilePos::new(30, 4), true))]);
+        state.tick(&[cmd(
+            0,
+            orders::advance(ids.clone(), TilePos::new(30, 4)).queued(),
+        )]);
     }
     let before = state.clone();
-    let report = state.tick(&[cmd(0, advance(&ids, TilePos::new(30, 12), true))]);
+    let report = state.tick(&[cmd(
+        0,
+        orders::advance(ids.clone(), TilePos::new(30, 12)).queued(),
+    )]);
     assert!(
         report
             .events

@@ -1,10 +1,15 @@
 //! Shared scaffolding used by the focused behavior suites.
 #![allow(dead_code)]
 
+pub mod orders;
+
+pub use orders::CommandExt;
+
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
 use aftermine_sim::{
-    BuildingKind, Command, Event, Goal, Order, PlayerCommand, PlayerId, Scenario, State, UnitKind,
+    Building, BuildingId, BuildingKind, Command, Event, Goal, Order, PlayerCommand, PlayerId,
+    Scenario, State, Unit, UnitId, UnitKind,
 };
 
 /// A small arena: two Foundries in opposite corners, open ground between.
@@ -131,6 +136,28 @@ pub fn cmd(player: u8, command: Command) -> PlayerCommand {
         player: PlayerId(player),
         command,
     }
+}
+
+/// The first unit, in `state`'s order, that `matches` accepts.
+#[track_caller]
+pub fn unit_id(state: &State, matches: impl Fn(&Unit) -> bool) -> UnitId {
+    state
+        .units()
+        .iter()
+        .find(|unit| matches(unit))
+        .expect("no unit matches")
+        .id
+}
+
+/// The first building, in `state`'s order, that `matches` accepts.
+#[track_caller]
+pub fn building_id(state: &State, matches: impl Fn(&Building) -> bool) -> BuildingId {
+    state
+        .buildings()
+        .iter()
+        .find(|building| matches(building))
+        .expect("no building matches")
+        .id
 }
 
 /// Every refusal in `events`, in order.

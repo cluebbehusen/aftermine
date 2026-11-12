@@ -5,7 +5,7 @@
 //! its death re-derelicts the frame for whoever holds the ground next.
 
 use crate::common;
-use common::{cmd, players};
+use common::{CommandExt, building_id, cmd, orders, players};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
@@ -46,16 +46,7 @@ fn build(
     kind: BuildingKind,
     anchor: TilePos,
 ) -> PlayerCommand {
-    cmd(
-        player,
-        Command::Build {
-            units: vec![builder],
-            kind,
-            anchor,
-            queue: false,
-            defer: false,
-        },
-    )
+    cmd(player, orders::build([builder], kind, anchor))
 }
 
 fn harvester(player: u8, x: i32, y: i32) -> UnitSpec {
@@ -112,12 +103,9 @@ fn building(player: u8, kind: BuildingKind, anchor: TilePos) -> BuildingSpec {
 }
 
 fn extractor_id(state: &State) -> aftermine_sim::BuildingId {
-    state
-        .buildings()
-        .iter()
-        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Extractor)
-        .expect("the support arena starts with an Extractor")
-        .id
+    building_id(state, |building| {
+        building.player == PlayerId(0) && building.kind == BuildingKind::Extractor
+    })
 }
 
 fn earnings_over(mut state: State, start: u64, ticks: u64) -> u32 {
@@ -251,11 +239,10 @@ fn one_explored_corner_allows_deferred_extractor_construction() {
             if remembered {
                 state.tick(&[cmd(
                     0,
-                    Command::Run {
-                        units: vec![worker],
-                        goal: TilePos::new(if x < FOG_FRAME.x { 3 } else { 27 }, y),
-                        queue: false,
-                    },
+                    orders::run(
+                        [worker],
+                        TilePos::new(if x < FOG_FRAME.x { 3 } else { 27 }, y),
+                    ),
                 )]);
                 for _ in 0..200 {
                     state.tick(&[]);
@@ -295,13 +282,7 @@ fn one_explored_corner_allows_deferred_extractor_construction() {
             let bank = state.player(PlayerId(0)).scrap;
             state.tick(&[cmd(
                 0,
-                Command::Build {
-                    units: vec![worker],
-                    kind: BuildingKind::Extractor,
-                    anchor: FOG_FRAME,
-                    queue: false,
-                    defer: true,
-                },
+                orders::build([worker], BuildingKind::Extractor, FOG_FRAME).deferred(),
             )]);
             let site = state
                 .buildings()
@@ -352,14 +333,7 @@ fn one_visible_corner_discloses_an_enemy_extractor_site() {
         Some(aftermine_sim::PlaceRefusal::Building)
     );
     let observer = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![observer],
-            goal: TilePos::new(3, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([observer], TilePos::new(3, 4)))]);
     for _ in 0..200 {
         state.tick(&[]);
     }
@@ -387,13 +361,7 @@ fn an_unseen_unit_on_a_discovered_frame_only_blocks_when_revealed() {
         );
         state.tick(&[cmd(
             0,
-            Command::Build {
-                units: vec![worker],
-                kind: BuildingKind::Extractor,
-                anchor: FOG_FRAME,
-                queue: false,
-                defer: true,
-            },
+            orders::build([worker], BuildingKind::Extractor, FOG_FRAME).deferred(),
         )]);
         let site = state
             .buildings()
@@ -439,14 +407,7 @@ fn an_unseen_enemy_claim_does_not_replace_the_remembered_frame() {
     assert!(state.vision(PlayerId(0)).explored(FOG_FRAME));
     assert!(state.vision(PlayerId(0)).visible(FOG_FRAME));
 
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(3, 7),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(3, 7)))]);
     // A hostile claim is known through any visible footprint tile, so the
     // whole 2x2 frame has to leave sight, not just its anchor.
     let frame_tiles = [
@@ -499,14 +460,7 @@ fn enemy_provisional_extractor_keeps_the_visible_frame_available_until_activatio
         .unwrap();
     let observer = state.units()[0].id;
     let enemy_builder = state.units()[1].id;
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![enemy_builder],
-            goal: TilePos::new(26, 7),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([enemy_builder], TilePos::new(26, 7)))]);
     for _ in 0..500 {
         state.tick(&[]);
     }
@@ -520,13 +474,7 @@ fn enemy_provisional_extractor_keeps_the_visible_frame_available_until_activatio
     }
     state.tick(&[cmd(
         1,
-        Command::Build {
-            units: vec![enemy_builder],
-            kind: BuildingKind::Extractor,
-            anchor: FOG_FRAME,
-            queue: false,
-            defer: true,
-        },
+        orders::build([enemy_builder], BuildingKind::Extractor, FOG_FRAME).deferred(),
     )]);
     let site = state
         .buildings()
@@ -633,14 +581,9 @@ fn foundry_support_uses_footprint_distance_and_requires_the_same_owner() {
     .build()
     .unwrap();
     let extractor = extractor_id(&at_boundary);
-    let foundry = at_boundary
-        .buildings()
-        .iter()
-        .find(|building| {
-            building.kind == BuildingKind::Foundry && building.anchor == SUPPORT_FOUNDRY
-        })
-        .expect("the support Foundry stands")
-        .id;
+    let foundry = building_id(&at_boundary, |building| {
+        building.kind == BuildingKind::Foundry && building.anchor == SUPPORT_FOUNDRY
+    });
     assert_eq!(
         state_income(&at_boundary, extractor),
         ExtractorSupport::Supported,
@@ -670,14 +613,9 @@ fn foundry_support_uses_footprint_distance_and_requires_the_same_owner() {
     .build()
     .unwrap();
     let extractor = extractor_id(&wrong_owner);
-    let enemy_foundry = wrong_owner
-        .buildings()
-        .iter()
-        .find(|building| {
-            building.kind == BuildingKind::Foundry && building.anchor == SUPPORT_FOUNDRY
-        })
-        .expect("the enemy support candidate stands")
-        .id;
+    let enemy_foundry = building_id(&wrong_owner, |building| {
+        building.kind == BuildingKind::Foundry && building.anchor == SUPPORT_FOUNDRY
+    });
     assert_eq!(
         state_income(&wrong_owner, extractor),
         ExtractorSupport::Remote,
@@ -811,29 +749,20 @@ fn destroying_the_supporting_foundry_returns_the_extractor_to_remote_yield() {
         .collect();
     let mut state = common::idle_welds_off(&state, &workers);
     let extractor = extractor_id(&state);
-    let expansion = state
-        .buildings()
-        .iter()
-        .find(|building| {
-            building.kind == BuildingKind::Foundry && building.anchor == SUPPORT_FOUNDRY
-        })
-        .unwrap()
-        .id;
+    let expansion = building_id(&state, |building| {
+        building.kind == BuildingKind::Foundry && building.anchor == SUPPORT_FOUNDRY
+    });
     let artillery = state
         .units()
         .iter()
         .filter(|unit| unit.player == PlayerId(1) && unit.kind == UnitKind::Avalanche)
         .map(|unit| unit.id)
-        .collect();
+        .collect::<Vec<_>>();
     assert_eq!(state_income(&state, extractor), ExtractorSupport::Supported);
 
     state.tick(&[cmd(
         1,
-        Command::Attack {
-            units: artillery,
-            target: aftermine_sim::Target::Building(expansion).into(),
-            queue: false,
-        },
+        orders::attack(artillery, aftermine_sim::Target::Building(expansion)),
     )]);
     for _ in 0..2_000 {
         if state.building(expansion).is_none() {
@@ -874,22 +803,13 @@ fn the_contest_cycle_re_derelicts_and_rebuilds() {
         FRAME.y,
     ));
     let mut state = scenario.build().unwrap();
-    let machine = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Extractor)
-        .unwrap()
-        .id;
+    let machine = building_id(&state, |b| b.kind == BuildingKind::Extractor);
     let (rebuilder, raider) = (state.units()[0].id, state.units()[1].id);
 
     // The raider grinds the restored machine down.
     state.tick(&[cmd(
         1,
-        Command::Attack {
-            units: vec![raider],
-            target: aftermine_sim::Target::Building(machine).into(),
-            queue: false,
-        },
+        orders::attack([raider], aftermine_sim::Target::Building(machine)),
     )]);
     let mut fell = false;
     for _ in 0..4_000 {
@@ -1120,18 +1040,13 @@ fn bore_target() -> aftermine_sim::RememberedBuilding {
 }
 
 fn focus_on_the_bore(state: &mut State) -> aftermine_sim::TickReport {
-    let bastion = state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Bastion)
-        .unwrap()
-        .id;
+    let bastion = building_id(state, |building| building.kind == BuildingKind::Bastion);
     state.tick(&[cmd(
         1,
-        Command::FocusFire {
-            buildings: vec![bastion],
-            target: aftermine_sim::AttackTarget::RememberedBuilding(bore_target()),
-        },
+        orders::focus_fire(
+            [bastion],
+            aftermine_sim::AttackTarget::RememberedBuilding(bore_target()),
+        ),
     )])
 }
 

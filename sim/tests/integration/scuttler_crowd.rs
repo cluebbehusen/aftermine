@@ -1,11 +1,9 @@
 //! Building frontage, rerouting, and deterministic Scuttler group contact.
 use crate::common;
 use aftermine_sim::scenario::ScenarioMode;
-use aftermine_sim::{
-    BuildingKind, Command, Event, PlayerId, Scenario, State, Target, UnitId, UnitKind,
-};
+use aftermine_sim::{BuildingKind, Event, PlayerId, Scenario, State, Target, UnitId, UnitKind};
 use chassis::fx::Fx;
-use common::{building, cmd, players, unit};
+use common::{building, cmd, orders, players, unit};
 use std::collections::BTreeSet;
 
 fn swarm(paired: bool) -> Scenario {
@@ -35,16 +33,15 @@ fn swarm(paired: bool) -> Scenario {
 fn attack(state: &State, player: u8, target: usize) -> aftermine_sim::PlayerCommand {
     cmd(
         player,
-        Command::Attack {
-            units: state
+        orders::attack(
+            state
                 .units()
                 .iter()
                 .filter(|u| u.player == PlayerId(player))
                 .map(|u| u.id)
-                .collect(),
-            target: Target::Building(state.buildings()[target].id).into(),
-            queue: false,
-        },
+                .collect::<Vec<_>>(),
+            Target::Building(state.buildings()[target].id),
+        ),
     )
 }
 
@@ -119,11 +116,7 @@ fn waiting_scuttlers_fill_frontage_released_by_a_move_order() {
         .unwrap();
     state.tick(&[cmd(
         0,
-        Command::Run {
-            units: vec![moved],
-            goal: chassis::grid::TilePos::new(18, 20),
-            queue: false,
-        },
+        orders::run([moved], chassis::grid::TilePos::new(18, 20)),
     )]);
     let mut replacements = BTreeSet::new();
     for _ in 0..60 {

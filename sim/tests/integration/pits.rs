@@ -5,12 +5,12 @@
 //! Vision deliberately ignores it, like all terrain.
 
 use crate::common;
-use common::{cmd, players, run, unit};
+use common::{cmd, orders, players, run, unit};
 
 use aftermine_sim::map::Terrain;
 use aftermine_sim::scenario::{ScenarioError, ScenarioMode, UnitSpec};
 use aftermine_sim::stats::Domain;
-use aftermine_sim::{Command, Event, PlayerId, Scenario, State, Target, UnitKind};
+use aftermine_sim::{Event, PlayerId, Scenario, State, Target, UnitKind};
 use chassis::grid::TilePos;
 
 /// A chasm at x=`wall_x` (default 12) severing east from west on the
@@ -76,22 +76,8 @@ fn ground_cannot_cross_but_air_flies_straight_over() {
     .unwrap();
     let (walker, flyer) = (state.units()[0].id, state.units()[1].id);
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![walker],
-                goal: TilePos::new(18, 5),
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![flyer],
-                goal: TilePos::new(18, 7),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([walker], TilePos::new(18, 5))),
+        cmd(0, orders::run([flyer], TilePos::new(18, 7))),
     ]);
     run(&mut state, 400);
     assert!(
@@ -118,14 +104,7 @@ fn direct_fire_crosses_the_void_that_rock_would_block() {
     .build()
     .unwrap();
     let (west, east) = (state.units()[0].id, state.units()[1].id);
-    let report = state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![west],
-            target: Target::Unit(east).into(),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::attack([west], Target::Unit(east)))]);
     let mut events = report.events;
     events.extend(run(&mut state, 40));
     assert!(
@@ -146,14 +125,7 @@ fn direct_fire_crosses_the_void_that_rock_would_block() {
     ];
     let mut state = walled.build().unwrap();
     let (west, east) = (state.units()[0].id, state.units()[1].id);
-    let report = state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![west],
-            target: Target::Unit(east).into(),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::attack([west], Target::Unit(east)))]);
     let mut events = report.events;
     events.extend(run(&mut state, 40));
     assert!(
@@ -180,14 +152,7 @@ fn artillery_arcs_sail_over_the_chasm() {
     .build()
     .unwrap();
     let (gun, victim) = (state.units()[0].id, state.units()[2].id);
-    let report = state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![gun],
-            target: Target::Unit(victim).into(),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::attack([gun], Target::Unit(victim)))]);
     let mut events = report.events;
     events.extend(run(&mut state, 60));
     assert!(
@@ -210,14 +175,7 @@ fn a_flyer_downed_over_the_void_leaves_nothing() {
     .build()
     .unwrap();
     let (flak, talon) = (state.units()[0].id, state.units()[1].id);
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![flak],
-            target: Target::Unit(talon).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([flak], Target::Unit(talon)))]);
     let events = run(&mut state, 400);
     assert!(
         events
@@ -244,13 +202,11 @@ fn foundations_refuse_the_void() {
     let builder = state.units()[0].id;
     let report = state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: aftermine_sim::BuildingKind::Turret,
-            anchor: TilePos::new(12, 5),
-            queue: false,
-            defer: false,
-        },
+        orders::build(
+            [builder],
+            aftermine_sim::BuildingKind::Turret,
+            TilePos::new(12, 5),
+        ),
     )]);
     assert!(
         report
@@ -267,14 +223,7 @@ fn ground_goals_on_the_void_snap_to_the_rim() {
         .build()
         .unwrap();
     let walker = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![walker],
-            goal: TilePos::new(12, 5),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([walker], TilePos::new(12, 5)))]);
     run(&mut state, 200);
     let landed = state.unit(walker).unwrap().tile();
     assert!(
@@ -298,16 +247,15 @@ fn a_chasm_map_reproduces_bit_identically() {
     let orders = |state: &State| {
         vec![cmd(
             0,
-            Command::Hunt {
-                units: state
+            orders::hunt(
+                state
                     .units()
                     .iter()
                     .filter(|u| u.player == PlayerId(0))
                     .map(|u| u.id)
-                    .collect(),
-                goal: TilePos::new(18, 6),
-                queue: false,
-            },
+                    .collect::<Vec<_>>(),
+                TilePos::new(18, 6),
+            ),
         )]
     };
     let first = orders(&a);

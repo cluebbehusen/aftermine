@@ -59,13 +59,7 @@ fn an_enclosed_founder_drives_off_along_a_map_half_turn() {
         let founder = state.units()[0].id;
         state.tick(&[cmd(
             0,
-            Command::Build {
-                units: vec![founder],
-                kind: BuildingKind::Fabricator,
-                anchor,
-                queue: false,
-                defer: false,
-            },
+            orders::build([founder], BuildingKind::Fabricator, anchor),
         )]);
         (0..40)
             .map(|_| {
@@ -94,13 +88,7 @@ fn a_pocketed_canonical_founder_drives_off_across_its_site() {
     let anchor = TilePos::new(5, 3);
     let report = state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![other, founder, founder],
-            kind: BuildingKind::Fabricator,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([other, founder, founder], BuildingKind::Fabricator, anchor),
     )]);
     assert!(
         !report
@@ -134,36 +122,14 @@ fn a_pocketed_founder_with_a_full_queue_is_not_moved_or_charged() {
     use aftermine_sim::stats::BuildingKind;
     let mut state = pocketed_founder_state();
     let founder = state.units()[0].id;
-    let mut commands = vec![cmd(
-        0,
-        Command::Run {
-            units: vec![founder],
-            goal: TilePos::new(4, 3),
-            queue: false,
-        },
-    )];
-    commands.extend((0..32).map(|_| {
-        cmd(
-            0,
-            Command::Run {
-                units: vec![founder],
-                goal: TilePos::new(4, 3),
-                queue: true,
-            },
-        )
-    }));
+    let mut commands = vec![cmd(0, orders::run([founder], TilePos::new(4, 3)))];
+    commands.extend((0..32).map(|_| cmd(0, orders::run([founder], TilePos::new(4, 3)).queued())));
     state.tick(&commands);
     assert_refused(
         &mut state,
         cmd(
             0,
-            Command::Build {
-                units: vec![founder],
-                kind: BuildingKind::Fabricator,
-                anchor: TilePos::new(5, 3),
-                queue: true,
-                defer: false,
-            },
+            orders::build([founder], BuildingKind::Fabricator, TilePos::new(5, 3)).queued(),
         ),
         RejectReason::QueueFull,
     );
@@ -181,22 +147,11 @@ fn construction_ramps_and_completes() {
     let cost = BuildingKind::Turret.base_stats().construction.cost;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
     // Site claimed instantly: paid in full, blocking, unfinished, partial hp.
     assert_eq!(state.player(PlayerId(0)).scrap, scrap_before - cost);
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .expect("site placed")
-        .id;
+    let site = building_id(&state, |b| b.anchor == anchor);
     let b = state.building(site).unwrap();
     assert!(!b.built());
     assert_eq!(b.hp, BuildingKind::Turret.base_stats().max_hp / 5);
@@ -244,44 +199,16 @@ fn a_second_builder_resumes_a_dead_builders_site() {
     // welding it.
     let mut state = common::idle_welds_off(&state, &[second]);
     let anchor = TilePos::new(5, 6);
-    state.tick(&[cmd(
-        0,
-        Command::Build {
-            units: vec![first],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::build([first], BuildingKind::Turret, anchor))]);
     // Let some progress land, then eat the builder.
     for _ in 0..100 {
         state.tick(&[]);
     }
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![killer],
-            target: Target::Unit(first).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([killer], Target::Unit(first)))]);
     run_until(&mut state, 400, |s, _| s.unit(first).is_none());
     // The killer leaves (oblivious walk), or it would eat the relief too.
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![killer],
-            goal: TilePos::new(13, 2),
-            queue: false,
-        },
-    )]);
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .expect("site survives its builder")
-        .id;
+    state.tick(&[cmd(1, orders::run([killer], TilePos::new(13, 2)))]);
+    let site = building_id(&state, |b| b.anchor == anchor);
     let progress_when_orphaned = state
         .building(site)
         .unwrap()
@@ -303,13 +230,7 @@ fn a_second_builder_resumes_a_dead_builders_site() {
     let scrap_before = state.player(PlayerId(0)).scrap;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![second],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([second], BuildingKind::Turret, anchor),
     )]);
     assert_eq!(state.player(PlayerId(0)).scrap, scrap_before);
     run_until(&mut state, 900, |s, _| {
@@ -330,39 +251,16 @@ fn cancel_refunds_by_health_and_damage_burns_it() {
     let anchor = TilePos::new(5, 6);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let site = building_id(&state, |b| b.anchor == anchor);
     for _ in 0..120 {
         state.tick(&[]);
     }
     // The raider chews the scaffold down before the cancel.
     state.tick(&[
-        cmd(
-            0,
-            Command::Stop {
-                units: vec![builder],
-            },
-        ),
-        cmd(
-            1,
-            Command::Attack {
-                units: vec![raider],
-                target: Target::Building(site).into(),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::stop([builder])),
+        cmd(1, orders::attack([raider], Target::Building(site))),
     ]);
     for _ in 0..120 {
         state.tick(&[]);
@@ -434,27 +332,14 @@ fn scouted_sites_are_remembered_as_sites() {
     let anchor = TilePos::new(12, 1);
     state.tick(&[cmd(
         1,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
     for _ in 0..30 {
         state.tick(&[]);
     }
     assert!(state.can_see(PlayerId(0), anchor), "scout sees the site");
     // Scout retreats out of sight; site keeps building behind the fog.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |s, _| !s.can_see(PlayerId(0), anchor));
     run_until(&mut state, 700, |s, _| {
         s.buildings()
@@ -487,27 +372,14 @@ fn a_fresh_site_blocks_units_already_walking_through_it() {
     .unwrap();
     let (mover, builder) = (state.units()[0].id, state.units()[1].id);
     let goal = TilePos::new(12, 6);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![mover],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([mover], goal))]);
     for _ in 0..20 {
         state.tick(&[]); // mover under way, site not yet placed
     }
     let anchor = TilePos::new(9, 6);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
     for _ in 0..400 {
         state.tick(&[]);
@@ -540,31 +412,13 @@ fn a_zeroed_site_cannot_be_revived_by_its_builder() {
     let anchor = TilePos::new(5, 6);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let site = building_id(&state, |b| b.anchor == anchor);
     // The first volley can land on the command tick itself; keep its
     // report.
     let mut events = state
-        .tick(&[cmd(
-            1,
-            Command::Attack {
-                units: lancers,
-                target: Target::Building(site).into(),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(1, orders::attack(lancers, Target::Building(site)))])
         .events;
     if state.building(site).is_some() {
         events.extend(run_until(&mut state, 120, |s, _| {
@@ -592,11 +446,7 @@ fn queue_overflow_is_rejected_not_swallowed() {
         .map(|i| {
             cmd(
                 0,
-                Command::Run {
-                    units: vec![mover],
-                    goal: TilePos::new(3 + i32::try_from(i % 10).unwrap(), 2),
-                    queue: true,
-                },
+                orders::run([mover], TilePos::new(3 + i32::try_from(i % 10).unwrap(), 2)).queued(),
             )
         })
         .collect();
@@ -647,13 +497,7 @@ fn unreachable_sites_are_rejected_before_charging() {
     let scrap_before = state.player(PlayerId(0)).scrap;
     let report = state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(6, 3),
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, TilePos::new(6, 3)),
     )]);
     assert!(report.events.iter().any(|e| matches!(
         e,
@@ -685,14 +529,7 @@ fn placement_requires_current_vision_not_mere_exploration() {
     let spot = TilePos::new(12, 1);
     assert!(state.can_place(PlayerId(0), BuildingKind::Turret, spot));
     // Walk home: the ground stays explored but drops out of sight.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |s, _| !s.can_see(PlayerId(0), spot));
     assert!(state.vision(PlayerId(0)).explored(spot));
     assert!(
@@ -716,24 +553,12 @@ fn extra_builders_accelerate_construction() {
         let anchor = TilePos::new(5, 6);
         state.tick(&[cmd(
             0,
-            Command::Build {
-                units: vec![ids[0]],
-                kind: BuildingKind::Turret,
-                anchor,
-                queue: false,
-                defer: false,
-            },
+            orders::build([ids[0]], BuildingKind::Turret, anchor),
         )]);
         if extra_builder {
             state.tick(&[cmd(
                 0,
-                Command::Build {
-                    units: vec![ids[1]],
-                    kind: BuildingKind::Turret,
-                    anchor,
-                    queue: false,
-                    defer: false,
-                },
+                orders::build([ids[1]], BuildingKind::Turret, anchor),
             )]);
         }
         let mut ticks = 0u32;
@@ -791,14 +616,7 @@ fn a_fresh_site_cannot_be_corner_cut_diagonally() {
     let mut state = scenario.build().unwrap();
     let (mover, builder) = (state.units()[0].id, state.units()[1].id);
     let goal = TilePos::new(11, 8);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![mover],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([mover], goal))]);
     for _ in 0..10 {
         state.tick(&[]); // under way along the straight leg
     }
@@ -815,13 +633,7 @@ fn a_fresh_site_cannot_be_corner_cut_diagonally() {
     assert_ne!(anchor, goal);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
     // Every step from here obeys the no-corner-cut rule around the site.
     let mut prev = state.unit(mover).unwrap().tile();
@@ -870,18 +682,7 @@ fn a_rejected_build_leaves_no_trace_on_the_hash() {
     let mut state = scenario.build().unwrap();
     let mut pristine = state.clone();
     let builder = state.units()[0].id;
-    let turret = |anchor| {
-        cmd(
-            0,
-            Command::Build {
-                units: vec![builder],
-                kind: BuildingKind::Turret,
-                anchor,
-                queue: false,
-                defer: false,
-            },
-        )
-    };
+    let turret = |anchor| cmd(0, orders::build([builder], BuildingKind::Turret, anchor));
     assert_refused(
         &mut state,
         turret(TilePos::new(6, 3)),
@@ -912,23 +713,9 @@ fn same_tick_construction_cannot_absorb_a_lethal_hit() {
     .unwrap();
     let (builder, sniper) = (state.units()[0].id, state.units()[1].id);
     let anchor = TilePos::new(5, 6);
-    let build = cmd(
-        0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
-    );
+    let build = cmd(0, orders::build([builder], BuildingKind::Turret, anchor));
     state.tick(std::slice::from_ref(&build));
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let site = building_id(&state, |b| b.anchor == anchor);
     run_until(&mut state, 100, |s, _| {
         s.building(site)
             .unwrap()
@@ -936,12 +723,7 @@ fn same_tick_construction_cannot_absorb_a_lethal_hit() {
             .unwrap_or(0)
             > 0
     });
-    state.tick(&[cmd(
-        0,
-        Command::Stop {
-            units: vec![builder],
-        },
-    )]);
+    state.tick(&[cmd(0, orders::stop([builder]))]);
     let mut doc = serde_json::to_value(&state).unwrap();
     for row in doc["buildings"].as_array_mut().unwrap() {
         if row["id"] == serde_json::json!(site) {
@@ -954,14 +736,7 @@ fn same_tick_construction_cannot_absorb_a_lethal_hit() {
     let events = state
         .tick(&[
             build,
-            cmd(
-                1,
-                Command::Attack {
-                    units: vec![sniper],
-                    target: Target::Building(site).into(),
-                    queue: false,
-                },
-            ),
+            cmd(1, orders::attack([sniper], Target::Building(site))),
         ])
         .events;
     assert!(
@@ -1021,32 +796,14 @@ fn a_doomed_site_never_comes_online() {
         state
             .tick(&[cmd(
                 0,
-                Command::Build {
-                    units: vec![builder],
-                    kind: BuildingKind::Turret,
-                    anchor,
-                    queue: false,
-                    defer: false,
-                },
+                orders::build([builder], BuildingKind::Turret, anchor),
             )])
             .events,
     );
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let site = building_id(&state, |b| b.anchor == anchor);
     all_events.extend(
         state
-            .tick(&[cmd(
-                1,
-                Command::Attack {
-                    units: vec![s1, s2],
-                    target: Target::Building(site).into(),
-                    queue: false,
-                },
-            )])
+            .tick(&[cmd(1, orders::attack([s1, s2], Target::Building(site)))])
             .events,
     );
     // Progress hit 1 on the build tick and 2 on the tick above; the final
@@ -1060,14 +817,7 @@ fn a_doomed_site_never_comes_online() {
     }
     all_events.extend(
         state
-            .tick(&[cmd(
-                1,
-                Command::Attack {
-                    units: vec![l1, l2, l3],
-                    target: Target::Building(site).into(),
-                    queue: false,
-                },
-            )])
+            .tick(&[cmd(1, orders::attack([l1, l2, l3], Target::Building(site)))])
             .events,
     );
     // Sweep a couple more ticks for the destruction event.
@@ -1105,23 +855,20 @@ fn queued_builds_chain_one_builder_through_two_sites() {
     let builder = state.units()[0].id;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: aftermine_sim::stats::BuildingKind::Turret,
-            anchor: TilePos::new(3, 4),
-            queue: false,
-            defer: false,
-        },
+        orders::build(
+            [builder],
+            aftermine_sim::stats::BuildingKind::Turret,
+            TilePos::new(3, 4),
+        ),
     )]);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: aftermine_sim::stats::BuildingKind::FlakTurret,
-            anchor: TilePos::new(9, 2),
-            queue: true,
-            defer: false,
-        },
+        orders::build(
+            [builder],
+            aftermine_sim::stats::BuildingKind::FlakTurret,
+            TilePos::new(9, 2),
+        )
+        .queued(),
     )]);
     // Both sites exist immediately (pay-and-claim at command time) and
     // both prices are gone from the bank.
@@ -1150,30 +897,13 @@ fn a_queued_build_claim_protects_the_site_until_its_worker_arrives() {
     let builder = state.units()[0].id;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(3, 4),
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, TilePos::new(3, 4)),
     )]);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::FlakTurret,
-            anchor: TilePos::new(9, 2),
-            queue: true,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::FlakTurret, TilePos::new(9, 2)).queued(),
     )]);
-    let queued = state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::FlakTurret)
-        .expect("queued site exists")
-        .id;
+    let queued = building_id(&state, |building| building.kind == BuildingKind::FlakTurret);
     let initial_hp = state.building(queued).unwrap().hp;
     assert!(
         state
@@ -1207,41 +937,17 @@ fn replacing_the_only_builders_program_refunds_a_queued_site() {
     let builder = state.units()[0].id;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(3, 4),
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, TilePos::new(3, 4)),
     )]);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::FlakTurret,
-            anchor: TilePos::new(9, 2),
-            queue: true,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::FlakTurret, TilePos::new(9, 2)).queued(),
     )]);
-    let queued = state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::FlakTurret)
-        .expect("queued site exists")
-        .id;
+    let queued = building_id(&state, |building| building.kind == BuildingKind::FlakTurret);
     let bank = state.player(PlayerId(0)).scrap;
     let cost = state.building(queued).unwrap().stats().construction.cost;
 
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(3, 2),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(3, 2)))]);
     let worker = state.unit(builder).unwrap();
     assert_ne!(worker.order, Order::Build { site: queued });
     assert!(
@@ -1266,40 +972,27 @@ fn a_queued_build_whose_site_died_pops_silently_and_the_program_survives() {
     let builder = state.units()[0].id;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: aftermine_sim::stats::BuildingKind::Turret,
-            anchor: TilePos::new(3, 4),
-            queue: false,
-            defer: false,
-        },
+        orders::build(
+            [builder],
+            aftermine_sim::stats::BuildingKind::Turret,
+            TilePos::new(3, 4),
+        ),
     )]);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: aftermine_sim::stats::BuildingKind::FlakTurret,
-            anchor: TilePos::new(9, 2),
-            queue: true,
-            defer: false,
-        },
+        orders::build(
+            [builder],
+            aftermine_sim::stats::BuildingKind::FlakTurret,
+            TilePos::new(9, 2),
+        )
+        .queued(),
     )]);
     let walk_home = TilePos::new(8, 6);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: walk_home,
-            queue: true,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], walk_home).queued())]);
     // Cancel the queued flak site while the turret is still going up.
-    let flak = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == aftermine_sim::stats::BuildingKind::FlakTurret)
-        .unwrap()
-        .id;
+    let flak = building_id(&state, |b| {
+        b.kind == aftermine_sim::stats::BuildingKind::FlakTurret
+    });
     state.tick(&[cmd(0, Command::Cancel { building: flak })]);
     let events = run_until(&mut state, 2_000, |s, _| {
         let u = s.unit(builder).unwrap();
@@ -1331,22 +1024,15 @@ fn a_full_order_queue_refuses_placement_with_nothing_spent() {
     // Fill the program in ONE tick — commands executed across ticks
     // would drain as fast as they queue (short legs complete). The
     // current order is a long march so nothing pops before the probe.
-    let mut fill = vec![cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(13, 6),
-            queue: false,
-        },
-    )];
+    let mut fill = vec![cmd(0, orders::run([builder], TilePos::new(13, 6)))];
     for i in 0..aftermine_sim::stats::ORDER_QUEUE_CAP {
         fill.push(cmd(
             0,
-            Command::Run {
-                units: vec![builder],
-                goal: TilePos::new(12 + i32::try_from(i % 2).unwrap(), 6),
-                queue: true,
-            },
+            orders::run(
+                [builder],
+                TilePos::new(12 + i32::try_from(i % 2).unwrap(), 6),
+            )
+            .queued(),
         ));
     }
     state.tick(&fill);
@@ -1354,13 +1040,12 @@ fn a_full_order_queue_refuses_placement_with_nothing_spent() {
     let sites_before = state.buildings().len();
     let report = state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: aftermine_sim::stats::BuildingKind::Turret,
-            anchor: TilePos::new(3, 4),
-            queue: true,
-            defer: false,
-        },
+        orders::build(
+            [builder],
+            aftermine_sim::stats::BuildingKind::Turret,
+            TilePos::new(3, 4),
+        )
+        .queued(),
     )]);
     assert!(
         report.events.iter().any(|e| matches!(
@@ -1390,24 +1075,20 @@ fn resuming_a_site_sends_every_hand() {
     let crew: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![crew[0]],
-            kind: aftermine_sim::stats::BuildingKind::Turret,
-            anchor: TilePos::new(3, 4),
-            queue: false,
-            defer: false,
-        },
+        orders::build(
+            [crew[0]],
+            aftermine_sim::stats::BuildingKind::Turret,
+            TilePos::new(3, 4),
+        ),
     )]);
     // Resume at the existing site with the full crew: everyone joins.
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: crew.clone(),
-            kind: aftermine_sim::stats::BuildingKind::Turret,
-            anchor: TilePos::new(3, 4),
-            queue: false,
-            defer: false,
-        },
+        orders::build(
+            crew.clone(),
+            aftermine_sim::stats::BuildingKind::Turret,
+            TilePos::new(3, 4),
+        ),
     )]);
     for id in &crew {
         assert!(
@@ -1468,13 +1149,7 @@ fn a_builder_founds_a_building_under_its_own_feet() {
     let anchor = TilePos::new(5, 6); // the builder's own tile
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
     assert!(
         state.buildings().iter().any(|b| b.anchor == anchor),
@@ -1531,13 +1206,7 @@ fn friendly_machines_make_way_for_foundations() {
     let anchor = TilePos::new(5, 6);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Fabricator,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Fabricator, anchor),
     )]);
     assert!(
         state.buildings().iter().any(|b| b.anchor == anchor),
@@ -1582,13 +1251,7 @@ fn an_enemy_machine_still_denies_the_ground() {
     let scrap = state.player(PlayerId(0)).scrap;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Fabricator,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Fabricator, anchor),
     )]);
     assert!(
         state.buildings().iter().all(|b| b.anchor != anchor),
@@ -1636,13 +1299,7 @@ fn an_allied_machine_makes_way_like_your_own() {
     let anchor = TilePos::new(5, 3);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Fabricator,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Fabricator, anchor),
     )]);
     assert!(
         state.buildings().iter().any(|b| b.anchor == anchor),
@@ -1682,36 +1339,16 @@ fn a_rejected_under_feet_build_leaves_no_trace_on_the_hash() {
         .build()
         .unwrap();
     let builder = state.units()[0].id;
-    let mut fill = vec![cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(6, 6),
-            queue: false,
-        },
-    )];
+    let mut fill = vec![cmd(0, orders::run([builder], TilePos::new(6, 6)))];
     for _ in 0..32 {
-        fill.push(cmd(
-            0,
-            Command::Run {
-                units: vec![builder],
-                goal: TilePos::new(7, 6),
-                queue: true,
-            },
-        ));
+        fill.push(cmd(0, orders::run([builder], TilePos::new(7, 6)).queued()));
     }
     state.tick(&fill);
     assert_refused(
         &mut state,
         cmd(
             0,
-            Command::Build {
-                units: vec![builder],
-                kind: BuildingKind::Turret,
-                anchor: TilePos::new(5, 6),
-                queue: true,
-                defer: false,
-            },
+            orders::build([builder], BuildingKind::Turret, TilePos::new(5, 6)).queued(),
         ),
         RejectReason::QueueFull,
     );
@@ -1756,13 +1393,7 @@ fn a_walled_in_machine_drives_across_the_site() {
     let anchor = TilePos::new(5, 3);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Fabricator,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Fabricator, anchor),
     )]);
     assert!(
         state.buildings().iter().any(|b| b.anchor == anchor),
@@ -1809,13 +1440,7 @@ fn sealed_on_a_site(kind: UnitKind) -> (State, UnitId) {
     let site = |kind, x, y| {
         cmd(
             0,
-            Command::Build {
-                units: vec![builder],
-                kind,
-                anchor: TilePos::new(x, y),
-                queue: true,
-                defer: false,
-            },
+            orders::build([builder], kind, TilePos::new(x, y)).queued(),
         )
     };
     let report = state.tick(&[
@@ -1879,18 +1504,8 @@ fn a_unit_clearing_a_site_turns_aside_from_an_enemy_claim_on_its_route() {
         state.units()[1].id,
         state.units()[2].id,
     );
-    let site = |player, unit, kind, anchor| {
-        cmd(
-            player,
-            Command::Build {
-                units: vec![unit],
-                kind,
-                anchor,
-                queue: true,
-                defer: false,
-            },
-        )
-    };
+    let site =
+        |player, unit, kind, anchor| cmd(player, orders::build([unit], kind, anchor).queued());
     state.tick(&[
         site(0, builder, BuildingKind::Fabricator, TilePos::new(18, 13)),
         site(0, builder, BuildingKind::Barricade, TilePos::new(20, 14)),
@@ -1923,16 +1538,7 @@ fn a_unit_clearing_a_site_turns_aside_from_an_enemy_claim_on_its_route() {
 fn a_unit_keeps_its_order_while_it_clears_a_site() {
     let (mut state, sealed) = sealed_on_a_site(UnitKind::Sentinel);
     let goal = TilePos::new(5, 5);
-    let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Run {
-                units: vec![sealed],
-                goal,
-                queue: false,
-            },
-        )])
-        .events;
+    let mut events = state.tick(&[cmd(0, orders::run([sealed], goal))]).events;
     for _ in 0..600 {
         events.extend(state.tick(&[]).events);
     }
@@ -1964,27 +1570,14 @@ fn a_unit_walled_in_on_open_ground_stays_where_it_stands() {
     let wall = |dx, dy| {
         cmd(
             0,
-            Command::Build {
-                units: vec![builder],
-                kind: BuildingKind::Barricade,
-                anchor: at.offset(dx, dy),
-                queue: true,
-                defer: false,
-            },
+            orders::build([builder], BuildingKind::Barricade, at.offset(dx, dy)).queued(),
         )
     };
     state.tick(&[wall(-1, 0), wall(1, 0), wall(0, -1), wall(0, 1)]);
     for _ in 0..200 {
         state.tick(&[]);
     }
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![walled],
-            goal: TilePos::new(5, 5),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([walled], TilePos::new(5, 5)))]);
     for _ in 0..200 {
         state.tick(&[]);
         assert_eq!(state.unit(walled).unwrap().pos, before);
@@ -2009,13 +1602,7 @@ fn a_founder_on_its_own_site_crosses_friendly_walls_but_not_hostile_ones() {
         let founder = state.units()[0].id;
         state.tick(&[cmd(
             0,
-            Command::Build {
-                units: vec![founder],
-                kind: BuildingKind::Barricade,
-                anchor: at,
-                queue: false,
-                defer: false,
-            },
+            orders::build([founder], BuildingKind::Barricade, at),
         )]);
         for _ in 0..100 {
             state.tick(&[]);
@@ -2043,13 +1630,7 @@ fn a_maw_overhanging_two_sites_drives_clear_of_them() {
     let site = |kind, x, y| {
         cmd(
             0,
-            Command::Build {
-                units: vec![builder],
-                kind,
-                anchor: TilePos::new(x, y),
-                queue: true,
-                defer: false,
-            },
+            orders::build([builder], kind, TilePos::new(x, y)).queued(),
         )
     };
     state.tick(&[
@@ -2090,24 +1671,11 @@ fn a_braced_gun_on_a_site_stows_and_drives_off() {
         state.units()[1].id,
         state.units()[2].id,
     );
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![gun],
-            target: Target::Unit(target).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([gun], Target::Unit(target)))]);
     run_until(&mut state, 200, |s, _| s.unit(gun).unwrap().braces() > 0);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Barricade,
-            anchor: at,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Barricade, at),
     )]);
     let braced = state.unit(gun).unwrap();
     assert!(braced.braces() > 0 && !state.passable(braced.tile()));
@@ -2132,13 +1700,7 @@ fn a_fresh_placement_commits_the_whole_crew() {
         let anchor = TilePos::new(3, 4);
         state.tick(&[cmd(
             0,
-            Command::Build {
-                units: ids.clone(),
-                kind: BuildingKind::Turret,
-                anchor,
-                queue: false,
-                defer: false,
-            },
+            orders::build(ids.clone(), BuildingKind::Turret, anchor),
         )]);
         let (hands, sentinel) = ids.split_at(crew);
         for id in hands {
@@ -2181,14 +1743,7 @@ fn a_deferred_build_founds_on_arrival() {
     let builder = state.units()[0].id;
     let spot = TilePos::new(12, 1);
     // Walk home: the spot stays explored but drops out of sight.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |s, _| !s.can_see(PlayerId(0), spot));
     assert!(state.vision(PlayerId(0)).explored(spot));
     assert!(
@@ -2205,13 +1760,7 @@ fn a_deferred_build_founds_on_arrival() {
     let scrap_before = state.player(PlayerId(0)).scrap;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build([builder], BuildingKind::Turret, spot).deferred(),
     )]);
     let cost = BuildingKind::Turret.base_stats().construction.cost;
     assert_eq!(state.player(PlayerId(0)).scrap, scrap_before - cost);
@@ -2241,12 +1790,7 @@ fn a_deferred_build_founds_on_arrival() {
         scrap_before - cost + drip_credits(&state),
         "paid in full when the ground was claimed (plus the passive drip)"
     );
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == spot)
-        .unwrap()
-        .id;
+    let site = building_id(&state, |b| b.anchor == spot);
     assert_eq!(state.unit(builder).unwrap().order, Order::Build { site });
     let events = run_until(&mut state, 800, |_, events| {
         events
@@ -2262,14 +1806,7 @@ fn deferred_founder_fixture() -> (State, UnitId, TilePos) {
         .unwrap();
     let builder = state.units()[0].id;
     let spot = TilePos::new(12, 1);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |state, _| {
         !state.can_see(PlayerId(0), spot)
     });
@@ -2289,22 +1826,11 @@ fn cancelling_a_queued_deferred_site_preserves_the_surrounding_program() {
     state.tick(&[
         cmd(
             0,
-            Command::Build {
-                units: vec![builder],
-                kind: BuildingKind::Turret,
-                anchor: spot,
-                queue: true,
-                defer: true,
-            },
+            orders::build([builder], BuildingKind::Turret, spot)
+                .queued()
+                .deferred(),
         ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![builder],
-                goal: TilePos::new(3, 5),
-                queue: true,
-            },
-        ),
+        cmd(0, orders::run([builder], TilePos::new(3, 5)).queued()),
     ]);
     let active_before = state.unit(builder).unwrap().order;
     assert_eq!(
@@ -2392,22 +1918,9 @@ fn cancelling_an_active_deferred_site_promotes_the_next_leg() {
     let scrap_before = state.player(PlayerId(0)).scrap;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build([builder], BuildingKind::Turret, spot).deferred(),
     )]);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(3, 5),
-            queue: true,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(3, 5)).queued())]);
 
     state.tick(&[cmd(
         0,
@@ -2444,13 +1957,7 @@ fn cancelling_a_deferred_site_drops_the_whole_builder_crew() {
 
     let placed = state.tick(&[cmd(
         0,
-        Command::Build {
-            units: crew.clone(),
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: true,
-        },
+        orders::build(crew.clone(), BuildingKind::Turret, anchor).deferred(),
     )]);
     assert!(
         !placed
@@ -2458,12 +1965,7 @@ fn cancelling_a_deferred_site_drops_the_whole_builder_crew() {
             .iter()
             .any(|event| matches!(event, Event::CommandRejected { .. }))
     );
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let site = building_id(&state, |b| b.anchor == anchor);
     assert!(
         crew.iter()
             .all(|id| state.unit(*id).unwrap().order == Order::Build { site })
@@ -2511,20 +2013,9 @@ fn cancelling_a_started_site_by_kind_and_anchor_matches_cancelling_it_by_id() {
     let anchor = TilePos::new(9, 5);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .expect("the site stands")
-        .id;
+    let site = building_id(&state, |b| b.anchor == anchor);
     for _ in 0..600 {
         if state
             .building(site)
@@ -2577,47 +2068,22 @@ fn repeated_pending_cancellation_cannot_retarget_the_next_site() {
     let first = TilePos::new(9, 5);
     let second = TilePos::new(9, 7);
     state.tick(&[
+        cmd(0, orders::run([builder], TilePos::new(3, 2))),
         cmd(
             0,
-            Command::Run {
-                units: vec![builder],
-                goal: TilePos::new(3, 2),
-                queue: false,
-            },
+            orders::build([builder], BuildingKind::Turret, first)
+                .queued()
+                .deferred(),
         ),
         cmd(
             0,
-            Command::Build {
-                units: vec![builder],
-                kind: BuildingKind::Turret,
-                anchor: first,
-                queue: true,
-                defer: true,
-            },
-        ),
-        cmd(
-            0,
-            Command::Build {
-                units: vec![builder],
-                kind: BuildingKind::Turret,
-                anchor: second,
-                queue: true,
-                defer: true,
-            },
+            orders::build([builder], BuildingKind::Turret, second)
+                .queued()
+                .deferred(),
         ),
     ]);
-    let first_id = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == first)
-        .unwrap()
-        .id;
-    let second_id = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == second)
-        .unwrap()
-        .id;
+    let first_id = building_id(&state, |b| b.anchor == first);
+    let second_id = building_id(&state, |b| b.anchor == second);
     assert_eq!(
         state
             .unit(builder)
@@ -2687,47 +2153,18 @@ fn cancelling_a_paid_queued_site_removes_only_its_build_leg() {
     let second_anchor = TilePos::new(8, 6);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: first_anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, first_anchor),
     )]);
-    let first = state
-        .buildings()
-        .iter()
-        .find(|building| building.anchor == first_anchor)
-        .unwrap()
-        .id;
+    let first = building_id(&state, |building| building.anchor == first_anchor);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: second_anchor,
-            queue: true,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, second_anchor).queued(),
     )]);
-    let second = state
-        .buildings()
-        .iter()
-        .find(|building| building.anchor == second_anchor)
-        .unwrap()
-        .id;
+    let second = building_id(&state, |building| building.anchor == second_anchor);
     let later = Order::Run {
         goal: TilePos::new(3, 2).into(),
     };
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(3, 2),
-            queue: true,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(3, 2)).queued())]);
     let second_site = state.building(second).unwrap();
     let stats = second_site.kind.base_stats();
     let expected_refund = stats.construction.cost;
@@ -2766,14 +2203,7 @@ fn reissuing_a_deferred_build_ignores_the_selected_founders_claim() {
         .unwrap();
     let builder = state.units()[0].id;
     let spot = TilePos::new(12, 1);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |s, _| !s.can_see(PlayerId(0), spot));
     assert!(state.vision(PlayerId(0)).explored(spot));
 
@@ -2833,14 +2263,7 @@ fn retargeting_a_deferred_build_ignores_the_replaced_footprint() {
     let builder = state.units()[0].id;
     let old_spot = TilePos::new(12, 1);
     let new_spot = TilePos::new(13, 1);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |s, _| {
         !s.can_see(PlayerId(0), old_spot) && !s.can_see(PlayerId(0), new_spot)
     });
@@ -2848,13 +2271,7 @@ fn retargeting_a_deferred_build_ignores_the_replaced_footprint() {
 
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Fabricator,
-            anchor: old_spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build([builder], BuildingKind::Fabricator, old_spot).deferred(),
     )]);
     assert_eq!(
         state.unit(builder).unwrap().order,
@@ -2865,13 +2282,7 @@ fn retargeting_a_deferred_build_ignores_the_replaced_footprint() {
     );
     let report = state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Fabricator,
-            anchor: new_spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build([builder], BuildingKind::Fabricator, new_spot).deferred(),
     )]);
     assert!(
         !report
@@ -2904,27 +2315,14 @@ fn a_deferred_build_respects_an_unselected_founders_claim() {
     let second = state.units()[1].id;
     let old_spot = TilePos::new(12, 1);
     let overlapping_spot = TilePos::new(13, 1);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![first, second],
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([first, second], TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |s, _| {
         !s.can_see(PlayerId(0), old_spot) && !s.can_see(PlayerId(0), overlapping_spot)
     });
 
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![first],
-            kind: BuildingKind::Fabricator,
-            anchor: old_spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build([first], BuildingKind::Fabricator, old_spot).deferred(),
     )]);
     assert_eq!(
         state.unit(first).unwrap().order,
@@ -2935,13 +2333,7 @@ fn a_deferred_build_respects_an_unselected_founders_claim() {
     );
     let report = state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![second],
-            kind: BuildingKind::Fabricator,
-            anchor: overlapping_spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build([second], BuildingKind::Fabricator, overlapping_spot).deferred(),
     )]);
     assert!(report.events.iter().any(|event| matches!(
         event,
@@ -2975,38 +2367,16 @@ fn a_deferred_claim_on_taken_ground_is_refunded_when_revealed() {
     .unwrap();
     let (founder, rival) = (state.units()[0].id, state.units()[1].id);
     let spot = TilePos::new(12, 1);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![founder],
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([founder], TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |s, _| !s.can_see(PlayerId(0), spot));
     // The rival claims the corner while nobody watches.
-    state.tick(&[cmd(
-        1,
-        Command::Build {
-            units: vec![rival],
-            kind: BuildingKind::Turret,
-            anchor: spot,
-            queue: false,
-            defer: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::build([rival], BuildingKind::Turret, spot))]);
     assert!(state.buildings().iter().any(|b| b.anchor == spot));
 
     let scrap_before = state.player(PlayerId(0)).scrap;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![founder],
-            kind: BuildingKind::Turret,
-            anchor: spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build([founder], BuildingKind::Turret, spot).deferred(),
     )]);
     assert_eq!(
         state.unit(founder).unwrap().order,
@@ -3066,33 +2436,15 @@ fn a_stopped_pending_found_spends_nothing() {
         .unwrap();
     let builder = state.units()[0].id;
     let spot = TilePos::new(12, 1);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |s, _| !s.can_see(PlayerId(0), spot));
     let scrap_before = state.player(PlayerId(0)).scrap;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build([builder], BuildingKind::Turret, spot).deferred(),
     )]);
     state.tick(&[]);
-    state.tick(&[cmd(
-        0,
-        Command::Stop {
-            units: vec![builder],
-        },
-    )]);
+    state.tick(&[cmd(0, orders::stop([builder]))]);
     for _ in 0..300 {
         state.tick(&[]);
     }
@@ -3121,13 +2473,7 @@ fn a_rejected_deferred_build_leaves_no_trace_on_the_hash() {
         &mut state,
         cmd(
             0,
-            Command::Build {
-                units: vec![builder],
-                kind: BuildingKind::Turret,
-                anchor: unscouted,
-                queue: false,
-                defer: true,
-            },
+            orders::build([builder], BuildingKind::Turret, unscouted).deferred(),
         ),
         RejectReason::BadSite,
     );
@@ -3156,14 +2502,7 @@ fn intent_verdicts_ignore_what_fog_hides() {
     // March the scout home in both worlds; identical command stream.
     for state in [&mut plain, &mut ambushed] {
         let scout = state.units()[0].id;
-        state.tick(&[cmd(
-            0,
-            Command::Run {
-                units: vec![scout],
-                goal: TilePos::new(3, 5),
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::run([scout], TilePos::new(3, 5)))]);
         run_until(state, 800, |s, _| !s.can_see(PlayerId(0), spot));
         assert!(state.vision(PlayerId(0)).explored(spot));
     }
@@ -3175,14 +2514,7 @@ fn intent_verdicts_ignore_what_fog_hides() {
         .filter(|u| u.player == PlayerId(1))
         .map(|u| u.id)
         .collect();
-    ambushed.tick(&[cmd(
-        1,
-        Command::Run {
-            units: squad.clone(),
-            goal: spot,
-            queue: false,
-        },
-    )]);
+    ambushed.tick(&[cmd(1, orders::run(squad.clone(), spot))]);
     run_until(&mut ambushed, 800, |s, _| {
         squad
             .iter()
@@ -3229,24 +2561,11 @@ fn a_deferred_crew_founds_once_and_stacks() {
     .unwrap();
     let crew: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
     let spot = TilePos::new(12, 1);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: crew.clone(),
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run(crew.clone(), TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |s, _| !s.can_see(PlayerId(0), spot));
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: crew.clone(),
-            kind: BuildingKind::Turret,
-            anchor: spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build(crew.clone(), BuildingKind::Turret, spot).deferred(),
     )]);
     for id in &crew {
         assert!(matches!(
@@ -3291,31 +2610,15 @@ fn cancelling_a_paid_deferred_site_clears_every_crewmates_promise() {
     let (founder, active_crewmate, queued_crewmate) = (crew[0], crew[1], crew[2]);
     let anchor = TilePos::new(10, 6);
 
+    state.tick(&[cmd(0, orders::run([queued_crewmate], TilePos::new(3, 2)))]);
     state.tick(&[cmd(
         0,
-        Command::Run {
-            units: vec![queued_crewmate],
-            goal: TilePos::new(3, 2),
-            queue: false,
-        },
-    )]);
-    state.tick(&[cmd(
-        0,
-        Command::Build {
-            units: crew,
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: true,
-            defer: true,
-        },
+        orders::build(crew, BuildingKind::Turret, anchor)
+            .queued()
+            .deferred(),
     )]);
 
-    let site = state
-        .buildings()
-        .iter()
-        .find(|building| building.anchor == anchor)
-        .expect("the adjacent founder claims the deferred site")
-        .id;
+    let site = building_id(&state, |building| building.anchor == anchor);
     assert_eq!(state.unit(founder).unwrap().order, Order::Build { site });
     assert_eq!(
         state.unit(active_crewmate).unwrap().order,
@@ -3382,13 +2685,7 @@ fn a_late_crewmate_finds_its_building_finished_and_calls_it_done() {
     let spot = TilePos::new(12, 1);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: crew,
-            kind: BuildingKind::Turret,
-            anchor: spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build(crew, BuildingKind::Turret, spot).deferred(),
     )]);
     run_until(&mut state, 2_000, |s, _| {
         s.buildings().iter().any(|b| b.anchor == spot && b.built())
@@ -3427,40 +2724,16 @@ fn a_paid_founder_cannot_lose_its_funding_to_training() {
     let mut state = scenario.build().unwrap();
     let builder = state.units()[0].id;
     let spot = TilePos::new(12, 1);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |s, _| !s.can_see(PlayerId(0), spot));
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build([builder], BuildingKind::Turret, spot).deferred(),
     )]);
     // Drain the bank while the founder walks: train a unit at the
     // Foundry (paid on enqueue).
-    let foundry = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(0))
-        .unwrap()
-        .id;
-    let training = state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: foundry,
-            kind: UnitKind::Harvester,
-        },
-    )]);
+    let foundry = building_id(&state, |b| b.player == PlayerId(0));
+    let training = state.tick(&[cmd(0, orders::train(foundry, UnitKind::Harvester))]);
     assert!(training.events.iter().any(|e| matches!(
         e,
         Event::CommandRejected {
