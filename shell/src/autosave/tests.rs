@@ -186,12 +186,14 @@ fn a_named_save_skips_a_taken_name_and_a_failed_one_leaves_nothing() {
             Ok(())
         }
     };
-    let first = publish_named(&dir, "save", 7, write(b"first")).unwrap();
-    let second = publish_named(&dir, "save", 7, write(b"second")).unwrap();
+    let first = publish_named(&dir, RecordKind::Save, 7, write(b"first")).unwrap();
+    let second = publish_named(&dir, RecordKind::Save, 7, write(b"second")).unwrap();
     assert_ne!(first, second, "a taken name is skipped, never replaced");
     assert_eq!(std::fs::read(&first).unwrap(), b"first");
     assert_eq!(std::fs::read(&second).unwrap(), b"second");
-    let failed = publish_named(&dir, "save", 7, |_| Err(anyhow::anyhow!("disk full")));
+    let failed = publish_named(&dir, RecordKind::Save, 7, |_| {
+        Err(anyhow::anyhow!("disk full"))
+    });
     assert!(matches!(failed, Err(SaveError::Write { .. })));
     assert_eq!(files(&dir).len(), 2, "a failed save leaves no file behind");
     std::fs::remove_dir_all(dir).unwrap();
@@ -536,7 +538,7 @@ fn rotation_keeps_the_last_five_matches() {
     let expected: Vec<String> = {
         let mut names: Vec<String> = slots[1..]
             .iter()
-            .map(|slot| slot.file("autosave"))
+            .map(|slot| slot.file(RecordKind::Autosave))
             .collect();
         names.sort();
         names
@@ -556,7 +558,7 @@ fn a_decided_match_writes_its_record_and_drops_its_slot() {
     game.do_tick();
     assert!(game.state.result().is_some());
     let job = SaveJob::capture(&game, None);
-    assert_eq!(job.folder, Folder::Matches);
+    assert_eq!(job.kind, RecordKind::Match);
     let mark = job.mark().unwrap();
     let Ok(Some(record)) = job.run_in(Some(matches.clone()), std::slice::from_ref(&autosaves))
     else {
@@ -567,7 +569,7 @@ fn a_decided_match_writes_its_record_and_drops_its_slot() {
         files(&autosaves).is_empty(),
         "the record replaces the autosave"
     );
-    assert_eq!(files(&matches), vec![game.slot.file("match")]);
+    assert_eq!(files(&matches), vec![game.slot.file(RecordKind::Match)]);
     let recording = aftermine_kit::load_recording(&record).unwrap();
     assert_eq!(recording.replay.meta.kind.as_deref(), Some("match"));
     assert_eq!(
@@ -671,12 +673,12 @@ fn a_slot_holds_one_autosave_kind() {
         None,
     );
     assert!(matches!(run_at(job, &dir), Ok(Some(_))));
-    assert_eq!(files(&dir), vec![game.slot.file("lan-autosave")]);
+    assert_eq!(files(&dir), vec![game.slot.file(RecordKind::LanAutosave)]);
     game.advance_ticks(1);
     assert!(matches!(write_record(&mut game, &dir), Ok(Some(_))));
     assert_eq!(
         files(&dir),
-        vec![game.slot.file("autosave")],
+        vec![game.slot.file(RecordKind::Autosave)],
         "a host resumed alone keeps one autosave"
     );
     std::fs::remove_dir_all(&dir).ok();
@@ -696,7 +698,7 @@ fn a_session_left_on_the_device_moves_into_icloud_when_resumed() {
         job.run_in(Some(cloud.clone()), &both),
         Ok(Some(_))
     ));
-    assert_eq!(files(&cloud), vec![game.slot.file("autosave")]);
+    assert_eq!(files(&cloud), vec![game.slot.file(RecordKind::Autosave)]);
     assert!(files(&device).is_empty(), "one match keeps one autosave");
     std::fs::remove_dir_all(&root).ok();
 }
@@ -706,7 +708,7 @@ fn restarting_drops_the_abandoned_slot() {
     let dir = scratch("discard");
     std::fs::create_dir_all(&dir).unwrap();
     let slot = SaveSlot("9".into());
-    for kind in AUTOSAVE_KINDS {
+    for kind in RecordKind::AUTOSAVES {
         std::fs::write(dir.join(slot.file(kind)), b"{}").unwrap();
     }
     discard_in(std::slice::from_ref(&slot), &[]);

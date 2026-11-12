@@ -2,6 +2,7 @@
 
 use crate::game::checkpoint::{GameCheckpoint, LanSave, RestoredGame, SaveCapture};
 use crate::numeric::Fit;
+use crate::saves::RecordKind;
 use aftermine_sim::SIM_VERSION;
 use anyhow::{Context, Result, ensure};
 use chassis::replay::ReplayMeta;
@@ -60,7 +61,7 @@ impl Unavailable {
 
 pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path) -> Result<()> {
     ensure!(
-        capture.is_lan() == lan_kind(meta.kind.as_deref()),
+        capture.is_lan() == RecordKind::of(&meta).lan(),
         "save kind does not match the match"
     );
     let checkpoint = capture.checkpoint()?;
@@ -136,10 +137,7 @@ fn check_header(header: &Header) -> Result<()> {
         header.meta.sim_version
     );
     ensure!(
-        matches!(
-            header.meta.kind.as_deref(),
-            Some("save" | "autosave" | "lan" | "lan-autosave")
-        ),
+        RecordKind::of(&header.meta) != RecordKind::Match,
         "invalid save kind"
     );
     let max = aftermine_sim::scenario::MAX_PLAYERS;
@@ -152,11 +150,6 @@ fn check_header(header: &Header) -> Result<()> {
         "invalid save teams"
     );
     Ok(())
-}
-
-/// Whether a save of `kind` holds a LAN match.
-fn lan_kind(kind: Option<&str>) -> bool {
-    matches!(kind, Some("lan" | "lan-autosave"))
 }
 
 /// A save, checked and ready: a local match to install, or a LAN match
@@ -172,7 +165,7 @@ pub(crate) fn prepare(path: &Path) -> Result<Loaded> {
     let checkpoint: GameCheckpoint = ciborium::from_reader(&mut reader)?;
     ensure!(reader.is_empty(), "trailing checkpoint payload");
     ensure!(
-        checkpoint.is_lan() == lan_kind(header.meta.kind.as_deref()),
+        checkpoint.is_lan() == RecordKind::of(&header.meta).lan(),
         "save kind does not match the match"
     );
     let slot = crate::autosave::SaveSlot::adopt(path, &crate::paths::records().autosave_folders());

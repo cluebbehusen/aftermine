@@ -433,20 +433,20 @@ fn lan_saves_are_their_own_kinds_and_resume_rather_than_play_back() {
         ("lan-autosave", RecordKind::LanAutosave),
     ] {
         meta.kind = Some(tag.to_owned());
-        assert_eq!(record_kind(&meta), kind);
+        assert_eq!(RecordKind::of(&meta), kind);
         assert!(kind.resumable(), "{kind:?}");
     }
     assert!(!RecordKind::Match.resumable());
-    let continues: Vec<RecordKind> = [
-        RecordKind::Autosave,
-        RecordKind::Save,
-        RecordKind::Match,
-        RecordKind::LanSave,
-        RecordKind::LanAutosave,
-    ]
-    .into_iter()
-    .filter(|kind| kind.continues())
-    .collect();
+    for kind in RecordKind::ALL {
+        meta.kind = Some(kind.key().to_owned());
+        assert_eq!(RecordKind::of(&meta), kind, "its key reads back");
+    }
+    meta.kind = None;
+    assert_eq!(RecordKind::of(&meta), RecordKind::Match, "untagged");
+    let continues: Vec<RecordKind> = RecordKind::ALL
+        .into_iter()
+        .filter(|kind| kind.continues())
+        .collect();
     assert_eq!(
         continues,
         [
