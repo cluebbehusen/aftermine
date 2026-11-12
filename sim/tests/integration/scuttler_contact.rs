@@ -2,9 +2,9 @@
 use crate::common;
 use aftermine_sim::scenario::BuildingSpec;
 use aftermine_sim::stats::BuildingKind;
-use aftermine_sim::{Command, Event, Target, UnitKind};
+use aftermine_sim::{Event, Target, UnitKind};
 use chassis::fx::Fx;
-use common::{cmd, open_arena, unit};
+use common::{building_id, cmd, open_arena, orders, unit};
 
 #[test]
 fn scuttler_closes_to_building_contact_from_faces_and_corners() {
@@ -25,23 +25,11 @@ fn scuttler_closes_to_building_contact_from_faces_and_corners() {
         });
         let mut state = scenario.build().unwrap();
         let attacker = state.units()[0].id;
-        let victim = state
-            .buildings()
-            .iter()
-            .find(|b| b.kind == BuildingKind::Fabricator)
-            .unwrap()
-            .id;
+        let victim = building_id(&state, |b| b.kind == BuildingKind::Fabricator);
         let mut hits = vec![];
         for tick in 0..350 {
             let commands = if tick == 0 {
-                vec![cmd(
-                    0,
-                    Command::Attack {
-                        units: vec![attacker],
-                        target: Target::Building(victim).into(),
-                        queue: false,
-                    },
-                )]
+                vec![cmd(0, orders::attack([attacker], Target::Building(victim)))]
             } else {
                 vec![]
             };
@@ -95,14 +83,7 @@ fn scuttler_can_bite_small_and_large_chassis_without_overlapping_them() {
         let mut struck = false;
         for tick in 0..100 {
             let commands = if tick == 0 {
-                vec![cmd(
-                    0,
-                    Command::Attack {
-                        units: vec![attacker],
-                        target: Target::Unit(victim).into(),
-                        queue: false,
-                    },
-                )]
+                vec![cmd(0, orders::attack([attacker], Target::Unit(victim)))]
             } else {
                 vec![]
             };

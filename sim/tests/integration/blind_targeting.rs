@@ -60,23 +60,12 @@ fn ground_guns_hold_fire_on_an_air_contact() {
     // Radar tells a flyer from a ground machine, so no ground-only gun
     // spends a shell on a Kestrel blip, and none can be ordered onto one.
     let mut state = radar_scene(None, Some(BuildingKind::Bastion), UnitKind::Kestrel);
-    let bastion = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Bastion)
-        .unwrap()
-        .id;
+    let bastion = building_id(&state, |b| b.kind == BuildingKind::Bastion);
     assert_eq!(
         state.vision(PlayerId(0)).contacts(),
         [air_blip(TilePos::new(14, 8))]
     );
-    let report = state.tick(&[cmd(
-        0,
-        Command::FocusFire {
-            buildings: vec![bastion],
-            target: blip(&state),
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::focus_fire([bastion], blip(&state)))]);
     assert!(
         report
             .events
@@ -105,14 +94,7 @@ fn ground_guns_hold_fire_on_an_air_contact() {
                 .any(|e| matches!(e, Event::ShellLaunched { .. }))
         );
     }
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![gun],
-            target: blip(&state),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([gun], blip(&state)))]);
     assert!(
         matches!(state.unit(gun).unwrap().order, Order::Run { .. }),
         "a gun that cannot hit the contact walks to it instead"
@@ -125,14 +107,7 @@ fn hunting_artillery_shells_a_ground_contact_but_walks_past_an_air_one() {
         let mut state = radar_scene(Some(UnitKind::Avalanche), None, enemy);
         let gun = state.units()[1].id;
         let start = state.unit(gun).unwrap().pos;
-        state.tick(&[cmd(
-            0,
-            Command::Hunt {
-                units: vec![gun],
-                goal: TilePos::new(5, 25),
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::hunt([gun], TilePos::new(5, 25)))]);
         let mut fired = false;
         for _ in 0..300 {
             fired |= state.tick(&[]).events.iter().any(|e| {
@@ -155,20 +130,9 @@ fn hunting_artillery_shells_a_ground_contact_but_walks_past_an_air_one() {
 #[test]
 fn explicit_contact_is_retained_and_stop_clears_defense_focus() {
     let mut state = radar_scene(None, Some(BuildingKind::Bastion), UnitKind::Harvester);
-    let id = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Bastion)
-        .unwrap()
-        .id;
+    let id = building_id(&state, |b| b.kind == BuildingKind::Bastion);
     let target = blip(&state);
-    state.tick(&[cmd(
-        0,
-        Command::FocusFire {
-            buildings: vec![id, id],
-            target,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::focus_fire([id, id], target))]);
     assert_eq!(state.building(id).unwrap().focus, Some(target));
     state.tick(&[cmd(
         0,
@@ -183,12 +147,7 @@ fn explicit_contact_is_retained_and_stop_clears_defense_focus() {
 fn automatic_avalanche_fires_without_pursuing_but_explicit_attack_pursues() {
     // The Excavator outlasts the one shell this window allows.
     let mut state = radar_scene(Some(UnitKind::Avalanche), None, UnitKind::Excavator);
-    let gun = state
-        .units()
-        .iter()
-        .find(|u| u.player == PlayerId(0))
-        .unwrap()
-        .id;
+    let gun = unit_id(&state, |u| u.player == PlayerId(0));
     let start = state.unit(gun).unwrap().pos;
     let mut fired = false;
     for _ in 0..100 {
@@ -201,27 +160,13 @@ fn automatic_avalanche_fires_without_pursuing_but_explicit_attack_pursues() {
     assert!(fired);
     assert_eq!(state.unit(gun).unwrap().pos, start);
     assert_eq!(state.unit(gun).unwrap().order, Order::Idle);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![gun],
-            goal: TilePos::new(2, 27),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([gun], TilePos::new(2, 27)))]);
     for _ in 0..700 {
         state.tick(&[]);
     }
     let target = blip(&state);
     let start = state.unit(gun).unwrap().pos;
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![gun],
-            target,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([gun], target))]);
     for _ in 0..80 {
         state.tick(&[]);
     }
@@ -231,44 +176,19 @@ fn automatic_avalanche_fires_without_pursuing_but_explicit_attack_pursues() {
 #[test]
 fn lost_contact_clears_preference_and_returning_detection_has_a_new_id() {
     let mut state = radar_scene(None, Some(BuildingKind::Bastion), UnitKind::Kestrel);
-    let gun = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Bastion)
-        .unwrap()
-        .id;
+    let gun = building_id(&state, |b| b.kind == BuildingKind::Bastion);
     let enemy = state.units()[0].id;
     let old = blip(&state);
     state.tick(&[
-        cmd(
-            0,
-            Command::FocusFire {
-                buildings: vec![gun],
-                target: old,
-            },
-        ),
-        cmd(
-            1,
-            Command::Run {
-                units: vec![enemy],
-                goal: TilePos::new(35, 8),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::focus_fire([gun], old)),
+        cmd(1, orders::run([enemy], TilePos::new(35, 8))),
     ]);
     for _ in 0..300 {
         state.tick(&[]);
     }
     assert!(state.building(gun).unwrap().focus.is_none());
     assert!(state.attack_view(PlayerId(0), old).is_none());
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![enemy],
-            goal: TilePos::new(14, 8),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([enemy], TilePos::new(14, 8)))]);
     for _ in 0..300 {
         state.tick(&[]);
     }
@@ -310,14 +230,7 @@ fn visible_attack_becomes_anonymous_when_only_radar_remains() {
         .find(|t| t.visible_unit == Some(enemy))
         .unwrap()
         .id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(2, 8),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(2, 8)))]);
     for _ in 0..120 {
         state.tick(&[]);
     }
@@ -329,19 +242,13 @@ fn visible_attack_becomes_anonymous_when_only_radar_remains() {
 #[test]
 fn unknown_contact_command_is_hash_inert_at_dispatch() {
     let state = radar_scene(Some(UnitKind::Avalanche), None, UnitKind::Kestrel);
-    let gun = state
-        .units()
-        .iter()
-        .find(|u| u.player == PlayerId(0))
-        .unwrap()
-        .id;
+    let gun = unit_id(&state, |u| u.player == PlayerId(0));
     let commands = [cmd(
         0,
-        Command::Attack {
-            units: vec![gun],
-            target: AttackTarget::Contact(aftermine_sim::ContactId(u32::MAX)),
-            queue: false,
-        },
+        orders::attack(
+            [gun],
+            AttackTarget::Contact(aftermine_sim::ContactId(u32::MAX)),
+        ),
     )];
     state.inspect_command_phase(&commands, |view| {
         assert_eq!(
@@ -355,14 +262,7 @@ fn unknown_contact_command_is_hash_inert_at_dispatch() {
 fn contact_histories_round_trip_and_replay_deterministically() {
     let mut state = radar_scene(Some(UnitKind::Avalanche), None, UnitKind::Kestrel);
     let enemy = state.units()[0].id;
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![enemy],
-            goal: TilePos::new(18, 8),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([enemy], TilePos::new(18, 8)))]);
     for _ in 0..20 {
         state.tick(&[]);
     }
@@ -405,36 +305,17 @@ fn remembered_building_keeps_taking_fire_until_scouting_confirms_its_loss() {
     let mut state = scenario.build().unwrap();
     let scout = state.units()[0].id;
     let gun = state.units()[1].id;
-    let building = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Reclaimer)
-        .unwrap()
-        .id;
+    let building = building_id(&state, |b| b.kind == BuildingKind::Reclaimer);
     let memory = state
         .attack_objective(PlayerId(0), Target::Building(building).into())
         .unwrap();
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(2, 3),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(2, 3)))]);
     for _ in 0..100 {
         state.tick(&[]);
     }
     assert!(!state.can_see(PlayerId(0), TilePos::new(14, 8)));
     let start = state.unit(gun).unwrap().pos;
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![gun],
-            target: memory,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([gun], memory))]);
     let mut blind_shots = 0;
     for _ in 0..600 {
         blind_shots += state
@@ -450,14 +331,7 @@ fn remembered_building_keeps_taking_fire_until_scouting_confirms_its_loss() {
     assert_eq!(state.unit(gun).unwrap().pos, start);
     assert!(matches!(state.unit(gun).unwrap().order,Order::Attack{target,..} if target==memory));
     assert!(state.attack_view(PlayerId(0), memory).is_some());
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(12, 3),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(12, 3)))]);
     for _ in 0..130 {
         state.tick(&[]);
     }
@@ -513,36 +387,17 @@ fn every_ground_combat_chassis_can_act_on_a_building_memory() {
         let mut state = scenario.build().unwrap();
         let scout = state.units()[0].id;
         let gun = state.units()[1].id;
-        let building = state
-            .buildings()
-            .iter()
-            .find(|b| b.kind == BuildingKind::Reclaimer)
-            .unwrap()
-            .id;
+        let building = building_id(&state, |b| b.kind == BuildingKind::Reclaimer);
         let target = state
             .attack_objective(PlayerId(0), Target::Building(building).into())
             .unwrap();
-        state.tick(&[cmd(
-            0,
-            Command::Run {
-                units: vec![scout],
-                goal: TilePos::new(2, 3),
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::run([scout], TilePos::new(2, 3)))]);
         for _ in 0..250 {
             state.tick(&[]);
         }
         assert!(!state.can_see(PlayerId(0), TilePos::new(19, 8)), "{kind:?}");
         let hp = state.building(building).unwrap().hp;
-        let report = state.tick(&[cmd(
-            0,
-            Command::Attack {
-                units: vec![gun],
-                target,
-                queue: false,
-            },
-        )]);
+        let report = state.tick(&[cmd(0, orders::attack([gun], target))]);
         assert!(
             !report
                 .events
@@ -570,19 +425,8 @@ fn concealed_identity_domain_health_and_position_do_not_change_firing_decisions(
     let base = radar_scene(None, Some(BuildingKind::Bastion), UnitKind::Kestrel);
     let mut air = base.clone();
     let target = blip(&base);
-    let gun = base
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Bastion)
-        .unwrap()
-        .id;
-    let command = cmd(
-        0,
-        Command::FocusFire {
-            buildings: vec![gun],
-            target,
-        },
-    );
+    let gun = building_id(&base, |b| b.kind == BuildingKind::Bastion);
+    let command = cmd(0, orders::focus_fire([gun], target));
     let a = air.tick(std::slice::from_ref(&command));
     let launches = |report: aftermine_sim::TickReport| {
         report
@@ -648,51 +492,16 @@ fn expired_queued_contact_cannot_bind_to_its_reappearance() {
     let gun = state.units()[1].id;
     let old = blip(&state);
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![gun],
-                goal: TilePos::new(2, 26),
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Attack {
-                units: vec![gun],
-                target: old,
-                queue: true,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![gun],
-                goal: TilePos::new(4, 26),
-                queue: true,
-            },
-        ),
-        cmd(
-            1,
-            Command::Run {
-                units: vec![enemy],
-                goal: TilePos::new(35, 8),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([gun], TilePos::new(2, 26))),
+        cmd(0, orders::attack([gun], old).queued()),
+        cmd(0, orders::run([gun], TilePos::new(4, 26)).queued()),
+        cmd(1, orders::run([enemy], TilePos::new(35, 8))),
     ]);
     for _ in 0..150 {
         state.tick(&[]);
     }
     assert!(state.attack_view(PlayerId(0), old).is_none());
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![enemy],
-            goal: TilePos::new(14, 8),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([enemy], TilePos::new(14, 8)))]);
     for _ in 0..1000 {
         state.tick(&[]);
         state.validate_invariants().unwrap();
@@ -732,35 +541,12 @@ fn removing_the_array_ends_its_contacts_and_defense_preference() {
     ];
     let mut state = scenario.build().unwrap();
     let worker = state.units()[0].id;
-    let array = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Array)
-        .unwrap()
-        .id;
-    let defense = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Bastion)
-        .unwrap()
-        .id;
+    let array = building_id(&state, |b| b.kind == BuildingKind::Array);
+    let defense = building_id(&state, |b| b.kind == BuildingKind::Bastion);
     let contact = blip(&state);
     state.tick(&[
-        cmd(
-            0,
-            Command::FocusFire {
-                buildings: vec![defense],
-                target: contact,
-            },
-        ),
-        cmd(
-            0,
-            Command::Salvage {
-                units: vec![worker],
-                building: array,
-                queue: false,
-            },
-        ),
+        cmd(0, orders::focus_fire([defense], contact)),
+        cmd(0, orders::salvage([worker], array)),
     ]);
     for _ in 0..600 {
         if state.building(array).is_none() {
@@ -799,14 +585,7 @@ fn explicit_radar_attack_routes_to_a_firing_stand_beside_impassable_ground() {
         state.tick(&[]);
     }
     assert_eq!(state.unit(gun).unwrap().pos, before);
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![gun],
-            target,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([gun], target))]);
     let mut fired = false;
     for _ in 0..800 {
         let report = state.tick(&[]);
@@ -862,24 +641,12 @@ fn unreachable_blind_attacks_stall_once_and_clear_the_program() {
             let mut state = scenario.build().unwrap();
             let gun = state.units()[0].id;
             let target = if remembered {
-                let building = state
-                    .buildings()
-                    .iter()
-                    .find(|b| b.kind == BuildingKind::Reclaimer)
-                    .unwrap()
-                    .id;
+                let building = building_id(&state, |b| b.kind == BuildingKind::Reclaimer);
                 let target = state
                     .attack_objective(PlayerId(0), Target::Building(building).into())
                     .unwrap();
                 let scout = state.units()[1].id;
-                state.tick(&[cmd(
-                    0,
-                    Command::Run {
-                        units: vec![scout],
-                        goal: TilePos::new(34, 25),
-                        queue: false,
-                    },
-                )]);
+                state.tick(&[cmd(0, orders::run([scout], TilePos::new(34, 25)))]);
                 for _ in 0..250 {
                     state.tick(&[]);
                 }
@@ -896,22 +663,8 @@ fn unreachable_blind_attacks_stall_once_and_clear_the_program() {
             };
             let start = state.unit(gun).unwrap().pos;
             let report = state.tick(&[
-                cmd(
-                    0,
-                    Command::Attack {
-                        units: vec![gun],
-                        target,
-                        queue: false,
-                    },
-                ),
-                cmd(
-                    0,
-                    Command::Run {
-                        units: vec![gun],
-                        goal: TilePos::new(4, 10),
-                        queue: true,
-                    },
-                ),
+                cmd(0, orders::attack([gun], target)),
+                cmd(0, orders::run([gun], TilePos::new(4, 10)).queued()),
             ]);
             assert!(report.events.iter().any(|event| matches!(event, Event::OrderStalled { unit, reason: aftermine_sim::event::StallReason::NoRoute, .. } if *unit == gun)), "{kind:?} remembered={remembered}: {:?}", report.events);
             for _ in 0..20 {
@@ -972,12 +725,7 @@ fn a_stored_focus_must_be_a_seen_target_the_gun_covers() {
             "unarmed" => (BuildingKind::Fabricator, contact),
             _ => (BuildingKind::Bastion, contact),
         };
-        let holder = state
-            .buildings()
-            .iter()
-            .find(|b| b.kind == holder)
-            .unwrap()
-            .id;
+        let holder = building_id(&state, |b| b.kind == holder);
         let mut data = serde_json::to_value(&state).unwrap();
         data["buildings"]
             .as_array_mut()
@@ -1127,12 +875,7 @@ fn defenses_fire_on_a_building_known_only_by_radar() {
             .unwrap()["tier"] = serde_json::json!(tier);
         let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
         state.tick(&[]);
-        let victim = state
-            .buildings()
-            .iter()
-            .find(|b| b.kind == BuildingKind::Fabricator)
-            .unwrap()
-            .id;
+        let victim = building_id(&state, |b| b.kind == BuildingKind::Fabricator);
         let hp = state.building(victim).unwrap().hp;
         let blip = TilePos::new(target.0, target.1);
         assert_eq!(
@@ -1246,11 +989,7 @@ fn a_breaker_hit_beside_a_buried_charge_destroys_the_charge() {
     assert!(!state.building_apparent(PlayerId(0), state.building(charge).unwrap()));
     state.tick(&[cmd(
         0,
-        Command::Attack {
-            units: vec![breaker],
-            target: Target::Building(barricade).into(),
-            queue: false,
-        },
+        orders::attack([breaker], Target::Building(barricade)),
     )]);
     let events = run_until(&mut state, 600, |_, events| {
         events.iter().any(|e| {
@@ -1293,45 +1032,19 @@ fn a_breaker_splashes_a_remembered_charge_mark_whose_charge_is_gone() {
         state.units()[1].id,
         state.units()[2].id,
     );
-    let charge = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::ScuttleCharge)
-        .unwrap()
-        .id;
+    let charge = building_id(&state, |b| b.kind == BuildingKind::ScuttleCharge);
     let mark = state
         .attack_objective(PlayerId(0), Target::Building(charge).into())
         .expect("the Surveyor detects the charge");
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![surveyor],
-            goal: TilePos::new(2, 20),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([surveyor], TilePos::new(2, 20)))]);
     run_until(&mut state, 300, |state, _| {
         !state.building_apparent(PlayerId(0), state.building(charge).unwrap())
     });
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![breaker],
-            target: mark,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([breaker], mark))]);
     run_until(&mut state, 600, |state, _| state.building(charge).is_none());
     assert!(state.attack_view(PlayerId(0), mark).is_some());
     let hp = state.unit(harvester).unwrap().hp;
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![harvester],
-            goal: TilePos::new(14, 8),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([harvester], TilePos::new(14, 8)))]);
     let events = run_until(&mut state, 600, |state, _| {
         state.unit(harvester).is_none_or(|u| u.hp < hp)
     });

@@ -3,12 +3,12 @@
 use crate::common;
 use aftermine_sim::scenario::ScenarioMode;
 use common::wide_open_map as open_map;
-use common::{cmd, players, unit};
+use common::{CommandExt, cmd, orders, players, unit, unit_id};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::UnitSpec;
 use aftermine_sim::state::Order;
-use aftermine_sim::{Command, Event, Scenario, State, Target, UnitId, UnitKind};
+use aftermine_sim::{Event, Scenario, State, Target, UnitId, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 
@@ -42,14 +42,7 @@ fn machines_board_ride_and_land() {
     let riders: Vec<_> = state.units()[1..].iter().map(|u| u.id).collect();
     // Adjacent riders can embark on the command tick itself, so its
     // report must be counted too.
-    let report = state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: riders,
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::load(riders, sky))]);
     let mut boarded = report
         .events
         .iter()
@@ -70,14 +63,7 @@ fn machines_board_ride_and_land() {
     assert_eq!(state.units().len(), 1, "riders leave the world's unit list");
 
     // Ride across the arena and set down.
-    state.tick(&[cmd(
-        0,
-        Command::Unload {
-            transport: sky,
-            at: TilePos::new(19, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::unload(sky, TilePos::new(19, 4)))]);
     let mut landed = Vec::new();
     for _ in 0..400 {
         let report = state.tick(&[]);
@@ -123,14 +109,7 @@ fn a_full_sling_stalls_the_straggler() {
     .unwrap();
     let sky = state.units()[0].id;
     let (heavy, straggler) = (state.units()[1].id, state.units()[2].id);
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![heavy, straggler],
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([heavy, straggler], sky))]);
     let mut stalled = false;
     for _ in 0..200 {
         let report = state.tick(&[]);
@@ -174,14 +153,7 @@ fn cargo_dies_with_the_airframe() {
     let sky = state.units()[0].id;
     let rider = state.units()[1].id;
     let hunter = state.units()[2].id;
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![rider],
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([rider], sky))]);
     for _ in 0..100 {
         state.tick(&[]);
         if state.unit(rider).is_none() {
@@ -189,14 +161,7 @@ fn cargo_dies_with_the_airframe() {
         }
     }
     assert!(state.unit(rider).is_none(), "premise: the rider is aboard");
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![hunter],
-            target: Target::Unit(sky).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([hunter], Target::Unit(sky)))]);
     let mut deaths = Vec::new();
     for _ in 0..2_000 {
         let report = state.tick(&[]);
@@ -239,14 +204,7 @@ fn the_sling_refuses_flyers_and_itself() {
     .unwrap();
     let sky = state.units()[0].id;
     let scout = state.units()[1].id;
-    let report = state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![scout],
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::load([scout], sky))]);
     assert!(
         report.events.iter().any(|e| matches!(
             e,
@@ -257,14 +215,7 @@ fn the_sling_refuses_flyers_and_itself() {
         )),
         "a flyer cannot be carried"
     );
-    let report = state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![sky],
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::load([sky], sky))]);
     assert!(
         report.events.iter().any(|e| matches!(
             e,
@@ -307,14 +258,7 @@ fn unload_over_the_pit_strands_the_cargo_until_open_ground() {
     .unwrap();
     let sky = state.units()[0].id;
     let rider = state.units()[1].id;
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![rider],
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([rider], sky))]);
     for _ in 0..100 {
         state.tick(&[]);
         if state.unit(rider).is_none() {
@@ -324,14 +268,7 @@ fn unload_over_the_pit_strands_the_cargo_until_open_ground() {
     assert!(state.unit(rider).is_none(), "premise: the rider is aboard");
 
     // Drop point dead center over the pit: nothing can land.
-    state.tick(&[cmd(
-        0,
-        Command::Unload {
-            transport: sky,
-            at: TilePos::new(12, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::unload(sky, TilePos::new(12, 6)))]);
     let mut stranded = false;
     for _ in 0..400 {
         let report = state.tick(&[]);
@@ -352,14 +289,7 @@ fn unload_over_the_pit_strands_the_cargo_until_open_ground() {
     assert!(state.unit(rider).is_none(), "the rider stays aboard");
 
     // Fly back over ground and the drop completes.
-    state.tick(&[cmd(
-        0,
-        Command::Unload {
-            transport: sky,
-            at: TilePos::new(3, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::unload(sky, TilePos::new(3, 4)))]);
     for _ in 0..400 {
         state.tick(&[]);
         if state.unit(rider).is_some() {
@@ -395,14 +325,7 @@ fn a_boarder_stands_down_when_the_sling_has_no_ground_route() {
     let sky = state.units()[0].id;
     let rider = state.units()[1].id;
 
-    let report = state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![rider],
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::load([rider], sky))]);
 
     assert!(report.events.iter().any(|event| matches!(
         event,
@@ -434,14 +357,7 @@ fn a_boarder_walks_to_reachable_ground_beside_a_sling_over_a_building() {
         "the transport deliberately hovers over its Foundry"
     );
 
-    let first = state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![rider],
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    let first = state.tick(&[cmd(0, orders::load([rider], sky))]);
     assert!(first.events.iter().all(|event| !matches!(
         event,
         Event::OrderStalled {
@@ -494,25 +410,11 @@ fn a_sling_sealed_in_by_peaks_unloads_as_close_as_it_can_get() {
     .unwrap();
     let sky = state.units()[0].id;
     let rider = state.units()[1].id;
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![rider],
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([rider], sky))]);
     assert!(state.unit(rider).is_none(), "premise: the rider is aboard");
 
     let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Unload {
-                transport: sky,
-                at: TilePos::new(18, 4),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::unload(sky, TilePos::new(18, 4)))])
         .events;
     for _ in 0..100 {
         if state.unit(sky).unwrap().cargo.is_empty() {
@@ -576,22 +478,8 @@ fn a_boarding_walk_that_cannot_be_routed_yields_to_the_queued_move() {
     let home = TilePos::new(2, 5);
     let mut events = state
         .tick(&[
-            cmd(
-                0,
-                Command::Load {
-                    units: vec![rider],
-                    transport: sky,
-                    queue: false,
-                },
-            ),
-            cmd(
-                0,
-                Command::Run {
-                    units: vec![rider],
-                    goal: home,
-                    queue: true,
-                },
-            ),
+            cmd(0, orders::load([rider], sky)),
+            cmd(0, orders::run([rider], home).queued()),
         ])
         .events;
     for _ in 0..300 {
@@ -638,18 +526,8 @@ fn a_rider_survives_when_its_sling_is_destroyed_during_boarding() {
     let mut document = serde_json::to_value(&state).unwrap();
     document["units"][0]["hp"] = serde_json::json!(7 * UnitKind::Talon.stats().weapons[0].damage);
     let mut state: State = serde_json::from_value(document).unwrap();
-    let sky = state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == UnitKind::Skyhook)
-        .unwrap()
-        .id;
-    let rider = state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == UnitKind::Sentinel)
-        .unwrap()
-        .id;
+    let sky = unit_id(&state, |unit| unit.kind == UnitKind::Skyhook);
+    let rider = unit_id(&state, |unit| unit.kind == UnitKind::Sentinel);
     let hunters: Vec<_> = state
         .units()
         .iter()
@@ -662,22 +540,8 @@ fn a_rider_survives_when_its_sling_is_destroyed_during_boarding() {
     }
 
     let report = state.tick(&[
-        cmd(
-            0,
-            Command::Load {
-                units: vec![rider],
-                transport: sky,
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Attack {
-                units: hunters,
-                target: Target::Unit(sky).into(),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::load([rider], sky)),
+        cmd(1, orders::attack(hunters, Target::Unit(sky))),
     ]);
     assert!(
         report
@@ -718,18 +582,8 @@ fn a_lethally_hit_rider_is_not_entombed_as_cargo() {
     )
     .build()
     .unwrap();
-    let sky = state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == UnitKind::Skyhook)
-        .unwrap()
-        .id;
-    let rider = state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == UnitKind::Sentinel)
-        .unwrap()
-        .id;
+    let sky = unit_id(&state, |unit| unit.kind == UnitKind::Skyhook);
+    let rider = unit_id(&state, |unit| unit.kind == UnitKind::Sentinel);
     let attackers: Vec<_> = state
         .units()
         .iter()
@@ -741,22 +595,8 @@ fn a_lethally_hit_rider_is_not_entombed_as_cargo() {
         common::face_target(&mut state, attacker, Target::Unit(rider));
     }
     let report = state.tick(&[
-        cmd(
-            0,
-            Command::Load {
-                units: vec![rider],
-                transport: sky,
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Attack {
-                units: attackers,
-                target: Target::Unit(rider).into(),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::load([rider], sky)),
+        cmd(1, orders::attack(attackers, Target::Unit(rider))),
     ]);
 
     assert!(
@@ -793,14 +633,7 @@ fn a_rider_that_stalled_on_its_way_boards_dormant() {
     .build()
     .unwrap();
     let (sky, rider) = (state.units()[0].id, state.units()[1].id);
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![rider],
-            transport: sky,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([rider], sky))]);
     let slot = state
         .units()
         .iter()
@@ -879,11 +712,10 @@ fn mirrored_boarders_take_mirrored_tiles() {
         [(0, vec![1, 2]), (3, vec![4])].map(|(sling, riders)| {
             cmd(
                 player,
-                Command::Load {
-                    units: riders.iter().map(|&i| side(&pairs[i])).collect(),
-                    transport: side(&pairs[sling]),
-                    queue: false,
-                },
+                orders::load(
+                    riders.iter().map(|&i| side(&pairs[i])).collect::<Vec<_>>(),
+                    side(&pairs[sling]),
+                ),
             )
         })
     };
@@ -976,22 +808,8 @@ fn mirrored_slings_set_riders_on_mirrored_tiles() {
     let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
     let (west, east) = ids.split_at(squad.len());
     state.tick(&[
-        cmd(
-            0,
-            Command::Load {
-                units: west[1..].to_vec(),
-                transport: west[0],
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Load {
-                units: east[1..].to_vec(),
-                transport: east[0],
-                queue: false,
-            },
-        ),
+        cmd(0, orders::load(west[1..].to_vec(), west[0])),
+        cmd(1, orders::load(east[1..].to_vec(), east[0])),
     ]);
     for _ in 0..100 {
         if state.units().len() == 2 {
@@ -1011,22 +829,8 @@ fn mirrored_slings_set_riders_on_mirrored_tiles() {
         }
     };
     let report = state.tick(&[
-        cmd(
-            0,
-            Command::Unload {
-                transport: west[0],
-                at: drop,
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Unload {
-                transport: east[0],
-                at: mirror(drop),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::unload(west[0], drop)),
+        cmd(1, orders::unload(east[0], mirror(drop))),
     ]);
     record(&report.events);
     assert!(matches!(

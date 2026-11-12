@@ -56,12 +56,7 @@ fn scrap(state: &State, seat: u8) -> u32 {
 }
 
 fn id(state: &State, seat: u8, kind: BuildingKind) -> BuildingId {
-    state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(seat) && b.kind == kind)
-        .unwrap()
-        .id
+    building_id(state, |b| b.player == PlayerId(seat) && b.kind == kind)
 }
 
 /// Why `command` was refused, if it was. A refusal leaves the world exactly

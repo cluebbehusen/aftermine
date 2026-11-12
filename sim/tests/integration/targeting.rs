@@ -3,7 +3,7 @@
 //! API only.
 
 use crate::common::*;
-use aftermine_sim::{BuildingKind, Command, Event, State, Target, UnitId, UnitKind};
+use aftermine_sim::{BuildingKind, Event, State, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
 
 /// What `unit` is attacking, as its owner sees it.
@@ -89,14 +89,7 @@ fn machines_come_before_buildings_and_defenses_that_can_hit_first_among_them() {
         ];
         scenario.build().unwrap()
     };
-    let turret = |state: &State| {
-        state
-            .buildings()
-            .iter()
-            .find(|b| b.kind == BuildingKind::Turret)
-            .unwrap()
-            .id
-    };
+    let turret = |state: &State| building_id(state, |b| b.kind == BuildingKind::Turret);
 
     let mut state = scene(vec![
         unit(0, UnitKind::Sentinel, 10, 6),
@@ -134,23 +127,9 @@ fn interrupted(ordered: bool) -> (State, [UnitId; 3]) {
     let [sentinel, harvester, attacker] = ids(&state)[..] else {
         unreachable!()
     };
-    let mut commands = vec![cmd(
-        1,
-        Command::Attack {
-            units: vec![attacker],
-            target: Target::Unit(sentinel).into(),
-            queue: false,
-        },
-    )];
+    let mut commands = vec![cmd(1, orders::attack([attacker], Target::Unit(sentinel)))];
     if ordered {
-        commands.push(cmd(
-            0,
-            Command::Attack {
-                units: vec![sentinel],
-                target: Target::Unit(harvester).into(),
-                queue: false,
-            },
-        ));
+        commands.push(cmd(0, orders::attack([sentinel], Target::Unit(harvester))));
     }
     state.tick(&commands);
     assert_eq!(
@@ -322,40 +301,21 @@ fn attack_goal(kind: UnitKind, hidden: bool, rotated: bool) -> TilePos {
     let mut state = scenario.build().unwrap();
     let attacker = state.units()[0].id;
     let scout = state.units()[1].id;
-    let fabricator = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Fabricator)
-        .unwrap()
-        .id;
+    let fabricator = building_id(&state, |b| b.kind == BuildingKind::Fabricator);
     let player = aftermine_sim::PlayerId(me);
     let memory = state
         .attack_objective(player, Target::Building(fabricator).into())
         .expect("premise: the Kestrel sees the Fabricator");
     if hidden {
         let (gx, gy) = at(36, 2);
-        state.tick(&[cmd(
-            me,
-            Command::Run {
-                units: vec![scout],
-                goal: TilePos::new(gx, gy),
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(me, orders::run([scout], TilePos::new(gx, gy)))]);
         run(&mut state, 120);
         assert!(
             state.attack_view(player, memory).unwrap().entity.is_none(),
             "premise: the Fabricator is only remembered"
         );
     }
-    state.tick(&[cmd(
-        me,
-        Command::Attack {
-            units: vec![attacker],
-            target: memory,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(me, orders::attack([attacker], memory))]);
     run(&mut state, 2);
     let unit = state.unit(attacker).unwrap();
     match unit.order {

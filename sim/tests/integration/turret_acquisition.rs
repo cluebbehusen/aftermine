@@ -2,18 +2,16 @@
 
 use crate::common;
 
-use aftermine_sim::{BuildingId, BuildingKind, Command, Event, PlayerId, State, Target, UnitKind};
+use aftermine_sim::{BuildingId, BuildingKind, Event, PlayerId, State, Target, UnitKind};
 use chassis::grid::TilePos;
 
-use common::{aim_defense_at, building, cmd, open_arena, open_arena_with, run_until, unit};
+use common::{
+    aim_defense_at, building, building_id, cmd, open_arena, open_arena_with, orders, run_until,
+    unit,
+};
 
 fn id(state: &State, kind: BuildingKind) -> BuildingId {
-    state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == kind)
-        .unwrap()
-        .id
+    building_id(state, |b| b.kind == kind)
 }
 
 fn shot(events: &[Event], defense: BuildingId) -> Option<Target> {
@@ -89,10 +87,7 @@ fn units_take_automatic_priority_but_explicit_building_focus_wins() {
         );
         let report = focused.tick(&[cmd(
             0,
-            Command::FocusFire {
-                buildings: vec![defense],
-                target: Target::Building(target).into(),
-            },
+            orders::focus_fire([defense], Target::Building(target)),
         )]);
         assert_eq!(
             shot(&report.events, defense),

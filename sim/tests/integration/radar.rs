@@ -2,11 +2,11 @@
 //! unfolds only after it has stood still for its deploy time.
 
 use crate::common;
-use common::{air_blip, building, cmd, ground_blip, open_arena, unit};
+use common::{air_blip, building, building_id, cmd, ground_blip, open_arena, orders, unit};
 
 use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
 use aftermine_sim::stats::{BuildingKind, Domain, HARVEST_RADAR_DANGER_RADIUS, UnitKind};
-use aftermine_sim::{Command, Order, PlayerId, RadarContact, State, UnitId};
+use aftermine_sim::{Order, PlayerId, RadarContact, State, UnitId};
 use chassis::grid::TilePos;
 
 fn field(units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> State {
@@ -71,14 +71,7 @@ fn a_surveyor_unfolds_its_radar_after_standing_still_and_folds_to_drive() {
         );
     }
 
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(10, 14),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(10, 14)))]);
     assert_eq!(
         state.unit(scout).unwrap().radar_deploy,
         0,
@@ -109,14 +102,7 @@ fn a_shove_from_a_passing_machine_leaves_the_radar_up() {
     idle(&mut state, deploy_ticks());
     assert!(state.unit(scout).unwrap().radar().is_some());
     let start = state.unit(scout).unwrap().pos;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![walker],
-            goal: TilePos::new(14, 10),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([walker], TilePos::new(14, 10)))]);
     let mut shoved = false;
     for _ in 0..120 {
         state.tick(&[]);
@@ -161,14 +147,7 @@ fn a_scout_waiting_for_a_safe_view_unfolds_its_radar() {
     );
     let scout: UnitId = state.units()[0].id;
     let goal = TilePos::new(23, 9);
-    state.tick(&[cmd(
-        0,
-        Command::Scout {
-            units: vec![scout],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::scout([scout], goal))]);
     idle(&mut state, deploy_ticks() + 1);
     let unit = state.unit(scout).unwrap();
     assert_eq!(unit.order, Order::Scout { tile: goal }, "still waiting");
@@ -189,12 +168,7 @@ fn a_parked_surveyor_spots_for_an_avalanche() {
             units,
             vec![building(1, BuildingKind::Reclaimer, target.x, target.y)],
         );
-        let reclaimer = state
-            .buildings()
-            .iter()
-            .find(|b| b.kind == BuildingKind::Reclaimer)
-            .unwrap()
-            .id;
+        let reclaimer = building_id(&state, |b| b.kind == BuildingKind::Reclaimer);
         let full = state.building(reclaimer).unwrap().hp;
         idle(&mut state, 200);
         idle(&mut state, 200);
@@ -277,14 +251,7 @@ fn radar_tells_a_flyer_from_a_ground_machine_on_one_tile() {
 
     // The Harvester drives off; each blip keeps its own track rather than
     // the nearer one of the other domain.
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![harvester],
-            goal: TilePos::new(21, 13),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([harvester], TilePos::new(21, 13)))]);
     idle(&mut state, 60);
     let after = tracks(&state);
     assert_eq!(after[0].1, before[0].1, "{before:?} -> {after:?}");

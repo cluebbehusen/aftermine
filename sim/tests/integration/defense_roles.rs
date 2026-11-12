@@ -3,10 +3,10 @@
 
 use crate::common;
 
-use aftermine_sim::{BuildingKind, Command, Event, PlayerId, Scenario, Target, UnitId, UnitKind};
+use aftermine_sim::{BuildingKind, Event, PlayerId, Scenario, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
 
-use common::{aim_defense_at, cmd, open_arena, unit};
+use common::{aim_defense_at, building_id, cmd, open_arena, orders, unit, unit_id};
 
 const WIDTH: i32 = 48;
 const HEIGHT: i32 = 20;
@@ -71,11 +71,7 @@ fn attack_building(
     let mut events = state
         .tick(&[cmd(
             attacker,
-            Command::Attack {
-                units: units.to_vec(),
-                target: Target::Building(building).into(),
-                queue: false,
-            },
+            orders::attack(units.to_vec(), Target::Building(building)),
         )])
         .events;
     for _ in 0..3_000u32 {
@@ -145,18 +141,8 @@ fn lancer_sieges_a_turret_from_outside_return_range() {
         )
         .build()
         .unwrap();
-        let turret = state
-            .buildings()
-            .iter()
-            .find(|building| building.kind == BuildingKind::Turret)
-            .unwrap()
-            .id;
-        let lancer = state
-            .units()
-            .iter()
-            .find(|unit| unit.player == PlayerId(attacker))
-            .unwrap()
-            .id;
+        let turret = building_id(&state, |building| building.kind == BuildingKind::Turret);
+        let lancer = unit_id(&state, |unit| unit.player == PlayerId(attacker));
         let events = attack_building(&mut state, attacker, &[lancer], turret);
 
         assert!(state.building(turret).is_none());
@@ -197,12 +183,7 @@ fn a_bombard_outranges_a_bastion_and_a_citadel_answers_it_from_full_range() {
             )
             .build()
             .unwrap();
-            let bastion = state
-                .buildings()
-                .iter()
-                .find(|building| building.kind == BuildingKind::Bastion)
-                .unwrap()
-                .id;
+            let bastion = building_id(&state, |building| building.kind == BuildingKind::Bastion);
             let mut value = serde_json::to_value(&state).unwrap();
             let row = value["buildings"]
                 .as_array_mut()
@@ -212,12 +193,9 @@ fn a_bombard_outranges_a_bastion_and_a_citadel_answers_it_from_full_range() {
                 .unwrap();
             row["tier"] = serde_json::json!(tier);
             let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
-            let bombard = state
-                .units()
-                .iter()
-                .find(|unit| unit.player == PlayerId(attacker) && unit.kind == UnitKind::Bombard)
-                .unwrap()
-                .id;
+            let bombard = unit_id(&state, |unit| {
+                unit.player == PlayerId(attacker) && unit.kind == UnitKind::Bombard
+            });
             let events = attack_building(&mut state, attacker, &[bombard], bastion);
 
             let fired_back = events.iter().any(|event| {
@@ -261,12 +239,7 @@ fn close_pressure_breaches_an_isolated_bastion_dead_zone() {
         )
         .build()
         .unwrap();
-        let bastion = state
-            .buildings()
-            .iter()
-            .find(|building| building.kind == BuildingKind::Bastion)
-            .unwrap()
-            .id;
+        let bastion = building_id(&state, |building| building.kind == BuildingKind::Bastion);
         let scuttlers: Vec<_> = state
             .units()
             .iter()
@@ -332,18 +305,8 @@ fn ground_attack_aircraft_bypass_ground_only_defenses() {
             )
             .build()
             .unwrap();
-            let defense = state
-                .buildings()
-                .iter()
-                .find(|building| building.kind == kind)
-                .unwrap()
-                .id;
-            let flyer = state
-                .units()
-                .iter()
-                .find(|unit| unit.player == PlayerId(attacker))
-                .unwrap()
-                .id;
+            let defense = building_id(&state, |building| building.kind == kind);
+            let flyer = unit_id(&state, |unit| unit.player == PlayerId(attacker));
             let events = attack_building(&mut state, attacker, &[flyer], defense);
 
             assert!(
@@ -378,18 +341,8 @@ fn ground_units_bypass_air_only_flak() {
         )
         .build()
         .unwrap();
-        let flak = state
-            .buildings()
-            .iter()
-            .find(|building| building.kind == BuildingKind::FlakTurret)
-            .unwrap()
-            .id;
-        let scuttler = state
-            .units()
-            .iter()
-            .find(|unit| unit.player == PlayerId(attacker))
-            .unwrap()
-            .id;
+        let flak = building_id(&state, |building| building.kind == BuildingKind::FlakTurret);
+        let scuttler = unit_id(&state, |unit| unit.player == PlayerId(attacker));
         let events = attack_building(&mut state, attacker, &[scuttler], flak);
 
         assert!(state.building(flak).is_none());
@@ -440,14 +393,7 @@ fn cost_par_outcome(
     } else {
         mirrored_anchor(anchors[anchors.len() / 2], kind)
     };
-    state.tick(&[cmd(
-        attacker,
-        Command::Hunt {
-            units: attackers.clone(),
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(attacker, orders::hunt(attackers.clone(), goal))]);
 
     let mut last_total = u64::MAX;
     let mut last_progress = 0u32;
@@ -551,32 +497,15 @@ fn changing_course_after_launch_can_dodge_an_unguided_bastion_shell() {
         )
         .build()
         .unwrap();
-        let scuttler = state
-            .units()
-            .iter()
-            .find(|unit| unit.player == PlayerId(attacker))
-            .unwrap()
-            .id;
-        let bastion = state
-            .buildings()
-            .iter()
-            .find(|building| building.kind == BuildingKind::Bastion)
-            .unwrap()
-            .id;
+        let scuttler = unit_id(&state, |unit| unit.player == PlayerId(attacker));
+        let bastion = building_id(&state, |building| building.kind == BuildingKind::Bastion);
         aim_defense_at(&mut state, bastion, Target::Unit(scuttler));
         let goal = if defender == 0 {
             TilePos::new(14, 15)
         } else {
             mirrored_tile(TilePos::new(14, 15))
         };
-        let first = state.tick(&[cmd(
-            attacker,
-            Command::Advance {
-                units: vec![scuttler],
-                goal,
-                queue: false,
-            },
-        )]);
+        let first = state.tick(&[cmd(attacker, orders::advance([scuttler], goal))]);
 
         let launched = first.events.iter().any(|event| {
             matches!(
@@ -593,14 +522,7 @@ fn changing_course_after_launch_can_dodge_an_unguided_bastion_shell() {
         } else {
             mirrored_tile(TilePos::new(14, 3))
         };
-        state.tick(&[cmd(
-            attacker,
-            Command::Advance {
-                units: vec![scuttler],
-                goal: dodge,
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(attacker, orders::advance([scuttler], dodge))]);
         let mut landed = first
             .events
             .iter()

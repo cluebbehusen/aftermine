@@ -2,12 +2,12 @@
 //! heavies.
 
 use crate::common;
-use common::{cmd, players, unit};
+use common::{CommandExt, building_id, cmd, orders, players, unit, unit_id};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
 use aftermine_sim::stats::BuildingKind;
-use aftermine_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, Target, UnitKind};
+use aftermine_sim::{Event, PlayerCommand, PlayerId, Scenario, Target, UnitKind};
 
 fn arena(scrap: u32, units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scenario {
     Scenario {
@@ -83,20 +83,11 @@ fn the_condor_bombs_on_passes_and_never_hovers_to_strafe() {
     .build()
     .unwrap();
     let condor = state.units()[0].id;
-    let turret = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(1))
-        .unwrap()
-        .id;
+    let turret = building_id(&state, |b| b.player == PlayerId(1));
     state.tick(&[]);
     state.tick(&[cmd(
         0,
-        Command::Attack {
-            units: vec![condor],
-            target: aftermine_sim::AttackTarget::Building(turret),
-            queue: false,
-        },
+        orders::attack([condor], aftermine_sim::AttackTarget::Building(turret)),
     )]);
     let mut release_ticks = Vec::new();
     let mut still_streak = 0u32;
@@ -142,27 +133,10 @@ fn the_condor_bombs_on_passes_and_never_hovers_to_strafe() {
 #[test]
 fn a_condor_replans_when_its_wide_turn_meets_a_peak() {
     let mut state = peak_strike_arena().build().unwrap();
-    let condor = state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == UnitKind::Condor)
-        .unwrap()
-        .id;
-    let foundry = state
-        .buildings()
-        .iter()
-        .find(|building| building.player == PlayerId(1))
-        .unwrap()
-        .id;
+    let condor = unit_id(&state, |unit| unit.kind == UnitKind::Condor);
+    let foundry = building_id(&state, |building| building.player == PlayerId(1));
     state.tick(&[]);
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![condor],
-            target: Target::Building(foundry).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([condor], Target::Building(foundry)))]);
 
     let mut release_ticks = Vec::new();
     let mut still_streak = 0u32;
@@ -236,20 +210,9 @@ fn bombers_wait_on_the_crucible_and_heavies_train_inside_it() {
     )
     .build()
     .unwrap();
-    let airworks = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Airworks)
-        .unwrap()
-        .id;
+    let airworks = building_id(&state, |b| b.kind == BuildingKind::Airworks);
     // No Crucible anywhere: the Airworks refuses the bomber by name.
-    let report = state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: airworks,
-            kind: UnitKind::Condor,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::train(airworks, UnitKind::Condor))]);
     assert!(
         report.events.iter().any(|e| matches!(
             e,
@@ -289,33 +252,11 @@ fn bombers_wait_on_the_crucible_and_heavies_train_inside_it() {
     )
     .build()
     .unwrap();
-    let airworks = with_crucible
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Airworks)
-        .unwrap()
-        .id;
-    let crucible = with_crucible
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Crucible)
-        .unwrap()
-        .id;
+    let airworks = building_id(&with_crucible, |b| b.kind == BuildingKind::Airworks);
+    let crucible = building_id(&with_crucible, |b| b.kind == BuildingKind::Crucible);
     let report = with_crucible.tick(&[
-        cmd(
-            0,
-            Command::Train {
-                building: airworks,
-                kind: UnitKind::Condor,
-            },
-        ),
-        cmd(
-            0,
-            Command::Train {
-                building: crucible,
-                kind: UnitKind::Breaker,
-            },
-        ),
+        cmd(0, orders::train(airworks, UnitKind::Condor)),
+        cmd(0, orders::train(crucible, UnitKind::Breaker)),
     ]);
     assert!(
         !report
@@ -358,21 +299,9 @@ fn a_bomber_never_turns_faster_than_its_rate() {
     .build()
     .unwrap();
     let condor = state.units()[0].id;
-    let turret = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(1))
-        .unwrap()
-        .id;
+    let turret = building_id(&state, |b| b.player == PlayerId(1));
     state.tick(&[]);
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![condor],
-            target: Target::Building(turret).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([condor], Target::Building(turret)))]);
     let rate = i16::from(UnitKind::Condor.stats().turn_rate);
     let mut heading = state.unit(condor).unwrap().heading;
     for _ in 0..600 {
@@ -425,23 +354,13 @@ fn turret(player: u8, x: i32, y: i32) -> BuildingSpec {
 }
 
 fn enemy_building(state: &aftermine_sim::State, x: i32, y: i32) -> aftermine_sim::ids::BuildingId {
-    state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(1) && b.anchor == chassis::grid::TilePos::new(x, y))
-        .expect("the authored enemy building exists")
-        .id
+    building_id(state, |b| {
+        b.player == PlayerId(1) && b.anchor == chassis::grid::TilePos::new(x, y)
+    })
 }
 
 fn attack(player: u8, unit: aftermine_sim::ids::UnitId, target: Target) -> PlayerCommand {
-    cmd(
-        player,
-        Command::Attack {
-            units: vec![unit],
-            target: target.into(),
-            queue: false,
-        },
-    )
+    cmd(player, orders::attack([unit], target))
 }
 
 /// What a watched flight did: the longest run of ticks spent motionless,
@@ -540,21 +459,10 @@ fn a_bomber_ordered_onto_a_corner_building_behind_it_never_touches_the_wall() {
     // A lone move would end in a landing; the queued return leg keeps the
     // first leg a plain northbound flight.
     state.tick(&[
+        cmd(0, orders::run([condor], chassis::grid::TilePos::new(19, 2))),
         cmd(
             0,
-            Command::Run {
-                units: vec![condor],
-                goal: chassis::grid::TilePos::new(19, 2),
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![condor],
-                goal: chassis::grid::TilePos::new(19, 12),
-                queue: true,
-            },
+            orders::run([condor], chassis::grid::TilePos::new(19, 12)).queued(),
         ),
     ]);
     let mut ready = false;
@@ -763,12 +671,7 @@ fn a_bomber_whose_target_dies_keeps_flying() {
     .build()
     .unwrap();
     let condor = state.units()[0].id;
-    let harvester = state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let harvester = unit_id(&state, |u| u.kind == UnitKind::Harvester);
     state.tick(&[]);
     state.tick(&[attack(0, condor, Target::Unit(harvester))]);
     let mut killed = false;
@@ -849,16 +752,7 @@ fn chase_from_pad(ticks: u32) -> (chassis::fx::Fx, chassis::fx::Fx) {
     let (mut state, condor) = spotted_strip(vec![unit(1, UnitKind::Harvester, 40, 14)]);
     let runner = state.units().last().unwrap().id;
     let pad = state.unit(condor).unwrap().pos;
-    let run = |goal: chassis::grid::TilePos| {
-        cmd(
-            1,
-            Command::Run {
-                units: vec![runner],
-                goal,
-                queue: false,
-            },
-        )
-    };
+    let run = |goal: chassis::grid::TilePos| cmd(1, orders::run([runner], goal));
     state.tick(&[run(chassis::grid::TilePos::containing(pad).offset(3, 0))]);
     common::run_until(&mut state, 600, |s, _| {
         matches!(
@@ -922,11 +816,7 @@ fn a_parked_condor_keeps_making_passes_on_a_victim_near_its_pad() {
     let pad = state.unit(condor).unwrap().pos;
     state.tick(&[cmd(
         1,
-        Command::Run {
-            units: vec![tank],
-            goal: chassis::grid::TilePos::containing(pad).offset(4, 0),
-            queue: false,
-        },
+        orders::run([tank], chassis::grid::TilePos::containing(pad).offset(4, 0)),
     )]);
     let mut releases = 0;
     for _ in 0..1500 {
