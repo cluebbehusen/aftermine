@@ -279,23 +279,33 @@ fn x_collects_a_patrol_waypoint_while_a_route_is_armed() {
 }
 
 #[test]
-fn chrome_under_the_reticle_takes_neither_a_nor_x() {
-    let mut game = scene(&[(0, SENTINEL, 32, 20)], &[]);
-    let mut input = pad_input(&mut game);
-    game.presentation
-        .selection
-        .set_units(vec![unit_at(&game, 32, 20)]);
-    let mut layout = game.presentation.layout.get();
-    layout.performance = macroquad::prelude::Rect::new(0.0, 0.0, 1280.0, 800.0);
-    game.presentation.layout.set(layout);
-    rest_on(&mut game, &mut input, CENTER);
-    press(&mut game, &mut input, PadButton::West);
-    assert!(game.pending.is_empty());
-    assert!(denied(&game));
-    game.presentation.sounds_pending.clear();
-    feed(&mut game, &mut input, &[down(PadButton::South)]);
-    assert!(input.pad_press.is_none());
-    assert!(denied(&game));
+fn chrome_or_the_minimap_under_the_reticle_takes_neither_a_nor_x() {
+    type Cover = fn(&mut crate::layout::LayoutModel, macroquad::prelude::Rect);
+    let rows: [(&str, Cover); 2] = [
+        ("chrome", |layout, screen| layout.performance = screen),
+        ("minimap", |layout, screen| layout.minimap = screen),
+    ];
+    for (hud, cover) in rows {
+        let mut game = scene(&[(0, SENTINEL, 36, 20)], &[]);
+        let mut input = pad_input(&mut game);
+        game.presentation
+            .selection
+            .set_units(vec![unit_at(&game, 36, 20)]);
+        let mut layout = game.presentation.layout.get();
+        cover(
+            &mut layout,
+            macroquad::prelude::Rect::new(0.0, 0.0, 1280.0, 800.0),
+        );
+        game.presentation.layout.set(layout);
+        rest_on(&mut game, &mut input, CENTER);
+        press(&mut game, &mut input, PadButton::West);
+        assert!(game.pending.is_empty(), "{hud}");
+        assert!(denied(&game), "{hud}");
+        game.presentation.sounds_pending.clear();
+        feed(&mut game, &mut input, &[down(PadButton::South)]);
+        assert!(input.pad_press.is_none(), "{hud}");
+        assert!(denied(&game), "{hud}");
+    }
 }
 
 #[test]
@@ -657,26 +667,6 @@ fn a_press_and_the_last_disconnect_in_one_batch_hand_the_pointer_back() {
         crate::platform::Hands::BUILD.pointer,
         "no reticle is left without a controller"
     );
-}
-
-#[test]
-fn the_minimap_under_the_reticle_takes_neither_a_nor_x() {
-    let mut game = scene(&[(0, SENTINEL, 36, 20)], &[]);
-    let mut input = pad_input(&mut game);
-    game.presentation
-        .selection
-        .set_units(vec![unit_at(&game, 36, 20)]);
-    let mut layout = game.presentation.layout.get();
-    layout.minimap = macroquad::prelude::Rect::new(0.0, 0.0, 1280.0, 800.0);
-    game.presentation.layout.set(layout);
-    rest_on(&mut game, &mut input, CENTER);
-    press(&mut game, &mut input, PadButton::West);
-    assert!(game.pending.is_empty());
-    assert!(denied(&game));
-    game.presentation.sounds_pending.clear();
-    feed(&mut game, &mut input, &[down(PadButton::South)]);
-    assert!(input.pad_press.is_none());
-    assert!(denied(&game));
 }
 
 /// Zoomed out, so the reticle's reach spans a tile and a half.
