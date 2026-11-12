@@ -23,10 +23,10 @@ boundary between simulation evidence and presentation evidence.
 - Use `aftermine-shell --debug-server --paused` for real input, menus, camera,
   HUD, fog, audio, and GPU rendering under a driven clock.
 - Use `driver profile-graphics` to see where frame time goes across screens,
-  scenes, views, zooms, camera motions and a large selection, and
-  `driver profile-shell` to time a replay-derived gameplay interval. Do not
-  substitute headless tick throughput or session screenshots for GPU-shell
-  profiling.
+  scenes, views, zooms, camera motions, a large selection and a sky full of
+  flyers, and `driver profile-shell` to time a replay-derived gameplay interval.
+  Do not substitute headless tick throughput or session screenshots for
+  GPU-shell profiling.
 - Use `driver tick-scan` to find costly stretches of a replay and
   `driver tick-profile` to see where simulation time goes inside a window of
   recorded ticks. Both measure the simulation alone, never frame timing; the

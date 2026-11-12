@@ -1,5 +1,8 @@
 use super::*;
-use aftermine_protocol::{PassCostView, PassDrawCallsView, PassTimingView, SlowFrameView};
+use aftermine_protocol::{
+    PassCostView, PassDrawCallsView, PassTimingView, SlowFrameView, UnitView,
+};
+use aftermine_sim::UnitKind;
 
 fn timing(mean_ms: f64) -> TimingSummary {
     TimingSummary {
@@ -88,7 +91,7 @@ fn report(workloads: Vec<WorkloadResult>) -> GraphicsReport {
 #[test]
 fn every_workload_has_a_unique_name_and_shares_a_shell_with_its_source() {
     let all = workloads();
-    assert_eq!(all.len(), 1 + 4 * Shot::MATCH.len() + 1 + 2);
+    assert_eq!(all.len(), 1 + 4 * Shot::MATCH.len() + 1 + 2 + 1);
     let names: std::collections::BTreeSet<_> = all.iter().map(|w| w.name.as_str()).collect();
     assert_eq!(names.len(), all.len());
     let mut seen = Vec::new();
@@ -312,6 +315,56 @@ fn the_camera_starts_on_seat_zeros_own_forces() {
         .buildings
         .retain(|building| building.player != 0);
     assert_eq!(seat_focus(&without_seat), None);
+}
+
+#[test]
+fn the_sky_view_frames_the_densest_airborne_flyers() {
+    let state = aftermine_sim::Scenario::skirmish().build().expect("builds");
+    let mut view = StateView::capture(&state, StateFilter::default());
+    let template = view.units[0].clone();
+    let unit = |kind, pos: [f64; 2], landed| UnitView {
+        kind,
+        pos,
+        landed,
+        ..template.clone()
+    };
+    assert_eq!(densest_flyers(&view, NEAR_ZOOM), None, "no flyers yet");
+
+    let width = f64::from(WINDOW[0]) / NEAR_ZOOM;
+    let height = f64::from(WINDOW[1]) / NEAR_ZOOM;
+    let apart = |[x, y]: [f64; 2], views: f64| [x + views * width, y + views * height];
+    let spread = [10.0, 10.0];
+    let pair = [100.0, 50.0];
+    let crowd = [200.0, 80.0];
+    view.units = vec![
+        // 0.6 of a view apart on both axes: each sees only itself, though a
+        // view twice as large would hold all three around the middle one.
+        unit(UnitKind::Talon, spread, false),
+        unit(UnitKind::Talon, apart(spread, 0.6), false),
+        unit(UnitKind::Talon, apart(spread, 1.2), false),
+        // 0.4 of a view apart: one view holds both, though a view half as
+        // large would split them.
+        unit(UnitKind::Condor, pair, false),
+        unit(UnitKind::Skyhook, apart(pair, 0.4), false),
+        unit(UnitKind::Sentinel, crowd, false),
+        unit(UnitKind::Sentinel, crowd, false),
+        unit(UnitKind::Sentinel, crowd, false),
+        unit(UnitKind::Kestrel, crowd, true),
+        unit(UnitKind::Kestrel, crowd, true),
+        unit(UnitKind::Kestrel, crowd, true),
+    ];
+    assert_eq!(
+        densest_flyers(&view, NEAR_ZOOM),
+        Some(pair),
+        "the pair shares one view, and its first flyer is listed before its \
+         second; ground units and landed airframes don't count"
+    );
+
+    let sky = select(Some("skyhook-")).expect("matches");
+    assert_eq!(sky.len(), 1);
+    assert_eq!(sky[0].name, "skyhook-open-near");
+    assert_eq!(sky[0].source, Source::Match(Scene::Skyhook, View::Open));
+    assert_eq!(sky[0].shot, Shot::Hold(NEAR_ZOOM));
 }
 
 #[test]

@@ -10,8 +10,10 @@ use aftermine_protocol::{
     StateView, TimingSummary,
 };
 use aftermine_sim::Scenario;
+use aftermine_sim::stats::Domain;
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -114,6 +116,9 @@ enum Scene {
     /// The bench's mass battle: two armies of [`MASS_PER_SIDE`] units in
     /// facing blocks on an open field.
     Mass,
+    /// Skyhook Anchorage late in an eight-bot match, when flyers fill its
+    /// sky.
+    Skyhook,
 }
 
 impl Scene {
@@ -122,15 +127,17 @@ impl Scene {
             Self::Small => "small",
             Self::Large => "large",
             Self::Mass => "mass",
+            Self::Skyhook => "skyhook",
         }
     }
 
-    /// A shipped map with every seat a bot, or the mass battle, whose seats
-    /// give no orders.
+    /// A map with every seat a bot, or the mass battle, whose seats give no
+    /// orders.
     fn scenario(self, root: &Path) -> Result<Scenario> {
         let map = match self {
             Self::Small => "scenarios/smelter-yard.json",
             Self::Large => "scenarios/grand-viaduct.json",
+            Self::Skyhook => "fixtures/scenarios/skyhook-anchorage.json",
             Self::Mass => return Ok(aftermine_kit::bench::mass_battle(MASS_PER_SIDE)),
         };
         let mut scenario = runner::load_scenario(&root.join(map).to_string_lossy())?;
@@ -145,6 +152,16 @@ impl Scene {
             Self::Small => 6_480,
             Self::Large => 18_000,
             Self::Mass => 20,
+            Self::Skyhook => 60_000,
+        }
+    }
+
+    /// Where the camera frames the scene: on seat zero's forces, as a
+    /// player's would, except on Skyhook, which frames its densest flyers.
+    fn focus(self, state: &StateView) -> Option<[f64; 2]> {
+        match self {
+            Self::Skyhook => densest_flyers(state, NEAR_ZOOM),
+            Self::Small | Self::Large | Self::Mass => seat_focus(state),
         }
     }
 }
@@ -302,6 +319,14 @@ fn workloads() -> Vec<Workload> {
             setup,
         });
     }
+    // Open, so every flyer in the frame draws, whoever owns it.
+    all.push(Workload {
+        name: "skyhook-open-near".to_string(),
+        source: Source::Match(Scene::Skyhook, View::Open),
+        shot: Shot::Hold(NEAR_ZOOM),
+        running: false,
+        setup: Setup::None,
+    });
     all
 }
 
@@ -375,6 +400,29 @@ fn seat_focus(state: &StateView) -> Option<[f64; 2]> {
     let count = points.len() as f64;
     let axis = |index: usize| points.iter().map(|point| point[index]).sum::<f64>() / count;
     Some([axis(0), axis(1)])
+}
+
+/// The flyer whose view at `zoom` holds the most airborne flyers, the
+/// earliest listed among equals.
+fn densest_flyers(state: &StateView, zoom: f64) -> Option<[f64; 2]> {
+    let flyers: Vec<[f64; 2]> = state
+        .units
+        .iter()
+        .filter(|unit| !unit.landed && unit.kind.stats().domain == Domain::Air)
+        .map(|unit| unit.pos)
+        .collect();
+    let half = WINDOW.map(|side| f64::from(side) / zoom / 2.0);
+    let in_view = |center: [f64; 2]| {
+        flyers
+            .iter()
+            .filter(|flyer| (0..2).all(|axis| (flyer[axis] - center[axis]).abs() <= half[axis]))
+            .count()
+    };
+    flyers
+        .iter()
+        .enumerate()
+        .max_by_key(|&(index, &center)| (in_view(center), Reverse(index)))
+        .map(|(_, &center)| center)
 }
 
 /// One workload's results across its trials.
@@ -591,7 +639,7 @@ impl ProfiledShell {
             })?;
             units = state.units.len();
             structures = state.buildings.len();
-            focus = seat_focus(&state);
+            focus = scene.focus(&state);
         }
         let opening = client.camera()?;
         Ok(Self {
