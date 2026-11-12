@@ -1035,19 +1035,32 @@ fn draw_piledriver_anchors(
         let factor = dest / 128.0;
         let center = body + vec2(-body_rotation.sin(), body_rotation.cos()) * (13.0 * factor);
         let size = vec2(source.w, source.h) * factor;
-        sprites.draw_unit(
-            center.x - size.x * 0.5,
-            center.y - size.y * 0.5,
-            tint,
-            DrawTextureParams {
-                dest_size: Some(size),
-                source: Some(source),
-                rotation: body_rotation,
-                ..Default::default()
-            },
-            zoom,
-        );
+        draw_layer(sprites, (source, tint), center, size, body_rotation, zoom);
     }
+}
+
+/// Draws `source` tinted `tint` at `size` on screen, centred on `center`
+/// and turned by `rotation`.
+fn draw_layer(
+    sprites: &Sprites,
+    (source, tint): (Rect, Color),
+    center: Vec2,
+    size: Vec2,
+    rotation: f32,
+    zoom: f32,
+) {
+    sprites.draw_unit(
+        center.x - size.x * 0.5,
+        center.y - size.y * 0.5,
+        tint,
+        DrawTextureParams {
+            dest_size: Some(size),
+            source: Some(source),
+            rotation,
+            ..Default::default()
+        },
+        zoom,
+    );
 }
 
 /// Where a mounted gun pivots on a hull drawn at `body`, turned by
@@ -1100,18 +1113,7 @@ fn draw_mounted_guns(
             (accent, seat_identity_color(game, unit.player)),
         ] {
             let size = vec2(source.w, source.h) * (body_size.x / hull.w);
-            sprites.draw_unit(
-                pivot.x - size.x * 0.5,
-                pivot.y - size.y * 0.5,
-                tint,
-                DrawTextureParams {
-                    dest_size: Some(size),
-                    source: Some(source),
-                    rotation,
-                    ..Default::default()
-                },
-                zoom,
-            );
+            draw_layer(sprites, (source, tint), pivot, size, rotation, zoom);
         }
     }
 }
@@ -1148,17 +1150,12 @@ fn draw_unit_body(
             zoom,
         );
     } else {
-        let params = DrawTextureParams {
-            dest_size: Some(body_size),
-            source: Some(source),
-            rotation: body_rotation,
-            ..Default::default()
-        };
-        sprites.draw_unit(
-            body.x - body_size.x * 0.5,
-            body.y - body_size.y * 0.5,
-            WHITE,
-            params.clone(),
+        draw_layer(
+            sprites,
+            (source, WHITE),
+            body,
+            body_size,
+            body_rotation,
             zoom,
         );
         if let Some(motion) = game.presentation.track_motion.get(&unit.id.0) {
@@ -1175,14 +1172,12 @@ fn draw_unit_body(
                 draw_scale,
             );
         }
-        sprites.draw_unit(
-            body.x - body_size.x * 0.5,
-            body.y - body_size.y * 0.5,
-            seat_identity_color(game, unit.player),
-            DrawTextureParams {
-                source: Some(accent),
-                ..params
-            },
+        draw_layer(
+            sprites,
+            (accent, seat_identity_color(game, unit.player)),
+            body,
+            body_size,
+            body_rotation,
             zoom,
         );
     }
@@ -1214,15 +1209,12 @@ fn draw_air_shadow(
             alpha,
         );
     } else {
-        sprites.draw_unit(
-            screen.x - shadow_size.x * 0.5 + shadow_offset.x,
-            screen.y - shadow_size.y * 0.5 + shadow_offset.y,
-            WHITE,
-            DrawTextureParams {
-                dest_size: Some(shadow_size),
-                source: Some(sprites.air_shadow()),
-                ..Default::default()
-            },
+        draw_layer(
+            sprites,
+            (sprites.air_shadow(), WHITE),
+            screen + shadow_offset,
+            shadow_size,
+            0.0,
             zoom,
         );
     }
@@ -1274,18 +1266,7 @@ fn draw_rig_mount(
         } else {
             (body, body_size)
         };
-        sprites.draw_unit(
-            center.x - size.x * 0.5,
-            center.y - size.y * 0.5,
-            tint,
-            DrawTextureParams {
-                dest_size: Some(size),
-                source: Some(source),
-                rotation: mount_rotation,
-                ..Default::default()
-            },
-            zoom,
-        );
+        draw_layer(sprites, (source, tint), center, size, mount_rotation, zoom);
     }
 }
 
@@ -1376,18 +1357,7 @@ fn draw_unit_pass(
         let body_size = vec2(dest, dest);
         if unit.kind == aftermine_sim::UnitKind::Bombard {
             let source = sprites.bombard_spades(unit.braces());
-            sprites.draw_unit(
-                body.x - body_size.x * 0.5,
-                body.y - body_size.y * 0.5,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(body_size),
-                    source: Some(source),
-                    rotation,
-                    ..Default::default()
-                },
-                zoom,
-            );
+            draw_layer(sprites, (source, WHITE), body, body_size, rotation, zoom);
         }
         if let (Some(rig), Some(roc)) = (rig, roc_rig) {
             roc::draw_under(
@@ -1435,18 +1405,8 @@ fn draw_unit_pass(
             let mount_y = 47.0;
             let offset = (mount_y - 64.0) / 128.0 * body_size.y;
             let center = body + vec2(-body_rotation.sin(), body_rotation.cos()) * offset;
-            sprites.draw_unit(
-                center.x - body_size.x * 0.5,
-                center.y - body_size.y * 0.5,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(body_size),
-                    source: Some(source),
-                    rotation: body_rotation + cycle * std::f32::consts::TAU,
-                    ..Default::default()
-                },
-                zoom,
-            );
+            let turn = body_rotation + cycle * std::f32::consts::TAU;
+            draw_layer(sprites, (source, WHITE), center, body_size, turn, zoom);
         }
         if unit.kind == aftermine_sim::UnitKind::Piledriver {
             draw_piledriver_anchors(game, sprites, unit, (body, body_rotation, dest), zoom);
@@ -1489,16 +1449,12 @@ fn draw_unit_pass(
             );
         }
         if let Some(mechanism_layer) = mechanism_layer {
-            sprites.draw_unit(
-                body.x - body_size.x * 0.5,
-                body.y - body_size.y * 0.5,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(body_size),
-                    source: Some(mechanism_layer),
-                    rotation,
-                    ..Default::default()
-                },
+            draw_layer(
+                sprites,
+                (mechanism_layer, WHITE),
+                body,
+                body_size,
+                rotation,
                 zoom,
             );
         }

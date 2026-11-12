@@ -43,16 +43,12 @@ pub(super) fn draw(
     let turn = Vec2::from_angle(rotation);
     let layer = |source: Rect, color: Color, offset: Vec2, dest: f32| {
         let at = center + turn.rotate(offset * scale);
-        sprites.draw_unit(
-            at.x - dest * 0.5,
-            at.y - dest * 0.5,
-            color,
-            DrawTextureParams {
-                dest_size: Some(vec2(dest, dest)),
-                source: Some(source),
-                rotation,
-                ..Default::default()
-            },
+        super::draw_layer(
+            sprites,
+            (source, color),
+            at,
+            vec2(dest, dest),
+            rotation,
             zoom,
         );
     };

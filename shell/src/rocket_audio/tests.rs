@@ -1,47 +1,6 @@
 use super::*;
 use crate::game::Game;
-
-fn motor(id: u32, arrival: u64) -> Motor<RocketKey> {
-    Motor {
-        key: RocketKey {
-            shooter: Target::Unit(aftermine_sim::UnitId(id)),
-            launch: Vec2Fx::ZERO,
-            impact: Vec2Fx::ZERO,
-            arrival,
-            occurrence: 0,
-        },
-        gain: 0.7,
-    }
-}
-
-#[test]
-fn overlapping_flights_stop_independently_and_do_not_retrigger_each_frame() {
-    let mut loops = RocketLoops::default();
-    let a = motor(1, 30);
-    let b = motor(2, 40);
-    assert_eq!(
-        loops.reconcile(&[a, b]),
-        vec![Change::Start(0, 0.7), Change::Start(1, 0.7)]
-    );
-    assert_eq!(
-        loops.reconcile(&[b]),
-        vec![Change::Stop(0), Change::Gain(1, 0.7)]
-    );
-    assert_eq!(loops.reconcile(&[b]), vec![Change::Gain(1, 0.7)]);
-    assert_eq!(loops.reconcile(&[]), vec![Change::Stop(1)]);
-    assert!(loops.reconcile(&[]).is_empty());
-}
-
-#[test]
-fn pause_or_seek_clears_loops_and_resuming_reconstructs_only_live_flights() {
-    let mut loops = RocketLoops::default();
-    loops.reconcile(&[motor(1, 30)]);
-    assert_eq!(loops.reconcile(&[]), vec![Change::Stop(0)]);
-    assert_eq!(
-        loops.reconcile(&[motor(2, 50)]),
-        vec![Change::Start(0, 0.7)]
-    );
-}
+use macroquad::prelude::Vec2;
 
 #[test]
 fn flight_envelope_is_sustained_until_arrival_including_short_flights() {

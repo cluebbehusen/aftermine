@@ -42,27 +42,17 @@ fn turned(offset: Vec2, rotation: f32, scale: f32) -> Vec2 {
     crate::numeric::rotate(offset, rotation) * scale
 }
 
-fn draw_layer(
+/// Draws a rig layer at `scale` screen pixels per canvas pixel.
+fn draw_scaled(
     sprites: &Sprites,
-    (source, tint): (Rect, Color),
+    layer: (Rect, Color),
     center: Vec2,
     rotation: f32,
     scale: f32,
     zoom: f32,
 ) {
-    let size = vec2(source.w, source.h) * scale;
-    sprites.draw_unit(
-        center.x - size.x * 0.5,
-        center.y - size.y * 0.5,
-        tint,
-        DrawTextureParams {
-            dest_size: Some(size),
-            source: Some(source),
-            rotation,
-            ..Default::default()
-        },
-        zoom,
-    );
+    let size = vec2(layer.0.w, layer.0.h) * scale;
+    super::draw_layer(sprites, layer, center, size, rotation, zoom);
 }
 
 /// The presentation clock in ticks, between this tick and the next.
@@ -89,7 +79,7 @@ pub(super) fn draw_shadows(
         DRONE_SHADOW
     };
     if let Some(shadow) = rig.shadow() {
-        draw_layer(
+        draw_scaled(
             sprites,
             (shadow, WHITE),
             body + throw * scale,
@@ -106,7 +96,7 @@ pub(super) fn draw_shadows(
             continue;
         };
         let pivot = mount_pivot(body, body_rotation, mount, zoom);
-        draw_layer(
+        draw_scaled(
             sprites,
             (shadow, WHITE),
             pivot + GUN_SHADOW * scale,
@@ -130,7 +120,7 @@ pub(super) fn draw_under(
     let zoom = game.presentation.camera.zoom;
     let scale = body_size.x / hull.w;
     for source in [roc.wall, roc.yoke] {
-        draw_layer(sprites, (source, WHITE), body, body_rotation, scale, zoom);
+        draw_scaled(sprites, (source, WHITE), body, body_rotation, scale, zoom);
     }
     draw_mounted_guns(
         game,
@@ -181,7 +171,7 @@ pub(super) fn draw_over(
         let frame = frames[crate::numeric::to_usize(cycle * frames.len() as f32) % frames.len()];
         let center = body + turned(FANS[side], body_rotation, scale);
         for layer in [(frame[0], WHITE), (frame[1], tint)] {
-            draw_layer(sprites, layer, center, body_rotation, scale, zoom);
+            draw_scaled(sprites, layer, center, body_rotation, scale, zoom);
         }
     }
     let last = roc.hatch.len() - 1;
@@ -189,7 +179,7 @@ pub(super) fn draw_over(
         .min(last);
     let center = body + turned(HATCH, body_rotation, scale);
     for layer in [(roc.hatch[step][0], WHITE), (roc.hatch[step][1], tint)] {
-        draw_layer(sprites, layer, center, body_rotation, scale, zoom);
+        draw_scaled(sprites, layer, center, body_rotation, scale, zoom);
     }
     let settled = DockMotion::settled(unit.bay.map_or(0, |bay| bay.docked));
     let docks = game
@@ -204,7 +194,7 @@ pub(super) fn draw_over(
             crate::numeric::to_usize((docks.spread(dock, now) * (steps.len() - 1) as f32).round())
                 .min(steps.len() - 1);
         for layer in [(steps[step][0], WHITE), (steps[step][1], tint)] {
-            draw_layer(sprites, layer, center, body_rotation, scale, zoom);
+            draw_scaled(sprites, layer, center, body_rotation, scale, zoom);
         }
         let rotor = dock + usize::try_from(game.state.current_tick() / 2 % 3).unwrap_or(0);
         if docks.resting(dock, now) {
@@ -229,7 +219,7 @@ pub(super) fn draw_over(
     }
     let heat = game.presentation.engine_heat(unit.id);
     if heat > 0.0 {
-        draw_layer(
+        draw_scaled(
             sprites,
             (roc.glow, Color::new(1.0, 1.0, 1.0, heat)),
             body,
@@ -258,7 +248,7 @@ pub(super) fn draw_assembling(
         (roc.ghost[0], Color::new(1.0, 1.0, 1.0, opacity)),
         (roc.ghost[1], Color { a: opacity, ..tint }),
     ] {
-        draw_layer(
+        draw_scaled(
             sprites,
             layer,
             centre,
@@ -284,7 +274,7 @@ fn draw_drone(
     let tint = seat_identity_color(game, player);
     for (body, accent) in [rig.hull(rotor % 3), rig.mount(None)] {
         for layer in [(body, WHITE), (accent, tint)] {
-            draw_layer(sprites, layer, center, rotation, scale, zoom);
+            draw_scaled(sprites, layer, center, rotation, scale, zoom);
         }
     }
 }

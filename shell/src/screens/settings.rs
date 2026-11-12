@@ -86,58 +86,46 @@ impl Face {
 /// A whole binding profile a Controls row puts in place of every
 /// binding, the player's rebinds included, once the player confirms.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Profile {
-    /// The classic defaults.
-    Classic,
-    /// The left-handed preset.
-    LeftHanded,
+struct Profile {
+    /// Whether it is the left-handed preset rather than the classic
+    /// defaults.
+    left_handed: bool,
+    /// The Controls row that asks for it.
+    item: Item,
+    /// The dialog's title.
+    question: &'static str,
+    /// The dialog's subtitle: what confirming costs.
+    consequence: &'static str,
+    /// The dialog row that carries it out.
+    verb: &'static str,
+    /// The notice once it is in place.
+    applied: &'static str,
 }
 
 impl Profile {
-    /// The Controls row that asks for it.
-    fn item(self) -> Item {
-        match self {
-            Profile::Classic => Item::ResetBindings,
-            Profile::LeftHanded => Item::Setting(Row::LeftHandedPreset),
-        }
-    }
+    const CLASSIC: Self = Self {
+        left_handed: false,
+        item: Item::ResetBindings,
+        question: "RESET BINDINGS?",
+        consequence: "Your changes are lost",
+        verb: "Reset bindings",
+        applied: "bindings reset to defaults",
+    };
+
+    const LEFT_HANDED: Self = Self {
+        left_handed: true,
+        item: Item::Setting(Row::LeftHandedPreset),
+        question: "LEFT-HANDED BINDINGS?",
+        consequence: "Your changes are lost",
+        verb: "Apply left-handed bindings",
+        applied: "left-handed profile applied",
+    };
 
     fn bindings(self) -> BindingMap {
-        match self {
-            Profile::Classic => BindingMap::classic(),
-            Profile::LeftHanded => BindingMap::left_handed(),
-        }
-    }
-
-    /// The dialog's title.
-    fn question(self) -> &'static str {
-        match self {
-            Profile::Classic => "RESET BINDINGS?",
-            Profile::LeftHanded => "LEFT-HANDED BINDINGS?",
-        }
-    }
-
-    /// The dialog's subtitle: what confirming costs.
-    fn consequence(self) -> &'static str {
-        match self {
-            Profile::Classic => "Your changes are lost",
-            Profile::LeftHanded => "Your changes are lost",
-        }
-    }
-
-    /// The dialog row that carries it out.
-    fn verb(self) -> &'static str {
-        match self {
-            Profile::Classic => "Reset bindings",
-            Profile::LeftHanded => "Apply left-handed bindings",
-        }
-    }
-
-    /// The notice once it is in place.
-    fn applied(self) -> &'static str {
-        match self {
-            Profile::Classic => "bindings reset to defaults",
-            Profile::LeftHanded => "left-handed profile applied",
+        if self.left_handed {
+            BindingMap::left_handed()
+        } else {
+            BindingMap::classic()
         }
     }
 }
@@ -554,10 +542,10 @@ fn tab_menu(tab: Tab, config: &Config, selected_slot: usize) -> Menu<Item> {
 /// dialog is what tells the player a press asked for the change.
 fn confirm_menu(profile: Profile) -> Menu<Item> {
     let mut menu = Menu::rows(
-        profile.question(),
+        profile.question,
         [
             (Label::from("Cancel"), Item::Cancel),
-            (Label::from(profile.verb()), Item::Confirm),
+            (Label::from(profile.verb), Item::Confirm),
         ],
     );
     menu.heading = Heading::Page { band: 0.0 };
@@ -888,7 +876,7 @@ impl SettingsScreen {
         }
         if let Face::Confirming(profile) = self.face {
             // A dialog: no tabs to wander off to while it asks.
-            self.menu.draw(sprites, profile.consequence());
+            self.menu.draw(sprites, profile.consequence);
             return;
         }
         self.menu.draw_with_coaching(sprites, "", self.coaching());
@@ -1065,7 +1053,7 @@ impl SettingsScreen {
                     // The brackets mark the chord being captured.
                     self.relabel(config);
                 }
-                Item::ResetBindings => self.ask(Profile::Classic),
+                Item::ResetBindings => self.ask(Profile::CLASSIC),
                 // Only the dialog offers these, and it is not up.
                 Item::Cancel | Item::Confirm => {}
             }
@@ -1100,7 +1088,7 @@ impl SettingsScreen {
                 update.dirty = true;
                 self.end_confirming(profile, config);
                 self.notice = Some(Notice {
-                    text: profile.applied().to_string(),
+                    text: profile.applied.to_string(),
                     danger: false,
                 });
             }
@@ -1113,7 +1101,7 @@ impl SettingsScreen {
     fn end_confirming(&mut self, profile: Profile, config: &Config) {
         self.face = Face::Tab(Tab::Controls);
         self.menu = tab_menu(Tab::Controls, config, self.binding_slot);
-        self.menu.select_where(|item| *item == profile.item());
+        self.menu.select_where(|item| *item == profile.item);
     }
 
     /// Activates a settings row: cycles its value, or does what it says.
@@ -1127,7 +1115,7 @@ impl SettingsScreen {
         match row {
             // The left-handed preset replaces the whole profile, custom
             // rebinds included; the reset row walks back to Classic.
-            Row::LeftHandedPreset => self.ask(Profile::LeftHanded),
+            Row::LeftHandedPreset => self.ask(Profile::LEFT_HANDED),
             Row::OpenDiagnostics => update.out = Out::OpenDiagnostics,
             Row::ExportDiagnostics => update.out = Out::ExportDiagnostics,
             Row::PlayerName => self.begin_naming(config),
