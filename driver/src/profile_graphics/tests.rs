@@ -105,6 +105,26 @@ fn every_workload_has_a_unique_name_and_shares_a_shell_with_its_source() {
 }
 
 #[test]
+fn match_views_hold_near_far_and_the_zooms_between() {
+    let names: Vec<String> = Shot::MATCH
+        .iter()
+        .filter(|shot| matches!(shot, Shot::Hold(_)))
+        .map(|shot| shot.name())
+        .collect();
+    assert_eq!(names, ["near", "hold-20", "hold-13.5", "far"]);
+    let between = |zoom: f64| FAR_ZOOM < zoom && zoom < NEAR_ZOOM;
+    assert!(between(BLEND_ZOOM) && between(FEATHER_ZOOM));
+    const {
+        assert!(
+            13.0 < FEATHER_ZOOM && FEATHER_ZOOM < 14.0,
+            "tiles must alternate between 13 and 14 pixels"
+        );
+    }
+    let holds = select(Some("small-fogged-hold-")).expect("matches");
+    assert_eq!(holds.len(), 2);
+}
+
+#[test]
 fn only_keeps_matching_workloads_and_refuses_an_empty_selection() {
     let zooms = select(Some("zoom-in")).expect("matches");
     assert_eq!(zooms.len(), 4);
@@ -131,9 +151,9 @@ fn shots_become_the_camera_motions_they_name() {
             frames: HOLD_FRAMES
         }
     );
-    for (shot, zoom) in [(Shot::Near, NEAR_ZOOM), (Shot::Far, FAR_ZOOM)] {
+    for zoom in [NEAR_ZOOM, BLEND_ZOOM, FEATHER_ZOOM, FAR_ZOOM] {
         assert_eq!(
-            motion(shot),
+            motion(Shot::Hold(zoom)),
             CameraMotion::Hold {
                 center,
                 zoom,

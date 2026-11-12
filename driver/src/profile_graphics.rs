@@ -21,6 +21,12 @@ use std::time::{Duration, Instant};
 const WINDOW: [u32; 2] = [1210, 834];
 const NEAR_ZOOM: f64 = 32.0;
 const FAR_ZOOM: f64 = 8.0;
+/// Unit sprites and strategic markers both draw here, halfway through the
+/// profiling config's crossfade from one to the other.
+const BLEND_ZOOM: f64 = 20.0;
+/// Tiles here alternate between 13 and 14 pixels wide, either side of the
+/// width where the fog feather takes a second step.
+const FEATHER_ZOOM: f64 = 13.5;
 const SETTLE_FRAMES: u32 = 120;
 const HOLD_FRAMES: u32 = 240;
 const PAN_FRAMES: u32 = 480;
@@ -148,34 +154,37 @@ enum Source {
     Match(Size, View),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Shot {
     /// The screen's own camera, untouched.
     Own,
-    Near,
-    Far,
+    /// One view held at this zoom.
+    Hold(f64),
     Pan,
     ZoomOut,
     ZoomIn,
 }
 
 impl Shot {
-    const MATCH: [Self; 5] = [
-        Self::Near,
-        Self::Far,
+    const MATCH: [Self; 7] = [
+        Self::Hold(NEAR_ZOOM),
+        Self::Hold(BLEND_ZOOM),
+        Self::Hold(FEATHER_ZOOM),
+        Self::Hold(FAR_ZOOM),
         Self::Pan,
         Self::ZoomOut,
         Self::ZoomIn,
     ];
 
-    const fn name(self) -> &'static str {
+    fn name(self) -> String {
         match self {
-            Self::Own => "own",
-            Self::Near => "near",
-            Self::Far => "far",
-            Self::Pan => "pan",
-            Self::ZoomOut => "zoom-out",
-            Self::ZoomIn => "zoom-in",
+            Self::Own => "own".to_string(),
+            Self::Hold(zoom) if zoom == NEAR_ZOOM => "near".to_string(),
+            Self::Hold(zoom) if zoom == FAR_ZOOM => "far".to_string(),
+            Self::Hold(zoom) => format!("hold-{zoom}"),
+            Self::Pan => "pan".to_string(),
+            Self::ZoomOut => "zoom-out".to_string(),
+            Self::ZoomIn => "zoom-in".to_string(),
         }
     }
 }
@@ -215,7 +224,7 @@ fn workloads() -> Vec<Workload> {
                 all.push(Workload {
                     name: format!("{}-{}-running", size.name(), view.name()),
                     source,
-                    shot: Shot::Near,
+                    shot: Shot::Hold(NEAR_ZOOM),
                     running: true,
                 });
             }
@@ -242,14 +251,9 @@ fn script(workload: &Workload, center: [f64; 2]) -> FrameScript {
         Shot::Own => CameraMotion::None {
             frames: HOLD_FRAMES,
         },
-        Shot::Near => CameraMotion::Hold {
+        Shot::Hold(zoom) => CameraMotion::Hold {
             center,
-            zoom: NEAR_ZOOM,
-            frames: HOLD_FRAMES,
-        },
-        Shot::Far => CameraMotion::Hold {
-            center,
-            zoom: FAR_ZOOM,
+            zoom,
             frames: HOLD_FRAMES,
         },
         Shot::Pan => CameraMotion::Pan {

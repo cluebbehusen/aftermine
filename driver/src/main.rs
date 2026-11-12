@@ -417,8 +417,9 @@ enum Cmd {
         dev: bool,
     },
     /// Run named native frame workloads and report where each frame's time
-    /// goes: Home, then small and large matches, fogged and open, across
-    /// camera motions. Stays on one fixed frame sequence so runs compare.
+    /// goes: Home, then small and large matches, fogged and open, held at
+    /// zooms from near to far and across camera motions. Stays on one fixed
+    /// frame sequence so runs compare.
     ProfileGraphics {
         /// Keep only workloads whose name contains this.
         #[arg(long)]
