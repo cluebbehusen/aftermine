@@ -71,6 +71,18 @@ fn a_replay_without_a_recorded_duration_is_refused() {
 }
 
 #[test]
+fn a_player_save_is_refused_by_name() {
+    let mut bytes = crate::checkpoint::SAVE_MAGIC.to_vec();
+    bytes.extend_from_slice(b"\0header");
+    let fixture = write_fixture(&bytes);
+    let error = load_replay(&fixture.0).expect_err("a save is not a replay");
+    assert!(
+        error.to_string().contains("a player save, not a recording"),
+        "{error}"
+    );
+}
+
+#[test]
 fn current_replay_rejects_unknown_fields_at_strict_setup_boundaries() {
     let mut documents = Vec::new();
 

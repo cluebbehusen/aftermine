@@ -1,12 +1,10 @@
 //! Shared pieces of the evaluation harnesses: manifest maps and their
 //! families, match modes, fully seated plans, and publishing rows.
 
-use crate::bot_eval::{
-    EvaluationController, EvaluationLeg, EvaluationPlan, EvidenceBatch, preflight_destinations,
-};
+use crate::bot_eval::{EvaluationLeg, EvaluationPlan, EvidenceBatch, preflight_destinations};
 use aftermine_sim::Scenario;
 use aftermine_sim::scenario::BotConfig;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -141,22 +139,25 @@ pub fn seat_teams(source: &Scenario) -> Result<Vec<u8>> {
         .collect())
 }
 
-/// A plan with every seat controlled, the authored human chair included.
+/// A plan with every seat a bot, the authored human chair included, each
+/// configured by `seats` in seat order.
 pub fn seated_plan(
     source: &Scenario,
     leg: EvaluationLeg,
-    seats: impl Iterator<Item = BotConfig>,
-) -> EvaluationPlan {
+    seats: &[BotConfig],
+) -> Result<EvaluationPlan> {
+    ensure!(
+        seats.len() == source.players.len(),
+        "{} bot configurations for {} seats",
+        seats.len(),
+        source.players.len()
+    );
     let mut scenario = source.clone();
-    for player in &mut scenario.players {
-        player.bot = false;
-        player.bot_config = None;
+    for (player, &config) in scenario.players.iter_mut().zip(seats) {
+        player.bot = true;
+        player.bot_config = Some(config);
     }
-    EvaluationPlan {
-        leg,
-        scenario,
-        controllers: seats.map(EvaluationController::configured).collect(),
-    }
+    EvaluationPlan::from_scenario(scenario, leg)
 }
 
 /// Refuses an output directory that already holds evaluation rows.

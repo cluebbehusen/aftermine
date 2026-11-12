@@ -570,26 +570,29 @@ fn default_candidate() -> String {
     format!("{}-{revision}{dirty}", build.version)
 }
 
-fn print_ladder_report(rows: &[PathBuf], json: bool) -> Result<()> {
-    let report = aftermine_driver::bot_ladder::build_report(
-        &aftermine_driver::bot_ladder::load_rows(rows)?,
-    )?;
+/// Prints `value` as pretty JSON when `json` is set, else as `render` draws it.
+fn emit<T: serde::Serialize>(
+    json: bool,
+    value: &T,
+    render: impl FnOnce(&T) -> String,
+) -> Result<()> {
     if json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+        println!("{}", serde_json::to_string_pretty(value)?);
     } else {
-        print!("{}", report.render());
+        print!("{}", render(value));
     }
     Ok(())
 }
 
-fn print_summary(rows: &[PathBuf], json: bool) -> Result<()> {
-    let report = aftermine_driver::seat_summary::summarize(rows)?;
-    if json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
-    } else {
-        print!("{}", report.render());
-    }
-    Ok(())
+fn print_ladder_report(rows: &[PathBuf], json: bool) -> Result<()> {
+    let report = aftermine_driver::bot_ladder::build_report(
+        &aftermine_driver::bot_ladder::load_rows(rows)?,
+    )?;
+    emit(
+        json,
+        &report,
+        aftermine_driver::bot_ladder::LadderReport::render,
+    )
 }
 
 #[expect(clippy::too_many_lines, reason = "one arm per subcommand")]
@@ -741,7 +744,11 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Cmd::BotSummary { rows, json } => print_summary(&rows, json)?,
+        Cmd::BotSummary { rows, json } => emit(
+            json,
+            &aftermine_driver::seat_summary::summarize(&rows)?,
+            aftermine_driver::seat_summary::RowSummary::render,
+        )?,
         Cmd::BotLadder {
             manifest: manifest_path,
             out,
@@ -777,15 +784,14 @@ fn main() -> Result<()> {
             let games = replays
                 .iter()
                 .map(|path| {
-                    let replay = aftermine_driver::replay_ledger::load(path)?;
+                    let replay = aftermine_kit::load_replay(path)
+                        .with_context(|| format!("loading {}", path.display()))?;
                     aftermine_driver::replay_ledger::ledger(path, &replay)
                 })
                 .collect::<Result<Vec<_>>>()?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&games)?);
-            } else {
-                print!("{}", aftermine_driver::replay_ledger::render(&games));
-            }
+            emit(json, &games, |games| {
+                aftermine_driver::replay_ledger::render(games)
+            })?;
         }
         Cmd::BotPressure {
             dir,
@@ -803,11 +809,7 @@ fn main() -> Result<()> {
                 }
                 outcomes.push(outcome);
             }
-            if json {
-                println!("{}", serde_json::to_string_pretty(&outcomes)?);
-            } else {
-                print!("{}", bot_pressure::report(&outcomes));
-            }
+            emit(json, &outcomes, |outcomes| bot_pressure::report(outcomes))?;
         }
         Cmd::TickScan {
             replay,
@@ -817,11 +819,7 @@ fn main() -> Result<()> {
             json,
         } => {
             let scan = aftermine_driver::tick_profile::scan(&replay, window, top, passes)?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&scan)?);
-            } else {
-                print!("{}", scan.table());
-            }
+            emit(json, &scan, aftermine_driver::tick_profile::Scan::table)?;
         }
         Cmd::TickProfile {
             replay,
@@ -839,11 +837,7 @@ fn main() -> Result<()> {
                 seconds,
                 focus.as_deref(),
             )?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
-            } else {
-                print!("{}", report.table(top));
-            }
+            emit(json, &report, |report| report.table(top))?;
         }
         Cmd::BotCost {
             workload,
@@ -852,18 +846,17 @@ fn main() -> Result<()> {
             json,
             save_replay,
         } => {
-            let (label, scenario, window) = match (workload, scenario) {
-                (Some(workload), _) => (
+            let (label, scenario, window) = match (workload, scenario, ticks) {
+                (Some(workload), _, ticks) => (
                     workload.to_string(),
                     workload.scenario(),
                     ticks.unwrap_or(workload.ticks()),
                 ),
-                (None, Some(path)) => {
+                (None, Some(path), Some(window)) => {
                     let scenario = runner::load_scenario(&path)?;
-                    let window = ticks.context("--scenario requires --ticks")?;
                     (path, scenario, window)
                 }
-                (None, None) => bail!("name a workload or pass --scenario"),
+                _ => unreachable!("clap requires a workload, or --scenario with --ticks"),
             };
             let mut replay = save_replay.as_ref().map(|_| {
                 aftermine_kit::GameReplay::new(
@@ -878,11 +871,7 @@ fn main() -> Result<()> {
                 replay.save(path)?;
                 eprintln!("replay: {}", path.display());
             }
-            if json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
-            } else {
-                print!("{}", report.table());
-            }
+            emit(json, &report, aftermine_driver::bot_cost::CostReport::table)?;
         }
         Cmd::Replay {
             path,
@@ -963,11 +952,11 @@ fn main() -> Result<()> {
                 },
             };
             let report = aftermine_driver::replay_summary::summarize(&replay, &opts)?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
-            } else {
-                print!("{}", report.render());
-            }
+            emit(
+                json,
+                &report,
+                aftermine_driver::replay_summary::SummaryReport::render,
+            )?;
         }
         Cmd::Render {
             scenario,
@@ -1021,11 +1010,7 @@ fn main() -> Result<()> {
         Cmd::MapAudit { scenario, json } => {
             let scenario = runner::load_scenario(&scenario)?;
             let audit = aftermine_driver::audit::audit(&scenario)?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&audit)?);
-            } else {
-                print!("{}", audit.table());
-            }
+            emit(json, &audit, aftermine_driver::audit::MapAudit::table)?;
         }
         Cmd::ReplayStats { path, every } => {
             let replay = aftermine_kit::load_replay(&path)

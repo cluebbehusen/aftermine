@@ -17,7 +17,15 @@ impl Repository {
         let repo = Self(path);
         repo.run(&["init", "-q"]);
         for package in [
-            "chassis", "sim", "opponent", "protocol", "kit", "net", "shell", "driver",
+            "chassis",
+            "sim",
+            "opponent",
+            "protocol",
+            "kit",
+            "net",
+            "apple-bridge",
+            "shell",
+            "driver",
         ] {
             fs::create_dir_all(repo.0.join(package).join("src")).unwrap();
             fs::write(
@@ -84,11 +92,13 @@ fn identity_tracks_shared_and_host_sources_without_private_artifacts() {
 }
 
 #[test]
-fn multiplayer_sources_mark_only_the_shell_dirty() {
-    let repo = Repository::new();
-    fs::write(repo.0.join("net/src/lib.rs"), "// changed transport").unwrap();
-    assert_eq!(identity(&repo.0, &inputs("shell")).1, "true");
-    assert_eq!(identity(&repo.0, &inputs("driver")).1, "false");
+fn shell_only_sources_mark_only_the_shell_dirty() {
+    for source in ["net/src/lib.rs", "apple-bridge/src/lib.rs"] {
+        let repo = Repository::new();
+        fs::write(repo.0.join(source), "// changed shell-only source").unwrap();
+        assert_eq!(identity(&repo.0, &inputs("shell")).1, "true", "{source}");
+        assert_eq!(identity(&repo.0, &inputs("driver")).1, "false", "{source}");
+    }
 }
 
 #[test]

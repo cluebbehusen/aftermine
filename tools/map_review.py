@@ -26,10 +26,14 @@ import pathlib
 import subprocess
 import tempfile
 
+# The simulation's `SCRAP_NODE_AMOUNT` and `RICH_SCRAP_NODE_AMOUNT`.
+SCRAP_NODE_AMOUNT = 400
+RICH_SCRAP_NODE_AMOUNT = 800
 
-def far_scrap_share(rows: list[str], threshold: float = 18.0) -> tuple[float, int]:
+
+def far_scrap_share(rows: list[str], threshold: float = 18.0) -> float:
     """Share of scrap value sitting beyond turtling range of every
-    Foundry anchor, and the total scrap units on the map."""
+    Foundry anchor."""
     anchors = [
         (x, y)
         for y, row in enumerate(rows)
@@ -37,20 +41,20 @@ def far_scrap_share(rows: list[str], threshold: float = 18.0) -> tuple[float, in
         if c in "12345678" or c in "abcdefgh"
     ]
     scraps = [
-        (x, y, 3 if c == "S" else 1)
+        (x, y, RICH_SCRAP_NODE_AMOUNT if c == "S" else SCRAP_NODE_AMOUNT)
         for y, row in enumerate(rows)
         for x, c in enumerate(row)
         if c in "sS"
     ]
     total = sum(v for _, _, v in scraps)
     if not anchors or not total:
-        return 0.0, total
+        return 0.0
     far = sum(
         v
         for x, y, v in scraps
         if min(math.hypot(x - ax, y - ay) for ax, ay in anchors) > threshold
     )
-    return far / total, total
+    return far / total
 
 
 def run_json(cmd: list[str]) -> dict | list | None:
@@ -128,7 +132,7 @@ def main() -> None:
         payload = json.loads(draft.read_text())
         rows = payload["map"]
         meta = payload.get("meta") or {}
-        share, total = far_scrap_share(rows)
+        share = far_scrap_share(rows)
 
         with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
             subprocess.run(
@@ -142,10 +146,10 @@ def main() -> None:
         stats: dict = {
             "size": f"{len(rows[0])} x {len(rows)}",
             "seats": len(payload.get("players", [])),
-            "scrap": f"{total} units, {share:.0%} beyond turtling range",
+            "scrap beyond turtling range": f"{share:.0%} by value",
         }
         if isinstance(audit, dict):
-            for key in ("free_tiles", "nodes"):
+            for key in ("free_tiles", "scrap_nodes", "scrap_total"):
                 if key in audit:
                     stats[key.replace("_", " ")] = audit[key]
             if "narrow_passages" in audit:

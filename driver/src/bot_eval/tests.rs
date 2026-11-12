@@ -172,10 +172,6 @@ fn opponent_config() -> BotConfig {
     )
 }
 
-fn opponent_controller() -> EvaluationController {
-    EvaluationController::configured(opponent_config())
-}
-
 #[test]
 fn configured_evaluation_records_exact_controller_provenance() {
     let plans = matchup_plans(
@@ -208,6 +204,9 @@ fn configured_evaluation_records_exact_controller_provenance() {
             assert_eq!(seat.seat, u8::try_from(seat_index).unwrap());
             assert_eq!(seat.config, config);
             assert_eq!(seat.profile, ResolvedProfile::resolve(config));
+            let recorded = &replay.setup.players[seat_index];
+            assert!(recorded.bot);
+            assert_eq!(recorded.bot_config, Some(config));
         }
         assert!(
             row.evidence.iter().all(|seat| seat.commands > 0),
@@ -215,8 +214,6 @@ fn configured_evaluation_records_exact_controller_provenance() {
         );
         let description = replay.meta.description.as_deref().unwrap();
         assert!(description.contains(&format!("evaluation={}", row.evaluation_fingerprint)));
-        assert!(description.contains("\"config\""));
-        assert!(description.contains(&serde_json::to_string(&opponent_controller()).unwrap()));
     }
 }
 
@@ -310,16 +307,10 @@ fn nominal_axis_aliases_share_one_execution_identity_and_are_refused() {
     assert_eq!(single.leg, EvaluationLeg::Single);
     assert_eq!(forward.leg, EvaluationLeg::Forward);
     assert_eq!(single.scenario, forward.scenario);
-    assert_eq!(single.controllers, forward.controllers);
     assert_ne!(
         evaluation_fingerprint(&single).unwrap(),
         evaluation_fingerprint(&forward).unwrap(),
         "the nominal provenance labels remain distinguishable"
-    );
-    assert_eq!(
-        execution_fingerprint(&single).unwrap(),
-        execution_fingerprint(&forward).unwrap(),
-        "execution identity must ignore the aliasing leg label"
     );
     let error = ensure_unique_execution_plans([&single, &forward]).unwrap_err();
     assert!(
@@ -350,40 +341,6 @@ fn command_hash_ignores_setup_but_covers_ticks_and_commands() {
         command_hash(&first).unwrap(),
         command_hash(&second).unwrap()
     );
-}
-
-#[test]
-fn evaluation_plan_refuses_missing_or_excess_controller_slots() {
-    let scenario = firing_squad();
-    for controllers in [
-        vec![opponent_controller()],
-        vec![
-            opponent_controller(),
-            opponent_controller(),
-            opponent_controller(),
-        ],
-    ] {
-        let plan = EvaluationPlan {
-            leg: EvaluationLeg::Single,
-            scenario: scenario.clone(),
-            controllers,
-        };
-
-        let fingerprint_error = evaluation_fingerprint(&plan).unwrap_err();
-        assert!(
-            fingerprint_error
-                .to_string()
-                .contains("controllers for 2 seats"),
-            "invalid provenance should fail clearly: {fingerprint_error:#}"
-        );
-        let evaluation_error = evaluate_plan_artifact(&plan, 1, "candidate-a").unwrap_err();
-        assert!(
-            evaluation_error
-                .to_string()
-                .contains("controllers for 2 seats"),
-            "invalid execution should fail before building: {evaluation_error:#}"
-        );
-    }
 }
 
 #[test]
@@ -1056,11 +1013,24 @@ fn a_stall_loop_limit_of_zero_is_refused_and_none_disables_the_stop() {
 fn a_seat_without_a_bot_configuration_is_refused() {
     let mut scenario = firing_squad();
     scenario.players[1].bot = false;
-    let error = EvaluationPlan::from_scenario(scenario, EvaluationLeg::Single).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("seat 1 has no bot configuration"),
-        "{error:#}"
-    );
+    let error = EvaluationPlan::from_scenario(scenario.clone(), EvaluationLeg::Single)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("seat 1 has no bot configuration"), "{error}");
+
+    let plan = EvaluationPlan {
+        leg: EvaluationLeg::Single,
+        scenario,
+    };
+    for error in [
+        evaluation_fingerprint(&plan).unwrap_err(),
+        evaluate_plan_artifact(&plan, 1, "candidate-a").unwrap_err(),
+    ] {
+        assert!(
+            error
+                .to_string()
+                .contains("seat 1 has no bot configuration"),
+            "{error:#}"
+        );
+    }
 }

@@ -155,3 +155,23 @@ fn long_advance_scales_the_deadline_and_the_next_call_restores_it() {
     );
     server.join().expect("server thread");
 }
+
+#[test]
+fn a_replay_load_waits_as_long_as_the_longest_advance() {
+    let load = read_timeout_for(&Request::LoadReplay {
+        path: "long-match.json".to_string(),
+    });
+    assert_eq!(
+        load,
+        read_timeout_for(&Request::AdvanceTicks {
+            ticks: MAX_ADVANCE_TICKS,
+        })
+    );
+    // A windowless session resumed a half-hour eight-seat replay at about
+    // 850 ticks a second; a machine half that fast must still finish.
+    let half_speed = Duration::from_secs(MAX_ADVANCE_TICKS.div_ceil(850 / 2));
+    assert!(
+        load > half_speed,
+        "{load:?} is too short for the longest advance on a slow machine"
+    );
+}

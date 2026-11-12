@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 pub const VERSION: u32 = 1;
 /// Encoded checkpoint load bound.
 pub const MAX_BYTES: usize = 256 * 1024 * 1024;
+/// Magic bytes that open a player save file.
+pub const SAVE_MAGIC: &[u8; 8] = b"AFTERSAV";
 
 /// World and command sources at the boundary before the next tick executes.
 #[derive(Debug, Clone, Serialize, Deserialize)]

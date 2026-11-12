@@ -19,10 +19,12 @@ fn manifest() -> LadderManifest {
 
 fn rungs(leg: &LadderLeg) -> Vec<(BotDifficulty, BotStance, u64)> {
     leg.plan
-        .controllers
+        .scenario
+        .players
         .iter()
-        .map(|controller| {
-            let config = controller.config();
+        .map(|player| {
+            assert!(player.bot, "every ladder seat is recorded as a bot");
+            let config = player.bot_config.expect("every ladder seat is configured");
             (config.difficulty, config.stance, config.personality_seed)
         })
         .collect()

@@ -18,15 +18,22 @@ class FarScrapShare(unittest.TestCase):
         rows = [
             "1" + "." * 40,
             "s" + "." * 40,  # adjacent: near
-            "." * 30 + "S" + "." * 10,  # 30 tiles out: far, worth 3
+            "." * 30 + "S" + "." * 10,  # 30 tiles out: far, worth two nodes
         ]
-        share, total = far_scrap_share(rows)
-        self.assertEqual(total, 4)
-        self.assertAlmostEqual(share, 0.75)
+        self.assertAlmostEqual(far_scrap_share(rows), 2 / 3)
 
     def test_a_map_with_no_scrap_reports_zero(self) -> None:
-        share, total = far_scrap_share(["1..", "..."])
-        self.assertEqual((share, total), (0.0, 0))
+        self.assertEqual(far_scrap_share(["1..", "..."]), 0.0)
+
+    def test_node_values_match_the_simulation(self) -> None:
+        stats = (
+            Path(__file__).resolve().parents[1] / "sim" / "src" / "stats.rs"
+        ).read_text(encoding="utf-8")
+        for name, value in (
+            ("SCRAP_NODE_AMOUNT", map_review.SCRAP_NODE_AMOUNT),
+            ("RICH_SCRAP_NODE_AMOUNT", map_review.RICH_SCRAP_NODE_AMOUNT),
+        ):
+            self.assertIn(f"pub const {name}: u32 = {value};", stats)
 
 
 class Rendering(unittest.TestCase):
@@ -74,7 +81,7 @@ class ReviewBuild(unittest.TestCase):
                 return subprocess.CompletedProcess(
                     cmd,
                     0,
-                    '{"free_tiles": 37, "nodes": 2}\n',
+                    '{"free_tiles": 37, "scrap_nodes": 2, "scrap_total": 1200}\n',
                     "",
                 )
             raise AssertionError(f"unexpected driver command: {cmd}")
@@ -115,7 +122,11 @@ class ReviewBuild(unittest.TestCase):
             self.assertLess(document.index("alpha"), document.index("zeta"))
             self.assertIn("first &amp; best", document)
             self.assertIn("<th>free tiles</th><td>37</td>", document)
-            self.assertIn("<th>nodes</th><td>2</td>", document)
+            self.assertIn("<th>scrap nodes</th><td>2</td>", document)
+            self.assertIn("<th>scrap total</th><td>1200</td>", document)
+            self.assertIn(
+                "<th>scrap beyond turtling range</th><td>0% by value</td>", document
+            )
             self.assertIn("data:image/png;base64,cmVuZGVyZWQgcG5n", document)
             self.assertEqual(len(calls), 4)
             for draft in (drafts / "alpha.json", drafts / "zeta.json"):

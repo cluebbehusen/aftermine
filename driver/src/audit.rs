@@ -81,7 +81,7 @@ pub struct MapAudit {
     pub size: (i32, i32),
     /// Passable ground tiles across the whole map.
     pub free_tiles: usize,
-    /// Scrap nodes and their total salvage.
+    /// Scrap nodes on the map.
     pub scrap_nodes: usize,
     /// Total scrap on the map.
     pub scrap_total: u64,

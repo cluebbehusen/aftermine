@@ -15,16 +15,20 @@ const ORDINARY_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn read_timeout_for(request: &Request) -> Duration {
     match request {
-        Request::AdvanceTicks { ticks } => {
-            // Budgeted from the protocol's shared figure, so this side's
-            // deadline can never undercut the server's own.
-            let seconds = (*ticks)
-                .min(MAX_ADVANCE_TICKS)
-                .div_ceil(ADVANCE_TICKS_PER_BUDGET_SECOND);
-            ORDINARY_READ_TIMEOUT.saturating_add(Duration::from_secs(seconds))
-        }
+        Request::AdvanceTicks { ticks } => advance_deadline(*ticks),
+        // Resuming a replay executes its whole history inside the request.
+        Request::LoadReplay { .. } => advance_deadline(MAX_ADVANCE_TICKS),
         _ => ORDINARY_READ_TIMEOUT,
     }
+}
+
+/// Budgeted from the protocol's shared figure, so this side's deadline can
+/// never undercut the server's own.
+fn advance_deadline(ticks: u64) -> Duration {
+    let seconds = ticks
+        .min(MAX_ADVANCE_TICKS)
+        .div_ceil(ADVANCE_TICKS_PER_BUDGET_SECOND);
+    ORDINARY_READ_TIMEOUT.saturating_add(Duration::from_secs(seconds))
 }
 
 fn read_response(reader: &mut impl BufRead, max_bytes: usize) -> Result<ResponseEnvelope> {

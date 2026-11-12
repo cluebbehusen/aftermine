@@ -127,7 +127,7 @@ impl<'a> ReplayPlayback<'a> {
 }
 
 /// Loads an Aftermine replay from disk, JSON or `.amreplay`, without its
-/// keyframes.
+/// keyframes. A player save is refused by name: it is a session checkpoint, not a recording.
 pub fn load_replay(path: impl AsRef<Path>) -> Result<GameReplay, ReplayError> {
     load_recording(path).map(|recording| recording.replay)
 }
@@ -244,7 +244,13 @@ pub fn load_recording(path: impl AsRef<Path>) -> Result<Recording, ReplayError> 
 fn read_file(path: &Path) -> Result<Recording, ReplayError> {
     let mut file = std::fs::File::open(path)?;
     let mut magic = [0; 8];
-    if file.read_exact(&mut magic).is_err() || &magic != MAGIC {
+    let read = file.read_exact(&mut magic).is_ok();
+    if read && &magic == crate::checkpoint::SAVE_MAGIC {
+        return Err(invalid(
+            "a player save, not a recording; use the match recording (match-*.amreplay) instead",
+        ));
+    }
+    if !read || &magic != MAGIC {
         let replay = GameReplay::load(path)?;
         return Ok(Recording {
             replay,
