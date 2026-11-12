@@ -16,40 +16,7 @@ use aftermine_sim::{Command, PlayerId, UnitId, UnitKind};
 use anyhow::{Context, Result, bail};
 use chassis::grid::as_index;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-
-static NEXT_HOME: AtomicU64 = AtomicU64::new(0);
-
-struct ScratchHome(PathBuf);
-
-impl ScratchHome {
-    fn new() -> Result<Self> {
-        loop {
-            let id = NEXT_HOME.fetch_add(1, Ordering::Relaxed);
-            let path =
-                std::env::temp_dir().join(format!("aftermine-smoke-{}-{id}", std::process::id()));
-            match std::fs::create_dir(&path) {
-                Ok(()) => return Ok(Self(path)),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-                Err(error) => return Err(error.into()),
-            }
-        }
-    }
-}
-
-impl Drop for ScratchHome {
-    fn drop(&mut self) {
-        if let Err(error) = std::fs::remove_dir_all(&self.0)
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            eprintln!(
-                "warning: could not remove smoke scratch HOME {}: {error}",
-                self.0.display()
-            );
-        }
-    }
-}
 
 /// Runs the smoke sequence against `addr`, optionally spawning a shell
 /// first (killed on exit, pass or fail).
@@ -82,29 +49,9 @@ fn run_spawned(addr: &str) -> Result<()> {
         .next()
         .and_then(|port| port.parse().ok())
         .context("addr must look like host:port")?;
-    let home = ScratchHome::new()?;
-    let executable = crate::auto::build_shell_executable()?;
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let mut command = std::process::Command::new(executable);
-    command
-        .args([
-            "--debug-server",
-            "--automation",
-            "--paused",
-            // Pin the window size: a large enough window clamps the
-            // camera immovable on the smoke's map, which would defeat
-            // the minimap-jump check.
-            "--window",
-            "1280x800",
-            "--port",
-            &port.to_string(),
-        ])
-        .env("AFTERMINE_RESOURCE_ROOT", &root);
-    crate::auto::isolate_home(&mut command, &home.0);
-    command.current_dir(&home.0);
+    let mut shell = crate::auto::ScratchShell::new("smoke")?;
     println!("smoke: spawning a shell on port {port}");
-    // Declared after the scratch HOME, so the shell is gone before it is.
-    let (_shell, mut client) = crate::auto::launch(command, port, Duration::from_secs(120))?;
+    let mut client = shell.spawn(port, true)?;
     execute(&mut client, true)
 }
 

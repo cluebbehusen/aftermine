@@ -1,21 +1,23 @@
 //! Launching and driving a real shell window. `launch` is the one way the
-//! driver starts a shell it then talks to, for the smoke check, profiling,
-//! the screenshot suite and the native test suites. The rest is driving
-//! vocabulary for the automation-mode shell, which ignores hardware input:
-//! read the shell's own UI report, and walk menus by row label — never by
-//! index, because Home's rows shift with resumable state on the host
+//! driver starts a shell it then talks to: profiling launches its own, and
+//! [`ScratchShell`] runs the automation shell on a throwaway HOME for the
+//! smoke check, the screenshot suite and the native test suites. The rest is
+//! driving vocabulary for the automation-mode shell, which ignores hardware
+//! input: read the shell's own UI report, and walk menus by row label — never
+//! by index, because Home's rows shift with resumable state on the host
 //! machine.
 
 use crate::client::Client;
 use aftermine_protocol::{Key, PadButton, PadFamily, RawEvent, Request, UiView};
 use anyhow::{Context, Result, bail};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// A shell child killed on drop, so a failing walk never strands a
 /// window holding the port.
-pub struct ShellGuard(std::process::Child);
+pub(crate) struct ShellGuard(std::process::Child);
 
 impl ShellGuard {
     /// The shell's process id.
@@ -29,18 +31,6 @@ impl Drop for ShellGuard {
         self.0.kill().ok();
         self.0.wait().ok();
     }
-}
-
-/// How to spawn the automation shell.
-pub struct SpawnOptions {
-    /// Debug-server port (each caller picks its own to avoid clashes).
-    pub port: u16,
-    /// Start with the sim clock paused (driven mode).
-    pub paused: bool,
-    /// Override HOME and the writable working directory for the child,
-    /// isolating config, autosaves, replay discovery, and default output
-    /// from the host user's real state.
-    pub home: Option<PathBuf>,
 }
 
 /// Builds the shell with the caller's normal Rust environment and returns
@@ -100,7 +90,11 @@ fn shell_executable_from_cargo_output(stdout: &[u8]) -> Option<PathBuf> {
     None
 }
 
-pub(crate) fn isolate_home(command: &mut std::process::Command, home: &std::path::Path) {
+/// Points every platform's writable roots at `home`. `HOME` alone is not
+/// hermetic: Windows resolves config and autosaves through `APPDATA`, and
+/// Linux prefers `XDG_CONFIG_HOME` and `XDG_DATA_HOME` over `HOME` when they
+/// are set.
+pub(crate) fn isolate_home(command: &mut std::process::Command, home: &Path) {
     command.env("HOME", home);
     command.env("XDG_CONFIG_HOME", home.join(".config"));
     command.env("XDG_DATA_HOME", home.join(".local/share"));
@@ -109,7 +103,7 @@ pub(crate) fn isolate_home(command: &mut std::process::Command, home: &std::path
 
 /// Writes `text` as the settings file under an isolated `home`, wherever each
 /// platform's shell looks for it.
-pub(crate) fn write_home_config(home: &std::path::Path, text: &str) -> Result<()> {
+pub fn write_home_config(home: &Path, text: &str) -> Result<()> {
     for dir in [
         home.join("Library/Application Support/Aftermine"),
         home.join(".config/aftermine"),
@@ -121,40 +115,83 @@ pub(crate) fn write_home_config(home: &std::path::Path, text: &str) -> Result<()
     Ok(())
 }
 
-/// Builds and spawns an automation-mode shell, then connects once it
-/// answers. The window is pinned to 1280x800 because the suites driving it
-/// depend on stable geometry and a persisted config may carry another size.
-pub fn spawn_shell(opts: &SpawnOptions) -> Result<(ShellGuard, Client)> {
-    // Read-only resources stay rooted at the workspace even when the
-    // writable working directory is isolated below.
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let executable = build_shell_executable()?;
-    let mut command = std::process::Command::new(executable);
-    command
-        .args([
-            "--debug-server",
-            "--automation",
-            "--window",
-            "1280x800",
-            "--port",
-            &opts.port.to_string(),
-        ])
-        .env("AFTERMINE_RESOURCE_ROOT", &root);
-    if opts.paused {
-        command.arg("--paused");
+/// A throwaway HOME and the automation shell spawned on it. Dropping it
+/// stops the shell before removing the HOME, so a last autosave never lands
+/// in a tree being deleted and a failing walk never strands a window holding
+/// the port.
+pub struct ScratchShell {
+    shell: Option<ShellGuard>,
+    home: PathBuf,
+}
+
+impl ScratchShell {
+    /// Creates an empty HOME under the system temporary directory, named
+    /// after `label`, with no shell on it yet. Anything the shell should find
+    /// there, such as [`write_home_config`]'s settings, goes in before
+    /// [`ScratchShell::spawn`].
+    pub fn new(label: &str) -> Result<Self> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        loop {
+            let id = NEXT.fetch_add(1, Ordering::Relaxed);
+            let home =
+                std::env::temp_dir().join(format!("aftermine-{label}-{}-{id}", std::process::id()));
+            match std::fs::create_dir(&home) {
+                Ok(()) => return Ok(Self { shell: None, home }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
     }
-    if let Some(home) = &opts.home {
-        // HOME alone is not hermetic: Windows resolves config and
-        // autosaves through APPDATA, and Linux prefers XDG_CONFIG_HOME
-        // and XDG_DATA_HOME over HOME when they are set. Point every
-        // platform's root and all relative writable paths into the
-        // scratch tree.
-        isolate_home(&mut command, home);
-        command.current_dir(home);
-    } else {
-        command.current_dir(root);
+
+    /// The HOME, which is also the shell's working directory.
+    pub fn home(&self) -> &Path {
+        &self.home
     }
-    launch(command, opts.port, Duration::from_secs(120))
+
+    /// Builds and spawns an automation-mode shell on this HOME, after
+    /// stopping any shell already running on it, and connects once it
+    /// answers on `port`. The window is pinned to 1280x800 because the walks
+    /// driving it depend on stable geometry, such as a camera that can move
+    /// on a small map, and a persisted config may carry another size.
+    pub fn spawn(&mut self, port: u16, paused: bool) -> Result<Client> {
+        self.shell = None;
+        // Read-only resources stay rooted at the workspace while the
+        // writable working directory is the HOME.
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut command = std::process::Command::new(build_shell_executable()?);
+        command
+            .args([
+                "--debug-server",
+                "--automation",
+                "--window",
+                "1280x800",
+                "--port",
+                &port.to_string(),
+            ])
+            .env("AFTERMINE_RESOURCE_ROOT", &root)
+            .current_dir(&self.home);
+        if paused {
+            command.arg("--paused");
+        }
+        isolate_home(&mut command, &self.home);
+        let (shell, client) = launch(command, port, Duration::from_secs(120))?;
+        self.shell = Some(shell);
+        Ok(client)
+    }
+}
+
+impl Drop for ScratchShell {
+    fn drop(&mut self) {
+        drop(self.shell.take());
+        if let Err(error) = std::fs::remove_dir_all(&self.home)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!(
+                "warning: could not remove scratch HOME {}: {error}",
+                self.home.display()
+            );
+        }
+    }
 }
 
 /// Spawns `command`, a shell told to serve the debug protocol on `port`, and

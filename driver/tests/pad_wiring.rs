@@ -16,7 +16,7 @@
 //! it, and the units' orders say who obeyed.
 
 use aftermine_driver::auto::{
-    INJECTED_PAD, ShellGuard, SpawnOptions, connect_pad, inject, press_key, spawn_shell, ui,
+    INJECTED_PAD, ScratchShell, connect_pad, inject, press_key, ui, write_home_config,
 };
 use aftermine_driver::client::Client;
 use aftermine_protocol::{
@@ -25,50 +25,30 @@ use aftermine_protocol::{
 use aftermine_sim::{BuildingId, BuildingKind, Command, Order, PlayerId, UnitId, UnitKind};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-
-static NEXT_HOME: AtomicU64 = AtomicU64::new(0);
 
 /// How close, in tiles, the reticle must come to a spot it aims at.
 const AIM_TOLERANCE: f64 = 0.15;
 /// The Siri Remote's pad id, beside the scripted controller's.
 const REMOTE: u64 = 9;
 
-/// A spawned paused shell with an isolated HOME, driven by one pad.
+/// A spawned paused shell on the driver's quiet settings, driven by one pad.
 struct Drill {
-    shell: Option<ShellGuard>,
     client: Client,
-    home: PathBuf,
+    shell: ScratchShell,
 }
 
 impl Drill {
     fn spawn(port: u16) -> Result<Self> {
-        let home = scratch_home(port)?;
-        let spawned = write_config(&home).and_then(|()| {
-            spawn_shell(&SpawnOptions {
-                port,
-                paused: true,
-                home: Some(home.clone()),
-            })
-        });
-        match spawned {
-            Ok((shell, client)) => Ok(Self {
-                shell: Some(shell),
-                client,
-                home,
-            }),
-            Err(error) => {
-                std::fs::remove_dir_all(&home).ok();
-                Err(error)
-            }
-        }
+        let mut shell = ScratchShell::new("pad-wiring")?;
+        write_home_config(shell.home(), include_str!("../src/quiet_config.json"))?;
+        let client = shell.spawn(port, true)?;
+        Ok(Self { client, shell })
     }
 
     /// Loads `scenario`, paused on the Playing screen, and connects the pad.
     fn load(&mut self, scenario: &Value) -> Result<StateView> {
-        let path = self.home.join("pad-drill.json");
+        let path = self.shell.home().join("pad-drill.json");
         std::fs::write(&path, serde_json::to_vec_pretty(scenario)?)?;
         self.client.call(Request::LoadScenario {
             path: path.to_string_lossy().into_owned(),
@@ -171,53 +151,10 @@ impl Drill {
     }
 }
 
-impl Drop for Drill {
-    fn drop(&mut self) {
-        drop(self.shell.take());
-        if let Err(error) = std::fs::remove_dir_all(&self.home)
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            eprintln!(
-                "warning: could not remove pad drill HOME {}: {error}",
-                self.home.display()
-            );
-        }
-    }
-}
-
 /// One full press of `button` on `pad`.
 fn press(client: &mut Client, pad: u64, button: PadButton) -> Result<()> {
     inject(client, RawEvent::PadDown { pad, button })?;
     inject(client, RawEvent::PadUp { pad, button })
-}
-
-fn scratch_home(port: u16) -> Result<PathBuf> {
-    loop {
-        let id = NEXT_HOME.fetch_add(1, Ordering::Relaxed);
-        let home = std::env::temp_dir().join(format!(
-            "aftermine-pad-wiring-{}-{port}-{id}",
-            std::process::id()
-        ));
-        match std::fs::create_dir(&home) {
-            Ok(()) => return Ok(home),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error.into()),
-        }
-    }
-}
-
-/// The driver's quiet settings, wherever each platform's shell looks.
-fn write_config(home: &Path) -> Result<()> {
-    let config = include_bytes!("../src/quiet_config.json");
-    for dir in [
-        home.join("Library/Application Support/Aftermine"),
-        home.join(".config/aftermine"),
-        home.join("AppData/Aftermine"),
-    ] {
-        std::fs::create_dir_all(&dir)?;
-        std::fs::write(dir.join("config.json"), config)?;
-    }
-    Ok(())
 }
 
 /// A 64 by 40 sandbox: seat 0 is yours, holding `units` and `buildings` as

@@ -13,6 +13,7 @@
 //!     cargo test -p aftermine-driver --test session_parity -- --ignored
 //! ```
 
+use aftermine_driver::auto::ScratchShell;
 use aftermine_driver::client::Client;
 use aftermine_driver::session::{Session, serve_listener};
 use aftermine_kit::runner;
@@ -232,7 +233,6 @@ fn every_live_verb_works_headless_over_tcp_and_the_record_reproduces() -> Result
 #[test]
 #[ignore = "spawns a real window; run with --ignored"]
 fn the_live_shell_and_the_headless_session_answer_identically() -> Result<()> {
-    let scratch = Scratch::new();
     let scenario_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../fixtures/scenarios/skirmish.json")
         .canonicalize()
@@ -240,12 +240,8 @@ fn the_live_shell_and_the_headless_session_answer_identically() -> Result<()> {
         .to_string_lossy()
         .into_owned();
 
-    let (_guard, mut shell) =
-        aftermine_driver::auto::spawn_shell(&aftermine_driver::auto::SpawnOptions {
-            port: 4177,
-            paused: true,
-            home: Some(scratch.0.clone()),
-        })?;
+    let mut window = ScratchShell::new("session-parity")?;
+    let mut shell = window.spawn(4177, true)?;
     let mut headless = session_client()?;
 
     // The same scenario file through the same verb on both servers.
