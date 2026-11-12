@@ -4,9 +4,7 @@ use crate::common;
 use aftermine_sim::scenario::ScenarioMode;
 
 use aftermine_sim::scenario::PlayerSpec;
-use aftermine_sim::{
-    Command, Event, Order, PlayerId, Scenario, StallReason, State, UnitId, UnitKind,
-};
+use aftermine_sim::{Event, Order, PlayerId, Scenario, StallReason, State, UnitId, UnitKind};
 use chassis::grid::TilePos;
 
 use common::*;
@@ -18,14 +16,7 @@ fn move_command_walks_unit_to_goal_then_idles() {
         .unwrap();
     let mover = state.units()[0].id;
     let goal = TilePos::new(13, 2);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![mover],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([mover], goal))]);
     run_until(&mut state, 200, |s, _| {
         let u = s.unit(mover).unwrap();
         u.tile() == goal && u.order == Order::Idle
@@ -40,14 +31,7 @@ fn move_routes_around_rock() {
         .unwrap();
     let mover = state.units()[0].id;
     let goal = TilePos::new(9, 4);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![mover],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([mover], goal))]);
     run_until(&mut state, 300, |s, _| {
         s.unit(mover).unwrap().tile() == goal
     });
@@ -59,17 +43,11 @@ fn move_goal_on_rock_snaps_to_nearby_ground() {
         .build()
         .unwrap();
     let mover = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![mover],
-            goal: TilePos::new(6, 3), // rock
-            queue: false,
-        },
-    )]);
+    let rock = TilePos::new(6, 3);
+    state.tick(&[cmd(0, orders::run([mover], rock))]);
     run_until(&mut state, 300, |s, _| {
         let u = s.unit(mover).unwrap();
-        u.order == Order::Idle && u.tile().chebyshev(TilePos::new(6, 3)) <= 1
+        u.order == Order::Idle && u.tile().chebyshev(rock) <= 1
     });
 }
 
@@ -86,14 +64,7 @@ fn units_ordered_to_one_tile_do_not_stack() {
     .build()
     .unwrap();
     let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: ids,
-            goal: TilePos::new(8, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run(ids, TilePos::new(8, 4)))]);
     for _ in 0..300 {
         state.tick(&[]);
     }
@@ -128,14 +99,7 @@ fn collision_never_pushes_through_rock() {
     .build()
     .unwrap();
     let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: ids,
-            goal: TilePos::new(5, 3),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run(ids, TilePos::new(5, 3)))]);
     for _ in 0..200 {
         state.tick(&[]);
         for u in state.units() {
@@ -165,14 +129,7 @@ fn congested_harvesters_keep_depositing() {
     .build()
     .unwrap();
     let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: ids,
-            node: TilePos::new(11, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest(ids, TilePos::new(11, 4)))]);
 
     let mut deposited_first_half = 0u32;
     let mut deposited_second_half = 0u32;
@@ -209,14 +166,7 @@ fn group_moves_fan_out_over_distinct_tiles() {
     .build()
     .unwrap();
     let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: ids,
-            goal: TilePos::new(10, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run(ids, TilePos::new(10, 4)))]);
     for _ in 0..400 {
         state.tick(&[]);
     }
@@ -320,14 +270,7 @@ fn congestion_survives_nonconsecutive_unit_ids() {
         "the wrong harvesters died"
     );
 
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: survivors,
-            node: TilePos::new(12, 1),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest(survivors, TilePos::new(12, 1)))]);
     let mut deposited = [0u32; 2];
     for tick in 0..3000u64 {
         let report = state.tick(&[]);
@@ -371,14 +314,7 @@ fn dense_stacks_respect_the_per_tick_displacement_cap() {
 #[test]
 fn a_harvester_crossing_a_parked_line_never_gets_a_collision_speed_burst() {
     fn timed_walk(mut state: State, mover: UnitId) -> (u64, chassis::fx::Fx) {
-        state.tick(&[cmd(
-            0,
-            Command::Run {
-                units: vec![mover],
-                goal: TilePos::new(35, 10),
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::run([mover], TilePos::new(35, 10)))]);
         let mut previous = state.unit(mover).expect("mover exists").pos;
         let mut max_step = chassis::fx::Fx::ZERO;
         for tick in 1..4_000 {
@@ -426,22 +362,8 @@ fn queued_orders_execute_in_sequence() {
     let mover = state.units()[0].id;
     let (a, b) = (TilePos::new(9, 6), TilePos::new(9, 2));
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![mover],
-                goal: a,
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![mover],
-                goal: b,
-                queue: true,
-            },
-        ),
+        cmd(0, orders::run([mover], a)),
+        cmd(0, orders::run([mover], b).queued()),
     ]);
     // First leg: arrive at A while B still waits in the queue.
     run_until(&mut state, 300, |s, _| s.unit(mover).unwrap().tile() == a);
@@ -461,22 +383,8 @@ fn queued_advance_executes_after_the_current_leg() {
     let mover = state.units()[0].id;
     let (first, advance_goal) = (TilePos::new(8, 6), TilePos::new(18, 6));
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![mover],
-                goal: first,
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Advance {
-                units: vec![mover],
-                goal: advance_goal,
-                queue: true,
-            },
-        ),
+        cmd(0, orders::run([mover], first)),
+        cmd(0, orders::advance([mover], advance_goal).queued()),
     ]);
     assert_eq!(
         state
@@ -511,36 +419,15 @@ fn direct_order_replaces_the_whole_queue() {
         .unwrap();
     let mover = state.units()[0].id;
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![mover],
-                goal: TilePos::new(13, 6),
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![mover],
-                goal: TilePos::new(13, 2),
-                queue: true,
-            },
-        ),
+        cmd(0, orders::run([mover], TilePos::new(13, 6))),
+        cmd(0, orders::run([mover], TilePos::new(13, 2)).queued()),
     ]);
     // A fresh unqueued order wipes the program mid-walk.
     for _ in 0..20 {
         state.tick(&[]);
     }
     let d = TilePos::new(4, 2);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![mover],
-            goal: d,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([mover], d))]);
     assert!(state.unit(mover).unwrap().queue.is_empty());
     run_until(&mut state, 300, |s, _| {
         let u = s.unit(mover).unwrap();
@@ -555,13 +442,7 @@ fn patrol_cycles_waypoints_and_never_settles() {
         .unwrap();
     let mover = state.units()[0].id;
     let (a, b) = (TilePos::new(4, 6), TilePos::new(11, 6));
-    state.tick(&[cmd(
-        0,
-        Command::Patrol {
-            units: vec![mover],
-            waypoints: vec![a, b],
-        },
-    )]);
+    state.tick(&[cmd(0, orders::patrol([mover], [a, b]))]);
     // Expect the circuit to visit a, b, then a again — proof of the loop.
     let mut expected = [a, b, a].into_iter();
     let mut next = expected.next();
@@ -594,13 +475,7 @@ fn patrol_engages_on_the_way_and_resumes_the_circuit() {
     .unwrap();
     let (patroller, victim) = (state.units()[0].id, state.units()[1].id);
     let (a, b) = (TilePos::new(3, 2), TilePos::new(8, 2));
-    state.tick(&[cmd(
-        0,
-        Command::Patrol {
-            units: vec![patroller],
-            waypoints: vec![a, b],
-        },
-    )]);
+    state.tick(&[cmd(0, orders::patrol([patroller], [a, b]))]);
     run_until(&mut state, 600, |s, _| s.unit(victim).is_none());
     // Back on the beat: both waypoints get visited again after the kill.
     for goal in [b, a] {
@@ -642,30 +517,9 @@ fn an_unreachable_leg_ends_short_and_the_program_continues() {
     let after = TilePos::new(2, 7);
     let mut events = state
         .tick(&[
-            cmd(
-                0,
-                Command::Run {
-                    units: vec![mover],
-                    goal: reachable,
-                    queue: false,
-                },
-            ),
-            cmd(
-                0,
-                Command::Run {
-                    units: vec![mover],
-                    goal: pocket,
-                    queue: true,
-                },
-            ),
-            cmd(
-                0,
-                Command::Run {
-                    units: vec![mover],
-                    goal: after,
-                    queue: true,
-                },
-            ),
+            cmd(0, orders::run([mover], reachable)),
+            cmd(0, orders::run([mover], pocket).queued()),
+            cmd(0, orders::run([mover], after).queued()),
         ])
         .events;
     events.extend(run_until(&mut state, 600, |state, _| {
@@ -700,15 +554,12 @@ fn stop_clears_a_patrol() {
     let mover = state.units()[0].id;
     state.tick(&[cmd(
         0,
-        Command::Patrol {
-            units: vec![mover],
-            waypoints: vec![TilePos::new(4, 6), TilePos::new(11, 6)],
-        },
+        orders::patrol([mover], [TilePos::new(4, 6), TilePos::new(11, 6)]),
     )]);
     for _ in 0..30 {
         state.tick(&[]);
     }
-    state.tick(&[cmd(0, Command::Stop { units: vec![mover] })]);
+    state.tick(&[cmd(0, orders::stop([mover]))]);
     let u = state.unit(mover).unwrap();
     assert_eq!(u.order, Order::Idle);
     assert!(u.queue.is_empty() && !u.looping);
@@ -735,14 +586,7 @@ fn an_idle_hostile_beside_the_goal_does_not_end_a_walk_short() {
     .unwrap();
     let walker = state.units()[0].id;
     let goal = TilePos::new(12, 8);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![walker],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([walker], goal))]);
     run_until(&mut state, 400, |s, _| {
         s.unit(walker).unwrap().order == aftermine_sim::Order::Idle
     });
