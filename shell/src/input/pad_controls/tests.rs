@@ -38,7 +38,7 @@ fn a_selects_what_the_reticle_brackets() {
         Some(Picked::Unit(near, aftermine_sim::PlayerId(0)))
     );
     press(&mut game, &mut input, PadButton::South);
-    assert_eq!(game.presentation.selection.units, vec![near]);
+    assert_eq!(game.presentation.selection.units(), vec![near]);
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn a_tap_selects_what_was_bracketed_as_a_went_down() {
     // Most of the way to the next unit, but inside the tap's slop.
     push_until(&mut game, &mut input, (0.4, 0.0), FRAME, |g| g.x >= 31.1);
     feed(&mut game, &mut input, &[up(PadButton::South)]);
-    assert_eq!(game.presentation.selection.units, vec![first]);
+    assert_eq!(game.presentation.selection.units(), vec![first]);
 }
 
 #[test]
@@ -67,11 +67,11 @@ fn held_queue_toggles_a_pick_and_a_miss_clears() {
     rest_on(&mut game, &mut input, at_b);
     input.now += 1.0;
     press(&mut game, &mut input, PadButton::South);
-    assert_eq!(game.presentation.selection.units, vec![a, b]);
+    assert_eq!(game.presentation.selection.units(), vec![a, b]);
     input.now += 1.0;
     press(&mut game, &mut input, PadButton::South);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         vec![a],
         "toggled back out"
     );
@@ -81,7 +81,7 @@ fn held_queue_toggles_a_pick_and_a_miss_clears() {
     input.now += 1.0;
     press(&mut game, &mut input, PadButton::South);
     assert!(
-        game.presentation.selection.units.is_empty(),
+        game.presentation.selection.units().is_empty(),
         "a miss clears"
     );
 }
@@ -108,7 +108,7 @@ fn a_second_tap_selects_that_kind_in_view() {
     input.now += 0.2;
     press(&mut game, &mut input, PadButton::South);
     let in_view = vec![unit_at(&game, 30, 20), unit_at(&game, 34, 22)];
-    assert_eq!(game.presentation.selection.units, in_view);
+    assert_eq!(game.presentation.selection.units(), in_view);
 }
 
 #[test]
@@ -120,12 +120,12 @@ fn a_late_second_tap_or_one_under_queue_stays_a_tap() {
     press(&mut game, &mut input, PadButton::South);
     input.now += 0.5;
     press(&mut game, &mut input, PadButton::South);
-    assert_eq!(game.presentation.selection.units, vec![one], "too late");
+    assert_eq!(game.presentation.selection.units(), vec![one], "too late");
     feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
     input.now += 0.1;
     press(&mut game, &mut input, PadButton::South);
     assert!(
-        game.presentation.selection.units.is_empty(),
+        game.presentation.selection.units().is_empty(),
         "queue toggles the unit out instead"
     );
 }
@@ -147,7 +147,7 @@ fn a_double_tap_reaches_a_structure_the_reticle_brackets() {
     input.now += 0.2;
     press(&mut game, &mut input, PadButton::South);
     assert_eq!(
-        game.presentation.selection.buildings,
+        game.presentation.selection.buildings(),
         vec![building_at(&game, 30, 20), building_at(&game, 36, 20)]
     );
 }
@@ -157,7 +157,7 @@ fn x_moves_the_selection_to_the_ground_under_the_reticle() {
     let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
     let mut input = pad_input(&mut game);
     let unit = unit_at(&game, 30, 20);
-    game.presentation.selection.units = vec![unit];
+    game.presentation.selection.set_units(vec![unit]);
     rest_on(&mut game, &mut input, vec2(36.5, 24.5));
     press(&mut game, &mut input, PadButton::West);
     assert_eq!(
@@ -186,7 +186,7 @@ fn x_attacks_an_enemy_in_reach_even_beside_your_own_unit() {
         unit_at(&game, 30, 20),
         unit_at(&game, 31, 20),
     );
-    game.presentation.selection.units = vec![army];
+    game.presentation.selection.set_units(vec![army]);
     // Nearer your own Sentinel, which the bracket prefers.
     rest_on(&mut game, &mut input, vec2(30.9, 20.5));
     assert_eq!(
@@ -213,7 +213,7 @@ fn x_sends_harvesters_to_scrap_and_welds_a_wounded_structure() {
     let mut input = pad_input(&mut game);
     let harvester = unit_at(&game, 37, 20);
     let array = building_at(&game, 30, 24);
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     // The drill's scrap lies at (40, 20).
     rest_on(&mut game, &mut input, vec2(40.5, 20.5));
     press(&mut game, &mut input, PadButton::West);
@@ -246,7 +246,7 @@ fn x_under_a_held_left_trigger_queues_the_order() {
     let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
     let mut input = pad_input(&mut game);
     let unit = unit_at(&game, 30, 20);
-    game.presentation.selection.units = vec![unit];
+    game.presentation.selection.set_units(vec![unit]);
     feed(&mut game, &mut input, &[down(PadButton::LeftTrigger)]);
     rest_on(&mut game, &mut input, vec2(36.5, 24.5));
     press(&mut game, &mut input, PadButton::West);
@@ -260,7 +260,9 @@ fn x_under_a_held_left_trigger_queues_the_order() {
 fn x_collects_a_patrol_waypoint_while_a_route_is_armed() {
     let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
     let mut input = pad_input(&mut game);
-    game.presentation.selection.units = vec![unit_at(&game, 30, 20)];
+    game.presentation
+        .selection
+        .set_units(vec![unit_at(&game, 30, 20)]);
     super::super::dispatch_action(
         &mut game,
         &mut input,
@@ -280,7 +282,9 @@ fn x_collects_a_patrol_waypoint_while_a_route_is_armed() {
 fn chrome_under_the_reticle_takes_neither_a_nor_x() {
     let mut game = scene(&[(0, SENTINEL, 32, 20)], &[]);
     let mut input = pad_input(&mut game);
-    game.presentation.selection.units = vec![unit_at(&game, 32, 20)];
+    game.presentation
+        .selection
+        .set_units(vec![unit_at(&game, 32, 20)]);
     let mut layout = game.presentation.layout.get();
     layout.performance = macroquad::prelude::Rect::new(0.0, 0.0, 1280.0, 800.0);
     game.presentation.layout.set(layout);
@@ -299,13 +303,13 @@ fn b_cancels_the_mode_then_clears_the_selection() {
     let mut game = scene(&[(0, SENTINEL, 30, 20)], &[]);
     let mut input = pad_input(&mut game);
     let unit = unit_at(&game, 30, 20);
-    game.presentation.selection.units = vec![unit];
+    game.presentation.selection.set_units(vec![unit]);
     super::super::dispatch_action(&mut game, &mut input, &BindingMap::classic(), Action::Hunt);
     press(&mut game, &mut input, PadButton::East);
     assert!(input.armed_mode().is_none());
-    assert_eq!(game.presentation.selection.units, vec![unit]);
+    assert_eq!(game.presentation.selection.units(), vec![unit]);
     press(&mut game, &mut input, PadButton::East);
-    assert!(game.presentation.selection.units.is_empty());
+    assert!(game.presentation.selection.units().is_empty());
     press(&mut game, &mut input, PadButton::East);
     assert!(!input.take_menu_request(), "B never opens the menu");
 }
@@ -323,12 +327,12 @@ fn the_bumpers_select_the_army_and_the_army_in_view() {
     let mut input = pad_input(&mut game);
     press(&mut game, &mut input, PadButton::LeftShoulder);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         units_of(&game, 0, SENTINEL)
     );
     press(&mut game, &mut input, PadButton::RightShoulder);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         vec![unit_at(&game, 30, 20)]
     );
 }
@@ -353,27 +357,27 @@ fn mixed_beside(buildings: &[(u8, BuildingKind, i32, i32)]) -> (Game, InputState
     let input = pad_input(&mut game);
     let mut all: Vec<UnitId> = game.state.units().iter().map(|u| u.id).collect();
     all.sort_unstable();
-    game.presentation.selection.units = all;
+    game.presentation.selection.set_units(all);
     (game, input)
 }
 
 #[test]
 fn rt_walks_the_kinds_in_roster_order_then_back_to_the_group() {
     let (mut game, mut input) = mixed();
-    let all = game.presentation.selection.units.clone();
+    let all = game.presentation.selection.units().to_vec();
     for kind in [HARVESTER, LANCER, SENTINEL] {
         press(&mut game, &mut input, PadButton::RightTrigger);
         assert_eq!(
-            game.presentation.selection.units,
+            game.presentation.selection.units(),
             units_of(&game, 0, kind),
             "{kind:?}"
         );
     }
     press(&mut game, &mut input, PadButton::RightTrigger);
-    assert_eq!(game.presentation.selection.units, all);
+    assert_eq!(game.presentation.selection.units(), all);
     press(&mut game, &mut input, PadButton::RightTrigger);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         units_of(&game, 0, HARVESTER)
     );
 }
@@ -383,10 +387,10 @@ fn rt_forgets_its_group_once_the_selection_changes_otherwise() {
     let (mut game, mut input) = mixed();
     press(&mut game, &mut input, PadButton::RightTrigger);
     let fresh = vec![unit_at(&game, 31, 20), unit_at(&game, 33, 20)];
-    game.presentation.selection.units = fresh;
+    game.presentation.selection.set_units(fresh);
     press(&mut game, &mut input, PadButton::RightTrigger);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         units_of(&game, 0, LANCER)
     );
 }
@@ -396,7 +400,7 @@ fn rt_moves_on_from_a_kind_whose_last_member_is_gone() {
     let (mut game, mut input) = mixed_beside(&[(0, BuildingKind::Crucible, 32, 23)]);
     press(&mut game, &mut input, PadButton::RightTrigger);
     let harvesters = units_of(&game, 0, HARVESTER);
-    assert_eq!(game.presentation.selection.units, harvesters);
+    assert_eq!(game.presentation.selection.units(), harvesters);
     game.issue(Command::Retire {
         units: harvesters.clone(),
         queue: false,
@@ -408,19 +412,19 @@ fn rt_moves_on_from_a_kind_whose_last_member_is_gone() {
         game.do_tick();
     }
     assert!(
-        game.presentation.selection.units.is_empty(),
+        game.presentation.selection.units().is_empty(),
         "the Crucible took the Harvesters and the selection with them"
     );
     press(&mut game, &mut input, PadButton::RightTrigger);
     assert!(!denied(&game));
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         units_of(&game, 0, LANCER),
         "the walk goes on to the kind after the one that left"
     );
     press(&mut game, &mut input, PadButton::RightTrigger);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         units_of(&game, 0, SENTINEL)
     );
 }
@@ -438,10 +442,12 @@ fn rt_widens_one_kind_to_every_one_of_it_as_the_all_button_does() {
         &[],
     );
     let mut input = pad_input(&mut game);
-    game.presentation.selection.units = vec![unit_at(&game, 30, 20), unit_at(&game, 31, 20)];
+    game.presentation
+        .selection
+        .set_units(vec![unit_at(&game, 30, 20), unit_at(&game, 31, 20)]);
     press(&mut game, &mut input, PadButton::RightTrigger);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         units_of(&game, 0, SENTINEL),
         "every own Sentinel, the far one too, and no enemy"
     );
@@ -453,10 +459,10 @@ fn rt_refuses_one_kind_once_every_one_is_selected() {
     let mut game = scene(&[(0, SENTINEL, 30, 20), (0, SENTINEL, 31, 20)], &[]);
     let mut input = pad_input(&mut game);
     let both = units_of(&game, 0, SENTINEL);
-    game.presentation.selection.units = both.clone();
+    game.presentation.selection.set_units(both.clone());
     press(&mut game, &mut input, PadButton::RightTrigger);
     assert!(denied(&game));
-    assert_eq!(game.presentation.selection.units, both);
+    assert_eq!(game.presentation.selection.units(), both);
 }
 
 #[test]
@@ -475,16 +481,16 @@ fn rt_walks_structure_kinds_in_roster_order_then_widens_one_kind() {
     let other = building_at(&game, 36, 16);
     let mut mixed = vec![turret, array];
     mixed.sort_unstable();
-    game.presentation.selection.buildings = mixed.clone();
+    game.presentation.selection.set_buildings(mixed.clone());
     for step in [vec![array], vec![turret], mixed] {
         press(&mut game, &mut input, PadButton::RightTrigger);
-        assert_eq!(game.presentation.selection.buildings, step);
+        assert_eq!(game.presentation.selection.buildings(), step);
     }
-    game.presentation.selection.buildings = vec![turret];
+    game.presentation.selection.set_buildings(vec![turret]);
     press(&mut game, &mut input, PadButton::RightTrigger);
     let mut turrets = vec![turret, other];
     turrets.sort_unstable();
-    assert_eq!(game.presentation.selection.buildings, turrets);
+    assert_eq!(game.presentation.selection.buildings(), turrets);
 }
 
 #[test]
@@ -539,7 +545,7 @@ fn a_press_after_another_in_the_batch_hit_tests_the_layout_it_brought_up() {
     // selected.
     let relayout = |game: &Game, _: &InputState| {
         let mut layout = game.presentation.layout.get();
-        layout.performance = if game.presentation.selection.units.is_empty() {
+        layout.performance = if game.presentation.selection.units().is_empty() {
             macroquad::prelude::Rect::default()
         } else {
             macroquad::prelude::Rect::new(0.0, 0.0, 1280.0, 800.0)
@@ -557,7 +563,7 @@ fn a_press_after_another_in_the_batch_hit_tests_the_layout_it_brought_up() {
         ],
         relayout,
     );
-    assert_eq!(game.presentation.selection.units.len(), 1);
+    assert_eq!(game.presentation.selection.units().len(), 1);
     assert!(game.pending.is_empty(), "X met the chrome LB brought up");
     assert!(denied(&game));
 }
@@ -578,7 +584,7 @@ fn x_from_workers_names_their_own_structure_before_an_enemy_beside_it() {
     wound_building(&mut game, array, 10);
     // On the Array's tile, with the enemy inside the reticle's reach.
     rest_on(&mut game, &mut input, vec2(30.9, 20.5));
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     press(&mut game, &mut input, PadButton::West);
     assert_eq!(
         only_command(&game),
@@ -590,7 +596,7 @@ fn x_from_workers_names_their_own_structure_before_an_enemy_beside_it() {
     );
     game.pending.clear();
     // An army there still takes the enemy, as a right-click does.
-    game.presentation.selection.units = vec![sentinel];
+    game.presentation.selection.set_units(vec![sentinel]);
     press(&mut game, &mut input, PadButton::West);
     assert_eq!(
         only_command(&game),
@@ -622,7 +628,7 @@ fn x_from_riders_boards_the_transport_bracketed_before_an_enemy_beside_it() {
         input.reticle.snap(),
         Some(Picked::Unit(skyhook, aftermine_sim::PlayerId(0)))
     );
-    game.presentation.selection.units = vec![lancer];
+    game.presentation.selection.set_units(vec![lancer]);
     press(&mut game, &mut input, PadButton::West);
     assert_eq!(
         only_command(&game),
@@ -657,7 +663,9 @@ fn a_press_and_the_last_disconnect_in_one_batch_hand_the_pointer_back() {
 fn the_minimap_under_the_reticle_takes_neither_a_nor_x() {
     let mut game = scene(&[(0, SENTINEL, 36, 20)], &[]);
     let mut input = pad_input(&mut game);
-    game.presentation.selection.units = vec![unit_at(&game, 36, 20)];
+    game.presentation
+        .selection
+        .set_units(vec![unit_at(&game, 36, 20)]);
     let mut layout = game.presentation.layout.get();
     layout.minimap = macroquad::prelude::Rect::new(0.0, 0.0, 1280.0, 800.0);
     game.presentation.layout.set(layout);
@@ -687,7 +695,7 @@ fn x_from_workers_on_scrap_beside_their_structure_harvests() {
     let harvester = unit_at(&game, 36, 20);
     let array = building_at(&game, 39, 20);
     wound_building(&mut game, array, 10);
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     // The drill's scrap lies at (40, 20), right beside the wounded Array.
     rest_on(&mut game, &mut input, vec2(40.5, 20.5));
     press(&mut game, &mut input, PadButton::West);
@@ -707,7 +715,7 @@ fn x_moves_to_the_ground_beside_your_own_unit_not_onto_it() {
     wide_reach(&mut game);
     let mut input = pad_input(&mut game);
     let sentinel = unit_at(&game, 30, 20);
-    game.presentation.selection.units = vec![sentinel];
+    game.presentation.selection.set_units(vec![sentinel]);
     // Inside the reticle's reach of the Harvester, which it brackets.
     rest_on(&mut game, &mut input, vec2(36.5, 24.5));
     assert!(matches!(input.reticle.snap(), Some(Picked::Unit(..))));
@@ -733,7 +741,9 @@ fn x_lays_patrol_waypoints_and_rallies_on_the_ground() {
     let fabricator = building_at(&game, 26, 18);
     // Beside the enemy, inside the reticle's reach of it.
     let ground = vec2(33.5, 24.5);
-    game.presentation.selection.units = vec![unit_at(&game, 30, 20)];
+    game.presentation
+        .selection
+        .set_units(vec![unit_at(&game, 30, 20)]);
     super::super::dispatch_action(
         &mut game,
         &mut input,
@@ -748,8 +758,8 @@ fn x_lays_patrol_waypoints_and_rallies_on_the_ground() {
         "the waypoint stays on the ground"
     );
     input.armed = None;
-    game.presentation.selection.units.clear();
-    game.presentation.selection.buildings = vec![fabricator];
+    game.presentation.selection.clear();
+    game.presentation.selection.set_buildings(vec![fabricator]);
     press(&mut game, &mut input, PadButton::West);
     assert_eq!(
         only_command(&game),
@@ -773,9 +783,9 @@ fn a_double_tap_over_salvage_keeps_the_pile() {
     press(&mut game, &mut input, PadButton::South);
     input.now += 0.2;
     press(&mut game, &mut input, PadButton::South);
-    assert!(game.presentation.selection.units.is_empty());
+    assert!(game.presentation.selection.units().is_empty());
     assert_eq!(
-        game.presentation.selection.pile,
+        game.presentation.selection.pile(),
         Some(chassis::grid::TilePos::new(40, 20))
     );
 }
@@ -790,7 +800,7 @@ fn x_from_defenses_takes_the_nearest_enemy_they_can_fire_at() {
     let mut input = pad_input(&mut game);
     let turret = building_at(&game, 28, 20);
     let sentinel = unit_at(&game, 32, 20);
-    game.presentation.selection.buildings = vec![turret];
+    game.presentation.selection.set_buildings(vec![turret]);
     // Nearer the aircraft, which a Turret cannot fire at, with the
     // Sentinel also in reach.
     rest_on(&mut game, &mut input, vec2(31.3, 20.5));
@@ -829,7 +839,7 @@ fn a_tap_keeps_the_unit_it_bracketed_after_that_unit_moves_on() {
         "it left the reticle's reach"
     );
     feed(&mut game, &mut input, &[up(PadButton::South)]);
-    assert_eq!(game.presentation.selection.units, vec![mover]);
+    assert_eq!(game.presentation.selection.units(), vec![mover]);
 }
 
 #[test]
@@ -840,7 +850,7 @@ fn x_never_aims_at_what_only_the_debug_overlay_sees() {
     let mut input = pad_input(&mut game);
     let sentinel = unit_at(&game, 14, 10);
     game.presentation.overlay = true;
-    game.presentation.selection.units = vec![sentinel];
+    game.presentation.selection.set_units(vec![sentinel]);
     // Inside the reticle's reach of the hidden enemy.
     rest_on(&mut game, &mut input, vec2(49.3, 30.5));
     press(&mut game, &mut input, PadButton::West);
@@ -871,7 +881,7 @@ fn x_from_workers_on_scrap_harvests_beside_an_enemy_an_army_attacks() {
     // On the drill's scrap at (40, 20), inside the reticle's reach of the
     // enemy but off its body.
     rest_on(&mut game, &mut input, vec2(40.5, 20.5));
-    game.presentation.selection.units = vec![harvester];
+    game.presentation.selection.set_units(vec![harvester]);
     press(&mut game, &mut input, PadButton::West);
     assert_eq!(
         only_command(&game),
@@ -882,7 +892,7 @@ fn x_from_workers_on_scrap_harvests_beside_an_enemy_an_army_attacks() {
         }
     );
     game.pending.clear();
-    game.presentation.selection.units = vec![army];
+    game.presentation.selection.set_units(vec![army]);
     press(&mut game, &mut input, PadButton::West);
     assert_eq!(
         only_command(&game),
@@ -903,7 +913,7 @@ fn x_rallies_onto_your_own_unit_in_reach() {
     wide_reach(&mut game);
     let mut input = pad_input(&mut game);
     let (sentinel, fabricator) = (unit_at(&game, 34, 24), building_at(&game, 26, 18));
-    game.presentation.selection.buildings = vec![fabricator];
+    game.presentation.selection.set_buildings(vec![fabricator]);
     // A tile from the Sentinel, off its body.
     rest_on(&mut game, &mut input, vec2(33.5, 24.5));
     press(&mut game, &mut input, PadButton::West);
@@ -935,9 +945,9 @@ fn a_double_tap_on_a_structure_keeps_to_its_kind_beside_a_unit() {
     press(&mut game, &mut input, PadButton::South);
     input.now += 0.2;
     press(&mut game, &mut input, PadButton::South);
-    assert!(game.presentation.selection.units.is_empty());
+    assert!(game.presentation.selection.units().is_empty());
     assert_eq!(
-        game.presentation.selection.buildings,
+        game.presentation.selection.buildings(),
         vec![building_at(&game, 30, 20), building_at(&game, 36, 20)]
     );
 }
@@ -1030,7 +1040,7 @@ fn a_remote_plays_no_part_in_a_match_but_back() {
         remote_press(&mut game, &mut input, button);
     }
     assert!(
-        game.presentation.selection.units.is_empty(),
+        game.presentation.selection.units().is_empty(),
         "a click selects nothing"
     );
     assert_eq!(
@@ -1049,7 +1059,7 @@ fn a_remotes_back_clears_a_selection_as_a_controllers_does() {
     let mut input = with_remote(&mut game);
     rest_on(&mut game, &mut input, vec2(30.5, 20.5));
     press(&mut game, &mut input, PadButton::South);
-    assert_eq!(game.presentation.selection.units, vec![id]);
+    assert_eq!(game.presentation.selection.units(), vec![id]);
     remote_press(&mut game, &mut input, crate::pad::BACK);
-    assert!(game.presentation.selection.units.is_empty());
+    assert!(game.presentation.selection.units().is_empty());
 }

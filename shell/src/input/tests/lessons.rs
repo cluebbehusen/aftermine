@@ -325,7 +325,7 @@ fn the_scrap_lesson_plays_as_its_mouse_and_keys_card_says() {
     assert!(copy(&game, Pointer::Mouse, true).contains("press N"));
     while hauling(&game) < 3 {
         press(&mut game, &mut input, Key::N);
-        assert_eq!(game.presentation.selection.units.len(), 1, "N grabs one");
+        assert_eq!(game.presentation.selection.units().len(), 1, "N grabs one");
         right_click_at(&mut game, &mut input, HOME_PILE);
         game.do_tick();
     }
@@ -398,7 +398,7 @@ fn the_scrap_lesson_plays_as_its_touch_card_says() {
         );
         tap_at(&mut game, &mut input, badge.center());
         assert_eq!(
-            game.presentation.selection.units.len(),
+            game.presentation.selection.units().len(),
             1,
             "the badge grabs one"
         );
@@ -557,10 +557,10 @@ fn the_build_lesson_plays_as_its_mouse_and_keys_card_says() {
         None,
         "saving the group finishes the lesson"
     );
-    game.presentation.selection.units.clear();
+    game.presentation.selection.clear();
     press(&mut game, &mut input, Key::Num1);
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         [own(&game, UnitKind::Lancer)[0].0],
         "1 recalls the group, as the card says"
     );
@@ -666,14 +666,14 @@ const BY_THE_OUTPOST: Vec2 = Vec2::new(50.5, 19.5);
 /// lesson; this one is about what the army does once chosen.
 fn select_army(game: &mut Game) {
     let human = game.presentation.human;
-    game.presentation.selection.units = game
-        .state
-        .units()
-        .iter()
-        .filter(|u| u.player == human && u.kind.stats().can_fight())
-        .map(|u| u.id)
-        .collect();
-    game.presentation.selection.buildings.clear();
+    game.presentation.selection.set_units(
+        game.state
+            .units()
+            .iter()
+            .filter(|u| u.player == human && u.kind.stats().can_fight())
+            .map(|u| u.id)
+            .collect(),
+    );
 }
 
 /// Centers the camera on `world`, as the camera keys or minimap would.
@@ -920,7 +920,7 @@ fn select_at(game: &mut Game, input: &mut InputState, world: Vec2, touch: bool) 
         click_at(game, input, p);
     }
     assert_eq!(
-        game.presentation.selection.units.len(),
+        game.presentation.selection.units().len(),
         1,
         "the {} picks one machine",
         if touch { "tap" } else { "click" }
@@ -1021,7 +1021,7 @@ fn play_sustain(touch: bool) {
         } else {
             press(&mut game, &mut input, Key::N);
         }
-        assert_eq!(game.presentation.selection.units.len(), 1);
+        assert_eq!(game.presentation.selection.units().len(), 1);
         order_at(&mut game, &mut input, NORTH_PILE);
         game.do_tick();
         relayout(&game, &input);

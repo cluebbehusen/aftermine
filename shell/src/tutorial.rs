@@ -329,7 +329,7 @@ impl Goal {
             Goal::Select(count) => {
                 game.presentation
                     .selection
-                    .units
+                    .units()
                     .iter()
                     .filter(|id| {
                         seat.state

@@ -522,7 +522,7 @@ pub fn subject_unit(game: &Scene<'_>) -> Option<aftermine_sim::UnitId> {
     let units: Vec<_> = game
         .presentation
         .selection
-        .units
+        .units()
         .iter()
         .filter_map(|id| game.state.unit(*id))
         .collect();
@@ -1408,7 +1408,7 @@ pub(crate) fn build_for_input(
     // Held Shift, or a pad's held LT, turns the Order card into the Fill a
     // Shift-click buys, so the total shows before the press.
     if input.queue_keys_held()
-        && !game.presentation.selection.buildings.is_empty()
+        && !game.presentation.selection.buildings().is_empty()
         && let Some(fill) = crate::building_actions::SelectedBuildings::inspect(game).fill_card()
         && let Some(card) = panel
             .cards
@@ -1463,7 +1463,7 @@ pub(crate) fn selection_patrols(game: &Scene<'_>) -> bool {
     let mut own = game
         .presentation
         .selection
-        .units
+        .units()
         .iter()
         .filter_map(|id| game.state.unit(*id))
         .filter(|unit| unit.player == human)
@@ -1673,14 +1673,14 @@ fn pile_panel(game: &Scene<'_>, tile: chassis::grid::TilePos) -> Option<Panel> {
     reason = "assembles every card and readout of the selection panel"
 )]
 fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -> Option<Panel> {
-    if let Some(tile) = game.presentation.selection.pile {
+    if let Some(tile) = game.presentation.selection.pile() {
         return pile_panel(game, tile);
     }
     let selected_buildings: Vec<_> = game
         .state
         .buildings()
         .iter()
-        .filter(|b| game.presentation.selection.buildings.contains(&b.id))
+        .filter(|b| game.presentation.selection.buildings().contains(&b.id))
         .collect();
     if let Some(&first) = selected_buildings.first() {
         let owner = first.player;
@@ -1799,13 +1799,13 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         }
         return Some(panel);
     }
-    if game.presentation.selection.units.is_empty() {
+    if game.presentation.selection.units().is_empty() {
         return None;
     }
     let units: Vec<_> = game
         .presentation
         .selection
-        .units
+        .units()
         .iter()
         .filter_map(|id| game.state.unit(*id))
         .collect();

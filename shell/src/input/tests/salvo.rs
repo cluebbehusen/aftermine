@@ -13,7 +13,7 @@ fn spires(count: usize, loaded: usize, scrap: u32) -> (Game, Vec<aftermine_sim::
         &vec![0; count],
         scrap,
     );
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     let mut json = serde_json::to_value(&*game.state).unwrap();
     for b in json["buildings"].as_array_mut().unwrap() {
         if ids[..loaded]

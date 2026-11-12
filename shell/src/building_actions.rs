@@ -85,7 +85,7 @@ pub(crate) struct UpgradeBatch {
 
 impl SelectedBuildings {
     pub fn inspect(game: &Scene<'_>) -> Self {
-        Self::inspect_ids(game, &game.presentation.selection.buildings)
+        Self::inspect_ids(game, game.presentation.selection.buildings())
     }
 
     /// Whether the viewer has a completed building that answers `need`.
@@ -788,8 +788,7 @@ pub(crate) fn scrap_sites(game: &mut Game) {
     }
     game.presentation
         .selection
-        .buildings
-        .retain(|id| !sites.contains(id));
+        .retain_buildings(|id| !sites.contains(id));
 }
 
 pub(crate) fn stop_or_scrap(game: &mut Game) {

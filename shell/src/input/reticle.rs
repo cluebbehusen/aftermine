@@ -210,10 +210,10 @@ pub(super) fn look_at(game: &mut Game, input: &mut InputState, world: Vec2) {
 
 fn selection_center(game: &Game) -> Option<Vec2> {
     let selection = &game.presentation.selection;
-    let members = if selection.units.is_empty() {
-        super::Group::Buildings(selection.buildings.clone())
+    let members = if selection.units().is_empty() {
+        super::Group::Buildings(selection.buildings().to_vec())
     } else {
-        super::Group::Units(selection.units.clone())
+        super::Group::Units(selection.units().to_vec())
     };
     members.center(&game.view())
 }

@@ -29,7 +29,9 @@ fn funded_builder() -> (Game, InputState) {
     .expect("chain range parses");
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let mut input = InputState::new();
-    game.presentation.selection.units = vec![game.state.units()[0].id];
+    game.presentation
+        .selection
+        .set_units(vec![game.state.units()[0].id]);
     input.arm_placement(aftermine_sim::BuildingKind::Turret);
     input.build_menu = true;
     (game, input)
@@ -263,7 +265,7 @@ fn a_fully_refused_plain_release_after_a_chain_keeps_placing() {
     // The other Harvester founds a site on the planned ground before the
     // release. The builder's own would go with the orders a plain build
     // replaces.
-    let builder = game.presentation.selection.units[0];
+    let builder = game.presentation.selection.units()[0];
     let other = game
         .state
         .units()

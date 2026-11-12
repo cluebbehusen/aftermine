@@ -1350,7 +1350,7 @@ fn draw_unit_pass(
             screen.y -= body_lift;
         }
         let body = screen;
-        if game.presentation.selection.units.contains(&unit.id) {
+        if game.presentation.selection.units().contains(&unit.id) {
             let owner = seat_identity_color(game, unit.player);
             if unit.player == game.presentation.human {
                 draw_circle_lines(

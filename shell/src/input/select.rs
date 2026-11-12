@@ -61,10 +61,7 @@ pub(super) fn select_army(game: &mut Game, input: &mut super::InputState, in_vie
         return;
     }
     input.close_construction();
-    let selection = &mut game.presentation.selection;
-    selection.units = ids;
-    selection.buildings.clear();
-    selection.pile = None;
+    game.presentation.selection.set_units(ids);
 }
 
 /// Selects the next idle harvester after the current selection (id
@@ -81,7 +78,7 @@ pub(super) fn cycle_idle_worker(game: &mut Game, input: &mut super::InputState) 
             .push((crate::game::SoundKind::Denied, None));
         return;
     };
-    let next = match game.presentation.selection.units.as_slice() {
+    let next = match game.presentation.selection.units() {
         [current] => idle
             .iter()
             .copied()
@@ -89,8 +86,7 @@ pub(super) fn cycle_idle_worker(game: &mut Game, input: &mut super::InputState) 
             .unwrap_or(first),
         _ => first,
     };
-    game.presentation.selection.units = vec![next];
-    game.presentation.selection.buildings.clear();
+    game.presentation.selection.set_units(vec![next]);
     let unit = game.state.unit(next).expect("listed above");
     let at = world_vec(unit.pos);
     super::reticle::look_at(game, input, at);
@@ -278,62 +274,51 @@ pub(super) fn click_select(game: &mut Game, screen: Vec2, additive: bool, ui: f3
 /// miss clears it, or inspects known salvage under `screen`, and an
 /// additive miss leaves it alone.
 pub(super) fn select_picked(game: &mut Game, picked: Option<Picked>, screen: Vec2, additive: bool) {
-    if !additive {
-        game.presentation.selection.buildings.clear();
-    }
-    if picked.is_some() {
-        game.presentation.selection.pile = None;
-    }
     if let Some(Picked::Unit(id, owner)) = picked {
-        game.presentation.selection.buildings.clear();
         let current_owner = game
             .presentation
             .selection
-            .units
+            .units()
             .first()
             .and_then(|u| game.state.unit(*u))
             .map(|u| u.player);
         if additive && current_owner == Some(owner) {
             // Shift-click toggles membership within one allegiance.
-            let units = &mut game.presentation.selection.units;
+            let mut units = game.presentation.selection.units().to_vec();
             match units.binary_search(&id) {
                 Ok(index) => {
                     units.remove(index);
                 }
                 Err(index) => units.insert(index, id),
             }
+            game.presentation.selection.set_units(units);
         } else {
             // A different owner replaces the selection, keeping it to one
             // allegiance.
-            game.presentation.selection.units = vec![id];
+            game.presentation.selection.set_units(vec![id]);
         }
         return;
     }
     // …then a building under the cursor (any owner whose ground shows).
     if let Some(Picked::Building(id, owner)) = picked {
-        game.presentation.selection.units.clear();
         let current_owner = game
             .presentation
             .selection
-            .buildings
+            .buildings()
             .first()
             .and_then(|id| game.state.building(*id))
             .map(|selected| selected.player);
         if additive && current_owner == Some(owner) {
-            if let Some(index) = game
-                .presentation
-                .selection
-                .buildings
-                .iter()
-                .position(|selected| *selected == id)
-            {
-                game.presentation.selection.buildings.remove(index);
+            let mut buildings = game.presentation.selection.buildings().to_vec();
+            if let Some(index) = buildings.iter().position(|selected| *selected == id) {
+                buildings.remove(index);
             } else {
-                game.presentation.selection.buildings.push(id);
-                game.presentation.selection.buildings.sort_unstable();
+                buildings.push(id);
+                buildings.sort_unstable();
             }
+            game.presentation.selection.set_buildings(buildings);
         } else {
-            game.presentation.selection.buildings = vec![id];
+            game.presentation.selection.set_buildings(vec![id]);
         }
         return;
     }
@@ -341,11 +326,13 @@ pub(super) fn select_picked(game: &mut Game, picked: Option<Picked>, screen: Vec
         return; // shift-miss leaves the selection alone
     }
     // …otherwise inspect the salvage under it, or clear.
-    game.presentation.selection.units.clear();
-    game.presentation.selection.buildings.clear();
     let world = game.presentation.camera.to_world(screen);
     let tile = numeric::tile_at(world);
-    game.presentation.selection.pile = game.view().known_salvage(tile).is_some().then_some(tile);
+    game.presentation.selection = if game.view().known_salvage(tile).is_some() {
+        crate::game::Selection::Pile(tile)
+    } else {
+        crate::game::Selection::Empty
+    };
 }
 
 /// The viewer's own units a box between world corners `a` and `b` covers
@@ -481,7 +468,7 @@ pub(super) fn select_swept(
             if additive {
                 ids.extend(
                     selection
-                        .units
+                        .units()
                         .iter()
                         .copied()
                         .filter(|id| state.unit(*id).is_some_and(|u| u.player == owner)),
@@ -489,14 +476,13 @@ pub(super) fn select_swept(
                 ids.sort_unstable();
                 ids.dedup();
             }
-            selection.units = ids;
-            selection.buildings.clear();
+            selection.set_units(ids);
         }
         Some(Kept::Buildings(owner, mut ids)) => {
             if additive {
                 ids.extend(
                     selection
-                        .buildings
+                        .buildings()
                         .iter()
                         .copied()
                         .filter(|id| state.building(*id).is_some_and(|b| b.player == owner)),
@@ -504,15 +490,10 @@ pub(super) fn select_swept(
                 ids.sort_unstable();
                 ids.dedup();
             }
-            selection.units.clear();
-            selection.buildings = ids;
+            selection.set_buildings(ids);
         }
         None if additive => {}
-        None => {
-            selection.units.clear();
-            selection.buildings.clear();
-            selection.pile = None;
-        }
+        None => selection.clear(),
     }
 }
 
@@ -533,8 +514,7 @@ pub(super) fn select_all_like(game: &mut Game, picked: Picked) {
             let Some(kind) = game.state.unit(id).map(|unit| unit.kind) else {
                 return;
             };
-            game.presentation.selection.buildings.clear();
-            game.presentation.selection.units = game
+            let units = game
                 .state
                 .units()
                 .iter()
@@ -542,13 +522,13 @@ pub(super) fn select_all_like(game: &mut Game, picked: Picked) {
                 .filter(|u| game.presentation.camera.in_view(world_vec(u.pos), 0.0))
                 .map(|u| u.id)
                 .collect();
+            game.presentation.selection.set_units(units);
         }
         Picked::Building(id, owner) => {
             let Some(kind) = game.state.building(id).map(|building| building.kind) else {
                 return;
             };
-            game.presentation.selection.units.clear();
-            game.presentation.selection.buildings = game
+            let buildings = game
                 .state
                 .buildings()
                 .iter()
@@ -564,6 +544,7 @@ pub(super) fn select_all_like(game: &mut Game, picked: Picked) {
                 })
                 .map(|building| building.id)
                 .collect();
+            game.presentation.selection.set_buildings(buildings);
         }
     }
 }

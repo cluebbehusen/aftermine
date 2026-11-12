@@ -40,15 +40,16 @@ pub(crate) fn fixture(kind: BuildingKind, tiers: &[u8], scrap: u32) -> Game {
             });
     }
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-    game.presentation.selection.buildings = game
-        .state
-        .buildings()
-        .iter()
-        .filter(|b| b.player == game.presentation.human && b.kind == kind && b.anchor.y == 5)
-        .map(|b| b.id)
-        .collect();
+    game.presentation.selection.set_buildings(
+        game.state
+            .buildings()
+            .iter()
+            .filter(|b| b.player == game.presentation.human && b.kind == kind && b.anchor.y == 5)
+            .map(|b| b.id)
+            .collect(),
+    );
     let mut json = serde_json::to_value(&*game.state).unwrap();
-    for (id, &tier) in game.presentation.selection.buildings.iter().zip(tiers) {
+    for (id, &tier) in game.presentation.selection.buildings().iter().zip(tiers) {
         let b = json["buildings"]
             .as_array_mut()
             .unwrap()
@@ -84,7 +85,7 @@ fn mixed_tiers_advance_once_and_skip_max_tier_with_pending_input() {
     ] {
         let mut game = fixture(kind, &tiers, 5000);
         let before = game.state.hash();
-        let ids = game.presentation.selection.buildings.clone();
+        let ids = game.presentation.selection.buildings().to_vec();
         let batch = SelectedBuildings::inspect(&game.view())
             .upgrade_batch()
             .unwrap();
@@ -116,7 +117,7 @@ fn mixed_tiers_advance_once_and_skip_max_tier_with_pending_input() {
 #[test]
 fn funding_and_prerequisites_are_per_recipient_in_canonical_order() {
     let mut game = fixture(BuildingKind::Turret, &[1, 0, 0], 200);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     let foreign = game
         .state
         .buildings()
@@ -124,14 +125,14 @@ fn funding_and_prerequisites_are_per_recipient_in_canonical_order() {
         .find(|b| b.player != game.presentation.human)
         .unwrap()
         .id;
-    game.presentation.selection.buildings = vec![
+    game.presentation.selection.set_buildings(vec![
         ids[2],
         foreign,
         ids[1],
         ids[0],
         ids[1],
         BuildingId(u32::MAX),
-    ];
+    ]);
     let batch = SelectedBuildings::inspect(&game.view())
         .upgrade_batch()
         .unwrap();
@@ -164,7 +165,7 @@ fn funding_and_prerequisites_are_per_recipient_in_canonical_order() {
         .unwrap();
     assert_eq!(
         batch.recipients,
-        vec![game.presentation.selection.buildings[0]]
+        vec![game.presentation.selection.buildings()[0]]
     );
     assert!(batch.reason.unwrap().contains("Crucible"));
     upgrade(&mut game);
@@ -216,7 +217,7 @@ fn pending_purchases_refunds_invalid_commands_and_surrender_share_one_preview() 
 #[test]
 fn pending_upgrades_and_cancellations_leave_only_live_defense_recipients() {
     let mut game = fixture(BuildingKind::Turret, &[0, 0, 2], 1000);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     game.issue(Command::UpgradeBuilding { building: ids[0] });
     stop_or_scrap(&mut game);
     assert!(
@@ -228,7 +229,7 @@ fn pending_upgrades_and_cancellations_leave_only_live_defense_recipients() {
 #[test]
 fn group_site_cancellation_skips_completed_and_committed_upgrades() {
     let mut game = fixture(BuildingKind::Turret, &[0, 0, 0], 1000);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     let mut json = serde_json::to_value(&*game.state).unwrap();
     let site = json["buildings"]
         .as_array_mut()
@@ -254,7 +255,10 @@ fn group_site_cancellation_skips_completed_and_committed_upgrades() {
             .count(),
         1
     );
-    assert_eq!(game.presentation.selection.buildings, vec![ids[0], ids[2]]);
+    assert_eq!(
+        game.presentation.selection.buildings(),
+        vec![ids[0], ids[2]]
+    );
     assert_accepted(&mut game);
     assert!(game.state.building(ids[1]).is_none());
     assert!(!game.state.building(ids[0]).unwrap().built());
@@ -365,7 +369,7 @@ fn a_deep_bore_waits_for_a_foundry_in_reach() {
 /// Loads every selected magazine to capacity, as finished assembly does.
 fn load_selected(game: &mut Game) {
     let mut json = serde_json::to_value(&*game.state).unwrap();
-    for id in &game.presentation.selection.buildings {
+    for id in game.presentation.selection.buildings() {
         let b = json["buildings"]
             .as_array_mut()
             .unwrap()
@@ -406,7 +410,7 @@ fn a_spire_offers_its_strike_only_while_loaded_and_a_full_magazine_refuses_an_or
     let selected = SelectedBuildings::inspect(&game.view());
     assert_eq!(
         selected.ready_silos(),
-        game.presentation.selection.buildings
+        game.presentation.selection.buildings()
     );
     assert!(matches!(
         selected.autofill_toggle(),
@@ -431,7 +435,7 @@ fn an_order_the_bank_cannot_pay_is_refused_with_its_price() {
     let funded = fixture(BuildingKind::Spire, &[0], cost);
     assert_eq!(
         SelectedBuildings::inspect(&funded.view()).round_order(),
-        Ok(funded.presentation.selection.buildings[0])
+        Ok(funded.presentation.selection.buildings()[0])
     );
 }
 
@@ -444,7 +448,7 @@ fn a_lattice_orders_into_the_emptiest_battery_and_cancels_the_busiest() {
         selected.autofill_toggle(),
         Some(Command::SetAutofill { enabled: false, .. })
     ));
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     assert_eq!(selected.round_recipient(), Some(ids[0]));
     assert!(selected.round_cancel().is_none());
     load_selected(&mut game);
@@ -470,7 +474,7 @@ fn a_lattice_orders_into_the_emptiest_battery_and_cancels_the_busiest() {
 fn stop_calls_off_an_armed_spire_selected_with_other_buildings() {
     let mut game = fixture(BuildingKind::Spire, &[0], 2000);
     load_selected(&mut game);
-    let spire = game.presentation.selection.buildings[0];
+    let spire = game.presentation.selection.buildings()[0];
     game.issue(Command::Launch {
         building: spire,
         // Behind the deck, which starts facing the map's centre.
@@ -484,7 +488,9 @@ fn stop_calls_off_an_armed_spire_selected_with_other_buildings() {
         .find(|b| b.kind == BuildingKind::Fabricator)
         .unwrap()
         .id;
-    game.presentation.selection.buildings.push(fabricator);
+    game.presentation
+        .selection
+        .set_buildings([game.presentation.selection.buildings(), &[fabricator]].concat());
     stop_or_scrap(&mut game);
     assert!(
         matches!(
@@ -501,7 +507,7 @@ fn spires_facing(headings: &[u8]) -> Game {
     let mut game = fixture(BuildingKind::Spire, &vec![0; headings.len()], 0);
     load_selected(&mut game);
     let mut json = serde_json::to_value(&*game.state).unwrap();
-    for (id, &heading) in game.presentation.selection.buildings.iter().zip(headings) {
+    for (id, &heading) in game.presentation.selection.buildings().iter().zip(headings) {
         let b = json["buildings"]
             .as_array_mut()
             .unwrap()
@@ -519,7 +525,7 @@ fn spires_facing(headings: &[u8]) -> Game {
 fn a_salvo_fires_the_decks_that_turn_least_then_the_lowest_ids() {
     // Heading 0 faces east, 64 south, 128 west.
     let game = spires_facing(&[128, 0, 64, 0]);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     let east = TilePos::new(38, 6);
     let selected = SelectedBuildings::inspect(&game.view());
     let sorted = |mut ids: Vec<BuildingId>| {
@@ -555,10 +561,10 @@ fn a_salvo_fires_the_decks_that_turn_least_then_the_lowest_ids() {
 fn fill_buys_every_empty_slot_emptiest_first_while_scrap_lasts() {
     let cost = BuildingKind::Spire.magazine().unwrap().round_cost;
     let mut game = fixture(BuildingKind::Spire, &[0, 0, 0], 2 * cost);
-    let ids = game.presentation.selection.buildings.clone();
-    game.presentation.selection.buildings = vec![ids[1]];
+    let ids = game.presentation.selection.buildings().to_vec();
+    game.presentation.selection.set_buildings(vec![ids[1]]);
     load_selected(&mut game);
-    game.presentation.selection.buildings.clone_from(&ids);
+    game.presentation.selection.set_buildings(ids.clone());
     let fill = SelectedBuildings::inspect(&game.view()).fill().unwrap();
     assert_eq!(fill.wanted, 2);
     assert_eq!(fill.recipients, vec![ids[0], ids[2]]);
@@ -577,7 +583,7 @@ fn fill_buys_every_empty_slot_emptiest_first_while_scrap_lasts() {
     // bank runs out.
     let cost = BuildingKind::Lattice.magazine().unwrap().round_cost;
     let mut game = fixture(BuildingKind::Lattice, &[0, 0], 3 * cost);
-    let ids = game.presentation.selection.buildings.clone();
+    let ids = game.presentation.selection.buildings().to_vec();
     let fill = SelectedBuildings::inspect(&game.view()).fill().unwrap();
     assert_eq!(fill.wanted, 4);
     assert_eq!(fill.recipients, vec![ids[0], ids[1], ids[0]]);
@@ -628,10 +634,10 @@ fn the_order_card_offers_fill_only_while_more_than_one_slot_is_empty() {
 #[test]
 fn a_magazine_group_counts_its_rounds_and_its_buildings() {
     let mut game = fixture(BuildingKind::Spire, &[0, 0, 0], 2000);
-    let ids = game.presentation.selection.buildings.clone();
-    game.presentation.selection.buildings = vec![ids[0]];
+    let ids = game.presentation.selection.buildings().to_vec();
+    game.presentation.selection.set_buildings(vec![ids[0]]);
     load_selected(&mut game);
-    game.presentation.selection.buildings.clone_from(&ids);
+    game.presentation.selection.set_buildings(ids.clone());
     game.issue(Command::OrderRound { building: ids[1] });
     assert_eq!(
         SelectedBuildings::inspect(&game.view())

@@ -244,9 +244,7 @@ fn enter(game: &mut Game, screen: &Screen) {
         ScreenKind::FinalMap => {
             game.clock.paused = true;
             game.presentation.stance = crate::game::Stance::Spectator;
-            game.presentation.selection.units.clear();
-            game.presentation.selection.buildings.clear();
-            game.presentation.selection.pile = None;
+            game.presentation.selection.clear();
         }
         ScreenKind::ColdOpen
         | ScreenKind::Home
@@ -947,8 +945,8 @@ fn playing_frame(
             card_press = filter_card_pad(events, &card);
         }
     }
-    let had_selection = !app.game.presentation.selection.units.is_empty()
-        || !app.game.presentation.selection.buildings.is_empty();
+    let had_selection = !app.game.presentation.selection.units().is_empty()
+        || !app.game.presentation.selection.buildings().is_empty();
     let mut ctrl = ctrl_at_frame_start;
     let mut shift = shift_at_frame_start;
     let escape_pressed = events.iter().any(|event| {

@@ -59,8 +59,8 @@ fn buildings_double_click_matches_kind_owner_and_viewport() {
     let expected = [8, 14, 20].map(|x| building_at(&game, x, 8));
     let screen = screen_at(&game, 8.5, 8.5);
     double_click(&mut game, &mut InputState::new(), screen);
-    assert_eq!(game.presentation.selection.buildings, expected);
-    assert!(game.presentation.selection.units.is_empty());
+    assert_eq!(game.presentation.selection.buildings(), expected);
+    assert!(game.presentation.selection.units().is_empty());
     assert!(game.pending.is_empty());
 }
 
@@ -82,7 +82,8 @@ fn buildings_double_click_uses_centers_at_viewport_edges() {
                 vec![first, second]
             };
             assert_eq!(
-                game.presentation.selection.buildings, expected,
+                game.presentation.selection.buildings(),
+                expected,
                 "zoom {zoom}, edge {right_edge}"
             );
         }
@@ -108,7 +109,7 @@ fn buildings_double_click_preserves_foreign_visibility() {
     assert!(!hidden.tiles().any(|t| game.my_vision().visible(t)));
     let screen = screen_at(&game, 10.5, 12.5);
     double_click(&mut game, &mut InputState::new(), screen);
-    assert_eq!(game.presentation.selection.buildings, expected);
+    assert_eq!(game.presentation.selection.buildings(), expected);
     apply_events(&mut game, &mut InputState::new(), &[right_down(screen)]);
     assert!(
         game.pending.is_empty(),
@@ -117,7 +118,7 @@ fn buildings_double_click_preserves_foreign_visibility() {
 
     let screen = screen_at(&game, 54.5, 12.5);
     double_click(&mut game, &mut InputState::new(), screen);
-    assert!(game.presentation.selection.buildings.is_empty());
+    assert!(game.presentation.selection.buildings().is_empty());
 }
 
 #[test]
@@ -128,7 +129,7 @@ fn buildings_double_click_cannot_pick_concealed_mines_on_visible_ground() {
     assert!(!game.state.building_apparent(PlayerId(0), mine));
     let screen = screen_at(&game, 14.5, 5.5);
     double_click(&mut game, &mut InputState::new(), screen);
-    assert!(game.presentation.selection.buildings.is_empty());
+    assert!(game.presentation.selection.buildings().is_empty());
 }
 
 #[test]
@@ -145,7 +146,7 @@ fn buildings_double_tap_uses_the_same_sweep() {
             &[touch_down(1, screen), touch_up(1, screen)],
         );
     }
-    assert_eq!(game.presentation.selection.buildings, expected);
+    assert_eq!(game.presentation.selection.buildings(), expected);
 }
 
 #[test]
@@ -164,8 +165,8 @@ fn buildings_double_click_keeps_units_ahead_of_buildings() {
     game.presentation.camera.center = vec2(14.0, 8.0);
     let screen = screen_at(&game, 8.05, 8.5);
     double_click(&mut game, &mut InputState::new(), screen);
-    assert_eq!(game.presentation.selection.units.len(), 2);
-    assert!(game.presentation.selection.buildings.is_empty());
+    assert_eq!(game.presentation.selection.units().len(), 2);
+    assert!(game.presentation.selection.buildings().is_empty());
 }
 
 #[test]
@@ -181,5 +182,5 @@ fn buildings_double_click_groups_across_upgrade_tiers() {
     assert_eq!(game.state.building(expected[1]).unwrap().tier, 0);
     let screen = screen_at(&game, 8.5, 8.5);
     double_click(&mut game, &mut InputState::new(), screen);
-    assert_eq!(game.presentation.selection.buildings, expected);
+    assert_eq!(game.presentation.selection.buildings(), expected);
 }

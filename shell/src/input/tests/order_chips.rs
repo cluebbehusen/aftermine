@@ -77,7 +77,7 @@ fn paused_chip_clicks_remove_the_legs_they_show() {
     let mut input = InputState::new();
     let human = game.presentation.human;
     let (fighter, _) = own_fighter(&game);
-    game.presentation.selection.units = vec![fighter];
+    game.presentation.selection.set_units(vec![fighter]);
     let [a, b, c, d] = [(12, 2), (16, 2), (20, 2), (24, 2)].map(|(x, y)| TilePos::new(x, y));
     game.state.tick(&legs(human, fighter, &[a, b, c, d]));
     game.clock.paused = true;
@@ -162,7 +162,7 @@ fn a_staged_sites_chip_cancels_it_by_kind_and_anchor_whoever_takes_its_id() {
     };
 
     client.issue(build(vec![worker], anchor));
-    client.presentation.selection.units = vec![worker];
+    client.presentation.selection.set_units(vec![worker]);
     let projected = client.state.inspect_command_phase(&client.pending, |view| {
         view.buildings()
             .iter()
@@ -223,7 +223,7 @@ fn a_chip_answers_a_slow_tap_but_not_a_lift_after_a_hold() {
     let mut input = InputState::new();
     let human = game.presentation.human;
     let (fighter, _) = own_fighter(&game);
-    game.presentation.selection.units = vec![fighter];
+    game.presentation.selection.set_units(vec![fighter]);
     let [a, b] = [(12, 2), (16, 2)].map(|(x, y)| TilePos::new(x, y));
     game.state.tick(&legs(human, fighter, &[a, b]));
     game.clock.paused = true;
@@ -312,7 +312,7 @@ fn a_held_site_chip_scraps_nothing_but_a_tap_cancels_the_site() {
         .find(|b| b.anchor == anchor && !b.built())
         .expect("the site stands")
         .id;
-    game.presentation.selection.units = vec![worker];
+    game.presentation.selection.set_units(vec![worker]);
     game.clock.paused = true;
 
     let (held, tapped) = hold_then_tap(&mut game, &mut input);
@@ -377,7 +377,7 @@ fn a_site_chip_takes_only_the_selection_off_a_shared_site() {
     let cost = Turret.base_stats().construction.cost;
     assert_eq!(crew_of(&game, queued), crew);
 
-    game.presentation.selection.units = first.to_vec();
+    game.presentation.selection.set_units(first.to_vec());
     let chips = publish_dock(&mut game, &input);
     let before = bank(&game);
     press(&mut game, &mut input, chips[1]);
@@ -386,7 +386,7 @@ fn a_site_chip_takes_only_the_selection_off_a_shared_site() {
     assert_eq!(crew_of(&game, queued), last, "queued for the other two");
     assert_eq!(bank(&game), before, "nothing refunded");
 
-    game.presentation.selection.units = last.to_vec();
+    game.presentation.selection.set_units(last.to_vec());
     let chips = publish_dock(&mut game, &input);
     input.now += 1.0;
     press(&mut game, &mut input, chips[1]);
@@ -407,7 +407,7 @@ fn a_site_chip_takes_only_the_selection_off_a_shared_site() {
     assert!(!site.unstarted(), "premise: work on the site began");
     let value = cost * site.hp / site.stats().max_hp;
     assert!(value < cost, "premise: {value} is less than the full price");
-    game.presentation.selection.units = crew.clone();
+    game.presentation.selection.set_units(crew.clone());
     let chips = publish_dock(&mut game, &input);
     let before = bank(&game);
     input.now += 1.0;
@@ -425,7 +425,7 @@ fn a_held_production_chip_cancels_nothing_but_a_tap_does() {
     let mut game = headless_game();
     let mut input = InputState::new();
     let foundry = game.view().own_foundries().next().expect("a Foundry").id;
-    game.presentation.selection.buildings = vec![foundry];
+    game.presentation.selection.set_buildings(vec![foundry]);
     crate::production::train(&mut game, 0);
     let staged: Vec<PlayerCommand> = game.pending.drain(..).collect();
     assert_eq!(staged.len(), 1, "premise: one job queued");
@@ -463,7 +463,7 @@ fn a_chip_sends_the_rest_of_the_selection_along() {
     for &unit in &mine {
         game.state.tick(&legs(human, unit, &[a, b]));
     }
-    game.presentation.selection.units = mine.clone();
+    game.presentation.selection.set_units(mine.clone());
     let subject = crate::panel::subject_unit(&game.view()).expect("a subject");
     let chips = publish_dock(&mut game, &input);
     press(&mut game, &mut input, chips[0]);
@@ -535,10 +535,10 @@ fn a_lan_clients_chip_names_the_leg_it_showed_after_legs_finish_in_flight() {
         game.run_batch(&programs);
     }
 
-    client.presentation.selection.units = vec![walker];
+    client.presentation.selection.set_units(vec![walker]);
     let chips = publish_dock(&mut client, &input);
     press(&mut client, &mut input, chips[1]);
-    client.presentation.selection.units = vec![patroller];
+    client.presentation.selection.set_units(vec![patroller]);
     let chips = publish_dock(&mut client, &input);
     press(&mut client, &mut input, chips[2]);
     let removals = sent(&mut client);

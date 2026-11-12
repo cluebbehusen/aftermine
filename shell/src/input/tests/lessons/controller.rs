@@ -188,7 +188,7 @@ fn the_command_lesson_plays_as_its_controller_card_says() {
     push_until(&mut game, &mut input, (-1.0, 0.0), |at| at.x <= near.x);
     let_go(&mut game, &mut input, PadButton::South);
     assert_eq!(
-        game.presentation.selection.units.len(),
+        game.presentation.selection.units().len(),
         4,
         "the sweep selects the squad"
     );
@@ -241,7 +241,7 @@ fn the_scrap_lesson_plays_as_its_controller_card_says() {
     while hauling(&game) < 3 {
         tap(&mut game, &mut input, PadButton::DpadDown);
         assert_eq!(
-            game.presentation.selection.units.len(),
+            game.presentation.selection.units().len(),
             1,
             "D-pad down grabs one"
         );
@@ -334,11 +334,11 @@ fn the_build_lesson_plays_as_its_controller_card_says() {
     );
 
     assert!(input.ring.is_none(), "saving a group closes the ring");
-    game.presentation.selection.units.clear();
+    game.presentation.selection.clear();
     tap(&mut game, &mut input, PadButton::DpadRight);
     pick(&mut game, &mut input, "Group 1");
     assert_eq!(
-        game.presentation.selection.units,
+        game.presentation.selection.units(),
         [lancer.0],
         "picking Group 1 with A recalls it, as the card says"
     );
@@ -382,7 +382,7 @@ fn the_build_lesson_s_lt_chain_ends_with_b_as_its_controller_card_says() {
     let fabricator = own_building(&game, BuildingKind::Fabricator);
     tap_at(&mut game, &mut input, fabricator, PadButton::South);
     assert_eq!(
-        game.presentation.selection.buildings.len(),
+        game.presentation.selection.buildings().len(),
         1,
         "A selects the Fabricator"
     );
@@ -458,7 +458,7 @@ fn the_see_and_sustain_lesson_plays_as_its_controller_card_says() {
     let select = |game: &mut Game, input: &mut InputState, world: Vec2| {
         tap_at(game, input, world, PadButton::South);
         assert_eq!(
-            game.presentation.selection.units.len(),
+            game.presentation.selection.units().len(),
             1,
             "A picks one machine"
         );
@@ -498,7 +498,7 @@ fn the_see_and_sustain_lesson_plays_as_its_controller_card_says() {
     assert!(pad_copy(&game).contains("Press D-pad down to select an idle Harvester"));
     while hauling(&game) < 3 {
         tap(&mut game, &mut input, PadButton::DpadDown);
-        assert_eq!(game.presentation.selection.units.len(), 1);
+        assert_eq!(game.presentation.selection.units().len(), 1);
         tap_at(&mut game, &mut input, NORTH_PILE, PadButton::West);
         game.do_tick();
         relayout(&game, &input);

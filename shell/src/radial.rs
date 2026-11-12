@@ -372,7 +372,7 @@ fn first_ring(game: &Scene<'_>, panel: &Panel) -> Vec<Slice> {
     let kinds: Vec<UnitKind> = game
         .presentation
         .selection
-        .units
+        .units()
         .iter()
         .filter_map(|id| game.state.unit(*id))
         .map(|unit| unit.kind)

@@ -390,7 +390,7 @@ impl RowJudged {
             tick: game.state.current_tick(),
             pending: game.pending.len(),
             queue,
-            units: game.presentation.selection.units.clone(),
+            units: game.presentation.selection.units().to_vec(),
         }
     }
 
@@ -756,7 +756,7 @@ fn replaced_build_units<'a>(game: &'a crate::game::Scene<'_>, queue: bool) -> &'
     if queue {
         &[]
     } else {
-        &game.presentation.selection.units
+        game.presentation.selection.units()
     }
 }
 
@@ -826,7 +826,7 @@ fn pending_build_projection_for(
             .filter(|unit| {
                 unit.player == game.presentation.human
                     && unit.kind.stats().harvest.is_some()
-                    && game.presentation.selection.units.contains(&unit.id)
+                    && game.presentation.selection.units().contains(&unit.id)
             })
             .collect();
         let can_assign = |unit: &&aftermine_sim::Unit| {
@@ -943,7 +943,7 @@ fn planned_batch(
     kind: aftermine_sim::BuildingKind,
     stroke: &PlacingStroke,
 ) -> Vec<aftermine_sim::PlayerCommand> {
-    let units = &game.presentation.selection.units;
+    let units = game.presentation.selection.units();
     let stamps =
         stroke
             .stamps
@@ -952,7 +952,7 @@ fn planned_batch(
             .map(|(index, &anchor)| aftermine_sim::PlayerCommand {
                 player: game.presentation.human,
                 command: Command::Build {
-                    units: units.clone(),
+                    units: units.to_vec(),
                     kind,
                     anchor,
                     queue: stroke.queues(index),
@@ -972,7 +972,7 @@ fn judge(
     let key = VerdictKey {
         tick: game.state.current_tick(),
         pending: game.pending.len(),
-        units: game.presentation.selection.units.clone(),
+        units: game.presentation.selection.units().to_vec(),
         kind,
         anchor,
         queue,
@@ -1031,7 +1031,7 @@ fn founder_may_reach(
     let Some(founder) = game
         .presentation
         .selection
-        .units
+        .units()
         .iter()
         .filter_map(|id| game.state.unit(*id))
         .find(|unit| unit.player == human && unit.kind.stats().harvest.is_some())
@@ -1152,7 +1152,7 @@ pub(crate) fn placement_backlog(game: &crate::game::Scene<'_>) -> Option<usize> 
         .or_else(|| {
             game.presentation
                 .selection
-                .units
+                .units()
                 .iter()
                 .copied()
                 .find(builds)
@@ -1478,17 +1478,17 @@ impl InputState {
                 .build_category
                 .map_or(Context::Construction, Context::BuildCategory);
         }
-        if game.presentation.selection.units.iter().any(|id| {
+        if game.presentation.selection.units().iter().any(|id| {
             game.state
                 .unit(*id)
                 .is_some_and(|unit| unit.kind.stats().harvest.is_some())
         }) {
             Context::Workers
-        } else if !game.presentation.selection.units.is_empty() {
+        } else if !game.presentation.selection.units().is_empty() {
             Context::Units
         } else if !orders::selected_producers(game).is_empty() {
             Context::Production
-        } else if !game.presentation.selection.buildings.is_empty() {
+        } else if !game.presentation.selection.buildings().is_empty() {
             Context::Buildings
         } else {
             Context::Empty
@@ -1766,7 +1766,7 @@ impl InputState {
     pub(crate) fn selected_group(&self, game: &crate::game::Scene<'_>) -> Option<u8> {
         let selection = &game.presentation.selection;
         let own = Group::of_selection(game);
-        if own.is_empty() || own.len() < selection.units.len().max(selection.buildings.len()) {
+        if own.is_empty() || own.len() < selection.units().len().max(selection.buildings().len()) {
             return None;
         }
         (0..self.groups.len())
@@ -1812,8 +1812,8 @@ impl InputState {
         matches!(self.queue_toggle, QueueToggle::Latched { .. }).then(|| LatchProbe {
             armed: self.armed_mode().is_some(),
             staged: game.pending.len(),
-            units: game.presentation.selection.units.clone(),
-            buildings: game.presentation.selection.buildings.clone(),
+            units: game.presentation.selection.units().to_vec(),
+            buildings: game.presentation.selection.buildings().to_vec(),
         })
     }
 
@@ -1830,8 +1830,8 @@ impl InputState {
         let armed = self.armed_mode().is_some();
         let selection = &game.presentation.selection;
         let acted = game.pending.len() != before.staged
-            || selection.units != before.units
-            || selection.buildings != before.buildings;
+            || selection.units() != before.units
+            || selection.buildings() != before.buildings;
         if !armed && (before.armed || acted) {
             self.queue_toggle = QueueToggle::Off;
         }
@@ -2324,10 +2324,6 @@ pub fn apply_events(
         apply_event(game, input, bindings, event);
         input.settle_latch(game, probe.as_ref());
     }
-    let selection = &mut game.presentation.selection;
-    if !selection.units.is_empty() || !selection.buildings.is_empty() {
-        selection.pile = None;
-    }
     // A QUEUE tap or a staged command moves what a held row would build.
     refresh_row(&game.view(), input, false);
     if !events.is_empty() {
@@ -2522,7 +2518,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                 if input.patrol_route().is_some() {
                     add_patrol_waypoint(game, input, bindings, world);
                 } else {
-                    let units = game.presentation.selection.units.clone();
+                    let units = game.presentation.selection.units().to_vec();
                     // The same commandability gate the world path
                     // applies: an inspected ally or enemy takes no
                     // orders from the minimap either.
@@ -3493,7 +3489,7 @@ fn stage_build(
     ) {
         return false;
     }
-    let units = game.presentation.selection.units.clone();
+    let units = game.presentation.selection.units().to_vec();
     game.issue(Command::Build {
         units,
         kind,
@@ -3545,7 +3541,7 @@ fn armed_verb_click(
         return true;
     }
     let world = game.presentation.camera.to_world(p);
-    let units = game.presentation.selection.units.clone();
+    let units = game.presentation.selection.units().to_vec();
     let queue = input.queue_held();
     let order = match verb {
         // The press names the structure it reaches, then that one must
@@ -3681,7 +3677,7 @@ pub(super) fn start_patrol(game: &mut Game, input: &mut InputState) {
     };
     input.armed = None;
     if !waypoints.is_empty() {
-        let units = game.presentation.selection.units.clone();
+        let units = game.presentation.selection.units().to_vec();
         game.issue(Command::Patrol { units, waypoints });
     }
 }
@@ -3786,7 +3782,7 @@ fn activate_card(
             let units = game
                 .presentation
                 .selection
-                .units
+                .units()
                 .iter()
                 .copied()
                 .filter(|&id| id != unit)
@@ -3821,7 +3817,7 @@ fn activate_card(
             // no command leaves here. Ctrl, Shift, or a lit QUEUE drops
             // the kind instead of keeping it.
             let keep = !(input.resolver.ctrl_held() || input.queue_held());
-            game.presentation.selection.units.retain(|id| {
+            game.presentation.selection.retain_units(|id| {
                 game.state
                     .unit(*id)
                     .is_some_and(|u| (u.kind == kind) == keep)
@@ -3829,7 +3825,7 @@ fn activate_card(
         }
         crate::panel::CardAction::FilterBuilding(kind) => {
             let keep = !(input.resolver.ctrl_held() || input.queue_held());
-            game.presentation.selection.buildings.retain(|id| {
+            game.presentation.selection.retain_buildings(|id| {
                 game.state
                     .building(*id)
                     .is_some_and(|b| (b.kind == kind) == keep)
@@ -3837,27 +3833,27 @@ fn activate_card(
         }
         crate::panel::CardAction::SelectAllBuildings(kind) => {
             let human = game.presentation.human;
-            game.presentation.selection.units.clear();
-            game.presentation.selection.buildings = game
+            let mut buildings: Vec<_> = game
                 .state
                 .buildings()
                 .iter()
                 .filter(|b| b.player == human && b.kind == kind)
                 .map(|b| b.id)
                 .collect();
-            game.presentation.selection.buildings.sort_unstable();
+            buildings.sort_unstable();
+            game.presentation.selection.set_buildings(buildings);
         }
         crate::panel::CardAction::SelectAllUnits(kind) => {
             let human = game.presentation.human;
-            game.presentation.selection.buildings.clear();
-            game.presentation.selection.units = game
+            let mut units: Vec<_> = game
                 .state
                 .units()
                 .iter()
                 .filter(|u| u.player == human && u.kind == kind && u.host.is_none())
                 .map(|u| u.id)
                 .collect();
-            game.presentation.selection.units.sort_unstable();
+            units.sort_unstable();
+            game.presentation.selection.set_units(units);
         }
         crate::panel::CardAction::ClosePalette => input.close_construction(),
         crate::panel::CardAction::ClearQueues => crate::production::cancel_all(game),

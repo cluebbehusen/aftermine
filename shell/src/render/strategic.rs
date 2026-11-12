@@ -1108,7 +1108,7 @@ fn strike_marks<'a>(game: &crate::game::Scene<'a>, input: &InputState) -> Vec<St
     for b in game
         .presentation
         .selection
-        .buildings
+        .buildings()
         .iter()
         .filter_map(|id| state.building(*id))
         .filter(|b| b.player == game.presentation.human)

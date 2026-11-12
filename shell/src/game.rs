@@ -56,19 +56,89 @@ impl Deref for PendingCommands {
     }
 }
 
-/// What the player currently has selected.
-#[derive(Default)]
-pub struct Selection {
-    /// Selected units, single-allegiance by construction (own for
-    /// command, ally or enemy for read-only inspection).
-    pub units: Vec<UnitId>,
-    /// Selected buildings of one owner (mutually exclusive with units
-    /// in practice), kept in id order. Commands validate ownership at
-    /// their own gates.
-    pub buildings: Vec<BuildingId>,
-    /// An inspected salvage tile: held only while nothing else is
-    /// selected and the viewer knows the tile still holds salvage.
-    pub pile: Option<chassis::grid::TilePos>,
+/// What the player currently has selected: one of units, structures or a
+/// salvage tile, never two at once.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Selection {
+    #[default]
+    Empty,
+    /// Units of one allegiance (own for command, ally or enemy for
+    /// read-only inspection); never empty.
+    Units(Vec<UnitId>),
+    /// Structures of one owner, kept in id order; never empty. Commands
+    /// validate ownership at their own gates.
+    Buildings(Vec<BuildingId>),
+    /// An inspected salvage tile, held only while the viewer knows it
+    /// still holds salvage.
+    Pile(chassis::grid::TilePos),
+}
+
+impl Selection {
+    /// The selected units; empty unless units are selected.
+    pub fn units(&self) -> &[UnitId] {
+        match self {
+            Self::Units(ids) => ids,
+            _ => &[],
+        }
+    }
+
+    /// The selected structures; empty unless structures are selected.
+    pub fn buildings(&self) -> &[BuildingId] {
+        match self {
+            Self::Buildings(ids) => ids,
+            _ => &[],
+        }
+    }
+
+    /// The inspected salvage tile, while one is selected.
+    pub fn pile(&self) -> Option<chassis::grid::TilePos> {
+        match self {
+            Self::Pile(tile) => Some(*tile),
+            _ => None,
+        }
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::Empty;
+    }
+
+    /// Selects `ids`, or nothing when there are none.
+    pub fn set_units(&mut self, ids: Vec<UnitId>) {
+        *self = if ids.is_empty() {
+            Self::Empty
+        } else {
+            Self::Units(ids)
+        };
+    }
+
+    /// Selects `ids`, or nothing when there are none.
+    pub fn set_buildings(&mut self, ids: Vec<BuildingId>) {
+        *self = if ids.is_empty() {
+            Self::Empty
+        } else {
+            Self::Buildings(ids)
+        };
+    }
+
+    /// Keeps the selected units `keep` accepts.
+    pub fn retain_units(&mut self, keep: impl FnMut(&UnitId) -> bool) {
+        if let Self::Units(ids) = self {
+            ids.retain(keep);
+            if ids.is_empty() {
+                self.clear();
+            }
+        }
+    }
+
+    /// Keeps the selected structures `keep` accepts.
+    pub fn retain_buildings(&mut self, keep: impl FnMut(&BuildingId) -> bool) {
+        if let Self::Buildings(ids) = self {
+            ids.retain(keep);
+            if ids.is_empty() {
+                self.clear();
+            }
+        }
+    }
 }
 
 /// A transient visual effect (never sim-relevant).
@@ -558,7 +628,7 @@ impl Game {
         let all_seeing = self.presentation.all_seeing();
         {
             let state = &self.state;
-            self.presentation.selection.units.retain(|id| {
+            self.presentation.selection.retain_units(|id| {
                 state.unit(*id).is_some_and(|u| {
                     !state.hostile(human, u.player) || all_seeing || {
                         state.vision(human).sees_unit(u)
@@ -566,7 +636,7 @@ impl Game {
                 })
             });
         }
-        self.presentation.selection.buildings.retain(|id| {
+        self.presentation.selection.retain_buildings(|id| {
             self.state.building(*id).is_some_and(|building| {
                 !self.state.hostile(human, building.player)
                     || all_seeing
@@ -576,10 +646,10 @@ impl Game {
                         && self.state.building_apparent(human, building))
             })
         });
-        if let Some(tile) = self.presentation.selection.pile
+        if let Some(tile) = self.presentation.selection.pile()
             && presentation::known_salvage(&self.state, human, all_seeing, tile).is_none()
         {
-            self.presentation.selection.pile = None;
+            self.presentation.selection.clear();
         }
         report
     }

@@ -301,7 +301,7 @@ pub(super) fn all_scout(game: &Game, units: &[aftermine_sim::UnitId]) -> bool {
 pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: OrderReach) {
     let world = game.presentation.camera.to_world(screen);
     let tile = numeric::tile_at(world);
-    if game.presentation.selection.units.is_empty() {
+    if game.presentation.selection.units().is_empty() {
         // Selected defenses focus on the enemy one of them can fire at.
         let selected = crate::building_actions::SelectedBuildings::inspect(&game.view());
         let fires_at = |domain| !selected.defenses(Some(domain)).is_empty();
@@ -328,7 +328,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: O
             .toast("You can only command your own units");
         return;
     }
-    let units = game.presentation.selection.units.clone();
+    let units = game.presentation.selection.units().to_vec();
     // The sim crews building, harvesting and welding from units with a
     // harvest kit, so a selection without one stages none of those orders
     // for the sim to reject with an empty crew.
@@ -439,7 +439,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: O
         .collect();
     if !carriable.is_empty() {
         let sling = reach.unit_at(game, world, |u| {
-            loadable(game, u) && !game.presentation.selection.units.contains(&u.id)
+            loadable(game, u) && !game.presentation.selection.units().contains(&u.id)
         });
         if let Some(transport) = sling.map(|u| u.id) {
             game.issue(Command::Load {
@@ -476,7 +476,7 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: O
     // still reads as a move. The armed Weld verb reaches those.
     if has_worker {
         let patient = reach.unit_at(game, world, |u| {
-            weldable(game, u) && !game.presentation.selection.units.contains(&u.id)
+            weldable(game, u) && !game.presentation.selection.units().contains(&u.id)
         });
         if let Some(target) = patient.map(|u| u.id) {
             game.issue(Command::RepairUnit {

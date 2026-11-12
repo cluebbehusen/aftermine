@@ -663,7 +663,7 @@ fn held_touch(game: &mut Game, input: &mut InputState, bindings: &crate::action:
     // the gesture: a hidden hostile or an undetected charge never flips
     // an order into a select, which would make occupancy observable.
     let on_entity = select::pick(game, tp.at, input.ui, select::Reach::TOUCH).is_some();
-    if on_entity && game.presentation.selection.units.is_empty() {
+    if on_entity && game.presentation.selection.units().is_empty() {
         select::click_select(game, tp.at, false, input.ui, select::Reach::TOUCH);
     } else {
         orders::context_order(game, tp.at, input.queue_held(), orders::OrderReach::EXACT);

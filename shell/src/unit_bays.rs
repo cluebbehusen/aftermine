@@ -64,7 +64,7 @@ fn flying(units: &[Unit], host: UnitId) -> u8 {
 impl SelectedBays {
     pub fn inspect(game: &Scene<'_>) -> Self {
         let human = game.presentation.human;
-        let selection = &game.presentation.selection.units;
+        let selection = game.presentation.selection.units();
         with_pending(game, |units, scrap, accepts| Self {
             hosts: units
                 .iter()

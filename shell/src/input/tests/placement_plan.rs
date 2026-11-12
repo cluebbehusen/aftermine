@@ -4,7 +4,9 @@ use super::*;
 fn planning(scrap: u32) -> (Game, InputState) {
     let mut game = drag_arena(scrap);
     let mut input = InputState::new();
-    game.presentation.selection.units = vec![game.state.units()[0].id];
+    game.presentation
+        .selection
+        .set_units(vec![game.state.units()[0].id]);
     input.arm_placement(aftermine_sim::BuildingKind::Turret);
     input.build_menu = true;
     (game, input)
@@ -269,7 +271,7 @@ fn the_first_stamp_that_stages_opens_the_row() {
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let mut input = InputState::new();
     let (builder, other) = (game.state.units()[0].id, game.state.units()[1].id);
-    game.presentation.selection.units = vec![builder];
+    game.presentation.selection.set_units(vec![builder]);
     input.arm_placement(aftermine_sim::BuildingKind::Turret);
     let (a, b) = (at(&game, 4), at(&game, 5));
     apply_events(&mut game, &mut input, &[left_down(a), mouse_move(b)]);
@@ -335,7 +337,7 @@ fn a_stamp_whose_ground_falls_into_fog_is_judged_as_fog() {
     .expect("long bank parses");
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let builder = game.state.units()[0].id;
-    game.presentation.selection.units = vec![builder];
+    game.presentation.selection.set_units(vec![builder]);
     let kind = aftermine_sim::BuildingKind::Turret;
     let stamp = TilePos::new(30, 3);
     assert!(

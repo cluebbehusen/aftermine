@@ -166,7 +166,7 @@ fn selected_markers_draw_after_the_rest_in_unit_order() {
     }
     let mut game = crate::game::Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let ids: Vec<_> = game.state.units().iter().map(|unit| unit.id).collect();
-    game.presentation.selection.units = vec![ids[0], ids[2]];
+    game.presentation.selection.set_units(vec![ids[0], ids[2]]);
     let shown: Vec<_> = shown_units(&game.view(), 1.0)
         .into_iter()
         .map(|(unit, _, selected)| (unit.id, selected))

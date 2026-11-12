@@ -65,7 +65,7 @@ pub(super) fn dispatch_action(
             if slot < input.groups.len() {
                 let own = super::Group::of_selection(&game.view());
                 let selection = &game.presentation.selection;
-                let picked = selection.units.len().max(selection.buildings.len());
+                let picked = selection.units().len().max(selection.buildings().len());
                 if own.len() < picked {
                     game.presentation.toast(match own {
                         super::Group::Units(_) => "Only your own units join a control group",
@@ -90,7 +90,7 @@ pub(super) fn dispatch_action(
                     .toast("You can only command your own units");
                 return;
             }
-            if !game.presentation.selection.units.iter().any(|id| {
+            if !game.presentation.selection.units().iter().any(|id| {
                 game.state
                     .unit(*id)
                     .is_some_and(|unit| unit.kind.stats().harvest.is_some() && unit.carrying() > 0)
@@ -100,35 +100,35 @@ pub(super) fn dispatch_action(
             }
             input.armed = None;
             game.issue(Command::ReturnCargo {
-                units: game.presentation.selection.units.clone(),
+                units: game.presentation.selection.units().to_vec(),
                 foundry: None,
                 repair: false,
             });
         }
         Action::Retire => {
-            if game.presentation.selection.units.is_empty() || !game.selection_commandable() {
+            if game.presentation.selection.units().is_empty() || !game.selection_commandable() {
                 game.presentation
                     .toast("You can only command your own units");
                 return;
             }
             input.armed = None;
             game.issue(Command::Retire {
-                units: game.presentation.selection.units.clone(),
+                units: game.presentation.selection.units().to_vec(),
                 queue: input.queue_held(),
             });
         }
         Action::StopOrScrap => {
             // Contextual: units selected halt in place; a selected own
             // unfinished site is scrapped for its refund.
-            if !game.presentation.selection.units.is_empty() && !game.selection_commandable() {
+            if !game.presentation.selection.units().is_empty() && !game.selection_commandable() {
                 game.presentation
                     .toast("You can only command your own units");
                 return;
             }
-            if game.presentation.selection.units.is_empty() {
+            if game.presentation.selection.units().is_empty() {
                 crate::building_actions::stop_or_scrap(game);
             } else {
-                let units = game.presentation.selection.units.clone();
+                let units = game.presentation.selection.units().to_vec();
                 game.issue(Command::Stop { units });
             }
         }
@@ -254,8 +254,7 @@ pub(super) fn dispatch_action(
                     })
                     .map(|u| u.id);
                 if let Some(id) = pick {
-                    game.presentation.selection.units = vec![id];
-                    game.presentation.selection.buildings.clear();
+                    game.presentation.selection.set_units(vec![id]);
                     input.build_menu = true;
                     input.stop_placing();
                 } else {
@@ -275,9 +274,9 @@ pub(super) fn dispatch_action(
             if input.patrol_route().is_some() {
                 super::start_patrol(game, input);
             } else if crate::panel::selection_patrols(&game.view()) {
-                let units = game.presentation.selection.units.clone();
+                let units = game.presentation.selection.units().to_vec();
                 game.issue(Command::Stop { units });
-            } else if !game.presentation.selection.units.is_empty() {
+            } else if !game.presentation.selection.units().is_empty() {
                 input.armed = Some(Armed::Patrol(Vec::new()));
             }
         }
@@ -313,9 +312,7 @@ pub(super) fn dispatch_action(
             if input.armed.take().is_some() {
                 return;
             }
-            game.presentation.selection.units.clear();
-            game.presentation.selection.buildings.clear();
-            game.presentation.selection.pile = None;
+            game.presentation.selection.clear();
         }
         Action::SetBookmark(slot) => {
             input.bookmarks[slot as usize] = Some(game.presentation.camera.center);

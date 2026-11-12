@@ -917,7 +917,7 @@ fn commands_units(game: &crate::game::Scene<'_>) -> bool {
     let human = game.presentation.human;
     game.presentation
         .selection
-        .units
+        .units()
         .iter()
         .any(|id| game.state.unit(*id).is_some_and(|u| u.player == human))
 }

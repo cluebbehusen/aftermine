@@ -561,13 +561,12 @@ fn every_way_out_of_the_final_map_ends_inspection() {
         Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
     game.presentation
         .selection
-        .units
-        .push(aftermine_sim::UnitId(1));
+        .set_units(vec![aftermine_sim::UnitId(1)]);
     let final_map = Screen::FinalMap(FinalMapScreen::open());
     enter(&mut game, &final_map);
     assert!(game.clock.paused);
     assert!(game.presentation.spectating());
-    assert!(game.presentation.selection.units.is_empty());
+    assert!(game.presentation.selection.units().is_empty());
     // The step keys on the screen left, so a quit-save or a debug load
     // ends inspection as surely as the Back button.
     exit(&mut game, ScreenKind::FinalMap);

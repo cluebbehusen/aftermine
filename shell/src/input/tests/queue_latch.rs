@@ -8,7 +8,7 @@ fn latch_range() -> (Game, InputState, Vec2, Vec2) {
     let mut layout = bare_layout(f32::INFINITY, 0.0);
     layout.queue_toggle = chip;
     game.presentation.layout.set(layout);
-    game.presentation.selection.units = vec![fighter];
+    game.presentation.selection.set_units(vec![fighter]);
     (game, InputState::new(), chip.center(), at)
 }
 
@@ -94,7 +94,11 @@ fn a_latched_queue_covers_one_selection_tap() {
         .expect("a harvester");
     tap_after(&mut game, &mut input, chip, 1.0);
     tap_world(&mut game, &mut input, other);
-    assert_eq!(game.presentation.selection.units.len(), 2, "the tap added");
+    assert_eq!(
+        game.presentation.selection.units().len(),
+        2,
+        "the tap added"
+    );
     assert_eq!(input.queue_toggle, QueueToggle::Off);
 }
 

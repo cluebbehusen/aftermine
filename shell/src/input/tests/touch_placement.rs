@@ -28,7 +28,9 @@ fn ghost_range(ghost: TilePos) -> (Game, InputState) {
     .expect("ghost range parses");
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let mut input = InputState::new();
-    game.presentation.selection.units = vec![game.state.units()[0].id];
+    game.presentation
+        .selection
+        .set_units(vec![game.state.units()[0].id]);
     input.arm_placement(aftermine_sim::BuildingKind::Barricade);
     input.build_menu = true;
     tap_world(

@@ -25,10 +25,10 @@ impl Group {
     /// holds no units.
     pub(crate) fn of_selection(game: &Scene<'_>) -> Self {
         let selection = &game.presentation.selection;
-        if selection.units.is_empty() && !selection.buildings.is_empty() {
-            Self::Buildings(selection.buildings.clone())
+        if selection.units().is_empty() && !selection.buildings().is_empty() {
+            Self::Buildings(selection.buildings().to_vec())
         } else {
-            Self::Units(selection.units.clone())
+            Self::Units(selection.units().to_vec())
         }
         .live(game)
     }
@@ -83,14 +83,11 @@ impl Group {
     pub(crate) fn select(&self, game: &mut Game) {
         let selection = &mut game.presentation.selection;
         match self {
-            Self::Units(ids) => {
-                selection.units.clone_from(ids);
-                selection.buildings.clear();
-            }
+            Self::Units(ids) => selection.set_units(ids.clone()),
             Self::Buildings(ids) => {
-                selection.units.clear();
-                selection.buildings.clone_from(ids);
-                selection.buildings.sort_unstable();
+                let mut ids = ids.clone();
+                ids.sort_unstable();
+                selection.set_buildings(ids);
             }
         }
     }
