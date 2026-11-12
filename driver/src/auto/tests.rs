@@ -1,5 +1,8 @@
 use super::*;
 use std::ffi::OsStr;
+use std::io::Read;
+use std::net::TcpListener;
+use std::process::Command;
 
 fn menu(items: &[&str], selected: Option<usize>) -> UiView {
     UiView {
@@ -152,4 +155,67 @@ fn mode_waits_ride_out_only_named_transitional_screens() {
         ModeWait::Unexpected
     );
     assert_eq!(classify_mode("saving", "home", &[]), ModeWait::Unexpected);
+}
+
+/// A stand-in shell that exits at once with status 3.
+fn exits_at_once() -> Command {
+    let mut command;
+    if cfg!(windows) {
+        command = Command::new("cmd");
+        command.args(["/C", "exit 3"]);
+    } else {
+        command = Command::new("sh");
+        command.args(["-c", "exit 3"]);
+    }
+    command
+}
+
+#[test]
+fn launch_refuses_a_port_that_already_answers_before_spawning_or_sending() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind a stand-in server");
+    let port = listener.local_addr().expect("stand-in address").port();
+    // Spawning this would fail with an error of its own.
+    let never_spawned = Command::new("aftermine-no-such-shell");
+    let Err(error) = launch(never_spawned, port, Duration::from_secs(5)) else {
+        panic!("launch connected to the stand-in server");
+    };
+    assert!(
+        error.to_string().contains("already answers"),
+        "refused for the wrong reason: {error:#}"
+    );
+    // The refusal came from a connection that sent nothing and hung up.
+    listener
+        .set_nonblocking(true)
+        .expect("nonblocking listener");
+    let (mut probe, _) = listener.accept().expect("launch probed the port");
+    probe.set_nonblocking(false).expect("blocking probe");
+    probe
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("probe read timeout");
+    let mut sent = Vec::new();
+    probe.read_to_end(&mut sent).expect("the probe hung up");
+    assert!(sent.is_empty(), "the probe sent {sent:?}");
+}
+
+#[test]
+fn launch_reports_a_shell_that_exits_before_answering_with_its_status() {
+    let status = exits_at_once().status().expect("run the stand-in once");
+    let port = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .and_then(|listener| listener.local_addr())
+        .expect("find a free port")
+        .port();
+    let started = Instant::now();
+    let Err(error) = launch(exits_at_once(), port, Duration::from_secs(60)) else {
+        panic!("a shell that exits never answers");
+    };
+    let message = error.to_string();
+    assert!(
+        message.contains("exited") && message.contains(&status.to_string()),
+        "{message}"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(30),
+        "noticed only after {:?}",
+        started.elapsed()
+    );
 }

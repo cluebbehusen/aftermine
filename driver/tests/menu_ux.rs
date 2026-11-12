@@ -1,10 +1,11 @@
 //! Menu interaction contracts, driven through the automation harness
-//! against a real spawned shell. `#[ignore]`d because they spawn real
-//! windows: CI has no display and the workspace suite must stay headless.
-//! Run them explicitly:
+//! against a real spawned shell. `#[ignore]`d because each test spawns a
+//! real window and the workspace suite stays headless; run them
+//! explicitly, under Xvfb where there is no display:
 //!
 //! ```sh
-//! cargo test -p aftermine-driver --test menu_ux -- --ignored --test-threads 1
+//! xvfb-run -s "-screen 0 1280x800x24" \
+//!     cargo test -p aftermine-driver --test menu_ux -- --ignored --test-threads 1
 //! ```
 //!
 //! Every spawned shell gets its own scratch HOME and platform-specific
@@ -18,7 +19,7 @@ use aftermine_driver::auto::{
 };
 use aftermine_driver::client::Client;
 use aftermine_protocol::{Key, MouseButton, PadButton, PadFamily, RawEvent, Request, Stick};
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -148,7 +149,7 @@ fn find_rows(client: &mut Client) -> Result<Vec<(f32, usize)>> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_stationary_pointer_never_changes_the_row_beneath_it() -> Result<()> {
     let (_guard, mut client) = spawn_at_map_list(4141)?;
     let rows = find_rows(&mut client)?;
@@ -178,7 +179,7 @@ fn a_stationary_pointer_never_changes_the_row_beneath_it() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn menu_rows_activate_on_release_not_on_press() -> Result<()> {
     let (_guard, mut client) = spawn_at_map_list(4142)?;
     // A high row: always a scenario, never Quit — pressing Quit would
@@ -246,7 +247,7 @@ fn menu_rows_activate_on_release_not_on_press() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn every_screen_transition_answers_the_walk() -> Result<()> {
     // One pass over the whole screen graph, asserting the shell's own
     // mode report at each hop. Navigation is by row LABEL, never by
@@ -288,12 +289,18 @@ fn every_screen_transition_answers_the_walk() -> Result<()> {
 
     activate_labeled(&mut client, "play")?;
     assert_mode(&mut client, "main_menu", "Home > Play")?;
-    activate_labeled(&mut client, "skirmish")?;
+    // Any shipped map serves, and the pool changes, so take the first.
+    let map = ui(&mut client)?
+        .items
+        .first()
+        .cloned()
+        .context("the map grid lists no map")?;
+    activate_labeled(&mut client, &map)?;
     assert_mode(&mut client, "match_setup", "map picked")?;
     // Back walks to the grid without losing the draft.
     press_key(&mut client, Key::Escape)?;
     assert_mode(&mut client, "main_menu", "setup > Esc")?;
-    activate_labeled(&mut client, "skirmish")?;
+    activate_labeled(&mut client, &map)?;
     assert_mode(&mut client, "match_setup", "map re-picked")?;
     // Start is preselected: Enter launches the classic matchup.
     press_key(&mut client, Key::Enter)?;
@@ -328,7 +335,7 @@ fn every_screen_transition_answers_the_walk() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_controller_walks_the_menus_through_the_same_funnel() -> Result<()> {
     // Injected pad events take the path hardware pads take: the D-pad
     // moves the cursor, the bottom face button confirms, and the right one
@@ -392,7 +399,7 @@ fn selections_over(client: &mut Client, span: Duration) -> Result<Vec<usize>> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_controller_stick_bumpers_and_triggers_drive_menus() -> Result<()> {
     let (_guard, mut client) = spawn(4146)?;
     assert_mode(&mut client, "home", "boot")?;
@@ -457,7 +464,7 @@ fn wait_for_status(
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_controller_watches_a_replay() -> Result<()> {
     let recording =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets/home/crossroads.amreplay");
@@ -541,7 +548,7 @@ fn wait_for_listed(client: &mut Client) -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_modifier_held_on_another_screen_still_captures_its_chord() -> Result<()> {
     // A Ctrl pressed on another Settings tab must still read as held on
     // Controls, so the rebind captures the chord rather than a bare key.
@@ -610,7 +617,7 @@ fn wait_for_saved_binding(home: &std::path::Path, key: &str, action: &str) -> Re
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction() -> Result<()> {
     let (mut guard, mut client) = spawn(4159)?;
     activate_labeled(&mut client, "settings")?;
@@ -624,7 +631,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
         rows.iter().any(|row| row.contains("Pan up: W | [L]")),
         "{rows:?}"
     );
-    wait_for_saved_binding(&guard.home, "i", "PanUp")?;
+    wait_for_saved_binding(&guard.home, "l", "PanUp")?;
     drop(client);
     drop(guard.shell.take());
     let (shell, reconnected) = spawn_shell(&SpawnOptions {
@@ -699,7 +706,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_remote_walks_the_menus_and_swipes_up_onto_the_tabs() -> Result<()> {
     let (_guard, mut client) = spawn(4160)?;
     assert_mode(&mut client, "home", "boot")?;
@@ -734,7 +741,7 @@ fn a_remote_walks_the_menus_and_swipes_up_onto_the_tabs() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_remote_finds_a_replay_on_the_other_tab_and_watches_it() -> Result<()> {
     let recording =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets/home/crossroads.amreplay");

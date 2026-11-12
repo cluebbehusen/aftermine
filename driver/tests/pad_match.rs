@@ -1,9 +1,10 @@
 //! Selection, orders, placement, targeted orders, pausing and the pause
 //! menu on a controller, driven through the real shell's input funnel with
 //! pad events: the same `InjectEvent` requests `driver live inject-pad`,
-//! `inject-pad-down`, `inject-pad-up` and `inject-pad-stick` send. Until a
-//! controller can arm a placement or a targeted order itself, its key arms
-//! it. `#[ignore]`d because each test spawns a real window; run them
+//! `inject-pad-down`, `inject-pad-up` and `inject-pad-stick` send. A drill
+//! arms a placement or a targeted order with its key, the shortest way in;
+//! `pad_ring.rs` drives the controller's own way in, the command ring on Y.
+//! `#[ignore]`d because each test spawns a real window; run them
 //! explicitly, under Xvfb where there is no display:
 //!
 //! ```sh
@@ -176,8 +177,7 @@ impl PadMatch {
         }
     }
 
-    /// Presses and lets go of `key`, which arms a mode as the radial menu
-    /// will once a controller can open it.
+    /// Presses and lets go of `key`, the shortest way to arm a mode.
     fn key(&mut self, key: Key) -> Result<()> {
         self.inject(RawEvent::KeyDown { key })?;
         self.inject(RawEvent::KeyUp { key })
@@ -376,7 +376,7 @@ fn sorted(ids: impl IntoIterator<Item = UnitId>) -> Vec<UnitId> {
 const OPEN: [f64; 2] = [31.5, 26.5];
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_picks_and_a_held_sweep_paints() -> Result<()> {
     let mut drill = PadMatch::spawn(44_311)?;
     let view = drill.load(&field())?;
@@ -411,7 +411,7 @@ fn a_picks_and_a_held_sweep_paints() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_double_tap_selects_that_kind_in_view() -> Result<()> {
     let mut drill = PadMatch::spawn(44_312)?;
     let view = drill.load(&field())?;
@@ -425,7 +425,7 @@ fn a_double_tap_selects_that_kind_in_view() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn x_gives_each_contextual_order() -> Result<()> {
     let mut drill = PadMatch::spawn(44_313)?;
 
@@ -537,7 +537,7 @@ fn drill_repair() -> Value {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn lt_queues_orders_and_rt_narrows_by_kind() -> Result<()> {
     let mut drill = PadMatch::spawn(44_314)?;
     let view = drill.load(&field())?;
@@ -600,16 +600,14 @@ fn lt_queues_orders_and_rt_narrows_by_kind() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn b_backs_out_of_a_mode_then_the_selection() -> Result<()> {
     let mut drill = PadMatch::spawn(44_315)?;
     let view = drill.load(&field())?;
     let lancer = unit_at(&view, 29, 20)?;
     drill.aim(tile(29, 20))?;
     drill.press(PadButton::South)?;
-    // No pad button arms a targeted order yet, so Hunt comes from its key.
-    drill.inject(RawEvent::KeyDown { key: Key::F })?;
-    drill.inject(RawEvent::KeyUp { key: Key::F })?;
+    drill.key(Key::F)?;
     drill.press(PadButton::East)?;
     let after = drill.order_at(OPEN)?;
     assert!(
@@ -629,7 +627,7 @@ fn b_backs_out_of_a_mode_then_the_selection() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn the_bumpers_select_the_army_and_the_army_in_view() -> Result<()> {
     let mut drill = PadMatch::spawn(44_316)?;
     let view = drill.load(&field())?;
@@ -650,7 +648,7 @@ fn the_bumpers_select_the_army_and_the_army_in_view() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn view_pauses_and_resumes_and_menu_opens_the_pause_menu() -> Result<()> {
     let mut drill = PadMatch::spawn(44_323)?;
     drill.load(&field())?;
@@ -691,7 +689,7 @@ fn sites(view: &StateView, kind: BuildingKind) -> Vec<[i32; 2]> {
 const BUILDER: [f64; 2] = [32.5, 23.5];
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_places_a_structure_centered_on_the_reticle() -> Result<()> {
     let mut drill = PadMatch::spawn(44_317)?;
     drill.load(&drill_build())?;
@@ -716,7 +714,7 @@ fn a_places_a_structure_centered_on_the_reticle() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_held_a_drags_a_row_of_barricades() -> Result<()> {
     let mut drill = PadMatch::spawn(44_318)?;
     drill.load(&drill_build())?;
@@ -737,7 +735,7 @@ fn a_held_a_drags_a_row_of_barricades() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_held_left_trigger_keeps_placing() -> Result<()> {
     let mut drill = PadMatch::spawn(44_319)?;
     drill.load(&drill_build())?;
@@ -766,7 +764,7 @@ fn a_held_left_trigger_keeps_placing() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_plain_a_after_the_left_trigger_replaces_the_chain_and_ends_placement() -> Result<()> {
     let mut drill = PadMatch::spawn(44_328)?;
     let view = drill.load(&drill_build())?;
@@ -805,7 +803,7 @@ fn a_plain_a_after_the_left_trigger_replaces_the_chain_and_ends_placement() -> R
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_refused_spot_builds_nothing_and_placement_stands() -> Result<()> {
     let mut drill = PadMatch::spawn(44_320)?;
     drill.load(&drill_build())?;
@@ -824,7 +822,7 @@ fn a_refused_spot_builds_nothing_and_placement_stands() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn b_backs_out_of_placement() -> Result<()> {
     let mut drill = PadMatch::spawn(44_321)?;
     drill.load(&drill_build())?;
@@ -878,7 +876,7 @@ fn drill_aim() -> Value {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_or_x_confirms_each_targeted_order() -> Result<()> {
     let mut drill = PadMatch::spawn(44_322)?;
     let lancer_tile = tile(29, 20);
@@ -986,7 +984,7 @@ fn a_or_x_confirms_each_targeted_order() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn rt_widens_one_kind_to_every_one_on_the_map() -> Result<()> {
     let mut drill = PadMatch::spawn(44_324)?;
     let view = drill.load(&field())?;
@@ -1015,7 +1013,7 @@ fn drill_salvo() -> Value {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn launch_takes_the_bumpers_over_to_fire_more() -> Result<()> {
     let mut drill = PadMatch::spawn(44_325)?;
     let view = drill.load(&drill_salvo())?;
@@ -1065,7 +1063,7 @@ fn drill_foundry() -> Value {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn the_left_stick_click_walks_and_cancels_the_queue() -> Result<()> {
     let mut drill = PadMatch::spawn(44_326)?;
     let view = drill.load(&drill_foundry())?;
@@ -1130,7 +1128,7 @@ fn the_left_stick_click_walks_and_cancels_the_queue() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_pad_hides_what_its_buttons_do_until_a_click() -> Result<()> {
     let mut drill = PadMatch::spawn(44_327)?;
     drill.load(&drill_foundry())?;
@@ -1196,7 +1194,7 @@ fn the_drills_build() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_remote_in_a_match_reaches_only_pause() -> Result<()> {
     const REMOTE: u64 = 9;
     let mut drill = PadMatch::spawn(44_330)?;
@@ -1256,7 +1254,7 @@ fn a_remote_in_a_match_reaches_only_pause() -> Result<()> {
 }
 
 #[test]
-#[ignore = "spawns a real window; run explicitly in the phase battery"]
+#[ignore = "spawns a real window; run with --ignored --test-threads 1"]
 fn a_remote_alone_holds_the_match_and_asks_for_a_controller() -> Result<()> {
     const REMOTE: u64 = 9;
     let mut drill = PadMatch::spawn(44_340)?;
