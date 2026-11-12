@@ -7,6 +7,7 @@ use aftermine_protocol::{Key, MouseButton, RawEvent};
 use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
 use aftermine_sim::{BuildingId, BuildingKind, Command, Scenario, UnitId, UnitKind};
 use macroquad::prelude::{Vec2, vec2};
+use std::fmt::Debug;
 
 /// Pixels per tile in [`scene`]: a tile is 32 logical pixels, so the
 /// reticle's 24-pixel reach is three quarters of a tile.
@@ -246,4 +247,78 @@ pub(crate) fn key_up(key: Key) -> RawEvent {
 /// A key pressed and released.
 pub(crate) fn keystroke(key: Key) -> [RawEvent; 2] {
     [key_down(key), key_up(key)]
+}
+
+/// Walks the press gesture every screen button keeps, pressing `armed` and
+/// letting go over `other` where a beat calls for the wrong place:
+///
+/// - a click dragged to `other` cancels, and a click in place commits;
+/// - finger 7 arms `armed`, finger 8 pressing, moving and lifting on
+///   `other` neither steals nor drops its press, and finger 7 lifting in
+///   place commits;
+/// - finger 9 arming `armed`, sliding to `other` and lifting there cancels;
+/// - finger 10 tapping `armed` commits.
+///
+/// `drive` feeds one frame to the screen and returns what the test watches
+/// and where the screen's pointer rests. A frame that commits nothing must
+/// leave the watch at `idle`, a commit gives `committed`, and a second
+/// finger never moves the pointer. The screen's own assertions follow the
+/// walk.
+#[track_caller]
+pub(crate) fn assert_press_contract<O: PartialEq + Debug>(
+    mut drive: impl FnMut(&[RawEvent]) -> (O, Vec2),
+    armed: Vec2,
+    other: Vec2,
+    idle: &O,
+    committed: &O,
+) {
+    let beats: [(&[RawEvent], &O, Option<Vec2>, &str); 7] = [
+        (
+            &[left_down(armed), left_up(other)],
+            idle,
+            None,
+            "a click dragged away cancels",
+        ),
+        (&click(armed), committed, None, "a click in place commits"),
+        (&[touch_down(7, armed)], idle, Some(armed), "a finger arms"),
+        (
+            &[
+                touch_down(8, other),
+                touch_move(8, other),
+                touch_up(8, other),
+            ],
+            idle,
+            Some(armed),
+            "a second finger neither steals nor resolves the press",
+        ),
+        (
+            &[touch_up(7, armed)],
+            committed,
+            Some(armed),
+            "the owner still holds its press",
+        ),
+        (
+            &[
+                touch_down(9, armed),
+                touch_move(9, other),
+                touch_up(9, other),
+            ],
+            idle,
+            None,
+            "the owner lifting elsewhere cancels",
+        ),
+        (
+            &tap(10, armed),
+            committed,
+            Some(armed),
+            "the next tap commits",
+        ),
+    ];
+    for (events, want, pointer, beat) in beats {
+        let (got, at) = drive(events);
+        assert_eq!(&got, want, "{beat}");
+        if let Some(pointer) = pointer {
+            assert_eq!(at, pointer, "{beat}: where the pointer rests");
+        }
+    }
 }

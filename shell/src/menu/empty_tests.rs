@@ -1,5 +1,7 @@
 use super::*;
-use crate::tests::support::{tap, touch_down, touch_move, touch_up};
+use crate::tests::support::{
+    assert_press_contract, mouse_move, tap, touch_down, touch_move, touch_up,
+};
 use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::vec2;
 
@@ -106,7 +108,7 @@ fn a_drag_that_began_on_a_row_never_commits_it() {
 }
 
 #[test]
-fn a_touch_gesture_belongs_to_its_first_finger_and_armed_row() {
+fn a_row_commits_only_when_its_own_press_lifts_on_it() {
     crate::render::set_viewport(1280.0, 800.0);
     let mut menu = Menu::list(
         "TOUCH",
@@ -116,19 +118,30 @@ fn a_touch_gesture_belongs_to_its_first_finger_and_armed_row() {
     let second = menu.item_rect(1).expect("second row").center();
     let mut mouse = vec2(0.0, 0.0);
 
-    assert_eq!(menu.handle(&[touch_down(7, second)], &mut mouse), None);
-    assert_eq!(menu.press.armed_touch(), Some((7, (1, false))));
+    assert_eq!(menu.handle(&[mouse_move(second)], &mut mouse), None);
+    assert_eq!(menu.view().hover, Some(1));
+    assert_eq!(menu.selected, 0, "hover is not keyboard selection");
 
-    // A second finger cannot steal or resolve the first finger's press.
-    assert_eq!(menu.handle(&tap(8, first), &mut mouse), None);
-    assert_eq!(menu.press.armed_touch(), Some((7, (1, false))));
-    assert_eq!(menu.selected, 0);
-
-    // The owning finger resolves on another row, so the gesture cancels.
-    assert_eq!(
-        menu.handle(&[touch_move(7, first), touch_up(7, first)], &mut mouse),
-        None
+    assert_press_contract(
+        |events| ((menu.handle(events, &mut mouse), menu.selected), mouse),
+        first,
+        second,
+        &(None, 0),
+        &(
+            Some(Activation {
+                value: 0,
+                column: None,
+            }),
+            0,
+        ),
     );
-    assert_eq!(menu.press.armed_touch(), None);
-    assert_eq!(menu.selected, 0);
+
+    assert_eq!(
+        menu.handle(&tap(1, second), &mut mouse),
+        Some(Activation {
+            value: 1,
+            column: None
+        })
+    );
+    assert_eq!(menu.selected, 1, "a committed press moves the selection");
 }

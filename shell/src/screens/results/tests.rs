@@ -1,7 +1,5 @@
 use super::*;
-use crate::tests::support::{
-    click, key_down, left_down, left_up, mouse_move, tap, touch_down, touch_move, touch_up,
-};
+use crate::tests::support::{assert_press_contract, key_down, mouse_move, tap};
 
 #[test]
 fn actions_fit_small_and_large_viewports() {
@@ -236,66 +234,7 @@ fn long_names_and_the_longest_bot_profile_stay_inside_the_player_column() {
 }
 
 #[test]
-fn touch_activation_requires_the_arming_finger_and_same_action() {
-    let viewport = vec2(640.0, 400.0);
-    let rematch = action_rects(4, viewport, 1.0)[0].center();
-    let watch = action_rects(4, viewport, 1.0)[1].center();
-    let mut screen = ResultsScreen::open(false);
-    let mut mouse = vec2(0.0, 0.0);
-    let mut sounds = Vec::new();
-
-    assert_eq!(
-        screen.update(
-            &[touch_down(7, watch)],
-            &mut mouse,
-            viewport,
-            1.0,
-            &mut sounds,
-        ),
-        Out::Stay
-    );
-    assert_eq!(screen.press.armed_touch(), Some((7, ResultAction::Watch)));
-
-    // A second finger cannot move or resolve the first finger's gesture.
-    assert_eq!(
-        screen.update(
-            &[touch_move(8, rematch), touch_up(8, rematch)],
-            &mut mouse,
-            viewport,
-            1.0,
-            &mut sounds,
-        ),
-        Out::Stay
-    );
-    assert_eq!(screen.press.armed_touch(), Some((7, ResultAction::Watch)));
-    assert_eq!(mouse, watch);
-
-    // The owning finger releases on another action, canceling the press.
-    assert_eq!(
-        screen.update(
-            &[touch_move(7, rematch), touch_up(7, rematch)],
-            &mut mouse,
-            viewport,
-            1.0,
-            &mut sounds,
-        ),
-        Out::Stay
-    );
-    assert_eq!(screen.press.armed_touch(), None);
-    assert_eq!(screen.selected(), 0);
-    assert!(sounds.is_empty(), "a canceled touch is silent");
-
-    // Cancellation releases ownership so the next gesture can commit.
-    assert_eq!(
-        screen.update(&tap(9, watch), &mut mouse, viewport, 1.0, &mut sounds),
-        Out::Watch
-    );
-    assert_eq!(screen.selected(), 1);
-    assert_eq!(sounds, vec![(SoundKind::Click, None)]);
-}
-
-#[test]
-fn mouse_hover_is_inert_and_clicks_commit_only_on_the_armed_action() {
+fn an_action_commits_only_when_its_own_press_lifts_on_it() {
     let viewport = vec2(640.0, 400.0);
     let rematch = action_rects(4, viewport, 1.0)[0].center();
     let watch = action_rects(4, viewport, 1.0)[1].center();
@@ -310,22 +249,26 @@ fn mouse_hover_is_inert_and_clicks_commit_only_on_the_armed_action() {
     assert_eq!(screen.hover(), Some(1));
     assert_eq!(screen.selected(), 0, "hover does not move the key cursor");
 
+    assert_press_contract(
+        |events| {
+            let out = screen.update(events, &mut mouse, viewport, 1.0, &mut sounds);
+            ((out, std::mem::take(&mut sounds), screen.selected()), mouse)
+        },
+        rematch,
+        watch,
+        &(Out::Stay, Vec::new(), 0),
+        &(Out::Rematch, vec![(SoundKind::Click, None)], 0),
+    );
+
     assert_eq!(
-        screen.update(
-            &[left_down(rematch), left_up(watch)],
-            &mut mouse,
-            viewport,
-            1.0,
-            &mut sounds,
-        ),
-        Out::Stay,
-        "dragging between actions cancels the click"
+        screen.update(&tap(1, watch), &mut mouse, viewport, 1.0, &mut sounds),
+        Out::Watch
     );
     assert_eq!(
-        screen.update(&click(rematch), &mut mouse, viewport, 1.0, &mut sounds),
-        Out::Rematch
+        screen.selected(),
+        1,
+        "a committed press moves the key cursor"
     );
-    assert_eq!(sounds, vec![(SoundKind::Click, None)]);
 }
 
 #[test]

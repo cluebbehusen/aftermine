@@ -1,6 +1,7 @@
 use super::*;
 use crate::tests::support::{
-    click, keystroke, left_down, left_up, tap, touch_down, touch_move, touch_up,
+    assert_press_contract, click, keystroke, left_down, left_up, tap, touch_down, touch_move,
+    touch_up,
 };
 use macroquad::prelude::vec2;
 
@@ -1097,71 +1098,7 @@ fn compact_setup_touch_only_edges_activate_every_editable_chip() {
 }
 
 #[test]
-fn setup_mouse_activation_requires_release_on_the_armed_cell() {
-    crate::render::set_viewport(1280.0, 800.0);
-    let (mut wizard, mut draft) = explicit_team_setup();
-    let scenario = draft.scenario.as_deref().expect("picked scenario");
-    let order = seat_display_order(scenario);
-    let layout = setup_layout(
-        scenario,
-        draft.seat_choice,
-        crate::render::viewport(),
-        crate::render::ui_scale(),
-    );
-    let row = 1;
-    let seat = order[row];
-    let seat_at = card(&layout, row).seat.center();
-    let team_at = card(&layout, row).team.center();
-    let stance_at = card(&layout, row).stance.unwrap().center();
-    let start_at = layout.start.unwrap().center();
-    let initial = draft.seats[seat];
-    let mut mouse = Vec2::ZERO;
-    let mut sounds = Vec::new();
-
-    let out = wizard
-        .update(
-            &[left_down(team_at), left_up(stance_at)],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(out, Out::Stay);
-    assert_eq!(draft.seats[seat], initial);
-    assert!(sounds.is_empty(), "a canceled click is silent");
-
-    let out = wizard
-        .update(&click(team_at), &mut mouse, &mut draft, &mut sounds)
-        .expect("update");
-    assert_eq!(out, Out::Stay);
-    assert_eq!(
-        draft.seats[seat].team_choice,
-        (initial.team_choice + 1) % (draft.seats.len() + 1)
-    );
-    assert_eq!(draft.seats[seat].stance, initial.stance);
-    assert_eq!(
-        wizard.cursor,
-        SetupCursor::Seat {
-            row,
-            cell: Cell::Team
-        }
-    );
-
-    let out = wizard
-        .update(&click(seat_at), &mut mouse, &mut draft, &mut sounds)
-        .expect("update");
-    assert_eq!(out, Out::Stay);
-    assert_eq!(draft.seat_choice, seat, "the clicked chair becomes human");
-
-    let out = wizard
-        .update(&click(start_at), &mut mouse, &mut draft, &mut sounds)
-        .expect("update");
-    assert_eq!(out, Out::Launch);
-    assert_eq!(sounds.len(), 3, "each committed click has one cue");
-}
-
-#[test]
-fn setup_touch_activation_belongs_to_its_first_finger_and_armed_cell() {
+fn a_setup_chip_commits_only_when_its_own_press_lifts_on_it() {
     crate::render::set_viewport(1280.0, 800.0);
     let (mut wizard, mut draft) = explicit_team_setup();
     let scenario = draft.scenario.as_deref().expect("picked scenario");
@@ -1175,81 +1112,33 @@ fn setup_touch_activation_belongs_to_its_first_finger_and_armed_cell() {
     let row = 1;
     let seat = order[row];
     let team = card(&layout, row).team;
-    let team_at = team.center();
     let stance_at = card(&layout, row).stance.unwrap().center();
+    let seat_at = card(&layout, row).seat.center();
+    let start_at = layout.start.unwrap().center();
     let initial = draft.seats[seat];
     let mut mouse = Vec2::ZERO;
     let mut sounds = Vec::new();
 
-    wizard
-        .update(
-            &[touch_down(7, team_at)],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(
-        wizard.setup_press.armed_touch(),
-        Some((
-            7,
-            SetupZone::Card {
-                row,
-                cell: Cell::Team
-            }
-        ))
+    // Letting go over the stance never touches it.
+    assert_press_contract(
+        |events| {
+            let out = wizard
+                .update(events, &mut mouse, &mut draft, &mut sounds)
+                .expect("update");
+            let cues = std::mem::take(&mut sounds);
+            ((out, cues, draft.seats[seat].stance), mouse)
+        },
+        team.center(),
+        stance_at,
+        &(Out::Stay, Vec::new(), initial.stance),
+        &(Out::Stay, vec![(SoundKind::Click, None)], initial.stance),
     );
-    assert_eq!(mouse, team_at);
-
-    // A second finger cannot steal or resolve the first finger's press.
-    wizard
-        .update(&tap(8, stance_at), &mut mouse, &mut draft, &mut sounds)
-        .expect("update");
-    assert_eq!(
-        wizard.setup_press.armed_touch(),
-        Some((
-            7,
-            SetupZone::Card {
-                row,
-                cell: Cell::Team
-            }
-        ))
-    );
-    assert_eq!(mouse, team_at);
-
-    // The owner releases over another cell, so the gesture cancels.
-    wizard
-        .update(
-            &[touch_move(7, stance_at), touch_up(7, stance_at)],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(wizard.setup_press.armed_touch(), None);
-    assert_eq!(draft.seats[seat], initial);
-    assert!(sounds.is_empty());
-
-    // A fresh gesture may move within the armed cell and still commit.
-    let inside = vec2(team.x + 2.0, team.y + 2.0);
-    let out = wizard
-        .update(
-            &[
-                touch_down(9, team_at),
-                touch_move(9, inside),
-                touch_up(9, inside),
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(out, Out::Stay);
+    let teams = draft.seats.len() + 1;
     assert_eq!(
         draft.seats[seat].team_choice,
-        (initial.team_choice + 1) % (draft.seats.len() + 1)
+        (initial.team_choice + 3) % teams,
+        "each committed press steps the team once"
     );
-    assert_eq!(draft.seats[seat].stance, initial.stance);
     assert_eq!(
         wizard.cursor,
         SetupCursor::Seat {
@@ -1257,7 +1146,33 @@ fn setup_touch_activation_belongs_to_its_first_finger_and_armed_cell() {
             cell: Cell::Team
         }
     );
-    assert_eq!(sounds, vec![(SoundKind::Click, None)]);
+
+    // A finger may wander inside the armed chip and still commit.
+    let inside = vec2(team.x + 2.0, team.y + 2.0);
+    let wander = [
+        touch_down(1, team.center()),
+        touch_move(1, inside),
+        touch_up(1, inside),
+    ];
+    wizard
+        .update(&wander, &mut mouse, &mut draft, &mut sounds)
+        .expect("update");
+    assert_eq!(
+        draft.seats[seat].team_choice,
+        (initial.team_choice + 4) % teams
+    );
+
+    let out = wizard
+        .update(&click(seat_at), &mut mouse, &mut draft, &mut sounds)
+        .expect("update");
+    assert_eq!(out, Out::Stay);
+    assert_eq!(draft.seat_choice, seat, "the clicked chair becomes human");
+
+    let out = wizard
+        .update(&click(start_at), &mut mouse, &mut draft, &mut sounds)
+        .expect("update");
+    assert_eq!(out, Out::Launch);
+    assert_eq!(sounds.len(), 3, "each committed press has one cue");
 }
 
 #[test]
