@@ -306,7 +306,7 @@ enum Cmd {
     /// Inspect a replay as stable JSON: metadata, command activity, outcome,
     /// and exact snapshots at selected simulation ticks.
     ReplayInspect {
-        /// Replay or save JSON path.
+        /// Replay path, JSON or `.amreplay`. A player save is refused.
         path: PathBuf,
         /// State ticks to capture, repeatable or comma-separated. Tick N is
         /// before commands stamped N execute. Defaults to the final tick.
@@ -324,7 +324,7 @@ enum Cmd {
     /// digests at intervals, and a coarse ASCII minimap. Large games read
     /// tighter with `--every 10000` or `--minimaps none`.
     ReplaySummary {
-        /// Replay or save JSON path.
+        /// Replay path, JSON or `.amreplay`. A player save is refused.
         path: PathBuf,
         /// Stop after this state tick (tick N is before commands stamped N
         /// execute); clamped to the replay's recorded duration.
@@ -359,8 +359,8 @@ enum Cmd {
         #[arg(short, long)]
         out: PathBuf,
     },
-    /// Timed mass-battle bench: ticks/second at scale, plus a hash
-    /// self-check. Wall-clock stays local; CI asserts only correctness.
+    /// Timed mass-battle bench: ticks per second and tick latency at scale.
+    /// It prints the final state hash for comparing runs but checks nothing.
     Bench {
         /// Units per side.
         #[arg(long, default_value_t = 250)]

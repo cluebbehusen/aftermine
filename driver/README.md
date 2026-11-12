@@ -40,7 +40,7 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
   headless run is not enough.
 - `profile_graphics` (`profile-graphics`) runs named frame workloads in the real
   shell and reports where each frame's time goes.
-- `ipad` (`cargo ipad`) and `tv` (`cargo tv`) build, install and launch the iPad
+- `device` (`cargo ipad` and `cargo tv`) builds, installs and launches the iPad
   and Apple TV apps.
 - `mac` (`cargo mac`) builds and opens the Mac app.
 
@@ -72,11 +72,11 @@ has the fixed workloads and size guards to compare a change against its base.
 
 ## Test suites
 
-- `tests/hashes.rs` runs six small scenarios without bots: economy,
-  construction, ground combat, air transport, fog and targeting, and team
-  victory. Each asserts the expected commands and events before comparing
-  milestone hashes from `tests/goldens/state-hashes.json`, which CI checks on
-  every platform.
+- `tests/hashes.rs` runs seven small scenarios without bots: economy,
+  construction, ground combat, air transport, fog and targeting, parking radar,
+  and team victory. Each asserts the expected commands and events before
+  comparing milestone hashes from `tests/goldens/state-hashes.json`, which CI
+  checks on every platform.
 - `tests/lockstep.rs` runs a netplay host and two clients in one process over
   delayed links on a virtual clock, and checks that every machine executes the
   same batches. It covers stalled, stuck, disconnected and diverged peers and a
