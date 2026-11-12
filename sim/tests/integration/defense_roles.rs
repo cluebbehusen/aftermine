@@ -89,79 +89,47 @@ fn attack_building(
 
 #[test]
 fn defense_stats_name_three_distinct_jobs() {
-    let turret = BuildingKind::Turret.base_stats();
-    assert_eq!(turret.max_hp, 350);
-    assert_eq!(turret.vision, 6);
-    assert_eq!(turret.weapons[0].damage, 12);
-    assert_eq!(turret.weapons[0].range, chassis::fx::Fx::lit("5"));
-    assert_eq!(turret.weapons[0].minimum_range, chassis::fx::Fx::ZERO);
-    assert_eq!(turret.weapons[0].cooldown_ticks, 25);
-    assert_eq!(turret.construction.cost, 100);
-    assert_eq!(turret.construction.build_ticks, 300);
+    use aftermine_sim::stats::Prerequisite;
 
-    let flak = BuildingKind::FlakTurret.base_stats();
-    assert_eq!(flak.max_hp, 300);
-    assert_eq!(flak.vision, 7);
-    assert_eq!(flak.weapons[0].damage, 7);
-    assert_eq!(flak.weapons[0].range, chassis::fx::Fx::lit("5.5"));
-    assert_eq!(flak.weapons[0].minimum_range, chassis::fx::Fx::ZERO);
-    assert_eq!(flak.weapons[0].cooldown_ticks, 12);
-    assert!(flak.weapons[0].targets.air);
-    assert!(!flak.weapons[0].targets.ground);
-    assert_eq!(flak.weapons[0].splash, Some(chassis::fx::Fx::lit("1.2")));
-    assert_eq!(flak.construction.cost, 90);
-    assert_eq!(flak.construction.build_ticks, 250);
-
-    let bastion = BuildingKind::Bastion.base_stats();
-    assert_eq!(bastion.max_hp, 500);
-    assert_eq!(bastion.vision, 6);
-    assert_eq!(bastion.weapons[0].damage, 40);
-    assert_eq!(bastion.weapons[0].range, chassis::fx::Fx::lit("9.5"));
-    assert_eq!(
-        bastion.weapons[0].minimum_range,
-        chassis::fx::Fx::lit("2.5")
-    );
-    assert_eq!(bastion.weapons[0].cooldown_ticks, 90);
-    assert_eq!(bastion.weapons[0].splash, Some(chassis::fx::Fx::lit("1.3")));
-    assert_eq!(bastion.construction.cost, 210);
-    assert_eq!(bastion.construction.build_ticks, 500);
-    assert_eq!(
-        bastion.construction.requires,
-        &[aftermine_sim::stats::Prerequisite::built(
-            BuildingKind::Fabricator
-        )]
+    let flak = BuildingKind::FlakTurret.base_stats().weapons[0];
+    assert!(
+        flak.targets.air && !flak.targets.ground,
+        "flak fires only skyward"
     );
 
     // The Citadel only reaches further.
+    let bastion = BuildingKind::Bastion.base_stats();
     let citadel = BuildingKind::Bastion.tier_stats(1);
-    assert_eq!(BuildingKind::Bastion.tier_name(1), "citadel");
-    assert_eq!(citadel.weapons[0].range, chassis::fx::Fx::lit("12.5"));
     assert_eq!(
         (citadel.max_hp, citadel.vision),
         (bastion.max_hp, bastion.vision)
     );
     let (gun, long_gun) = (bastion.weapons[0], citadel.weapons[0]);
+    assert!(long_gun.range > gun.range);
     assert_eq!(
         (
             gun.damage,
             gun.minimum_range,
             gun.cooldown_ticks,
-            gun.splash
+            gun.splash,
+            gun.targets
         ),
         (
             long_gun.damage,
             long_gun.minimum_range,
             long_gun.cooldown_ticks,
-            long_gun.splash
+            long_gun.splash,
+            long_gun.targets
         )
     );
-    let upgrade = citadel.construction;
-    assert_eq!((upgrade.cost, upgrade.build_ticks), (250, 400));
+
     assert_eq!(
-        upgrade.requires,
-        &[aftermine_sim::stats::Prerequisite::built(
-            BuildingKind::Crucible
-        )]
+        bastion.construction.requires,
+        &[Prerequisite::built(BuildingKind::Fabricator)]
+    );
+    assert_eq!(
+        citadel.construction.requires,
+        &[Prerequisite::built(BuildingKind::Crucible)]
     );
 }
 

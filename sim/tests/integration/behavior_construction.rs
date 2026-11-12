@@ -923,23 +923,22 @@ fn a_rejected_build_leaves_no_trace_on_the_hash() {
 #[test]
 fn same_tick_construction_cannot_absorb_a_lethal_hit() {
     use aftermine_sim::stats::BuildingKind;
-    // Chew a turret site to exactly the lancer's damage, then land the
-    // builder's resume and the lancer's shot on the same tick. The
-    // shooter aimed at a 30 hp site; one point of same-tick construction
-    // must not rescue it.
+    // Stop a turret site at exactly one lancer shot, then land the
+    // builder's resume and the lancer's shot on the same tick. One point of
+    // same-tick construction must not rescue it.
+    let gun = UnitKind::Lancer.stats().weapons[0];
+    let lethal = gun.building_damage.unwrap_or(gun.damage);
     let mut state = arena(vec![
         unit(0, UnitKind::Harvester, 4, 6),
-        unit(1, UnitKind::Sentinel, 12, 2),
         // Parked at exactly 5.5 from the site's closest point: in firing
-        // range, outside auto-acquire — it must not chew early.
+        // range, outside auto-acquire — it must not fire early.
         unit(1, UnitKind::Lancer, 11, 6),
     ])
     .build()
     .unwrap();
-    let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
-    let (builder, chewer, sniper) = (ids[0], ids[1], ids[2]);
+    let (builder, sniper) = (state.units()[0].id, state.units()[1].id);
     let anchor = TilePos::new(5, 6);
-    state.tick(&[cmd(
+    let build = cmd(
         0,
         Command::Build {
             units: vec![builder],
@@ -948,7 +947,8 @@ fn same_tick_construction_cannot_absorb_a_lethal_hit() {
             queue: false,
             defer: false,
         },
-    )]);
+    );
+    state.tick(std::slice::from_ref(&build));
     let site = state
         .buildings()
         .iter()
@@ -962,48 +962,24 @@ fn same_tick_construction_cannot_absorb_a_lethal_hit() {
             .unwrap_or(0)
             > 0
     });
-    // Freeze construction at exactly 70 hp (the first ramp step is zero).
     state.tick(&[cmd(
         0,
         Command::Stop {
             units: vec![builder],
         },
     )]);
-    assert_eq!(state.building(site).unwrap().hp, 70);
-    // Four sentinel hits take it to exactly 30.
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![chewer],
-            target: Target::Building(site).into(),
-            queue: false,
-        },
-    )]);
-    run_until(&mut state, 400, |s, _| {
-        s.building(site).is_some_and(|b| b.hp <= 30)
-    });
-    assert_eq!(state.building(site).unwrap().hp, 30, "clean 10s from 70");
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![chewer],
-            goal: TilePos::new(13, 1),
-            queue: false,
-        },
-    )]);
+    let mut doc = serde_json::to_value(&state).unwrap();
+    for row in doc["buildings"].as_array_mut().unwrap() {
+        if row["id"] == serde_json::json!(site) {
+            row["hp"] = serde_json::json!(lethal);
+        }
+    }
+    state = serde_json::from_value(doc).unwrap();
+    face_target(&mut state, sniper, Target::Building(site));
     // The finale: builder resumes and the lancer fires, same tick.
-    let mut events = state
+    let events = state
         .tick(&[
-            cmd(
-                0,
-                Command::Build {
-                    units: vec![builder],
-                    kind: BuildingKind::Turret,
-                    anchor,
-                    queue: false,
-                    defer: false,
-                },
-            ),
+            build,
             cmd(
                 1,
                 Command::Attack {
@@ -1014,9 +990,6 @@ fn same_tick_construction_cannot_absorb_a_lethal_hit() {
             ),
         ])
         .events;
-    if state.building(site).is_some() {
-        events.extend(run_until(&mut state, 5, |s, _| s.building(site).is_none()));
-    }
     assert!(
         events
             .iter()
