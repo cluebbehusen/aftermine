@@ -1,5 +1,7 @@
 use super::*;
-use crate::tests::support::{click, keystroke, left_down, left_up, tap, touch_down, touch_up};
+use crate::tests::support::{
+    click, keystroke, left_down, left_up, tap, touch_down, touch_up, typed,
+};
 use macroquad::prelude::vec2;
 
 /// Settings opened on `tab`.
@@ -458,7 +460,7 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     let refused = drive(&mut s, &mut config, &keystroke(Key::Enter), false);
     assert!(!refused.dirty, "a blank name keeps the form up");
     assert_eq!(s.mode_name(), "player_name");
-    let typed: Vec<RawEvent> = " Connor ".chars().map(|ch| RawEvent::Text { ch }).collect();
+    let typed = typed(" Connor ");
     drive(&mut s, &mut config, &typed, false);
     let saved = drive(&mut s, &mut config, &keystroke(Key::Enter), false);
     assert!(saved.dirty);

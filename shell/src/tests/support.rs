@@ -230,6 +230,11 @@ pub(crate) fn tap(id: u64, at: Vec2) -> [RawEvent; 2] {
     [touch_down(id, at), touch_up(id, at)]
 }
 
+/// `text` typed one character at a time.
+pub(crate) fn typed(text: &str) -> Vec<RawEvent> {
+    text.chars().map(|ch| RawEvent::Text { ch }).collect()
+}
+
 pub(crate) fn key_down(key: Key) -> RawEvent {
     RawEvent::KeyDown { key }
 }

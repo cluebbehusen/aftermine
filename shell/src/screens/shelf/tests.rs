@@ -1,6 +1,8 @@
 use super::*;
 use crate::saves::{RecordKind, Unavailable};
-use crate::tests::support::{click, left_down, left_up, tap, touch_down, touch_move, touch_up};
+use crate::tests::support::{
+    click, keystroke, left_down, left_up, tap, touch_down, touch_move, touch_up,
+};
 use aftermine_protocol::PadButton;
 use macroquad::prelude::vec2;
 
@@ -47,7 +49,7 @@ fn drive_events(shelf: &mut Shelf, events: &[RawEvent]) -> Out {
 }
 
 fn drive(shelf: &mut Shelf, key: Key) -> Out {
-    drive_events(shelf, &[RawEvent::KeyDown { key }, RawEvent::KeyUp { key }])
+    drive_events(shelf, &keystroke(key))
 }
 
 /// Moves the cursor to the titled row on the tab on show and activates

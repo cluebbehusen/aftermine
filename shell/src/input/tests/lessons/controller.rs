@@ -1,13 +1,10 @@
 //! Basic Training played the way each card words it to a controller alone:
 //! the reticle, A, X, the rings and the D-pad, through the same funnel.
 
+use super::super::pad_scene::{FRAME, PAD, down, left_stick, up};
 use super::*;
 use crate::input::HudHands;
 use aftermine_protocol::{PadButton, PadFamily};
-
-const PAD: u64 = 1;
-/// Seconds per simulated frame.
-const FRAME: f32 = 1.0 / 60.0;
 
 /// The paragraphs the card shows while an Xbox controller is in use.
 fn pad_copy(game: &Game) -> String {
@@ -61,21 +58,12 @@ fn pad_begin(lesson: Lesson) -> (Game, InputState) {
     (game, input)
 }
 
-fn stick(x: f32, y: f32) -> RawEvent {
-    RawEvent::PadStick {
-        pad: PAD,
-        stick: aftermine_protocol::Stick::Left,
-        x,
-        y,
-    }
-}
-
 fn hold(game: &mut Game, input: &mut InputState, button: PadButton) {
-    feed(game, input, &[RawEvent::PadDown { pad: PAD, button }]);
+    feed(game, input, &[down(button)]);
 }
 
 fn let_go(game: &mut Game, input: &mut InputState, button: PadButton) {
-    feed(game, input, &[RawEvent::PadUp { pad: PAD, button }]);
+    feed(game, input, &[up(button)]);
 }
 
 /// A press and release, well apart from the last, so it is no double tap.
@@ -106,9 +94,9 @@ fn aim(game: &mut Game, input: &mut InputState, title: &str) {
         .position(|name| *name == title)
         .unwrap_or_else(|| panic!("no {title} slice in {titles:?}"));
     let toward = crate::radial::slice_direction(index, titles.len());
-    feed(game, input, &[stick(toward.x, toward.y)]);
+    feed(game, input, &[left_stick(toward.x, toward.y)]);
     frame(game, input);
-    feed(game, input, &[stick(0.0, 0.0)]);
+    feed(game, input, &[left_stick(0.0, 0.0)]);
     frame(game, input);
 }
 
@@ -148,14 +136,14 @@ fn push_until(
     (x, y): (f32, f32),
     there: impl Fn(Vec2) -> bool,
 ) {
-    feed(game, input, &[stick(x, y)]);
+    feed(game, input, &[left_stick(x, y)]);
     for _ in 0..600 {
         if there(input.reticle.ground(&game.presentation.camera)) {
             break;
         }
         frame(game, input);
     }
-    feed(game, input, &[stick(0.0, 0.0)]);
+    feed(game, input, &[left_stick(0.0, 0.0)]);
     frame(game, input);
 }
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::tests::support::{click, tap, touch_down, touch_up};
+use crate::tests::support::{click, keystroke, tap, touch_down, touch_up, typed};
 use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
 
@@ -138,11 +138,7 @@ fn a_lan_leave_line_follows_the_seat_as_the_match_plays_on_under_the_menu() {
 fn drive(p: &mut PauseScreen, key: Key) -> Out {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    p.update(
-        &[RawEvent::KeyDown { key }, RawEvent::KeyUp { key }],
-        &mut mouse,
-        &mut sounds,
-    )
+    p.update(&keystroke(key), &mut mouse, &mut sounds)
 }
 
 /// Moves the cursor to the labeled row and activates it by label,
@@ -314,7 +310,7 @@ fn escape_cancels_the_save_failure_dialog_never_the_leave() {
 fn type_text(p: &mut PauseScreen, text: &str) {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    let events: Vec<RawEvent> = text.chars().map(|ch| RawEvent::Text { ch }).collect();
+    let events = typed(text);
     p.update(&events, &mut mouse, &mut sounds);
 }
 
@@ -577,7 +573,6 @@ fn the_name_field_names_the_keys_or_controller_buttons_in_use() {
 
 #[test]
 fn every_answer_to_a_pause_dialog_clicks() {
-    let key = |key| [RawEvent::KeyDown { key }, RawEvent::KeyUp { key }];
     let open_confirm = || {
         let mut p = PauseScreen::open(false, true);
         activate(&mut p, "Main menu");
@@ -598,7 +593,7 @@ fn every_answer_to_a_pause_dialog_clicks() {
         let mode = p.mode_name();
         let mut heard = Vec::new();
         for pressed in &keys {
-            heard = pointer(&mut p, &key(*pressed)).1;
+            heard = pointer(&mut p, &keystroke(*pressed)).1;
         }
         assert_eq!(heard, [SoundKind::Click], "{mode} after {keys:?}");
     }

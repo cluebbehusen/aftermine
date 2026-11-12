@@ -1,7 +1,6 @@
 use super::*;
-use crate::tests::support::{keystroke, touch_down, touch_up};
+use crate::tests::support::{click, keystroke, tap, touch_down, touch_up};
 use aftermine_protocol::Key;
-use aftermine_protocol::MouseButton;
 use macroquad::prelude::vec2;
 
 /// Every glyph half as wide as the size: deterministic and headless.
@@ -17,19 +16,7 @@ fn press(list: &mut LessonsScreen, events: &[RawEvent]) -> Out {
 
 /// A click (or, with `touch`, a tap) at `p`.
 fn at(p: Vec2, touch: bool) -> [RawEvent; 2] {
-    let (x, y) = (p.x, p.y);
-    if touch {
-        [
-            RawEvent::TouchDown { id: 3, x, y },
-            RawEvent::TouchUp { id: 3, x, y },
-        ]
-    } else {
-        let button = MouseButton::Left;
-        [
-            RawEvent::MouseDown { button, x, y },
-            RawEvent::MouseUp { button, x, y },
-        ]
-    }
+    if touch { tap(3, p) } else { click(p) }
 }
 
 fn start() -> Vec2 {

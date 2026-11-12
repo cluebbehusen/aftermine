@@ -1,6 +1,6 @@
 use super::*;
 use crate::netplay::{ClientLobby, Returning};
-use crate::tests::support::tap;
+use crate::tests::support::{keystroke, tap, typed};
 use macroquad::prelude::vec2;
 
 impl LobbyScreen {
@@ -18,14 +18,7 @@ fn feed(screen: &mut LobbyScreen, events: &[RawEvent]) -> Out {
 }
 
 fn press(screen: &mut LobbyScreen, key: Key) -> Out {
-    feed(
-        screen,
-        &[RawEvent::KeyDown { key }, RawEvent::KeyUp { key }],
-    )
-}
-
-fn typed(text: &str) -> Vec<RawEvent> {
-    text.chars().map(|ch| RawEvent::Text { ch }).collect()
+    feed(screen, &keystroke(key))
 }
 
 fn join(name: &str, address: &str) -> Out {

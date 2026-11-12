@@ -1,15 +1,11 @@
 use super::*;
-use crate::tests::support::{key_down, tap};
+use crate::tests::support::{key_down, tap, typed};
 use macroquad::prelude::vec2;
 
 fn feed(form: &mut Form, events: &[RawEvent]) -> (Edit, Vec<SoundKind>) {
     let mut sounds = Vec::new();
     let edit = form.update(events, &mut sounds);
     (edit, sounds.into_iter().map(|(kind, _)| kind).collect())
-}
-
-fn text(value: &str) -> Vec<RawEvent> {
-    value.chars().map(|ch| RawEvent::Text { ch }).collect()
 }
 
 fn single(value: &str, max: usize) -> Form {
@@ -54,14 +50,14 @@ fn a_field_filters_caps_and_commits_a_trimmed_value() {
         vec!["abc_"],
         "the prefill is filtered"
     );
-    feed(&mut form, &text("def"));
+    feed(&mut form, &typed("def"));
     assert_eq!(
         form.menu(|_| ()).view().items,
         vec!["abcde_"],
         "the cap refuses more"
     );
     feed(&mut form, &[key_down(Key::Backspace)]);
-    feed(&mut form, &text(" "));
+    feed(&mut form, &typed(" "));
     assert_eq!(feed(&mut form, &[key_down(Key::Enter)]).0, Edit::Commit);
     assert_eq!(form.value(0), "abcd");
 }
@@ -75,7 +71,7 @@ fn a_blank_field_refuses_to_commit_and_escape_cancels() {
     assert_eq!(sounds, vec![SoundKind::Denied]);
     assert_eq!(form.error, Some("type something first"));
     assert_eq!(form.error_line().as_deref(), Some("Type something first"));
-    feed(&mut form, &text("a"));
+    feed(&mut form, &typed("a"));
     assert_eq!(form.error, None, "an edit clears the refusal");
     assert_eq!(feed(&mut form, &[key_down(Key::Escape)]).0, Edit::Cancel);
     let mut form = single("x", 10);
@@ -111,7 +107,7 @@ fn a_form_without_cancel_spans_its_confirm_across_the_fields() {
 fn typing_lands_in_the_focused_field_and_focus_moves_by_key_and_tap() {
     crate::render::set_viewport(1280.0, 800.0);
     let mut form = pair("", "", 0);
-    feed(&mut form, &text("Al1"));
+    feed(&mut form, &typed("Al1"));
     assert_eq!(
         form.menu(|i| i).view().items,
         vec!["Name: Al_", "Code: "],
@@ -119,7 +115,7 @@ fn typing_lands_in_the_focused_field_and_focus_moves_by_key_and_tap() {
     );
     assert_eq!(form.keyboard(), Keyboard::Text);
     feed(&mut form, &[key_down(Key::Tab)]);
-    feed(&mut form, &text("42"));
+    feed(&mut form, &typed("42"));
     assert_eq!(form.menu(|i| i).view().items, vec!["Name: Al", "Code: 42_"]);
     assert_eq!(form.menu(|i| i).selected, 1);
     assert_eq!(form.keyboard(), Keyboard::Address);
@@ -139,7 +135,7 @@ fn typing_lands_in_the_focused_field_and_focus_moves_by_key_and_tap() {
 fn enter_advances_then_commits_and_a_bad_field_takes_focus_with_its_reason() {
     crate::render::set_viewport(1280.0, 800.0);
     let mut form = pair("", "12x", 0);
-    feed(&mut form, &text("Al"));
+    feed(&mut form, &typed("Al"));
     assert_eq!(feed(&mut form, &[key_down(Key::Enter)]).0, Edit::Stay);
     assert_eq!(form.focus, 1, "Enter moves on from the name");
     let (edit, sounds) = feed(&mut form, &[key_down(Key::Enter)]);
@@ -152,7 +148,7 @@ fn enter_advances_then_commits_and_a_bad_field_takes_focus_with_its_reason() {
     feed(&mut form, &tap(1, layout.confirm.center()));
     assert_eq!(form.focus, 0, "the blank name takes focus");
     assert_eq!(form.error, Some("type something first"));
-    feed(&mut form, &text("Al"));
+    feed(&mut form, &typed("Al"));
     assert_eq!(
         feed(&mut form, &tap(1, layout.confirm.center())).0,
         Edit::Commit

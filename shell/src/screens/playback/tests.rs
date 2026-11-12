@@ -2,7 +2,7 @@ use super::*;
 use crate::camera::controls::RemoteMode;
 use crate::game::Game;
 use crate::tests::support::{
-    click, left_down, left_up, mouse_move, tap, touch_down, touch_move, touch_up,
+    click, keystroke, left_down, left_up, mouse_move, tap, touch_down, touch_move, touch_up,
 };
 use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
@@ -109,7 +109,7 @@ fn key_with(session: &mut PlaybackSession, bindings: &crate::action::BindingMap,
     let mut mouse = vec2(0.0, 0.0);
     let leave = session.update(
         bindings,
-        &[RawEvent::KeyDown { key }, RawEvent::KeyUp { key }],
+        &keystroke(key),
         0.0,
         vec2(1280.0, 800.0),
         crate::config::CameraPrefs::default(),
