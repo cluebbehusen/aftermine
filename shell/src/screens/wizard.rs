@@ -633,6 +633,15 @@ impl SetupCursor {
         }
     }
 
+    /// The seat row the map preview rings: only a seat card holds the
+    /// focus, so the switch and Start ring none.
+    fn focused_row(self) -> Option<usize> {
+        match self {
+            Self::Seat { row, .. } => Some(row),
+            Self::Switch { .. } | Self::Start { .. } => None,
+        }
+    }
+
     /// The row the page follows among `cards` seat cards, Start counting
     /// as the row past them.
     fn row(self, cards: usize) -> usize {
@@ -2038,7 +2047,11 @@ impl Wizard {
         };
         if let Some((preview, theme)) = preview {
             let drawn = draw_preview(&preview, theme, layout.preview, ui);
-            let focus = order.get(self.cursor.row(order.len())).copied();
+            let focus = self
+                .cursor
+                .focused_row()
+                .and_then(|row| order.get(row))
+                .copied();
             draw_seat_markers(scenario, &styles, drawn, draft.seat_choice, focus, ui);
         }
 
