@@ -1,50 +1,21 @@
 //! End-to-end contract coverage for `aftermine-driver replay-ledger`.
 
+#[path = "support/cli.rs"]
+mod cli;
+
 use aftermine_kit::GameReplay;
 use aftermine_sim::{SIM_VERSION, Scenario};
 use chassis::replay::Replay;
+use cli::{Scratch, TempReplay, driver, refused, succeeded};
 use serde_json::Value;
-use std::path::PathBuf;
-use std::process::{Command, Output};
-
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "aftermine-replay-ledger-cli-{name}-{}",
-        std::process::id()
-    ));
-    std::fs::remove_dir_all(&dir).ok();
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn ledger(args: &[&std::ffi::OsStr]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .arg("replay-ledger")
-        .args(args)
-        .output()
-        .expect("run replay-ledger")
-}
-
-/// A skirmish replay of `ticks` idle ticks.
-fn replay(dir: &std::path::Path, ticks: u64) -> PathBuf {
-    let mut replay: GameReplay = Replay::new(SIM_VERSION, "test", Scenario::skirmish());
-    replay.meta.ticks = Some(ticks);
-    let path = dir.join("skirmish.json");
-    replay.save(&path).expect("save generated replay fixture");
-    path
-}
 
 #[test]
 fn a_replay_ledger_reports_every_seat_as_json_and_text() {
-    let dir = scratch("contract");
-    let path = replay(&dir, 3_000);
-    let output = ledger(&[path.as_os_str(), "--json".as_ref()]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let games: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let mut replay: GameReplay = Replay::new(SIM_VERSION, "test", Scenario::skirmish());
+    replay.meta.ticks = Some(3_000);
+    let path = TempReplay::save("replay-ledger", &replay);
+    let json = succeeded(driver().arg("replay-ledger").arg(&*path).arg("--json"));
+    let games: Value = serde_json::from_str(&json).unwrap();
     let [game] = games.as_array().unwrap().as_slice() else {
         panic!("{games}");
     };
@@ -62,26 +33,16 @@ fn a_replay_ledger_reports_every_seat_as_json_and_text() {
         );
     }
 
-    let output = ledger(&[path.as_os_str(), path.as_os_str()]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let text = String::from_utf8(output.stdout).unwrap();
+    let text = succeeded(driver().arg("replay-ledger").arg(&*path).arg(&*path));
     assert!(text.starts_with("2 games"), "{text}");
     assert!(text.contains("income"), "{text}");
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn a_player_save_is_refused_for_its_missing_history() {
-    let dir = scratch("save");
+    let dir = Scratch::new("replay-ledger-save");
     let save = dir.join("game.amsave");
     std::fs::write(&save, b"AFTERSAV\0header").unwrap();
-    let output = ledger(&[save.as_os_str()]);
-    assert!(!output.status.success());
-    let error = String::from_utf8_lossy(&output.stderr);
+    let error = refused(driver().arg("replay-ledger").arg(&save));
     assert!(error.contains("match recording"), "{error}");
-    std::fs::remove_dir_all(dir).unwrap();
 }

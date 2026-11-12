@@ -1,37 +1,13 @@
 //! End-to-end contract coverage for `aftermine-driver bot-ladder` and
 //! `bot-ladder-report`.
 
+#[path = "support/cli.rs"]
+mod cli;
+
+use cli::{Scratch, driver, jsonl, refused, succeeded};
 use serde_json::Value;
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "aftermine-bot-ladder-cli-{name}-{}",
-        std::process::id()
-    ));
-    std::fs::remove_dir_all(&dir).ok();
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn driver(args: &[&OsStr]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args(args)
-        .output()
-        .expect("run aftermine-driver")
-}
-
-fn succeeded(output: &Output) -> String {
-    assert!(
-        output.status.success(),
-        "stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout.clone()).unwrap()
-}
+use std::process::Command;
 
 /// Writes a one-comparison ladder over Skirmish at 24 ticks.
 fn manifest(dir: &Path) -> PathBuf {
@@ -54,34 +30,29 @@ fn manifest(dir: &Path) -> PathBuf {
     path
 }
 
-fn ladder(manifest: &Path, out: &Path, replays: &Path) -> Output {
-    driver(&[
-        "bot-ladder".as_ref(),
-        manifest.as_os_str(),
-        "--jobs".as_ref(),
-        "2".as_ref(),
-        "--out".as_ref(),
-        out.as_os_str(),
-        "--replay-dir".as_ref(),
-        replays.as_os_str(),
-    ])
+fn ladder(manifest: &Path, out: &Path, replays: &Path) -> Command {
+    let mut command = driver();
+    command
+        .arg("bot-ladder")
+        .arg(manifest)
+        .args(["--jobs", "2", "--out"])
+        .arg(out)
+        .arg("--replay-dir")
+        .arg(replays);
+    command
 }
 
 #[test]
 fn a_ladder_writes_paired_rows_and_reports_them_against_the_gate() {
-    let dir = scratch("one-pair");
+    let dir = Scratch::new("bot-ladder-one-pair");
     let manifest = manifest(&dir);
     let (out, replays) = (dir.join("out"), dir.join("replays"));
-    let report = succeeded(&ladder(&manifest, &out, &replays));
+    let report = succeeded(&mut ladder(&manifest, &out, &replays));
     assert!(
         report.contains("prime against scrapheap: too few decided pairs"),
         "{report}"
     );
-    let rows: Vec<Value> = std::fs::read_to_string(out.join("rows.jsonl"))
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
+    let rows = jsonl(&std::fs::read_to_string(out.join("rows.jsonl")).unwrap());
     assert_eq!(rows.len(), 2);
     for (row, (leg, rungs)) in rows.iter().zip([
         ("forward", ["prime", "scrapheap"]),
@@ -96,7 +67,7 @@ fn a_ladder_writes_paired_rows_and_reports_them_against_the_gate() {
         }
         let replay = row["replay"].as_str().unwrap();
         assert!(Path::new(replay).exists());
-        let summary = succeeded(&driver(&["replay-summary".as_ref(), replay.as_ref()]));
+        let summary = succeeded(driver().args(["replay-summary", replay]));
         for rung in rungs {
             assert!(
                 summary.contains(&format!("bot ({rung} / balanced, personality seed 9000)")),
@@ -106,40 +77,40 @@ fn a_ladder_writes_paired_rows_and_reports_them_against_the_gate() {
     }
     assert!(replays.join("legs.jsonl").exists());
 
-    let json = succeeded(&driver(&[
-        "bot-ladder-report".as_ref(),
-        out.join("rows.jsonl").as_os_str(),
-        "--json".as_ref(),
-    ]));
+    let json = succeeded(
+        driver()
+            .arg("bot-ladder-report")
+            .arg(out.join("rows.jsonl"))
+            .arg("--json"),
+    );
     let json: Value = serde_json::from_str(&json).unwrap();
     assert_eq!(json["comparisons"][0]["overall"]["legs"], 2);
     assert_eq!(json["comparisons"][0]["verdict"], "too_few_pairs");
 
-    let again = ladder(&manifest, &out, &dir.join("replays-again"));
-    assert!(!again.status.success(), "existing rows are never replaced");
-    std::fs::remove_dir_all(dir).unwrap();
+    let again = refused(&mut ladder(&manifest, &out, &dir.join("replays-again")));
+    assert!(
+        again.contains("refusing to overwrite"),
+        "existing rows are never replaced: {again}"
+    );
 }
 
 #[test]
 fn the_report_refuses_rows_from_bot_eval() {
-    let dir = scratch("not-ladder");
+    let dir = Scratch::new("bot-ladder-not-ladder");
     let rows = dir.join("rows.jsonl");
-    succeeded(&driver(&[
-        "bot-eval".as_ref(),
-        "skirmish".as_ref(),
-        "--ticks".as_ref(),
-        "1".as_ref(),
-        "--candidate".as_ref(),
-        "cli".as_ref(),
-        "--out".as_ref(),
-        rows.as_os_str(),
-    ]));
-    let report = driver(&["bot-ladder-report".as_ref(), rows.as_os_str()]);
-    assert!(!report.status.success());
-    assert!(
-        String::from_utf8_lossy(&report.stderr).contains("is not a bot-ladder row"),
-        "{}",
-        String::from_utf8_lossy(&report.stderr)
+    succeeded(
+        driver()
+            .args([
+                "bot-eval",
+                "skirmish",
+                "--ticks",
+                "1",
+                "--candidate",
+                "cli",
+                "--out",
+            ])
+            .arg(&rows),
     );
-    std::fs::remove_dir_all(dir).unwrap();
+    let stderr = refused(driver().arg("bot-ladder-report").arg(&rows));
+    assert!(stderr.contains("is not a bot-ladder row"), "{stderr}");
 }

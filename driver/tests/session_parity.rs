@@ -13,6 +13,9 @@
 //!     cargo test -p aftermine-driver --test session_parity -- --ignored
 //! ```
 
+#[path = "support/cli.rs"]
+mod cli;
+
 use aftermine_driver::auto::ScratchShell;
 use aftermine_driver::client::Client;
 use aftermine_driver::session::{Session, serve_listener};
@@ -21,36 +24,9 @@ use aftermine_protocol::framing::Limits;
 use aftermine_protocol::{Reply, Request, StateFilter, hash_hex};
 use aftermine_sim::{Command, PlayerId, Scenario};
 use anyhow::{Context, Result, bail};
+use cli::Scratch;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static NEXT_SCRATCH: AtomicU64 = AtomicU64::new(0);
-
-/// A private scratch directory, removed on drop.
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Self {
-        let id = NEXT_SCRATCH.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "aftermine-session-parity-{}-{id}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&path).expect("create scratch dir");
-        Self(path)
-    }
-
-    fn path(&self, name: &str) -> String {
-        self.0.join(name).to_string_lossy().into_owned()
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).ok();
-    }
-}
 
 /// Serves a fresh skirmish session on an ephemeral port and connects.
 fn session_client() -> Result<Client> {
@@ -102,7 +78,7 @@ fn the_session_advances_exactly_like_the_canonical_runner() {
 
 #[test]
 fn every_live_verb_works_headless_over_tcp_and_the_record_reproduces() -> Result<()> {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("session-parity");
     let mut client = session_client()?;
 
     // Status: always driven mode.
@@ -151,7 +127,7 @@ fn every_live_verb_works_headless_over_tcp_and_the_record_reproduces() -> Result
     assert!(missing.to_string().contains("no such player"));
 
     // CPU screenshot: a real PNG, labeled with its renderer.
-    let shot_path = scratch.path("shot.png");
+    let shot_path = scratch.join("shot.png").to_string_lossy().into_owned();
     let Reply::Screenshot(shot) = client.call(Request::Screenshot {
         path: Some(shot_path.clone()),
     })?
@@ -165,7 +141,7 @@ fn every_live_verb_works_headless_over_tcp_and_the_record_reproduces() -> Result
     // Save-is-a-replay: the session's record re-executes to the hash the
     // session itself reports, the same check the live shell's smoke test
     // runs.
-    let replay_path = scratch.path("session.json");
+    let replay_path = scratch.join("session.json").to_string_lossy().into_owned();
     let Reply::Saved(saved) = client.call(Request::SaveReplay {
         path: replay_path.clone(),
     })?
@@ -240,7 +216,7 @@ fn the_live_shell_and_the_headless_session_answer_identically() -> Result<()> {
         .to_string_lossy()
         .into_owned();
 
-    let mut window = ScratchShell::new("session-parity")?;
+    let mut window = ScratchShell::new("session-parity-live")?;
     let mut shell = window.spawn(4177, true)?;
     let mut headless = session_client()?;
 

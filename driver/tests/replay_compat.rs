@@ -1,12 +1,12 @@
 //! Checks at the replay file-loading boundary and the `replay` command.
 
+#[path = "support/cli.rs"]
+mod cli;
+
 use aftermine_kit::GameReplay;
 use aftermine_sim::{SIM_VERSION, Scenario};
 use chassis::replay::ReplayError;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
+use cli::{TempReplay, driver, jsonl, refused, succeeded};
 
 #[test]
 fn checkpoint_origins_reach_every_read_only_replay_surface() {
@@ -18,12 +18,8 @@ fn checkpoint_origins_reach_every_read_only_replay_surface() {
     let origin = aftermine_kit::recording::WorldOrigin::capture(&scenario, &state).unwrap();
     let mut replay = GameReplay::with_origin(SIM_VERSION, "test", scenario, origin).unwrap();
     replay.meta.ticks = Some(43);
-    let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
-    let file = TempReplay(
-        std::env::temp_dir().join(format!("aftermine-origin-{}-{id}.json", std::process::id())),
-    );
-    replay.save(&file.0).unwrap();
-    let replay = aftermine_kit::load_replay(&file.0).unwrap();
+    let file = TempReplay::save("origin", &replay);
+    let replay = aftermine_kit::load_replay(&*file).unwrap();
     let report =
         aftermine_driver::replay_inspect::inspect(&replay, &[37, 43], None, false).unwrap();
     assert_eq!(report.start_tick, 37);
@@ -158,49 +154,21 @@ fn checkpoint_exploration_deltas_count_only_new_scouting() {
     );
 }
 
-struct TempReplay(PathBuf);
-
-impl Drop for TempReplay {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
-}
-
-fn foreign_version_replay() -> TempReplay {
-    let mut replay: GameReplay = GameReplay::new(SIM_VERSION + 1, "test", Scenario::skirmish());
-    replay.meta.ticks = Some(0);
-    let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!(
-        "aftermine-foreign-version-replay-{}-{id}.json",
-        std::process::id()
-    ));
-    std::fs::write(
-        &path,
-        serde_json::to_vec(&replay).expect("fixture serializes"),
-    )
-    .expect("fixture is written");
-    TempReplay(path)
-}
-
 #[test]
 fn a_foreign_version_replay_is_refused_at_version_validation() {
-    let fixture = foreign_version_replay();
-    let replay = aftermine_kit::load_replay(&fixture.0).expect("the current setup shape loads");
+    let mut replay: GameReplay = GameReplay::new(SIM_VERSION + 1, "test", Scenario::skirmish());
+    replay.meta.ticks = Some(0);
+    let fixture = TempReplay::save("foreign-version-replay", &replay);
+    let replay = aftermine_kit::load_replay(&*fixture).expect("the current setup shape loads");
     assert!(matches!(
         replay.validate(Some(SIM_VERSION)),
         Err(ReplayError::VersionMismatch { .. })
     ));
 
-    let refused = std::process::Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .arg("replay")
-        .arg(&fixture.0)
-        .output()
-        .expect("run replay");
-    assert!(!refused.status.success());
+    let stderr = refused(driver().arg("replay").arg(&*fixture));
     assert!(
-        String::from_utf8_lossy(&refused.stderr).contains("replay was recorded on sim"),
-        "the replay command should refuse at version validation: {}",
-        String::from_utf8_lossy(&refused.stderr)
+        stderr.contains("replay was recorded on sim"),
+        "the replay command should refuse at version validation: {stderr}"
     );
 }
 
@@ -208,30 +176,8 @@ fn a_foreign_version_replay_is_refused_at_version_validation() {
 fn hash_every_lines_repeat_exactly_and_end_at_the_final_hash() {
     let mut replay = GameReplay::new(SIM_VERSION, "test", Scenario::skirmish());
     replay.meta.ticks = Some(25);
-    let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
-    let file = TempReplay(std::env::temp_dir().join(format!(
-        "aftermine-hash-every-{}-{id}.json",
-        std::process::id()
-    )));
-    replay.save(&file.0).unwrap();
-    let run = |extra: &[&str]| {
-        let output = std::process::Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-            .arg("replay")
-            .arg(&file.0)
-            .args(extra)
-            .output()
-            .expect("run replay");
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8(output.stdout)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-            .collect::<Vec<_>>()
-    };
+    let file = TempReplay::save("hash-every", &replay);
+    let run = |extra: &[&str]| jsonl(&succeeded(driver().arg("replay").arg(&*file).args(extra)));
     let lines = run(&["--hash-every", "10"]);
     assert_eq!(lines, run(&["--hash-every", "10"]));
     let ticks: Vec<_> = lines.iter().map(|line| line["tick"].as_u64()).collect();
@@ -258,32 +204,19 @@ fn until_runs_a_prefix_while_a_short_ticks_override_still_refuses() {
         },
     );
     replay.meta.ticks = Some(200);
-    let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
-    let file = TempReplay(
-        std::env::temp_dir().join(format!("aftermine-until-{}-{id}.json", std::process::id())),
-    );
-    replay.save(&file.0).unwrap();
-    let run = |extra: &[&str]| {
-        std::process::Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-            .arg("replay")
-            .arg(&file.0)
-            .args(extra)
-            .output()
-            .expect("run replay")
+    let file = TempReplay::save("until", &replay);
+    let run = || {
+        let mut command = driver();
+        command.arg("replay").arg(&*file);
+        command
     };
-    let prefix = run(&["--until", "50", "--hash-every", "25"]);
-    assert!(
-        prefix.status.success(),
-        "{}",
-        String::from_utf8_lossy(&prefix.stderr)
-    );
-    let ticks: Vec<_> = String::from_utf8(prefix.stdout)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap()["tick"].as_u64())
-        .collect();
+    let prefix = jsonl(&succeeded(run().args([
+        "--until",
+        "50",
+        "--hash-every",
+        "25",
+    ])));
+    let ticks: Vec<_> = prefix.iter().map(|line| line["tick"].as_u64()).collect();
     assert_eq!(ticks, [Some(25), Some(50), Some(50)]);
-    let truncated = run(&["--ticks", "50"]);
-    assert!(!truncated.status.success());
-    assert!(String::from_utf8_lossy(&truncated.stderr).contains("unconsumed"));
+    assert!(refused(run().args(["--ticks", "50"])).contains("unconsumed"));
 }

@@ -1,7 +1,10 @@
 //! End-to-end contract coverage for `aftermine-driver bot-eval`.
 
+#[path = "support/cli.rs"]
+mod cli;
+
+use cli::{Scratch, driver, jsonl, refused, succeeded};
 use serde_json::Value;
-use std::process::Command;
 
 #[test]
 fn retired_controller_flags_are_rejected() {
@@ -17,80 +20,58 @@ fn retired_controller_flags_are_rejected() {
 
 #[test]
 fn replay_evidence_requires_its_jsonl_sidecar() {
-    let dir = scratch("replay-sidecar-required");
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "1",
-            "--candidate",
-            "candidate-a",
-            "--replay-dir",
-        ])
-        .arg(dir.join("replays"))
-        .output()
-        .expect("run replay-only evaluation");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let dir = Scratch::new("bot-eval-replay-sidecar");
+    let stderr = refused(
+        driver()
+            .args([
+                "bot-eval",
+                "skirmish",
+                "--ticks",
+                "1",
+                "--candidate",
+                "candidate-a",
+                "--replay-dir",
+            ])
+            .arg(dir.join("replays")),
+    );
     assert!(
         stderr.contains("--out") && stderr.contains("required"),
         "replay-only refusal should name the required sidecar: {stderr}"
     );
     assert!(!dir.join("replays").exists());
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn bot_eval_supports_a_severed_ground_map() {
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../scenarios/severance.json"),
-            "--ticks",
-            "1",
-        ])
-        .output()
-        .expect("run an current-controller evaluation on a severed map");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    succeeded(driver().args([
+        "bot-eval",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../scenarios/severance.json"),
+        "--ticks",
+        "1",
+    ]));
 }
 
 #[test]
 fn a_zero_stall_loop_limit_disables_the_early_stop() {
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "1",
-            "--stall-loop-limit",
-            "0",
-        ])
-        .output()
-        .expect("run a bot evaluation without the loop stop");
-    assert!(
-        output.status.success(),
-        "bot-eval failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).expect("JSONL is UTF-8");
-    let row: Value = serde_json::from_str(stdout.lines().next().expect("one row")).unwrap();
+    let rows = jsonl(&succeeded(driver().args([
+        "bot-eval",
+        "skirmish",
+        "--ticks",
+        "1",
+        "--stall-loop-limit",
+        "0",
+    ])));
+    let row = &rows[0];
     assert_eq!(row["stall_loop_limit"], Value::Null);
     assert_eq!(row["termination"], "tick_limit");
 }
 
 fn assert_skirmish_bot_eval_refuses(args: &[&str], expected: &[&str]) {
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args(["bot-eval", "skirmish", "--ticks", "1"])
-        .args(args)
-        .output()
-        .expect("run invalid bot evaluation");
-    assert!(!output.status.success(), "invalid options were accepted");
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = refused(
+        driver()
+            .args(["bot-eval", "skirmish", "--ticks", "1"])
+            .args(args),
+    );
     for fragment in expected {
         assert!(
             stderr.contains(fragment),
@@ -101,33 +82,19 @@ fn assert_skirmish_bot_eval_refuses(args: &[&str], expected: &[&str]) {
 
 #[test]
 fn paired_cell_emits_two_compact_rows_with_profiles_exchanged() {
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "1",
-            "--personality-seed-base",
-            "40",
-            "--difficulty",
-            "prime",
-            "--stance",
-            "aggressive",
-            "--paired",
-        ])
-        .output()
-        .expect("run paired bot evaluation");
-    assert!(
-        output.status.success(),
-        "bot-eval failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stdout = String::from_utf8(output.stdout).expect("JSONL is UTF-8");
-    let rows: Vec<Value> = stdout
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("each line is one JSON object"))
-        .collect();
+    let rows = jsonl(&succeeded(driver().args([
+        "bot-eval",
+        "skirmish",
+        "--ticks",
+        "1",
+        "--personality-seed-base",
+        "40",
+        "--difficulty",
+        "prime",
+        "--stance",
+        "aggressive",
+        "--paired",
+    ])));
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0]["leg"], "forward");
     assert_eq!(rows[1]["leg"], "swapped");
@@ -167,36 +134,22 @@ fn paired_cell_emits_two_compact_rows_with_profiles_exchanged() {
 
 #[test]
 fn cross_difficulty_cells_share_personality_and_swap_complete_configs() {
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "1",
-            "--runs",
-            "2",
-            "--personality-seed-base",
-            "40",
-            "--difficulty",
-            "prime",
-            "--opponent-difficulty",
-            "scrapheap",
-            "--same-personality-seed",
-            "--paired",
-        ])
-        .output()
-        .expect("run cross-difficulty bot evaluation");
-    assert!(
-        output.status.success(),
-        "bot-eval failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stdout = String::from_utf8(output.stdout).expect("JSONL is UTF-8");
-    let rows: Vec<Value> = stdout
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("each line is one JSON object"))
-        .collect();
+    let rows = jsonl(&succeeded(driver().args([
+        "bot-eval",
+        "skirmish",
+        "--ticks",
+        "1",
+        "--runs",
+        "2",
+        "--personality-seed-base",
+        "40",
+        "--difficulty",
+        "prime",
+        "--opponent-difficulty",
+        "scrapheap",
+        "--same-personality-seed",
+        "--paired",
+    ])));
     assert_eq!(rows.len(), 4);
 
     let (cells, remainder) = rows.as_chunks::<2>();
@@ -232,48 +185,39 @@ fn cross_difficulty_cells_share_personality_and_swap_complete_configs() {
 
 #[test]
 fn every_persisted_row_replays_to_its_reported_terminal_state() {
-    let dir = scratch("replay-integrity");
+    let dir = Scratch::new("bot-eval-replay-integrity");
     let replay_dir = dir.join("replays");
     let out = dir.join("rows.jsonl");
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "3",
-            "--runs",
-            "2",
-            "--personality-seed-base",
-            "40",
-            "--difficulty",
-            "prime",
-            "--stance",
-            "aggressive",
-            "--opponent-difficulty",
-            "veteran",
-            "--opponent-stance",
-            "turtle",
-            "--paired",
-            "--candidate",
-            "candidate-a",
-            "--out",
-        ])
-        .arg(&out)
-        .arg("--replay-dir")
-        .arg(&replay_dir)
-        .output()
-        .expect("run evidence-producing evaluation");
-    assert!(
-        output.status.success(),
-        "bot-eval failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+    succeeded(
+        driver()
+            .args([
+                "bot-eval",
+                "skirmish",
+                "--ticks",
+                "3",
+                "--runs",
+                "2",
+                "--personality-seed-base",
+                "40",
+                "--difficulty",
+                "prime",
+                "--stance",
+                "aggressive",
+                "--opponent-difficulty",
+                "veteran",
+                "--opponent-stance",
+                "turtle",
+                "--paired",
+                "--candidate",
+                "candidate-a",
+                "--out",
+            ])
+            .arg(&out)
+            .arg("--replay-dir")
+            .arg(&replay_dir),
     );
 
-    let rows: Vec<Value> = String::from_utf8(std::fs::read(&out).unwrap())
-        .expect("JSONL is UTF-8")
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("each line is one JSON object"))
-        .collect();
+    let rows = jsonl(&std::fs::read_to_string(&out).unwrap());
     assert_eq!(rows.len(), 4, "two runs times two paired legs");
 
     for row in &rows {
@@ -322,54 +266,39 @@ fn every_persisted_row_replays_to_its_reported_terminal_state() {
     }
 
     assert_eq!(std::fs::read_dir(&replay_dir).unwrap().count(), rows.len());
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn opponent_override_refuses_an_ambiguous_multiseat_scenario() {
     let scenario =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios/compass-grand.json");
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .arg("bot-eval")
-        .arg(scenario)
-        .args(["--ticks", "1", "--opponent-difficulty", "prime"])
-        .output()
-        .expect("run invalid multiseat bot evaluation");
-    assert!(!output.status.success());
+    let stderr = refused(driver().arg("bot-eval").arg(scenario).args([
+        "--ticks",
+        "1",
+        "--opponent-difficulty",
+        "prime",
+    ]));
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("require exactly two seats"),
-        "multiseat refusal was unclear: {}",
-        String::from_utf8_lossy(&output.stderr)
+        stderr.contains("require exactly two seats"),
+        "multiseat refusal was unclear: {stderr}"
     );
-}
-
-fn scratch(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "aftermine-bot-eval-cli-{name}-{}",
-        std::process::id()
-    ));
-    std::fs::remove_dir_all(&dir).ok();
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
 }
 
 #[test]
 fn persisted_evidence_requires_an_explicit_candidate() {
-    let dir = scratch("candidate-required");
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args(["bot-eval", "skirmish", "--ticks", "1", "--out"])
-        .arg(dir.join("rows.jsonl"))
-        .output()
-        .expect("run persisted bot evaluation");
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("--candidate is required"));
+    let dir = Scratch::new("bot-eval-candidate-required");
+    let stderr = refused(
+        driver()
+            .args(["bot-eval", "skirmish", "--ticks", "1", "--out"])
+            .arg(dir.join("rows.jsonl")),
+    );
+    assert!(stderr.contains("--candidate is required"));
     assert!(!dir.join("rows.jsonl").exists());
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn a_later_invalid_scenario_publishes_no_partial_evidence() {
-    let dir = scratch("prevalidation");
+    let dir = Scratch::new("bot-eval-prevalidation");
     let invalid = dir.join("invalid.json");
     let shipped = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../fixtures/scenarios/skirmish.json");
@@ -380,27 +309,24 @@ fn a_later_invalid_scenario_publishes_no_partial_evidence() {
     let replay_dir = dir.join("replays");
     let out = dir.join("rows.jsonl");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args(["bot-eval", "skirmish"])
-        .arg(&invalid)
-        .args(["--ticks", "1", "--candidate", "candidate-a", "--out"])
-        .arg(&out)
-        .arg("--replay-dir")
-        .arg(&replay_dir)
-        .output()
-        .expect("run invalid evaluation batch");
-    assert!(!output.status.success());
+    let stderr = refused(
+        driver()
+            .args(["bot-eval", "skirmish"])
+            .arg(&invalid)
+            .args(["--ticks", "1", "--candidate", "candidate-a", "--out"])
+            .arg(&out)
+            .arg("--replay-dir")
+            .arg(&replay_dir),
+    );
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("needs 1 to 16 players"),
-        "unexpected refusal: {}",
-        String::from_utf8_lossy(&output.stderr)
+        stderr.contains("needs 1 to 16 players"),
+        "unexpected refusal: {stderr}"
     );
     assert!(!out.exists(), "the JSONL index was not published");
     assert!(
         !replay_dir.exists() || std::fs::read_dir(&replay_dir).unwrap().next().is_none(),
         "the valid first scenario left replay or staging evidence behind"
     );
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -413,51 +339,48 @@ fn overflowing_seed_ranges_publish_no_partial_evidence() {
     )];
 
     for (name, option, seed, expected) in cases {
-        let dir = scratch(&format!("{name}-seed-overflow"));
+        let dir = Scratch::new(&format!("bot-eval-{name}-seed-overflow"));
         let replay_dir = dir.join("replays");
         let out = dir.join("rows.jsonl");
-        let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-            .args([
-                "bot-eval",
-                "skirmish",
-                "--ticks",
-                "1",
-                "--runs",
-                "2",
-                option,
-                &seed,
-                "--candidate",
-                "candidate-a",
-                "--out",
-            ])
-            .arg(&out)
-            .arg("--replay-dir")
-            .arg(&replay_dir)
-            .output()
-            .expect("run overflowing evaluation batch");
-
-        assert!(!output.status.success());
+        let stderr = refused(
+            driver()
+                .args([
+                    "bot-eval",
+                    "skirmish",
+                    "--ticks",
+                    "1",
+                    "--runs",
+                    "2",
+                    option,
+                    &seed,
+                    "--candidate",
+                    "candidate-a",
+                    "--out",
+                ])
+                .arg(&out)
+                .arg("--replay-dir")
+                .arg(&replay_dir),
+        );
         assert!(
-            String::from_utf8_lossy(&output.stderr).contains(expected),
-            "unexpected {name} seed refusal: {}",
-            String::from_utf8_lossy(&output.stderr)
+            stderr.contains(expected),
+            "unexpected {name} seed refusal: {stderr}"
         );
         assert!(!out.exists(), "the JSONL index was not published");
         assert!(
             !replay_dir.exists() || std::fs::read_dir(&replay_dir).unwrap().next().is_none(),
             "the completed first seed cell left evidence behind"
         );
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }
 
 #[test]
 fn rerunning_one_exact_candidate_refuses_to_replace_its_evidence() {
-    let dir = scratch("no-overwrite");
+    let dir = Scratch::new("bot-eval-no-overwrite");
     let replay_dir = dir.join("replays");
     let out = dir.join("rows.jsonl");
     let run = || {
-        Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
+        let mut command = driver();
+        command
             .args([
                 "bot-eval",
                 "skirmish",
@@ -469,17 +392,11 @@ fn rerunning_one_exact_candidate_refuses_to_replace_its_evidence() {
             ])
             .arg(&out)
             .arg("--replay-dir")
-            .arg(&replay_dir)
-            .output()
-            .expect("run evidence-producing evaluation")
+            .arg(&replay_dir);
+        command
     };
 
-    let first = run();
-    assert!(
-        first.status.success(),
-        "first evaluation failed: {}",
-        String::from_utf8_lossy(&first.stderr)
-    );
+    succeeded(&mut run());
     let original_index = std::fs::read(&out).unwrap();
     let replay_paths: Vec<_> = std::fs::read_dir(&replay_dir)
         .unwrap()
@@ -488,40 +405,35 @@ fn rerunning_one_exact_candidate_refuses_to_replace_its_evidence() {
     assert_eq!(replay_paths.len(), 1);
     let original_replay = std::fs::read(&replay_paths[0]).unwrap();
 
-    let second = run();
-    assert!(!second.status.success());
+    let stderr = refused(&mut run());
     assert!(
-        String::from_utf8_lossy(&second.stderr).contains("refusing to overwrite"),
-        "unexpected refusal: {}",
-        String::from_utf8_lossy(&second.stderr)
+        stderr.contains("refusing to overwrite"),
+        "unexpected refusal: {stderr}"
     );
     assert_eq!(std::fs::read(&out).unwrap(), original_index);
     assert_eq!(std::fs::read(&replay_paths[0]).unwrap(), original_replay);
     assert_eq!(std::fs::read_dir(&replay_dir).unwrap().count(), 1);
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn decision_trace_requires_a_persisted_index_and_candidate() {
-    let dir = scratch("trace-contract");
+    let dir = Scratch::new("bot-eval-trace-contract");
     let trace = dir.join("trace.jsonl");
     let out = dir.join("rows.jsonl");
 
-    let without_index = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "1",
-            "--candidate",
-            "candidate-a",
-            "--decision-trace-out",
-        ])
-        .arg(&trace)
-        .output()
-        .expect("run trace-only evaluation");
-    assert!(!without_index.status.success());
-    let stderr = String::from_utf8_lossy(&without_index.stderr);
+    let stderr = refused(
+        driver()
+            .args([
+                "bot-eval",
+                "skirmish",
+                "--ticks",
+                "1",
+                "--candidate",
+                "candidate-a",
+                "--decision-trace-out",
+            ])
+            .arg(&trace),
+    );
     assert!(
         stderr.contains("--decision-trace-out")
             && stderr.contains("--out")
@@ -529,52 +441,48 @@ fn decision_trace_requires_a_persisted_index_and_candidate() {
         "trace-only refusal was unclear: {stderr}"
     );
 
-    let without_candidate = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args(["bot-eval", "skirmish", "--ticks", "1", "--out"])
-        .arg(&out)
-        .arg("--decision-trace-out")
-        .arg(&trace)
-        .output()
-        .expect("run persisted trace without a candidate");
-    assert!(!without_candidate.status.success());
-    assert!(String::from_utf8_lossy(&without_candidate.stderr).contains("--candidate is required"));
+    let stderr = refused(
+        driver()
+            .args(["bot-eval", "skirmish", "--ticks", "1", "--out"])
+            .arg(&out)
+            .arg("--decision-trace-out")
+            .arg(&trace),
+    );
+    assert!(stderr.contains("--candidate is required"));
     assert!(!out.exists());
     assert!(!trace.exists());
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn decision_trace_is_deterministic_opt_in_evidence_for_both_seats() {
-    let first = scratch("trace-determinism-first");
-    let second = scratch("trace-determinism-second");
+    let first = Scratch::new("bot-eval-trace-determinism");
+    let second = Scratch::new("bot-eval-trace-determinism");
 
     let run = |dir: &std::path::Path| {
         let out = dir.join("rows.jsonl");
         let trace = dir.join("trace.jsonl");
-        let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-            .args([
-                "bot-eval",
-                "skirmish",
-                "--ticks",
-                "25",
-                "--paired",
-                "--personality-seed-base",
-                "40",
-                "--candidate",
-                "candidate-a",
-                "--out",
-            ])
-            .arg(&out)
-            .arg("--decision-trace-out")
-            .arg(&trace)
-            .output()
-            .expect("run traced current-controller evaluation");
-        assert!(
-            output.status.success(),
-            "traced bot-eval failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+        succeeded(
+            driver()
+                .args([
+                    "bot-eval",
+                    "skirmish",
+                    "--ticks",
+                    "25",
+                    "--paired",
+                    "--personality-seed-base",
+                    "40",
+                    "--candidate",
+                    "candidate-a",
+                    "--out",
+                ])
+                .arg(&out)
+                .arg("--decision-trace-out")
+                .arg(&trace),
         );
-        (std::fs::read(out).unwrap(), std::fs::read(trace).unwrap())
+        (
+            std::fs::read_to_string(out).unwrap(),
+            std::fs::read_to_string(trace).unwrap(),
+        )
     };
 
     let (first_rows, first_trace) = run(&first);
@@ -588,36 +496,24 @@ fn decision_trace_is_deterministic_opt_in_evidence_for_both_seats() {
         "decision trace JSONL must stay deterministic"
     );
 
-    let without_trace = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "25",
-            "--paired",
-            "--personality-seed-base",
-            "40",
-            "--candidate",
-            "candidate-a",
-        ])
-        .output()
-        .expect("run ordinary current-controller evaluation");
-    assert!(without_trace.status.success());
+    let without_trace = succeeded(driver().args([
+        "bot-eval",
+        "skirmish",
+        "--ticks",
+        "25",
+        "--paired",
+        "--personality-seed-base",
+        "40",
+        "--candidate",
+        "candidate-a",
+    ]));
     assert_eq!(
-        without_trace.stdout, first_rows,
+        without_trace, first_rows,
         "enabling trace output must not change normal evaluation rows"
     );
 
-    let rows: Vec<Value> = String::from_utf8(first_rows)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    let traces: Vec<Value> = String::from_utf8(first_trace)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
+    let rows = jsonl(&first_rows);
+    let traces = jsonl(&first_trace);
     assert_eq!(rows.len(), 2);
     assert!(!traces.is_empty());
     assert!(rows.iter().all(|row| row.get("trace").is_none()));
@@ -634,78 +530,70 @@ fn decision_trace_is_deterministic_opt_in_evidence_for_both_seats() {
         assert_eq!(trace["tick"], trace["trace"]["tick"]);
         assert!(trace["tick"].as_u64().unwrap() < evaluation["duration_ticks"].as_u64().unwrap());
     }
-
-    std::fs::remove_dir_all(first).unwrap();
-    std::fs::remove_dir_all(second).unwrap();
 }
 
 #[test]
 fn decision_trace_refuses_overwrite_before_publishing_other_evidence() {
-    let dir = scratch("trace-no-overwrite");
+    let dir = Scratch::new("bot-eval-trace-no-overwrite");
     let out = dir.join("rows.jsonl");
     let trace = dir.join("trace.jsonl");
     std::fs::write(&trace, b"earlier trace").unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "1",
-            "--candidate",
-            "candidate-a",
-            "--out",
-        ])
-        .arg(&out)
-        .arg("--decision-trace-out")
-        .arg(&trace)
-        .output()
-        .expect("run evaluation against existing trace evidence");
-    assert!(!output.status.success());
+    let stderr = refused(
+        driver()
+            .args([
+                "bot-eval",
+                "skirmish",
+                "--ticks",
+                "1",
+                "--candidate",
+                "candidate-a",
+                "--out",
+            ])
+            .arg(&out)
+            .arg("--decision-trace-out")
+            .arg(&trace),
+    );
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("refusing to overwrite"),
-        "unexpected refusal: {}",
-        String::from_utf8_lossy(&output.stderr)
+        stderr.contains("refusing to overwrite"),
+        "unexpected refusal: {stderr}"
     );
     assert_eq!(std::fs::read(&trace).unwrap(), b"earlier trace");
     assert!(!out.exists());
-    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
-    std::fs::remove_dir_all(dir).unwrap();
+    assert_eq!(std::fs::read_dir(&*dir).unwrap().count(), 1);
 }
 
 #[test]
 fn staged_trace_is_cleaned_up_when_replay_staging_fails() {
-    let dir = scratch("trace-stage-cleanup");
+    let dir = Scratch::new("bot-eval-trace-stage-cleanup");
     let out = dir.join("rows.jsonl");
     let trace = dir.join("trace.jsonl");
     let replay_blocker = dir.join("not-a-directory");
     std::fs::write(&replay_blocker, b"keep me").unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .args([
-            "bot-eval",
-            "skirmish",
-            "--ticks",
-            "1",
-            "--candidate",
-            "candidate-a",
-            "--out",
-        ])
-        .arg(&out)
-        .arg("--decision-trace-out")
-        .arg(&trace)
-        .arg("--replay-dir")
-        .arg(&replay_blocker)
-        .output()
-        .expect("run evaluation with an invalid replay directory");
-    assert!(!output.status.success());
+    refused(
+        driver()
+            .args([
+                "bot-eval",
+                "skirmish",
+                "--ticks",
+                "1",
+                "--candidate",
+                "candidate-a",
+                "--out",
+            ])
+            .arg(&out)
+            .arg("--decision-trace-out")
+            .arg(&trace)
+            .arg("--replay-dir")
+            .arg(&replay_blocker),
+    );
     assert_eq!(std::fs::read(&replay_blocker).unwrap(), b"keep me");
     assert!(!out.exists());
     assert!(!trace.exists());
     assert_eq!(
-        std::fs::read_dir(&dir).unwrap().count(),
+        std::fs::read_dir(&*dir).unwrap().count(),
         1,
         "private trace staging files must be removed on another evidence failure"
     );
-    std::fs::remove_dir_all(dir).unwrap();
 }
