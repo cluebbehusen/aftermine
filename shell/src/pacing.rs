@@ -31,6 +31,10 @@ const NOMINAL: Rate = Rate(60_000);
 /// The fastest any session's clock runs.
 const TOP_SPEED: u32 = 64;
 
+/// How long a still screen must go without input before it drops to the
+/// idle rate, so a list stepped through by repeated presses stays smooth.
+const QUIET: Duration = Duration::from_secs(1);
+
 /// The fewest ticks a frame may catch up: the top speed's share of a 60 Hz
 /// frame, with an eighth to spare. A LAN match runs at 1x and never owes
 /// more.
@@ -139,6 +143,42 @@ pub(crate) fn label(setting: FrameRate, refresh: Option<Refresh>) -> String {
         (Some(refresh), _) => refresh.every(divisor(setting, refresh)).label(),
         (None, FrameRate::Capped(fps)) => fps_label(fps),
         (None, FrameRate::Full) => "Full".to_owned(),
+    }
+}
+
+/// How many refreshes each frame spans: one where the session runs
+/// `uncapped` or the refresh is unknown, the slowest choice while the screen
+/// holds `still`, and otherwise the setting's.
+pub(crate) fn pace(
+    setting: FrameRate,
+    refresh: Option<Refresh>,
+    still: bool,
+    uncapped: bool,
+) -> u32 {
+    match refresh {
+        Some(refresh) if !uncapped && still => refresh.slowest(),
+        Some(refresh) if !uncapped => divisor(setting, refresh),
+        _ => 1,
+    }
+}
+
+/// When the player last gave any input, which tells a still screen left
+/// alone from one in use.
+#[derive(Debug, Default)]
+pub(crate) struct Quiet {
+    heard: Option<Duration>,
+}
+
+impl Quiet {
+    /// Notes input heard at `now`.
+    pub(crate) fn hear(&mut self, now: Duration) {
+        self.heard = Some(now);
+    }
+
+    /// Whether no input has come for [`QUIET`] as of `now`.
+    pub(crate) fn quiet(&self, now: Duration) -> bool {
+        self.heard
+            .is_none_or(|heard| now.saturating_sub(heard) >= QUIET)
     }
 }
 

@@ -88,3 +88,43 @@ fn a_setting_reads_as_the_rate_it_gives() {
     );
     assert_eq!(label(FrameRate::Full, None), "Full");
 }
+
+#[test]
+fn a_still_screen_idles_at_the_slowest_choice_and_harnesses_run_uncapped() {
+    let refresh = Some(display(120.0));
+    assert_eq!(pace(FrameRate::Full, refresh, false, false), 1);
+    assert_eq!(pace(FrameRate::Capped(60), refresh, false, false), 2);
+    assert_eq!(pace(FrameRate::Full, refresh, true, false), 4, "idle at 30");
+    assert_eq!(pace(FrameRate::Capped(40), refresh, true, false), 4);
+    assert_eq!(
+        pace(FrameRate::Full, Some(display(40.0)), true, false),
+        1,
+        "nothing slower to drop to"
+    );
+    for still in [false, true] {
+        assert_eq!(
+            pace(FrameRate::Capped(30), refresh, still, true),
+            1,
+            "uncapped"
+        );
+        assert_eq!(
+            pace(FrameRate::Capped(30), None, still, false),
+            1,
+            "unknown refresh"
+        );
+    }
+}
+
+#[test]
+fn a_screen_turns_quiet_a_second_after_the_last_input() {
+    let ms = std::time::Duration::from_millis;
+    let mut quiet = Quiet::default();
+    assert!(quiet.quiet(ms(0)), "nothing heard yet");
+    quiet.hear(ms(500));
+    assert!(!quiet.quiet(ms(500)));
+    assert!(!quiet.quiet(ms(1_499)));
+    assert!(quiet.quiet(ms(1_500)));
+    quiet.hear(ms(1_600));
+    assert!(!quiet.quiet(ms(2_000)), "new input starts the wait over");
+    assert!(quiet.quiet(ms(2_600)));
+}

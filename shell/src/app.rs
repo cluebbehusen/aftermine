@@ -171,6 +171,9 @@ struct App {
     /// The rate frames present at, which sizes each frame's catch-up work;
     /// none while the refresh is unknown.
     paced: Option<crate::pacing::Rate>,
+    /// When the player last gave input, which holds a still screen at its
+    /// full rate for a moment.
+    quiet: crate::pacing::Quiet,
 }
 
 /// A viewer over the live match's record so far; the match waits untouched.
@@ -379,6 +382,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         clock: std::time::Instant::now(),
         refresh: None,
         paced: None,
+        quiet: crate::pacing::Quiet::default(),
     };
     // A rerun pass re-enters the loop inside the same presented frame;
     // the frame's starting screen is the one recorded before it.
@@ -486,6 +490,9 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             events
         });
         events.append(&mut app.injected);
+        if !events.is_empty() {
+            app.quiet.hear(app.clock.elapsed());
+        }
         // Start-of-frame modifier truth, saved before the fold below:
         // the Controls capture replays this frame's edges in order from
         // this baseline, so a chord fully pressed AND released inside
@@ -711,6 +718,15 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             began_playing,
             screen.kind() == ScreenKind::Playing,
         );
+        // Harnesses and measurements see every frame the display offers.
+        let uncapped = app.args.debug_server || app.args.automation || app.frame_profiler.enabled();
+        let interval = crate::pacing::pace(
+            app.config.frame_rate,
+            app.refresh,
+            app.idle(&screen, held),
+            uncapped,
+        );
+        app.paced = app.refresh.map(|refresh| refresh.every(interval));
         let wait_diagnostic_scope = visible_stage(&screen, &app, Stage::Present);
         next_frame().await;
         drop(wait_diagnostic_scope);
@@ -869,6 +885,16 @@ impl App {
     fn save_settings(&mut self) {
         self.settings_sync.push(&self.config);
         self.settings_writer.save(&self.config);
+    }
+
+    /// Whether the frame loop may drop to the idle rate: the screen holds
+    /// still, the player has left it alone, and no LAN link needs a timely
+    /// pump.
+    fn idle(&self, screen: &Screen, held: bool) -> bool {
+        self.net.is_none()
+            && self.lingering.is_none()
+            && self.quiet.quiet(self.clock.elapsed())
+            && screen.still(&self.game, held, render::reduced_motion())
     }
 
     /// The refresh whose frame rates Settings offers. An automation shell
