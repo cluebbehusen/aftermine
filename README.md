@@ -103,6 +103,25 @@ Aftermine is pre-launch, so saves and replays from other builds are not
 supported. [`docs/versioning.md`](docs/versioning.md) explains what changes at
 launch.
 
+## LAN play
+
+Every machine must run a build of the same commit. The host switches match setup
+to LAN, which opens the other seats and shows the address to join. Other players
+pick Join match, enter a name, and choose the host from the list or type its
+address (the port defaults to 4200). The host can move or remove players and
+starts once every open seat is filled. Tailscale and other routed networks need
+the typed address.
+
+From the command line, `--host` opens match setup on a scenario with its LAN
+lobby already listening on that address. The host takes the first seat the
+scenario leaves to a human (`"bot": false`), and presses Start once the others
+have joined:
+
+```sh
+cargo run -p aftermine-shell --release -- --host 0.0.0.0:4200 --scenario duel.json
+cargo run -p aftermine-shell --release -- --join 192.168.1.20:4200
+```
+
 ## Architecture
 
 Each crate owns one layer of the game and has its own README with its purpose,
