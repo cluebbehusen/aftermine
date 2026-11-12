@@ -59,10 +59,12 @@ similar_names = "allow"
 # the OpenGL view the shell renders with blank on iOS. It also reads game
 # controllers on Apple platforms through GameController, the Siri Remote
 # included, which no miniquad release does, and it links for tvOS: releases use
-# objc-rs 0.2, which falls back to the GNUstep runtime there. Drop the patch
+# objc-rs 0.2, which falls back to the GNUstep runtime there. It also reports
+# the display's refresh and presents on every nth refresh on every desktop and
+# Apple platform, which the frame rate setting paces through. Drop the patch
 # once releases carry these changes.
 [patch.crates-io]
-miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "32804d66b00601fb7137c3237b8e4f8438d813f1" }
+miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "8c4066ef929343126059d0e70e55037ab260033e" }
 
 # quad-snd, macroquad's audio library, has no backend for tvOS, and on iOS and
 # tvOS it leaves the audio session in its default category, which stops other

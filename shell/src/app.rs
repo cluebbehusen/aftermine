@@ -174,6 +174,9 @@ struct App {
     /// When the player last gave input, which holds a still screen at its
     /// full rate for a moment.
     quiet: crate::pacing::Quiet,
+    /// The frame interval last asked of the platform; none before the
+    /// first ask.
+    interval: Option<u32>,
 }
 
 /// A viewer over the live match's record so far; the match waits untouched.
@@ -188,9 +191,6 @@ fn live_playback(game: &Game) -> Result<PlaybackSession> {
 
 #[expect(clippy::too_many_lines, reason = "startup and the native frame loop")]
 pub(crate) async fn run(args: Args) -> Result<()> {
-    // miniquad paces iOS at 60 fps unless asked for the display's full
-    // rate, 120 Hz on ProMotion iPads. Other platforms ignore the request.
-    macroquad::miniquad::window::set_preferred_frame_rate(None);
     crate::paths::look_up_cloud();
     let review_font = std::env::var_os("AFTERMINE_REVIEW_FONT")
         .map(std::fs::read)
@@ -383,6 +383,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         refresh: None,
         paced: None,
         quiet: crate::pacing::Quiet::default(),
+        interval: None,
     };
     // A rerun pass re-enters the loop inside the same presented frame;
     // the frame's starting screen is the one recorded before it.
@@ -399,6 +400,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             Some(Ok(_)) | None => {}
         }
         app.report_settings();
+        // The display can change under the window, as when it moves to
+        // another display.
+        app.refresh =
+            macroquad::miniquad::window::refresh_rate().and_then(crate::pacing::Refresh::from_hz);
         let visible = screen.visible(&app.game);
         aftermine_kit::diagnostics::frame(aftermine_kit::diagnostics::FrameContext {
             screen: screen.profile_mode(),
@@ -726,6 +731,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             app.idle(&screen, held),
             uncapped,
         );
+        if app.interval != Some(interval) {
+            macroquad::miniquad::window::set_frame_interval(interval);
+            app.interval = Some(interval);
+        }
         app.paced = app.refresh.map(|refresh| refresh.every(interval));
         let wait_diagnostic_scope = visible_stage(&screen, &app, Stage::Present);
         next_frame().await;
