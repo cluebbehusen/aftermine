@@ -1559,7 +1559,7 @@ fn grid_entries(n: usize) -> Vec<ScenarioEntry> {
             label: format!("m{i}"),
             blurb: None,
             path: Some(PathBuf::from(format!("m{i}.json"))),
-            theme: String::new(),
+            theme: None,
         })
         .collect()
 }

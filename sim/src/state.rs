@@ -3541,11 +3541,7 @@ impl State {
             })
             .map(|b| ChargeDetector::Mast {
                 anchor: b.anchor,
-                radius: if b.tier >= 1 {
-                    crate::stats::CHARGE_ARRAY_DETECT_RADIUS
-                } else {
-                    crate::stats::CHARGE_BASE_ARRAY_DETECT_RADIUS
-                },
+                radius: crate::stats::charge_detect_radius(b.tier),
             });
         scouts.chain(masts)
     }

@@ -3,10 +3,9 @@
 use super::*;
 use crate::game::Scene;
 use aftermine_sim::stats::{
-    BuildingKind, CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS, CHARGE_BLAST_RADIUS,
-    CHARGE_DAMAGE, CHARGE_SCOUT_DETECT_RADIUS, CHARGE_TRIGGER_RADIUS, CRUCIBLE_SMELT_RADIUS,
-    Domain, FOUNDRY_DRIP_START_TICK, REPAIR_BAY_PERIOD, REPAIR_BAY_RADIUS, REPAIR_BAY_STEP,
-    WeaponStats,
+    BuildingKind, CHARGE_BLAST_RADIUS, CHARGE_DAMAGE, CHARGE_SCOUT_DETECT_RADIUS,
+    CHARGE_TRIGGER_RADIUS, CRUCIBLE_SMELT_RADIUS, Domain, FOUNDRY_DRIP_START_TICK,
+    REPAIR_BAY_PERIOD, REPAIR_BAY_RADIUS, REPAIR_BAY_STEP, WeaponStats, charge_detect_radius,
 };
 
 /// An Extractor's income rows while it produces nothing.
@@ -365,10 +364,10 @@ fn hold_rows(info: &mut SelectionInfo, game: &Scene<'_>, u: &aftermine_sim::Unit
     let hostile = game.state.hostile(game.presentation.human, u.player);
     if stats.transport_capacity > 0 {
         let value = if hostile {
-            format!("{} points", stats.transport_capacity)
+            format!("{} slots", stats.transport_capacity)
         } else {
             let held: u8 = u.cargo.iter().map(|r| r.kind.stats().transport_size).sum();
-            format!("{held}/{} points", stats.transport_capacity)
+            format!("{held}/{} slots", stats.transport_capacity)
         };
         info.row("Cargo", value, Some(StatIcon::Verb(VerbIcon::Build)));
     }
@@ -489,14 +488,9 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         }
         match b.kind {
             BuildingKind::Array => {
-                let radius = if b.tier == 0 {
-                    CHARGE_BASE_ARRAY_DETECT_RADIUS
-                } else {
-                    CHARGE_ARRAY_DETECT_RADIUS
-                };
                 info.row(
                     "Charge detection",
-                    format!("{radius} tiles"),
+                    format!("{} tiles", charge_detect_radius(b.tier)),
                     Some(Cap(CapabilityIcon::Radar)),
                 );
             }
@@ -559,7 +553,7 @@ pub(crate) fn selection_info(game: &Scene<'_>, panel: &Panel) -> SelectionInfo {
         );
         if crate::look::scout(u.kind) {
             info.row(
-                "Mine detection",
+                "Charge detection",
                 format!("{CHARGE_SCOUT_DETECT_RADIUS} tiles"),
                 Some(Cap(CapabilityIcon::Radar)),
             );

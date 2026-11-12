@@ -52,6 +52,48 @@ pub fn bounded_replay_duration(replay: &GameReplay) -> anyhow::Result<u64> {
     Ok(total)
 }
 
+/// A scenario-origin replay's world, rebuilt to keep playing it.
+pub struct Resumed {
+    /// The world after every recorded tick.
+    pub state: aftermine_sim::State,
+    /// Each bot seat's controller, its memory rebuilt by watching every
+    /// tick.
+    pub bots: Vec<crate::controller::SeatController>,
+}
+
+/// Rebuilds a replay's world to keep recording onto it: refuses a replay
+/// from another simulation version, since commands recorded onto it could
+/// not reproduce, or one that starts from a saved world, bounds its
+/// duration by [`crate::MAX_REPLAY_TICKS`], and re-executes every recorded
+/// tick. Bots watch each tick to rebuild their memory; their commands are
+/// discarded because the record is authoritative. `observe` sees each tick's
+/// world and report as it completes.
+pub fn resume(
+    replay: &GameReplay,
+    mut observe: impl FnMut(&aftermine_sim::State, &aftermine_sim::TickReport),
+) -> anyhow::Result<Resumed> {
+    use anyhow::Context as _;
+    replay
+        .validate(Some(aftermine_sim::SIM_VERSION))
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
+    anyhow::ensure!(
+        replay.origin.is_none(),
+        "live continuation requires a session checkpoint for this replay origin"
+    );
+    let total = bounded_replay_duration(replay)?;
+    let mut state = replay.setup.build().context("building replay setup")?;
+    let mut bots = crate::controller::seat_controllers(&replay.setup)
+        .context("building the replay's bot seats")?;
+    let mut playback = ReplayPlayback::new(replay);
+    for _ in 0..total {
+        let _ = crate::bot_execution::commands(&state, &mut bots);
+        let report = playback.step(&mut state);
+        crate::controller::record_events(&mut bots, &report);
+        observe(&state, &report);
+    }
+    Ok(Resumed { state, bots })
+}
+
 /// Feeds a replay's recorded commands back into a state one tick at a time.
 pub struct ReplayPlayback<'a> {
     cursor: chassis::replay::ReplayCursor<'a, PlayerCommand>,

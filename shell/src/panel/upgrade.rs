@@ -3,10 +3,7 @@
 use super::info::SelectionInfo;
 use aftermine_sim::{
     BuildingKind, ExtractorIncome, ExtractorSupport,
-    stats::{
-        CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS, RECLAIMER_PERIOD,
-        REFINERY_PERIOD,
-    },
+    stats::{charge_detect_radius, passive_scrap_per_minute},
 };
 
 #[derive(Debug, Clone)]
@@ -46,17 +43,9 @@ fn tier_facts(kind: BuildingKind, tier: u8) -> Vec<(String, String)> {
     }
     match kind {
         BuildingKind::Reclaimer => {
-            let period = if tier == 0 {
-                RECLAIMER_PERIOD
-            } else {
-                REFINERY_PERIOD
-            };
             facts.push((
                 "Income".into(),
-                format!(
-                    "{} scrap/min",
-                    60 * u64::from(aftermine_sim::TICKS_PER_SECOND) / period
-                ),
+                format!("{} scrap/min", passive_scrap_per_minute(tier)),
             ));
         }
         BuildingKind::Extractor => {
@@ -74,12 +63,10 @@ fn tier_facts(kind: BuildingKind, tier: u8) -> Vec<(String, String)> {
             }
         }
         BuildingKind::Array => {
-            let radius = if tier == 0 {
-                CHARGE_BASE_ARRAY_DETECT_RADIUS
-            } else {
-                CHARGE_ARRAY_DETECT_RADIUS
-            };
-            facts.push(("Charge detection".into(), format!("{radius} tiles")));
+            facts.push((
+                "Charge detection".into(),
+                format!("{} tiles", charge_detect_radius(tier)),
+            ));
         }
         _ => {}
     }

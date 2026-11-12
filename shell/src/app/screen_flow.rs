@@ -1,5 +1,6 @@
 //! Cross-screen transitions and drawing for one presented frame.
 
+use super::screen::EffectAging;
 use super::*;
 use crate::frame_profile::{FramePass, measure, pass};
 use crate::render::tutorial_card::{self, CardButton, CardLayout};
@@ -274,6 +275,10 @@ pub(super) struct MenuNotice {
 }
 
 impl MenuNotice {
+    pub(super) fn new(text: String) -> Self {
+        Self { text, until: None }
+    }
+
     /// The text to draw at `now`, starting its time on screen at the first
     /// draw; none once that time has passed.
     pub(super) fn show(&mut self, now: f64) -> Option<&str> {
@@ -282,38 +287,15 @@ impl MenuNotice {
     }
 }
 
-/// Delivers the frame's notices to the screen that is up: the HUD's toast
-/// strip in live play or a replay, the Settings and pause menus' own notice
-/// lines, and the shared menu line everywhere else, including the waiting
-/// screen, which covers the HUD. The final map has no running clock to age
-/// a toast, so its notices wait on the menu line for the report it returns
-/// to.
+/// Delivers the frame's notices to the screen that is up.
 pub(super) fn deliver_notices(
     notices: &mut Vec<Notice>,
     live: &mut Game,
     menu_notice: &mut Option<MenuNotice>,
     screen: &mut Screen,
 ) {
-    for Notice { text, danger } in notices.drain(..) {
-        match screen {
-            Screen::Playing => live.presentation.toast(text),
-            Screen::Playback { session, .. } => session.presentation.toast(text),
-            Screen::Settings { screen, .. } => {
-                screen.notice = Some(screens::settings::Notice { text, danger });
-            }
-            Screen::Pause(pause) => pause.show_notice(text),
-            Screen::ColdOpen(_)
-            | Screen::Home(_)
-            | Screen::Codex { .. }
-            | Screen::Lessons { .. }
-            | Screen::Wizard(_)
-            | Screen::Lobby { .. }
-            | Screen::Replays(_)
-            | Screen::Results(_)
-            | Screen::FinalMap(_)
-            | Screen::Waiting(_)
-            | Screen::Busy(_) => *menu_notice = Some(MenuNotice { text, until: None }),
-        }
+    for notice in notices.drain(..) {
+        screen.deliver_notice(live, menu_notice, notice);
     }
 }
 
@@ -341,8 +323,7 @@ pub(super) fn update_and_draw(
             .pad_family_named(screen.kind() == ScreenKind::Playing),
     });
     // Controls capture and text editing keep their conventional recovery keys.
-    let fixed_editor = matches!(&screen, Screen::Settings { screen, .. } if screen.edits_bindings())
-        || screen.text_entry();
+    let fixed_editor = screen.edits_bindings() || screen.text_entry();
     if fixed_editor {
         crate::menu::set_bindings(&crate::action::BindingMap::classic());
     } else {
@@ -357,26 +338,20 @@ pub(super) fn update_and_draw(
     // Controller buttons keep one layout in every menu, editors included,
     // so a pad can always leave a text field. A chord being captured for a
     // binding sees them raw: only the keyboard binds, and a pad cancels.
-    let capturing = matches!(&screen, Screen::Settings { screen, .. } if screen.capturing());
-    if !screen.kind().gameplay() && !capturing {
-        let binding_editor =
-            matches!(&screen, Screen::Settings { screen, .. } if screen.edits_bindings());
-        events = crate::pad::menu_keys(&events, !binding_editor);
+    if !screen.kind().gameplay() && !screen.captures_chord() {
+        events = crate::pad::menu_keys(&events, !screen.edits_bindings());
         events = app.menu_stick.arrows(&events, time.presentation);
     } else {
         app.menu_stick.reset();
     }
     let mut profile_frame_active = false;
-    // Results draws the decided match behind its report, so the match's
-    // effects keep aging there. Menus draw their own backdrops, Playing and
-    // Playback advance their own clocks below, and Pause freezes the
-    // battlefield behind it.
-    if matches!(screen, Screen::Results(_)) {
-        app.game.update_fx(time.presentation);
-        app.game.presentation.age_toasts(time.presentation);
-    } else if app.net.is_some() && screen.kind() != ScreenKind::Playing {
-        // A LAN match keeps ticking under menus, so its effects age too.
-        app.game.update_wall_clock_fx(time.presentation);
+    match screen.effect_aging(app.net.is_some()) {
+        EffectAging::Always => {
+            app.game.update_fx(time.presentation);
+            app.game.presentation.age_toasts(time.presentation);
+        }
+        EffectAging::WallClock => app.game.update_wall_clock_fx(time.presentation),
+        EffectAging::Held => {}
     }
     // A wait that begins while a match menu is up brings the waiting
     // screen forward, where the host can end it. Opening the menu again

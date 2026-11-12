@@ -1,4 +1,5 @@
 use super::*;
+use aftermine_sim::scenario::Theme;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -91,13 +92,13 @@ fn fog_feather_meets_across_tile_edges_without_overdarkening() {
     }
 }
 
-const THEMES: [&str; 6] = [
-    "rusted-yard",
-    "cold-circuitry",
-    "quarry-dust",
-    "basalt",
-    "slag",
-    "verdigris",
+const THEMES: [Theme; 6] = [
+    Theme::RustedYard,
+    Theme::ColdCircuitry,
+    Theme::QuarryDust,
+    Theme::Basalt,
+    Theme::Slag,
+    Theme::Verdigris,
 ];
 
 #[test]
@@ -109,8 +110,8 @@ fn theme_prop_selection_is_a_180_degree_pair() {
                     for x in 0..width {
                         let pos = TilePos::new(x, y);
                         let mirror = TilePos::new(width - 1 - x, height - 1 - y);
-                        let a = symmetric_theme_prop(theme, pos, width, height);
-                        let b = symmetric_theme_prop(theme, mirror, width, height);
+                        let a = symmetric_theme_prop(Some(theme), pos, width, height);
+                        let b = symmetric_theme_prop(Some(theme), mirror, width, height);
                         assert_eq!(a.map(|p| p.variant), b.map(|p| p.variant));
                         if pos != mirror
                             && let (Some(a), Some(b)) = (a, b)
@@ -122,12 +123,9 @@ fn theme_prop_selection_is_a_180_degree_pair() {
             }
         }
     }
+    assert_eq!(symmetric_theme_prop(None, TilePos::new(4, 4), 9, 9), None);
     assert_eq!(
-        symmetric_theme_prop("unknown", TilePos::new(4, 4), 9, 9),
-        None
-    );
-    assert_eq!(
-        symmetric_theme_prop("basalt", TilePos::new(4, 4), 9, 9),
+        symmetric_theme_prop(Some(Theme::Basalt), TilePos::new(4, 4), 9, 9),
         None
     );
 }
@@ -201,16 +199,9 @@ fn every_shipped_map_gets_symmetric_safe_theme_dressing() {
     for path in paths {
         let scenario = aftermine_sim::Scenario::load(&path)
             .unwrap_or_else(|err| panic!("loading {}: {err}", path.display()));
-        let theme = scenario
-            .meta
-            .as_ref()
-            .map_or("", |meta| meta.theme.as_str());
-        assert!(
-            theme_code(theme).is_some(),
-            "{} has no generated theme-prop row",
-            path.display()
-        );
-        seen_themes.insert(theme.to_string());
+        let theme = scenario.meta.as_ref().and_then(|meta| meta.theme);
+        assert!(theme.is_some(), "{} names no theme", path.display());
+        seen_themes.insert(format!("{theme:?}"));
         let height = scenario.map.len().fit::<i32>();
         let width = scenario.map.first().expect("map row").len().fit::<i32>();
         let mut count = 0;
@@ -267,7 +258,7 @@ fn every_shipped_map_gets_symmetric_safe_theme_dressing() {
             );
         }
         variants_by_theme
-            .entry(theme.to_string())
+            .entry(format!("{theme:?}"))
             .or_default()
             .extend(variants.iter().copied());
         all_variants.extend(variants);
@@ -281,15 +272,16 @@ fn every_shipped_map_gets_symmetric_safe_theme_dressing() {
     );
     assert_eq!(
         seen_themes,
-        THEMES.map(str::to_string).into_iter().collect()
+        THEMES
+            .map(|theme| format!("{:?}", Some(theme)))
+            .into_iter()
+            .collect()
     );
     for theme in THEMES {
+        let variants = variants_by_theme.get(&format!("{:?}", Some(theme)));
         assert!(
-            variants_by_theme
-                .get(theme)
-                .is_some_and(|variants| variants.len() >= 8),
-            "{theme} exercises too little of the shared environment library: {:?}",
-            variants_by_theme.get(theme)
+            variants.is_some_and(|variants| variants.len() >= 8),
+            "{theme:?} exercises too little of the shared environment library: {variants:?}"
         );
     }
     assert_eq!(

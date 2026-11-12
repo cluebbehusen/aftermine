@@ -166,3 +166,15 @@ fn a_starting_drone_is_an_error() {
         "a drone exists only with the carrier it docks on"
     );
 }
+
+#[test]
+fn a_misspelled_theme_fails_to_load() {
+    let with_theme = |theme: &str| {
+        let mut value = serde_json::to_value(Scenario::skirmish()).unwrap();
+        value["meta"] = serde_json::json!({ "theme": theme });
+        Scenario::from_json(&value.to_string())
+    };
+    let loaded = with_theme("quarry-dust").expect("a shipped theme loads");
+    assert_eq!(loaded.meta.unwrap().theme, Some(Theme::QuarryDust));
+    assert!(with_theme("quary-dust").is_err());
+}

@@ -64,47 +64,9 @@ impl Session {
     /// and keep recording. A replay from another sim version is refused,
     /// since commands recorded onto it could not reproduce.
     pub fn resume(replay: GameReplay) -> Result<Self> {
-        replay
-            .validate(Some(SIM_VERSION))
-            .map_err(|err| anyhow::anyhow!("{err}"))?;
-        anyhow::ensure!(
-            replay.origin.is_none(),
-            "live continuation requires a session checkpoint for this replay origin"
-        );
-        let scenario = replay.setup.clone();
-        let mut state = scenario.build().context("building replay setup")?;
-        let total = aftermine_kit::replay_duration(&replay);
-        // The shell's load bound: a structurally valid file can still
-        // claim an absurd duration.
-        anyhow::ensure!(
-            total <= aftermine_kit::MAX_REPLAY_TICKS,
-            "replay spans {total} ticks, beyond the {}-tick load limit",
-            aftermine_kit::MAX_REPLAY_TICKS
-        );
-        // Bots carry memory across ticks, so they observe every replayed
-        // tick; their commands are discarded because the record is
-        // authoritative.
-        let mut bots =
-            seat_controllers(&scenario).context("building replay public bot map briefing")?;
-        let mut cursor = replay.cursor();
-        for _ in 0..total {
-            for bot in &mut bots {
-                let _ = bot.act(&state);
-            }
-            let commands: Vec<PlayerCommand> = cursor
-                .take_tick(state.current_tick())
-                .iter()
-                .map(|t| t.command.clone())
-                .collect();
-            let report = state.tick(&commands);
-            record_events(&mut bots, &report);
-        }
-        anyhow::ensure!(
-            cursor.is_finished(),
-            "replay duration metadata does not cover its own commands"
-        );
+        let aftermine_kit::Resumed { state, bots } = aftermine_kit::resume(&replay, |_, _| {})?;
         Ok(Self {
-            scenario,
+            scenario: replay.setup.clone(),
             state,
             bots,
             recorder: replay,

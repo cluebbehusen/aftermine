@@ -1464,13 +1464,7 @@ impl InputState {
 
     pub(crate) fn context(&self, game: &Game) -> crate::action::Context {
         use crate::action::Context;
-        if self.construction_open()
-            && game.presentation.selection.units.iter().any(|id| {
-                game.state.unit(*id).is_some_and(|u| {
-                    u.player == game.presentation.human && u.kind.stats().harvest.is_some()
-                })
-            })
-        {
+        if self.construction_open() && game.view().selection_has_worker() {
             return self
                 .build_category
                 .map_or(Context::Construction, Context::BuildCategory);
@@ -3562,24 +3556,8 @@ fn armed_verb_click(
             reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
-            let patient = game
-                .state
-                .units()
-                .iter()
-                .filter(|u| {
-                    u.player == game.presentation.human
-                        && u.hp > 0
-                        && u.hp < u.kind.stats().max_hp
-                        && u.kind.stats().repairable()
-                        && u.domain() == aftermine_sim::stats::Domain::Ground
-                })
-                .map(|u| {
-                    let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-                    (at.distance(world), u.id, u.kind)
-                })
-                .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
-                .min_by(|a, b| a.0.total_cmp(&b.0));
-            let Some((_, target, _)) = patient else {
+            let patient = reach.unit_at(game, world, |u| orders::weldable(game, u));
+            let Some(target) = patient.map(|u| u.id) else {
                 game.presentation.toast("Can't repair that");
                 game.presentation
                     .sounds_pending
@@ -3589,12 +3567,9 @@ fn armed_verb_click(
             // A machine cannot weld itself: if the picked patient is the
             // only selected welder, the sim would reject after the ping, so
             // refuse here instead.
-            let has_other_welder = game.presentation.selection.units.iter().any(|id| {
-                *id != target
-                    && game.state.unit(*id).is_some_and(|u| {
-                        u.kind.stats().harvest.is_some() && u.player == game.presentation.human
-                    })
-            });
+            let has_other_welder = game
+                .view()
+                .selection_has_own(|u| u.id != target && u.kind.stats().harvest.is_some());
             if !has_other_welder {
                 game.presentation.toast("A worker can't repair itself");
                 game.presentation
@@ -3624,31 +3599,15 @@ fn armed_verb_click(
             reticle::look_at(game, input, world);
         } else if !click_on_hud(game, p) {
             let world = game.presentation.camera.to_world(p);
-            let picked = game
-                .state
-                .units()
-                .iter()
-                .filter(|u| u.player == game.presentation.human && u.hp > 0)
-                .map(|u| {
-                    let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-                    (at.distance(world), u.id, u.kind)
-                })
-                .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
-                .min_by(|a, b| a.0.total_cmp(&b.0));
-            let Some((_, target, _)) = picked else {
+            let picked = reach.unit_at(game, world, |u| orders::own_body(game, u));
+            let Some(target) = picked.map(|u| u.id) else {
                 game.presentation.toast("Pick one of your units");
                 game.presentation
                     .sounds_pending
                     .push((crate::game::SoundKind::Denied, None));
                 return true;
             };
-            let has_escort = game.presentation.selection.units.iter().any(|id| {
-                *id != target
-                    && game
-                        .state
-                        .unit(*id)
-                        .is_some_and(|u| u.player == game.presentation.human)
-            });
+            let has_escort = game.view().selection_has_own(|u| u.id != target);
             if !has_escort {
                 game.presentation.toast("A unit can't escort itself");
                 game.presentation

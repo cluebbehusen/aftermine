@@ -28,10 +28,7 @@ pub(crate) fn ground_seen_by(
     state: &aftermine_sim::State,
     ground: Vec2,
 ) -> bool {
-    presentation.all_seeing()
-        || state
-            .vision(presentation.human)
-            .visible(crate::numeric::tile_at(ground))
+    presentation.sees_tile(state, crate::numeric::tile_at(ground))
 }
 
 /// Ticks over which a warhead eases off its deck's rail: it leaves from

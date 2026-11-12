@@ -13,12 +13,12 @@
 //! Only ground where hostile seats meet counts: an island that joins no
 //! enemy keeps its authored shape.
 
+use super::grid::Grid;
 use aftermine_sim::stats::{BuildingKind, Domain};
 use aftermine_sim::{PlayerId, State};
 use chassis::grid::{TilePos, as_index};
 use serde::Serialize;
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::VecDeque;
 
 /// A trafficked passage narrower than three tiles.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -29,86 +29,6 @@ pub struct NarrowPassage {
     pub max: (i32, i32),
     /// Narrow tiles in the passage.
     pub tiles: usize,
-}
-
-/// Grid helpers over one built state.
-struct Grid {
-    width: i32,
-    height: i32,
-    open: Vec<bool>,
-}
-
-impl Grid {
-    fn new(state: &State) -> Self {
-        let (width, height) = (state.map().width(), state.map().height());
-        let mut open = vec![false; as_index(width * height)];
-        for y in 0..height {
-            for x in 0..width {
-                open[as_index(y * width + x)] = state.passable(TilePos::new(x, y));
-            }
-        }
-        Self {
-            width,
-            height,
-            open,
-        }
-    }
-
-    fn index(&self, t: TilePos) -> usize {
-        as_index(t.y * self.width + t.x)
-    }
-
-    fn inside(&self, t: TilePos) -> bool {
-        t.x >= 0 && t.y >= 0 && t.x < self.width && t.y < self.height
-    }
-
-    fn open(&self, t: TilePos) -> bool {
-        self.inside(t) && self.open[self.index(t)]
-    }
-
-    fn cells(&self) -> usize {
-        self.open.len()
-    }
-
-    /// Ground distances in tenths from a source set under the sim's
-    /// movement costs: 8-connected, no corner cutting, diagonals at 14.
-    fn distances(&self, sources: &[TilePos]) -> Vec<u32> {
-        let mut dist = vec![u32::MAX; self.cells()];
-        let mut heap = BinaryHeap::new();
-        for &s in sources {
-            if self.open(s) && dist[self.index(s)] != 0 {
-                dist[self.index(s)] = 0;
-                heap.push(Reverse((0u32, s.y, s.x)));
-            }
-        }
-        while let Some(Reverse((d, y, x))) = heap.pop() {
-            let t = TilePos::new(x, y);
-            if d > dist[self.index(t)] {
-                continue;
-            }
-            for dy in -1..=1 {
-                for dx in -1..=1 {
-                    if (dx, dy) == (0, 0) {
-                        continue;
-                    }
-                    let n = t.offset(dx, dy);
-                    if !self.open(n) {
-                        continue;
-                    }
-                    let diagonal = dx != 0 && dy != 0;
-                    if diagonal && !(self.open(t.offset(dx, 0)) && self.open(t.offset(0, dy))) {
-                        continue;
-                    }
-                    let nd = d + if diagonal { 14 } else { 10 };
-                    if nd < dist[self.index(n)] {
-                        dist[self.index(n)] = nd;
-                        heap.push(Reverse((nd, n.y, n.x)));
-                    }
-                }
-            }
-        }
-        dist
-    }
 }
 
 /// How far around a tile, in square anchors, its slide groups are traced:
@@ -191,19 +111,9 @@ fn narrow_tiles(grid: &Grid) -> Vec<bool> {
             };
             let here = cover(t);
             let split = || {
-                (-1..=1).any(|dy| {
-                    (-1..=1).any(|dx| {
-                        let n = t.offset(dx, dy);
-                        let diagonal = dx != 0 && dy != 0;
-                        let step = (dx, dy) != (0, 0)
-                            && grid.open(n)
-                            && (!diagonal
-                                || (grid.open(t.offset(dx, 0)) && grid.open(t.offset(0, dy))));
-                        step && {
-                            let there = cover(n);
-                            there != 0 && there & here == 0
-                        }
-                    })
+                grid.steps(t).any(|(n, _)| {
+                    let there = cover(n);
+                    there != 0 && there & here == 0
                 })
             };
             narrow[grid.index(t)] = here.count_ones() != 1 || split();
@@ -212,31 +122,16 @@ fn narrow_tiles(grid: &Grid) -> Vec<bool> {
     narrow
 }
 
-/// Passable tiles ringing a footprint.
-fn ring(grid: &Grid, anchor: TilePos, (w, h): (i32, i32)) -> Vec<TilePos> {
-    let mut out = Vec::new();
-    for dy in -1..=h {
-        for dx in -1..=w {
-            let inside = (0..w).contains(&dx) && (0..h).contains(&dy);
-            let t = anchor.offset(dx, dy);
-            if !inside && grid.open(t) {
-                out.push(t);
-            }
-        }
-    }
-    out
-}
-
 /// The places a match's ground traffic runs between.
 fn points_of_interest(state: &State, grid: &Grid) -> Vec<Vec<TilePos>> {
     let mut points: Vec<Vec<TilePos>> = Vec::new();
     for b in state.buildings() {
         if b.kind == BuildingKind::Foundry {
-            points.push(ring(grid, b.anchor, b.kind.size()));
+            points.push(grid.ring(b.anchor, b.kind.size()));
         }
     }
     for &frame in state.map().extractor_frames() {
-        points.push(ring(grid, frame, BuildingKind::Extractor.size()));
+        points.push(grid.ring(frame, BuildingKind::Extractor.size()));
     }
     for u in state.units() {
         if u.domain() == Domain::Ground && grid.open(u.tile()) {
@@ -252,7 +147,7 @@ fn points_of_interest(state: &State, grid: &Grid) -> Vec<Vec<TilePos>> {
 /// Every trafficked passage narrower than three tiles, in row-major
 /// order of their first tile.
 pub fn narrow_passages(state: &State) -> Vec<NarrowPassage> {
-    let grid = Grid::new(state);
+    let grid = super::passable_grid(state);
     let narrow = narrow_tiles(&grid);
     let points = points_of_interest(state, &grid);
     let traffic = traffic(&grid, &points);
@@ -324,25 +219,11 @@ fn traffic(grid: &Grid, points: &[Vec<TilePos>]) -> Vec<bool> {
         while let Some(t) = queue.pop() {
             traffic[grid.index(t)] = true;
             let here = dist[grid.index(t)];
-            for dy in -1..=1 {
-                for dx in -1..=1 {
-                    if (dx, dy) == (0, 0) {
-                        continue;
-                    }
-                    let n = t.offset(dx, dy);
-                    if !grid.open(n) || seen[grid.index(n)] {
-                        continue;
-                    }
-                    let diagonal = dx != 0 && dy != 0;
-                    if diagonal && !(grid.open(t.offset(dx, 0)) && grid.open(t.offset(0, dy))) {
-                        continue;
-                    }
-                    let there = dist[grid.index(n)];
-                    let step = if diagonal { 14 } else { 10 };
-                    if there != u32::MAX && there + step == here {
-                        seen[grid.index(n)] = true;
-                        queue.push(n);
-                    }
+            for (n, step) in grid.steps(t) {
+                let there = dist[grid.index(n)];
+                if !seen[grid.index(n)] && there != u32::MAX && there + step == here {
+                    seen[grid.index(n)] = true;
+                    queue.push(n);
                 }
             }
         }

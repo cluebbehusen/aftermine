@@ -6,8 +6,8 @@ use chassis::fx::Vec2Fx;
 use macroquad::audio::{PlaySoundParams, Sound, play_sound, set_sound_volume, stop_sound};
 use macroquad::prelude::Vec2;
 
-use crate::audio_timeline::{missile_ejection_ticks, projectile_elapsed_ticks};
 use crate::game::{Scene, SoundKind, world_vec};
+use crate::game::{missile_ejection_ticks, projectile_elapsed_ticks};
 
 pub(crate) const MOTOR_VOICES: usize = 16;
 
@@ -87,8 +87,7 @@ fn audible_motors(game: &Scene<'_>) -> Vec<Motor<RocketKey>> {
         );
         let at = from.lerp(impact, progress);
         if game.state.hostile(game.presentation.human, shell.player)
-            && !game.presentation.all_seeing()
-            && !game.my_vision().visible(numeric::tile_at(at))
+            && !game.sees_tile(numeric::tile_at(at))
         {
             continue;
         }

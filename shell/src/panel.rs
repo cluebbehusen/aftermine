@@ -304,7 +304,7 @@ pub struct Panel {
     /// A mixed selection's unit-kind filters. Kept separate from
     /// command cards so choosing a roster slice can never crowd out a
     /// verb or make the verb row look like more selected units.
-    pub roster: Vec<Card>,
+    pub roster: Vec<RosterChip>,
     /// The title row's offer to select every own one of a one-kind
     /// selection's kind; absent once the selection holds them all.
     pub select_all: Option<SelectAll>,
@@ -317,6 +317,11 @@ pub struct Panel {
     /// What the queue strip is labeled. An order dock draws the subject's
     /// program, and the portrait beside it already names whose.
     pub queue_label: String,
+    /// What the queue strip holds.
+    pub dock: DockKind,
+    /// What the rally card does to the producers' rallies, when the panel
+    /// has one.
+    pub rally: Option<RallyVerb>,
     /// The Stop button above the dock: it halts the selection's orders, clears
     /// a defense's target preference, or empties production. Absent
     /// while nothing selected has anything to stop.
@@ -349,7 +354,7 @@ impl Panel {
                 .as_ref()
                 .filter(|_| index == 0)
                 .map(|all| &all.card),
-            crate::layout::CardRow::Roster => self.roster.get(index),
+            crate::layout::CardRow::Roster => self.roster.get(index).map(|chip| &chip.card),
             crate::layout::CardRow::Cards => self.cards.get(index),
             crate::layout::CardRow::Queue => self.queue.get(index),
             crate::layout::CardRow::Stop => self.stop.as_ref().filter(|_| index == 0),
@@ -359,6 +364,43 @@ impl Panel {
                 .and_then(|column| column.chips.get(index)),
         }
     }
+}
+
+/// What a panel's queue strip holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DockKind {
+    /// A unit's program, its chips numbered as the world's breadcrumbs.
+    Orders,
+    /// A structure's work: production, rounds or a target.
+    Work,
+}
+
+/// What a rally card does to the producers it points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RallyVerb {
+    /// None of them has a rally yet.
+    Set,
+    /// One of them already has a rally, which the card replaces.
+    Reset,
+}
+
+impl RallyVerb {
+    /// The word on the card.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Set => "Set",
+            Self::Reset => "Reset",
+        }
+    }
+}
+
+/// One kind's chip on a mixed selection's roster strip.
+pub struct RosterChip {
+    /// How many of the kind the selection holds: a small chip shows this
+    /// alone.
+    pub count: usize,
+    /// Its face, tooltip and press.
+    pub card: Card,
 }
 
 /// The title row's select-all button.
@@ -537,7 +579,7 @@ pub fn building_economy_lines(kind: BuildingKind) -> Vec<String> {
     match kind {
         BuildingKind::Reclaimer => vec![format!(
             "Makes {} scrap/min.",
-            per_minute(aftermine_sim::stats::RECLAIMER_PERIOD)
+            aftermine_sim::stats::passive_scrap_per_minute(0)
         )],
         BuildingKind::Extractor => vec![format!(
             "Makes {remote} scrap/min, or {supported} scrap/min with your Foundry within {radius} tiles."
@@ -594,17 +636,17 @@ pub(crate) fn building_income(game: &Scene<'_>, building: &aftermine_sim::state:
     if let Some(income) = game.state.extractor_income(building.id) {
         return income.scrap_per_minute();
     }
-    let period = match building.kind {
-        BuildingKind::Reclaimer if building.tier == 0 => aftermine_sim::stats::RECLAIMER_PERIOD,
-        BuildingKind::Reclaimer => aftermine_sim::stats::REFINERY_PERIOD,
+    match building.kind {
+        BuildingKind::Reclaimer => aftermine_sim::stats::passive_scrap_per_minute(building.tier),
         BuildingKind::Foundry
             if game.state.current_tick() >= aftermine_sim::stats::FOUNDRY_DRIP_START_TICK =>
         {
-            aftermine_sim::stats::FOUNDRY_DRIP_PERIOD
+            (60 * u64::from(aftermine_sim::TICKS_PER_SECOND)
+                / aftermine_sim::stats::FOUNDRY_DRIP_PERIOD)
+                .fit::<u32>()
         }
-        _ => return 0,
-    };
-    (60 * u64::from(aftermine_sim::TICKS_PER_SECOND) / period).fit::<u32>()
+        _ => 0,
+    }
 }
 
 fn weapon_line(weapon: &WeaponStats) -> String {
@@ -1361,6 +1403,7 @@ fn strip_hotkeys(panel: &mut Panel) {
     for card in panel
         .roster
         .iter_mut()
+        .map(|chip| &mut chip.card)
         .chain(&mut panel.cards)
         .chain(&mut panel.queue)
         .chain(&mut panel.absent)
@@ -1484,7 +1527,7 @@ fn unload_queue_desc(hands: Hands) -> &'static str {
 
 /// The strip row over a mixed own building selection: one counted chip
 /// per kind, like a mixed army, with its tiers in the tooltip.
-fn building_roster(buildings: &[aftermine_sim::Building]) -> Vec<Card> {
+fn building_roster(buildings: &[aftermine_sim::Building]) -> Vec<RosterChip> {
     let hands = crate::platform::hands();
     let mut kinds: Vec<(BuildingKind, Vec<u8>)> = Vec::new();
     for b in buildings {
@@ -1514,18 +1557,21 @@ fn building_roster(buildings: &[aftermine_sim::Building]) -> Vec<Card> {
                 desc.push(named.join(", "));
             }
             desc.extend(roster_filter_desc(hands));
-            Card {
-                icon: CardIcon::Building(kind, tiers[0]),
-                title: format!("{} x{}", entity_name(kind.name()), tiers.len()),
-                cost: None,
-                hotkey: String::new(),
-                action: CardAction::FilterBuilding(kind),
-                enabled: true,
-                why: None,
-                desc,
-                progress: None,
-                autocast: None,
-                hold: None,
+            RosterChip {
+                count: tiers.len(),
+                card: Card {
+                    icon: CardIcon::Building(kind, tiers[0]),
+                    title: format!("{} x{}", entity_name(kind.name()), tiers.len()),
+                    cost: None,
+                    hotkey: String::new(),
+                    action: CardAction::FilterBuilding(kind),
+                    enabled: true,
+                    why: None,
+                    desc,
+                    progress: None,
+                    autocast: None,
+                    hold: None,
+                },
             }
         })
         .collect()
@@ -1606,6 +1652,8 @@ fn pile_panel(game: &Scene<'_>, tile: chassis::grid::TilePos) -> Option<Panel> {
         queue: Vec::new(),
         queue_groups: Vec::new(),
         queue_label: String::new(),
+        dock: DockKind::Work,
+        rally: None,
         stop: None,
         drones: None,
         absent: Vec::new(),
@@ -1653,6 +1701,8 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             queue: Vec::new(),
             queue_groups: Vec::new(),
             queue_label: "Queue".into(),
+            dock: DockKind::Work,
+            rally: None,
             stop: None,
             drones: None,
             absent: Vec::new(),
@@ -1684,6 +1734,7 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         }
         let selected = crate::building_actions::SelectedBuildings::inspect(game);
         panel.cards = selected.cards(bindings);
+        panel.rally = selected.rally_verb();
         panel.roster = building_roster(&selected.buildings);
         panel.select_all = building_select_all(game, bindings, &selected.buildings);
         if plural {
@@ -1814,6 +1865,8 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
         queue: Vec::new(),
         queue_groups: Vec::new(),
         queue_label: "Orders".to_string(),
+        dock: DockKind::Orders,
+        rally: None,
         stop: None,
         drones: None,
         absent: Vec::new(),
@@ -1850,18 +1903,21 @@ fn build_panel(game: &Scene<'_>, bindings: &BindingMap, build_menu_open: bool) -
             // into those tiles and gives the eye two competing summaries.
             panel.summary.clear();
             for (kind, n) in counts {
-                panel.roster.push(Card {
-                    icon: CardIcon::Unit(kind),
-                    title: format!("{} x{n}", entity_name(kind.name())),
-                    cost: None,
-                    hotkey: String::new(),
-                    action: CardAction::FilterKind(kind),
-                    enabled: true,
-                    why: None,
-                    desc: roster_filter_desc(crate::platform::hands()),
-                    progress: None,
-                    autocast: None,
-                    hold: None,
+                panel.roster.push(RosterChip {
+                    count: n,
+                    card: Card {
+                        icon: CardIcon::Unit(kind),
+                        title: format!("{} x{n}", entity_name(kind.name())),
+                        cost: None,
+                        hotkey: String::new(),
+                        action: CardAction::FilterKind(kind),
+                        enabled: true,
+                        why: None,
+                        desc: roster_filter_desc(crate::platform::hands()),
+                        progress: None,
+                        autocast: None,
+                        hold: None,
+                    },
                 });
             }
         }

@@ -210,6 +210,13 @@ impl Camera {
         (self.center - half, self.center + half)
     }
 
+    /// Whether world point `at` lies within `margin` world units of the
+    /// visible rectangle.
+    pub(crate) fn in_view(&self, at: Vec2, margin: f32) -> bool {
+        let (lo, hi) = self.world_rect();
+        at.cmpge(lo - margin).all() && at.cmple(hi + margin).all()
+    }
+
     fn clamp(&mut self) {
         self.center = self.clamped(self.center, self.zoom);
     }

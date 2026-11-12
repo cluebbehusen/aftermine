@@ -1,5 +1,6 @@
 use super::*;
 use crate::numeric::Fit;
+use aftermine_sim::stats::{CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS};
 
 fn values(kind: BuildingKind, tier: u8, label: &str) -> (String, String) {
     let row = comparison(kind, tier)

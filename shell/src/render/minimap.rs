@@ -286,6 +286,23 @@ fn repaint(image: &mut Image, x: u32, y: u32, color: Color) -> bool {
     changed
 }
 
+/// How a structure fills its footprint on the minimap, if the viewer sees
+/// it there. As in the world, an unverified site shows only to its owner,
+/// in the same faint amber.
+pub(crate) fn structure_fill(
+    game: &crate::game::Scene<'_>,
+    building: &aftermine_sim::Building,
+) -> Option<Color> {
+    if !game.sees_building(building) {
+        return None;
+    }
+    if building.provisional() {
+        return (building.player == game.presentation.human)
+            .then_some(super::entities::UNVERIFIED_SITE);
+    }
+    Some(super::seat_identity_color(game, building.player))
+}
+
 /// Draws the minimap under the same fog rules as the world view
 /// (omniscient while the F1 overlay is up).
 pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
@@ -386,27 +403,20 @@ pub(crate) fn draw_minimap(game: &crate::game::Scene<'_>) {
         }
     }
     for building in game.state.buildings() {
-        let seen = omniscient
-            || building.player == game.presentation.human
-            || (building.tiles().any(|t| vision.visible(t))
-                && game
-                    .state
-                    .building_apparent(game.presentation.human, building));
-        if !seen {
+        let Some(fill) = structure_fill(game, building) else {
             continue;
-        }
+        };
         let (w, h) = building.kind.size();
         draw_rectangle(
             rect.x + building.anchor.x as f32 * scale,
             rect.y + building.anchor.y as f32 * scale,
             w as f32 * scale,
             h as f32 * scale,
-            super::seat_identity_color(game, building.player),
+            fill,
         );
     }
     for unit in game.state.units() {
-        let seen = omniscient || unit.player == game.presentation.human || vision.sees_unit(unit);
-        if !seen {
+        if !game.sees_unit(unit) {
             continue;
         }
         // A hull wider than a tile shows at its size; small bodies share one dot.

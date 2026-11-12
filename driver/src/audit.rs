@@ -13,6 +13,7 @@ use chassis::grid::as_index;
 use serde::Serialize;
 use std::collections::BinaryHeap;
 
+mod grid;
 mod levels;
 mod lockouts;
 mod passages;
@@ -154,117 +155,30 @@ fn longest_reach() -> f64 {
         .fold(0.0, f64::max)
 }
 
-/// Passable tiles ringing a building footprint, where ground traffic
-/// enters and leaves.
-fn doorsteps(state: &State, anchor: TilePos, size: (i32, i32)) -> Vec<TilePos> {
-    let mut out = Vec::new();
-    for dy in -1..=size.1 {
-        for dx in -1..=size.0 {
-            let inside = (0..size.0).contains(&dx) && (0..size.1).contains(&dy);
-            let t = anchor.offset(dx, dy);
-            if !inside && state.passable(t) {
-                out.push(t);
-            }
-        }
-    }
-    out
+/// Ground the simulation lets bodies cross now.
+fn passable_grid(state: &State) -> grid::Grid {
+    let map = state.map();
+    grid::Grid::new(map.width(), map.height(), |t| state.passable(t))
 }
 
-/// Flood fill over ground passability from a doorstep set.
-fn reachable_from(state: &State, starts: &[TilePos]) -> usize {
-    let (w, h) = (state.map().width(), state.map().height());
-    let index = |t: TilePos| as_index(t.y * w + t.x);
-    let mut seen = vec![false; as_index(w * h)];
-    let mut queue: std::collections::VecDeque<TilePos> = starts.iter().copied().collect();
-    for &s in starts {
-        seen[index(s)] = true;
-    }
-    let mut count = 0;
-    while let Some(t) = queue.pop_front() {
-        count += 1;
-        for dy in -1..=1 {
-            for dx in -1..=1 {
-                if dx == 0 && dy == 0 {
-                    continue;
-                }
-                let n = t.offset(dx, dy);
-                let in_bounds = n.x >= 0 && n.y >= 0 && n.x < w && n.y < h;
-                if !in_bounds || seen[index(n)] || !state.passable(n) {
-                    continue;
-                }
-                // The sim's A* forbids corner cutting: a diagonal step
-                // is legal only when both cardinal companions are open.
-                if dx != 0
-                    && dy != 0
-                    && !(state.passable(t.offset(dx, 0)) && state.passable(t.offset(0, dy)))
-                {
-                    continue;
-                }
-                seen[index(n)] = true;
-                queue.push_back(n);
-            }
-        }
-    }
-    count
+/// Ground tiles reachable from a doorstep set.
+fn reachable_from(ground: &grid::Grid, starts: &[TilePos]) -> usize {
+    ground
+        .flood(starts, &mut vec![usize::MAX; ground.cells()], 0)
+        .len()
 }
 
-/// Shortest ground route between two doorstep sets, in tile-equivalents:
-/// Dijkstra under the sim's movement costs (8-connected, no corner
-/// cutting, diagonals at 14/10 as in `chassis::path::astar`). Searching
-/// from every doorstep keeps a rock on one side of a Foundry from
+/// Shortest ground route between two doorstep sets, in whole tiles.
+/// Searching from every doorstep keeps a rock on one side of a Foundry from
 /// understating or sealing the route.
-fn ground_route(state: &State, from: &[TilePos], to: &[TilePos]) -> Option<usize> {
-    if from.is_empty() || to.is_empty() {
-        return None;
-    }
-    let (w, h) = (state.map().width(), state.map().height());
-    let index = |t: TilePos| as_index(t.y * w + t.x);
-    let mut dist: Vec<u32> = vec![u32::MAX; as_index(w * h)];
-    let mut heap: std::collections::BinaryHeap<std::cmp::Reverse<(u32, i32, i32)>> =
-        BinaryHeap::default();
-    for &s in from {
-        dist[index(s)] = 0;
-        heap.push(std::cmp::Reverse((0, s.x, s.y)));
-    }
-    let mut target = vec![false; as_index(w * h)];
-    for t in to {
-        target[index(*t)] = true;
-    }
-    while let Some(std::cmp::Reverse((d, x, y))) = heap.pop() {
-        let t = TilePos::new(x, y);
-        if d > dist[index(t)] {
-            continue; // stale entry
-        }
-        if target[index(t)] {
-            // Costs run in tenths; report whole tile-equivalents.
-            return Some(((d + 5) / 10) as usize);
-        }
-        for dy in -1..=1 {
-            for dx in -1..=1 {
-                if dx == 0 && dy == 0 {
-                    continue;
-                }
-                let n = t.offset(dx, dy);
-                let in_bounds = n.x >= 0 && n.y >= 0 && n.x < w && n.y < h;
-                if !in_bounds || !state.passable(n) {
-                    continue;
-                }
-                if dx != 0
-                    && dy != 0
-                    && !(state.passable(t.offset(dx, 0)) && state.passable(t.offset(0, dy)))
-                {
-                    continue;
-                }
-                let step = if dx != 0 && dy != 0 { 14 } else { 10 };
-                let nd = d + step;
-                if nd < dist[index(n)] {
-                    dist[index(n)] = nd;
-                    heap.push(std::cmp::Reverse((nd, n.x, n.y)));
-                }
-            }
-        }
-    }
-    None
+fn ground_route(ground: &grid::Grid, from: &[TilePos], to: &[TilePos]) -> Option<usize> {
+    let dist = ground.distances(from);
+    to.iter()
+        .map(|&t| dist[ground.index(t)])
+        .min()
+        .filter(|&d| d != u32::MAX)
+        // Costs run in tenths; report whole tile-equivalents.
+        .map(|d| ((d + 5) / 10) as usize)
 }
 
 /// Air distance between two Foundries, center to center, so an asymmetric
@@ -390,6 +304,7 @@ pub fn audit(scenario: &Scenario) -> Result<MapAudit> {
         }
     }
 
+    let ground = passable_grid(&state);
     // Every seat's Foundry (and its doorstep set), in seat order.
     let mut steps: Vec<(u8, &aftermine_sim::Building, Vec<TilePos>)> = Vec::new();
     for (i, player) in state.players().iter().enumerate() {
@@ -404,7 +319,7 @@ pub fn audit(scenario: &Scenario) -> Result<MapAudit> {
         steps.push((
             u8::try_from(i).expect("seat indices fit in u8"),
             foundry,
-            doorsteps(&state, foundry.anchor, foundry.kind.size()),
+            ground.ring(foundry.anchor, foundry.kind.size()),
         ));
     }
 
@@ -417,7 +332,7 @@ pub fn audit(scenario: &Scenario) -> Result<MapAudit> {
             if !state.hostile(aftermine_sim::PlayerId(sa), aftermine_sim::PlayerId(sb)) {
                 continue;
             }
-            let ground_steps = ground_route(&state, &steps[i].2, &steps[j].2);
+            let ground_steps = ground_route(&ground, &steps[i].2, &steps[j].2);
             let air_tiles = air_route(&state, steps[i].1, steps[j].1);
             let artillery_pressure = ground_steps.map(|s| reach / s.max(1) as f64);
             #[expect(
@@ -486,7 +401,7 @@ pub fn audit(scenario: &Scenario) -> Result<MapAudit> {
                 });
             SeatAudit {
                 seat: *seat,
-                reachable_tiles: reachable_from(&state, doorstep),
+                reachable_tiles: reachable_from(&ground, doorstep),
                 nearest_scrap,
                 nearest_enemy_route: nearest_enemy[idx],
                 nearest_extractor,

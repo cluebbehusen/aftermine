@@ -809,12 +809,51 @@ fn separate_flak_yokes_report_at_their_authored_delays() {
 }
 
 #[test]
-fn forge_spot_reaches_its_target_before_the_effect_expires() {
-    assert_eq!(forge_spot_phases(0.0), (0.0, 0.0));
-    assert_eq!(forge_spot_phases(FORGE_SPOT_TRAVEL_FRACTION), (1.0, 0.0));
-    let (travel, impact) = forge_spot_phases(0.99);
-    assert_eq!(travel, 1.0);
-    assert!(impact > 0.9);
+fn a_round_reaches_its_target_before_the_effect_expires() {
+    use crate::game::ShotStyle;
+    for style in [
+        ShotStyle::Kinetic { heavy: false },
+        ShotStyle::Kinetic { heavy: true },
+        ShotStyle::ForgeSpot,
+        ShotStyle::Mortar,
+    ] {
+        let arrival = style.travel_time();
+        assert!(0.0 < arrival && arrival < style.life(), "{style:?}");
+        assert_eq!(shot_travel_progress(style, 0.0), 0.0);
+        assert_eq!(shot_travel_progress(style, arrival), 1.0);
+        assert_eq!(shot_impact_progress(style, arrival), 0.0);
+        let late = style.life() * 0.99;
+        assert_eq!(shot_travel_progress(style, late), 1.0);
+        assert!(shot_impact_progress(style, late) > 0.9, "{style:?}");
+    }
+}
+
+#[test]
+fn direct_contact_radius_follows_style_and_splash() {
+    use crate::game::ShotStyle;
+    for (style, splash, radius) in [
+        (ShotStyle::Rail, None, 0.75),
+        (ShotStyle::Rail, Some(1.4), 0.75),
+        (ShotStyle::ForgeSpot, None, 0.55),
+        (ShotStyle::Mortar, None, 0.9),
+        (ShotStyle::Mortar, Some(1.4), 1.4),
+    ] {
+        let contact = direct_contact(style, None, Vec2::ZERO, Vec2::ZERO, splash, 0.2, 7)
+            .expect("a direct style leaves a contact mark");
+        assert_eq!(contact.radius, radius, "{style:?} with splash {splash:?}");
+    }
+    assert!(
+        direct_contact(
+            ShotStyle::Kinetic { heavy: true },
+            None,
+            Vec2::ZERO,
+            Vec2::ZERO,
+            None,
+            0.0,
+            0
+        )
+        .is_none()
+    );
 }
 
 #[test]

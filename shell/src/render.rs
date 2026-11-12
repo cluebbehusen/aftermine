@@ -75,7 +75,7 @@ pub fn staleness_fade(age: f32) -> f32 {
 pub(crate) fn resource_memory_opacity(game: &Scene<'_>, pos: chassis::grid::TilePos) -> f32 {
     let mut seen = game.presentation.last_seen.borrow_mut();
     let now = game.presentation.fx_time();
-    if game.presentation.all_seeing() || game.my_vision().visible(pos) {
+    if game.sees_tile(pos) {
         seen.insert((pos.x, pos.y), now);
         1.0
     } else {
@@ -90,7 +90,7 @@ mod chrome;
 mod destruction;
 pub(crate) mod entities;
 mod environment;
-mod grade;
+pub(crate) mod grade;
 mod ground;
 pub(crate) use ground::{GroundBlend, GroundCache};
 pub(crate) mod hud;
@@ -660,21 +660,6 @@ fn visible_tiles(game: &crate::game::Scene<'_>) -> (TilePos, TilePos) {
     ground::GroundView::live(&game.presentation.camera).tiles(game.state.map())
 }
 
-/// Per-theme terrain grading: a subtle multiplier on ground-layer
-/// sprites only. Units, chrome, the minimap, and the golden renderer
-/// stay untinted; grading is atmosphere, never information.
-pub fn theme_tint(theme: &str) -> Color {
-    match theme {
-        "rusted-yard" => Color::new(1.0, 0.95, 0.88, 1.0),
-        "cold-circuitry" => Color::new(0.89, 0.95, 1.0, 1.0),
-        "quarry-dust" => Color::new(1.0, 0.97, 0.90, 1.0),
-        "basalt" => Color::new(0.92, 0.91, 1.0, 1.0),
-        "slag" => Color::new(1.0, 0.92, 0.92, 1.0),
-        "verdigris" => Color::new(0.90, 1.0, 0.94, 1.0),
-        _ => WHITE,
-    }
-}
-
 const GHOST_TINT: Color = color_u8!(150, 150, 165, 210);
 
 fn unit_work_facing(
@@ -690,9 +675,7 @@ fn unit_work_facing(
         | UnitWorkState::Unloading { target, .. } => target,
         UnitWorkState::Idle => return None,
     };
-    let to_screen_space =
-        |point: chassis::fx::Vec2Fx| vec2(point.x.to_num::<f32>(), point.y.to_num::<f32>());
-    let direction = to_screen_space(target) - to_screen_space(from);
+    let direction = crate::game::world_vec(target) - crate::game::world_vec(from);
     (direction.length_squared() > 1e-6)
         .then(|| direction.y.atan2(direction.x) + std::f32::consts::FRAC_PI_2)
 }
@@ -760,22 +743,14 @@ fn tracked_mount_angle(
     let position = match target {
         aftermine_sim::Target::Unit(id) => {
             let target = game.state.unit(id)?;
-            if target.player != game.presentation.human
-                && !game.presentation.all_seeing()
-                && !game.my_vision().sees_unit(target)
-            {
+            if !game.sees_unit(target) {
                 return None;
             }
             game.presentation.draw_pos(target.id, target.pos, alpha)
         }
         aftermine_sim::Target::Building(id) => {
             let target = game.state.building(id)?;
-            if !game.presentation.all_seeing()
-                && (!target.tiles().any(|tile| game.my_vision().visible(tile))
-                    || !game
-                        .state
-                        .building_apparent(game.presentation.human, target))
-            {
+            if !game.sees_building(target) {
                 return None;
             }
             let from = game.presentation.draw_pos(unit.id, unit.pos, alpha);
@@ -811,7 +786,7 @@ pub(crate) fn unit_animation(
     state: &aftermine_sim::State,
     unit: &aftermine_sim::Unit,
 ) -> crate::presentation_animation::UnitAnimationState {
-    let current = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
+    let current = crate::game::world_vec(unit.pos);
     let moving = presentation
         .prev_pos
         .get(&unit.id.0)
@@ -988,7 +963,8 @@ pub(crate) fn unit_body_pose(
             Some((angle, at))
                 if animation.attack.is_some()
                     || (rig.is_some() || !moving)
-                        && (preparing || game.presentation.fx_time() - at < 1.2) =>
+                        && (preparing
+                            || game.presentation.fx_time() - at < crate::game::AIM_HOLD_SECS) =>
             {
                 angle
             }
@@ -1288,10 +1264,7 @@ fn draw_rig_mount(
             // The cropped mechanism retains its position on the 128-pixel
             // chassis and swings about its breech.
             let scale = dest / 128.0;
-            let turn = |v: Vec2, angle: f32| {
-                let (sin, cos) = angle.sin_cos();
-                vec2(v.x * cos - v.y * sin, v.x * sin + v.y * cos)
-            };
+            let turn = crate::numeric::rotate;
             let breech = vec2(4.0, 0.0) * scale;
             let mount = vec2(4.0, -8.0) * scale;
             (
@@ -1325,25 +1298,23 @@ fn draw_unit_pass(
     const CULL_MARGIN: f32 = 2.5;
     let zoom = game.presentation.camera.zoom;
     let airborne = domain == aftermine_sim::stats::Domain::Air;
-    // Frustum cull with a margin covering the sprite, its shadow, rings,
-    // and bars.
-    let (view_lo, view_hi) = game.presentation.camera.world_rect();
     for unit in game.state.units() {
         // The body's current layer, not its kind's: a parked airframe
         // draws among ground bodies with no shadow or lift.
         if unit.domain() != domain {
             continue;
         }
-        if !crate::strategic_markers::visible(game, unit) {
+        if !game.sees_unit(unit) {
             continue;
         }
         let pos = roc::drone_draw_pos(game, unit, alpha)
             .unwrap_or_else(|| game.presentation.draw_pos(unit.id, unit.pos, alpha));
-        let margin = unit_cull_margin(unit.kind, CULL_MARGIN);
-        if pos.x < view_lo.x - margin
-            || pos.y < view_lo.y - margin
-            || pos.x > view_hi.x + margin
-            || pos.y > view_hi.y + margin
+        // Frustum cull with a margin covering the sprite, its shadow, rings,
+        // and bars.
+        if !game
+            .presentation
+            .camera
+            .in_view(pos, unit_cull_margin(unit.kind, CULL_MARGIN))
         {
             continue;
         }

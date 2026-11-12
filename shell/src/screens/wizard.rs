@@ -1143,7 +1143,12 @@ pub fn draw_seat_markers(
 
 /// Draws a map preview centered in `area`, graded with the map's theme,
 /// and returns where the map itself landed.
-pub(crate) fn draw_preview(preview: &Preview<'_>, theme: &str, area: Rect, ui: f32) -> Rect {
+pub(crate) fn draw_preview(
+    preview: &Preview<'_>,
+    theme: Option<aftermine_sim::scenario::Theme>,
+    area: Rect,
+    ui: f32,
+) -> Rect {
     let rect = preview.rect(area);
     draw_rectangle(
         rect.x - 8.0 * ui,
@@ -1152,7 +1157,7 @@ pub(crate) fn draw_preview(preview: &Preview<'_>, theme: &str, area: Rect, ui: f
         rect.h + 16.0 * ui,
         SURFACE_MENU,
     );
-    preview.draw(area, crate::render::theme_tint(theme))
+    preview.draw(area, crate::render::grade::tint(theme))
 }
 
 /// Who a seat card's controller chip names.
@@ -2024,14 +2029,10 @@ impl Wizard {
         let preview = match self.picked_entry(draft).filter(|_| self.resume.is_none()) {
             Some(entry) => previews
                 .get(entry, layout.preview)
-                .map(|preview| (preview, entry.theme.as_str())),
-            None => previews.get_map(scenario, layout.preview).map(|preview| {
-                let theme = scenario
-                    .meta
-                    .as_ref()
-                    .map_or("", |meta| meta.theme.as_str());
-                (preview, theme)
-            }),
+                .map(|preview| (preview, entry.theme)),
+            None => previews
+                .get_map(scenario, layout.preview)
+                .map(|preview| (preview, scenario.meta.as_ref().and_then(|meta| meta.theme))),
         };
         if let Some((preview, theme)) = preview {
             let drawn = draw_preview(&preview, theme, layout.preview, ui);

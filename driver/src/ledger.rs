@@ -17,9 +17,8 @@
 //! nothing the ledger can credit.
 
 use aftermine_sim::stats::{
-    BuildingKind, CHARGE_ARRAY_DETECT_RADIUS, CHARGE_BASE_ARRAY_DETECT_RADIUS, CHARGE_BLAST_RADIUS,
-    CRUCIBLE_SMELT_PERIOD, CRUCIBLE_SMELT_RADIUS, FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK,
-    RECLAIMER_PERIOD, REFINERY_PERIOD, UnitKind,
+    BuildingKind, CHARGE_BLAST_RADIUS, CRUCIBLE_SMELT_PERIOD, CRUCIBLE_SMELT_RADIUS,
+    FOUNDRY_DRIP_PERIOD, FOUNDRY_DRIP_START_TICK, UnitKind, charge_detect_radius, reclaimer_period,
 };
 use aftermine_sim::{
     Building, BuildingId, Event, Order, State, Target, TickReport, UnitId, UnitRepairSource,
@@ -1335,15 +1334,9 @@ impl ImpactLedger {
                 .iter()
                 .filter(|body| body.team == team)
                 .filter(|body| match body.building {
-                    Some((BuildingKind::Array, tier, true)) => within(
-                        body.tile,
-                        pre.tile,
-                        if tier >= 1 {
-                            CHARGE_ARRAY_DETECT_RADIUS
-                        } else {
-                            CHARGE_BASE_ARRAY_DETECT_RADIUS
-                        },
-                    ),
+                    Some((BuildingKind::Array, tier, true)) => {
+                        within(body.tile, pre.tile, charge_detect_radius(tier))
+                    }
                     _ => false,
                 })
                 .min_by_key(|body| body.key);
@@ -1379,11 +1372,8 @@ impl ImpactLedger {
             }
             let resigned = state.players()[usize::from(body.owner)].resigned;
             let credit = match kind {
-                BuildingKind::Reclaimer if tier == 0 && !resigned => {
-                    now.is_multiple_of(RECLAIMER_PERIOD)
-                }
-                BuildingKind::Reclaimer if tier == 1 && !resigned => {
-                    now.is_multiple_of(REFINERY_PERIOD)
+                BuildingKind::Reclaimer if tier <= 1 && !resigned => {
+                    now.is_multiple_of(reclaimer_period(tier))
                 }
                 BuildingKind::Foundry => {
                     !resigned

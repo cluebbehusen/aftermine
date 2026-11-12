@@ -358,6 +358,56 @@ fn skyhook_visible_edge_accepts_a_load_order() {
 }
 
 #[test]
+fn a_retiring_skyhook_takes_no_load_order() {
+    let mut scenario = armed_skirmish();
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Skyhook,
+        x: 12,
+        y: 7,
+    });
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Crucible,
+            x: 9,
+            y: 3,
+        });
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
+    let (sentinel, _) = own_fighter(&game);
+    let skyhook = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.kind == UnitKind::Skyhook)
+        .expect("fixture Skyhook")
+        .id;
+    game.issue(Command::Retire {
+        units: vec![skyhook],
+        queue: false,
+    });
+    game.do_tick();
+    let transport = game.state.unit(skyhook).unwrap();
+    assert!(transport.retiring(), "premise: on its way to the Crucible");
+    let screen = game
+        .presentation
+        .camera
+        .to_screen(crate::game::world_vec(transport.pos));
+    game.presentation.selection.units = vec![sentinel];
+    let mut input = InputState::new();
+    apply_events(&mut game, &mut input, &[right_down(screen)]);
+    assert!(
+        !game
+            .pending
+            .iter()
+            .any(|command| matches!(command.command, Command::Load { .. })),
+        "{:?}",
+        game.pending
+    );
+}
+
+#[test]
 fn hostile_skyhook_visible_edge_accepts_an_attack_order() {
     let mut game = skyhook_interaction_game();
     let mut input = InputState::new();
@@ -1816,6 +1866,81 @@ fn accompany_arms_on_e_and_the_rest_of_the_selection_escorts_the_picked_unit() {
         input.armed_mode(),
         None,
         "an unqueued pick stands the mode down"
+    );
+}
+
+#[test]
+fn accompany_stays_armed_after_a_click_on_an_own_drone() {
+    let (mut game, roc) = roc_with_drones();
+    let drone = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.host == Some(roc))
+        .expect("premise: a launched drone");
+    let screen = game
+        .presentation
+        .camera
+        .to_screen(crate::game::world_vec(drone.pos));
+    let mut input = InputState::new();
+    game.presentation.selection.units = vec![roc];
+    dispatch_action(&mut game, &mut input, Action::Accompany);
+    assert_eq!(input.armed_mode(), Some(ArmedMode::Accompany));
+    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    assert!(game.pending.is_empty(), "{:?}", game.pending);
+    assert_eq!(
+        input.armed_mode(),
+        Some(ArmedMode::Accompany),
+        "a drone is no escort target, and its host can't escort itself"
+    );
+}
+
+#[test]
+fn weld_stays_armed_after_a_click_on_a_retiring_unit() {
+    let mut scenario = armed_skirmish();
+    scenario
+        .buildings
+        .push(aftermine_sim::scenario::BuildingSpec {
+            player: 0,
+            kind: aftermine_sim::BuildingKind::Crucible,
+            x: 9,
+            y: 3,
+        });
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
+    let (sentinel, _) = own_fighter(&game);
+    game.issue(Command::Retire {
+        units: vec![sentinel],
+        queue: false,
+    });
+    game.do_tick();
+    let mut value = serde_json::to_value(&*game.state).unwrap();
+    for row in value["units"].as_array_mut().unwrap() {
+        if row["id"] == serde_json::json!(sentinel) {
+            row["hp"] = serde_json::json!(1);
+        }
+    }
+    *game.state = serde_json::from_value(value).unwrap();
+    let patient = game.state.unit(sentinel).unwrap();
+    assert!(patient.retiring(), "premise: on its way to the Crucible");
+    let at = crate::game::world_vec(patient.pos);
+    let worker = game
+        .state
+        .units()
+        .iter()
+        .find(|u| u.player == game.presentation.human && u.kind.stats().harvest.is_some())
+        .unwrap()
+        .id;
+    let mut input = InputState::new();
+    game.presentation.selection.units = vec![worker];
+    dispatch_action(&mut game, &mut input, Action::RepairUnit);
+    assert_eq!(input.armed_mode(), Some(ArmedMode::Weld));
+    let screen = game.presentation.camera.to_screen(at);
+    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    assert!(game.pending.is_empty(), "{:?}", game.pending);
+    assert_eq!(
+        input.armed_mode(),
+        Some(ArmedMode::Weld),
+        "no repair mends a retiring machine, so the click misses"
     );
 }
 
@@ -5787,8 +5912,8 @@ fn the_roster_strip_cuts_a_mixed_selection_both_ways() {
     let strip: Vec<_> = panel
         .roster
         .iter()
-        .filter_map(|c| match c.action {
-            crate::panel::CardAction::FilterKind(k) => Some((k, c.title.clone())),
+        .filter_map(|c| match c.card.action {
+            crate::panel::CardAction::FilterKind(k) => Some((k, c.card.title.clone())),
             _ => None,
         })
         .collect();

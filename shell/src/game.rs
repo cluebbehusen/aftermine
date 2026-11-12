@@ -83,11 +83,11 @@ pub(crate) mod checkpoint;
 pub(crate) mod network;
 mod projectiles;
 pub(crate) mod projection;
-pub(crate) use projectiles::LaunchPose;
+pub(crate) use projectiles::{LaunchPose, missile_ejection_ticks, projectile_elapsed_ticks};
 
 pub(crate) use fx::{
-    BuildingHit, HitSurface, INTERCEPT_OVERLAP_TICKS, InterceptFlight, UnitBody, UnitHit,
-    WARHEAD_BURST,
+    BuildingHit, FLAK_ROUND_TRAVEL, HitSurface, INTERCEPT_OVERLAP_TICKS, InterceptFlight, UnitBody,
+    UnitHit, WARHEAD_BURST,
 };
 pub use fx::{Effect, EffectKind, FlakYokeDelay, PingKind, ShotStyle, SoundKind};
 
@@ -340,53 +340,20 @@ impl Game {
         // valid file can still claim a duration long enough to freeze the
         // UI for minutes.
         let _load = aftermine_kit::diagnostics::stage(Stage::ReplayLoad, 0);
-        // Untrusted file: enforce the invariants recording guarantees, and
-        // refuse cross-version saves outright, since resuming one would
-        // keep recording onto a log that can no longer reproduce.
-        replay
-            .validate(Some(SIM_VERSION))
-            .map_err(|err| anyhow::anyhow!("{err}"))?;
-        anyhow::ensure!(
-            replay.origin.is_none(),
-            "live continuation requires a session checkpoint for this replay origin"
-        );
-        let scenario = replay.setup.clone();
-        let mut state = scenario.build()?;
-        let total = aftermine_kit::replay_duration(&replay);
-        anyhow::ensure!(
-            total <= aftermine_kit::MAX_REPLAY_TICKS,
-            "replay spans {total} ticks, beyond the {}-tick interactive load limit \
-             (the headless driver replays without one)",
-            aftermine_kit::MAX_REPLAY_TICKS
-        );
-        // The fast-forward lets bots observe every tick to rebuild controller
-        // memory. Their generated commands are discarded because the record
-        // remains authoritative.
-        let mut bots = seat_controllers(&scenario)?;
-        let mut cursor = replay.cursor();
-        let mut live_stats = aftermine_kit::stats::LiveMatchStats::new(&state);
+        let mut game = Self::new(replay.setup.clone())?;
+        let mut live_stats = aftermine_kit::stats::LiveMatchStats::new(&game.state);
         let mut projectile_releases = projectiles::ProjectileReleases::default();
-        let mut game = Self::new(scenario)?;
         let mut boundary_fog = game.presentation.boundary_fog.clone();
-        for _ in 0..total {
-            aftermine_kit::diagnostics::progress(state.current_tick());
-            let _ = aftermine_kit::bot_execution::commands(&state, &mut bots);
-            let commands: Vec<PlayerCommand> = cursor
-                .take_tick(state.current_tick())
-                .iter()
-                .map(|t| t.command.clone())
-                .collect();
-            let report = state.tick(&commands);
-            aftermine_kit::controller::record_events(&mut bots, &report);
-            game.keyframes.observe(&state);
-            boundary_fog.observe(&state, game.presentation.human);
-            projectile_releases.observe(&state, &report.events);
-            live_stats.observe(&state, &report.events);
-        }
-        anyhow::ensure!(
-            cursor.is_finished(),
-            "replay duration metadata does not cover its own commands"
-        );
+        let human = game.presentation.human;
+        let keyframes = &mut game.keyframes;
+        let aftermine_kit::Resumed { state, bots } =
+            aftermine_kit::resume(&replay, |state, report| {
+                aftermine_kit::diagnostics::progress(state.current_tick());
+                keyframes.observe(state);
+                boundary_fog.observe(state, human);
+                projectile_releases.observe(state, &report.events);
+                live_stats.observe(state, &report.events);
+            })?;
         game.replace_state_after_jump(&state);
         game.presentation.boundary_fog = boundary_fog;
         game.presentation.projectile_releases = projectile_releases;
@@ -766,6 +733,12 @@ pub(crate) fn gun_turns_off_hull(kind: UnitKind) -> bool {
             .is_some_and(|brace| brace.traverse.is_some())
 }
 
+/// How long, in seconds, a body that fired without a turret holds its aim
+/// before it may turn back to its facing.
+pub(crate) const AIM_HOLD_SECS: f32 = 1.2;
+
+/// The signed turn from angle `from` to angle `to` the short way, in
+/// radians within `[-PI, PI)`.
 pub(crate) fn angle_delta(from: f32, to: f32) -> f32 {
     (to - from + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }

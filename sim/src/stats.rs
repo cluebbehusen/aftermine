@@ -2820,6 +2820,31 @@ pub const CHARGE_ARRAY_DETECT_RADIUS: i32 = 22;
 /// Ticks per scrap credited by a tier-one Reclaimer (the Refinery).
 pub const REFINERY_PERIOD: u64 = 10;
 
+/// Ticks per scrap a built Reclaimer of `tier` credits.
+pub const fn reclaimer_period(tier: u8) -> u64 {
+    if tier == 0 {
+        RECLAIMER_PERIOD
+    } else {
+        REFINERY_PERIOD
+    }
+}
+
+/// Scrap a minute a built Reclaimer of `tier` credits.
+pub fn passive_scrap_per_minute(tier: u8) -> u32 {
+    let per_minute = 60 * u64::from(crate::TICKS_PER_SECOND) / reclaimer_period(tier);
+    u32::try_from(per_minute).unwrap_or(u32::MAX)
+}
+
+/// How far a built Array of `tier` reveals buried charges: the base ring,
+/// or the Deep Array's wider one.
+pub const fn charge_detect_radius(tier: u8) -> i32 {
+    if tier == 0 {
+        CHARGE_BASE_ARRAY_DETECT_RADIUS
+    } else {
+        CHARGE_ARRAY_DETECT_RADIUS
+    }
+}
+
 /// Maximum footprint-to-footprint tile distance at which a completed own
 /// Foundry supports an Extractor.
 pub const EXTRACTOR_SUPPORT_RADIUS: i32 = 8;

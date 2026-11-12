@@ -173,7 +173,7 @@ fn an_island_map_reports_no_passages() {
     ]);
     // The west island's frame lies past a one-tile gap under its rock, so
     // the same layout on contested ground would report it.
-    let grid = Grid::new(&state);
+    let grid = super::super::passable_grid(&state);
     assert!(narrow_tiles(&grid).iter().any(|&n| n));
     assert!(narrow_passages(&state).is_empty());
 }
@@ -238,7 +238,7 @@ fn walking_back_marks_exactly_the_pairwise_shortest_routes() {
         staged.push(field(&refs));
     }
     for state in &staged {
-        let grid = Grid::new(state);
+        let grid = super::super::passable_grid(state);
         let points = points_of_interest(state, &grid);
         assert_eq!(traffic(&grid, &points), pairwise_traffic(&grid, &points));
     }

@@ -161,8 +161,7 @@ impl MawMotion {
 
     /// How far the drum has lowered, eased, 0 stowed to 1 lowered.
     pub(crate) fn deploy(&self, alpha: f32) -> f32 {
-        let linear = lerp(self.deploy, alpha);
-        linear * linear * (3.0 - 2.0 * linear)
+        crate::numeric::smoothstep(lerp(self.deploy, alpha))
     }
 
     pub(crate) fn spin(&self, alpha: f32) -> f32 {

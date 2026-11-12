@@ -42,10 +42,10 @@ fn publish_strip(game: &mut Game, input: &InputState) -> Vec<(Rect, CardAction)>
         .roster
         .iter()
         .enumerate()
-        .map(|(slot, card)| {
+        .map(|(slot, chip)| {
             (
                 Rect::new(20.0 + 68.0 * slot as f32, 600.0, 64.0, 64.0),
-                card.action,
+                chip.card.action,
             )
         })
         .collect();

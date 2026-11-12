@@ -271,3 +271,25 @@ fn only_a_lattice_keeps_a_status_line_while_it_is_blank() {
         assert!(info.status.is_empty(), "{kind:?}: {:?}", info.status);
     }
 }
+
+#[test]
+fn rows_speak_the_rosters_words() {
+    let row = |panel: &Panel, label: &str| {
+        panel
+            .info
+            .rows
+            .iter()
+            .find(|r| r.label == label)
+            .map(|r| r.value.clone())
+    };
+    let skyhook = UnitKind::Skyhook.stats().transport_capacity;
+    assert_eq!(
+        row(&selected(UnitKind::Skyhook, false), "Cargo"),
+        Some(format!("0/{skyhook} slots"))
+    );
+    assert_eq!(
+        row(&selected(UnitKind::Skyhook, true), "Cargo"),
+        Some(format!("{skyhook} slots"))
+    );
+    assert!(row(&selected(UnitKind::Surveyor, false), "Charge detection").is_some());
+}

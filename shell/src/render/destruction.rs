@@ -4,20 +4,10 @@ use super::{air_presentation, reduced_motion, seat_identity_color, unit_draw_sca
 use crate::assets::Sprites;
 use crate::game::{EffectKind, Scene, UnitBody};
 use crate::numeric;
-use crate::numeric::Fit;
+use crate::numeric::{Fit, rotate};
+use crate::render::prim::pixel_rect;
 use aftermine_sim::{BuildingKind, ProjectileKind};
 use macroquad::prelude::*;
-
-fn pixel_rect(center: Vec2, size: Vec2, pixel: f32, color: Color) {
-    let origin = (center - size * 0.5) / pixel;
-    draw_rectangle(
-        origin.x.round() * pixel,
-        origin.y.round() * pixel,
-        (size.x / pixel).round().max(1.0) * pixel,
-        (size.y / pixel).round().max(1.0) * pixel,
-        color,
-    );
-}
 
 fn hash(seed: u32, index: u32) -> u32 {
     seed.wrapping_mul(2_654_435_761)
@@ -25,17 +15,8 @@ fn hash(seed: u32, index: u32) -> u32 {
         .rotate_left(13)
 }
 
-fn rotate(v: Vec2, angle: f32) -> Vec2 {
-    let (s, c) = angle.sin_cos();
-    vec2(v.x * c - v.y * s, v.x * s + v.y * c)
-}
-
 fn visible(game: &Scene<'_>, at: Vec2) -> bool {
-    game.presentation.all_seeing()
-        || game.my_vision().visible(chassis::grid::TilePos::new(
-            numeric::to_i32(at.x.floor()),
-            numeric::to_i32(at.y.floor()),
-        ))
+    game.sees_tile(numeric::tile_at(at))
 }
 
 pub(super) fn casualty_visible(game: &Scene<'_>, at: Vec2, body: UnitBody) -> bool {
@@ -537,8 +518,8 @@ fn fall_pose(
         return crash_pose(at, body, age, reduced_motion());
     };
     let t = (age / CRASH_TIME).clamp(0.0, 1.0);
-    let launch = vec2(crash.launch.x.to_num(), crash.launch.y.to_num());
-    let impact = vec2(crash.impact.x.to_num(), crash.impact.y.to_num());
+    let launch = crate::game::world_vec(crash.launch);
+    let impact = crate::game::world_vec(crash.impact);
     let trajectory = launch.lerp(impact, (t - 0.2 * t * t) / 0.8);
     let (_, shadow_offset, lift) = air_presentation(body.kind, 1.0);
     CrashPose {

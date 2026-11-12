@@ -39,11 +39,7 @@ const DRONE_SHADOW: Vec2 = vec2(3.0, 7.0);
 /// A canvas offset turned with the hull, in screen pixels at `scale`
 /// screen pixels per canvas pixel.
 fn turned(offset: Vec2, rotation: f32, scale: f32) -> Vec2 {
-    let (sin, cos) = rotation.sin_cos();
-    vec2(
-        offset.x * cos - offset.y * sin,
-        offset.x * sin + offset.y * cos,
-    ) * scale
+    crate::numeric::rotate(offset, rotation) * scale
 }
 
 fn draw_layer(
@@ -147,11 +143,6 @@ pub(super) fn draw_under(
     );
 }
 
-fn ramp(t: f32, a: f32, b: f32) -> f32 {
-    let u = ((t - a) / (b - a)).clamp(0.0, 1.0);
-    u * u * (3.0 - 2.0 * u)
-}
-
 /// How far the cargo hatch stands open while a rider boards or leaves:
 /// it swings open, holds, then closes.
 fn hatch_opening(transport: Option<TransportActionState>) -> f32 {
@@ -159,7 +150,10 @@ fn hatch_opening(transport: Option<TransportActionState>) -> f32 {
         Some(
             TransportActionState::Boarding { progress }
             | TransportActionState::Unloading { progress },
-        ) => ramp(progress, 0.0, 0.25) * (1.0 - ramp(progress, 0.6, 1.0)),
+        ) => {
+            crate::numeric::ramp(progress, 0.0, 0.25)
+                * (1.0 - crate::numeric::ramp(progress, 0.6, 1.0))
+        }
         None => 0.0,
     }
 }

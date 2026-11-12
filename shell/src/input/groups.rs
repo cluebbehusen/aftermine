@@ -3,7 +3,7 @@
 use crate::game::{Game, Scene};
 use crate::panel::CardIcon;
 use aftermine_sim::{BuildingId, UnitId};
-use macroquad::prelude::{Vec2, vec2};
+use macroquad::prelude::Vec2;
 
 /// A saved control group. Like a selection, it holds units or buildings,
 /// never both, so every command path that reads a selection reads a
@@ -101,14 +101,14 @@ impl Group {
             Self::Units(ids) => ids
                 .iter()
                 .filter_map(|id| game.state.unit(*id))
-                .map(|u| vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>()))
+                .map(|u| crate::game::world_vec(u.pos))
                 .collect(),
             Self::Buildings(ids) => ids
                 .iter()
                 .filter_map(|id| game.state.building(*id))
                 .map(|b| {
                     let center = b.center();
-                    vec2(center.x.to_num::<f32>(), center.y.to_num::<f32>())
+                    crate::game::world_vec(center)
                 })
                 .collect(),
         };

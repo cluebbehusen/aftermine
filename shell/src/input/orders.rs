@@ -37,7 +37,7 @@ pub(super) fn rally_producers(
     let at = match rally {
         Rally::Tile(tile) => tile_center(tile),
         Rally::Unit(unit) => match game.state.unit(unit) {
-            Some(u) => vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>()),
+            Some(u) => crate::game::world_vec(u.pos),
             None => return,
         },
     };
@@ -74,6 +74,24 @@ impl OrderReach {
         unit_pick_radius(kind).max(self.units)
     }
 
+    /// The unit `pred` accepts that `world` names: the nearest whose own
+    /// reach covers it, the lower id on a tie.
+    pub(super) fn unit_at(
+        self,
+        game: &Game,
+        world: Vec2,
+        pred: impl Fn(&aftermine_sim::Unit) -> bool,
+    ) -> Option<&aftermine_sim::Unit> {
+        game.state
+            .units()
+            .iter()
+            .filter(|unit| pred(unit))
+            .map(|unit| (crate::game::world_vec(unit.pos).distance(world), unit))
+            .filter(|(distance, unit)| *distance <= self.unit(unit.kind))
+            .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.id.cmp(&b.1.id)))
+            .map(|(_, unit)| unit)
+    }
+
     /// The building `pred` accepts that `world` names: the one under it,
     /// else the nearest whose footprint lies within reach.
     pub(super) fn building(
@@ -106,20 +124,35 @@ impl OrderReach {
 /// The rally a world click names: the own unit within `reach`, never a
 /// drone, or else the ground.
 pub(super) fn rally_at(game: &Game, world: Vec2, reach: OrderReach) -> Rally {
-    game.state
-        .units()
-        .iter()
-        .filter(|u| u.player == game.presentation.human && u.host.is_none())
-        .map(|u| {
-            let at = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-            (at.distance(world), u.id, u.kind)
-        })
-        .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
-        .min_by(|a, b| a.0.total_cmp(&b.0))
+    reach
+        .unit_at(game, world, |unit| own_body(game, unit))
         .map_or_else(
             || Rally::Tile(ground_tile(&game.state, world)),
-            |(_, unit, _)| Rally::Unit(unit),
+            |unit| Rally::Unit(unit.id),
         )
+}
+
+/// Whether `unit` is one of the player's own living machines an order can
+/// name: anything but a drone, which only ever follows its host.
+pub(super) fn own_body(game: &Game, unit: &aftermine_sim::Unit) -> bool {
+    unit.player == game.presentation.human && unit.hp > 0 && unit.host.is_none()
+}
+
+/// Whether the player's workers can weld `unit`: an own wounded ground
+/// body, airframes parked, that is not on its way to a Crucible.
+pub(super) fn weldable(game: &Game, unit: &aftermine_sim::Unit) -> bool {
+    let stats = unit.kind.stats();
+    own_body(game, unit)
+        && unit.hp < stats.max_hp
+        && stats.repairable()
+        && unit.domain() == aftermine_sim::stats::Domain::Ground
+        && !unit.retiring()
+}
+
+/// Whether the player's ground units can board `unit`: an own transport
+/// that is not on its way to a Crucible.
+fn loadable(game: &Game, unit: &aftermine_sim::Unit) -> bool {
+    own_body(game, unit) && unit.kind.stats().transport_capacity > 0 && !unit.retiring()
 }
 
 /// The nearest hostile the player sees within `reach` of `world`, in a
@@ -130,34 +163,19 @@ fn visible_hostile_target_at(
     reach: OrderReach,
     fires_at: &dyn Fn(aftermine_sim::stats::Domain) -> bool,
 ) -> Option<(Target, Vec2, aftermine_sim::stats::Domain)> {
-    let unit = game
-        .state
-        .units()
-        .iter()
-        .filter(|unit| {
-            game.state.hostile(game.presentation.human, unit.player)
-                && game.my_vision().sees_unit(unit)
-                && fires_at(unit.domain())
-        })
-        .filter_map(|unit| {
-            let position = vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>());
-            let distance = position.distance(world);
-            (distance <= reach.unit(unit.kind)).then_some((
-                distance,
-                unit.id,
-                position,
-                // Its layer right now: a parked airframe is a ground
-                // target for the weapons that can reach ground.
-                unit.domain(),
-            ))
-        })
-        .min_by(|left, right| {
-            left.0
-                .total_cmp(&right.0)
-                .then_with(|| left.1.cmp(&right.1))
-        });
-    if let Some((_, id, position, domain)) = unit {
-        return Some((Target::Unit(id), position, domain));
+    let unit = reach.unit_at(game, world, |unit| {
+        game.state.hostile(game.presentation.human, unit.player)
+            && game.my_vision().sees_unit(unit)
+            && fires_at(unit.domain())
+    });
+    if let Some(unit) = unit {
+        // Its layer right now: a parked airframe is a ground target for
+        // the weapons that can reach ground.
+        return Some((
+            Target::Unit(unit.id),
+            crate::game::world_vec(unit.pos),
+            unit.domain(),
+        ));
     }
     if !fires_at(aftermine_sim::stats::Domain::Ground) {
         return None;
@@ -420,23 +438,10 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: O
         })
         .collect();
     if !carriable.is_empty() {
-        let sling = game
-            .state
-            .units()
-            .iter()
-            .filter(|u| {
-                u.player == game.presentation.human
-                    && u.hp > 0
-                    && u.kind.stats().transport_capacity > 0
-                    && !game.presentation.selection.units.contains(&u.id)
-            })
-            .map(|u| {
-                let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-                (p.distance(world), u.id, u.kind)
-            })
-            .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
-            .min_by(|a, b| a.0.total_cmp(&b.0));
-        if let Some((_, transport, _)) = sling {
+        let sling = reach.unit_at(game, world, |u| {
+            loadable(game, u) && !game.presentation.selection.units.contains(&u.id)
+        });
+        if let Some(transport) = sling.map(|u| u.id) {
             game.issue(Command::Load {
                 units: carriable,
                 transport,
@@ -470,25 +475,10 @@ pub(super) fn context_order(game: &mut Game, screen: Vec2, queue: bool, reach: O
     // current selection, so ordering a group that contains its own wounded
     // still reads as a move. The armed Weld verb reaches those.
     if has_worker {
-        let patient = game
-            .state
-            .units()
-            .iter()
-            .filter(|u| {
-                u.player == game.presentation.human
-                    && u.hp > 0
-                    && u.hp < u.kind.stats().max_hp
-                    && u.kind.stats().repairable()
-                    && u.domain() == aftermine_sim::stats::Domain::Ground
-                    && !game.presentation.selection.units.contains(&u.id)
-            })
-            .map(|u| {
-                let p = vec2(u.pos.x.to_num::<f32>(), u.pos.y.to_num::<f32>());
-                (p.distance(world), u.id, u.kind)
-            })
-            .filter(|(distance, _, kind)| *distance <= reach.unit(*kind))
-            .min_by(|a, b| a.0.total_cmp(&b.0));
-        if let Some((_, target, _)) = patient {
+        let patient = reach.unit_at(game, world, |u| {
+            weldable(game, u) && !game.presentation.selection.units.contains(&u.id)
+        });
+        if let Some(target) = patient.map(|u| u.id) {
             game.issue(Command::RepairUnit {
                 units,
                 target,

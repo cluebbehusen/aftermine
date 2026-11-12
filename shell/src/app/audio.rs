@@ -2,7 +2,7 @@
 //! score follows the screen.
 
 use super::{App, Screen};
-use crate::game::{Game, SoundKind};
+use crate::game::SoundKind;
 use macroquad::prelude::Vec2;
 
 /// Mixes and plays this frame's queued sounds and steers the score.
@@ -19,18 +19,11 @@ pub(super) fn frame(app: &mut App, screen: &mut Screen, dt: f32) {
         camera.viewport() / camera.zoom * 0.5,
         camera.zoom,
     );
-    let (motor_game, motor_running) = match &*screen {
-        Screen::Playback { session, .. } => (
-            session.view(),
-            !session.clock.paused && session.seeking.is_none(),
-        ),
-        Screen::Playing => (
-            app.game.view(),
-            !app.game.clock.paused
-                && !super::screen_flow::held_for_controller(&app.game, &app.input),
-        ),
-        _ => (app.game.view(), false),
-    };
+    let motor_running = screen.motors_run(
+        &app.game,
+        super::screen_flow::held_for_controller(&app.game, &app.input),
+    );
+    let motor_game = screen.visible(&app.game).view();
     app.mixer.rocket_loops.update(
         &motor_game,
         motor_running,
@@ -74,44 +67,15 @@ pub(super) fn frame(app: &mut App, screen: &mut Screen, dt: f32) {
         app.mixer
             .play(&app.sounds, event.kind, &app.config.volumes, event.gain);
     }
-    // The report before the first Home is silent; the score starts at the cut.
-    if !matches!(screen, Screen::ColdOpen(_))
+    if screen.kind().scored()
         && let Some(soundtrack) = &mut app.soundtrack
     {
         soundtrack.update(
-            soundtrack_scene(screen, &app.game),
+            screen.soundtrack_scene(&app.game),
             combat_impulse,
             dt,
             app.config.volumes,
         );
         soundtrack.apply(&app.sounds);
-    }
-}
-
-pub(super) fn soundtrack_scene(screen: &Screen, game: &Game) -> crate::soundtrack::Scene {
-    match screen {
-        Screen::Playing => crate::soundtrack::match_scene(&game.view(), false),
-        Screen::Playback { session, .. } => crate::soundtrack::match_scene(
-            &session.view(),
-            session.clock.paused || session.seeking.is_some(),
-        ),
-        Screen::FinalMap(_) => crate::soundtrack::match_scene(&game.view(), true),
-        Screen::Busy(_) | Screen::Pause(_) | Screen::Waiting(_) => {
-            crate::soundtrack::match_scene(&game.view(), true)
-        }
-        Screen::Settings { .. } | Screen::Codex { .. } | Screen::Lessons { .. }
-            if screen.over_pause() =>
-        {
-            crate::soundtrack::match_scene(&game.view(), true)
-        }
-        Screen::Results(_) => crate::soundtrack::match_scene(&game.view(), false),
-        Screen::ColdOpen(_)
-        | Screen::Home(_)
-        | Screen::Lobby { .. }
-        | Screen::Settings { .. }
-        | Screen::Codex { .. }
-        | Screen::Lessons { .. }
-        | Screen::Wizard(_)
-        | Screen::Replays(_) => crate::soundtrack::Scene::Menu,
     }
 }

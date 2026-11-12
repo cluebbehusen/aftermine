@@ -175,23 +175,15 @@ impl PreviousEffects {
                 .filter(|crash| {
                     crash.arrival == state.current_tick()
                         && (crash.player == game.human
-                            || game.all_seeing()
-                            || state
-                                .vision(game.human)
-                                .visible(chassis::grid::TilePos::containing(crash.impact)))
+                            || game
+                                .sees_tile(state, chassis::grid::TilePos::containing(crash.impact)))
                 })
                 .map(|crash| crash.unit)
                 .collect(),
             buildings: state
                 .buildings()
                 .iter()
-                .filter(|b| {
-                    !b.provisional()
-                        && (b.player == game.human
-                            || game.all_seeing()
-                            || (b.tiles().any(|t| state.vision(game.human).visible(t))
-                                && state.building_apparent(game.human, b)))
-                })
+                .filter(|b| !b.provisional() && game.sees_building(state, b))
                 .map(|b| {
                     (
                         b.id,
@@ -214,11 +206,7 @@ impl PreviousEffects {
             units: state
                 .units()
                 .iter()
-                .filter(|unit| {
-                    unit.player == game.human
-                        || game.all_seeing()
-                        || state.vision(game.human).sees_unit(unit)
-                })
+                .filter(|unit| game.sees_unit(state, unit))
                 .map(|unit| {
                     (
                         unit.id,
@@ -437,7 +425,25 @@ pub enum ShotStyle {
     },
 }
 
+/// Seconds one flak round flies from its yoke to the burst.
+pub(crate) const FLAK_ROUND_TRAVEL: f32 = 0.10;
+
+/// The share of a kinetic report's life its round spends in flight.
+const KINETIC_TRAVEL_FRACTION: f32 = 0.60;
+
 impl ShotStyle {
+    /// Seconds before the shot reaches its contact and the impact begins:
+    /// none for a rail or a contact tool, the last yoke's round for flak.
+    pub fn travel_time(self) -> f32 {
+        match self {
+            ShotStyle::Contact | ShotStyle::Rail => 0.0,
+            ShotStyle::ForgeSpot => 0.12,
+            ShotStyle::Mortar => 0.144,
+            ShotStyle::Kinetic { .. } => KINETIC_TRAVEL_FRACTION * self.life(),
+            ShotStyle::FlakBurst { yoke_delay, .. } => yoke_delay.seconds() + FLAK_ROUND_TRAVEL,
+        }
+    }
+
     /// Seconds the report stays on screen.
     pub fn life(self) -> f32 {
         match self {
@@ -856,14 +862,9 @@ impl Presentation {
             }
         }
         let visible = witnessed
-            || self.all_seeing()
             || crash.player == self.human
-            || state
-                .vision(self.human)
-                .visible(chassis::grid::TilePos::containing(crash.launch))
-            || state
-                .vision(self.human)
-                .visible(chassis::grid::TilePos::containing(crash.impact));
+            || self.sees_tile(state, chassis::grid::TilePos::containing(crash.launch))
+            || self.sees_tile(state, chassis::grid::TilePos::containing(crash.impact));
         if !visible {
             return;
         }
@@ -1007,13 +1008,7 @@ impl Presentation {
     fn building_hit(&self, state: &State, id: aftermine_sim::BuildingId) -> Option<BuildingHit> {
         state
             .building(id)
-            .filter(|b| {
-                !b.provisional()
-                    && (self.all_seeing()
-                        || b.player == self.human
-                        || b.tiles().any(|t| state.vision(self.human).visible(t))
-                            && state.building_apparent(self.human, b))
-            })
+            .filter(|b| !b.provisional() && self.sees_building(state, b))
             .map(|b| BuildingHit::capture(state, b))
             .or_else(|| {
                 self.fx_previous
@@ -1036,10 +1031,7 @@ impl Presentation {
             aftermine_sim::Target::Unit(id) => id,
         };
         let (body, mut center, airborne, frame) = if let Some(unit) = state.unit(id) {
-            if !self.all_seeing()
-                && unit.player != self.human
-                && !state.vision(self.human).sees_unit(unit)
-            {
+            if !self.sees_unit(state, unit) {
                 return None;
             }
             (
@@ -1177,10 +1169,7 @@ impl Presentation {
     #[expect(clippy::too_many_lines, reason = "one arm per simulation event")]
     pub(super) fn spawn_fx(&mut self, state: &State, events: &[Event]) {
         let sees = |game: &Self, pos: chassis::fx::Vec2Fx| {
-            game.all_seeing()
-                || state
-                    .vision(game.human)
-                    .visible(chassis::grid::TilePos::containing(pos))
+            game.sees_tile(state, chassis::grid::TilePos::containing(pos))
         };
         let mut remaining = std::collections::HashMap::<aftermine_sim::UnitId, u8>::new();
         for event in events {
@@ -1494,9 +1483,7 @@ impl Presentation {
                     // Seeing any tile of the footprint clears a ghost, so a
                     // mark there tells nothing the player hasn't learned.
                     let scorched = !state.hostile(self.human, *player)
-                        || self.all_seeing()
-                        || footprint(*kind, *pos)
-                            .any(|tile| state.vision(self.human).visible(tile));
+                        || footprint(*kind, *pos).any(|tile| self.sees_tile(state, tile));
                     let body = self
                         .fx_previous
                         .buildings
@@ -1545,10 +1532,7 @@ impl Presentation {
                     let Some(host) = state.unit(*host) else {
                         continue;
                     };
-                    if host.player == self.human
-                        || self.all_seeing()
-                        || state.vision(self.human).sees_unit(host)
-                    {
+                    if self.sees_unit(state, host) {
                         let sound = if matches!(event, Event::DroneLaunched { .. }) {
                             SoundKind::DroneLaunch
                         } else {
@@ -1774,10 +1758,7 @@ impl Presentation {
                 } => {
                     // What the blast hurts alerts through its own
                     // `DamageTaken`; a near miss raises nothing.
-                    let impact_sound = self.audio_timeline.landed(*player, *at);
                     let world = world_vec(*at);
-                    let hostile_shell = state.hostile(self.human, *player);
-                    self.queue_blast(impact_sound, world, !hostile_shell || sees(self, *at));
                     let arrived = self
                         .fx_previous
                         .shells
@@ -1802,6 +1783,13 @@ impl Presentation {
                         .map_or(aftermine_sim::ProjectileKind::Shell, |(shell, _)| {
                             shell.kind
                         });
+                    let impact_sound = if payload == aftermine_sim::ProjectileKind::Missile {
+                        SoundKind::RocketImpact
+                    } else {
+                        SoundKind::Artillery
+                    };
+                    let hostile_shell = state.hostile(self.human, *player);
+                    self.queue_blast(impact_sound, world, !hostile_shell || sees(self, *at));
                     let from = arrived
                         .as_ref()
                         .map_or(world, |(shell, _)| world_vec(shell.launch));
