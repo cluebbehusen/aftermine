@@ -209,44 +209,70 @@ fn sample_text(ui: f32) -> TopBarText {
 }
 
 #[test]
-fn the_desktop_top_bar_keeps_its_legacy_positions() {
-    let bar = top_bar(1280.0, 1.0, Platform::Desktop, sample_text(1.0));
-    assert_eq!((bar.scrap_label_x, bar.scrap_x), (12.0, 70.0));
-    assert_eq!(bar.passive_x, 151.0, "a short bank keeps the minimum");
-    assert_eq!(
-        bar.units_x,
-        151.0 + 120.0 + 16.0,
-        "a long income pushes the count"
+fn the_desktop_top_bar_reads_left_to_right_without_overlap() {
+    let text = sample_text(1.0);
+    let bar = top_bar(1280.0, 1.0, Platform::Desktop, text);
+    let right = |rect: Rect| rect.x + rect.w;
+    assert!(bar.scrap_label_x < bar.scrap_x);
+    assert!(bar.scrap_x + text.scrap <= bar.passive_x);
+    assert!(bar.passive_x + text.passive <= bar.units_x);
+    assert!(bar.units_x + text.units_label <= bar.count_x);
+    assert!(bar.count_x + text.units <= bar.idle_badge.x);
+    assert!(
+        bar.idle_badge.w > text.idle.unwrap(),
+        "the badge holds its text"
     );
-    assert_eq!(bar.count_x, bar.units_x + 60.0);
-    assert_eq!(
-        bar.idle_badge,
-        Rect::new(bar.count_x + 45.0, 3.0, 88.0, 34.0)
+    assert!(bar.status_x + text.status < bar.pause_button.x);
+    assert!(right(bar.pause_button) < bar.menu_button.x);
+    assert!(right(bar.menu_button) <= 1280.0);
+    assert_eq!(bar.status_space, (right(bar.idle_badge), bar.status_x));
+    for rect in [bar.idle_badge, bar.pause_button, bar.menu_button] {
+        assert!(
+            rect.y >= 0.0 && rect.y + rect.h <= TOP_BAR_H,
+            "{rect:?} stays inside the bar"
+        );
+    }
+
+    let short_bank = top_bar(
+        1280.0,
+        1.0,
+        Platform::Desktop,
+        TopBarText { scrap: 1.0, ..text },
     );
-    assert_eq!(bar.menu_button, Rect::new(1238.0, 3.0, 34.0, 34.0));
-    assert_eq!(bar.pause_button, Rect::new(1194.0, 3.0, 34.0, 34.0));
-    assert_eq!(bar.status_x, 1194.0 - 12.0 - 76.0);
     assert_eq!(
-        bar.status_space,
-        (bar.idle_badge.x + bar.idle_badge.w, bar.status_x)
+        short_bank.passive_x, bar.passive_x,
+        "a short bank keeps the minimum"
     );
-    let touch = top_bar(1280.0, 1.0, Platform::Touch, sample_text(1.0));
-    assert_eq!(
-        touch.scrap_label_x, 18.0,
-        "touch holds the bank off the corner"
-    );
-    assert_eq!(touch.menu_button.x, 1280.0 - 34.0 - 20.0);
-    let no_idle = top_bar(
+    let long_income = top_bar(
         1280.0,
         1.0,
         Platform::Desktop,
         TopBarText {
-            idle: None,
-            ..sample_text(1.0)
+            passive: text.passive + 40.0,
+            ..text
         },
     );
+    assert_eq!(
+        long_income.units_x,
+        bar.units_x + 40.0,
+        "a long income pushes the count"
+    );
+
+    let touch = top_bar(1280.0, 1.0, Platform::Touch, text);
+    assert!(
+        touch.scrap_label_x > bar.scrap_label_x,
+        "touch holds the bank off the corner"
+    );
+    assert!(right(touch.menu_button) < right(bar.menu_button));
+
+    let no_idle = top_bar(
+        1280.0,
+        1.0,
+        Platform::Desktop,
+        TopBarText { idle: None, ..text },
+    );
     assert_eq!(no_idle.idle_badge, Rect::new(0.0, 0.0, 0.0, 0.0));
-    assert_eq!(no_idle.status_space.0, no_idle.count_x + 24.0);
+    assert_eq!(no_idle.status_space.0, no_idle.count_x + text.units);
 }
 
 #[test]

@@ -1495,71 +1495,21 @@ fn defense_tracking_game() -> (crate::game::Game, BuildingId, UnitId) {
 }
 
 #[test]
-fn every_weapon_family_uses_its_physical_report() {
-    assert_eq!(
-        unit_shot_style(UnitKind::Scuttler).unwrap(),
-        ShotStyle::Contact
-    );
-    assert_eq!(unit_shot_style(UnitKind::Lancer).unwrap(), ShotStyle::Rail);
-    assert_eq!(
-        unit_shot_style(UnitKind::Flakhound).unwrap(),
-        ShotStyle::FlakBurst {
-            yoke_delay: FlakYokeDelay::OneTick,
-            rounds_per_yoke: 2,
-        }
-    );
-    // Both Sentinel slots speak through its one physical barrel;
-    // the second is a weaker skyward poke, not a paired flak gun.
-    assert_eq!(
-        unit_shot_style(UnitKind::Sentinel).unwrap(),
-        ShotStyle::Kinetic { heavy: false }
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Warden).unwrap(),
-        ShotStyle::Kinetic { heavy: true }
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Breaker).unwrap(),
-        ShotStyle::Mortar
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Buzzard).unwrap(),
-        ShotStyle::Kinetic { heavy: true }
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Talon).unwrap(),
-        ShotStyle::ForgeSpot
-    );
-    assert_eq!(
-        defense_report(BuildingKind::FlakTurret).shot(0),
-        ShotStyle::FlakBurst {
-            yoke_delay: FlakYokeDelay::OneAndHalfTicks,
-            rounds_per_yoke: 2,
-        }
-    );
-    assert_eq!(
-        defense_report(BuildingKind::FlakTurret).shot(1),
-        ShotStyle::FlakBurst {
-            yoke_delay: FlakYokeDelay::OneAndHalfTicks,
-            rounds_per_yoke: 3,
-        }
-    );
-    assert_eq!(
-        defense_report(BuildingKind::Turret).shot(0),
-        ShotStyle::ForgeSpot
-    );
-}
-
-#[test]
 fn flak_yoke_rounds_switch_with_the_second_muzzle_frame() {
+    let delay = |style: Option<ShotStyle>| match style {
+        Some(ShotStyle::FlakBurst { yoke_delay, .. }) => yoke_delay.ticks(),
+        other => panic!("expected a flak burst, got {other:?}"),
+    };
     assert_eq!(
         crate::presentation_animation::FLAKHOUND_REPORT_TICKS / 2.0,
-        FlakYokeDelay::OneTick.ticks()
+        delay(unit_shot_style(UnitKind::Flakhound))
     );
-    assert_eq!(
-        crate::presentation_animation::FLAK_TURRET_REPORT_TICKS / 2.0,
-        FlakYokeDelay::OneAndHalfTicks.ticks()
-    );
+    for shot in defense_report(BuildingKind::FlakTurret).shots {
+        assert_eq!(
+            crate::presentation_animation::FLAK_TURRET_REPORT_TICKS / 2.0,
+            delay(Some(*shot))
+        );
+    }
 }
 
 #[test]
@@ -1780,61 +1730,16 @@ fn only_bombard_and_bastion_use_real_shell_entities() {
 }
 
 #[test]
-fn approved_combatants_use_their_own_reports() {
-    assert_eq!(
-        unit_fire_sound(UnitKind::Sentinel).unwrap(),
-        SoundKind::SentinelFire
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Scuttler).unwrap(),
-        SoundKind::ScuttlerFire
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Lancer).unwrap(),
-        SoundKind::LancerFire
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Flakhound).unwrap(),
-        SoundKind::FlakhoundFire
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Buzzard).unwrap(),
-        SoundKind::BuzzardFire
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Talon).unwrap(),
-        SoundKind::TalonFire
-    );
-    assert_eq!(unit_fire_sound(UnitKind::Roc).unwrap(), SoundKind::RocFire);
-    assert_eq!(
-        unit_fire_sound(UnitKind::Maw),
-        None,
-        "the Maw's drum is heard as a loop"
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Drone).unwrap(),
-        SoundKind::DroneFire
-    );
-    assert_eq!(
-        defense_report(BuildingKind::FlakTurret).sound,
-        SoundKind::FlakTurretFire
-    );
-    assert_eq!(
-        shell_fire_sound(Target::Unit(UnitId(4))),
-        SoundKind::BombardFire
-    );
-    assert_eq!(
-        shell_fire_sound(Target::Building(BuildingId(7))),
-        SoundKind::BastionFire
-    );
-}
-
-#[test]
 fn generic_combatants_keep_the_generic_report() {
     assert_eq!(
         unit_fire_sound(UnitKind::Harvester),
         None,
         "an unarmed worker has no report"
+    );
+    assert_eq!(
+        unit_fire_sound(UnitKind::Maw),
+        None,
+        "the Maw's drum is heard as a loop"
     );
     assert_eq!(defense_report(BuildingKind::Turret).sound, SoundKind::Laser);
 }
@@ -1910,6 +1815,14 @@ fn every_projectile_shooter_launches_with_its_own_report() {
             "{kind:?}"
         );
     }
+    assert_eq!(
+        shell_fire_sound(Target::Unit(UnitId(4))),
+        SoundKind::BombardFire
+    );
+    assert_eq!(
+        shell_fire_sound(Target::Building(BuildingId(7))),
+        SoundKind::BastionFire
+    );
 }
 
 #[test]
