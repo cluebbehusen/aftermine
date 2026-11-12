@@ -1236,8 +1236,8 @@ pub struct Building {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rally: Option<Rally>,
     /// A player-designated target this defense prefers while its owner's
-    /// team can still resolve it, by sight, memory or radar, in the weapon's
-    /// domain. Range and cover only decide whether the preference can be
+    /// team can still resolve it as an attack target, by sight, memory,
+    /// radar or because it is public, in the weapon's domain. Range and cover only decide whether the preference can be
     /// fired on now; they do not erase it or suppress ordinary fallback
     /// acquisition.
     #[serde(default, skip_serializing_if = "Option::is_none")]

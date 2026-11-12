@@ -69,9 +69,10 @@ layer at a single level is stored as a flat map, so every map has one form.
 
 Scenario mode defaults to an ordinary match. Sandbox mode relaxes only what a
 match demands of its setup and its end, and never declares elimination or a
-result; every command, placement, ownership and cost check still applies. Mode
-is serialized state: a sandbox cannot deserialize with elimination stamps or a
-final result, and session checkpoints require matching scenario and world modes.
+result. Placement, ownership and cost checks still apply, but a seat without a
+Foundry keeps commanding until it surrenders. Mode is serialized state: a
+sandbox cannot deserialize with elimination stamps or a final result, and
+session checkpoints require matching scenario and world modes.
 
 All `State` fields are crate-private. Other crates get narrow immutable
 accessors and change the world only by passing commands to `tick`. Prediction is
