@@ -1,4 +1,6 @@
-use super::super::tests::pad_scene::{FRAME, down, left_stick, pad_input, scene, units_of, up};
+use super::super::tests::pad_scene::{
+    FRAME, down, left_stick, pad_input, pos, rest_on, scene, units_of, up,
+};
 use super::super::{ArmedMode, Group, InputState, apply_events, track_hands, update_held};
 use super::current;
 use crate::action::BindingMap;
@@ -869,6 +871,68 @@ fn a_group_of_structures_wears_its_lead_and_a_lost_member_drops_out() {
     let two = slot(&game, &input, 2);
     assert_eq!(two.count, 1);
     assert_eq!(two.card.desc, names(&["1 Sentinel."]));
+}
+
+/// Lays the whole HUD out and publishes it, as each frame does before
+/// input. The helpers above publish only the panel, which leaves these hit
+/// regions standing.
+fn lay_out_hud(game: &Game, input: &InputState) {
+    crate::render::hud::refresh(
+        &game.view(),
+        input,
+        &BindingMap::classic(),
+        crate::render::hud::HudEnv {
+            viewport: macroquad::prelude::vec2(1280.0, 800.0),
+            ui: 1.0,
+        },
+        None,
+        &|_, text: &str, size: f32| text.chars().count() as f32 * size * 0.5,
+    );
+}
+
+/// The HUD as last laid out shows no control group bar to click.
+fn no_group_bar(game: &Game) -> bool {
+    let layout = game.presentation.layout.get();
+    layout.group_column.w == 0.0 && layout.group_slots.iter().all(Option::is_none)
+}
+
+#[test]
+fn groups_assign_and_recall_with_the_group_bar_hidden() {
+    let mut game = squads();
+    let mut input = pad_input(&mut game);
+    let scuttler = units_of(&game, 0, UnitKind::Scuttler);
+    let mut army = [units_of(&game, 0, UnitKind::Sentinel), scuttler.clone()].concat();
+    army.sort_unstable();
+    lay_out_hud(&game, &input);
+    let at = pos(&game, scuttler[0]);
+    rest_on(&mut game, &mut input, at);
+    tap(&mut game, &mut input, PadButton::South);
+    assert_eq!(game.presentation.selection.units(), scuttler);
+    input.settle_hud();
+    assert!(input.hud_pad, "the press put the HUD in pad mode");
+
+    lay_out_hud(&game, &input);
+    assert!(no_group_bar(&game), "with a selection to save");
+    open_groups(&mut game, &mut input);
+    aim(&mut game, &mut input, "Group 2");
+    tap(&mut game, &mut input, PadButton::West);
+    tap(&mut game, &mut input, PadButton::LeftShoulder);
+    assert_eq!(game.presentation.selection.units(), army);
+    lay_out_hud(&game, &input);
+    open_groups(&mut game, &mut input);
+    aim(&mut game, &mut input, "Group 1");
+    tap(&mut game, &mut input, PadButton::West);
+    tap(&mut game, &mut input, PadButton::East);
+    assert!(game.presentation.selection.units().is_empty());
+
+    lay_out_hud(&game, &input);
+    assert!(no_group_bar(&game), "with two groups saved");
+    open_groups(&mut game, &mut input);
+    pick(&mut game, &mut input, "Group 2");
+    assert_eq!(game.presentation.selection.units(), scuttler);
+    open_groups(&mut game, &mut input);
+    pick(&mut game, &mut input, "Group 1");
+    assert_eq!(game.presentation.selection.units(), army);
 }
 
 #[test]

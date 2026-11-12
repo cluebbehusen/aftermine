@@ -182,9 +182,9 @@ jobs:
         run: |
           cargo build -p aftermine-shell --locked
           cargo build -p aftermine-driver --locked
-          cargo test -p aftermine-driver --test menu_ux --test session_parity --locked --no-run
+          cargo test -p aftermine-driver --test menu_ux --test session_parity --test pad_wiring --locked --no-run
       - name: Native suites
-        run: xvfb-run -a -s "-screen 0 1280x800x24" cargo test -p aftermine-driver --test menu_ux --test session_parity --locked --no-fail-fast -- --ignored --test-threads 1
+        run: xvfb-run -a -s "-screen 0 1280x800x24" cargo test -p aftermine-driver --test menu_ux --test session_parity --test pad_wiring --locked --no-fail-fast -- --ignored --test-threads 1
         env:
           RUST_BACKTRACE: "1"
       # Runs even when a suite fails, so each trial run reports both.
