@@ -88,7 +88,7 @@ fn report(workloads: Vec<WorkloadResult>) -> GraphicsReport {
 #[test]
 fn every_workload_has_a_unique_name_and_shares_a_shell_with_its_source() {
     let all = workloads();
-    assert_eq!(all.len(), 1 + 4 * Shot::MATCH.len() + 1);
+    assert_eq!(all.len(), 1 + 4 * Shot::MATCH.len() + 1 + 1);
     let names: std::collections::BTreeSet<_> = all.iter().map(|w| w.name.as_str()).collect();
     assert_eq!(names.len(), all.len());
     let mut seen = Vec::new();
@@ -101,7 +101,7 @@ fn every_workload_has_a_unique_name_and_shares_a_shell_with_its_source() {
     let running: Vec<_> = all.iter().filter(|w| w.running).collect();
     assert_eq!(running.len(), 1);
     assert_eq!(running[0].name, "large-fogged-running");
-    assert_eq!(running[0].source, Source::Match(Size::Large, View::Fogged));
+    assert_eq!(running[0].source, Source::Match(Scene::Large, View::Fogged));
 }
 
 #[test]
@@ -122,6 +122,34 @@ fn match_views_hold_near_far_and_the_zooms_between() {
     }
     let holds = select(Some("small-fogged-hold-")).expect("matches");
     assert_eq!(holds.len(), 2);
+}
+
+#[test]
+fn the_mass_battle_fits_in_view_with_every_unit_standing() {
+    let mass = Scene::Mass.scenario(Path::new(".")).expect("generated");
+    assert_eq!(mass.units.len(), 2 * MASS_PER_SIDE as usize);
+    assert!(
+        mass.players.iter().all(|seat| !seat.bot),
+        "no seat may order its army away"
+    );
+    let state = mass.build().expect("builds");
+    let width = f64::from(WINDOW[0]) / MASS_ZOOM;
+    let height = f64::from(WINDOW[1]) / MASS_ZOOM;
+    assert!(
+        f64::from(state.map().width()) <= width && f64::from(state.map().height()) <= height,
+        "the field must fit a {width:.0}x{height:.0}-tile view"
+    );
+    let workload = select(Some("mass-")).expect("matches");
+    assert_eq!(workload.len(), 1);
+    assert_eq!(workload[0].name, "mass-fogged-hold-12");
+    assert_eq!(
+        script(&workload[0], [0.0, 0.0]).motion,
+        CameraMotion::Hold {
+            center: [0.0, 0.0],
+            zoom: MASS_ZOOM,
+            frames: HOLD_FRAMES,
+        }
+    );
 }
 
 #[test]

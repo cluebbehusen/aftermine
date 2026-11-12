@@ -1,5 +1,5 @@
-//! Named native frame workloads: where a frame's time goes on each screen, map
-//! size, view and camera motion.
+//! Named native frame workloads: where a frame's time goes on each screen,
+//! scene, view, zoom and camera motion.
 
 use crate::auto::{ShellGuard, build_shell_executable_for, isolate_home, write_home_config};
 use crate::client::Client;
@@ -9,6 +9,7 @@ use aftermine_protocol::{
     CameraMotion, FrameProbes, FrameProfileView, FrameScript, Request, StateFilter, StateView,
     TimingSummary,
 };
+use aftermine_sim::Scenario;
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write as _;
@@ -27,6 +28,10 @@ const BLEND_ZOOM: f64 = 20.0;
 /// Tiles here alternate between 13 and 14 pixels wide, either side of the
 /// width where the fog feather takes a second step.
 const FEATHER_ZOOM: f64 = 13.5;
+/// Units a seat fields in the mass battle.
+const MASS_PER_SIDE: u32 = 250;
+/// The whole mass battle fits in view here.
+const MASS_ZOOM: f64 = 12.0;
 const SETTLE_FRAMES: u32 = 120;
 const HOLD_FRAMES: u32 = 240;
 const PAN_FRAMES: u32 = 480;
@@ -101,32 +106,45 @@ impl Drop for HeldClocks {
     }
 }
 
+/// The match a workload's frames show, rebuilt from a generated replay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Size {
+enum Scene {
     Small,
     Large,
+    /// The bench's mass battle: two armies of [`MASS_PER_SIDE`] units in
+    /// facing blocks on an open field.
+    Mass,
 }
 
-impl Size {
+impl Scene {
     const fn name(self) -> &'static str {
         match self {
             Self::Small => "small",
             Self::Large => "large",
+            Self::Mass => "mass",
         }
     }
 
-    const fn map(self) -> &'static str {
-        match self {
+    /// A shipped map with every seat a bot, or the mass battle, whose seats
+    /// give no orders.
+    fn scenario(self, root: &Path) -> Result<Scenario> {
+        let map = match self {
             Self::Small => "scenarios/smelter-yard.json",
             Self::Large => "scenarios/grand-viaduct.json",
-        }
+            Self::Mass => return Ok(aftermine_kit::bench::mass_battle(MASS_PER_SIDE)),
+        };
+        let mut scenario = runner::load_scenario(&root.join(map).to_string_lossy())?;
+        aftermine_kit::bench::all_bots(&mut scenario);
+        Ok(scenario)
     }
 
-    /// Late enough for real armies, early enough that the match is undecided.
+    /// For a map, late enough for real armies and early enough that the
+    /// match is undecided. The mass battle's armies stand where they deploy.
     const fn ticks(self) -> u64 {
         match self {
             Self::Small => 6_480,
             Self::Large => 18_000,
+            Self::Mass => 20,
         }
     }
 }
@@ -151,7 +169,7 @@ impl View {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Source {
     Home,
-    Match(Size, View),
+    Match(Scene, View),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -209,20 +227,20 @@ fn workloads() -> Vec<Workload> {
         shot: Shot::Own,
         running: false,
     }];
-    for size in [Size::Small, Size::Large] {
+    for scene in [Scene::Small, Scene::Large] {
         for view in [View::Fogged, View::Open] {
-            let source = Source::Match(size, view);
+            let source = Source::Match(scene, view);
             for shot in Shot::MATCH {
                 all.push(Workload {
-                    name: format!("{}-{}-{}", size.name(), view.name(), shot.name()),
+                    name: format!("{}-{}-{}", scene.name(), view.name(), shot.name()),
                     source,
                     shot,
                     running: false,
                 });
             }
-            if (size, view) == (Size::Large, View::Fogged) {
+            if (scene, view) == (Scene::Large, View::Fogged) {
                 all.push(Workload {
-                    name: format!("{}-{}-running", size.name(), view.name()),
+                    name: format!("{}-{}-running", scene.name(), view.name()),
                     source,
                     shot: Shot::Hold(NEAR_ZOOM),
                     running: true,
@@ -230,6 +248,13 @@ fn workloads() -> Vec<Workload> {
             }
         }
     }
+    let mass = Shot::Hold(MASS_ZOOM);
+    all.push(Workload {
+        name: format!("mass-fogged-{}", mass.name()),
+        source: Source::Match(Scene::Mass, View::Fogged),
+        shot: mass,
+        running: false,
+    });
     all
 }
 
@@ -472,8 +497,8 @@ impl ProfiledShell {
             Source::Home => {
                 command.arg("--automation");
             }
-            Source::Match(size, view) => {
-                let replay = input_replay(root, size)?;
+            Source::Match(scene, view) => {
+                let replay = input_replay(root, scene)?;
                 let flag = match view {
                     View::Fogged => "--replay",
                     View::Open => "--watch",
@@ -490,21 +515,21 @@ impl ProfiledShell {
         let mut units = 0;
         let mut structures = 0;
         let mut focus = None;
-        if let Source::Match(size, view) = source {
+        if let Source::Match(scene, view) = source {
             if view == View::Open {
-                let advanced = client.advance(size.ticks())?;
+                let advanced = client.advance(scene.ticks())?;
                 ensure!(
-                    advanced.tick == size.ticks(),
+                    advanced.tick == scene.ticks(),
                     "viewer stopped at tick {} on the way to {}",
                     advanced.tick,
-                    size.ticks()
+                    scene.ticks()
                 );
             }
             let status = client.status()?;
             ensure!(
-                status.tick == size.ticks() && status.result.is_none(),
+                status.tick == scene.ticks() && status.result.is_none(),
                 "expected an undecided match at tick {}, found tick {} with result {:?}",
-                size.ticks(),
+                scene.ticks(),
                 status.tick,
                 status.result
             );
@@ -532,27 +557,25 @@ impl ProfiledShell {
 
 /// The replay behind a match workload, generated the first time it is needed
 /// and kept under the gitignored `replays/` so comparisons share one input.
-fn input_replay(root: &Path, size: Size) -> Result<PathBuf> {
-    let path = root
-        .join("replays/graphics")
-        .join(format!("{}-{}.json", size.name(), size.ticks()));
+fn input_replay(root: &Path, scene: Scene) -> Result<PathBuf> {
+    let path =
+        root.join("replays/graphics")
+            .join(format!("{}-{}.json", scene.name(), scene.ticks()));
     if aftermine_kit::load_replay(&path).is_ok_and(|replay| {
         replay.validate(Some(aftermine_sim::SIM_VERSION)).is_ok()
-            && replay.meta.ticks == Some(size.ticks())
+            && replay.meta.ticks == Some(scene.ticks())
     }) {
         return Ok(path);
     }
     eprintln!("generating {}", path.display());
-    let map = root.join(size.map());
-    let mut scenario = runner::load_scenario(&map.to_string_lossy())?;
-    aftermine_kit::bench::all_bots(&mut scenario);
+    let scenario = scene.scenario(root)?;
     let build = crate::build_identity();
-    let outcome = runner::run_scenario(&scenario, size.ticks(), true, Some(&build))?;
+    let outcome = runner::run_scenario(&scenario, scene.ticks(), true, Some(&build))?;
     ensure!(
         outcome.state.result().is_none(),
-        "{} was decided before tick {}; choose an earlier one",
-        size.map(),
-        size.ticks()
+        "the {} scene was decided before tick {}; choose an earlier one",
+        scene.name(),
+        scene.ticks()
     );
     let replay = outcome.replay.context("the run recorded no replay")?;
     if let Some(parent) = path.parent() {
