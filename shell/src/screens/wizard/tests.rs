@@ -1773,3 +1773,25 @@ fn a_seat_card_labels_the_viewer_s_seat_and_a_seat_on_the_move() {
     );
     assert_eq!(view(CardController::Open, false).tag(), None);
 }
+
+#[test]
+fn the_map_rings_a_seat_only_while_the_cursor_sits_on_its_card() {
+    assert_eq!(
+        SetupCursor::Seat {
+            row: 1,
+            cell: Cell::Team
+        }
+        .focused_row(),
+        Some(1)
+    );
+    assert_eq!(
+        SetupCursor::Switch {
+            row: 1,
+            cell: Cell::Seat
+        }
+        .focused_row(),
+        None,
+        "the switch holds the focus, so no seat is ringed"
+    );
+    assert_eq!(SetupCursor::Start { cell: Cell::Seat }.focused_row(), None);
+}
