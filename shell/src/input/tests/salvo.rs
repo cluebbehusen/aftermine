@@ -51,7 +51,7 @@ fn last_toast(game: &Game) -> Option<&str> {
 
 fn click_world(game: &mut Game, input: &mut InputState, world: Vec2) {
     let p = game.presentation.camera.to_screen(world);
-    apply_events(game, input, &click(p.x, p.y));
+    apply_events(game, input, &click(p));
 }
 
 fn orders(game: &Game) -> Vec<aftermine_sim::BuildingId> {
@@ -148,7 +148,7 @@ fn the_banner_steppers_size_the_salvo_and_its_cross_stands_it_down() {
     assert!(less.right() <= more.x, "minus sits left of plus");
     assert!(more.right() <= cancel.x, "the cross ends the row");
     let press = |game: &mut Game, input: &mut InputState, rect: Rect| {
-        apply_events(game, input, &click(rect.center().x, rect.center().y));
+        apply_events(game, input, &click(rect.center()));
         relayout(game, input);
     };
     press(&mut game, &mut input, less);
@@ -237,7 +237,7 @@ fn shift_turns_order_into_fill_and_a_shift_click_fills_every_empty_spire() {
         .find(|card| card.action == crate::panel::CardAction::Dispatch(Action::OrderRound))
         .unwrap();
     assert_eq!((fill.title.as_str(), fill.cost), ("Fill 3", Some(3 * cost)));
-    apply_events(&mut game, &mut input, &click(at.x, at.y));
+    apply_events(&mut game, &mut input, &click(at));
     apply_events(&mut game, &mut input, &[key_up(Key::Shift)]);
     assert_eq!(orders(&game), ids[1..].to_vec());
     assert_eq!(last_toast(&game), None, "a full order needs no toast");
@@ -278,6 +278,6 @@ fn a_right_click_or_a_long_press_on_order_fills_and_a_press_orders_one() {
     let (mut game, ids) = spires(3, 0, 10 * cost);
     let mut input = InputState::new();
     let at = publish_order(&mut game, &input).center();
-    apply_events(&mut game, &mut input, &click(at.x, at.y));
+    apply_events(&mut game, &mut input, &click(at));
     assert_eq!(orders(&game), vec![ids[0]]);
 }

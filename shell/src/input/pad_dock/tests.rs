@@ -1,12 +1,11 @@
 //! The queue strip through the real funnel: pad events as the frame loop
 //! feeds them, the HUD laid out between them, against a staged sandbox.
 
-use super::super::tests::pad_scene::{
-    FRAME, building_at, denied, down, left_stick, pad_input, scene, up,
-};
+use super::super::tests::pad_scene::{FRAME, down, left_stick, pad_input, up};
 use super::super::{InputState, apply_events, track_hands, update_held};
 use super::*;
 use crate::render::hud::{self, HudEnv};
+use crate::tests::support::{building_at, denied, scene};
 use aftermine_protocol::RawEvent;
 use aftermine_sim::{BuildingKind, Command, UnitKind};
 use macroquad::prelude::vec2;

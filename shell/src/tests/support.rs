@@ -1,0 +1,203 @@
+//! Staging the shell's unit tests share: open sandboxes, lookups by seat
+//! and kind, pointer and key events, and the press gesture every screen
+//! button keeps.
+
+use crate::game::Game;
+use aftermine_protocol::{Key, MouseButton, RawEvent};
+use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
+use aftermine_sim::{BuildingId, BuildingKind, Scenario, UnitId, UnitKind};
+use macroquad::prelude::{Vec2, vec2};
+
+/// Pixels per tile in [`scene`]: a tile is 32 logical pixels, so the
+/// reticle's 24-pixel reach is three quarters of a tile.
+pub(crate) const ZOOM: f32 = 32.0;
+/// Where [`scene`]'s camera looks: the middle of the map, clear of every
+/// edge.
+pub(crate) const CENTER: Vec2 = vec2(32.0, 20.0);
+
+/// Open ground `width` by `height` tiles in sandbox mode for `seats` seats,
+/// none a bot and none holding scrap, with `units` and `buildings` as
+/// (seat, kind, x, y).
+pub(crate) fn sandbox(
+    width: usize,
+    height: usize,
+    seats: u8,
+    units: &[(u8, UnitKind, i32, i32)],
+    buildings: &[(u8, BuildingKind, i32, i32)],
+) -> Scenario {
+    Scenario {
+        mode: ScenarioMode::Sandbox,
+        name: "Sandbox".to_owned(),
+        map: vec![".".repeat(width); height],
+        levels: Vec::new(),
+        players: (1..=seats)
+            .map(|seat| PlayerSpec {
+                name: format!("Seat {seat}"),
+                team: None,
+                scrap: 0,
+                bot: false,
+                bot_config: None,
+            })
+            .collect(),
+        units: units
+            .iter()
+            .map(|&(player, kind, x, y)| UnitSpec { player, kind, x, y })
+            .collect(),
+        buildings: buildings
+            .iter()
+            .map(|&(player, kind, x, y)| BuildingSpec { player, kind, x, y })
+            .collect(),
+        meta: None,
+    }
+}
+
+/// A 64 by 40 [`sandbox`] with scrap at (40, 20), seat 0 local with 1,000
+/// scrap and seats 1 and 2 passive, and the camera on [`CENTER`] at
+/// [`ZOOM`].
+pub(crate) fn scene(
+    units: &[(u8, UnitKind, i32, i32)],
+    buildings: &[(u8, BuildingKind, i32, i32)],
+) -> Game {
+    let mut scenario = sandbox(64, 40, 3, units, buildings);
+    scenario.players[0].scrap = 1000;
+    scenario.map[20].replace_range(40..41, "s");
+    let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("the scene builds");
+    game.presentation.camera.show(CENTER, ZOOM);
+    game
+}
+
+/// The ids of `player`'s units of `kind`, in id order.
+pub(crate) fn units_of(game: &Game, player: u8, kind: UnitKind) -> Vec<UnitId> {
+    let mut ids: Vec<UnitId> = game
+        .state
+        .units()
+        .iter()
+        .filter(|u| u.player.0 == player && u.kind == kind)
+        .map(|u| u.id)
+        .collect();
+    ids.sort_unstable();
+    ids
+}
+
+/// The unit standing on tile `(x, y)`.
+#[track_caller]
+pub(crate) fn unit_at(game: &Game, x: i32, y: i32) -> UnitId {
+    game.state
+        .units()
+        .iter()
+        .find(|u| u.tile() == chassis::grid::TilePos::new(x, y))
+        .map(|u| u.id)
+        .expect("a unit stands there")
+}
+
+/// Where a unit stands.
+#[track_caller]
+pub(crate) fn pos(game: &Game, id: UnitId) -> Vec2 {
+    let unit = game.state.unit(id).expect("the unit lives");
+    vec2(unit.pos.x.to_num::<f32>(), unit.pos.y.to_num::<f32>())
+}
+
+/// The building anchored at `(x, y)`.
+#[track_caller]
+pub(crate) fn building_at(game: &Game, x: i32, y: i32) -> BuildingId {
+    game.state
+        .buildings()
+        .iter()
+        .find(|b| b.anchor == chassis::grid::TilePos::new(x, y))
+        .map(|b| b.id)
+        .expect("a building stands there")
+}
+
+/// Whether this frame played the refusal cue.
+pub(crate) fn denied(game: &Game) -> bool {
+    game.presentation
+        .sounds_pending
+        .contains(&(crate::game::SoundKind::Denied, None))
+}
+
+/// Takes `hp` off building `id` through the state's own serialization.
+pub(crate) fn wound_building(game: &mut Game, id: BuildingId, hp: u64) {
+    let mut data = serde_json::to_value(&*game.state).expect("state serializes");
+    let building = data["buildings"]
+        .as_array_mut()
+        .expect("buildings")
+        .iter_mut()
+        .find(|b| b["id"] == serde_json::json!(id))
+        .expect("the building is listed");
+    building["hp"] = serde_json::json!(building["hp"].as_u64().expect("hp") - hp);
+    *game.state = serde_json::from_value(data).expect("the wounded state loads");
+}
+
+pub(crate) fn mouse_move(at: Vec2) -> RawEvent {
+    RawEvent::MouseMove { x: at.x, y: at.y }
+}
+
+pub(crate) fn left_down(at: Vec2) -> RawEvent {
+    RawEvent::MouseDown {
+        button: MouseButton::Left,
+        x: at.x,
+        y: at.y,
+    }
+}
+
+pub(crate) fn left_up(at: Vec2) -> RawEvent {
+    RawEvent::MouseUp {
+        button: MouseButton::Left,
+        x: at.x,
+        y: at.y,
+    }
+}
+
+pub(crate) fn right_down(at: Vec2) -> RawEvent {
+    RawEvent::MouseDown {
+        button: MouseButton::Right,
+        x: at.x,
+        y: at.y,
+    }
+}
+
+/// A left click in place.
+pub(crate) fn click(at: Vec2) -> [RawEvent; 2] {
+    [left_down(at), left_up(at)]
+}
+
+pub(crate) fn touch_down(id: u64, at: Vec2) -> RawEvent {
+    RawEvent::TouchDown {
+        id,
+        x: at.x,
+        y: at.y,
+    }
+}
+
+pub(crate) fn touch_move(id: u64, at: Vec2) -> RawEvent {
+    RawEvent::TouchMove {
+        id,
+        x: at.x,
+        y: at.y,
+    }
+}
+
+pub(crate) fn touch_up(id: u64, at: Vec2) -> RawEvent {
+    RawEvent::TouchUp {
+        id,
+        x: at.x,
+        y: at.y,
+    }
+}
+
+pub(crate) fn touch_cancel(id: u64) -> RawEvent {
+    RawEvent::TouchCancel { id }
+}
+
+/// Finger `id` tapping in place.
+pub(crate) fn tap(id: u64, at: Vec2) -> [RawEvent; 2] {
+    [touch_down(id, at), touch_up(id, at)]
+}
+
+pub(crate) fn key_down(key: Key) -> RawEvent {
+    RawEvent::KeyDown { key }
+}
+
+pub(crate) fn key_up(key: Key) -> RawEvent {
+    RawEvent::KeyUp { key }
+}

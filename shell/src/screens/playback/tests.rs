@@ -1,6 +1,9 @@
 use super::*;
 use crate::camera::controls::RemoteMode;
 use crate::game::Game;
+use crate::tests::support::{
+    click, left_down, left_up, mouse_move, tap, touch_down, touch_move, touch_up,
+};
 use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
 
@@ -272,28 +275,6 @@ fn feed(pb: &mut PlaybackSession, events: &[RawEvent]) -> bool {
     )
 }
 
-fn tap(id: u64, p: Vec2) -> [RawEvent; 2] {
-    [
-        RawEvent::TouchDown { id, x: p.x, y: p.y },
-        RawEvent::TouchUp { id, x: p.x, y: p.y },
-    ]
-}
-
-fn click(p: Vec2) -> [RawEvent; 2] {
-    [
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: p.x,
-            y: p.y,
-        },
-        RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: p.x,
-            y: p.y,
-        },
-    ]
-}
-
 /// The transport buttons at the viewport `feed` drives.
 fn buttons() -> [(macroquad::prelude::Rect, Transport); 5] {
     transport_buttons(vec2(1280.0, 800.0), render::ui_scale(), false)
@@ -477,21 +458,9 @@ fn a_back_press_that_slides_off_stays() {
     let mut pb = session();
     let before = pb.presentation.camera.center;
     let events = [
-        RawEvent::TouchDown {
-            id: 1,
-            x: back.center().x,
-            y: back.center().y,
-        },
-        RawEvent::TouchMove {
-            id: 1,
-            x: off.x,
-            y: off.y,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: off.x,
-            y: off.y,
-        },
+        touch_down(1, back.center()),
+        touch_move(1, off),
+        touch_up(1, off),
     ];
     assert!(!feed(&mut pb, &events));
     assert_eq!(
@@ -513,23 +482,7 @@ fn a_drag_from_between_the_transport_buttons_never_moves_the_camera() {
         let mut pb = session();
         let before = pb.presentation.camera.center;
         let off = at - vec2(100.0, 0.0);
-        let events = [
-            RawEvent::TouchDown {
-                id,
-                x: at.x,
-                y: at.y,
-            },
-            RawEvent::TouchMove {
-                id,
-                x: off.x,
-                y: off.y,
-            },
-            RawEvent::TouchUp {
-                id,
-                x: off.x,
-                y: off.y,
-            },
-        ];
+        let events = [touch_down(id, at), touch_move(id, off), touch_up(id, off)];
         assert!(!feed(&mut pb, &events));
         assert_eq!(
             pb.presentation.camera.center, before,
@@ -549,32 +502,11 @@ fn a_touch_on_the_scrub_band_seeks_and_a_drag_retargets() {
     let bar = scrub_rect(&pb.view(), vec2(1280.0, 800.0));
     // Just above the thin bar, inside its fingertip target.
     let start = vec2(bar.x + bar.w * 0.5, bar.y - 8.0);
-    feed(
-        &mut pb,
-        &[RawEvent::TouchDown {
-            id: 1,
-            x: start.x,
-            y: start.y,
-        }],
-    );
+    feed(&mut pb, &[touch_down(1, start)]);
     assert_eq!(pb.seeking, Some(30));
-    feed(
-        &mut pb,
-        &[RawEvent::TouchMove {
-            id: 1,
-            x: bar.x + bar.w,
-            y: start.y,
-        }],
-    );
+    feed(&mut pb, &[touch_move(1, vec2(bar.x + bar.w, start.y))]);
     assert_eq!(pb.seeking, Some(60), "the drag re-targets the seek");
-    feed(
-        &mut pb,
-        &[RawEvent::TouchUp {
-            id: 1,
-            x: bar.x + bar.w,
-            y: start.y,
-        }],
-    );
+    feed(&mut pb, &[touch_up(1, vec2(bar.x + bar.w, start.y))]);
     assert_eq!(pb.scrub_finger, None);
 }
 
@@ -583,25 +515,11 @@ fn a_cancelled_scrub_finger_keeps_its_seek_and_frees_the_bar() {
     let mut pb = session();
     let bar = scrub_rect(&pb.view(), vec2(1280.0, 800.0));
     let y = bar.y - 8.0;
-    feed(
-        &mut pb,
-        &[RawEvent::TouchDown {
-            id: 1,
-            x: bar.x + bar.w * 0.5,
-            y,
-        }],
-    );
+    feed(&mut pb, &[touch_down(1, vec2(bar.x + bar.w * 0.5, y))]);
     feed(&mut pb, &[RawEvent::TouchCancel { id: 1 }]);
     assert_eq!(pb.scrub_finger, None);
     assert_eq!(pb.seeking, Some(30), "the seek it made stands");
-    feed(
-        &mut pb,
-        &[RawEvent::TouchDown {
-            id: 2,
-            x: bar.x + bar.w,
-            y,
-        }],
-    );
+    feed(&mut pb, &[touch_down(2, vec2(bar.x + bar.w, y))]);
     assert_eq!(pb.seeking, Some(60), "the next finger scrubs");
 }
 
@@ -613,23 +531,7 @@ fn a_touch_drag_on_the_battlefield_moves_only_the_camera() {
     let to = vec2(540.0, 300.0);
     feed(
         &mut pb,
-        &[
-            RawEvent::TouchDown {
-                id: 1,
-                x: from.x,
-                y: from.y,
-            },
-            RawEvent::TouchMove {
-                id: 1,
-                x: to.x,
-                y: to.y,
-            },
-            RawEvent::TouchUp {
-                id: 1,
-                x: to.x,
-                y: to.y,
-            },
-        ],
+        &[touch_down(1, from), touch_move(1, to), touch_up(1, to)],
     );
     assert!(pb.presentation.camera.center.x > before.x);
     assert_eq!(pb.seeking, None);
@@ -644,11 +546,7 @@ fn a_scrub_press_seeks_to_the_bar_fraction_and_a_drag_retargets() {
     let mut mouse = vec2(0.0, 0.0);
     pb.update(
         &crate::action::BindingMap::classic(),
-        &[RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: bar.x + bar.w * 0.75,
-            y: bar.y + bar.h * 0.5,
-        }],
+        &[left_down(vec2(bar.x + bar.w * 0.75, bar.y + bar.h * 0.5))],
         0.0,
         viewport,
         crate::config::CameraPrefs::default(),
@@ -665,7 +563,7 @@ fn a_scrub_press_seeks_to_the_bar_fraction_and_a_drag_retargets() {
     // Dragging retargets before release.
     pb.update(
         &crate::action::BindingMap::classic(),
-        &[RawEvent::MouseMove { x: bar.x, y: bar.y }],
+        &[mouse_move(bar.point())],
         0.0,
         viewport,
         crate::config::CameraPrefs::default(),
@@ -674,11 +572,7 @@ fn a_scrub_press_seeks_to_the_bar_fraction_and_a_drag_retargets() {
     assert_eq!(pb.engine.position(), 0, "the drag walked the target home");
     pb.update(
         &crate::action::BindingMap::classic(),
-        &[RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: bar.x,
-            y: bar.y,
-        }],
+        &[left_up(bar.point())],
         0.0,
         viewport,
         crate::config::CameraPrefs::default(),

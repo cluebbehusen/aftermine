@@ -174,10 +174,10 @@ fn the_strip_buttons_answer_clicks_and_never_reach_the_world() {
     let mut input = InputState::new();
     let strip = publish_strip(&game);
     let p = strip.all.center();
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert_eq!(game.presentation.selection.units(), own(&game, &ARMY));
     let p = strip.in_view.center();
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert_eq!(
         game.presentation.selection.units().len(),
         ARMY.len(),
@@ -185,7 +185,7 @@ fn the_strip_buttons_answer_clicks_and_never_reach_the_world() {
     );
     // The plate's margin is chrome: a near miss selects nothing under it.
     let margin = vec2(strip.plate.x + 2.0, strip.plate.center().y);
-    apply_events(&mut game, &mut input, &click(margin.x, margin.y));
+    apply_events(&mut game, &mut input, &click(margin));
     assert_eq!(game.presentation.selection.units().len(), ARMY.len());
     assert!(game.pending.is_empty());
 }

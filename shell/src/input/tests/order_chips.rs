@@ -68,7 +68,7 @@ fn legs(player: PlayerId, unit: UnitId, goals: &[TilePos]) -> Vec<PlayerCommand>
 }
 
 fn press(game: &mut Game, input: &mut InputState, chip: Rect) {
-    apply_events(game, input, &click(chip.center().x, chip.center().y));
+    apply_events(game, input, &click(chip.center()));
 }
 
 #[test]

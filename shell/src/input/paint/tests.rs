@@ -2,10 +2,10 @@
 //! feeds them, then frames of a held stick.
 
 use super::super::tests::pad_scene::{
-    FRAME, PAD, building_at, down, feed, frame, left_stick, pad_input, press, push_until, rest_on,
-    scene, unit_at, units_of, up,
+    FRAME, PAD, down, feed, frame, left_stick, pad_input, press, push_until, rest_on, up,
 };
 use super::*;
+use crate::tests::support::{building_at, scene, unit_at, units_of};
 use aftermine_protocol::{PadButton, RawEvent};
 use aftermine_sim::{BuildingKind, PlayerId, UnitKind};
 use macroquad::prelude::vec2;

@@ -4,6 +4,10 @@
 use super::*;
 use crate::numeric;
 use crate::numeric::Fit;
+use crate::tests::support::{
+    click, key_down, key_up, left_down, left_up, mouse_move, right_down, touch_cancel, touch_down,
+    touch_move, touch_up,
+};
 use aftermine_sim::scenario::ScenarioMode;
 use aftermine_sim::{PlayerCommand, UnitKind};
 
@@ -188,62 +192,6 @@ fn bare_layout(panel_top: f32, panel_right: f32) -> crate::layout::LayoutModel {
     }
 }
 
-fn left_down(p: Vec2) -> RawEvent {
-    RawEvent::MouseDown {
-        button: MouseButton::Left,
-        x: p.x,
-        y: p.y,
-    }
-}
-
-fn left_up(p: Vec2) -> RawEvent {
-    RawEvent::MouseUp {
-        button: MouseButton::Left,
-        x: p.x,
-        y: p.y,
-    }
-}
-
-fn right_down(p: Vec2) -> RawEvent {
-    RawEvent::MouseDown {
-        button: MouseButton::Right,
-        x: p.x,
-        y: p.y,
-    }
-}
-
-fn mouse_move(p: Vec2) -> RawEvent {
-    RawEvent::MouseMove { x: p.x, y: p.y }
-}
-
-fn touch_down(id: u64, p: Vec2) -> RawEvent {
-    RawEvent::TouchDown { id, x: p.x, y: p.y }
-}
-
-fn touch_move(id: u64, p: Vec2) -> RawEvent {
-    RawEvent::TouchMove { id, x: p.x, y: p.y }
-}
-
-fn touch_up(id: u64, p: Vec2) -> RawEvent {
-    RawEvent::TouchUp { id, x: p.x, y: p.y }
-}
-
-fn touch_cancel(id: u64) -> RawEvent {
-    RawEvent::TouchCancel { id }
-}
-
-fn key_down(key: Key) -> RawEvent {
-    RawEvent::KeyDown { key }
-}
-
-fn key_up(key: Key) -> RawEvent {
-    RawEvent::KeyUp { key }
-}
-
-fn click(x: f32, y: f32) -> [RawEvent; 2] {
-    [left_down(vec2(x, y)), left_up(vec2(x, y))]
-}
-
 #[test]
 fn performance_panel_swallows_orders_and_selection_without_revealing_fog() {
     let mut game = headless_game();
@@ -262,7 +210,7 @@ fn performance_panel_swallows_orders_and_selection_without_revealing_fog() {
     let pos = layout.performance.center();
     let before = game.state.hash();
     for events in [
-        click(pos.x, pos.y).to_vec(),
+        click(pos).to_vec(),
         vec![right_down(pos)],
         vec![touch_down(23, pos), touch_up(23, pos)],
     ] {
@@ -327,7 +275,7 @@ fn skyhook_visible_edge_selects_the_transport() {
     let (mut game, skyhook, edge) = skyhook_edge(0);
     let mut input = InputState::new();
 
-    apply_events(&mut game, &mut input, &click(edge.x, edge.y));
+    apply_events(&mut game, &mut input, &click(edge));
 
     assert_eq!(game.presentation.selection.units(), vec![skyhook]);
 }
@@ -440,7 +388,7 @@ fn shift_click_selects_and_toggles_same_owner_buildings() {
     };
 
     let first = center(&game, own[0]);
-    apply_events(&mut game, &mut input, &click(first.x, first.y));
+    apply_events(&mut game, &mut input, &click(first));
     assert_eq!(game.presentation.selection.buildings(), vec![own[0]]);
 
     let second = center(&game, own[1]);
@@ -752,7 +700,7 @@ fn build_click(
     game.presentation.camera.center = world;
     game.presentation.camera.pan(Vec2::ZERO);
     let point = game.presentation.camera.to_screen(world);
-    apply_events(game, input, &click(point.x, point.y));
+    apply_events(game, input, &click(point));
 }
 
 fn extractor_input_game() -> Game {
@@ -1008,7 +956,7 @@ fn a_click_on_a_unit_selects_it_headlessly() {
         .presentation
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(game.presentation.selection.units(), vec![unit]);
 }
 
@@ -1021,7 +969,7 @@ fn a_right_click_on_ground_stages_an_advance() {
         .presentation
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     let mid = game.presentation.camera.to_screen(vec2(
         pos.x.to_num::<f32>() + 4.0,
         pos.y.to_num::<f32>() + 2.0,
@@ -1499,7 +1447,7 @@ fn a_ribbon_s_cross_cancels_the_mode_and_its_words_do_nothing() {
     game.presentation.layout.set(layout);
     let words = vec2(ribbon.x + 20.0, ribbon.center().y);
     tap(&mut game, &mut input, words);
-    apply_events(&mut game, &mut input, &click(words.x, words.y));
+    apply_events(&mut game, &mut input, &click(words));
     assert_eq!(
         input.armed_mode(),
         Some(ArmedMode::Hunt),
@@ -1517,11 +1465,7 @@ fn a_ribbon_s_cross_cancels_the_mode_and_its_words_do_nothing() {
     assert!(game.pending.is_empty(), "cancel emits no gameplay command");
 
     input.armed = Some(Armed::Verb(ClickVerb::Run));
-    apply_events(
-        &mut game,
-        &mut input,
-        &click(cancel.center().x, cancel.center().y),
-    );
+    apply_events(&mut game, &mut input, &click(cancel.center()));
     assert_eq!(input.armed_mode(), None, "a click cancels too");
 }
 
@@ -1551,7 +1495,7 @@ fn a_patrol_ribbon_acts_only_through_start_and_the_cross() {
         "the words keep the route"
     );
     tap_world(&mut game, &mut input, vec2(9.5, 5.5));
-    apply_events(&mut game, &mut input, &click(words.x, words.y));
+    apply_events(&mut game, &mut input, &click(words));
     assert_eq!(
         input.patrol_route().map(<[TilePos]>::len),
         Some(1),
@@ -1797,7 +1741,7 @@ fn accompany_arms_on_e_and_the_rest_of_the_selection_escorts_the_picked_unit() {
     game.presentation.selection.set_units(vec![escorted]);
     apply_events(&mut game, &mut input, &[key_down(Key::E), key_up(Key::E)]);
     assert_eq!(input.armed_mode(), Some(ArmedMode::Accompany));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert!(game.pending.is_empty(), "{:?}", game.pending);
     assert_eq!(
         input.armed_mode(),
@@ -1808,7 +1752,7 @@ fn accompany_arms_on_e_and_the_rest_of_the_selection_escorts_the_picked_unit() {
     game.presentation
         .selection
         .set_units(vec![escort, escorted]);
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(
         game.pending.iter().map(|c| &c.command).collect::<Vec<_>>(),
         [&Command::Accompany {
@@ -1841,7 +1785,7 @@ fn accompany_stays_armed_after_a_click_on_an_own_drone() {
     game.presentation.selection.set_units(vec![roc]);
     dispatch_action(&mut game, &mut input, Action::Accompany);
     assert_eq!(input.armed_mode(), Some(ArmedMode::Accompany));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert!(game.pending.is_empty(), "{:?}", game.pending);
     assert_eq!(
         input.armed_mode(),
@@ -1890,7 +1834,7 @@ fn weld_stays_armed_after_a_click_on_a_retiring_unit() {
     dispatch_action(&mut game, &mut input, Action::RepairUnit);
     assert_eq!(input.armed_mode(), Some(ArmedMode::Weld));
     let screen = game.presentation.camera.to_screen(at);
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert!(game.pending.is_empty(), "{:?}", game.pending);
     assert_eq!(
         input.armed_mode(),
@@ -1954,10 +1898,10 @@ fn double_click_timing_obeys_the_injected_clock() {
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
     input.now = 10.0;
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     // A slow second click is just a click...
     input.now = 11.0;
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(
         game.presentation.selection.units().len(),
         1,
@@ -1965,7 +1909,7 @@ fn double_click_timing_obeys_the_injected_clock() {
     );
     // ...a fast one is a kind-sweep.
     input.now = 11.2;
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert!(
         game.presentation.selection.units().len() > 1,
         "0.2s apart double-clicks into a kind sweep"
@@ -2457,7 +2401,7 @@ fn f_arms_explicit_hunt_and_the_click_consumes_it() {
         .presentation
         .camera
         .to_screen(vec2(goal.x as f32 + 0.5, goal.y as f32 + 0.5));
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
 
     assert!(game.pending.iter().any(|command| matches!(
         command.command,
@@ -2777,7 +2721,7 @@ fn an_ally_selection_reads_its_orders_but_takes_none() {
         .presentation
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(
         game.presentation.selection.units(),
         vec![ally],
@@ -2855,7 +2799,7 @@ fn a_hostile_selection_inspects_and_leaks_nothing() {
         .presentation
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(
         game.presentation.selection.units(),
         vec![foe],
@@ -2939,7 +2883,7 @@ fn shift_clicked_units_keep_the_selection_in_id_order() {
         );
     };
     let last = screen(&game, units[2]);
-    apply_events(&mut game, &mut input, &click(last.x, last.y));
+    apply_events(&mut game, &mut input, &click(last));
     for id in [units[0], units[1]] {
         let at = screen(&game, id);
         shift_click(&mut game, &mut input, at);
@@ -2966,7 +2910,7 @@ fn a_selection_never_mixes_allegiances() {
         .camera
         .to_screen(vec2(ally_pos.x.to_num::<f32>(), ally_pos.y.to_num::<f32>()));
     // Own selected, shift-click the ally: REPLACE, never merge.
-    apply_events(&mut game, &mut input, &click(my_screen.x, my_screen.y));
+    apply_events(&mut game, &mut input, &click(my_screen));
     assert_eq!(game.presentation.selection.units(), vec![mine]);
     apply_events(
         &mut game,
@@ -3601,11 +3545,7 @@ fn a_disabled_card_explains_itself_to_a_tap_or_a_click() {
     assert!(game.pending.is_empty(), "a refusal stages nothing");
 
     game.presentation.toasts.clear();
-    apply_events(
-        &mut game,
-        &mut input,
-        &click(rect.center().x, rect.center().y),
-    );
+    apply_events(&mut game, &mut input, &click(rect.center()));
     assert!(toasted(&game), "the click names the reason");
     assert!(game.pending.is_empty());
     assert_eq!(
@@ -4082,11 +4022,7 @@ fn the_queue_chip_flips_by_tap_and_click() {
     // Past the double-tap window, so the click turns it off rather than
     // locking it.
     input.now += 1.0;
-    apply_events(
-        &mut game,
-        &mut input,
-        &click(chip.center().x, chip.center().y),
-    );
+    apply_events(&mut game, &mut input, &click(chip.center()));
     assert!(!input.queue_held());
     assert!(
         game.presentation.selection.units().is_empty(),
@@ -4150,13 +4086,13 @@ fn taps_collect_a_patrol_route_and_the_card_starts_it() {
 fn a_left_click_adds_a_patrol_waypoint_and_a_full_route_says_so() {
     let (mut game, mut input, _) = armed_patrol();
     let p = game.presentation.camera.to_screen(vec2(9.5, 5.5));
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert_eq!(input.patrol_route().map(<[TilePos]>::len), Some(1));
     input.armed = Some(Armed::Patrol(vec![
         TilePos::new(9, 5);
         aftermine_sim::stats::ORDER_QUEUE_CAP
     ]));
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert_eq!(
         input.patrol_route().map(<[TilePos]>::len),
         Some(aftermine_sim::stats::ORDER_QUEUE_CAP)
@@ -4431,9 +4367,9 @@ fn a_zoomed_out_double_click_on_a_pile_never_sweeps_the_unit_beside_it() {
     game.presentation.camera.zoom = 10.0 * input.ui / (distance + 0.1);
     let p = game.presentation.camera.to_screen(pile);
     input.now = 1.0;
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     input.now = 1.1;
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert!(
         game.presentation.selection.units().is_empty(),
         "{:?}",
@@ -4624,7 +4560,7 @@ fn an_allied_site_under_fog_refuses_selection() {
     game.presentation.camera.center = site_center;
     let screen = game.presentation.camera.to_screen(site_center);
     input.now = 5.0; // clicks land at the viewport center; keep them
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y)); // out of double-click range
+    apply_events(&mut game, &mut input, &click(screen)); // out of double-click range
     assert!(
         game.presentation.selection.buildings().is_empty(),
         "a fogged ally site must refuse the blind click"
@@ -4645,7 +4581,7 @@ fn an_allied_site_under_fog_refuses_selection() {
     game.presentation.camera.center = center;
     let screen = game.presentation.camera.to_screen(center);
     input.now = 10.0;
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(
         game.presentation.selection.buildings(),
         vec![ally_foundry],
@@ -4753,7 +4689,7 @@ fn a_selected_hostile_drops_when_fog_recovers_it() {
         .presentation
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(game.presentation.selection.units(), vec![foe]);
     // Send my only nearby eyes home; the foe's bot recalls its
     // harvester east to mine — both walks end my sight of it, and the
@@ -4929,8 +4865,9 @@ fn only_a_remote_or_a_bare_tv_lacks_a_controller() {
 
 #[test]
 fn a_remote_press_in_a_match_is_refused_aloud_except_back() {
+    use crate::tests::support::{denied, scene};
     use aftermine_protocol::{PadButton, PadFamily};
-    use pad_scene::{denied, feed, scene};
+    use pad_scene::feed;
     const REMOTE: u64 = 9;
     let mut game = scene(&[(0, UnitKind::Scuttler, 32, 20)], &[]);
     let mut input = InputState::new();
@@ -5379,11 +5316,7 @@ fn the_alert_badge_jumps_the_camera_by_click_or_tap() {
                 vec2(badge.center().x, badge.y + badge.h + 3.0),
             );
         } else {
-            apply_events(
-                &mut game,
-                &mut input,
-                &click(badge.center().x, badge.center().y),
-            );
+            apply_events(&mut game, &mut input, &click(badge.center()));
         }
         assert!(
             game.presentation.camera.center.distance(alert) < 0.01,
@@ -5449,11 +5382,7 @@ fn a_click_on_the_menu_button_requests_the_pause_menu() {
     let mut input = InputState::new();
     game.presentation.layout.set(top_bar_layout());
     let menu = game.presentation.layout.get().menu_button;
-    apply_events(
-        &mut game,
-        &mut input,
-        &click(menu.center().x, menu.center().y),
-    );
+    apply_events(&mut game, &mut input, &click(menu.center()));
     assert!(input.take_menu_request());
     assert!(
         !input.take_menu_request(),
@@ -5488,7 +5417,7 @@ fn a_bar_without_a_menu_button_ignores_its_corner() {
         .layout
         .set(bare_layout(f32::INFINITY, 0.0));
     let corner = crate::layout::menu_button_rect(1280.0, 1.0, false).center();
-    apply_events(&mut game, &mut input, &click(corner.x, corner.y));
+    apply_events(&mut game, &mut input, &click(corner));
     tap(&mut game, &mut input, corner);
     assert!(
         !input.take_menu_request(),
@@ -5503,7 +5432,7 @@ fn an_armed_mode_never_eats_the_menu_button() {
     game.presentation.layout.set(top_bar_layout());
     input.arm_placement(aftermine_sim::BuildingKind::Fabricator);
     let menu = game.presentation.layout.get().menu_button.center();
-    apply_events(&mut game, &mut input, &click(menu.x, menu.y));
+    apply_events(&mut game, &mut input, &click(menu));
     assert!(input.take_menu_request());
     assert!(game.pending.is_empty(), "no build is staged under the bar");
     tap(&mut game, &mut input, menu);
@@ -5534,9 +5463,9 @@ fn the_pause_button_toggles_pause_by_click_and_by_tap() {
     let mut input = InputState::new();
     game.presentation.layout.set(top_bar_layout());
     let button = game.presentation.layout.get().pause_button.center();
-    apply_events(&mut game, &mut input, &click(button.x, button.y));
+    apply_events(&mut game, &mut input, &click(button));
     assert!(game.clock.paused);
-    apply_events(&mut game, &mut input, &click(button.x, button.y));
+    apply_events(&mut game, &mut input, &click(button));
     assert!(!game.clock.paused);
     tap(&mut game, &mut input, button);
     assert!(game.clock.paused, "a fingertip pauses like the key");
@@ -7658,7 +7587,7 @@ fn a_plain_placement_replaces_the_selected_claim_while_shift_preserves_it() {
         None,
         "a plain click abandons the selected founder's old claim"
     );
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert_eq!(
         game.pending.len(),
         1,
@@ -7933,7 +7862,7 @@ fn mouse_and_touch_switch_construction_without_cancelling_or_placing_in_the_worl
             let events = if touch {
                 vec![touch_down(1, vec2(x, 740.0)), touch_up(1, vec2(x, 740.0))]
             } else {
-                click(x, 740.0).to_vec()
+                click(vec2(x, 740.0)).to_vec()
             };
             apply_events(&mut game, &mut input, &events);
             assert_eq!(
@@ -8191,7 +8120,7 @@ fn a_hidden_mine_does_not_change_placement_selection_or_resume_input() {
         );
         input.stop_placing();
         let point = game.presentation.camera.to_screen(vec2(12.5, 4.5));
-        apply_events(&mut game, &mut input, &click(point.x, point.y));
+        apply_events(&mut game, &mut input, &click(point));
         assert_eq!(game.presentation.selection.buildings(), vec![site]);
         game.presentation.selection.clear();
         game.presentation.selection.set_units(vec![worker]);
@@ -8233,7 +8162,7 @@ fn selecting_an_unfinished_mine_does_not_reveal_its_condition_after_concealment(
     game.presentation.camera.center = vec2(12.5, 4.5);
     game.presentation.camera.pan(Vec2::ZERO);
     let point = game.presentation.camera.to_screen(vec2(12.5, 4.5));
-    apply_events(&mut game, &mut input, &click(point.x, point.y));
+    apply_events(&mut game, &mut input, &click(point));
     assert_eq!(game.presentation.selection.buildings(), vec![mine]);
     for _ in 0..200 {
         if game.state.building(mine).unwrap().built() {
@@ -8249,7 +8178,7 @@ fn selecting_an_unfinished_mine_does_not_reveal_its_condition_after_concealment(
             .iter()
             .any(|g| g.anchor == TilePos::new(12, 4))
     );
-    apply_events(&mut game, &mut input, &click(point.x, point.y));
+    apply_events(&mut game, &mut input, &click(point));
     assert!(game.presentation.selection.buildings().is_empty());
 }
 
@@ -8516,7 +8445,11 @@ fn grouped_production_clicks_and_shortcuts_stage_the_same_batch() {
     layout.card_count = 1;
     mouse_game.presentation.layout.set(layout);
     for _ in 0..2 {
-        apply_events(&mut mouse_game, &mut mouse_input, &click(260.0, 740.0));
+        apply_events(
+            &mut mouse_game,
+            &mut mouse_input,
+            &click(vec2(260.0, 740.0)),
+        );
         apply_events(
             &mut key_game,
             &mut key_input,
@@ -8564,7 +8497,9 @@ fn grouped_upgrade_mouse_touch_and_remapped_keys_share_pending_eligibility() {
         // Deliberately retain the old hit-test card between activations.
         for _ in 0..2 {
             match mode {
-                0 => apply_events_with(&mut game, &mut input, &bindings, &click(260.0, 740.0)),
+                0 => {
+                    apply_events_with(&mut game, &mut input, &bindings, &click(vec2(260.0, 740.0)));
+                }
                 1 => apply_events_with(
                     &mut game,
                     &mut input,
@@ -8750,11 +8685,7 @@ fn the_dock_stop_square_halts_the_selection_by_click_and_tap() {
             input.now += 0.1;
             apply_events(&mut game, &mut input, &[touch_up(1, square.center())]);
         } else {
-            apply_events(
-                &mut game,
-                &mut input,
-                &click(square.center().x, square.center().y),
-            );
+            apply_events(&mut game, &mut input, &click(square.center()));
         }
         assert!(
             game.pending
@@ -9045,7 +8976,7 @@ fn launch_arms_the_loaded_spires_and_the_next_click_strikes_that_tile() {
     assert_eq!(input.striking(), Some(&Strike::new(vec![spire])));
     assert_eq!(input.armed_mode(), Some(ArmedMode::Strike));
     let p = game.presentation.camera.to_screen(vec2(20.5, 6.5));
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert!(input.striking().is_none());
     assert!(
         game.pending.iter().any(|c| matches!(
@@ -9109,7 +9040,7 @@ fn a_click_with_a_touch_aim_down_moves_the_aim_instead_of_launching() {
     input.last_pointer = Pointer::Touch;
     dispatch_action(&mut game, &mut input, Action::Launch);
     let p = game.presentation.camera.to_screen(vec2(20.5, 6.5));
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert_eq!(
         input.striking().and_then(Strike::aim),
         Some(TilePos::new(20, 6))
@@ -9206,7 +9137,7 @@ fn a_surveyor_is_picked_by_its_visible_body_not_its_canvas() {
         .expect("the opening fields a Surveyor");
     let click_at = |game: &mut Game, input: &mut InputState, world: Vec2| {
         let screen = game.presentation.camera.to_screen(world);
-        apply_events(game, input, &click(screen.x, screen.y));
+        apply_events(game, input, &click(screen));
     };
     // Inside the two-tile sprite canvas, but clear of the packed body.
     click_at(&mut game, &mut input, at + vec2(0.0, 0.8));
@@ -9355,7 +9286,7 @@ fn a_click_on_a_drone_chip_cancels_that_drone() {
         layout.chrome_owns(chip),
         "the column keeps clicks off the map"
     );
-    apply_events(&mut game, &mut input, &click(chip.x, chip.y));
+    apply_events(&mut game, &mut input, &click(chip));
     assert!(
         game.pending.iter().any(|pending| matches!(
             pending.command,

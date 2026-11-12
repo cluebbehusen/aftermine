@@ -1,11 +1,10 @@
-use super::super::tests::pad_scene::{
-    FRAME, down, left_stick, pad_input, pos, rest_on, scene, units_of, up,
-};
+use super::super::tests::pad_scene::{FRAME, down, left_stick, pad_input, rest_on, up};
 use super::super::{ArmedMode, Group, InputState, apply_events, track_hands, update_held};
 use super::current;
 use crate::action::BindingMap;
 use crate::game::Game;
 use crate::panel::CardIcon;
+use crate::tests::support::{pos, scene, units_of};
 use aftermine_protocol::{PadButton, RawEvent};
 use aftermine_sim::{BuildingKind, Command, UnitKind};
 

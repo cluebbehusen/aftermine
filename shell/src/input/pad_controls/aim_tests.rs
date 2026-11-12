@@ -3,11 +3,11 @@
 //! backs out, all through the real funnel against a staged sandbox.
 
 use super::super::tests::pad_scene::{
-    FRAME, PAD, ZOOM, building_at, denied, down, feed, frame, left_stick, pad_input, press,
-    push_until, rest_on, scene, unit_at, up, wound_building,
+    FRAME, PAD, down, feed, frame, left_stick, pad_input, press, push_until, rest_on, up,
 };
 use super::*;
 use crate::input::{ClickVerb, Pointer, preview_spot, unit_pick_radius};
+use crate::tests::support::{ZOOM, building_at, denied, scene, unit_at, wound_building};
 use aftermine_protocol::RawEvent;
 use aftermine_sim::{BuildingId, BuildingKind, Command, Rally};
 use chassis::grid::TilePos;
