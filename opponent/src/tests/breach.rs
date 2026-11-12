@@ -38,17 +38,6 @@ fn fortress(guns: &[(i32, i32)]) -> Scenario {
     scenario
 }
 
-/// `scenario` built with West's Extractors refitted into Deep Bores.
-fn bored(scenario: &Scenario) -> State {
-    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
-    for entry in value["buildings"].as_array_mut().unwrap() {
-        if entry["player"] == 0 && entry["kind"] == "extractor" {
-            entry["tier"] = 1.into();
-        }
-    }
-    serde_json::from_value(value).unwrap()
-}
-
 /// West's breach investments on `state`.
 fn wanted(scenario: &Scenario, state: &State) -> Vec<Investment> {
     wanted_with(scenario, state, &crate::memory::Memory::default())

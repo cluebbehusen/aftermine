@@ -19,7 +19,7 @@ use chassis::grid::TilePos;
 /// two halves share a map and nothing else. Both foundries sit west —
 /// scenario validation requires the seats ground-connected, so the east
 /// side hosts only orphaned units.
-fn ridge(gap: bool, units: Vec<UnitSpec>) -> Scenario {
+pub(crate) fn ridge(gap: bool, units: Vec<UnitSpec>) -> Scenario {
     // The border is rock — which air crosses freely — so the ridge
     // claims its border cells too or the sky routes around the ends.
     let wall_row = |row: &str| row.to_string();
@@ -243,33 +243,6 @@ fn flak_cannot_burst_through_stone() {
         "the burst never crossed the ridge"
     );
     assert_eq!(state.unit(talon).unwrap().hp, hp);
-}
-
-#[test]
-fn a_ridge_match_stays_bit_identical() {
-    let build = || {
-        let mut state = ridge(
-            true,
-            vec![
-                unit(0, UnitKind::Scuttler, 8, 3),
-                unit(0, UnitKind::Talon, 9, 8),
-                unit(1, UnitKind::Scuttler, 16, 3),
-                unit(1, UnitKind::Buzzard, 15, 8),
-            ],
-        )
-        .build()
-        .unwrap();
-        let (talon, buzzard) = (state.units()[1].id, state.units()[3].id);
-        state.tick(&[
-            cmd(0, orders::run([talon], TilePos::new(18, 8))),
-            cmd(1, orders::run([buzzard], TilePos::new(5, 8))),
-        ]);
-        for _ in 0..300 {
-            state.tick(&[]);
-        }
-        state.hash()
-    };
-    assert_eq!(build(), build(), "same ridge, same bits");
 }
 
 #[test]

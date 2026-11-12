@@ -23,7 +23,7 @@ fn guarded(difficulty: BotDifficulty, turrets: &[(i32, i32)], kestrel: (i32, i32
             y: *y,
         });
     }
-    scenario.players[0].bot_config = Some(BotConfig::new(difficulty, BotStance::Balanced, 11));
+    scenario.players[0].bot_config = Some(rung(difficulty));
     scenario
 }
 

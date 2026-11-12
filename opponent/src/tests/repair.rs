@@ -52,13 +52,10 @@ fn to_bay(commands: &[PlayerCommand], anchor: (i32, i32)) -> Vec<Vec<UnitId>> {
 }
 
 fn welds(commands: &[PlayerCommand]) -> Vec<UnitId> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::RepairUnit { target, .. } => Some(*target),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match command {
+        Command::RepairUnit { target, .. } => Some(*target),
+        _ => None,
+    })
 }
 
 #[test]

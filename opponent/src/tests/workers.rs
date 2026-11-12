@@ -192,14 +192,11 @@ fn loaded(state: &State, unit: UnitId, scrap: u32) -> State {
 }
 
 fn returns(commands: &[PlayerCommand]) -> Vec<UnitId> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::ReturnCargo { units, .. } => Some(units.clone()),
-            _ => None,
-        })
-        .flatten()
-        .collect()
+    commands_of(commands, |command| match command {
+        Command::ReturnCargo { units, .. } => Some(units.clone()),
+        _ => None,
+    })
+    .concat()
 }
 
 /// West's commands for an idle Harvester at (5, 11) carrying `scrap` when

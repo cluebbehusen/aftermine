@@ -98,7 +98,12 @@ pub(crate) const ARENA: [&str; 12] = [
 ];
 
 fn config() -> BotConfig {
-    BotConfig::new(BotDifficulty::Standard, BotStance::Balanced, 11)
+    rung(BotDifficulty::Standard)
+}
+
+/// A Balanced seat at `difficulty`.
+fn rung(difficulty: BotDifficulty) -> BotConfig {
+    BotConfig::new(difficulty, BotStance::Balanced, 11)
 }
 
 /// A seat that seldom builds static defense before it sees a threat, for
@@ -330,34 +335,34 @@ fn building(player: u8, kind: BuildingKind, x: i32, y: i32) -> BuildingSpec {
     BuildingSpec { player, kind, x, y }
 }
 
-fn builds(commands: &[PlayerCommand]) -> Vec<(BuildingKind, TilePos)> {
+/// What `pick` takes from each of `commands` it accepts, in order.
+fn commands_of<T>(commands: &[PlayerCommand], pick: impl FnMut(&Command) -> Option<T>) -> Vec<T> {
     commands
         .iter()
-        .filter_map(|command| match command.command {
-            Command::Build { kind, anchor, .. } => Some((kind, anchor)),
-            _ => None,
-        })
+        .map(|command| &command.command)
+        .filter_map(pick)
         .collect()
+}
+
+fn builds(commands: &[PlayerCommand]) -> Vec<(BuildingKind, TilePos)> {
+    commands_of(commands, |command| match *command {
+        Command::Build { kind, anchor, .. } => Some((kind, anchor)),
+        _ => None,
+    })
 }
 
 fn trains(commands: &[PlayerCommand]) -> Vec<(BuildingId, UnitKind)> {
-    commands
-        .iter()
-        .filter_map(|command| match command.command {
-            Command::Train { building, kind } => Some((building, kind)),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match *command {
+        Command::Train { building, kind } => Some((building, kind)),
+        _ => None,
+    })
 }
 
 fn harvests(commands: &[PlayerCommand]) -> Vec<(TilePos, Vec<UnitId>)> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::Harvest { units, node, .. } => Some((*node, units.clone())),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match command {
+        Command::Harvest { units, node, .. } => Some((*node, units.clone())),
+        _ => None,
+    })
 }
 
 fn surrender(player: u8) -> PlayerCommand {
@@ -381,23 +386,24 @@ fn at(state: &State, x: i32, y: i32) -> UnitId {
 }
 
 fn hunts(commands: &[PlayerCommand]) -> Vec<(Vec<UnitId>, TilePos)> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::Hunt { units, goal, .. } => Some((units.clone(), *goal)),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match command {
+        Command::Hunt { units, goal, .. } => Some((units.clone(), *goal)),
+        _ => None,
+    })
 }
 
 fn advances(commands: &[PlayerCommand]) -> Vec<(Vec<UnitId>, TilePos)> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::Advance { units, goal, .. } => Some((units.clone(), *goal)),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match command {
+        Command::Advance { units, goal, .. } => Some((units.clone(), *goal)),
+        _ => None,
+    })
+}
+
+fn attacks(commands: &[PlayerCommand]) -> Vec<(Vec<UnitId>, AttackTarget)> {
+    commands_of(commands, |command| match command {
+        Command::Attack { units, target, .. } => Some((units.clone(), *target)),
+        _ => None,
+    })
 }
 
 fn run(player: u8, units: Vec<UnitId>, x: i32, y: i32) -> PlayerCommand {
@@ -515,13 +521,21 @@ fn field() -> Scenario {
 }
 
 fn runs(commands: &[PlayerCommand]) -> Vec<(Vec<UnitId>, TilePos)> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::Run { units, goal, .. } => Some((units.clone(), *goal)),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match command {
+        Command::Run { units, goal, .. } => Some((units.clone(), *goal)),
+        _ => None,
+    })
+}
+
+/// `scenario` built with West's Extractors refitted into Deep Bores.
+fn bored(scenario: &Scenario) -> State {
+    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
+    for entry in value["buildings"].as_array_mut().unwrap() {
+        if entry["player"] == 0 && entry["kind"] == "extractor" {
+            entry["tier"] = 1.into();
+        }
+    }
+    serde_json::from_value(value).unwrap()
 }
 
 /// `state` with `unit` at `hp`.
@@ -889,7 +903,7 @@ fn the_allowance_caps_unit_orders_but_not_purchases() {
                 .any(|(node, _)| *node == TilePos::new(x, y))),
         "premise: four nodes near the west Foundry"
     );
-    let scrapheap = BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11);
+    let scrapheap = rung(BotDifficulty::Scrapheap);
     let (commands, trace) =
         seat_with(&scenario, 0, scrapheap).act_traced(&state, &mut OwnEvents::default());
     let trace = trace.unwrap();
@@ -910,16 +924,8 @@ fn decisions_follow_the_difficulty_interval_and_stop_after_the_result() {
     let scenario = arena(200);
     let mut state = scenario.build().unwrap();
     let mut standard = seat(&scenario, 0);
-    let scrapheap = seat_with(
-        &scenario,
-        0,
-        BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11),
-    );
-    let prime = seat_with(
-        &scenario,
-        0,
-        BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 11),
-    );
+    let scrapheap = seat_with(&scenario, 0, rung(BotDifficulty::Scrapheap));
+    let prime = seat_with(&scenario, 0, rung(BotDifficulty::Prime));
     let interval = crate::decision_interval;
     let (fast, mid, slow) = (
         interval(BotDifficulty::Prime),

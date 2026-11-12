@@ -132,29 +132,23 @@ fn east_start() -> MissionKind {
 }
 
 fn loads(commands: &[PlayerCommand]) -> Vec<(UnitId, Vec<UnitId>)> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::Load {
-                units, transport, ..
-            } => Some((*transport, units.clone())),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match command {
+        Command::Load {
+            units, transport, ..
+        } => Some((*transport, units.clone())),
+        _ => None,
+    })
 }
 
 fn unloads(commands: &[PlayerCommand]) -> Vec<(UnitId, TilePos, bool)> {
-    commands
-        .iter()
-        .filter_map(|command| match command.command {
-            Command::Unload {
-                transport,
-                at,
-                queue,
-            } => Some((transport, at, queue)),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match *command {
+        Command::Unload {
+            transport,
+            at,
+            queue,
+        } => Some((transport, at, queue)),
+        _ => None,
+    })
 }
 
 fn commands_for(boarding: &[(UnitId, Vec<UnitId>)]) -> Vec<PlayerCommand> {
@@ -1138,14 +1132,11 @@ fn riders_left_standing_fly_only_with_the_need_aboard_or_disband() {
         (commands, lift(&trace.unwrap().missions))
     };
     let stopped = |commands: &[PlayerCommand]| -> Vec<UnitId> {
-        commands
-            .iter()
-            .filter_map(|command| match &command.command {
-                Command::Stop { units } => Some(units.clone()),
-                _ => None,
-            })
-            .flatten()
-            .collect()
+        commands_of(commands, |command| match command {
+            Command::Stop { units } => Some(units.clone()),
+            _ => None,
+        })
+        .concat()
     };
 
     let (commands, mission) = settled(&[]);
@@ -1520,10 +1511,6 @@ fn recalled(
 fn lifts(mut opponent: Opponent, state: &State) -> bool {
     let (_, trace) = opponent.act_traced(state, &mut OwnEvents::default());
     lift(&trace.unwrap().missions).is_some()
-}
-
-fn rung(difficulty: BotDifficulty) -> BotConfig {
-    BotConfig::new(difficulty, BotStance::Balanced, 11)
 }
 
 #[test]
@@ -1961,13 +1948,7 @@ fn a_roc_being_assembled_counts_toward_the_carrier_stock() {
     ]);
     scenario.units.push(unit(0, UnitKind::Excavator, 9, 18));
     scenario.players[0].scrap = UnitKind::Roc.stats().cost + 1_000;
-    let mut value = serde_json::to_value(scenario.build().unwrap()).unwrap();
-    for entry in value["buildings"].as_array_mut().unwrap() {
-        if entry["player"] == 0 && entry["kind"] == "extractor" {
-            entry["tier"] = 1.into();
-        }
-    }
-    let bare: State = serde_json::from_value(value).unwrap();
+    let bare = bored(&scenario);
     let skyhooks_trained = |state: &State| {
         trains(&seat_with(&scenario, 0, thrifty()).act(state, &mut OwnEvents::default()))
             .iter()
@@ -2267,7 +2248,7 @@ fn mirrored_seats_walk_counterpart_islands_first_when_orders_run_out() {
     let scenario = shoals();
     let mut state = scenario.build().unwrap();
     advance_to(&mut state, 24, &[]);
-    let scrapheap = BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11);
+    let scrapheap = rung(BotDifficulty::Scrapheap);
     let (west, trace) =
         seat_with(&scenario, 0, scrapheap).act_traced(&state, &mut OwnEvents::default());
     let walking = west

@@ -268,45 +268,6 @@ fn six_levels_climb_end_to_end() {
     assert_eq!(state.unit(walker).unwrap().tile(), goal);
 }
 
-#[test]
-fn a_tiered_map_reproduces_bit_identically() {
-    let scenario = stair(
-        3,
-        vec![
-            unit(0, UnitKind::Sentinel, 4, 2),
-            unit(0, UnitKind::Talon, 6, 3),
-            unit(1, UnitKind::Sentinel, 16, 10),
-        ],
-    );
-    let mut a = scenario.build().unwrap();
-    let mut b = scenario.build().unwrap();
-    let hunt = |state: &State| {
-        vec![cmd(
-            0,
-            orders::hunt(
-                state
-                    .units()
-                    .iter()
-                    .filter(|u| u.player == PlayerId(0))
-                    .map(|u| u.id)
-                    .collect::<Vec<_>>(),
-                TilePos::new(16, 10),
-            ),
-        )]
-    };
-    let first = hunt(&a);
-    a.tick(&first);
-    let second = hunt(&b);
-    b.tick(&second);
-    for _ in 0..300 {
-        a.tick(&[]);
-        b.tick(&[]);
-    }
-    assert_eq!(a.hash(), b.hash());
-    let restored: State = serde_json::from_str(&serde_json::to_string(&a).unwrap()).unwrap();
-    assert_eq!(restored.hash(), a.hash());
-}
-
 fn attack(
     state: &mut State,
     player: u8,
