@@ -10,14 +10,14 @@ use common::{cmd, orders, players, run, unit};
 use aftermine_sim::map::Terrain;
 use aftermine_sim::scenario::{ScenarioError, ScenarioMode, UnitSpec};
 use aftermine_sim::stats::Domain;
-use aftermine_sim::{Event, PlayerId, Scenario, State, Target, UnitKind};
+use aftermine_sim::{Event, Scenario, Target, UnitKind};
 use chassis::grid::TilePos;
 
 /// A chasm at x=`wall_x` (default 12) severing east from west on the
 /// ground. Both Foundries sit west — the build gate requires the seats
 /// ground-connected, so the east half hosts only orphaned machines.
 /// `width` widens the chasm eastward for range experiments.
-fn chasm(width: i32, units: Vec<UnitSpec>) -> Scenario {
+pub(crate) fn chasm(width: i32, units: Vec<UnitSpec>) -> Scenario {
     let mut map = vec!["#".repeat(24)];
     for y in 1..11 {
         let mut row = String::from("#");
@@ -230,43 +230,6 @@ fn ground_goals_on_the_void_snap_to_the_rim() {
         landed != TilePos::new(12, 5) && (landed.x - 12).abs() <= 3,
         "the goal snapped to standable ground near the rim, got {landed:?}"
     );
-}
-
-#[test]
-fn a_chasm_map_reproduces_bit_identically() {
-    let scenario = chasm(
-        2,
-        vec![
-            unit(0, UnitKind::Sentinel, 10, 4),
-            unit(1, UnitKind::Sentinel, 15, 6),
-            unit(0, UnitKind::Talon, 9, 7),
-        ],
-    );
-    let mut a = scenario.build().unwrap();
-    let mut b = scenario.build().unwrap();
-    let orders = |state: &State| {
-        vec![cmd(
-            0,
-            orders::hunt(
-                state
-                    .units()
-                    .iter()
-                    .filter(|u| u.player == PlayerId(0))
-                    .map(|u| u.id)
-                    .collect::<Vec<_>>(),
-                TilePos::new(18, 6),
-            ),
-        )]
-    };
-    let first = orders(&a);
-    a.tick(&first);
-    let second = orders(&b);
-    b.tick(&second);
-    for _ in 0..300 {
-        a.tick(&[]);
-        b.tick(&[]);
-    }
-    assert_eq!(a.hash(), b.hash());
 }
 
 #[test]

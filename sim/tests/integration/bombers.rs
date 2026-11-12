@@ -499,67 +499,42 @@ fn a_bomber_ordered_onto_a_corner_building_behind_it_never_touches_the_wall() {
 }
 
 #[test]
-fn a_bomber_attacking_an_edge_building_head_on_never_touches_the_wall() {
-    let mut state = edge_arena(
-        vec![
-            unit(0, UnitKind::Condor, 6, 8),
-            unit(0, UnitKind::Kestrel, 20, 6),
-        ],
-        vec![turret(1, 22, 8)],
-    )
-    .build()
-    .unwrap();
-    let condor = state.units()[0].id;
-    let target = enemy_building(&state, 22, 8);
-    state.tick(&[]);
-    state.tick(&[attack(0, condor, Target::Building(target))]);
-    let flight = fly_and_watch(&mut state, condor, 1_500, 3);
-    assert!(
-        flight.max_still < 10,
-        "the Condor parked for {} ticks",
-        flight.max_still
-    );
-    assert_eq!(
-        flight.pinned, 0,
-        "the Condor was pressed against the world's edge"
-    );
-    assert!(
-        flight.releases.len() >= 3,
-        "three edge passes expected, saw {:?}",
-        flight.releases
-    );
-}
-
-#[test]
-fn a_bomber_attacking_a_corner_building_never_leaves_the_world() {
-    let mut state = edge_arena(
-        vec![
-            unit(0, UnitKind::Condor, 8, 3),
-            unit(0, UnitKind::Kestrel, 20, 13),
-        ],
-        vec![turret(1, 22, 14)],
-    )
-    .build()
-    .unwrap();
-    let condor = state.units()[0].id;
-    let target = enemy_building(&state, 22, 14);
-    state.tick(&[]);
-    state.tick(&[attack(0, condor, Target::Building(target))]);
-    let flight = fly_and_watch(&mut state, condor, 1_500, 3);
-    assert!(
-        flight.max_still < 10,
-        "the Condor parked for {} ticks",
-        flight.max_still
-    );
-    assert_eq!(
-        flight.pinned, 0,
-        "the Condor was pressed against the world's edge"
-    );
-    assert!(
-        flight.releases.len() >= 3,
-        "three corner passes expected, saw {:?}",
-        flight.releases
-    );
+fn a_bomber_attacking_a_building_on_the_boundary_never_touches_the_wall() {
+    // A Kestrel spots for the Condor. The turret stands against the east
+    // wall, met head on, or in the south-east corner.
+    for (place, condor, kestrel, turret_at) in [
+        ("edge", (6, 8), (20, 6), (22, 8)),
+        ("corner", (8, 3), (20, 13), (22, 14)),
+    ] {
+        let mut state = edge_arena(
+            vec![
+                unit(0, UnitKind::Condor, condor.0, condor.1),
+                unit(0, UnitKind::Kestrel, kestrel.0, kestrel.1),
+            ],
+            vec![turret(1, turret_at.0, turret_at.1)],
+        )
+        .build()
+        .unwrap();
+        let condor = unit_id(&state, |u| u.kind == UnitKind::Condor);
+        let target = enemy_building(&state, turret_at.0, turret_at.1);
+        state.tick(&[]);
+        state.tick(&[attack(0, condor, Target::Building(target))]);
+        let flight = fly_and_watch(&mut state, condor, 1_500, 3);
+        assert!(
+            flight.max_still < 10,
+            "{place}: the Condor parked for {} ticks",
+            flight.max_still
+        );
+        assert_eq!(
+            flight.pinned, 0,
+            "{place}: the Condor was pressed against the world's edge"
+        );
+        assert!(
+            flight.releases.len() >= 3,
+            "{place}: three passes expected, saw {:?}",
+            flight.releases
+        );
+    }
 }
 
 #[test]

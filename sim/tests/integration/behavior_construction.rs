@@ -282,34 +282,6 @@ fn cancel_refunds_by_health_and_damage_burns_it() {
 }
 
 #[test]
-fn sealed_apart_scenarios_refuse_to_build() {
-    use aftermine_sim::scenario::ScenarioError;
-    // A mesa wall: rock alone would leave the sky open, and an
-    // air-connected map is legal.
-    let scenario = Scenario {
-        levels: Vec::new(),
-        mode: ScenarioMode::Match,
-        name: "sealed".into(),
-        map: vec![
-            "#####^######".into(),
-            "#1...^.....#".into(),
-            "#....^.....#".into(),
-            "#....^..2..#".into(),
-            "#....^.....#".into(),
-            "#####^######".into(),
-        ],
-        players: arena(vec![]).players,
-        units: vec![],
-        buildings: Vec::new(),
-        meta: None,
-    };
-    assert!(matches!(
-        scenario.build(),
-        Err(ScenarioError::Disconnected(..))
-    ));
-}
-
-#[test]
 fn can_place_refuses_foundries() {
     use aftermine_sim::stats::BuildingKind;
     let state = arena(vec![]).build().unwrap();
@@ -468,12 +440,11 @@ fn queue_overflow_is_rejected_not_swallowed() {
     assert!(rejected > 0, "silent drops at the cap");
 }
 
-#[test]
-fn unreachable_sites_are_rejected_before_charging() {
-    use aftermine_sim::stats::BuildingKind;
-    // The pocket interior is visible (vision is radius-based, rock does
-    // not block sight) but no builder can path to any doorstep.
-    let scenario = Scenario {
+/// Player 0's Harvester near a rock pocket around (6, 3). The pocket is in
+/// sight, since rock does not block vision, but no builder can path to the
+/// doorstep of a site inside it.
+fn sealed_doorstep() -> State {
+    Scenario {
         levels: Vec::new(),
         mode: ScenarioMode::Match,
         name: "sealed-doorstep".into(),
@@ -491,8 +462,15 @@ fn unreachable_sites_are_rejected_before_charging() {
         units: vec![unit(0, UnitKind::Harvester, 4, 6)],
         buildings: Vec::new(),
         meta: None,
-    };
-    let mut state = scenario.build().unwrap();
+    }
+    .build()
+    .unwrap()
+}
+
+#[test]
+fn unreachable_sites_are_rejected_before_charging() {
+    use aftermine_sim::stats::BuildingKind;
+    let mut state = sealed_doorstep();
     let builder = state.units()[0].id;
     let scrap_before = state.player(PlayerId(0)).scrap;
     let report = state.tick(&[cmd(
@@ -660,26 +638,7 @@ fn a_fresh_site_cannot_be_corner_cut_diagonally() {
 #[test]
 fn a_rejected_build_leaves_no_trace_on_the_hash() {
     use aftermine_sim::stats::BuildingKind;
-    let scenario = Scenario {
-        levels: Vec::new(),
-        mode: ScenarioMode::Match,
-        name: "sealed-doorstep".into(),
-        map: vec![
-            "##############".into(),
-            "#1...........#".into(),
-            "#....###.....#".into(),
-            "#....#.#.....#".into(),
-            "#....###.....#".into(),
-            "#..........2.#".into(),
-            "#............#".into(),
-            "##############".into(),
-        ],
-        players: arena(vec![]).players,
-        units: vec![unit(0, UnitKind::Harvester, 4, 6)],
-        buildings: Vec::new(),
-        meta: None,
-    };
-    let mut state = scenario.build().unwrap();
+    let mut state = sealed_doorstep();
     let mut pristine = state.clone();
     let builder = state.units()[0].id;
     let turret = |anchor| cmd(0, orders::build([builder], BuildingKind::Turret, anchor));

@@ -142,13 +142,10 @@ fn indexed_acquisition_matches_the_scan_at_north_and_south_rows() {
     }
 }
 
-/// Two mixed armies crossing an open arena, compared pick-for-pick
-/// against the linear scan every tick — range edges, weapon-mask
-/// misses (flak vs ground, ground-only vs flyers), dying candidates,
-/// and the building fallback near the far Foundry all churn as the
-/// fronts meet and melt.
-#[test]
-fn indexed_acquisition_matches_the_linear_scan() {
+/// `west` and `east` in ranks of `columns` at opposite ends of an open
+/// 31 by 19 arena, one tick after each side is sent hunting toward the
+/// other's start.
+fn mixed_armies(columns: i32, west: &[UnitKind], east: &[UnitKind]) -> State {
     let width = 31usize;
     let height = 19usize;
     let mut rows = vec![vec!['#'; width]; height];
@@ -159,29 +156,9 @@ fn indexed_acquisition_matches_the_linear_scan() {
     }
     rows[1][1] = '1';
     rows[height - 3][width - 3] = '2';
-    let west: &[UnitKind] = &[
-        UnitKind::Sentinel,
-        UnitKind::Sentinel,
-        UnitKind::Scuttler,
-        UnitKind::Lancer,
-        UnitKind::Flakhound,
-        UnitKind::Buzzard,
-        UnitKind::Talon,
-        UnitKind::Harvester,
-    ];
-    let east: &[UnitKind] = &[
-        UnitKind::Sentinel,
-        UnitKind::Sentinel,
-        UnitKind::Scuttler,
-        UnitKind::Lancer,
-        UnitKind::Flakhound,
-        UnitKind::Buzzard,
-        UnitKind::Talon,
-        UnitKind::Harvester,
-    ];
     let mut units = Vec::new();
     for (&kind, i) in west.iter().zip(0_i32..) {
-        let (dx, dy) = (i % 4, i / 4);
+        let (dx, dy) = (i % columns, i / columns);
         units.push(UnitSpec {
             player: 0,
             kind,
@@ -190,7 +167,7 @@ fn indexed_acquisition_matches_the_linear_scan() {
         });
     }
     for (&kind, i) in east.iter().zip(0_i32..) {
-        let (dx, dy) = (i % 4, i / 4);
+        let (dx, dy) = (i % columns, i / columns);
         units.push(UnitSpec {
             player: 1,
             kind,
@@ -198,38 +175,54 @@ fn indexed_acquisition_matches_the_linear_scan() {
             y: 14 - dy * 2,
         });
     }
-    let scenario = Scenario {
+    let mut state = Scenario {
         levels: Vec::new(),
         mode: ScenarioMode::Match,
-        name: "acquisition-differential".into(),
+        name: "mixed-armies".into(),
         map: rows.into_iter().map(|r| r.into_iter().collect()).collect(),
         players: vec![seat("West"), seat("East")],
         units,
         buildings: Vec::new(),
         meta: None,
+    }
+    .build()
+    .expect("arena builds");
+    let hunt = |player: u8, goal: TilePos| PlayerCommand {
+        player: PlayerId(player),
+        command: Command::Hunt {
+            units: state
+                .units
+                .iter()
+                .filter(|u| u.player == PlayerId(player))
+                .map(|u| u.id)
+                .collect(),
+            goal,
+            queue: false,
+        },
     };
-    let mut state = scenario.build().expect("arena builds");
-    let march = |state: &State, player: u8, goal: TilePos| -> PlayerCommand {
-        PlayerCommand {
-            player: PlayerId(player),
-            command: Command::Hunt {
-                units: state
-                    .units
-                    .iter()
-                    .filter(|u| u.player == PlayerId(player))
-                    .map(|u| u.id)
-                    .collect(),
-                goal,
-                queue: false,
-            },
-        }
-    };
-    let opening = [
-        march(&state, 0, TilePos::new(27, 15)),
-        march(&state, 1, TilePos::new(3, 3)),
-    ];
+    let opening = [hunt(0, TilePos::new(27, 15)), hunt(1, TilePos::new(3, 3))];
     state.tick(&opening);
+    state
+}
 
+/// Two mixed armies crossing an open arena, compared pick-for-pick
+/// against the linear scan every tick — range edges, weapon-mask
+/// misses (flak vs ground, ground-only vs flyers), dying candidates,
+/// and the building fallback near the far Foundry all churn as the
+/// fronts meet and melt.
+#[test]
+fn indexed_acquisition_matches_the_linear_scan() {
+    let army = [
+        UnitKind::Sentinel,
+        UnitKind::Sentinel,
+        UnitKind::Scuttler,
+        UnitKind::Lancer,
+        UnitKind::Flakhound,
+        UnitKind::Buzzard,
+        UnitKind::Talon,
+        UnitKind::Harvester,
+    ];
+    let mut state = mixed_armies(4, &army, &army);
     let mut index = UnitIndex::new();
     let mut picks = 0usize;
     for _ in 0..400 {
@@ -288,83 +281,25 @@ fn linear_sidearm_victim(
 /// fog, air-vs-ground weapon masks, and dying candidates included.
 #[test]
 fn windowed_sidearm_victim_matches_the_linear_scan() {
-    let width = 31usize;
-    let height = 19usize;
-    let mut rows = vec![vec!['#'; width]; height];
-    for row in rows.iter_mut().take(height - 1).skip(1) {
-        for cell in row.iter_mut().take(width - 1).skip(1) {
-            *cell = '.';
-        }
-    }
-    rows[1][1] = '1';
-    rows[height - 3][width - 3] = '2';
-    let west: &[UnitKind] = &[
-        UnitKind::Sentinel,
-        UnitKind::Sentinel,
-        UnitKind::Sentinel,
-        UnitKind::Buzzard,
-        UnitKind::Talon,
-        UnitKind::Flakhound,
-    ];
-    let east: &[UnitKind] = &[
-        UnitKind::Sentinel,
-        UnitKind::Sentinel,
-        UnitKind::Talon,
-        UnitKind::Talon,
-        UnitKind::Buzzard,
-        UnitKind::Scuttler,
-    ];
-    let mut units = Vec::new();
-    for (&kind, i) in west.iter().zip(0_i32..) {
-        let (dx, dy) = (i % 3, i / 3);
-        units.push(UnitSpec {
-            player: 0,
-            kind,
-            x: 3 + dx * 2,
-            y: 4 + dy * 2,
-        });
-    }
-    for (&kind, i) in east.iter().zip(0_i32..) {
-        let (dx, dy) = (i % 3, i / 3);
-        units.push(UnitSpec {
-            player: 1,
-            kind,
-            x: 27 - dx * 2,
-            y: 14 - dy * 2,
-        });
-    }
-    let scenario = Scenario {
-        levels: Vec::new(),
-        mode: ScenarioMode::Match,
-        name: "sidearm-differential".into(),
-        map: rows.into_iter().map(|r| r.into_iter().collect()).collect(),
-        players: vec![seat("West"), seat("East")],
-        units,
-        buildings: Vec::new(),
-        meta: None,
-    };
-    let mut state = scenario.build().expect("arena builds");
-    let march = |state: &State, player: u8, goal: TilePos| -> PlayerCommand {
-        PlayerCommand {
-            player: PlayerId(player),
-            command: Command::Hunt {
-                units: state
-                    .units
-                    .iter()
-                    .filter(|u| u.player == PlayerId(player))
-                    .map(|u| u.id)
-                    .collect(),
-                goal,
-                queue: false,
-            },
-        }
-    };
-    let opening = [
-        march(&state, 0, TilePos::new(27, 15)),
-        march(&state, 1, TilePos::new(3, 3)),
-    ];
-    state.tick(&opening);
-
+    let mut state = mixed_armies(
+        3,
+        &[
+            UnitKind::Sentinel,
+            UnitKind::Sentinel,
+            UnitKind::Sentinel,
+            UnitKind::Buzzard,
+            UnitKind::Talon,
+            UnitKind::Flakhound,
+        ],
+        &[
+            UnitKind::Sentinel,
+            UnitKind::Sentinel,
+            UnitKind::Talon,
+            UnitKind::Talon,
+            UnitKind::Buzzard,
+            UnitKind::Scuttler,
+        ],
+    );
     let mut index = UnitIndex::new();
     let mut picks = 0usize;
     for _ in 0..400 {

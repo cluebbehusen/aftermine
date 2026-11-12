@@ -97,7 +97,7 @@ fn establish_straight_motion(
 }
 
 /// Fires the bombard at the scuttler and returns (state, launch events).
-fn open_fire() -> (State, Vec<Event>) {
+pub(crate) fn open_fire() -> (State, Vec<Event>) {
     let mut state = range(vec![
         unit(0, UnitKind::Bombard, 4, 5),
         // The spotter sees (vision 7 at range 6) without engaging
@@ -195,18 +195,6 @@ fn shells_outlive_their_shooters() {
         state.unit(scuttler).is_none_or(|u| u.hp < hp_before),
         "the stationary victim still paid"
     );
-}
-
-#[test]
-fn two_runs_with_shells_in_flight_stay_bit_identical() {
-    let build = || {
-        let (mut state, _) = open_fire();
-        run(&mut state, 17); // mid-flight: shells live in the state
-        assert!(!state.shells().is_empty(), "premise: a shell is airborne");
-        run(&mut state, 100);
-        state.hash()
-    };
-    assert_eq!(build(), build(), "same seed, same shells, same bits");
 }
 
 #[test]
