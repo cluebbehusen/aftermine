@@ -304,50 +304,41 @@ fn skyhook_interaction_game() -> Game {
     Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("Skyhook interaction builds")
 }
 
-#[test]
-fn skyhook_visible_edge_selects_the_transport() {
+/// The Skyhook interaction scene with the camera on `seat`'s Skyhook. Returns
+/// that Skyhook and the screen point 0.9 tiles east of its center, beyond the
+/// bare pick radius but inside its drawn sprite.
+fn skyhook_edge(seat: u8) -> (Game, aftermine_sim::UnitId, Vec2) {
     let mut game = skyhook_interaction_game();
-    let mut input = InputState::new();
     let skyhook = game
         .state
         .units()
         .iter()
-        .find(|unit| unit.kind == UnitKind::Skyhook)
+        .find(|unit| unit.kind == UnitKind::Skyhook && unit.player.0 == seat)
         .expect("fixture Skyhook");
-    let id = skyhook.id;
-    let center = vec2(skyhook.pos.x.to_num::<f32>(), skyhook.pos.y.to_num::<f32>());
+    let (id, center) = (skyhook.id, crate::game::world_vec(skyhook.pos));
     game.presentation.camera.center = center;
     game.presentation.camera.pan(Vec2::ZERO);
     let edge = game.presentation.camera.to_screen(center + vec2(0.9, 0.0));
+    (game, id, edge)
+}
+
+#[test]
+fn skyhook_visible_edge_selects_the_transport() {
+    let (mut game, skyhook, edge) = skyhook_edge(0);
+    let mut input = InputState::new();
 
     apply_events(&mut game, &mut input, &click(edge.x, edge.y));
 
-    assert_eq!(game.presentation.selection.units(), vec![id]);
+    assert_eq!(game.presentation.selection.units(), vec![skyhook]);
 }
 
 #[test]
 fn skyhook_visible_edge_accepts_a_load_order() {
-    let mut game = skyhook_interaction_game();
+    let (mut game, transport, edge) = skyhook_edge(0);
     let mut input = InputState::new();
-    let sentinel = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == UnitKind::Sentinel)
-        .expect("fixture Sentinel")
-        .id;
-    let skyhook = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == UnitKind::Skyhook)
-        .expect("fixture Skyhook");
-    let transport = skyhook.id;
-    let center = vec2(skyhook.pos.x.to_num::<f32>(), skyhook.pos.y.to_num::<f32>());
-    game.presentation.camera.center = center;
-    game.presentation.camera.pan(Vec2::ZERO);
-    game.presentation.selection.set_units(vec![sentinel]);
-    let edge = game.presentation.camera.to_screen(center + vec2(0.9, 0.0));
+    game.presentation
+        .selection
+        .set_units(vec![own_fighter(&game).0]);
 
     apply_events(&mut game, &mut input, &[right_down(edge)]);
 
@@ -409,27 +400,11 @@ fn a_retiring_skyhook_takes_no_load_order() {
 
 #[test]
 fn hostile_skyhook_visible_edge_accepts_an_attack_order() {
-    let mut game = skyhook_interaction_game();
+    let (mut game, target, edge) = skyhook_edge(1);
     let mut input = InputState::new();
-    let sentinel = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == UnitKind::Sentinel)
-        .expect("fixture Sentinel")
-        .id;
-    let skyhook = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == UnitKind::Skyhook && unit.player != game.presentation.human)
-        .expect("fixture hostile Skyhook");
-    let target = skyhook.id;
-    let center = vec2(skyhook.pos.x.to_num::<f32>(), skyhook.pos.y.to_num::<f32>());
-    game.presentation.camera.center = center;
-    game.presentation.camera.pan(Vec2::ZERO);
-    game.presentation.selection.set_units(vec![sentinel]);
-    let edge = game.presentation.camera.to_screen(center + vec2(0.9, 0.0));
+    game.presentation
+        .selection
+        .set_units(vec![own_fighter(&game).0]);
 
     apply_events(&mut game, &mut input, &[right_down(edge)]);
 
@@ -1479,34 +1454,13 @@ fn the_rally_card_arms_a_touchable_world_target() {
         .id;
     game.presentation.selection.set_buildings(vec![foundry]);
 
-    let card = macroquad::math::Rect::new(300.0, 700.0, 60.0, 60.0);
-    let mut layout = bare_layout(680.0, 500.0);
-    layout.cards[0] = (card, crate::panel::CardAction::ArmRally);
-    layout.card_count = 1;
-    game.presentation.layout.set(layout);
-
-    input.now = 1.0;
-    apply_events(
-        &mut game,
-        &mut input,
-        &[
-            touch_down(1, vec2(card.x + 20.0, card.y + 20.0)),
-            touch_up(1, vec2(card.x + 20.0, card.y + 20.0)),
-        ],
-    );
+    tap_panel_card(&mut game, &mut input, |card| {
+        card.action == crate::panel::CardAction::ArmRally
+    });
     assert_eq!(input.rallying(), [foundry]);
 
     let rally = chassis::grid::TilePos::new(14, 9);
-    let point = game
-        .presentation
-        .camera
-        .to_screen(vec2(rally.x as f32 + 0.5, rally.y as f32 + 0.5));
-    input.now = 2.0;
-    apply_events(
-        &mut game,
-        &mut input,
-        &[touch_down(2, point), touch_up(2, point)],
-    );
+    tap_world(&mut game, &mut input, tile_center(rally));
 
     assert!(matches!(
         game.pending.as_slice(),
@@ -2523,47 +2477,19 @@ fn f_arms_explicit_hunt_and_the_click_consumes_it() {
 fn the_hunt_card_is_touchable_and_arms_the_same_world_tap() {
     let mut game = headless_game();
     let mut input = InputState::new();
-    let fighter = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind.stats().can_fight())
-        .expect("a starting combat unit")
-        .id;
+    let (fighter, _) = own_fighter(&game);
     game.presentation.selection.set_units(vec![fighter]);
 
-    let card = macroquad::math::Rect::new(300.0, 700.0, 60.0, 60.0);
-    let mut layout = bare_layout(680.0, 500.0);
-    layout.cards[0] = (card, crate::panel::CardAction::Dispatch(Action::Hunt));
-    layout.card_count = 1;
-    game.presentation.layout.set(layout);
-
-    input.now = 2.0;
-    apply_events(
-        &mut game,
-        &mut input,
-        &[touch_down(1, vec2(card.x + 20.0, card.y + 20.0))],
-    );
-    input.now = 2.1;
-    apply_events(
-        &mut game,
-        &mut input,
-        &[touch_up(1, vec2(card.x + 20.0, card.y + 20.0))],
-    );
+    tap_panel_card(&mut game, &mut input, |card| {
+        card.action == crate::panel::CardAction::Dispatch(Action::Hunt)
+    });
     assert!(
         input.is_armed(ClickVerb::Hunt),
         "the fingertip arms the panel verb"
     );
 
     let goal = game.state.unit(fighter).unwrap().tile().offset(4, 1);
-    let point = game
-        .presentation
-        .camera
-        .to_screen(vec2(goal.x as f32 + 0.5, goal.y as f32 + 0.5));
-    input.now = 3.0;
-    apply_events(&mut game, &mut input, &[touch_down(2, point)]);
-    input.now = 3.1;
-    apply_events(&mut game, &mut input, &[touch_up(2, point)]);
+    tap_world(&mut game, &mut input, tile_center(goal));
 
     assert!(game.pending.iter().any(|command| matches!(
         command.command,
