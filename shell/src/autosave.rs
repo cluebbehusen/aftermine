@@ -2,8 +2,7 @@
 //!
 //! Failure is a first-class outcome here: a quit path that cannot
 //! write its record must be able to say so before the process exits,
-//! which is why [`SaveJob::run`] reports [`SaveOutcome`] and [`SaveError`]
-//! instead of a bool.
+//! which is why [`SaveJob::run`] reports a [`SaveError`] instead of a bool.
 
 use crate::game::Game;
 use std::path::{Path, PathBuf};
@@ -17,19 +16,6 @@ const KEEP_MATCHES: usize = 20;
 /// A temp older than this is an orphan from a crashed save, not a
 /// write in flight.
 const TEMP_ORPHAN_AGE: Duration = Duration::from_secs(3600);
-/// What a successful [`SaveJob::run`] call actually did.
-#[derive(Debug)]
-pub enum SaveOutcome {
-    /// A record landed at this path. Runtime quit flows need only the
-    /// success; filesystem contract tests inspect the exact destination.
-    #[cfg_attr(not(test), allow(dead_code))]
-    Wrote(PathBuf),
-    /// An unstarted game has nothing worth a file.
-    NothingToSave,
-    /// This session already wrote its record.
-    AlreadySaved,
-}
-
 /// Why a save could not land — own-machine facts carrying the path
 /// that refused, so the failure is diagnosable and reportable.
 #[derive(Debug, thiserror::Error)]
@@ -320,7 +306,6 @@ pub(crate) struct SaveJob {
     /// the slot; a named save gets a fresh file in the saves folder and
     /// removes the slot's autosaves if it has a mark.
     mark: Option<SaveMark>,
-    already_saved: bool,
 }
 
 impl SaveJob {
@@ -334,11 +319,10 @@ impl SaveJob {
             !(named && game.tutorial.is_some()),
             "lessons offer no named save"
         );
-        let already_saved = game.is_saved();
         // A lesson restarts in seconds, so it is never saved.
         let needed = game.tutorial.is_none()
             && (named
-                || (!already_saved
+                || (!game.is_saved()
                     && (game.state.current_tick() != 0 || !game.pending.is_empty())));
         // A LAN match resumes only through its host's LAN save
         // (`SaveJob::lan`), so any other save of one keeps the watch-only
@@ -389,7 +373,6 @@ impl SaveJob {
                 slot: game.slot.clone(),
                 key: game.save_key(),
             }),
-            already_saved,
         }
     }
 
@@ -418,7 +401,6 @@ impl SaveJob {
                 slot: game.slot.clone(),
                 key: game.save_key(),
             }),
-            already_saved: false,
         }
     }
 
@@ -427,9 +409,10 @@ impl SaveJob {
         self.mark.clone()
     }
 
-    /// Writes the record. Where it lands may wait on the first iCloud
-    /// lookup, so the save worker runs this.
-    pub(crate) fn run(self) -> Result<SaveOutcome, SaveError> {
+    /// Writes the record, returning where it landed; an unstarted game, or
+    /// one whose record is already written, writes nothing. Where it lands
+    /// may wait on the first iCloud lookup, so the save worker runs this.
+    pub(crate) fn run(self) -> Result<Option<PathBuf>, SaveError> {
         let records = crate::paths::records();
         let dir = match self.folder {
             Folder::Saves => records.saves(),
@@ -445,61 +428,54 @@ impl SaveJob {
         self,
         dir: Option<PathBuf>,
         autosaves: &[PathBuf],
-    ) -> Result<SaveOutcome, SaveError> {
-        let outcome = if let Some(data) = self.data {
-            let dir = dir.ok_or(SaveError::NoDataDir)?;
-            std::fs::create_dir_all(&dir).map_err(|source| SaveError::CreateDir {
-                path: dir.clone(),
-                source,
-            })?;
-            let kind = self.meta.kind.as_deref().unwrap();
-            let meta = self.meta.clone();
-            let write = |path: &Path| match data {
-                SaveData::Checkpoint(capture) => {
-                    crate::saved_game::write_capture(capture, meta, path)
-                }
-                SaveData::Recording(mut replay, mut keyframes, history) => {
-                    if let Some(history) = history {
-                        history.wait(&mut replay, &mut keyframes);
-                    }
-                    aftermine_kit::save_recording(path, &replay, &keyframes.wait())
-                        .map_err(Into::into)
-                }
-            };
-            let path = match &self.mark {
-                Some(mark) if self.folder != Folder::Saves => {
-                    let path = dir.join(mark.slot.file(kind));
-                    replace(&path, write).map_err(|source| SaveError::Write {
-                        path: path.clone(),
-                        source,
-                    })?;
-                    for folder in autosaves {
-                        if *folder == dir {
-                            mark.slot.clear_autosaves(folder, kind);
-                        } else {
-                            mark.slot.discard(folder);
-                        }
-                    }
-                    rotate(&dir);
-                    path
-                }
-                mark => {
-                    let path = publish_named(&dir, kind, self.meta.ticks.unwrap(), write)?;
-                    if let Some(mark) = mark {
-                        for folder in autosaves {
-                            mark.slot.discard(folder);
-                        }
-                    }
-                    path
-                }
-            };
-            SaveOutcome::Wrote(path)
-        } else if self.already_saved {
-            SaveOutcome::AlreadySaved
-        } else {
-            SaveOutcome::NothingToSave
+    ) -> Result<Option<PathBuf>, SaveError> {
+        let Some(data) = self.data else {
+            return Ok(None);
         };
-        Ok(outcome)
+        let dir = dir.ok_or(SaveError::NoDataDir)?;
+        std::fs::create_dir_all(&dir).map_err(|source| SaveError::CreateDir {
+            path: dir.clone(),
+            source,
+        })?;
+        let kind = self.meta.kind.as_deref().unwrap();
+        let meta = self.meta.clone();
+        let write = |path: &Path| match data {
+            SaveData::Checkpoint(capture) => crate::saved_game::write_capture(capture, meta, path),
+            SaveData::Recording(mut replay, mut keyframes, history) => {
+                if let Some(history) = history {
+                    history.wait(&mut replay, &mut keyframes);
+                }
+                aftermine_kit::save_recording(path, &replay, &keyframes.wait()).map_err(Into::into)
+            }
+        };
+        let path = match &self.mark {
+            Some(mark) if self.folder != Folder::Saves => {
+                let path = dir.join(mark.slot.file(kind));
+                replace(&path, write).map_err(|source| SaveError::Write {
+                    path: path.clone(),
+                    source,
+                })?;
+                for folder in autosaves {
+                    if *folder == dir {
+                        mark.slot.clear_autosaves(folder, kind);
+                    } else {
+                        mark.slot.discard(folder);
+                    }
+                }
+                rotate(&dir);
+                path
+            }
+            mark => {
+                let path = publish_named(&dir, kind, self.meta.ticks.unwrap(), write)?;
+                if let Some(mark) = mark {
+                    for folder in autosaves {
+                        mark.slot.discard(folder);
+                    }
+                }
+                path
+            }
+        };
+        Ok(Some(path))
     }
 }
 

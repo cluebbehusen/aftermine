@@ -405,16 +405,7 @@ impl App {
         else {
             return;
         };
-        let job = autosave::SaveJob::lan(&self.game, capture, None);
-        let mark = job.mark();
-        let task: Task = Box::new(move |_| {
-            job.run().map_err(|error| {
-                let line = error.player_line();
-                anyhow::Error::new(error).context(line)
-            })?;
-            crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
-            Ok(Output::Saved(mark))
-        });
+        let task = save_task(autosave::SaveJob::lan(&self.game, capture, None));
         match self.persistence.start(task) {
             Ok(id) => self.autosave_id = Some(BackgroundJob::of(id, &self.game)),
             Err(error) => self.notify(error.to_string(), true),
@@ -466,29 +457,14 @@ impl App {
             return;
         }
         let decided = self.owes_finished_record();
-        if self
-            .background
-            .due(
-                decided,
-                local && undecided && kept && unsaved,
-                self.clock.elapsed(),
-            )
-            .is_none()
-        {
+        if !self.background.due(
+            decided,
+            local && undecided && kept && unsaved,
+            self.clock.elapsed(),
+        ) {
             return;
         }
-        let job = autosave::SaveJob::capture(&self.game, None);
-        let mark = job.mark();
-        let task: Task = Box::new(move |_| {
-            job.run().map_err(|error| {
-                let line = error.player_line();
-                anyhow::Error::new(error).context(line)
-            })?;
-            // Sent at once, so a session left on one device can continue
-            // on another.
-            crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
-            Ok(Output::Saved(mark))
-        });
+        let task = save_task(autosave::SaveJob::capture(&self.game, None));
         match self.persistence.start(task) {
             Ok(id) => {
                 self.autosave_id = Some(BackgroundJob::of(id, &self.game));
@@ -715,15 +691,7 @@ pub(super) fn frame(
                 let Some(job) = save_job(intent, &app.game, app.net.as_ref()) else {
                     unreachable!("only an exit saves nothing, and it starts no task")
                 };
-                let mark = job.mark();
-                Box::new(move |_| {
-                    job.run().map_err(|error| {
-                        let line = error.player_line();
-                        anyhow::Error::new(error).context(line)
-                    })?;
-                    crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
-                    Ok(Output::Saved(mark))
-                })
+                save_task(job)
             }
         };
         match app.persistence.start(task) {
@@ -966,6 +934,20 @@ fn after_success(
             }
         },
     }
+}
+
+/// The worker task that writes `job` and sends it to the cloud mirror at
+/// once, so a session left on one device can continue on another.
+fn save_task(job: autosave::SaveJob) -> Task {
+    let mark = job.mark();
+    Box::new(move |_| {
+        job.run().map_err(|error| {
+            let line = error.player_line();
+            anyhow::Error::new(error).context(line)
+        })?;
+        crate::cloud_mirror::request(crate::cloud_mirror::Mode::Push);
+        Ok(Output::Saved(mark))
+    })
 }
 
 /// The save `intent` owes before it completes, if any. A LAN host keeps

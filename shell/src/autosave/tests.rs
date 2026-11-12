@@ -1,11 +1,11 @@
 use super::*;
 
 /// Runs `job` with `dir` holding both its record and the match's autosaves.
-fn run_at(job: SaveJob, dir: &Path) -> Result<SaveOutcome, SaveError> {
+fn run_at(job: SaveJob, dir: &Path) -> Result<Option<PathBuf>, SaveError> {
     job.run_in(Some(dir.to_owned()), &[dir.to_owned()])
 }
 
-fn write_record(game: &mut Game, dir: &Path) -> Result<SaveOutcome, SaveError> {
+fn write_record(game: &mut Game, dir: &Path) -> Result<Option<PathBuf>, SaveError> {
     let job = SaveJob::capture(game, None);
     let mark = job.mark();
     let result = run_at(job, dir)?;
@@ -29,7 +29,7 @@ fn write_named(game: &Game, name: &str, dir: &Path, saved_at: u64) -> Result<Pat
     let mut job = SaveJob::capture(game, Some(name));
     job.meta.saved_at = Some(saved_at);
     match run_at(job, dir)? {
-        SaveOutcome::Wrote(path) => Ok(path),
+        Some(path) => Ok(path),
         _ => unreachable!(),
     }
 }
@@ -55,7 +55,7 @@ fn pending_tick_zero_input_is_saved_and_finished_matches_remain_recordings() {
         building: aftermine_sim::BuildingId(0),
         kind: aftermine_sim::UnitKind::Harvester,
     });
-    let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
+    let Ok(Some(path)) = write_record(&mut game, &dir) else {
         panic!("pending input must not be discarded")
     };
     let mut restored = crate::saved_game::tests::load(&path).unwrap();
@@ -64,7 +64,7 @@ fn pending_tick_zero_input_is_saved_and_finished_matches_remain_recordings() {
     assert_eq!(restored.do_tick().events, game.do_tick().events);
     restored.issue(aftermine_sim::Command::Surrender);
     restored.do_tick();
-    let Ok(SaveOutcome::Wrote(finished)) = write_record(&mut restored, &dir) else {
+    let Ok(Some(finished)) = write_record(&mut restored, &dir) else {
         panic!("finished record writes")
     };
     let record = aftermine_kit::load_replay(&finished).unwrap();
@@ -100,7 +100,7 @@ fn a_lan_match_leaves_only_a_watch_only_recording() {
         building: aftermine_sim::BuildingId(0),
         kind: aftermine_sim::UnitKind::Harvester,
     });
-    let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
+    let Ok(Some(path)) = write_record(&mut game, &dir) else {
         panic!("an undecided LAN match still records its history")
     };
     let record = aftermine_kit::load_replay(&path).unwrap();
@@ -109,23 +109,20 @@ fn a_lan_match_leaves_only_a_watch_only_recording() {
 }
 
 #[test]
-fn outcomes_distinguish_nothing_already_and_wrote() {
-    let dir = scratch("outcomes");
+fn a_session_writes_one_record_once_it_has_started() {
+    let dir = scratch("one-record");
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
     assert!(
-        matches!(
-            write_record(&mut game, &dir),
-            Ok(SaveOutcome::NothingToSave)
-        ),
+        matches!(write_record(&mut game, &dir), Ok(None)),
         "an unstarted game writes nothing"
     );
     game.advance_ticks(1);
-    let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
+    let Ok(Some(path)) = write_record(&mut game, &dir) else {
         panic!("a started game writes its record");
     };
     assert!(path.exists());
     assert!(
-        matches!(write_record(&mut game, &dir), Ok(SaveOutcome::AlreadySaved)),
+        matches!(write_record(&mut game, &dir), Ok(None)),
         "one record per session"
     );
     std::fs::remove_dir_all(&dir).ok();
@@ -154,7 +151,7 @@ fn records_carry_their_kind_and_a_named_save_leaves_the_session_recorder_alone()
     let again = write_named(&game, "again", &dir, 1_784_721_601).expect("the twin walks a counter");
     assert_ne!(saved, again);
     // The quit autosave stamps its own kind.
-    let Ok(SaveOutcome::Wrote(auto_path)) = write_record(&mut game, &dir) else {
+    let Ok(Some(auto_path)) = write_record(&mut game, &dir) else {
         panic!("the quit record lands");
     };
     let auto = crate::saved_game::inspect(&auto_path).expect("loads back");
@@ -345,7 +342,7 @@ fn a_lan_host_save_is_a_resumable_checkpoint() {
     };
     for (name, kind) in [(None, "lan-autosave"), (Some("raid"), "lan")] {
         let job = SaveJob::lan(&game, capture(), name);
-        let SaveOutcome::Wrote(path) = run_at(job, &dir).unwrap() else {
+        let Some(path) = run_at(job, &dir).unwrap() else {
             panic!("a LAN save lands");
         };
         assert!(
@@ -370,24 +367,24 @@ fn a_named_save_replaces_the_matchs_autosave_and_counts_as_saved() {
     let dir = scratch("named-replaces-autosave");
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(1);
-    let Ok(SaveOutcome::Wrote(autosave)) = write_record(&mut game, &dir) else {
+    let Ok(Some(autosave)) = write_record(&mut game, &dir) else {
         panic!("the autosave lands");
     };
     game.advance_ticks(1);
     let job = SaveJob::capture(&game, Some("before the push"));
     let mark = job.mark().expect("a local match counts its named save");
-    let Ok(SaveOutcome::Wrote(named)) = run_at(job, &dir) else {
+    let Ok(Some(named)) = run_at(job, &dir) else {
         panic!("the named save lands");
     };
     game.mark_saved(&mark);
     assert!(!autosave.exists(), "the named save holds what it held");
     assert!(
-        matches!(write_record(&mut game, &dir), Ok(SaveOutcome::AlreadySaved)),
+        matches!(write_record(&mut game, &dir), Ok(None)),
         "leaving right after a named save writes nothing"
     );
     assert_eq!(files(&dir).len(), 1);
     game.advance_ticks(1);
-    let Ok(SaveOutcome::Wrote(again)) = write_record(&mut game, &dir) else {
+    let Ok(Some(again)) = write_record(&mut game, &dir) else {
         panic!("play after the named save autosaves");
     };
     assert_eq!(again, autosave);
@@ -403,7 +400,7 @@ fn a_failed_named_save_keeps_the_matchs_autosave() {
     std::fs::write(&blocked, b"in the way").unwrap();
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(1);
-    let Ok(SaveOutcome::Wrote(autosave)) = write_record(&mut game, &autosaves) else {
+    let Ok(Some(autosave)) = write_record(&mut game, &autosaves) else {
         panic!("the autosave lands");
     };
     game.advance_ticks(1);
@@ -428,14 +425,11 @@ fn leaving_a_loaded_named_save_unplayed_writes_nothing() {
     };
     let mut resumed = restored.install();
     assert!(
-        matches!(
-            write_record(&mut resumed, &dir),
-            Ok(SaveOutcome::AlreadySaved)
-        ),
+        matches!(write_record(&mut resumed, &dir), Ok(None)),
         "the named save already holds this moment"
     );
     resumed.advance_ticks(3);
-    let Ok(SaveOutcome::Wrote(autosave)) = write_record(&mut resumed, &dir) else {
+    let Ok(Some(autosave)) = write_record(&mut resumed, &dir) else {
         panic!("play after the load autosaves");
     };
     assert_ne!(autosave, named, "a named save is never overwritten");
@@ -448,11 +442,11 @@ fn a_match_overwrites_its_one_slot() {
     let dir = scratch("one-slot");
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(1);
-    let Ok(SaveOutcome::Wrote(first)) = write_record(&mut game, &dir) else {
+    let Ok(Some(first)) = write_record(&mut game, &dir) else {
         panic!("the first autosave lands");
     };
     game.advance_ticks(2);
-    let Ok(SaveOutcome::Wrote(second)) = write_record(&mut game, &dir) else {
+    let Ok(Some(second)) = write_record(&mut game, &dir) else {
         panic!("the next autosave lands");
     };
     assert_eq!(first, second);
@@ -467,7 +461,7 @@ fn continuing_a_slot_overwrites_it() {
     let dir = scratch("continue-slot");
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(4);
-    let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
+    let Ok(Some(path)) = write_record(&mut game, &dir) else {
         panic!("the autosave lands");
     };
     let slot = SaveSlot::adopt(&path, std::slice::from_ref(&dir)).unwrap();
@@ -477,14 +471,11 @@ fn continuing_a_slot_overwrites_it() {
     };
     let mut resumed = restored.with_slot(Some(slot)).install();
     assert!(
-        matches!(
-            write_record(&mut resumed, &dir),
-            Ok(SaveOutcome::AlreadySaved)
-        ),
+        matches!(write_record(&mut resumed, &dir), Ok(None)),
         "leaving right after Continue rewrites nothing"
     );
     resumed.advance_ticks(3);
-    let Ok(SaveOutcome::Wrote(again)) = write_record(&mut resumed, &dir) else {
+    let Ok(Some(again)) = write_record(&mut resumed, &dir) else {
         panic!("the continued match saves");
     };
     assert_eq!(again, path);
@@ -538,10 +529,7 @@ fn rotation_keeps_the_last_five_matches() {
         let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
         for ticks in [1, 2] {
             game.advance_ticks(ticks);
-            assert!(matches!(
-                write_record(&mut game, &dir),
-                Ok(SaveOutcome::Wrote(_))
-            ));
+            assert!(matches!(write_record(&mut game, &dir), Ok(Some(_))));
         }
         slots.push(game.slot.clone());
     }
@@ -563,18 +551,14 @@ fn a_decided_match_writes_its_record_and_drops_its_slot() {
     let (autosaves, matches) = (root.join("autosaves"), root.join("matches"));
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(aftermine_kit::keyframes::KEYFRAME_EVERY + 5);
-    assert!(matches!(
-        write_record(&mut game, &autosaves),
-        Ok(SaveOutcome::Wrote(_))
-    ));
+    assert!(matches!(write_record(&mut game, &autosaves), Ok(Some(_))));
     game.issue(aftermine_sim::Command::Surrender);
     game.do_tick();
     assert!(game.state.result().is_some());
     let job = SaveJob::capture(&game, None);
     assert_eq!(job.folder, Folder::Matches);
     let mark = job.mark().unwrap();
-    let Ok(SaveOutcome::Wrote(record)) =
-        job.run_in(Some(matches.clone()), std::slice::from_ref(&autosaves))
+    let Ok(Some(record)) = job.run_in(Some(matches.clone()), std::slice::from_ref(&autosaves))
     else {
         panic!("the finished record lands");
     };
@@ -591,10 +575,7 @@ fn a_decided_match_writes_its_record_and_drops_its_slot() {
         [aftermine_kit::keyframes::KEYFRAME_EVERY],
         "the record carries the keyframes the match kept"
     );
-    assert!(matches!(
-        write_record(&mut game, &matches),
-        Ok(SaveOutcome::AlreadySaved)
-    ));
+    assert!(matches!(write_record(&mut game, &matches), Ok(None)));
     std::fs::remove_dir_all(&root).ok();
 }
 
@@ -614,7 +595,7 @@ fn a_match_decided_right_after_its_resume_records_its_whole_history() {
     resumed.issue(aftermine_sim::Command::Surrender);
     resumed.do_tick();
     assert!(resumed.state.result().is_some());
-    let Ok(SaveOutcome::Wrote(record)) = write_record(&mut resumed, &root) else {
+    let Ok(Some(record)) = write_record(&mut resumed, &root) else {
         panic!("the finished record lands");
     };
     let recording = aftermine_kit::load_recording(&record).unwrap();
@@ -639,10 +620,10 @@ fn a_save_that_finished_after_more_ticks_does_not_cover_them() {
     let job = SaveJob::capture(&game, None);
     let mark = job.mark().unwrap();
     game.advance_ticks(2);
-    assert!(matches!(run_at(job, &dir), Ok(SaveOutcome::Wrote(_))));
+    assert!(matches!(run_at(job, &dir), Ok(Some(_))));
     game.mark_saved(&mark);
     assert!(!game.is_saved());
-    let Ok(SaveOutcome::Wrote(path)) = write_record(&mut game, &dir) else {
+    let Ok(Some(path)) = write_record(&mut game, &dir) else {
         panic!("the newer ticks still save");
     };
     assert_eq!(
@@ -673,10 +654,7 @@ fn a_match_decided_before_install_writes_no_record() {
     replay.meta.ticks = Some(game.state.current_tick());
     let mut watched = Game::from_replay(replay).unwrap();
     assert!(watched.state.result().is_some());
-    assert!(matches!(
-        write_record(&mut watched, &dir),
-        Ok(SaveOutcome::AlreadySaved)
-    ));
+    assert!(matches!(write_record(&mut watched, &dir), Ok(None)));
     assert!(!dir.exists());
 }
 
@@ -692,13 +670,10 @@ fn a_slot_holds_one_autosave_kind() {
         game.capture_save().for_lan(Vec::new(), manifest),
         None,
     );
-    assert!(matches!(run_at(job, &dir), Ok(SaveOutcome::Wrote(_))));
+    assert!(matches!(run_at(job, &dir), Ok(Some(_))));
     assert_eq!(files(&dir), vec![game.slot.file("lan-autosave")]);
     game.advance_ticks(1);
-    assert!(matches!(
-        write_record(&mut game, &dir),
-        Ok(SaveOutcome::Wrote(_))
-    ));
+    assert!(matches!(write_record(&mut game, &dir), Ok(Some(_))));
     assert_eq!(
         files(&dir),
         vec![game.slot.file("autosave")],
@@ -713,16 +688,13 @@ fn a_session_left_on_the_device_moves_into_icloud_when_resumed() {
     let (cloud, device) = (root.join("cloud"), root.join("device"));
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     game.advance_ticks(3);
-    assert!(matches!(
-        write_record(&mut game, &device),
-        Ok(SaveOutcome::Wrote(_))
-    ));
+    assert!(matches!(write_record(&mut game, &device), Ok(Some(_))));
     game.advance_ticks(3);
     let both = [cloud.clone(), device.clone()];
     let job = SaveJob::capture(&game, None);
     assert!(matches!(
         job.run_in(Some(cloud.clone()), &both),
-        Ok(SaveOutcome::Wrote(_))
+        Ok(Some(_))
     ));
     assert_eq!(files(&cloud), vec![game.slot.file("autosave")]);
     assert!(files(&device).is_empty(), "one match keeps one autosave");
@@ -753,9 +725,6 @@ fn a_lesson_is_never_saved() {
     )
     .unwrap();
     game.advance_ticks(20);
-    assert!(matches!(
-        write_record(&mut game, &dir),
-        Ok(SaveOutcome::NothingToSave)
-    ));
+    assert!(matches!(write_record(&mut game, &dir), Ok(None)));
     assert!(!dir.exists(), "nothing was written");
 }
