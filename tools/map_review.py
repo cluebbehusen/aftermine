@@ -1,14 +1,14 @@
 """Builds a browser-openable review page for map drafts.
 
-Map drafts live in ``map-drafts/`` — outside ``scenarios/`` so the
-shipped-map sweeps and hash fixtures never see unblessed work. This
-tool renders each draft through the driver's CPU rasterizer, runs the
-structural audit, and writes one self-contained HTML file (images
-inlined) for review in any browser.
+Map drafts live in ``map-drafts/`` — outside ``scenarios/`` so the map
+gates, the integrity soak and the game's map list never see unapproved
+work. This tool renders each draft through the driver's CPU rasterizer,
+runs the structural audit, and writes one self-contained HTML file
+(images inlined) for review in any browser.
 
-Blessing a draft means moving its JSON into ``scenarios/``, re-running
-the map gates, blessing the hash fixture row, and committing — this
-page only presents; it never promotes.
+A draft moves into ``scenarios/`` only once it passes the map gates,
+its metadata badges match the audit's, and it is explicitly approved —
+this page only presents; it never promotes.
 
 Usage (from the repository root):
     uv run tools/map_review.py
@@ -109,9 +109,10 @@ def page(cards: list[str]) -> str:
 </style></head>
 <body>
 <h1>Map drafts for review</h1>
-<p>Rendered by the driver's CPU rasterizer. Blessing a draft = move its
-JSON from <code>map-drafts/</code> into <code>scenarios/</code>, re-run
-the map gates, bless the hash fixture, and commit.</p>
+<p>Rendered by the driver's CPU rasterizer. A draft moves from
+<code>map-drafts/</code> into <code>scenarios/</code> only once it passes
+the map gates, its badges match the audit, and it is explicitly
+approved.</p>
 {body}
 </body></html>
 """
