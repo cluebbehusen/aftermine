@@ -90,13 +90,7 @@ fn stripping_hotkeys_clears_every_card_row() {
         );
     }
 
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .expect("a harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.state.tick(&[PlayerCommand {
         player: game.presentation.human,
         command: Command::Hunt {
@@ -120,13 +114,7 @@ fn stripping_hotkeys_clears_every_card_row() {
 #[test]
 fn the_all_button_names_its_key_only_while_a_keyboard_is_in_use() {
     let mut game = game();
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .expect("a harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let input = crate::input::InputState::new();
     for hands in crate::platform::tests::ALL_HANDS
@@ -153,6 +141,7 @@ fn stat<'a>(panel: &'a Panel, label: &str) -> &'a info::StatRow {
         .find(|row| row.label == label)
         .unwrap()
 }
+use crate::tests::support::{issue_tick, own_building, own_unit, sandbox};
 use aftermine_sim::{Command, PlayerCommand, Scenario};
 use macroquad::prelude::vec2;
 
@@ -320,13 +309,7 @@ fn recurring_income_tracks_real_output_upgrade_downtime_and_foundry_warmup() {
         },
     ]);
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-    let reclaimer = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Reclaimer)
-        .unwrap()
-        .id;
+    let reclaimer = own_building(&game, BuildingKind::Reclaimer);
     let foundry = human_foundry(&game);
     let rate = |game: &Game, id| building_income(&game.view(), game.state.building(id).unwrap());
     assert_eq!(rate(&game, reclaimer), 30);
@@ -401,13 +384,7 @@ fn extractor_build_copy_names_both_rates_and_the_foundry_rule() {
     );
 
     let mut game = game();
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == game.presentation.human && unit.kind == UnitKind::Harvester)
-        .expect("starting Harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), true).expect("advanced builds");
@@ -447,13 +424,7 @@ fn verb_cards_wear_their_atlas_icons() {
     use aftermine_sim::UnitKind;
     use chassis::grid::TilePos;
     let mut game = game();
-    let sentinel = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
-        .expect("skirmish authors a sentinel")
-        .id;
+    let sentinel = own_unit(&game, UnitKind::Sentinel);
     game.state.tick(&[PlayerCommand {
         player: game.presentation.human,
         command: Command::Hunt {
@@ -610,13 +581,7 @@ fn a_non_producer_never_offers_a_rally_action() {
             y: 3,
         });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("fixture builds");
-    let turret = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let turret = own_building(&game, BuildingKind::Turret);
     game.presentation.selection.set_buildings(vec![turret]);
 
     let panel =
@@ -662,13 +627,7 @@ fn an_upgrade_needs_no_harvester_and_explains_its_downtime() {
     ]);
     let mut game =
         Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("upgrade fixture builds");
-    let turret = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Turret)
-        .expect("fixture has a turret")
-        .id;
+    let turret = own_building(&game, BuildingKind::Turret);
     game.presentation.selection.set_buildings(vec![turret]);
 
     let panel =
@@ -704,13 +663,7 @@ fn an_upgrade_needs_no_harvester_and_explains_its_downtime() {
 #[test]
 fn a_locked_card_names_an_upgrade_by_the_structure_it_upgrades() {
     let mut game = game();
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == game.presentation.human && unit.kind == UnitKind::Harvester)
-        .expect("a harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), true).expect("panel");
     let why = |title: &str| {
@@ -802,14 +755,7 @@ fn the_patrol_card_says_what_each_kind_of_unit_does_on_the_way() {
         });
     }
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("skirmish builds");
-    let own = |kind| {
-        game.state
-            .units()
-            .iter()
-            .find(|u| u.player == game.presentation.human && u.kind == kind)
-            .expect("the scenario fields this unit")
-            .id
-    };
+    let own = |kind| own_unit(&game, kind);
     let (sentinel, harvester, skyhook) = (
         own(UnitKind::Sentinel),
         own(UnitKind::Harvester),
@@ -855,13 +801,7 @@ fn the_patrol_card_says_what_each_kind_of_unit_does_on_the_way() {
 #[test]
 fn a_patrolling_selection_lights_patrol_and_its_dock_says_patrol() {
     let mut game = game();
-    let sentinel = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
-        .expect("the scenario fields a Sentinel")
-        .id;
+    let sentinel = own_unit(&game, UnitKind::Sentinel);
     game.presentation.selection.set_units(vec![sentinel]);
     let patrol_card = |panel: &Panel| {
         panel
@@ -906,15 +846,7 @@ fn a_patrolling_selection_lights_patrol_and_its_dock_says_patrol() {
 #[test]
 fn the_harvester_panel_is_the_same_grammar() {
     let mut game = game();
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| {
-            u.player == game.presentation.human && u.kind == aftermine_sim::UnitKind::Harvester
-        })
-        .expect("starting harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     assert_eq!(panel.title, "Harvester");
@@ -1074,13 +1006,7 @@ fn builder_game_with(
     scenario.players[0].scrap = 5000;
     scenario.buildings.extend_from_slice(buildings);
     let game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("skirmish builds");
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .expect("starting harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     (game, harvester)
 }
 
@@ -1597,13 +1523,7 @@ fn a_repair_chip_wears_the_patients_tier() {
         spec(BuildingKind::Fabricator, 9),
         spec(BuildingKind::Turret, 12),
     ]);
-    let turret = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Turret)
-        .expect("fixture has a turret")
-        .id;
+    let turret = own_building(&game, BuildingKind::Turret);
     game.state.tick(&[PlayerCommand {
         player: game.presentation.human,
         command: Command::UpgradeBuilding { building: turret },
@@ -1847,13 +1767,7 @@ fn a_selected_bastion_shows_its_minimum_and_maximum_range() {
 #[test]
 fn a_single_unit_exposes_static_combat_facts_but_a_group_does_not() {
     let mut game = game();
-    let sentinel = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
-        .expect("starting sentinel")
-        .id;
+    let sentinel = own_unit(&game, UnitKind::Sentinel);
     game.presentation.selection.set_units(vec![sentinel]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).expect("panel");
     assert_eq!(stat(&panel, "Ground").value, "10 dmg/hit");
@@ -1868,13 +1782,7 @@ fn a_single_unit_exposes_static_combat_facts_but_a_group_does_not() {
     );
     assert_eq!(stat(&panel, "Speed").value, "2.2 tiles/s");
 
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .expect("starting harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation
         .selection
         .set_units(vec![sentinel, harvester]);
@@ -1997,8 +1905,7 @@ fn a_magazine_docks_its_ordered_rounds_and_keeps_its_facts_short() {
     let stats = BuildingKind::Lattice.magazine().unwrap();
     // The battery autofills its first interceptor; a second is bought.
     game.do_tick();
-    game.issue(Command::OrderRound { building: lattice });
-    game.do_tick();
+    issue_tick(&mut game, Command::OrderRound { building: lattice });
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     let chips: Vec<_> = panel
         .queue
@@ -2032,25 +1939,11 @@ fn a_magazine_docks_its_ordered_rounds_and_keeps_its_facts_short() {
 
 #[test]
 fn an_allied_magazine_docks_its_rounds_read_only() {
-    let mut scenario = Scenario::from_json(
-        r#"{
-        "name":"Allied battery", "mode":"sandbox",
-        "map":["................", "................", "................", "................",
-               "................", "................", "................", "................"],
-        "players":[{"name":"You","scrap":0,"bot":false,"team":0},
-                   {"name":"Ally","scrap":1000,"bot":false,"team":0}],
-        "units":[], "buildings":[]
-    }"#,
-    )
-    .unwrap();
-    scenario
-        .buildings
-        .push(aftermine_sim::scenario::BuildingSpec {
-            player: 1,
-            kind: BuildingKind::Lattice,
-            x: 6,
-            y: 3,
-        });
+    let mut scenario = sandbox(16, 8, 2, &[], &[(1, BuildingKind::Lattice, 6, 3)]);
+    scenario.players[1].scrap = 1000;
+    for player in &mut scenario.players {
+        player.team = Some(0);
+    }
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let lattice = game.state.buildings()[0].id;
     game.presentation.selection.set_buildings(vec![lattice]);
@@ -2089,13 +1982,7 @@ fn the_top_bar_income_follows_the_tick_it_was_summed_at() {
         },
     ]);
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-    let reclaimer = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Reclaimer)
-        .unwrap()
-        .id;
+    let reclaimer = own_building(&game, BuildingKind::Reclaimer);
     let summed = |game: &Game| -> u32 {
         game.state
             .buildings()
@@ -2305,13 +2192,7 @@ fn a_single_unit_kind_offers_every_one_you_own_until_all_are_selected() {
         CardAction::SelectAllUnits(UnitKind::Sentinel)
     );
 
-    let lancer = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Lancer)
-        .unwrap()
-        .id;
+    let lancer = own_unit(&game, UnitKind::Lancer);
     game.presentation
         .selection
         .set_units([game.presentation.selection.units(), &[lancer]].concat());
@@ -2362,8 +2243,7 @@ fn a_roc_docks_its_drones_on_order_beside_its_program() {
     let bay = UnitKind::Roc.stats().bay.unwrap();
     // The bay autofills its first drone; a second is bought.
     game.do_tick();
-    game.issue(Command::OrderDrone { unit: roc });
-    game.do_tick();
+    issue_tick(&mut game, Command::OrderDrone { unit: roc });
     game.presentation.selection.set_units(vec![roc]);
     let panel = build_for_palette(&game.view(), &BindingMap::classic(), false).unwrap();
     let column = panel.drones.as_ref().expect("drones on order get a column");

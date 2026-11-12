@@ -68,6 +68,7 @@ fn multiple_bot_seats_rebuild_the_same_history_on_resume() {
     assert_eq!(original.hash_hex(), resumed.hash_hex());
 }
 
+use crate::tests::support::issue_tick;
 use aftermine_sim::{Command, Scenario, UnitKind};
 
 #[test]
@@ -704,8 +705,7 @@ fn a_decisive_concession_uses_the_result_flow_not_the_overlay() {
         macroquad::prelude::vec2(1280.0, 800.0),
     )
     .expect("skirmish builds");
-    game.issue(Command::Surrender);
-    game.do_tick();
+    issue_tick(&mut game, Command::Surrender);
     assert!(game.state.player(game.presentation.human).resigned);
     assert!(game.state.result().is_some(), "a 1v1 concession decides");
     assert!(
@@ -765,8 +765,7 @@ fn a_team_concession_raises_the_surrender_overlay() {
         !game.presentation.all_seeing(),
         "a seat in the match sees through its own fog"
     );
-    game.issue(Command::Surrender);
-    game.do_tick();
+    issue_tick(&mut game, Command::Surrender);
     assert!(game.state.player(game.presentation.human).resigned);
     assert!(
         game.state.result().is_none(),
@@ -866,8 +865,7 @@ fn fog_holds_only_while_a_lan_teammate_plays_on() {
 #[test]
 fn an_out_seat_keeps_its_lifted_fog_through_save_and_resume() {
     let mut game = concede_arena([(0, false), (1, true), (2, true), (3, true)]);
-    game.issue(Command::Surrender);
-    game.do_tick();
+    issue_tick(&mut game, Command::Surrender);
     assert!(game.state.result().is_none(), "three seats fight on");
     assert_eq!(game.presentation.stance, Stance::Out);
 

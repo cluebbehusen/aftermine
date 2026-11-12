@@ -1,5 +1,7 @@
 use super::*;
 use crate::game::{Effect, Game};
+use crate::tests::support::sandbox;
+use aftermine_sim::BuildingKind;
 use macroquad::prelude::Vec2;
 
 #[test]
@@ -31,16 +33,7 @@ fn an_interceptor_motor_sounds_only_during_its_climb() {
 /// West's loaded Spire on an open field with nobody else's eyes, the camera
 /// over it.
 fn spire_game() -> (Game, aftermine_sim::BuildingId) {
-    let scenario = serde_json::from_value(serde_json::json!({
-        "name": "Strike audio", "mode": "sandbox", "map": vec![".".repeat(70); 20],
-        "players": [
-            {"name": "West", "scrap": 0, "bot": false},
-            {"name": "East", "scrap": 0, "bot": false}
-        ],
-        "units": [],
-        "buildings": [{"player": 0, "kind": "spire", "x": 4, "y": 8}]
-    }))
-    .unwrap();
+    let scenario = sandbox(70, 20, 2, &[], &[(0, BuildingKind::Spire, 4, 8)]);
     let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
     let mut wire = serde_json::to_value(&*game.state).unwrap();
     let spire = wire["buildings"]

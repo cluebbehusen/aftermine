@@ -138,7 +138,7 @@ fn card(game: &Game, action: CardAction) -> Vec2 {
 }
 
 fn click_at(game: &mut Game, input: &mut InputState, p: Vec2) {
-    send(game, input, &click(p.x, p.y));
+    send(game, input, &click(p));
 }
 
 fn right_click_at(game: &mut Game, input: &mut InputState, world: Vec2) {

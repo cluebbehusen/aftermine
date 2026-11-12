@@ -1,36 +1,11 @@
 use super::*;
+use crate::tests::support::{click, tap, touch_down, touch_up};
+use macroquad::prelude::vec2;
 
 /// A click (or, with `touch`, a tap) on the BACK button.
-pub(crate) fn press_back(touch: bool) -> Vec<RawEvent> {
+pub(crate) fn press_back(touch: bool) -> [RawEvent; 2] {
     let p = corner_slot(0, crate::render::ui_scale()).center();
-    if touch {
-        vec![
-            RawEvent::TouchDown {
-                id: 9,
-                x: p.x,
-                y: p.y,
-            },
-            RawEvent::TouchUp {
-                id: 9,
-                x: p.x,
-                y: p.y,
-            },
-        ]
-    } else {
-        let button = aftermine_protocol::MouseButton::Left;
-        vec![
-            RawEvent::MouseDown {
-                button,
-                x: p.x,
-                y: p.y,
-            },
-            RawEvent::MouseUp {
-                button,
-                x: p.x,
-                y: p.y,
-            },
-        ]
-    }
+    if touch { tap(9, p) } else { click(p) }
 }
 
 #[test]
@@ -44,25 +19,10 @@ fn the_back_button_claims_its_presses_and_passes_the_rest() {
     // Pressed on BACK, released elsewhere: nothing, and the release
     // stays the button's.
     let p = corner_slot(0, crate::render::ui_scale()).center();
-    let (pressed, rest) = back.route(&[
-        RawEvent::TouchDown {
-            id: 1,
-            x: p.x,
-            y: p.y,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: 600.0,
-            y: 400.0,
-        },
-    ]);
+    let (pressed, rest) = back.route(&[touch_down(1, p), touch_up(1, vec2(600.0, 400.0))]);
     assert!(!pressed);
     assert!(rest.is_empty());
-    let elsewhere = [RawEvent::TouchDown {
-        id: 2,
-        x: 600.0,
-        y: 400.0,
-    }];
+    let elsewhere = [touch_down(2, vec2(600.0, 400.0))];
     assert_eq!(back.route(&elsewhere), (false, elsewhere.to_vec()));
 }
 
@@ -70,22 +30,14 @@ fn the_back_button_claims_its_presses_and_passes_the_rest() {
 fn the_back_button_takes_no_press_in_pad_mode() {
     let mut back = BackButton::default();
     let p = corner_slot(0, crate::render::ui_scale()).center();
-    let down = RawEvent::TouchDown {
-        id: 1,
-        x: p.x,
-        y: p.y,
-    };
-    let up = RawEvent::TouchUp {
-        id: 1,
-        x: p.x,
-        y: p.y,
-    };
+    let down = touch_down(1, p);
+    let up = touch_up(1, p);
     assert_eq!(back.route(&[down]), (false, Vec::new()), "armed");
     for hands in crate::platform::tests::pad_hands() {
         crate::platform::set_hands(hands);
         for touch in [false, true] {
             let press = press_back(touch);
-            assert_eq!(back.route(&press), (false, press.clone()), "{hands:?}");
+            assert_eq!(back.route(&press), (false, press.to_vec()), "{hands:?}");
         }
     }
     crate::platform::set_hands(crate::platform::Hands::BUILD);

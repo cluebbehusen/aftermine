@@ -4,8 +4,12 @@
 use super::*;
 use crate::numeric;
 use crate::numeric::Fit;
+use crate::tests::support::{
+    click, issue_tick, key_down, key_up, left_down, left_up, mouse_move, own_building, own_unit,
+    right_down, right_up, touch_cancel, touch_down, touch_move, touch_up,
+};
 use aftermine_sim::scenario::ScenarioMode;
-use aftermine_sim::{PlayerCommand, UnitKind};
+use aftermine_sim::{BuildingKind, PlayerCommand, UnitKind};
 
 /// The shipped default map: input tests never read a developer's saved
 /// bindings.
@@ -188,62 +192,6 @@ fn bare_layout(panel_top: f32, panel_right: f32) -> crate::layout::LayoutModel {
     }
 }
 
-fn left_down(p: Vec2) -> RawEvent {
-    RawEvent::MouseDown {
-        button: MouseButton::Left,
-        x: p.x,
-        y: p.y,
-    }
-}
-
-fn left_up(p: Vec2) -> RawEvent {
-    RawEvent::MouseUp {
-        button: MouseButton::Left,
-        x: p.x,
-        y: p.y,
-    }
-}
-
-fn right_down(p: Vec2) -> RawEvent {
-    RawEvent::MouseDown {
-        button: MouseButton::Right,
-        x: p.x,
-        y: p.y,
-    }
-}
-
-fn mouse_move(p: Vec2) -> RawEvent {
-    RawEvent::MouseMove { x: p.x, y: p.y }
-}
-
-fn touch_down(id: u64, p: Vec2) -> RawEvent {
-    RawEvent::TouchDown { id, x: p.x, y: p.y }
-}
-
-fn touch_move(id: u64, p: Vec2) -> RawEvent {
-    RawEvent::TouchMove { id, x: p.x, y: p.y }
-}
-
-fn touch_up(id: u64, p: Vec2) -> RawEvent {
-    RawEvent::TouchUp { id, x: p.x, y: p.y }
-}
-
-fn touch_cancel(id: u64) -> RawEvent {
-    RawEvent::TouchCancel { id }
-}
-
-fn key_down(key: Key) -> RawEvent {
-    RawEvent::KeyDown { key }
-}
-
-fn key_up(key: Key) -> RawEvent {
-    RawEvent::KeyUp { key }
-}
-
-fn click(x: f32, y: f32) -> [RawEvent; 2] {
-    [left_down(vec2(x, y)), left_up(vec2(x, y))]
-}
-
 #[test]
 fn performance_panel_swallows_orders_and_selection_without_revealing_fog() {
     let mut game = headless_game();
@@ -262,7 +210,7 @@ fn performance_panel_swallows_orders_and_selection_without_revealing_fog() {
     let pos = layout.performance.center();
     let before = game.state.hash();
     for events in [
-        click(pos.x, pos.y).to_vec(),
+        click(pos).to_vec(),
         vec![right_down(pos)],
         vec![touch_down(23, pos), touch_up(23, pos)],
     ] {
@@ -327,7 +275,7 @@ fn skyhook_visible_edge_selects_the_transport() {
     let (mut game, skyhook, edge) = skyhook_edge(0);
     let mut input = InputState::new();
 
-    apply_events(&mut game, &mut input, &click(edge.x, edge.y));
+    apply_events(&mut game, &mut input, &click(edge));
 
     assert_eq!(game.presentation.selection.units(), vec![skyhook]);
 }
@@ -367,13 +315,7 @@ fn a_retiring_skyhook_takes_no_load_order() {
         });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let (sentinel, _) = own_fighter(&game);
-    let skyhook = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == UnitKind::Skyhook)
-        .expect("fixture Skyhook")
-        .id;
+    let skyhook = own_unit(&game, UnitKind::Skyhook);
     game.issue(Command::Retire {
         units: vec![skyhook],
         queue: false,
@@ -440,7 +382,7 @@ fn shift_click_selects_and_toggles_same_owner_buildings() {
     };
 
     let first = center(&game, own[0]);
-    apply_events(&mut game, &mut input, &click(first.x, first.y));
+    apply_events(&mut game, &mut input, &click(first));
     assert_eq!(game.presentation.selection.buildings(), vec![own[0]]);
 
     let second = center(&game, own[1]);
@@ -536,16 +478,7 @@ fn box_select_keeps_own_units_ahead_of_buildings() {
 #[test]
 fn box_select_keeps_own_buildings_ahead_of_foreign_units() {
     let mut game = contested_producer_game();
-    let fabricator = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| {
-            building.player == game.presentation.human
-                && building.kind == aftermine_sim::BuildingKind::Fabricator
-        })
-        .expect("own Fabricator")
-        .id;
+    let fabricator = own_building(&game, BuildingKind::Fabricator);
     let enemy = game
         .state
         .units()
@@ -622,13 +555,7 @@ fn training_skips_a_selected_nonproducer_before_the_factory() {
     );
     let mut game =
         Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("production fixture builds");
-    let turret = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == aftermine_sim::BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let turret = own_building(&game, BuildingKind::Turret);
     let foundry = game.view().own_foundries().next().unwrap().id;
     game.presentation
         .selection
@@ -659,13 +586,7 @@ fn training_uses_the_first_selected_factory_that_supports_the_slot() {
     let mut game =
         Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("crucible fixture builds");
     let foundry = game.view().own_foundries().next().unwrap().id;
-    let crucible = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == aftermine_sim::BuildingKind::Crucible)
-        .unwrap()
-        .id;
+    let crucible = own_building(&game, BuildingKind::Crucible);
     game.presentation
         .selection
         .set_buildings(vec![crucible, foundry]);
@@ -703,13 +624,7 @@ fn a_selected_defense_right_clicks_a_visible_enemy_into_focus() {
     });
     let mut game =
         Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("focus fixture builds");
-    let turret = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == aftermine_sim::BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let turret = own_building(&game, BuildingKind::Turret);
     let enemy = game
         .state
         .units()
@@ -752,7 +667,7 @@ fn build_click(
     game.presentation.camera.center = world;
     game.presentation.camera.pan(Vec2::ZERO);
     let point = game.presentation.camera.to_screen(world);
-    apply_events(game, input, &click(point.x, point.y));
+    apply_events(game, input, &click(point));
 }
 
 fn extractor_input_game() -> Game {
@@ -915,8 +830,7 @@ fn the_cycle_key_does_nothing_for_a_seat_out_of_the_match() {
 fn cycle_key_does_nothing_once_out(mut game: Game, ffa: bool) {
     let mut input = InputState::new();
     assert!(!idle_harvesters(&game.view()).is_empty());
-    game.issue(aftermine_sim::Command::Surrender);
-    game.do_tick();
+    issue_tick(&mut game, aftermine_sim::Command::Surrender);
     assert!(!game.state.accepts_commands(game.presentation.human));
     assert_eq!(
         game.state.result().is_none(),
@@ -934,13 +848,7 @@ fn a_misclick_keeps_placement_armed_and_a_shift_click_repeats() {
     let mut game = headless_game();
     let mut input = InputState::new();
     // Arm a turret with a harvester selected (the palette's path).
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Harvester && u.player == game.presentation.human)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     input.arm_placement(aftermine_sim::BuildingKind::Turret);
 
@@ -975,14 +883,9 @@ fn a_misclick_keeps_placement_armed_and_a_shift_click_repeats() {
     // fresh, still-funded session.
     let mut game = headless_game();
     let mut input = InputState::new();
-    game.presentation.selection.set_units(vec![
-        game.state
-            .units()
-            .iter()
-            .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-            .unwrap()
-            .id,
-    ]);
+    game.presentation
+        .selection
+        .set_units(vec![own_unit(&game, UnitKind::Harvester)]);
     input.arm_placement(aftermine_sim::BuildingKind::Turret);
     apply_events(
         &mut game,
@@ -1008,7 +911,7 @@ fn a_click_on_a_unit_selects_it_headlessly() {
         .presentation
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(game.presentation.selection.units(), vec![unit]);
 }
 
@@ -1021,7 +924,7 @@ fn a_right_click_on_ground_stages_an_advance() {
         .presentation
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     let mid = game.presentation.camera.to_screen(vec2(
         pos.x.to_num::<f32>() + 4.0,
         pos.y.to_num::<f32>() + 2.0,
@@ -1357,13 +1260,7 @@ fn a_context_order_cancels_placement_and_every_deferred_build_ghost() {
     scenario.players[0].scrap = 300;
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
     let mut input = InputState::new();
-    let builder = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == game.presentation.human && unit.kind == UnitKind::Harvester)
-        .expect("a starting Harvester")
-        .id;
+    let builder = own_unit(&game, UnitKind::Harvester);
     let start = game.state.unit(builder).unwrap().tile();
     let kind = aftermine_sim::BuildingKind::Turret;
     let claims = [
@@ -1499,7 +1396,7 @@ fn a_ribbon_s_cross_cancels_the_mode_and_its_words_do_nothing() {
     game.presentation.layout.set(layout);
     let words = vec2(ribbon.x + 20.0, ribbon.center().y);
     tap(&mut game, &mut input, words);
-    apply_events(&mut game, &mut input, &click(words.x, words.y));
+    apply_events(&mut game, &mut input, &click(words));
     assert_eq!(
         input.armed_mode(),
         Some(ArmedMode::Hunt),
@@ -1517,11 +1414,7 @@ fn a_ribbon_s_cross_cancels_the_mode_and_its_words_do_nothing() {
     assert!(game.pending.is_empty(), "cancel emits no gameplay command");
 
     input.armed = Some(Armed::Verb(ClickVerb::Run));
-    apply_events(
-        &mut game,
-        &mut input,
-        &click(cancel.center().x, cancel.center().y),
-    );
+    apply_events(&mut game, &mut input, &click(cancel.center()));
     assert_eq!(input.armed_mode(), None, "a click cancels too");
 }
 
@@ -1551,7 +1444,7 @@ fn a_patrol_ribbon_acts_only_through_start_and_the_cross() {
         "the words keep the route"
     );
     tap_world(&mut game, &mut input, vec2(9.5, 5.5));
-    apply_events(&mut game, &mut input, &click(words.x, words.y));
+    apply_events(&mut game, &mut input, &click(words));
     assert_eq!(
         input.patrol_route().map(<[TilePos]>::len),
         Some(1),
@@ -1595,13 +1488,7 @@ fn patrol_stops_a_patrolling_selection_and_arms_any_other() {
 
     // A selection with a unit off patrol is not lit: Patrol arms a route
     // for all of it.
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .expect("a starting harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation
         .selection
         .set_units(vec![fighter, harvester]);
@@ -1797,7 +1684,7 @@ fn accompany_arms_on_e_and_the_rest_of_the_selection_escorts_the_picked_unit() {
     game.presentation.selection.set_units(vec![escorted]);
     apply_events(&mut game, &mut input, &[key_down(Key::E), key_up(Key::E)]);
     assert_eq!(input.armed_mode(), Some(ArmedMode::Accompany));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert!(game.pending.is_empty(), "{:?}", game.pending);
     assert_eq!(
         input.armed_mode(),
@@ -1808,7 +1695,7 @@ fn accompany_arms_on_e_and_the_rest_of_the_selection_escorts_the_picked_unit() {
     game.presentation
         .selection
         .set_units(vec![escort, escorted]);
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(
         game.pending.iter().map(|c| &c.command).collect::<Vec<_>>(),
         [&Command::Accompany {
@@ -1841,7 +1728,7 @@ fn accompany_stays_armed_after_a_click_on_an_own_drone() {
     game.presentation.selection.set_units(vec![roc]);
     dispatch_action(&mut game, &mut input, Action::Accompany);
     assert_eq!(input.armed_mode(), Some(ArmedMode::Accompany));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert!(game.pending.is_empty(), "{:?}", game.pending);
     assert_eq!(
         input.armed_mode(),
@@ -1890,7 +1777,7 @@ fn weld_stays_armed_after_a_click_on_a_retiring_unit() {
     dispatch_action(&mut game, &mut input, Action::RepairUnit);
     assert_eq!(input.armed_mode(), Some(ArmedMode::Weld));
     let screen = game.presentation.camera.to_screen(at);
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert!(game.pending.is_empty(), "{:?}", game.pending);
     assert_eq!(
         input.armed_mode(),
@@ -1954,10 +1841,10 @@ fn double_click_timing_obeys_the_injected_clock() {
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
     input.now = 10.0;
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     // A slow second click is just a click...
     input.now = 11.0;
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(
         game.presentation.selection.units().len(),
         1,
@@ -1965,7 +1852,7 @@ fn double_click_timing_obeys_the_injected_clock() {
     );
     // ...a fast one is a kind-sweep.
     input.now = 11.2;
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert!(
         game.presentation.selection.units().len() > 1,
         "0.2s apart double-clicks into a kind sweep"
@@ -2103,13 +1990,7 @@ fn a_right_click_anywhere_on_an_own_site_resumes_it() {
     // site's own anchor (the sim's resume arm matches anchor+kind).
     let mut game = headless_game();
     let mut input = InputState::new();
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Harvester && u.player == game.presentation.human)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     // Stand a Fabricator site on open visible ground near the base.
     let foundry = game.state.buildings()[0].anchor;
     let anchor = chassis::grid::TilePos::new(foundry.x + 3, foundry.y + 4);
@@ -2282,20 +2163,8 @@ fn the_armed_salvage_verb_strips_by_click_and_refuses_the_foundry() {
         });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("builds");
     let mut input = InputState::new();
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Harvester && u.player == game.presentation.human)
-        .unwrap()
-        .id;
-    let turret = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == aftermine_sim::BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
+    let turret = own_building(&game, BuildingKind::Turret);
     game.presentation.selection.set_units(vec![harvester]);
     // Arm with the hotkey, exactly as a player would.
     apply_events(&mut game, &mut input, &[key_down(Key::V), key_up(Key::V)]);
@@ -2338,13 +2207,7 @@ fn the_armed_salvage_verb_strips_by_click_and_refuses_the_foundry() {
 fn the_armed_run_verb_issues_an_oblivious_move() {
     let mut game = headless_game();
     let mut input = InputState::new();
-    let fighter = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
-        .expect("skirmish authors a sentinel")
-        .id;
+    let fighter = own_unit(&game, UnitKind::Sentinel);
     game.presentation.selection.set_units(vec![fighter]);
     // Arm with the classic hotkey, exactly as a player would.
     apply_events(&mut game, &mut input, &[key_down(Key::G), key_up(Key::G)]);
@@ -2384,13 +2247,7 @@ fn the_armed_run_verb_issues_an_oblivious_move() {
 fn arming_run_stands_the_other_verbs_down() {
     let mut game = headless_game();
     let mut input = InputState::new();
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Harvester && u.player == game.presentation.human)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     // Placement armed, then G: exactly one verb may hold the cursor —
     // armed_click resolves placement before run, so both live at once
@@ -2457,7 +2314,7 @@ fn f_arms_explicit_hunt_and_the_click_consumes_it() {
         .presentation
         .camera
         .to_screen(vec2(goal.x as f32 + 0.5, goal.y as f32 + 0.5));
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
 
     assert!(game.pending.iter().any(|command| matches!(
         command.command,
@@ -2777,7 +2634,7 @@ fn an_ally_selection_reads_its_orders_but_takes_none() {
         .presentation
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(
         game.presentation.selection.units(),
         vec![ally],
@@ -2855,7 +2712,7 @@ fn a_hostile_selection_inspects_and_leaks_nothing() {
         .presentation
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(
         game.presentation.selection.units(),
         vec![foe],
@@ -2939,7 +2796,7 @@ fn shift_clicked_units_keep_the_selection_in_id_order() {
         );
     };
     let last = screen(&game, units[2]);
-    apply_events(&mut game, &mut input, &click(last.x, last.y));
+    apply_events(&mut game, &mut input, &click(last));
     for id in [units[0], units[1]] {
         let at = screen(&game, id);
         shift_click(&mut game, &mut input, at);
@@ -2966,7 +2823,7 @@ fn a_selection_never_mixes_allegiances() {
         .camera
         .to_screen(vec2(ally_pos.x.to_num::<f32>(), ally_pos.y.to_num::<f32>()));
     // Own selected, shift-click the ally: REPLACE, never merge.
-    apply_events(&mut game, &mut input, &click(my_screen.x, my_screen.y));
+    apply_events(&mut game, &mut input, &click(my_screen));
     assert_eq!(game.presentation.selection.units(), vec![mine]);
     apply_events(
         &mut game,
@@ -3049,13 +2906,7 @@ fn touch_taps_select_and_a_still_hold_orders() {
 fn armed_placement(kind: aftermine_sim::BuildingKind) -> (Game, InputState, aftermine_sim::UnitId) {
     let mut game = headless_game();
     let mut input = InputState::new();
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Harvester && u.player == game.presentation.human)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     input.arm_placement(kind);
     input.build_menu = true;
@@ -3601,11 +3452,7 @@ fn a_disabled_card_explains_itself_to_a_tap_or_a_click() {
     assert!(game.pending.is_empty(), "a refusal stages nothing");
 
     game.presentation.toasts.clear();
-    apply_events(
-        &mut game,
-        &mut input,
-        &click(rect.center().x, rect.center().y),
-    );
+    apply_events(&mut game, &mut input, &click(rect.center()));
     assert!(toasted(&game), "the click names the reason");
     assert!(game.pending.is_empty());
     assert_eq!(
@@ -3946,13 +3793,7 @@ fn a_pair_formed_mid_pan_or_while_armed_never_boxes() {
     );
     apply_events(&mut game, &mut input, &[touch_up(1, a - vec2(40.0, 0.0))]);
 
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .expect("a harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     input.arm_placement(aftermine_sim::BuildingKind::Turret);
     input.build_menu = true;
@@ -4082,11 +3923,7 @@ fn the_queue_chip_flips_by_tap_and_click() {
     // Past the double-tap window, so the click turns it off rather than
     // locking it.
     input.now += 1.0;
-    apply_events(
-        &mut game,
-        &mut input,
-        &click(chip.center().x, chip.center().y),
-    );
+    apply_events(&mut game, &mut input, &click(chip.center()));
     assert!(!input.queue_held());
     assert!(
         game.presentation.selection.units().is_empty(),
@@ -4150,13 +3987,13 @@ fn taps_collect_a_patrol_route_and_the_card_starts_it() {
 fn a_left_click_adds_a_patrol_waypoint_and_a_full_route_says_so() {
     let (mut game, mut input, _) = armed_patrol();
     let p = game.presentation.camera.to_screen(vec2(9.5, 5.5));
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert_eq!(input.patrol_route().map(<[TilePos]>::len), Some(1));
     input.armed = Some(Armed::Patrol(vec![
         TilePos::new(9, 5);
         aftermine_sim::stats::ORDER_QUEUE_CAP
     ]));
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert_eq!(
         input.patrol_route().map(<[TilePos]>::len),
         Some(aftermine_sim::stats::ORDER_QUEUE_CAP)
@@ -4355,13 +4192,7 @@ fn a_tap_on_a_scrap_pile_selects_it_for_its_panel() {
     assert_eq!(row(&panel, "Scrap left"), Some(scrap.to_string()));
     assert_eq!(row(&panel, "Harvesters"), Some("0".into()));
 
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .expect("a harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.issue(Command::Harvest {
         units: vec![harvester],
         node: tile,
@@ -4431,9 +4262,9 @@ fn a_zoomed_out_double_click_on_a_pile_never_sweeps_the_unit_beside_it() {
     game.presentation.camera.zoom = 10.0 * input.ui / (distance + 0.1);
     let p = game.presentation.camera.to_screen(pile);
     input.now = 1.0;
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     input.now = 1.1;
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert!(
         game.presentation.selection.units().is_empty(),
         "{:?}",
@@ -4624,7 +4455,7 @@ fn an_allied_site_under_fog_refuses_selection() {
     game.presentation.camera.center = site_center;
     let screen = game.presentation.camera.to_screen(site_center);
     input.now = 5.0; // clicks land at the viewport center; keep them
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y)); // out of double-click range
+    apply_events(&mut game, &mut input, &click(screen)); // out of double-click range
     assert!(
         game.presentation.selection.buildings().is_empty(),
         "a fogged ally site must refuse the blind click"
@@ -4645,7 +4476,7 @@ fn an_allied_site_under_fog_refuses_selection() {
     game.presentation.camera.center = center;
     let screen = game.presentation.camera.to_screen(center);
     input.now = 10.0;
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(
         game.presentation.selection.buildings(),
         vec![ally_foundry],
@@ -4753,7 +4584,7 @@ fn a_selected_hostile_drops_when_fog_recovers_it() {
         .presentation
         .camera
         .to_screen(vec2(pos.x.to_num::<f32>(), pos.y.to_num::<f32>()));
-    apply_events(&mut game, &mut input, &click(screen.x, screen.y));
+    apply_events(&mut game, &mut input, &click(screen));
     assert_eq!(game.presentation.selection.units(), vec![foe]);
     // Send my only nearby eyes home; the foe's bot recalls its
     // harvester east to mine — both walks end my sight of it, and the
@@ -4929,8 +4760,9 @@ fn only_a_remote_or_a_bare_tv_lacks_a_controller() {
 
 #[test]
 fn a_remote_press_in_a_match_is_refused_aloud_except_back() {
+    use crate::tests::support::{denied, scene};
     use aftermine_protocol::{PadButton, PadFamily};
-    use pad_scene::{denied, feed, scene};
+    use pad_scene::feed;
     const REMOTE: u64 = 9;
     let mut game = scene(&[(0, UnitKind::Scuttler, 32, 20)], &[]);
     let mut input = InputState::new();
@@ -5198,16 +5030,8 @@ fn hardware_touches_arrive_once_in_order_and_in_logical_pixels() {
     assert_eq!(
         stream.events,
         vec![
-            RawEvent::TouchDown {
-                id: 7,
-                x: 100.0,
-                y: 50.0
-            },
-            RawEvent::TouchUp {
-                id: 7,
-                x: 101.0,
-                y: 50.0
-            },
+            touch_down(7, vec2(100.0, 50.0)),
+            touch_up(7, vec2(101.0, 50.0)),
         ],
         "a tap inside one frame keeps both edges, divided out of backing pixels"
     );
@@ -5379,11 +5203,7 @@ fn the_alert_badge_jumps_the_camera_by_click_or_tap() {
                 vec2(badge.center().x, badge.y + badge.h + 3.0),
             );
         } else {
-            apply_events(
-                &mut game,
-                &mut input,
-                &click(badge.center().x, badge.center().y),
-            );
+            apply_events(&mut game, &mut input, &click(badge.center()));
         }
         assert!(
             game.presentation.camera.center.distance(alert) < 0.01,
@@ -5449,11 +5269,7 @@ fn a_click_on_the_menu_button_requests_the_pause_menu() {
     let mut input = InputState::new();
     game.presentation.layout.set(top_bar_layout());
     let menu = game.presentation.layout.get().menu_button;
-    apply_events(
-        &mut game,
-        &mut input,
-        &click(menu.center().x, menu.center().y),
-    );
+    apply_events(&mut game, &mut input, &click(menu.center()));
     assert!(input.take_menu_request());
     assert!(
         !input.take_menu_request(),
@@ -5488,7 +5304,7 @@ fn a_bar_without_a_menu_button_ignores_its_corner() {
         .layout
         .set(bare_layout(f32::INFINITY, 0.0));
     let corner = crate::layout::menu_button_rect(1280.0, 1.0, false).center();
-    apply_events(&mut game, &mut input, &click(corner.x, corner.y));
+    apply_events(&mut game, &mut input, &click(corner));
     tap(&mut game, &mut input, corner);
     assert!(
         !input.take_menu_request(),
@@ -5503,7 +5319,7 @@ fn an_armed_mode_never_eats_the_menu_button() {
     game.presentation.layout.set(top_bar_layout());
     input.arm_placement(aftermine_sim::BuildingKind::Fabricator);
     let menu = game.presentation.layout.get().menu_button.center();
-    apply_events(&mut game, &mut input, &click(menu.x, menu.y));
+    apply_events(&mut game, &mut input, &click(menu));
     assert!(input.take_menu_request());
     assert!(game.pending.is_empty(), "no build is staged under the bar");
     tap(&mut game, &mut input, menu);
@@ -5534,9 +5350,9 @@ fn the_pause_button_toggles_pause_by_click_and_by_tap() {
     let mut input = InputState::new();
     game.presentation.layout.set(top_bar_layout());
     let button = game.presentation.layout.get().pause_button.center();
-    apply_events(&mut game, &mut input, &click(button.x, button.y));
+    apply_events(&mut game, &mut input, &click(button));
     assert!(game.clock.paused);
-    apply_events(&mut game, &mut input, &click(button.x, button.y));
+    apply_events(&mut game, &mut input, &click(button));
     assert!(!game.clock.paused);
     tap(&mut game, &mut input, button);
     assert!(game.clock.paused, "a fingertip pauses like the key");
@@ -6497,13 +6313,7 @@ fn a_full_queue_refuses_the_opening_shift_stamp() {
 #[test]
 fn a_fogged_leg_draws_at_its_click_in_program_order() {
     let mut game = headless_game();
-    let fighter = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Sentinel)
-        .expect("skirmish authors a sentinel")
-        .id;
+    let fighter = own_unit(&game, UnitKind::Sentinel);
     game.presentation.selection.set_units(vec![fighter]);
     // First leg into unexplored ground, then a leg back onto explored
     // home turf.
@@ -7021,13 +6831,7 @@ fn a_click_on_remembered_ground_defers_and_unscouted_refuses() {
     use chassis::grid::TilePos;
     let mut game = headless_game();
     let mut input = InputState::new();
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     let spot = TilePos::new(18, 4);
     // Scout the spot, then walk home so it stays explored but unseen.
     let walk = |game: &mut Game, goal: TilePos| {
@@ -7098,13 +6902,7 @@ fn a_click_on_remembered_ground_defers_and_unscouted_refuses() {
 fn an_undrained_deferred_build_is_replaced_before_preflight() {
     let mut game = headless_game();
     let mut input = InputState::new();
-    let builder = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .expect("skirmish authors a harvester")
-        .id;
+    let builder = own_unit(&game, UnitKind::Harvester);
     let kind = aftermine_sim::BuildingKind::Fabricator;
     let first = TilePos::new(18, 4);
     let replacement = TilePos::new(19, 4);
@@ -7556,13 +7354,7 @@ fn a_deferred_shift_build_can_use_any_selected_worker_with_room() {
 fn a_plain_placement_replaces_the_selected_claim_while_shift_preserves_it() {
     let mut game = headless_game();
     let mut input = InputState::new();
-    let builder = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .expect("skirmish authors a harvester")
-        .id;
+    let builder = own_unit(&game, UnitKind::Harvester);
     let kind = aftermine_sim::BuildingKind::Fabricator;
     let old_spot = TilePos::new(10, 4);
     let new_spot = TilePos::new(11, 4);
@@ -7658,7 +7450,7 @@ fn a_plain_placement_replaces_the_selected_claim_while_shift_preserves_it() {
         None,
         "a plain click abandons the selected founder's old claim"
     );
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert_eq!(
         game.pending.len(),
         1,
@@ -7700,13 +7492,7 @@ fn the_upgrade_card_stages_only_the_building() {
     let mut game =
         Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("upgrade fixture builds");
     let mut input = InputState::new();
-    let turret = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == aftermine_sim::BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let turret = own_building(&game, BuildingKind::Turret);
     game.presentation.selection.set_buildings(vec![turret]);
     activate_card(&mut game, &mut input, crate::panel::CardAction::Upgrade);
     assert_eq!(game.pending.len(), 1, "one upgrade command staged");
@@ -7737,20 +7523,8 @@ fn an_automatic_upgrade_is_not_a_worker_target_or_a_scrappable_site() {
     let mut game =
         Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("upgrade fixture builds");
     let mut input = InputState::new();
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == game.presentation.human && unit.kind == UnitKind::Harvester)
-        .expect("fixture has a human harvester")
-        .id;
-    let turret = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == aftermine_sim::BuildingKind::Turret)
-        .expect("fixture has a turret")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
+    let turret = own_building(&game, BuildingKind::Turret);
     game.state.tick(&[aftermine_sim::PlayerCommand {
         player: game.presentation.human,
         command: aftermine_sim::Command::UpgradeBuilding { building: turret },
@@ -7933,7 +7707,7 @@ fn mouse_and_touch_switch_construction_without_cancelling_or_placing_in_the_worl
             let events = if touch {
                 vec![touch_down(1, vec2(x, 740.0)), touch_up(1, vec2(x, 740.0))]
             } else {
-                click(x, 740.0).to_vec()
+                click(vec2(x, 740.0)).to_vec()
             };
             apply_events(&mut game, &mut input, &events);
             assert_eq!(
@@ -8053,13 +7827,7 @@ fn right_click_uses_building_memory_and_anonymous_contacts_and_stop_clears_focus
     );
     game.pending.clear();
     game.presentation.selection.clear();
-    let defense = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == aftermine_sim::BuildingKind::Bastion)
-        .unwrap()
-        .id;
+    let defense = own_building(&game, BuildingKind::Bastion);
     game.presentation.selection.set_buildings(vec![defense]);
     context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(
@@ -8133,14 +7901,9 @@ fn radar_contact_above_a_building_ghost_wins_for_units_and_defenses() {
         Command::Attack { target: aftermine_sim::AttackTarget::Contact(id), .. } if id == contact));
     game.pending.clear();
     game.presentation.selection.clear();
-    game.presentation.selection.set_buildings(vec![
-        game.state
-            .buildings()
-            .iter()
-            .find(|building| building.kind == aftermine_sim::BuildingKind::FlakTurret)
-            .unwrap()
-            .id,
-    ]);
+    game.presentation
+        .selection
+        .set_buildings(vec![own_building(&game, BuildingKind::FlakTurret)]);
     context_order(&mut game, screen, false, OrderReach::EXACT);
     assert!(matches!(game.pending.last().unwrap().command,
         Command::FocusFire { target: aftermine_sim::AttackTarget::Contact(id), .. } if id == contact));
@@ -8191,7 +7954,7 @@ fn a_hidden_mine_does_not_change_placement_selection_or_resume_input() {
         );
         input.stop_placing();
         let point = game.presentation.camera.to_screen(vec2(12.5, 4.5));
-        apply_events(&mut game, &mut input, &click(point.x, point.y));
+        apply_events(&mut game, &mut input, &click(point));
         assert_eq!(game.presentation.selection.buildings(), vec![site]);
         game.presentation.selection.clear();
         game.presentation.selection.set_units(vec![worker]);
@@ -8233,7 +7996,7 @@ fn selecting_an_unfinished_mine_does_not_reveal_its_condition_after_concealment(
     game.presentation.camera.center = vec2(12.5, 4.5);
     game.presentation.camera.pan(Vec2::ZERO);
     let point = game.presentation.camera.to_screen(vec2(12.5, 4.5));
-    apply_events(&mut game, &mut input, &click(point.x, point.y));
+    apply_events(&mut game, &mut input, &click(point));
     assert_eq!(game.presentation.selection.buildings(), vec![mine]);
     for _ in 0..200 {
         if game.state.building(mine).unwrap().built() {
@@ -8249,7 +8012,7 @@ fn selecting_an_unfinished_mine_does_not_reveal_its_condition_after_concealment(
             .iter()
             .any(|g| g.anchor == TilePos::new(12, 4))
     );
-    apply_events(&mut game, &mut input, &click(point.x, point.y));
+    apply_events(&mut game, &mut input, &click(point));
     assert!(game.presentation.selection.buildings().is_empty());
 }
 
@@ -8390,13 +8153,7 @@ fn upgrade_and_rally_shortcuts_share_the_cards_owner_and_affordability_gates() {
     let mut input = InputState::new();
     let mut bindings = BindingMap::classic();
     assert!(bindings.rebind(Action::Upgrade, Chord::bare(Key::L)));
-    let turret = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == aftermine_sim::BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let turret = own_building(&game, BuildingKind::Turret);
     game.presentation.selection.set_buildings(vec![turret]);
     controls_key_with(&mut game, &mut input, &bindings, Key::L);
     assert!(
@@ -8516,7 +8273,11 @@ fn grouped_production_clicks_and_shortcuts_stage_the_same_batch() {
     layout.card_count = 1;
     mouse_game.presentation.layout.set(layout);
     for _ in 0..2 {
-        apply_events(&mut mouse_game, &mut mouse_input, &click(260.0, 740.0));
+        apply_events(
+            &mut mouse_game,
+            &mut mouse_input,
+            &click(vec2(260.0, 740.0)),
+        );
         apply_events(
             &mut key_game,
             &mut key_input,
@@ -8564,7 +8325,9 @@ fn grouped_upgrade_mouse_touch_and_remapped_keys_share_pending_eligibility() {
         // Deliberately retain the old hit-test card between activations.
         for _ in 0..2 {
             match mode {
-                0 => apply_events_with(&mut game, &mut input, &bindings, &click(260.0, 740.0)),
+                0 => {
+                    apply_events_with(&mut game, &mut input, &bindings, &click(vec2(260.0, 740.0)));
+                }
                 1 => apply_events_with(
                     &mut game,
                     &mut input,
@@ -8666,13 +8429,7 @@ fn return_cargo_card_and_shortcut_replace_work_for_both_workers() {
     for kind in [UnitKind::Harvester, UnitKind::Excavator] {
         for via_card in [false, true] {
             let mut game = headless_game();
-            let worker = game
-                .state
-                .units()
-                .iter()
-                .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-                .unwrap()
-                .id;
+            let worker = own_unit(&game, UnitKind::Harvester);
             let mut data = serde_json::to_value(&*game.state).unwrap();
             let row = data["units"]
                 .as_array_mut()
@@ -8717,13 +8474,7 @@ fn return_cargo_card_and_shortcut_replace_work_for_both_workers() {
 #[test]
 fn the_dock_stop_square_halts_the_selection_by_click_and_tap() {
     let mut game = headless_game();
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.state.tick(&[aftermine_sim::PlayerCommand {
         player: game.presentation.human,
         command: Command::Hunt {
@@ -8750,11 +8501,7 @@ fn the_dock_stop_square_halts_the_selection_by_click_and_tap() {
             input.now += 0.1;
             apply_events(&mut game, &mut input, &[touch_up(1, square.center())]);
         } else {
-            apply_events(
-                &mut game,
-                &mut input,
-                &click(square.center().x, square.center().y),
-            );
+            apply_events(&mut game, &mut input, &click(square.center()));
         }
         assert!(
             game.pending
@@ -8820,13 +8567,7 @@ fn return_cargo_foundry_click_keeps_empty_welders_and_loaded_workers() {
 #[test]
 fn return_cargo_empty_selection_hides_the_card_and_refuses_the_shortcut() {
     let mut game = headless_game();
-    let worker = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let worker = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![worker]);
     let mut input = InputState::new();
     let panel = crate::panel::build_for_palette(&game.view(), &classic(), false).unwrap();
@@ -8843,20 +8584,8 @@ fn return_cargo_empty_selection_hides_the_card_and_refuses_the_shortcut() {
 #[test]
 fn shared_cargo_shortcut_unloads_a_transport() {
     let mut game = skyhook_interaction_game();
-    let transport = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Skyhook)
-        .unwrap()
-        .id;
-    let passenger = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Sentinel)
-        .unwrap()
-        .id;
+    let transport = own_unit(&game, UnitKind::Skyhook);
+    let passenger = own_unit(&game, UnitKind::Sentinel);
     game.issue(Command::Load {
         units: vec![passenger],
         transport,
@@ -8882,13 +8611,7 @@ fn shared_cargo_shortcut_unloads_a_transport() {
 #[test]
 fn mixed_workers_use_the_cargo_shortcut_and_keep_other_unit_bindings() {
     let mut game = headless_game();
-    let worker = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let worker = own_unit(&game, UnitKind::Harvester);
     let mut data = serde_json::to_value(&*game.state).unwrap();
     let row = data["units"]
         .as_array_mut()
@@ -9045,7 +8768,7 @@ fn launch_arms_the_loaded_spires_and_the_next_click_strikes_that_tile() {
     assert_eq!(input.striking(), Some(&Strike::new(vec![spire])));
     assert_eq!(input.armed_mode(), Some(ArmedMode::Strike));
     let p = game.presentation.camera.to_screen(vec2(20.5, 6.5));
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert!(input.striking().is_none());
     assert!(
         game.pending.iter().any(|c| matches!(
@@ -9109,7 +8832,7 @@ fn a_click_with_a_touch_aim_down_moves_the_aim_instead_of_launching() {
     input.last_pointer = Pointer::Touch;
     dispatch_action(&mut game, &mut input, Action::Launch);
     let p = game.presentation.camera.to_screen(vec2(20.5, 6.5));
-    apply_events(&mut game, &mut input, &click(p.x, p.y));
+    apply_events(&mut game, &mut input, &click(p));
     assert_eq!(
         input.striking().and_then(Strike::aim),
         Some(TilePos::new(20, 6))
@@ -9120,14 +8843,7 @@ fn a_click_with_a_touch_aim_down_moves_the_aim_instead_of_launching() {
 /// Skirmish's starting Surveyor and a staged Sentinel beside it.
 fn scout_game() -> (Game, aftermine_sim::UnitId, aftermine_sim::UnitId) {
     let game = headless_game();
-    let own = |kind: UnitKind| {
-        game.state
-            .units()
-            .iter()
-            .find(|u| u.player == game.presentation.human && u.kind == kind)
-            .expect("staged")
-            .id
-    };
+    let own = |kind: UnitKind| own_unit(&game, kind);
     let (scout, sentinel) = (own(UnitKind::Surveyor), own(UnitKind::Sentinel));
     (game, scout, sentinel)
 }
@@ -9206,7 +8922,7 @@ fn a_surveyor_is_picked_by_its_visible_body_not_its_canvas() {
         .expect("the opening fields a Surveyor");
     let click_at = |game: &mut Game, input: &mut InputState, world: Vec2| {
         let screen = game.presentation.camera.to_screen(world);
-        apply_events(game, input, &click(screen.x, screen.y));
+        apply_events(game, input, &click(screen));
     };
     // Inside the two-tile sprite canvas, but clear of the packed body.
     click_at(&mut game, &mut input, at + vec2(0.0, 0.8));
@@ -9232,13 +8948,7 @@ fn roc_with_drones() -> (Game, UnitId) {
         y: 10,
     });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-    let roc = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == aftermine_sim::UnitKind::Roc)
-        .unwrap()
-        .id;
+    let roc = own_unit(&game, UnitKind::Roc);
     let mut value = serde_json::to_value(&*game.state).unwrap();
     for row in value["units"].as_array_mut().unwrap() {
         if row["id"] == serde_json::json!(roc) {
@@ -9323,13 +9033,7 @@ fn a_click_on_a_drone_chip_cancels_that_drone() {
         y: 10,
     });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-    let roc = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.kind == aftermine_sim::UnitKind::Roc)
-        .unwrap()
-        .id;
+    let roc = own_unit(&game, UnitKind::Roc);
     // The bay autofills its first drone.
     game.do_tick();
     game.presentation.selection.set_units(vec![roc]);
@@ -9355,7 +9059,7 @@ fn a_click_on_a_drone_chip_cancels_that_drone() {
         layout.chrome_owns(chip),
         "the column keeps clicks off the map"
     );
-    apply_events(&mut game, &mut input, &click(chip.x, chip.y));
+    apply_events(&mut game, &mut input, &click(chip));
     assert!(
         game.pending.iter().any(|pending| matches!(
             pending.command,

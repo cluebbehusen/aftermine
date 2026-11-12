@@ -38,14 +38,14 @@ fn a_saved_group_recalls_by_click_and_a_quick_second_click_centers_it() {
     game.presentation.camera.center = far;
     input.now = 10.0;
     let at = rects[0].center();
-    apply_events(&mut game, &mut input, &click(at.x, at.y));
+    apply_events(&mut game, &mut input, &click(at));
     assert_eq!(game.presentation.selection.units(), vec![fighter]);
     assert_eq!(
         game.presentation.camera.center, far,
         "one recall leaves the camera"
     );
     input.now = 10.2;
-    apply_events(&mut game, &mut input, &click(at.x, at.y));
+    apply_events(&mut game, &mut input, &click(at));
     assert_ne!(
         game.presentation.camera.center, far,
         "a quick second recall centers"
@@ -70,7 +70,7 @@ fn ctrl_click_saves_the_selection_to_any_slot_and_plus_saves_it_plainly() {
         ],
     );
     let at = rects[4].center();
-    apply_events(&mut game, &mut input, &click(at.x, at.y));
+    apply_events(&mut game, &mut input, &click(at));
     assert!(
         input.groups[4].is_empty(),
         "a plain click on an empty place does nothing"
@@ -78,7 +78,7 @@ fn ctrl_click_saves_the_selection_to_any_slot_and_plus_saves_it_plainly() {
 
     apply_events(&mut game, &mut input, &[key_down(Key::Ctrl)]);
     let at = rects[3].center();
-    apply_events(&mut game, &mut input, &click(at.x, at.y));
+    apply_events(&mut game, &mut input, &click(at));
     apply_events(&mut game, &mut input, &[key_up(Key::Ctrl)]);
     assert_eq!(
         input.groups[3],
@@ -87,7 +87,7 @@ fn ctrl_click_saves_the_selection_to_any_slot_and_plus_saves_it_plainly() {
     );
 
     let at = rects[1].center();
-    apply_events(&mut game, &mut input, &click(at.x, at.y));
+    apply_events(&mut game, &mut input, &click(at));
     assert_eq!(
         input.groups[1],
         Group::Units(vec![own[0]]),

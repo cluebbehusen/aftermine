@@ -68,7 +68,7 @@ fn legs(player: PlayerId, unit: UnitId, goals: &[TilePos]) -> Vec<PlayerCommand>
 }
 
 fn press(game: &mut Game, input: &mut InputState, chip: Rect) {
-    apply_events(game, input, &click(chip.center().x, chip.center().y));
+    apply_events(game, input, &click(chip.center()));
 }
 
 #[test]
@@ -287,13 +287,7 @@ fn a_held_site_chip_scraps_nothing_but_a_tap_cancels_the_site() {
     let mut game = headless_game();
     let mut input = InputState::new();
     let human = game.presentation.human;
-    let worker = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == human && u.kind == UnitKind::Harvester)
-        .expect("a starting harvester")
-        .id;
+    let worker = own_unit(&game, UnitKind::Harvester);
     let anchor = turret_ground(&game, worker);
     game.state.tick(&[PlayerCommand {
         player: human,

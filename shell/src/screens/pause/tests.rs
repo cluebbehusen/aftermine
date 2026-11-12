@@ -1,4 +1,5 @@
 use super::*;
+use crate::tests::support::{click, keystroke, tap, touch_down, touch_up, typed};
 use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
 
@@ -137,11 +138,7 @@ fn a_lan_leave_line_follows_the_seat_as_the_match_plays_on_under_the_menu() {
 fn drive(p: &mut PauseScreen, key: Key) -> Out {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    p.update(
-        &[RawEvent::KeyDown { key }, RawEvent::KeyUp { key }],
-        &mut mouse,
-        &mut sounds,
-    )
+    p.update(&keystroke(key), &mut mouse, &mut sounds)
 }
 
 /// Moves the cursor to the labeled row and activates it by label,
@@ -313,7 +310,7 @@ fn escape_cancels_the_save_failure_dialog_never_the_leave() {
 fn type_text(p: &mut PauseScreen, text: &str) {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    let events: Vec<RawEvent> = text.chars().map(|ch| RawEvent::Text { ch }).collect();
+    let events = typed(text);
     p.update(&events, &mut mouse, &mut sounds);
 }
 
@@ -338,41 +335,15 @@ fn pointer(p: &mut PauseScreen, events: &[RawEvent]) -> (Out, Vec<SoundKind>) {
     (out, sounds.into_iter().map(|(kind, _)| kind).collect())
 }
 
-fn tap(at: Vec2) -> [RawEvent; 2] {
-    [
-        RawEvent::TouchDown {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-    ]
-}
-
 #[test]
 fn the_save_button_commits_like_enter_and_refuses_a_blank_name() {
     let (mut p, layout) = naming_at_1280("Skirmish");
     assert_eq!(
-        pointer(&mut p, &tap(layout.confirm.center())).0,
+        pointer(&mut p, &tap(1, layout.confirm.center())).0,
         Out::Save("Skirmish".to_string())
     );
     let (mut p, layout) = naming_at_1280("");
-    let click = [
-        RawEvent::MouseDown {
-            button: aftermine_protocol::MouseButton::Left,
-            x: layout.confirm.center().x,
-            y: layout.confirm.center().y,
-        },
-        RawEvent::MouseUp {
-            button: aftermine_protocol::MouseButton::Left,
-            x: layout.confirm.center().x,
-            y: layout.confirm.center().y,
-        },
-    ];
+    let click = click(layout.confirm.center());
     let (out, sounds) = pointer(&mut p, &click);
     assert_eq!(out, Out::Stay);
     assert!(sounds.contains(&SoundKind::Denied));
@@ -383,7 +354,7 @@ fn the_save_button_commits_like_enter_and_refuses_a_blank_name() {
 fn the_cancel_button_abandons_like_escape() {
     let (mut p, layout) = naming_at_1280("Skirmish");
     let cancel = layout.cancel.expect("the save form keeps Cancel");
-    assert_eq!(pointer(&mut p, &tap(cancel.center())).0, Out::Stay);
+    assert_eq!(pointer(&mut p, &tap(1, cancel.center())).0, Out::Stay);
     assert!(p.form().is_none());
     assert_eq!(p.menu.view().items[p.menu.selected], "Save match");
 }
@@ -393,16 +364,8 @@ fn a_save_press_released_elsewhere_keeps_naming() {
     let (mut p, layout) = naming_at_1280("Skirmish");
     let from = layout.confirm.center();
     let events = [
-        RawEvent::TouchDown {
-            id: 1,
-            x: from.x,
-            y: from.y,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: from.x,
-            y: from.y + 300.0,
-        },
+        touch_down(1, from),
+        touch_up(1, vec2(from.x, from.y + 300.0)),
     ];
     assert_eq!(pointer(&mut p, &events).0, Out::Stay);
     assert!(p.form().is_some());
@@ -415,7 +378,7 @@ fn tapping_the_field_requests_the_keyboard_once() {
         !p.form()
             .is_some_and(crate::text_field::Form::take_keyboard_request)
     );
-    pointer(&mut p, &tap(layout.fields[0].center()));
+    pointer(&mut p, &tap(1, layout.fields[0].center()));
     assert!(
         p.form()
             .is_some_and(crate::text_field::Form::take_keyboard_request)
@@ -610,7 +573,6 @@ fn the_name_field_names_the_keys_or_controller_buttons_in_use() {
 
 #[test]
 fn every_answer_to_a_pause_dialog_clicks() {
-    let key = |key| [RawEvent::KeyDown { key }, RawEvent::KeyUp { key }];
     let open_confirm = || {
         let mut p = PauseScreen::open(false, true);
         activate(&mut p, "Main menu");
@@ -631,7 +593,7 @@ fn every_answer_to_a_pause_dialog_clicks() {
         let mode = p.mode_name();
         let mut heard = Vec::new();
         for pressed in &keys {
-            heard = pointer(&mut p, &key(*pressed)).1;
+            heard = pointer(&mut p, &keystroke(*pressed)).1;
         }
         assert_eq!(heard, [SoundKind::Click], "{mode} after {keys:?}");
     }

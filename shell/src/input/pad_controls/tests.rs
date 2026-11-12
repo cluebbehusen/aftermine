@@ -2,10 +2,12 @@
 //! loop feeds them, against a staged sandbox.
 
 use super::super::tests::pad_scene::{
-    CENTER, FRAME, PAD, building_at, denied, down, feed, pad_input, pos, press, push_until,
-    rest_on, scene, unit_at, units_of, up, wound_building,
+    FRAME, PAD, down, feed, pad_input, press, push_until, rest_on, up,
 };
 use super::*;
+use crate::tests::support::{
+    CENTER, building_at, denied, pos, scene, unit_at, units_of, wound_building,
+};
 use aftermine_protocol::RawEvent;
 use aftermine_sim::{BuildingKind, Command, PlayerCommand};
 use macroquad::prelude::vec2;

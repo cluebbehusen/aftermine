@@ -1,4 +1,5 @@
 use super::*;
+use crate::tests::support::keystroke;
 use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
 
@@ -142,11 +143,7 @@ fn home_grows_only_on_windows_larger_than_its_layout() {
 fn press(home: &mut HomeScreen, key: Key) -> Out {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    home.update(
-        &[RawEvent::KeyDown { key }, RawEvent::KeyUp { key }],
-        &mut mouse,
-        &mut sounds,
-    )
+    home.update(&keystroke(key), &mut mouse, &mut sounds)
 }
 
 #[test]

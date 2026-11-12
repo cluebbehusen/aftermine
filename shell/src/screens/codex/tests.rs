@@ -1,15 +1,12 @@
 use super::*;
+use crate::tests::support::keystroke;
 use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
 
 fn drive(screen: &mut CodexScreen, key: Key) -> Out {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    screen.update(
-        &[RawEvent::KeyDown { key }, RawEvent::KeyUp { key }],
-        &mut mouse,
-        &mut sounds,
-    )
+    screen.update(&keystroke(key), &mut mouse, &mut sounds)
 }
 
 /// Every row's page, in list order.

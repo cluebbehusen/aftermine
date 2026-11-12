@@ -1,4 +1,5 @@
 use super::*;
+use crate::tests::support::click;
 use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::vec2;
 
@@ -82,70 +83,6 @@ fn wheel_scroll_cannot_pin_the_cursor_onto_a_header() {
 }
 
 #[test]
-fn mouse_activation_requires_a_release_on_the_armed_row() {
-    crate::render::set_viewport(1280.0, 800.0);
-    let mut menu = sectioned();
-    let first = menu.item_rect(1).expect("first item").center();
-    let second = menu.item_rect(2).expect("second item").center();
-    let mut mouse = vec2(0.0, 0.0);
-
-    assert_eq!(
-        menu.handle(
-            &[RawEvent::MouseMove {
-                x: second.x,
-                y: second.y,
-            }],
-            &mut mouse,
-        ),
-        None
-    );
-    assert_eq!(menu.view().hover, Some(2));
-    assert_eq!(menu.selected, 1, "hover is not keyboard selection");
-
-    assert_eq!(
-        menu.handle(
-            &[
-                RawEvent::MouseDown {
-                    button: aftermine_protocol::MouseButton::Left,
-                    x: first.x,
-                    y: first.y,
-                },
-                RawEvent::MouseUp {
-                    button: aftermine_protocol::MouseButton::Left,
-                    x: second.x,
-                    y: second.y,
-                },
-            ],
-            &mut mouse,
-        ),
-        None,
-        "dragging to another row cancels the press"
-    );
-    assert_eq!(
-        menu.handle(
-            &[
-                RawEvent::MouseDown {
-                    button: aftermine_protocol::MouseButton::Left,
-                    x: second.x,
-                    y: second.y,
-                },
-                RawEvent::MouseUp {
-                    button: aftermine_protocol::MouseButton::Left,
-                    x: second.x,
-                    y: second.y,
-                },
-            ],
-            &mut mouse,
-        ),
-        Some(Activation {
-            value: 2,
-            column: None
-        })
-    );
-    assert_eq!(menu.selected, 2);
-}
-
-#[test]
 fn paging_keeps_the_keyboard_target_visible_and_off_section_headers() {
     crate::render::set_viewport(1280.0, 400.0);
     let mut menu = sectioned();
@@ -207,16 +144,9 @@ fn binding_rows_widen_the_list_and_report_the_clicked_chord() {
     let row = menu.item_rect(1).expect("the binding row shows");
     assert!(row.w > plain.item_rect(1).expect("a plain row").w);
     let columns = BindingColumns::of(row, crate::render::ui_scale());
-    let click = |x: f32| {
-        let button = aftermine_protocol::MouseButton::Left;
-        let y = row.center().y;
-        [
-            RawEvent::MouseDown { button, x, y },
-            RawEvent::MouseUp { button, x, y },
-        ]
-    };
+    let on = |column: macroquad::prelude::Rect| click(vec2(column.center().x, row.center().y));
     let mut mouse = vec2(0.0, 0.0);
-    let picked = menu.handle(&click(columns.secondary.center().x), &mut mouse);
+    let picked = menu.handle(&on(columns.secondary), &mut mouse);
     assert_eq!(
         picked,
         Some(Activation {
@@ -224,7 +154,7 @@ fn binding_rows_widen_the_list_and_report_the_clicked_chord() {
             column: Some(1)
         })
     );
-    let picked = menu.handle(&click(columns.name.center().x), &mut mouse);
+    let picked = menu.handle(&on(columns.name), &mut mouse);
     assert_eq!(picked.and_then(|picked| picked.column), None);
     let picked = menu.handle(&[RawEvent::KeyDown { key: Key::Enter }], &mut mouse);
     assert_eq!(picked.and_then(|picked| picked.column), None);

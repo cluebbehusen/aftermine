@@ -48,9 +48,9 @@ fn screen_at(game: &Game, x: f32, y: f32) -> Vec2 {
 
 fn double_click(game: &mut Game, input: &mut InputState, screen: Vec2) {
     input.now = 10.0;
-    apply_events(game, input, &click(screen.x, screen.y));
+    apply_events(game, input, &click(screen));
     input.now = 10.2;
-    apply_events(game, input, &click(screen.x, screen.y));
+    apply_events(game, input, &click(screen));
 }
 
 #[test]

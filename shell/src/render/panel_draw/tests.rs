@@ -1,5 +1,7 @@
 use super::*;
 use crate::game::Game;
+use crate::tests::support::{own_building, own_unit, sandbox};
+use aftermine_sim::{BuildingKind, UnitKind};
 
 /// The top bar's bottom, the ceiling a dock has with no card over it.
 fn bar(scale: f32) -> f32 {
@@ -77,15 +79,7 @@ fn collective_queue_keeps_every_kind_visible_in_narrow_windows() {
 fn production_dock_width_survives_countdowns_and_blocked_completion() {
     let mut game =
         Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
-    let foundry = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| {
-            b.player == game.presentation.human && b.kind == aftermine_sim::BuildingKind::Foundry
-        })
-        .unwrap()
-        .id;
+    let foundry = own_building(&game, BuildingKind::Foundry);
     game.presentation.selection.set_buildings(vec![foundry]);
     let train = aftermine_sim::PlayerCommand {
         player: game.presentation.human,
@@ -152,17 +146,9 @@ fn fabricator_corner_reaches_wrapped_actions_and_keeps_queue_above_it() {
             y: 3,
         });
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-    game.presentation.selection.set_buildings(vec![
-        game.state
-            .buildings()
-            .iter()
-            .find(|b| {
-                b.player == game.presentation.human
-                    && b.kind == aftermine_sim::BuildingKind::Fabricator
-            })
-            .unwrap()
-            .id,
-    ]);
+    game.presentation
+        .selection
+        .set_buildings(vec![own_building(&game, BuildingKind::Fabricator)]);
     let mut panel =
         crate::panel::build_for_palette(&game.view(), &crate::action::BindingMap::classic(), false)
             .unwrap();
@@ -236,15 +222,7 @@ fn production_cards_stay_inside_the_band_across_layouts_and_actions() {
                     });
             }
             let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-            let building = game
-                .state
-                .buildings()
-                .iter()
-                .find(|building| {
-                    building.player == game.presentation.human && building.kind == kind
-                })
-                .unwrap()
-                .id;
+            let building = own_building(&game, kind);
             game.presentation.selection.set_buildings(vec![building]);
             if full_queue {
                 let unit = *kind.base_stats().produces.first().unwrap();
@@ -972,13 +950,7 @@ fn harvester_with_orders(orders: usize) -> Game {
     let mut game =
         Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1133.0, 744.0)).unwrap();
     let human = game.presentation.human;
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == human && u.kind == aftermine_sim::UnitKind::Harvester)
-        .expect("a starting Harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     let here = game.state.unit(harvester).unwrap().tile();
     let walks: Vec<_> = (0..orders)
         .map(|step| aftermine_sim::PlayerCommand {
@@ -1189,13 +1161,7 @@ fn a_structure_keeps_its_picture_still_as_it_finishes_building_and_upgrading() {
         });
     let mut game = Game::with_viewport(scenario, vec2(1133.0, 744.0)).unwrap();
     let human = game.presentation.human;
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == human && u.kind == aftermine_sim::UnitKind::Harvester)
-        .expect("a starting Harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     let here = game.state.unit(harvester).unwrap().tile();
     let anchor = (-5..=5)
         .flat_map(|dy| (-5..=5).map(move |dx| (dx, dy)))
@@ -1212,13 +1178,7 @@ fn a_structure_keeps_its_picture_still_as_it_finishes_building_and_upgrading() {
             defer: false,
         },
     }]);
-    let turret = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| b.player == human && b.kind == BuildingKind::Turret)
-        .expect("the Turret's site")
-        .id;
+    let turret = own_building(&game, BuildingKind::Turret);
     game.presentation.selection.set_buildings(vec![turret]);
     let finish = |game: &mut Game, label: &str| {
         let start = card_frame(game);
@@ -1280,20 +1240,17 @@ fn an_aircraft_keeps_its_picture_still_as_it_lands() {
 #[test]
 fn a_lattice_keeps_its_picture_and_dock_still_as_warheads_come_and_go() {
     use aftermine_sim::{BuildingKind, Command, PlayerCommand, PlayerId};
-    let scenario = serde_json::from_value(serde_json::json!({
-        "name": "Lattice watch", "mode": "sandbox", "map": vec![".".repeat(70); 20],
-        "players": [
-            {"name": "East", "scrap": 0, "bot": false},
-            {"name": "West", "scrap": 0, "bot": false}
+    let scenario = sandbox(
+        70,
+        20,
+        2,
+        &[],
+        &[
+            (1, BuildingKind::Spire, 4, 8),
+            (0, BuildingKind::Lattice, 50, 8),
+            (0, BuildingKind::Array, 30, 2),
         ],
-        "units": [],
-        "buildings": [
-            {"player": 1, "kind": "spire", "x": 4, "y": 8},
-            {"player": 0, "kind": "lattice", "x": 50, "y": 8},
-            {"player": 0, "kind": "array", "x": 30, "y": 2}
-        ]
-    }))
-    .unwrap();
+    );
     let mut game = Game::with_viewport(scenario, vec2(1133.0, 744.0)).unwrap();
     let mut wire = serde_json::to_value(&*game.state).unwrap();
     for b in wire["buildings"].as_array_mut().unwrap() {
@@ -1358,20 +1315,20 @@ fn a_lattice_keeps_its_picture_and_dock_still_as_warheads_come_and_go() {
 #[test]
 fn an_extractor_keeps_its_picture_still_as_it_finishes_building_and_upgrading() {
     use aftermine_sim::{BuildingKind, Command, PlayerCommand};
-    let mut map = vec![".".repeat(40); 20];
-    map[8].replace_range(20..21, "E");
-    let scenario = serde_json::from_value(serde_json::json!({
-        "name": "Extractor rows", "mode": "sandbox", "map": map,
-        "players": [{"name": "You", "scrap": 5000, "bot": false}],
-        "units": [{"player": 0, "kind": "harvester", "x": 19, "y": 12}],
-        // A Foundry to support it and a Crucible to unlock the Deep Bore.
-        "buildings": [
-            {"player": 0, "kind": "foundry", "x": 14, "y": 4},
-            {"player": 0, "kind": "fabricator", "x": 26, "y": 12},
-            {"player": 0, "kind": "crucible", "x": 28, "y": 4}
-        ]
-    }))
-    .unwrap();
+    // A Foundry to support it and a Crucible to unlock the Deep Bore.
+    let mut scenario = sandbox(
+        40,
+        20,
+        1,
+        &[(0, UnitKind::Harvester, 19, 12)],
+        &[
+            (0, BuildingKind::Foundry, 14, 4),
+            (0, BuildingKind::Fabricator, 26, 12),
+            (0, BuildingKind::Crucible, 28, 4),
+        ],
+    );
+    scenario.players[0].scrap = 5000;
+    scenario.map[8].replace_range(20..21, "E");
     let mut game = Game::with_viewport(scenario, vec2(1133.0, 744.0)).unwrap();
     let human = game.presentation.human;
     let harvester = game.state.units()[0].id;
@@ -1387,13 +1344,7 @@ fn an_extractor_keeps_its_picture_still_as_it_finishes_building_and_upgrading() 
             defer: false,
         },
     }]);
-    let extractor = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Extractor)
-        .expect("the Extractor's site")
-        .id;
+    let extractor = own_building(&game, BuildingKind::Extractor);
     game.presentation.selection.set_buildings(vec![extractor]);
     let rows = |game: &Game| {
         let info = selection_info(game);

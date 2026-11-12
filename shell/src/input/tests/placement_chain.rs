@@ -152,11 +152,7 @@ fn the_ribbon_s_cross_after_a_chain_leaves_placement_and_keeps_the_chain() {
     shift_chain(&mut game, &mut input);
     assert!(input.placing().is_some(), "premise: still placing");
 
-    apply_events(
-        &mut game,
-        &mut input,
-        &click(cross.center().x, cross.center().y),
-    );
+    apply_events(&mut game, &mut input, &click(cross.center()));
     assert!(input.placing().is_none(), "the cross ends placement");
     assert_eq!(builds(&game), CHAIN, "and places nothing");
 }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::screens::wizard::launch::launch;
+use crate::tests::support::{left_down, left_up};
 
 #[test]
 fn the_live_streak_counts_only_unbroken_live_frames() {
@@ -54,18 +55,7 @@ fn wizard_seat_swap_opens_on_the_new_humans_foundry() {
 
     let mut input = input::InputState::new();
     input.camera_prefs.edge_pan = true;
-    for event in [
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: 352.0,
-            y: 222.0,
-        },
-        RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: 352.0,
-            y: 222.0,
-        },
-    ] {
+    for event in [left_down(vec2(352.0, 222.0)), left_up(vec2(352.0, 222.0))] {
         track_pointer_position(&mut input.mouse, &event);
     }
     input.reset_session();

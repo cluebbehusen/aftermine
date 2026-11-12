@@ -1,6 +1,8 @@
 use super::*;
 use crate::action::BindingMap;
 use crate::game::Game;
+use crate::tests::support::{click, issue_tick, left_down, mouse_move, own_unit};
+use aftermine_sim::UnitKind;
 
 /// Every glyph half as wide as the size: deterministic and headless.
 fn fixed(_: Face, text: &str, size: f32) -> f32 {
@@ -127,8 +129,7 @@ fn a_seat_out_shows_no_idle_badge(game: &mut Game, ffa: bool) {
         badge(game).w > 0.0,
         "premise: the match opens with idle workers"
     );
-    game.issue(aftermine_sim::Command::Surrender);
-    game.do_tick();
+    issue_tick(game, aftermine_sim::Command::Surrender);
     assert!(!game.state.accepts_commands(human));
     assert_eq!(
         game.state.result().is_none(),
@@ -295,14 +296,7 @@ fn the_placement_ribbon_says_what_a_click_would_do_and_holds_still() {
 #[test]
 fn every_armed_ribbon_ends_in_a_cross_clear_of_its_words() {
     let mut game = skirmish();
-    let human = game.presentation.human;
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let arms: [fn(&mut InputState); 3] = [
         |input| input.armed = Some(crate::input::Armed::Verb(crate::input::ClickVerb::Hunt)),
@@ -469,14 +463,7 @@ fn the_patrol_ribbon_holds_still_and_lights_start_once_it_has_a_point() {
 #[test]
 fn a_finger_with_no_ghost_down_leaves_the_ribbon_one_row_tall() {
     let mut game = skirmish();
-    let human = game.presentation.human;
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let mut input = InputState::new();
     input.build_menu = true;
@@ -501,13 +488,7 @@ fn a_finger_with_no_ghost_down_leaves_the_ribbon_one_row_tall() {
 fn a_planned_row_counts_itself_in_the_ribbon() {
     let mut game = skirmish();
     let human = game.presentation.human;
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let foundry = game
         .state
@@ -526,15 +507,7 @@ fn a_planned_row_counts_itself_in_the_ribbon() {
         ))
     };
     let (a, b, c) = (at(3), at(4), at(5));
-    let events = [
-        aftermine_protocol::RawEvent::MouseDown {
-            button: aftermine_protocol::MouseButton::Left,
-            x: a.x,
-            y: a.y,
-        },
-        aftermine_protocol::RawEvent::MouseMove { x: b.x, y: b.y },
-        aftermine_protocol::RawEvent::MouseMove { x: c.x, y: c.y },
-    ];
+    let events = [left_down(a), mouse_move(b), mouse_move(c)];
     crate::input::apply_events(
         &mut game,
         &mut input,
@@ -568,13 +541,7 @@ fn a_planned_row_counts_itself_in_the_ribbon() {
 fn the_status_row_goes_blank_over_chrome_and_keeps_its_height() {
     let mut game = skirmish();
     let human = game.presentation.human;
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|unit| unit.player == human && unit.kind == aftermine_sim::UnitKind::Harvester)
-        .unwrap()
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![harvester]);
     let foundry = game
         .state
@@ -937,7 +904,6 @@ fn pad_mode_leaves_out_what_buttons_do_and_moves_nothing_that_stays() {
 
 #[test]
 fn the_click_that_ends_pad_mode_lands_on_the_hud_pad_mode_drew() {
-    use aftermine_protocol::{MouseButton, RawEvent};
     let (mut game, foundry) = foundry_selected();
     let mouse = layout(
         &game.view(),
@@ -969,18 +935,7 @@ fn the_click_that_ends_pad_mode_lands_on_the_hud_pad_mode_drew() {
             &fixed,
         );
     };
-    let click = [
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: train.x,
-            y: train.y,
-        },
-        RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: train.x,
-            y: train.y,
-        },
-    ];
+    let click = click(train);
     let mut input = InputState::new();
     input.hud_pad = true;
     relayout(&game, &input);

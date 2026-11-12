@@ -74,7 +74,7 @@ fn a_kind_chip_keeps_its_kind_and_shift_or_ctrl_drops_it() {
     let mut input = InputState::new();
     let turrets = CardAction::FilterBuilding(BuildingKind::Turret);
     let at = chip(&publish_strip(&mut game, &input), turrets);
-    apply_events(&mut game, &mut input, &click(at.x, at.y));
+    apply_events(&mut game, &mut input, &click(at));
     assert_eq!(
         game.presentation.selection.buildings(),
         own_buildings(&game, Some(BuildingKind::Turret))
@@ -86,7 +86,7 @@ fn a_kind_chip_keeps_its_kind_and_shift_or_ctrl_drops_it() {
             .set_buildings(own_buildings(&game, None));
         let at = chip(&publish_strip(&mut game, &input), turrets);
         apply_events(&mut game, &mut input, &[key_down(modifier)]);
-        apply_events(&mut game, &mut input, &click(at.x, at.y));
+        apply_events(&mut game, &mut input, &click(at));
         apply_events(&mut game, &mut input, &[key_up(modifier)]);
         assert_eq!(
             game.presentation.selection.buildings(),
@@ -137,7 +137,7 @@ fn the_all_button_selects_every_one_you_own_by_click_or_tap() {
         if touch {
             tap(&mut game, &mut input, at);
         } else {
-            apply_events(&mut game, &mut input, &click(at.x, at.y));
+            apply_events(&mut game, &mut input, &click(at));
         }
         assert_eq!(
             game.presentation.selection.buildings(),
@@ -162,10 +162,10 @@ fn i_gathers_every_one_you_own_as_the_all_button_does() {
     game.presentation.selection.set_buildings(vec![turrets[2]]);
     apply_events(&mut game, &mut input, &press_i());
     assert_eq!(game.presentation.selection.buildings(), turrets);
-    assert!(!super::pad_scene::denied(&game));
+    assert!(!crate::tests::support::denied(&game));
     apply_events(&mut game, &mut input, &press_i());
     assert!(
-        super::pad_scene::denied(&game),
+        crate::tests::support::denied(&game),
         "with every one selected there is no button to press"
     );
     assert_eq!(game.presentation.selection.buildings(), turrets);
@@ -276,7 +276,7 @@ fn the_all_button_gathers_units_but_not_the_ones_riding_a_transport() {
         title, "Select all 2 Sentinels",
         "the rider and the enemy's do not count"
     );
-    apply_events(&mut game, &mut input, &click(at.x, at.y));
+    apply_events(&mut game, &mut input, &click(at));
     assert_eq!(game.presentation.selection.units(), &sentinels[..2]);
     assert!(game.pending.is_empty(), "gathering issues no command");
 }
