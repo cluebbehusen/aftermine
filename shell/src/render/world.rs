@@ -1104,7 +1104,8 @@ pub(super) fn draw_extractor_frames(
     }
 }
 
-/// Battle scars: scorch decals where buildings died, fading over ~20s.
+/// Battle scars: scorch decals where buildings died and warheads burst,
+/// fading over 20 s.
 pub(crate) fn draw_scorches(game: &crate::game::Scene<'_>, sprites: &Sprites) {
     let zoom = game.presentation.camera.zoom;
     for (at, age, width) in &game.presentation.scorches {

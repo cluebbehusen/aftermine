@@ -524,9 +524,10 @@ contact points never change simulation targeting, damage or splash.
 `assets` loads the generated sprite atlas, whose manifest covers every sprite
 key the shell resolves. Frame counts come from the atlas, the animation code
 owns timing, and tests keep every selected frame below the shipped count. `look`
-declares each unit and defense kind's presentation in one exhaustive match, so a
-new kind must state each part. Facts the simulation already states, such as
-which kinds fly, crash, scout or fight, are read from its stats.
+declares each unit and defense kind's scale, gait, mechanisms, weapon report and
+far-zoom marker in exhaustive matches, so a new kind must state each part. Facts
+the simulation already states, such as which kinds fly, crash, scout or fight,
+are read from its stats.
 
 Terrain art derives from map geometry alone. `GroundLayout` is computed on a
 match's first draw and kept, so revealed terrain never changes as fog lifts;
