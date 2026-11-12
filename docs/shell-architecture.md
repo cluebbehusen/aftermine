@@ -577,7 +577,7 @@ shell.
 
 | Contract                      | Primary source                                                                 | Behavioral evidence                                                             |
 | ----------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`       | Screen-flow step tables, screen tests, `driver/tests/menu_ux.rs` (run by hand)  |
+| App ownership and screen flow | `shell/src/app.rs`, `shell/src/app/screen_flow.rs`, `shell/src/screens/`       | Screen-flow step tables, screen tests, `driver/tests/menu_ux.rs` (Linux CI)     |
 | Live tick and recording       | `shell/src/game.rs`                                                            | Game tests, `driver/src/smoke.rs`                                               |
 | Input and shared geometry     | `shell/src/input.rs`, `shell/src/layout.rs`, `shell/src/panel.rs`              | Input and layout tests, plus real-window drills in `driver/tests/pad_wiring.rs` |
 | Saves                         | `shell/src/autosave.rs`, `shell/src/saves.rs`, `shell/src/app/persistence.rs`  | Module tests, the persistence step table                                        |
