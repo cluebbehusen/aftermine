@@ -312,6 +312,22 @@ fn performance_modes_the_last_join_address_and_the_name_persist() {
 }
 
 #[test]
+fn the_frame_rate_persists_as_full_or_a_cap() {
+    assert_eq!(Config::default().frame_rate, FrameRate::Full);
+    for (frame_rate, json) in [
+        (FrameRate::Full, r#""full""#),
+        (FrameRate::Capped(60), r#"{"capped":60}"#),
+    ] {
+        assert_eq!(serde_json::to_string(&frame_rate).unwrap(), json);
+        let config = Config {
+            frame_rate,
+            ..Config::default()
+        };
+        assert_eq!(Config::from_text(Some(&config.text())), config);
+    }
+}
+
+#[test]
 fn a_hand_edited_ui_scale_loads_within_the_settings_range() {
     let dir = std::env::temp_dir().join(format!("aftermine-config-scale-{}", std::process::id()));
     let path = dir.join("config.json");

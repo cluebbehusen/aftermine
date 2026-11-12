@@ -271,18 +271,28 @@ fn a_value_between_the_steps_moves_to_its_neighbour() {
         (Step::Cycle, 0.75),
     ] {
         config.volumes.music = 0.6;
-        assert!(step_setting(&mut config, Row::MusicVolume, step));
+        assert!(step_setting(&mut config, Row::MusicVolume, step, None));
         assert_eq!(config.volumes.music, landed, "{step:?}");
     }
     config.ui_scale = 0.9;
-    step_setting(&mut config, Row::UiScale, Step::Back);
+    step_setting(&mut config, Row::UiScale, Step::Back, None);
     assert_eq!(config.ui_scale, 0.75, "never past the level below");
     crate::render::set_user_scale(1.0);
     config.markers.start = 33.0;
     assert_eq!(config.markers.timing_label(), "Custom");
-    assert!(step_setting(&mut config, Row::MarkerTiming, Step::Cycle));
+    assert!(step_setting(
+        &mut config,
+        Row::MarkerTiming,
+        Step::Cycle,
+        None
+    ));
     assert_eq!(config.markers.timing_label(), "Standard");
-    assert!(!step_setting(&mut config, Row::PlayerName, Step::Cycle));
+    assert!(!step_setting(
+        &mut config,
+        Row::PlayerName,
+        Step::Cycle,
+        None
+    ));
 }
 
 #[test]
@@ -493,17 +503,17 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
 fn the_control_group_row_shows_and_hides_the_bar() {
     let mut config = Config::default();
     assert_eq!(
-        Row::ControlGroups.label(&config).to_string(),
+        Row::ControlGroups.label(&config, None).to_string(),
         "Control group bar: Shown"
     );
-    step_setting(&mut config, Row::ControlGroups, Step::Cycle);
+    step_setting(&mut config, Row::ControlGroups, Step::Cycle, None);
     assert!(!config.control_groups);
     assert_eq!(
-        Row::ControlGroups.label(&config).to_string(),
+        Row::ControlGroups.label(&config, None).to_string(),
         "Control group bar: Hidden"
     );
     assert!(!render::control_groups(), "the HUD follows at once");
-    step_setting(&mut config, Row::ControlGroups, Step::Cycle);
+    step_setting(&mut config, Row::ControlGroups, Step::Cycle, None);
     assert!(render::control_groups());
     assert!(rows(Tab::Display, Platform::Touch).contains(&Row::ControlGroups));
 }
@@ -546,6 +556,135 @@ fn performance_cycles_with_keyboard_mouse_and_touch_in_small_windows() {
     }
     crate::render::set_viewport(1280.0, 800.0);
     crate::render::set_user_scale(1.0);
+}
+
+/// Settings on the Display tab over a display at `hz`.
+fn on_display(hz: f64, config: &Config) -> SettingsScreen {
+    let mut screen = on(Tab::Display, config);
+    screen.set_refresh(Refresh::from_hz(hz), config);
+    screen
+}
+
+#[test]
+fn frame_rate_cycles_with_keyboard_mouse_and_touch_in_small_windows() {
+    use crate::config::FrameRate;
+    for platform in [Platform::Desktop, Platform::Touch, Platform::Tv] {
+        assert!(rows(Tab::Display, platform).contains(&Row::FrameRate));
+    }
+    for scale in [0.75, 1.0, 1.25, 1.5] {
+        crate::render::set_viewport(640.0, 400.0);
+        crate::render::set_user_scale(scale);
+        let mut config = Config::default();
+        let mut screen = on_display(120.0, &config);
+        let row = Item::Setting(Row::FrameRate);
+        assert_eq!(label(&screen, row), "Frame rate: 120 FPS");
+        for _ in 0..index(&screen, row) {
+            drive(&mut screen, &mut config, &keystroke(Key::Down), false);
+        }
+        for (how, frame_rate, shown) in [
+            (0, FrameRate::Capped(30), "30 FPS"),
+            (1, FrameRate::Capped(40), "40 FPS"),
+            (2, FrameRate::Capped(60), "60 FPS"),
+            (0, FrameRate::Full, "120 FPS"),
+        ] {
+            let rect = screen
+                .menu
+                .item_rect(index(&screen, row))
+                .expect("selected row visible");
+            let events = match how {
+                0 => keystroke(Key::Enter),
+                1 => click(rect.center()),
+                _ => tap(1, rect.center()),
+            };
+            let update = drive(&mut screen, &mut config, &events, false);
+            assert!(update.dirty);
+            assert_eq!(config.frame_rate, frame_rate, "the top choice stores Full");
+            assert_eq!(screen.menu.selected, index(&screen, row));
+            assert_eq!(label(&screen, row), format!("Frame rate: {shown}"));
+        }
+    }
+    crate::render::set_viewport(1280.0, 800.0);
+    crate::render::set_user_scale(1.0);
+}
+
+#[test]
+fn left_and_right_step_the_frame_rate_and_stop_at_the_ends() {
+    use crate::config::FrameRate;
+    let mut config = Config::default();
+    let mut screen = on_display(144.0, &config);
+    focus(&mut screen, Item::Setting(Row::FrameRate));
+    assert!(!drive(&mut screen, &mut config, &keystroke(Key::Right), false).dirty);
+    assert_eq!(config.frame_rate, FrameRate::Full, "already the fastest");
+    for fps in [72, 48, 36, 36] {
+        drive(&mut screen, &mut config, &keystroke(Key::Left), false);
+        assert_eq!(config.frame_rate, FrameRate::Capped(fps));
+    }
+    drive(&mut screen, &mut config, &keystroke(Key::Right), false);
+    assert_eq!(config.frame_rate, FrameRate::Capped(48));
+}
+
+#[test]
+fn a_press_that_shows_no_change_keeps_a_cap_from_another_display() {
+    use crate::config::FrameRate;
+    let mut config = Config {
+        frame_rate: FrameRate::Capped(60),
+        ..Config::default()
+    };
+    let mut screen = on_display(60.0, &config);
+    focus(&mut screen, Item::Setting(Row::FrameRate));
+    assert!(!drive(&mut screen, &mut config, &keystroke(Key::Right), false).dirty);
+    assert_eq!(
+        config.frame_rate,
+        FrameRate::Capped(60),
+        "60 Hz already shows its top choice"
+    );
+
+    config.frame_rate = FrameRate::Capped(30);
+    let mut screen = on_display(50.0, &config);
+    focus(&mut screen, Item::Setting(Row::FrameRate));
+    for key in [Key::Left, Key::Right, Key::Enter] {
+        drive(&mut screen, &mut config, &keystroke(key), false);
+        assert_eq!(
+            config.frame_rate,
+            FrameRate::Capped(30),
+            "50 Hz offers one choice"
+        );
+    }
+}
+
+#[test]
+fn the_frame_rate_follows_the_display_and_waits_for_one() {
+    use crate::config::FrameRate;
+    let mut config = Config {
+        frame_rate: FrameRate::Capped(60),
+        ..Config::default()
+    };
+    let row = Item::Setting(Row::FrameRate);
+    let mut screen = on(Tab::Display, &config);
+    focus(&mut screen, row);
+    assert_eq!(label(&screen, row), "Frame rate: 60 FPS");
+    for key in [Key::Enter, Key::Left, Key::Right] {
+        assert!(!drive(&mut screen, &mut config, &keystroke(key), false).dirty);
+    }
+    assert_eq!(
+        config.frame_rate,
+        FrameRate::Capped(60),
+        "no display, no choices to step through"
+    );
+    let selected = screen.menu.selected;
+    for (hz, shown) in [(120.0, "60 FPS"), (144.0, "48 FPS"), (40.0, "40 FPS")] {
+        screen.set_refresh(Refresh::from_hz(hz), &config);
+        assert_eq!(
+            label(&screen, row),
+            format!("Frame rate: {shown}"),
+            "{hz} Hz"
+        );
+        assert_eq!(screen.menu.selected, selected, "the cursor stays");
+    }
+    assert_eq!(config.frame_rate, FrameRate::Capped(60), "the cap is kept");
+    screen.set_refresh(Refresh::from_hz(144.0), &config);
+    drive(&mut screen, &mut config, &keystroke(Key::Right), false);
+    assert_eq!(config.frame_rate, FrameRate::Capped(72));
 }
 
 #[test]
@@ -1002,7 +1141,7 @@ fn the_page_heading_stacks_title_strip_and_list_and_shows_more_rows() {
                 first.y >= strip[0].bottom(),
                 "the list starts under the strip, {at}"
             );
-            let mut wordmark = tab_menu(Tab::Controls, &Config::default(), 0);
+            let mut wordmark = tab_menu(Tab::Controls, &Config::default(), 0, None);
             wordmark.heading = Heading::Wordmark;
             assert!(
                 page.menu.visible_range()[1] > wordmark.visible_range()[1],

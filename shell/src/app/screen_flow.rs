@@ -631,6 +631,7 @@ fn settings_frame(
     ctrl_at_frame_start: bool,
     shift_at_frame_start: bool,
 ) -> Screen {
+    sc.set_refresh(app.offered_refresh(), &app.config);
     let input_scope = app
         .game
         .diagnostic_stage(aftermine_kit::diagnostics::Stage::Input);

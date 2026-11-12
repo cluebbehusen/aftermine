@@ -1,6 +1,7 @@
 {
   "markers": {"start": 24.0, "end": 16.0, "scale": 1.0},
   "performance_display": "off",
+  "frame_rate": "full",
   "version": 1,
   "bindings": {
     "bindings": [

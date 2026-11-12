@@ -166,6 +166,8 @@ struct App {
     autosave_retry: Option<std::time::Duration>,
     /// The session clock the lobby and the link read.
     clock: std::time::Instant,
+    /// The display's refresh, once the platform reports one.
+    refresh: Option<crate::pacing::Refresh>,
 }
 
 /// A viewer over the live match's record so far; the match waits untouched.
@@ -372,6 +374,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         background: background_save::Schedule::default(),
         autosave_retry: None,
         clock: std::time::Instant::now(),
+        refresh: None,
     };
     // A rerun pass re-enters the loop inside the same presented frame;
     // the frame's starting screen is the one recorded before it.
@@ -859,6 +862,17 @@ impl App {
     fn save_settings(&mut self) {
         self.settings_sync.push(&self.config);
         self.settings_writer.save(&self.config);
+    }
+
+    /// The refresh whose frame rates Settings offers. An automation shell
+    /// assumes a 60 Hz display, so its walks read the same on every
+    /// machine.
+    fn offered_refresh(&self) -> Option<crate::pacing::Refresh> {
+        if self.args.automation {
+            crate::pacing::Refresh::from_hz(60.0)
+        } else {
+            self.refresh
+        }
     }
 
     /// Tells the player a settings write failed, once per failure.
