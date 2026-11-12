@@ -157,29 +157,72 @@ fn windows_rank_by_average_tick_and_keep_their_starting_units() {
     assert_eq!(summary, [(12, 2, 9, 6), (16, 1, 9, 8), (14, 2, 4, 7)]);
 }
 
-fn scan_of(replay: &GameReplay) -> Result<Scan> {
+fn scan_of(replay: &GameReplay, passes: u32) -> Result<Scan> {
+    static SCANS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
         "aftermine-tick-scan-{}-{}",
         std::process::id(),
-        replay.meta.ticks.unwrap_or_default()
+        SCANS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("fixture.json");
     replay.save(&path).unwrap();
-    let scan = scan(path.to_str().unwrap(), 5, 10);
+    let scan = scan(path.to_str().unwrap(), 5, 10, passes);
     std::fs::remove_dir_all(&dir).unwrap();
     scan
 }
 
 #[test]
 fn a_scan_times_every_recorded_tick() {
-    let scan = scan_of(&crate::support_tests::replay_fixture()).unwrap();
+    let scan = scan_of(&crate::support_tests::replay_fixture(), 1).unwrap();
     assert_eq!((scan.start, scan.end, scan.per_tick.count), (0, 12, 12));
     assert_eq!(
         scan.windows.iter().map(|window| window.ticks).sum::<u64>(),
         12
     );
     assert!(scan.slowest_tick < 12);
+    assert!(scan.table().contains("one pass"), "{}", scan.table());
+}
+
+#[test]
+fn repeated_passes_still_time_each_tick_once_with_its_starting_units() {
+    let replay = crate::support_tests::replay_fixture();
+    let once = scan_of(&replay, 1).unwrap();
+    let thrice = scan_of(&replay, 3).unwrap();
+    assert_eq!(thrice.passes, 3);
+    assert_eq!(thrice.per_tick.count, 12);
+    let starts = |scan: &Scan| {
+        let mut starts: Vec<_> = scan
+            .windows
+            .iter()
+            .map(|window| (window.from, window.ticks, window.units))
+            .collect();
+        starts.sort_unstable();
+        starts
+    };
+    assert_eq!(starts(&thrice), starts(&once));
+    assert!(
+        thrice.table().contains("fastest of 3 passes"),
+        "{}",
+        thrice.table()
+    );
+    assert!(scan_of(&replay, 0).is_err());
+}
+
+#[test]
+fn each_tick_keeps_its_fastest_pass() {
+    let passes = [[5, 41_000, 7], [6, 4_750, 7], [4, 4_800, 9]];
+    let mut ran = Vec::new();
+    let fastest = fastest_of(3, |pass| {
+        ran.push(pass);
+        passes[pass as usize].to_vec()
+    });
+    assert_eq!(fastest, [4, 4_750, 7]);
+    assert_eq!(ran, [0, 1, 2]);
+    assert_eq!(
+        fastest_of(1, |pass| passes[pass as usize].to_vec()),
+        passes[0]
+    );
 }
 
 #[test]
@@ -187,10 +230,10 @@ fn a_scan_refuses_empty_and_overlong_recordings() {
     let mut empty = crate::support_tests::replay_fixture();
     empty.commands.clear();
     empty.meta.ticks = Some(0);
-    assert!(scan_of(&empty).is_err());
+    assert!(scan_of(&empty, 1).is_err());
     let mut overlong = crate::support_tests::replay_fixture();
     overlong.meta.ticks = Some(aftermine_kit::MAX_REPLAY_TICKS + 1);
-    assert!(scan_of(&overlong).is_err());
+    assert!(scan_of(&overlong, 1).is_err());
 }
 
 #[test]

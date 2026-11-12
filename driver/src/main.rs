@@ -225,9 +225,9 @@ enum Cmd {
         #[arg(long)]
         save_replay: Option<PathBuf>,
     },
-    /// Time every tick of a replay in one straight pass and rank its
-    /// costliest windows, to choose where `tick-profile` should look.
-    /// Recorded commands replay; controllers do not run.
+    /// Time every tick of a replay and rank its costliest windows, to
+    /// choose where `tick-profile` should look. Recorded commands replay;
+    /// controllers do not run.
     TickScan {
         /// Scenario-origin or checkpoint-origin replay.
         replay: String,
@@ -237,6 +237,11 @@ enum Cmd {
         /// Windows to list.
         #[arg(long, default_value_t = 10)]
         top: usize,
+        /// Replay this many times and keep each tick's fastest time. One
+        /// pass on a loaded machine counts every preemption as simulation,
+        /// so its slowest ticks are no evidence of a spike.
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
+        passes: u32,
         /// Emit JSON instead of the table.
         #[arg(long)]
         json: bool,
@@ -412,8 +417,11 @@ enum Cmd {
         dev: bool,
     },
     /// Run named native frame workloads and report where each frame's time
-    /// goes: Home, then small and large matches, fogged and open, across
-    /// camera motions. Stays on one fixed frame sequence so runs compare.
+    /// goes: Home, then small and large matches, fogged and open, held at
+    /// zooms from near to far and across camera motions, then a 500-unit mass
+    /// battle with and without seat zero's army selected, and a late Skyhook
+    /// Anchorage view of its densest flyers. Stays on one fixed frame
+    /// sequence so runs compare.
     ProfileGraphics {
         /// Keep only workloads whose name contains this.
         #[arg(long)]
@@ -805,9 +813,10 @@ fn main() -> Result<()> {
             replay,
             window,
             top,
+            passes,
             json,
         } => {
-            let scan = aftermine_driver::tick_profile::scan(&replay, window, top)?;
+            let scan = aftermine_driver::tick_profile::scan(&replay, window, top, passes)?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&scan)?);
             } else {

@@ -1,5 +1,5 @@
-//! Named native frame workloads: where a frame's time goes on each screen, map
-//! size, view and camera motion.
+//! Named native frame workloads: where a frame's time goes on each screen,
+//! scene, view, zoom and camera motion.
 
 use crate::auto::{
     ShellGuard, build_shell_executable_for, isolate_home, launch, write_home_config,
@@ -8,11 +8,14 @@ use crate::client::Client;
 use crate::profile::{ProfileWorkspace, expect_ok, expect_performance};
 use aftermine_kit::runner;
 use aftermine_protocol::{
-    CameraMotion, FrameProbes, FrameProfileView, FrameScript, Request, StateFilter, StateView,
-    TimingSummary,
+    CameraMotion, FrameProbes, FrameProfileView, FrameScript, Key, RawEvent, Request, StateFilter,
+    StateView, TimingSummary,
 };
+use aftermine_sim::Scenario;
+use aftermine_sim::stats::Domain;
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -23,6 +26,16 @@ use std::time::{Duration, Instant};
 const WINDOW: [u32; 2] = [1210, 834];
 const NEAR_ZOOM: f64 = 32.0;
 const FAR_ZOOM: f64 = 8.0;
+/// Unit sprites and strategic markers both draw here, halfway through the
+/// profiling config's crossfade from one to the other.
+const BLEND_ZOOM: f64 = 20.0;
+/// Tiles here alternate between 13 and 14 pixels wide, either side of the
+/// width where the fog feather takes a second step.
+const FEATHER_ZOOM: f64 = 13.5;
+/// Units a seat fields in the mass battle.
+const MASS_PER_SIDE: u32 = 250;
+/// The whole mass battle fits in view here.
+const MASS_ZOOM: f64 = 12.0;
 const SETTLE_FRAMES: u32 = 120;
 const HOLD_FRAMES: u32 = 240;
 const PAN_FRAMES: u32 = 480;
@@ -97,32 +110,60 @@ impl Drop for HeldClocks {
     }
 }
 
+/// The match a workload's frames show, rebuilt from a generated replay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Size {
+enum Scene {
     Small,
     Large,
+    /// The bench's mass battle: two armies of [`MASS_PER_SIDE`] units in
+    /// facing blocks on an open field.
+    Mass,
+    /// Skyhook Anchorage late in an eight-bot match, when flyers fill its
+    /// sky.
+    Skyhook,
 }
 
-impl Size {
+impl Scene {
     const fn name(self) -> &'static str {
         match self {
             Self::Small => "small",
             Self::Large => "large",
+            Self::Mass => "mass",
+            Self::Skyhook => "skyhook",
         }
     }
 
-    const fn map(self) -> &'static str {
-        match self {
+    /// A map with every seat a bot, or the mass battle, whose seats give no
+    /// orders.
+    fn scenario(self, root: &Path) -> Result<Scenario> {
+        let map = match self {
             Self::Small => "scenarios/smelter-yard.json",
             Self::Large => "scenarios/grand-viaduct.json",
-        }
+            Self::Skyhook => "fixtures/scenarios/skyhook-anchorage.json",
+            Self::Mass => return Ok(aftermine_kit::bench::mass_battle(MASS_PER_SIDE)),
+        };
+        let mut scenario = runner::load_scenario(&root.join(map).to_string_lossy())?;
+        aftermine_kit::bench::all_bots(&mut scenario);
+        Ok(scenario)
     }
 
-    /// Late enough for real armies, early enough that the match is undecided.
+    /// For a map, late enough for real armies and early enough that the
+    /// match is undecided. The mass battle's armies stand where they deploy.
     const fn ticks(self) -> u64 {
         match self {
             Self::Small => 6_480,
             Self::Large => 18_000,
+            Self::Mass => 20,
+            Self::Skyhook => 60_000,
+        }
+    }
+
+    /// Where the camera frames the scene: on seat zero's forces, as a
+    /// player's would, except on Skyhook, which frames its densest flyers.
+    fn focus(self, state: &StateView) -> Option<[f64; 2]> {
+        match self {
+            Self::Skyhook => densest_flyers(state, NEAR_ZOOM),
+            Self::Small | Self::Large | Self::Mass => seat_focus(state),
         }
     }
 }
@@ -147,39 +188,74 @@ impl View {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Source {
     Home,
-    Match(Size, View),
+    Match(Scene, View),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Shot {
     /// The screen's own camera, untouched.
     Own,
-    Near,
-    Far,
+    /// One view held at this zoom.
+    Hold(f64),
     Pan,
     ZoomOut,
     ZoomIn,
 }
 
 impl Shot {
-    const MATCH: [Self; 5] = [
-        Self::Near,
-        Self::Far,
+    const MATCH: [Self; 7] = [
+        Self::Hold(NEAR_ZOOM),
+        Self::Hold(BLEND_ZOOM),
+        Self::Hold(FEATHER_ZOOM),
+        Self::Hold(FAR_ZOOM),
         Self::Pan,
         Self::ZoomOut,
         Self::ZoomIn,
     ];
 
-    const fn name(self) -> &'static str {
+    fn name(self) -> String {
         match self {
-            Self::Own => "own",
-            Self::Near => "near",
-            Self::Far => "far",
-            Self::Pan => "pan",
-            Self::ZoomOut => "zoom-out",
-            Self::ZoomIn => "zoom-in",
+            Self::Own => "own".to_string(),
+            Self::Hold(zoom) if zoom == NEAR_ZOOM => "near".to_string(),
+            Self::Hold(zoom) if zoom == FAR_ZOOM => "far".to_string(),
+            Self::Hold(zoom) => format!("hold-{zoom}"),
+            Self::Pan => "pan".to_string(),
+            Self::ZoomOut => "zoom-out".to_string(),
+            Self::ZoomIn => "zoom-in".to_string(),
         }
     }
+}
+
+/// What a workload does to its scene before its frames are measured, through
+/// the input funnel a player's own input takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Setup {
+    /// The scene as it loads.
+    None,
+    /// Seat zero selects its whole army with the profiling config's Select
+    /// army chord.
+    SelectArmy,
+}
+
+impl Setup {
+    /// The requests that set the scene up, sent before the frame script.
+    fn requests(self) -> Vec<Request> {
+        match self {
+            Self::None => Vec::new(),
+            Self::SelectArmy => chord(&[Key::Ctrl, Key::A]),
+        }
+    }
+}
+
+/// `keys` pressed in order and released in reverse, as a player holds a
+/// modifier around a key.
+fn chord(keys: &[Key]) -> Vec<Request> {
+    let press = keys.iter().map(|&key| RawEvent::KeyDown { key });
+    let release = keys.iter().rev().map(|&key| RawEvent::KeyUp { key });
+    press
+        .chain(release)
+        .map(|event| Request::InjectEvent { event })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -188,9 +264,18 @@ struct Workload {
     source: Source,
     shot: Shot,
     /// Whether the match plays while frames are measured; every other workload
-    /// holds it paused. A match that has played can't repeat, so each trial of
-    /// this workload gets a fresh shell.
+    /// holds it paused.
     running: bool,
+    setup: Setup,
+}
+
+impl Workload {
+    /// A match that has played, or a scene that was set up, can't be put
+    /// back, so each trial of such a workload gets a fresh shell, and so does
+    /// the workload after it.
+    fn changes_its_shell(&self) -> bool {
+        self.running || self.setup != Setup::None
+    }
 }
 
 /// Every workload, with those sharing a source next to each other so a run
@@ -201,28 +286,49 @@ fn workloads() -> Vec<Workload> {
         source: Source::Home,
         shot: Shot::Own,
         running: false,
+        setup: Setup::None,
     }];
-    for size in [Size::Small, Size::Large] {
+    for scene in [Scene::Small, Scene::Large] {
         for view in [View::Fogged, View::Open] {
-            let source = Source::Match(size, view);
+            let source = Source::Match(scene, view);
             for shot in Shot::MATCH {
                 all.push(Workload {
-                    name: format!("{}-{}-{}", size.name(), view.name(), shot.name()),
+                    name: format!("{}-{}-{}", scene.name(), view.name(), shot.name()),
                     source,
                     shot,
                     running: false,
+                    setup: Setup::None,
                 });
             }
-            if (size, view) == (Size::Large, View::Fogged) {
+            if (scene, view) == (Scene::Large, View::Fogged) {
                 all.push(Workload {
-                    name: format!("{}-{}-running", size.name(), view.name()),
+                    name: format!("{}-{}-running", scene.name(), view.name()),
                     source,
-                    shot: Shot::Near,
+                    shot: Shot::Hold(NEAR_ZOOM),
                     running: true,
+                    setup: Setup::None,
                 });
             }
         }
     }
+    let mass = Shot::Hold(MASS_ZOOM);
+    for (setup, suffix) in [(Setup::None, ""), (Setup::SelectArmy, "-selected")] {
+        all.push(Workload {
+            name: format!("mass-fogged-{}{suffix}", mass.name()),
+            source: Source::Match(Scene::Mass, View::Fogged),
+            shot: mass,
+            running: false,
+            setup,
+        });
+    }
+    // Open, so every flyer in the frame draws, whoever owns it.
+    all.push(Workload {
+        name: "skyhook-open-near".to_string(),
+        source: Source::Match(Scene::Skyhook, View::Open),
+        shot: Shot::Hold(NEAR_ZOOM),
+        running: false,
+        setup: Setup::None,
+    });
     all
 }
 
@@ -244,14 +350,9 @@ fn script(workload: &Workload, center: [f64; 2]) -> FrameScript {
         Shot::Own => CameraMotion::None {
             frames: HOLD_FRAMES,
         },
-        Shot::Near => CameraMotion::Hold {
+        Shot::Hold(zoom) => CameraMotion::Hold {
             center,
-            zoom: NEAR_ZOOM,
-            frames: HOLD_FRAMES,
-        },
-        Shot::Far => CameraMotion::Hold {
-            center,
-            zoom: FAR_ZOOM,
+            zoom,
             frames: HOLD_FRAMES,
         },
         Shot::Pan => CameraMotion::Pan {
@@ -301,6 +402,29 @@ fn seat_focus(state: &StateView) -> Option<[f64; 2]> {
     let count = points.len() as f64;
     let axis = |index: usize| points.iter().map(|point| point[index]).sum::<f64>() / count;
     Some([axis(0), axis(1)])
+}
+
+/// The flyer whose view at `zoom` holds the most airborne flyers, the
+/// earliest listed among equals.
+fn densest_flyers(state: &StateView, zoom: f64) -> Option<[f64; 2]> {
+    let flyers: Vec<[f64; 2]> = state
+        .units
+        .iter()
+        .filter(|unit| !unit.landed && unit.kind.stats().domain == Domain::Air)
+        .map(|unit| unit.pos)
+        .collect();
+    let half = WINDOW.map(|side| f64::from(side) / zoom / 2.0);
+    let in_view = |center: [f64; 2]| {
+        flyers
+            .iter()
+            .filter(|flyer| (0..2).all(|axis| (flyer[axis] - center[axis]).abs() <= half[axis]))
+            .count()
+    };
+    flyers
+        .iter()
+        .enumerate()
+        .max_by_key(|&(index, &center)| (in_view(center), Reverse(index)))
+        .map(|(_, &center)| center)
 }
 
 /// One workload's results across its trials.
@@ -384,13 +508,16 @@ fn run_source(
         eprintln!("profiling {}", workload.name);
         let mut trials = Vec::new();
         for trial in 0..options.trials {
-            if workload.running {
+            if workload.changes_its_shell() {
                 shell = None;
             }
             let live = match &mut shell {
                 Some(live) => live,
                 None => shell.insert(ProfiledShell::launch(root, executable, source, options)?),
             };
+            for request in workload.setup.requests() {
+                expect_ok(&live.client.call(request)?, "set up the scene")?;
+            }
             let frame_script = script(workload, live.center);
             let probes = probes_for_trial(trial, options);
             trials.push(run_trial(&mut live.client, &frame_script, &probes)?);
@@ -404,7 +531,7 @@ fn run_source(
             final_camera: [camera.center[0], camera.center[1], camera.zoom],
             trials,
         });
-        if workload.running {
+        if workload.changes_its_shell() {
             shell = None;
         }
     }
@@ -470,8 +597,8 @@ impl ProfiledShell {
             Source::Home => {
                 command.arg("--automation");
             }
-            Source::Match(size, view) => {
-                let replay = input_replay(root, size)?;
+            Source::Match(scene, view) => {
+                let replay = input_replay(root, scene)?;
                 let flag = match view {
                     View::Fogged => "--replay",
                     View::Open => "--watch",
@@ -486,21 +613,21 @@ impl ProfiledShell {
         let mut units = 0;
         let mut structures = 0;
         let mut focus = None;
-        if let Source::Match(size, view) = source {
+        if let Source::Match(scene, view) = source {
             if view == View::Open {
-                let advanced = client.advance(size.ticks())?;
+                let advanced = client.advance(scene.ticks())?;
                 ensure!(
-                    advanced.tick == size.ticks(),
+                    advanced.tick == scene.ticks(),
                     "viewer stopped at tick {} on the way to {}",
                     advanced.tick,
-                    size.ticks()
+                    scene.ticks()
                 );
             }
             let status = client.status()?;
             ensure!(
-                status.tick == size.ticks() && status.result.is_none(),
+                status.tick == scene.ticks() && status.result.is_none(),
                 "expected an undecided match at tick {}, found tick {} with result {:?}",
-                size.ticks(),
+                scene.ticks(),
                 status.tick,
                 status.result
             );
@@ -512,7 +639,7 @@ impl ProfiledShell {
             })?;
             units = state.units.len();
             structures = state.buildings.len();
-            focus = seat_focus(&state);
+            focus = scene.focus(&state);
         }
         let opening = client.camera()?;
         Ok(Self {
@@ -528,27 +655,25 @@ impl ProfiledShell {
 
 /// The replay behind a match workload, generated the first time it is needed
 /// and kept under the gitignored `replays/` so comparisons share one input.
-fn input_replay(root: &Path, size: Size) -> Result<PathBuf> {
-    let path = root
-        .join("replays/graphics")
-        .join(format!("{}-{}.json", size.name(), size.ticks()));
+fn input_replay(root: &Path, scene: Scene) -> Result<PathBuf> {
+    let path =
+        root.join("replays/graphics")
+            .join(format!("{}-{}.json", scene.name(), scene.ticks()));
     if aftermine_kit::load_replay(&path).is_ok_and(|replay| {
         replay.validate(Some(aftermine_sim::SIM_VERSION)).is_ok()
-            && replay.meta.ticks == Some(size.ticks())
+            && replay.meta.ticks == Some(scene.ticks())
     }) {
         return Ok(path);
     }
     eprintln!("generating {}", path.display());
-    let map = root.join(size.map());
-    let mut scenario = runner::load_scenario(&map.to_string_lossy())?;
-    aftermine_kit::bench::all_bots(&mut scenario);
+    let scenario = scene.scenario(root)?;
     let build = crate::build_identity();
-    let outcome = runner::run_scenario(&scenario, size.ticks(), true, Some(&build))?;
+    let outcome = runner::run_scenario(&scenario, scene.ticks(), true, Some(&build))?;
     ensure!(
         outcome.state.result().is_none(),
-        "{} was decided before tick {}; choose an earlier one",
-        size.map(),
-        size.ticks()
+        "the {} scene was decided before tick {}; choose an earlier one",
+        scene.name(),
+        scene.ticks()
     );
     let replay = outcome.replay.context("the run recorded no replay")?;
     if let Some(parent) = path.parent() {
