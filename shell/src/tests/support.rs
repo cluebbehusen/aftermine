@@ -201,3 +201,8 @@ pub(crate) fn key_down(key: Key) -> RawEvent {
 pub(crate) fn key_up(key: Key) -> RawEvent {
     RawEvent::KeyUp { key }
 }
+
+/// A key pressed and released.
+pub(crate) fn keystroke(key: Key) -> [RawEvent; 2] {
+    [key_down(key), key_up(key)]
+}

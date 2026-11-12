@@ -1,4 +1,5 @@
 use super::*;
+use crate::tests::support::{left_down, left_up, right_down, touch_down, touch_up};
 
 /// A finished lesson's card, laid out headless at 1280x800.
 fn finished_card() -> CardLayout {
@@ -83,38 +84,15 @@ fn the_lesson_card_keeps_its_presses_and_its_buttons_act() {
     assert!(!card.rect.contains(world));
 
     let mut events = vec![
-        RawEvent::TouchDown {
-            id: 1,
-            x: on_card.x,
-            y: on_card.y,
-        },
-        RawEvent::TouchDown {
-            id: 2,
-            x: world.x,
-            y: world.y,
-        },
-        RawEvent::TouchUp {
-            id: 2,
-            x: world.x,
-            y: world.y,
-        },
+        touch_down(1, on_card),
+        touch_down(2, world),
+        touch_up(2, world),
     ];
     let filtered = filter_card_pointer(&mut events, &card, 1.0);
     assert_eq!(filtered, CardPointer::default());
     assert_eq!(
         events,
-        vec![
-            RawEvent::TouchDown {
-                id: 2,
-                x: world.x,
-                y: world.y,
-            },
-            RawEvent::TouchUp {
-                id: 2,
-                x: world.x,
-                y: world.y,
-            },
-        ],
+        vec![touch_down(2, world), touch_up(2, world)],
         "the card eats its finger and leaves the world's alone"
     );
 
@@ -122,26 +100,11 @@ fn the_lesson_card_keeps_its_presses_and_its_buttons_act() {
     // mouse pointer there only meets the card.
     let next = button(CardButton::Next);
     let near = vec2(next.center().x, next.bottom() + 3.0);
-    let mut events = vec![
-        RawEvent::TouchDown {
-            id: 3,
-            x: near.x,
-            y: near.y,
-        },
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: near.x,
-            y: near.y,
-        },
-    ];
+    let mut events = vec![touch_down(3, near), left_down(near)];
     let filtered = filter_card_pointer(&mut events, &card, 1.0);
     assert_eq!(filtered.pressed, Some(CardButton::Next));
     assert!(events.is_empty());
-    let mut events = vec![RawEvent::MouseDown {
-        button: MouseButton::Left,
-        x: near.x,
-        y: near.y,
-    }];
+    let mut events = vec![left_down(near)];
     assert_eq!(
         filter_card_pointer(&mut events, &card, 1.0),
         CardPointer::default()
@@ -150,23 +113,7 @@ fn the_lesson_card_keeps_its_presses_and_its_buttons_act() {
 
     let fold = button(CardButton::Fold).center();
     let lessons = button(CardButton::Lessons).center();
-    let mut events = vec![
-        RawEvent::MouseDown {
-            button: MouseButton::Right,
-            x: lessons.x,
-            y: lessons.y,
-        },
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: fold.x,
-            y: fold.y,
-        },
-        RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: on_card.x,
-            y: on_card.y,
-        },
-    ];
+    let mut events = vec![right_down(lessons), left_down(fold), left_up(on_card)];
     let filtered = filter_card_pointer(&mut events, &card, 1.0);
     assert_eq!(
         filtered,
@@ -198,31 +145,14 @@ fn the_tip_card_closes_by_mouse_and_by_finger_and_keeps_its_other_presses() {
         crate::input::HudHands::Pointer,
     );
     let close = card.buttons[0].0;
-    let mouse = |at: Vec2| {
-        vec![
-            RawEvent::MouseDown {
-                button: MouseButton::Left,
-                x: at.x,
-                y: at.y,
-            },
-            RawEvent::MouseUp {
-                button: MouseButton::Left,
-                x: at.x,
-                y: at.y,
-            },
-        ]
-    };
+    let mouse = |at: Vec2| vec![left_down(at), left_up(at)];
     let mut events = mouse(close.center());
     let filtered = filter_card_pointer(&mut events, &card, 1.0);
     assert_eq!(filtered.pressed, Some(CardButton::Dismiss));
     assert!(events.is_empty());
 
     let near = vec2(close.center().x, close.bottom() + 3.0);
-    let mut events = vec![RawEvent::TouchDown {
-        id: 1,
-        x: near.x,
-        y: near.y,
-    }];
+    let mut events = vec![touch_down(1, near)];
     let filtered = filter_card_pointer(&mut events, &card, 1.0);
     assert_eq!(
         filtered.pressed,

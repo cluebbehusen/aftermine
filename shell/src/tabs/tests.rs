@@ -1,21 +1,5 @@
 use super::*;
-use aftermine_protocol::MouseButton;
-
-fn click(at: Vec2) -> [RawEvent; 2] {
-    let button = MouseButton::Left;
-    [
-        RawEvent::MouseDown {
-            button,
-            x: at.x,
-            y: at.y,
-        },
-        RawEvent::MouseUp {
-            button,
-            x: at.x,
-            y: at.y,
-        },
-    ]
-}
+use crate::tests::support::{click, left_down, left_up, tap};
 
 #[test]
 fn segments_sit_side_by_side_inside_the_window_at_every_scale() {
@@ -44,18 +28,7 @@ fn a_press_on_a_tab_is_claimed_and_anything_else_passes_through() {
     assert_eq!(picked, Some(2));
     assert!(rest.is_empty(), "the list beneath never sees the press");
 
-    let tap = [
-        RawEvent::TouchDown {
-            id: 3,
-            x: rects[1].center().x,
-            y: rects[1].center().y,
-        },
-        RawEvent::TouchUp {
-            id: 3,
-            x: rects[1].center().x,
-            y: rects[1].center().y,
-        },
-    ];
+    let tap = tap(3, rects[1].center());
     assert_eq!(strip.route(&tap, 4).0, Some(1));
 
     let below = click(Vec2::new(640.0, 700.0));
@@ -70,20 +43,7 @@ fn a_press_released_on_another_tab_picks_nothing() {
     crate::render::set_user_scale(1.0);
     let mut strip = TabStrip::default();
     let rects = rects(4);
-    let button = MouseButton::Left;
-    let (from, to) = (rects[0].center(), rects[3].center());
-    let events = [
-        RawEvent::MouseDown {
-            button,
-            x: from.x,
-            y: from.y,
-        },
-        RawEvent::MouseUp {
-            button,
-            x: to.x,
-            y: to.y,
-        },
-    ];
+    let events = [left_down(rects[0].center()), left_up(rects[3].center())];
     assert_eq!(strip.route(&events, 4).0, None);
 }
 

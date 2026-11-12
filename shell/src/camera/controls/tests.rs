@@ -1,4 +1,5 @@
 use super::*;
+use crate::tests::support::{left_down, left_up, mouse_move};
 use aftermine_protocol::Key;
 
 fn camera() -> Camera {
@@ -60,11 +61,7 @@ fn a_viewer_steers_from_the_minimap_until_the_press_lets_go() {
         under: Some(world),
         clamped: Some(world),
     };
-    let press = RawEvent::MouseDown {
-        button: MouseButton::Left,
-        x: 1200.0,
-        y: 700.0,
-    };
+    let press = left_down(vec2(1200.0, 700.0));
     hands.pointer(
         &press,
         on_map(vec2(10.0, 10.0)),
@@ -76,10 +73,7 @@ fn a_viewer_steers_from_the_minimap_until_the_press_lets_go() {
     let pressed = camera.center;
     assert_eq!(mouse, vec2(1200.0, 700.0));
 
-    let drag = RawEvent::MouseMove {
-        x: 1210.0,
-        y: 710.0,
-    };
+    let drag = mouse_move(vec2(1210.0, 710.0));
     hands.pointer(
         &drag,
         on_map(vec2(30.0, 20.0)),
@@ -91,11 +85,7 @@ fn a_viewer_steers_from_the_minimap_until_the_press_lets_go() {
     assert_ne!(camera.center, pressed, "a held press keeps steering");
     let steered = camera.center;
 
-    let release = RawEvent::MouseUp {
-        button: MouseButton::Left,
-        x: 1210.0,
-        y: 710.0,
-    };
+    let release = left_up(vec2(1210.0, 710.0));
     hands.pointer(
         &release,
         MinimapPoint::default(),

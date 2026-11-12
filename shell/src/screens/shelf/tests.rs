@@ -1,5 +1,6 @@
 use super::*;
 use crate::saves::{RecordKind, Unavailable};
+use crate::tests::support::{click, left_down, left_up, tap, touch_down, touch_move, touch_up};
 use aftermine_protocol::PadButton;
 use macroquad::prelude::vec2;
 
@@ -47,37 +48,6 @@ fn drive_events(shelf: &mut Shelf, events: &[RawEvent]) -> Out {
 
 fn drive(shelf: &mut Shelf, key: Key) -> Out {
     drive_events(shelf, &[RawEvent::KeyDown { key }, RawEvent::KeyUp { key }])
-}
-
-fn tap(at: Vec2) -> Vec<RawEvent> {
-    vec![
-        RawEvent::TouchDown {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-    ]
-}
-
-fn click(at: Vec2) -> Vec<RawEvent> {
-    use aftermine_protocol::MouseButton;
-    vec![
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: at.x,
-            y: at.y,
-        },
-        RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: at.x,
-            y: at.y,
-        },
-    ]
 }
 
 /// Moves the cursor to the titled row on the tab on show and activates
@@ -296,9 +266,9 @@ fn tabs_step_by_key_both_ways_and_answer_clicks_and_taps() {
     let strip = crate::tabs::rects(Tab::ALL.len());
     drive_events(&mut shelf, &click(strip[1].center()));
     assert_eq!(shelf.tab(), Tab::Replays);
-    drive_events(&mut shelf, &tap(strip[0].center()));
+    drive_events(&mut shelf, &tap(1, strip[0].center()));
     assert_eq!(shelf.tab(), Tab::Saves);
-    drive_events(&mut shelf, &tap(strip[0].center()));
+    drive_events(&mut shelf, &tap(1, strip[0].center()));
     assert_eq!(shelf.tab(), Tab::Saves, "the active tab stays put");
 }
 
@@ -488,7 +458,7 @@ fn a_rows_delete_button_asks_by_click_or_tap_and_the_rest_of_the_row_opens_it() 
     crate::render::set_viewport(1180.0, 820.0);
     crate::render::set_user_scale(1.0);
     for touch in [false, true] {
-        let press = |at: Vec2| if touch { tap(at) } else { click(at) };
+        let press = |at: Vec2| if touch { tap(1, at) } else { click(at) };
         let mut shelf = Shelf::from_entries(mixed());
         let button = shelf.menu.action_rect(1).expect("every record row has one");
         let row = shelf.menu.item_rect(1).unwrap();
@@ -518,7 +488,6 @@ fn a_rows_delete_button_asks_by_click_or_tap_and_the_rest_of_the_row_opens_it() 
 
 #[test]
 fn a_press_that_crosses_a_rows_delete_edge_does_nothing() {
-    use aftermine_protocol::MouseButton;
     crate::render::set_viewport(1180.0, 820.0);
     crate::render::set_user_scale(1.0);
     let mut shelf = Shelf::from_entries(mixed());
@@ -526,30 +495,8 @@ fn a_press_that_crosses_a_rows_delete_edge_does_nothing() {
     let row = shelf.menu.item_rect(1).unwrap();
     let title = vec2(row.x + 40.0, row.center().y);
     for (from, to) in [(button, title), (title, button)] {
-        let mouse = [
-            RawEvent::MouseDown {
-                button: MouseButton::Left,
-                x: from.x,
-                y: from.y,
-            },
-            RawEvent::MouseUp {
-                button: MouseButton::Left,
-                x: to.x,
-                y: to.y,
-            },
-        ];
-        let finger = [
-            RawEvent::TouchDown {
-                id: 1,
-                x: from.x,
-                y: from.y,
-            },
-            RawEvent::TouchUp {
-                id: 1,
-                x: to.x,
-                y: to.y,
-            },
-        ];
+        let mouse = [left_down(from), left_up(to)];
+        let finger = [touch_down(1, from), touch_up(1, to)];
         for events in [&mouse, &finger] {
             assert_eq!(drive_events(&mut shelf, events), Out::Stay);
             assert!(shelf.asking.is_none(), "{from} to {to} asked");
@@ -571,23 +518,11 @@ fn a_finger_dragging_from_a_delete_button_scrolls_instead() {
     });
     let mut shelf = Shelf::from_entries(records.collect());
     let start = shelf.menu.action_rect(1).unwrap().center();
-    let mut events = vec![RawEvent::TouchDown {
-        id: 1,
-        x: start.x,
-        y: start.y,
-    }];
+    let mut events = vec![touch_down(1, start)];
     for step in 1..=8 {
-        events.push(RawEvent::TouchMove {
-            id: 1,
-            x: start.x,
-            y: start.y - 12.0 * step as f32,
-        });
+        events.push(touch_move(1, vec2(start.x, start.y - 12.0 * step as f32)));
     }
-    events.push(RawEvent::TouchUp {
-        id: 1,
-        x: start.x,
-        y: start.y - 96.0,
-    });
+    events.push(touch_up(1, vec2(start.x, start.y - 96.0)));
     assert_eq!(drive_events(&mut shelf, &events), Out::Stay);
     assert!(shelf.asking.is_none(), "a drag never asks");
     assert!(shelf.menu.visible_range()[0] > 0, "the drag scrolled");

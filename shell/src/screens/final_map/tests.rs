@@ -1,6 +1,8 @@
 use super::*;
+use crate::tests::support::{
+    click, left_down, left_up, mouse_move, tap, touch_down, touch_move, touch_up,
+};
 use aftermine_protocol::Key;
-use aftermine_protocol::MouseButton;
 use aftermine_sim::Scenario;
 
 #[test]
@@ -41,18 +43,7 @@ fn the_back_button_returns_to_the_report_by_click_and_by_tap() {
     let back = crate::button::corner_slot(0, render::ui_scale()).center();
     let prefs = crate::config::CameraPrefs::default();
     let mut mouse = Vec2::ZERO;
-    let tap = [
-        RawEvent::TouchDown {
-            id: 1,
-            x: back.x,
-            y: back.y,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: back.x,
-            y: back.y,
-        },
-    ];
+    let tap = tap(1, back);
     let mut screen = FinalMapScreen::open();
     assert!(screen.update(
         &crate::action::BindingMap::classic(),
@@ -62,18 +53,7 @@ fn the_back_button_returns_to_the_report_by_click_and_by_tap() {
         &mut mouse,
         &mut game
     ));
-    let click = [
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: back.x,
-            y: back.y,
-        },
-        RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: back.x,
-            y: back.y,
-        },
-    ];
+    let click = click(back);
     let mut screen = FinalMapScreen::open();
     assert!(screen.update(
         &crate::action::BindingMap::classic(),
@@ -93,21 +73,9 @@ fn touch_camera_gestures_never_tick_the_sim() {
     let mut mouse = Vec2::ZERO;
     let before = game.presentation.camera.center;
     let drag = [
-        RawEvent::TouchDown {
-            id: 1,
-            x: 640.0,
-            y: 300.0,
-        },
-        RawEvent::TouchMove {
-            id: 1,
-            x: 540.0,
-            y: 300.0,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: 540.0,
-            y: 300.0,
-        },
+        touch_down(1, vec2(640.0, 300.0)),
+        touch_move(1, vec2(540.0, 300.0)),
+        touch_up(1, vec2(540.0, 300.0)),
     ];
     assert!(!screen.update(
         &crate::action::BindingMap::classic(),
@@ -143,11 +111,7 @@ fn minimap_drag_and_key_release_have_explicit_camera_lifetimes() {
 
     screen.update(
         &crate::action::BindingMap::classic(),
-        &[RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: press.x,
-            y: press.y,
-        }],
+        &[left_down(press)],
         0.0,
         crate::config::CameraPrefs::default(),
         &mut mouse,
@@ -167,10 +131,7 @@ fn minimap_drag_and_key_release_have_explicit_camera_lifetimes() {
     game.presentation.camera.pan(Vec2::ZERO);
     screen.update(
         &crate::action::BindingMap::classic(),
-        &[RawEvent::MouseMove {
-            x: dragged.x,
-            y: dragged.y,
-        }],
+        &[mouse_move(dragged)],
         0.0,
         crate::config::CameraPrefs::default(),
         &mut mouse,
@@ -184,17 +145,7 @@ fn minimap_drag_and_key_release_have_explicit_camera_lifetimes() {
     );
     screen.update(
         &crate::action::BindingMap::classic(),
-        &[
-            RawEvent::MouseUp {
-                button: MouseButton::Left,
-                x: dragged.x,
-                y: dragged.y,
-            },
-            RawEvent::MouseMove {
-                x: press.x,
-                y: press.y,
-            },
-        ],
+        &[left_up(dragged), mouse_move(press)],
         0.0,
         crate::config::CameraPrefs::default(),
         &mut mouse,

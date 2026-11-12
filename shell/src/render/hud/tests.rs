@@ -1,6 +1,7 @@
 use super::*;
 use crate::action::BindingMap;
 use crate::game::Game;
+use crate::tests::support::{click, left_down, mouse_move};
 
 /// Every glyph half as wide as the size: deterministic and headless.
 fn fixed(_: Face, text: &str, size: f32) -> f32 {
@@ -526,15 +527,7 @@ fn a_planned_row_counts_itself_in_the_ribbon() {
         ))
     };
     let (a, b, c) = (at(3), at(4), at(5));
-    let events = [
-        aftermine_protocol::RawEvent::MouseDown {
-            button: aftermine_protocol::MouseButton::Left,
-            x: a.x,
-            y: a.y,
-        },
-        aftermine_protocol::RawEvent::MouseMove { x: b.x, y: b.y },
-        aftermine_protocol::RawEvent::MouseMove { x: c.x, y: c.y },
-    ];
+    let events = [left_down(a), mouse_move(b), mouse_move(c)];
     crate::input::apply_events(
         &mut game,
         &mut input,
@@ -937,7 +930,6 @@ fn pad_mode_leaves_out_what_buttons_do_and_moves_nothing_that_stays() {
 
 #[test]
 fn the_click_that_ends_pad_mode_lands_on_the_hud_pad_mode_drew() {
-    use aftermine_protocol::{MouseButton, RawEvent};
     let (mut game, foundry) = foundry_selected();
     let mouse = layout(
         &game.view(),
@@ -969,18 +961,7 @@ fn the_click_that_ends_pad_mode_lands_on_the_hud_pad_mode_drew() {
             &fixed,
         );
     };
-    let click = [
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: train.x,
-            y: train.y,
-        },
-        RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: train.x,
-            y: train.y,
-        },
-    ];
+    let click = click(train);
     let mut input = InputState::new();
     input.hud_pad = true;
     relayout(&game, &input);

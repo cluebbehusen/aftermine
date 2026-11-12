@@ -1,4 +1,5 @@
 use super::*;
+use crate::tests::support::{click, keystroke, left_down, left_up, tap, touch_down, touch_up};
 use macroquad::prelude::vec2;
 
 /// Settings opened on `tab`.
@@ -35,51 +36,16 @@ fn drive(s: &mut SettingsScreen, config: &mut Config, events: &[RawEvent], ctrl0
     s.update(events, &mut mouse, &mut sounds, config, ctrl0, false)
 }
 
-fn press(key: Key) -> Vec<RawEvent> {
-    vec![RawEvent::KeyDown { key }, RawEvent::KeyUp { key }]
-}
-
-fn tap(at: Vec2) -> Vec<RawEvent> {
-    vec![
-        RawEvent::TouchDown {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-    ]
-}
-
-fn click(at: Vec2) -> Vec<RawEvent> {
-    use aftermine_protocol::MouseButton;
-    vec![
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: at.x,
-            y: at.y,
-        },
-        RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: at.x,
-            y: at.y,
-        },
-    ]
-}
-
 /// Activates the focused profile row, then confirms the dialog it
 /// raises.
 fn apply_focused_profile(s: &mut SettingsScreen, config: &mut Config) -> Update {
-    drive(s, config, &press(Key::Enter), false);
+    drive(s, config, &keystroke(Key::Enter), false);
     assert!(
         matches!(s.face, Face::Confirming(_)),
         "a profile row asks first"
     );
-    drive(s, config, &press(Key::Down), false);
-    drive(s, config, &press(Key::Enter), false)
+    drive(s, config, &keystroke(Key::Down), false);
+    drive(s, config, &keystroke(Key::Enter), false)
 }
 
 #[test]
@@ -192,16 +158,16 @@ fn tabs_step_by_key_wrap_at_the_ends_and_answer_clicks_and_taps() {
     crate::render::set_user_scale(1.0);
     let mut config = Config::default();
     let mut screen = SettingsScreen::open(&config);
-    drive(&mut screen, &mut config, &press(Key::E), false);
+    drive(&mut screen, &mut config, &keystroke(Key::E), false);
     assert_eq!(screen.face, Face::Tab(Tab::Audio));
-    drive(&mut screen, &mut config, &press(Key::Q), false);
-    drive(&mut screen, &mut config, &press(Key::Q), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Q), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Q), false);
     assert_eq!(
         screen.face,
         Face::Tab(Tab::Controls),
         "Q wraps off the left"
     );
-    drive(&mut screen, &mut config, &press(Key::E), false);
+    drive(&mut screen, &mut config, &keystroke(Key::E), false);
     assert_eq!(
         screen.face,
         Face::Tab(Tab::General),
@@ -212,7 +178,7 @@ fn tabs_step_by_key_wrap_at_the_ends_and_answer_clicks_and_taps() {
     let up = drive(&mut screen, &mut config, &click(strip[2].center()), false);
     assert_eq!(screen.face, Face::Tab(Tab::Display));
     assert!(!up.dirty, "a tab switch edits nothing");
-    drive(&mut screen, &mut config, &tap(strip[1].center()), false);
+    drive(&mut screen, &mut config, &tap(1, strip[1].center()), false);
     assert_eq!(screen.face, Face::Tab(Tab::Audio));
     assert_eq!(
         screen.menu.selected,
@@ -230,10 +196,10 @@ fn the_binding_editor_switches_tabs_on_q_e_and_the_players_own_tab_chords() {
             .rebind_slot(Action::PrevTab, 0, Chord::bare(Key::Z))
     );
     let mut screen = on(Tab::Controls, &config);
-    drive(&mut screen, &mut config, &press(Key::Z), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Z), false);
     assert_eq!(screen.face, Face::Tab(Tab::Display), "the player's chord");
     screen.show(Tab::Controls, &config);
-    drive(&mut screen, &mut config, &press(Key::E), false);
+    drive(&mut screen, &mut config, &keystroke(Key::E), false);
     assert_eq!(
         screen.face,
         Face::Tab(Tab::General),
@@ -246,9 +212,9 @@ fn a_capture_takes_the_tab_keys_as_its_answer() {
     let mut config = Config::default();
     let mut screen = on(Tab::Controls, &config);
     focus(&mut screen, Item::Binding(Action::Patrol));
-    drive(&mut screen, &mut config, &press(Key::Enter), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Enter), false);
     assert_eq!(screen.face, Face::Capturing(Action::Patrol));
-    drive(&mut screen, &mut config, &press(Key::E), false);
+    drive(&mut screen, &mut config, &keystroke(Key::E), false);
     assert_eq!(
         screen.face,
         Face::Tab(Tab::Controls),
@@ -262,10 +228,10 @@ fn left_and_right_stop_at_the_ends_while_enter_wraps() {
     let mut screen = on(Tab::Audio, &config);
     focus(&mut screen, Item::Setting(Row::MasterVolume));
     assert_eq!(config.volumes.master, 1.0);
-    let up = drive(&mut screen, &mut config, &press(Key::Right), false);
+    let up = drive(&mut screen, &mut config, &keystroke(Key::Right), false);
     assert!(!up.dirty, "already at the top");
     assert_eq!(config.volumes.master, 1.0);
-    let up = drive(&mut screen, &mut config, &press(Key::Left), false);
+    let up = drive(&mut screen, &mut config, &keystroke(Key::Left), false);
     assert!(up.dirty);
     assert_eq!(config.volumes.master, 0.75);
     assert_eq!(
@@ -273,24 +239,24 @@ fn left_and_right_stop_at_the_ends_while_enter_wraps() {
         "Master volume: 75%"
     );
     for _ in 0..5 {
-        drive(&mut screen, &mut config, &press(Key::Left), false);
+        drive(&mut screen, &mut config, &keystroke(Key::Left), false);
     }
     assert_eq!(config.volumes.master, 0.0, "Left stops at silence");
-    drive(&mut screen, &mut config, &press(Key::Enter), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Enter), false);
     assert_eq!(config.volumes.master, 0.25, "Enter steps up");
 
     screen.show(Tab::Display, &config);
     focus(&mut screen, Item::Setting(Row::MarkerTiming));
-    drive(&mut screen, &mut config, &press(Key::Left), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Left), false);
     assert_eq!(config.markers.timing_label(), "Later");
-    drive(&mut screen, &mut config, &press(Key::Left), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Left), false);
     assert_eq!(config.markers.timing_label(), "Later");
     focus(&mut screen, Item::Setting(Row::ReducedMotion));
-    drive(&mut screen, &mut config, &press(Key::Right), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Right), false);
     assert!(config.reduced_motion, "Right turns a toggle on");
-    drive(&mut screen, &mut config, &press(Key::Right), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Right), false);
     assert!(config.reduced_motion, "and keeps it on");
-    drive(&mut screen, &mut config, &press(Key::Left), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Left), false);
     assert!(!config.reduced_motion);
 }
 
@@ -325,7 +291,7 @@ fn marker_settings_apply_live_and_remain_touch_reachable_in_small_windows() {
     let mut screen = on(Tab::Display, &config);
     focus(&mut screen, Item::Setting(Row::MarkerTiming));
     for (name, midpoint) in [("Earlier", 26.0), ("Later", 14.0), ("Standard", 20.0)] {
-        let update = drive(&mut screen, &mut config, &press(Key::Enter), false);
+        let update = drive(&mut screen, &mut config, &keystroke(Key::Enter), false);
         assert!(update.dirty);
         assert!(label(&screen, Item::Setting(Row::MarkerTiming)).ends_with(name));
         assert_eq!(crate::strategic_markers::marker_alpha(midpoint), 0.5);
@@ -336,7 +302,7 @@ fn marker_settings_apply_live_and_remain_touch_reachable_in_small_windows() {
             .menu
             .item_rect(index(&screen, Item::Setting(Row::MarkerSize)))
             .expect("selected size row visible");
-        let update = drive(&mut screen, &mut config, &tap(rect.center()), false);
+        let update = drive(&mut screen, &mut config, &tap(1, rect.center()), false);
         assert!(update.dirty);
         assert_eq!(config.markers.scale, size);
         assert_eq!(crate::strategic_markers::prefs(), config.markers);
@@ -372,13 +338,13 @@ fn escape_leaves_from_any_tab_but_first_cancels_a_capture() {
     let mut config = Config::default();
     for tab in Tab::ALL {
         let mut screen = on(tab, &config);
-        let update = drive(&mut screen, &mut config, &press(Key::Escape), false);
+        let update = drive(&mut screen, &mut config, &keystroke(Key::Escape), false);
         assert_eq!(update.out, Out::Leave, "{tab:?}");
     }
     let mut screen = on(Tab::Controls, &config);
     focus(&mut screen, Item::Binding(Action::Patrol));
-    drive(&mut screen, &mut config, &press(Key::Enter), false);
-    let update = drive(&mut screen, &mut config, &press(Key::Escape), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Enter), false);
+    let update = drive(&mut screen, &mut config, &keystroke(Key::Escape), false);
     assert_eq!(update.out, Out::Stay);
     assert_eq!(screen.face, Face::Tab(Tab::Controls));
     assert_eq!(
@@ -393,7 +359,7 @@ fn a_controller_press_cancels_a_capture_and_binds_nothing() {
     let mut config = Config::default();
     let mut screen = on(Tab::Controls, &config);
     focus(&mut screen, Item::Binding(Action::Patrol));
-    drive(&mut screen, &mut config, &press(Key::Enter), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Enter), false);
     assert!(screen.capturing());
     let update = drive(
         &mut screen,
@@ -415,9 +381,9 @@ fn cycling_a_row_edits_the_config_and_reports_dirty() {
     let mut config = Config::default();
     let mut s = on(Tab::Display, &config);
     for _ in 0..index(&s, Item::Setting(Row::ReducedMotion)) {
-        drive(&mut s, &mut config, &press(Key::Down), false);
+        drive(&mut s, &mut config, &keystroke(Key::Down), false);
     }
-    let up = drive(&mut s, &mut config, &press(Key::Enter), false);
+    let up = drive(&mut s, &mut config, &keystroke(Key::Enter), false);
     assert!(config.reduced_motion);
     assert!(up.dirty, "the caller is told to persist");
     assert_eq!(
@@ -433,9 +399,9 @@ fn music_volume_is_a_live_persisted_settings_row() {
     let mut screen = on(Tab::Audio, &config);
     let music = index(&screen, Item::Setting(Row::MusicVolume));
     for _ in 0..music {
-        drive(&mut screen, &mut config, &press(Key::Down), false);
+        drive(&mut screen, &mut config, &keystroke(Key::Down), false);
     }
-    let update = drive(&mut screen, &mut config, &press(Key::Enter), false);
+    let update = drive(&mut screen, &mut config, &keystroke(Key::Enter), false);
     assert!(update.dirty);
     assert_eq!(config.volumes.music, 0.0);
     assert_eq!(screen.menu.selected, music);
@@ -454,7 +420,7 @@ fn music_volume_is_touch_reachable() {
     std::thread::spawn(|| crate::render::set_user_scale(0.75))
         .join()
         .unwrap();
-    let update = drive(&mut screen, &mut config, &tap(row.center()), false);
+    let update = drive(&mut screen, &mut config, &tap(1, row.center()), false);
     assert!(update.dirty);
     assert_eq!(config.volumes.music, 0.0);
     assert_eq!(screen.menu.selected, music);
@@ -468,7 +434,7 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     let name = Item::Setting(Row::PlayerName);
     assert_eq!(label(&s, name), "Name: Anvil", "the default stands in");
     focus(&mut s, name);
-    let up = drive(&mut s, &mut config, &press(Key::Enter), false);
+    let up = drive(&mut s, &mut config, &keystroke(Key::Enter), false);
     assert!(!up.dirty);
     assert_eq!(s.mode_name(), "player_name");
     assert!(!s.edits_bindings(), "the form edits text, not bindings");
@@ -479,22 +445,22 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     assert_eq!(s.menu.view().items, vec!["Anvil_"]);
 
     // Saving the default unchanged leaves it a default, which never syncs.
-    let kept = drive(&mut s, &mut config, &press(Key::Enter), false);
+    let kept = drive(&mut s, &mut config, &keystroke(Key::Enter), false);
     assert!(!kept.dirty);
     assert_eq!(config.player_name, None);
     assert_eq!(s.mode_name(), "settings");
 
-    drive(&mut s, &mut config, &press(Key::Enter), false);
+    drive(&mut s, &mut config, &keystroke(Key::Enter), false);
     for _ in "Anvil".chars() {
-        drive(&mut s, &mut config, &press(Key::Backspace), false);
+        drive(&mut s, &mut config, &keystroke(Key::Backspace), false);
     }
     assert_eq!(s.menu.view().items, vec!["_"]);
-    let refused = drive(&mut s, &mut config, &press(Key::Enter), false);
+    let refused = drive(&mut s, &mut config, &keystroke(Key::Enter), false);
     assert!(!refused.dirty, "a blank name keeps the form up");
     assert_eq!(s.mode_name(), "player_name");
     let typed: Vec<RawEvent> = " Connor ".chars().map(|ch| RawEvent::Text { ch }).collect();
     drive(&mut s, &mut config, &typed, false);
-    let saved = drive(&mut s, &mut config, &press(Key::Enter), false);
+    let saved = drive(&mut s, &mut config, &keystroke(Key::Enter), false);
     assert!(saved.dirty);
     assert_eq!(config.player_name.as_deref(), Some("Connor"));
     assert_eq!(s.mode_name(), "settings");
@@ -503,13 +469,13 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     assert_eq!(s.menu.selected, index(&s, name), "back on the row");
 
     // Escape and the corner BACK both close the form without saving.
-    drive(&mut s, &mut config, &press(Key::Enter), false);
-    drive(&mut s, &mut config, &press(Key::Backspace), false);
-    let up = drive(&mut s, &mut config, &press(Key::Escape), false);
+    drive(&mut s, &mut config, &keystroke(Key::Enter), false);
+    drive(&mut s, &mut config, &keystroke(Key::Backspace), false);
+    let up = drive(&mut s, &mut config, &keystroke(Key::Escape), false);
     assert!(!up.dirty);
     assert_eq!(up.out, Out::Stay, "Escape leaves the form, not Settings");
     assert_eq!(config.player_name.as_deref(), Some("Connor"));
-    drive(&mut s, &mut config, &press(Key::Enter), false);
+    drive(&mut s, &mut config, &keystroke(Key::Enter), false);
     assert_eq!(s.menu.view().items, vec!["Connor_"], "prefilled");
     assert!(
         !s.form()
@@ -550,7 +516,7 @@ fn performance_cycles_with_keyboard_mouse_and_touch_in_small_windows() {
         let mut screen = SettingsScreen::open(&config);
         let row = Item::Setting(Row::PerformanceDisplay);
         for _ in 0..index(&screen, row) {
-            drive(&mut screen, &mut config, &press(Key::Down), false);
+            drive(&mut screen, &mut config, &keystroke(Key::Down), false);
         }
         for mode in [
             PerformanceDisplay::Fps,
@@ -562,9 +528,9 @@ fn performance_cycles_with_keyboard_mouse_and_touch_in_small_windows() {
                 .item_rect(index(&screen, row))
                 .expect("selected row visible");
             let events = match mode {
-                PerformanceDisplay::Fps => press(Key::Enter),
+                PerformanceDisplay::Fps => keystroke(Key::Enter),
                 PerformanceDisplay::Detailed => click(rect.center()),
-                PerformanceDisplay::Off => tap(rect.center()),
+                PerformanceDisplay::Off => tap(1, rect.center()),
             };
             let update = drive(&mut screen, &mut config, &events, false);
             assert!(update.dirty);
@@ -594,9 +560,9 @@ fn match_tips_start_off_and_switch_with_keyboard_mouse_and_touch() {
             .item_rect(index(&screen, row))
             .expect("selected row visible");
         let events = match how {
-            0 => press(Key::Enter),
+            0 => keystroke(Key::Enter),
             1 => click(rect.center()),
-            _ => tap(rect.center()),
+            _ => tap(1, rect.center()),
         };
         assert!(drive(&mut screen, &mut config, &events, false).dirty);
         assert_eq!(config.match_tips, on);
@@ -615,9 +581,9 @@ fn a_held_modifier_from_another_screen_rides_into_the_captured_chord() {
     let mut config = Config::default();
     let mut s = on(Tab::Controls, &config);
     focus(&mut s, Item::Binding(Action::Patrol));
-    drive(&mut s, &mut config, &press(Key::Enter), true);
+    drive(&mut s, &mut config, &keystroke(Key::Enter), true);
     assert!(matches!(s.face, Face::Capturing(_)));
-    let up = drive(&mut s, &mut config, &press(Key::K), true);
+    let up = drive(&mut s, &mut config, &keystroke(Key::K), true);
     assert!(up.dirty);
     assert_eq!(
         config.bindings.chord_for(Action::Patrol),
@@ -638,7 +604,7 @@ fn a_chord_released_within_the_frame_still_reads_its_modifiers() {
     let mut config = Config::default();
     let mut s = on(Tab::Controls, &config);
     focus(&mut s, Item::Binding(Action::Patrol));
-    drive(&mut s, &mut config, &press(Key::Enter), false);
+    drive(&mut s, &mut config, &keystroke(Key::Enter), false);
     let batch = vec![
         RawEvent::KeyDown { key: Key::Ctrl },
         RawEvent::KeyDown { key: Key::K },
@@ -662,18 +628,18 @@ fn a_conflicting_chord_is_refused_and_the_notice_names_the_holder() {
     let before = config.bindings.chord_for(Action::Patrol);
     let mut s = on(Tab::Controls, &config);
     focus(&mut s, Item::Binding(Action::Patrol));
-    drive(&mut s, &mut config, &press(Key::Enter), false);
-    let up = drive(&mut s, &mut config, &press(Key::G), false);
+    drive(&mut s, &mut config, &keystroke(Key::Enter), false);
+    let up = drive(&mut s, &mut config, &keystroke(Key::G), false);
     assert!(!up.dirty);
     let notice = s.notice.as_ref().expect("the refusal reports");
     assert_eq!(notice.text, "G is already bound to Run");
     assert!(notice.danger);
     assert_eq!(config.bindings.chord_for(Action::Patrol), before);
     // Navigation is not an action: the notice waits to be read.
-    drive(&mut s, &mut config, &press(Key::Down), false);
+    drive(&mut s, &mut config, &keystroke(Key::Down), false);
     assert!(s.notice.is_some(), "arrow keys must not eat the notice");
     // The next action clears it.
-    drive(&mut s, &mut config, &press(Key::Enter), false);
+    drive(&mut s, &mut config, &keystroke(Key::Enter), false);
     assert!(s.notice.is_none(), "arming a row is the next action");
 }
 
@@ -682,10 +648,10 @@ fn unbinding_after_a_refusal_retires_the_notice() {
     let mut config = Config::default();
     let mut s = on(Tab::Controls, &config);
     focus(&mut s, Item::Binding(Action::Patrol));
-    drive(&mut s, &mut config, &press(Key::Enter), false);
-    drive(&mut s, &mut config, &press(Key::G), false);
+    drive(&mut s, &mut config, &keystroke(Key::Enter), false);
+    drive(&mut s, &mut config, &keystroke(Key::G), false);
     assert!(s.notice.is_some());
-    let up = drive(&mut s, &mut config, &press(Key::X), false);
+    let up = drive(&mut s, &mut config, &keystroke(Key::X), false);
     assert!(up.dirty);
     assert_eq!(config.bindings.chord_for(Action::Patrol), None);
     assert!(s.notice.is_none(), "the refusal no longer applies");
@@ -715,8 +681,8 @@ fn a_conflict_with_a_non_remappable_holder_is_still_named() {
     let mut config = Config::default();
     let mut s = on(Tab::Controls, &config);
     focus(&mut s, Item::Binding(Action::Patrol));
-    drive(&mut s, &mut config, &press(Key::Enter), false);
-    drive(&mut s, &mut config, &press(Key::Num1), false);
+    drive(&mut s, &mut config, &keystroke(Key::Enter), false);
+    drive(&mut s, &mut config, &keystroke(Key::Num1), false);
     assert_eq!(
         s.notice.as_ref().map(|n| n.text.as_str()),
         Some("1 is already bound to Recall group 1")
@@ -728,10 +694,10 @@ fn switching_tabs_clears_the_notice() {
     let mut config = Config::default();
     let mut s = on(Tab::Controls, &config);
     focus(&mut s, Item::Binding(Action::Patrol));
-    drive(&mut s, &mut config, &press(Key::Enter), false);
-    drive(&mut s, &mut config, &press(Key::G), false);
+    drive(&mut s, &mut config, &keystroke(Key::Enter), false);
+    drive(&mut s, &mut config, &keystroke(Key::G), false);
     assert!(s.notice.is_some());
-    drive(&mut s, &mut config, &press(Key::Q), false);
+    drive(&mut s, &mut config, &keystroke(Key::Q), false);
     assert!(
         s.face == Face::Tab(Tab::Display) && s.notice.is_none(),
         "a tab change retires the notice with its context"
@@ -743,7 +709,7 @@ fn the_left_handed_preset_moves_the_verbs_and_reset_walks_home() {
     let mut config = Config::default();
     let mut s = on(Tab::Controls, &config);
     for _ in 0..index(&s, Item::Setting(Row::LeftHandedPreset)) {
-        drive(&mut s, &mut config, &press(Key::Down), false);
+        drive(&mut s, &mut config, &keystroke(Key::Down), false);
     }
     let up = apply_focused_profile(&mut s, &mut config);
     assert!(up.dirty);
@@ -811,7 +777,7 @@ fn x_unbinds_and_reset_restores_the_classic_map() {
     let mut config = Config::default();
     let mut s = on(Tab::Controls, &config);
     focus(&mut s, Item::Binding(Action::Patrol));
-    let up = drive(&mut s, &mut config, &press(Key::X), false);
+    let up = drive(&mut s, &mut config, &keystroke(Key::X), false);
     assert!(up.dirty);
     assert_eq!(config.bindings.chord_for(Action::Patrol), None);
     focus(&mut s, Item::ResetBindings);
@@ -840,12 +806,12 @@ fn a_whole_profile_asks_first_and_every_way_out_keeps_the_rebinds() {
         let rebound = config.bindings.clone();
         let mut s = on(Tab::Controls, &config);
         for (way, events) in [
-            ("Enter on the preselected Cancel", press(Key::Enter)),
-            ("Escape", press(Key::Escape)),
+            ("Enter on the preselected Cancel", keystroke(Key::Enter)),
+            ("Escape", keystroke(Key::Escape)),
             ("the BACK button", crate::button::tests::press_back(true)),
         ] {
             focus(&mut s, profile.item);
-            let up = drive(&mut s, &mut config, &press(Key::Enter), false);
+            let up = drive(&mut s, &mut config, &keystroke(Key::Enter), false);
             assert_eq!(s.face, Face::Confirming(profile));
             assert_eq!(s.mode_name(), "confirm_bindings");
             assert!(
@@ -890,12 +856,12 @@ fn every_way_out_of_the_profile_dialog_clicks() {
     let mut config = Config::default();
     let mut s = on(Tab::Controls, &config);
     for (way, events) in [
-        ("Enter on the preselected Cancel", press(Key::Enter)),
-        ("Escape", press(Key::Escape)),
+        ("Enter on the preselected Cancel", keystroke(Key::Enter)),
+        ("Escape", keystroke(Key::Escape)),
         ("the BACK button", crate::button::tests::press_back(true)),
     ] {
         focus(&mut s, Profile::LEFT_HANDED.item);
-        drive(&mut s, &mut config, &press(Key::Enter), false);
+        drive(&mut s, &mut config, &keystroke(Key::Enter), false);
         assert_eq!(s.face, Face::Confirming(Profile::LEFT_HANDED));
         let (mut mouse, mut sounds) = (vec2(0.0, 0.0), Vec::new());
         s.update(&events, &mut mouse, &mut sounds, &mut config, false, false);
@@ -927,9 +893,9 @@ fn a_second_tap_on_a_profile_row_never_applies_it() {
                 .item_rect(index(&s, profile.item))
                 .expect("the profile rows open in view")
                 .center();
-            drive(&mut s, &mut config, &tap(row), false);
+            drive(&mut s, &mut config, &tap(1, row), false);
             assert_eq!(s.face, Face::Confirming(profile));
-            let up = drive(&mut s, &mut config, &tap(row), false);
+            let up = drive(&mut s, &mut config, &tap(1, row), false);
             assert!(
                 !up.dirty && config.bindings == rebound,
                 "the dialog's verb never sits under the row that raised it"
@@ -956,8 +922,8 @@ fn escape_outranks_a_confirm_picked_in_the_same_frame() {
         let rebound = config.bindings.clone();
         let mut s = on(Tab::Controls, &config);
         focus(&mut s, Item::ResetBindings);
-        drive(&mut s, &mut config, &press(Key::Enter), false);
-        drive(&mut s, &mut config, &press(Key::Down), false);
+        drive(&mut s, &mut config, &keystroke(Key::Enter), false);
+        drive(&mut s, &mut config, &keystroke(Key::Down), false);
         assert_eq!(s.menu.value(), Some(&Item::Confirm));
         let up = drive(&mut s, &mut config, &events, false);
         assert_eq!(s.face, Face::Tab(Tab::Controls), "{events:?}");
@@ -984,17 +950,9 @@ fn a_tab_held_while_settings_leaves_its_tabs_never_locks_the_strip() {
             .center();
         let finger = |id: u64, at: Vec2, down: bool| {
             if down {
-                RawEvent::TouchDown {
-                    id,
-                    x: at.x,
-                    y: at.y,
-                }
+                touch_down(id, at)
             } else {
-                RawEvent::TouchUp {
-                    id,
-                    x: at.x,
-                    y: at.y,
-                }
+                touch_up(id, at)
             }
         };
         drive(&mut s, &mut config, &[finger(1, held, true)], false);
@@ -1007,9 +965,9 @@ fn a_tab_held_while_settings_leaves_its_tabs_never_locks_the_strip() {
         assert_ne!(s.face, Face::Tab(Tab::Controls), "{item:?} left the tabs");
         // The held finger lifts while the tabs are not listening.
         drive(&mut s, &mut config, &[finger(1, held, false)], false);
-        drive(&mut s, &mut config, &press(Key::Escape), false);
+        drive(&mut s, &mut config, &keystroke(Key::Escape), false);
         assert_eq!(s.face, Face::Tab(Tab::Controls));
-        drive(&mut s, &mut config, &tap(strip[1].center()), false);
+        drive(&mut s, &mut config, &tap(1, strip[1].center()), false);
         assert_eq!(
             s.face,
             Face::Tab(Tab::Audio),
@@ -1058,7 +1016,7 @@ fn x_clears_a_binding_that_the_defaults_never_fill_back_in() {
     let mut config = Config::default();
     let mut screen = on(Tab::Controls, &config);
     focus(&mut screen, Item::Binding(Action::SelectArmy));
-    assert!(drive(&mut screen, &mut config, &press(Key::X), false).dirty);
+    assert!(drive(&mut screen, &mut config, &keystroke(Key::X), false).dirty);
     assert_eq!(config.bindings.chord_for(Action::SelectArmy), None);
     let mut written: Config =
         serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
@@ -1074,9 +1032,9 @@ fn every_default_action_is_editable_and_secondary_edit_does_not_replace_primary(
         index(&screen, Item::Binding(binding.action));
     }
     focus(&mut screen, Item::Binding(Action::PanUp));
-    drive(&mut screen, &mut config, &press(Key::Right), false);
-    drive(&mut screen, &mut config, &press(Key::Enter), false);
-    assert!(drive(&mut screen, &mut config, &press(Key::L), false).dirty);
+    drive(&mut screen, &mut config, &keystroke(Key::Right), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Enter), false);
+    assert!(drive(&mut screen, &mut config, &keystroke(Key::L), false).dirty);
     assert_eq!(
         config.bindings.chord_at(Action::PanUp, 0),
         Some(Chord::bare(Key::W))
@@ -1085,7 +1043,7 @@ fn every_default_action_is_editable_and_secondary_edit_does_not_replace_primary(
         config.bindings.chord_at(Action::PanUp, 1),
         Some(Chord::bare(Key::L))
     );
-    drive(&mut screen, &mut config, &press(Key::X), false);
+    drive(&mut screen, &mut config, &keystroke(Key::X), false);
     assert_eq!(config.bindings.chord_at(Action::PanUp, 1), None);
     assert_eq!(
         config.bindings.chord_at(Action::PanUp, 0),
@@ -1108,8 +1066,8 @@ fn select_all_of_kind_is_listed_with_the_control_groups_and_rebinds() {
     assert_eq!(section, Some("CONTROL GROUPS"));
     assert_eq!(label(&screen, item), "Select all of kind: [I] | unbound");
     focus(&mut screen, item);
-    drive(&mut screen, &mut config, &press(Key::Enter), false);
-    assert!(drive(&mut screen, &mut config, &press(Key::L), false).dirty);
+    drive(&mut screen, &mut config, &keystroke(Key::Enter), false);
+    assert!(drive(&mut screen, &mut config, &keystroke(Key::L), false).dirty);
     assert_eq!(
         config.bindings.chord_at(Action::SelectAllOfKind, 0),
         Some(Chord::bare(Key::L))
@@ -1125,46 +1083,27 @@ fn left_and_right_on_the_controls_tab_step_a_setting_or_the_chord_column() {
     drive(
         &mut screen,
         &mut config,
-        &press(if edge_pan { Key::Left } else { Key::Right }),
+        &keystroke(if edge_pan { Key::Left } else { Key::Right }),
         false,
     );
     assert_eq!(config.camera.edge_pan, !edge_pan, "a setting row steps");
     assert_eq!(screen.binding_slot, 0, "and leaves the column alone");
     focus(&mut screen, Item::Binding(Action::PanUp));
-    drive(&mut screen, &mut config, &press(Key::Right), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Right), false);
     assert_eq!(screen.binding_slot, 1, "a binding row picks the column");
 }
 
 #[test]
 fn clicking_the_secondary_column_selects_it_even_when_release_is_a_later_frame() {
-    use aftermine_protocol::MouseButton;
     let mut config = Config::default();
     let mut screen = on(Tab::Controls, &config);
     focus(&mut screen, Item::Binding(Action::PanUp));
     let (x, y) = pan_up_columns(&screen).secondary.center().into();
-    drive(
-        &mut screen,
-        &mut config,
-        &[RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x,
-            y,
-        }],
-        false,
-    );
+    drive(&mut screen, &mut config, &[left_down(vec2(x, y))], false);
     assert_eq!(screen.face, Face::Tab(Tab::Controls));
-    drive(
-        &mut screen,
-        &mut config,
-        &[RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x,
-            y,
-        }],
-        false,
-    );
+    drive(&mut screen, &mut config, &[left_up(vec2(x, y))], false);
     assert_eq!(screen.binding_slot, 1);
-    assert!(drive(&mut screen, &mut config, &press(Key::L), false).dirty);
+    assert!(drive(&mut screen, &mut config, &keystroke(Key::L), false).dirty);
     assert_eq!(
         config.bindings.chord_at(Action::PanUp, 0),
         Some(Chord::bare(Key::W))
@@ -1181,19 +1120,19 @@ fn chord_columns_wrap_and_tab_steps_right() {
     let mut screen = on(Tab::Controls, &config);
     focus(&mut screen, Item::Binding(Action::PanUp));
     assert_eq!(screen.binding_slot, 0);
-    drive(&mut screen, &mut config, &press(Key::Left), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Left), false);
     assert_eq!(
         screen.binding_slot, 1,
         "left from primary wraps to secondary"
     );
-    drive(&mut screen, &mut config, &press(Key::Right), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Right), false);
     assert_eq!(
         screen.binding_slot, 0,
         "right from secondary wraps to primary"
     );
-    drive(&mut screen, &mut config, &press(Key::Tab), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Tab), false);
     assert_eq!(screen.binding_slot, 1);
-    drive(&mut screen, &mut config, &press(Key::Tab), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Tab), false);
     assert_eq!(screen.binding_slot, 0);
 }
 
@@ -1349,18 +1288,18 @@ fn the_controller_section_sits_before_the_key_lists_and_steps_its_own_settings()
         label(&screen, Item::Setting(Row::StickSpeed)),
         "Stick speed: 100%"
     );
-    drive(&mut screen, &mut config, &press(Key::Right), false);
-    drive(&mut screen, &mut config, &press(Key::Right), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Right), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Right), false);
     assert_eq!(config.pad.stick_speed, 2.0);
-    assert!(!drive(&mut screen, &mut config, &press(Key::Right), false).dirty);
+    assert!(!drive(&mut screen, &mut config, &keystroke(Key::Right), false).dirty);
     for _ in 0..5 {
-        drive(&mut screen, &mut config, &press(Key::Left), false);
+        drive(&mut screen, &mut config, &keystroke(Key::Left), false);
     }
     assert_eq!(config.pad.stick_speed, 0.5, "Left stops at the slowest");
     assert_eq!(config.camera.pan_speed, 1.0, "the keys keep their speed");
 
     focus(&mut screen, Item::Setting(Row::InvertStickZoom));
-    assert!(drive(&mut screen, &mut config, &press(Key::Enter), false).dirty);
+    assert!(drive(&mut screen, &mut config, &keystroke(Key::Enter), false).dirty);
     assert!(config.pad.zoom_inverted);
     assert!(
         !config.camera.zoom_inverted,
@@ -1377,7 +1316,7 @@ fn the_controller_section_sits_before_the_key_lists_and_steps_its_own_settings()
         Key::Right,
         Key::Right,
     ] {
-        drive(&mut screen, &mut config, &press(key), false);
+        drive(&mut screen, &mut config, &keystroke(key), false);
         seen.push(label(&screen, Item::Setting(Row::ReticleSnap)));
     }
     assert_eq!(
@@ -1387,6 +1326,6 @@ fn the_controller_section_sits_before_the_key_lists_and_steps_its_own_settings()
         ]
         .map(|value| format!("Reticle snap: {value}"))
     );
-    drive(&mut screen, &mut config, &press(Key::Enter), false);
+    drive(&mut screen, &mut config, &keystroke(Key::Enter), false);
     assert_eq!(config.pad.snap, ReticleSnap::Off, "Enter wraps");
 }

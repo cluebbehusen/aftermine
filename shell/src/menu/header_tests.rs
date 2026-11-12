@@ -1,4 +1,5 @@
 use super::*;
+use crate::tests::support::{click, left_down, left_up, mouse_move};
 use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::vec2;
 
@@ -89,54 +90,17 @@ fn mouse_activation_requires_a_release_on_the_armed_row() {
     let second = menu.item_rect(2).expect("second item").center();
     let mut mouse = vec2(0.0, 0.0);
 
-    assert_eq!(
-        menu.handle(
-            &[RawEvent::MouseMove {
-                x: second.x,
-                y: second.y,
-            }],
-            &mut mouse,
-        ),
-        None
-    );
+    assert_eq!(menu.handle(&[mouse_move(second)], &mut mouse), None);
     assert_eq!(menu.view().hover, Some(2));
     assert_eq!(menu.selected, 1, "hover is not keyboard selection");
 
     assert_eq!(
-        menu.handle(
-            &[
-                RawEvent::MouseDown {
-                    button: aftermine_protocol::MouseButton::Left,
-                    x: first.x,
-                    y: first.y,
-                },
-                RawEvent::MouseUp {
-                    button: aftermine_protocol::MouseButton::Left,
-                    x: second.x,
-                    y: second.y,
-                },
-            ],
-            &mut mouse,
-        ),
+        menu.handle(&[left_down(first), left_up(second)], &mut mouse),
         None,
         "dragging to another row cancels the press"
     );
     assert_eq!(
-        menu.handle(
-            &[
-                RawEvent::MouseDown {
-                    button: aftermine_protocol::MouseButton::Left,
-                    x: second.x,
-                    y: second.y,
-                },
-                RawEvent::MouseUp {
-                    button: aftermine_protocol::MouseButton::Left,
-                    x: second.x,
-                    y: second.y,
-                },
-            ],
-            &mut mouse,
-        ),
+        menu.handle(&click(second), &mut mouse),
         Some(Activation {
             value: 2,
             column: None

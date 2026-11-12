@@ -1,5 +1,6 @@
 use super::*;
 use crate::netplay::{ClientLobby, Returning};
+use crate::tests::support::tap;
 use macroquad::prelude::vec2;
 
 impl LobbyScreen {
@@ -174,7 +175,7 @@ fn back_leaves_the_form_and_steps_out_of_a_join_onto_the_form() {
     // A join that hangs on connecting steps back to the form, filled in,
     // by Back or Escape.
     let leaves: [Vec<RawEvent>; 2] = [
-        crate::button::tests::press_back(false),
+        crate::button::tests::press_back(false).to_vec(),
         vec![RawEvent::KeyDown { key: Key::Escape }],
     ];
     for events in leaves {
@@ -252,21 +253,6 @@ fn heard(screen: &mut LobbyScreen, rows: usize) {
     }
 }
 
-fn tap(at: Vec2) -> [RawEvent; 2] {
-    [
-        RawEvent::TouchDown {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-    ]
-}
-
 #[test]
 fn a_lobby_heard_on_the_network_lists_and_a_tap_joins_it() {
     crate::render::set_viewport(1280.0, 800.0);
@@ -281,7 +267,10 @@ fn a_lobby_heard_on_the_network_lists_and_a_tap_joins_it() {
         panic!("the form is up");
     };
     let row = match_rows(form, 1)[0].center();
-    assert_eq!(feed(&mut screen, &tap(row)), join("Alex", "127.0.0.1:4321"));
+    assert_eq!(
+        feed(&mut screen, &tap(1, row)),
+        join("Alex", "127.0.0.1:4321")
+    );
 }
 
 #[test]
@@ -312,7 +301,7 @@ fn a_tap_joins_the_lobby_it_pressed_even_if_the_list_reorders() {
         panic!("the form is up");
     };
     let row = match_rows(form, 1)[0].center();
-    let [down, up] = tap(row);
+    let [down, up] = tap(1, row);
     assert_eq!(feed(&mut screen, &[down]), Out::Stay);
 
     // A host that sorts first arrives under the finger.
@@ -340,7 +329,7 @@ fn joining_a_listed_lobby_still_needs_a_name_and_other_builds_are_inert() {
     };
     let row = match_rows(form, 1)[0].center();
     let mut sounds = Vec::new();
-    let out = screen.update(&tap(row), &mut vec2(0.0, 0.0), &mut sounds);
+    let out = screen.update(&tap(1, row), &mut vec2(0.0, 0.0), &mut sounds);
     assert_eq!(out, Out::Stay);
     assert!(sounds.iter().any(|(kind, _)| *kind == SoundKind::Denied));
     assert_eq!(
@@ -360,5 +349,5 @@ fn joining_a_listed_lobby_still_needs_a_name_and_other_builds_are_inert() {
         panic!("the form is up");
     };
     let row = match_rows(form, 1)[0].center();
-    assert_eq!(feed(&mut screen, &tap(row)), Out::Stay);
+    assert_eq!(feed(&mut screen, &tap(1, row)), Out::Stay);
 }

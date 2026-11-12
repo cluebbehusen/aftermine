@@ -1,4 +1,5 @@
 use super::*;
+use crate::tests::support::{click, tap, touch_down, touch_up};
 
 #[test]
 fn graph_ceiling_uses_readable_steps() {
@@ -294,18 +295,7 @@ fn a_tab_press_picks_its_view() {
     let parts = layout();
     let at = parts.strip[2].center();
     let mut chart = Chart::default();
-    let press = [
-        RawEvent::TouchDown {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-    ];
+    let press = tap(1, at);
     chart.route(&press, &stats, &parts, 1.0, &mut Vec::new());
     assert_eq!(chart.view(), ChartView::Income);
 }
@@ -316,31 +306,19 @@ fn a_finger_reads_the_plot_lifts_to_open_and_slides_off_to_cancel() {
     let parts = layout();
     let mut chart = Chart::default();
     let mut sounds = Vec::new();
-    let down = RawEvent::TouchDown {
-        id: 3,
-        x: 300.0,
-        y: 100.0,
-    };
+    let down = touch_down(3, vec2(300.0, 100.0));
     let (open, rest) = chart.route(&[down], &stats, &parts, 1.0, &mut sounds);
     assert_eq!(open, None);
     assert!(rest.is_empty(), "the plot owns the finger");
     assert_eq!(chart.pointer, Some(vec2(300.0, 100.0)), "resting reads");
 
-    let up = RawEvent::TouchUp {
-        id: 3,
-        x: 300.0,
-        y: 100.0,
-    };
+    let up = touch_up(3, vec2(300.0, 100.0));
     let (open, _) = chart.route(&[up], &stats, &parts, 1.0, &mut sounds);
     assert_eq!(open, Some(2_000), "lifting opens that moment");
     assert_eq!(chart.pointer, None);
 
     chart.route(&[down], &stats, &parts, 1.0, &mut sounds);
-    let off = RawEvent::TouchUp {
-        id: 3,
-        x: 300.0,
-        y: 600.0,
-    };
+    let off = touch_up(3, vec2(300.0, 600.0));
     let (open, _) = chart.route(&[off], &stats, &parts, 1.0, &mut sounds);
     assert_eq!(open, None, "sliding off the plot cancels");
     assert_eq!(chart.pointer, None);
@@ -356,20 +334,7 @@ fn the_mouse_reads_on_hover_and_opens_on_a_click() {
     let (_, rest) = chart.route(&[moved], &stats, &parts, 1.0, &mut sounds);
     assert_eq!(rest, [moved], "the screen still hears the mouse move");
     assert_eq!(chart.pointer, Some(vec2(300.0, 100.0)));
-    let left = aftermine_protocol::MouseButton::Left;
-    let press = [
-        RawEvent::MouseDown {
-            button: left,
-            x: 300.0,
-            y: 100.0,
-        },
-        RawEvent::MouseUp {
-            button: left,
-            x: 300.0,
-            y: 100.0,
-        },
-    ];
-    let (open, _) = chart.route(&press, &stats, &parts, 1.0, &mut sounds);
+    let (open, _) = chart.route(&click(vec2(300.0, 100.0)), &stats, &parts, 1.0, &mut sounds);
     assert_eq!(open, Some(2_000));
 }
 
@@ -381,11 +346,7 @@ fn the_built_tab_has_no_plot_to_press() {
         view: 4,
         ..Chart::default()
     };
-    let at = RawEvent::TouchDown {
-        id: 1,
-        x: 300.0,
-        y: 100.0,
-    };
+    let at = touch_down(1, vec2(300.0, 100.0));
     let (open, rest) = chart.route(&[at], &stats, &parts, 1.0, &mut Vec::new());
     assert_eq!(open, None);
     assert_eq!(rest, [at], "the screen hears it instead");
