@@ -1,22 +1,15 @@
 //! End-to-end contract coverage for `aftermine-driver bot-cost`.
 
+#[path = "support/cli.rs"]
+mod cli;
+
 use aftermine_driver::bot_cost::Workload;
 use aftermine_protocol::hash_hex;
+use cli::{driver, succeeded};
 use serde_json::Value;
-use std::process::Command;
 
 fn bot_cost(args: &[&str]) -> String {
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .arg("bot-cost")
-        .args(args)
-        .output()
-        .expect("run bot-cost");
-    assert!(
-        output.status.success(),
-        "bot-cost failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).expect("output is UTF-8")
+    succeeded(driver().arg("bot-cost").args(args))
 }
 
 /// The same workload through ordinary scheduling, which may run seats in

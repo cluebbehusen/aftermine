@@ -16,7 +16,7 @@
 //! cargo run -p aftermine-driver -- shots --bless    # adopt current
 //! ```
 
-use crate::auto::{self, SpawnOptions};
+use crate::auto;
 use crate::client::Client;
 use aftermine_kit::perceptual::{self, Verdict};
 use aftermine_protocol::{Key, MouseButton, RawEvent, Reply, Request};
@@ -24,47 +24,7 @@ use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-static NEXT_HOME: AtomicU64 = AtomicU64::new(0);
 static NEXT_ADOPTION: AtomicU64 = AtomicU64::new(0);
-
-struct ScratchHome(PathBuf);
-
-impl Drop for ScratchHome {
-    fn drop(&mut self) {
-        if let Err(error) = std::fs::remove_dir_all(&self.0)
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            eprintln!(
-                "warning: could not remove shots scratch HOME {}: {error}",
-                self.0.display()
-            );
-        }
-    }
-}
-
-/// A throwaway HOME whose Aftermine config pins the presentation knobs the
-/// suite depends on: reduced motion (stills the Home backdrop drift),
-/// default scale, the Classic bindings, 1280x800. The macOS, XDG and
-/// Windows locations are all written so the suite behaves the same on every
-/// platform.
-fn scratch_home() -> Result<ScratchHome> {
-    let home = loop {
-        let id = NEXT_HOME.fetch_add(1, Ordering::Relaxed);
-        let path =
-            std::env::temp_dir().join(format!("aftermine-shots-home-{}-{id}", std::process::id()));
-        match std::fs::create_dir(&path) {
-            Ok(()) => break ScratchHome(path),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error.into()),
-        }
-    };
-    let mut config: serde_json::Value =
-        serde_json::from_str(include_str!("quiet_config.json")).expect("static json");
-    config["reduced_motion"] = true.into();
-    let text = serde_json::to_string_pretty(&config).expect("static json");
-    crate::auto::write_home_config(&home.0, &text)?;
-    Ok(home)
-}
 
 fn capture(client: &mut Client, path: &Path) -> Result<()> {
     if let Some(dir) = path.parent() {
@@ -215,17 +175,20 @@ impl Suite<'_> {
     }
 }
 
-/// Runs the shot walk. Spawns its own shell on `port`.
+/// Runs the shot walk. Spawns its own shell on `port`, on a throwaway
+/// HOME whose config pins the presentation knobs the suite depends on:
+/// reduced motion (stills the Home backdrop drift), default scale, the
+/// Classic bindings and 1280x800. The macOS, XDG and Windows locations are
+/// all written so the suite behaves the same on every platform.
 pub fn run(port: u16, bless: bool, dir: &Path, threshold: f64) -> Result<()> {
-    let home = scratch_home()?;
-    let (guard, mut client) = auto::spawn_shell(&SpawnOptions {
-        port,
-        paused: true,
-        home: Some(home.0.clone()),
-    })?;
-    let outcome = walk(&mut client, bless, dir, threshold);
-    drop(guard);
-    outcome
+    let mut shell = auto::ScratchShell::new("shots")?;
+    let mut config: serde_json::Value =
+        serde_json::from_str(include_str!("quiet_config.json")).expect("static json");
+    config["reduced_motion"] = true.into();
+    let text = serde_json::to_string_pretty(&config).expect("static json");
+    auto::write_home_config(shell.home(), &text)?;
+    let mut client = shell.spawn(port, true)?;
+    walk(&mut client, bless, dir, threshold)
 }
 
 fn walk(client: &mut Client, bless: bool, dir: &Path, threshold: f64) -> Result<()> {

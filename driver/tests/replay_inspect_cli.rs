@@ -1,24 +1,15 @@
 //! End-to-end contract coverage for `aftermine-driver replay-inspect`.
 
+#[path = "support/cli.rs"]
+mod cli;
+
 use aftermine_kit::GameReplay;
 use aftermine_sim::{
     Command as SimCommand, PlayerCommand, PlayerId, SIM_VERSION, Scenario, UnitId,
 };
 use chassis::replay::Replay;
+use cli::{TempReplay, driver, succeeded};
 use serde_json::Value;
-use std::path::PathBuf;
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
-
-struct TempReplay(PathBuf);
-
-impl Drop for TempReplay {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
-}
 
 fn stop(player: u8, unit: UnitId) -> PlayerCommand {
     PlayerCommand {
@@ -43,40 +34,23 @@ fn save_fixture() -> TempReplay {
     replay.record(7, stop(1, unit(1)));
     replay.record(118, stop(1, unit(1)));
     replay.meta.ticks = Some(120);
-
-    let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!(
-        "aftermine-replay-inspect-{}-{id}.json",
-        std::process::id()
-    ));
-    replay.save(&path).expect("save generated replay fixture");
-    TempReplay(path)
+    TempReplay::save("replay-inspect", &replay)
 }
 
 #[test]
 fn replay_inspect_emits_stable_json_snapshots_and_command_silence() {
     let fixture = save_fixture();
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .arg("replay-inspect")
-        .arg(&fixture.0)
-        .args([
-            "--tick",
-            "118,0",
-            "--tick",
-            "7,7",
-            "--fog-seat",
-            "1",
-            "--map",
-        ])
-        .output()
-        .expect("run replay-inspect");
-    assert!(
-        output.status.success(),
-        "replay-inspect failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let output = succeeded(driver().arg("replay-inspect").arg(&*fixture).args([
+        "--tick",
+        "118,0",
+        "--tick",
+        "7,7",
+        "--fog-seat",
+        "1",
+        "--map",
+    ]));
 
-    let report: Value = serde_json::from_slice(&output.stdout).expect("stdout is JSON");
+    let report: Value = serde_json::from_str(&output).expect("stdout is JSON");
     assert_eq!(report["schema_version"], 1);
     assert_eq!(report["scenario"]["name"], "Skirmish Basin");
     assert_eq!(report["scenario"]["players"][1]["bot"], true);

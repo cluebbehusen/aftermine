@@ -72,6 +72,21 @@ fn isolated_shells_override_every_platform_writable_root() {
     );
 }
 
+#[test]
+fn a_scratch_shell_owns_a_fresh_home_until_it_drops() {
+    let first = ScratchShell::new("auto-test").unwrap();
+    let second = ScratchShell::new("auto-test").unwrap();
+    assert_ne!(first.home(), second.home());
+    write_home_config(first.home(), "{}").unwrap();
+    let home = first.home().to_path_buf();
+    assert!(home.join(".config/aftermine/config.json").is_file());
+    drop(first);
+    assert!(
+        !home.exists(),
+        "the HOME goes with everything written there"
+    );
+}
+
 /// Walks `view` with a cursor `step` moves, returning the keys pressed.
 fn walk(view: &UiView, needle: &str, step: impl Fn(usize, Key) -> usize) -> Vec<Key> {
     let mut walk = Walk::to_label(view, needle).unwrap();

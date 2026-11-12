@@ -1,25 +1,16 @@
 //! End-to-end contract coverage for `aftermine-driver replay-summary`.
 
+#[path = "support/cli.rs"]
+mod cli;
+
 use aftermine_kit::GameReplay;
 use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance};
 use aftermine_sim::{
     Command as SimCommand, PlayerCommand, PlayerId, SIM_VERSION, Scenario, UnitId,
 };
 use chassis::replay::Replay;
+use cli::{TempReplay, driver, succeeded};
 use serde_json::Value;
-use std::path::PathBuf;
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
-
-struct TempReplay(PathBuf);
-
-impl Drop for TempReplay {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
-}
 
 fn stop(player: u8, unit: UnitId) -> PlayerCommand {
     PlayerCommand {
@@ -49,29 +40,11 @@ fn save_fixture() -> TempReplay {
     replay.record(7, stop(1, unit(1)));
     replay.record(118, stop(1, unit(1)));
     replay.meta.ticks = Some(120);
-
-    let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!(
-        "aftermine-replay-summary-{}-{id}.json",
-        std::process::id()
-    ));
-    replay.save(&path).expect("save generated replay fixture");
-    TempReplay(path)
+    TempReplay::save("replay-summary", &replay)
 }
 
-fn run_summary(fixture: &TempReplay, extra: &[&str]) -> std::process::Output {
-    let output = Command::new(env!("CARGO_BIN_EXE_aftermine-driver"))
-        .arg("replay-summary")
-        .arg(&fixture.0)
-        .args(extra)
-        .output()
-        .expect("run replay-summary");
-    assert!(
-        output.status.success(),
-        "replay-summary failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
+fn run_summary(fixture: &TempReplay, extra: &[&str]) -> String {
+    succeeded(driver().arg("replay-summary").arg(&**fixture).args(extra))
 }
 
 #[test]
@@ -79,7 +52,7 @@ fn replay_summary_emits_the_json_contract() {
     let fixture = save_fixture();
     let output = run_summary(&fixture, &["--every", "40", "--json"]);
 
-    let report: Value = serde_json::from_slice(&output.stdout).expect("stdout is JSON");
+    let report: Value = serde_json::from_str(&output).expect("stdout is JSON");
     assert_eq!(report["schema_version"], 1);
     assert_eq!(report["scenario"]["name"], "Skirmish Basin");
     assert_eq!(report["scenario"]["effective_ticks"], 120);
@@ -110,8 +83,7 @@ fn replay_summary_emits_the_json_contract() {
 #[test]
 fn replay_summary_text_carries_header_digests_and_legend() {
     let fixture = save_fixture();
-    let output = run_summary(&fixture, &["--every", "60", "--minimaps", "all"]);
-    let text = String::from_utf8(output.stdout).expect("utf8 text");
+    let text = run_summary(&fixture, &["--every", "60", "--minimaps", "all"]);
     assert!(text.contains("Skirmish Basin"), "missing header:\n{text}");
     assert!(
         text.contains(
@@ -138,21 +110,14 @@ fn save_surrender_fixture() -> TempReplay {
         },
     );
     replay.meta.ticks = Some(60);
-
-    let id = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!(
-        "aftermine-replay-summary-surrender-{}-{id}.json",
-        std::process::id()
-    ));
-    replay.save(&path).expect("save surrender fixture");
-    TempReplay(path)
+    TempReplay::save("replay-summary-surrender", &replay)
 }
 
 #[test]
 fn a_surrender_reaches_the_timeline_outcome_and_post_game_digest() {
     let fixture = save_surrender_fixture();
     let output = run_summary(&fixture, &["--every", "10", "--json"]);
-    let report: Value = serde_json::from_slice(&output.stdout).expect("stdout is JSON");
+    let report: Value = serde_json::from_str(&output).expect("stdout is JSON");
 
     let kinds: Vec<&str> = report["timeline"]
         .as_array()
@@ -180,7 +145,7 @@ fn a_surrender_reaches_the_timeline_outcome_and_post_game_digest() {
         60 - decided
     );
 
-    let text = String::from_utf8(run_summary(&fixture, &["--every", "10"]).stdout).expect("utf8");
+    let text = run_summary(&fixture, &["--every", "10"]);
     assert!(text.contains("resigned: seat 1"), "text:\n{text}");
     assert!(text.contains("victory team 0"), "text:\n{text}");
     assert!(text.contains("(post-game)"), "text:\n{text}");
@@ -190,8 +155,8 @@ fn a_surrender_reaches_the_timeline_outcome_and_post_game_digest() {
 fn minimap_modes_emit_all_sparse_and_none() {
     let fixture = save_fixture();
     let count = |extra: &[&str]| {
-        let text = String::from_utf8(run_summary(&fixture, extra).stdout).expect("utf8");
-        text.lines()
+        run_summary(&fixture, extra)
+            .lines()
             .filter(|line| line.trim_start().starts_with("map: "))
             .count()
     };
@@ -208,10 +173,10 @@ fn minimap_modes_emit_all_sparse_and_none() {
 #[test]
 fn replay_summary_is_deterministic() {
     let fixture = save_fixture();
-    let text_a = run_summary(&fixture, &["--every", "60"]).stdout;
-    let text_b = run_summary(&fixture, &["--every", "60"]).stdout;
+    let text_a = run_summary(&fixture, &["--every", "60"]);
+    let text_b = run_summary(&fixture, &["--every", "60"]);
     assert_eq!(text_a, text_b, "text output must be byte-identical");
-    let json_a = run_summary(&fixture, &["--every", "60", "--json"]).stdout;
-    let json_b = run_summary(&fixture, &["--every", "60", "--json"]).stdout;
+    let json_a = run_summary(&fixture, &["--every", "60", "--json"]);
+    let json_b = run_summary(&fixture, &["--every", "60", "--json"]);
     assert_eq!(json_a, json_b, "JSON output must be byte-identical");
 }

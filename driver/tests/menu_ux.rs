@@ -9,64 +9,23 @@
 //! ```
 //!
 //! Every spawned shell gets its own scratch HOME and platform-specific
-//! config/data roots. The guard removes that tree only after the child
-//! has exited, so even autosave-producing walks cannot touch real data.
+//! config/data roots, removed only after the shell has exited, so even
+//! autosave-producing walks cannot touch real data.
 
 use aftermine_driver::auto::{
-    INJECTED_PAD, ShellGuard, SpawnOptions, activate_labeled, activate_labeled_by_pad, assert_mode,
-    connect_pad, inject, press_key, press_pad, select_labeled, select_tab, spawn_shell, ui,
-    wait_for_mode,
+    INJECTED_PAD, ScratchShell, activate_labeled, activate_labeled_by_pad, assert_mode,
+    connect_pad, inject, press_key, press_pad, select_labeled, select_tab, ui, wait_for_mode,
 };
 use aftermine_driver::client::Client;
 use aftermine_protocol::{Key, MouseButton, PadButton, PadFamily, RawEvent, Request, Stick};
 use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-
-static NEXT_HOME: AtomicU64 = AtomicU64::new(0);
-
-/// Owns both the spawned shell and its isolated HOME. Dropping the
-/// shell first matters: a final autosave must finish before the
-/// scratch tree is removed.
-struct MenuShellGuard {
-    shell: Option<ShellGuard>,
-    home: PathBuf,
-}
-
-impl Drop for MenuShellGuard {
-    fn drop(&mut self) {
-        drop(self.shell.take());
-        if let Err(error) = std::fs::remove_dir_all(&self.home)
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            eprintln!(
-                "warning: could not remove menu UX scratch HOME {}: {error}",
-                self.home.display()
-            );
-        }
-    }
-}
-
-fn scratch_home(port: u16) -> Result<PathBuf> {
-    loop {
-        let id = NEXT_HOME.fetch_add(1, Ordering::Relaxed);
-        let home = std::env::temp_dir().join(format!(
-            "aftermine-menu-ux-{}-{port}-{id}",
-            std::process::id()
-        ));
-        match std::fs::create_dir(&home) {
-            Ok(()) => return Ok(home),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error.into()),
-        }
-    }
-}
 
 /// Spawns an automation-mode shell (via the shared harness vocabulary)
 /// and walks Home -> Play so tests operate on the scenario list (the
 /// widget with enough rows to scroll).
-fn spawn_at_map_list(port: u16) -> Result<(MenuShellGuard, Client)> {
+fn spawn_at_map_list(port: u16) -> Result<(ScratchShell, Client)> {
     let (guard, mut client) = spawn(port)?;
     // By label, never by blind Enter: if a fixture later adds an
     // autosave, Home's first row becomes Continue.
@@ -74,7 +33,7 @@ fn spawn_at_map_list(port: u16) -> Result<(MenuShellGuard, Client)> {
     Ok((guard, client))
 }
 
-fn spawn(port: u16) -> Result<(MenuShellGuard, Client)> {
+fn spawn(port: u16) -> Result<(ScratchShell, Client)> {
     spawn_prepared(port, |_| Ok(()))
 }
 
@@ -83,30 +42,11 @@ fn spawn(port: u16) -> Result<(MenuShellGuard, Client)> {
 fn spawn_prepared(
     port: u16,
     prepare: impl FnOnce(&std::path::Path) -> Result<()>,
-) -> Result<(MenuShellGuard, Client)> {
-    let home = scratch_home(port)?;
-    if let Err(error) = prepare(&home) {
-        std::fs::remove_dir_all(home).ok();
-        return Err(error);
-    }
-    let spawned = spawn_shell(&SpawnOptions {
-        port,
-        paused: false,
-        home: Some(home.clone()),
-    });
-    match spawned {
-        Ok((shell, client)) => Ok((
-            MenuShellGuard {
-                shell: Some(shell),
-                home,
-            },
-            client,
-        )),
-        Err(error) => {
-            std::fs::remove_dir_all(home).ok();
-            Err(error)
-        }
-    }
+) -> Result<(ScratchShell, Client)> {
+    let mut shell = ScratchShell::new("menu-ux")?;
+    prepare(shell.home())?;
+    let client = shell.spawn(port, false)?;
+    Ok((shell, client))
 }
 
 fn hover(client: &mut Client, x: f32, y: f32) -> Result<()> {
@@ -631,16 +571,9 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
         rows.iter().any(|row| row.contains("Pan up: W | [L]")),
         "{rows:?}"
     );
-    wait_for_saved_binding(&guard.home, "l", "PanUp")?;
+    wait_for_saved_binding(guard.home(), "l", "PanUp")?;
     drop(client);
-    drop(guard.shell.take());
-    let (shell, reconnected) = spawn_shell(&SpawnOptions {
-        port: 4159,
-        paused: true,
-        home: Some(guard.home.clone()),
-    })?;
-    guard.shell = Some(shell);
-    client = reconnected;
+    client = guard.spawn(4159, true)?;
     activate_labeled(&mut client, "settings")?;
     select_tab(&mut client, "controls")?;
     assert!(
@@ -659,7 +592,7 @@ fn controls_persist_secondary_bindings_and_keep_camera_keys_live_in_construction
             x: 9,
             y: 3,
         });
-    let path = guard.home.join("controls-scenario.json");
+    let path = guard.home().join("controls-scenario.json");
     std::fs::write(&path, serde_json::to_vec(&scenario)?)?;
     client.call(Request::LoadScenario {
         path: path.to_string_lossy().into_owned(),
