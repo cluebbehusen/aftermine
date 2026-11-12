@@ -939,8 +939,8 @@ fn playing_frame(
         card_press = filtered.pressed;
         // Swallowing a release whose press began in the world must
         // also end that drag, or a later release completes it.
-        if filtered.swallowed_release {
-            app.input.drag_origin = None;
+        if filtered.swallowed_release && app.input.drag_origin().is_some() {
+            app.input.left_drag = None;
         }
         // A ring or the queue strip keeps the pad's buttons while open.
         if card_press.is_none() && app.input.ring.is_none() && app.input.dock.is_none() {

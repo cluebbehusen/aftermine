@@ -455,13 +455,13 @@ fn letting_go_of_lt_under_an_open_build_ring_keeps_placing_and_its_category() {
         macroquad::prelude::vec2(26.5, 20.5),
     );
     tap(&mut game, &mut input, PadButton::South);
-    assert!(input.placing.is_some(), "a held LT keeps placing");
+    assert!(input.placing().is_some(), "a held LT keeps placing");
     tap(&mut game, &mut input, PadButton::North);
     frame(&mut game, &mut input);
     assert_eq!(heading(&game, &input).as_deref(), Some("DEFENSE"));
     feed(&mut game, &mut input, &[up(PadButton::LeftTrigger)]);
     frame(&mut game, &mut input);
-    assert!(input.placing.is_some(), "letting go keeps placing");
+    assert!(input.placing().is_some(), "letting go keeps placing");
     assert_eq!(
         heading(&game, &input).as_deref(),
         Some("DEFENSE"),
@@ -469,7 +469,7 @@ fn letting_go_of_lt_under_an_open_build_ring_keeps_placing_and_its_category() {
     );
     tap(&mut game, &mut input, PadButton::North);
     assert!(input.ring.is_none());
-    assert!(input.placing.is_some(), "closing the ring keeps placing");
+    assert!(input.placing().is_some(), "closing the ring keeps placing");
 
     // LT is up, so A is a plain placement, which ends the mode.
     super::super::tests::pad_scene::rest_on(
@@ -485,7 +485,7 @@ fn letting_go_of_lt_under_an_open_build_ring_keeps_placing_and_its_category() {
         "A placed a plain Barricade: {:?}",
         game.pending
     );
-    assert!(input.placing.is_none(), "and ended placement");
+    assert!(input.placing().is_none(), "and ended placement");
     assert!(!input.construction_open(), "closing construction with it");
 }
 
@@ -535,7 +535,7 @@ fn holding_b_out_of_a_placement_closes_every_ring() {
     pick(&mut game, &mut input, "Build");
     pick(&mut game, &mut input, "Defense");
     pick(&mut game, &mut input, "Barricade");
-    assert!(input.placing.is_some());
+    assert!(input.placing().is_some());
     feed(&mut game, &mut input, &[down(PadButton::East)]);
     frame(&mut game, &mut input);
     assert_eq!(heading(&game, &input).as_deref(), Some("DEFENSE"));

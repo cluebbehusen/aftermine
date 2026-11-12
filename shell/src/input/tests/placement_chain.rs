@@ -75,21 +75,24 @@ fn letting_go_of_shift_mid_chain_keeps_placing_until_a_plain_click() {
     let (mut game, mut input) = funded_builder();
     shift_chain(&mut game, &mut input);
     assert_eq!(builds(&game), CHAIN, "premise: Shift chains");
-    assert!(input.placing.is_some(), "letting go of Shift keeps placing");
+    assert!(
+        input.placing().is_some(),
+        "letting go of Shift keeps placing"
+    );
 
     apply_events(
         &mut game,
         &mut input,
         &[key_down(Key::Shift), key_up(Key::Shift)],
     );
-    assert!(input.placing.is_some(), "and so does a bare Shift tap");
+    assert!(input.placing().is_some(), "and so does a bare Shift tap");
 
     // Shift is up, so the click is a plain build: it replaces the
     // builder's orders, the chain included, and ends placement.
     let c = at(&game, 11, 3);
     apply_events(&mut game, &mut input, &[left_down(c), left_up(c)]);
     assert_eq!(builds(&game)[2..], [(TilePos::new(11, 3), false)]);
-    assert!(input.placing.is_none(), "a plain placement ends the mode");
+    assert!(input.placing().is_none(), "a plain placement ends the mode");
     assert!(input.build_menu, "and the palette stays for the next pick");
 }
 
@@ -101,7 +104,10 @@ fn letting_go_of_shift_before_anything_is_placed_keeps_placement_armed() {
         &mut input,
         &[key_down(Key::Shift), key_up(Key::Shift)],
     );
-    assert!(input.placing.is_some(), "a bare Shift tap changes nothing");
+    assert!(
+        input.placing().is_some(),
+        "a bare Shift tap changes nothing"
+    );
 
     // A refused Shift-click places nothing either.
     let wall = at(&game, 0, 3);
@@ -116,7 +122,7 @@ fn letting_go_of_shift_before_anything_is_placed_keeps_placement_armed() {
         ],
     );
     assert!(builds(&game).is_empty());
-    assert!(input.placing.is_some(), "a refusal leaves the mode armed");
+    assert!(input.placing().is_some(), "a refusal leaves the mode armed");
 }
 
 #[test]
@@ -128,7 +134,7 @@ fn escape_after_a_chain_leaves_placement_and_keeps_the_chain() {
         &mut input,
         &[key_down(Key::Escape), key_up(Key::Escape)],
     );
-    assert!(input.placing.is_none(), "Esc leaves placement");
+    assert!(input.placing().is_none(), "Esc leaves placement");
     assert!(input.build_menu, "back to the palette");
     assert_eq!(builds(&game), CHAIN, "without placing or undoing a site");
 }
@@ -142,14 +148,14 @@ fn the_ribbon_s_cross_after_a_chain_leaves_placement_and_keeps_the_chain() {
     layout.ribbon_cancel = cross;
     game.presentation.layout.set(layout);
     shift_chain(&mut game, &mut input);
-    assert!(input.placing.is_some(), "premise: still placing");
+    assert!(input.placing().is_some(), "premise: still placing");
 
     apply_events(
         &mut game,
         &mut input,
         &click(cross.center().x, cross.center().y),
     );
-    assert!(input.placing.is_none(), "the cross ends placement");
+    assert!(input.placing().is_none(), "the cross ends placement");
     assert_eq!(builds(&game), CHAIN, "and places nothing");
 }
 
@@ -179,7 +185,7 @@ fn letting_go_of_shift_mid_stroke_keeps_placing() {
         "queued, as the press was: {staged:?}"
     );
     assert!(
-        input.placing.is_some(),
+        input.placing().is_some(),
         "a stroke begun under Shift keeps placing"
     );
 }
@@ -201,7 +207,7 @@ fn turning_queue_off_after_a_queued_confirm_keeps_touch_placement() {
 
     tap(&mut game, &mut input, chip.center());
     assert_eq!(input.queue_toggle, QueueToggle::Off);
-    assert!(input.placing.is_some(), "turning QUEUE off keeps placing");
+    assert!(input.placing().is_some(), "turning QUEUE off keeps placing");
     assert_eq!(
         input.ghost_anchor(),
         Some(next),
@@ -211,7 +217,7 @@ fn turning_queue_off_after_a_queued_confirm_keeps_touch_placement() {
     // QUEUE is off, so the check mark is a plain build that ends placement.
     tap_check(&mut game, &mut input);
     assert_eq!(builds(&game)[1..], [(next, false)]);
-    assert!(input.placing.is_none(), "a plain confirm ends the mode");
+    assert!(input.placing().is_none(), "a plain confirm ends the mode");
 }
 
 #[test]
@@ -235,7 +241,7 @@ fn dropping_a_stroke_after_letting_go_of_shift_keeps_placing() {
         &[key_down(Key::Escape), key_up(Key::Escape)],
     );
     assert!(input.planned_stamps().is_empty(), "Esc drops the stroke");
-    assert!(input.placing.is_some(), "and keeps placing");
+    assert!(input.placing().is_some(), "and keeps placing");
     assert_eq!(builds(&game).len(), 1);
 }
 
@@ -279,7 +285,7 @@ fn a_fully_refused_plain_release_after_a_chain_keeps_placing() {
         "premise: the release staged nothing"
     );
     assert!(
-        input.placing.is_some(),
+        input.placing().is_some(),
         "nothing staged, so the refusal keeps placing"
     );
 }
@@ -290,7 +296,7 @@ fn a_mouse_placement_leaves_the_palette_up() {
     let a = at(&game, 7, 3);
     apply_events(&mut game, &mut input, &[left_down(a), left_up(a)]);
     assert_eq!(builds(&game), [(TilePos::new(7, 3), false)]);
-    assert!(input.placing.is_none(), "one placement ends the mode");
+    assert!(input.placing().is_none(), "one placement ends the mode");
     assert!(
         input.build_menu,
         "the drawn palette stays for the next pick"
@@ -326,7 +332,7 @@ fn a_mouse_placement_under_a_held_left_trigger_leaves_the_palette_up() {
     );
     feed(&mut game, &mut input, &[left_down(a), left_up(a)]);
     assert_eq!(builds(&game), [(TilePos::new(7, 3), true)]);
-    assert!(input.placing.is_some(), "the held trigger keeps placing");
+    assert!(input.placing().is_some(), "the held trigger keeps placing");
     assert!(!input.hud_pad, "the click handed the HUD to the mouse");
     feed(
         &mut game,
@@ -336,11 +342,11 @@ fn a_mouse_placement_under_a_held_left_trigger_leaves_the_palette_up() {
             button: PadButton::LeftTrigger,
         }],
     );
-    assert!(input.placing.is_some(), "letting go keeps placing");
+    assert!(input.placing().is_some(), "letting go keeps placing");
     let b = at(&game, 9, 3);
     feed(&mut game, &mut input, &[left_down(b), left_up(b)]);
     assert_eq!(builds(&game)[1..], [(TilePos::new(9, 3), false)]);
-    assert!(input.placing.is_none(), "a plain click ends the mode");
+    assert!(input.placing().is_none(), "a plain click ends the mode");
     assert!(
         input.construction_open(),
         "the drawn palette stays for the next pick"

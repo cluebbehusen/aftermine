@@ -83,7 +83,7 @@ fn an_unaffordable_spot_is_short_by_the_missing_scrap_and_refuses_the_click() {
         .to_screen(vec2(anchor.x as f32 + 0.5, anchor.y as f32 + 0.5));
     apply_events(&mut game, &mut input, &[left_down(p), left_up(p)]);
     assert!(game.pending.is_empty(), "a short click stages nothing");
-    assert!(input.placing.is_some(), "and keeps placing");
+    assert!(input.placing().is_some(), "and keeps placing");
     assert!(
         game.presentation
             .sounds_pending

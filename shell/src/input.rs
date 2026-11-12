@@ -70,7 +70,7 @@ pub(crate) fn unit_pick_radius(kind: aftermine_sim::UnitKind) -> f32 {
 /// Camera pan speed in screen pixels per second (converted by zoom).
 pub(crate) const PAN_PX_PER_SEC: f32 = 900.0;
 
-/// The one persistent world-targeting mode currently armed.
+/// The armed mode as its ribbon names it, without what it holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ArmedMode {
     /// Place this structure.
@@ -472,7 +472,7 @@ pub(crate) fn salvo_readout(
     game: &crate::game::Scene<'_>,
     input: &InputState,
 ) -> Option<(usize, usize)> {
-    let ready = input.striking.as_ref()?.silos(game).ready_silos().len();
+    let ready = input.striking()?.silos(game).ready_silos().len();
     let fires = if input.resolver.shift_held() {
         ready
     } else {
@@ -514,19 +514,44 @@ pub(crate) enum ClickVerb {
     Scout,
 }
 
+/// The one world-targeting mode armed for the next press, holding what
+/// lasts only while it is armed.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Armed {
+    /// Place a structure.
+    Place(Placement),
+    /// Set these producers' rally point; never empty.
+    Rally(Vec<aftermine_sim::BuildingId>),
+    /// Pick the selected Spires' strike tile.
+    Strike(Strike),
+    /// Issue this verb at the next world click.
+    Verb(ClickVerb),
+    /// Collect a patrol route's waypoints.
+    Patrol(Vec<TilePos>),
+}
+
+/// What a held left mouse button drags.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum LeftDrag {
+    /// A selection box from this window point.
+    Box(Vec2),
+    /// The camera, across the minimap.
+    Minimap,
+    /// The touch ghost's row handle.
+    Handle,
+}
+
 /// Cross-frame input state (cursor, held keys, drag origin).
 #[expect(
     clippy::struct_excessive_bools,
-    reason = "a minimap drag, the palette, the queue toggle and a menu request are independent"
+    reason = "seen keys, the stick latch, the pad HUD, the palette and a menu request are independent"
 )]
 pub struct InputState {
     /// Last known cursor position, window pixels.
     pub mouse: Vec2,
-    /// Where the current left-drag started, if any.
-    pub drag_origin: Option<Vec2>,
-    /// Whether a left-drag is steering the camera via the minimap —
-    /// clicks there never start a selection box, they drive the view.
-    pub(crate) minimap_drag: bool,
+    /// What the held left button drags, if anything. Clicks on the
+    /// minimap steer the view and never start a selection box.
+    pub(crate) left_drag: Option<LeftDrag>,
     /// Middle-drag pan anchor: the world follows the hand.
     pub(crate) mmb_anchor: Option<Vec2>,
     /// Control groups 1..=5 (assigned with Ctrl+N, recalled with N).
@@ -538,10 +563,8 @@ pub struct InputState {
     /// Camera bookmarks (Ctrl+F5..F8 set, F5..F8 recall). Session
     /// state: a new match's coordinates mean different ground.
     pub(crate) bookmarks: [Option<Vec2>; 4],
-    /// Waypoints collected while arming a patrol (`R`), if any.
-    pub(crate) patrol_route: Option<Vec<TilePos>>,
-    /// The armed building placement, if any.
-    pub(crate) placing: Option<Placement>,
+    /// The world-targeting mode armed for the next press, if any.
+    pub(crate) armed: Option<Armed>,
     /// The pointer used last: the mouse's hover only means something
     /// while the mouse is the one in use.
     pub(crate) last_pointer: Pointer,
@@ -590,12 +613,6 @@ pub struct InputState {
     /// settles once a frame, after the frame's input, so every press is
     /// judged against the HUD the last frame drew.
     pub(crate) hud_pad: bool,
-    /// The verb the next world click issues, if one is armed.
-    pub(crate) click_verb: Option<ClickVerb>,
-    /// Producers whose rally point the next world/minimap click sets.
-    pub(crate) rallying: Vec<aftermine_sim::BuildingId>,
-    /// The armed strike, while Spires wait for their target.
-    pub(crate) striking: Option<Strike>,
     /// How many warheads each strike pick fires, kept for the match.
     pub(crate) salvo: usize,
     /// Whether the build palette is open (`B`; digits pick a structure).
@@ -621,8 +638,6 @@ pub struct InputState {
     pub(crate) last_tap: Option<(f64, macroquad::prelude::Vec2)>,
     /// The QUEUE toggle: touch's stand-in for a held Shift.
     pub(crate) queue_toggle: QueueToggle,
-    /// Whether the mouse is dragging the touch ghost's row handle.
-    pub(crate) handle_drag: bool,
     /// The live two-finger gesture, if two fingers are down.
     pub(crate) pair: Option<Pair>,
     /// The menu button was pressed this frame. Input cannot switch
@@ -1286,21 +1301,19 @@ pub(crate) fn tile_center(tile: TilePos) -> Vec2 {
 
 impl InputState {
     pub(crate) fn construction_open(&self) -> bool {
-        self.build_menu || self.placing.is_some()
+        self.build_menu || self.placing().is_some()
     }
 
     /// Fresh input state.
     pub fn new() -> Self {
         Self {
             mouse: vec2(0.0, 0.0),
-            drag_origin: None,
-            minimap_drag: false,
+            left_drag: None,
             mmb_anchor: None,
             groups: Default::default(),
             last_click: None,
             last_recall: None,
-            patrol_route: None,
-            placing: None,
+            armed: None,
             last_pointer: crate::platform::Hands::BUILD.pointer,
             keys_seen: crate::platform::Hands::BUILD.keys,
             pads: std::collections::BTreeMap::new(),
@@ -1317,9 +1330,6 @@ impl InputState {
             dock: None,
             dock_held: Vec::new(),
             hud_pad: false,
-            click_verb: None,
-            rallying: Vec::new(),
-            striking: None,
             salvo: 1,
             build_menu: false,
             build_category: None,
@@ -1331,7 +1341,6 @@ impl InputState {
             touches: Vec::new(),
             last_tap: None,
             queue_toggle: QueueToggle::Off,
-            handle_drag: false,
             pair: None,
             menu_requested: false,
             bookmarks: [None; 4],
@@ -1489,53 +1498,111 @@ impl InputState {
     pub(crate) fn close_construction(&mut self) {
         self.build_menu = false;
         self.build_category = None;
-        self.disarm_click_verbs();
-        self.patrol_route = None;
-    }
-
-    /// Disarms every left-click verb, so arming placement, salvage, repair,
-    /// run, hunt, rally, or patrol stands the others down. `armed_click`
-    /// resolves modes in a fixed priority order, so two live at once would
-    /// make the next click do something other than what the toast promised.
-    pub(crate) fn disarm_click_verbs(&mut self) {
-        self.stop_placing();
-        self.patrol_route = None;
-        self.click_verb = None;
-        self.rallying.clear();
-        self.striking = None;
+        self.armed = None;
     }
 
     /// Arms placement of `kind`, with no stroke or ghost yet.
     pub(crate) fn arm_placement(&mut self, kind: aftermine_sim::BuildingKind) {
-        self.placing = Some(Placement {
+        self.armed = Some(Armed::Place(Placement {
             kind,
             stroke: None,
             ghost: None,
             chain: None,
-        });
+        }));
     }
 
-    /// Drops placement: the armed kind, its stroke, and its ghost.
+    /// Drops placement, with its stroke and ghost, when it is armed.
     pub(crate) fn stop_placing(&mut self) {
-        self.placing = None;
+        if self.placing().is_some() {
+            self.armed = None;
+        }
+    }
+
+    /// The armed placement, if one is.
+    pub(crate) fn placing(&self) -> Option<&Placement> {
+        match &self.armed {
+            Some(Armed::Place(placement)) => Some(placement),
+            _ => None,
+        }
+    }
+
+    fn placing_mut(&mut self) -> Option<&mut Placement> {
+        match &mut self.armed {
+            Some(Armed::Place(placement)) => Some(placement),
+            _ => None,
+        }
+    }
+
+    /// The armed strike, while Spires wait for their target.
+    pub(crate) fn striking(&self) -> Option<&Strike> {
+        match &self.armed {
+            Some(Armed::Strike(strike)) => Some(strike),
+            _ => None,
+        }
+    }
+
+    fn striking_mut(&mut self) -> Option<&mut Strike> {
+        match &mut self.armed {
+            Some(Armed::Strike(strike)) => Some(strike),
+            _ => None,
+        }
+    }
+
+    /// The producers whose rally point the next world or minimap press
+    /// sets; empty unless a rally is armed.
+    pub(crate) fn rallying(&self) -> &[aftermine_sim::BuildingId] {
+        match &self.armed {
+            Some(Armed::Rally(producers)) => producers,
+            _ => &[],
+        }
+    }
+
+    /// The verb the next world click issues, if one is armed.
+    pub(crate) fn click_verb(&self) -> Option<ClickVerb> {
+        match self.armed {
+            Some(Armed::Verb(verb)) => Some(verb),
+            _ => None,
+        }
+    }
+
+    /// The waypoints collected so far while a patrol is armed.
+    pub(crate) fn patrol_route(&self) -> Option<&[TilePos]> {
+        match &self.armed {
+            Some(Armed::Patrol(route)) => Some(route),
+            _ => None,
+        }
+    }
+
+    fn patrol_route_mut(&mut self) -> Option<&mut Vec<TilePos>> {
+        match &mut self.armed {
+            Some(Armed::Patrol(route)) => Some(route),
+            _ => None,
+        }
+    }
+
+    /// Where the selection box being dragged started, if one is.
+    pub(crate) fn drag_origin(&self) -> Option<Vec2> {
+        match self.left_drag {
+            Some(LeftDrag::Box(origin)) => Some(origin),
+            _ => None,
+        }
     }
 
     /// The building kind armed for placement, if any.
     pub(crate) fn placing_kind(&self) -> Option<aftermine_sim::BuildingKind> {
-        self.placing.as_ref().map(|placement| placement.kind)
+        self.placing().map(|placement| placement.kind)
     }
 
     /// Whether the armed placement has staged a site.
     fn placement_staged(&self) -> bool {
-        self.placing
-            .as_ref()
+        self.placing()
             .is_some_and(|placement| placement.chain.is_some())
     }
 
     /// The plan placement is previewing: a live mouse stroke, else the
     /// touch ghost's row.
     fn active_plan(&self) -> Option<&PlacingStroke> {
-        let placement = self.placing.as_ref()?;
+        let placement = self.placing()?;
         placement
             .stroke
             .as_ref()
@@ -1548,23 +1615,23 @@ impl InputState {
     /// the preview, the ribbon and the next press all read the reticle.
     fn pad_points(&mut self) {
         self.last_pointer = Pointer::Pad;
-        if let Some(placement) = &mut self.placing {
+        if let Some(placement) = self.placing_mut() {
             placement.ghost = None;
         }
-        if let Some(strike) = &mut self.striking {
+        if let Some(strike) = self.striking_mut() {
             strike.aim = None;
         }
     }
 
     /// Who lays the live placement stroke, while one is down.
     pub(crate) fn stroke_by(&self) -> Option<Presser> {
-        self.placing.as_ref()?.stroke.as_ref().map(|held| held.by)
+        self.placing()?.stroke.as_ref().map(|held| held.by)
     }
 
     /// The previewed plan's stamps.
     /// A held stroke's presser and the world point it has covered up to.
     pub(super) fn stroke_reached(&self) -> Option<(Presser, Vec2)> {
-        let held = self.placing.as_ref()?.stroke.as_ref()?;
+        let held = self.placing()?.stroke.as_ref()?;
         Some((held.by, held.reached))
     }
 
@@ -1572,8 +1639,7 @@ impl InputState {
     /// between, as after a camera jump, which crosses none.
     pub(super) fn restart_stroke_at(&mut self, world: Vec2) {
         if let Some(held) = self
-            .placing
-            .as_mut()
+            .placing_mut()
             .and_then(|placement| placement.stroke.as_mut())
         {
             held.reached = world;
@@ -1588,7 +1654,7 @@ impl InputState {
     /// Throws a live stroke's plan, or a touch ghost's row, away, keeping
     /// placement armed. Returns whether there was one.
     pub(crate) fn drop_stroke(&mut self) -> bool {
-        self.placing.as_mut().is_some_and(|placement| {
+        self.placing_mut().is_some_and(|placement| {
             placement.stroke.take().is_some()
                 || placement
                     .ghost
@@ -1599,49 +1665,33 @@ impl InputState {
 
     /// The touch ghost's anchor, while placement is armed.
     pub(crate) fn ghost_anchor(&self) -> Option<TilePos> {
-        self.placing
-            .as_ref()?
-            .ghost
-            .as_ref()
-            .map(|ghost| ghost.anchor)
+        self.placing()?.ghost.as_ref().map(|ghost| ghost.anchor)
     }
 
     /// Whether `verb` is the armed click verb.
-    pub(crate) fn armed(&self, verb: ClickVerb) -> bool {
-        self.click_verb == Some(verb)
+    pub(crate) fn is_armed(&self, verb: ClickVerb) -> bool {
+        self.click_verb() == Some(verb)
     }
 
-    /// Current persistent mode, in the same priority order the world
-    /// click resolver uses.
+    /// The armed mode, as its ribbon names it.
     pub(crate) fn armed_mode(&self) -> Option<ArmedMode> {
-        self.striking
-            .is_some()
-            .then_some(ArmedMode::Strike)
-            .or_else(|| (!self.rallying.is_empty()).then_some(ArmedMode::Rally))
-            .or_else(|| self.placing_kind().map(ArmedMode::Build))
-            .or_else(|| {
-                self.click_verb.map(|verb| match verb {
-                    ClickVerb::Salvage => ArmedMode::Salvage,
-                    ClickVerb::Weld => ArmedMode::Weld,
-                    ClickVerb::Accompany => ArmedMode::Accompany,
-                    ClickVerb::Run => ArmedMode::Run,
-                    ClickVerb::Hunt => ArmedMode::Hunt,
-                    ClickVerb::Scout => ArmedMode::Scout,
-                })
-            })
-            .or_else(|| {
-                self.patrol_route
-                    .as_ref()
-                    .map(|route| ArmedMode::Patrol(route.len()))
-            })
+        Some(match self.armed.as_ref()? {
+            Armed::Place(placement) => ArmedMode::Build(placement.kind),
+            Armed::Rally(_) => ArmedMode::Rally,
+            Armed::Strike(_) => ArmedMode::Strike,
+            Armed::Verb(ClickVerb::Salvage) => ArmedMode::Salvage,
+            Armed::Verb(ClickVerb::Weld) => ArmedMode::Weld,
+            Armed::Verb(ClickVerb::Accompany) => ArmedMode::Accompany,
+            Armed::Verb(ClickVerb::Run) => ArmedMode::Run,
+            Armed::Verb(ClickVerb::Hunt) => ArmedMode::Hunt,
+            Armed::Verb(ClickVerb::Scout) => ArmedMode::Scout,
+            Armed::Patrol(route) => ArmedMode::Patrol(route.len()),
+        })
     }
 
     /// Cancels whichever persistent targeting mode is armed.
     pub(crate) fn cancel_armed_mode(&mut self) -> bool {
-        let armed = self.armed_mode().is_some();
-        self.disarm_click_verbs();
-        self.patrol_route = None;
-        armed
+        self.armed.take().is_some()
     }
 
     /// Drops everything that assumes continuity (held keys, open drags,
@@ -1651,20 +1701,14 @@ impl InputState {
     /// a phantom box-select after resuming.
     pub fn reset_transient(&mut self) {
         self.resolver.clear();
-        self.drag_origin = None;
-        self.minimap_drag = false;
+        self.left_drag = None;
         self.mmb_anchor = None;
-        self.patrol_route = None;
-        self.stop_placing();
-        self.click_verb = None;
-        self.rallying.clear();
-        self.striking = None;
+        self.armed = None;
         self.build_menu = false;
         self.build_category = None;
         self.touches.clear();
         self.last_tap = None;
         self.queue_toggle = QueueToggle::Off;
-        self.handle_drag = false;
         self.pair = None;
         self.menu_requested = false;
         self.pad_press = None;
@@ -2237,12 +2281,7 @@ pub fn desired_cursor(game: &Game, input: &InputState) -> macroquad::miniquad::C
     if row.iter().any(|r| r.w > 0.0 && r.contains(input.mouse)) {
         return CursorIcon::Pointer;
     }
-    if input.placing.is_some()
-        || input.patrol_route.is_some()
-        || input.click_verb.is_some()
-        || !input.rallying.is_empty()
-        || input.striking.is_some()
-    {
+    if input.armed.is_some() {
         return CursorIcon::Crosshair;
     }
     let layout = game.presentation.layout.get();
@@ -2314,7 +2353,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // A held minimap press keeps steering: clamp the cursor
             // into the minimap so sliding off its edge doesn't stall
             // the pan mid-gesture.
-            if input.minimap_drag
+            if input.left_drag == Some(LeftDrag::Minimap)
                 && let Some(world) = crate::render::minimap_world_clamped(&game.view(), vec2(x, y))
             {
                 reticle::look_at(game, input, world);
@@ -2337,7 +2376,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // Refused cells skip silently (the ghost tells that story).
             let to = game.presentation.camera.to_world(vec2(x, y));
             extend_stroke(game, input, Presser::Mouse, to);
-            if input.handle_drag {
+            if input.left_drag == Some(LeftDrag::Handle) {
                 pull_row(&game.view(), input, vec2(x, y));
             }
         }
@@ -2367,7 +2406,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
                 && handle.contains(vec2(x, y))
                 && ghost_control_at(&layout, vec2(x, y)).is_none()
             {
-                input.handle_drag = true;
+                input.left_drag = Some(LeftDrag::Handle);
                 return;
             }
             if ribbon_row_press(game, input, vec2(x, y), Pointer::Mouse)
@@ -2416,9 +2455,9 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             // clicks outright.
             if let Some(world) = crate::render::minimap_world_at(&game.view(), vec2(x, y)) {
                 reticle::look_at(game, input, world);
-                input.minimap_drag = true;
+                input.left_drag = Some(LeftDrag::Minimap);
             } else if !click_on_hud(game, vec2(x, y)) {
-                input.drag_origin = Some(vec2(x, y));
+                input.left_drag = Some(LeftDrag::Box(vec2(x, y)));
             }
         }
         RawEvent::MouseUp {
@@ -2427,8 +2466,8 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             y,
         } => {
             input.mouse = vec2(x, y);
-            input.minimap_drag = false;
-            if std::mem::take(&mut input.handle_drag) {
+            let drag = input.left_drag.take();
+            if drag == Some(LeftDrag::Handle) {
                 return;
             }
             // The placement stroke ends at release, taking the ground
@@ -2436,7 +2475,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             let to = game.presentation.camera.to_world(vec2(x, y));
             extend_stroke(game, input, Presser::Mouse, to);
             finish_stroke(game, input, Presser::Mouse);
-            if let Some(origin) = input.drag_origin.take() {
+            if let Some(LeftDrag::Box(origin)) = drag {
                 let release = vec2(x, y);
                 let additive = input.queue_held();
                 if origin.distance(release) <= click_slop(input.ui) {
@@ -2480,7 +2519,7 @@ fn apply_event(game: &mut Game, input: &mut InputState, bindings: &BindingMap, e
             let queue = input.queue_held();
             if let Some(world) = crate::render::minimap_world_at(&game.view(), vec2(x, y)) {
                 let tile = ground_tile(&game.state, world);
-                if input.patrol_route.is_some() {
+                if input.patrol_route().is_some() {
                     add_patrol_waypoint(game, input, bindings, world);
                 } else {
                     let units = game.presentation.selection.units.clone();
@@ -2641,7 +2680,7 @@ pub(super) fn stand_down_for_order(input: &mut InputState) -> bool {
     if input.drop_stroke() {
         return true;
     }
-    if input.patrol_route.is_none() {
+    if input.patrol_route().is_none() {
         input.close_construction();
     }
     false
@@ -2657,7 +2696,7 @@ pub(super) fn world_order(
     p: Vec2,
     reach: OrderReach,
 ) {
-    if input.patrol_route.is_some() {
+    if input.patrol_route().is_some() {
         let world = game.presentation.camera.to_world(p);
         add_patrol_waypoint(game, input, bindings, world);
     } else {
@@ -2695,11 +2734,7 @@ pub(super) fn ribbon_row_press(
     } else if hits(layout.queue_toggle) {
         input.toggle_queue();
     } else if hits(layout.patrol_start) {
-        if input
-            .patrol_route
-            .as_ref()
-            .is_some_and(|route| !route.is_empty())
-        {
+        if input.patrol_route().is_some_and(|route| !route.is_empty()) {
             start_patrol(game, input);
             game.presentation
                 .sounds_pending
@@ -2766,7 +2801,7 @@ fn armed_click(
         Presser::Pad(_) => reticle::reach(input).in_world(input.ui, game.presentation.camera.zoom),
         Presser::Mouse | Presser::Touch => OrderReach::EXACT,
     };
-    if let Some(strike) = &mut input.striking {
+    if let Some(strike) = input.striking_mut() {
         // Any tile on the map may be struck, seen or not; the minimap
         // names one as well as the world.
         let world = minimap.unwrap_or_else(|| game.presentation.camera.to_world(p));
@@ -2783,20 +2818,18 @@ fn armed_click(
         }
         return true;
     }
-    if !input.rallying.is_empty() {
+    if !input.rallying().is_empty() {
         // The minimap names ground only; the world names the own unit the
         // press reaches, which new units then escort, or else the ground.
         let rally = match minimap {
             Some(world) => aftermine_sim::Rally::Tile(ground_tile(&game.state, world)),
             None => rally_at(game, game.presentation.camera.to_world(p), reach),
         };
-        let producers = crate::building_actions::SelectedBuildings::inspect_ids(
-            &game.view(),
-            &input.rallying,
-        )
-        .producers();
+        let producers =
+            crate::building_actions::SelectedBuildings::inspect_ids(&game.view(), input.rallying())
+                .producers();
         rally_producers(game, producers, rally);
-        input.rallying.clear();
+        input.armed = None;
         return true;
     }
     if let Some(kind) = input.placing_kind() {
@@ -2814,7 +2847,7 @@ fn armed_click(
                 // takes over from a finger builds where the ghost and the
                 // ribbon say, never at an unpreviewed cursor.
                 let anchor = ghost_anchor_under(&game.view(), kind, world);
-                if let Some(placement) = &mut input.placing {
+                if let Some(placement) = input.placing_mut() {
                     // A moved ghost leaves its row behind.
                     placement.ghost = Some(PlacementGhost::at(anchor));
                 }
@@ -2832,7 +2865,7 @@ fn armed_click(
                 PlacementVerdict::Builds | PlacementVerdict::BuildsOnArrival
             ) {
                 deny(game);
-            } else if let Some(placement) = &mut input.placing {
+            } else if let Some(placement) = input.placing_mut() {
                 placement.stroke = Some(HeldStroke {
                     by,
                     plan: PlacingStroke {
@@ -2872,7 +2905,7 @@ pub(crate) fn ghost_footprint(
     game: &crate::game::Scene<'_>,
     input: &InputState,
 ) -> Option<macroquad::math::Rect> {
-    if let Some(strike) = &input.striking {
+    if let Some(strike) = input.striking() {
         let blast = aftermine_sim::stats::WARHEAD.outer_radius.to_num::<f32>();
         return Some(strike_disc_on_screen(game, strike.aim()?, blast));
     }
@@ -2913,7 +2946,7 @@ pub(crate) fn ghost_touch_rect(
 ) -> Option<macroquad::math::Rect> {
     // A strike's aim is grabbed by its full-damage core, so a tap in its
     // outer ring still moves it there.
-    let grip = match input.striking.as_ref() {
+    let grip = match input.striking() {
         Some(strike) => strike_disc_on_screen(
             game,
             strike.aim()?,
@@ -2928,7 +2961,7 @@ pub(crate) fn ghost_touch_rect(
 /// the row it has pulled out, or the ghost's east edge before it has one.
 /// An Extractor snaps to frames and lays no rows.
 pub(crate) fn row_handle_at(game: &crate::game::Scene<'_>, input: &InputState) -> Option<Vec2> {
-    let placement = input.placing.as_ref()?;
+    let placement = input.placing()?;
     let ghost = placement.ghost.as_ref()?;
     if placement.kind == aftermine_sim::BuildingKind::Extractor {
         return None;
@@ -2955,8 +2988,7 @@ pub(crate) fn row_handle_at(game: &crate::game::Scene<'_>, input: &InputState) -
 /// otherwise hang.
 pub(crate) fn row_runs_down(input: &InputState) -> bool {
     input
-        .placing
-        .as_ref()
+        .placing()
         .and_then(|placement| placement.ghost.as_ref()?.row.as_ref())
         .is_some_and(|row| row.step.1 > 0)
 }
@@ -3006,7 +3038,7 @@ pub(crate) fn pull_row(game: &crate::game::Scene<'_>, input: &mut InputState, p:
         kind,
         ghost: Some(ghost),
         ..
-    }) = input.placing.as_mut()
+    }) = input.placing_mut()
     else {
         return;
     };
@@ -3074,7 +3106,7 @@ pub(crate) fn refresh_row(game: &crate::game::Scene<'_>, input: &mut InputState,
         kind,
         ghost: Some(ghost),
         ..
-    }) = input.placing.as_mut()
+    }) = input.placing_mut()
     else {
         return;
     };
@@ -3121,8 +3153,7 @@ pub(crate) fn ghost_control_at(
 /// was one.
 pub(super) fn drop_row(input: &mut InputState) -> bool {
     input
-        .placing
-        .as_mut()
+        .placing_mut()
         .and_then(|placement| placement.ghost.as_mut())
         .is_some_and(|ghost| ghost.row.take().is_some())
 }
@@ -3130,17 +3161,12 @@ pub(super) fn drop_row(input: &mut InputState) -> bool {
 /// A finger landed on the ghost: it grabs it where it is.
 pub(crate) fn grab_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, p: Vec2) {
     let world = game.presentation.camera.to_world(p);
-    if let Some(aim) = input
-        .striking
-        .as_mut()
-        .and_then(|strike| strike.aim.as_mut())
-    {
+    if let Some(aim) = input.striking_mut().and_then(|strike| strike.aim.as_mut()) {
         aim.grab = Some((aim.tile, world));
         return;
     }
     if let Some(ghost) = input
-        .placing
-        .as_mut()
+        .placing_mut()
         .and_then(|placement| placement.ghost.as_mut())
     {
         ghost.grab = Some((ghost.anchor, world));
@@ -3154,11 +3180,7 @@ pub(crate) fn grab_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, 
 /// drawn. Moving it leaves any row behind.
 pub(crate) fn drag_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, p: Vec2) {
     let lift = crate::theme::MIN_TOUCH_TARGET * input.ui;
-    if let Some(aim) = input
-        .striking
-        .as_mut()
-        .and_then(|strike| strike.aim.as_mut())
-    {
+    if let Some(aim) = input.striking_mut().and_then(|strike| strike.aim.as_mut()) {
         drag_aim(game, aim, p, lift);
         return;
     }
@@ -3166,7 +3188,7 @@ pub(crate) fn drag_ghost(game: &crate::game::Scene<'_>, input: &mut InputState, 
         kind,
         ghost: Some(ghost),
         ..
-    }) = input.placing.as_mut()
+    }) = input.placing_mut()
     else {
         return;
     };
@@ -3200,12 +3222,11 @@ fn launch_strike(game: &mut Game, input: &mut InputState, target: TilePos) {
         return;
     };
     let salvo = input
-        .striking
-        .as_ref()
+        .striking()
         .map(|strike| strike.silos(&game.view()).salvo(target, fires))
         .unwrap_or_default();
     if salvo.is_empty() {
-        input.striking = None;
+        input.armed = None;
         game.presentation.toast("No warhead loaded");
         return;
     }
@@ -3213,7 +3234,7 @@ fn launch_strike(game: &mut Game, input: &mut InputState, target: TilePos) {
         game.issue(Command::Launch { building, target });
     }
     if salvo.len() == ready {
-        input.striking = None;
+        input.armed = None;
     }
 }
 
@@ -3221,7 +3242,7 @@ fn launch_strike(game: &mut Game, input: &mut InputState, target: TilePos) {
 /// controls show before the first tap.
 pub(super) fn drop_aim_in_view(game: &crate::game::Scene<'_>, input: &mut InputState) {
     let tile = ground_tile(game.state, game.presentation.camera.center);
-    if let Some(strike) = &mut input.striking {
+    if let Some(strike) = input.striking_mut() {
         strike.aim_at(tile);
     }
 }
@@ -3252,7 +3273,7 @@ fn drag_aim(game: &crate::game::Scene<'_>, aim: &mut StrikeAim, p: Vec2, lift: f
 /// ghost; a success disarms, unless queueing keeps placement armed, when
 /// the ghost moves on to offer the next spot.
 pub(crate) fn confirm_ghost(game: &mut Game, input: &mut InputState) {
-    if let Some(target) = input.striking.as_ref().and_then(Strike::aim) {
+    if let Some(target) = input.striking().and_then(Strike::aim) {
         launch_strike(game, input, target);
         return;
     }
@@ -3263,8 +3284,7 @@ pub(crate) fn confirm_ghost(game: &mut Game, input: &mut InputState) {
     // it stands now.
     refresh_row(&game.view(), input, true);
     let row = input
-        .placing
-        .as_mut()
+        .placing_mut()
         .and_then(|placement| placement.ghost.as_mut()?.row.take());
     let placed = if let Some(row) = row {
         commit_stroke(game, input, kind, &row.plan, Some(row.step))
@@ -3281,7 +3301,7 @@ pub(crate) fn confirm_ghost(game: &mut Game, input: &mut InputState) {
         return;
     }
     let view = game.view();
-    if let Some(placement) = &mut input.placing
+    if let Some(placement) = input.placing_mut()
         && let Some(chain) = placement.chain
     {
         let next = TilePos::new(chain.last.x + chain.step.0, chain.last.y + chain.step.1);
@@ -3292,7 +3312,8 @@ pub(crate) fn confirm_ghost(game: &mut Game, input: &mut InputState) {
 /// The ghost's cross: a strike stands down; a pulled-out row folds back to
 /// the ghost; a lone ghost gives the building back to the palette.
 pub(crate) fn cancel_ghost(input: &mut InputState) {
-    if input.striking.take().is_some() {
+    if input.striking().is_some() {
+        input.armed = None;
         return;
     }
     if !drop_row(input) {
@@ -3308,7 +3329,7 @@ fn drop_ghost_in_view(game: &crate::game::Scene<'_>, input: &mut InputState) {
         return;
     };
     let anchor = ghost_anchor_under(game, kind, game.presentation.camera.center);
-    if let Some(placement) = &mut input.placing {
+    if let Some(placement) = input.placing_mut() {
         placement.ghost = Some(PlacementGhost::at(anchor));
     }
 }
@@ -3317,7 +3338,7 @@ fn drop_ghost_in_view(game: &crate::game::Scene<'_>, input: &mut InputState) {
 /// spot is `step`, else the offset from the last site, else one
 /// footprint east.
 fn record_placed(input: &mut InputState, anchor: TilePos, step: Option<(i32, i32)>) {
-    let Some(placement) = &mut input.placing else {
+    let Some(placement) = input.placing_mut() else {
         return;
     };
     let east = (placement.kind.size().0, 0);
@@ -3400,7 +3421,7 @@ fn commit_stroke(
 /// stages; queue held at either end keeps placing. Returns whether `by`
 /// was laying one.
 fn finish_stroke(game: &mut Game, input: &mut InputState, by: Presser) -> bool {
-    let Some(placement) = input.placing.as_mut() else {
+    let Some(placement) = input.placing_mut() else {
         return false;
     };
     let Some(held) = placement.stroke.take_if(|held| held.by == by) else {
@@ -3423,7 +3444,7 @@ fn extend_stroke(game: &Game, input: &mut InputState, by: Presser, to: Vec2) {
         kind,
         stroke: Some(held),
         ..
-    }) = input.placing.as_mut()
+    }) = input.placing_mut()
     else {
         return;
     };
@@ -3507,8 +3528,8 @@ fn armed_verb_click(
     minimap: Option<Vec2>,
     reach: OrderReach,
 ) -> bool {
-    let Some(verb) = input.click_verb else {
-        if input.patrol_route.is_none() {
+    let Some(verb) = input.click_verb() else {
+        if input.patrol_route().is_none() {
             return false;
         }
         // Left-clicks and taps collect the route just as right-clicks
@@ -3618,7 +3639,7 @@ fn armed_verb_click(
             game.issue(command);
             game.presentation.ping_order(at, ping, queue);
             if !queue {
-                input.click_verb = None;
+                input.armed = None;
             }
         }
         Err(refusal) => {
@@ -3638,7 +3659,7 @@ fn add_patrol_waypoint(
     world: Vec2,
 ) {
     let key = bindings.label(Action::Patrol);
-    let Some(route) = &mut input.patrol_route else {
+    let Some(route) = input.patrol_route_mut() else {
         return;
     };
     if route.len() >= aftermine_sim::stats::ORDER_QUEUE_CAP {
@@ -3655,9 +3676,11 @@ fn add_patrol_waypoint(
 /// Sends the route being collected as the selection's patrol and stands
 /// patrol targeting down. An empty route only stands down.
 pub(super) fn start_patrol(game: &mut Game, input: &mut InputState) {
-    if let Some(waypoints) = input.patrol_route.take()
-        && !waypoints.is_empty()
-    {
+    let Some(waypoints) = input.patrol_route_mut().map(std::mem::take) else {
+        return;
+    };
+    input.armed = None;
+    if !waypoints.is_empty() {
         let units = game.presentation.selection.units.clone();
         game.issue(Command::Patrol { units, waypoints });
     }
@@ -3724,7 +3747,6 @@ fn activate_card(
         crate::panel::CardAction::Dispatch(a) => dispatch_action(game, input, bindings, a),
         crate::panel::CardAction::ArmBuild(kind) => {
             input.build_menu = true;
-            input.disarm_click_verbs();
             input.arm_placement(kind);
             input.build_category = Some(crate::action::building_category(kind));
             if input.last_pointer == Pointer::Touch {
@@ -3736,8 +3758,7 @@ fn activate_card(
             if buildings.is_empty() {
                 return;
             }
-            input.disarm_click_verbs();
-            input.rallying = buildings;
+            input.armed = Some(Armed::Rally(buildings));
         }
         crate::panel::CardAction::CancelProduction(kind) => {
             crate::production::cancel_one(game, kind);

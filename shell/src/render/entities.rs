@@ -282,7 +282,7 @@ pub(crate) fn decor_units(game: &crate::game::Scene<'_>) -> Vec<aftermine_sim::U
 /// the loop Start will send.
 pub(crate) fn draw_breadcrumbs(game: &crate::game::Scene<'_>, input: &InputState) {
     let dot = |p: Vec2, color: Color| fill_circle(p, 3.0, color);
-    if let Some(route) = &input.patrol_route {
+    if let Some(route) = input.patrol_route() {
         let points: Vec<Vec2> = route
             .iter()
             .map(|tile| {
@@ -3184,7 +3184,7 @@ pub(crate) fn draw_range_rings(game: &crate::game::Scene<'_>, input: &InputState
         &game.presentation.selection.buildings,
     )
     .is_none()
-        && input.placing.is_none()
+        && input.placing().is_none()
     {
         return;
     }
@@ -3331,7 +3331,7 @@ fn draw_press_ring(at: Vec2, progress: f32) {
 }
 
 pub(crate) fn draw_drag_rect(game: &crate::game::Scene<'_>, input: &InputState) {
-    let Some(origin) = input.drag_origin else {
+    let Some(origin) = input.drag_origin() else {
         return;
     };
     let now = input.mouse;

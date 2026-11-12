@@ -47,7 +47,7 @@ pub(super) fn press(
         PadButton::West => order(game, input, bindings, pad),
         PadButton::East => back(game, input, bindings, pad),
         // Launch takes the bumpers over, as the strike ribbon's steppers.
-        PadButton::LeftShoulder | PadButton::RightShoulder if input.striking.is_some() => {
+        PadButton::LeftShoulder | PadButton::RightShoulder if input.striking().is_some() => {
             super::step_salvo(&game.view(), input, button == PadButton::RightShoulder);
         }
         PadButton::LeftShoulder => {
@@ -73,7 +73,7 @@ pub(super) fn press(
 pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button: PadButton) {
     match button {
         PadButton::South => {
-            let placing = input.placing.is_some();
+            let placing = input.placing().is_some();
             if super::finish_stroke(game, input, Presser::Pad(pad)) {
                 placed(input, placing);
                 return;
@@ -94,7 +94,7 @@ pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64, button:
 /// into the build ring. Out of pad mode the palette is drawn, so it stays.
 fn placed(input: &mut InputState, placing: bool) {
     if placing
-        && input.placing.is_none()
+        && input.placing().is_none()
         && super::hud_in_pad_mode(crate::platform::PLATFORM, input.pad_in_use.is_some())
     {
         input.close_construction();
@@ -169,7 +169,7 @@ fn order(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u6
         return;
     }
     if input.armed_mode().is_some() {
-        let placing = input.placing.is_some();
+        let placing = input.placing().is_some();
         super::armed_click(game, input, bindings, point, Presser::Pad(pad));
         super::finish_stroke(game, input, Presser::Pad(pad));
         placed(input, placing);
@@ -191,10 +191,10 @@ fn back(game: &mut Game, input: &mut InputState, bindings: &BindingMap, pad: u64
     if paint::abandon(input) {
         return;
     }
-    let placing = input.placing.is_some();
+    let placing = input.placing().is_some();
     let staged = input.placement_staged();
     super::dispatch_action(game, input, bindings, Action::Back);
-    if placing && input.placing.is_none() {
+    if placing && input.placing().is_none() {
         if staged {
             placed(input, placing);
         } else {

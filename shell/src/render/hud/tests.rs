@@ -305,12 +305,12 @@ fn every_armed_ribbon_ends_in_a_cross_clear_of_its_words() {
         .id;
     game.presentation.selection.units.push(harvester);
     let arms: [fn(&mut InputState); 3] = [
-        |input| input.click_verb = Some(crate::input::ClickVerb::Hunt),
+        |input| input.armed = Some(crate::input::Armed::Verb(crate::input::ClickVerb::Hunt)),
         |input| {
             input.build_menu = true;
             input.arm_placement(aftermine_sim::BuildingKind::Turret);
         },
-        |input| input.patrol_route = Some(Vec::new()),
+        |input| input.armed = Some(crate::input::Armed::Patrol(Vec::new())),
     ];
     for arm in arms {
         let mut input = InputState::new();
@@ -443,7 +443,7 @@ fn the_patrol_ribbon_holds_still_and_lights_start_once_it_has_a_point() {
         assert_eq!(hud.layout.ribbon_cancel, ribbon.cancel);
         (ribbon.rect, buttons, ribbon.cancel)
     };
-    input.patrol_route = Some(Vec::new());
+    input.armed = Some(crate::input::Armed::Patrol(Vec::new()));
     let (empty, waiting, cancel) = ribbon(&input);
     assert!(!waiting.ready, "Start waits for a point");
     for button in [waiting.start, cancel] {
@@ -452,13 +452,15 @@ fn the_patrol_ribbon_holds_still_and_lights_start_once_it_has_a_point() {
     }
     assert!(waiting.start.right() < cancel.x);
 
-    input.patrol_route = Some(vec![chassis::grid::TilePos::new(3, 3)]);
+    input.armed = Some(crate::input::Armed::Patrol(vec![
+        chassis::grid::TilePos::new(3, 3),
+    ]));
     let (one, ready, _) = ribbon(&input);
     assert!(ready.ready);
-    input.patrol_route = Some(vec![
+    input.armed = Some(crate::input::Armed::Patrol(vec![
         chassis::grid::TilePos::new(3, 3);
         aftermine_sim::stats::ORDER_QUEUE_CAP
-    ]);
+    ]));
     let (full, _, _) = ribbon(&input);
     assert_eq!(one, empty, "the ribbon holds still");
     assert_eq!(full, empty);

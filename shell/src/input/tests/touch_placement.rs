@@ -95,7 +95,7 @@ fn arming_by_touch_drops_the_ghost_mid_view_and_by_mouse_does_not() {
         &mut input,
         crate::panel::CardAction::ArmBuild(aftermine_sim::BuildingKind::Turret),
     );
-    assert!(input.placing.is_some());
+    assert!(input.placing().is_some());
     assert_eq!(
         input.ghost_anchor(),
         None,
@@ -131,7 +131,10 @@ fn a_pulled_row_previews_until_the_check_builds_it_whole() {
         ],
         "the check builds the row, the first replacing as a plain tap does"
     );
-    assert!(input.placing.is_none(), "and a plain check ends placement");
+    assert!(
+        input.placing().is_none(),
+        "and a plain check ends placement"
+    );
 }
 
 #[test]
@@ -175,7 +178,7 @@ fn the_cross_folds_a_row_back_then_returns_the_building() {
     assert_eq!(input.ghost_anchor(), Some(TilePos::new(3, 2)));
     tap_cross(&mut game, &mut input);
     assert!(
-        input.placing.is_none(),
+        input.placing().is_none(),
         "a lone ghost gives the building back"
     );
     assert!(input.build_menu, "to the palette");
@@ -317,7 +320,7 @@ fn a_finger_that_lands_on_the_cross_never_presses_the_check() {
     input.now += 0.05;
     apply_events(&mut game, &mut input, &[touch_up(1, lift)]);
     assert!(game.pending.is_empty(), "no build");
-    assert!(input.placing.is_some(), "and no cancel either");
+    assert!(input.placing().is_some(), "and no cancel either");
 }
 
 #[test]
@@ -470,5 +473,5 @@ fn a_trackpad_drags_the_row_handle_too() {
     );
     assert_eq!(input.planned_stamps().len(), 3, "the cursor pulled a row");
     assert!(game.pending.is_empty(), "and built nothing");
-    assert!(input.placing.is_some());
+    assert!(input.placing().is_some());
 }

@@ -92,7 +92,7 @@ fn each_pick_fires_the_salvo_and_aiming_stays_on_until_none_is_ready() {
     assert_eq!(launches(&game)[2].1, TilePos::new(30, 8));
     fired.sort_unstable();
     assert_eq!(fired, ids, "each Spire fires once");
-    assert!(input.striking.is_none(), "the last ready warhead disarms");
+    assert!(input.striking().is_none(), "the last ready warhead disarms");
     assert_eq!(input.salvo, 2, "the size is kept for the next strike");
 }
 
@@ -106,7 +106,7 @@ fn a_shift_click_fires_every_ready_warhead() {
     click_world(&mut game, &mut input, vec2(20.5, 6.5));
     apply_events(&mut game, &mut input, &[key_up(Key::Shift)]);
     assert_eq!(launches(&game).len(), 3);
-    assert!(input.striking.is_none());
+    assert!(input.striking().is_none());
     assert_eq!(input.salvo, 1, "Shift leaves the size alone");
 }
 
@@ -154,7 +154,7 @@ fn the_banner_steppers_size_the_salvo_and_its_cross_stands_it_down() {
     press(&mut game, &mut input, less);
     assert_eq!(input.salvo, 1, "the size never drops below one");
     assert!(
-        input.striking.is_some(),
+        input.striking().is_some(),
         "a stepper never cancels the strike"
     );
     for _ in 0..4 {
@@ -174,9 +174,9 @@ fn the_banner_steppers_size_the_salvo_and_its_cross_stands_it_down() {
         &mut input,
         Rect::new(ribbon.x + 2.0, ribbon.y + 2.0, 4.0, 4.0),
     );
-    assert!(input.striking.is_some(), "the words do nothing");
+    assert!(input.striking().is_some(), "the words do nothing");
     press(&mut game, &mut input, cancel);
-    assert!(input.striking.is_none(), "the cross cancels");
+    assert!(input.striking().is_none(), "the cross cancels");
     assert!(launches(&game).is_empty());
 }
 
@@ -192,13 +192,13 @@ fn a_touch_check_mark_fires_the_salvo_and_keeps_its_aim() {
     tap(&mut game, &mut input, controls.confirm.center());
     assert_eq!(launches(&game).len(), 2);
     assert_eq!(
-        input.striking.as_ref().and_then(Strike::aim),
+        input.striking().and_then(Strike::aim),
         Some(TilePos::new(20, 6)),
         "the aim waits for the next salvo"
     );
     tap(&mut game, &mut input, controls.confirm.center());
     assert_eq!(launches(&game).len(), 3);
-    assert!(input.striking.is_none());
+    assert!(input.striking().is_none());
 }
 
 /// Publishes the selection's command cards in one row, as drawing does,

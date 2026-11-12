@@ -311,7 +311,7 @@ fn a_second_finger_cancels_from_the_ribbon_cross_and_builds_from_the_check() {
     let (fighter, at) = own_fighter(&game);
     game.presentation.selection.units = vec![fighter];
     dispatch_action(&mut game, &mut input, Action::Hunt);
-    assert!(input.armed(ClickVerb::Hunt), "premise: Hunt is armed");
+    assert!(input.is_armed(ClickVerb::Hunt), "premise: Hunt is armed");
     relayout::relayout(&game, &input);
     let cross = game.presentation.layout.get().ribbon_cancel;
     assert!(cross.w > 0.0, "premise: the ribbon shows its cross");

@@ -269,7 +269,10 @@ fn x_collects_a_patrol_waypoint_while_a_route_is_armed() {
     );
     rest_on(&mut game, &mut input, vec2(36.5, 24.5));
     press(&mut game, &mut input, PadButton::West);
-    assert_eq!(input.patrol_route.as_ref().map(Vec::len), Some(1));
+    assert_eq!(
+        input.patrol_route().map(<[chassis::grid::TilePos]>::len),
+        Some(1)
+    );
     assert!(game.pending.is_empty());
 }
 
@@ -740,11 +743,11 @@ fn x_lays_patrol_waypoints_and_rallies_on_the_ground() {
     rest_on(&mut game, &mut input, ground);
     press(&mut game, &mut input, PadButton::West);
     assert_eq!(
-        input.patrol_route.as_deref(),
+        input.patrol_route(),
         Some(&[chassis::grid::TilePos::new(33, 24)][..]),
         "the waypoint stays on the ground"
     );
-    input.patrol_route = None;
+    input.armed = None;
     game.presentation.selection.units.clear();
     game.presentation.selection.buildings = vec![fabricator];
     press(&mut game, &mut input, PadButton::West);

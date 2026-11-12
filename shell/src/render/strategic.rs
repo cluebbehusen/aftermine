@@ -1083,7 +1083,7 @@ fn strike_marks<'a>(game: &crate::game::Scene<'a>, input: &InputState) -> Vec<St
     let camera = &game.presentation.camera;
     let state = game.state;
     let mut marks = Vec::new();
-    if let Some(strike) = &input.striking {
+    if let Some(strike) = input.striking() {
         // A touch aim, once down, is where it lands; else the hover point.
         let tile = strike.aim().or_else(|| {
             input

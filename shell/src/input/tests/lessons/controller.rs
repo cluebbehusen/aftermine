@@ -372,9 +372,9 @@ fn the_build_lesson_s_lt_chain_ends_with_b_as_its_controller_card_says() {
         3,
         "a held LT chains them"
     );
-    assert!(input.placing.is_some(), "letting go of LT keeps placing");
+    assert!(input.placing().is_some(), "letting go of LT keeps placing");
     tap(&mut game, &mut input, PadButton::East);
-    assert!(input.placing.is_none(), "B stops placing");
+    assert!(input.placing().is_none(), "B stops placing");
     assert!(input.ring.is_none(), "without opening the build ring");
     assert!(!input.construction_open(), "and closes construction");
     run_to(&mut game, &input, Some("Set a rally point"));

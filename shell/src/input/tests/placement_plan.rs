@@ -42,7 +42,10 @@ fn a_drag_stages_nothing_until_the_release() {
 
     apply_events(&mut game, &mut input, &[left_up(c)]);
     assert_eq!(staged_builds(&game), 5, "the release stages the row");
-    assert!(input.placing.is_none(), "and a plain stroke ends placement");
+    assert!(
+        input.placing().is_none(),
+        "and a plain stroke ends placement"
+    );
 }
 
 #[test]
@@ -66,11 +69,11 @@ fn escape_or_a_right_click_mid_drag_drops_the_row_and_keeps_placing() {
             input.planned_stamps().is_empty(),
             "{cancel:?} drops the row"
         );
-        assert!(input.placing.is_some(), "{cancel:?} keeps placing");
+        assert!(input.placing().is_some(), "{cancel:?} keeps placing");
         let c = at(&game, 8);
         apply_events(&mut game, &mut input, &[mouse_move(c), left_up(c)]);
         assert!(game.pending.is_empty(), "{cancel:?}: nothing staged");
-        assert!(input.placing.is_some(), "{cancel:?}: still placing");
+        assert!(input.placing().is_some(), "{cancel:?}: still placing");
     }
 }
 

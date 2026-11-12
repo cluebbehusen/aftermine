@@ -4,7 +4,7 @@
 
 use super::orders::digit_action;
 use super::select::{cycle_idle_worker, idle_harvesters, select_army};
-use super::{ClickVerb, InputState, Pointer};
+use super::{Armed, ClickVerb, InputState, Pointer};
 use crate::action::Action;
 use crate::game::Game;
 use crate::numeric;
@@ -98,8 +98,7 @@ pub(super) fn dispatch_action(
                 game.presentation.toast("No scrap carried");
                 return;
             }
-            input.disarm_click_verbs();
-            input.patrol_route = None;
+            input.armed = None;
             game.issue(Command::ReturnCargo {
                 units: game.presentation.selection.units.clone(),
                 foundry: None,
@@ -112,7 +111,7 @@ pub(super) fn dispatch_action(
                     .toast("You can only command your own units");
                 return;
             }
-            input.disarm_click_verbs();
+            input.armed = None;
             game.issue(Command::Retire {
                 units: game.presentation.selection.units.clone(),
                 queue: input.queue_held(),
@@ -139,8 +138,7 @@ pub(super) fn dispatch_action(
                 game.presentation.toast("No warhead loaded");
                 return;
             }
-            input.disarm_click_verbs();
-            input.striking = Some(super::Strike::new(selected.silos()));
+            input.armed = Some(Armed::Strike(super::Strike::new(selected.silos())));
             if input.last_pointer == Pointer::Touch {
                 super::drop_aim_in_view(&game.view(), input);
             }
@@ -207,8 +205,7 @@ pub(super) fn dispatch_action(
         | Action::Unload
         | Action::Build(_) => super::activate_action_card(game, input, bindings, action),
         Action::BuildCategory(category) => {
-            input.disarm_click_verbs();
-            input.patrol_route = None;
+            input.armed = None;
             input.build_menu = true;
             input.build_category = Some(category);
         }
@@ -222,7 +219,7 @@ pub(super) fn dispatch_action(
         Action::ToggleBuildPalette => {
             if input.construction_open() {
                 if input.build_category.take().is_some() {
-                    input.disarm_click_verbs();
+                    input.armed = None;
                     input.build_menu = true;
                 } else {
                     input.close_construction();
@@ -275,14 +272,13 @@ pub(super) fn dispatch_action(
             // First press arms a route; the second sends the circuit. On
             // a selection already patrolling, the card is lit and a press
             // turns the patrol off: they stop where they are.
-            if input.patrol_route.is_some() {
+            if input.patrol_route().is_some() {
                 super::start_patrol(game, input);
             } else if crate::panel::selection_patrols(&game.view()) {
                 let units = game.presentation.selection.units.clone();
                 game.issue(Command::Stop { units });
             } else if !game.presentation.selection.units.is_empty() {
-                input.disarm_click_verbs();
-                input.patrol_route = Some(Vec::new());
+                input.armed = Some(Armed::Patrol(Vec::new()));
             }
         }
         // The overlay sees through fog, so it is a development tool: a
@@ -301,7 +297,7 @@ pub(super) fn dispatch_action(
             if input.drop_stroke() {
                 return;
             }
-            if input.placing.is_some() {
+            if input.placing().is_some() {
                 input.stop_placing();
                 input.build_menu = true;
                 return;
@@ -314,17 +310,7 @@ pub(super) fn dispatch_action(
                 input.close_construction();
                 return;
             }
-            if input.click_verb.take().is_some() {
-                return;
-            }
-            if !input.rallying.is_empty() {
-                input.rallying.clear();
-                return;
-            }
-            if input.striking.take().is_some() {
-                return;
-            }
-            if input.patrol_route.take().is_some() {
+            if input.armed.take().is_some() {
                 return;
             }
             game.presentation.selection.units.clear();
@@ -426,11 +412,10 @@ fn toggle_verb(
     qualifies: impl Fn(&aftermine_sim::Unit) -> bool,
     refusal: &'static str,
 ) {
-    if input.armed(verb) {
-        input.click_verb = None;
+    if input.is_armed(verb) {
+        input.armed = None;
     } else if game.view().selection_has_own(qualifies) {
-        input.disarm_click_verbs();
-        input.click_verb = Some(verb);
+        input.armed = Some(Armed::Verb(verb));
     } else {
         game.presentation.toast(refusal);
     }

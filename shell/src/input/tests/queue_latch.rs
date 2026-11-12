@@ -126,10 +126,13 @@ fn a_latched_queue_lasts_a_whole_placement_chain() {
         "and both queued"
     );
     assert!(matches!(input.queue_toggle, QueueToggle::Latched { .. }));
-    assert!(input.placing.is_some(), "still placing");
+    assert!(input.placing().is_some(), "still placing");
 
     tap_after(&mut game, &mut input, cancel.center(), 1.0);
-    assert!(input.placing.is_none(), "the ribbon's cross ends placement");
+    assert!(
+        input.placing().is_none(),
+        "the ribbon's cross ends placement"
+    );
     assert_eq!(input.queue_toggle, QueueToggle::Off, "and QUEUE with it");
 }
 
