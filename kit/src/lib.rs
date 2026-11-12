@@ -4,7 +4,7 @@ pub mod bench;
 pub mod bot_execution;
 pub mod build;
 pub mod checkpoint;
-mod compression;
+pub mod compression;
 pub mod controller;
 pub mod fights;
 pub mod history;

@@ -26,6 +26,10 @@ while reusable game-independent primitives stay in `chassis`.
   1,024 ticks so playback can seek quickly, and `recording` handles replays that
   start from a saved world rather than tick zero.
 - `playback` seeks exactly anywhere between a recording's start and end.
+- `compression` writes one checksummed Zstandard frame per record, keyframe,
+  save or LAN snapshot, a keyframe delta using the world before it as its
+  dictionary, and refuses a frame without its checksum, with bytes after it, or
+  of another length than declared.
 - `runner` runs scenarios and replays headlessly; `bench` builds the mass-battle
   fixture.
 - `stats` derives match summaries from simulation state.

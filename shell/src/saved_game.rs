@@ -7,7 +7,7 @@ use aftermine_sim::SIM_VERSION;
 use anyhow::{Context, Result, ensure};
 use chassis::replay::ReplayMeta;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 const VERSION: u32 = 1;
@@ -75,10 +75,7 @@ pub(crate) fn write_capture(capture: SaveCapture, meta: ReplayMeta, path: &Path)
     let (map, tick) = checkpoint.metadata();
     let teams = crate::menu::team_sizes(checkpoint.team_tags());
     ensure!(meta.ticks == Some(tick), "save metadata mismatch");
-    let mut encoder = zstd::stream::Encoder::new(Vec::new(), LEVEL)?;
-    encoder.include_checksum(true)?;
-    encoder.write_all(&payload)?;
-    let compressed = encoder.finish()?;
+    let compressed = aftermine_kit::compression::compress(&payload, None, LEVEL)?;
     let header = Header {
         version: VERSION,
         meta,
@@ -202,23 +199,12 @@ fn read_payload(path: &Path) -> Result<(Header, Vec<u8>)> {
         compressed.len() as u64 == header.compressed_bytes,
         "save payload length mismatch"
     );
-    ensure!(
-        compressed
-            .get(4)
-            .is_some_and(|descriptor| descriptor & 4 != 0),
-        "save frame has no checksum"
-    );
-    let frame_len = zstd::zstd_safe::find_frame_compressed_size(&compressed)
-        .map_err(|code| anyhow::anyhow!("invalid compressed frame: {code}"))?;
-    ensure!(frame_len == compressed.len(), "trailing compressed payload");
-    let mut payload = Vec::new();
-    zstd::stream::read::Decoder::new(compressed.as_slice())?
-        .take(header.decoded_bytes + 1)
-        .read_to_end(&mut payload)?;
-    ensure!(
-        payload.len() as u64 == header.decoded_bytes,
-        "decoded payload length mismatch"
-    );
+    let payload = aftermine_kit::compression::decompress(
+        &compressed,
+        header.decoded_bytes,
+        MAX_BYTES as u64,
+        None,
+    )?;
     Ok((header, payload))
 }
 
