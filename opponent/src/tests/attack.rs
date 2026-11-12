@@ -941,7 +941,7 @@ fn the_upper_rungs_go_after_the_unguarded_target() {
         ],
         &[(24, 5), (25, 5), (26, 5), (27, 5)],
     );
-    let prime = BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 11);
+    let prime = rung(BotDifficulty::Prime);
     assert_eq!(target_of(&scenario, prime), open);
     assert_eq!(
         target_of(&scenario, config()),
@@ -955,7 +955,7 @@ fn the_lowest_rung_marches_on_a_foundry() {
     let scenario = targets(&[(BuildingKind::Crucible, 34, 10)], &[]);
     let mut scenario = scenario;
     scenario.units.push(unit(0, UnitKind::Kestrel, 40, 12));
-    let scrapheap = BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11);
+    let scrapheap = rung(BotDifficulty::Scrapheap);
     assert_eq!(target_of(&scenario, scrapheap), TilePos::new(43, 11));
     assert_eq!(
         target_of(&scenario, config()),
@@ -1003,7 +1003,7 @@ fn a_target_out_of_reach_gives_way_to_one_the_army_can_beat() {
     let trace = opponent.act_traced(&state, &mut OwnEvents::default()).1;
     assert_eq!(anchor(trace), Some(open));
 
-    let scrapheap = BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11);
+    let scrapheap = rung(BotDifficulty::Scrapheap);
     let state = scenario.build().unwrap();
     let (_, trace) =
         seat_with(&scenario, 0, scrapheap).act_traced(&state, &mut OwnEvents::default());
@@ -1179,10 +1179,6 @@ fn the_lowest_rung_sometimes_attacks_into_an_army_it_cannot_beat() {
         !seeds.clone().all(|seed| launches(scrapheap(seed))),
         "not every Scrapheap does"
     );
-}
-
-fn rung(difficulty: BotDifficulty) -> BotConfig {
-    BotConfig::new(difficulty, BotStance::Balanced, 11)
 }
 
 /// Where the travelling attack's army stands, mid-field.

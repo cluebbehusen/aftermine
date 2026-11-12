@@ -222,7 +222,7 @@ fn mirrored_seats_build_on_mirrored_spots() {
 
 #[test]
 fn scrapheap_still_techs() {
-    let scrapheap = BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11);
+    let scrapheap = rung(BotDifficulty::Scrapheap);
     let scenario = arena(200);
     let mut state = scenario.build().unwrap();
     let mut opponent = seat_with(&scenario, 0, scrapheap);

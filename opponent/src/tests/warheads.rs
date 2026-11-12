@@ -67,13 +67,10 @@ fn staged(scenario: &Scenario, interceptors: u8) -> State {
 
 /// West's launches, as (Spire, target).
 fn launches(commands: &[PlayerCommand]) -> Vec<(BuildingId, TilePos)> {
-    commands
-        .iter()
-        .filter_map(|command| match command.command {
-            Command::Launch { building, target } => Some((building, target)),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match *command {
+        Command::Launch { building, target } => Some((building, target)),
+        _ => None,
+    })
 }
 
 fn decide(scenario: &Scenario, state: &State, config: BotConfig) -> Vec<PlayerCommand> {
@@ -179,7 +176,7 @@ fn a_volley_overwhelms_a_full_lattice_over_works_worth_the_interceptors_it_draws
     );
 
     // The whole volley is one order, so the narrowest attention fires it.
-    let scrapheap = BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11);
+    let scrapheap = rung(BotDifficulty::Scrapheap);
     assert!(crate::decision::allowance(BotDifficulty::Scrapheap) < 3);
     advance_to(&mut state, 24, &[]);
     assert_eq!(launches(&decide(&three, &state, scrapheap)).len(), 3);
@@ -295,7 +292,7 @@ fn units_a_warhead_already_flying_will_fell_draw_no_second_strike() {
 fn a_lattice_over_works_worth_a_strike_is_struck_and_a_lone_one_is_not() {
     let lattice = [(BuildingKind::Lattice, 36, 9)];
     let spires = [(6, 14), (6, 17), (9, 14)];
-    let prime = BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 11);
+    let prime = rung(BotDifficulty::Prime);
     let guarding = strikes(&spires, &BLOCK, &lattice, &[(31, 5)]);
     let fired = launches(&decide(&guarding, &staged(&guarding, 2), prime));
     assert_eq!(fired.len(), 3, "{fired:?}");

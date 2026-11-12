@@ -324,7 +324,7 @@ fn defense_outranks_workers_under_a_small_allowance() {
     }
     scenario.units.extend((4..=5).map(|x| harvester(0, x, 7)));
     let state = scenario.build().unwrap();
-    let scrapheap = BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11);
+    let scrapheap = rung(BotDifficulty::Scrapheap);
     let (commands, trace) =
         seat_with(&scenario, 0, scrapheap).act_traced(&state, &mut OwnEvents::default());
     let trace = trace.unwrap();
@@ -949,10 +949,7 @@ fn a_bulwark_out_of_sight_is_valued_and_feared_as_a_bulwark() {
 
 #[test]
 fn a_gun_in_sight_shelling_the_base_is_attacked() {
-    for config in [
-        config(),
-        BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 11),
-    ] {
+    for config in [config(), rung(BotDifficulty::Prime)] {
         let mut scenario = shelling(&[0]);
         // A West Scuttler beside the gun reveals it. The gun stands beyond the
         // reach that makes a unit a threat to buildings, but its shells land in
@@ -970,17 +967,10 @@ fn a_gun_in_sight_shelling_the_base_is_attacked() {
             "premise: the gun is in sight"
         );
         let commands = seat_with(&scenario, 0, config).act(&state, &mut OwnEvents::default());
-        let sent: Vec<UnitId> = commands
-            .iter()
-            .filter_map(|command| match &command.command {
-                Command::Attack {
-                    units,
-                    target: AttackTarget::Unit(target),
-                    ..
-                } if *target == gun => Some(units.clone()),
-                _ => None,
-            })
-            .flatten()
+        let sent: Vec<UnitId> = attacks(&commands)
+            .into_iter()
+            .filter(|(_, target)| *target == AttackTarget::Unit(gun))
+            .flat_map(|(units, _)| units)
             .collect();
         assert!(!sent.is_empty(), "{commands:?}");
         // Focus fire at Prime keeps them on it rather than hunting.

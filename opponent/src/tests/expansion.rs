@@ -157,13 +157,7 @@ fn an_unexplored_expansion_sends_a_harvester_to_look() {
 }
 
 fn builds_of(commands: &[PlayerCommand]) -> Vec<BuildingKind> {
-    commands
-        .iter()
-        .filter_map(|command| match command.command {
-            Command::Build { kind, .. } => Some(kind),
-            _ => None,
-        })
-        .collect()
+    builds(commands).into_iter().map(|(kind, _)| kind).collect()
 }
 
 #[test]
@@ -202,7 +196,7 @@ fn a_free_frame_near_home_gets_an_extractor_at_every_rung() {
     let frame = TilePos::new(6, 1);
     for difficulty in BotDifficulty::ALL {
         let mut state = scenario.build().unwrap();
-        let config = BotConfig::new(difficulty, BotStance::Balanced, 11);
+        let config = rung(difficulty);
         let mut opponent = seat_with(&scenario, 0, config);
         let mut events = OwnEvents::default();
         let mut placed = false;
@@ -476,7 +470,7 @@ fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands_at_every_run
         let extractor = own_extractor(&state);
         // Deep Bores wait for harvesting to saturate and home scrap to run
         // down.
-        let config = BotConfig::new(difficulty, BotStance::Balanced, 11);
+        let config = rung(difficulty);
         let mut opponent = seat_with(&scenario, 0, config);
         let mut events = OwnEvents::default();
         let mut upgraded = false;
@@ -517,7 +511,7 @@ fn a_deep_bore_wanted_before_a_crucible_stands_builds_the_crucible_first() {
             building: extractor,
             tier: 1,
         };
-        let config = BotConfig::new(difficulty, BotStance::Balanced, 11);
+        let config = rung(difficulty);
         let mut opponent = seat_with(&scenario, 0, config);
         let mut events = OwnEvents::default();
         let mut pulled = None;
