@@ -2753,7 +2753,10 @@ fn armed_click(
     p: Vec2,
     by: Presser,
 ) -> bool {
-    if click_on_hud(game, p) && crate::render::minimap_world_at(&game.view(), p).is_none() {
+    // Past here a press names a minimap point or open world; other chrome
+    // is not an armed press's to take.
+    let minimap = crate::render::minimap_world_at(&game.view(), p);
+    if minimap.is_none() && click_on_hud(game, p) {
         return false;
     }
     // What the press names: exactly what lies under a click or tap, and as
@@ -2766,51 +2769,43 @@ fn armed_click(
     if let Some(strike) = &mut input.striking {
         // Any tile on the map may be struck, seen or not; the minimap
         // names one as well as the world.
-        let minimap = crate::render::minimap_world_at(&game.view(), p);
-        let world = minimap
-            .or_else(|| (!click_on_hud(game, p)).then(|| game.presentation.camera.to_world(p)));
-        if let Some(world) = world {
-            let target = ground_tile(&game.state, world);
-            if by == Presser::Touch || strike.aim.is_some() {
-                // A tap only aims; the check mark launches. A minimap aim
-                // brings the camera along so its ring and controls show.
-                strike.aim_at(target);
-                if minimap.is_some() {
-                    reticle::look_at(game, input, tile_center(target));
-                }
-            } else {
-                launch_strike(game, input, target);
+        let world = minimap.unwrap_or_else(|| game.presentation.camera.to_world(p));
+        let target = ground_tile(&game.state, world);
+        if by == Presser::Touch || strike.aim.is_some() {
+            // A tap only aims; the check mark launches. A minimap aim
+            // brings the camera along so its ring and controls show.
+            strike.aim_at(target);
+            if minimap.is_some() {
+                reticle::look_at(game, input, tile_center(target));
             }
+        } else {
+            launch_strike(game, input, target);
         }
         return true;
     }
     if !input.rallying.is_empty() {
         // The minimap names ground only; the world names the own unit the
         // press reaches, which new units then escort, or else the ground.
-        let rally = if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            Some(aftermine_sim::Rally::Tile(ground_tile(&game.state, world)))
-        } else {
-            (!click_on_hud(game, p))
-                .then(|| rally_at(game, game.presentation.camera.to_world(p), reach))
+        let rally = match minimap {
+            Some(world) => aftermine_sim::Rally::Tile(ground_tile(&game.state, world)),
+            None => rally_at(game, game.presentation.camera.to_world(p), reach),
         };
-        if let Some(rally) = rally {
-            let producers = crate::building_actions::SelectedBuildings::inspect_ids(
-                &game.view(),
-                &input.rallying,
-            )
-            .producers();
-            rally_producers(game, producers, rally);
-            input.rallying.clear();
-        }
+        let producers = crate::building_actions::SelectedBuildings::inspect_ids(
+            &game.view(),
+            &input.rallying,
+        )
+        .producers();
+        rally_producers(game, producers, rally);
+        input.rallying.clear();
         return true;
     }
     if let Some(kind) = input.placing_kind() {
         // The minimap keeps its meaning while placing: jump the
         // camera, never misread the click as world ground (that would
         // spend scrap on a bogus tile).
-        if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
+        if let Some(world) = minimap {
             reticle::look_at(game, input, world);
-        } else if !click_on_hud(game, p) {
+        } else {
             let world = game.presentation.camera.to_world(p);
             if by == Presser::Touch || input.ghost_anchor().is_some() {
                 // A tap never builds on its own: it drops the ghost (or
@@ -2850,7 +2845,7 @@ fn armed_click(
         }
         return true;
     }
-    armed_verb_click(game, input, bindings, p, reach)
+    armed_verb_click(game, input, bindings, p, minimap, reach)
 }
 
 /// The anchor that centers `kind`'s footprint on a finger at `world`,
@@ -3500,212 +3495,138 @@ fn deny(game: &mut Game) {
         .push((crate::game::SoundKind::Denied, None));
 }
 
-/// The armed left-click verbs after placement: salvage, weld, run, and
-/// hunt. A salvage, weld or escort takes the structure or unit within
-/// `reach` of the press.
+/// The armed left-click verbs after placement, or a patrol route being
+/// collected, for a press at screen point `p` that names `minimap`'s world
+/// point when it lands on the minimap. A salvage, weld or escort takes the
+/// structure or unit within `reach` of the press.
 fn armed_verb_click(
     game: &mut Game,
     input: &mut InputState,
     bindings: &BindingMap,
     p: Vec2,
+    minimap: Option<Vec2>,
     reach: OrderReach,
 ) -> bool {
-    if input.armed(ClickVerb::Salvage) {
-        // As in placement: the minimap jumps the camera, a misclick keeps
-        // the mode armed, and Shift chains teardowns behind the crew's
-        // program.
-        if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            reticle::look_at(game, input, world);
-        } else if !click_on_hud(game, p) {
-            let world = game.presentation.camera.to_world(p);
-            // The press names the structure it reaches, then that one must
-            // qualify: a controller aimed at the Foundry never strips the
-            // wall beside it.
-            let target = reach
-                .building(game, world, |b| select::selectable_building(game, b))
-                .filter(|b| {
-                    b.player == game.presentation.human
-                        && b.built()
-                        && b.kind != aftermine_sim::BuildingKind::Foundry
-                });
-            let Some(building) = target.map(|b| b.id) else {
-                game.presentation.toast("Can't salvage that");
-                game.presentation
-                    .sounds_pending
-                    .push((crate::game::SoundKind::Denied, None));
-                return true;
-            };
-            let units = game.presentation.selection.units.clone();
-            game.issue(Command::Salvage {
-                units,
-                building,
-                queue: input.queue_held(),
-            });
-            game.presentation
-                .ping_order(world, PingKind::Harvest, input.queue_held());
-            if !input.queue_held() {
-                input.click_verb = None;
-            }
+    let Some(verb) = input.click_verb else {
+        if input.patrol_route.is_none() {
+            return false;
         }
+        // Left-clicks and taps collect the route just as right-clicks
+        // do; the minimap keeps its ground meaning.
+        let world = minimap.unwrap_or_else(|| game.presentation.camera.to_world(p));
+        add_patrol_waypoint(game, input, bindings, world);
+        return true;
+    };
+    // The minimap jumps the camera, a misclick keeps the verb armed, and
+    // Shift queues the order behind each program and keeps the verb armed.
+    if let Some(world) = minimap {
+        reticle::look_at(game, input, world);
         return true;
     }
-    if input.armed(ClickVerb::Weld) {
-        // As in salvage: the minimap jumps the camera, a misclick keeps the
-        // mode armed, and Shift chains welds behind the crew's program.
-        if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            reticle::look_at(game, input, world);
-        } else if !click_on_hud(game, p) {
-            let world = game.presentation.camera.to_world(p);
-            let patient = reach.unit_at(game, world, |u| orders::weldable(game, u));
-            let Some(target) = patient.map(|u| u.id) else {
-                game.presentation.toast("Can't repair that");
-                game.presentation
-                    .sounds_pending
-                    .push((crate::game::SoundKind::Denied, None));
-                return true;
-            };
+    let world = game.presentation.camera.to_world(p);
+    let units = game.presentation.selection.units.clone();
+    let queue = input.queue_held();
+    let order = match verb {
+        // The press names the structure it reaches, then that one must
+        // qualify: a controller aimed at the Foundry never strips the
+        // wall beside it.
+        ClickVerb::Salvage => reach
+            .building(game, world, |b| select::selectable_building(game, b))
+            .filter(|b| {
+                b.player == game.presentation.human
+                    && b.built()
+                    && b.kind != aftermine_sim::BuildingKind::Foundry
+            })
+            .map(|b| {
+                let building = b.id;
+                (
+                    Command::Salvage {
+                        units,
+                        building,
+                        queue,
+                    },
+                    world,
+                    PingKind::Harvest,
+                )
+            })
+            .ok_or("Can't salvage that"),
+        ClickVerb::Weld => match reach.unit_at(game, world, |u| orders::weldable(game, u)) {
+            None => Err("Can't repair that"),
             // A machine cannot weld itself: if the picked patient is the
             // only selected welder, the sim would reject after the ping, so
             // refuse here instead.
-            let has_other_welder = game
-                .view()
-                .selection_has_own(|u| u.id != target && u.kind.stats().harvest.is_some());
-            if !has_other_welder {
-                game.presentation.toast("A worker can't repair itself");
-                game.presentation
-                    .sounds_pending
-                    .push((crate::game::SoundKind::Denied, None));
-                return true;
+            Some(patient)
+                if !game.view().selection_has_own(|u| {
+                    u.id != patient.id && u.kind.stats().harvest.is_some()
+                }) =>
+            {
+                Err("A worker can't repair itself")
             }
-            let units = game.presentation.selection.units.clone();
-            game.issue(Command::RepairUnit {
-                units,
-                target,
-                queue: input.queue_held(),
-            });
-            game.presentation
-                .ping_order(world, PingKind::Harvest, input.queue_held());
-            if !input.queue_held() {
-                input.click_verb = None;
+            Some(patient) => Ok((
+                Command::RepairUnit {
+                    units,
+                    target: patient.id,
+                    queue,
+                },
+                world,
+                PingKind::Harvest,
+            )),
+        },
+        // The picked unit may be one of the selection; the rest escort it.
+        ClickVerb::Accompany => match reach.unit_at(game, world, |u| orders::own_body(game, u)) {
+            None => Err("Pick one of your units"),
+            Some(picked) if !game.view().selection_has_own(|u| u.id != picked.id) => {
+                Err("A unit can't escort itself")
             }
-        }
-        return true;
-    }
-    if input.armed(ClickVerb::Accompany) {
-        // As in weld: the minimap jumps the camera, a misclick keeps the
-        // mode armed, and Shift queues the escort behind each program. The
-        // picked unit may be one of the selection; the rest escort it.
-        if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            reticle::look_at(game, input, world);
-        } else if !click_on_hud(game, p) {
-            let world = game.presentation.camera.to_world(p);
-            let picked = reach.unit_at(game, world, |u| orders::own_body(game, u));
-            let Some(target) = picked.map(|u| u.id) else {
-                game.presentation.toast("Pick one of your units");
-                game.presentation
-                    .sounds_pending
-                    .push((crate::game::SoundKind::Denied, None));
-                return true;
-            };
-            let has_escort = game.view().selection_has_own(|u| u.id != target);
-            if !has_escort {
-                game.presentation.toast("A unit can't escort itself");
-                game.presentation
-                    .sounds_pending
-                    .push((crate::game::SoundKind::Denied, None));
-                return true;
-            }
-            let units = game.presentation.selection.units.clone();
-            game.issue(Command::Accompany {
-                units,
-                target,
-                queue: input.queue_held(),
-            });
-            game.presentation
-                .ping_order(world, PingKind::Move, input.queue_held());
-            if !input.queue_held() {
-                input.click_verb = None;
-            }
-        }
-        return true;
-    }
-    if input.armed(ClickVerb::Run) {
-        // The minimap jumps the camera, HUD chrome swallows the click, and
-        // Shift chains legs and keeps the verb armed.
-        if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            reticle::look_at(game, input, world);
-        } else if !click_on_hud(game, p) {
-            let world = game.presentation.camera.to_world(p);
+            Some(picked) => Ok((
+                Command::Accompany {
+                    units,
+                    target: picked.id,
+                    queue,
+                },
+                world,
+                PingKind::Move,
+            )),
+        },
+        ClickVerb::Run => {
             let goal = ground_tile(&game.state, world);
-            let units = game.presentation.selection.units.clone();
-            game.issue(Command::Run {
-                units,
-                goal,
-                queue: input.queue_held(),
-            });
-            game.presentation
-                .ping_order(tile_center(goal), PingKind::Move, input.queue_held());
-            if !input.queue_held() {
-                input.click_verb = None;
-            }
+            Ok((
+                Command::Run { units, goal, queue },
+                tile_center(goal),
+                PingKind::Move,
+            ))
         }
-        return true;
-    }
-    if input.armed(ClickVerb::Hunt) {
-        // Explicit fighting march: minimap jumps the camera, HUD
-        // swallows, and Shift chains legs while keeping the verb armed.
-        if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            reticle::look_at(game, input, world);
-        } else if !click_on_hud(game, p) {
-            let world = game.presentation.camera.to_world(p);
+        ClickVerb::Hunt => {
             let goal = ground_tile(&game.state, world);
-            let units = game.presentation.selection.units.clone();
-            game.issue(Command::Hunt {
-                units,
-                goal,
-                queue: input.queue_held(),
-            });
-            game.presentation
-                .ping_order(tile_center(goal), PingKind::Attack, input.queue_held());
-            if !input.queue_held() {
-                input.click_verb = None;
-            }
+            Ok((
+                Command::Hunt { units, goal, queue },
+                tile_center(goal),
+                PingKind::Attack,
+            ))
         }
-        return true;
-    }
-    if input.armed(ClickVerb::Scout) {
-        // Like Run: the minimap jumps the camera, HUD chrome swallows the
-        // click, and Shift chains legs and keeps the verb armed.
-        if let Some(world) = crate::render::minimap_world_at(&game.view(), p) {
-            reticle::look_at(game, input, world);
-        } else if !click_on_hud(game, p) {
-            let world = game.presentation.camera.to_world(p);
+        ClickVerb::Scout => {
             let goal = ground_tile(&game.state, world);
-            let units = game.presentation.selection.units.clone();
-            game.issue(Command::Scout {
-                units,
-                goal,
-                queue: input.queue_held(),
-            });
-            game.presentation
-                .ping_order(tile_center(goal), PingKind::Move, input.queue_held());
-            if !input.queue_held() {
+            Ok((
+                Command::Scout { units, goal, queue },
+                tile_center(goal),
+                PingKind::Move,
+            ))
+        }
+    };
+    match order {
+        Ok((command, at, ping)) => {
+            game.issue(command);
+            game.presentation.ping_order(at, ping, queue);
+            if !queue {
                 input.click_verb = None;
             }
         }
-        return true;
-    }
-    if input.patrol_route.is_some() {
-        // Left-clicks and taps collect the route just as right-clicks
-        // do; the minimap keeps its ground meaning.
-        let world = crate::render::minimap_world_at(&game.view(), p)
-            .or_else(|| (!click_on_hud(game, p)).then(|| game.presentation.camera.to_world(p)));
-        if let Some(world) = world {
-            add_patrol_waypoint(game, input, bindings, world);
+        Err(refusal) => {
+            game.presentation.toast(refusal);
+            deny(game);
         }
-        return true;
     }
-    false
+    true
 }
 
 /// Adds a waypoint at `world` to the patrol route being collected, or
