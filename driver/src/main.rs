@@ -225,9 +225,9 @@ enum Cmd {
         #[arg(long)]
         save_replay: Option<PathBuf>,
     },
-    /// Time every tick of a replay in one straight pass and rank its
-    /// costliest windows, to choose where `tick-profile` should look.
-    /// Recorded commands replay; controllers do not run.
+    /// Time every tick of a replay and rank its costliest windows, to
+    /// choose where `tick-profile` should look. Recorded commands replay;
+    /// controllers do not run.
     TickScan {
         /// Scenario-origin or checkpoint-origin replay.
         replay: String,
@@ -237,6 +237,11 @@ enum Cmd {
         /// Windows to list.
         #[arg(long, default_value_t = 10)]
         top: usize,
+        /// Replay this many times and keep each tick's fastest time. One
+        /// pass on a loaded machine counts every preemption as simulation,
+        /// so its slowest ticks are no evidence of a spike.
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
+        passes: u32,
         /// Emit JSON instead of the table.
         #[arg(long)]
         json: bool,
@@ -805,9 +810,10 @@ fn main() -> Result<()> {
             replay,
             window,
             top,
+            passes,
             json,
         } => {
-            let scan = aftermine_driver::tick_profile::scan(&replay, window, top)?;
+            let scan = aftermine_driver::tick_profile::scan(&replay, window, top, passes)?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&scan)?);
             } else {

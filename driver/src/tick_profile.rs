@@ -1,7 +1,9 @@
 //! Where simulation time goes inside a window of recorded ticks.
 //!
-//! [`scan`] times every tick of a replay in one straight pass and ranks its
-//! windows, so a costly stretch can be found before it is profiled.
+//! [`scan`] times every tick of a replay and ranks its windows, so a costly
+//! stretch can be found before it is profiled. Repeated passes keep each
+//! tick's fastest time, since one pass on a loaded machine counts every
+//! preemption as simulation.
 //!
 //! The replay is rebuilt to the window's first tick, then the window is
 //! re-simulated from a clone of that world again and again while macOS's
@@ -232,7 +234,7 @@ pub struct WindowCost {
     pub units: usize,
 }
 
-/// Wall time of every tick of a replay, from one straight pass.
+/// Wall time of every tick of a replay, each its fastest of every pass.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Scan {
     /// The scanned replay.
@@ -241,6 +243,8 @@ pub struct Scan {
     pub start: u64,
     /// End of the recording.
     pub end: u64,
+    /// Passes over the replay.
+    pub passes: u32,
     /// Per-tick wall time across the whole replay.
     pub per_tick: Summary,
     /// The tick with the largest wall time.
@@ -251,26 +255,58 @@ pub struct Scan {
     pub windows: Vec<WindowCost>,
 }
 
-/// Times every tick of the replay at `path` and ranks its `window`-tick
-/// windows, keeping the `top` costliest.
-pub fn scan(path: &str, window: u64, top: usize) -> Result<Scan> {
+/// Times every tick of the replay at `path` in each of `passes` passes,
+/// keeping each tick's fastest, and ranks its `window`-tick windows, keeping
+/// the `top` costliest.
+pub fn scan(path: &str, window: u64, top: usize, passes: u32) -> Result<Scan> {
     ensure!(window > 0, "a window spans at least one tick");
+    ensure!(passes > 0, "a scan makes at least one pass");
     let replay = aftermine_kit::load_replay(path).with_context(|| format!("loading {path}"))?;
     replay
         .validate(Some(aftermine_sim::SIM_VERSION))
         .map_err(|err| anyhow::anyhow!("{err}"))?;
-    let mut state = aftermine_kit::recording::initial_state(&replay)?;
-    let start = state.current_tick();
+    let initial = aftermine_kit::recording::initial_state(&replay)?;
+    let start = initial.current_tick();
     let end = aftermine_kit::bounded_replay_duration(&replay)?;
     ensure!(end > start, "the recording spans no ticks to scan");
+    let mut units = Vec::new();
+    let times = fastest_of(passes, |pass| {
+        let units = (pass == 0).then_some(&mut units);
+        time_pass(&replay, initial.clone(), end, window, units)
+    });
+    let slowest = (0..times.len()).max_by_key(|&index| (times[index], Reverse(index)));
+    Ok(Scan {
+        replay: path.to_owned(),
+        start,
+        end,
+        passes,
+        per_tick: Summary::of(&times),
+        slowest_tick: start + slowest.expect("a recording with ticks has a slowest one") as u64,
+        window,
+        windows: costliest(&times, start, window, &units, top),
+    })
+}
+
+/// Wall time of each tick from `state` up to `end`, replaying the recorded
+/// commands. With `units`, also records the units alive at the start of each
+/// `window`-tick window.
+fn time_pass(
+    replay: &GameReplay,
+    mut state: State,
+    end: u64,
+    window: u64,
+    mut units: Option<&mut Vec<usize>>,
+) -> Vec<u64> {
+    let start = state.current_tick();
     let mut next = replay
         .commands
         .partition_point(|command| command.tick < start);
     let mut times = Vec::new();
-    let mut units = Vec::new();
     while state.current_tick() < end {
         let tick = state.current_tick();
-        if (tick - start).is_multiple_of(window) {
+        if let Some(units) = units.as_deref_mut()
+            && (tick - start).is_multiple_of(window)
+        {
             units.push(state.units().len());
         }
         let first = next;
@@ -289,16 +325,20 @@ pub fn scan(path: &str, window: u64, top: usize) -> Result<Scan> {
         state.tick(&commands);
         times.push(u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX));
     }
-    let slowest = (0..times.len()).max_by_key(|&index| (times[index], Reverse(index)));
-    Ok(Scan {
-        replay: path.to_owned(),
-        start,
-        end,
-        per_tick: Summary::of(&times),
-        slowest_tick: start + slowest.expect("a recording with ticks has a slowest one") as u64,
-        window,
-        windows: costliest(&times, start, window, &units, top),
-    })
+    times
+}
+
+/// Each tick's fastest time over `passes` calls of `pass`, which is given
+/// its index. A tick never runs faster than its work allows, so its fastest
+/// pass is the one the OS interrupted least.
+fn fastest_of(passes: u32, mut pass: impl FnMut(u32) -> Vec<u64>) -> Vec<u64> {
+    let mut fastest = pass(0);
+    for index in 1..passes {
+        for (best, time) in fastest.iter_mut().zip(pass(index)) {
+            *best = (*best).min(time);
+        }
+    }
+    fastest
 }
 
 /// The `top` costliest `window`-tick windows of per-tick `times` starting at
@@ -331,8 +371,12 @@ impl Scan {
     /// The whole replay's tick costs above its costliest windows.
     pub fn table(&self) -> String {
         let micros = |ns: u64| ns as f64 / 1000.0;
+        let passes = match self.passes {
+            1 => "one pass".to_owned(),
+            passes => format!("fastest of {passes} passes"),
+        };
         let mut out = format!(
-            "{}: ticks {}..{}, avg {:.1} µs/tick, p99 {:.1} µs, max {:.1} µs at tick {}\n\
+            "{}: ticks {}..{}, {passes}, avg {:.1} µs/tick, p99 {:.1} µs, max {:.1} µs at tick {}\n\
              costliest {}-tick windows by average tick:\n",
             self.replay,
             self.start,
