@@ -4,7 +4,7 @@
 //! retiring machine, recovery, refusals, and mirrored retirements.
 
 use crate::common;
-use common::{assert_refused, cmd, rejected, run_until, unit};
+use common::{assert_refused, cmd, orders, rejected, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
@@ -459,33 +459,12 @@ fn a_loaded_transport_sets_its_riders_down_then_retires() {
     let [sling, rider, latecomer] = ids(&state)[..] else {
         unreachable!()
     };
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![rider],
-            transport: sling,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([rider], sling))]);
     run_until(&mut state, 200, |s, _| s.unit(rider).is_none());
     // A rider already on its way when the sling retires is turned away.
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![latecomer],
-            transport: sling,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([latecomer], sling))]);
     state.tick(&[cmd(0, retire(vec![sling]))]);
-    let report = state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![latecomer],
-            transport: sling,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::load([latecomer], sling))]);
     assert_eq!(rejected(&report.events), [RejectReason::InvalidTarget]);
     let events = run_until(&mut state, 600, |_, events| {
         retired(events, sling).is_some()
@@ -570,23 +549,9 @@ fn no_repair_source_mends_a_retiring_machine() {
     };
     edit(&mut state, |d| unit_row(d, patient)["hp"] = json!(20));
     state.tick(&[cmd(0, retire(vec![patient]))]);
-    let report = state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: patient,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::repair_unit([welder], patient))]);
     assert_eq!(rejected(&report.events), [RejectReason::InvalidTarget]);
-    state.tick(&[cmd(
-        0,
-        Command::Accompany {
-            units: vec![welder],
-            target: patient,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::accompany([welder], patient))]);
     let bank = state.player(PlayerId(0)).scrap;
     let events = run_until(&mut state, 400, |s, events| {
         if let Some(u) = s.unit(patient) {
@@ -744,16 +709,8 @@ fn mirrored_machines_retire_in_mirrored_steps() {
     // The last pair rides the Skyhooks to their Crucibles and is set down
     // there, so the drop ring's frame is mirrored too.
     let (slings, riders) = (pairs[3], [pairs[4], pairs[5]]);
-    let load = |player: u8, riders: Vec<UnitId>, sling: UnitId| {
-        cmd(
-            player,
-            Command::Load {
-                units: riders,
-                transport: sling,
-                queue: false,
-            },
-        )
-    };
+    let load =
+        |player: u8, riders: Vec<UnitId>, sling: UnitId| cmd(player, orders::load(riders, sling));
     state.tick(&[
         load(0, riders.iter().map(|r| r.0).collect(), slings.0),
         load(1, riders.iter().map(|r| r.1).collect(), slings.1),

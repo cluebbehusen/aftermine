@@ -262,7 +262,7 @@ chassis::listed_enum! {
     /// A clip the shell should play (queued by sim events, drained per frame).
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum SoundKind {
-        /// An attack landed somewhere you can see.
+        /// A Turret's report, in two alternating takes.
         Laser,
         /// A unit died somewhere you can see.
         UnitDeath,

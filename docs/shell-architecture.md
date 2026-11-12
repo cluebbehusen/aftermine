@@ -183,31 +183,18 @@ the reticle through the same selection, order, placement and targeting paths as
 clicks. Menu opens the pause menu and View pauses, as the top bar's buttons do.
 The buttons a pad holds drop with the rest of held input on every transition.
 
-The Siri Remote is a pad of its own family on Apple TV: a press on its center is
-the bottom face button, Back is the right one, and a press on the ring around
-the center is a D-pad direction, as each step of swipe travel taps one. A remote
-with no ring clicks with its whole surface. Play/Pause is its own button, a
-click in menus. Everything past the adapter treats it as a pad, so menus need no
-second path. It has no tab buttons, so a tab strip takes its arrows: Up from the
-top row moves the cursor onto the strip, and only one of the two wears it. It
-can't play a match: there its only press is Back, which walks outward as Escape
-does, and any other press is refused aloud. Copy names a connected controller
-instead of the remote; with none connected, the HUD stays in pad mode and names
-no buttons. While no controller but the remote is connected, setup warns before
-Start and a notice over the match asks for one. A local match holds meanwhile,
-apart from the player's own pause, so a controller connecting resumes only what
-the hold stopped; a LAN match runs on for the other players. tvOS keeps
-controller presses from UIKit until the shell offers them, which it does on
-Home, so Back leaves the app from there and nowhere else, and never on the
-release of the Back that reached Home.
+The Siri Remote is a pad of its own family on Apple TV, which the adapter maps
+onto pad buttons and D-pad directions. Everything past the adapter treats it as
+a pad, so menus need no second path. It can't play a match: while no controller
+but the remote is connected, a local match holds, apart from the player's own
+pause, so a controller connecting resumes only what the hold stopped; a LAN
+match runs on for the other players. tvOS keeps controller presses from UIKit
+until the shell offers them, which it does on Home, so Back leaves the app from
+there and nowhere else, and never on the release of the Back that reached Home.
 
 The replay viewer and final map give controllers one camera,
-`camera::controls::RemoteCamera`. Sticks pan and zoom it. The remote's one
-surface can't, so a click steps through modes that say what its swipes and ring
-mean. A strip always shows the mode in use and a hint says what it does. The
-replay clock keeps its place under the timeline, and hints stand on their own
-plate above it. Pan follows the raw finger travel a swipe also reports; nothing
-else reads that travel.
+`camera::controls::RemoteCamera`, and nothing else reads the raw finger travel a
+remote swipe reports.
 
 A TV's system keyboard fills the screen, so it opens only when the player clicks
 a field, and a form's cursor reaches its confirm button. The keyboard shows the
@@ -294,11 +281,8 @@ it short. Only a touch build sizes controls for fingertips. Copy follows the
 hands in use instead: each frame publishes the last pointer, whether a hardware
 key has been pressed, and the controller pressed since the last key, click or
 tap as `platform::Hands`; a mouse that only moves leaves a controller in use.
-Hints name keys only once one has been pressed, and name a controller's buttons
-while it is in use. A TV names its remote until something else is used. Lesson
-and tip cards follow the HUD instead: in pad mode they name the controller it
-names, and an Xbox pad's buttons while none is connected. Outside pad mode,
-every screen offers a pointer path for what Escape does.
+Lesson and tip cards follow the HUD instead. Outside pad mode, every screen
+offers a pointer path for what Escape does.
 
 While a controller is in use, and always on a TV, the match HUD, the menus and
 the replay viewer stand in pad mode: they leave out the controls a controller's
@@ -378,22 +362,15 @@ Every record file also mirrors through CloudKit's private database, one record
 per file named by its folder and file name, so Apple TV shares records with iPad
 and Mac. iPad and Mac mirror their iCloud Drive folder and Apple TV its cache;
 workspace and automation runs never mirror. Passes run on a thread of their own,
-never the worker, so CloudKit's waits never hold up a save. A full pass runs the
-first time Home opens, on return to the foreground and then at most every 30
-seconds while Home or the shelf is open, and after every save a pass sends this
-device's changes without fetching. Files arrive only while Home or the shelf is
-open or a load is waiting for them, never during a match. A load waits at most
-five seconds for a full pass under way, so a match does not resume from an older
-copy and then save over the newer one. A quit waits at most five seconds for the
-pushes this device asked for, so the save it made reaches the player's other
-devices. A pass that changes local records makes the shelf scan again. The shelf
-counts the records the last full pass left on their way; a push leaves that
-count alone, and a full pass that fails leaves none. A pass CloudKit refuses
-keeps why, iCloud storage full, no account or anything else, until a later pass
-gets through, and meanwhile Apple TV's shelf says so, since there CloudKit holds
-the only lasting copy. A wait CloudKit asks for holds every pass back until it
-ends, for at most five minutes, and meanwhile no load or quit waits on the
-mirror.
+never the worker, so CloudKit's waits never hold up a save. Files arrive only
+while Home or the shelf is open or a load is waiting for them, never during a
+match. A load waits a bounded time for a full pass under way, so a match does
+not resume from an older copy and then save over the newer one, and a quit waits
+a bounded time for this device's pushes. A pass that changes local records makes
+the shelf scan again. A pass CloudKit refuses keeps why until a later pass gets
+through, and meanwhile Apple TV's shelf says so, since there CloudKit holds the
+only lasting copy. While CloudKit asks passes to wait, no load or quit waits on
+the mirror.
 
 Each record has a version: how far its match has been played, in ticks, or, once
 deleted, a delete record one tick past the save it deleted. The most ticks wins
@@ -524,9 +501,10 @@ contact points never change simulation targeting, damage or splash.
 `assets` loads the generated sprite atlas, whose manifest covers every sprite
 key the shell resolves. Frame counts come from the atlas, the animation code
 owns timing, and tests keep every selected frame below the shipped count. `look`
-declares each unit and defense kind's presentation in one exhaustive match, so a
-new kind must state each part. Facts the simulation already states, such as
-which kinds fly, crash, scout or fight, are read from its stats.
+declares each unit and defense kind's scale, gait, mechanisms, weapon report and
+far-zoom marker in exhaustive matches, so a new kind must state each part. Facts
+the simulation already states, such as which kinds fly, crash, scout or fight,
+are read from its stats.
 
 Terrain art derives from map geometry alone. `GroundLayout` is computed on a
 match's first draw and kept, so revealed terrain never changes as fog lifts;

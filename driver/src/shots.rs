@@ -1,5 +1,5 @@
-//! The perceptual-diff screenshot suite: canonical screens captured
-//! from a real automation-mode shell and compared against per-machine
+//! The perceptual-diff screenshot suite: canonical screens captured from a
+//! real automation-mode shell and compared against per-machine
 //! references on a tolerance metric.
 //!
 //! Pixel goldens do not survive GPU or font changes, so this is a local
@@ -177,8 +177,9 @@ impl Suite<'_> {
 
 /// Runs the shot walk. Spawns its own shell on `port`, on a throwaway
 /// HOME whose config pins the presentation knobs the suite depends on:
-/// reduced motion (stills the Home backdrop drift), default scale, classic
-/// bindings and 1280x800.
+/// reduced motion (stills the Home backdrop drift), default scale, the
+/// Classic bindings and 1280x800. The macOS, XDG and Windows locations are
+/// all written so the suite behaves the same on every platform.
 pub fn run(port: u16, bless: bool, dir: &Path, threshold: f64) -> Result<()> {
     let mut shell = auto::ScratchShell::new("shots")?;
     let mut config: serde_json::Value =

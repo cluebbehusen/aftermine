@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 /// Version of the serialized [`ReplayInspection`] contract.
 pub const REPLAY_INSPECTION_SCHEMA_VERSION: u32 = 1;
 
-/// A stable machine-readable inspection of one replay or save.
+/// A stable machine-readable inspection of one replay.
 #[derive(Debug, Serialize)]
 pub struct ReplayInspection {
     /// Serialization contract version.
@@ -71,7 +71,7 @@ pub struct FinalStateSummary {
     pub tick: u64,
     /// Exact deterministic state hash.
     pub hash: String,
-    /// Match result, or `None` when the saved session was still in progress.
+    /// Match result, or `None` when the recording ends before one.
     pub result: Option<GameResult>,
     /// Seats belonging to the victorious team, empty for a draw or unfinished match.
     pub winner_seats: Vec<u8>,

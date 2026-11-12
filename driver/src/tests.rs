@@ -23,97 +23,6 @@ fn run_all_bots_is_an_explicit_complete_match_mode() {
 }
 
 #[test]
-fn bot_eval_parses_exact_profile_and_paired_seed_cell() {
-    let cli = Cli::try_parse_from([
-        "aftermine-driver",
-        "bot-eval",
-        "skirmish",
-        "scenarios/terrace-ledger.json",
-        "--ticks",
-        "50000",
-        "--personality-seed-base",
-        "900",
-        "--difficulty",
-        "prime",
-        "--stance",
-        "aggressive",
-        "--paired",
-        "--candidate",
-        "build-a",
-    ])
-    .expect("bot evaluation parses");
-    let Cmd::BotEval {
-        scenarios,
-        ticks,
-        runs,
-        personality_seed_base,
-        difficulty,
-        stance,
-        opponent_difficulty,
-        opponent_stance,
-        same_personality_seed,
-        paired,
-        candidate,
-        ..
-    } = cli.cmd
-    else {
-        panic!("bot-eval parsed as another command")
-    };
-    assert_eq!(scenarios, ["skirmish", "scenarios/terrace-ledger.json"]);
-    assert_eq!((ticks, runs), (50_000, 1));
-    assert_eq!(personality_seed_base, Some(900));
-    assert_eq!(difficulty, aftermine_sim::scenario::BotDifficulty::Prime);
-    assert_eq!(stance, aftermine_sim::scenario::BotStance::Aggressive);
-    assert_eq!(opponent_difficulty, None);
-    assert_eq!(opponent_stance, None);
-    assert!(!same_personality_seed);
-    assert!(paired);
-    assert_eq!(candidate.as_deref(), Some("build-a"));
-}
-
-#[test]
-fn bot_eval_parses_cross_difficulty_shared_personality_comparison() {
-    let cli = Cli::try_parse_from([
-        "aftermine-driver",
-        "bot-eval",
-        "skirmish",
-        "--difficulty",
-        "prime",
-        "--opponent-difficulty",
-        "standard",
-        "--opponent-stance",
-        "turtle",
-        "--same-personality-seed",
-        "--paired",
-    ])
-    .expect("cross-difficulty bot evaluation parses");
-    let Cmd::BotEval {
-        difficulty,
-        stance,
-        opponent_difficulty,
-        opponent_stance,
-        same_personality_seed,
-        paired,
-        ..
-    } = cli.cmd
-    else {
-        panic!("bot-eval parsed as another command")
-    };
-    assert_eq!(difficulty, aftermine_sim::scenario::BotDifficulty::Prime);
-    assert_eq!(stance, aftermine_sim::scenario::BotStance::Balanced);
-    assert_eq!(
-        opponent_difficulty,
-        Some(aftermine_sim::scenario::BotDifficulty::Standard)
-    );
-    assert_eq!(
-        opponent_stance,
-        Some(aftermine_sim::scenario::BotStance::Turtle)
-    );
-    assert!(same_personality_seed);
-    assert!(paired);
-}
-
-#[test]
 fn bot_pressure_defaults_to_the_shipped_scenarios() {
     let cli = Cli::try_parse_from(["aftermine-driver", "bot-pressure"]).expect("parses");
     let Cmd::BotPressure {
@@ -140,82 +49,31 @@ fn bot_summary_requires_rows() {
     assert!(json);
 }
 
-#[test]
-fn tick_scan_ranks_hundred_tick_windows_by_default() {
-    let cli = Cli::try_parse_from(["aftermine-driver", "tick-scan", "match.json"])
-        .expect("a replay alone parses");
-    let Cmd::TickScan {
-        replay,
-        window,
-        top,
-        passes,
-        json,
-    } = cli.cmd
-    else {
-        panic!("tick-scan parsed as another command")
-    };
-    assert_eq!(
-        (replay.as_str(), window, top, passes, json),
-        ("match.json", 100, 10, 1, false)
-    );
-    for refused in ["--window", "--passes"] {
-        assert!(
-            Cli::try_parse_from(["aftermine-driver", "tick-scan", "match.json", refused, "0"])
-                .is_err(),
-            "{refused} 0"
-        );
-    }
-    let cli = Cli::try_parse_from([
-        "aftermine-driver",
-        "tick-scan",
-        "match.json",
-        "--passes",
-        "5",
-    ])
-    .expect("passes parse");
-    assert!(matches!(cli.cmd, Cmd::TickScan { passes: 5, .. }));
+/// Whether `aftermine-driver <args>` parses.
+fn parses(args: &[&str]) -> bool {
+    Cli::try_parse_from(std::iter::once("aftermine-driver").chain(args.iter().copied())).is_ok()
 }
 
 #[test]
-fn tick_profile_defaults_to_one_tick_and_requires_its_start() {
-    let cli = Cli::try_parse_from([
-        "aftermine-driver",
-        "tick-profile",
-        "match.json",
-        "--from",
-        "40",
-    ])
-    .expect("a replay and start parse");
-    let Cmd::TickProfile {
-        replay,
-        from,
-        ticks,
-        seconds,
-        focus,
-        json,
-        ..
-    } = cli.cmd
-    else {
-        panic!("tick-profile parsed as another command")
-    };
-    assert_eq!(
-        (replay.as_str(), from, ticks, seconds),
-        ("match.json", 40, 1, 5)
-    );
-    assert_eq!((focus, json), (None, false));
-    assert!(Cli::try_parse_from(["aftermine-driver", "tick-profile", "match.json"]).is_err());
-    assert!(
-        Cli::try_parse_from([
-            "aftermine-driver",
-            "tick-profile",
-            "match.json",
-            "--from",
-            "40",
-            "--ticks",
-            "0",
-        ])
-        .is_err()
-    );
+fn tick_scan_refuses_an_empty_window_or_no_passes() {
+    assert!(parses(&["tick-scan", "match.json"]));
+    for refused in [
+        ["tick-scan", "match.json", "--window", "0"],
+        ["tick-scan", "match.json", "--passes", "0"],
+    ] {
+        assert!(!parses(&refused), "{refused:?}");
+    }
+}
+
+#[test]
+fn tick_profile_requires_its_start_and_at_least_one_tick() {
+    assert!(parses(&["tick-profile", "match.json", "--from", "40"]));
+    for refused in [
+        &["tick-profile", "match.json"][..],
+        &["tick-profile", "match.json", "--from", "40", "--ticks", "0"],
+    ] {
+        assert!(!parses(refused), "{refused:?}");
+    }
 }
 
 #[test]

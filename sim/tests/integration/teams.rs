@@ -2,11 +2,11 @@
 //! spectating seats. Headless scenarios through the public API only.
 
 use crate::common;
-use common::{cmd, run_until, unit};
+use common::{building_id, cmd, orders, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{PlayerSpec, ScenarioError, ScenarioMode, UnitSpec};
-use aftermine_sim::{Command, Event, GameResult, Order, PlayerId, Scenario, Target, UnitKind};
+use aftermine_sim::{Event, GameResult, Order, PlayerId, Scenario, Target, UnitKind};
 use chassis::grid::TilePos;
 
 /// A 2v2 arena: west team (seats 0, 1) against east team (seats 2, 3).
@@ -80,14 +80,7 @@ fn allied_fighters_ignore_and_cannot_target_each_other() {
     );
 
     // An attack command on a teammate bounces.
-    let report = state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![mine],
-            target: Target::Unit(ally).into(),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::attack([mine], Target::Unit(ally)))]);
     assert!(report.events.iter().any(|e| matches!(
         e,
         Event::CommandRejected {
@@ -113,14 +106,7 @@ fn splash_spares_the_teammate_in_the_blast() {
     );
     let ally_hp = state.unit(ally).unwrap().hp;
     let foe_hp = state.unit(foe).unwrap().hp;
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![bombard],
-            target: Target::Unit(foe).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([bombard], Target::Unit(foe)))]);
     let mut launched = false;
     let mut landed = false;
     for _ in 0..100 {
@@ -199,19 +185,10 @@ fn victory_takes_every_enemy_foundry_and_spectators_stay_muted() {
     let scout = state.units()[7].id;
     // The harvester stays clear of the shelled Foundry rather than welding it.
     let mut state = common::idle_welds_off(&state, &[survivor]);
-    let east_foundry = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(2))
-        .unwrap()
-        .id;
+    let east_foundry = building_id(&state, |b| b.player == PlayerId(2));
     state.tick(&[cmd(
         0,
-        Command::Attack {
-            units: guns.clone(),
-            target: Target::Building(east_foundry).into(),
-            queue: false,
-        },
+        orders::attack(guns.clone(), Target::Building(east_foundry)),
     )]);
     run_until(&mut state, 1200, |_, events| {
         events
@@ -223,14 +200,7 @@ fn victory_takes_every_enemy_foundry_and_spectators_stay_muted() {
         "half a team down is not a victory"
     );
     // The foundry-less seat is a spectator; its teammate plays on.
-    let report = state.tick(&[cmd(
-        2,
-        Command::Run {
-            units: vec![survivor],
-            goal: TilePos::new(12, 6),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(2, orders::run([survivor], TilePos::new(12, 6)))]);
     assert!(report.events.iter().any(|e| matches!(
         e,
         Event::CommandRejected {
@@ -243,30 +213,14 @@ fn victory_takes_every_enemy_foundry_and_spectators_stay_muted() {
 
     // A scout walks south to put the second foundry in team sight (the
     // guns outrange their own eyes), then the guns finish the match.
-    let east_foundry_2 = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(3))
-        .unwrap()
-        .id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(18, 9),
-            queue: false,
-        },
-    )]);
+    let east_foundry_2 = building_id(&state, |b| b.player == PlayerId(3));
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(18, 9)))]);
     run_until(&mut state, 400, |s, _| {
         s.can_see(PlayerId(0), TilePos::new(20, 11))
     });
     state.tick(&[cmd(
         0,
-        Command::Attack {
-            units: guns,
-            target: Target::Building(east_foundry_2).into(),
-            queue: false,
-        },
+        orders::attack(guns, Target::Building(east_foundry_2)),
     )]);
     run_until(&mut state, 3000, |s, _| s.result().is_some());
     assert_eq!(state.result(), Some(GameResult::Victory { team: 0 }));

@@ -1,6 +1,6 @@
 use super::*;
+use crate::tests::support::{click, keystroke, tap, touch_down, touch_up};
 use aftermine_protocol::Key;
-use aftermine_protocol::MouseButton;
 use macroquad::prelude::vec2;
 
 /// Every glyph half as wide as the size: deterministic and headless.
@@ -14,25 +14,9 @@ fn press(list: &mut LessonsScreen, events: &[RawEvent]) -> Out {
     list.update(events, &mut mouse, &mut sounds, &fixed)
 }
 
-fn key(key: Key) -> [RawEvent; 2] {
-    [RawEvent::KeyDown { key }, RawEvent::KeyUp { key }]
-}
-
 /// A click (or, with `touch`, a tap) at `p`.
 fn at(p: Vec2, touch: bool) -> [RawEvent; 2] {
-    let (x, y) = (p.x, p.y);
-    if touch {
-        [
-            RawEvent::TouchDown { id: 3, x, y },
-            RawEvent::TouchUp { id: 3, x, y },
-        ]
-    } else {
-        let button = MouseButton::Left;
-        [
-            RawEvent::MouseDown { button, x, y },
-            RawEvent::MouseUp { button, x, y },
-        ]
-    }
+    if touch { tap(3, p) } else { click(p) }
 }
 
 fn start() -> Vec2 {
@@ -103,19 +87,19 @@ fn the_list_marks_finished_rows_and_opens_on_the_next_one() {
 #[test]
 fn enter_starts_the_selected_row_and_back_or_escape_leaves() {
     let mut list = LessonsScreen::open(&[], false);
-    assert_eq!(press(&mut list, &key(Key::Down)), Out::Stay);
+    assert_eq!(press(&mut list, &keystroke(Key::Down)), Out::Stay);
     assert_eq!(
-        press(&mut list, &key(Key::Enter)),
+        press(&mut list, &keystroke(Key::Enter)),
         Out::Start(Course::Lesson(Lesson::Scrap))
     );
     for _ in 0..4 {
-        press(&mut list, &key(Key::Down));
+        press(&mut list, &keystroke(Key::Down));
     }
     assert_eq!(
-        press(&mut list, &key(Key::Enter)),
+        press(&mut list, &keystroke(Key::Enter)),
         Out::Start(Course::FirstMatch)
     );
-    assert_eq!(press(&mut list, &key(Key::Escape)), Out::Leave);
+    assert_eq!(press(&mut list, &keystroke(Key::Escape)), Out::Leave);
     for touch in [false, true] {
         let mut list = LessonsScreen::open(&[], false);
         assert_eq!(
@@ -165,21 +149,7 @@ fn a_press_that_leaves_start_starts_nothing() {
     let on = start();
     let off = row(&list, 1);
     assert_eq!(
-        press(
-            &mut list,
-            &[
-                RawEvent::TouchDown {
-                    id: 3,
-                    x: on.x,
-                    y: on.y
-                },
-                RawEvent::TouchUp {
-                    id: 3,
-                    x: off.x,
-                    y: off.y
-                },
-            ]
-        ),
+        press(&mut list, &[touch_down(3, on), touch_up(3, off)]),
         Out::Stay
     );
     assert_eq!(list.menu.value(), Some(&Course::Lesson(Lesson::Command)));

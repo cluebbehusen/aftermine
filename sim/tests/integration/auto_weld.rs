@@ -5,7 +5,7 @@
 //! that no other job is ever interrupted.
 
 use crate::common;
-use common::{assert_refused, cmd, open_arena, open_arena_with, run, run_until, unit};
+use common::{assert_refused, cmd, open_arena, open_arena_with, orders, run, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::UnitSpec;
@@ -238,10 +238,7 @@ fn a_patrolling_worker_welds_what_it_passes_and_keeps_its_circuit() {
     set_hp(&mut state, patient, full - 30);
     state.tick(&[cmd(
         0,
-        Command::Patrol {
-            units: vec![welder],
-            waypoints: vec![TilePos::new(4, 8), TilePos::new(24, 8)],
-        },
+        orders::patrol([welder], [TilePos::new(4, 8), TilePos::new(24, 8)]),
     )]);
     let events = run_until(&mut state, 2_000, |s, _| {
         s.unit(patient).unwrap().hp == full
@@ -365,14 +362,7 @@ fn a_moving_patient_is_taken_on_only_once_it_stops() {
     let wounded = max_hp(&state, patient) - 20;
     set_hp(&mut state, patient, wounded);
     // It walks past the post and on out of reach.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![patient],
-            goal: TilePos::new(2, 10),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([patient], TilePos::new(2, 10)))]);
     let mut stopped = false;
     for _ in 0..400 {
         state.tick(&[]);
@@ -409,23 +399,14 @@ fn no_other_job_is_interrupted() {
     let wounded = max_hp(&state, patient) - 20;
     set_hp(&mut state, patient, wounded);
     state.tick(&[
+        cmd(0, orders::run([runner], TilePos::new(12, 8))),
         cmd(
             0,
-            Command::Run {
-                units: vec![runner],
-                goal: TilePos::new(12, 8),
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Build {
-                units: vec![builder],
-                kind: aftermine_sim::BuildingKind::Turret,
-                anchor: TilePos::new(10, 13),
-                queue: false,
-                defer: false,
-            },
+            orders::build(
+                [builder],
+                aftermine_sim::BuildingKind::Turret,
+                TilePos::new(10, 13),
+            ),
         ),
     ]);
     for _ in 0..60 {
@@ -486,23 +467,9 @@ fn the_idle_switch_rides_along_in_a_transport() {
         unreachable!()
     };
     state.tick(&[cmd(0, idle_weld(vec![worker], false))]);
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![worker],
-            transport: skyhook,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([worker], skyhook))]);
     run_until(&mut state, 600, |s, _| s.unit(worker).is_none());
-    state.tick(&[cmd(
-        0,
-        Command::Unload {
-            transport: skyhook,
-            at: TilePos::new(16, 8),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::unload(skyhook, TilePos::new(16, 8)))]);
     run_until(&mut state, 1_200, |s, _| s.unit(worker).is_some());
     assert!(!state.unit(worker).unwrap().idle_weld());
 }
@@ -591,10 +558,10 @@ fn patrol_legs_follow_what_each_machine_can_do() {
     };
     state.tick(&[cmd(
         0,
-        Command::Patrol {
-            units: vec![armed, worker, carrier],
-            waypoints: vec![TilePos::new(6, 8), TilePos::new(20, 8)],
-        },
+        orders::patrol(
+            [armed, worker, carrier],
+            [TilePos::new(6, 8), TilePos::new(20, 8)],
+        ),
     )]);
     let legs = |id: UnitId| {
         let unit = state.unit(id).unwrap();
@@ -627,10 +594,7 @@ fn a_broke_patrol_walks_on_past_the_wounded() {
     set_hp(&mut state, patient, wounded);
     state.tick(&[cmd(
         0,
-        Command::Patrol {
-            units: vec![welder],
-            waypoints: vec![TilePos::new(4, 8), TilePos::new(24, 8)],
-        },
+        orders::patrol([welder], [TilePos::new(4, 8), TilePos::new(24, 8)]),
     )]);
     let far = run_until(&mut state, 1_000, |s, _| {
         assert!(

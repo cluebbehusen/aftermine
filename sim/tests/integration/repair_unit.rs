@@ -5,7 +5,7 @@
 //! command validation ring.
 
 use crate::common;
-use common::{arena, cmd, run_until, unit};
+use common::{CommandExt, arena, cmd, orders, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::UnitSpec;
@@ -22,23 +22,9 @@ const PATIENT_MAX: u32 = 60; // harvester max_hp, the suite's patient
 /// lets it chew to at most `floor` hp, then pulls it back to its corner.
 /// Returns the wound.
 fn wound(state: &mut State, patient: UnitId, raider: UnitId, floor: u32) -> u32 {
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![raider],
-            goal: TilePos::new(6, 2),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([raider], TilePos::new(6, 2)))]);
     run_until(state, 2_000, |s, _| s.unit(patient).unwrap().hp <= floor);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![raider],
-            goal: TilePos::new(12, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([raider], TilePos::new(12, 6)))]);
     run_until(state, 600, |s, _| {
         s.unit(raider).unwrap().tile() == TilePos::new(12, 6)
     });
@@ -147,38 +133,22 @@ fn departure_case(work: DepartingWork, tick: u64) -> (State, UnitId, UnitId, Pla
     let state: State = serde_json::from_value(json).unwrap();
 
     let command = match work {
-        DepartingWork::Attack => Command::Attack {
-            units: vec![patient],
-            target: Target::Unit(extra_unit.expect("attack case has a target")).into(),
-            queue: false,
-        },
-        DepartingWork::Harvest => Command::Harvest {
-            units: vec![patient],
-            node: TilePos::new(11, 5),
-            queue: false,
-        },
-        DepartingWork::Build => Command::Build {
-            units: vec![patient],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(9, 2),
-            queue: false,
-            defer: false,
-        },
-        DepartingWork::Repair => Command::Repair {
-            units: vec![patient],
-            building: work_building.expect("repair case has a Turret"),
-            queue: false,
-        },
-        DepartingWork::Salvage => Command::Salvage {
-            units: vec![patient],
-            building: work_building.expect("salvage case has a Turret"),
-            queue: false,
-        },
-        DepartingWork::RepairUnit => Command::RepairUnit {
-            units: vec![patient],
-            target: extra_unit.expect("unit-repair case has a target"),
-            queue: false,
-        },
+        DepartingWork::Attack => orders::attack(
+            [patient],
+            Target::Unit(extra_unit.expect("attack case has a target")),
+        ),
+        DepartingWork::Harvest => orders::harvest([patient], TilePos::new(11, 5)),
+        DepartingWork::Build => orders::build([patient], BuildingKind::Turret, TilePos::new(9, 2)),
+        DepartingWork::Repair => {
+            orders::repair([patient], work_building.expect("repair case has a Turret"))
+        }
+        DepartingWork::Salvage => {
+            orders::salvage([patient], work_building.expect("salvage case has a Turret"))
+        }
+        DepartingWork::RepairUnit => orders::repair_unit(
+            [patient],
+            extra_unit.expect("unit-repair case has a target"),
+        ),
     };
     (state, welder, patient, cmd(0, command))
 }
@@ -193,14 +163,7 @@ fn harvesters_weld_wounded_machines_for_a_price() {
     );
     let hurt = wound(&mut state, patient, raider, 45);
     let bank_before = state.player(PlayerId(0)).scrap;
-    state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: patient,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::repair_unit([welder], patient))]);
     run_until(&mut state, 600, |s, _| {
         s.unit(patient).unwrap().hp == PATIENT_MAX
     });
@@ -230,14 +193,7 @@ fn the_torch_bills_its_first_scrap_before_free_hp_can_land() {
     );
     wound(&mut state, patient, raider, 45);
     let bank_before = state.player(PlayerId(0)).scrap;
-    state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: patient,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::repair_unit([welder], patient))]);
     run_until(&mut state, 100, |s, _| {
         s.player(PlayerId(0)).scrap < bank_before
     });
@@ -269,28 +225,14 @@ fn a_rejected_welders_prepaid_coin_comes_back() {
     // Park the fresh pair in body contact BEFORE they are needed, so
     // their first weld ticks are their first meter ticks.
     for (torch, park) in fresh.iter().zip([TilePos::new(3, 2), TilePos::new(5, 2)]) {
-        state.tick(&[cmd(
-            0,
-            Command::Run {
-                units: vec![*torch],
-                goal: park,
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::run([*torch], park))]);
         run_until(&mut state, 300, |s, _| {
             s.unit(*torch).unwrap().tile() == park
         });
     }
     // The opener welds to exactly one hp short (harvester steps are
     // never more than 1 hp per tick: ramp 60 over 100 ticks).
-    state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![opener],
-            target: patient,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::repair_unit([opener], patient))]);
     run_until(&mut state, 900, |s, _| {
         s.unit(patient).unwrap().hp >= PATIENT_MAX - 1
     });
@@ -299,22 +241,10 @@ fn a_rejected_welders_prepaid_coin_comes_back() {
         PATIENT_MAX - 1,
         "test premise: stopped one hp short"
     );
-    state.tick(&[cmd(
-        0,
-        Command::Stop {
-            units: vec![opener],
-        },
-    )]);
+    state.tick(&[cmd(0, orders::stop([opener]))]);
     // Both fresh torches take the last hp together.
     let bank_before = state.player(PlayerId(0)).scrap;
-    state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: fresh.clone(),
-            target: patient,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::repair_unit(fresh.clone(), patient))]);
     run_until(&mut state, 60, |s, _| {
         s.unit(patient).unwrap().hp == PATIENT_MAX
     });
@@ -340,22 +270,8 @@ fn a_walking_patient_is_chased_not_welded() {
     let hurt = wound(&mut state, patient, raider, 45);
     // Outside the parked raider's aggro — the walk must stay a walk.
     let goal = TilePos::new(6, 7);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![patient],
-            goal,
-            queue: false,
-        },
-    )]);
-    state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: patient,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([patient], goal))]);
+    state.tick(&[cmd(0, orders::repair_unit([welder], patient))]);
     run_until(&mut state, 600, |s, _| {
         s.unit(patient).unwrap().tile() == goal
     });
@@ -382,27 +298,13 @@ fn a_move_landing_mid_weld_rides_no_farewell_heal() {
             state.units()[2].id,
         );
         let hurt = wound(&mut state, patient, raider, 40);
-        state.tick(&[cmd(
-            0,
-            Command::RepairUnit {
-                units: vec![welder],
-                target: patient,
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::repair_unit([welder], patient))]);
         run_until(&mut state, 600, |s, _| s.unit(patient).unwrap().hp > hurt);
         for _ in 0..offset {
             state.tick(&[]);
         }
         let before = state.unit(patient).unwrap().hp;
-        state.tick(&[cmd(
-            0,
-            Command::Run {
-                units: vec![patient],
-                goal: TilePos::new(12, 2),
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::run([patient], TilePos::new(12, 2)))]);
         assert_eq!(
             state.unit(patient).unwrap().hp,
             before,
@@ -483,14 +385,7 @@ fn a_stationary_work_order_remains_weldable() {
         let mut state: State = serde_json::from_value(json).unwrap();
 
         let before = state.unit(patient).unwrap().hp;
-        let report = state.tick(&[cmd(
-            0,
-            Command::RepairUnit {
-                units: vec![patient],
-                target: other,
-                queue: false,
-            },
-        )]);
+        let report = state.tick(&[cmd(0, orders::repair_unit([patient], other))]);
         assert_eq!(
             state.unit(patient).unwrap().pos,
             TilePos::new(5, 5).center()
@@ -600,14 +495,7 @@ fn a_departing_patient_propagates_through_an_in_reach_weld_chain() {
 
         let before_hp = state.unit(b).unwrap().hp;
         let before_pos = state.unit(b).unwrap().pos;
-        let report = state.tick(&[cmd(
-            0,
-            Command::Run {
-                units: vec![c],
-                goal: TilePos::new(10, 7),
-                queue: false,
-            },
-        )]);
+        let report = state.tick(&[cmd(0, orders::run([c], TilePos::new(10, 7)))]);
         assert_eq!(
             state.unit(b).unwrap().hp,
             before_hp,
@@ -654,13 +542,7 @@ fn a_patient_evicted_from_freshly_claimed_ground_rides_no_heal() {
         let before_pos = state.unit(patient).unwrap().pos;
         let report = state.tick(&[cmd(
             0,
-            Command::Build {
-                units: vec![founder],
-                kind: BuildingKind::Turret,
-                anchor: TilePos::new(5, 5),
-                queue: false,
-                defer: false,
-            },
+            orders::build([founder], BuildingKind::Turret, TilePos::new(5, 5)),
         )]);
         assert!(
             state
@@ -713,13 +595,7 @@ fn a_stationary_builder_at_a_revealed_scaffold_is_weldable() {
         let anchor = TilePos::new(6, 5);
         state.tick(&[cmd(
             0,
-            Command::Build {
-                units: vec![patient],
-                kind: BuildingKind::Turret,
-                anchor,
-                queue: false,
-                defer: true,
-            },
+            orders::build([patient], BuildingKind::Turret, anchor).deferred(),
         )]);
         let mut json = serde_json::to_value(&state).unwrap();
         json["tick"] = serde_json::json!(tick);
@@ -788,26 +664,12 @@ fn fire_wins_the_tick_and_the_dead_forfeit_their_welds() {
     );
     let r2 = state.units()[3].id;
     let hurt = wound(&mut state, patient, r1, 40);
-    state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: patient,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::repair_unit([welder], patient))]);
     // The weld is live before the guns come back.
     run_until(&mut state, 100, |s, _| s.unit(patient).unwrap().hp > hurt);
     // Two gnawing scuttlers out-pace one torch (20 hp/s vs 12).
     for raider in [r1, r2] {
-        state.tick(&[cmd(
-            1,
-            Command::Run {
-                units: vec![raider],
-                goal: TilePos::new(5, 3),
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(1, orders::run([raider], TilePos::new(5, 3)))]);
     }
     let events = run_until(&mut state, 2_000, |_, events| {
         events
@@ -843,14 +705,7 @@ fn reissued_welds_still_pay_for_the_torch_time() {
     let bank_before = state.player(PlayerId(0)).scrap;
     let mut healed = false;
     for _ in 0..150 {
-        state.tick(&[cmd(
-            0,
-            Command::RepairUnit {
-                units: vec![welder],
-                target: patient,
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::repair_unit([welder], patient))]);
         for _ in 0..3 {
             state.tick(&[]);
         }
@@ -878,22 +733,8 @@ fn a_queued_weld_waits_its_turn_then_welds() {
     );
     let hurt = wound(&mut state, patient, raider, 45);
     let waypoint = TilePos::new(10, 2);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![welder],
-            goal: waypoint,
-            queue: false,
-        },
-    )]);
-    state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: patient,
-            queue: true,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([welder], waypoint))]);
+    state.tick(&[cmd(0, orders::repair_unit([welder], patient).queued())]);
     assert!(
         matches!(state.unit(welder).unwrap().order, Order::Run { .. }),
         "the march survives the shift-weld"
@@ -918,22 +759,8 @@ fn an_empty_bank_stalls_a_commanded_weld_and_clears_its_program() {
     let hurt = wound(&mut state, patient, raider, 45);
     assert_eq!(state.player(PlayerId(0)).scrap, 0, "premise: an empty bank");
     state.tick(&[
-        cmd(
-            0,
-            Command::RepairUnit {
-                units: vec![welder],
-                target: patient,
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![welder],
-                goal: TilePos::new(10, 2),
-                queue: true,
-            },
-        ),
+        cmd(0, orders::repair_unit([welder], patient)),
+        cmd(0, orders::run([welder], TilePos::new(10, 2)).queued()),
     ]);
     assert_eq!(
         state.unit(welder).unwrap().queue.len(),
@@ -993,21 +820,13 @@ fn weld_refuses_the_healthy_the_foreign_the_flying_and_the_selfish() {
     // Full health leaves nothing to do.
     rejected(
         &mut state,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: patient,
-            queue: false,
-        },
+        orders::repair_unit([welder], patient),
         RejectReason::InvalidTarget,
     );
     // Foreign machines are not patients.
     rejected(
         &mut state,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: raider,
-            queue: false,
-        },
+        orders::repair_unit([welder], raider),
         RejectReason::InvalidTarget,
     );
     // A combat unit holds no torch.
@@ -1015,36 +834,21 @@ fn weld_refuses_the_healthy_the_foreign_the_flying_and_the_selfish() {
     assert!(hurt < PATIENT_MAX);
     rejected(
         &mut state,
-        Command::RepairUnit {
-            units: vec![guard],
-            target: patient,
-            queue: false,
-        },
+        orders::repair_unit([guard], patient),
         RejectReason::NoValidUnits,
     );
     // A wounded machine cannot weld itself: the patient drops out of
     // its own crew, and alone that leaves no valid units.
     rejected(
         &mut state,
-        Command::RepairUnit {
-            units: vec![patient],
-            target: patient,
-            queue: false,
-        },
+        orders::repair_unit([patient], patient),
         RejectReason::NoValidUnits,
     );
     // The air rule: the buzzard flies into the enemy pair's aggro and
     // their skyward pokes wound it; the wounded flyer still refuses
     // the ground torch — that patient waits for a facility that owns
     // the sky.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![flyer],
-            goal: TilePos::new(10, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([flyer], TilePos::new(10, 6)))]);
     run_until(&mut state, 2_000, |s, _| {
         s.unit(flyer)
             .is_none_or(|u| u.hp < UnitKind::Buzzard.stats().max_hp)
@@ -1054,21 +858,10 @@ fn weld_refuses_the_healthy_the_foreign_the_flying_and_the_selfish() {
         "test premise: the flyer survives its wounding"
     );
     // Pull the flyer home; validation cares only that it is wounded air.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![flyer],
-            goal: TilePos::new(4, 7),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([flyer], TilePos::new(4, 7)))]);
     rejected(
         &mut state,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: flyer,
-            queue: false,
-        },
+        orders::repair_unit([welder], flyer),
         RejectReason::InvalidTarget,
     );
 }

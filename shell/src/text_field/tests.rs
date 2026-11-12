@@ -1,33 +1,11 @@
 use super::*;
+use crate::tests::support::{key_down, tap, typed};
 use macroquad::prelude::vec2;
 
 fn feed(form: &mut Form, events: &[RawEvent]) -> (Edit, Vec<SoundKind>) {
     let mut sounds = Vec::new();
     let edit = form.update(events, &mut sounds);
     (edit, sounds.into_iter().map(|(kind, _)| kind).collect())
-}
-
-fn text(value: &str) -> Vec<RawEvent> {
-    value.chars().map(|ch| RawEvent::Text { ch }).collect()
-}
-
-fn key(key: Key) -> [RawEvent; 1] {
-    [RawEvent::KeyDown { key }]
-}
-
-fn tap(at: Vec2) -> [RawEvent; 2] {
-    [
-        RawEvent::TouchDown {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-        RawEvent::TouchUp {
-            id: 1,
-            x: at.x,
-            y: at.y,
-        },
-    ]
 }
 
 fn single(value: &str, max: usize) -> Form {
@@ -72,15 +50,15 @@ fn a_field_filters_caps_and_commits_a_trimmed_value() {
         vec!["abc_"],
         "the prefill is filtered"
     );
-    feed(&mut form, &text("def"));
+    feed(&mut form, &typed("def"));
     assert_eq!(
         form.menu(|_| ()).view().items,
         vec!["abcde_"],
         "the cap refuses more"
     );
-    feed(&mut form, &key(Key::Backspace));
-    feed(&mut form, &text(" "));
-    assert_eq!(feed(&mut form, &key(Key::Enter)).0, Edit::Commit);
+    feed(&mut form, &[key_down(Key::Backspace)]);
+    feed(&mut form, &typed(" "));
+    assert_eq!(feed(&mut form, &[key_down(Key::Enter)]).0, Edit::Commit);
     assert_eq!(form.value(0), "abcd");
 }
 
@@ -88,18 +66,18 @@ fn a_field_filters_caps_and_commits_a_trimmed_value() {
 fn a_blank_field_refuses_to_commit_and_escape_cancels() {
     crate::render::set_viewport(1280.0, 800.0);
     let mut form = single("  ", 10);
-    let (edit, sounds) = feed(&mut form, &key(Key::Enter));
+    let (edit, sounds) = feed(&mut form, &[key_down(Key::Enter)]);
     assert_eq!(edit, Edit::Stay);
     assert_eq!(sounds, vec![SoundKind::Denied]);
     assert_eq!(form.error, Some("type something first"));
     assert_eq!(form.error_line().as_deref(), Some("Type something first"));
-    feed(&mut form, &text("a"));
+    feed(&mut form, &typed("a"));
     assert_eq!(form.error, None, "an edit clears the refusal");
-    assert_eq!(feed(&mut form, &key(Key::Escape)).0, Edit::Cancel);
+    assert_eq!(feed(&mut form, &[key_down(Key::Escape)]).0, Edit::Cancel);
     let mut form = single("x", 10);
     let layout = form.layout(vec2(1280.0, 800.0), crate::render::ui_scale());
     let cancel = layout.cancel.expect("a form keeps Cancel by default");
-    assert_eq!(feed(&mut form, &tap(cancel.center())).0, Edit::Cancel);
+    assert_eq!(feed(&mut form, &tap(1, cancel.center())).0, Edit::Cancel);
 }
 
 #[test]
@@ -117,37 +95,37 @@ fn a_form_without_cancel_spans_its_confirm_across_the_fields() {
     let old_cancel = with_cancel.cancel.expect("the paired form keeps Cancel");
     let left_edge = vec2(first.x + 4.0, old_cancel.center().y);
     assert_eq!(
-        feed(&mut form, &tap(left_edge)).0,
+        feed(&mut form, &tap(1, left_edge)).0,
         Edit::Commit,
         "where Cancel sat now confirms"
     );
     let mut form = pair("Al", "12", 1).without_cancel();
-    assert_eq!(feed(&mut form, &key(Key::Escape)).0, Edit::Cancel);
+    assert_eq!(feed(&mut form, &[key_down(Key::Escape)]).0, Edit::Cancel);
 }
 
 #[test]
 fn typing_lands_in_the_focused_field_and_focus_moves_by_key_and_tap() {
     crate::render::set_viewport(1280.0, 800.0);
     let mut form = pair("", "", 0);
-    feed(&mut form, &text("Al1"));
+    feed(&mut form, &typed("Al1"));
     assert_eq!(
         form.menu(|i| i).view().items,
         vec!["Name: Al_", "Code: "],
         "each field takes only its own characters"
     );
     assert_eq!(form.keyboard(), Keyboard::Text);
-    feed(&mut form, &key(Key::Tab));
-    feed(&mut form, &text("42"));
+    feed(&mut form, &[key_down(Key::Tab)]);
+    feed(&mut form, &typed("42"));
     assert_eq!(form.menu(|i| i).view().items, vec!["Name: Al", "Code: 42_"]);
     assert_eq!(form.menu(|i| i).selected, 1);
     assert_eq!(form.keyboard(), Keyboard::Address);
-    feed(&mut form, &key(Key::Down));
+    feed(&mut form, &[key_down(Key::Down)]);
     assert_eq!(form.focus, 0, "focus wraps forward");
-    feed(&mut form, &key(Key::Up));
+    feed(&mut form, &[key_down(Key::Up)]);
     assert_eq!(form.focus, 1, "and back");
 
     let layout = form.layout(vec2(1280.0, 800.0), crate::render::ui_scale());
-    feed(&mut form, &tap(layout.fields[0].center()));
+    feed(&mut form, &tap(1, layout.fields[0].center()));
     assert_eq!(form.focus, 0);
     assert!(form.take_keyboard_request(), "a tap raises the keyboard");
     assert!(!form.take_keyboard_request(), "once");
@@ -157,22 +135,22 @@ fn typing_lands_in_the_focused_field_and_focus_moves_by_key_and_tap() {
 fn enter_advances_then_commits_and_a_bad_field_takes_focus_with_its_reason() {
     crate::render::set_viewport(1280.0, 800.0);
     let mut form = pair("", "12x", 0);
-    feed(&mut form, &text("Al"));
-    assert_eq!(feed(&mut form, &key(Key::Enter)).0, Edit::Stay);
+    feed(&mut form, &typed("Al"));
+    assert_eq!(feed(&mut form, &[key_down(Key::Enter)]).0, Edit::Stay);
     assert_eq!(form.focus, 1, "Enter moves on from the name");
-    let (edit, sounds) = feed(&mut form, &key(Key::Enter));
+    let (edit, sounds) = feed(&mut form, &[key_down(Key::Enter)]);
     assert_eq!(edit, Edit::Stay);
     assert_eq!(sounds, vec![SoundKind::Denied]);
     assert_eq!(form.error, Some("digits please"));
 
     let mut form = pair("", "12", 1);
     let layout = form.layout(vec2(1280.0, 800.0), crate::render::ui_scale());
-    feed(&mut form, &tap(layout.confirm.center()));
+    feed(&mut form, &tap(1, layout.confirm.center()));
     assert_eq!(form.focus, 0, "the blank name takes focus");
     assert_eq!(form.error, Some("type something first"));
-    feed(&mut form, &text("Al"));
+    feed(&mut form, &typed("Al"));
     assert_eq!(
-        feed(&mut form, &tap(layout.confirm.center())).0,
+        feed(&mut form, &tap(1, layout.confirm.center())).0,
         Edit::Commit
     );
     assert_eq!((form.value(0), form.value(1)), ("Al", "12"));

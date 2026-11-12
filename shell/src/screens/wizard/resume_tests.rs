@@ -4,6 +4,7 @@
 use super::*;
 use crate::game::checkpoint::LanManifest;
 use crate::netplay::{ClientLobby, Lobby};
+use crate::tests::support::keystroke;
 use aftermine_sim::scenario::BotConfig;
 use macroquad::prelude::vec2;
 use std::time::Instant;
@@ -11,12 +12,8 @@ use std::time::Instant;
 const SAM: InstallId = InstallId::new(11);
 const ALEX: InstallId = InstallId::new(12);
 
-fn press(key: Key) -> [RawEvent; 2] {
-    [RawEvent::KeyDown { key }, RawEvent::KeyUp { key }]
-}
-
 fn drive(w: &mut Wizard, draft: &mut NewMatchDraft, key: Key) -> Out {
-    w.update(&press(key), &mut vec2(0.0, 0.0), draft, &mut Vec::new())
+    w.update(&keystroke(key), &mut vec2(0.0, 0.0), draft, &mut Vec::new())
         .expect("update")
 }
 
@@ -520,7 +517,7 @@ fn a_player_dropped_before_the_save_is_out_once_the_resume_plays() {
 
 fn sounds_of(w: &mut Wizard, draft: &mut NewMatchDraft, key: Key) -> Vec<SoundKind> {
     let mut sounds = Vec::new();
-    w.update(&press(key), &mut vec2(0.0, 0.0), draft, &mut sounds)
+    w.update(&keystroke(key), &mut vec2(0.0, 0.0), draft, &mut sounds)
         .expect("update");
     sounds.into_iter().map(|(sound, _)| sound).collect()
 }

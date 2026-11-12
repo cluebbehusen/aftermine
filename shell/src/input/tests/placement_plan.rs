@@ -54,14 +54,7 @@ fn a_drag_stages_nothing_until_the_release() {
 fn escape_or_a_right_click_mid_drag_drops_the_row_and_keeps_placing() {
     for cancel in [
         [key_down(Key::Escape), key_up(Key::Escape)],
-        [
-            right_down(vec2(600.0, 300.0)),
-            RawEvent::MouseUp {
-                button: MouseButton::Right,
-                x: 600.0,
-                y: 300.0,
-            },
-        ],
+        [right_down(vec2(600.0, 300.0)), right_up(vec2(600.0, 300.0))],
     ] {
         let (mut game, mut input) = planning(10_000);
         let (a, b) = (at(&game, 4), at(&game, 6));

@@ -1,5 +1,6 @@
 use super::*;
 use crate::numeric::Fit;
+use crate::tests::support::issue_tick;
 use aftermine_sim::scenario::BotConfig;
 
 /// `game` as a player's save writes it.
@@ -128,8 +129,7 @@ fn checkpoint_preserves_pending_input_memory_and_statistics() {
         original.presentation.boundary_fog,
         restored.presentation.boundary_fog
     );
-    original.issue(Command::Surrender);
-    original.do_tick();
+    issue_tick(&mut original, Command::Surrender);
     assert!(original.state.result().is_some());
     let finished = reloaded(&original);
     assert_eq!(original.state.hash(), finished.state.hash());

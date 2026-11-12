@@ -15,13 +15,10 @@ fn scouting(tick: u64) -> (Scenario, State) {
 
 /// Where each ground scout was sent to look.
 fn looks(commands: &[PlayerCommand]) -> Vec<(Vec<UnitId>, TilePos)> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::Scout { units, goal, .. } => Some((units.clone(), *goal)),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match command {
+        Command::Scout { units, goal, .. } => Some((units.clone(), *goal)),
+        _ => None,
+    })
 }
 
 fn scouts(missions: &[MissionStatus]) -> Vec<MissionStatus> {
@@ -212,21 +209,11 @@ fn skirmish(defenders: [(i32, i32); 2], hp: u32) -> (Scenario, State, UnitId) {
 }
 
 fn veteran() -> BotConfig {
-    BotConfig::new(BotDifficulty::Veteran, BotStance::Balanced, 11)
+    rung(BotDifficulty::Veteran)
 }
 
 fn scrapheap() -> BotConfig {
-    BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11)
-}
-
-fn attacks(commands: &[PlayerCommand]) -> Vec<(Vec<UnitId>, AttackTarget)> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::Attack { units, target, .. } => Some((units.clone(), *target)),
-            _ => None,
-        })
-        .collect()
+    rung(BotDifficulty::Scrapheap)
 }
 
 #[test]
@@ -675,13 +662,10 @@ fn an_air_scout_flies_around_remembered_anti_air() {
     let kestrel = scout[0];
 
     let (commands, goal) = staged(true);
-    let sent: Vec<(TilePos, bool)> = commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::Run { units, goal, queue } if *units == [kestrel] => Some((*goal, *queue)),
-            _ => None,
-        })
-        .collect();
+    let sent = commands_of(&commands, |command| match command {
+        Command::Run { units, goal, queue } if *units == [kestrel] => Some((*goal, *queue)),
+        _ => None,
+    });
     let [(via, false), (last, true)] = sent[..] else {
         panic!("{sent:?}");
     };

@@ -2,10 +2,10 @@
 //! feeds them, then frames of a held stick.
 
 use super::super::tests::pad_scene::{
-    FRAME, PAD, building_at, down, feed, frame, left_stick, pad_input, press, push_until, rest_on,
-    scene, unit_at, units_of, up,
+    FRAME, PAD, down, feed, frame, left_stick, pad_input, press, push_until, rest_on, up,
 };
 use super::*;
+use crate::tests::support::{building_at, left_down, scene, unit_at, units_of};
 use aftermine_protocol::{PadButton, RawEvent};
 use aftermine_sim::{BuildingKind, PlayerId, UnitKind};
 use macroquad::prelude::vec2;
@@ -258,11 +258,7 @@ fn chrome_over_the_reticle_hides_the_ground_it_would_paint() {
 #[test]
 fn another_pointer_or_a_lost_pad_ends_the_sweep() {
     for ending in [
-        RawEvent::MouseDown {
-            button: aftermine_protocol::MouseButton::Left,
-            x: 5.0,
-            y: 5.0,
-        },
+        left_down(vec2(5.0, 5.0)),
         RawEvent::PadDisconnected { pad: PAD },
     ] {
         let mut game = row_scene();

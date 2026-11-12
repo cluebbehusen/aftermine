@@ -3,11 +3,11 @@
 //! backs out, all through the real funnel against a staged sandbox.
 
 use super::super::tests::pad_scene::{
-    FRAME, PAD, ZOOM, building_at, denied, down, feed, frame, left_stick, pad_input, press,
-    push_until, rest_on, scene, unit_at, up, wound_building,
+    FRAME, PAD, down, feed, frame, left_stick, pad_input, press, push_until, rest_on, up,
 };
 use super::*;
 use crate::input::{ClickVerb, Pointer, preview_spot, unit_pick_radius};
+use crate::tests::support::{ZOOM, building_at, denied, left_down, scene, unit_at, wound_building};
 use aftermine_protocol::RawEvent;
 use aftermine_sim::{BuildingId, BuildingKind, Command, Rally};
 use chassis::grid::TilePos;
@@ -269,15 +269,7 @@ fn another_pointer_a_second_pad_or_a_disconnect_leaves_no_stray_row() {
         input.stroke_by().is_some(),
         "a nudged mouse changes nothing"
     );
-    feed(
-        &mut game,
-        &mut input,
-        &[RawEvent::MouseDown {
-            button: aftermine_protocol::MouseButton::Left,
-            x: 5.0,
-            y: 5.0,
-        }],
-    );
+    feed(&mut game, &mut input, &[left_down(vec2(5.0, 5.0))]);
     assert_eq!(input.stroke_by(), None);
     assert_eq!(input.placing_kind(), Some(BARRICADE));
     feed(&mut game, &mut input, &[up(PadButton::South)]);

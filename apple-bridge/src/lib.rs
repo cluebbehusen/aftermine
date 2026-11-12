@@ -73,7 +73,8 @@ pub fn download(dir: &Path) -> usize {
     }
 }
 
-/// Strings crossing from the Objective-C side, shared by both bridges.
+/// Strings crossing from the Objective-C side, shared by every module that
+/// takes a string back.
 #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos"))]
 #[allow(unsafe_code)]
 mod objc {

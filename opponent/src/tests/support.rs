@@ -15,25 +15,19 @@ fn all_wounded(state: &State, units: &[UnitId], hp: u32) -> State {
 }
 
 fn repairs(commands: &[PlayerCommand]) -> Vec<(Vec<UnitId>, BuildingId)> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::Repair {
-                units, building, ..
-            } => Some((units.clone(), *building)),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match command {
+        Command::Repair {
+            units, building, ..
+        } => Some((units.clone(), *building)),
+        _ => None,
+    })
 }
 
 fn welds(commands: &[PlayerCommand]) -> Vec<(Vec<UnitId>, UnitId)> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::RepairUnit { units, target, .. } => Some((units.clone(), *target)),
-            _ => None,
-        })
-        .collect()
+    commands_of(commands, |command| match command {
+        Command::RepairUnit { units, target, .. } => Some((units.clone(), *target)),
+        _ => None,
+    })
 }
 
 /// West Sentinel spots near home, clear of the arena's scrap.

@@ -58,28 +58,17 @@ cargo run -p aftermine-driver -- smoke --spawn
 A workspace build binds F1 to the debug overlay, which shows the whole world
 through the fog. A packaged copy never offers it, and a LAN match refuses it.
 
+Set `AFTERMINE_SOUND_BANK` to a folder of `.wav` files to audition sounds: each
+clip found there under its shipped name replaces the one in `assets/sounds/`.
+
 `assets/licenses/third-party.txt` holds the license notices of every third-party
 crate the game links, and every bundle ships it with the rest of `assets/`.
 Regenerate it with `sh tools/gen_notices.sh` when `Cargo.lock` changes.
 
-### LAN play
-
-Every machine must run a build of the same commit. The host switches match setup
-to LAN, which opens the other seats and shows the address to join. Other players
-pick Join match, enter a name, and choose the host from the list or type its
-address (the port defaults to 4200). The host can move or remove players and
-starts once every open seat is filled. Tailscale and other routed networks need
-the typed address.
-
-From the command line, `--host` opens match setup on a scenario with its LAN
-lobby already listening on that address. The host takes the first seat the
-scenario leaves to a human (`"bot": false`), and presses Start once the others
-have joined:
-
-```sh
-cargo run -p aftermine-shell --release -- --host 0.0.0.0:4200 --scenario duel.json
-cargo run -p aftermine-shell --release -- --join 192.168.1.20:4200
-```
+`--scenario path/to/scene.json` launches an authored scene directly; the
+[sandbox-matches skill](../.agents/skills/sandbox-matches/SKILL.md) shows how to
+build one. The root README covers [LAN play](../README.md#lan-play), and the
+[netplay architecture](../docs/netplay-architecture.md) states its contracts.
 
 ## iPad, Apple TV and Mac apps
 
@@ -135,14 +124,6 @@ workspace `Cargo.toml` explains why.
 `uv run tools/gen_icon.py` exports the app icon for iOS, macOS and the desktop
 window from `tools/production_icon_sources/`. Commit the sources and the
 generated files together when changing the icon.
-
-## Sandbox sessions
-
-`--scenario path/to/scene.json` launches an authored scene directly. With
-`"mode": "sandbox"`, Foundries are optional and nobody wins or loses
-automatically, but costs, ownership and command rules still apply. Local input
-controls the first seat without a bot. Saves and replays keep sandbox rules. The
-sandbox-matches skill shows how to build a scene.
 
 ## Autosaves and diagnostics
 

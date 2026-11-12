@@ -1,5 +1,5 @@
 use super::*;
-use aftermine_protocol::MouseButton;
+use crate::tests::support::{click, left_down, left_up, touch_move, touch_up};
 
 #[test]
 fn the_map_hint_names_only_what_the_hands_in_use_have() {
@@ -328,18 +328,7 @@ fn clicks_commit_on_release_inside_the_same_card() {
     let (target, rect) = layout.cards[2];
     let (cx, cy) = (rect.x + rect.w * 0.5, rect.y + rect.h * 0.5);
     let mut mouse = vec2(0.0, 0.0);
-    let click = [
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: cx,
-            y: cy,
-        },
-        RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: cx,
-            y: cy,
-        },
-    ];
+    let click = click(vec2(cx, cy));
     // The first click on a non-selected card selects it; browsing by
     // pointer must not misfire a launch.
     let out = b.handle(&entries, &click, &mut mouse);
@@ -352,16 +341,8 @@ fn clicks_commit_on_release_inside_the_same_card() {
     let out = b.handle(
         &entries,
         &[
-            RawEvent::MouseDown {
-                button: MouseButton::Left,
-                x: cx,
-                y: cy,
-            },
-            RawEvent::MouseUp {
-                button: MouseButton::Left,
-                x: cx + rect.w * 2.0,
-                y: cy,
-            },
+            left_down(vec2(cx, cy)),
+            left_up(vec2(cx + rect.w * 2.0, cy)),
         ],
         &mut mouse,
     );
@@ -379,26 +360,10 @@ fn touch_drag_scrolls_while_touch_taps_select_and_commit() {
     let mut mouse = vec2(0.0, 0.0);
 
     b.handle(&entries, &[RawEvent::TouchDown { id: 1, x, y }], &mut mouse);
-    let out = b.handle(
-        &entries,
-        &[RawEvent::TouchMove {
-            id: 1,
-            x,
-            y: y - 30.0,
-        }],
-        &mut mouse,
-    );
+    let out = b.handle(&entries, &[touch_move(1, vec2(x, y - 30.0))], &mut mouse);
     assert_eq!(out, Out::Stay);
     assert!(b.scroll_y > 0.0, "an upward drag moves down the shelf");
-    let out = b.handle(
-        &entries,
-        &[RawEvent::TouchUp {
-            id: 1,
-            x,
-            y: y - 30.0,
-        }],
-        &mut mouse,
-    );
+    let out = b.handle(&entries, &[touch_up(1, vec2(x, y - 30.0))], &mut mouse);
     assert_eq!(out, Out::Stay, "a drag cannot activate a card");
     assert_eq!(b.selected, 0, "a drag cannot retarget keyboard focus");
 

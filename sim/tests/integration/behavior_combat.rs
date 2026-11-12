@@ -4,7 +4,7 @@ use crate::common;
 use aftermine_sim::scenario::ScenarioMode;
 
 use aftermine_sim::scenario::BuildingSpec;
-use aftermine_sim::{BuildingKind, Command, Event, Order, Scenario, Target, UnitId, UnitKind};
+use aftermine_sim::{BuildingKind, Event, Order, Scenario, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
 
 use common::*;
@@ -33,12 +33,7 @@ fn turn_limited_weapons_align_before_firing_and_resume_identically() {
         document["units"][0]["heading"] = serde_json::json!(128);
         state = serde_json::from_value(document).unwrap();
         let id = state.units()[0].id;
-        let target = state
-            .buildings()
-            .iter()
-            .find(|building| building.kind == BuildingKind::Fabricator)
-            .unwrap()
-            .id;
+        let target = building_id(&state, |building| building.kind == BuildingKind::Fabricator);
         let initial = state.unit(id).unwrap().pos;
         assert_eq!(state.unit(id).unwrap().heading, 128);
         let mut previous = 128u8;
@@ -46,14 +41,7 @@ fn turn_limited_weapons_align_before_firing_and_resume_identically() {
         let mut resumed = None;
         for tick in 0..60 {
             let commands = if tick == 0 {
-                vec![cmd(
-                    0,
-                    Command::Attack {
-                        units: vec![id],
-                        target: Target::Building(target).into(),
-                        queue: false,
-                    },
-                )]
+                vec![cmd(0, orders::attack([id], Target::Building(target)))]
             } else {
                 vec![]
             };
@@ -151,16 +139,7 @@ fn bombard_retracts_before_retargeting_or_moving_and_resumes_mid_deployment() {
         .map(|b| b.id)
         .collect();
     face_target(&mut state, id, Target::Building(targets[0]));
-    let fire = |target| {
-        cmd(
-            0,
-            Command::Attack {
-                units: vec![id],
-                target: Target::Building(target).into(),
-                queue: false,
-            },
-        )
-    };
+    let fire = |target| cmd(0, orders::attack([id], Target::Building(target)));
     let fired = |events: &[Event]| {
         events.iter().any(
             |e| matches!(e, Event::ShellLaunched { shooter, .. } if *shooter == Target::Unit(id)),
@@ -218,14 +197,7 @@ fn bombard_retracts_before_retargeting_or_moving_and_resumes_mid_deployment() {
     }
     for tick in 0..12 {
         let commands = if tick == 0 {
-            vec![cmd(
-                0,
-                Command::Run {
-                    units: vec![id],
-                    goal: TilePos::new(16, 10),
-                    queue: false,
-                },
-            )]
+            vec![cmd(0, orders::run([id], TilePos::new(16, 10)))]
         } else {
             vec![]
         };
@@ -274,14 +246,7 @@ fn bombard_cannot_fire_unbraced_advance_potshots() {
     let start = state.unit(id).unwrap().pos;
     for tick in 0..30 {
         let commands = if tick == 0 {
-            vec![cmd(
-                0,
-                Command::Advance {
-                    units: vec![id],
-                    goal: TilePos::new(8, 14),
-                    queue: false,
-                },
-            )]
+            vec![cmd(0, orders::advance([id], TilePos::new(8, 14)))]
         } else {
             vec![]
         };
@@ -313,16 +278,7 @@ fn buzzard_tracks_a_new_target_during_reload_without_spending_another_shot() {
         .filter(|b| b.kind == BuildingKind::Fabricator)
         .map(|b| b.id)
         .collect();
-    let attack = |target| {
-        cmd(
-            0,
-            Command::Attack {
-                units: vec![id],
-                target: Target::Building(target).into(),
-                queue: false,
-            },
-        )
-    };
+    let attack = |target| cmd(0, orders::attack([id], Target::Building(target)));
     let mut fired = false;
     for tick in 0..30 {
         let report = state.tick(&if tick == 0 {
@@ -378,14 +334,7 @@ fn advancing_buzzard_traverses_independently_and_does_not_track_hidden_charges()
         let mut firing_heading = None;
         for tick in 0..20 {
             let report = state.tick(&if tick == 0 {
-                vec![cmd(
-                    0,
-                    Command::Advance {
-                        units: vec![id],
-                        goal: TilePos::new(7, 17),
-                        queue: false,
-                    },
-                )]
+                vec![cmd(0, orders::advance([id], TilePos::new(7, 17)))]
             } else {
                 vec![]
             });
@@ -449,14 +398,7 @@ fn advancing_heavy_units_keep_moving_but_cannot_fire_before_alignment() {
         for tick in 0..90 {
             let previous = state.unit(id).unwrap().heading;
             let commands = if tick == 0 {
-                vec![cmd(
-                    0,
-                    Command::Advance {
-                        units: vec![id],
-                        goal: TilePos::new(22, 8),
-                        queue: false,
-                    },
-                )]
+                vec![cmd(0, orders::advance([id], TilePos::new(22, 8)))]
             } else {
                 vec![]
             };
@@ -499,14 +441,7 @@ fn attack_command_kills_and_reports() {
     let (attacker, victim) = (state.units()[0].id, state.units()[1].id);
     // The first hit can land on the command tick itself, so keep its events.
     let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Attack {
-                units: vec![attacker],
-                target: Target::Unit(victim).into(),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::attack([attacker], Target::Unit(victim)))])
         .events;
     // 60 hp / 10 damage at 1 hit per second → 6 hits, ~101 ticks + travel.
     events.extend(run_until(&mut state, 200, |s, _| s.unit(victim).is_none()));
@@ -554,12 +489,7 @@ fn avalanche_backs_out_of_its_dead_zone_before_firing() {
     };
     let mut state = scenario.build().unwrap();
     let avalanche = state.units()[0].id;
-    let target = state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Fabricator)
-        .unwrap()
-        .id;
+    let target = building_id(&state, |building| building.kind == BuildingKind::Fabricator);
     let initial_pos = state.unit(avalanche).unwrap().pos;
     let initial_distance = initial_pos.dist(
         state
@@ -571,11 +501,7 @@ fn avalanche_backs_out_of_its_dead_zone_before_firing() {
     let mut events = state
         .tick(&[cmd(
             0,
-            Command::Attack {
-                units: vec![avalanche],
-                target: Target::Building(target).into(),
-                queue: false,
-            },
+            orders::attack([avalanche], Target::Building(target)),
         )])
         .events;
     events.extend(run_until(&mut state, 500, |_, events| {
@@ -636,19 +562,10 @@ fn mirrored_avalanches_back_out_to_mirrored_stands() {
         scenario.buildings = vec![common::building(them, BuildingKind::Reclaimer, bx, by)];
         let mut state = scenario.build().unwrap();
         let avalanche = state.units()[0].id;
-        let target = state
-            .buildings()
-            .iter()
-            .find(|b| b.kind == BuildingKind::Reclaimer)
-            .unwrap()
-            .id;
+        let target = building_id(&state, |b| b.kind == BuildingKind::Reclaimer);
         state.tick(&[cmd(
             me,
-            Command::Attack {
-                units: vec![avalanche],
-                target: Target::Building(target).into(),
-                queue: false,
-            },
+            orders::attack([avalanche], Target::Building(target)),
         )]);
         let path = state.unit(avalanche).unwrap().path.clone();
         path.and_then(|path| path.final_point)
@@ -683,14 +600,7 @@ fn hunt_engages_on_the_way_then_resumes() {
     // the route: the marcher must engage mid-march, kill it, then still
     // arrive and stand down.
     let goal = TilePos::new(12, 4);
-    state.tick(&[cmd(
-        0,
-        Command::Hunt {
-            units: vec![marcher],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::hunt([marcher], goal))]);
     run_until(&mut state, 400, |s, _| s.unit(bystander).is_none());
     run_until(&mut state, 400, |s, _| {
         let u = s.unit(marcher).unwrap();
@@ -705,14 +615,7 @@ fn hunt_with_only_harvesters_degrades_to_move() {
         .unwrap();
     let mover = state.units()[0].id;
     let goal = TilePos::new(10, 2);
-    state.tick(&[cmd(
-        0,
-        Command::Hunt {
-            units: vec![mover],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::hunt([mover], goal))]);
     assert!(matches!(
         state.unit(mover).unwrap().order,
         Order::Run { .. }
@@ -753,14 +656,7 @@ fn unqueued_advance_replaces_an_acquired_attack_on_the_command_tick() {
     );
 
     let goal = TilePos::new(16, 4);
-    state.tick(&[cmd(
-        0,
-        Command::Advance {
-            units: vec![mover],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::advance([mover], goal))]);
 
     let mover = state.unit(mover).unwrap();
     assert_eq!(commanded(mover.order), Order::Advance { goal: goal.into() });
@@ -789,14 +685,7 @@ fn advance_moves_and_fires_without_replacing_its_route() {
     let before_hp = state.unit(target).unwrap().hp;
     let goal = TilePos::new(14, 4);
 
-    let report = state.tick(&[cmd(
-        0,
-        Command::Advance {
-            units: vec![mover],
-            goal,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::advance([mover], goal))]);
 
     let mover = state.unit(mover).unwrap();
     assert!(mover.pos != before_pos, "the shot must not stop movement");
@@ -834,14 +723,7 @@ fn advance_chooses_equal_range_targets_by_id() {
     face_target(&mut state, mover, Target::Unit(lower));
     let full = UnitKind::Harvester.stats().max_hp;
 
-    state.tick(&[cmd(
-        0,
-        Command::Advance {
-            units: vec![mover],
-            goal: TilePos::new(14, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::advance([mover], TilePos::new(14, 4)))]);
 
     assert!(
         state.unit(lower).unwrap().hp < full,
@@ -869,14 +751,7 @@ fn advance_does_not_fire_a_secondary_weapon() {
     let (mover, flyer) = (state.units()[0].id, state.units()[1].id);
     let before = state.unit(flyer).unwrap().hp;
 
-    let report = state.tick(&[cmd(
-        0,
-        Command::Advance {
-            units: vec![mover],
-            goal: TilePos::new(14, 4),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::advance([mover], TilePos::new(14, 4)))]);
 
     assert_eq!(
         state.unit(flyer).unwrap().hp,
@@ -913,14 +788,7 @@ fn advance_respects_cover_without_diverting_around_it() {
     let before = state.unit(target).unwrap().hp;
     let goal = TilePos::new(4, 8);
 
-    let report = state.tick(&[cmd(
-        0,
-        Command::Advance {
-            units: vec![mover],
-            goal,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::advance([mover], goal))]);
 
     assert_eq!(
         state.unit(target).unwrap().hp,
@@ -965,14 +833,7 @@ fn advance_projectiles_launch_unguided_without_stopping() {
         "the allied spotter makes the launch legal"
     );
 
-    let report = state.tick(&[cmd(
-        0,
-        Command::Advance {
-            units: vec![launcher],
-            goal: TilePos::new(17, 5),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::advance([launcher], TilePos::new(17, 5)))]);
 
     assert!(
         report.events.iter().any(|event| matches!(
@@ -1022,14 +883,7 @@ fn advance_never_fires_into_fog() {
     );
     let before_hp = state.unit(unseen).unwrap().hp;
 
-    let report = state.tick(&[cmd(
-        0,
-        Command::Advance {
-            units: vec![bombard],
-            goal: TilePos::new(18, 5),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::advance([bombard], TilePos::new(18, 5)))]);
 
     assert_eq!(state.unit(unseen).unwrap().hp, before_hp);
     assert!(
@@ -1063,14 +917,7 @@ fn advance_never_chases_an_out_of_range_bystander() {
     let (mover, bystander) = (state.units()[0].id, state.units()[1].id);
     let before_hp = state.unit(bystander).unwrap().hp;
     let goal = TilePos::new(17, 3);
-    state.tick(&[cmd(
-        0,
-        Command::Advance {
-            units: vec![mover],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::advance([mover], goal))]);
 
     run_until(&mut state, 400, |state, _| {
         let mover = state.unit(mover).unwrap();
@@ -1099,22 +946,8 @@ fn advance_ignores_retaliation_and_pacifists_use_plain_move() {
     );
     let goal = TilePos::new(14, 4);
     state.tick(&[
-        cmd(
-            0,
-            Command::Advance {
-                units: vec![guard, worker],
-                goal,
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Attack {
-                units: vec![attacker],
-                target: Target::Unit(guard).into(),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::advance([guard, worker], goal)),
+        cmd(1, orders::attack([attacker], Target::Unit(guard))),
     ]);
 
     assert!(matches!(
@@ -1160,14 +993,7 @@ fn rock_is_cover_until_the_attacker_repositions() {
     let start_tile = state.unit(attacker).unwrap().tile();
     let mut first_hit_tile = None;
     let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Attack {
-                units: vec![attacker],
-                target: Target::Unit(victim).into(),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::attack([attacker], Target::Unit(victim)))])
         .events;
     for _ in 0..600 {
         if first_hit_tile.is_none() && events.iter().any(|e| matches!(e, Event::AttackHit { .. })) {
@@ -1214,14 +1040,7 @@ fn buildings_are_not_cover_only_terrain_is() {
     face_target(&mut state, attacker, Target::Unit(victim));
     let start_tile = state.unit(attacker).unwrap().tile();
     let events = state
-        .tick(&[cmd(
-            0,
-            Command::Attack {
-                units: vec![attacker],
-                target: Target::Unit(victim).into(),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::attack([attacker], Target::Unit(victim)))])
         .events;
     assert!(
         events.iter().any(|e| matches!(e, Event::AttackHit { .. })),
@@ -1292,13 +1111,7 @@ fn an_unbuilt_site_is_no_sandbag() {
     // The site claims the line tile on the command tick.
     state.tick(&[cmd(
         1,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Array,
-            anchor: TilePos::new(5, 3),
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Array, TilePos::new(5, 3)),
     )]);
     let site = state
         .buildings()
@@ -1307,14 +1120,7 @@ fn an_unbuilt_site_is_no_sandbag() {
         .expect("the site must have been placed");
     assert!(!site.built(), "the blocker must be an unbuilt foundation");
     let events = state
-        .tick(&[cmd(
-            0,
-            Command::Attack {
-                units: vec![attacker],
-                target: Target::Unit(victim).into(),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::attack([attacker], Target::Unit(victim)))])
         .events;
     assert!(
         events.iter().any(|e| matches!(e, Event::AttackHit { .. })),
@@ -1370,14 +1176,7 @@ fn lancer_fires_from_beyond_bombard_sight_and_retaliation_answers() {
     let vision = chassis::fx::Fx::from_num(UnitKind::Bombard.stats().vision);
     assert!(d2 > vision * vision, "test premise: outside bombard sight");
 
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![lancer],
-            target: Target::Unit(victim).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([lancer], Target::Unit(victim)))]);
     // The lancer needs no approach: the first hit lands within a tick or
     // two; retaliation adopts the shooter before the spades deploy.
     run_until(&mut state, 10, |s, _| {
@@ -1438,36 +1237,15 @@ fn a_flank_pick_is_lethal_and_the_march_still_arrives() {
     // would fan out ring goals and blur the arrival assertion).
     let rear_goal = TilePos::new(16, 1);
     state.tick(&[
-        cmd(
-            0,
-            Command::Hunt {
-                units: vec![marcher],
-                goal,
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Hunt {
-                units: vec![rearguard],
-                goal: rear_goal,
-                queue: false,
-            },
-        ),
+        cmd(0, orders::hunt([marcher], goal)),
+        cmd(0, orders::hunt([rearguard], rear_goal)),
     ]);
     // Let the march reach the firing window (dist 5.39: in lancer range,
     // outside sentinel aggro), then order the shot.
     run_until(&mut state, 200, |s, _| {
         s.unit(marcher).unwrap().tile() == TilePos::new(7, 2)
     });
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![lancer],
-            target: Target::Unit(marcher).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([lancer], Target::Unit(marcher)))]);
     // One rail hit is the whole story for a 60-hp marcher.
     run_until(&mut state, 20, |s, _| s.unit(marcher).is_none());
     let sniper = state.unit(lancer).unwrap();
@@ -1493,14 +1271,7 @@ fn scuttler_wins_the_matchups_it_should_and_loses_the_rest() {
     .build()
     .unwrap();
     let (rat, prey) = (state.units()[0].id, state.units()[1].id);
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![rat],
-            target: Target::Unit(prey).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([rat], Target::Unit(prey)))]);
     run_until(&mut state, 200, |s, _| s.unit(prey).is_none());
     assert!(state.unit(rat).is_some());
 
@@ -1511,14 +1282,7 @@ fn scuttler_wins_the_matchups_it_should_and_loses_the_rest() {
     .build()
     .unwrap();
     let (line, rat) = (state.units()[0].id, state.units()[1].id);
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![rat],
-            target: Target::Unit(line).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([rat], Target::Unit(line)))]);
     run_until(&mut state, 400, |s, _| s.unit(rat).is_none());
     assert!(state.unit(line).is_some(), "the sentinel holds the line");
 }
@@ -1544,43 +1308,18 @@ fn turret_holds_ground_and_dies_to_lancer_siege() {
     let anchor = TilePos::new(5, 5);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
-    let turret = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let turret = building_id(&state, |b| b.anchor == anchor);
     run_until(&mut state, 600, |s, _| {
         s.building(turret)
             .is_some_and(aftermine_sim::Building::built)
     });
     // Builder clears the field so the duel is clean.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(2, 1),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(2, 1)))]);
     // Fog: the scuttler can't target what it hasn't seen, so hunt in and
     // let fire-at-will find the turret.
-    state.tick(&[cmd(
-        1,
-        Command::Hunt {
-            units: vec![rat],
-            goal: TilePos::new(6, 5),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::hunt([rat], TilePos::new(6, 5)))]);
     let events = run_until(&mut state, 600, |s, _| s.unit(rat).is_none());
     assert!(
         events
@@ -1607,41 +1346,16 @@ fn turret_holds_ground_and_dies_to_lancer_siege() {
     let (builder, lancer) = (state.units()[0].id, state.units()[1].id);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
-    let turret = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let turret = building_id(&state, |b| b.anchor == anchor);
     run_until(&mut state, 600, |s, _| {
         s.building(turret)
             .is_some_and(aftermine_sim::Building::built)
     });
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![builder],
-                goal: TilePos::new(2, 1),
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Hunt {
-                units: vec![lancer],
-                goal: TilePos::new(6, 5),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([builder], TilePos::new(2, 1))),
+        cmd(1, orders::hunt([lancer], TilePos::new(6, 5))),
     ]);
     run_until(&mut state, 2000, |s, _| s.building(turret).is_none());
     assert_eq!(
@@ -1666,13 +1380,7 @@ fn turret_fires_at_its_stated_cadence() {
     let anchor = TilePos::new(5, 6);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
     run_until(&mut state, 700, |s, _| {
         s.buildings()
@@ -1681,22 +1389,8 @@ fn turret_fires_at_its_stated_cadence() {
     });
     // Builder clears out; the sentinel wanders in obliviously.
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![builder],
-                goal: TilePos::new(2, 2),
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Run {
-                units: vec![target],
-                goal: TilePos::new(8, 6),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([builder], TilePos::new(2, 2))),
+        cmd(1, orders::run([target], TilePos::new(8, 6))),
     ]);
     let mut fire_ticks: Vec<u64> = Vec::new();
     for _ in 0..600u32 {
@@ -1746,21 +1440,12 @@ fn bastion_has_artillery_reach_and_a_real_close_pressure_dead_zone() {
         ..open_arena(20, 12, vec![unit(1, UnitKind::Scuttler, 9, 6)])
     };
     let mut state = scenario.build().unwrap();
-    let bastion = state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Bastion)
-        .unwrap()
-        .id;
+    let bastion = building_id(&state, |building| building.kind == BuildingKind::Bastion);
     let scuttler = state.units()[0].id;
     let scuttler_hp = state.unit(scuttler).unwrap().hp;
     state.tick(&[cmd(
         1,
-        Command::Attack {
-            units: vec![scuttler],
-            target: Target::Building(bastion).into(),
-            queue: false,
-        },
+        orders::attack([scuttler], Target::Building(bastion)),
     )]);
     let events = run_until(&mut state, 1_500, |s, _| s.building(bastion).is_none());
     assert!(
@@ -1797,12 +1482,7 @@ fn bastion_opens_fire_beyond_its_dead_zone() {
         ..open_arena(20, 12, vec![unit(1, UnitKind::Harvester, 13, 6)])
     };
     let mut state = scenario.build().unwrap();
-    let bastion = state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Bastion)
-        .unwrap()
-        .id;
+    let bastion = building_id(&state, |building| building.kind == BuildingKind::Bastion);
     let target = state.units()[0].id;
     let before = state.unit(target).unwrap().hp;
     let events = run_until(&mut state, 200, |s, _| {
@@ -1837,22 +1517,8 @@ fn mirrored_duels_end_in_mutual_annihilation() {
     .unwrap();
     let (a, b) = (state.units()[0].id, state.units()[1].id);
     state.tick(&[
-        cmd(
-            0,
-            Command::Attack {
-                units: vec![a],
-                target: Target::Unit(b).into(),
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Attack {
-                units: vec![b],
-                target: Target::Unit(a).into(),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::attack([a], Target::Unit(b))),
+        cmd(1, orders::attack([b], Target::Unit(a))),
     ]);
     run_until(&mut state, 400, |s, _| {
         s.unit(a).is_none() || s.unit(b).is_none()
@@ -1891,22 +1557,8 @@ fn retaliation_interrupts_an_attack_on_a_corpse() {
         face_target(&mut state, shooter, Target::Unit(target));
     }
     state.tick(&[
-        cmd(
-            1,
-            Command::Attack {
-                units: vec![sniper],
-                target: Target::Unit(v).into(),
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Attack {
-                units: vec![c1, c2],
-                target: Target::Unit(bait).into(),
-                queue: false,
-            },
-        ),
+        cmd(1, orders::attack([sniper], Target::Unit(v))),
+        cmd(0, orders::attack([c1, c2], Target::Unit(bait))),
     ]);
     assert!(state.unit(bait).is_none(), "the bait died in the volley");
     assert!(
@@ -1941,14 +1593,7 @@ fn an_advancing_gun_breaks_a_distance_tie_by_bearing_not_id() {
         let id = state.units()[0].id;
         let goal = TilePos::new(goal.0, goal.1);
         face_toward(&mut state, id, goal.center());
-        let mut commands = vec![cmd(
-            0,
-            Command::Advance {
-                units: vec![id],
-                goal,
-                queue: false,
-            },
-        )];
+        let mut commands = vec![cmd(0, orders::advance([id], goal))];
         for _ in 0..40 {
             let report = state.tick(&commands);
             commands.clear();
@@ -2021,22 +1666,8 @@ fn a_hunt_passes_over_a_victim_it_can_neither_shoot_nor_reach_and_keeps_its_prog
         let hunter = state.units()[0].id;
         let full = state.unit(sealed).unwrap().hp;
         state.tick(&[
-            cmd(
-                0,
-                Command::Hunt {
-                    units: vec![hunter],
-                    goal: TilePos::new(34, row),
-                    queue: false,
-                },
-            ),
-            cmd(
-                0,
-                Command::Run {
-                    units: vec![hunter],
-                    goal: TilePos::new(34, 15),
-                    queue: true,
-                },
-            ),
+            cmd(0, orders::hunt([hunter], TilePos::new(34, row))),
+            cmd(0, orders::run([hunter], TilePos::new(34, 15)).queued()),
         ]);
         let events = run_until(&mut state, 1200, |s, _| {
             s.unit(hunter).unwrap().tile() == TilePos::new(34, 15)
@@ -2065,14 +1696,7 @@ fn an_ordered_attack_on_a_victim_no_route_reaches_still_refuses() {
     let hunter = state.units()[0].id;
     // The refusal can come on the command's own tick.
     let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Attack {
-                units: vec![hunter],
-                target: Target::Unit(sealed).into(),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::attack([hunter], Target::Unit(sealed)))])
         .events;
     events.extend(run(&mut state, 100));
     assert!(
@@ -2094,14 +1718,7 @@ fn an_escort_beside_a_victim_behind_rock_keeps_its_slot() {
         ],
     );
     let (lead, guard) = (state.units()[0].id, state.units()[1].id);
-    state.tick(&[cmd(
-        0,
-        Command::Accompany {
-            units: vec![guard],
-            target: lead,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::accompany([guard], lead))]);
     run(&mut state, 30);
     for _ in 0..300 {
         state.tick(&[]);
@@ -2126,12 +1743,7 @@ fn a_gun_still_takes_on_a_structure_it_can_shell_from_across_a_pit() {
         .buildings
         .push(common::building(1, BuildingKind::Fabricator, 14, 6));
     let mut state = scenario.build().unwrap();
-    let fabricator = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Fabricator)
-        .unwrap()
-        .id;
+    let fabricator = building_id(&state, |b| b.kind == BuildingKind::Fabricator);
     let full = state.building(fabricator).unwrap().hp;
     run_until(&mut state, 600, |s, _| {
         s.building(fabricator).is_none_or(|b| b.hp < full)

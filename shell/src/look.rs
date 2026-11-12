@@ -1,9 +1,11 @@
-//! What each unit and defense kind looks and sounds like in the shell,
-//! declared in one place. [`unit()`] and [`defense()`] are exhaustive
-//! matches, so a new kind must state every presentation fact here instead of
-//! drawing with another kind's defaults. Facts the simulation already states
-//! (rotorcraft, large airframes, scouts, demolition, braced siege, upgrade
-//! ladders) are read from its stats instead, and frame counts from the atlas.
+//! Each unit and defense kind's sprite scale, gait, mechanisms, airframe,
+//! weapon report and far-zoom marker. [`unit()`] and [`defense()`] are
+//! exhaustive matches, so a new kind must state each of these here instead of
+//! drawing with another kind's defaults. Which atlas frame a kind shows is
+//! chosen in `render::motion`, and animation timing lives in
+//! `presentation_animation`. Facts the simulation already states (rotorcraft,
+//! large airframes, scouts, demolition, braced siege, upgrade ladders) are
+//! read from its stats instead, and frame counts from the atlas.
 
 use crate::game::{FlakYokeDelay, ShotStyle, SoundKind};
 use aftermine_sim::{BuildingKind, UnitKind};

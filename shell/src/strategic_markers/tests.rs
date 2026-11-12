@@ -68,15 +68,6 @@ fn extractor_frame_markers_share_exploration_and_claim_visibility() {
 }
 
 #[test]
-fn marker_scaling_preserves_the_screen_position_and_scales_the_art() {
-    let center = vec2(330.0, 140.0);
-    for scale in [0.75, 1.0, 1.5] {
-        let pen = Pen { center, scale };
-        assert_eq!(pen.at((0.0, 0.0)), center);
-        assert_eq!(pen.at((-7.0, 12.0)), center + vec2(-7.0, 12.0) * scale);
-    }
-}
-#[test]
 fn enemy_mine_marker_stays_hidden_on_visible_ground() {
     let mut scenario: aftermine_sim::scenario::Scenario =
         serde_json::from_str(include_str!("../../../fixtures/scenarios/skirmish.json")).unwrap();

@@ -226,8 +226,9 @@ symmetric, decisive map can still be dull or confusing.
 
 ## Keep drafts out of the shipped pool
 
-Draft in `map-drafts/`, never directly in `scenarios/`. The shipped-map sweep
-and hash blessing read the entire scenarios directory.
+Draft in `map-drafts/`, never directly in `scenarios/`. The map gates, the
+all-map integrity soak and the game's map list read the entire scenarios
+directory.
 
 A map retired from the pool that tests, benchmarks, or the built-in skirmish
 still load moves to `fixtures/scenarios/`. The game never lists those maps.
@@ -244,6 +245,7 @@ When changing the review-page builder, run its orchestration and escaping tests:
 uv run -m unittest tools.test_map_review
 ```
 
-The review page presents drafts; it never promotes them. Moving a draft into
-`scenarios/`, blessing hashes, and committing it require explicit user approval.
-Inspect every changed hash and golden after an intended promotion.
+The review page presents drafts; it never promotes them. A draft moves into
+`scenarios/` only once it passes the map gates, its metadata badges match the
+audit's, and the user explicitly approves the move and the commit. No hash
+fixture reads `scenarios/`, so promotion blesses nothing.

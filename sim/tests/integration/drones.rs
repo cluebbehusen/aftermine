@@ -2,7 +2,7 @@
 //! nearby enemy aircraft or a hit, fighting on a short leash, screening fire,
 //! docking once calm, and falling with their host.
 
-use crate::common::{building, cmd, open_arena, players, run, unit};
+use crate::common::{building, cmd, open_arena, orders, players, run, unit, unit_id};
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::UnitSpec;
 use aftermine_sim::stats::{BuildingKind, RECALL_TICKS};
@@ -19,12 +19,7 @@ fn staged(scrap: u32, units: Vec<UnitSpec>) -> State {
 }
 
 fn roc(state: &State) -> UnitId {
-    state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Roc && u.player.0 == 0)
-        .unwrap()
-        .id
+    unit_id(state, |u| u.kind == UnitKind::Roc && u.player.0 == 0)
 }
 
 fn drones(state: &State, host: UnitId) -> Vec<UnitId> {
@@ -229,12 +224,7 @@ fn drones_fight_a_fighter_that_reaches_their_host_from_its_full_range() {
         ],
     );
     let roc = roc(&state);
-    let talon = state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Talon)
-        .unwrap()
-        .id;
+    let talon = unit_id(&state, |u| u.kind == UnitKind::Talon);
     let reach = UnitKind::Talon.stats().weapons[0].range + UnitKind::Roc.stats().radius;
     let gap = state
         .unit(talon)
@@ -321,25 +311,13 @@ fn drones_dock_once_the_threat_is_gone_and_relaunch_whole() {
         ],
     );
     let roc = roc(&state);
-    let enemy = state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Skyhook)
-        .unwrap()
-        .id;
+    let enemy = unit_id(&state, |u| u.kind == UnitKind::Skyhook);
     let mut state = with_bay(&state, roc, &serde_json::json!({"docked": 2}));
     state.tick(&[]);
     let flying = drones(&state, roc);
     assert_eq!(flying.len(), 2, "premise: launched");
     // The enemy carrier leaves; the drones come home once the alert lapses.
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![enemy],
-            goal: TilePos::new(27, 20),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([enemy], TilePos::new(27, 20)))]);
     let events = run(&mut state, u64::from(RECALL_TICKS) + 400);
     assert_eq!(docked(&events), 2, "both drones dock");
     assert!(drones(&state, roc).is_empty());
@@ -420,23 +398,11 @@ fn drones_take_no_commands_and_nothing_targets_them_as_a_friend() {
         ],
     );
     let roc = roc(&state);
-    let sentinel = state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Sentinel)
-        .unwrap()
-        .id;
+    let sentinel = unit_id(&state, |u| u.kind == UnitKind::Sentinel);
     let mut state = with_bay(&state, roc, &serde_json::json!({"docked": 1}));
     state.tick(&[]);
     let drone = drones(&state, roc)[0];
-    let report = state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![drone],
-            goal: TilePos::new(25, 20),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::run([drone], TilePos::new(25, 20)))]);
     assert!(report.events.iter().any(|e| matches!(
         e,
         Event::CommandRejected {
@@ -445,14 +411,7 @@ fn drones_take_no_commands_and_nothing_targets_them_as_a_friend() {
         }
     )));
     assert_eq!(state.unit(drone).unwrap().host, Some(roc));
-    let report = state.tick(&[cmd(
-        0,
-        Command::Accompany {
-            units: vec![sentinel],
-            target: drone,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::accompany([sentinel], drone))]);
     assert!(report.events.iter().any(|e| matches!(
         e,
         Event::CommandRejected {

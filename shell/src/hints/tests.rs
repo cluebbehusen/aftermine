@@ -1,4 +1,6 @@
 use super::*;
+use crate::tests::support::{touch_down, touch_move};
+use macroquad::prelude::vec2;
 
 #[test]
 fn coaching_waits_for_an_idle_screen_then_stays() {
@@ -39,15 +41,7 @@ fn hints_show_by_default_where_no_clock_runs() {
 
 #[test]
 fn only_acting_counts_as_input() {
-    assert!(is_press(&RawEvent::TouchDown {
-        id: 1,
-        x: 0.0,
-        y: 0.0
-    }));
+    assert!(is_press(&touch_down(1, vec2(0.0, 0.0))));
     assert!(!is_press(&RawEvent::MouseMove { x: 1.0, y: 1.0 }));
-    assert!(!is_press(&RawEvent::TouchMove {
-        id: 1,
-        x: 0.0,
-        y: 0.0
-    }));
+    assert!(!is_press(&touch_move(1, vec2(0.0, 0.0))));
 }

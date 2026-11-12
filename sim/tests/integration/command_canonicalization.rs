@@ -13,7 +13,7 @@ use aftermine_sim::{
 };
 use chassis::grid::TilePos;
 
-use common::{cmd, run_until, unit};
+use common::{building_id, cmd, orders, run_until, unit};
 
 /// One arm per [`Command`] variant, contiguous indices. Adding a variant
 /// stops this file compiling, which is the point: the new verb then has to
@@ -190,23 +190,11 @@ fn stage() -> Stage {
     let biter = state.units()[5].id;
     let transport = state.units()[6].id;
     let scout = state.units()[7].id;
-    let turret = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Turret)
-        .expect("the staged turret")
-        .id;
+    let turret = building_id(&state, |b| b.kind == BuildingKind::Turret);
 
     // The raid: the scuttler gnaws the turret and dies to it, leaving the
     // scars that make a repair order legal.
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![raider],
-            target: Target::Building(turret).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([raider], Target::Building(turret)))]);
     let mut fallen = Vec::new();
     run_until(&mut state, 600, |_, events| {
         fallen.extend(events.iter().filter_map(|e| match e {
@@ -331,10 +319,7 @@ fn families(stage: &Stage) -> Vec<Family> {
         Family {
             name: "patrol",
             actor: guard,
-            make: Box::new(move |units, _| Command::Patrol {
-                units,
-                waypoints: vec![ground, TilePos::new(9, 9)],
-            }),
+            make: Box::new(move |units, _| orders::patrol(units, [ground, TilePos::new(9, 9)])),
         },
         Family {
             name: "build",
@@ -368,7 +353,7 @@ fn families(stage: &Stage) -> Vec<Family> {
         Family {
             name: "stop",
             actor: guard,
-            make: Box::new(move |units, _| Command::Stop { units }),
+            make: Box::new(move |units, _| orders::stop(units)),
         },
         Family {
             name: "repair-unit",
@@ -519,14 +504,7 @@ fn a_tripled_append_takes_one_queue_slot() {
         let mut state = stage.state.clone();
         // Something to queue behind — an idle unit takes the order
         // outright and the append never fires.
-        state.tick(&[cmd(
-            0,
-            Command::Run {
-                units: vec![family.actor],
-                goal: TilePos::new(4, 9),
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::run([family.actor], TilePos::new(4, 9)))]);
         let before = state.unit(family.actor).unwrap().queue.len();
         state.tick(&[cmd(0, (family.make)(vec![family.actor; 3], true))]);
         let unit = state.unit(family.actor).unwrap();

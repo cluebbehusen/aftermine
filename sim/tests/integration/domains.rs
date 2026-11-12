@@ -5,10 +5,10 @@
 
 use crate::common;
 use aftermine_sim::scenario::ScenarioMode;
-use common::{arena, cmd, run_until, unit};
+use common::{arena, cmd, orders, run_until, unit};
 
 use aftermine_sim::stats::{BuildingKind, Domain};
-use aftermine_sim::{Command, Event, Order, PlayerId, Scenario, Target, UnitKind};
+use aftermine_sim::{Event, Order, PlayerId, Scenario, Target, UnitKind};
 use chassis::grid::TilePos;
 
 #[test]
@@ -170,14 +170,7 @@ fn air_flies_straight_over_rock_and_may_park_on_it() {
         .build()
         .unwrap();
     let flyer = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![flyer],
-            goal: TilePos::new(9, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([flyer], TilePos::new(9, 4)))]);
     let mut crossed_rock = false;
     run_until(&mut state, 70, |s, _| {
         let u = s.unit(flyer).unwrap();
@@ -190,14 +183,7 @@ fn air_flies_straight_over_rock_and_may_park_on_it() {
     assert!(crossed_rock, "a straight flight must pass over the rock");
 
     // A rock tile is a legal destination for a flyer.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![flyer],
-            goal: TilePos::new(6, 3),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([flyer], TilePos::new(6, 3)))]);
     run_until(&mut state, 80, |s, _| {
         s.unit(flyer).unwrap().tile() == TilePos::new(6, 3)
     });
@@ -218,14 +204,7 @@ fn collision_pairs_only_within_a_domain() {
         state.units()[2].id,
     );
     // Both flyers head for the sentinel's tile.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![buzzard, talon],
-            goal: TilePos::new(4, 2),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([buzzard, talon], TilePos::new(4, 2)))]);
     for _ in 0..120 {
         state.tick(&[]);
     }
@@ -274,14 +253,7 @@ fn weapon_masks_gate_acquisition_both_ways() {
     assert_eq!(state.unit(harv).unwrap().hp, 60);
 
     // Send the talon overhead: flak acquires and deletes it unanswered.
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![talon],
-            goal: TilePos::new(5, 5),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([talon], TilePos::new(5, 5)))]);
     run_until(&mut state, 400, |_, events| {
         events
             .iter()
@@ -300,14 +272,7 @@ fn ground_only_weapons_cannot_answer_air() {
     .build()
     .unwrap();
     let (buzzard, scuttler) = (state.units()[0].id, state.units()[1].id);
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![buzzard],
-            target: Target::Unit(scuttler).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([buzzard], Target::Unit(scuttler)))]);
     run_until(&mut state, 400, |_, events| {
         events
             .iter()
@@ -339,11 +304,7 @@ fn splash_kills_the_cluster_in_one_shell() {
     let target = state.units()[1].id;
     state.tick(&[cmd(
         0,
-        Command::Attack {
-            units: vec![state.units()[0].id],
-            target: Target::Unit(target).into(),
-            queue: false,
-        },
+        orders::attack([state.units()[0].id], Target::Unit(target)),
     )]);
     run_until(&mut state, 64, |_, events| {
         events
@@ -380,14 +341,7 @@ fn splash_victims_all_turn_on_the_shooter() {
         state.units()[1].id,
         state.units()[2].id,
     );
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![bombard],
-            target: Target::Unit(s1).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([bombard], Target::Unit(s1)))]);
     run_until(&mut state, 100, |_, events| {
         events
             .iter()
@@ -421,14 +375,7 @@ fn indirect_fire_arcs_over_rock() {
     .build()
     .unwrap();
     let (bombard, victim) = (state.units()[0].id, state.units()[1].id);
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![bombard],
-            target: Target::Unit(victim).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([bombard], Target::Unit(victim)))]);
     run_until(&mut state, 64, |_, events| {
         events
             .iter()
@@ -489,14 +436,7 @@ fn long_guns_fire_on_a_spotters_eyes_and_go_quiet_without_them() {
         state.units()[1].id,
         state.units()[2].id,
     );
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![bombard],
-            target: Target::Unit(victim).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([bombard], Target::Unit(victim)))]);
     run_until(&mut state, 64, |_, events| {
         events
             .iter()
@@ -514,14 +454,7 @@ fn long_guns_fire_on_a_spotters_eyes_and_go_quiet_without_them() {
     // next shell comes off cooldown after the spotter leaves, while the gun is
     // still crawling the southern detour far outside its own vision — it
     // must hold fire through this whole window.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![spotter],
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([spotter], TilePos::new(2, 6)))]);
     let mut blind_launches = 0;
     for _ in 0..119 {
         let report = state.tick(&[]);
@@ -554,14 +487,7 @@ fn attack_orders_on_uncoverable_targets_walk_instead() {
     .build()
     .unwrap();
     let (flak, harv) = (state.units()[0].id, state.units()[2].id);
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![flak],
-            target: Target::Unit(harv).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([flak], Target::Unit(harv)))]);
     assert!(
         matches!(state.unit(flak).unwrap().order, Order::Run { .. }),
         "no covering weapon lowers the attack to a walk"
@@ -580,13 +506,7 @@ fn hovering_machines_do_not_block_foundations() {
     assert_eq!(UnitKind::Buzzard.stats().domain, Domain::Air);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(5, 5),
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, TilePos::new(5, 5)),
     )]);
     assert!(
         state
@@ -617,14 +537,7 @@ fn the_sidearm_fights_its_own_war_alongside_the_main_gun() {
         state.units()[1].id,
         state.units()[2].id,
     );
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![mine],
-            target: Target::Unit(foe).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([mine], Target::Unit(foe)))]);
     let (mut ground_hits, mut air_hits) = (0, 0);
     for _ in 0..100 {
         let report = state.tick(&[]);
@@ -671,13 +584,7 @@ fn radar_blips_detect_without_identifying_or_authorizing() {
     );
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Array,
-            anchor: TilePos::new(4, 2),
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Array, TilePos::new(4, 2)),
     )]);
     run_until(&mut state, 500, |_, events| {
         events
@@ -708,14 +615,7 @@ fn radar_blips_detect_without_identifying_or_authorizing() {
     );
 
     // And it buys no shot: targeted attacks still need true sight.
-    let report = state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![fighter],
-            target: Target::Unit(intruder).into(),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::attack([fighter], Target::Unit(intruder)))]);
     assert!(
         report
             .events
@@ -725,14 +625,7 @@ fn radar_blips_detect_without_identifying_or_authorizing() {
     );
 
     // Walking into true sight converts the blip into a sighting.
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![intruder],
-            goal: TilePos::new(6, 2),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([intruder], TilePos::new(6, 2)))]);
     run_until(&mut state, 400, |s, _| {
         let t = s.unit(intruder).unwrap().tile();
         s.vision(PlayerId(0)).visible(t)
@@ -782,14 +675,7 @@ fn splash_hits_the_unseen_but_reveals_nothing() {
     // Premise: the aimed victim is seen (spotter), the bystander is not.
     assert!(state.can_see(PlayerId(0), state.unit(victim).unwrap().tile()));
     assert!(!state.can_see(PlayerId(0), state.unit(bystander).unwrap().tile()));
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![bombard],
-            target: Target::Unit(victim).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([bombard], Target::Unit(victim)))]);
     let mut named_bystander = false;
     let mut landed = false;
     for _ in 0..100 {
@@ -837,25 +723,11 @@ fn ground_anti_air_reaches_a_flyer_parked_over_rock() {
     .unwrap();
     let (flak, talon) = (state.units()[0].id, state.units()[1].id);
     // Park the talon on the rock at (6,3)-(7,4).
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![talon],
-            goal: TilePos::new(7, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([talon], TilePos::new(7, 4)))]);
     run_until(&mut state, 200, |s, _| {
         s.unit(talon).unwrap().tile() == TilePos::new(7, 4)
     });
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![flak],
-            target: Target::Unit(talon).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([flak], Target::Unit(talon)))]);
     run_until(&mut state, 600, |_, events| {
         events
             .iter()

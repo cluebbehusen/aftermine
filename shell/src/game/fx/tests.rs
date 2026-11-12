@@ -1,5 +1,6 @@
 use super::*;
 use crate::game::Game;
+use crate::tests::support::{issue_tick, own_building, sandbox};
 use aftermine_sim::{BuildingId, BuildingKind, Target, UnitId, UnitKind};
 
 fn defense_report(kind: BuildingKind) -> crate::look::DefenseReport {
@@ -8,18 +9,16 @@ fn defense_report(kind: BuildingKind) -> crate::look::DefenseReport {
 
 #[test]
 fn lethal_scuttler_bite_retains_the_visible_unit_surface() {
-    let scenario = serde_json::from_value(serde_json::json!({
-        "name": "Lethal bite", "mode": "sandbox", "map": vec![".............................."; 22],
-        "players": [
-            {"name": "Local", "scrap": 0, "bot": false},
-            {"name": "Target", "scrap": 0, "bot": false}
+    let scenario = sandbox(
+        30,
+        22,
+        2,
+        &[
+            (0, UnitKind::Scuttler, 11, 7),
+            (1, UnitKind::Harvester, 12, 7),
         ],
-        "units": [
-            {"player": 0, "kind": "scuttler", "x": 11, "y": 7},
-            {"player": 1, "kind": "harvester", "x": 12, "y": 7}
-        ]
-    }))
-    .unwrap();
+        &[],
+    );
     let mut game = Game::with_viewport(scenario, Vec2::new(1280., 800.)).unwrap();
     let mut wire = serde_json::to_value(&*game.state).unwrap();
     wire["units"][1]["hp"] = serde_json::json!(1);
@@ -55,16 +54,13 @@ fn lethal_scuttler_bite_retains_the_visible_unit_surface() {
 #[test]
 fn building_reports_keep_surface_facts_through_the_lethal_tick() {
     for lethal in [false, true] {
-        let scenario = serde_json::from_value(serde_json::json!({
-            "name": "Building strike", "mode": "sandbox", "map": vec![".............................."; 22],
-            "players": [
-                {"name": "Local", "scrap": 0, "bot": false},
-                {"name": "Target", "scrap": 0, "bot": false}
-            ],
-            "units": [{"player": 0, "kind": "sentinel", "x": 11, "y": 7}],
-            "buildings": [{"player": 1, "kind": "fabricator", "x": 13, "y": 9}]
-        }))
-        .unwrap();
+        let scenario = sandbox(
+            30,
+            22,
+            2,
+            &[(0, UnitKind::Sentinel, 11, 7)],
+            &[(1, BuildingKind::Fabricator, 13, 9)],
+        );
         let mut game = Game::with_viewport(scenario, Vec2::new(1280., 800.)).unwrap();
         if lethal {
             let mut wire = serde_json::to_value(&*game.state).unwrap();
@@ -785,13 +781,7 @@ fn collapse_preserves_the_casualty_and_live_playback_state_parity() {
         Vec2::new(1280.0, 800.0),
     );
     let mut reference = (*live.state).clone();
-    let id = live
-        .state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Bastion)
-        .unwrap()
-        .id;
+    let id = own_building(&live, BuildingKind::Bastion);
     for _ in 0..40 {
         playback.remember_previous_tick(&reference);
         let expected = reference.tick(&[]);
@@ -1223,16 +1213,10 @@ fn hidden_demolition_and_building_loss_sound_without_revealing_identity() {
 
 #[test]
 fn a_sapper_blast_is_witnessed_when_its_view_dies_with_an_ally_but_not_an_enemy() {
-    let scenario = serde_json::from_value(serde_json::json!({
-        "name": "Allied Sapper", "mode": "sandbox", "map": vec![".".repeat(60); 30],
-        "players": [
-            {"name": "Local", "scrap": 0, "bot": false, "team": 0},
-            {"name": "Ally", "scrap": 0, "bot": false, "team": 0},
-            {"name": "Enemy", "scrap": 0, "bot": false, "team": 1}
-        ],
-        "units": [{"player": 0, "kind": "harvester", "x": 2, "y": 2}]
-    }))
-    .unwrap();
+    let mut scenario = sandbox(60, 30, 3, &[(0, UnitKind::Harvester, 2, 2)], &[]);
+    for (player, team) in scenario.players.iter_mut().zip([0, 0, 1]) {
+        player.team = Some(team);
+    }
     let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
     let at = chassis::grid::TilePos::new(50, 25).center();
     assert!(
@@ -1477,13 +1461,7 @@ fn defense_tracking_game() -> (crate::game::Game, BuildingId, UnitId) {
     });
     let game = crate::game::Game::with_viewport(scenario, macroquad::prelude::vec2(1280.0, 800.0))
         .expect("tracking scenario builds");
-    let building = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let building = own_building(&game, BuildingKind::Turret);
     let target = game
         .state
         .units()
@@ -1495,71 +1473,21 @@ fn defense_tracking_game() -> (crate::game::Game, BuildingId, UnitId) {
 }
 
 #[test]
-fn every_weapon_family_uses_its_physical_report() {
-    assert_eq!(
-        unit_shot_style(UnitKind::Scuttler).unwrap(),
-        ShotStyle::Contact
-    );
-    assert_eq!(unit_shot_style(UnitKind::Lancer).unwrap(), ShotStyle::Rail);
-    assert_eq!(
-        unit_shot_style(UnitKind::Flakhound).unwrap(),
-        ShotStyle::FlakBurst {
-            yoke_delay: FlakYokeDelay::OneTick,
-            rounds_per_yoke: 2,
-        }
-    );
-    // Both Sentinel slots speak through its one physical barrel;
-    // the second is a weaker skyward poke, not a paired flak gun.
-    assert_eq!(
-        unit_shot_style(UnitKind::Sentinel).unwrap(),
-        ShotStyle::Kinetic { heavy: false }
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Warden).unwrap(),
-        ShotStyle::Kinetic { heavy: true }
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Breaker).unwrap(),
-        ShotStyle::Mortar
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Buzzard).unwrap(),
-        ShotStyle::Kinetic { heavy: true }
-    );
-    assert_eq!(
-        unit_shot_style(UnitKind::Talon).unwrap(),
-        ShotStyle::ForgeSpot
-    );
-    assert_eq!(
-        defense_report(BuildingKind::FlakTurret).shot(0),
-        ShotStyle::FlakBurst {
-            yoke_delay: FlakYokeDelay::OneAndHalfTicks,
-            rounds_per_yoke: 2,
-        }
-    );
-    assert_eq!(
-        defense_report(BuildingKind::FlakTurret).shot(1),
-        ShotStyle::FlakBurst {
-            yoke_delay: FlakYokeDelay::OneAndHalfTicks,
-            rounds_per_yoke: 3,
-        }
-    );
-    assert_eq!(
-        defense_report(BuildingKind::Turret).shot(0),
-        ShotStyle::ForgeSpot
-    );
-}
-
-#[test]
 fn flak_yoke_rounds_switch_with_the_second_muzzle_frame() {
+    let delay = |style: Option<ShotStyle>| match style {
+        Some(ShotStyle::FlakBurst { yoke_delay, .. }) => yoke_delay.ticks(),
+        other => panic!("expected a flak burst, got {other:?}"),
+    };
     assert_eq!(
         crate::presentation_animation::FLAKHOUND_REPORT_TICKS / 2.0,
-        FlakYokeDelay::OneTick.ticks()
+        delay(unit_shot_style(UnitKind::Flakhound))
     );
-    assert_eq!(
-        crate::presentation_animation::FLAK_TURRET_REPORT_TICKS / 2.0,
-        FlakYokeDelay::OneAndHalfTicks.ticks()
-    );
+    for shot in defense_report(BuildingKind::FlakTurret).shots {
+        assert_eq!(
+            crate::presentation_animation::FLAK_TURRET_REPORT_TICKS / 2.0,
+            delay(Some(*shot))
+        );
+    }
 }
 
 #[test]
@@ -1712,8 +1640,7 @@ fn final_volley_drains_after_the_simulation_stops() {
         macroquad::prelude::vec2(1280.0, 800.0),
     )
     .expect("skirmish builds");
-    game.issue(aftermine_sim::Command::Surrender);
-    game.do_tick();
+    issue_tick(&mut game, aftermine_sim::Command::Surrender);
     assert!(game.state.result().is_some());
 
     let completed_tick = game.state.current_tick();
@@ -1780,61 +1707,16 @@ fn only_bombard_and_bastion_use_real_shell_entities() {
 }
 
 #[test]
-fn approved_combatants_use_their_own_reports() {
-    assert_eq!(
-        unit_fire_sound(UnitKind::Sentinel).unwrap(),
-        SoundKind::SentinelFire
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Scuttler).unwrap(),
-        SoundKind::ScuttlerFire
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Lancer).unwrap(),
-        SoundKind::LancerFire
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Flakhound).unwrap(),
-        SoundKind::FlakhoundFire
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Buzzard).unwrap(),
-        SoundKind::BuzzardFire
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Talon).unwrap(),
-        SoundKind::TalonFire
-    );
-    assert_eq!(unit_fire_sound(UnitKind::Roc).unwrap(), SoundKind::RocFire);
-    assert_eq!(
-        unit_fire_sound(UnitKind::Maw),
-        None,
-        "the Maw's drum is heard as a loop"
-    );
-    assert_eq!(
-        unit_fire_sound(UnitKind::Drone).unwrap(),
-        SoundKind::DroneFire
-    );
-    assert_eq!(
-        defense_report(BuildingKind::FlakTurret).sound,
-        SoundKind::FlakTurretFire
-    );
-    assert_eq!(
-        shell_fire_sound(Target::Unit(UnitId(4))),
-        SoundKind::BombardFire
-    );
-    assert_eq!(
-        shell_fire_sound(Target::Building(BuildingId(7))),
-        SoundKind::BastionFire
-    );
-}
-
-#[test]
 fn generic_combatants_keep_the_generic_report() {
     assert_eq!(
         unit_fire_sound(UnitKind::Harvester),
         None,
         "an unarmed worker has no report"
+    );
+    assert_eq!(
+        unit_fire_sound(UnitKind::Maw),
+        None,
+        "the Maw's drum is heard as a loop"
     );
     assert_eq!(defense_report(BuildingKind::Turret).sound, SoundKind::Laser);
 }
@@ -1910,6 +1792,14 @@ fn every_projectile_shooter_launches_with_its_own_report() {
             "{kind:?}"
         );
     }
+    assert_eq!(
+        shell_fire_sound(Target::Unit(UnitId(4))),
+        SoundKind::BombardFire
+    );
+    assert_eq!(
+        shell_fire_sound(Target::Building(BuildingId(7))),
+        SoundKind::BastionFire
+    );
 }
 
 #[test]
@@ -1981,13 +1871,7 @@ fn a_bastion_mount_bears_on_its_shot_on_the_launch_frame() {
     let mut game =
         crate::game::Game::with_viewport(scenario, macroquad::prelude::vec2(1280.0, 800.0))
             .expect("tracking scenario builds");
-    let shooter = game
-        .state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Bastion)
-        .unwrap()
-        .id;
+    let shooter = own_building(&game, BuildingKind::Bastion);
     let target = game
         .state
         .units()
@@ -2137,14 +2021,13 @@ fn ranged_reports_retain_unit_contacts_through_lethal_hits() {
         UnitKind::Warden,
         UnitKind::Breaker,
     ] {
-        let scenario = serde_json::from_value(serde_json::json!({
-            "name":"Unit impacts", "mode":"sandbox", "map":vec![".............................."; 22],
-            "players":[
-                {"name":"Local","scrap":0,"bot":false},
-                {"name":"Target","scrap":0,"bot":false}
-            ],
-            "units":[{"player":0,"kind":kind,"x":10,"y":10},{"player":1,"kind":"excavator","x":14,"y":10}]
-        })).unwrap();
+        let scenario = sandbox(
+            30,
+            22,
+            2,
+            &[(0, kind, 10, 10), (1, UnitKind::Excavator, 14, 10)],
+            &[],
+        );
         let mut game = Game::with_viewport(scenario, Vec2::new(1280., 800.)).unwrap();
         let mut wire = serde_json::to_value(&*game.state).unwrap();
         wire["units"][1]["hp"] = serde_json::json!(1);
@@ -2182,15 +2065,16 @@ fn ranged_reports_retain_unit_contacts_through_lethal_hits() {
 
 #[test]
 fn bomb_contacts_preserve_ground_spread_and_use_simulation_time() {
-    let scenario = serde_json::from_value(serde_json::json!({
-        "name":"Bomb contacts", "mode":"sandbox", "map":vec!["...................................."; 24],
-        "players":[
-            {"name":"Local","scrap":0,"bot":false},
-            {"name":"Target","scrap":0,"bot":false}
+    let scenario = sandbox(
+        36,
+        24,
+        2,
+        &[
+            (0, UnitKind::Condor, 12, 11),
+            (0, UnitKind::Harvester, 17, 15),
         ],
-        "units":[{"player":0,"kind":"condor","x":12,"y":11},{"player":0,"kind":"harvester","x":17,"y":15}],
-        "buildings":[{"player":1,"kind":"fabricator","x":17,"y":10}]
-    })).unwrap();
+        &[(1, BuildingKind::Fabricator, 17, 10)],
+    );
     let mut game = Game::with_viewport(scenario, Vec2::new(1280., 800.)).unwrap();
     // The Condor's own bomb lands on the footprint; two more already fall
     // on open ground either side of it.
@@ -2280,15 +2164,17 @@ fn bomb_contacts_preserve_ground_spread_and_use_simulation_time() {
 #[test]
 fn checkpoint_projectiles_recover_unit_contacts_without_launch_history() {
     for kind in [UnitKind::Bombard, UnitKind::Avalanche, UnitKind::Condor] {
-        let scenario = serde_json::from_value(serde_json::json!({
-            "name":"Restored contacts", "mode":"sandbox", "map":vec!["...................................."; 24],
-            "players":[{"name":"Local","scrap":0,"bot":false},
-                {"name":"Target","scrap":0,"bot":false}],
-            "units":[{"player":0,"kind":kind,"x":12,"y":11},
-                {"player":0,"kind":"harvester","x":17,"y":15},
-                {"player":1,"kind":"excavator","x":17,"y":11}]
-        }))
-        .unwrap();
+        let scenario = sandbox(
+            36,
+            24,
+            2,
+            &[
+                (0, kind, 12, 11),
+                (0, UnitKind::Harvester, 17, 15),
+                (1, UnitKind::Excavator, 17, 11),
+            ],
+            &[],
+        );
         let mut game = Game::with_viewport(scenario, Vec2::new(1280., 800.)).unwrap();
         game.pending.push(aftermine_sim::PlayerCommand {
             player: game.presentation.human,
@@ -2348,14 +2234,16 @@ fn checkpoint_projectiles_recover_unit_contacts_without_launch_history() {
 
 #[test]
 fn lethal_hit_retains_the_moving_body_frame() {
-    let scenario = serde_json::from_value(serde_json::json!({
-        "name":"Moving lethal contact", "mode":"sandbox", "map":vec!["....................................";24],
-        "players":[{"name":"Local","scrap":0,"bot":false},
-            {"name":"Target","scrap":0,"bot":false}],
-        "units":[{"player":0,"kind":"lancer","x":10,"y":10},
-            {"player":1,"kind":"scuttler","x":13,"y":10}]
-    }))
-    .unwrap();
+    let scenario = sandbox(
+        36,
+        24,
+        2,
+        &[
+            (0, UnitKind::Lancer, 10, 10),
+            (1, UnitKind::Scuttler, 13, 10),
+        ],
+        &[],
+    );
     let mut game = Game::with_viewport(scenario, Vec2::new(1280., 800.)).unwrap();
     let mut wire = serde_json::to_value(&*game.state).unwrap();
     wire["units"][1]["hp"] = serde_json::json!(1);
@@ -2407,11 +2295,16 @@ fn lethal_hit_retains_the_moving_body_frame() {
 }
 
 fn mantle_interception_game() -> Game {
-    let scenario = serde_json::from_value(serde_json::json!({
-        "name":"Point defense art", "mode":"sandbox", "map":vec!["........................................"; 24],
-        "players":[{"name":"Local","scrap":0,"bot":false},{"name":"Enemy","scrap":0,"bot":false}],
-        "units":[{"player":0,"kind":"mantle","x":10,"y":10},{"player":1,"kind":"bombard","x":18,"y":10}]
-    })).unwrap();
+    let scenario = sandbox(
+        40,
+        24,
+        2,
+        &[
+            (0, UnitKind::Mantle, 10, 10),
+            (1, UnitKind::Bombard, 18, 10),
+        ],
+        &[],
+    );
     Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap()
 }
 
@@ -2713,20 +2606,17 @@ fn a_hostile_warhead_warns_once_with_its_own_protected_cue() {
 
 #[test]
 fn a_forecast_interceptor_leaves_ahead_and_meets_the_warhead_at_its_stop() {
-    let scenario = serde_json::from_value(serde_json::json!({
-        "name": "Early interceptor", "mode": "sandbox", "map": vec![".".repeat(70); 20],
-        "players": [
-            {"name": "West", "scrap": 0, "bot": false},
-            {"name": "East", "scrap": 0, "bot": false}
+    let scenario = sandbox(
+        70,
+        20,
+        2,
+        &[],
+        &[
+            (0, BuildingKind::Spire, 4, 8),
+            (1, BuildingKind::Lattice, 50, 8),
+            (1, BuildingKind::Array, 30, 2),
         ],
-        "units": [],
-        "buildings": [
-            {"player": 0, "kind": "spire", "x": 4, "y": 8},
-            {"player": 1, "kind": "lattice", "x": 50, "y": 8},
-            {"player": 1, "kind": "array", "x": 30, "y": 2}
-        ]
-    }))
-    .unwrap();
+    );
     let mut game = Game::with_viewport(scenario, Vec2::new(1280.0, 800.0)).unwrap();
     let mut wire = serde_json::to_value(&*game.state).unwrap();
     for b in wire["buildings"].as_array_mut().unwrap() {
@@ -2738,13 +2628,7 @@ fn a_forecast_interceptor_leaves_ahead_and_meets_the_warhead_at_its_stop() {
     }
     let state: aftermine_sim::State = serde_json::from_value(wire).unwrap();
     game.replace_state_after_jump(&state);
-    let spire = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == aftermine_sim::BuildingKind::Spire)
-        .unwrap()
-        .id;
+    let spire = own_building(&game, BuildingKind::Spire);
     game.issue(aftermine_sim::Command::Launch {
         building: spire,
         target: chassis::grid::TilePos::new(56, 9),
@@ -2826,18 +2710,16 @@ fn only_the_warheads_owner_is_told_it_was_intercepted() {
 #[test]
 fn piledriver_audio_follows_visible_mechanisms_once_per_transition() {
     for (visible, fog_lifted) in [(true, false), (false, false), (false, true)] {
-        let scenario = serde_json::from_value(serde_json::json!({
-            "name": "Piledriver audio", "mode": "sandbox", "map": vec!["........................................"; 28],
-            "players": [
-                {"name": "Local", "scrap": 0, "bot": false},
-                {"name": "Target", "scrap": 0, "bot": false},
-                {"name": "Distant observer", "scrap": 0, "bot": false}
+        let scenario = sandbox(
+            40,
+            28,
+            3,
+            &[
+                (0, UnitKind::Piledriver, 12, 14),
+                (1, UnitKind::Breaker, 19, 14),
             ],
-            "units": [
-                {"player": 0, "kind": "piledriver", "x": 12, "y": 14},
-                {"player": 1, "kind": "breaker", "x": 19, "y": 14}
-            ]
-        })).unwrap();
+            &[],
+        );
         let mut game = Game::with_viewport(scenario, Vec2::new(1280., 800.)).unwrap();
         if !visible {
             game.presentation.human = aftermine_sim::PlayerId(2);

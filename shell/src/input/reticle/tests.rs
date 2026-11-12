@@ -5,6 +5,7 @@ use super::super::select::{Reach, pick};
 use super::super::{InputState, Pointer, apply_events, track_hands, update_held};
 use super::*;
 use crate::action::BindingMap;
+use crate::tests::support::left_down;
 use aftermine_protocol::{Key, RawEvent, Stick};
 use aftermine_sim::{BuildingKind, UnitKind};
 use macroquad::prelude::vec2;
@@ -241,15 +242,7 @@ fn the_reticle_snaps_onto_a_unit_in_reach_and_slows_over_it() {
     );
     update_held(&mut game, &mut input, 0.0);
     assert_eq!(input.last_pointer, Pointer::Pad);
-    feed(
-        &mut game,
-        &mut input,
-        &[RawEvent::MouseDown {
-            button: aftermine_protocol::MouseButton::Left,
-            x: 5.0,
-            y: 6.0,
-        }],
-    );
+    feed(&mut game, &mut input, &[left_down(vec2(5.0, 6.0))]);
     update_held(&mut game, &mut input, 0.0);
     assert_eq!(input.hover_point(), Some(vec2(5.0, 6.0)));
     assert_eq!(input.reticle.snap(), None);

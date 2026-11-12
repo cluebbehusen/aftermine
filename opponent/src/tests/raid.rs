@@ -37,16 +37,6 @@ fn raiders(state: &State) -> Vec<UnitId> {
     ids
 }
 
-fn attacks(commands: &[PlayerCommand]) -> Vec<(Vec<UnitId>, AttackTarget)> {
-    commands
-        .iter()
-        .filter_map(|command| match &command.command {
-            Command::Attack { units, target, .. } => Some((units.clone(), *target)),
-            _ => None,
-        })
-        .collect()
-}
-
 fn building_at(state: &State, anchor: TilePos) -> BuildingId {
     state
         .buildings()

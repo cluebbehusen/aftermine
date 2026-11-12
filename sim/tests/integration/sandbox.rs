@@ -1,4 +1,5 @@
 //! Open-ended unit scenes use the ordinary command and persistence boundaries.
+use crate::common::orders;
 use aftermine_sim::scenario::{ScenarioError, ScenarioMode};
 use aftermine_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State};
 use chassis::grid::TilePos;
@@ -23,11 +24,7 @@ fn units_without_foundries_accept_commands_and_keep_running_after_restore() {
     let start = state.units()[0].pos;
     let command = PlayerCommand {
         player: PlayerId(0),
-        command: Command::Run {
-            units: vec![unit],
-            goal: TilePos::new(9, 2),
-            queue: false,
-        },
+        command: orders::run([unit], TilePos::new(9, 2)),
     };
     assert!(!state.tick(&[command]).events.iter().any(|event| {
         matches!(
@@ -84,7 +81,7 @@ fn surrender_stops_a_seats_commands_without_ending_a_sandbox() {
     }]);
     let report = state.tick(&[PlayerCommand {
         player: PlayerId(0),
-        command: Command::Stop { units: vec![unit] },
+        command: orders::stop([unit]),
     }]);
     assert!(
         report

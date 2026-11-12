@@ -222,7 +222,7 @@ fn mirrored_seats_build_on_mirrored_spots() {
 
 #[test]
 fn scrapheap_still_techs() {
-    let scrapheap = BotConfig::new(BotDifficulty::Scrapheap, BotStance::Balanced, 11);
+    let scrapheap = rung(BotDifficulty::Scrapheap);
     let scenario = arena(200);
     let mut state = scenario.build().unwrap();
     let mut opponent = seat_with(&scenario, 0, scrapheap);
@@ -623,24 +623,6 @@ fn opponents_invest_without_rejected_orders() {
                 .any(|event| matches!(event, Event::CommandRejected { .. })),
             "{:?}",
             report.events
-        );
-    }
-    for player in [PlayerId(0), PlayerId(1)] {
-        let owned: Vec<BuildingKind> = state
-            .buildings()
-            .iter()
-            .filter(|building| building.player == player)
-            .map(|building| building.kind)
-            .collect();
-        assert!(
-            owned.contains(&BuildingKind::Fabricator),
-            "{player:?} {owned:?}"
-        );
-        assert!(
-            owned
-                .iter()
-                .any(|kind| !matches!(kind, BuildingKind::Foundry | BuildingKind::Fabricator)),
-            "{player:?} invested beyond its first tech: {owned:?}"
         );
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::tests::support::keystroke;
 use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
 
@@ -11,11 +12,7 @@ fn absent(seat: u8, name: &str, seconds: u64) -> Absent {
 }
 
 fn press(screen: &mut WaitingScreen, key: Key) -> Out {
-    screen.update(
-        &[RawEvent::KeyDown { key }, RawEvent::KeyUp { key }],
-        &mut vec2(0.0, 0.0),
-        &mut Vec::new(),
-    )
+    screen.update(&keystroke(key), &mut vec2(0.0, 0.0), &mut Vec::new())
 }
 
 #[test]

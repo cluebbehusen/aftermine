@@ -9,11 +9,11 @@ use aftermine_sim::scenario::BuildingSpec;
 use aftermine_sim::stats::{
     BuildingKind, HARVEST_MOBILE_DANGER_MARGIN, HARVEST_RADAR_DANGER_RADIUS, HARVEST_ZONE_RADIUS,
 };
-use aftermine_sim::{Command, Event, Order, PlayerId, State, Target, UnitKind};
+use aftermine_sim::{Event, Order, PlayerId, State, Target, UnitKind};
 use chassis::grid::TilePos;
 use serde_json::json;
 
-use common::{cmd, ground_blip, open_arena_with, run_until, unit};
+use common::{CommandExt, building_id, cmd, ground_blip, open_arena_with, orders, run_until, unit};
 
 #[test]
 fn a_loaded_worker_inside_static_pressure_leaves_and_deposits() {
@@ -36,14 +36,7 @@ fn a_loaded_worker_inside_static_pressure_leaves_and_deposits() {
         worker,
         UnitKind::Harvester.stats().harvest.unwrap().capacity,
     );
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], node))]);
     assert!(
         state.unit(worker).unwrap().path.is_some(),
         "known static fire trapped the worker instead of allowing retreat"
@@ -79,14 +72,7 @@ fn a_worker_displaced_to_the_far_edge_of_its_doorstep_closes_the_gap() {
         serde_json::to_value(Vec2Fx::new(Fx::lit("9.03"), Fx::lit("7.95"))).unwrap();
     state = serde_json::from_value(data).unwrap();
     assert!(!state.unit(worker).unwrap().in_work_reach(node, (1, 1)));
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], node))]);
     run_until(&mut state, 200, |s, _| {
         s.unit(worker).unwrap().carrying() > 0
     });
@@ -106,14 +92,7 @@ fn harvesting_waits_for_physical_reach_from_each_approach() {
                 vec![],
             );
             let worker = state.units()[0].id;
-            state.tick(&[cmd(
-                0,
-                Command::Harvest {
-                    units: vec![worker],
-                    node,
-                    queue: false,
-                },
-            )]);
+            state.tick(&[cmd(0, orders::harvest([worker], node))]);
             run_until(&mut state, 600, |s, _| {
                 s.unit(worker).unwrap().carrying() > 0
             });
@@ -161,14 +140,7 @@ fn unloading_waits_for_physical_reach_on_each_foundry_side() {
             );
             let worker = state.units()[0].id;
             state = set_cargo(state, worker, kind.stats().harvest.unwrap().capacity);
-            let report = state.tick(&[cmd(
-                0,
-                Command::Harvest {
-                    units: vec![worker],
-                    node,
-                    queue: false,
-                },
-            )]);
+            let report = state.tick(&[cmd(0, orders::harvest([worker], node))]);
             assert!(
                 !report
                     .events
@@ -202,12 +174,7 @@ fn unloading_waits_for_physical_reach_on_each_foundry_side() {
 /// Runs loaded Harvesters into `foundry` and returns how many deposits they
 /// made, failing if any unload begins with the hull turned away from it.
 fn unloads_facing_the_foundry(state: &mut State, anchor: TilePos, ticks: u64) -> usize {
-    let foundry = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let foundry = building_id(state, |b| b.anchor == anchor);
     let workers: Vec<_> = state.units().iter().map(|unit| unit.id).collect();
     let mut unloading = vec![false; workers.len()];
     let mut deposits = 0;
@@ -267,14 +234,7 @@ fn harvesters_arriving_together_unload_facing_the_foundry() {
         for &worker in &workers {
             state = set_cargo(state, worker, capacity);
         }
-        state.tick(&[cmd(
-            0,
-            Command::Harvest {
-                units: workers,
-                node,
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::harvest(workers, node))]);
         assert_eq!(
             unloads_facing_the_foundry(&mut state, anchor, 160),
             2,
@@ -360,14 +320,7 @@ fn the_fixed_anchor_reaches_the_widest_deposit_but_cannot_chain_past_it() {
     );
     let worker = state.units()[0].id;
     let before = state.player(PlayerId(0)).scrap;
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: anchor,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], anchor))]);
     run_until(&mut state, 2_000, |state, _| {
         let unit = state.unit(worker).unwrap();
         unit.order == Order::Idle && unit.carrying() == 0
@@ -400,14 +353,7 @@ fn a_dry_node_adopts_a_neighboring_wreck_inside_the_same_contract() {
     );
     let worker = state.units()[0].id;
     let before = state.map().wreck_at(wreck);
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: anchor,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], anchor))]);
     run_until(&mut state, 600, |state, _| {
         state.map().wreck_at(wreck) < before
     });
@@ -438,14 +384,7 @@ fn equally_reachable_sources_prefer_the_more_valuable_salvage() {
         vec![],
     );
     let worker = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: anchor,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], anchor))]);
     run_until(&mut state, 100, |state, _| {
         matches!(
             state.unit(worker).unwrap().order,
@@ -472,14 +411,7 @@ fn a_delivery_returns_to_the_same_zone_while_salvage_remains() {
         vec![],
     );
     let worker = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: source,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], source))]);
     run_until(&mut state, 800, |_, events| {
         events
             .iter()
@@ -517,22 +449,8 @@ fn withdrawal_deposits_then_advances_one_queued_order_at_the_foundry() {
     );
     let worker = state.units()[0].id;
     state.tick(&[
-        cmd(
-            0,
-            Command::Harvest {
-                units: vec![worker],
-                node: source,
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![worker],
-                goal,
-                queue: true,
-            },
-        ),
+        cmd(0, orders::harvest([worker], source)),
+        cmd(0, orders::run([worker], goal).queued()),
     ]);
     run_until(
         &mut state,
@@ -588,14 +506,7 @@ fn shared_sight_withdraws_an_autonomous_retarget_but_not_before_it_is_known() {
             .vision(PlayerId(0))
             .visible(state.unit(threat).unwrap().tile())
     );
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: anchor,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], anchor))]);
     run_until(&mut state, 300, |state, _| {
         state.unit(worker).unwrap().carrying() > 1
             && matches!(
@@ -614,14 +525,7 @@ fn shared_sight_withdraws_an_autonomous_retarget_but_not_before_it_is_known() {
         "the autonomous retarget was legal only because the Bombard was still hidden"
     );
 
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(20, 5),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(20, 5)))]);
     run_until(&mut state, 300, |state, _| {
         matches!(
             state.unit(worker).unwrap().order,
@@ -631,14 +535,7 @@ fn shared_sight_withdraws_an_autonomous_retarget_but_not_before_it_is_known() {
             }
         )
     });
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(4, 5),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(4, 5)))]);
     let events = run_until(&mut state, 800, |state, _| {
         state.unit(worker).unwrap().order == Order::Idle
     });
@@ -674,14 +571,7 @@ fn a_hidden_artillery_hit_diverts_autonomous_work_without_revealing_the_gun() {
         "the victim's team cannot see the artillery"
     );
 
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: anchor,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], anchor))]);
     run_until(&mut state, 300, |state, _| {
         matches!(
             state.unit(worker).unwrap().order,
@@ -716,21 +606,9 @@ fn a_hidden_artillery_hit_diverts_autonomous_work_without_revealing_the_gun() {
     doc["units"][worker_slot]["progress"] = json!(0);
     state = serde_json::from_value(doc).unwrap();
     let before = state.unit(worker).unwrap().hp;
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![bombard],
-            target: Target::Unit(worker).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([bombard], Target::Unit(worker)))]);
     run_until(&mut state, 64, |state, _| !state.shells().is_empty());
-    state.tick(&[cmd(
-        1,
-        Command::Stop {
-            units: vec![bombard],
-        },
-    )]);
+    state.tick(&[cmd(1, orders::stop([bombard]))]);
     run_until(&mut state, 100, |state, events| {
         events
             .iter()
@@ -783,14 +661,7 @@ fn a_seen_raider_leaves_no_caution_behind_once_it_is_gone() {
         "the victim's team watches the raider"
     );
     let max_hp = UnitKind::Harvester.stats().max_hp;
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![raider],
-            target: Target::Unit(worker).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([raider], Target::Unit(worker)))]);
     run_until(&mut state, 100, |state, _| {
         state.unit(worker).unwrap().hp < max_hp
     });
@@ -807,28 +678,14 @@ fn a_seen_raider_leaves_no_caution_behind_once_it_is_gone() {
         .expect("raider exists");
     doc["units"][raider_slot]["hp"] = json!(1);
     state = serde_json::from_value(doc).unwrap();
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![defender],
-            target: Target::Unit(raider).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([defender], Target::Unit(raider)))]);
     run_until(&mut state, 200, |state, _| state.unit(raider).is_none());
     state = set_cargo(
         state,
         worker,
         UnitKind::Harvester.stats().harvest.unwrap().capacity,
     );
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], node))]);
     let events = run_until(&mut state, 60, |_, events| {
         events.iter().any(|event| {
             matches!(
@@ -866,21 +723,9 @@ fn a_hidden_gun_is_remembered_even_when_its_old_launch_tile_is_seen() {
         vec![],
     );
     let (worker, bombard) = (state.units()[0].id, state.units()[1].id);
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![bombard],
-            target: Target::Unit(worker).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([bombard], Target::Unit(worker)))]);
     run_until(&mut state, 100, |state, _| !state.shells().is_empty());
-    state.tick(&[cmd(
-        1,
-        Command::Stop {
-            units: vec![bombard],
-        },
-    )]);
+    state.tick(&[cmd(1, orders::stop([bombard]))]);
     // Stand in for a gun that moved after firing: the shell now launched
     // from ground the victim's team watches while the gun stays hidden.
     let launch = state.unit(worker).unwrap().pos;
@@ -921,14 +766,7 @@ fn a_hidden_hit_on_any_harvesting_worker_is_remembered() {
     );
     let (worker, bombard) = (state.units()[0].id, state.units()[1].id);
     let before = state.unit(worker).unwrap().hp;
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![bombard],
-            target: Target::Unit(worker).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([bombard], Target::Unit(worker)))]);
     run_until(&mut state, 200, |state, _| {
         state.unit(worker).unwrap().hp < before
     });
@@ -965,38 +803,14 @@ fn an_own_loss_withdraws_a_worker_home_before_it_surfaces_idle() {
         }],
     );
     let (worker, bombard) = (state.units()[0].id, state.units()[1].id);
-    let victim = state
-        .buildings()
-        .iter()
-        .find(|building| building.anchor == struck)
-        .unwrap()
-        .id;
+    let victim = building_id(&state, |building| building.anchor == struck);
     state = set_building_hp(state, victim, 40);
 
     state.tick(&[
-        cmd(
-            0,
-            Command::Harvest {
-                units: vec![worker],
-                node: anchor,
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Attack {
-                units: vec![bombard],
-                target: Target::Building(victim).into(),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::harvest([worker], anchor)),
+        cmd(1, orders::attack([bombard], Target::Building(victim))),
     ]);
-    state.tick(&[cmd(
-        1,
-        Command::Stop {
-            units: vec![bombard],
-        },
-    )]);
+    state.tick(&[cmd(1, orders::stop([bombard]))]);
     run_until(&mut state, 300, |state, _| {
         matches!(
             state.unit(worker).unwrap().order,
@@ -1062,14 +876,7 @@ fn a_far_radar_contact_does_not_withdraw_an_unrelated_zone() {
         state.vision(PlayerId(0)).contacts(),
         &[ground_blip(contact)]
     );
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: source,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], source))]);
     for _ in 0..25 {
         state.tick(&[]);
     }
@@ -1113,14 +920,7 @@ fn an_explicit_anchor_remains_authoritative_inside_a_local_radar_contact() {
     );
     assert!(!state.vision(PlayerId(0)).visible(contact));
 
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: source,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], source))]);
     assert!(
         matches!(
             state.unit(worker).unwrap().order,
@@ -1158,14 +958,7 @@ fn an_explicit_source_avoids_unrelated_known_danger_on_the_way() {
     );
     let worker = state.units()[0].id;
     let scout = state.units()[1].id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(3, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(3, 4)))]);
     run_until(&mut state, 500, |state, _| {
         state.unit(scout).unwrap().order == Order::Idle
     });
@@ -1176,14 +969,7 @@ fn an_explicit_source_avoids_unrelated_known_danger_on_the_way() {
     assert!(!state.vision(PlayerId(0)).visible(contact));
     assert!(!state.vision(PlayerId(0)).visible(source));
 
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: source,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], source))]);
     let path = state
         .unit(worker)
         .unwrap()
@@ -1225,14 +1011,7 @@ fn an_explicit_source_prefers_a_safe_doorstep_before_a_dangerous_fallback() {
     );
     let worker = state.units()[0].id;
     let scout = state.units()[1].id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(3, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(3, 4)))]);
     run_until(&mut state, 500, |state, _| {
         state.unit(scout).unwrap().order == Order::Idle
     });
@@ -1242,14 +1021,7 @@ fn an_explicit_source_prefers_a_safe_doorstep_before_a_dangerous_fallback() {
     );
     assert!(!state.vision(PlayerId(0)).visible(source));
 
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: source,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], source))]);
     let path = state
         .unit(worker)
         .unwrap()
@@ -1292,14 +1064,7 @@ fn a_loaded_delivery_routes_around_known_danger() {
         state.vision(PlayerId(0)).contacts(),
         &[ground_blip(contact)]
     );
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: source,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], source))]);
     let capacity = UnitKind::Harvester.stats().harvest.unwrap().capacity;
     state = set_cargo(state, worker, capacity);
 
@@ -1344,14 +1109,7 @@ fn an_unscouted_enemy_building_cannot_bend_a_delivery_route() {
 
     let prepare = |mut state: State| {
         let worker = state.units()[0].id;
-        state.tick(&[cmd(
-            0,
-            Command::Harvest {
-                units: vec![worker],
-                node: source,
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::harvest([worker], source))]);
         let capacity = UnitKind::Harvester.stats().harvest.unwrap().capacity;
         state = set_cargo(state, worker, capacity);
         state.tick(&[]);
@@ -1394,14 +1152,7 @@ fn a_remembered_armed_structure_blocks_an_autonomous_retarget_after_sight_is_los
             .any(|ghost| ghost.anchor == turret)
     );
 
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(3, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(3, 4)))]);
     run_until(&mut state, 400, |state, _| {
         state.unit(scout).unwrap().order == Order::Idle
     });
@@ -1412,14 +1163,7 @@ fn a_remembered_armed_structure_blocks_an_autonomous_retarget_after_sight_is_los
         "the fallback remains legitimate frozen salvage memory"
     );
 
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: anchor,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], anchor))]);
     run_until(&mut state, 200, |state, _| {
         matches!(
             state.unit(worker).unwrap().order,
@@ -1454,14 +1198,7 @@ fn an_autonomous_retarget_routes_around_known_danger() {
         vec![],
     );
     let worker = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: anchor,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::harvest([worker], anchor))]);
     run_until(&mut state, 100, |state, _| {
         matches!(
             state.unit(worker).unwrap().order,
@@ -1507,14 +1244,7 @@ fn never_seen_live_salvage_is_not_a_command_oracle() {
     assert!(!state.vision(PlayerId(0)).explored(hidden));
     assert_eq!(state.map().scrap_at(hidden), 5);
 
-    let report = state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: vec![worker],
-            node: hidden,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::harvest([worker], hidden))]);
     assert!(report.events.contains(&Event::CommandRejected {
         player: PlayerId(0),
         reason: RejectReason::NotANode,
@@ -1541,22 +1271,8 @@ fn stacked_heaps_hand_two_workers_distinct_work_tiles() {
     );
     let (a, b) = (state.units()[0].id, state.units()[1].id);
     state.tick(&[
-        cmd(
-            0,
-            Command::Harvest {
-                units: vec![a],
-                node: upper,
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Harvest {
-                units: vec![b],
-                node: lower,
-                queue: false,
-            },
-        ),
+        cmd(0, orders::harvest([a], upper)),
+        cmd(0, orders::harvest([b], lower)),
     ]);
     let goal = |state: &State, id| state.unit(id).unwrap().path.as_ref().map(|path| path.goal);
     assert_ne!(
@@ -1622,22 +1338,8 @@ fn a_claimed_work_tile_still_serves_when_the_free_ones_are_sealed() {
     };
     let (first, second) = (state.units()[0].id, state.units()[1].id);
     state.tick(&[
-        cmd(
-            0,
-            Command::Harvest {
-                units: vec![first],
-                node: source,
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Harvest {
-                units: vec![second],
-                node: starter,
-                queue: false,
-            },
-        ),
+        cmd(0, orders::harvest([first], source)),
+        cmd(0, orders::harvest([second], starter)),
     ]);
     let west = TilePos::new(11, 6);
     assert_eq!(
@@ -1696,14 +1398,7 @@ fn wreck_workers_leave_the_pile_and_work_from_beside_it() {
                 vec![],
             );
             let worker = state.units()[0].id;
-            state.tick(&[cmd(
-                0,
-                Command::Harvest {
-                    units: vec![worker],
-                    node,
-                    queue: false,
-                },
-            )]);
+            state.tick(&[cmd(0, orders::harvest([worker], node))]);
             run_until(&mut state, 300, |s, _| {
                 s.unit(worker).unwrap().carrying() > 0
             });

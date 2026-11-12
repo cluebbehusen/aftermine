@@ -3,17 +3,14 @@
 
 use super::*;
 use crate::netplay::{ClientLobby, Lobby};
+use crate::tests::support::keystroke;
 use aftermine_net::JoinMessage;
 use macroquad::prelude::vec2;
 use std::io::Write;
 use std::time::Instant;
 
-fn press(key: Key) -> [RawEvent; 2] {
-    [RawEvent::KeyDown { key }, RawEvent::KeyUp { key }]
-}
-
 fn drive(w: &mut Wizard, draft: &mut NewMatchDraft, key: Key) -> Out {
-    w.update(&press(key), &mut vec2(0.0, 0.0), draft, &mut Vec::new())
+    w.update(&keystroke(key), &mut vec2(0.0, 0.0), draft, &mut Vec::new())
         .expect("update")
 }
 

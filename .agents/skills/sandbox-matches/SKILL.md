@@ -111,7 +111,8 @@ EOF
 ## Keep it out of the shipped pool
 
 Never place a sandbox in `scenarios/`, even uncommitted: the shipped-map gates,
-hash sweep, and browser read the entire directory. Keep sandboxes in scratch
-space or `map-drafts/`, and delete them when the task ends. Sandboxes are exempt
-from the shipped-map expectations — metadata badges, symmetry claims, audits,
-and pacing judgments all stay in the map-authoring workflow.
+the all-map integrity soak and the map browser read the entire directory. Keep
+sandboxes in scratch space or `map-drafts/`, and delete them when the task ends.
+Sandboxes are exempt from the shipped-map expectations — metadata badges,
+symmetry claims, audits, and pacing judgments all stay in the map-authoring
+workflow.

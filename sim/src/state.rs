@@ -401,8 +401,9 @@ impl Order {
 /// firing costs nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Leash {
-    /// The station to walk back to when the fight ends or the tether
-    /// runs out.
+    /// The station to walk back to when the tether runs out, or when a chase
+    /// toward a firing stance cannot route. A fight that ends with its victim gone drops the
+    /// leash, leaving the guard stationed where it stands.
     pub anchor: TilePos,
     /// Chase ticks the guard may spend beyond the radius, granted only by
     /// a joined fight: refreshed to [`crate::stats::LEASH_PATIENCE`] every
@@ -1234,10 +1235,11 @@ pub struct Building {
     /// Where finished units report. `None` means stand at the doorstep.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rally: Option<Rally>,
-    /// A player-designated target this defense prefers while it remains a
-    /// live, hostile, truly visible target in the weapon's domain. Range and
-    /// cover only decide whether the preference can be fired on now; they do
-    /// not erase it or suppress ordinary fallback acquisition.
+    /// A player-designated target this defense prefers while its owner's
+    /// team can still resolve it as an attack target, by sight, memory,
+    /// radar or because it is public, in the weapon's domain. Range and cover only decide whether the preference can be
+    /// fired on now; they do not erase it or suppress ordinary fallback
+    /// acquisition.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub focus: Option<crate::AttackTarget>,
     /// Position on the kind's upgrade ladder (zero = base). An accepted
@@ -2151,8 +2153,8 @@ impl State {
     /// compile until its checks are decided; give each new check a fixture
     /// in `sim/tests/integration/state_integrity.rs`.
     ///
-    /// Public for tooling that wants to re-check a state it mutated by
-    /// hand; the sim itself never calls it inside [`State::tick`].
+    /// Public so tests and tooling can re-check a state they hold; the sim
+    /// itself never calls it inside [`State::tick`].
     pub fn validate_invariants(&self) -> Result<(), StateIntegrityError> {
         use StateIntegrityError as E;
         // Destructured so a new field cannot compile until its checks are
@@ -3978,8 +3980,9 @@ pub enum StateIntegrityError {
     /// A player sits on a team index no seat carries.
     #[error("player {0} sits on a team outside the table")]
     ForeignTeam(PlayerId),
-    /// A player's finite emergency-income ledger exceeds its public cap
-    /// or claims both an armed and active cycle.
+    /// An active recovery cycle whose target exceeds
+    /// [`crate::stats::FOUNDRY_RECOVERY_RESERVE`] or whose allowance exceeds
+    /// its target.
     #[error("player {0} carries an invalid recovery ledger")]
     InvalidRecoveryLedger(PlayerId),
     /// A victory names a team no player carries.
@@ -4054,8 +4057,7 @@ pub enum StateIntegrityError {
     /// walking a ground route.
     #[error("unit {0} carries an invalid stall counter")]
     InvalidStallTicks(UnitId),
-    /// A detour retry scheduled further ahead than a failed search sets, or
-    /// held by a unit that never harvests.
+    /// A detour retry scheduled further ahead than a failed search sets.
     #[error("unit {0} carries an invalid danger retry")]
     InvalidDangerRetry(UnitId),
     /// A machine stamped as damaged at or after the current tick.
@@ -4064,7 +4066,7 @@ pub enum StateIntegrityError {
     /// A chase allowance or reacquisition cooldown exceeds its legal bound.
     #[error("unit {0} carries an invalid leash clock")]
     InvalidLeashClock(UnitId),
-    /// Motor speed exceeds the chassis limit or belongs to a stationary/air body.
+    /// A ground motor speed below zero or past the chassis limit.
     #[error("unit {0} carries invalid ground motor speed")]
     InvalidGroundSpeed(UnitId),
     /// A unit's order queue is longer than [`crate::stats::ORDER_QUEUE_CAP`].
@@ -4185,8 +4187,8 @@ pub enum StateIntegrityError {
     /// touchdown allows.
     #[error("unit {0} is landed off its tile center")]
     LandedOffCenter(UnitId),
-    /// A landed airframe carrying a path; takeoff clears the flag before
-    /// any route is written.
+    /// A landed airframe carrying a path; takeoff leaves the landed motor
+    /// before any route is written.
     #[error("unit {0} is landed but holds a path")]
     LandedWithPath(UnitId),
     /// A landed airframe parked on a heading no turn can fly out of

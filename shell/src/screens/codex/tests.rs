@@ -1,15 +1,12 @@
 use super::*;
+use crate::tests::support::keystroke;
 use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
 
 fn drive(screen: &mut CodexScreen, key: Key) -> Out {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    screen.update(
-        &[RawEvent::KeyDown { key }, RawEvent::KeyUp { key }],
-        &mut mouse,
-        &mut sounds,
-    )
+    screen.update(&keystroke(key), &mut mouse, &mut sounds)
 }
 
 /// Every row's page, in list order.
@@ -88,40 +85,47 @@ fn activating_a_page_row_stays() {
 
 #[test]
 fn notes_read_from_the_stats_table() {
-    let harvester = unit_notes(UnitKind::Harvester);
+    let harvest = UnitKind::Harvester.stats().harvest.unwrap();
+    let carries = format!("Carries {} scrap per trip", harvest.capacity);
     assert!(
-        harvester
+        unit_notes(UnitKind::Harvester)
             .iter()
-            .any(|l| l.starts_with("Carries 10 scrap per trip"))
+            .any(|l| l.starts_with(&carries))
     );
-    let skyhook = unit_notes(UnitKind::Skyhook);
-    assert!(
-        skyhook
-            .iter()
-            .any(|l| l == "Carries up to 4 transport slots of ground units.")
-    );
+    let slots = UnitKind::Skyhook.stats().transport_capacity;
+    assert!(unit_notes(UnitKind::Skyhook).contains(&format!(
+        "Carries up to {slots} transport slots of ground units."
+    )));
     // Each upgrade rung is two lines: how to get it, then what it has.
     let turret = building_notes(BuildingKind::Turret);
-    assert_eq!(turret.len(), 4, "two upgrade rungs: {turret:?}");
+    assert_eq!(
+        turret.len(),
+        2 * (BuildingKind::Turret.tiers().len() - 1),
+        "{turret:?}"
+    );
     assert!(turret[0].starts_with("Upgrades to Heavy Turret"));
     assert!(turret[1].starts_with("Heavy Turret: "));
     assert!(
         turret[2].starts_with("Upgrades to Bulwark") && turret[2].ends_with("Needs a Crucible.")
     );
 
-    let extractor = building_notes(BuildingKind::Extractor);
+    // The economy lines the build cards show lead the page.
+    for kind in [BuildingKind::Extractor, BuildingKind::Foundry] {
+        let economy = building_economy_lines(kind);
+        assert!(!economy.is_empty(), "{kind:?}");
+        assert!(building_notes(kind).starts_with(&economy), "{kind:?}");
+    }
+    let bore = BuildingKind::Extractor.tier_stats(1).construction;
+    let seconds = bore.build_ticks as f32 / aftermine_sim::TICKS_PER_SECOND as f32;
     assert!(
-        extractor.iter().any(|line| line
-            == "Makes 120 scrap/min, or 180 scrap/min with your Foundry within 8 tiles.")
+        building_notes(BuildingKind::Extractor).contains(&format!(
+            "Upgrades to Deep Bore for {} scrap in {seconds:.0} s. Needs a Crucible and a Foundry within {} tiles.",
+            bore.cost,
+            aftermine_sim::stats::EXTRACTOR_SUPPORT_RADIUS
+        ))
     );
-    assert!(extractor.iter().any(|line| line
-        == "Upgrades to Deep Bore for 350 scrap in 30 s. Needs a Crucible and a Foundry within 8 tiles."));
-
-    let foundry = building_notes(BuildingKind::Foundry);
-    assert!(foundry.iter().any(|line| line
-        == "Raises the output of your Extractors within 8 tiles from 120 to 180 scrap/min."));
     assert!(
-        foundry
+        building_notes(BuildingKind::Foundry)
             .iter()
             .any(|line| line == "Building another Foundry needs a Fabricator.")
     );

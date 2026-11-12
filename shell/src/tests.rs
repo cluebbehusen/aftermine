@@ -1,5 +1,7 @@
 use super::*;
 
+pub(crate) mod support;
+
 #[test]
 fn the_touch_build_argv_parses_to_ordinary_defaults() {
     let args = Args::parse_from(["Aftermine"]);

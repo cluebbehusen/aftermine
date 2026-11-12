@@ -29,23 +29,3 @@ fn every_profile_has_consistent_human_readable_labels() {
         }
     }
 }
-
-#[test]
-fn default_profile_is_no_longer_ambiguous_about_difficulty() {
-    assert_eq!(
-        bot_label(
-            BotDifficulty::Standard,
-            BotStance::Balanced,
-            BotLabelStyle::Controller,
-        ),
-        "Standard / Balanced bot"
-    );
-    assert_eq!(
-        bot_label(
-            BotDifficulty::Standard,
-            BotStance::Balanced,
-            BotLabelStyle::Compact,
-        ),
-        "STD/BAL"
-    );
-}

@@ -3,13 +3,13 @@
 //! and a ramp holds walls and mines, never a foundation.
 
 use crate::common;
-use common::{building, cmd, players, run, run_until, unit};
+use common::{building, cmd, orders, players, run, run_until, unit};
 
 use aftermine_sim::map::{Elevation, Terrain};
 use aftermine_sim::scenario::{ScenarioMode, UnitSpec};
 use aftermine_sim::stats::Domain;
 use aftermine_sim::{
-    BuildingKind, Command, Event, PlaceRefusal, PlayerId, Scenario, State, Target, UnitKind,
+    BuildingKind, Event, PlaceRefusal, PlayerId, Scenario, State, Target, UnitKind,
 };
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
@@ -83,14 +83,7 @@ pub(crate) fn stair(count: i32, units: Vec<UnitSpec>) -> Scenario {
 }
 
 fn run_to(state: &mut State, walker: aftermine_sim::UnitId, goal: TilePos) {
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![walker],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([walker], goal))]);
 }
 
 #[test]
@@ -275,46 +268,6 @@ fn six_levels_climb_end_to_end() {
     assert_eq!(state.unit(walker).unwrap().tile(), goal);
 }
 
-#[test]
-fn a_tiered_map_reproduces_bit_identically() {
-    let scenario = stair(
-        3,
-        vec![
-            unit(0, UnitKind::Sentinel, 4, 2),
-            unit(0, UnitKind::Talon, 6, 3),
-            unit(1, UnitKind::Sentinel, 16, 10),
-        ],
-    );
-    let mut a = scenario.build().unwrap();
-    let mut b = scenario.build().unwrap();
-    let hunt = |state: &State| {
-        vec![cmd(
-            0,
-            Command::Hunt {
-                units: state
-                    .units()
-                    .iter()
-                    .filter(|u| u.player == PlayerId(0))
-                    .map(|u| u.id)
-                    .collect(),
-                goal: TilePos::new(16, 10),
-                queue: false,
-            },
-        )]
-    };
-    let first = hunt(&a);
-    a.tick(&first);
-    let second = hunt(&b);
-    b.tick(&second);
-    for _ in 0..300 {
-        a.tick(&[]);
-        b.tick(&[]);
-    }
-    assert_eq!(a.hash(), b.hash());
-    let restored: State = serde_json::from_str(&serde_json::to_string(&a).unwrap()).unwrap();
-    assert_eq!(restored.hash(), a.hash());
-}
-
 fn attack(
     state: &mut State,
     player: u8,
@@ -322,14 +275,7 @@ fn attack(
     target: Target,
 ) -> Vec<Event> {
     state
-        .tick(&[cmd(
-            player,
-            Command::Attack {
-                units,
-                target: target.into(),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(player, orders::attack(units, target))])
         .events
 }
 
@@ -413,16 +359,15 @@ fn direct_fire_never_crosses_between_levels() {
     let hunt = |player: u8, state: &State, goal: TilePos| {
         cmd(
             player,
-            Command::Hunt {
-                units: state
+            orders::hunt(
+                state
                     .units()
                     .iter()
                     .filter(|u| u.player == PlayerId(player))
                     .map(|u| u.id)
-                    .collect(),
+                    .collect::<Vec<_>>(),
                 goal,
-                queue: false,
-            },
+            ),
         )
     };
     let orders = [
@@ -509,14 +454,7 @@ fn a_lead_never_carries_a_shell_onto_higher_ground() {
     .build()
     .unwrap();
     let (gun, victim) = (state.units()[0].id, state.units()[2].id);
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![victim],
-            goal: TilePos::new(11, 1),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([victim], TilePos::new(11, 1)))]);
     let mut events = attack(&mut state, 0, vec![gun], Target::Unit(victim));
     events.extend(run(&mut state, 200));
     assert!(
@@ -651,22 +589,8 @@ fn mirrored_ramp_duels_end_in_mutual_annihilation() {
     .unwrap();
     let (a, b) = (state.units()[0].id, state.units()[1].id);
     state.tick(&[
-        cmd(
-            0,
-            Command::Hunt {
-                units: vec![a],
-                goal: TilePos::new(20, 5),
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Hunt {
-                units: vec![b],
-                goal: TilePos::new(3, 5),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::hunt([a], TilePos::new(20, 5))),
+        cmd(1, orders::hunt([b], TilePos::new(3, 5))),
     ]);
     run_until(&mut state, 900, |s, _| {
         s.unit(a).is_none() || s.unit(b).is_none()
@@ -732,14 +656,7 @@ fn an_escort_drops_a_victim_past_its_break_radius_on_another_level() {
     .build()
     .unwrap();
     let [lead, escort, victim] = [0, 1, 2].map(|i| state.units()[i].id);
-    state.tick(&[cmd(
-        0,
-        Command::Accompany {
-            units: vec![escort],
-            target: lead,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::accompany([escort], lead))]);
     let contact = state
         .vision(PlayerId(0))
         .tracks()

@@ -1,16 +1,5 @@
 use super::*;
-
-impl<Z: Copy + PartialEq> Press<Z> {
-    pub fn armed_touch(&self) -> Option<(u64, Z)> {
-        self.touch
-    }
-}
-
-impl<Z: Copy + PartialEq> ScrollPress<Z> {
-    pub fn armed_touch(&self) -> Option<(u64, Z)> {
-        self.press.armed_touch()
-    }
-}
+use crate::tests::support::{left_down, left_up, touch_cancel, touch_down, touch_move, touch_up};
 
 fn zone(p: Vec2, _touch: bool) -> Option<u8> {
     (p.x < 100.0).then_some(1)
@@ -19,16 +8,8 @@ fn zone(p: Vec2, _touch: bool) -> Option<u8> {
 #[test]
 fn feed_commits_only_a_release_on_the_armed_zone() {
     let mut press = Press::default();
-    let down = |x| RawEvent::MouseDown {
-        button: MouseButton::Left,
-        x,
-        y: 0.0,
-    };
-    let up = |x| RawEvent::MouseUp {
-        button: MouseButton::Left,
-        x,
-        y: 0.0,
-    };
+    let down = |x| left_down(vec2(x, 0.0));
+    let up = |x| left_up(vec2(x, 0.0));
     assert_eq!(press.feed(&down(10.0), zone), Fed::Held);
     assert_eq!(press.feed(&up(20.0), zone), Fed::Activated(1));
     assert_eq!(press.feed(&down(10.0), zone), Fed::Held);
@@ -37,57 +18,29 @@ fn feed_commits_only_a_release_on_the_armed_zone() {
         Fed::Held,
         "a press dragged away still belongs to the button"
     );
-    let touch = RawEvent::TouchDown {
-        id: 3,
-        x: 10.0,
-        y: 0.0,
-    };
+    let touch = touch_down(3, at(0.0));
     assert_eq!(press.feed(&touch, zone), Fed::Held);
-    let lift = RawEvent::TouchUp {
-        id: 3,
-        x: 12.0,
-        y: 0.0,
-    };
+    let lift = touch_up(3, vec2(12.0, 0.0));
     assert_eq!(press.feed(&lift, zone), Fed::Activated(1));
 }
 
 #[test]
 fn feed_leaves_unarmed_events_to_the_caller() {
     let mut press = Press::default();
-    let away = RawEvent::TouchDown {
-        id: 3,
-        x: 500.0,
-        y: 0.0,
-    };
+    let away = touch_down(3, vec2(500.0, 0.0));
     assert_eq!(press.feed(&away, zone), Fed::Ignored);
-    let drag = RawEvent::TouchMove {
-        id: 3,
-        x: 10.0,
-        y: 0.0,
-    };
+    let drag = touch_move(3, at(0.0));
     assert_eq!(press.feed(&drag, zone), Fed::Ignored);
-    let release = RawEvent::MouseUp {
-        button: MouseButton::Left,
-        x: 10.0,
-        y: 0.0,
-    };
+    let release = left_up(at(0.0));
     assert_eq!(press.feed(&release, zone), Fed::Ignored);
 }
 
 #[test]
 fn a_second_finger_cannot_steal_the_press() {
     let mut press = Press::default();
-    let start = RawEvent::TouchDown {
-        id: 3,
-        x: 10.0,
-        y: 0.0,
-    };
+    let start = touch_down(3, at(0.0));
     assert_eq!(press.feed(&start, zone), Fed::Held);
-    let other = RawEvent::TouchDown {
-        id: 4,
-        x: 10.0,
-        y: 0.0,
-    };
+    let other = touch_down(4, at(0.0));
     assert_eq!(
         press.feed(&other, zone),
         Fed::Ignored,
@@ -143,27 +96,23 @@ fn cancel_disarms_mouse_and_touch() {
     assert!(press.touch_free());
 }
 
-fn touch_down(id: u64, y: f32) -> RawEvent {
-    RawEvent::TouchDown { id, x: 10.0, y }
-}
-
-fn touch_move(id: u64, y: f32) -> RawEvent {
-    RawEvent::TouchMove { id, x: 10.0, y }
-}
-
-fn touch_up(id: u64, y: f32) -> RawEvent {
-    RawEvent::TouchUp { id, x: 10.0, y }
+/// A point on the list's armed zone, `y` px down.
+fn at(y: f32) -> Vec2 {
+    vec2(10.0, y)
 }
 
 #[test]
 fn a_finger_within_the_slop_still_taps() {
     let ui = 1.5;
     let mut press = ScrollPress::default();
-    assert_eq!(press.feed(&touch_down(3, 100.0), ui, zone), Swipe::Held);
+    assert_eq!(press.feed(&touch_down(3, at(100.0)), ui, zone), Swipe::Held);
     let inside = 100.0 + 7.9 * ui;
-    assert_eq!(press.feed(&touch_move(3, inside), ui, zone), Swipe::Held);
     assert_eq!(
-        press.feed(&touch_up(3, inside), ui, zone),
+        press.feed(&touch_move(3, at(inside)), ui, zone),
+        Swipe::Held
+    );
+    assert_eq!(
+        press.feed(&touch_up(3, at(inside)), ui, zone),
         Swipe::Activated(1)
     );
 }
@@ -172,10 +121,10 @@ fn a_finger_within_the_slop_still_taps() {
 fn crossing_the_slop_scrolls_the_whole_way_and_cancels_the_tap() {
     let ui = 1.5;
     let mut press = ScrollPress::default();
-    press.feed(&touch_down(3, 100.0), ui, zone);
+    press.feed(&touch_down(3, at(100.0)), ui, zone);
     let past = 100.0 + 8.1 * ui;
     assert_eq!(
-        press.feed(&touch_move(3, past), ui, zone),
+        press.feed(&touch_move(3, at(past)), ui, zone),
         Swipe::Scrolled {
             dy: past - 100.0,
             began: true
@@ -183,21 +132,21 @@ fn crossing_the_slop_scrolls_the_whole_way_and_cancels_the_tap() {
         "the first report catches up the travel since touchdown"
     );
     assert_eq!(
-        press.feed(&touch_move(3, past - 5.0), ui, zone),
+        press.feed(&touch_move(3, at(past - 5.0)), ui, zone),
         Swipe::Scrolled {
             dy: -5.0,
             began: false
         }
     );
     assert_eq!(
-        press.feed(&touch_up(3, 100.0), ui, zone),
+        press.feed(&touch_up(3, at(100.0)), ui, zone),
         Swipe::Held,
         "a drag never taps, even back where it began"
     );
     assert!(!press.scrolling());
-    assert_eq!(press.feed(&touch_down(4, 100.0), ui, zone), Swipe::Held);
+    assert_eq!(press.feed(&touch_down(4, at(100.0)), ui, zone), Swipe::Held);
     assert_eq!(
-        press.feed(&touch_up(4, 100.0), ui, zone),
+        press.feed(&touch_up(4, at(100.0)), ui, zone),
         Swipe::Activated(1),
         "the next finger taps afresh"
     );
@@ -206,14 +155,20 @@ fn crossing_the_slop_scrolls_the_whole_way_and_cancels_the_tap() {
 #[test]
 fn a_second_finger_neither_taps_nor_scrolls_while_the_first_drags() {
     let mut press = ScrollPress::default();
-    press.feed(&touch_down(3, 100.0), 1.0, zone);
-    press.feed(&touch_move(3, 140.0), 1.0, zone);
+    press.feed(&touch_down(3, at(100.0)), 1.0, zone);
+    press.feed(&touch_move(3, at(140.0)), 1.0, zone);
     assert!(press.scrolling());
-    assert_eq!(press.feed(&touch_down(4, 100.0), 1.0, zone), Swipe::Held);
-    assert_eq!(press.feed(&touch_move(4, 300.0), 1.0, zone), Swipe::Held);
-    assert_eq!(press.feed(&touch_up(4, 100.0), 1.0, zone), Swipe::Held);
     assert_eq!(
-        press.feed(&touch_move(3, 150.0), 1.0, zone),
+        press.feed(&touch_down(4, at(100.0)), 1.0, zone),
+        Swipe::Held
+    );
+    assert_eq!(
+        press.feed(&touch_move(4, at(300.0)), 1.0, zone),
+        Swipe::Held
+    );
+    assert_eq!(press.feed(&touch_up(4, at(100.0)), 1.0, zone), Swipe::Held);
+    assert_eq!(
+        press.feed(&touch_move(3, at(150.0)), 1.0, zone),
         Swipe::Scrolled {
             dy: 10.0,
             began: false
@@ -221,24 +176,20 @@ fn a_second_finger_neither_taps_nor_scrolls_while_the_first_drags() {
     );
 }
 
-fn touch_cancel(id: u64) -> RawEvent {
-    RawEvent::TouchCancel { id }
-}
-
 #[test]
 fn a_cancelled_finger_disarms_its_press_without_activating() {
     let mut press = Press::default();
-    assert_eq!(press.feed(&touch_down(3, 0.0), zone), Fed::Held);
+    assert_eq!(press.feed(&touch_down(3, at(0.0)), zone), Fed::Held);
     assert_eq!(
         press.feed(&touch_cancel(4), zone),
         Fed::Ignored,
         "another finger's cancel is not the press's"
     );
-    assert_eq!(press.armed_touch(), Some((3, 1)));
+    assert!(press.owns(3));
     assert_eq!(press.feed(&touch_cancel(3), zone), Fed::Held);
-    assert_eq!(press.armed_touch(), None);
+    assert!(!press.owns(3));
     assert_eq!(
-        press.feed(&touch_up(3, 0.0), zone),
+        press.feed(&touch_up(3, at(0.0)), zone),
         Fed::Ignored,
         "a lift after the cancel activates nothing"
     );
@@ -247,19 +198,19 @@ fn a_cancelled_finger_disarms_its_press_without_activating() {
 #[test]
 fn a_cancelled_list_finger_neither_taps_nor_keeps_scrolling() {
     let mut press = ScrollPress::default();
-    press.feed(&touch_down(3, 100.0), 1.0, zone);
+    press.feed(&touch_down(3, at(100.0)), 1.0, zone);
     assert_eq!(press.feed(&touch_cancel(3), 1.0, zone), Swipe::Held);
-    assert_eq!(press.armed_touch(), None, "the tap is gone");
+    assert!(!press.owns(3), "the tap is gone");
 
-    press.feed(&touch_down(4, 100.0), 1.0, zone);
-    press.feed(&touch_move(4, 140.0), 1.0, zone);
+    press.feed(&touch_down(4, at(100.0)), 1.0, zone);
+    press.feed(&touch_move(4, at(140.0)), 1.0, zone);
     assert_eq!(press.feed(&touch_cancel(5), 1.0, zone), Swipe::Held);
     assert!(press.scrolling(), "another finger's cancel changes nothing");
     assert_eq!(press.feed(&touch_cancel(4), 1.0, zone), Swipe::Held);
     assert!(!press.scrolling());
-    press.feed(&touch_down(6, 100.0), 1.0, zone);
+    press.feed(&touch_down(6, at(100.0)), 1.0, zone);
     assert_eq!(
-        press.feed(&touch_up(6, 100.0), 1.0, zone),
+        press.feed(&touch_up(6, at(100.0)), 1.0, zone),
         Swipe::Activated(1),
         "the next finger taps afresh"
     );

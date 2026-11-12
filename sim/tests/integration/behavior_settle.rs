@@ -2,7 +2,7 @@
 
 use crate::common;
 
-use aftermine_sim::{Command, UnitKind};
+use aftermine_sim::UnitKind;
 use chassis::grid::TilePos;
 
 use common::*;
@@ -33,14 +33,7 @@ fn a_parked_crowd_goes_fully_stationary() {
         .collect();
     let mut state = arena(units).build().unwrap();
     let ids: Vec<_> = state.units().iter().map(|u| u.id).collect();
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: ids,
-            goal: TilePos::new(9, 2),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run(ids, TilePos::new(9, 2)))]);
     // Ample time to arrive and settle (the arena is 16x9).
     for _ in 0..1_200 {
         state.tick(&[]);

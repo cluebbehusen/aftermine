@@ -5,7 +5,7 @@ use chassis::grid::as_index;
 use aftermine_sim::{BuildingKind, Command, Event, Order, PlayerId, State, UnitId, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use common::{building, cmd, open_arena, unit};
+use common::{building, building_id, cmd, open_arena, orders, unit};
 use serde_json::json;
 
 fn release_scene(kind: UnitKind) -> (State, UnitId, aftermine_sim::BuildingId) {
@@ -15,12 +15,7 @@ fn release_scene(kind: UnitKind) -> (State, UnitId, aftermine_sim::BuildingId) {
         .buildings
         .push(building(0, BuildingKind::Foundry, 10, 6));
     let state = scenario.build().unwrap();
-    let foundry = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == TilePos::new(10, 6))
-        .unwrap()
-        .id;
+    let foundry = building_id(&state, |b| b.anchor == TilePos::new(10, 6));
     let id = state.units()[0].id;
     let point = state
         .contact_surface(state.building(foundry).unwrap())
@@ -153,7 +148,7 @@ fn displacement_restarts_release_and_stop_keeps_the_uncredited_load() {
         assert_eq!(state.unit(id).unwrap().carrying(), 7);
     }
     assert!(resumed);
-    state.tick(&[cmd(0, Command::Stop { units: vec![id] })]);
+    state.tick(&[cmd(0, orders::stop([id]))]);
     for _ in 0..20 {
         state.tick(&[]);
     }
@@ -172,12 +167,7 @@ fn adjacent_build_repair_and_salvage_approach_before_advancing_work() {
                 .buildings
                 .push(building(0, BuildingKind::Fabricator, 10, 6));
             let state = scenario.build().unwrap();
-            let target = state
-                .buildings()
-                .iter()
-                .find(|b| b.anchor == TilePos::new(10, 6))
-                .unwrap()
-                .id;
+            let target = building_id(&state, |b| b.anchor == TilePos::new(10, 6));
             let id = state.units()[0].id;
             let mut data = serde_json::to_value(&state).unwrap();
             let slot = state
@@ -239,6 +229,11 @@ fn malformed_release_and_endpoint_snapshots_are_rejected() {
     let (mut state, id, _) = release_scene(UnitKind::Harvester);
     state.tick(&[]);
     let base = serde_json::to_value(&state).unwrap();
+    let refusal = |bad: serde_json::Value| {
+        serde_json::from_value::<State>(bad)
+            .expect_err("a malformed snapshot must never become a state")
+            .to_string()
+    };
     for (field, value) in [
         ("elapsed", json!(0)),
         ("elapsed", json!(10)),
@@ -246,11 +241,14 @@ fn malformed_release_and_endpoint_snapshots_are_rejected() {
     ] {
         let mut bad = base.clone();
         bad["units"][0]["worker"]["unloading"][field] = value;
-        assert!(serde_json::from_value::<State>(bad).is_err());
+        assert!(
+            refusal(bad).contains("carries invalid unloading state"),
+            "{field}"
+        );
     }
     let mut bad = base.clone();
     bad["units"][0]["worker"]["carrying"] = json!(0);
-    assert!(serde_json::from_value::<State>(bad).is_err());
+    assert!(refusal(bad).contains("carries invalid unloading state"));
     let mut displaced = base;
     displaced["units"][0]["pos"] = json!(Vec2Fx::new(Fx::lit("9.02"), Fx::lit("7.5")));
     state = serde_json::from_value(displaced).unwrap();
@@ -264,7 +262,10 @@ fn malformed_release_and_endpoint_snapshots_are_rejected() {
     ] {
         let mut bad = base.clone();
         bad["units"][0]["path"][field] = value;
-        assert!(serde_json::from_value::<State>(bad).is_err());
+        assert!(
+            refusal(bad).contains("carries an invalid work endpoint"),
+            "{field}"
+        );
     }
 }
 
@@ -280,14 +281,7 @@ fn field_repair_closes_to_each_pair_of_hulls_before_billing() {
             let mut data = serde_json::to_value(state).unwrap();
             data["units"][1]["hp"] = json!(patient.stats().max_hp / 2);
             let mut state: State = serde_json::from_value(data).unwrap();
-            state.tick(&[cmd(
-                0,
-                Command::RepairUnit {
-                    units: vec![id],
-                    target,
-                    queue: false,
-                },
-            )]);
+            state.tick(&[cmd(0, orders::repair_unit([id], target))]);
             let mut worked = false;
             for _ in 0..200 {
                 let w = state.unit(id).unwrap();
@@ -303,14 +297,7 @@ fn field_repair_closes_to_each_pair_of_hulls_before_billing() {
             }
             assert!(worked, "{welder:?} failed to reach {patient:?}");
             let before = state.unit(target).unwrap().hp;
-            state.tick(&[cmd(
-                0,
-                Command::Run {
-                    units: vec![target],
-                    goal: TilePos::new(15, 7),
-                    queue: false,
-                },
-            )]);
+            state.tick(&[cmd(0, orders::run([target], TilePos::new(15, 7)))]);
             assert_eq!(state.unit(target).unwrap().hp, before);
         }
     }
@@ -393,14 +380,7 @@ fn harvester_closes_to_the_footprint_on_every_approach_side_before_gathering() {
         scenario.map[as_index(node.y)] = row.into_iter().collect();
         let mut state = scenario.build().unwrap();
         let id = state.units()[0].id;
-        state.tick(&[cmd(
-            0,
-            Command::Harvest {
-                units: vec![id],
-                node,
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::harvest([id], node))]);
         for _ in 0..200 {
             if state.unit(id).unwrap().carrying() > 0 {
                 break;
@@ -435,15 +415,8 @@ fn incoming_workers_share_contact_space_without_reserving_it_from_far_away() {
     row[12] = 'S';
     scenario.map[8] = row.into_iter().collect();
     let mut state = scenario.build().unwrap();
-    let ids = state.units().iter().map(|unit| unit.id).collect();
-    state.tick(&[cmd(
-        0,
-        Command::Harvest {
-            units: ids,
-            node,
-            queue: false,
-        },
-    )]);
+    let ids: Vec<_> = state.units().iter().map(|unit| unit.id).collect();
+    state.tick(&[cmd(0, orders::harvest(ids, node))]);
     assert!(state.units().iter().all(|worker| {
         worker
             .path
@@ -485,15 +458,8 @@ fn a_crowded_crew_delivers_every_last_load_and_clears_the_dropoff() {
                     }).collect::<Vec<_>>()
                 })).unwrap();
                 let mut state = scenario.build().unwrap();
-                let ids = state.units().iter().map(|u| u.id).collect();
-                let command = cmd(
-                    0,
-                    Command::Harvest {
-                        units: ids,
-                        node,
-                        queue: false,
-                    },
-                );
+                let ids: Vec<_> = state.units().iter().map(|u| u.id).collect();
+                let command = cmd(0, orders::harvest(ids, node));
                 let mut deposited = 0;
                 for tick in 0..3000 {
                     let report = state.tick(if tick == 0 {
@@ -539,14 +505,7 @@ fn both_workers_leave_scrap_overhang_to_unload_at_a_neighboring_foundry() {
         scenario.map[10] = row.into_iter().collect();
         let mut state = scenario.build().unwrap();
         let id = state.units()[0].id;
-        state.tick(&[cmd(
-            0,
-            Command::Harvest {
-                units: vec![id],
-                node,
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::harvest([id], node))]);
         let mut deposits = 0;
         for _ in 0..1200 {
             deposits += state

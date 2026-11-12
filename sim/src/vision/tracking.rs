@@ -16,7 +16,8 @@ pub struct ContactSample {
     pub tile: TilePos,
 }
 
-/// A team-local mobile contact. Identity exists only during true sight.
+/// A team-local contact: a hostile unit in true sight or a radar return,
+/// a structure's included. Identity exists only during true sight.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContactTrack {
     /// Continuous observation identity, unrelated to entity ids.

@@ -4,7 +4,8 @@
 //! no pursuit, structure damage, healing only by its kiln).
 
 use crate::common::{
-    assert_refused, building, cmd, face_toward, open_arena_with, players, run, run_until, unit,
+    CommandExt, assert_refused, building, building_id, cmd, face_toward, open_arena_with, orders,
+    players, run, run_until, unit,
 };
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::observation::ObservationData;
@@ -207,14 +208,7 @@ fn a_faster_worker_takes_a_slower_holders_place_on_a_full_cradle() {
     let aside = TilePos::new(20, 14);
     state.tick(&[
         raise(&haulers, CRADLE, false),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![haulers[3]],
-                goal: aside,
-                queue: true,
-            },
-        ),
+        cmd(0, orders::run([haulers[3]], aside).queued()),
     ]);
     assert!(haulers.iter().all(|&id| holds(&state, id)));
 
@@ -243,14 +237,7 @@ fn a_worker_no_faster_than_the_crew_is_refused_and_keeps_its_program() {
     let hauler = ids(&state, 0, UnitKind::Harvester)[0];
     state.tick(&[
         raise(&crew[..4], CRADLE, false),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![crew[4], hauler],
-                goal: TilePos::new(24, 14),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([crew[4], hauler], TilePos::new(24, 14))),
     ]);
     let program = state.unit(crew[4]).unwrap().order;
     assert_refused(
@@ -273,14 +260,7 @@ fn a_queued_join_is_judged_when_its_turn_comes() {
     let step = TilePos::new(4, 14);
     state.tick(&[
         raise(&crew, CRADLE, false),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![haulers[0]],
-                goal: step,
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([haulers[0]], step)),
     ]);
     assert_eq!(
         rejected(&state.tick(&[raise(&[haulers[0]], CRADLE, true)])),
@@ -304,14 +284,7 @@ fn a_queued_join_is_judged_when_its_turn_comes() {
     let excavator = ids(&state, 0, UnitKind::Excavator)[0];
     state.tick(&[
         raise(&haulers, CRADLE, false),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![excavator],
-                goal: step,
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([excavator], step)),
     ]);
     state.tick(&[raise(&[excavator], CRADLE, true)]);
     run_until(&mut state, 400, |state, _| {
@@ -339,14 +312,7 @@ fn a_worker_moved_on_from_one_full_cradle_to_another_leaves_no_crew_over_its_cap
     state.tick(&[raise(&excavators[..4], CRADLE, false)]);
     state.tick(&[
         raise(&excavators[4..], second, false),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![hauler],
-                goal: TilePos::new(10, 14),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([hauler], TilePos::new(10, 14))),
     ]);
     assert_eq!(
         rejected(&state.tick(&[raise(&[hauler], second, true)])),
@@ -482,14 +448,7 @@ fn a_destroyed_cradle_leaves_a_wreck_for_the_work_its_crew_raised() {
     let id = cradle(&state).unwrap().id;
     let sentinel = ids(&state, 1, UnitKind::Sentinel)[0];
     let mut progress = 0;
-    let mut report = state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![sentinel],
-            target: Target::Building(id).into(),
-            queue: false,
-        },
-    )]);
+    let mut report = state.tick(&[cmd(1, orders::attack([sentinel], Target::Building(id)))]);
     for _ in 0..200 {
         if report
             .events
@@ -627,14 +586,7 @@ fn a_maw_takes_no_weld_no_repair_bay_and_no_retirement() {
     let max = UnitKind::Maw.stats().max_hp;
     let state = forge_hp(&state, sentinel, UnitKind::Sentinel.stats().max_hp / 2);
     let mut state = forge_hp(&state, maw, max - 500);
-    let report = state.tick(&[cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: maw,
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::repair_unit([welder], maw))]);
     assert_eq!(rejected(&report), Some(RejectReason::InvalidTarget));
     let report = state.tick(&[cmd(
         0,
@@ -668,14 +620,7 @@ fn a_sapper_charge_strikes_a_maw_as_a_structure() {
     );
     let maw = ids(&state, 0, UnitKind::Maw)[0];
     let sapper = ids(&state, 1, UnitKind::Sapper)[0];
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![sapper],
-            target: Target::Unit(maw).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([sapper], Target::Unit(maw)))]);
     run_until(&mut state, 400, |state, _| state.unit(sapper).is_none());
     let charge = UnitKind::Sapper.stats().demolition.unwrap();
     assert_eq!(
@@ -695,12 +640,7 @@ fn a_maw_cuts_the_nearest_building_before_any_machine() {
         vec![building(1, BuildingKind::Turret, 27, 10)],
     );
     let maw = ids(&state, 0, UnitKind::Maw)[0];
-    let turret = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let turret = building_id(&state, |b| b.kind == BuildingKind::Turret);
     let mut state = state;
     state.tick(&[]);
     let order = state.unit(maw).unwrap().order;
@@ -729,14 +669,7 @@ fn a_maw_never_turns_on_a_machine() {
     let maw = ids(&state, 0, UnitKind::Maw)[0];
     let lancer = ids(&state, 1, UnitKind::Lancer)[0];
     let start = state.unit(maw).unwrap().pos;
-    state.tick(&[cmd(
-        1,
-        Command::Attack {
-            units: vec![lancer],
-            target: Target::Unit(maw).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::attack([lancer], Target::Unit(maw)))]);
     run_until(&mut state, 400, |state, _| {
         state.unit(maw).unwrap().hp < UnitKind::Maw.stats().max_hp
     });
@@ -764,14 +697,7 @@ fn a_maw_crushes_a_small_machine_under_its_front() {
         let start = state.unit(maw).unwrap().pos;
         face_toward(&mut state, maw, start + Vec2Fx::new(Fx::ONE, Fx::ZERO));
         let heading = state.unit(maw).unwrap().heading;
-        state.tick(&[cmd(
-            1,
-            Command::Run {
-                units: vec![sentinel],
-                goal: TilePos::new(24, 10),
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(1, orders::run([sentinel], TilePos::new(24, 10)))]);
         let mut crushed = 0;
         for _ in 0..200 {
             let report = state.tick(&[]);
@@ -808,14 +734,7 @@ fn a_maw_holds_its_ground_against_small_bodies() {
     let maw = ids(&state, 0, UnitKind::Maw)[0];
     let sentinels = ids(&state, 0, UnitKind::Sentinel);
     let start = state.unit(maw).unwrap().pos;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: sentinels,
-            goal: TilePos::new(30, 10),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run(sentinels, TilePos::new(30, 10)))]);
     for _ in 0..300 {
         state.tick(&[]);
         assert_eq!(state.unit(maw).unwrap().pos, start);
@@ -836,23 +755,9 @@ fn a_maw_cutter_deals_structure_damage_to_structures() {
             .collect();
         // A Maw cuts a machine only when ordered to, and a building of its
         // own accord.
-        let mut orders = vec![cmd(
-            1,
-            Command::Run {
-                units: victims.clone(),
-                goal: TilePos::new(24, 10),
-                queue: false,
-            },
-        )];
+        let mut orders = vec![cmd(1, orders::run(victims.clone(), TilePos::new(24, 10)))];
         if ordered {
-            orders.push(cmd(
-                0,
-                Command::Attack {
-                    units: vec![maw],
-                    target: Target::Unit(victims[0]).into(),
-                    queue: false,
-                },
-            ));
+            orders.push(cmd(0, orders::attack([maw], Target::Unit(victims[0]))));
         }
         state.tick(&orders);
         let mut lost = Vec::new();
@@ -976,12 +881,7 @@ fn first_cut(
     }
     let mut state: State = serde_json::from_value(doc).unwrap();
     let maw = ids(&state, 0, UnitKind::Maw)[0];
-    let target = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let target = building_id(&state, |b| b.anchor == anchor);
     cut_by(&mut state, maw, target)
 }
 
@@ -989,11 +889,7 @@ fn first_cut(
 fn cut_by(state: &mut State, maw: UnitId, target: aftermine_sim::BuildingId) -> Cut {
     state.tick(&[cmd(
         0,
-        Command::Attack {
-            units: vec![maw],
-            target: AttackTarget::Building(target),
-            queue: false,
-        },
+        orders::attack([maw], AttackTarget::Building(target)),
     )]);
     let surface = |state: &State| state.contact_surface(state.building(target).unwrap());
     let mut met = surface(state);
@@ -1094,12 +990,7 @@ fn maw_beside(
     doc["units"][0]["heading"] = serde_json::json!(heading);
     let state: State = serde_json::from_value(doc).unwrap();
     let maw = ids(&state, 0, UnitKind::Maw)[0];
-    let target = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == buildings[0].2)
-        .unwrap()
-        .id;
+    let target = building_id(&state, |b| b.anchor == buildings[0].2);
     (state, maw, target)
 }
 
@@ -1147,11 +1038,7 @@ fn first_stroke(
     };
     let report = state.tick(&[cmd(
         0,
-        Command::Attack {
-            units: vec![maw],
-            target: AttackTarget::Building(target),
-            queue: false,
-        },
+        orders::attack([maw], AttackTarget::Building(target)),
     )]);
     let mut first = struck(&report.events);
     if first.is_empty() {
@@ -1217,12 +1104,7 @@ fn a_maw_off_a_corner_drives_to_a_side_before_it_cuts() {
     doc["units"][0]["heading"] = serde_json::json!(0);
     let mut state: State = serde_json::from_value(doc).unwrap();
     let maw = ids(&state, 0, UnitKind::Maw)[0];
-    let barricade = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Barricade)
-        .unwrap()
-        .id;
+    let barricade = building_id(&state, |b| b.kind == BuildingKind::Barricade);
     let cut = cut_by(&mut state, maw, barricade);
     assert_ne!(cut.stood, stood);
     assert!(square_to(cut.met, cut.heading));
@@ -1251,12 +1133,7 @@ fn a_maw_cuts_every_hostile_building_its_drum_presses_flat_in_one_stroke() {
                 (owner, BuildingKind::Barricade, lower),
             ],
         );
-        let beside = state
-            .buildings()
-            .iter()
-            .find(|b| b.anchor == lower)
-            .unwrap()
-            .id;
+        let beside = building_id(&state, |b| b.anchor == lower);
         let hp = |state: &State, id| state.building(id).unwrap().hp;
         let full = (hp(&state, target), hp(&state, beside));
         let struck = first_stroke(&mut state, maw, target, 40);
@@ -1385,14 +1262,7 @@ fn a_hunting_maw_cuts_a_way_through_a_wall_to_its_goal() {
             &buildings,
         );
         let goal = TilePos::new(15, 22);
-        state.tick(&[cmd(
-            0,
-            Command::Hunt {
-                units: vec![maw],
-                goal,
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::hunt([maw], goal))]);
         run_until(&mut state, 600, |state, _| {
             state.unit(maw).unwrap().tile() == goal
         });
@@ -1416,14 +1286,7 @@ fn a_hunting_maw_cuts_into_a_wall_with_another_out_of_sight_beyond() {
     let (mut state, maw, _) =
         maw_beside(Vec2Fx::new(Fx::lit("15.5"), Fx::lit("4.5")), 64, &buildings);
     let goal = TilePos::new(15, 26);
-    state.tick(&[cmd(
-        0,
-        Command::Hunt {
-            units: vec![maw],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::hunt([maw], goal))]);
     let events = run_until(&mut state, 1_200, |state, _| {
         state.unit(maw).unwrap().tile() == goal
     });
@@ -1443,14 +1306,7 @@ fn a_hunting_maw_passes_a_wall_beside_its_way() {
     let (mut state, maw, _) =
         maw_beside(Vec2Fx::new(Fx::lit("2.5"), Fx::lit("11.5")), 0, &buildings);
     let goal = TilePos::new(29, 11);
-    state.tick(&[cmd(
-        0,
-        Command::Hunt {
-            units: vec![maw],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::hunt([maw], goal))]);
     run_until(&mut state, 900, |state, _| {
         state.unit(maw).unwrap().tile() == goal
     });
@@ -1466,12 +1322,7 @@ fn a_maws_drum_jams_the_gun_it_presses_on() {
         vec![building(1, BuildingKind::Turret, 27, 10)],
     );
     let maw = ids(&state, 0, UnitKind::Maw)[0];
-    let turret = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let turret = building_id(&state, |b| b.kind == BuildingKind::Turret);
     let (mut fired, mut cut) = (Vec::new(), None);
     for t in 0..600 {
         let report = state.tick(&[]);
@@ -1509,12 +1360,7 @@ fn upgrading_bastion(
     scenario.buildings = vec![building(1, BuildingKind::Bastion, anchor.x, anchor.y)];
     let state = forge_upgrade(&scenario.build().unwrap(), anchor, progress);
     let maw = ids(&state, 0, UnitKind::Maw)[0];
-    let target = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let target = building_id(&state, |b| b.anchor == anchor);
     (state, maw, target)
 }
 
@@ -1541,11 +1387,7 @@ fn a_maw_cuts_on_while_an_upgrade_redraws_the_outline_under_it() {
     let labor = BuildingKind::Bastion.tier_stats(1).construction.build_ticks;
     for redraw in [labor.div_ceil(3), labor] {
         let (mut state, maw, target) = upgrading_bastion(anchor, TilePos::new(19, 19), 1);
-        let attack = Command::Attack {
-            units: vec![maw],
-            target: AttackTarget::Building(target),
-            queue: false,
-        };
+        let attack = orders::attack([maw], AttackTarget::Building(target));
         state.tick(&[cmd(0, attack)]);
         let hit = |events: &[Event]| {
             events
@@ -1593,11 +1435,7 @@ fn a_maw_driving_in_cuts_square_to_the_outline_an_upgrade_redraws() {
         upgrading_bastion(anchor, TilePos::new(15, 10), labor * 2 / 3 + 1);
     state.tick(&[cmd(
         0,
-        Command::Attack {
-            units: vec![maw],
-            target: AttackTarget::Building(target),
-            queue: false,
-        },
+        orders::attack([maw], AttackTarget::Building(target)),
     )]);
     run_until(&mut state, 400, |state, _| {
         state
@@ -1675,12 +1513,7 @@ fn a_maw_answers_a_gun_that_fires_on_it_from_beyond_its_aggro() {
         vec![building(1, BuildingKind::Bastion, 28, 10)],
     );
     let maw = ids(&state, 0, UnitKind::Maw)[0];
-    let bastion = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Bastion)
-        .unwrap()
-        .id;
+    let bastion = building_id(&state, |b| b.kind == BuildingKind::Bastion);
     run_until(&mut state, 600, |state, _| {
         state.unit(maw).unwrap().hp < UnitKind::Maw.stats().max_hp
     });
@@ -1768,12 +1601,9 @@ fn a_maw_passes_over_a_structure_it_cannot_reach() {
     };
     let mut state = scene(true);
     let maw = ids(&state, 0, UnitKind::Maw)[0];
-    let open = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Barricade && b.anchor == TilePos::new(13, 9))
-        .unwrap()
-        .id;
+    let open = building_id(&state, |b| {
+        b.kind == BuildingKind::Barricade && b.anchor == TilePos::new(13, 9)
+    });
     state.tick(&[]);
     let Order::Attack { target, .. } = state.unit(maw).unwrap().order else {
         panic!("the Maw picked no fight");

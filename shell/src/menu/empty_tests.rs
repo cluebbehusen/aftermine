@@ -1,4 +1,7 @@
 use super::*;
+use crate::tests::support::{
+    assert_press_contract, mouse_move, tap, touch_down, touch_move, touch_up,
+};
 use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::vec2;
 
@@ -71,21 +74,7 @@ fn a_touch_drag_scrolls_a_long_list_without_activating() {
         .expect("dragging up reveals Back")
         .center();
     let mut mouse = vec2(0.0, 0.0);
-    let tapped = menu.handle(
-        &[
-            RawEvent::TouchDown {
-                id: 8,
-                x: back.x,
-                y: back.y,
-            },
-            RawEvent::TouchUp {
-                id: 8,
-                x: back.x,
-                y: back.y,
-            },
-        ],
-        &mut mouse,
-    );
+    let tapped = menu.handle(&tap(8, back), &mut mouse);
     assert_eq!(tapped.map(|picked| picked.value), Some(39));
     drag(&mut menu, 9, x, 180.0, 330.0);
     assert_eq!(
@@ -110,32 +99,16 @@ fn a_drag_that_began_on_a_row_never_commits_it() {
     let row = menu.item_rect(1).expect("second row").center();
     let mut mouse = vec2(0.0, 0.0);
     let events = [
-        RawEvent::TouchDown {
-            id: 7,
-            x: row.x,
-            y: row.y,
-        },
-        RawEvent::TouchMove {
-            id: 7,
-            x: row.x,
-            y: row.y + 40.0,
-        },
-        RawEvent::TouchMove {
-            id: 7,
-            x: row.x,
-            y: row.y,
-        },
-        RawEvent::TouchUp {
-            id: 7,
-            x: row.x,
-            y: row.y,
-        },
+        touch_down(7, row),
+        touch_move(7, vec2(row.x, row.y + 40.0)),
+        touch_move(7, row),
+        touch_up(7, row),
     ];
     assert_eq!(menu.handle(&events, &mut mouse), None);
 }
 
 #[test]
-fn a_touch_gesture_belongs_to_its_first_finger_and_armed_row() {
+fn a_row_commits_only_when_its_own_press_lifts_on_it() {
     crate::render::set_viewport(1280.0, 800.0);
     let mut menu = Menu::list(
         "TOUCH",
@@ -145,60 +118,30 @@ fn a_touch_gesture_belongs_to_its_first_finger_and_armed_row() {
     let second = menu.item_rect(1).expect("second row").center();
     let mut mouse = vec2(0.0, 0.0);
 
-    assert_eq!(
-        menu.handle(
-            &[RawEvent::TouchDown {
-                id: 7,
-                x: second.x,
-                y: second.y,
-            }],
-            &mut mouse,
-        ),
-        None
-    );
-    assert_eq!(menu.press.armed_touch(), Some((7, (1, false))));
+    assert_eq!(menu.handle(&[mouse_move(second)], &mut mouse), None);
+    assert_eq!(menu.view().hover, Some(1));
+    assert_eq!(menu.selected, 0, "hover is not keyboard selection");
 
-    // A second finger cannot steal or resolve the first finger's press.
-    assert_eq!(
-        menu.handle(
-            &[
-                RawEvent::TouchDown {
-                    id: 8,
-                    x: first.x,
-                    y: first.y,
-                },
-                RawEvent::TouchUp {
-                    id: 8,
-                    x: first.x,
-                    y: first.y,
-                },
-            ],
-            &mut mouse,
+    assert_press_contract(
+        |events| ((menu.handle(events, &mut mouse), menu.selected), mouse),
+        first,
+        second,
+        &(None, 0),
+        &(
+            Some(Activation {
+                value: 0,
+                column: None,
+            }),
+            0,
         ),
-        None
     );
-    assert_eq!(menu.press.armed_touch(), Some((7, (1, false))));
-    assert_eq!(menu.selected, 0);
 
-    // The owning finger resolves on another row, so the gesture cancels.
     assert_eq!(
-        menu.handle(
-            &[
-                RawEvent::TouchMove {
-                    id: 7,
-                    x: first.x,
-                    y: first.y,
-                },
-                RawEvent::TouchUp {
-                    id: 7,
-                    x: first.x,
-                    y: first.y,
-                },
-            ],
-            &mut mouse,
-        ),
-        None
+        menu.handle(&tap(1, second), &mut mouse),
+        Some(Activation {
+            value: 1,
+            column: None
+        })
     );
-    assert_eq!(menu.press.armed_touch(), None);
-    assert_eq!(menu.selected, 0);
+    assert_eq!(menu.selected, 1, "a committed press moves the selection");
 }

@@ -1,7 +1,7 @@
 //! Ground chassis and independent mounts share deterministic turn limits.
 use crate::common;
 use aftermine_sim::stats::Domain;
-use aftermine_sim::{Command, Event, Target, UnitKind};
+use aftermine_sim::{Event, Target, UnitKind};
 use chassis::grid::TilePos;
 use common::*;
 
@@ -24,14 +24,7 @@ fn every_ground_chassis_pivots_before_moving_and_completes_its_route() {
         let mut moved = false;
         for tick in 0..400 {
             let commands = if tick == 0 {
-                vec![cmd(
-                    0,
-                    Command::Run {
-                        units: vec![id],
-                        goal: TilePos::new(14, 10),
-                        queue: false,
-                    },
-                )]
+                vec![cmd(0, orders::run([id], TilePos::new(14, 10)))]
             } else {
                 vec![]
             };
@@ -80,12 +73,9 @@ fn independent_ground_guns_traverse_without_spinning_the_hull() {
         document["units"][0]["heading"] = serde_json::json!(128);
         state = serde_json::from_value(document).unwrap();
         let id = state.units()[0].id;
-        let target = state
-            .buildings()
-            .iter()
-            .find(|b| b.kind == aftermine_sim::BuildingKind::Fabricator)
-            .unwrap()
-            .id;
+        let target = building_id(&state, |b| {
+            b.kind == aftermine_sim::BuildingKind::Fabricator
+        });
         let mut previous = 128u8;
         let mut resumed: Option<aftermine_sim::State> = None;
         let mut fired = false;
@@ -93,11 +83,7 @@ fn independent_ground_guns_traverse_without_spinning_the_hull() {
             let commands = if tick == 0 {
                 vec![cmd(
                     0,
-                    Command::Attack {
-                        units: vec![id],
-                        target: aftermine_sim::AttackTarget::Building(target),
-                        queue: false,
-                    },
+                    orders::attack([id], aftermine_sim::AttackTarget::Building(target)),
                 )]
             } else {
                 vec![]
@@ -170,14 +156,7 @@ fn a_ground_sidearm_cannot_fire_across_its_main_guns_bearing() {
         state.units()[2].id,
     );
     face_target(&mut state, gun, Target::Unit(ground));
-    let report = state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![gun],
-            target: Target::Unit(ground).into(),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::attack([gun], Target::Unit(ground)))]);
     assert!(report.events.iter().any(|event| matches!(event,Event::AttackHit{attacker,target:Some(Target::Unit(id)),..} if *attacker==gun && *id==ground)));
     assert!(!report.events.iter().any(|event| matches!(event,Event::AttackHit{attacker,target:Some(Target::Unit(id)),..} if *attacker==gun && *id==air)));
     assert_eq!(

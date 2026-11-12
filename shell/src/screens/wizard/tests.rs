@@ -1,5 +1,8 @@
 use super::*;
-use aftermine_protocol::MouseButton;
+use crate::tests::support::{
+    assert_press_contract, click, keystroke, left_down, left_up, tap, touch_down, touch_move,
+    touch_up,
+};
 use macroquad::prelude::vec2;
 
 /// Computes [`SetupLayout`]. `seat_choice` marks the human card; every
@@ -175,18 +178,7 @@ fn clicking_lan_on_entering_setup_lights_only_the_switch() {
         0,
     );
     let lan = layout.switch[1].center();
-    let click = [
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: lan.x,
-            y: lan.y,
-        },
-        RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: lan.x,
-            y: lan.y,
-        },
-    ];
+    let click = click(lan);
     w.update(&click, &mut vec2(0.0, 0.0), &mut draft, &mut Vec::new())
         .expect("update");
     assert!(w.lan.is_some(), "{:?}", w.notice);
@@ -207,8 +199,8 @@ fn every_answer_to_a_setup_question_clicks() {
     let mut w = Wizard::open(&draft);
     pick_first_map(&mut w, &mut draft);
     for (way, events) in [
-        ("Enter on the preselected Cancel", press(Key::Enter)),
-        ("Escape", press(Key::Escape)),
+        ("Enter on the preselected Cancel", keystroke(Key::Enter)),
+        ("Escape", keystroke(Key::Escape)),
         ("the BACK button", crate::button::tests::press_back(true)),
     ] {
         w.overlay = Some(confirm_overlay(Confirm::Close { to_map: false }, None));
@@ -220,14 +212,10 @@ fn every_answer_to_a_setup_question_clicks() {
     }
 }
 
-fn press(key: Key) -> Vec<RawEvent> {
-    vec![RawEvent::KeyDown { key }, RawEvent::KeyUp { key }]
-}
-
 fn drive(w: &mut Wizard, draft: &mut NewMatchDraft, key: Key) -> Out {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    w.update(&press(key), &mut mouse, draft, &mut sounds)
+    w.update(&keystroke(key), &mut mouse, draft, &mut sounds)
         .expect("update")
 }
 
@@ -503,7 +491,7 @@ fn an_all_one_team_draft_disables_start() {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
     let out = w
-        .update(&press(Key::Enter), &mut mouse, &mut draft, &mut sounds)
+        .update(&keystroke(Key::Enter), &mut mouse, &mut draft, &mut sounds)
         .expect("update");
     assert_eq!(out, Out::Stay, "one team, nobody to fight: Start refuses");
     assert_eq!(w.step, Step::Setup, "the screen stays put");
@@ -522,23 +510,7 @@ fn an_all_one_team_draft_disables_start() {
 fn tap_at(w: &mut Wizard, draft: &mut NewMatchDraft, from: Vec2, to: Vec2) -> Out {
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    let events = [
-        RawEvent::TouchDown {
-            id: 5,
-            x: from.x,
-            y: from.y,
-        },
-        RawEvent::TouchMove {
-            id: 5,
-            x: to.x,
-            y: to.y,
-        },
-        RawEvent::TouchUp {
-            id: 5,
-            x: to.x,
-            y: to.y,
-        },
-    ];
+    let events = [touch_down(5, from), touch_move(5, to), touch_up(5, to)];
     w.update(&events, &mut mouse, draft, &mut sounds)
         .expect("update")
 }
@@ -556,18 +528,7 @@ fn the_corner_back_button_steps_back_like_escape_on_both_steps() {
     assert_eq!(w.step, Step::Setup);
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    let click = [
-        RawEvent::MouseDown {
-            button: MouseButton::Left,
-            x: back.x,
-            y: back.y,
-        },
-        RawEvent::MouseUp {
-            button: MouseButton::Left,
-            x: back.x,
-            y: back.y,
-        },
-    ];
+    let click = click(back);
     assert_eq!(
         w.update(&click, &mut mouse, &mut draft, &mut sounds)
             .expect("update"),
@@ -595,26 +556,15 @@ fn a_back_press_that_slides_off_does_nothing() {
 fn a_step_change_drops_a_half_made_back_press() {
     crate::render::set_viewport(1280.0, 800.0);
     let back = crate::button::corner_slot(0, crate::render::ui_scale()).center();
-    let button = MouseButton::Left;
     let mut draft = NewMatchDraft::default();
     let mut w = Wizard::open(&draft);
     let mut mouse = vec2(0.0, 0.0);
     let mut sounds = Vec::new();
-    let down = [RawEvent::MouseDown {
-        button,
-        x: back.x,
-        y: back.y,
-    }];
-    w.update(&down, &mut mouse, &mut draft, &mut sounds)
+    w.update(&[left_down(back)], &mut mouse, &mut draft, &mut sounds)
         .expect("update");
     pick_first_map(&mut w, &mut draft);
     assert_eq!(w.step, Step::Setup);
-    let up = [RawEvent::MouseUp {
-        button,
-        x: back.x,
-        y: back.y,
-    }];
-    w.update(&up, &mut mouse, &mut draft, &mut sounds)
+    w.update(&[left_up(back)], &mut mouse, &mut draft, &mut sounds)
         .expect("update");
     assert_eq!(
         w.step,
@@ -896,23 +846,7 @@ fn mouse_and_touch_cycle_the_direct_bot_controls() {
     let mut mouse = Vec2::ZERO;
     let mut sounds = Vec::new();
     wizard
-        .update(
-            &[
-                RawEvent::MouseDown {
-                    button: MouseButton::Left,
-                    x: difficulty.x,
-                    y: difficulty.y,
-                },
-                RawEvent::MouseUp {
-                    button: MouseButton::Left,
-                    x: difficulty.x,
-                    y: difficulty.y,
-                },
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
+        .update(&click(difficulty), &mut mouse, &mut draft, &mut sounds)
         .expect("cycle difficulty");
     assert_eq!(draft.seats[opponent].difficulty, BotDifficulty::Veteran);
     assert_eq!(draft.seats[opponent].stance, BotStance::Balanced);
@@ -920,23 +854,7 @@ fn mouse_and_touch_cycle_the_direct_bot_controls() {
     assert_eq!(wizard.cursor.cell(), Cell::Difficulty);
 
     wizard
-        .update(
-            &[
-                RawEvent::TouchDown {
-                    id: 4,
-                    x: stance.x,
-                    y: stance.y,
-                },
-                RawEvent::TouchUp {
-                    id: 4,
-                    x: stance.x,
-                    y: stance.y,
-                },
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
+        .update(&tap(4, stance), &mut mouse, &mut draft, &mut sounds)
         .expect("cycle stance");
     assert_eq!(draft.seats[opponent].difficulty, BotDifficulty::Veteran);
     assert_eq!(draft.seats[opponent].stance, BotStance::Aggressive);
@@ -1073,23 +991,7 @@ fn compact_setup_pages_to_a_nonoverlapping_opponent_touch_target() {
     let mut mouse = Vec2::ZERO;
     let mut sounds = Vec::new();
     wizard
-        .update(
-            &[
-                RawEvent::TouchDown {
-                    id: 20,
-                    x: at.x,
-                    y: at.y,
-                },
-                RawEvent::TouchUp {
-                    id: 20,
-                    x: at.x,
-                    y: at.y,
-                },
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
+        .update(&tap(20, at), &mut mouse, &mut draft, &mut sounds)
         .unwrap();
     assert_eq!(
         wizard.cursor,
@@ -1117,23 +1019,7 @@ fn compact_setup_pages_to_a_nonoverlapping_opponent_touch_target() {
         "the probe exercises the enlarged touch-only area"
     );
     wizard
-        .update(
-            &[
-                RawEvent::TouchDown {
-                    id: 21,
-                    x: at.x,
-                    y: at.y,
-                },
-                RawEvent::TouchUp {
-                    id: 21,
-                    x: at.x,
-                    y: at.y,
-                },
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
+        .update(&tap(21, at), &mut mouse, &mut draft, &mut sounds)
         .unwrap();
     let seat = seat_display_order(draft.scenario.as_deref().unwrap())[row];
     assert_eq!(wizard.mode_name(), "match_setup");
@@ -1186,23 +1072,7 @@ fn compact_setup_touch_only_edges_activate_every_editable_chip() {
         let mut mouse = Vec2::ZERO;
         let mut sounds = Vec::new();
         let out = wizard
-            .update(
-                &[
-                    RawEvent::TouchDown {
-                        id: 7,
-                        x: at.x,
-                        y: at.y,
-                    },
-                    RawEvent::TouchUp {
-                        id: 7,
-                        x: at.x,
-                        y: at.y,
-                    },
-                ],
-                &mut mouse,
-                &mut draft,
-                &mut sounds,
-            )
+            .update(&tap(7, at), &mut mouse, &mut draft, &mut sounds)
             .expect("activate compact setup cell");
         assert_eq!(out, Out::Stay);
         assert_eq!(sounds, [(SoundKind::Click, None)]);
@@ -1228,130 +1098,7 @@ fn compact_setup_touch_only_edges_activate_every_editable_chip() {
 }
 
 #[test]
-fn setup_mouse_activation_requires_release_on_the_armed_cell() {
-    crate::render::set_viewport(1280.0, 800.0);
-    let (mut wizard, mut draft) = explicit_team_setup();
-    let scenario = draft.scenario.as_deref().expect("picked scenario");
-    let order = seat_display_order(scenario);
-    let layout = setup_layout(
-        scenario,
-        draft.seat_choice,
-        crate::render::viewport(),
-        crate::render::ui_scale(),
-    );
-    let row = 1;
-    let seat = order[row];
-    let seat_at = card(&layout, row).seat.center();
-    let team_at = card(&layout, row).team.center();
-    let stance_at = card(&layout, row).stance.unwrap().center();
-    let start_at = layout.start.unwrap().center();
-    let initial = draft.seats[seat];
-    let mut mouse = Vec2::ZERO;
-    let mut sounds = Vec::new();
-
-    let out = wizard
-        .update(
-            &[
-                RawEvent::MouseDown {
-                    button: MouseButton::Left,
-                    x: team_at.x,
-                    y: team_at.y,
-                },
-                RawEvent::MouseUp {
-                    button: MouseButton::Left,
-                    x: stance_at.x,
-                    y: stance_at.y,
-                },
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(out, Out::Stay);
-    assert_eq!(draft.seats[seat], initial);
-    assert!(sounds.is_empty(), "a canceled click is silent");
-
-    let out = wizard
-        .update(
-            &[
-                RawEvent::MouseDown {
-                    button: MouseButton::Left,
-                    x: team_at.x,
-                    y: team_at.y,
-                },
-                RawEvent::MouseUp {
-                    button: MouseButton::Left,
-                    x: team_at.x,
-                    y: team_at.y,
-                },
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(out, Out::Stay);
-    assert_eq!(
-        draft.seats[seat].team_choice,
-        (initial.team_choice + 1) % (draft.seats.len() + 1)
-    );
-    assert_eq!(draft.seats[seat].stance, initial.stance);
-    assert_eq!(
-        wizard.cursor,
-        SetupCursor::Seat {
-            row,
-            cell: Cell::Team
-        }
-    );
-
-    let out = wizard
-        .update(
-            &[
-                RawEvent::MouseDown {
-                    button: MouseButton::Left,
-                    x: seat_at.x,
-                    y: seat_at.y,
-                },
-                RawEvent::MouseUp {
-                    button: MouseButton::Left,
-                    x: seat_at.x,
-                    y: seat_at.y,
-                },
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(out, Out::Stay);
-    assert_eq!(draft.seat_choice, seat, "the clicked chair becomes human");
-
-    let out = wizard
-        .update(
-            &[
-                RawEvent::MouseDown {
-                    button: MouseButton::Left,
-                    x: start_at.x,
-                    y: start_at.y,
-                },
-                RawEvent::MouseUp {
-                    button: MouseButton::Left,
-                    x: start_at.x,
-                    y: start_at.y,
-                },
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(out, Out::Launch);
-    assert_eq!(sounds.len(), 3, "each committed click has one cue");
-}
-
-#[test]
-fn setup_touch_activation_belongs_to_its_first_finger_and_armed_cell() {
+fn a_setup_chip_commits_only_when_its_own_press_lifts_on_it() {
     crate::render::set_viewport(1280.0, 800.0);
     let (mut wizard, mut draft) = explicit_team_setup();
     let scenario = draft.scenario.as_deref().expect("picked scenario");
@@ -1365,124 +1112,33 @@ fn setup_touch_activation_belongs_to_its_first_finger_and_armed_cell() {
     let row = 1;
     let seat = order[row];
     let team = card(&layout, row).team;
-    let team_at = team.center();
     let stance_at = card(&layout, row).stance.unwrap().center();
+    let seat_at = card(&layout, row).seat.center();
+    let start_at = layout.start.unwrap().center();
     let initial = draft.seats[seat];
     let mut mouse = Vec2::ZERO;
     let mut sounds = Vec::new();
 
-    wizard
-        .update(
-            &[RawEvent::TouchDown {
-                id: 7,
-                x: team_at.x,
-                y: team_at.y,
-            }],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(
-        wizard.setup_press.armed_touch(),
-        Some((
-            7,
-            SetupZone::Card {
-                row,
-                cell: Cell::Team
-            }
-        ))
+    // Letting go over the stance never touches it.
+    assert_press_contract(
+        |events| {
+            let out = wizard
+                .update(events, &mut mouse, &mut draft, &mut sounds)
+                .expect("update");
+            let cues = std::mem::take(&mut sounds);
+            ((out, cues, draft.seats[seat].stance), mouse)
+        },
+        team.center(),
+        stance_at,
+        &(Out::Stay, Vec::new(), initial.stance),
+        &(Out::Stay, vec![(SoundKind::Click, None)], initial.stance),
     );
-    assert_eq!(mouse, team_at);
-
-    // A second finger cannot steal or resolve the first finger's press.
-    wizard
-        .update(
-            &[
-                RawEvent::TouchDown {
-                    id: 8,
-                    x: stance_at.x,
-                    y: stance_at.y,
-                },
-                RawEvent::TouchUp {
-                    id: 8,
-                    x: stance_at.x,
-                    y: stance_at.y,
-                },
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(
-        wizard.setup_press.armed_touch(),
-        Some((
-            7,
-            SetupZone::Card {
-                row,
-                cell: Cell::Team
-            }
-        ))
-    );
-    assert_eq!(mouse, team_at);
-
-    // The owner releases over another cell, so the gesture cancels.
-    wizard
-        .update(
-            &[
-                RawEvent::TouchMove {
-                    id: 7,
-                    x: stance_at.x,
-                    y: stance_at.y,
-                },
-                RawEvent::TouchUp {
-                    id: 7,
-                    x: stance_at.x,
-                    y: stance_at.y,
-                },
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(wizard.setup_press.armed_touch(), None);
-    assert_eq!(draft.seats[seat], initial);
-    assert!(sounds.is_empty());
-
-    // A fresh gesture may move within the armed cell and still commit.
-    let inside = vec2(team.x + 2.0, team.y + 2.0);
-    let out = wizard
-        .update(
-            &[
-                RawEvent::TouchDown {
-                    id: 9,
-                    x: team_at.x,
-                    y: team_at.y,
-                },
-                RawEvent::TouchMove {
-                    id: 9,
-                    x: inside.x,
-                    y: inside.y,
-                },
-                RawEvent::TouchUp {
-                    id: 9,
-                    x: inside.x,
-                    y: inside.y,
-                },
-            ],
-            &mut mouse,
-            &mut draft,
-            &mut sounds,
-        )
-        .expect("update");
-    assert_eq!(out, Out::Stay);
+    let teams = draft.seats.len() + 1;
     assert_eq!(
         draft.seats[seat].team_choice,
-        (initial.team_choice + 1) % (draft.seats.len() + 1)
+        (initial.team_choice + 3) % teams,
+        "each committed press steps the team once"
     );
-    assert_eq!(draft.seats[seat].stance, initial.stance);
     assert_eq!(
         wizard.cursor,
         SetupCursor::Seat {
@@ -1490,7 +1146,33 @@ fn setup_touch_activation_belongs_to_its_first_finger_and_armed_cell() {
             cell: Cell::Team
         }
     );
-    assert_eq!(sounds, vec![(SoundKind::Click, None)]);
+
+    // A finger may wander inside the armed chip and still commit.
+    let inside = vec2(team.x + 2.0, team.y + 2.0);
+    let wander = [
+        touch_down(1, team.center()),
+        touch_move(1, inside),
+        touch_up(1, inside),
+    ];
+    wizard
+        .update(&wander, &mut mouse, &mut draft, &mut sounds)
+        .expect("update");
+    assert_eq!(
+        draft.seats[seat].team_choice,
+        (initial.team_choice + 4) % teams
+    );
+
+    let out = wizard
+        .update(&click(seat_at), &mut mouse, &mut draft, &mut sounds)
+        .expect("update");
+    assert_eq!(out, Out::Stay);
+    assert_eq!(draft.seat_choice, seat, "the clicked chair becomes human");
+
+    let out = wizard
+        .update(&click(start_at), &mut mouse, &mut draft, &mut sounds)
+        .expect("update");
+    assert_eq!(out, Out::Launch);
+    assert_eq!(sounds.len(), 3, "each committed press has one cue");
 }
 
 #[test]

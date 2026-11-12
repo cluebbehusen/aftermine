@@ -60,13 +60,13 @@ fn skirmish_opening_matches_golden() {
 //
 // The skirmish goldens only ever exercise ground, rock, full nodes and
 // healthy machines. This scenario is built in test code, never under
-// `scenarios/`, which ships to players and is read by the hash fixtures,
-// the integrity tests and the map gates. It is driven through a scripted
-// program until the final state carries every branch of
-// `kit/src/render.rs`: every terrain, rubble, scrap full and rich and
-// worked down past half, a wreck tile, standing and half-built structures
-// of every kind, damaged machines of every kind, a laden harvester, and
-// three hostile seats in distinct colours.
+// `scenarios/`, which ships to players and is read by the integrity tests
+// and the map gates. It is driven through a scripted program until the
+// final state carries every branch of `kit/src/render.rs`: every terrain,
+// rubble, scrap full and rich and worked down past half, a wreck tile,
+// standing and half-built structures of every kind, damaged machines of
+// every kind, a laden harvester, and three hostile seats in distinct
+// colours.
 //
 // `showcase_covers_every_rendered_feature` is the readable half of the
 // contract: it names each of those, so a script that quietly stops

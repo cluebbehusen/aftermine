@@ -25,8 +25,8 @@ chassis::listed_enum! {
         /// Fast, cheap, fragile raider: a contact-range shredder that eats
         /// harvest lines and dies to anything that fights back in time.
         Scuttler,
-        /// Slow long-range artillery: outranges everything it can see,
-        /// melts to anything that reaches it.
+        /// Slow long-range artillery: outranges the line, melts to anything
+        /// that reaches it.
         Lancer,
         /// Heavy siege piece: arcing splash shells that reach beyond its own
         /// eyes — someone else must hold sight on the target.
@@ -207,8 +207,8 @@ pub struct WeaponStats {
     /// ground.
     pub targets: DomainMask,
     /// Area damage radius around the impact point. Splash hits enemy
-    /// *units* in the weapon's target domains; buildings only ever take
-    /// the direct hit.
+    /// *units* in the weapon's target domains and buried charges; other
+    /// buildings only ever take the direct hit.
     pub splash: Option<Fx>,
     /// Indirect fire arcs over terrain: the line-of-sight trace that lets
     /// rock block direct shots is skipped.
@@ -293,7 +293,7 @@ pub struct UnitStats {
     /// weapons.
     pub demolition: Option<DemolitionStats>,
     /// Room this machine occupies aboard a transport. 0 means it can
-    /// never be carried — every flyer, and the transport itself.
+    /// never be carried: every flyer, transports included, and the Maw.
     pub transport_size: u8,
     /// Total cargo room this machine offers as a carrier. 0 for
     /// everything that is not a transport.
@@ -451,8 +451,7 @@ pub enum TargetPriority {
     /// The one with the most full health, then the nearest: a gun whose one
     /// slug a light machine would mostly waste.
     Heaviest,
-    /// Buildings before machines: a breacher that strikes a machine only
-    /// when no structure is in reach.
+    /// Structures only: a breacher never picks a machine for itself.
     Buildings,
 }
 
@@ -963,8 +962,8 @@ pub struct CrashProfile {
 }
 
 impl UnitKind {
-    /// Whether a cradle assembles this kind: an experimental, of which a
-    /// player fields one at a time and which no Crucible dismantles.
+    /// Whether a cradle assembles this kind: an experimental, which no
+    /// Crucible dismantles.
     pub const fn assembled(self) -> bool {
         let mut i = 0;
         while i < BuildingKind::ALL.len() {
@@ -2086,10 +2085,10 @@ const FOUNDRY: BuildingStats = BuildingStats {
         UnitKind::Surveyor,
     ],
     weapons: &[],
+    traverse: 0,
     // The expansion base and comeback path. Its Fabricator prerequisite
     // makes a proxy Foundry a committed tech play, while its price keeps
     // expansion a credible mid-game choice.
-    traverse: 0,
     construction: ConstructionStats {
         cost: 300,
         build_ticks: 600,
@@ -2189,9 +2188,9 @@ const BASTION: BuildingStats = BuildingStats {
             speed: Fx::lit("0.30"),
         }),
     }],
+    traverse: 3,
     // Competes with the mobile Bombard by trading mobility for a durable
     // firing position rather than losing the comparison on price alone.
-    traverse: 3,
     construction: ConstructionStats {
         cost: 210,
         build_ticks: 500,
@@ -2274,10 +2273,10 @@ const CRUCIBLE: BuildingStats = BuildingStats {
         UnitKind::Piledriver,
     ],
     weapons: &[],
+    traverse: 0,
     // This gate must be affordable often enough for the late-game roster
     // to appear; stronger units do not matter when their factory is never
     // a credible purchase.
-    traverse: 0,
     construction: ConstructionStats {
         cost: 400,
         build_ticks: 550,
@@ -2416,9 +2415,9 @@ const EXTRACTOR: BuildingStats = BuildingStats {
     vision: 4,
     produces: &[],
     weapons: &[],
+    traverse: 0,
     // Cheap to restore but hard to hold: the price buys durable income on
     // map-authored ground every player can read.
-    traverse: 0,
     construction: ConstructionStats {
         cost: 100,
         build_ticks: 300,

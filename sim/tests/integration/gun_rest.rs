@@ -3,13 +3,13 @@
 use crate::common;
 
 use aftermine_sim::scenario::UnitSpec;
-use aftermine_sim::{BuildingId, BuildingKind, Command, Event, State, Target, UnitId, UnitKind};
+use aftermine_sim::{BuildingId, BuildingKind, Event, State, Target, UnitId, UnitKind};
 use chassis::compass::heading_of;
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use serde_json::{Value, json};
 
-use common::{aim_defense, building, cmd, open_arena, unit};
+use common::{aim_defense, building, building_id, cmd, open_arena, orders, unit};
 
 const WIDTH: usize = 32;
 const HEIGHT: usize = 22;
@@ -37,12 +37,7 @@ fn forge(state: &mut State, table: &str, id: &Value, edit: impl FnOnce(&mut Valu
 }
 
 fn find_defense(state: &State, kind: BuildingKind) -> BuildingId {
-    state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == kind)
-        .unwrap()
-        .id
+    building_id(state, |b| b.kind == kind)
 }
 
 /// A lone defense whose gun faces away from the map centre.
@@ -197,14 +192,7 @@ fn a_jammed_gun_holds_its_bearing() {
     let maw = state.units()[0].id;
     let gun = find_defense(&state, BuildingKind::Turret);
     let rest = heading_of(centre() - state.building(gun).unwrap().center());
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![maw],
-            target: Target::Building(gun).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([maw], Target::Building(gun)))]);
     let mut held = None;
     for _ in 0..600 {
         let report = state.tick(&[]);
@@ -255,14 +243,7 @@ fn a_turret_returns_to_the_nose_and_then_follows_the_hull() {
         );
 
         let mut turned = false;
-        state.tick(&[cmd(
-            0,
-            Command::Run {
-                units: vec![id],
-                goal: TilePos::new(2, 18),
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::run([id], TilePos::new(2, 18)))]);
         for _ in 0..40 {
             state.tick(&[]);
             let unit = state.unit(id).unwrap();

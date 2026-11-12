@@ -7,7 +7,9 @@ use aftermine_sim::{
 };
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use common::{assert_refused, cmd, open_arena, open_arena_with, run_until, unit};
+use common::{
+    assert_refused, building_id, cmd, open_arena, open_arena_with, orders, run_until, unit,
+};
 use serde_json::json;
 
 fn loaded(kind: UnitKind) -> (State, UnitId, BuildingId) {
@@ -15,12 +17,7 @@ fn loaded(kind: UnitKind) -> (State, UnitId, BuildingId) {
         .build()
         .unwrap();
     let worker = state.units()[0].id;
-    let foundry = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(0))
-        .unwrap()
-        .id;
+    let foundry = building_id(&state, |b| b.player == PlayerId(0));
     let mut data = serde_json::to_value(&state).unwrap();
     data["units"][0]["worker"]["carrying"] = json!(7);
     state = serde_json::from_value(data).unwrap();
@@ -50,10 +47,7 @@ fn return_cargo_replaces_work_and_queue_then_deposits_once_and_stays() {
         let (mut state, worker, foundry) = loaded(kind);
         state.tick(&[cmd(
             0,
-            Command::Patrol {
-                units: vec![worker],
-                waypoints: vec![TilePos::new(16, 5), TilePos::new(16, 8)],
-            },
+            orders::patrol([worker], [TilePos::new(16, 5), TilePos::new(16, 8)]),
         )]);
         assert!(!state.unit(worker).unwrap().queue.is_empty());
         let report = state.tick(&[cmd(0, delivery(worker, None, false))]);
@@ -161,17 +155,9 @@ fn return_cargo_refusals_preserve_the_existing_program_and_cargo() {
     let (mut state, worker, own) = loaded(UnitKind::Harvester);
     state.tick(&[cmd(
         0,
-        Command::Patrol {
-            units: vec![worker],
-            waypoints: vec![TilePos::new(16, 5), TilePos::new(16, 8)],
-        },
+        orders::patrol([worker], [TilePos::new(16, 5), TilePos::new(16, 8)]),
     )]);
-    let foreign = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(1))
-        .unwrap()
-        .id;
+    let foreign = building_id(&state, |b| b.player == PlayerId(1));
     for (command, reason) in [
         (
             delivery(worker, Some(foreign), false),
@@ -206,18 +192,8 @@ fn return_cargo_skips_a_sealed_near_foundry_and_honors_explicit_destinations() {
         .push(common::building(0, BuildingKind::Foundry, 16, 4));
     let state = scenario.build().unwrap();
     let worker = state.units()[0].id;
-    let near = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == TilePos::new(1, 1))
-        .unwrap()
-        .id;
-    let far = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == TilePos::new(16, 4))
-        .unwrap()
-        .id;
+    let near = building_id(&state, |b| b.anchor == TilePos::new(1, 1));
+    let far = building_id(&state, |b| b.anchor == TilePos::new(16, 4));
     let mut data = serde_json::to_value(&state).unwrap();
     data["units"][0]["worker"]["carrying"] = json!(5);
     let mut state: State = serde_json::from_value(data).unwrap();
@@ -261,31 +237,6 @@ fn return_cargo_retains_the_load_when_its_foundry_disappears() {
 }
 
 #[test]
-fn return_cargo_rejects_forged_worker_and_target_references() {
-    let (state, worker, foundry) = loaded(UnitKind::Harvester);
-    let base = serde_json::to_value(&state).unwrap();
-    for queued in [false, true] {
-        for target in [foundry, BuildingId(u32::MAX)] {
-            let mut data = base.clone();
-            let order = json!({"order": "return_cargo", "foundry": target, "repair": true});
-            if queued {
-                data["units"][0]["queue"] = json!([order]);
-            } else {
-                data["units"][0]["order"] = order;
-            }
-            if target == foundry {
-                data["units"][0]["kind"] = json!("sentinel");
-                data["units"][0]["worker"]["carrying"] = json!(0);
-            }
-            assert!(
-                serde_json::from_value::<State>(data).is_err(),
-                "accepted forged delivery for {worker:?}"
-            );
-        }
-    }
-}
-
-#[test]
 fn return_cargo_cancels_a_partial_harvest_and_can_be_overridden_by_move() {
     let mut state = open_arena_with(24, 16, vec![unit(0, UnitKind::Harvester, 10, 5)], |rows| {
         rows[5][11] = 's';
@@ -295,14 +246,7 @@ fn return_cargo_cancels_a_partial_harvest_and_can_be_overridden_by_move() {
     let worker = state.units()[0].id;
     accepted(
         &state
-            .tick(&[cmd(
-                0,
-                Command::Harvest {
-                    units: vec![worker],
-                    node: TilePos::new(11, 5),
-                    queue: false,
-                },
-            )])
+            .tick(&[cmd(0, orders::harvest([worker], TilePos::new(11, 5)))])
             .events,
     );
     run_until(&mut state, 100, |s, _| {
@@ -312,14 +256,7 @@ fn return_cargo_cancels_a_partial_harvest_and_can_be_overridden_by_move() {
     let returning: State = serde_json::from_value(serde_json::to_value(&state).unwrap()).unwrap();
     accepted(
         &state
-            .tick(&[cmd(
-                0,
-                Command::Run {
-                    units: vec![worker],
-                    goal: TilePos::new(17, 8),
-                    queue: false,
-                },
-            )])
+            .tick(&[cmd(0, orders::run([worker], TilePos::new(17, 8)))])
             .events,
     );
     run_until(&mut state, 500, |s, _| {
@@ -343,12 +280,7 @@ fn return_cargo_honors_a_far_explicit_foundry_and_saturates_the_bank() {
         .buildings
         .push(common::building(0, BuildingKind::Foundry, 16, 4));
     let state = scenario.build().unwrap();
-    let far = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == TilePos::new(16, 4))
-        .unwrap()
-        .id;
+    let far = building_id(&state, |b| b.anchor == TilePos::new(16, 4));
     let worker = state.units()[0].id;
     let mut data = serde_json::to_value(&state).unwrap();
     data["units"][0]["worker"]["carrying"] = json!(5);

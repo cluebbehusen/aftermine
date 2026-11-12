@@ -7,15 +7,10 @@ use aftermine_sim::{BuildingId, BuildingKind, Event, State, Target, UnitKind};
 use chassis::compass::heading_of;
 use chassis::fx::Vec2Fx;
 
-use common::{aim_defense, building, open_arena, unit};
+use common::{aim_defense, building, building_id, open_arena, unit};
 
 fn defense(state: &State, kind: BuildingKind) -> BuildingId {
-    state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == kind)
-        .unwrap()
-        .id
+    building_id(state, |b| b.kind == kind)
 }
 
 fn bearing(state: &State, id: BuildingId) -> u8 {

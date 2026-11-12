@@ -1,4 +1,5 @@
 //! Local building interaction preserves tile routing and permits a bounded final approach.
+use crate::common::{CommandExt, building_id, orders};
 use aftermine_sim::{Command, Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitKind};
 use chassis::{fx::Fx, grid::TilePos};
 use serde_json::json;
@@ -27,11 +28,7 @@ fn melee_reaches_the_inset_and_can_leave_it() {
     let mut hit = false;
     for tick in 0..160 {
         let report = state.tick(&if tick == 0 {
-            vec![command(Command::Attack {
-                units: vec![id],
-                target: Target::Building(building).into(),
-                queue: false,
-            })]
+            vec![command(orders::attack([id], Target::Building(building)))]
         } else {
             vec![]
         });
@@ -57,11 +54,7 @@ fn melee_reaches_the_inset_and_can_leave_it() {
         }
     }
     assert!(hit, "never reached building");
-    state.tick(&[command(Command::Run {
-        units: vec![id],
-        goal: TilePos::new(11, 5),
-        queue: false,
-    })]);
+    state.tick(&[command(orders::run([id], TilePos::new(11, 5)))]);
     for _ in 0..160 {
         state.tick(&[]);
         if state
@@ -104,11 +97,7 @@ fn worker_repairs_at_the_surface_then_obeys_a_new_move() {
         let mut data = serde_json::to_value(&state).unwrap();
         data["buildings"][0]["hp"] = json!(100);
         let mut state: State = serde_json::from_value(data).unwrap();
-        state.tick(&[command(Command::Repair {
-            units: vec![id],
-            building,
-            queue: false,
-        })]);
+        state.tick(&[command(orders::repair([id], building))]);
         let mut repaired = false;
         for _ in 0..250 {
             state.tick(&[]);
@@ -118,11 +107,7 @@ fn worker_repairs_at_the_surface_then_obeys_a_new_move() {
             }
         }
         assert!(repaired, "{kind:?} failed to repair: {:?}", state.unit(id));
-        state.tick(&[command(Command::Run {
-            units: vec![id],
-            goal: TilePos::new(16, 10),
-            queue: false,
-        })]);
+        state.tick(&[command(orders::run([id], TilePos::new(16, 10)))]);
         for _ in 0..250 {
             state.tick(&[]);
         }
@@ -149,11 +134,7 @@ fn rectangular_building_wall_still_blocks_ordinary_travel() {
     })).unwrap();
     let mut state = scenario.build().unwrap();
     let id = state.units()[0].id;
-    state.tick(&[command(Command::Run {
-        units: vec![id],
-        goal: TilePos::new(18, 7),
-        queue: false,
-    })]);
+    state.tick(&[command(orders::run([id], TilePos::new(18, 7)))]);
     for _ in 0..350 {
         state.tick(&[]);
         assert!(state.unit(id).unwrap().pos.x < Fx::from_num(12));
@@ -186,26 +167,14 @@ fn unusable_building_stances_stall_once_and_obey_order_failure_policy() {
         data["buildings"][0]["hp"] = json!(100);
         let mut state: State = serde_json::from_value(data).unwrap();
         let order = if own_building {
-            Command::Repair {
-                units: vec![id],
-                building,
-                queue: false,
-            }
+            orders::repair([id], building)
         } else {
-            Command::Attack {
-                units: vec![id],
-                target: Target::Building(building).into(),
-                queue: false,
-            }
+            orders::attack([id], Target::Building(building))
         };
         let mut events = state
             .tick(&[
                 command(order),
-                command(Command::Run {
-                    units: vec![id],
-                    goal: TilePos::new(4, 3),
-                    queue: true,
-                }),
+                command(orders::run([id], TilePos::new(4, 3)).queued()),
             ])
             .events;
         for _ in 0..10 {
@@ -255,19 +224,12 @@ fn builders_reach_a_stance_past_a_neighboring_footprint_corner() {
         .unwrap();
         let mut state = scenario.build().unwrap();
         let id = state.units()[0].id;
-        state.tick(&[command(Command::Build {
-            units: vec![id],
-            kind: aftermine_sim::BuildingKind::Turret,
-            anchor: TilePos::new(20, 16),
-            queue: false,
-            defer: false,
-        })]);
-        let site = state
-            .buildings()
-            .iter()
-            .find(|b| b.anchor == TilePos::new(20, 16))
-            .expect("site placed")
-            .id;
+        state.tick(&[command(orders::build(
+            [id],
+            aftermine_sim::BuildingKind::Turret,
+            TilePos::new(20, 16),
+        ))]);
+        let site = building_id(&state, |b| b.anchor == TilePos::new(20, 16));
         let mut started = false;
         for _ in 0..300 {
             state.tick(&[]);
@@ -308,13 +270,7 @@ fn paid_site(
     .unwrap();
     let mut state = scenario.build().unwrap();
     let id = state.units()[0].id;
-    let report = state.tick(&[command(Command::Build {
-        units: vec![id],
-        kind,
-        anchor,
-        queue: false,
-        defer: false,
-    })]);
+    let report = state.tick(&[command(orders::build([id], kind, anchor))]);
     let site = state
         .buildings()
         .iter()
@@ -567,11 +523,7 @@ fn a_welder_whose_building_begins_an_upgrade_stands_down_and_can_leave() {
     let mut data = serde_json::to_value(&state).unwrap();
     data["buildings"][0]["hp"] = json!(100);
     let mut state: State = serde_json::from_value(data).unwrap();
-    state.tick(&[command(Command::Repair {
-        units: vec![id],
-        building,
-        queue: false,
-    })]);
+    state.tick(&[command(orders::repair([id], building))]);
     for _ in 0..250 {
         state.tick(&[]);
         if state.building(building).unwrap().hp > 100 {
@@ -604,11 +556,7 @@ fn a_welder_whose_building_begins_an_upgrade_stands_down_and_can_leave() {
         state.unit(id)
     );
     let goal = TilePos::new(16, 6);
-    state.tick(&[command(Command::Run {
-        units: vec![id],
-        goal,
-        queue: false,
-    })]);
+    state.tick(&[command(orders::run([id], goal))]);
     for _ in 0..250 {
         state.tick(&[]);
     }

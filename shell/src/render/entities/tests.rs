@@ -1,5 +1,7 @@
 use super::*;
 use crate::game::Game;
+use crate::tests::support::{own_building, own_unit, sandbox};
+use aftermine_sim::{BuildingKind, UnitKind};
 
 impl BuildingRangeShape {
     fn outer_bounds(self) -> (Vec2, Vec2) {
@@ -383,13 +385,7 @@ fn flakhound_and_sentinel_use_consistent_colors_and_marks_for_each_target_domain
         aftermine_sim::UnitKind::Flakhound,
         aftermine_sim::UnitKind::Sentinel,
     ] {
-        let id = game
-            .state
-            .units()
-            .iter()
-            .find(|unit| unit.kind == kind)
-            .unwrap()
-            .id;
+        let id = own_unit(&game, kind);
         game.presentation.selection.set_units(vec![id]);
         let mut indicators = Vec::new();
         visit_active_ranges(&game.view(), &InputState::new(), |indicator| {
@@ -973,14 +969,6 @@ fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
     }))
     .unwrap();
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).unwrap();
-    let id = |game: &Game, kind: aftermine_sim::UnitKind| {
-        game.state
-            .units()
-            .iter()
-            .find(|unit| unit.kind == kind)
-            .unwrap()
-            .id
-    };
     let radar_rings = |game: &Game| {
         let mut radii = Vec::new();
         visit_active_ranges(&game.view(), &InputState::new(), |indicator| {
@@ -993,8 +981,8 @@ fn a_selected_scout_shows_its_radar_ring_only_while_the_radar_is_up() {
         radii
     };
     let (kestrel, surveyor) = (
-        id(&game, aftermine_sim::UnitKind::Kestrel),
-        id(&game, aftermine_sim::UnitKind::Surveyor),
+        own_unit(&game, aftermine_sim::UnitKind::Kestrel),
+        own_unit(&game, aftermine_sim::UnitKind::Surveyor),
     );
     game.presentation.selection.set_units(vec![kestrel]);
     assert_eq!(radar_rings(&game), [14.0]);
@@ -1058,19 +1046,13 @@ fn a_selected_mantle_shows_its_intercept_reach_from_its_centre() {
 
 #[test]
 fn only_a_seat_under_fog_draws_radar_blips() {
-    let scenario = aftermine_sim::Scenario::from_json(
-        &serde_json::json!({
-            "name": "Radar blips", "mode": "sandbox", "map": vec![".............................."; 22],
-            "players": [
-                {"name": "Seat", "scrap": 0, "bot": false},
-                {"name": "Rival", "scrap": 0, "bot": false},
-            ],
-            "buildings": [{"player": 0, "kind": "array", "x": 3, "y": 8}],
-            "units": [{"player": 1, "kind": "harvester", "x": 20, "y": 8}],
-        })
-        .to_string(),
-    )
-    .expect("radar fixture parses");
+    let scenario = sandbox(
+        30,
+        22,
+        2,
+        &[(1, UnitKind::Harvester, 20, 8)],
+        &[(0, BuildingKind::Array, 3, 8)],
+    );
     let mut game =
         Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("radar fixture builds");
     assert_eq!(
@@ -1158,15 +1140,7 @@ fn repair_tethers_follow_each_own_bays_patient_choice() {
         }
     }
     game.replace_state_after_jump(&serde_json::from_value(value).unwrap());
-    let own = game
-        .state
-        .buildings()
-        .iter()
-        .find(|b| {
-            b.player == game.presentation.human && b.kind == aftermine_sim::BuildingKind::RepairBay
-        })
-        .unwrap()
-        .id;
+    let own = own_building(&game, BuildingKind::RepairBay);
 
     let tethers = repair_tethers(&game.view());
     assert!(

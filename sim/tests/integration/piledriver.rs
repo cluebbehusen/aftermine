@@ -3,7 +3,7 @@
 
 use crate::common;
 
-use aftermine_sim::{Command, Event, Order, PlayerId, State, Target, UnitId, UnitKind};
+use aftermine_sim::{Event, Order, PlayerId, State, Target, UnitId, UnitKind};
 use chassis::grid::TilePos;
 
 use common::*;
@@ -79,14 +79,7 @@ fn a_piledriver_braces_before_its_slug_and_never_fires_on_the_move() {
     );
     assert_eq!(state.unit(breaker).unwrap().hp, max - slug);
     // Ordered to move, it stows and fires nothing until it stops.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![gun],
-            goal: TilePos::new(5, 9),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([gun], TilePos::new(5, 9)))]);
     let hp = state.unit(breaker).unwrap().hp;
     let origin = state.unit(gun).unwrap().pos;
     let mut retractions = 0;
@@ -130,14 +123,7 @@ fn planted() -> (State, UnitId, UnitId) {
 }
 
 fn run_to(state: &mut State, unit: UnitId, x: i32, y: i32) {
-    state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![unit],
-            goal: TilePos::new(x, y),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::run([unit], TilePos::new(x, y)))]);
 }
 
 #[test]
@@ -191,14 +177,7 @@ fn a_planted_gun_given_another_order_folds_and_swings_home() {
         s.unit(breaker).unwrap().hp < max - slug
     });
     assert_ne!(state.unit(gun).unwrap().gun_traverse(), 0, "staged swung");
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![gun],
-            goal: TilePos::new(2, 5),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([gun], TilePos::new(2, 5)))]);
     run_until(&mut state, 200, |s, _| s.unit(gun).unwrap().braces() == 0);
     let unit = state.unit(gun).unwrap();
     assert_eq!(unit.gun_traverse(), 0);

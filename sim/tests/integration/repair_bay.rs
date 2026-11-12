@@ -6,13 +6,13 @@
 //! winning the tick.
 
 use crate::common;
-use common::{cmd, run_until, unit};
+use common::{CommandExt, cmd, orders, run_until, unit, unit_id};
 
 use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
 use aftermine_sim::stats::FOUNDRY_RECOVERY_RESERVE;
 use aftermine_sim::{
-    BuildingId, BuildingKind, Command, Event, PlayerCommand, PlayerId, Scenario, State, Target,
-    UnitId, UnitKind,
+    BuildingId, BuildingKind, Event, PlayerCommand, PlayerId, Scenario, State, Target, UnitId,
+    UnitKind,
 };
 use chassis::grid::TilePos;
 
@@ -82,14 +82,7 @@ fn arena(units: Vec<UnitSpec>, scrap: u32, bay: bool) -> Scenario {
 use common::building as structure;
 
 fn walk(player: u8, units: Vec<UnitId>, goal: TilePos) -> PlayerCommand {
-    cmd(
-        player,
-        Command::Run {
-            units,
-            goal,
-            queue: false,
-        },
-    )
+    cmd(player, orders::run(units, goal))
 }
 
 /// Walks the raider beside the patient at FAR, lets auto-acquire gnaw to
@@ -618,25 +611,18 @@ fn an_unbuilt_bay_is_inert() {
     // Begin work before abandoning the bay so its inert scaffold remains.
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![founder],
-            kind: BuildingKind::RepairBay,
-            anchor: TilePos::new(BAY_ANCHOR.0, BAY_ANCHOR.1),
-            queue: false,
-            defer: false,
-        },
+        orders::build(
+            [founder],
+            BuildingKind::RepairBay,
+            TilePos::new(BAY_ANCHOR.0, BAY_ANCHOR.1),
+        ),
     )]);
     run_until(&mut state, 500, |s, _| {
         s.buildings().iter().any(|b| {
             b.kind == BuildingKind::RepairBay && b.construction_progress().unwrap_or(0) > 0
         })
     });
-    state.tick(&[cmd(
-        0,
-        Command::Stop {
-            units: vec![founder],
-        },
-    )]);
+    state.tick(&[cmd(0, orders::stop([founder]))]);
     assert!(
         state
             .buildings()
@@ -845,14 +831,7 @@ fn the_aura_does_not_fight_an_active_salvage_job() {
     let (mut state, worker, patient, hurt) = wounded_salvage_patient(TilePos::new(8, 4));
     let bank = state.player(PlayerId(0)).scrap;
     let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Salvage {
-                units: vec![worker],
-                building: patient,
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::salvage([worker], patient))])
         .events;
 
     assert!(matches!(
@@ -886,14 +865,7 @@ fn the_aura_respects_a_queued_salvage_commitment() {
     let bank = state.player(PlayerId(0)).scrap;
     let report = state.tick(&[
         walk(0, vec![worker], TilePos::new(2, 9)),
-        cmd(
-            0,
-            Command::Salvage {
-                units: vec![worker],
-                building: patient,
-                queue: true,
-            },
-        ),
+        cmd(0, orders::salvage([worker], patient).queued()),
     ]);
 
     assert!(matches!(
@@ -1024,12 +996,7 @@ fn lethal_fire_wins_a_structure_repair_pulse_and_forfeits_its_coin() {
         TilePos::new(9, 4),
         PlayerId(0),
     );
-    let attacker = state
-        .units()
-        .iter()
-        .find(|unit| unit.player == PlayerId(1))
-        .unwrap()
-        .id;
+    let attacker = unit_id(&state, |unit| unit.player == PlayerId(1));
     let damage = UnitKind::Sentinel.stats().weapons[0].damage;
     let hurt = (1..=damage)
         .find(|hp| building_aura_bill(BuildingKind::Turret, 0, *hp, *hp + 1) == 1)
@@ -1040,11 +1007,7 @@ fn lethal_fire_wins_a_structure_repair_pulse_and_forfeits_its_coin() {
     common::face_target(&mut state, attacker, Target::Building(patient));
     let report = state.tick(&[cmd(
         1,
-        Command::Attack {
-            units: vec![attacker],
-            target: Target::Building(patient).into(),
-            queue: false,
-        },
+        orders::attack([attacker], Target::Building(patient)),
     )]);
     assert!(
         state.building(patient).is_none(),

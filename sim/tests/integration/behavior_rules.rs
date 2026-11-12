@@ -6,7 +6,7 @@ use aftermine_sim::scenario::ScenarioMode;
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::PlayerSpec;
 use aftermine_sim::{
-    BuildingId, Command, Event, GameResult, Order, PlayerId, Scenario, Target, UnitId, UnitKind,
+    BuildingId, Event, GameResult, Order, PlayerId, Scenario, Target, UnitId, UnitKind,
 };
 use chassis::grid::TilePos;
 
@@ -31,40 +31,19 @@ fn fog_reveals_persists_and_gates_attacks() {
     );
 
     // Attacking through fog is rejected outright.
-    let report = state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![scout],
-            target: Target::Unit(quarry).into(),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::attack([scout], Target::Unit(quarry)))]);
     assert!(report.events.contains(&Event::CommandRejected {
         player: PlayerId(0),
         reason: RejectReason::InvalidTarget,
     }));
 
     // Scouting toward it brings it into view…
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(9, 3),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(9, 3)))]);
     run_until(&mut state, 300, |s, _| s.can_see(PlayerId(0), quarry_tile));
 
     // …and walking home drops visibility but keeps the exploration.
     let home = TilePos::new(2, 6);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: home,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], home))]);
     run_until(&mut state, 400, |s, _| {
         s.unit(scout).unwrap().tile() == home
     });
@@ -120,14 +99,7 @@ fn ghost_memory_survives_unseen_demolition_until_revisited() {
     let me = PlayerId(0);
 
     // Scout down to see p1's Foundry (harvester vision 6).
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(9, 5),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(9, 5)))]);
     run_until(&mut state, 300, |s, _| {
         s.vision(me)
             .ghosts()
@@ -136,14 +108,7 @@ fn ghost_memory_survives_unseen_demolition_until_revisited() {
     });
 
     // Walk home, out of sight of that corner.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(4, 2),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(4, 2)))]);
     run_until(&mut state, 300, |s, _| {
         s.unit(scout).unwrap().tile() == TilePos::new(4, 2)
     });
@@ -162,14 +127,7 @@ fn ghost_memory_survives_unseen_demolition_until_revisited() {
     );
 
     // Revisit: seeing the empty ground erases the memory.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(9, 5),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(9, 5)))]);
     run_until(&mut state, 300, |s, _| {
         !s.vision(me)
             .ghosts()
@@ -193,40 +151,19 @@ fn remembered_scrap_freezes_when_sight_is_lost() {
     let me = PlayerId(0);
     let full = aftermine_sim::stats::SCRAP_NODE_AMOUNT;
 
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(9, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(9, 4)))]);
     run_until(&mut state, 300, |s, _| {
         s.vision(me).remembered_scrap(node) == full
     });
 
     let home = TilePos::new(4, 2);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: home,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], home))]);
     run_until(&mut state, 300, |s, _| {
         s.unit(scout).unwrap().tile() == home && !s.can_see(me, node)
     });
 
     // Unseen mining: live amount drops, p0's memory doesn't.
-    state.tick(&[cmd(
-        1,
-        Command::Harvest {
-            units: vec![miner],
-            node,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::harvest([miner], node))]);
     run_until(&mut state, 600, |s, _| s.map().scrap_at(node) < full - 4);
     assert_eq!(
         state.vision(me).remembered_scrap(node),
@@ -235,14 +172,7 @@ fn remembered_scrap_freezes_when_sight_is_lost() {
     );
 
     // Re-scouting reconciles memory with reality.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(9, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], TilePos::new(9, 4)))]);
     run_until(&mut state, 300, |s, _| {
         s.can_see(me, node) && s.vision(me).remembered_scrap(node) == s.map().scrap_at(node)
     });
@@ -265,25 +195,10 @@ fn hostile_coordinates_are_rejected_not_panicked() {
         TilePos::new(i32::MAX, i32::MAX),
     ] {
         for command in [
-            Command::Run {
-                units: vec![u],
-                goal,
-                queue: false,
-            },
-            Command::Hunt {
-                units: vec![u],
-                goal,
-                queue: false,
-            },
-            Command::Harvest {
-                units: vec![u],
-                node: goal,
-                queue: false,
-            },
-            Command::SetRally {
-                building: foundry,
-                rally: Some(aftermine_sim::Rally::Tile(goal)),
-            },
+            orders::run([u], goal),
+            orders::hunt([u], goal),
+            orders::harvest([u], goal),
+            orders::set_rally(foundry, Some(aftermine_sim::Rally::Tile(goal))),
         ] {
             let report = state.tick(&[cmd(0, command)]);
             assert!(
@@ -340,14 +255,7 @@ fn eliminated_players_cannot_command_survivors() {
         !s.buildings().iter().any(|b| b.player == PlayerId(1))
     });
     assert!(state.result().is_none(), "two players remain — play on");
-    let report = state.tick(&[cmd(
-        1,
-        Command::Run {
-            units: vec![survivor],
-            goal: TilePos::new(5, 5),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(1, orders::run([survivor], TilePos::new(5, 5)))]);
     assert!(report.events.contains(&Event::CommandRejected {
         player: PlayerId(1),
         reason: RejectReason::Eliminated,
@@ -360,14 +268,7 @@ fn commanding_enemy_units_is_rejected() {
         .build()
         .unwrap();
     let enemy_unit = state.units()[0].id;
-    let report = state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![enemy_unit],
-            goal: TilePos::new(2, 2),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::run([enemy_unit], TilePos::new(2, 2)))]);
     assert!(report.events.contains(&Event::CommandRejected {
         player: PlayerId(0),
         reason: RejectReason::NoValidUnits,
@@ -385,20 +286,8 @@ fn destroying_the_last_foundry_wins_and_freezes() {
     .build()
     .unwrap();
     let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
-    let enemy_foundry: BuildingId = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(1))
-        .unwrap()
-        .id;
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: ids,
-            target: Target::Building(enemy_foundry).into(),
-            queue: false,
-        },
-    )]);
+    let enemy_foundry: BuildingId = building_id(&state, |b| b.player == PlayerId(1));
+    state.tick(&[cmd(0, orders::attack(ids, Target::Building(enemy_foundry)))]);
     // 800 hp / 30 dps → ~27 s ≈ 540 ticks, plus approach.
     let events = run_until(&mut state, 2_000, |s, _| s.result().is_some());
     assert_eq!(state.result(), Some(GameResult::Victory { team: 0 }));
@@ -433,18 +322,12 @@ fn rally_on_unexplored_scrap_does_not_probe_the_map() {
     state.tick(&[
         cmd(
             0,
-            Command::SetRally {
-                building: foundry,
-                rally: Some(aftermine_sim::Rally::Tile(TilePos::new(11, 4))),
-            },
+            orders::set_rally(
+                foundry,
+                Some(aftermine_sim::Rally::Tile(TilePos::new(11, 4))),
+            ),
         ),
-        cmd(
-            0,
-            Command::Train {
-                building: foundry,
-                kind: UnitKind::Harvester,
-            },
-        ),
+        cmd(0, orders::train(foundry, UnitKind::Harvester)),
     ]);
     let events = run_until(&mut state, 200, |_, events| {
         events
@@ -480,22 +363,8 @@ fn rally_trusts_remembered_scrap_even_when_it_is_stale() {
     assert!(state.vision(PlayerId(0)).remembered_scrap(node) > 0);
     // Scout retreats out of sight; the enemy strips the node bare.
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![scout],
-                goal: TilePos::new(2, 3),
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Harvest {
-                units: vec![miner],
-                node,
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([scout], TilePos::new(2, 3))),
+        cmd(1, orders::harvest([miner], node)),
     ]);
     run_until(&mut state, 12_000, |s, _| s.map().scrap_at(node) == 0);
     assert!(
@@ -507,18 +376,9 @@ fn rally_trusts_remembered_scrap_even_when_it_is_stale() {
     state.tick(&[
         cmd(
             0,
-            Command::SetRally {
-                building: foundry,
-                rally: Some(aftermine_sim::Rally::Tile(node)),
-            },
+            orders::set_rally(foundry, Some(aftermine_sim::Rally::Tile(node))),
         ),
-        cmd(
-            0,
-            Command::Train {
-                building: foundry,
-                kind: UnitKind::Harvester,
-            },
-        ),
+        cmd(0, orders::train(foundry, UnitKind::Harvester)),
     ]);
     let events = run_until(&mut state, 200, |_, events| {
         events.iter().any(|e| {
@@ -573,13 +433,7 @@ fn losing_the_last_foundry_ends_the_match_despite_other_buildings() {
     let anchor = TilePos::new(12, 1);
     state.tick(&[cmd(
         1,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, anchor),
     )]);
     run_until(&mut state, 700, |s, _| {
         s.buildings()
@@ -600,14 +454,7 @@ fn losing_the_last_foundry_ends_the_match_despite_other_buildings() {
         .filter(|b| b.kind == aftermine_sim::BuildingKind::Foundry)
         .unwrap()
         .id;
-    state.tick(&[cmd(
-        0,
-        Command::Hunt {
-            units: attackers,
-            goal: TilePos::new(13, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::hunt(attackers, TilePos::new(13, 6)))]);
     run_until(&mut state, 4000, |s, _| s.building(foundry).is_none());
     assert_eq!(
         state.result(),
@@ -668,16 +515,7 @@ fn a_remembered_building_keeps_the_tier_it_was_last_seen_at() {
     state.tick(&[]);
     assert_eq!(remembered(&state), (Some(1), Some((true, 1))));
 
-    let fly = |goal| {
-        cmd(
-            0,
-            Command::Run {
-                units: vec![scout],
-                goal,
-                queue: false,
-            },
-        )
-    };
+    let fly = |goal| cmd(0, orders::run([scout], goal));
     state.tick(&[fly(TilePos::new(5, 5))]);
     run_until(&mut state, 400, |state, _| !state.can_see(me, anchor));
     assert_eq!(
