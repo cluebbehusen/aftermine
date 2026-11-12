@@ -17,7 +17,7 @@ use crate::screens::settings::SettingsScreen;
 use crate::screens::shelf::Shelf;
 use crate::screens::waiting::WaitingScreen;
 use crate::screens::wizard::Wizard;
-use crate::text_field::Keyboard;
+use crate::text_field::Form;
 
 /// Which screen owns input this frame, holding that screen's state.
 /// Match choices live in the [`crate::screens::wizard::NewMatchDraft`] on
@@ -770,34 +770,13 @@ impl Screen {
         }
     }
 
-    /// The keyboard a text field on screen asks for: the save-name field,
-    /// the player-name field, or the Join form.
-    pub(super) fn keyboard(&self) -> Option<Keyboard> {
+    /// The text form on screen, which takes typed input and the system
+    /// keyboard while it is up.
+    pub(super) fn form(&mut self) -> Option<&mut Form> {
         match self {
-            Self::Pause(pause) => pause.keyboard(),
-            Self::Lobby { screen, .. } => screen.keyboard(),
-            Self::Settings { screen, .. } => screen.keyboard(),
-            Self::ColdOpen(_)
-            | Self::Home(_)
-            | Self::Wizard(_)
-            | Self::Codex { .. }
-            | Self::Lessons { .. }
-            | Self::Playing
-            | Self::Playback { .. }
-            | Self::Replays(_)
-            | Self::Results(_)
-            | Self::FinalMap(_)
-            | Self::Waiting(_)
-            | Self::Busy(_) => None,
-        }
-    }
-
-    /// The text the on-screen keyboard should show for the field on screen.
-    pub(super) fn keyboard_text(&self) -> Option<&str> {
-        match self {
-            Self::Pause(pause) => pause.keyboard_text(),
-            Self::Lobby { screen, .. } => screen.keyboard_text(),
-            Self::Settings { screen, .. } => screen.keyboard_text(),
+            Self::Pause(pause) => pause.form(),
+            Self::Lobby { screen, .. } => screen.form(),
+            Self::Settings { screen, .. } => screen.form(),
             Self::ColdOpen(_)
             | Self::Home(_)
             | Self::Wizard(_)
@@ -814,30 +793,8 @@ impl Screen {
     }
 
     /// Whether a text field owns input.
-    pub(super) fn text_entry(&self) -> bool {
-        self.keyboard().is_some()
-    }
-
-    /// Whether the text field on screen asked to bring back the on-screen
-    /// keyboard this frame.
-    pub(super) fn take_keyboard_request(&mut self) -> bool {
-        match self {
-            Self::Pause(pause) => pause.take_keyboard_request(),
-            Self::Lobby { screen, .. } => screen.take_keyboard_request(),
-            Self::Settings { screen, .. } => screen.take_keyboard_request(),
-            Self::ColdOpen(_)
-            | Self::Home(_)
-            | Self::Wizard(_)
-            | Self::Codex { .. }
-            | Self::Lessons { .. }
-            | Self::Playing
-            | Self::Playback { .. }
-            | Self::Replays(_)
-            | Self::Results(_)
-            | Self::FinalMap(_)
-            | Self::Waiting(_)
-            | Self::Busy(_) => false,
-        }
+    pub(super) fn text_entry(&mut self) -> bool {
+        self.form().is_some()
     }
 
     /// The diagnostics' coarse name for the screen.

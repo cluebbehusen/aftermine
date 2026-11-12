@@ -597,8 +597,11 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         // which follows the focused text field: every way out of a field
         // hides it, its layout follows the field's kind, and a tap on a
         // field brings back one the player dismissed.
-        let refocus = screen.take_keyboard_request();
-        let wanted = screen.keyboard();
+        let mut form = screen.form();
+        let refocus = form
+            .as_deref_mut()
+            .is_some_and(crate::text_field::Form::take_keyboard_request);
+        let wanted = form.as_deref().map(crate::text_field::Form::keyboard);
         if !crate::platform::PLATFORM.desktop() {
             if let Some(kind) = wanted
                 && wanted != app.soft_keyboard
@@ -606,7 +609,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
                 macroquad::miniquad::window::set_keyboard_type(kind.native());
             }
             if crate::platform::PLATFORM == crate::platform::Platform::Tv
-                && let Some(text) = screen.keyboard_text()
+                && let Some(text) = form.as_deref().map(crate::text_field::Form::keyboard_text)
                 && crate::text_field::keyboard_text_is_stale(app.keyboard_text.as_deref(), text)
             {
                 macroquad::miniquad::window::set_keyboard_text(text);

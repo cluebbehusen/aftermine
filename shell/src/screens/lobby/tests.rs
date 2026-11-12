@@ -39,10 +39,16 @@ fn a_new_player_types_a_name_then_an_address_and_joins_on_the_default_port() {
     crate::render::set_viewport(1280.0, 800.0);
     let mut screen = LobbyScreen::join("", "");
     assert_eq!(screen.mode_name(), "join_match");
-    assert_eq!(screen.keyboard(), Some(Keyboard::Text));
+    assert_eq!(
+        screen.form().map(|form| form.keyboard()),
+        Some(Keyboard::Text)
+    );
     feed(&mut screen, &typed("Alex Q. 1/2"));
     assert_eq!(press(&mut screen, Key::Enter), Out::Stay, "Enter moves on");
-    assert_eq!(screen.keyboard(), Some(Keyboard::Address));
+    assert_eq!(
+        screen.form().map(|form| form.keyboard()),
+        Some(Keyboard::Address)
+    );
     feed(&mut screen, &typed("10.0.0.2 @"));
     assert_eq!(
         screen.menu.view().items,
@@ -60,7 +66,10 @@ fn a_new_player_types_a_name_then_an_address_and_joins_on_the_default_port() {
 fn a_returning_player_starts_on_the_address_and_bad_input_says_why() {
     crate::render::set_viewport(1280.0, 800.0);
     let mut screen = LobbyScreen::join("Connor", "192.168.1");
-    assert_eq!(screen.keyboard(), Some(Keyboard::Address));
+    assert_eq!(
+        screen.form().map(|form| form.keyboard()),
+        Some(Keyboard::Address)
+    );
     assert_eq!(press(&mut screen, Key::Enter), Out::Stay);
     let Face::Join { form, .. } = &screen.face else {
         panic!("the form stays up");
@@ -73,7 +82,7 @@ fn a_returning_player_starts_on_the_address_and_bad_input_says_why() {
 
     let mut screen = LobbyScreen::join("   ", "connor-mbp:5000");
     assert_eq!(
-        screen.keyboard(),
+        screen.form().map(|form| form.keyboard()),
         Some(Keyboard::Text),
         "a blank name needs typing"
     );
@@ -84,7 +93,7 @@ fn a_returning_player_starts_on_the_address_and_bad_input_says_why() {
         "the name is still blank"
     );
     assert_eq!(
-        screen.keyboard(),
+        screen.form().map(|form| form.keyboard()),
         Some(Keyboard::Text),
         "and takes focus back"
     );
@@ -117,7 +126,7 @@ fn a_failed_join_returns_to_the_form_with_the_reason_and_both_values() {
     crate::render::set_viewport(1280.0, 800.0);
     let unreachable = "127.0.0.1:1";
     let mut screen = connecting(unreachable);
-    assert_eq!(screen.keyboard(), None);
+    assert_eq!(screen.form().map(|form| form.keyboard()), None);
     assert_eq!(screen.mode_name(), "lobby");
     assert!(screen.subtitle().starts_with("Connecting to"));
     assert!(
@@ -131,7 +140,7 @@ fn a_failed_join_returns_to_the_form_with_the_reason_and_both_values() {
     );
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while screen.keyboard().is_none() {
+    while screen.form().is_none() {
         assert!(
             std::time::Instant::now() < deadline,
             "the connect never failed"
@@ -202,9 +211,12 @@ fn back_leaves_the_form_and_steps_out_of_a_join_onto_the_form() {
 
 #[test]
 fn a_typed_address_that_cannot_parse_opens_the_form_with_why() {
-    let screen = LobbyScreen::failed("", "nope:0", "the port must be a number".to_owned());
+    let mut screen = LobbyScreen::failed("", "nope:0", "the port must be a number".to_owned());
     assert_eq!(screen.subtitle(), "the port must be a number");
-    assert_eq!(screen.keyboard(), Some(Keyboard::Text));
+    assert_eq!(
+        screen.form().map(|form| form.keyboard()),
+        Some(Keyboard::Text)
+    );
     assert_eq!(LobbyScreen::join("", "").subtitle(), "");
 }
 
@@ -332,7 +344,7 @@ fn joining_a_listed_lobby_still_needs_a_name_and_other_builds_are_inert() {
     assert_eq!(out, Out::Stay);
     assert!(sounds.iter().any(|(kind, _)| *kind == SoundKind::Denied));
     assert_eq!(
-        screen.keyboard(),
+        screen.form().map(|form| form.keyboard()),
         Some(Keyboard::Text),
         "the name takes focus"
     );

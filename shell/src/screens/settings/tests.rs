@@ -472,7 +472,10 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     assert!(!up.dirty);
     assert_eq!(s.mode_name(), "player_name");
     assert!(!s.edits_bindings(), "the form edits text, not bindings");
-    assert_eq!(s.keyboard(), Some(Keyboard::Text));
+    assert_eq!(
+        s.form().map(|form| form.keyboard()),
+        Some(crate::text_field::Keyboard::Text)
+    );
     assert_eq!(s.menu.view().items, vec!["Anvil_"]);
 
     // Saving the default unchanged leaves it a default, which never syncs.
@@ -495,7 +498,7 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     assert!(saved.dirty);
     assert_eq!(config.player_name.as_deref(), Some("Connor"));
     assert_eq!(s.mode_name(), "settings");
-    assert_eq!(s.keyboard(), None);
+    assert_eq!(s.form().map(|form| form.keyboard()), None);
     assert_eq!(label(&s, name), "Name: Connor");
     assert_eq!(s.menu.selected, index(&s, name), "back on the row");
 
@@ -508,7 +511,10 @@ fn the_name_row_opens_a_name_form_that_saves_a_valid_name() {
     assert_eq!(config.player_name.as_deref(), Some("Connor"));
     drive(&mut s, &mut config, &press(Key::Enter), false);
     assert_eq!(s.menu.view().items, vec!["Connor_"], "prefilled");
-    assert!(!s.take_keyboard_request());
+    assert!(
+        !s.form()
+            .is_some_and(crate::text_field::Form::take_keyboard_request)
+    );
     let back = crate::button::tests::press_back(true);
     let up = drive(&mut s, &mut config, &back, false);
     assert_eq!(up.out, Out::Stay);

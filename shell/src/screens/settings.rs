@@ -13,7 +13,7 @@ use crate::numeric::Fit;
 use crate::platform::Platform;
 use crate::render;
 use crate::tabs::TabStrip;
-use crate::text_field::{Edit, Field, Form, Keyboard};
+use crate::text_field::{Edit, Field, Form};
 use aftermine_net::{NameError, PlayerName};
 use aftermine_protocol::{Key, RawEvent};
 use macroquad::prelude::{Vec2, draw_text, measure_text};
@@ -703,21 +703,9 @@ impl SettingsScreen {
         }
     }
 
-    /// The keyboard the name form asks for while it is open.
-    pub fn keyboard(&self) -> Option<Keyboard> {
-        self.naming.as_ref().map(Form::keyboard)
-    }
-
-    /// Consumes the name form's request to raise the on-screen keyboard.
-    pub fn keyboard_text(&self) -> Option<&str> {
-        self.naming.as_ref().map(Form::keyboard_text)
-    }
-
-    /// Consumes a request to raise the on-screen keyboard again.
-    pub fn take_keyboard_request(&mut self) -> bool {
-        self.naming
-            .as_mut()
-            .is_some_and(Form::take_keyboard_request)
+    /// The name form, while it is open.
+    pub fn form(&mut self) -> Option<&mut Form> {
+        self.naming.as_mut()
     }
 
     /// Whether the binding editor is up: it reads raw keys under the
