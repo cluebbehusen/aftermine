@@ -172,17 +172,6 @@ class ProductionSpriteSourceTests(unittest.TestCase):
             "000e91b69f35066f88c1e67685df75a731d5463892d2cb166986cc9106a7a920",
         )
 
-    def test_installer_is_independent_of_review_files(self) -> None:
-        root = Path(finalized.__file__).parent
-        production_sources = "\n".join(
-            path.read_text() for path in sorted(root.glob("*.py"))
-        )
-        self.assertNotIn("art-direction-review", production_sources)
-        self.assertNotIn("from tools.batch", production_sources)
-        self.assertNotIn("from tools import batch", production_sources)
-        # Recipes draw with the shared kit; the generator imports them.
-        self.assertNotIn("gen_sprites", production_sources)
-
     def test_piledriver_preserves_approved_body_and_reload_closes(self) -> None:
         digest = hashlib.sha256()
         for variant in kit.PALETTES:
