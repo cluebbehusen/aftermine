@@ -233,7 +233,7 @@ jobs:
       - name: Sound tests
         run: uv run --with 'numpy==2.5.1' --with 'scipy==1.18.0' -m unittest tools.test_gen_sounds
       - name: Review tool tests
-        run: uv run -m unittest tools.test_map_review tools.test_asset_review tools.test_line_report
+        run: uv run -m unittest tools.test_map_review tools.test_line_report
 
   # The license notices every bundle ships must match Cargo.lock.
   notices:

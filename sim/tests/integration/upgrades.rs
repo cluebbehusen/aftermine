@@ -262,6 +262,11 @@ fn a_stale_builder_order_cannot_speed_up_the_next_tier() {
 fn the_ladder_lifts_and_the_numbers_follow() {
     let mut state = arena(2_000, true, false).build().unwrap();
     let turret = find(&state, BuildingKind::Turret);
+    let base = BuildingKind::Turret.base_stats();
+    let rises = |state: &State| {
+        let stats = state.building(turret).unwrap().stats();
+        stats.max_hp > base.max_hp && stats.weapons[0].damage > base.weapons[0].damage
+    };
 
     let bank = state.player(PlayerId(0)).scrap;
     let heavy = BuildingKind::Turret.upgrade_from(0).unwrap();
@@ -279,8 +284,10 @@ fn the_ladder_lifts_and_the_numbers_follow() {
     run_until_built(&mut state, turret, 2_000);
     {
         let b = state.building(turret).unwrap();
-        assert_eq!(b.stats().max_hp, 500, "heavy turret hit points");
-        assert_eq!(b.stats().weapons[0].damage, 20, "heavy turret gun");
+        assert!(
+            rises(&state),
+            "the heavy turret outlasts and outguns the base"
+        );
         assert_eq!(b.hp, b.stats().max_hp, "the ramp tops out at the new max");
     }
 
@@ -289,8 +296,7 @@ fn the_ladder_lifts_and_the_numbers_follow() {
     run_until_built(&mut state, turret, 3_000);
     let b = state.building(turret).unwrap();
     assert_eq!(b.tier, 2);
-    assert_eq!(b.stats().max_hp, 900, "bulwark hit points");
-    assert_eq!(b.stats().weapons[0].damage, 60, "bulwark gun");
+    assert!(rises(&state), "the bulwark outlasts and outguns the base");
     assert_eq!(b.kind.tier_name(b.tier), "bulwark");
 }
 

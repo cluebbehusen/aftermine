@@ -244,16 +244,28 @@ fn own_extractors_name_current_income_without_exposing_foreign_support() {
         })
         .expect("a distant Extractor is remote");
 
+    let income = |support| {
+        format!(
+            "{} scrap/min",
+            aftermine_sim::ExtractorIncome::new(0, support).scrap_per_minute()
+        )
+    };
     game.presentation.selection.set_buildings(vec![supported]);
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("supported panel");
-    assert_eq!(stat(&panel, "Income").value, "180 scrap/min");
+    assert_eq!(
+        stat(&panel, "Income").value,
+        income(aftermine_sim::ExtractorSupport::Supported)
+    );
     assert_eq!(stat(&panel, "Support").value, "Foundry");
 
     game.presentation.selection.set_buildings(vec![remote]);
     let panel =
         build_for_palette(&game.view(), &BindingMap::classic(), false).expect("remote panel");
-    assert_eq!(stat(&panel, "Income").value, "120 scrap/min");
+    assert_eq!(
+        stat(&panel, "Income").value,
+        income(aftermine_sim::ExtractorSupport::Remote)
+    );
     assert_eq!(stat(&panel, "Support").value, "Remote");
 
     let foreign = game
@@ -365,18 +377,26 @@ fn recurring_income_tracks_real_output_upgrade_downtime_and_foundry_warmup() {
 
 #[test]
 fn extractor_build_copy_names_both_rates_and_the_foundry_rule() {
+    use aftermine_sim::{ExtractorIncome, ExtractorSupport};
+    let remote = ExtractorIncome::new(0, ExtractorSupport::Remote).scrap_per_minute();
+    let supported = ExtractorIncome::new(0, ExtractorSupport::Supported).scrap_per_minute();
+    let radius = aftermine_sim::stats::EXTRACTOR_SUPPORT_RADIUS;
     let extractor = building_economy_lines(BuildingKind::Extractor);
     assert_eq!(
         extractor,
-        ["Makes 120 scrap/min, or 180 scrap/min with your Foundry within 8 tiles."]
+        [format!(
+            "Makes {remote} scrap/min, or {supported} scrap/min with your Foundry within {radius} tiles."
+        )]
     );
 
     let foundry = building_economy_lines(BuildingKind::Foundry);
     assert_eq!(
         foundry,
         [
-            "Raises the output of your Extractors within 8 tiles from 120 to 180 scrap/min.",
-            "After the first 2 minutes, each Foundry makes 20 scrap/min.",
+            format!(
+                "Raises the output of your Extractors within {radius} tiles from {remote} to {supported} scrap/min."
+            ),
+            "After the first 2 minutes, each Foundry makes 20 scrap/min.".to_string(),
         ]
     );
 
@@ -396,18 +416,16 @@ fn extractor_build_copy_names_both_rates_and_the_foundry_rule() {
         .iter()
         .find(|card| card.title == "Extractor")
         .expect("advanced palette contains Extractor");
-    assert!(
-        extractor_card
-            .desc
-            .iter()
-            .any(|line| line.contains("120 scrap/min"))
-    );
-    assert!(
-        extractor_card
-            .desc
-            .iter()
-            .any(|line| line.contains("180 scrap/min"))
-    );
+    for rate in [remote, supported] {
+        assert!(
+            extractor_card
+                .desc
+                .iter()
+                .any(|line| line.contains(&format!("{rate} scrap/min"))),
+            "{:?}",
+            extractor_card.desc
+        );
+    }
 }
 
 #[test]

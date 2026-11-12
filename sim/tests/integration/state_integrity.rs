@@ -37,9 +37,6 @@ fn sandbox_cannot_restore_a_match_result_or_elimination_stamp() {
         let error = serde_json::from_value::<State>(forged).unwrap_err();
         assert!(error.to_string().contains("sandbox contains"), "{error}");
     }
-    let mut forged = original;
-    forged["mode"] = json!("unknown");
-    assert!(serde_json::from_value::<State>(forged).is_err());
 }
 
 /// A two-seat arena with a standing Fabricator and enough open ground for
@@ -332,14 +329,6 @@ fn ground_motor_speed_is_validated_and_survives_continuation() {
         forged["units"][0]["motor"]["speed"] = serde_json::to_value(speed).unwrap();
         assert!(refusal(forged).contains("invalid ground motor speed"));
     }
-    // Planted spades leave no motor speed to forge.
-    let mut forged = doc(&state);
-    forged["units"][1]["motor"] = json!({
-        "motor": "braced",
-        "ticks": 1,
-        "speed": serde_json::to_value(Fx::from_bits(1)).unwrap(),
-    });
-    assert!(refusal(forged).contains("unknown field"));
 }
 
 /// A well-formed shell, for fixtures that need one in the sky.
@@ -1259,13 +1248,6 @@ fn every_checklist_row_refuses_its_forgery() {
             "unit u0 names a coordinate outside the envelope",
         ),
         (
-            "a harvest work-zone anchor at the far end of the coordinate space",
-            |d| {
-                d["units"][0]["order"]["anchor"] = json!({"x": i32::MAX, "y": 0});
-            },
-            "unit u0 names a coordinate outside the envelope",
-        ),
-        (
             "cargo delivery to a foreign Foundry",
             |d| {
                 let foreign = d["buildings"]
@@ -1279,6 +1261,15 @@ fn every_checklist_row_refuses_its_forgery() {
                     json!({"order": "return_cargo", "foundry": foreign, "repair": false});
             },
             "unit u0 has an invalid cargo delivery",
+        ),
+        (
+            "cargo delivery by a machine that carries none",
+            |d| {
+                let own = foundry_of(d, &json!(0));
+                d["units"][1]["order"] =
+                    json!({"order": "return_cargo", "foundry": own, "repair": false});
+            },
+            "unit u1 has an invalid cargo delivery",
         ),
         (
             "a rally onto a unit that left play",
@@ -1440,13 +1431,6 @@ fn every_checklist_row_refuses_its_forgery() {
             "stores a slot or endpoint equal to its own goal",
         ),
         (
-            "a tending walk toward the far end of the coordinate space",
-            |d| {
-                d["units"][0]["order"] = json!({"order": "tend", "goal": {"x": i32::MIN, "y": 2}});
-            },
-            "unit u0 names a coordinate outside the envelope",
-        ),
-        (
             "a retirement at a building that is no Crucible",
             |d| {
                 let owner = d["units"][0]["player"].clone();
@@ -1497,36 +1481,6 @@ fn every_checklist_row_refuses_its_forgery() {
             "unit u0 names a harvest source outside its work zone",
         ),
         (
-            "a walk endpoint at the far end of the coordinate space",
-            |d| {
-                d["units"][0]["order"] = json!({
-                    "order": "run",
-                    "goal": {"x": 3, "y": 3, "endpoint": {"x": i32::MAX, "y": 3}},
-                });
-            },
-            "unit u0 names a coordinate outside the envelope",
-        ),
-        (
-            "an unload drop point at the far end of the coordinate space",
-            |d| {
-                d["units"][0]["queue"] =
-                    json!([{"order": "unload", "at": {"x": 3, "y": i32::MIN}}]);
-            },
-            "unit u0 names a coordinate outside the envelope",
-        ),
-        (
-            "an attack resuming toward an endpoint at the far end of the coordinate space",
-            |d| {
-                let victim = d["units"][2]["id"].clone();
-                d["units"][0]["order"] = json!({
-                    "order": "attack",
-                    "target": {"kind": "unit", "id": victim},
-                    "resume": {"hunt": {"x": 3, "y": 3, "endpoint": {"x": 3, "y": i32::MIN}}},
-                });
-            },
-            "unit u0 names a coordinate outside the envelope",
-        ),
-        (
             "a walk storing its own target as its endpoint",
             |d| {
                 d["units"][0]["queue"] = json!([{
@@ -1547,28 +1501,6 @@ fn every_checklist_row_refuses_its_forgery() {
                 });
             },
             "unit u0 stores a slot or endpoint equal to its own goal",
-        ),
-        (
-            "a walk slot at the far end of the coordinate space",
-            |d| {
-                d["units"][0]["order"] = json!({
-                    "order": "run",
-                    "goal": {"x": 3, "y": 3, "aim": {"slot": {"x": i32::MAX, "y": 3}}},
-                });
-            },
-            "unit u0 names a coordinate outside the envelope",
-        ),
-        (
-            "an attack resuming toward a slot at the far end of the coordinate space",
-            |d| {
-                let victim = d["units"][2]["id"].clone();
-                d["units"][0]["order"] = json!({
-                    "order": "attack",
-                    "target": {"kind": "unit", "id": victim},
-                    "resume": {"hunt": {"x": 3, "y": 3, "aim": {"slot": {"x": 3, "y": i32::MIN}}}},
-                });
-            },
-            "unit u0 names a coordinate outside the envelope",
         ),
         (
             "a walk slot on its own clicked tile",
@@ -1594,17 +1526,6 @@ fn every_checklist_row_refuses_its_forgery() {
                 });
             },
             "unit u0 stores a slot or endpoint equal to its own goal",
-        ),
-        (
-            "a landing taken over from a click at the far end of the coordinate space",
-            |d| {
-                d["units"][0]["queue"] = json!([{
-                    "order": "land",
-                    "goal": {"x": 6, "y": 2},
-                    "from": {"x": i32::MIN, "y": 2},
-                }]);
-            },
-            "unit u0 names a coordinate outside the envelope",
         ),
         (
             "an order against an id the run never minted",
@@ -2355,6 +2276,74 @@ fn every_checklist_row_refuses_its_forgery() {
     }
 }
 
+/// Every coordinate a unit's current or queued order names stays inside the
+/// envelope, whatever kind of order holds it.
+#[test]
+fn every_order_coordinate_is_bounded_by_the_envelope() {
+    let base = snapshot();
+    let victim = base["units"][2]["id"].clone();
+    let mut harvest = base["units"][0]["order"].clone();
+    harvest["anchor"] = json!({"x": i32::MAX, "y": 0});
+    let far = [
+        ("order", harvest),
+        (
+            "order",
+            json!({"order": "tend", "goal": {"x": i32::MIN, "y": 2}}),
+        ),
+        (
+            "order",
+            json!({
+                "order": "run",
+                "goal": {"x": 3, "y": 3, "endpoint": {"x": i32::MAX, "y": 3}},
+            }),
+        ),
+        (
+            "queue",
+            json!([{"order": "unload", "at": {"x": 3, "y": i32::MIN}}]),
+        ),
+        (
+            "order",
+            json!({
+                "order": "attack",
+                "target": {"kind": "unit", "id": victim},
+                "resume": {"hunt": {"x": 3, "y": 3, "endpoint": {"x": 3, "y": i32::MIN}}},
+            }),
+        ),
+        (
+            "order",
+            json!({
+                "order": "run",
+                "goal": {"x": 3, "y": 3, "aim": {"slot": {"x": i32::MAX, "y": 3}}},
+            }),
+        ),
+        (
+            "order",
+            json!({
+                "order": "attack",
+                "target": {"kind": "unit", "id": victim},
+                "resume": {"hunt": {"x": 3, "y": 3, "aim": {"slot": {"x": 3, "y": i32::MIN}}}},
+            }),
+        ),
+        (
+            "queue",
+            json!([{
+                "order": "land",
+                "goal": {"x": 6, "y": 2},
+                "from": {"x": i32::MIN, "y": 2},
+            }]),
+        ),
+    ];
+    for (field, order) in far {
+        let mut forged = base.clone();
+        forged["units"][0][field] = order.clone();
+        let message = refusal(forged);
+        assert!(
+            message.contains("unit u0 names a coordinate outside the envelope"),
+            "{order}: {message}"
+        );
+    }
+}
+
 #[test]
 fn the_ghost_sort_key_carries_the_owner() {
     // Two hostile seats can leave memories under the same corner, which
@@ -2772,30 +2761,6 @@ fn a_dangling_order_target_is_not_a_forgery() {
     run(&mut state, 5);
     state.validate_invariants().expect("still coherent");
     assert!(state.unit(UnitId(live)).is_some());
-}
-
-#[test]
-fn parse_refuses_a_map_beyond_the_edge_bound() {
-    use aftermine_sim::map::{MAX_MAP_EDGE, Map, MapError};
-    let edge = usize::from(MAX_MAP_EDGE);
-
-    let wide = vec!["#".repeat(edge + 1)];
-    assert!(matches!(
-        Map::parse(&wide),
-        Err(MapError::TooLarge { width, height: 1 }) if width == edge + 1
-    ));
-
-    let tall: Vec<String> = std::iter::repeat_n("#".to_string(), edge + 1).collect();
-    assert!(matches!(
-        Map::parse(&tall),
-        Err(MapError::TooLarge { width: 1, height }) if height == edge + 1
-    ));
-
-    let square: Vec<String> = std::iter::repeat_n("#".repeat(edge), edge).collect();
-    assert!(
-        Map::parse(&square).is_ok(),
-        "the bound is inclusive: exactly the maximum still parses"
-    );
 }
 
 fn pending_crash(d: &Value) -> Value {

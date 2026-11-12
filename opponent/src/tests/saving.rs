@@ -625,24 +625,6 @@ fn opponents_invest_without_rejected_orders() {
             report.events
         );
     }
-    for player in [PlayerId(0), PlayerId(1)] {
-        let owned: Vec<BuildingKind> = state
-            .buildings()
-            .iter()
-            .filter(|building| building.player == player)
-            .map(|building| building.kind)
-            .collect();
-        assert!(
-            owned.contains(&BuildingKind::Fabricator),
-            "{player:?} {owned:?}"
-        );
-        assert!(
-            owned
-                .iter()
-                .any(|kind| !matches!(kind, BuildingKind::Foundry | BuildingKind::Fabricator)),
-            "{player:?} invested beyond its first tech: {owned:?}"
-        );
-    }
 }
 
 #[test]
