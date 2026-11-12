@@ -1,7 +1,11 @@
 //! Walks whose goal cannot be reached end as close as they can get, report
 //! it once, and let the rest of the program run. Crowds settling at such an
 //! endpoint never count as unreachable, and reachable walks keep their
-//! ordinary arrival.
+//! ordinary arrival. One table pins what an order that finds no route
+//! leaves of a looping program, and whether it says so: walks, work orders,
+//! drop-off runs, ordered attacks, boarding, unloading and retirement. A
+//! landing never belongs to a looping program, so the table leaves it out;
+//! a walk that turns into a landing has a test of its own.
 
 use crate::common;
 use common::{cmd, run_until};
@@ -9,7 +13,7 @@ use common::{cmd, run_until};
 use aftermine_sim::event::StallReason;
 use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
 use aftermine_sim::stats::BuildingKind;
-use aftermine_sim::{Command, Event, Order, Scenario, State, UnitId, UnitKind};
+use aftermine_sim::{Command, Event, Order, PlayerId, Scenario, State, UnitId, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 
@@ -699,4 +703,547 @@ fn a_repair_that_cannot_be_reached_advances_to_a_queued_move() {
         1,
         "the unreachable weld reports once and yields to the queued walk"
     );
+}
+
+/// Home ground and far ground on either side of an unbroken rock wall, with
+/// a scrap node on the far side, a ring of peaks there whose pocket even
+/// aircraft cannot reach, and a one-tile cell walled off from home ground
+/// against the wall.
+const SPLIT: [&str; 12] = [
+    "##############################",
+    "#.........#..................#",
+    "#.........#..................#",
+    "#.........#..................#",
+    "#.........#..................#",
+    "#.........#..................#",
+    "#.........#.............s....#",
+    "#.........#..................#",
+    "#.......###.........^^^......#",
+    "#.......#.#.........^.^......#",
+    "#.......###.........^^^......#",
+    "##############################",
+];
+
+/// Where every staged unit starts on home ground.
+const NEAR: (i32, i32) = (7, 4);
+/// The walk home that follows the stalled order round the loop.
+const HOME: TilePos = TilePos::new(4, 6);
+const FAR: TilePos = TilePos::new(16, 4);
+const NODE: TilePos = TilePos::new(24, 6);
+const POCKET: TilePos = TilePos::new(21, 9);
+const CELL: TilePos = TilePos::new(9, 9);
+
+/// What a stalled order leaves of a looping program whose next order is the
+/// walk home.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Left {
+    /// The order goes to the back of the loop and the walk home runs.
+    Rotated,
+    /// The order is gone and the walk home runs.
+    Dropped,
+    /// The whole program is gone.
+    Cleared,
+}
+
+/// SPLIT in a sandbox for Home and an enemy, Home's Foundry on home ground.
+fn split(units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> State {
+    let mut scenario = sandbox(&SPLIT, units, buildings);
+    scenario.players.push(PlayerSpec {
+        name: "Far".into(),
+        team: None,
+        scrap: 5_000,
+        bot: false,
+        bot_config: None,
+    });
+    scenario
+        .buildings
+        .push(common::building(0, BuildingKind::Foundry, 1, 1));
+    scenario.build().unwrap()
+}
+
+fn near(kind: UnitKind) -> UnitSpec {
+    unit(kind, NEAR.0, NEAR.1)
+}
+
+fn unit_at(state: &State, x: i32, y: i32) -> UnitId {
+    let tile = TilePos::new(x, y);
+    state
+        .units()
+        .iter()
+        .find(|u| u.tile() == tile)
+        .unwrap_or_else(|| panic!("no unit on {tile:?}"))
+        .id
+}
+
+fn building_at(state: &State, x: i32, y: i32) -> aftermine_sim::BuildingId {
+    let tile = TilePos::new(x, y);
+    state
+        .buildings()
+        .iter()
+        .find(|b| b.anchor == tile)
+        .unwrap_or_else(|| panic!("no building on {tile:?}"))
+        .id
+}
+
+/// `state` with the serialized unit `id` edited by `edit`.
+fn edited(state: &State, id: UnitId, edit: impl FnOnce(&mut serde_json::Value)) -> State {
+    let mut doc = serde_json::to_value(state).unwrap();
+    let row = doc["units"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["id"] == serde_json::json!(id))
+        .unwrap();
+    edit(row);
+    serde_json::from_value(doc).unwrap()
+}
+
+/// The order `command` gives `unit`, read from the command phase.
+fn ordered(state: &State, unit: UnitId, command: Command) -> Order {
+    state.inspect_command_phase(&[cmd(0, command)], |view| view.unit(unit).unwrap().order)
+}
+
+/// An order to attack `target` as the player gives it.
+fn attack(state: &State, unit: UnitId, target: aftermine_sim::Target) -> Order {
+    let order = ordered(
+        state,
+        unit,
+        Command::Attack {
+            units: vec![unit],
+            target: target.into(),
+            queue: false,
+        },
+    );
+    assert!(matches!(order, Order::Attack { .. }), "premise: {order:?}");
+    order
+}
+
+/// Gives `unit` the loop of `order` then the walk home, ticks until `order`
+/// ends, and returns what is left of the loop and whether the unit
+/// reported `NoRoute`.
+fn left_of_the_loop(state: &State, unit: UnitId, order: Order) -> (Left, bool) {
+    let home = Order::Run {
+        goal: aftermine_sim::Goal::at(HOME),
+    };
+    let mut state = edited(state, unit, |row| {
+        row["order"] = serde_json::to_value(order).unwrap();
+        row["queue"] = serde_json::json!([home]);
+        row["looping"] = serde_json::json!(true);
+        row["path"] = serde_json::Value::Null;
+    });
+    let mut events = Vec::new();
+    while common::commanded(state.unit(unit).unwrap().order) == common::commanded(order) {
+        assert!(state.current_tick() < 600, "{order:?} never ended");
+        events.extend(state.tick(&[]).events);
+    }
+    let reported = no_routes(&events).iter().any(|(id, _)| *id == unit);
+    let u = state.unit(unit).unwrap();
+    let queue: Vec<Order> = u.queue.iter().copied().map(common::commanded).collect();
+    let left = if u.order == Order::Idle && queue.is_empty() && !u.looping {
+        Left::Cleared
+    } else if common::commanded(u.order) == home && queue == [common::commanded(order)] {
+        Left::Rotated
+    } else if common::commanded(u.order) == home && queue.is_empty() {
+        Left::Dropped
+    } else {
+        panic!("{order:?} left {:?} then {:?}", u.order, u.queue);
+    };
+    (left, reported)
+}
+
+fn joining_a_far_site() -> (State, UnitId, Order) {
+    let mut state = split(
+        vec![near(UnitKind::Harvester), unit(UnitKind::Harvester, 13, 2)],
+        vec![],
+    );
+    let founder = unit_at(&state, 13, 2);
+    let report = state.tick(&[cmd(
+        0,
+        Command::Build {
+            units: vec![founder],
+            kind: BuildingKind::Turret,
+            anchor: TilePos::new(15, 2),
+            queue: false,
+            defer: false,
+        },
+    )]);
+    assert_eq!(common::rejected(&report.events), []);
+    let site = building_at(&state, 15, 2);
+    let unit = unit_at(&state, NEAR.0, NEAR.1);
+    (state, unit, Order::Build { site })
+}
+
+/// `state` once the Kestrel `scout` has flown home, so what it saw on far
+/// ground is memory.
+fn flown_home(mut state: State, scout: UnitId) -> State {
+    let report = state.tick(&[cmd(
+        0,
+        Command::Run {
+            units: vec![scout],
+            goal: TilePos::new(2, 10),
+            queue: false,
+        },
+    )]);
+    assert_eq!(common::rejected(&report.events), []);
+    run_until(&mut state, 600, |state, _| {
+        state.unit(scout).unwrap().order == Order::Idle
+    });
+    state
+}
+
+fn founding_a_far_scaffold() -> (State, UnitId, Order) {
+    // A Kestrel explores the corner, then leaves it out of sight, so a
+    // deferred build there pays for a scaffold that stays provisional.
+    let state = split(
+        vec![
+            near(UnitKind::Harvester),
+            unit(UnitKind::Harvester, 12, 6),
+            unit(UnitKind::Kestrel, 26, 2),
+        ],
+        vec![],
+    );
+    let scout = unit_at(&state, 26, 2);
+    let mut state = flown_home(state, scout);
+    let (kind, anchor) = (BuildingKind::Turret, TilePos::new(27, 1));
+    let report = state.tick(&[cmd(
+        0,
+        Command::Build {
+            units: vec![unit_at(&state, 12, 6)],
+            kind,
+            anchor,
+            queue: false,
+            defer: true,
+        },
+    )]);
+    assert_eq!(common::rejected(&report.events), []);
+    let scaffold = state.building(building_at(&state, 27, 1)).unwrap();
+    assert!(scaffold.provisional(), "premise: the scaffold is unseen");
+    let unit = unit_at(&state, NEAR.0, NEAR.1);
+    (state, unit, Order::Found { kind, anchor })
+}
+
+/// `state` with the building at `x, y` at `hp`.
+fn damaged(state: &State, x: i32, y: i32, hp: u32) -> State {
+    let id = building_at(state, x, y);
+    let mut doc = serde_json::to_value(state).unwrap();
+    let row = doc["buildings"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["id"] == serde_json::json!(id))
+        .unwrap();
+    row["hp"] = serde_json::json!(hp);
+    serde_json::from_value(doc).unwrap()
+}
+
+fn welding_a_far_building() -> (State, UnitId, Order) {
+    let state = split(
+        vec![near(UnitKind::Harvester)],
+        vec![common::building(0, BuildingKind::Turret, FAR.x, FAR.y)],
+    );
+    let state = damaged(&state, FAR.x, FAR.y, 100);
+    let building = building_at(&state, FAR.x, FAR.y);
+    let unit = unit_at(&state, NEAR.0, NEAR.1);
+    (state, unit, Order::Repair { building })
+}
+
+fn welding_a_far_machine() -> (State, UnitId, Order) {
+    let state = split(
+        vec![
+            near(UnitKind::Harvester),
+            unit(UnitKind::Harvester, FAR.x, FAR.y),
+        ],
+        vec![],
+    );
+    let patient = unit_at(&state, FAR.x, FAR.y);
+    let state = edited(&state, patient, |row| row["hp"] = serde_json::json!(20));
+    let unit = unit_at(&state, NEAR.0, NEAR.1);
+    (state, unit, Order::RepairUnit { unit: patient })
+}
+
+fn salvaging_a_far_building() -> (State, UnitId, Order) {
+    let state = split(
+        vec![near(UnitKind::Harvester)],
+        vec![common::building(0, BuildingKind::Barricade, FAR.x, FAR.y)],
+    );
+    let building = building_at(&state, FAR.x, FAR.y);
+    let unit = unit_at(&state, NEAR.0, NEAR.1);
+    (state, unit, Order::Salvage { building })
+}
+
+/// A Harvester beside the far node carrying `load`.
+fn far_harvester(load: u32) -> (State, UnitId) {
+    let state = split(vec![unit(UnitKind::Harvester, NODE.x - 1, NODE.y)], vec![]);
+    let harvester = unit_at(&state, NODE.x - 1, NODE.y);
+    let state = edited(&state, harvester, |row| {
+        row["worker"]["carrying"] = serde_json::json!(load);
+    });
+    (state, harvester)
+}
+
+fn returning_cargo_from_far_ground() -> (State, UnitId, Order) {
+    let (state, harvester) = far_harvester(5);
+    let foundry = building_at(&state, 1, 1);
+    (
+        state,
+        harvester,
+        Order::ReturnCargo {
+            foundry,
+            repair: false,
+        },
+    )
+}
+
+fn delivering_a_full_load_from_far_ground() -> (State, UnitId, Order) {
+    let capacity = UnitKind::Harvester.stats().harvest.unwrap().capacity;
+    let (state, harvester) = far_harvester(capacity);
+    (
+        state,
+        harvester,
+        Order::Harvest {
+            node: NODE,
+            anchor: NODE,
+            withdrawing: false,
+        },
+    )
+}
+
+fn withdrawing_from_far_ground() -> (State, UnitId, Order) {
+    let (state, harvester) = far_harvester(0);
+    (
+        state,
+        harvester,
+        Order::Harvest {
+            node: NODE,
+            anchor: NODE,
+            withdrawing: true,
+        },
+    )
+}
+
+/// `kind` on home ground, a Home Kestrel in sight of an enemy Harvester and
+/// an enemy Barricade on far ground.
+fn far_enemies(kind: UnitKind) -> State {
+    split(
+        vec![
+            near(kind),
+            unit(UnitKind::Kestrel, FAR.x, FAR.y - 2),
+            common::unit(1, UnitKind::Harvester, FAR.x, FAR.y + 2),
+        ],
+        vec![common::building(1, BuildingKind::Barricade, FAR.x, FAR.y)],
+    )
+}
+
+fn chasing_a_far_machine() -> (State, UnitId, Order) {
+    let state = far_enemies(UnitKind::Sentinel);
+    let (shooter, victim) = (
+        unit_at(&state, NEAR.0, NEAR.1),
+        unit_at(&state, FAR.x, FAR.y + 2),
+    );
+    let order = attack(&state, shooter, aftermine_sim::Target::Unit(victim));
+    (state, shooter, order)
+}
+
+fn shooting_a_far_building(kind: UnitKind) -> (State, UnitId, Order) {
+    let state = far_enemies(kind);
+    let shooter = unit_at(&state, NEAR.0, NEAR.1);
+    let target = aftermine_sim::Target::Building(building_at(&state, FAR.x, FAR.y));
+    let order = attack(&state, shooter, target);
+    (state, shooter, order)
+}
+
+fn shelling_a_far_memory() -> (State, UnitId, Order) {
+    let (state, shooter, order) = shooting_a_far_building(UnitKind::Sentinel);
+    let scout = unit_at(&state, FAR.x, FAR.y - 2);
+    let state = flown_home(state, scout);
+    assert!(
+        !state.can_see(PlayerId(0), FAR),
+        "premise: only memory holds the Barricade"
+    );
+    (state, shooter, order)
+}
+
+/// `kind` on home ground ordered at an enemy Barricade in the peak pocket,
+/// which a Home Kestrel sees from outside the ring.
+fn attacking_into_the_pocket(kind: UnitKind) -> (State, UnitId, Order) {
+    let state = split(
+        vec![near(kind), unit(UnitKind::Kestrel, POCKET.x, POCKET.y - 3)],
+        vec![common::building(
+            1,
+            BuildingKind::Barricade,
+            POCKET.x,
+            POCKET.y,
+        )],
+    );
+    let shooter = unit_at(&state, NEAR.0, NEAR.1);
+    let target = aftermine_sim::Target::Building(building_at(&state, POCKET.x, POCKET.y));
+    let order = attack(&state, shooter, target);
+    (state, shooter, order)
+}
+
+/// An Avalanche shut in the cell, ordered at an enemy charge a Kestrel
+/// detected inside the gun's minimum range across the wall: the gun sees
+/// the ground but not the charge, and every tile it could fire from lies
+/// outside the cell.
+fn shelling_a_charge_from_the_dead_zone() -> (State, UnitId, Order) {
+    let state = split(
+        vec![
+            unit(UnitKind::Avalanche, CELL.x, CELL.y),
+            unit(UnitKind::Kestrel, 12, 7),
+        ],
+        vec![common::building(1, BuildingKind::ScuttleCharge, 12, 9)],
+    );
+    let (gun, charge) = (unit_at(&state, CELL.x, CELL.y), building_at(&state, 12, 9));
+    let order = attack(&state, gun, aftermine_sim::Target::Building(charge));
+    let scout = unit_at(&state, 12, 7);
+    let state = flown_home(state, scout);
+    let charge = state.building(charge).unwrap();
+    assert!(
+        !state.building_apparent(PlayerId(0), charge),
+        "premise: only memory holds the charge"
+    );
+    (state, gun, order)
+}
+
+fn walking_to_far_ground() -> (State, UnitId, Order) {
+    let state = split(vec![near(UnitKind::Sentinel)], vec![]);
+    let walker = unit_at(&state, NEAR.0, NEAR.1);
+    let order = Order::Run {
+        goal: aftermine_sim::Goal::at(FAR),
+    };
+    (state, walker, order)
+}
+
+fn unloading_in_the_pocket() -> (State, UnitId, Order) {
+    let state = split(vec![near(UnitKind::Skyhook)], vec![]);
+    let transport = unit_at(&state, NEAR.0, NEAR.1);
+    let order = Order::Unload {
+        at: aftermine_sim::Goal::at(POCKET),
+        reverse: false,
+    };
+    (state, transport, order)
+}
+
+fn boarding_over_far_ground() -> (State, UnitId, Order) {
+    let state = split(
+        vec![
+            near(UnitKind::Sentinel),
+            unit(UnitKind::Skyhook, FAR.x, FAR.y),
+        ],
+        vec![],
+    );
+    let transport = unit_at(&state, FAR.x, FAR.y);
+    let order = Order::Board { transport };
+    let unit = unit_at(&state, NEAR.0, NEAR.1);
+    (state, unit, order)
+}
+
+fn retiring_at_a_far_crucible() -> (State, UnitId, Order) {
+    let state = split(
+        vec![near(UnitKind::Sentinel)],
+        vec![common::building(0, BuildingKind::Crucible, FAR.x, FAR.y)],
+    );
+    let crucible = building_at(&state, FAR.x, FAR.y);
+    let order = Order::Retire {
+        crucible,
+        pad: None,
+    };
+    let unit = unit_at(&state, NEAR.0, NEAR.1);
+    (state, unit, order)
+}
+
+type Scene = fn() -> (State, UnitId, Order);
+
+#[test]
+fn what_an_order_with_no_route_leaves_of_its_loop() {
+    use Left::{Cleared, Dropped, Rotated};
+    let rows: [(&str, Scene, Left, bool); 19] = [
+        ("build", joining_a_far_site, Dropped, true),
+        ("found", founding_a_far_scaffold, Dropped, true),
+        ("repair", welding_a_far_building, Dropped, true),
+        ("repair unit", welding_a_far_machine, Dropped, true),
+        ("salvage", salvaging_a_far_building, Dropped, true),
+        (
+            "return cargo",
+            returning_cargo_from_far_ground,
+            Rotated,
+            true,
+        ),
+        (
+            "deliver",
+            delivering_a_full_load_from_far_ground,
+            Rotated,
+            true,
+        ),
+        ("withdraw", withdrawing_from_far_ground, Rotated, true),
+        ("chase", chasing_a_far_machine, Cleared, true),
+        (
+            "attack a building",
+            || shooting_a_far_building(UnitKind::Sentinel),
+            Cleared,
+            true,
+        ),
+        (
+            "demolish",
+            || shooting_a_far_building(UnitKind::Sapper),
+            Cleared,
+            true,
+        ),
+        ("attack a memory", shelling_a_far_memory, Cleared, true),
+        (
+            "attack from the dead zone",
+            shelling_a_charge_from_the_dead_zone,
+            Cleared,
+            true,
+        ),
+        (
+            "mounted guns",
+            || attacking_into_the_pocket(UnitKind::Roc),
+            Cleared,
+            true,
+        ),
+        (
+            "bomber run-in",
+            || attacking_into_the_pocket(UnitKind::Condor),
+            Cleared,
+            true,
+        ),
+        ("walk", walking_to_far_ground, Rotated, false),
+        ("unload", unloading_in_the_pocket, Rotated, false),
+        ("board", boarding_over_far_ground, Dropped, true),
+        ("retire", retiring_at_a_far_crucible, Dropped, true),
+    ];
+    let mut wrong = Vec::new();
+    for (name, scene, left, reports) in rows {
+        let (state, unit, order) = scene();
+        let seen = left_of_the_loop(&state, unit, order);
+        if seen != (left, reports) {
+            wrong.push(format!("{name}: {seen:?}, not {:?}", (left, reports)));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn a_flier_short_of_its_goal_lands_instead_and_says_so_once() {
+    // A landing takes over only a walk with nothing after it, so this case
+    // stands outside the loop table.
+    let mut state = split(vec![near(UnitKind::Condor)], vec![]);
+    let condor = unit_at(&state, NEAR.0, NEAR.1);
+    let mut events = state.tick(&[move_to(vec![condor], POCKET, false)]).events;
+    events.extend(run_until(&mut state, 600, |state, _| {
+        matches!(state.unit(condor).unwrap().order, Order::Land { .. })
+    }));
+    let u = state.unit(condor).unwrap();
+    let Order::Land { goal, from } = u.order else {
+        unreachable!();
+    };
+    assert_eq!(from, Some(POCKET), "the landing keeps the clicked tile");
+    assert!(
+        goal.chebyshev(POCKET) > 1,
+        "on open ground outside the ring"
+    );
+    assert!(u.queue.is_empty());
+    let reports: Vec<UnitId> = no_routes(&events).iter().map(|(id, _)| *id).collect();
+    assert_eq!(reports, [condor], "one report");
 }

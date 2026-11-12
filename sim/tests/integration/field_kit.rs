@@ -454,6 +454,143 @@ fn a_charge_detonates_under_hostile_treads() {
     );
 }
 
+/// The id of the building of `kind` anchored at `anchor`.
+fn building_at(state: &State, kind: BuildingKind, anchor: TilePos) -> aftermine_sim::BuildingId {
+    state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == kind && b.anchor == anchor)
+        .unwrap_or_else(|| panic!("no {kind:?} at {anchor:?}"))
+        .id
+}
+
+/// Orders `builder` to place a `kind` site at `anchor`, asserting the order
+/// is taken.
+fn place(state: &mut State, builder: aftermine_sim::UnitId, kind: BuildingKind, anchor: TilePos) {
+    let report = state.tick(&[cmd(
+        0,
+        Command::Build {
+            units: vec![builder],
+            kind,
+            anchor,
+            queue: false,
+            defer: false,
+        },
+    )]);
+    assert_eq!(common::rejected(&report.events), []);
+}
+
+#[test]
+fn discovering_a_charge_under_an_unstarted_site_refunds_it() {
+    // The Barricade goes down over a charge nobody knows of; a Surveyor
+    // walks into detection range long before the builder arrives.
+    let charge_tile = TilePos::new(14, 4);
+    let mut state = arena(
+        open_map(),
+        vec![
+            unit(0, UnitKind::Harvester, 2, 6),
+            unit(0, UnitKind::Surveyor, 9, 4),
+        ],
+        vec![building(1, BuildingKind::ScuttleCharge, 14, 4)],
+    )
+    .build()
+    .unwrap();
+    let (builder, surveyor) = (state.units()[0].id, state.units()[1].id);
+    let charge = building_at(&state, BuildingKind::ScuttleCharge, charge_tile);
+    place(&mut state, builder, BuildingKind::Barricade, charge_tile);
+    let site = building_at(&state, BuildingKind::Barricade, charge_tile);
+    let cost = BuildingKind::Barricade.base_stats().construction.cost;
+    assert_eq!(state.player(PlayerId(0)).scrap, 800 - cost);
+    state.tick(&[cmd(
+        0,
+        Command::Run {
+            units: vec![surveyor],
+            goal: TilePos::new(11, 4),
+            queue: false,
+        },
+    )]);
+    let events = run_until(&mut state, 300, |_, events| {
+        events
+            .iter()
+            .any(|e| matches!(e, Event::BuildCancelled { .. }))
+    });
+    assert!(events.contains(&Event::BuildCancelled {
+        building: site,
+        player: PlayerId(0),
+        refund: cost,
+    }));
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, Event::ChargeDetonated { .. })),
+        "the charge never fired"
+    );
+    assert_eq!(state.player(PlayerId(0)).scrap, 800, "the whole price back");
+    assert!(state.building(site).is_none());
+    assert!(state.building(charge).is_some(), "the charge lies in wait");
+    assert_eq!(charge_ghosts(&state, 0), [charge_tile]);
+    assert_eq!(state.unit(builder).unwrap().order, Order::Idle);
+}
+
+#[test]
+fn the_first_work_over_a_hidden_charge_sets_it_off_with_no_refund() {
+    // The charge lies under the Fabricator's far corner, out of trigger
+    // reach of a builder working from the near side, so only the first
+    // crew work can set it off.
+    let anchor = TilePos::new(12, 4);
+    let charge_tile = TilePos::new(13, 5);
+    let mut state = arena(
+        open_map(),
+        vec![unit(0, UnitKind::Harvester, 8, 4)],
+        vec![building(1, BuildingKind::ScuttleCharge, 13, 5)],
+    )
+    .build()
+    .unwrap();
+    let builder = state.units()[0].id;
+    let charge = building_at(&state, BuildingKind::ScuttleCharge, charge_tile);
+    place(&mut state, builder, BuildingKind::Fabricator, anchor);
+    let site = building_at(&state, BuildingKind::Fabricator, anchor);
+    let paid = 800 - BuildingKind::Fabricator.base_stats().construction.cost;
+    assert_eq!(state.player(PlayerId(0)).scrap, paid);
+    let mut events = Vec::new();
+    while events.is_empty() {
+        assert!(state.current_tick() < 600, "the builder never got to work");
+        let unstarted = state.building(site).unwrap().unstarted();
+        assert!(unstarted, "the site took work without a blast");
+        events = state
+            .tick(&[])
+            .events
+            .into_iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    Event::ChargeDetonated { .. }
+                        | Event::BuildingDestroyed { .. }
+                        | Event::BuildCancelled { .. }
+                )
+            })
+            .collect();
+    }
+    assert!(
+        matches!(
+            events[..],
+            [
+                Event::ChargeDetonated { building: fired, player: PlayerId(1), .. },
+                Event::BuildingDestroyed { building: spent, .. },
+                Event::BuildingDestroyed { building: lost, player: PlayerId(0), .. },
+            ] if fired == charge && spent == charge && lost == site
+        ),
+        "{events:?}"
+    );
+    assert!(state.building(site).is_none());
+    assert!(
+        state.building(charge).is_none(),
+        "the blast spends the charge"
+    );
+    assert_eq!(state.player(PlayerId(0)).scrap, paid, "nothing comes back");
+    assert_eq!(state.unit(builder).unwrap().order, Order::Idle);
+}
+
 #[test]
 fn saturation_fire_clears_a_field_without_detonation() {
     // A Bombard shells a Barricade; its 1.4 splash catches the buried

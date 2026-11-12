@@ -514,8 +514,10 @@ pub struct GroundMotion {
 pub enum StallReason {
     /// The goal (or every doorstep of the work site) is out of reach. A
     /// walk ends on the reachable tile nearest its goal and its program
-    /// continues; a patrol lap passes silently. Other orders drop only
-    /// themselves, except a chase, which ends the whole program.
+    /// continues; a patrol lap passes silently. A worker's run to a
+    /// drop-off advances its program as if finished, rotating in a patrol,
+    /// and reports each time. Other orders drop only themselves, except a
+    /// chase, which ends the whole program.
     NoRoute,
     /// No standable tile within weapon reach of the victim.
     NoFiringPosition,
