@@ -6,12 +6,12 @@ use crate::common;
 use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
 use aftermine_sim::stats::{COLLISION_MAX_STEP, Domain};
 use aftermine_sim::{
-    AttackTarget, BuildingKind, Command, Event, Order, PlayerCommand, PlayerId, Scenario, State,
-    Unit, UnitId, UnitKind,
+    AttackTarget, BuildingKind, Event, Order, PlayerCommand, PlayerId, Scenario, State, Unit,
+    UnitId, UnitKind,
 };
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
-use common::{building, cmd, players, unit};
+use common::{building, cmd, orders, players, unit, unit_id};
 
 const WIDTH: usize = 48;
 const HEIGHT: usize = 21;
@@ -125,12 +125,9 @@ fn edit(state: &mut State, id: UnitId, poke: impl FnOnce(&mut serde_json::Value)
 }
 
 fn maw_of(state: &State, player: u8) -> UnitId {
-    state
-        .units()
-        .iter()
-        .find(|u| u.kind == UnitKind::Maw && u.player == PlayerId(player))
-        .unwrap()
-        .id
+    unit_id(state, |u| {
+        u.kind == UnitKind::Maw && u.player == PlayerId(player)
+    })
 }
 
 fn movers_of(state: &State, player: u8) -> Vec<UnitId> {
@@ -156,14 +153,7 @@ fn walk_past(state: &mut State, max_ticks: u64) -> Vec2Fx {
     let maw = maw_of(state, 0);
     let start = state.unit(maw).unwrap().pos;
     let movers = movers_of(state, 0);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: movers.clone(),
-            goal: GOAL,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run(movers.clone(), GOAL))]);
     let mut cleared = vec![false; movers.len()];
     for tick in 1..=max_ticks {
         let hull = state.unit(maw).unwrap();
@@ -281,22 +271,8 @@ fn only_its_own_side_routes_round_a_maw() {
     );
     let [own, enemy] = [0, 1].map(|player| movers_of(&state, player)[0]);
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![own],
-                goal: TilePos::new(40, MID - 1),
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Run {
-                units: vec![enemy],
-                goal: TilePos::new(40, MID + 1),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([own], TilePos::new(40, MID - 1))),
+        cmd(1, orders::run([enemy], TilePos::new(40, MID + 1))),
     ]);
     let hull = state.unit(maw_of(&state, 0)).unwrap();
     let under_the_maw = |id: UnitId| {
@@ -367,22 +343,8 @@ fn mirrored_maws_make_mirrored_way() {
         .collect();
     let [west, east] = [0, 1].map(|player| movers_of(&state, player));
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: west,
-                goal: GOAL,
-                queue: false,
-            },
-        ),
-        cmd(
-            1,
-            Command::Run {
-                units: east,
-                goal: mirror(GOAL),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run(west, GOAL)),
+        cmd(1, orders::run(east, mirror(GOAL))),
     ]);
     let maw = maw_of(&state, 0);
     let start = state.unit(maw).unwrap().pos;
@@ -412,14 +374,7 @@ fn a_parked_maw_pulls_off_the_spot_its_own_unit_is_sent_to() {
     let maw = maw_of(&state, 0);
     let lancer = movers_of(&state, 0)[0];
     let spot = TilePos::new(23, MID);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![lancer],
-            goal: spot,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([lancer], spot))]);
     common::run_until(&mut state, 500, |state, _| {
         let (hull, body) = (state.unit(maw).unwrap(), state.unit(lancer).unwrap());
         assert!(!inside(hull, body), "the Lancer is inside the Maw");
@@ -443,14 +398,7 @@ fn a_harvester_walks_round_its_own_maw_to_scrap_and_back() {
         0,
     );
     let harvester = movers_of(&state, 0)[0];
-    let order = cmd(
-        0,
-        Command::Harvest {
-            units: vec![harvester],
-            node,
-            queue: false,
-        },
-    );
+    let order = cmd(0, orders::harvest([harvester], node));
     let moved = run_past(&mut state, vec![order], 1_200, |_, events| {
         events
             .iter()
@@ -478,14 +426,7 @@ fn a_welder_walks_round_its_own_maw_to_a_wounded_machine() {
     edit(&mut state, patient, |row| {
         row["hp"] = serde_json::json!(wounded);
     });
-    let order = cmd(
-        0,
-        Command::RepairUnit {
-            units: vec![welder],
-            target: patient,
-            queue: false,
-        },
-    );
+    let order = cmd(0, orders::repair_unit([welder], patient));
     let moved = run_past(&mut state, vec![order], 500, |state, _| {
         state.unit(patient).unwrap().hp > wounded
     });
@@ -505,14 +446,7 @@ fn a_machine_walks_round_its_own_maw_to_board_a_transport() {
     let [rider, transport] = movers_of(&state, 0)[..] else {
         unreachable!("a rider and a transport")
     };
-    let order = cmd(
-        0,
-        Command::Load {
-            units: vec![rider],
-            transport,
-            queue: false,
-        },
-    );
+    let order = cmd(0, orders::load([rider], transport));
     let moved = run_past(&mut state, vec![order], 500, |_, events| {
         events
             .iter()
@@ -537,11 +471,7 @@ fn a_ranged_unit_walks_round_its_own_maw_to_fire_on_a_structure() {
     let full = state.building(barricade).unwrap().hp;
     let order = cmd(
         0,
-        Command::Attack {
-            units: vec![sentinel],
-            target: AttackTarget::Building(barricade),
-            queue: false,
-        },
+        orders::attack([sentinel], AttackTarget::Building(barricade)),
     );
     let moved = run_past(&mut state, vec![order], 500, |state, _| {
         state.building(barricade).unwrap().hp < full
@@ -588,14 +518,7 @@ fn a_harvesters_way_round_its_maw_bends_only_for_structures_its_team_has_seen() 
         });
         let sight = state.vision(PlayerId(0));
         assert!(!sight.visible(unseen) && sight.visible(seen));
-        let order = cmd(
-            0,
-            Command::Harvest {
-                units: vec![harvester],
-                node,
-                queue: false,
-            },
-        );
+        let order = cmd(0, orders::harvest([harvester], node));
         run_past(&mut state, vec![order], 1, |_, _| true);
         let (hull, body) = (state.unit(maw).unwrap(), state.unit(harvester).unwrap());
         let touch = hull.kind.stats().radius + body.kind.stats().radius;
@@ -626,14 +549,7 @@ fn a_harvesters_way_round_its_maw_bends_only_for_structures_its_team_has_seen() 
 /// the Maw has parked, before `mover` reaches it.
 fn park_across_a_fresh_route(state: &mut State, mover: UnitId, order: PlayerCommand) {
     let maw = maw_of(state, 0);
-    let park = cmd(
-        0,
-        Command::Run {
-            units: vec![maw],
-            goal: TilePos::new(23, MID),
-            queue: false,
-        },
-    );
+    let park = cmd(0, orders::run([maw], TilePos::new(23, MID)));
     run_past(state, vec![park, order], 300, |state, _| {
         let hull = state.unit(maw).unwrap();
         hull.path.is_none() && hull.drive_speed() == Fx::ZERO
@@ -654,14 +570,7 @@ fn a_maw_parking_across_a_route_planned_while_it_drove_holds_its_spot() {
         ],
     );
     let lancer = movers_of(&state, 0)[0];
-    let order = cmd(
-        0,
-        Command::Run {
-            units: vec![lancer],
-            goal: GOAL,
-            queue: false,
-        },
-    );
+    let order = cmd(0, orders::run([lancer], GOAL));
     park_across_a_fresh_route(&mut state, lancer, order);
     let moved = run_past(&mut state, Vec::new(), 500, |state, _| {
         TilePos::containing(state.unit(lancer).unwrap().pos).x >= THROUGH
@@ -683,14 +592,7 @@ fn a_maw_parking_across_a_harvest_route_planned_while_it_drove_holds_its_spot() 
         0,
     );
     let harvester = movers_of(&state, 0)[0];
-    let order = cmd(
-        0,
-        Command::Harvest {
-            units: vec![harvester],
-            node,
-            queue: false,
-        },
-    );
+    let order = cmd(0, orders::harvest([harvester], node));
     park_across_a_fresh_route(&mut state, harvester, order);
     let moved = run_past(&mut state, Vec::new(), 1_200, |_, events| {
         events
@@ -715,14 +617,7 @@ fn a_maw_parking_across_a_scout_route_planned_while_it_drove_holds_its_spot() {
     );
     let surveyor = movers_of(&state, 0)[0];
     let goal = TilePos::new(36, MID);
-    let order = cmd(
-        0,
-        Command::Scout {
-            units: vec![surveyor],
-            goal,
-            queue: false,
-        },
-    );
+    let order = cmd(0, orders::scout([surveyor], goal));
     park_across_a_fresh_route(&mut state, surveyor, order);
     let moved = run_past(&mut state, Vec::new(), 400, |state, _| {
         state.unit(surveyor).unwrap().order == Order::Idle
@@ -752,14 +647,7 @@ fn a_maw_pulls_aside_for_a_harvester_whose_way_round_runs_through_known_fire() {
         0,
     );
     let harvester = movers_of(&state, 0)[0];
-    let order = cmd(
-        0,
-        Command::Harvest {
-            units: vec![harvester],
-            node,
-            queue: false,
-        },
-    );
+    let order = cmd(0, orders::harvest([harvester], node));
     let moved = run_past(&mut state, vec![order], 1_200, |_, events| {
         events
             .iter()
@@ -779,14 +667,7 @@ fn a_surveyor_scouts_round_its_own_maw() {
     );
     let surveyor = movers_of(&state, 0)[0];
     let goal = TilePos::new(36, MID);
-    let order = cmd(
-        0,
-        Command::Scout {
-            units: vec![surveyor],
-            goal,
-            queue: false,
-        },
-    );
+    let order = cmd(0, orders::scout([surveyor], goal));
     let moved = run_past(&mut state, vec![order], 400, |state, _| {
         state.unit(surveyor).unwrap().order == Order::Idle
     });

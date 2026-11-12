@@ -6,7 +6,7 @@
 //! Crucible.
 
 use crate::common;
-use common::{cmd, players};
+use common::{CommandExt, building_id, cmd, orders, players};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{BuildingSpec, ScenarioMode, UnitSpec};
@@ -78,12 +78,7 @@ fn upgrade(building: aftermine_sim::BuildingId) -> PlayerCommand {
 }
 
 fn find(state: &State, kind: BuildingKind) -> aftermine_sim::BuildingId {
-    state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == kind)
-        .unwrap()
-        .id
+    building_id(state, |b| b.kind == kind)
 }
 
 fn run_until_built(state: &mut State, building: aftermine_sim::BuildingId, cap: u64) {
@@ -147,22 +142,8 @@ fn buying_an_upgrade_does_not_touch_worker_programs() {
     let turret = find(&state, BuildingKind::Turret);
     let worker = state.units()[0].id;
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![worker],
-                goal: TilePos::new(4, 3),
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![worker],
-                goal: TilePos::new(4, 6),
-                queue: true,
-            },
-        ),
+        cmd(0, orders::run([worker], TilePos::new(4, 3))),
+        cmd(0, orders::run([worker], TilePos::new(4, 6)).queued()),
     ]);
     assert!(
         !state.unit(worker).unwrap().queue.is_empty(),
@@ -190,16 +171,7 @@ fn workers_cannot_join_or_accelerate_a_self_upgrade() {
     state.tick(&[upgrade(turret)]);
     let mut control = state.clone();
 
-    let report = state.tick(&[cmd(
-        0,
-        Command::Build {
-            units: vec![worker],
-            kind,
-            anchor,
-            queue: false,
-            defer: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::build([worker], kind, anchor))]);
     control.tick(&[]);
 
     assert!(report.events.iter().any(|event| matches!(
@@ -224,13 +196,7 @@ fn a_stale_builder_order_cannot_speed_up_the_next_tier() {
     let anchor = TilePos::new(8, 3);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![worker],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([worker], BuildingKind::Turret, anchor),
     )]);
     let turret = find(&state, BuildingKind::Turret);
     run_until_built(&mut state, turret, 2_000);
@@ -327,13 +293,7 @@ fn the_bastion_ladder_starts_behind_the_fabricator() {
         let builder = state.units()[0].id;
         cmd(
             0,
-            Command::Build {
-                units: vec![builder],
-                kind: BuildingKind::Bastion,
-                anchor: TilePos::new(11, 2),
-                queue: false,
-                defer: false,
-            },
+            orders::build([builder], BuildingKind::Bastion, TilePos::new(11, 2)),
         )
     };
     let mut bare = arena(1_000, false, false);
@@ -452,11 +412,7 @@ fn an_upgrading_works_is_committed_offline_and_mortal() {
     // Offline: the site never fires while the raider grinds it down.
     let mut report = state.tick(&[cmd(
         1,
-        Command::Attack {
-            units: vec![raider],
-            target: aftermine_sim::Target::Building(turret).into(),
-            queue: false,
-        },
+        orders::attack([raider], aftermine_sim::Target::Building(turret)),
     )]);
     let mut destroyed = report.events.iter().any(
         |event| matches!(event, Event::BuildingDestroyed { building, .. } if *building == turret),
@@ -519,11 +475,7 @@ fn lethal_fire_wins_an_upgrades_completion_tick() {
     }
     let report = state.tick(&[cmd(
         1,
-        Command::Attack {
-            units: sappers,
-            target: aftermine_sim::Target::Building(turret).into(),
-            queue: false,
-        },
+        orders::attack(sappers, aftermine_sim::Target::Building(turret)),
     )]);
 
     assert!(report.events.iter().any(

@@ -5,7 +5,7 @@
 
 use crate::common;
 use aftermine_sim::scenario::ScenarioMode;
-use common::{cmd, players};
+use common::{CommandExt, building_id, cmd, orders, players};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::UnitSpec;
@@ -42,16 +42,7 @@ fn arena(scrap: u32, fabricator: bool, units: Vec<UnitSpec>) -> Scenario {
 }
 
 fn build_foundry(builder: aftermine_sim::UnitId, anchor: TilePos) -> PlayerCommand {
-    cmd(
-        0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Foundry,
-            anchor,
-            queue: false,
-            defer: false,
-        },
-    )
+    cmd(0, orders::build([builder], BuildingKind::Foundry, anchor))
 }
 
 fn harvester(x: i32, y: i32) -> UnitSpec {
@@ -99,12 +90,7 @@ fn a_completed_expansion_produces_and_smelts_its_own_drip() {
     let mut state = arena(1_000, true, vec![harvester(8, 4)]).build().unwrap();
     let builder = state.units()[0].id;
     state.tick(&[build_foundry(builder, TilePos::new(10, 4))]);
-    let expansion = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Foundry && !b.built())
-        .unwrap()
-        .id;
+    let expansion = building_id(&state, |b| b.kind == BuildingKind::Foundry && !b.built());
     for _ in 0..BuildingKind::Foundry.base_stats().construction.build_ticks + 40 {
         state.tick(&[]);
         if state
@@ -119,13 +105,7 @@ fn a_completed_expansion_produces_and_smelts_its_own_drip() {
         "the attended site completes"
     );
     let bank = state.player(PlayerId(0)).scrap;
-    let report = state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: expansion,
-            kind: UnitKind::Harvester,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::train(expansion, UnitKind::Harvester))]);
     assert!(
         !report
             .events
@@ -166,12 +146,9 @@ fn a_foundry_site_keeps_its_team_alive() {
     let mut state = arena(1_000, true, vec![harvester(8, 4)]).build().unwrap();
     let builder = state.units()[0].id;
     state.tick(&[build_foundry(builder, TilePos::new(10, 4))]);
-    let standing = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Foundry && b.built() && b.player == PlayerId(0))
-        .unwrap()
-        .id;
+    let standing = building_id(&state, |b| {
+        b.kind == BuildingKind::Foundry && b.built() && b.player == PlayerId(0)
+    });
 
     // The standing Foundry falls; the site under construction remains.
     // Removing a live id through the trust boundary is legal (ids are
@@ -195,12 +172,9 @@ fn a_foundry_site_keeps_its_team_alive() {
     );
 
     // The site falls too: now the seat is out and the match decides.
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Foundry && b.player == PlayerId(0))
-        .unwrap()
-        .id;
+    let site = building_id(&state, |b| {
+        b.kind == BuildingKind::Foundry && b.player == PlayerId(0)
+    });
     let mut value = serde_json::to_value(&state).unwrap();
     value["buildings"]
         .as_array_mut()
@@ -256,20 +230,9 @@ fn abandoned_sites_rust_away_and_attended_sites_do_not() {
     let (builder, bystander) = (state.units()[0].id, state.units()[1].id);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(9, 4),
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, TilePos::new(9, 4)),
     )]);
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let site = building_id(&state, |b| b.kind == BuildingKind::Turret);
     // Attended (the builder works it): the site only ever gains hp.
     let hp_start = state.building(site).unwrap().hp;
     for _ in 0..40 {
@@ -281,14 +244,7 @@ fn abandoned_sites_rust_away_and_attended_sites_do_not() {
     );
 
     // Called away: the scaffold decays one hp per period.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(16, 2),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(16, 2)))]);
     for _ in 0..60 {
         state.tick(&[]);
     }
@@ -303,14 +259,7 @@ fn abandoned_sites_rust_away_and_attended_sites_do_not() {
     );
 
     // A parked harvester beside the footprint counts as attendance.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![bystander],
-            goal: TilePos::new(10, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([bystander], TilePos::new(10, 4)))]);
     for _ in 0..40 {
         state.tick(&[]);
     }
@@ -325,14 +274,7 @@ fn abandoned_sites_rust_away_and_attended_sites_do_not() {
 
     // Left alone for good, the scaffold dies through the ordinary
     // destroyed-building path.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![bystander],
-            goal: TilePos::new(16, 2),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([bystander], TilePos::new(16, 2)))]);
     let mut destroyed = false;
     for _ in 0..2_000 {
         let report = state.tick(&[]);
@@ -367,24 +309,11 @@ fn a_paid_foundry_blueprint_keeps_its_seat_in_until_it_is_refunded() {
     let spot = TilePos::new(30, 9);
     // Walk off so the spot is remembered but out of sight, and the Foundry
     // is only a blueprint until the builder gets back.
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![builder],
-            goal: TilePos::new(10, 10),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([builder], TilePos::new(10, 10)))]);
     common::run_until(&mut state, 400, |s, _| !s.can_see(PlayerId(0), spot));
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Foundry,
-            anchor: spot,
-            queue: false,
-            defer: true,
-        },
+        orders::build([builder], BuildingKind::Foundry, spot).deferred(),
     )]);
     let blueprint = |s: &State| {
         s.buildings()
@@ -415,12 +344,7 @@ fn a_paid_foundry_blueprint_keeps_its_seat_in_until_it_is_refunded() {
     assert!(state.accepts_commands(PlayerId(0)));
 
     // Stopping the builder refunds the blueprint, and with it the seat is out.
-    state.tick(&[cmd(
-        0,
-        Command::Stop {
-            units: vec![builder],
-        },
-    )]);
+    state.tick(&[cmd(0, orders::stop([builder]))]);
     common::run(&mut state, 3);
     assert!(!blueprint(&state));
     assert!(state.player(PlayerId(0)).eliminated_at.is_some());

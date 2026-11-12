@@ -15,14 +15,7 @@ fn fixture() -> (State, Vec<UnitId>, TilePos) {
     let mut state = scenario.build().unwrap();
     let crew = state.units().iter().map(|u| u.id).collect::<Vec<_>>();
     let anchor = TilePos::new(12, 1);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: crew.clone(),
-            goal: TilePos::new(2, 6),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run(crew.clone(), TilePos::new(2, 6)))]);
     run_until(&mut state, 400, |s, _| !s.can_see(PlayerId(0), anchor));
     assert!(state.vision(PlayerId(0)).explored(anchor));
     (state, crew, anchor)
@@ -67,23 +60,13 @@ fn one_paid_nonphysical_site_survives_until_the_final_worker_abandons_it() {
 
     let snapshot = serde_json::to_string(&state).unwrap();
     let mut restored: State = serde_json::from_str(&snapshot).unwrap();
-    let stop = cmd(
-        0,
-        Command::Stop {
-            units: vec![crew[0]],
-        },
-    );
+    let stop = cmd(0, orders::stop([crew[0]]));
     state.tick(std::slice::from_ref(&stop));
     restored.tick(&[stop]);
     assert_eq!(state, restored);
     assert!(state.building(id).is_some());
     assert_eq!(state.player(PlayerId(0)).scrap, bank - cost);
-    let report = state.tick(&[cmd(
-        0,
-        Command::Stop {
-            units: vec![crew[1], crew[1]],
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::stop([crew[1], crew[1]]))]);
     assert!(state.building(id).is_none());
     assert_eq!(state.player(PlayerId(0)).scrap, bank);
     assert_eq!(
@@ -136,12 +119,7 @@ fn visibility_activates_the_same_site_without_another_payment() {
     snapshot["map"]["grid"]["cells"][tile]["wreck"] = serde_json::json!(100);
     state = serde_json::from_value(snapshot).unwrap();
     state.tick(&[cmd(0, plan(crew.clone(), anchor, false))]);
-    let id = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .unwrap()
-        .id;
+    let id = building_id(&state, |b| b.anchor == anchor);
     let bank = state.player(PlayerId(0)).scrap;
     run_until(&mut state, 600, |s, _| {
         s.building(id).is_some_and(|b| !b.provisional())
@@ -162,7 +140,7 @@ fn visibility_activates_the_same_site_without_another_payment() {
             .all(|id_| state.unit(*id_).unwrap().order == Order::Build { site: id })
     );
     state.validate_invariants().unwrap();
-    state.tick(&[cmd(0, Command::Stop { units: crew })]);
+    state.tick(&[cmd(0, orders::stop(crew))]);
     assert!(state.building(id).is_none());
     assert!(state.map().wreck_at(anchor) > 0);
 }
@@ -216,18 +194,12 @@ fn a_provisional_site_cannot_shield_a_physical_building_from_blind_fire() {
     let state = scenario.build().unwrap();
     let shooter = state.units()[0].id;
     let bystander = state.units()[2].id;
-    let provisional = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Barricade && b.player == PlayerId(1))
-        .unwrap()
-        .id;
-    let physical = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Barricade && b.player == PlayerId(2))
-        .unwrap()
-        .id;
+    let provisional = building_id(&state, |b| {
+        b.kind == BuildingKind::Barricade && b.player == PlayerId(1)
+    });
+    let physical = building_id(&state, |b| {
+        b.kind == BuildingKind::Barricade && b.player == PlayerId(2)
+    });
     let mut snapshot = serde_json::to_value(&state).unwrap();
     // One enemy planned unseen ground; another claimed it. The shooter still
     // remembers a removed mine whose owner differs from the physical building.
@@ -298,14 +270,7 @@ fn a_provisional_site_cannot_shield_a_physical_building_from_blind_fire() {
                 .is_none()
         );
         let hp = state.building(physical).unwrap().hp;
-        let report = state.tick(&[cmd(
-            0,
-            Command::Attack {
-                units: vec![shooter],
-                target,
-                queue: false,
-            },
-        )]);
+        let report = state.tick(&[cmd(0, orders::attack([shooter], target))]);
         assert!(
             !report
                 .events

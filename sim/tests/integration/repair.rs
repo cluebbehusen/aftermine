@@ -2,11 +2,11 @@
 //! through the public API only, like `behavior.rs`.
 
 use crate::common;
-use common::{arena, cmd, run_until, unit};
+use common::{CommandExt, arena, building_id, cmd, orders, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::stats::{BuildingKind, RECLAIMER_PERIOD};
-use aftermine_sim::{Command, Event, Order, PlayerId, State, UnitKind};
+use aftermine_sim::{Event, Order, PlayerId, State, UnitKind};
 use chassis::grid::TilePos;
 
 /// Builds a turret at (3,3), lets an enemy ranged raid wound it (the
@@ -22,34 +22,16 @@ fn wounded_turret(
     *state = common::idle_welds_off(state, &[builder]);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(3, 3),
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, TilePos::new(3, 3)),
     )]);
     run_until(state, 500, |_, events| {
         events
             .iter()
             .any(|e| matches!(e, Event::BuildingCompleted { .. }))
     });
-    let turret = state
-        .buildings()
-        .iter()
-        .find(|b| b.kind == BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let turret = building_id(state, |b| b.kind == BuildingKind::Turret);
     // The ranged raiders damage the turret before it defeats them.
-    state.tick(&[cmd(
-        1,
-        Command::Hunt {
-            units: raiders.to_vec(),
-            goal: TilePos::new(3, 4),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(1, orders::hunt(raiders.to_vec(), TilePos::new(3, 4)))]);
     let mut fallen = 0;
     run_until(state, 1200, |_, events| {
         fallen += events
@@ -64,19 +46,10 @@ fn wounded_turret(
         "test premise: the raid must leave scars (hp {hp})"
     );
     // Train the welder now that the field is quiet.
-    let foundry = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
-        .unwrap()
-        .id;
-    state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: foundry,
-            kind: UnitKind::Harvester,
-        },
-    )]);
+    let foundry = building_id(state, |b| {
+        b.player == PlayerId(0) && b.kind == BuildingKind::Foundry
+    });
+    state.tick(&[cmd(0, orders::train(foundry, UnitKind::Harvester))]);
     let mut welder = None;
     run_until(state, 200, |_, events| {
         events.iter().any(|e| {
@@ -106,14 +79,7 @@ fn harvesters_weld_wounds_shut_for_a_price() {
     let raiders = vec![state.units()[1].id, state.units()[2].id];
     let (turret, welder, wounded_hp) = wounded_turret(&mut state, builder, &raiders);
     let bank_before = state.player(PlayerId(0)).scrap;
-    state.tick(&[cmd(
-        0,
-        Command::Repair {
-            units: vec![welder],
-            building: turret,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::repair([welder], turret))]);
     run_until(&mut state, 600, |s, _| {
         s.building(turret).unwrap().hp == BuildingKind::Turret.base_stats().max_hp
     });
@@ -153,36 +119,20 @@ fn a_rejected_welders_prepaid_coin_comes_back() {
     // Foundry; leaving the opener there lets contact-arrival stop a newcomer
     // before its explicit parking tile.
     let opener_staging = TilePos::new(8, 1);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![opener],
-            goal: opener_staging,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([opener], opener_staging))]);
     run_until(&mut state, 300, |s, _| {
         s.unit(opener).unwrap().tile() == opener_staging
     });
     // Two more torches, parked adjacent BEFORE they are needed so
     // their first weld ticks are their first meter ticks.
-    let foundry = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
-        .unwrap()
-        .id;
+    let foundry = building_id(&state, |b| {
+        b.player == PlayerId(0) && b.kind == BuildingKind::Foundry
+    });
     let mut fresh = Vec::new();
     // South-side parks: away from the foundry's spawn traffic, so each
     // torch walks alone and lands exactly on its goal.
     for park in [TilePos::new(2, 4), TilePos::new(4, 4)] {
-        state.tick(&[cmd(
-            0,
-            Command::Train {
-                building: foundry,
-                kind: UnitKind::Harvester,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::train(foundry, UnitKind::Harvester))]);
         let mut trained = None;
         run_until(&mut state, 200, |_, events| {
             events.iter().any(|e| {
@@ -197,14 +147,7 @@ fn a_rejected_welders_prepaid_coin_comes_back() {
         let torch = trained.expect("trained");
         // Parked beside the wound, a torch waits for its Repair order.
         state = common::idle_welds_off(&state, &[torch]);
-        state.tick(&[cmd(
-            0,
-            Command::Run {
-                units: vec![torch],
-                goal: park,
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::run([torch], park))]);
         run_until(&mut state, 300, |s, _| {
             s.unit(torch).unwrap().tile() == park
         });
@@ -214,14 +157,7 @@ fn a_rejected_welders_prepaid_coin_comes_back() {
     // more than 1 hp per tick: ramp 280 over 300 ticks), then stands
     // down.
     let max = BuildingKind::Turret.base_stats().max_hp;
-    state.tick(&[cmd(
-        0,
-        Command::Repair {
-            units: vec![opener],
-            building: turret,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::repair([opener], turret))]);
     run_until(&mut state, 900, |s, _| {
         s.building(turret).unwrap().hp >= max - 1
     });
@@ -230,22 +166,10 @@ fn a_rejected_welders_prepaid_coin_comes_back() {
         max - 1,
         "test premise: stopped one hp short"
     );
-    state.tick(&[cmd(
-        0,
-        Command::Stop {
-            units: vec![opener],
-        },
-    )]);
+    state.tick(&[cmd(0, orders::stop([opener]))]);
     // Both fresh torches take the last hp together.
     let bank_before = state.player(PlayerId(0)).scrap;
-    state.tick(&[cmd(
-        0,
-        Command::Repair {
-            units: fresh.clone(),
-            building: turret,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::repair(fresh.clone(), turret))]);
     run_until(&mut state, 60, |s, _| s.building(turret).unwrap().hp == max);
     let spent = bank_before - state.player(PlayerId(0)).scrap;
     assert_eq!(
@@ -264,12 +188,7 @@ fn a_free_stepping_welder_still_consumes_the_room() {
         .buildings
         .push(common::building(0, BuildingKind::Turret, 3, 3));
     let state = scenario.build().unwrap();
-    let turret = state
-        .buildings()
-        .iter()
-        .find(|building| building.kind == BuildingKind::Turret)
-        .unwrap()
-        .id;
+    let turret = building_id(&state, |building| building.kind == BuildingKind::Turret);
     let midmeter = state.units()[0].id;
     let joiner = state.units()[1].id;
     let max = BuildingKind::Turret.base_stats().max_hp;
@@ -330,14 +249,7 @@ fn an_empty_bank_stalls_the_torch() {
     let builder = state.units()[0].id;
     let raiders = vec![state.units()[1].id, state.units()[2].id];
     let (turret, welder, _) = wounded_turret(&mut state, builder, &raiders);
-    state.tick(&[cmd(
-        0,
-        Command::Repair {
-            units: vec![welder],
-            building: turret,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::repair([welder], turret))]);
     run_until(&mut state, 300, |_, events| {
         events.iter().any(|e| {
             matches!(
@@ -364,30 +276,13 @@ fn repair_rejects_the_healthy_the_foreign_and_the_unfinished() {
         .build()
         .unwrap();
     let builder = state.units()[0].id;
-    let my_foundry = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(0))
-        .unwrap()
-        .id;
-    let their_foundry = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(1))
-        .unwrap()
-        .id;
+    let my_foundry = building_id(&state, |b| b.player == PlayerId(0));
+    let their_foundry = building_id(&state, |b| b.player == PlayerId(1));
     for (building, expected) in [
         (my_foundry, RejectReason::InvalidTarget),
         (their_foundry, RejectReason::NotYourBuilding),
     ] {
-        let report = state.tick(&[cmd(
-            0,
-            Command::Repair {
-                units: vec![builder],
-                building,
-                queue: false,
-            },
-        )]);
+        let report = state.tick(&[cmd(0, orders::repair([builder], building))]);
         assert!(
             report
                 .events
@@ -399,28 +294,10 @@ fn repair_rejects_the_healthy_the_foreign_and_the_unfinished() {
     // A fresh site is Build's business, not Repair's.
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(6, 1),
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Turret, TilePos::new(6, 1)),
     )]);
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| !b.built())
-        .expect("site placed")
-        .id;
-    let report = state.tick(&[cmd(
-        0,
-        Command::Repair {
-            units: vec![builder],
-            building: site,
-            queue: false,
-        },
-    )]);
+    let site = building_id(&state, |b| !b.built());
+    let report = state.tick(&[cmd(0, orders::repair([builder], site))]);
     assert!(report.events.iter().any(|e| matches!(
         e,
         Event::CommandRejected {
@@ -438,13 +315,7 @@ fn reclaimers_trickle_scrap_forever() {
     let builder = state.units()[0].id;
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![builder],
-            kind: BuildingKind::Reclaimer,
-            anchor: TilePos::new(5, 1),
-            queue: false,
-            defer: false,
-        },
+        orders::build([builder], BuildingKind::Reclaimer, TilePos::new(5, 1)),
     )]);
     run_until(&mut state, 500, |_, events| {
         events
@@ -491,14 +362,7 @@ fn reissued_repairs_still_pay_for_the_welding() {
     // counter on reissue would keep it from ever reaching a whole scrap.
     let mut healed = false;
     for _ in 0..150 {
-        state.tick(&[cmd(
-            0,
-            Command::Repair {
-                units: vec![welder],
-                building: turret,
-                queue: false,
-            },
-        )]);
+        state.tick(&[cmd(0, orders::repair([welder], turret))]);
         for _ in 0..3 {
             state.tick(&[]);
         }
@@ -533,14 +397,7 @@ fn the_torch_bills_its_first_scrap_the_tick_it_lights() {
     let raiders = vec![state.units()[1].id, state.units()[2].id];
     let (turret, welder, _) = wounded_turret(&mut state, builder, &raiders);
     let bank_before = state.player(PlayerId(0)).scrap;
-    state.tick(&[cmd(
-        0,
-        Command::Repair {
-            units: vec![welder],
-            building: turret,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::repair([welder], turret))]);
     // The welder trained adjacent to the foundry and must walk over; give
     // it until the first welding tick, which is when the first coin drops.
     run_until(&mut state, 100, |s, _| {
@@ -576,14 +433,7 @@ fn the_last_coin_prepays_its_full_scrap_of_welding() {
     assert_eq!(state.player(PlayerId(0)).scrap, 1, "test premise: one coin");
     let hp_before = state.building(turret).unwrap().hp;
 
-    state.tick(&[cmd(
-        0,
-        Command::Repair {
-            units: vec![welder],
-            building: turret,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::repair([welder], turret))]);
     run_until(&mut state, 300, |_, events| {
         events
             .iter()
@@ -639,22 +489,8 @@ fn a_queued_repair_waits_its_turn_then_welds() {
 
     // Send the welder marching, then queue the weld behind the march.
     let waypoint = TilePos::new(10, 2);
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![welder],
-            goal: waypoint,
-            queue: false,
-        },
-    )]);
-    state.tick(&[cmd(
-        0,
-        Command::Repair {
-            units: vec![welder],
-            building: turret,
-            queue: true,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([welder], waypoint))]);
+    state.tick(&[cmd(0, orders::repair([welder], turret).queued())]);
     assert!(
         matches!(state.unit(welder).unwrap().order, Order::Run { .. }),
         "the march survives the shift-repair"
