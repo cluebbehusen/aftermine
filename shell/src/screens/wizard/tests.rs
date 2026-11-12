@@ -39,7 +39,7 @@ fn the_setup_hint_names_only_what_the_hands_in_use_have() {
         for one_team in [false, true] {
             for press in EVERY_PRESS {
                 let hint = setup_hint(one_team, press, hands);
-                crate::platform::tests::assert_copy_fits(hands, hint);
+                crate::platform::tests::assert_copy_fits(hands, &hint);
                 assert_eq!(hint.contains("{back}"), hands.keys, "{hint}");
             }
         }
@@ -52,7 +52,7 @@ fn the_setup_hints_spell_out_what_the_remotes_buttons_do() {
         pad: Some(aftermine_protocol::PadFamily::Remote),
         ..crate::platform::tests::ALL_HANDS[3]
     };
-    let filled = |template| crate::platform::tests::assert_pad_copy(hands, template);
+    let filled = |template: String| crate::platform::tests::assert_pad_copy(hands, &template);
     assert_eq!(
         filled(setup_hint(true, CursorPress::Start, hands)),
         "Every seat is on one team - Click a TEAM chip to change it - Back to leave"
@@ -107,7 +107,7 @@ fn the_setup_hints_spell_out_what_the_remotes_buttons_do() {
         assert_eq!(filled(setup_hint(false, press, hands)), expected);
     }
     assert_eq!(
-        filled(moving_hint(hands)),
+        filled(moving_hint(hands).to_owned()),
         "Click a seat to swap them there - Back to cancel"
     );
 }
@@ -304,7 +304,7 @@ fn a_stale_seat_never_carries_across_maps() {
     let mut draft = NewMatchDraft::default();
     draft.set_scenario(team.clone(), path.clone());
     draft.seat_choice = 5;
-    let stance = cycle_stance(draft.seats[3].stance, 1);
+    let stance = next_choice(&BotStance::ALL, draft.seats[3].stance);
     draft.seats[3].stance = stance;
     draft.set_scenario(team, path);
     assert_eq!(draft.seat_choice, 5, "same map: the chair survives Back");
@@ -1210,11 +1210,14 @@ fn compact_setup_touch_only_edges_activate_every_editable_chip() {
             Cell::Difficulty => {
                 assert_eq!(
                     draft.seats[seat].difficulty,
-                    cycle_difficulty(initial_difficulty, 1)
+                    next_choice(&BotDifficulty::ALL, initial_difficulty)
                 );
                 assert_eq!(draft.seats[seat].stance, initial_stance);
             }
-            Cell::Stance => assert_eq!(draft.seats[seat].stance, cycle_stance(initial_stance, 1)),
+            Cell::Stance => assert_eq!(
+                draft.seats[seat].stance,
+                next_choice(&BotStance::ALL, initial_stance)
+            ),
             Cell::Team => assert_eq!(
                 draft.seats[seat].team_choice,
                 (initial_team + 1) % (draft.seats.len() + 1)
@@ -1724,7 +1727,7 @@ fn the_setup_hints_name_a_controllers_buttons_while_one_is_in_use() {
         crate::platform::tests::assert_pad_copy(hands, moving_hint(hands));
         for one_team in [false, true] {
             for press in EVERY_PRESS {
-                crate::platform::tests::assert_pad_copy(hands, setup_hint(one_team, press, hands));
+                crate::platform::tests::assert_pad_copy(hands, &setup_hint(one_team, press, hands));
             }
         }
     }
