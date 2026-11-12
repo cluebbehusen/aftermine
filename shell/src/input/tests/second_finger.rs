@@ -170,13 +170,7 @@ fn a_second_finger_held_on_a_slot_saves_the_selection_there() {
     let mut game = headless_game();
     let mut input = InputState::new();
     let (fighter, at) = own_fighter(&game);
-    let harvester = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .expect("own Harvester")
-        .id;
+    let harvester = own_unit(&game, UnitKind::Harvester);
     input.groups[0] = Group::Units(vec![harvester]);
     game.presentation.selection.set_units(vec![fighter]);
     let slot = group_one_slot(&game, &input);

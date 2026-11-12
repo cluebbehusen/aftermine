@@ -23,13 +23,7 @@ pub(super) fn relayout(game: &Game, input: &InputState) {
 /// would before input.
 fn builder_in_hand() -> Game {
     let mut game = headless_game();
-    let builder = game
-        .state
-        .units()
-        .iter()
-        .find(|u| u.player == game.presentation.human && u.kind == UnitKind::Harvester)
-        .expect("the human starts with a harvester")
-        .id;
+    let builder = own_unit(&game, UnitKind::Harvester);
     game.presentation.selection.set_units(vec![builder]);
     relayout(&game, &InputState::new());
     game

@@ -4,9 +4,10 @@ use super::current;
 use crate::action::BindingMap;
 use crate::game::Game;
 use crate::panel::CardIcon;
-use crate::tests::support::{pos, scene, units_of};
+use crate::tests::support::{left_down, pos, sandbox, scene, units_of};
 use aftermine_protocol::{PadButton, RawEvent};
 use aftermine_sim::{BuildingKind, Command, UnitKind};
+use macroquad::prelude::vec2;
 
 /// Publishes the panel as the HUD's layout pass does before input.
 fn publish(game: &Game, input: &InputState) {
@@ -316,15 +317,7 @@ fn another_hand_or_a_lost_controller_closes_the_ring() {
         input.ring.is_some(),
         "a mouse that only moves leaves it open"
     );
-    feed(
-        &mut game,
-        &mut input,
-        &[RawEvent::MouseDown {
-            button: aftermine_protocol::MouseButton::Left,
-            x: 5.0,
-            y: 5.0,
-        }],
-    );
+    feed(&mut game, &mut input, &[left_down(vec2(5.0, 5.0))]);
     assert!(input.ring.is_none(), "a click closes it");
     tap(&mut game, &mut input, PadButton::North);
     feed(
@@ -1053,30 +1046,20 @@ fn a_held_left_trigger_turns_order_into_fill_under_the_stick() {
 /// A sandbox holding one own `unit` or one built own `building`, with a
 /// derelict Extractor frame at (40, 10) where an Extractor stands.
 fn lone(unit: Option<UnitKind>, building: Option<BuildingKind>) -> Game {
-    let mut map = vec![".".repeat(64); 40];
-    map[10].replace_range(40..41, "E");
     let anchor = if building == Some(BuildingKind::Extractor) {
         (40, 10)
     } else {
         (30, 18)
     };
-    let scenario = aftermine_sim::Scenario::from_json(
-        &serde_json::json!({
-            "name": "Lone kind",
-            "mode": "sandbox",
-            "players": [{"name": "You", "scrap": 1000, "bot": false}],
-            "map": map,
-            "units": unit
-                .map(|kind| vec![serde_json::json!({"player": 0, "kind": kind, "x": 30, "y": 24})])
-                .unwrap_or_default(),
-            "buildings": building
-                .map(|kind| vec![serde_json::json!({"player": 0, "kind": kind, "x": anchor.0, "y": anchor.1})])
-                .unwrap_or_default(),
-        })
-        .to_string(),
-    )
-    .expect("the scene parses");
-    Game::with_viewport(scenario, macroquad::prelude::vec2(1280.0, 800.0))
+    let units: Vec<_> = unit.map(|kind| (0, kind, 30, 24)).into_iter().collect();
+    let buildings: Vec<_> = building
+        .map(|kind| (0, kind, anchor.0, anchor.1))
+        .into_iter()
+        .collect();
+    let mut scenario = sandbox(64, 40, 1, &units, &buildings);
+    scenario.players[0].scrap = 1000;
+    scenario.map[10].replace_range(40..41, "E");
+    Game::with_viewport(scenario, vec2(1280.0, 800.0))
         .unwrap_or_else(|error| panic!("{unit:?} {building:?} stands alone: {error:#}"))
 }
 

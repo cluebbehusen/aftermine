@@ -5,7 +5,7 @@ use super::super::tests::pad_scene::{FRAME, down, left_stick, pad_input, up};
 use super::super::{InputState, apply_events, track_hands, update_held};
 use super::*;
 use crate::render::hud::{self, HudEnv};
-use crate::tests::support::{building_at, denied, scene};
+use crate::tests::support::{building_at, denied, left_down, scene};
 use aftermine_protocol::RawEvent;
 use aftermine_sim::{BuildingKind, Command, UnitKind};
 use macroquad::prelude::vec2;
@@ -302,15 +302,7 @@ fn it_closes_when_the_dock_empties_the_selection_changes_or_another_hand_takes_o
         input.dock.is_some(),
         "a mouse that only moves leaves it open"
     );
-    feed(
-        &mut game,
-        &mut input,
-        &[RawEvent::MouseDown {
-            button: aftermine_protocol::MouseButton::Left,
-            x: 10.0,
-            y: 10.0,
-        }],
-    );
+    feed(&mut game, &mut input, &[left_down(vec2(10.0, 10.0))]);
     assert!(input.dock.is_none(), "a click took over");
 }
 

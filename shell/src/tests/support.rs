@@ -5,7 +5,7 @@
 use crate::game::Game;
 use aftermine_protocol::{Key, MouseButton, RawEvent};
 use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
-use aftermine_sim::{BuildingId, BuildingKind, Scenario, UnitId, UnitKind};
+use aftermine_sim::{BuildingId, BuildingKind, Command, Scenario, UnitId, UnitKind};
 use macroquad::prelude::{Vec2, vec2};
 
 /// Pixels per tile in [`scene`]: a tile is 32 logical pixels, so the
@@ -64,6 +64,34 @@ pub(crate) fn scene(
     let mut game = Game::with_viewport(scenario, vec2(1280.0, 800.0)).expect("the scene builds");
     game.presentation.camera.show(CENTER, ZOOM);
     game
+}
+
+/// Issues `command` for the local seat and runs one tick.
+pub(crate) fn issue_tick(game: &mut Game, command: Command) {
+    game.issue(command);
+    game.do_tick();
+}
+
+/// The local seat's first unit of `kind`.
+#[track_caller]
+pub(crate) fn own_unit(game: &Game, kind: UnitKind) -> UnitId {
+    game.state
+        .units()
+        .iter()
+        .find(|unit| unit.player == game.presentation.human && unit.kind == kind)
+        .expect("the local seat fields one")
+        .id
+}
+
+/// The local seat's first structure of `kind`.
+#[track_caller]
+pub(crate) fn own_building(game: &Game, kind: BuildingKind) -> BuildingId {
+    game.state
+        .buildings()
+        .iter()
+        .find(|building| building.player == game.presentation.human && building.kind == kind)
+        .expect("the local seat holds one")
+        .id
 }
 
 /// The ids of `player`'s units of `kind`, in id order.
@@ -150,6 +178,14 @@ pub(crate) fn left_up(at: Vec2) -> RawEvent {
 
 pub(crate) fn right_down(at: Vec2) -> RawEvent {
     RawEvent::MouseDown {
+        button: MouseButton::Right,
+        x: at.x,
+        y: at.y,
+    }
+}
+
+pub(crate) fn right_up(at: Vec2) -> RawEvent {
+    RawEvent::MouseUp {
         button: MouseButton::Right,
         x: at.x,
         y: at.y,
