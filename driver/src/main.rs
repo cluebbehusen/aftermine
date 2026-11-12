@@ -418,7 +418,8 @@ enum Cmd {
     },
     /// Run named native frame workloads and report where each frame's time
     /// goes: Home, then small and large matches, fogged and open, held at
-    /// zooms from near to far and across camera motions. Stays on one fixed
+    /// zooms from near to far and across camera motions, then a 500-unit mass
+    /// battle with and without seat zero's army selected. Stays on one fixed
     /// frame sequence so runs compare.
     ProfileGraphics {
         /// Keep only workloads whose name contains this.

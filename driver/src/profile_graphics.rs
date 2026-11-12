@@ -6,8 +6,8 @@ use crate::client::Client;
 use crate::profile::{ProfileWorkspace, connect_within, expect_ok, expect_performance};
 use aftermine_kit::runner;
 use aftermine_protocol::{
-    CameraMotion, FrameProbes, FrameProfileView, FrameScript, Request, StateFilter, StateView,
-    TimingSummary,
+    CameraMotion, FrameProbes, FrameProfileView, FrameScript, Key, RawEvent, Request, StateFilter,
+    StateView, TimingSummary,
 };
 use aftermine_sim::Scenario;
 use anyhow::{Context, Result, bail, ensure};
@@ -207,15 +207,56 @@ impl Shot {
     }
 }
 
+/// What a workload does to its scene before its frames are measured, through
+/// the input funnel a player's own input takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Setup {
+    /// The scene as it loads.
+    None,
+    /// Seat zero selects its whole army with the profiling config's Select
+    /// army chord.
+    SelectArmy,
+}
+
+impl Setup {
+    /// The requests that set the scene up, sent before the frame script.
+    fn requests(self) -> Vec<Request> {
+        match self {
+            Self::None => Vec::new(),
+            Self::SelectArmy => chord(&[Key::Ctrl, Key::A]),
+        }
+    }
+}
+
+/// `keys` pressed in order and released in reverse, as a player holds a
+/// modifier around a key.
+fn chord(keys: &[Key]) -> Vec<Request> {
+    let press = keys.iter().map(|&key| RawEvent::KeyDown { key });
+    let release = keys.iter().rev().map(|&key| RawEvent::KeyUp { key });
+    press
+        .chain(release)
+        .map(|event| Request::InjectEvent { event })
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct Workload {
     name: String,
     source: Source,
     shot: Shot,
     /// Whether the match plays while frames are measured; every other workload
-    /// holds it paused. A match that has played can't repeat, so each trial of
-    /// this workload gets a fresh shell.
+    /// holds it paused.
     running: bool,
+    setup: Setup,
+}
+
+impl Workload {
+    /// A match that has played, or a scene that was set up, can't be put
+    /// back, so each trial of such a workload gets a fresh shell, and so does
+    /// the workload after it.
+    fn changes_its_shell(&self) -> bool {
+        self.running || self.setup != Setup::None
+    }
 }
 
 /// Every workload, with those sharing a source next to each other so a run
@@ -226,6 +267,7 @@ fn workloads() -> Vec<Workload> {
         source: Source::Home,
         shot: Shot::Own,
         running: false,
+        setup: Setup::None,
     }];
     for scene in [Scene::Small, Scene::Large] {
         for view in [View::Fogged, View::Open] {
@@ -236,6 +278,7 @@ fn workloads() -> Vec<Workload> {
                     source,
                     shot,
                     running: false,
+                    setup: Setup::None,
                 });
             }
             if (scene, view) == (Scene::Large, View::Fogged) {
@@ -244,17 +287,21 @@ fn workloads() -> Vec<Workload> {
                     source,
                     shot: Shot::Hold(NEAR_ZOOM),
                     running: true,
+                    setup: Setup::None,
                 });
             }
         }
     }
     let mass = Shot::Hold(MASS_ZOOM);
-    all.push(Workload {
-        name: format!("mass-fogged-{}", mass.name()),
-        source: Source::Match(Scene::Mass, View::Fogged),
-        shot: mass,
-        running: false,
-    });
+    for (setup, suffix) in [(Setup::None, ""), (Setup::SelectArmy, "-selected")] {
+        all.push(Workload {
+            name: format!("mass-fogged-{}{suffix}", mass.name()),
+            source: Source::Match(Scene::Mass, View::Fogged),
+            shot: mass,
+            running: false,
+            setup,
+        });
+    }
     all
 }
 
@@ -411,13 +458,16 @@ fn run_source(
         eprintln!("profiling {}", workload.name);
         let mut trials = Vec::new();
         for trial in 0..options.trials {
-            if workload.running {
+            if workload.changes_its_shell() {
                 shell = None;
             }
             let live = match &mut shell {
                 Some(live) => live,
                 None => shell.insert(ProfiledShell::launch(root, executable, source, options)?),
             };
+            for request in workload.setup.requests() {
+                expect_ok(&live.client.call(request)?, "set up the scene")?;
+            }
             let frame_script = script(workload, live.center);
             let probes = probes_for_trial(trial, options);
             trials.push(run_trial(&mut live.client, &frame_script, &probes)?);
@@ -431,7 +481,7 @@ fn run_source(
             final_camera: [camera.center[0], camera.center[1], camera.zoom],
             trials,
         });
-        if workload.running {
+        if workload.changes_its_shell() {
             shell = None;
         }
     }

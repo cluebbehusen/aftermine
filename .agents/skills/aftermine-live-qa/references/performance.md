@@ -95,6 +95,13 @@ whatever the display does, from replays kept in `replays/graphics`. Narrow a run
 with `--only <name part>`. Compare runs on one machine only and run the same
 binary twice first: a difference smaller than that repeat's is noise.
 
+To measure what a scene state costs, such as a selection, pair a workload that
+sets the scene up with one that doesn't and compare the two.
+`mass-fogged-hold-12-selected` and `mass-fogged-hold-12` are such a pair. A
+setup step injects the input events a player would make before the frame script
+starts, and the workload runs in a shell of its own so nothing it changed
+reaches the next one.
+
 Check for other builds and shells before trusting a run. The Mac's frame
 `interval` follows its display, so use `cpu` against the 8.33 ms budget, then
 confirm a win on the iPad with the Detailed performance graph. A Mac with its

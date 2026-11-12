@@ -88,7 +88,7 @@ fn report(workloads: Vec<WorkloadResult>) -> GraphicsReport {
 #[test]
 fn every_workload_has_a_unique_name_and_shares_a_shell_with_its_source() {
     let all = workloads();
-    assert_eq!(all.len(), 1 + 4 * Shot::MATCH.len() + 1 + 1);
+    assert_eq!(all.len(), 1 + 4 * Shot::MATCH.len() + 1 + 2);
     let names: std::collections::BTreeSet<_> = all.iter().map(|w| w.name.as_str()).collect();
     assert_eq!(names.len(), all.len());
     let mut seen = Vec::new();
@@ -139,8 +139,7 @@ fn the_mass_battle_fits_in_view_with_every_unit_standing() {
         f64::from(state.map().width()) <= width && f64::from(state.map().height()) <= height,
         "the field must fit a {width:.0}x{height:.0}-tile view"
     );
-    let workload = select(Some("mass-")).expect("matches");
-    assert_eq!(workload.len(), 1);
+    let workload = select(Some("mass-fogged-hold-12")).expect("matches");
     assert_eq!(workload[0].name, "mass-fogged-hold-12");
     assert_eq!(
         script(&workload[0], [0.0, 0.0]).motion,
@@ -150,6 +149,69 @@ fn the_mass_battle_fits_in_view_with_every_unit_standing() {
             frames: HOLD_FRAMES,
         }
     );
+}
+
+#[test]
+fn a_large_selection_is_set_up_against_an_unselected_control() {
+    let mass = select(Some("mass-")).expect("matches");
+    let shape: Vec<_> = mass
+        .iter()
+        .map(|workload| (workload.name.as_str(), workload.setup))
+        .collect();
+    assert_eq!(
+        shape,
+        [
+            ("mass-fogged-hold-12", Setup::None),
+            ("mass-fogged-hold-12-selected", Setup::SelectArmy),
+        ]
+    );
+    assert_eq!(mass[0].shot, mass[1].shot);
+    assert!(!mass[0].changes_its_shell());
+    assert!(
+        mass[1].changes_its_shell(),
+        "a selection would leak into the next workload"
+    );
+    let set_up: Vec<_> = workloads()
+        .into_iter()
+        .filter(|workload| workload.setup != Setup::None)
+        .map(|workload| workload.name)
+        .collect();
+    assert_eq!(set_up, ["mass-fogged-hold-12-selected"]);
+}
+
+#[test]
+fn selecting_the_army_presses_the_chord_the_profiling_config_binds() {
+    let config: serde_json::Value =
+        serde_json::from_str(include_str!("../quiet_config.json")).expect("parses");
+    let bound: Vec<_> = config["bindings"]["bindings"]
+        .as_array()
+        .expect("bindings")
+        .iter()
+        .filter(|binding| binding["action"] == "SelectArmy")
+        .map(|binding| binding["chord"].clone())
+        .collect();
+    assert_eq!(
+        bound,
+        [serde_json::json!({"key": "a", "ctrl": true, "shift": false})]
+    );
+    let events: Vec<_> = Setup::SelectArmy
+        .requests()
+        .into_iter()
+        .map(|request| match request {
+            Request::InjectEvent { event } => event,
+            other => panic!("a chord only injects input, not {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        events,
+        [
+            RawEvent::KeyDown { key: Key::Ctrl },
+            RawEvent::KeyDown { key: Key::A },
+            RawEvent::KeyUp { key: Key::A },
+            RawEvent::KeyUp { key: Key::Ctrl },
+        ]
+    );
+    assert!(Setup::None.requests().is_empty());
 }
 
 #[test]
@@ -170,6 +232,7 @@ fn shots_become_the_camera_motions_they_name() {
             source: Source::Home,
             shot,
             running: false,
+            setup: Setup::None,
         };
         script(&workload, center).motion
     };
