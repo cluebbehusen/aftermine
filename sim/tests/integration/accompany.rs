@@ -5,7 +5,10 @@
 //! slots.
 
 use crate::common;
-use common::{assert_refused, cmd, open_arena, rejected, run, run_until, unit};
+use common::{
+    CommandExt, assert_refused, building_id, cmd, open_arena, orders, rejected, run, run_until,
+    unit,
+};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{ScenarioMode, UnitSpec};
@@ -27,20 +30,8 @@ fn ids(state: &State) -> Vec<UnitId> {
     state.units().iter().map(|u| u.id).collect()
 }
 
-fn accompany(units: Vec<UnitId>, target: UnitId, queue: bool) -> Command {
-    Command::Accompany {
-        units,
-        target,
-        queue,
-    }
-}
-
 fn run_to(units: Vec<UnitId>, x: i32, y: i32) -> Command {
-    Command::Run {
-        units,
-        goal: TilePos::new(x, y),
-        queue: false,
-    }
+    orders::run(units, TilePos::new(x, y))
 }
 
 fn escorting(state: &State, escort: UnitId, escorted: UnitId) -> bool {
@@ -95,7 +86,7 @@ fn escorts_hold_slots_around_a_moving_unit() {
     let [lead, fast, steady, flyer] = ids(&state)[..] else {
         unreachable!()
     };
-    let report = state.tick(&[cmd(0, accompany(vec![fast, steady, flyer], lead, false))]);
+    let report = state.tick(&[cmd(0, orders::accompany([fast, steady, flyer], lead))]);
     assert!(rejected(&report.events).is_empty());
     run(&mut state, 60);
     for escort in [fast, steady, flyer] {
@@ -137,7 +128,7 @@ fn escorts_never_slow_the_escorted_unit() {
         };
         let mut commands = vec![cmd(0, run_to(vec![lead], 34, 10))];
         if escorted {
-            commands.push(cmd(0, accompany(vec![a, b], lead, false)));
+            commands.push(cmd(0, orders::accompany([a, b], lead)));
         }
         state.tick(&commands);
         let mut ticks = 1;
@@ -166,7 +157,7 @@ fn an_escort_fights_a_threat_near_the_escorted_unit_then_returns() {
     };
     set_hp(&mut state, raider, 10);
     state.tick(&[
-        cmd(0, accompany(vec![guard], lead, false)),
+        cmd(0, orders::accompany([guard], lead)),
         cmd(1, run_to(vec![raider], 13, 11)),
     ]);
     run_until(&mut state, 300, |s, _| fighting_for(s, guard, lead));
@@ -199,14 +190,11 @@ fn an_escort_on_a_structure_is_not_held_by_a_unit_beyond_its_reach_and_the_break
     let [lead, guard, _idler] = ids(&state)[..] else {
         unreachable!()
     };
-    let wall = state
-        .buildings()
-        .iter()
-        .find(|b| b.player.0 == 1 && b.kind == aftermine_sim::BuildingKind::Barricade)
-        .unwrap()
-        .id;
+    let wall = building_id(&state, |b| {
+        b.player.0 == 1 && b.kind == aftermine_sim::BuildingKind::Barricade
+    });
     let full = state.building(wall).unwrap().hp;
-    state.tick(&[cmd(0, accompany(vec![guard], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([guard], lead))]);
     let events = run(&mut state, 400);
     let shots = events
         .iter()
@@ -232,7 +220,7 @@ fn an_escort_breaks_off_a_victim_that_strays_past_the_break_radius() {
     let [lead, guard, raider, _scout] = ids(&state)[..] else {
         unreachable!()
     };
-    state.tick(&[cmd(0, accompany(vec![guard], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([guard], lead))]);
     run_until(&mut state, 60, |s, _| fighting_for(s, guard, lead));
     state.tick(&[cmd(1, run_to(vec![raider], 36, 10))]);
     let bound = ESCORT_BREAK_RADIUS.to_num::<i32>() + 2;
@@ -266,7 +254,7 @@ fn an_escort_shelled_from_beyond_its_engage_radius_holds_its_slot() {
     let [lead, guard, ..] = ids(&state)[..] else {
         unreachable!()
     };
-    state.tick(&[cmd(0, accompany(vec![guard], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([guard], lead))]);
     let full = state.unit(guard).unwrap().hp;
     let mut hit = false;
     for _ in 0..300 {
@@ -294,7 +282,7 @@ fn a_long_gun_escort_fires_at_its_full_reach_without_leaving_its_slot() {
     let [lead, gun, target, _scout] = ids(&state)[..] else {
         unreachable!()
     };
-    state.tick(&[cmd(0, accompany(vec![gun], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([gun], lead))]);
     run_until(&mut state, 300, |s, _| fighting_for(s, gun, lead));
     let stand = state.unit(gun).unwrap().pos;
     let full = UnitKind::Sentinel.stats().max_hp;
@@ -329,7 +317,7 @@ fn a_long_gun_escort_left_behind_rejoins_before_firing_from_its_slot_again() {
     let [lead, gun, ..] = ids(&state)[..] else {
         unreachable!()
     };
-    state.tick(&[cmd(0, accompany(vec![gun], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([gun], lead))]);
     let engage = aftermine_sim::stats::ESCORT_ENGAGE_RADIUS;
     run_until(&mut state, 400, |s, _| {
         let behind = s.unit(gun).unwrap().pos.dist_sq(s.unit(lead).unwrap().pos);
@@ -366,7 +354,7 @@ fn an_escort_catching_up_does_not_answer_fire_from_beside_its_path() {
     let [lead, lancer] = ids(&state)[..] else {
         unreachable!()
     };
-    state.tick(&[cmd(0, accompany(vec![lancer], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([lancer], lead))]);
     let (full, engage) = (
         state.unit(lancer).unwrap().hp,
         aftermine_sim::stats::ESCORT_ENGAGE_RADIUS,
@@ -398,7 +386,7 @@ fn an_escort_far_behind_closes_on_a_threat_near_its_unit() {
     let [lead, guard, threat] = ids(&state)[..] else {
         unreachable!()
     };
-    state.tick(&[cmd(0, accompany(vec![guard], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([guard], lead))]);
     let full = UnitKind::Harvester.stats().max_hp;
     run_until(&mut state, 600, |s, _| {
         s.unit(threat).is_none_or(|t| t.hp < full)
@@ -432,7 +420,7 @@ fn an_escort_passes_over_an_aircraft_it_could_shoot_only_from_a_sealed_stand() {
     let [lead, guard, _scout] = ids(&state)[..] else {
         unreachable!()
     };
-    state.tick(&[cmd(0, accompany(vec![guard], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([guard], lead))]);
     for _ in 0..100 {
         state.tick(&[]);
         assert!(escorting(&state, guard, lead), "no fight is ever picked");
@@ -454,7 +442,7 @@ fn a_talon_escort_rises_only_against_aircraft() {
             unreachable!()
         };
         state.tick(&[
-            cmd(0, accompany(vec![talon], lead, false)),
+            cmd(0, orders::accompany([talon], lead)),
             cmd(1, run_to(vec![enemy], 13, 10)),
         ]);
         let mut rose = false;
@@ -488,7 +476,7 @@ fn a_welder_escort_mends_the_party_only_while_the_escorted_unit_stands() {
     };
     set_hp(&mut state, lead, 20);
     state.tick(&[
-        cmd(0, accompany(vec![welder], lead, false)),
+        cmd(0, orders::accompany([welder], lead)),
         cmd(0, run_to(vec![lead], 30, 10)),
     ]);
     run_until(&mut state, 1_000, |s, _| {
@@ -533,7 +521,7 @@ fn a_broke_welder_escort_waits_without_leaving_duty() {
         unreachable!()
     };
     set_hp(&mut state, lead, 20);
-    state.tick(&[cmd(0, accompany(vec![welder], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([welder], lead))]);
     let events = run(&mut state, 300);
     assert_eq!(state.unit(lead).unwrap().hp, 20);
     assert!(escorting(&state, welder, lead));
@@ -578,7 +566,7 @@ fn a_fight_no_route_reaches_returns_the_escort_to_duty() {
     let [lead, guard, sealed, _scout] = ids(&state)[..] else {
         unreachable!()
     };
-    state.tick(&[cmd(0, accompany(vec![guard], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([guard], lead))]);
     let mut data = serde_json::to_value(&state).unwrap();
     let row = data["units"]
         .as_array_mut()
@@ -639,7 +627,7 @@ fn an_escort_never_picks_a_threat_it_can_neither_shoot_nor_reach() {
     let [lead, guard, ..] = ids(&state)[..] else {
         unreachable!()
     };
-    state.tick(&[cmd(0, accompany(vec![guard], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([guard], lead))]);
     for _ in 0..100 {
         state.tick(&[]);
         assert!(escorting(&state, guard, lead), "no fight is ever picked");
@@ -660,15 +648,8 @@ fn escorts_take_their_next_order_or_idle_when_the_escorted_unit_leaves_play() {
         unreachable!()
     };
     state.tick(&[
-        cmd(0, accompany(vec![queued, plain], lead, false)),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![queued],
-                goal: TilePos::new(20, 4),
-                queue: true,
-            },
-        ),
+        cmd(0, orders::accompany([queued, plain], lead)),
+        cmd(0, orders::run([queued], TilePos::new(20, 4)).queued()),
     ]);
     run(&mut state, 60);
     let rest = state.unit(plain).unwrap().pos;
@@ -702,25 +683,11 @@ fn escorts_follow_the_escorted_unit_aboard_a_transport() {
         unreachable!()
     };
     state.tick(&[
-        cmd(0, accompany(vec![escort], lead, false)),
-        cmd(
-            0,
-            Command::Load {
-                units: vec![lead],
-                transport: sling,
-                queue: false,
-            },
-        ),
+        cmd(0, orders::accompany([escort], lead)),
+        cmd(0, orders::load([lead], sling)),
     ]);
     run_until(&mut state, 200, |s, _| s.unit(lead).is_none());
-    state.tick(&[cmd(
-        0,
-        Command::Unload {
-            transport: sling,
-            at: TilePos::new(28, 10),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::unload(sling, TilePos::new(28, 10)))]);
     run_until(&mut state, 800, |s, _| {
         assert!(escorting(s, escort, lead), "duty survives the ride");
         s.unit(lead).is_some()
@@ -744,7 +711,7 @@ fn a_skyhook_escort_keeps_a_motion_the_validator_accepts() {
     let [lead, sling] = ids(&state)[..] else {
         unreachable!()
     };
-    state.tick(&[cmd(0, accompany(vec![sling], lead, false))]);
+    state.tick(&[cmd(0, orders::accompany([sling], lead))]);
     let mut refused = 0;
     for leg in 0..24 {
         let (x, y) = [(34, 4), (5, 16), (34, 16), (5, 4)][leg % 4];
@@ -770,15 +737,8 @@ fn a_transport_carrying_the_unit_it_escorts_holds_still() {
     let all = ids(&state);
     let (lead, sling) = (all[0], all[9]);
     state.tick(&[
-        cmd(0, accompany(all[1..].to_vec(), lead, false)),
-        cmd(
-            0,
-            Command::Load {
-                units: vec![lead],
-                transport: sling,
-                queue: false,
-            },
-        ),
+        cmd(0, orders::accompany(all[1..].to_vec(), lead)),
+        cmd(0, orders::load([lead], sling)),
     ]);
     run_until(&mut state, 200, |s, _| s.unit(lead).is_none());
     run(&mut state, 20);
@@ -808,20 +768,20 @@ fn escort_loops_are_refused_at_dispatch() {
         unreachable!()
     };
     let report = state.tick(&[
-        cmd(0, accompany(vec![a], b, false)),
-        cmd(0, accompany(vec![b], d, false)),
+        cmd(0, orders::accompany([a], b)),
+        cmd(0, orders::accompany([b], d)),
     ]);
     assert!(rejected(&report.events).is_empty());
     let refuse = |state: &mut State, command: Command| {
         assert_refused(state, cmd(0, command), RejectReason::NoValidUnits);
     };
     // Directly, and through the chain a -> b -> d.
-    refuse(&mut state, accompany(vec![b], a, false));
-    refuse(&mut state, accompany(vec![d], a, false));
+    refuse(&mut state, orders::accompany([b], a));
+    refuse(&mut state, orders::accompany([d], a));
     // Through an escort waiting in a program.
     state.tick(&[cmd(0, run_to(vec![c], 20, 4))]);
-    state.tick(&[cmd(0, accompany(vec![c], a, true))]);
-    refuse(&mut state, accompany(vec![a], c, false));
+    state.tick(&[cmd(0, orders::accompany([c], a).queued())]);
+    refuse(&mut state, orders::accompany([a], c));
 }
 
 #[test]
@@ -842,14 +802,10 @@ fn accompany_refuses_foreign_and_absent_targets() {
         (UnitId(999), RejectReason::InvalidTarget),
         (own, RejectReason::NoValidUnits),
     ] {
-        assert_refused(
-            &mut state,
-            cmd(0, accompany(vec![own], target, false)),
-            reason,
-        );
+        assert_refused(&mut state, cmd(0, orders::accompany([own], target)), reason);
     }
     // The target never escorts itself; the rest of the list does.
-    let report = state.tick(&[cmd(0, accompany(vec![own, mate], own, false))]);
+    let report = state.tick(&[cmd(0, orders::accompany([own, mate], own))]);
     assert!(rejected(&report.events).is_empty());
     assert!(escorting(&state, mate, own));
     assert_eq!(state.unit(own).unwrap().order, Order::Idle);
@@ -921,8 +877,8 @@ fn mirrored_escorts_take_mirrored_slots() {
     let goal = TilePos::new(26, 6);
     let far = mirror(goal);
     state.tick(&[
-        cmd(0, accompany(west_ids[1..].to_vec(), west_ids[0], false)),
-        cmd(1, accompany(east_ids[1..].to_vec(), east_ids[0], false)),
+        cmd(0, orders::accompany(west_ids[1..].to_vec(), west_ids[0])),
+        cmd(1, orders::accompany(east_ids[1..].to_vec(), east_ids[0])),
         cmd(0, run_to(vec![west_ids[0]], goal.x, goal.y)),
         cmd(1, run_to(vec![east_ids[0]], far.x, far.y)),
     ]);
@@ -1007,8 +963,8 @@ fn escorts_of_foundries_on_the_middle_row_take_mirrored_slots() {
         .collect();
     let (west_ids, east_ids): (Vec<UnitId>, Vec<UnitId>) = pairs.iter().copied().unzip();
     state.tick(&[
-        cmd(0, accompany(west_ids[1..].to_vec(), west_ids[0], false)),
-        cmd(1, accompany(east_ids[1..].to_vec(), east_ids[0], false)),
+        cmd(0, orders::accompany(west_ids[1..].to_vec(), west_ids[0])),
+        cmd(1, orders::accompany(east_ids[1..].to_vec(), east_ids[0])),
     ]);
     for tick in 0..60 {
         for &(w, e) in &pairs[1..] {

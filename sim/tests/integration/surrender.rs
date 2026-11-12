@@ -4,7 +4,7 @@
 
 use crate::common;
 use aftermine_sim::scenario::ScenarioMode;
-use common::cmd;
+use common::{cmd, orders};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::PlayerSpec;
@@ -111,7 +111,7 @@ fn a_team_concession_is_seat_scoped_until_the_whole_team_resigns() {
 
     // The conceded seat has no voice left: any later command — a second
     // Surrender included — rejects at the gate.
-    for command in [Command::Stop { units: Vec::new() }, Command::Surrender] {
+    for command in [orders::stop(Vec::new()), Command::Surrender] {
         let report = state.tick(&[cmd(1, command)]);
         assert!(
             report.events.iter().any(|e| matches!(

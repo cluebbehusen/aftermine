@@ -4,12 +4,12 @@
 
 use crate::common;
 use aftermine_sim::scenario::ScenarioMode;
-use common::{cmd, players, unit};
+use common::{building_id, cmd, orders, players, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::UnitSpec;
 use aftermine_sim::stats::BuildingKind;
-use aftermine_sim::{Command, Event, Scenario, UnitKind};
+use aftermine_sim::{Event, Scenario, UnitKind};
 use chassis::grid::TilePos;
 
 fn arena(scrap: u32, fabricator: bool, units: Vec<UnitSpec>) -> Scenario {
@@ -45,13 +45,7 @@ fn the_excavator_waits_on_the_fabricator_and_builds_at_double_pace() {
     // Without the tech hall, the Foundry refuses the Excavator by name.
     let mut bare = arena(1_000, false, vec![]).build().unwrap();
     let foundry = bare.buildings()[0].id;
-    let report = bare.tick(&[cmd(
-        0,
-        Command::Train {
-            building: foundry,
-            kind: UnitKind::Excavator,
-        },
-    )]);
+    let report = bare.tick(&[cmd(0, orders::train(foundry, UnitKind::Excavator))]);
     assert!(report.events.iter().any(|e| matches!(
         e,
         Event::CommandRejected {
@@ -68,20 +62,9 @@ fn the_excavator_waits_on_the_fabricator_and_builds_at_double_pace() {
         let builder = state.units()[0].id;
         state.tick(&[cmd(
             0,
-            Command::Build {
-                units: vec![builder],
-                kind: BuildingKind::Turret,
-                anchor: TilePos::new(9, 4),
-                queue: false,
-                defer: false,
-            },
+            orders::build([builder], BuildingKind::Turret, TilePos::new(9, 4)),
         )]);
-        let site = state
-            .buildings()
-            .iter()
-            .find(|b| b.kind == BuildingKind::Turret)
-            .unwrap()
-            .id;
+        let site = building_id(&state, |b| b.kind == BuildingKind::Turret);
         let mut started = None;
         for tick in 0..2_000u64 {
             state.tick(&[]);
@@ -130,11 +113,7 @@ fn interceptors_rule_the_sky_and_ignore_the_ground() {
     // A ground target refuses the air-only gun.
     let report = state.tick(&[cmd(
         0,
-        Command::Attack {
-            units: vec![talon],
-            target: aftermine_sim::Target::Unit(crawler).into(),
-            queue: false,
-        },
+        orders::attack([talon], aftermine_sim::Target::Unit(crawler)),
     )]);
     let ground_hit = (0..40).any(|_| {
         state
@@ -149,11 +128,7 @@ fn interceptors_rule_the_sky_and_ignore_the_ground() {
     // The scout falls to it.
     state.tick(&[cmd(
         0,
-        Command::Attack {
-            units: vec![talon],
-            target: aftermine_sim::Target::Unit(scout).into(),
-            queue: false,
-        },
+        orders::attack([talon], aftermine_sim::Target::Unit(scout)),
     )]);
     let mut fell = false;
     for _ in 0..400 {

@@ -2,11 +2,13 @@
 //! while its unit is carried, and it clears the tick its unit leaves play.
 
 use crate::common;
-use common::{assert_refused, cmd, open_arena, rejected, run, run_until, unit};
+use common::{
+    assert_refused, building_id, cmd, open_arena, orders, rejected, run, run_until, unit,
+};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::UnitSpec;
-use aftermine_sim::{BuildingId, Command, Event, Order, Rally, State, UnitId, UnitKind};
+use aftermine_sim::{BuildingId, Event, Order, Rally, State, UnitId, UnitKind};
 use chassis::grid::TilePos;
 use serde_json::json;
 
@@ -19,25 +21,12 @@ fn build(units: Vec<UnitSpec>) -> State {
 }
 
 fn foundry(state: &State) -> BuildingId {
-    state
-        .buildings()
-        .iter()
-        .find(|b| b.player.0 == 0)
-        .expect("the west Foundry")
-        .id
-}
-
-fn rally(building: BuildingId, rally: Option<Rally>) -> Command {
-    Command::SetRally { building, rally }
-}
-
-fn train(building: BuildingId, kind: UnitKind) -> Command {
-    Command::Train { building, kind }
+    building_id(state, |b| b.player.0 == 0)
 }
 
 /// Trains `kind` and returns the newborn at the end of its birth tick.
 fn newborn(state: &mut State, building: BuildingId, kind: UnitKind) -> UnitId {
-    state.tick(&[cmd(0, train(building, kind))]);
+    state.tick(&[cmd(0, orders::train(building, kind))]);
     let events = run_until(state, 2_000, |_, events| {
         events
             .iter()
@@ -56,7 +45,7 @@ fn newborn(state: &mut State, building: BuildingId, kind: UnitKind) -> UnitId {
 fn every_newborn_escorts_the_rally_unit() {
     let mut state = build(vec![unit(0, UnitKind::Sentinel, 12, 10)]);
     let (home, guard) = (foundry(&state), state.units()[0].id);
-    let report = state.tick(&[cmd(0, rally(home, Some(Rally::Unit(guard))))]);
+    let report = state.tick(&[cmd(0, orders::set_rally(home, Some(Rally::Unit(guard))))]);
     assert!(rejected(&report.events).is_empty());
     assert_eq!(
         state.building(home).unwrap().rally,
@@ -84,15 +73,8 @@ fn a_unit_rally_rides_with_its_unit_aboard_a_transport() {
     let home = foundry(&state);
     let (guard, sling) = (state.units()[0].id, state.units()[1].id);
     state.tick(&[
-        cmd(0, rally(home, Some(Rally::Unit(guard)))),
-        cmd(
-            0,
-            Command::Load {
-                units: vec![guard],
-                transport: sling,
-                queue: false,
-            },
-        ),
+        cmd(0, orders::set_rally(home, Some(Rally::Unit(guard)))),
+        cmd(0, orders::load([guard], sling)),
     ]);
     run_until(&mut state, 200, |s, _| s.unit(guard).is_none());
     assert_eq!(
@@ -100,8 +82,8 @@ fn a_unit_rally_rides_with_its_unit_aboard_a_transport() {
         Some(Rally::Unit(guard)),
         "boarding keeps the unit in play"
     );
-    state.tick(&[cmd(0, rally(home, None))]);
-    let report = state.tick(&[cmd(0, rally(home, Some(Rally::Unit(guard))))]);
+    state.tick(&[cmd(0, orders::set_rally(home, None))]);
+    let report = state.tick(&[cmd(0, orders::set_rally(home, Some(Rally::Unit(guard))))]);
     assert!(
         rejected(&report.events).is_empty(),
         "a rider can be rallied onto"
@@ -137,7 +119,7 @@ fn a_unit_rally_clears_the_tick_its_unit_dies() {
     let mut data = serde_json::to_value(&state).unwrap();
     data["units"][0]["hp"] = json!(1);
     state = serde_json::from_value(data).unwrap();
-    state.tick(&[cmd(0, rally(home, Some(Rally::Unit(doomed))))]);
+    state.tick(&[cmd(0, orders::set_rally(home, Some(Rally::Unit(doomed))))]);
     let events = run_until(&mut state, 200, |s, events| {
         s.validate_invariants().unwrap();
         events
@@ -165,11 +147,14 @@ fn a_unit_rally_refuses_foreign_and_absent_units() {
     for target in [enemy, UnitId(999)] {
         assert_refused(
             &mut state,
-            cmd(0, rally(home, Some(Rally::Unit(target)))),
+            cmd(0, orders::set_rally(home, Some(Rally::Unit(target)))),
             RejectReason::InvalidTarget,
         );
     }
     // A tile rally still behaves as before.
-    let report = state.tick(&[cmd(0, rally(home, Some(Rally::Tile(TilePos::new(9, 9)))))]);
+    let report = state.tick(&[cmd(
+        0,
+        orders::set_rally(home, Some(Rally::Tile(TilePos::new(9, 9)))),
+    )]);
     assert!(rejected(&report.events).is_empty());
 }

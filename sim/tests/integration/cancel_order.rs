@@ -3,7 +3,7 @@
 //! while the command is in flight never change which order goes.
 
 use crate::common;
-use common::{arena, assert_refused, cmd, run_until, unit};
+use common::{CommandExt, arena, assert_refused, building_id, cmd, orders, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{PlayerSpec, ScenarioMode, UnitSpec};
@@ -121,13 +121,7 @@ fn a_patrol_cut_to_one_leg_keeps_looping_and_the_last_leg_idles_it() {
     let mut state = sandbox(30, 10, &[(0, UnitKind::Sentinel, 3, 5)]);
     let id = ids(&state, 0)[0];
     let (a, b) = (TilePos::new(6, 5), TilePos::new(24, 5));
-    state.tick(&[cmd(
-        0,
-        Command::Patrol {
-            units: vec![id],
-            waypoints: vec![a, b],
-        },
-    )]);
+    state.tick(&[cmd(0, orders::patrol([id], [a, b]))]);
     state.tick(&[cancel(id, walk(b), 0, &[])]);
     assert_eq!(keys(&state, id), walks(&[a]));
     assert!(state.unit(id).unwrap().looping, "one leg still loops");
@@ -153,22 +147,8 @@ fn a_cancelled_harvest_keeps_its_cargo() {
     let node = TilePos::new(11, 4);
     let home = TilePos::new(1, 1);
     state.tick(&[
-        cmd(
-            0,
-            Command::Harvest {
-                units: vec![worker],
-                node,
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![worker],
-                goal: home,
-                queue: true,
-            },
-        ),
+        cmd(0, orders::harvest([worker], node)),
+        cmd(0, orders::run([worker], home).queued()),
     ]);
     run_until(&mut state, 400, |state, _| {
         state.unit(worker).unwrap().carrying() > 0
@@ -189,20 +169,9 @@ fn cancelling_the_last_build_order_on_an_unstarted_site_refunds_it() {
     let anchor = TilePos::new(9, 6);
     state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![worker],
-            kind: BuildingKind::Turret,
-            anchor,
-            queue: false,
-            defer: false,
-        },
+        orders::build([worker], BuildingKind::Turret, anchor),
     )]);
-    let site = state
-        .buildings()
-        .iter()
-        .find(|b| b.anchor == anchor)
-        .expect("the site stands")
-        .id;
+    let site = building_id(&state, |b| b.anchor == anchor);
     let paid = state.player(PlayerId(0)).scrap;
     assert_eq!(
         state
@@ -317,22 +286,8 @@ fn an_engagement_on_the_march_goes_with_its_leg() {
     let group = ids(&state, 0);
     let (click, next) = (TilePos::new(12, 5), TilePos::new(20, 5));
     state.tick(&[
-        cmd(
-            0,
-            Command::Hunt {
-                units: group.clone(),
-                goal: click,
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Hunt {
-                units: group.clone(),
-                goal: next,
-                queue: true,
-            },
-        ),
+        cmd(0, orders::hunt(group.clone(), click)),
+        cmd(0, orders::hunt(group.clone(), next).queued()),
     ]);
     run_until(&mut state, 300, |state, _| {
         group.iter().any(|&id| {
@@ -375,22 +330,8 @@ fn walks_match_by_click_whatever_their_verb() {
     };
     let (a, b) = (TilePos::new(20, 5), TilePos::new(25, 5));
     state.tick(&[
-        cmd(
-            0,
-            Command::Hunt {
-                units: vec![fighter, worker],
-                goal: a,
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Advance {
-                units: vec![fighter, worker],
-                goal: b,
-                queue: true,
-            },
-        ),
+        cmd(0, orders::hunt([fighter, worker], a)),
+        cmd(0, orders::advance([fighter, worker], b).queued()),
     ]);
     assert!(matches!(
         state.unit(worker).unwrap().order,
@@ -415,30 +356,9 @@ fn only_the_named_verb_leaves_a_mixed_program() {
     let node = TilePos::new(11, 4);
     let (a, b) = (TilePos::new(8, 6), TilePos::new(3, 6));
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![worker],
-                goal: a,
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Harvest {
-                units: vec![worker],
-                node,
-                queue: true,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![worker],
-                goal: b,
-                queue: true,
-            },
-        ),
+        cmd(0, orders::run([worker], a)),
+        cmd(0, orders::harvest([worker], node).queued()),
+        cmd(0, orders::run([worker], b).queued()),
     ]);
     state.tick(&[cancel(worker, OrderKey::Harvest { anchor: node }, 0, &[])]);
     assert_eq!(keys(&state, worker), walks(&[a, b]));
@@ -570,20 +490,8 @@ fn repeated_waypoints_out_of_step_drop_different_visits() {
     };
     let [a, b, c] = [(20, 2), (20, 9), (30, 5)].map(|(x, y)| TilePos::new(x, y));
     state.tick(&[
-        cmd(
-            0,
-            Command::Patrol {
-                units: vec![subject],
-                waypoints: vec![a, b, a, c],
-            },
-        ),
-        cmd(
-            0,
-            Command::Patrol {
-                units: vec![other],
-                waypoints: vec![b, a, c, a],
-            },
-        ),
+        cmd(0, orders::patrol([subject], [a, b, a, c])),
+        cmd(0, orders::patrol([other], [b, a, c, a])),
     ]);
     let mut patrols = state.clone();
     patrols.tick(&[cancel(subject, walk(a), 1, &[other])]);
@@ -619,14 +527,7 @@ fn a_landing_that_took_over_a_walk_goes_with_the_walk() {
         unreachable!()
     };
     assert_eq!(from, Some(click), "test premise");
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![condor],
-            goal: next,
-            queue: true,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([condor], next).queued())]);
     assert!(matches!(
         state.unit(condor).unwrap().order,
         Order::Land { .. }
@@ -666,14 +567,7 @@ fn refusals_leave_the_world_untouched() {
     };
     let foreign = ids(&state, 1)[0];
     let [a, b, c] = [(20, 3), (20, 8), (30, 8)].map(|(x, y)| TilePos::new(x, y));
-    state.tick(&[cmd(
-        0,
-        Command::Load {
-            units: vec![rider],
-            transport: skyhook,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::load([rider], skyhook))]);
     run_until(&mut state, 200, |state, _| state.unit(rider).is_none());
     state.tick(&program(&[subject], &[a, b]));
     state.tick(&program(&[holder], &[a, c, a]));

@@ -5,7 +5,7 @@
 //! never read ground the player has not seen.
 
 use crate::common;
-use common::{cmd, run_until};
+use common::{cmd, orders, run_until};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::event::StallReason;
@@ -86,14 +86,6 @@ fn explored(state: &State, player: u8, tile: TilePos) -> bool {
     state.vision(PlayerId(player)).explored(tile)
 }
 
-fn move_to(units: Vec<UnitId>, goal: TilePos) -> Command {
-    Command::Run {
-        units,
-        goal,
-        queue: false,
-    }
-}
-
 fn no_routes(events: &[Event]) -> Vec<UnitId> {
     events
         .iter()
@@ -124,7 +116,7 @@ fn a_group_spreads_at_issue_on_explored_ground_and_on_exposure_otherwise() {
     let seen = TilePos::new(8, 6);
     assert!(explored(&base, 0, seen));
     let mut state = base.clone();
-    state.tick(&[cmd(0, move_to(group.clone(), seen))]);
+    state.tick(&[cmd(0, orders::run(group.clone(), seen))]);
     let goals: Vec<Goal> = group.iter().map(|&id| goal(&state, id).unwrap()).collect();
     assert!(
         goals
@@ -145,7 +137,7 @@ fn a_group_spreads_at_issue_on_explored_ground_and_on_exposure_otherwise() {
     let unseen = TilePos::new(34, 6);
     assert!(!explored(&base, 0, unseen));
     let mut state = base;
-    state.tick(&[cmd(0, move_to(group.clone(), unseen))]);
+    state.tick(&[cmd(0, orders::run(group.clone(), unseen))]);
     let pending: Vec<Goal> = group.iter().map(|&id| goal(&state, id).unwrap()).collect();
     let aftermine_sim::Aim::Pending { reverse, .. } = pending[0].aim else {
         panic!("an unseen click waits for exposure: {pending:?}");
@@ -211,8 +203,8 @@ fn a_teammates_sight_hands_a_far_unit_its_slot() {
     let click = TilePos::new(40, 4);
     assert!(!explored(&state, 0, click) && !explored(&state, 1, click));
     state.tick(&[
-        cmd(0, move_to(vec![mine], click)),
-        cmd(1, move_to(vec![ally], TilePos::new(47, 4))),
+        cmd(0, orders::run([mine], click)),
+        cmd(1, orders::run([ally], TilePos::new(47, 4))),
     ]);
     assert!(goal(&state, mine).unwrap().is_pending());
     run_until(&mut state, 300, |state, _| {
@@ -248,18 +240,9 @@ fn rally_newborn(state: &mut State, rally: TilePos) -> UnitId {
     state.tick(&[
         cmd(
             0,
-            Command::SetRally {
-                building: foundry,
-                rally: Some(aftermine_sim::Rally::Tile(rally)),
-            },
+            orders::set_rally(foundry, Some(aftermine_sim::Rally::Tile(rally))),
         ),
-        cmd(
-            0,
-            Command::Train {
-                building: foundry,
-                kind: UnitKind::Harvester,
-            },
-        ),
+        cmd(0, orders::train(foundry, UnitKind::Harvester)),
     ]);
     let events = run_until(state, 400, |_, events| {
         events
@@ -315,13 +298,7 @@ fn an_off_map_rally_from_an_old_record_is_clamped_onto_the_map() {
     doc["buildings"][0]["rally"] = serde_json::json!({"tile": {"x": -2, "y": 5}});
     state = serde_json::from_value(doc).expect("the envelope admits it");
     let foundry = state.buildings()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Train {
-            building: foundry,
-            kind: UnitKind::Harvester,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::train(foundry, UnitKind::Harvester))]);
     let events = run_until(&mut state, 400, |_, events| {
         events
             .iter()
@@ -372,11 +349,7 @@ fn pacifists_sent_at_an_unexplored_radar_contact_share_its_tile() {
     let walkers = ids(&state, 0);
     state.tick(&[cmd(
         0,
-        Command::Attack {
-            units: walkers.clone(),
-            target: AttackTarget::Contact(contact),
-            queue: false,
-        },
+        orders::attack(walkers.clone(), AttackTarget::Contact(contact)),
     )]);
     let goals: Vec<Goal> = walkers
         .iter()
@@ -409,7 +382,7 @@ fn a_pending_group_into_an_unexplored_island_ends_at_the_shore() {
     let group = ids(&state, 0);
     let island = TilePos::new(33, 5);
     assert!(!explored(&state, 0, island));
-    state.tick(&[cmd(0, move_to(group.clone(), island))]);
+    state.tick(&[cmd(0, orders::run(group.clone(), island))]);
     assert!(
         group
             .iter()
@@ -443,7 +416,7 @@ fn an_explored_click_with_no_open_ground_near_it_ends_as_one_crowd() {
     let group = ids(&state, 0);
     let click = TilePos::new(15, 7);
     assert!(explored(&state, 0, click));
-    state.tick(&[cmd(0, move_to(group.clone(), click))]);
+    state.tick(&[cmd(0, orders::run(group.clone(), click))]);
     assert!(
         group
             .iter()
@@ -470,7 +443,7 @@ fn reissuing_a_walk_keeps_its_path_seen_or_unseen() {
             &[(0, UnitKind::Sentinel, 3, 5), (0, UnitKind::Sentinel, 3, 7)],
         );
         let group = ids(&state, 0);
-        let order = cmd(0, move_to(group.clone(), click));
+        let order = cmd(0, orders::run(group.clone(), click));
         state.tick(std::slice::from_ref(&order));
         for _ in 0..3 {
             state.tick(&[]);
@@ -502,12 +475,12 @@ fn a_reissue_onto_a_new_slot_adopts_it_without_touching_the_path() {
     );
     let group = ids(&state, 0);
     let click = TilePos::new(8, 6);
-    state.tick(&[cmd(0, move_to(group.clone(), click))]);
+    state.tick(&[cmd(0, orders::run(group.clone(), click))]);
     state.tick(&[]);
     let second = state.unit(group[1]).unwrap().clone();
     let slotted = goal(&state, group[1]).unwrap();
     assert!(matches!(slotted.aim, aftermine_sim::Aim::Slot(_)));
-    state.inspect_command_phase(&[cmd(0, move_to(vec![group[1]], click))], |view| {
+    state.inspect_command_phase(&[cmd(0, orders::run([group[1]], click))], |view| {
         let after = view.unit(group[1]).unwrap();
         let Order::Run { goal } = after.order else {
             panic!("still walking");
@@ -532,14 +505,7 @@ fn an_engagement_resumes_toward_the_same_slot() {
     let group = ids(&state, 0);
     let click = TilePos::new(9, 5);
     assert!(explored(&state, 0, click));
-    let command = cmd(
-        0,
-        Command::Hunt {
-            units: group.clone(),
-            goal: click,
-            queue: false,
-        },
-    );
+    let command = cmd(0, orders::hunt(group.clone(), click));
     let march = state.inspect_command_phase(std::slice::from_ref(&command), |view| {
         match view.unit(group[1]).unwrap().order {
             Order::Hunt { goal } => goal,
@@ -575,13 +541,7 @@ fn patrol_legs_spread_per_unit() {
     let group = ids(&state, 0);
     let legs = [TilePos::new(9, 3), TilePos::new(9, 9)];
     assert!(legs.iter().all(|&leg| explored(&state, 0, leg)));
-    state.tick(&[cmd(
-        0,
-        Command::Patrol {
-            units: group.clone(),
-            waypoints: legs.into(),
-        },
-    )]);
+    state.tick(&[cmd(0, orders::patrol(group.clone(), legs))]);
     for (leg, &click) in legs.iter().enumerate() {
         let targets: Vec<TilePos> = group
             .iter()
@@ -618,7 +578,7 @@ fn fliers_ordered_onto_a_peak_settle_off_it_seen_or_unseen() {
             let flier = ids(&state, 0)[0];
             let peak = TilePos::new(30, 5);
             assert_eq!(explored(&state, 0, peak), seen, "{kind:?} from {start}");
-            state.tick(&[cmd(0, move_to(vec![flier], peak))]);
+            state.tick(&[cmd(0, orders::run([flier], peak))]);
             let issued = goal(&state, flier).unwrap();
             assert_eq!(issued.tile(), peak);
             assert_eq!(issued.is_pending(), !seen, "{kind:?} from {start}");
@@ -640,7 +600,7 @@ fn a_condor_hands_off_only_once_its_click_is_explored() {
     let condor = ids(&state, 0)[0];
     let click = TilePos::new(36, 6);
     assert!(!explored(&state, 0, click));
-    state.tick(&[cmd(0, move_to(vec![condor], click))]);
+    state.tick(&[cmd(0, orders::run([condor], click))]);
     let reach = aftermine_sim::stats::LANDING_HANDOFF_REACH;
     let mut pending_in_reach = 0;
     let mut was_pending = true;
@@ -694,30 +654,12 @@ fn off_map_tile_goals_are_refused_without_a_trace() {
         TilePos::new(4, 10),
     ] {
         let commands: [Command; 6] = [
-            move_to(vec![sentinel], tile),
-            Command::Hunt {
-                units: vec![sentinel],
-                goal: tile,
-                queue: false,
-            },
-            Command::Advance {
-                units: vec![sentinel],
-                goal: tile,
-                queue: false,
-            },
-            Command::Patrol {
-                units: vec![sentinel],
-                waypoints: vec![TilePos::new(6, 5), tile],
-            },
-            Command::Unload {
-                transport: skyhook,
-                at: tile,
-                queue: false,
-            },
-            Command::SetRally {
-                building: foundry,
-                rally: Some(aftermine_sim::Rally::Tile(tile)),
-            },
+            orders::run([sentinel], tile),
+            orders::hunt([sentinel], tile),
+            orders::advance([sentinel], tile),
+            orders::patrol([sentinel], [TilePos::new(6, 5), tile]),
+            orders::unload(skyhook, tile),
+            orders::set_rally(foundry, Some(aftermine_sim::Rally::Tile(tile))),
         ];
         for command in commands {
             let mut refused = state.clone();

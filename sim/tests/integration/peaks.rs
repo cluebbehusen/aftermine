@@ -6,14 +6,12 @@
 
 use crate::common;
 use aftermine_sim::scenario::ScenarioMode;
-use common::{building, cmd, players, run, run_until, unit};
+use common::{building, building_id, cmd, orders, players, run, run_until, unit};
 
 use aftermine_sim::map::Terrain;
 use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
 use aftermine_sim::stats::Domain;
-use aftermine_sim::{
-    BuildingKind, Command, Event, PlayerId, Scenario, State, Target, UnitId, UnitKind,
-};
+use aftermine_sim::{BuildingKind, Event, PlayerId, Scenario, State, Target, UnitId, UnitKind};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 
@@ -84,22 +82,8 @@ fn no_route_crosses_a_full_ridge() {
     .unwrap();
     let (walker, flyer) = (state.units()[0].id, state.units()[1].id);
     state.tick(&[
-        cmd(
-            0,
-            Command::Run {
-                units: vec![walker],
-                goal: TilePos::new(18, 5),
-                queue: false,
-            },
-        ),
-        cmd(
-            0,
-            Command::Run {
-                units: vec![flyer],
-                goal: TilePos::new(18, 7),
-                queue: false,
-            },
-        ),
+        cmd(0, orders::run([walker], TilePos::new(18, 5))),
+        cmd(0, orders::run([flyer], TilePos::new(18, 7))),
     ]);
     let events = run(&mut state, 400);
     assert!(
@@ -133,14 +117,7 @@ fn air_reroutes_through_the_gap() {
         .build()
         .unwrap();
     let flyer = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![flyer],
-            goal: TilePos::new(18, 8),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([flyer], TilePos::new(18, 8)))]);
     for _ in 0..400 {
         state.tick(&[]);
         let tile = state.unit(flyer).unwrap().tile();
@@ -163,14 +140,7 @@ fn a_peak_goal_snaps_to_open_sky() {
         .build()
         .unwrap();
     let flyer = state.units()[0].id;
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![flyer],
-            goal: TilePos::new(12, 5),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([flyer], TilePos::new(12, 5)))]);
     run(&mut state, 200);
     let rest = state.unit(flyer).unwrap().tile();
     assert_ne!(
@@ -196,14 +166,7 @@ fn ground_guns_do_not_shoot_through_mountains() {
     let (gun, victim) = (state.units()[0].id, state.units()[1].id);
     let hp = state.unit(victim).unwrap().hp;
     let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Attack {
-                units: vec![gun],
-                target: Target::Unit(victim).into(),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::attack([gun], Target::Unit(victim)))])
         .events;
     events.extend(run(&mut state, 200));
     assert!(
@@ -231,14 +194,7 @@ fn artillery_arcs_break_on_the_ridge() {
     let (bombard, victim) = (state.units()[0].id, state.units()[2].id);
     let hp = state.unit(victim).unwrap().hp;
     let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Attack {
-                units: vec![bombard],
-                target: Target::Unit(victim).into(),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::attack([bombard], Target::Unit(victim)))])
         .events;
     events.extend(run(&mut state, 300));
     assert!(
@@ -279,14 +235,7 @@ fn flak_cannot_burst_through_stone() {
     let (flak, talon) = (state.units()[0].id, state.units()[1].id);
     let hp = state.unit(talon).unwrap().hp;
     let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Attack {
-                units: vec![flak],
-                target: Target::Unit(talon).into(),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::attack([flak], Target::Unit(talon)))])
         .events;
     events.extend(run(&mut state, 200));
     assert!(
@@ -312,22 +261,8 @@ fn a_ridge_match_stays_bit_identical() {
         .unwrap();
         let (talon, buzzard) = (state.units()[1].id, state.units()[3].id);
         state.tick(&[
-            cmd(
-                0,
-                Command::Run {
-                    units: vec![talon],
-                    goal: TilePos::new(18, 8),
-                    queue: false,
-                },
-            ),
-            cmd(
-                1,
-                Command::Run {
-                    units: vec![buzzard],
-                    goal: TilePos::new(5, 8),
-                    queue: false,
-                },
-            ),
+            cmd(0, orders::run([talon], TilePos::new(18, 8))),
+            cmd(1, orders::run([buzzard], TilePos::new(5, 8))),
         ]);
         for _ in 0..300 {
             state.tick(&[]);
@@ -348,10 +283,7 @@ fn a_patrol_leg_on_the_ridge_snaps_to_open_sky() {
     let flyer = state.units()[0].id;
     state.tick(&[cmd(
         0,
-        Command::Patrol {
-            units: vec![flyer],
-            waypoints: vec![TilePos::new(12, 5), TilePos::new(9, 5)],
-        },
+        orders::patrol([flyer], [TilePos::new(12, 5), TilePos::new(9, 5)]),
     )]);
     for _ in 0..300 {
         state.tick(&[]);
@@ -401,21 +333,9 @@ fn a_building_flush_against_the_ridge_is_safe_from_the_far_side() {
     .build()
     .unwrap();
     let lancer = state.units()[0].id;
-    let west = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(1))
-        .unwrap()
-        .id;
+    let west = building_id(&state, |b| b.player == PlayerId(1));
     let hp = state.building(west).unwrap().hp;
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![lancer],
-            target: Target::Building(west).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([lancer], Target::Building(west)))]);
     // The lancer may legally chase through the northern pass; only
     // shots fired while it still stands east of the ridge would be
     // through-the-mountain shots. Watch exactly that window.
@@ -445,10 +365,7 @@ fn an_air_patrol_through_the_ridge_keeps_flying_its_legs() {
     let flyer = state.units()[0].id;
     state.tick(&[cmd(
         0,
-        Command::Patrol {
-            units: vec![flyer],
-            waypoints: vec![TilePos::new(12, 5), TilePos::new(6, 5)],
-        },
+        orders::patrol([flyer], [TilePos::new(12, 5), TilePos::new(6, 5)]),
     )]);
     let mut near_wall = false;
     let mut home_again = false;
@@ -565,14 +482,7 @@ fn a_breaker_blast_breaks_on_a_peak() {
             .any(|e| matches!(e, Event::AttackHit { attacker, .. } if *attacker == breaker))
     };
     let first = state
-        .tick(&[cmd(
-            0,
-            Command::Attack {
-                units: vec![breaker],
-                target: Target::Unit(victim).into(),
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::attack([breaker], Target::Unit(victim)))])
         .events;
     if !fired(&first) {
         run_until(&mut state, 300, |_, events| fired(events));
@@ -593,14 +503,7 @@ fn a_sapper_ring_breaks_on_a_peak() {
         Vec::new(),
     );
     let [sapper, victim, open, behind] = [0, 1, 2, 3].map(|i| state.units()[i].id);
-    state.tick(&[cmd(
-        0,
-        Command::Attack {
-            units: vec![sapper],
-            target: Target::Unit(victim).into(),
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::attack([sapper], Target::Unit(victim)))]);
     run_until(&mut state, 300, |state, _| state.unit(sapper).is_none());
     sheltered(&state, open, behind);
 }

@@ -3,7 +3,7 @@ use crate::common;
 use aftermine_sim::{Command, Order, PlayerCommand, SIM_VERSION, Scenario, State, UnitKind};
 use chassis::grid::TilePos;
 use chassis::replay::Replay;
-use common::{cmd, commanded, open_arena, unit};
+use common::{cmd, commanded, open_arena, orders, unit};
 
 #[test]
 fn replay_roundtrip_executes_and_reproduces_advance() {
@@ -11,14 +11,7 @@ fn replay_roundtrip_executes_and_reproduces_advance() {
     let mut live = scenario.build().unwrap();
     let mover = live.units()[0].id;
     let goal = TilePos::new(18, 6);
-    let advance = cmd(
-        0,
-        Command::Advance {
-            units: vec![mover],
-            goal,
-            queue: false,
-        },
-    );
+    let advance = cmd(0, orders::advance([mover], goal));
     let mut replay = Replay::<_, _, ()>::new(SIM_VERSION, "test", scenario);
     replay.record(live.current_tick(), advance.clone());
     live.tick(&[advance]);
@@ -70,16 +63,13 @@ fn serde_roundtrip_preserves_queued_programs() {
     // Non-empty queues serialize through skip-if-default fields. A
     // mid-patrol snapshot must survive losslessly and keep ticking
     // identically.
-    use aftermine_sim::{Command, PlayerCommand, PlayerId};
+    use aftermine_sim::{PlayerCommand, PlayerId};
     use chassis::grid::TilePos;
     let mut state = Scenario::skirmish().build().unwrap();
     let movers: Vec<_> = state.units().iter().map(|u| u.id).collect();
     state.tick(&[PlayerCommand {
         player: PlayerId(0),
-        command: Command::Patrol {
-            units: movers,
-            waypoints: vec![TilePos::new(10, 10), TilePos::new(14, 6)],
-        },
+        command: orders::patrol(movers, [TilePos::new(10, 10), TilePos::new(14, 6)]),
     }]);
     for _ in 0..100 {
         state.tick(&[]);

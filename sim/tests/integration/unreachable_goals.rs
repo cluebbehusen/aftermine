@@ -8,7 +8,7 @@
 //! a walk that turns into a landing has a test of its own.
 
 use crate::common;
-use common::{cmd, run_until};
+use common::{CommandExt, cmd, orders, run_until};
 
 use aftermine_sim::event::StallReason;
 use aftermine_sim::scenario::{BuildingSpec, PlayerSpec, ScenarioMode, UnitSpec};
@@ -348,22 +348,8 @@ fn mirrored_groups_sent_into_mirrored_enclosures_settle_symmetrically() {
     };
     let mut events = state
         .tick(&[
-            cmd(
-                0,
-                Command::Run {
-                    units: left.clone(),
-                    goal: inside,
-                    queue: false,
-                },
-            ),
-            cmd(
-                1,
-                Command::Run {
-                    units: right.clone(),
-                    goal: mirror(inside),
-                    queue: false,
-                },
-            ),
+            cmd(0, orders::run(left.clone(), inside)),
+            cmd(1, orders::run(right.clone(), mirror(inside))),
         ])
         .events;
     let mut endpoints = std::collections::BTreeSet::new();
@@ -442,10 +428,7 @@ fn newborns_rallied_onto_unreachable_ground_all_settle() {
         .map(|&building| {
             cmd(
                 0,
-                Command::SetRally {
-                    building,
-                    rally: Some(aftermine_sim::Rally::Tile(ISLAND)),
-                },
+                orders::set_rally(building, Some(aftermine_sim::Rally::Tile(ISLAND))),
             )
         })
         .collect();
@@ -457,13 +440,7 @@ fn newborns_rallied_onto_unreachable_ground_all_settle() {
         for &building in &foundries {
             if ordered < 21 && state.building(building).unwrap().queue.is_empty() {
                 ordered += 1;
-                commands.push(cmd(
-                    0,
-                    Command::Train {
-                        building,
-                        kind: UnitKind::Scuttler,
-                    },
-                ));
+                commands.push(cmd(0, orders::train(building, UnitKind::Scuttler)));
             }
         }
         let report = state.tick(&commands);
@@ -560,13 +537,7 @@ fn a_barricade_sealing_the_goal_mid_walk_ends_the_walk_short() {
         state
             .tick(&[cmd(
                 0,
-                Command::Build {
-                    units: vec![builder],
-                    kind: BuildingKind::Barricade,
-                    anchor: TilePos::new(9, 3),
-                    queue: false,
-                    defer: false,
-                },
+                orders::build([builder], BuildingKind::Barricade, TilePos::new(9, 3)),
             )])
             .events,
     );
@@ -596,13 +567,7 @@ fn a_patrol_with_one_unreachable_leg_keeps_looping_silently() {
     let guard = state.units()[0].id;
     let (a, c) = (TilePos::new(3, 2), TilePos::new(8, 8));
     let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Patrol {
-                units: vec![guard],
-                waypoints: vec![a, ISLAND, c],
-            },
-        )])
+        .tick(&[cmd(0, orders::patrol([guard], [a, ISLAND, c]))])
         .events;
     let mut visits = Vec::new();
     for _ in 0..2_400 {
@@ -630,14 +595,14 @@ fn a_patrol_with_every_leg_unreachable_holds_still_silently() {
     let mut events = state
         .tick(&[cmd(
             0,
-            Command::Patrol {
-                units: vec![guard],
-                waypoints: vec![
+            orders::patrol(
+                [guard],
+                [
                     TilePos::new(22, 5),
                     TilePos::new(24, 3),
                     TilePos::new(24, 7),
                 ],
-            },
+            ),
         )])
         .events;
     events.extend(run_until(&mut state, 400, |state, _| {
@@ -678,14 +643,7 @@ fn a_repair_that_cannot_be_reached_advances_to_a_queued_move() {
     let home = TilePos::new(6, 8);
     let mut events = state
         .tick(&[
-            cmd(
-                0,
-                Command::Repair {
-                    units: vec![welder],
-                    building: turret,
-                    queue: false,
-                },
-            ),
+            cmd(0, orders::repair([welder], turret)),
             move_to(vec![welder], home, true),
         ])
         .events;
@@ -805,15 +763,7 @@ fn ordered(state: &State, unit: UnitId, command: Command) -> Order {
 
 /// An order to attack `target` as the player gives it.
 fn attack(state: &State, unit: UnitId, target: aftermine_sim::Target) -> Order {
-    let order = ordered(
-        state,
-        unit,
-        Command::Attack {
-            units: vec![unit],
-            target: target.into(),
-            queue: false,
-        },
-    );
+    let order = ordered(state, unit, orders::attack([unit], target));
     assert!(matches!(order, Order::Attack { .. }), "premise: {order:?}");
     order
 }
@@ -859,13 +809,7 @@ fn joining_a_far_site() -> (State, UnitId, Order) {
     let founder = unit_at(&state, 13, 2);
     let report = state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![founder],
-            kind: BuildingKind::Turret,
-            anchor: TilePos::new(15, 2),
-            queue: false,
-            defer: false,
-        },
+        orders::build([founder], BuildingKind::Turret, TilePos::new(15, 2)),
     )]);
     assert_eq!(common::rejected(&report.events), []);
     let site = building_at(&state, 15, 2);
@@ -876,14 +820,7 @@ fn joining_a_far_site() -> (State, UnitId, Order) {
 /// `state` once the Kestrel `scout` has flown home, so what it saw on far
 /// ground is memory.
 fn flown_home(mut state: State, scout: UnitId) -> State {
-    let report = state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal: TilePos::new(2, 10),
-            queue: false,
-        },
-    )]);
+    let report = state.tick(&[cmd(0, orders::run([scout], TilePos::new(2, 10)))]);
     assert_eq!(common::rejected(&report.events), []);
     run_until(&mut state, 600, |state, _| {
         state.unit(scout).unwrap().order == Order::Idle
@@ -907,13 +844,7 @@ fn founding_a_far_scaffold() -> (State, UnitId, Order) {
     let (kind, anchor) = (BuildingKind::Turret, TilePos::new(27, 1));
     let report = state.tick(&[cmd(
         0,
-        Command::Build {
-            units: vec![unit_at(&state, 12, 6)],
-            kind,
-            anchor,
-            queue: false,
-            defer: true,
-        },
+        orders::build([unit_at(&state, 12, 6)], kind, anchor).deferred(),
     )]);
     assert_eq!(common::rejected(&report.events), []);
     let scaffold = state.building(building_at(&state, 27, 1)).unwrap();

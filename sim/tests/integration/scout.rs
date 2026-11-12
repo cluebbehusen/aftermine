@@ -3,7 +3,7 @@
 //! waits or gives up when it cannot.
 
 use crate::common;
-use common::{assert_refused, building, cmd, open_arena, run_until, unit};
+use common::{CommandExt, assert_refused, building, cmd, open_arena, orders, run_until, unit};
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::{BuildingSpec, UnitSpec};
@@ -23,20 +23,10 @@ fn field(units: Vec<UnitSpec>, buildings: Vec<BuildingSpec>) -> Scenario {
     scenario
 }
 
-fn scout_order(scout: UnitId, goal: TilePos, queue: bool) -> Command {
-    Command::Scout {
-        units: vec![scout],
-        goal,
-        queue,
-    }
-}
-
 /// Sends `scout` to `goal` and plays until it idles, checking every tick's
 /// state and collecting the events.
 fn scout_until_idle(state: &mut State, scout: UnitId, goal: TilePos, ticks: u64) -> Vec<Event> {
-    let mut events = state
-        .tick(&[cmd(0, scout_order(scout, goal, false))])
-        .events;
+    let mut events = state.tick(&[cmd(0, orders::scout([scout], goal))]).events;
     events.extend(run_until(state, ticks, |state, _| {
         state.validate_invariants().unwrap();
         state.unit(scout).unwrap().order == Order::Idle
@@ -97,9 +87,7 @@ fn a_known_turret_stops_the_scout_where_it_still_sees_the_target() {
     .unwrap();
     let scout = state.units()[0].id;
     let goal = TilePos::new(25, 8);
-    let mut events = state
-        .tick(&[cmd(0, scout_order(scout, goal, false))])
-        .events;
+    let mut events = state.tick(&[cmd(0, orders::scout([scout], goal))]).events;
     // The follower may cut a corner of the planned detour into the margin
     // around the gun, but never into its range.
     let range = 5;
@@ -139,8 +127,8 @@ fn a_scout_with_no_safe_view_waits_then_gives_the_leg_up() {
     let fallback = TilePos::new(8, 16);
     let mut events = state
         .tick(&[
-            cmd(0, scout_order(scout, unsafe_goal, false)),
-            cmd(0, scout_order(scout, fallback, true)),
+            cmd(0, orders::scout([scout], unsafe_goal)),
+            cmd(0, orders::scout([scout], fallback).queued()),
         ])
         .events;
     events.extend(run_until(
@@ -166,13 +154,7 @@ fn a_patrolling_scout_skips_an_unsafe_waypoint_silently() {
     let (mut state, scout, unsafe_goal) = bastion_field((8, 9));
     let safe = TilePos::new(8, 16);
     let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Patrol {
-                units: vec![scout],
-                waypoints: vec![unsafe_goal, safe],
-            },
-        )])
+        .tick(&[cmd(0, orders::patrol([scout], [unsafe_goal, safe]))])
         .events;
     assert!(matches!(
         state.unit(scout).unwrap().order,
@@ -202,9 +184,7 @@ fn a_scout_backs_out_of_a_visible_enemys_reach_and_goes_around_it() {
     let scout = state.units()[0].id;
     let goal = TilePos::new(30, 10);
     let start = state.unit(scout).unwrap().tile();
-    let mut events = state
-        .tick(&[cmd(0, scout_order(scout, goal, false))])
-        .events;
+    let mut events = state.tick(&[cmd(0, orders::scout([scout], goal))]).events;
     let first = state.unit(scout).unwrap().path.clone().expect("a retreat");
     assert!(
         first.waypoints.iter().all(|tile| {
@@ -230,14 +210,7 @@ fn a_crowd_of_scouts_sent_to_one_tile_all_arrive() {
     let scouts: Vec<UnitId> = state.units().iter().map(|unit| unit.id).collect();
     let goal = TilePos::new(26, 14);
     let mut events = state
-        .tick(&[cmd(
-            0,
-            Command::Scout {
-                units: scouts.clone(),
-                goal,
-                queue: false,
-            },
-        )])
+        .tick(&[cmd(0, orders::scout(scouts.clone(), goal))])
         .events;
     events.extend(run_until(&mut state, 600, |state, _| {
         scouts
@@ -286,14 +259,7 @@ fn a_scout_walks_around_a_charge_it_detected() {
 #[test]
 fn a_plain_run_ignores_the_scouts_caution() {
     let (mut state, scout, goal) = charge_lane();
-    state.tick(&[cmd(
-        0,
-        Command::Run {
-            units: vec![scout],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::run([scout], goal))]);
     let events = run_until(&mut state, 400, |state, _| state.unit(scout).is_none());
     assert!(
         events
@@ -305,7 +271,7 @@ fn a_plain_run_ignores_the_scouts_caution() {
 /// The scout's first planned path toward `goal`.
 fn first_path(mut state: State, goal: TilePos) -> Vec<TilePos> {
     let scout = state.units()[0].id;
-    state.tick(&[cmd(0, scout_order(scout, goal, false))]);
+    state.tick(&[cmd(0, orders::scout([scout], goal))]);
     state.tick(&[]);
     state
         .unit(scout)
@@ -401,29 +367,15 @@ fn only_scouts_take_the_order_and_refusals_change_nothing() {
     let goal = TilePos::new(20, 8);
     assert_refused(
         &mut state,
-        cmd(
-            0,
-            Command::Scout {
-                units: vec![sentinel],
-                goal,
-                queue: false,
-            },
-        ),
+        cmd(0, orders::scout([sentinel], goal)),
         RejectReason::NoValidUnits,
     );
     assert_refused(
         &mut state,
-        cmd(0, scout_order(scout, TilePos::new(-1, 8), false)),
+        cmd(0, orders::scout([scout], TilePos::new(-1, 8))),
         RejectReason::OutOfBounds,
     );
-    state.tick(&[cmd(
-        0,
-        Command::Scout {
-            units: vec![sentinel, scout],
-            goal,
-            queue: false,
-        },
-    )]);
+    state.tick(&[cmd(0, orders::scout([sentinel, scout], goal))]);
     assert_eq!(
         state.unit(scout).unwrap().order,
         Order::Scout { tile: goal }
@@ -439,8 +391,8 @@ fn a_queued_scout_leg_cancels_like_a_walk() {
     let scout = state.units()[0].id;
     let (first, second) = (TilePos::new(20, 8), TilePos::new(20, 16));
     state.tick(&[
-        cmd(0, scout_order(scout, first, false)),
-        cmd(0, scout_order(scout, second, true)),
+        cmd(0, orders::scout([scout], first)),
+        cmd(0, orders::scout([scout], second).queued()),
     ]);
     state.tick(&[cmd(
         0,
