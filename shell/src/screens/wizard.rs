@@ -415,25 +415,16 @@ pub struct Wizard {
     pub entries: Vec<ScenarioEntry>,
     /// The map grid's state.
     pub browser: Browser,
-    /// Setup cursor over the DISPLAY order: seats grouped by team,
-    /// then the Start button.
-    pub setup_sel: usize,
-    /// Which cell of the selected seat card the cursor is on: 0 the
-    /// seat itself, then its controls left to right: 1 difficulty,
-    /// 2 stance, and 3 team. The two bot controls are absent
-    /// from the human's row.
-    pub setup_cell: Cell,
+    /// The setup cursor over the switch, the seat cards in display order
+    /// and Start.
+    pub(crate) cursor: SetupCursor,
     /// Setup zone armed by a press; activation on release inside the
     /// same zone.
     setup_press: Press<SetupZone>,
     /// The corner Back button: Home from the grid, the grid from setup.
     back: crate::button::BackButton,
-    /// Compact setup page. Full-height layouts always clamp this to zero.
-    setup_page: usize,
     /// The LAN lobby while this setup screen hosts one.
     lan: Option<Box<LanHost>>,
-    /// The cursor sits on the LOCAL | LAN switch above the cards.
-    on_switch: bool,
     /// The seat whose occupant was picked up, waiting for the seat to
     /// swap with.
     moving: Option<usize>,
@@ -617,6 +608,51 @@ impl Cell {
             Self::Stance => 2,
             Self::Team => 3,
         }
+    }
+}
+
+/// Where the setup screen's keyboard and controller cursor sits. Every
+/// place keeps the card cell last stood on, so a walk over Start or the
+/// switch comes back to the same column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SetupCursor {
+    /// The LOCAL | LAN switch above the cards. It keeps the row it came
+    /// from, which the page and the paging keys follow.
+    Switch { row: usize, cell: Cell },
+    /// A seat card, its `row` in display order.
+    Seat { row: usize, cell: Cell },
+    /// The Start button below the cards.
+    Start { cell: Cell },
+}
+
+impl SetupCursor {
+    /// The card at `row`, or Start once `row` is past the `cards`.
+    fn at(row: usize, cell: Cell, cards: usize) -> Self {
+        if row < cards {
+            Self::Seat { row, cell }
+        } else {
+            Self::Start { cell }
+        }
+    }
+
+    fn cell(self) -> Cell {
+        match self {
+            Self::Switch { cell, .. } | Self::Seat { cell, .. } | Self::Start { cell } => cell,
+        }
+    }
+
+    /// The row the page follows among `cards` seat cards, Start counting
+    /// as the row past them.
+    fn row(self, cards: usize) -> usize {
+        match self {
+            Self::Switch { row, .. } | Self::Seat { row, .. } => row.min(cards),
+            Self::Start { .. } => cards,
+        }
+    }
+
+    /// The compact page the cursor shows, before a layout clamps it.
+    fn page(self, cards: usize) -> usize {
+        self.row(cards) / COMPACT_PAGE_ITEMS
     }
 }
 
@@ -1398,13 +1434,13 @@ impl Wizard {
             step: Step::Map,
             entries,
             browser,
-            setup_sel: 0,
-            setup_cell: Cell::Seat,
+            cursor: SetupCursor::Seat {
+                row: 0,
+                cell: Cell::Seat,
+            },
             setup_press: Press::default(),
             back: crate::button::BackButton::default(),
-            setup_page: 0,
             lan: None,
-            on_switch: false,
             moving: None,
             overlay: None,
             notice: None,
@@ -1494,7 +1530,6 @@ impl Wizard {
         self.step = step;
         self.back.cancel();
         self.moving = None;
-        self.on_switch = false;
         self.notice = None;
         match step {
             Step::Map => {
@@ -1508,9 +1543,7 @@ impl Wizard {
             Step::Setup => {
                 // Start preselected: Enter-Enter from the grid plays
                 // the map as authored.
-                self.setup_sel = draft.seats.len();
-                self.setup_page = self.setup_sel / COMPACT_PAGE_ITEMS;
-                self.setup_cell = Cell::Seat;
+                self.cursor = SetupCursor::Start { cell: Cell::Seat };
                 self.setup_press.cancel();
             }
         }
@@ -1606,7 +1639,6 @@ impl Wizard {
         let start_index = order.len();
         let view = crate::render::viewport();
         let ui = crate::render::ui_scale();
-        self.setup_page = self.setup_sel.min(start_index) / COMPACT_PAGE_ITEMS;
         let open = self.open_flags(draft);
         let lan_on = self.lan.is_some();
         let layout = setup_layout_page(
@@ -1615,9 +1647,8 @@ impl Wizard {
             &open,
             view,
             ui,
-            self.setup_page,
+            self.cursor.page(start_index),
         );
-        self.setup_page = layout.page;
         // A resume fixes the map's bots and teams and the host's seat: only
         // the reserved seats change hands.
         let resuming = self.resume.is_some();
@@ -1671,16 +1702,18 @@ impl Wizard {
                 if let Some(p) = crate::press::position(event) {
                     *mouse = p;
                 }
-                self.on_switch = matches!(zone, SetupZone::Switch(_));
+                let (row, kept) = (self.cursor.row(start_index), self.cursor.cell());
                 match zone {
                     SetupZone::Card { row, cell } => {
-                        self.setup_sel = row;
-                        if cell_live(row, cell) {
-                            self.setup_cell = cell;
-                        }
+                        self.cursor = SetupCursor::Seat {
+                            row,
+                            cell: if cell_live(row, cell) { cell } else { kept },
+                        };
                     }
-                    SetupZone::Start => self.setup_sel = start_index,
-                    SetupZone::Switch(_) | SetupZone::PrevPage | SetupZone::NextPage => {}
+                    SetupZone::Start => self.cursor = SetupCursor::Start { cell: kept },
+                    SetupZone::Switch(_) => self.cursor = SetupCursor::Switch { row, cell: kept },
+                    // Paging places the cursor as it activates, below.
+                    SetupZone::PrevPage | SetupZone::NextPage => {}
                 }
                 activate = Some(zone);
                 break;
@@ -1690,15 +1723,13 @@ impl Wizard {
                     return self.back_from_setup(draft).then_some(Out::Home);
                 }
                 RawEvent::KeyDown { key: Key::Enter } => {
-                    activate = Some(if self.on_switch {
-                        SetupZone::Switch(!lan_on)
-                    } else if self.setup_sel >= start_index {
-                        SetupZone::Start
-                    } else {
-                        SetupZone::Card {
-                            row: self.setup_sel,
-                            cell: self.pressed_cell(draft, &open, order[self.setup_sel]),
-                        }
+                    activate = Some(match self.cursor {
+                        SetupCursor::Switch { .. } => SetupZone::Switch(!lan_on),
+                        SetupCursor::Start { .. } => SetupZone::Start,
+                        SetupCursor::Seat { row, .. } => SetupZone::Card {
+                            row,
+                            cell: self.pressed_cell(draft, &open, order[row]),
+                        },
                     });
                     break;
                 }
@@ -1708,17 +1739,17 @@ impl Wizard {
                     };
                     // The switch is the line above the first card; Home,
                     // End, and paging stay on the cards and Start.
+                    let (row, cell) = (self.cursor.row(start_index), self.cursor.cell());
                     let target = if matches!(nav, Nav::Up | Nav::Down) {
-                        let line = if self.on_switch {
-                            0
-                        } else {
-                            self.setup_sel + 1
+                        let line = match self.cursor {
+                            SetupCursor::Switch { .. } => 0,
+                            SetupCursor::Seat { .. } | SetupCursor::Start { .. } => row + 1,
                         };
                         step_line(start_index + 2, line, nav, Axis::Vertical, 1, |_| true)
                     } else {
                         step_line(
                             start_index + 1,
-                            self.setup_sel,
+                            row,
                             nav,
                             Axis::Vertical,
                             COMPACT_PAGE_ITEMS,
@@ -1727,22 +1758,24 @@ impl Wizard {
                         .map(|row| row + 1)
                     };
                     if let Some(line) = target {
-                        self.on_switch = line == 0;
-                        if let Some(row) = line.checked_sub(1) {
-                            self.setup_sel = row;
-                            self.setup_page = row / COMPACT_PAGE_ITEMS;
-                        }
-                    } else if !self.on_switch
-                        && let Some(cell) = step_line(
+                        self.cursor = match line.checked_sub(1) {
+                            Some(row) => SetupCursor::at(row, cell, start_index),
+                            None => SetupCursor::Switch { row, cell },
+                        };
+                    } else if let SetupCursor::Seat { row, cell } = self.cursor
+                        && let Some(next) = step_line(
                             Cell::ALL.len(),
-                            self.setup_cell.index(),
+                            cell.index(),
                             nav,
                             Axis::Horizontal,
                             1,
-                            |cell| cell_live(self.setup_sel, Cell::ALL[cell]),
+                            |cell| cell_live(row, Cell::ALL[cell]),
                         )
                     {
-                        self.setup_cell = Cell::ALL[cell];
+                        self.cursor = SetupCursor::Seat {
+                            row,
+                            cell: Cell::ALL[next],
+                        };
                     }
                 }
                 RawEvent::MouseMove { x, y } => *mouse = vec2(x, y),
@@ -1758,15 +1791,13 @@ impl Wizard {
         self.setup_press.cancel();
         match zone {
             SetupZone::PrevPage => {
-                self.setup_page = self.setup_page.saturating_sub(1);
-                self.setup_sel = self.setup_page * COMPACT_PAGE_ITEMS;
-                self.setup_cell = Cell::Seat;
+                let page = layout.page.saturating_sub(1);
+                self.cursor = SetupCursor::at(page * COMPACT_PAGE_ITEMS, Cell::Seat, start_index);
                 sounds.push((SoundKind::Click, None));
             }
             SetupZone::NextPage => {
-                self.setup_page = (self.setup_page + 1).min(layout.page_count - 1);
-                self.setup_sel = (self.setup_page * COMPACT_PAGE_ITEMS).min(start_index);
-                self.setup_cell = Cell::Seat;
+                let page = (layout.page + 1).min(layout.page_count - 1);
+                self.cursor = SetupCursor::at(page * COMPACT_PAGE_ITEMS, Cell::Seat, start_index);
                 sounds.push((SoundKind::Click, None));
             }
             SetupZone::Switch(_) if resuming => {
@@ -1869,15 +1900,15 @@ impl Wizard {
         let view = crate::render::viewport();
         let ui = crate::render::ui_scale();
         let open = self.open_flags(draft);
+        let order = seat_display_order(scenario);
         let layout = setup_layout_page(
             scenario,
             draft.seat_choice,
             &open,
             view,
             ui,
-            self.setup_page,
+            self.cursor.page(order.len()),
         );
-        let order = seat_display_order(scenario);
 
         let compact = layout.page_count > 1;
         if compact {
@@ -1947,14 +1978,17 @@ impl Wizard {
                 name: scenario.players[seat].name.as_str(),
                 controller,
                 team: team_chip_label(plan.team_choice),
-                focus: (self.setup_sel == pos && !self.on_switch).then_some(self.setup_cell),
+                focus: match self.cursor {
+                    SetupCursor::Seat { row, cell } if row == pos => Some(cell),
+                    _ => None,
+                },
                 moving: self.moving == Some(seat),
             };
             draw_seat_card(card, &view, ui);
         }
         // Start button, disabled for an all-one-team draft.
         let one_team = draft_one_team(draft);
-        let start_selected = self.on_start(layout.cards.len());
+        let start_selected = matches!(self.cursor, SetupCursor::Start { .. });
         if let Some(start) = layout.start {
             draw_rectangle(start.x, start.y, start.w, start.h, SURFACE_MENU);
             stroke_rect(
@@ -2036,7 +2070,7 @@ impl Wizard {
         };
         if let Some((preview, theme)) = preview {
             let drawn = draw_preview(&preview, theme, layout.preview, ui);
-            let focus = (self.setup_sel < order.len()).then(|| order[self.setup_sel]);
+            let focus = order.get(self.cursor.row(order.len())).copied();
             draw_seat_markers(scenario, &styles, drawn, draft.seat_choice, focus, ui);
         }
 
@@ -2107,7 +2141,7 @@ impl Wizard {
                 if active { TEXT_PRIMARY } else { TEXT_SECONDARY },
             );
         }
-        if self.on_switch {
+        if matches!(self.cursor, SetupCursor::Switch { .. }) {
             let [left, right] = layout.switch;
             stroke_rect(
                 Rect::new(left.x, left.y, right.x + right.w - left.x, left.h),
@@ -2211,10 +2245,10 @@ impl Wizard {
                     "Mode: {}",
                     if self.lan.is_some() { "LAN" } else { "Local" }
                 ));
-                let selected = if self.on_switch {
-                    items.len() - 1
-                } else {
-                    self.setup_sel
+                let selected = match self.cursor {
+                    SetupCursor::Switch { .. } => items.len() - 1,
+                    SetupCursor::Seat { row, .. } => row,
+                    SetupCursor::Start { .. } => items.len() - 2,
                 };
                 ("MATCH SETUP".to_string(), items, selected)
             }
@@ -2287,7 +2321,7 @@ impl Wizard {
                     &open,
                     view,
                     ui,
-                    self.setup_page,
+                    self.cursor.page(scenario.players.len()),
                 )
                 .visible_range
             }),
@@ -2382,36 +2416,32 @@ impl Wizard {
     /// The cell a press on `seat`'s card uses: the sticky column falls back
     /// to the seat zone on rows where its cell is dead.
     fn pressed_cell(&self, draft: &NewMatchDraft, open: &[bool], seat: usize) -> Cell {
+        let cell = self.cursor.cell();
         let live = seat_cell_live(
-            self.setup_cell,
+            cell,
             seat,
             draft.seat_choice,
             open,
             &self.movable_seats(draft),
             self.resume.is_some(),
         );
-        if live { self.setup_cell } else { Cell::Seat }
-    }
-
-    /// Whether the cursor sits on Start, past `cards` seat cards: the
-    /// switch above the cards keeps the row it came from.
-    fn on_start(&self, cards: usize) -> bool {
-        !self.on_switch && self.setup_sel >= cards
+        if live { cell } else { Cell::Seat }
     }
 
     /// What a press at the cursor does.
     fn cursor_press(&self, draft: &NewMatchDraft, open: &[bool], order: &[usize]) -> CursorPress {
-        if self.on_switch {
+        let seat = match self.cursor {
             // A saved LAN match resumes only with its players, so an open
             // lobby stays open.
-            return if self.resume.is_some() && self.lan.is_some() {
-                CursorPress::Nothing
-            } else {
-                CursorPress::Switch
-            };
-        }
-        let Some(&seat) = order.get(self.setup_sel) else {
-            return CursorPress::Start;
+            SetupCursor::Switch { .. } if self.resume.is_some() && self.lan.is_some() => {
+                return CursorPress::Nothing;
+            }
+            SetupCursor::Switch { .. } => return CursorPress::Switch,
+            SetupCursor::Start { .. } => return CursorPress::Start,
+            SetupCursor::Seat { row, .. } => match order.get(row) {
+                Some(&seat) => seat,
+                None => return CursorPress::Start,
+            },
         };
         let held = self.holds_member(seat);
         match self.pressed_cell(draft, open, seat) {

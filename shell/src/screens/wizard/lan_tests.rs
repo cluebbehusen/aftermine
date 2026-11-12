@@ -109,8 +109,10 @@ fn settle(
 /// giving the chair back to its bot.
 fn bot_chair(w: &mut Wizard, draft: &mut NewMatchDraft, row: usize) {
     let seat = seat_display_order(draft.scenario.as_deref().unwrap())[row];
-    w.setup_sel = row;
-    w.setup_cell = Cell::Difficulty;
+    w.cursor = SetupCursor::Seat {
+        row,
+        cell: Cell::Difficulty,
+    };
     drive(w, draft, Key::Enter);
     assert!(!draft.seats[seat].open);
 }
@@ -181,8 +183,7 @@ fn the_setup_hint_says_what_a_press_does_on_each_kind_of_lobby_seat() {
     });
     let order = seat_display_order(draft.scenario.as_deref().unwrap());
     let press_at = |w: &mut Wizard, draft: &NewMatchDraft, row: usize, cell: Cell| {
-        w.setup_sel = row;
-        w.setup_cell = cell;
+        w.cursor = SetupCursor::Seat { row, cell };
         w.cursor_press(draft, &w.open_flags(draft), &order)
     };
     assert_eq!(
@@ -232,12 +233,17 @@ fn the_host_moves_players_kicks_them_and_starts_only_with_every_chair_filled() {
 
     // Pick Alex up from South West and drop them on North East's bot.
     bot_chair(&mut w, &mut draft, 2);
-    w.setup_cell = Cell::Seat;
-    w.setup_sel = 1;
+    w.cursor = SetupCursor::Seat {
+        row: 1,
+        cell: Cell::Seat,
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert_eq!(w.moving, Some(2));
     assert!(w.ui_surface(&draft).1[1].contains("moving"));
-    w.setup_sel = 2;
+    w.cursor = SetupCursor::Seat {
+        row: 2,
+        cell: w.cursor.cell(),
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert_eq!(w.moving, None);
     assert_eq!(member_at(&w, 1), Some(alex));
@@ -253,14 +259,19 @@ fn the_host_moves_players_kicks_them_and_starts_only_with_every_chair_filled() {
     });
 
     // Escape drops a pick instead of leaving setup.
-    w.setup_sel = 0;
+    w.cursor = SetupCursor::Seat {
+        row: 0,
+        cell: w.cursor.cell(),
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert_eq!(w.moving, Some(0));
     drive(&mut w, &mut draft, Key::Escape);
     assert_eq!((w.moving, w.step), (None, Step::Setup));
 
     // An empty open chair holds Start.
-    w.setup_sel = 4;
+    w.cursor = SetupCursor::Start {
+        cell: w.cursor.cell(),
+    };
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Stay);
     assert_eq!(
         w.notice.map(|notice| notice.to_string()).as_deref(),
@@ -269,8 +280,10 @@ fn the_host_moves_players_kicks_them_and_starts_only_with_every_chair_filled() {
     drive(&mut w, &mut draft, Key::Enter);
 
     // Removing Alex asks first, with Cancel preselected.
-    w.setup_sel = 2;
-    w.setup_cell = Cell::Difficulty;
+    w.cursor = SetupCursor::Seat {
+        row: 2,
+        cell: Cell::Difficulty,
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert_eq!(w.mode_name(), "confirm_lobby");
     assert_eq!(w.ui_surface(&draft).0, "REMOVE ALEX?");
@@ -292,7 +305,9 @@ fn an_open_seat_notice_lasts_only_until_the_seats_change() {
     let (mut w, mut draft) = hosting();
     let shown = |w: &Wizard| w.notice.map(|notice| notice.to_string());
     let held_start = |w: &mut Wizard, draft: &mut NewMatchDraft| {
-        w.setup_sel = 4;
+        w.cursor = SetupCursor::Start {
+            cell: w.cursor.cell(),
+        };
         assert_eq!(drive(w, draft, Key::Enter), Out::Stay);
     };
     held_start(&mut w, &mut draft);
@@ -326,7 +341,9 @@ fn a_full_lobby_starts_on_every_machine_under_the_players_names() {
     });
     bot_chair(&mut w, &mut draft, 2);
     bot_chair(&mut w, &mut draft, 3);
-    w.setup_sel = 4;
+    w.cursor = SetupCursor::Start {
+        cell: w.cursor.cell(),
+    };
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Launch);
     assert!(w.hosting_players());
     let scenario = launch::hosted_scenario(&draft, 0x500, &w.member_names()).unwrap();
@@ -339,8 +356,10 @@ fn a_full_lobby_starts_on_every_machine_under_the_players_names() {
 
     // The start launches the setup it froze, so nothing changes it.
     let frozen = draft.seats.clone();
-    w.setup_sel = 1;
-    w.setup_cell = Cell::Difficulty;
+    w.cursor = SetupCursor::Seat {
+        row: 1,
+        cell: Cell::Difficulty,
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert_eq!(draft.seats, frozen);
 
@@ -472,13 +491,18 @@ fn an_empty_lobby_starts_a_local_match_and_closes_quietly() {
     for row in 1..4 {
         bot_chair(&mut w, &mut draft, row);
     }
-    w.setup_sel = 4;
+    w.cursor = SetupCursor::Start {
+        cell: w.cursor.cell(),
+    };
     assert_eq!(drive(&mut w, &mut draft, Key::Enter), Out::Launch);
     assert!(w.lan.is_none());
     assert!(!w.hosting_players());
 
     let (mut w, mut draft) = hosting();
-    w.on_switch = true;
+    w.cursor = SetupCursor::Switch {
+        row: 0,
+        cell: Cell::Seat,
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert!(
         w.lan.is_none(),
@@ -508,7 +532,11 @@ fn leaving_or_going_local_with_players_asks_first() {
     assert_eq!(w.mode_name(), "match_setup", "and so does Back");
     assert!(w.lan.is_some());
 
-    w.on_switch = true;
+    w.cursor = SetupCursor::Switch {
+        row: 0,
+
+        cell: Cell::Seat,
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert_eq!(w.mode_name(), "confirm_lobby");
     drive(&mut w, &mut draft, Key::Down);
@@ -525,7 +553,10 @@ fn leaving_or_going_local_with_players_asks_first() {
 fn switching_to_lan_opens_the_lobby_at_once() {
     let (mut w, mut draft) = hosting();
     w.close_lan(&mut draft);
-    w.on_switch = true;
+    w.cursor = SetupCursor::Switch {
+        row: 0,
+        cell: Cell::Seat,
+    };
     drive(&mut w, &mut draft, Key::Enter);
     assert!(w.lan.is_some(), "nothing stops to ask for a name");
     assert_eq!(w.mode_name(), "match_setup");
