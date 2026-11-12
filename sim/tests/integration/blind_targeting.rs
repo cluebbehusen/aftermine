@@ -479,9 +479,12 @@ fn fabricated_and_corrupted_contact_histories_are_rejected() {
             "history" => track[field] = serde_json::json!([]),
             _ => unreachable!(),
         }
+        let refusal = serde_json::from_value::<aftermine_sim::State>(data)
+            .expect_err("a forged contact history must never become a state")
+            .to_string();
         assert!(
-            serde_json::from_value::<aftermine_sim::State>(data).is_err(),
-            "{field}"
+            refusal.contains("has invalid contact tracking"),
+            "{field}: {refusal}"
         );
     }
 }

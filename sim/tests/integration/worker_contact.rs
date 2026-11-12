@@ -239,6 +239,11 @@ fn malformed_release_and_endpoint_snapshots_are_rejected() {
     let (mut state, id, _) = release_scene(UnitKind::Harvester);
     state.tick(&[]);
     let base = serde_json::to_value(&state).unwrap();
+    let refusal = |bad: serde_json::Value| {
+        serde_json::from_value::<State>(bad)
+            .expect_err("a malformed snapshot must never become a state")
+            .to_string()
+    };
     for (field, value) in [
         ("elapsed", json!(0)),
         ("elapsed", json!(10)),
@@ -246,11 +251,14 @@ fn malformed_release_and_endpoint_snapshots_are_rejected() {
     ] {
         let mut bad = base.clone();
         bad["units"][0]["worker"]["unloading"][field] = value;
-        assert!(serde_json::from_value::<State>(bad).is_err());
+        assert!(
+            refusal(bad).contains("carries invalid unloading state"),
+            "{field}"
+        );
     }
     let mut bad = base.clone();
     bad["units"][0]["worker"]["carrying"] = json!(0);
-    assert!(serde_json::from_value::<State>(bad).is_err());
+    assert!(refusal(bad).contains("carries invalid unloading state"));
     let mut displaced = base;
     displaced["units"][0]["pos"] = json!(Vec2Fx::new(Fx::lit("9.02"), Fx::lit("7.5")));
     state = serde_json::from_value(displaced).unwrap();
@@ -264,7 +272,10 @@ fn malformed_release_and_endpoint_snapshots_are_rejected() {
     ] {
         let mut bad = base.clone();
         bad["units"][0]["path"][field] = value;
-        assert!(serde_json::from_value::<State>(bad).is_err());
+        assert!(
+            refusal(bad).contains("carries an invalid work endpoint"),
+            "{field}"
+        );
     }
 }
 

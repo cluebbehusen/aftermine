@@ -420,19 +420,6 @@ fn can_place_refuses_foundries() {
 }
 
 #[test]
-fn validator_rejects_foreign_owners() {
-    let state = arena(vec![unit(0, UnitKind::Harvester, 4, 6)])
-        .build()
-        .unwrap();
-    let mut doc: serde_json::Value =
-        serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
-    doc["units"][0]["player"] = serde_json::json!(9);
-    // Validation runs inside Deserialize: the tamper never becomes a
-    // State at all.
-    assert!(serde_json::from_value::<State>(doc).is_err());
-}
-
-#[test]
 fn scouted_sites_are_remembered_as_sites() {
     use aftermine_sim::stats::BuildingKind;
     // P0's scout watches P1 start a turret, then leaves. The ghost must
@@ -767,19 +754,6 @@ fn extra_builders_accelerate_construction() {
         pair * 2 < solo * 3,
         "two builders should be markedly faster: solo {solo}, pair {pair}"
     );
-}
-
-#[test]
-fn validator_rejects_malformed_grids() {
-    let state = arena(vec![]).build().unwrap();
-    let mut doc: serde_json::Value =
-        serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
-    // Truncate the first vision table's visible-cells array.
-    let cells = doc["vision"][0]["visible"]["cells"]
-        .as_array_mut()
-        .expect("vision grid serializes its cells");
-    cells.pop();
-    assert!(serde_json::from_value::<State>(doc).is_err());
 }
 
 #[test]

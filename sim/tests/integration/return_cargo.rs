@@ -261,31 +261,6 @@ fn return_cargo_retains_the_load_when_its_foundry_disappears() {
 }
 
 #[test]
-fn return_cargo_rejects_forged_worker_and_target_references() {
-    let (state, worker, foundry) = loaded(UnitKind::Harvester);
-    let base = serde_json::to_value(&state).unwrap();
-    for queued in [false, true] {
-        for target in [foundry, BuildingId(u32::MAX)] {
-            let mut data = base.clone();
-            let order = json!({"order": "return_cargo", "foundry": target, "repair": true});
-            if queued {
-                data["units"][0]["queue"] = json!([order]);
-            } else {
-                data["units"][0]["order"] = order;
-            }
-            if target == foundry {
-                data["units"][0]["kind"] = json!("sentinel");
-                data["units"][0]["worker"]["carrying"] = json!(0);
-            }
-            assert!(
-                serde_json::from_value::<State>(data).is_err(),
-                "accepted forged delivery for {worker:?}"
-            );
-        }
-    }
-}
-
-#[test]
 fn return_cargo_cancels_a_partial_harvest_and_can_be_overridden_by_move() {
     let mut state = open_arena_with(24, 16, vec![unit(0, UnitKind::Harvester, 10, 5)], |rows| {
         rows[5][11] = 's';

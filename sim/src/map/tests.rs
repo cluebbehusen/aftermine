@@ -64,6 +64,29 @@ fn rejects_ragged_and_unknown() {
 }
 
 #[test]
+fn parse_refuses_a_map_beyond_the_edge_bound() {
+    let edge = usize::from(MAX_MAP_EDGE);
+
+    let wide = vec!["#".repeat(edge + 1)];
+    assert!(matches!(
+        Map::parse(&wide),
+        Err(MapError::TooLarge { width, height: 1 }) if width == edge + 1
+    ));
+
+    let tall: Vec<String> = std::iter::repeat_n("#".to_string(), edge + 1).collect();
+    assert!(matches!(
+        Map::parse(&tall),
+        Err(MapError::TooLarge { width: 1, height }) if height == edge + 1
+    ));
+
+    let square: Vec<String> = std::iter::repeat_n("#".repeat(edge), edge).collect();
+    assert!(
+        Map::parse(&square).is_ok(),
+        "the bound is inclusive: exactly the maximum still parses"
+    );
+}
+
+#[test]
 fn ascii_roundtrip() {
     let rows = ["#.s", ",S.", "s#."];
     let (map, _) = Map::parse(&rows).unwrap();
