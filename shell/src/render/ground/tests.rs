@@ -337,3 +337,109 @@ fn a_flush_in_pieces_submits_every_flush_tiles_tiles() {
     flush.tile();
     assert_eq!(submitted.get(), 3);
 }
+
+#[test]
+fn a_frame_always_bakes_one_chunk_and_more_only_within_its_budget() {
+    let slow = Duration::from_millis(40);
+    assert!(may_bake(0, BAKES_PER_FRAME, slow), "the first never waits");
+    assert!(may_bake(1, BAKES_PER_FRAME, Duration::ZERO));
+    assert!(may_bake(
+        BAKES_PER_FRAME - 1,
+        BAKES_PER_FRAME,
+        BAKE_BUDGET.saturating_sub(Duration::from_micros(1))
+    ));
+    assert!(!may_bake(1, BAKES_PER_FRAME, BAKE_BUDGET));
+    assert!(!may_bake(1, BAKES_PER_FRAME, slow));
+    assert!(!may_bake(BAKES_PER_FRAME, BAKES_PER_FRAME, Duration::ZERO));
+}
+
+#[test]
+fn an_allowance_counts_the_bakes_it_lets_through() {
+    let mut allowance = Allowance::new(1);
+    assert!(allowance.take());
+    assert!(!allowance.take());
+    assert!(!allowance.take());
+    assert_eq!(allowance.baked, 1);
+}
+
+#[test]
+fn a_block_is_the_smallest_rectangle_around_its_chunks() {
+    let block = Block::around([(4, 1), (4, 3), (5, 2)]).expect("chunks to hold");
+    assert_eq!(
+        block,
+        Block {
+            lo: (4, 1),
+            hi: (5, 3)
+        }
+    );
+    assert!(block.holds((5, 1)) && block.holds((4, 2)));
+    assert!(!block.holds((3, 2)) && !block.holds((4, 4)) && !block.holds((6, 3)));
+    assert_eq!(Block::around([]), None);
+}
+
+/// Which chunks of `layer` among `keys` the frame draws straight to the
+/// screen.
+fn straight_chunks(showing: &Showing, keys: &[ChunkKey], layer: Layer) -> Vec<ChunkKey> {
+    let blocks = showing.straight(layer);
+    keys.iter()
+        .copied()
+        .filter(|key| key.0 == layer && blocks.iter().any(|block| block.holds((key.1, key.2))))
+        .collect()
+}
+
+#[test]
+fn a_row_and_a_column_left_unbaked_draw_straight_as_themselves() {
+    // Six by five chunks of each layer on show, as after a pan down and to the
+    // right that outran the ring: the new right column and bottom row, the
+    // column baked down to its third row.
+    let view: Vec<ChunkKey> = [Layer::Floor, Layer::Raised]
+        .into_iter()
+        .flat_map(|layer| (0..5).flat_map(move |y| (0..6).map(move |x| (layer, x, y))))
+        .collect();
+    let unbaked: Vec<ChunkKey> = view
+        .iter()
+        .copied()
+        .filter(|&(layer, x, y)| layer == Layer::Floor && ((x == 5 && y >= 2) || y == 4))
+        .collect();
+    let showing = Showing::settled(view.clone(), unbaked.clone());
+    assert_eq!(straight_chunks(&showing, &view, Layer::Floor), unbaked);
+    assert_eq!(showing.straight(Layer::Floor).len(), 3, "a block a row");
+    assert!(straight_chunks(&showing, &view, Layer::Raised).is_empty());
+
+    // With every chunk of a layer unbaked, its blocks hold the whole view.
+    let first = Showing::settled(view.clone(), view.clone());
+    for layer in [Layer::Floor, Layer::Raised] {
+        assert_eq!(
+            straight_chunks(&first, &view, layer).len(),
+            view.len() / 2,
+            "{layer:?}"
+        );
+    }
+}
+
+#[test]
+fn a_block_drawn_straight_covers_every_tile_its_chunks_bake() {
+    let live = GroundView::live(&camera(32.0));
+    let zoom = live.zoom();
+    let block = Block {
+        lo: (-1, 2),
+        hi: (3, 4),
+    };
+    let part = live.block(block);
+    assert_eq!(part.zoom(), zoom);
+    assert_eq!(
+        part.to_screen(vec2(7.25, -3.5)),
+        live.to_screen(vec2(7.25, -3.5))
+    );
+    let (lo, hi) = part.world_rect();
+    assert_eq!(lo, GroundView::chunk(zoom, block.lo).world_rect().0);
+    assert_eq!(hi, GroundView::chunk(zoom, block.hi).world_rect().1);
+    let single = Block {
+        lo: (2, 1),
+        hi: (2, 1),
+    };
+    assert_eq!(
+        live.block(single).world_rect(),
+        GroundView::chunk(zoom, (2, 1)).world_rect()
+    );
+}
