@@ -22,15 +22,20 @@ use aftermine_sim::map::{Map, Terrain};
 use chassis::grid::TilePos;
 use macroquad::prelude::*;
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 /// Logical pixels on a side of one chunk. Chunks are a fixed size on screen,
 /// so the cache holds about a screen of them per layer at any zoom.
 const CHUNK: f32 = 256.0;
-/// Most chunks baked in one frame. A view missing more draws its ground
-/// straight to the screen while the cache fills over the next frames.
+/// Time a frame spends baking before it leaves the rest to the next frames.
+/// Chunks of the view still missing draw straight to the screen meanwhile.
+const BAKE_BUDGET: Duration = Duration::from_millis(3);
+/// Most chunks baked in one frame. [`BAKE_BUDGET`] counts only the CPU's time,
+/// and each bake also queues a GPU pass over a whole chunk.
 const BAKES_PER_FRAME: usize = 12;
-/// Most fresh chunks baked in one frame while stretched ones stay on show. The
-/// frame is not waiting on them, so the work can spread out.
+/// Most chunks baked in one frame that the frame does not show: fresh ones
+/// behind the stretched ones on show, or the ring around the view. The frame
+/// is not waiting on them, so the work can spread out.
 const BACKGROUND_BAKES_PER_FRAME: usize = 4;
 /// Tiles past a chunk's edge whose art can still reach into it: dressing,
 /// pit relief and wear marks overhang their tile by less than one. Slabs reach
@@ -96,6 +101,18 @@ impl GroundView {
             origin: -corner,
             lo: corner / zoom - Vec2::splat(REACH),
             hi: (corner + Vec2::splat(CHUNK)) / zoom + Vec2::splat(REACH),
+        }
+    }
+
+    /// The part of `self` that `block` covers, covering every tile a bake of
+    /// any chunk in it would.
+    fn block(&self, block: Block) -> Self {
+        let corner = |(x, y): (i32, i32)| vec2(x as f32, y as f32) * CHUNK;
+        Self {
+            zoom: self.zoom,
+            origin: self.origin,
+            lo: corner(block.lo) / self.zoom - Vec2::splat(REACH),
+            hi: corner((block.hi.0 + 1, block.hi.1 + 1)) / self.zoom + Vec2::splat(REACH),
         }
     }
 
@@ -231,33 +248,111 @@ impl Layer {
 
 type ChunkKey = (Layer, i32, i32);
 
-/// The chunks of a layer's `extent` (world) that a screen of `viewport`
-/// logical pixels shows through `view`, with a chunk `side` logical pixels
-/// across.
+/// The columns and rows `[x0, x1) × [y0, y1)` of the chunks `side` logical
+/// pixels across that hold the rectangle `lo` to `hi`, in logical pixels from
+/// world `(0, 0)`.
+fn chunk_span(lo: Vec2, hi: Vec2, side: f32) -> (i32, i32, i32, i32) {
+    let first = (lo / side).floor();
+    let last = (hi / side).ceil();
+    (
+        numeric::to_i32(first.x),
+        numeric::to_i32(first.y),
+        numeric::to_i32(last.x),
+        numeric::to_i32(last.y),
+    )
+}
+
+/// The span of the chunks of a layer's `extent` (world) that a screen of
+/// `viewport` logical pixels shows through `view`, with a chunk `side` logical
+/// pixels across.
+fn span_in_view(
+    view: &GroundView,
+    viewport: Vec2,
+    extent: (Vec2, Vec2),
+    side: f32,
+) -> (i32, i32, i32, i32) {
+    let lo = (-view.origin).max(extent.0 * view.zoom);
+    let hi = (viewport - view.origin).min(extent.1 * view.zoom);
+    chunk_span(lo, hi, side)
+}
+
+/// The chunks of [`span_in_view`].
 fn chunks_in_view(
     view: &GroundView,
     viewport: Vec2,
     extent: (Vec2, Vec2),
     side: f32,
 ) -> impl Iterator<Item = (i32, i32)> {
-    // In logical pixels from world (0, 0).
-    let lo = (-view.origin).max(extent.0 * view.zoom);
-    let hi = (viewport - view.origin).min(extent.1 * view.zoom);
-    let first = (lo / side).floor();
-    let last = (hi / side).ceil();
-    let (x0, y0) = (numeric::to_i32(first.x), numeric::to_i32(first.y));
-    let (x1, y1) = (numeric::to_i32(last.x), numeric::to_i32(last.y));
+    let (x0, y0, x1, y1) = span_in_view(view, viewport, extent, side);
     (y0..y1).flat_map(move |y| (x0..x1).map(move |x| (x, y)))
+}
+
+/// The chunks of a layer's `extent` in the ring just outside those
+/// [`chunks_in_view`] gives, where a pan reaches next.
+fn chunks_around(
+    view: &GroundView,
+    viewport: Vec2,
+    extent: (Vec2, Vec2),
+    side: f32,
+) -> impl Iterator<Item = (i32, i32)> {
+    let (x0, y0, x1, y1) = span_in_view(view, viewport, extent, side);
+    let (ex0, ey0, ex1, ey1) = chunk_span(extent.0 * view.zoom, extent.1 * view.zoom, side);
+    let (rx0, ry0, rx1, ry1) = if x0 < x1 && y0 < y1 {
+        (
+            (x0 - 1).max(ex0),
+            (y0 - 1).max(ey0),
+            (x1 + 1).min(ex1),
+            (y1 + 1).min(ey1),
+        )
+    } else {
+        (0, 0, 0, 0)
+    };
+    (ry0..ry1)
+        .flat_map(move |y| (rx0..rx1).map(move |x| (x, y)))
+        .filter(move |(x, y)| !((x0..x1).contains(x) && (y0..y1).contains(y)))
+}
+
+/// The chunks `chunks` gives for each layer's extent, both layers together.
+fn of_both_layers<I: Iterator<Item = (i32, i32)>>(
+    map: &Map,
+    chunks: impl Fn((Vec2, Vec2)) -> I,
+) -> Vec<ChunkKey> {
+    [Layer::Floor, Layer::Raised]
+        .into_iter()
+        .flat_map(|layer| chunks(layer.extent(map)).map(move |(x, y)| (layer, x, y)))
+        .collect()
 }
 
 /// The chunks of both layers that `view` shows.
 fn chunks_of_view(map: &Map, view: &GroundView, viewport: Vec2, side: f32) -> Vec<ChunkKey> {
-    [Layer::Floor, Layer::Raised]
-        .into_iter()
-        .flat_map(|layer| {
-            chunks_in_view(view, viewport, layer.extent(map), side).map(move |(x, y)| (layer, x, y))
-        })
-        .collect()
+    of_both_layers(map, |extent| chunks_in_view(view, viewport, extent, side))
+}
+
+/// The chunks of both layers in the ring around those `view` shows.
+fn chunks_around_view(map: &Map, view: &GroundView, viewport: Vec2, side: f32) -> Vec<ChunkKey> {
+    of_both_layers(map, |extent| chunks_around(view, viewport, extent, side))
+}
+
+/// Puts first the chunks of `ring` the view heads for, its camera having moved
+/// `heading` logical pixels since the last frame. A still view keeps their
+/// order.
+fn ahead_first(ring: &mut [ChunkKey], view: &GroundView, viewport: Vec2, heading: Vec2) {
+    let lead = |&(_, x, y): &ChunkKey| {
+        let center = view.origin + (vec2(x as f32, y as f32) + 0.5) * CHUNK - viewport * 0.5;
+        center.dot(heading)
+    };
+    // Not `total_cmp`, which would order the signed zeros of a still view.
+    ring.sort_by(|a, b| {
+        lead(b)
+            .partial_cmp(&lead(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
+/// How many chunks the cache keeps for a view of `view` chunks with `ring`
+/// around it: those, and half again the view's, so panning back finds them.
+fn keep(view: usize, ring: usize) -> usize {
+    view + ring + view / 2
 }
 
 /// The screen rectangle `[lo, hi)` of chunk `(x, y)`. Neighbors compute their
@@ -327,6 +422,70 @@ fn stalest(chunks: &BTreeMap<ChunkKey, Chunk>, count: usize) -> Vec<ChunkKey> {
     by_use.into_iter().take(count).map(|(_, key)| key).collect()
 }
 
+/// Whether a frame that has baked `baked` chunks over `spent` may bake
+/// another: the first always, so the cache keeps filling however slow a bake
+/// runs, then more while both the count and the time allow.
+fn may_bake(baked: usize, cap: usize, spent: Duration) -> bool {
+    baked == 0 || (baked < cap && spent < BAKE_BUDGET)
+}
+
+/// One frame's share of bakes, timed from the first.
+struct Allowance {
+    cap: usize,
+    started: Instant,
+    baked: usize,
+}
+
+impl Allowance {
+    fn new(cap: usize) -> Self {
+        Self {
+            cap,
+            started: Instant::now(),
+            baked: 0,
+        }
+    }
+
+    /// Whether one more bake fits, counting it if it does.
+    fn take(&mut self) -> bool {
+        let fits = may_bake(self.baked, self.cap, self.started.elapsed());
+        if fits {
+            self.baked += 1;
+        }
+        fits
+    }
+}
+
+/// A rectangle of chunks, `lo` to `hi` inclusive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Block {
+    lo: (i32, i32),
+    hi: (i32, i32),
+}
+
+impl Block {
+    /// The smallest block holding every one of `chunks`.
+    fn around(chunks: impl IntoIterator<Item = (i32, i32)>) -> Option<Self> {
+        chunks
+            .into_iter()
+            .fold(None, |block: Option<Self>, (x, y)| {
+                Some(block.map_or(
+                    Self {
+                        lo: (x, y),
+                        hi: (x, y),
+                    },
+                    |block| Self {
+                        lo: (block.lo.0.min(x), block.lo.1.min(y)),
+                        hi: (block.hi.0.max(x), block.hi.1.max(y)),
+                    },
+                ))
+            })
+    }
+
+    fn holds(self, (x, y): (i32, i32)) -> bool {
+        (self.lo.0..=self.hi.0).contains(&x) && (self.lo.1..=self.hi.1).contains(&y)
+    }
+}
+
 struct Chunk {
     /// `None` when nothing in the layer reaches the chunk.
     target: Option<RenderTarget>,
@@ -341,7 +500,9 @@ struct ChunkGrid {
     side: f32,
 }
 
-/// The chunks a frame draws in place of its ground.
+/// How a frame draws its ground from the cache: the chunks on show, any
+/// fresh ones and the whole-map image behind them, and the chunks on show that
+/// draw straight to the screen until they bake.
 struct Showing {
     chunks: ChunkGrid,
     /// Fresh chunks for where the zoom will land, once they are all ready.
@@ -349,16 +510,36 @@ struct Showing {
     fresh_on_top: bool,
     /// Whether the whole-map image fills in what the chunks do not cover.
     overview: bool,
+    /// Chunks of `chunks` not baked yet, which draw straight to the screen in
+    /// [`Self::straight`]'s blocks.
+    unbaked: Vec<ChunkKey>,
 }
 
 impl Showing {
-    fn settled(keys: Vec<ChunkKey>) -> Self {
+    fn settled(keys: Vec<ChunkKey>, unbaked: Vec<ChunkKey>) -> Self {
         Self {
             chunks: ChunkGrid { keys, side: CHUNK },
             fresh: None,
             fresh_on_top: false,
             overview: false,
+            unbaked,
         }
+    }
+
+    /// The blocks of `layer` that draw straight to the screen: one per row of
+    /// its unbaked chunks, so a row and a column left by a diagonal pan draw
+    /// as themselves and not the whole view around them.
+    fn straight(&self, layer: Layer) -> Vec<Block> {
+        let unbaked: Vec<(i32, i32)> = self
+            .unbaked
+            .iter()
+            .filter(|key| key.0 == layer)
+            .map(|&(_, x, y)| (x, y))
+            .collect();
+        let rows: std::collections::BTreeSet<i32> = unbaked.iter().map(|&(_, y)| y).collect();
+        rows.into_iter()
+            .filter_map(|row| Block::around(unbaked.iter().copied().filter(|&(_, y)| y == row)))
+            .collect()
     }
 }
 
@@ -378,6 +559,9 @@ pub(crate) struct GroundBlend {
     bake: Material,
     /// Draws a chunk onto the frame.
     composite: Material,
+    /// Draws the passes straight to the screen as macroquad's own sprite
+    /// shader would, inside the logical rectangle `Clip` alone.
+    clipped: Material,
 }
 
 /// The baked ground, kept by the presentation for its match. Created empty;
@@ -392,7 +576,8 @@ pub(crate) struct GroundCache {
     /// scale.
     spare: Vec<RenderTarget>,
     frame: u64,
-    /// The chunks this frame draws, when the cache covers the view.
+    /// How this frame draws its ground from the cache; `None` draws all of it
+    /// straight to the screen.
     showing: Option<Showing>,
     /// Fresh chunks baking behind the ones on show, for the zoom in `next_zoom`.
     next: BTreeMap<ChunkKey, Chunk>,
@@ -402,6 +587,9 @@ pub(crate) struct GroundCache {
     /// The zoom a glide was headed for last frame. While it keeps changing,
     /// fresh chunks would be stale before they finish.
     last_target: Option<f32>,
+    /// Where world `(0, 0)` landed on the last settled frame, to tell which
+    /// way a pan heads.
+    last_origin: Option<Vec2>,
     /// Whether `chunks` sample smoothly, for stretching. Held still at their
     /// own zoom they sample exactly, which stays sharp at fractional DPI.
     smooth: bool,
@@ -410,9 +598,11 @@ pub(crate) struct GroundCache {
 
 impl GroundCache {
     /// Readies the chunks this frame shows, baking what is missing within the
-    /// frame's allowance. While the zoom moves, or has landed past the chunks,
-    /// those stretch to fit while fresh ones bake. Before any chunks exist, the
-    /// frame draws its ground straight to the screen.
+    /// frame's allowance; the rest draws straight to the screen. A frame whose
+    /// chunks are all baked spends what is left of it on the ring around them,
+    /// where a pan reaches next. While the zoom moves, or has landed past the
+    /// chunks, those stretch to fit while fresh ones bake. Before any chunks
+    /// exist, the frame draws its ground straight to the screen.
     pub(super) fn prepare(
         &mut self,
         ground: &Ground<'_>,
@@ -423,6 +613,7 @@ impl GroundCache {
         let dpi = screen_dpi_scale();
         let viewport = camera.viewport();
         self.showing = None;
+        let last_origin = self.last_origin.take();
         if self.overview.as_ref().is_none_or(|map| map.dpi != dpi) {
             self.overview = Some(Box::new(bake_overview(ground, sprites, dpi)));
         }
@@ -445,39 +636,69 @@ impl GroundCache {
         }
         self.frame += 1;
         let wanted = chunks_of_view(ground.map, view, viewport, CHUNK);
-        let missing: Vec<ChunkKey> = wanted
+        let ring = chunks_around_view(ground.map, view, viewport, CHUNK);
+        let mut missing: Vec<ChunkKey> = wanted
             .iter()
             .copied()
             .filter(|key| !self.chunks.contains_key(key))
             .collect();
-        let allowance = missing.len().min(BAKES_PER_FRAME);
+        let mut allowance = Allowance::new(BAKES_PER_FRAME);
         let baked = self.bake(
             ground,
             sprites,
-            dpi,
-            view.zoom,
+            (view.zoom, dpi),
             FilterMode::Nearest,
-            &missing[..allowance],
+            &missing,
+            &mut allowance,
         );
+        let unbaked = missing.split_off(baked.len());
         self.chunks.extend(baked);
-        for key in &wanted {
+        if unbaked.is_empty() {
+            allowance.cap = allowance.cap.min(BACKGROUND_BAKES_PER_FRAME);
+            let mut ahead: Vec<ChunkKey> = ring
+                .iter()
+                .copied()
+                .filter(|key| !self.chunks.contains_key(key))
+                .collect();
+            let heading = last_origin.map_or(Vec2::ZERO, |last| last - view.origin);
+            ahead_first(&mut ahead, view, viewport, heading);
+            let baked = self.bake(
+                ground,
+                sprites,
+                (view.zoom, dpi),
+                FilterMode::Nearest,
+                &ahead,
+                &mut allowance,
+            );
+            self.chunks.extend(baked);
+        }
+        self.last_origin = Some(view.origin);
+        self.stamp(wanted.iter().chain(&ring));
+        self.retire_beyond(keep(wanted.len(), ring.len()));
+        // Enough to bake a whole fresh view behind the one on show.
+        self.spare.truncate(wanted.len());
+        self.showing = Some(Showing::settled(wanted, unbaked));
+    }
+
+    /// Marks `keys` drawn this frame, or as good as.
+    fn stamp<'k>(&mut self, keys: impl Iterator<Item = &'k ChunkKey>) {
+        for key in keys {
             if let Some(chunk) = self.chunks.get_mut(key) {
                 chunk.used = self.frame;
             }
         }
-        // Keep half again the chunks on show, so panning back finds them.
-        let keep = wanted.len() + wanted.len() / 2;
-        if self.chunks.len() > keep {
-            for key in stalest(&self.chunks, self.chunks.len() - keep) {
-                if let Some(target) = self.chunks.remove(&key).and_then(|chunk| chunk.target) {
-                    self.spare.push(target);
-                }
-            }
+    }
+
+    /// Retires the least recently used chunks past `keep`, keeping their
+    /// textures for later bakes.
+    fn retire_beyond(&mut self, keep: usize) {
+        if self.chunks.len() <= keep {
+            return;
         }
-        // Enough to bake a whole fresh view behind the one on show.
-        self.spare.truncate(wanted.len());
-        if missing.len() <= BAKES_PER_FRAME {
-            self.showing = Some(Showing::settled(wanted));
+        for key in stalest(&self.chunks, self.chunks.len() - keep) {
+            if let Some(target) = self.chunks.remove(&key).and_then(|chunk| chunk.target) {
+                self.spare.push(target);
+            }
         }
     }
 
@@ -512,7 +733,7 @@ impl GroundCache {
         {
             if !moving {
                 self.promote_next(view.zoom, dpi);
-                return Showing::settled(keys);
+                return Showing::settled(keys, Vec::new());
             }
             fresh = Some(ChunkGrid {
                 keys,
@@ -528,6 +749,7 @@ impl GroundCache {
             fresh,
             fresh_on_top,
             overview: true,
+            unbaked: Vec::new(),
         }
     }
 
@@ -563,17 +785,16 @@ impl GroundCache {
             .copied()
             .filter(|key| !self.next.contains_key(key))
             .collect();
-        let allowance = missing.len().min(BACKGROUND_BAKES_PER_FRAME);
         let baked = self.bake(
             ground,
             sprites,
-            dpi,
-            view.zoom,
+            (view.zoom, dpi),
             FilterMode::Linear,
-            &missing[..allowance],
+            &missing,
+            &mut Allowance::new(BACKGROUND_BAKES_PER_FRAME),
         );
+        self.next_ready = baked.len() == missing.len();
         self.next.extend(baked);
-        self.next_ready = missing.len() <= allowance;
         self.next_ready.then_some(wanted)
     }
 
@@ -633,6 +854,10 @@ impl GroundCache {
             layer.draw(ground, view, sprites, &mut Flush::never());
             return;
         };
+        let straight = showing.straight(layer);
+        let drawn_straight =
+            |key: &ChunkKey| straight.iter().any(|block| block.holds((key.1, key.2)));
+        let shown = |key: &&ChunkKey| key.0 == layer && !drawn_straight(key);
         gl_use_material(&sprites.ground_blend().composite);
         // Top of the stack first, each image clipped to what is still bare.
         let mut covered = Vec::new();
@@ -645,7 +870,7 @@ impl GroundCache {
         };
         for (grid, held) in stack.into_iter().flatten() {
             let mut rects = Vec::with_capacity(grid.keys.len());
-            for key in grid.keys.iter().filter(|key| key.0 == layer) {
+            for key in grid.keys.iter().filter(shown) {
                 let whole = chunk_on_screen(view, (key.1, key.2), grid.side);
                 if let Some(target) = held.get(key).and_then(|chunk| chunk.target.as_ref()) {
                     for part in uncovered_parts(whole, &covered) {
@@ -670,17 +895,43 @@ impl GroundCache {
             }
         }
         gl_use_default_material();
+        if straight.is_empty() {
+            return;
+        }
+        if showing
+            .chunks
+            .keys
+            .iter()
+            .filter(|key| key.0 == layer)
+            .all(drawn_straight)
+        {
+            layer.draw(ground, view, sprites, &mut Flush::never());
+            return;
+        }
+        // Baked chunks show around each block, so it draws inside its own edges
+        // alone, as a bake of its chunks would.
+        let clipped = &sprites.ground_blend().clipped;
+        gl_use_material(clipped);
+        for block in straight {
+            let (lo, _) = chunk_on_screen(view, block.lo, CHUNK);
+            let (_, hi) = chunk_on_screen(view, block.hi, CHUNK);
+            clipped.set_uniform("Clip", vec4(lo.x, lo.y, hi.x, hi.y));
+            layer.draw(ground, &view.block(block), sprites, &mut Flush::never());
+        }
+        gl_use_default_material();
     }
 
-    /// Bakes `keys` at `zoom` into textures of the display scale `dpi`.
+    /// Bakes as many of `keys` as `allowance` lets, in order, at `zoom` into
+    /// textures of the display scale `dpi`. A chunk with nothing to draw takes
+    /// none of the allowance.
     fn bake(
         &mut self,
         ground: &Ground<'_>,
         sprites: &Sprites,
-        dpi: f32,
-        zoom: f32,
+        (zoom, dpi): (f32, f32),
         filter: FilterMode,
         keys: &[ChunkKey],
+        allowance: &mut Allowance,
     ) -> Vec<(ChunkKey, Chunk)> {
         if keys.is_empty() {
             return Vec::new();
@@ -691,7 +942,11 @@ impl GroundCache {
         gl_use_material(&sprites.ground_blend().bake);
         for &(layer, x, y) in keys {
             let view = GroundView::chunk(zoom, (x, y));
-            let target = if layer == Layer::Raised && raised_is_empty(ground.map, &view) {
+            let empty = layer == Layer::Raised && raised_is_empty(ground.map, &view);
+            if !empty && !allowance.take() {
+                break;
+            }
+            let target = if empty {
                 None
             } else {
                 let target = self
@@ -836,7 +1091,50 @@ void main(){ gl_FragColor=color*texture2D(Texture,uv); }
             premultiplied(),
         )
         .context("loading the terrain composite shader")?;
-        Ok(Self { bake, composite })
+        // A clipped fragment is one whose center lies outside `Clip`, which is
+        // how a chunk's own mesh decides which pixels are its.
+        let clipped = load_material(
+            ShaderSource::Glsl {
+                vertex: r"#version 100
+attribute vec3 position;
+attribute vec2 texcoord;
+attribute vec4 color0;
+varying lowp vec2 uv;
+varying lowp vec4 color;
+varying highp vec2 at;
+uniform mat4 Model;
+uniform mat4 Projection;
+void main(){ vec4 world=Model*vec4(position,1.0); gl_Position=Projection*world; color=color0/255.0; uv=texcoord; at=world.xy; }
+",
+                fragment: r"#version 100
+precision mediump float;
+varying lowp vec2 uv;
+varying lowp vec4 color;
+varying highp vec2 at;
+uniform highp vec4 Clip;
+uniform sampler2D Texture;
+void main(){ if(at.x<Clip.x||at.y<Clip.y||at.x>=Clip.z||at.y>=Clip.w) discard; gl_FragColor=color*texture2D(Texture,uv); }
+",
+            },
+            MaterialParams {
+                pipeline_params: PipelineParams {
+                    color_blend: Some(BlendState::new(
+                        Equation::Add,
+                        BlendFactor::Value(BlendValue::SourceAlpha),
+                        BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
+                    )),
+                    ..Default::default()
+                },
+                uniforms: vec![UniformDesc::new("Clip", UniformType::Float4)],
+                ..Default::default()
+            },
+        )
+        .context("loading the clipped terrain shader")?;
+        Ok(Self {
+            bake,
+            composite,
+            clipped,
+        })
     }
 }
 
