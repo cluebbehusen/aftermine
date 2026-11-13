@@ -1,5 +1,6 @@
 use super::*;
 use crate::camera::Camera;
+use crate::numeric::Fit;
 
 /// A camera holding still at about `zoom`.
 fn camera(zoom: f32) -> Camera {
@@ -442,4 +443,121 @@ fn a_block_drawn_straight_covers_every_tile_its_chunks_bake() {
         live.block(single).world_rect(),
         GroundView::chunk(zoom, (2, 1)).world_rect()
     );
+}
+
+/// The chunk columns and rows `[x0, x1) × [y0, y1)` of `keys` in `layer`.
+fn span(keys: &[ChunkKey], layer: Layer) -> (i32, i32, i32, i32) {
+    let of = |key: &&ChunkKey| key.0 == layer;
+    let xs = keys.iter().filter(of).map(|key| key.1);
+    let ys = keys.iter().filter(of).map(|key| key.2);
+    (
+        xs.clone().min().expect("chunks in view"),
+        ys.clone().min().expect("chunks in view"),
+        xs.max().expect("chunks in view") + 1,
+        ys.max().expect("chunks in view") + 1,
+    )
+}
+
+#[test]
+fn the_ring_is_every_chunk_beside_the_view_on_its_layer() {
+    let map = open_map(128, 112, &[]);
+    let middle = GroundView::live(&wide_camera(vec2(64.0, 56.0), 16.0));
+    let view = chunks_of_view(&map, &middle, VIEWPORT, CHUNK);
+    let ring = chunks_around_view(&map, &middle, VIEWPORT, CHUNK);
+    for layer in [Layer::Floor, Layer::Raised] {
+        let (x0, y0, x1, y1) = span(&view, layer);
+        let around: Vec<ChunkKey> = (y0 - 1..=y1)
+            .flat_map(|y| (x0 - 1..=x1).map(move |x| (layer, x, y)))
+            .filter(|&(_, x, y)| !((x0..x1).contains(&x) && (y0..y1).contains(&y)))
+            .collect();
+        let mut on_layer: Vec<ChunkKey> =
+            ring.iter().copied().filter(|key| key.0 == layer).collect();
+        on_layer.sort_unstable();
+        let mut expected = around;
+        expected.sort_unstable();
+        assert_eq!(on_layer, expected, "{layer:?}");
+    }
+
+    // At the map's corner the view already holds each layer's first chunks,
+    // the floor's at the map's edge and the raised layer's past it, so the
+    // ring goes no further.
+    let corner = GroundView::live(&wide_camera(Vec2::ZERO, 16.0));
+    let view = chunks_of_view(&map, &corner, VIEWPORT, CHUNK);
+    let ring = chunks_around_view(&map, &corner, VIEWPORT, CHUNK);
+    for (layer, first) in [(Layer::Floor, 0), (Layer::Raised, -1)] {
+        let (x0, y0, _, _) = span(&view, layer);
+        assert_eq!((x0, y0), (first, first), "{layer:?}");
+        let on_layer = ring.iter().filter(|key| key.0 == layer);
+        assert!(on_layer.clone().count() > 0);
+        assert!(
+            on_layer.clone().all(|key| key.1 >= x0 && key.2 >= y0),
+            "{layer:?} reaches off its layer"
+        );
+    }
+}
+
+/// Whether [`ahead_first`], heading `heading`, puts the chunks of `ring` that
+/// `ahead` picks out before all the rest.
+fn leads(
+    ring: &[ChunkKey],
+    view: &GroundView,
+    heading: Vec2,
+    ahead: impl Fn(&ChunkKey) -> bool,
+) -> bool {
+    let mut ordered = ring.to_vec();
+    ahead_first(&mut ordered, view, VIEWPORT, heading);
+    let leading = ring.iter().filter(|key| ahead(key)).count();
+    leading > 0 && ordered[..leading].iter().all(&ahead)
+}
+
+#[test]
+fn the_ring_bakes_where_the_view_is_heading_first() {
+    let map = open_map(128, 112, &[]);
+    let live = GroundView::live(&wide_camera(vec2(64.0, 56.0), 16.0));
+    let view = chunks_of_view(&map, &live, VIEWPORT, CHUNK);
+    let (_, y0, x1, _) = span(&view, Layer::Floor);
+    let ring = chunks_around_view(&map, &live, VIEWPORT, CHUNK);
+    // Each heading's leading edge is the column or row of the ring it meets.
+    assert!(leads(&ring, &live, vec2(6.0, 0.0), |key| key.1 == x1));
+    assert!(leads(&ring, &live, vec2(0.0, -4.0), |key| key.2 == y0 - 1));
+    let mut still = ring.clone();
+    ahead_first(&mut still, &live, VIEWPORT, Vec2::ZERO);
+    assert_eq!(still, ring);
+}
+
+#[test]
+fn chunks_in_view_and_in_the_ring_outlast_every_older_one() {
+    let map = open_map(128, 112, &[]);
+    let live = GroundView::live(&wide_camera(vec2(64.0, 56.0), 16.0));
+    let view = chunks_of_view(&map, &live, VIEWPORT, CHUNK);
+    let ring = chunks_around_view(&map, &live, VIEWPORT, CHUNK);
+    let history: Vec<ChunkKey> = (0..view.len())
+        .map(|n| (Layer::Floor, 100 + n.fit::<i32>(), 0))
+        .collect();
+    let mut cache = settled_cache(&map, vec2(64.0, 56.0), 16.0);
+    // Baked a frame or more ago, as a pan leaves them.
+    for (age, &key) in ring.iter().chain(&history).enumerate() {
+        cache.chunks.insert(
+            key,
+            Chunk {
+                target: None,
+                used: age as u64,
+            },
+        );
+    }
+    cache.frame = 1_000;
+    cache.stamp(view.iter().chain(&ring));
+    let keep = keep(view.len(), ring.len());
+    cache.retire_beyond(keep);
+    assert_eq!(cache.chunks.len(), keep);
+    for key in view.iter().chain(&ring) {
+        assert!(cache.chunks.contains_key(key), "{key:?} was retired");
+    }
+    // The newest of the rest stay, so panning back finds them.
+    let kept: Vec<&ChunkKey> = history
+        .iter()
+        .filter(|key| cache.chunks.contains_key(key))
+        .collect();
+    assert_eq!(kept.len(), view.len() / 2);
+    assert_eq!(kept.last(), history.last().as_ref());
 }
