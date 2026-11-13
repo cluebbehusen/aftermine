@@ -1179,3 +1179,32 @@ fn time_the_app_slept_does_not_count_against_the_rejoin_window() {
     }
     assert!(now >= Duration::from_secs(60) + REJOIN_WINDOW);
 }
+
+#[test]
+fn a_failing_listener_reports_each_new_kind_of_failure_once() {
+    let mut errors = AcceptErrors::default();
+    let refused = || Err(io::Error::from(io::ErrorKind::ConnectionAborted));
+    assert!(errors.take(refused()).is_none());
+    assert_eq!(errors.last, Some(io::ErrorKind::ConnectionAborted));
+    assert!(errors.take(Ok(None)).is_none());
+    assert_eq!(
+        errors.last,
+        Some(io::ErrorKind::ConnectionAborted),
+        "an empty queue between failures doesn't make the same failure new"
+    );
+    assert!(
+        errors
+            .take(Err(io::Error::from(io::ErrorKind::OutOfMemory)))
+            .is_none()
+    );
+    assert_eq!(errors.last, Some(io::ErrorKind::OutOfMemory));
+
+    let listener = Listener::bind("127.0.0.1:0").unwrap();
+    let _client =
+        Connection::connect_any(listener.local_addr().unwrap(), Duration::from_secs(5)).unwrap();
+    let _host = wait(|| errors.take(listener.try_accept()));
+    assert_eq!(
+        errors.last, None,
+        "an accepted connection clears the failure"
+    );
+}
