@@ -302,8 +302,14 @@ Each platform's backend reports the refresh of the display the window is on and
 presents on every `n`th refresh in the display's own timing, on whichever
 display the window moves to. Where a platform reports no refresh, frames present
 at whatever rate it offers and the Frame rate row shows its value without
-stepping. A limiter outside the game, such as Steam's on Steam Deck, wins when
-it is slower; the shell never works against it.
+stepping. On Windows and Linux, where a driver setting can override the
+interval, `pacing::Fallback` watches settled frame times; once frames come
+faster than asked, the shell sleeps before presenting each one for the rest of
+the session, holding even the full rate to the refresh, timed to land on a
+refresh where the driver still waits for one. A change of refresh starts the
+check over, and frames slower than asked never engage it. A limiter outside the
+game, such as Steam's on Steam Deck, wins when it is slower; the shell never
+works against it.
 
 While a controller is in use, and always on a TV, the match HUD, the menus and
 the replay viewer stand in pad mode: they leave out the controls a controller's

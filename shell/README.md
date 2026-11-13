@@ -15,7 +15,8 @@ crate is a binary, and this README is also its crate-level rustdoc.
   questions, `app/screen_flow` handles transitions, and `app/persistence` runs
   saving and loading on a background worker.
 - `pacing` turns the Frame rate setting and the display's refresh into how many
-  refreshes each frame spans, idling still screens at the slowest choice.
+  refreshes each frame spans, idling still screens at the slowest choice, and on
+  Windows and Linux paces frames itself when a driver ignores that.
 - `game` owns one live session: its world, recorder, bots and `game::Clock`.
   `game::Presentation` holds the camera, effects and UI state, and rendering
   borrows the active world through `game::Scene`.
