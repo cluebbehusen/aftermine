@@ -180,12 +180,42 @@ pub(crate) fn sentence(names: &[&str]) -> String {
     }
 }
 
+/// Reports a listener's failures to accept. A listener that dies fails on
+/// every poll, so each new kind of failure prints once.
+#[derive(Debug, Default)]
+struct AcceptErrors {
+    last: Option<io::ErrorKind>,
+}
+
+impl AcceptErrors {
+    /// The accepted connection, if any, printing a failure unlike the last
+    /// one since a connection was accepted.
+    fn take(&mut self, accepted: io::Result<Option<Connection>>) -> Option<Connection> {
+        match accepted {
+            Ok(connection) => {
+                if connection.is_some() {
+                    self.last = None;
+                }
+                connection
+            }
+            Err(error) => {
+                if self.last != Some(error.kind()) {
+                    eprintln!("cannot accept a LAN connection: {error}");
+                }
+                self.last = Some(error.kind());
+                None
+            }
+        }
+    }
+}
+
 /// The host's connections, one per client seat.
 pub(crate) struct HostLink {
     session: HostSession,
     peers: Vec<(PlayerId, Connection)>,
     /// Takes the connections of players probing or rejoining their seats.
     listener: Option<Listener>,
+    accept_errors: AcceptErrors,
     desk: Desk,
     visitors: Vec<(VisitorId, Connection)>,
     /// Finished connections of seats that left, flushing their last lines.
@@ -470,6 +500,7 @@ impl Link {
             session: started.session,
             peers: started.peers,
             listener: started.listener,
+            accept_errors: AcceptErrors::default(),
             desk: Desk::new(&started.commit),
             visitors: Vec::new(),
             departing: Vec::new(),
@@ -781,7 +812,7 @@ impl HostLink {
     fn serve_visitors(&mut self, game: &Game, now: Duration) {
         if let Some(listener) = &self.listener {
             while self.visitors.len() < MAX_GREETING {
-                let Ok(Some(connection)) = listener.try_accept() else {
+                let Some(connection) = self.accept_errors.take(listener.try_accept()) else {
                     break;
                 };
                 let visitor = self.desk.connected(now);
@@ -1248,6 +1279,7 @@ fn routed_from(probe: Ipv4Addr) -> Option<IpAddr> {
 pub(crate) struct HostLobby {
     /// Moves on to the match once it starts.
     listener: Option<Listener>,
+    accept_errors: AcceptErrors,
     address: String,
     commit: String,
     /// The TCP port joiners connect to.
@@ -1296,6 +1328,7 @@ impl HostLobby {
         let advertiser = advertises(bound).then(Advertiser::new).and_then(Result::ok);
         Ok(Self {
             listener: Some(listener),
+            accept_errors: AcceptErrors::default(),
             address: reachable(bound),
             commit: commit.to_owned(),
             port: bound.port(),
@@ -1386,7 +1419,10 @@ impl HostLobby {
             .filter(|(member, _)| self.gathering.name(*member).is_none())
             .count();
         while unnamed < MAX_GREETING {
-            let Some(Ok(Some(connection))) = self.listener.as_ref().map(Listener::try_accept)
+            let Some(connection) = self
+                .listener
+                .as_ref()
+                .and_then(|listener| self.accept_errors.take(listener.try_accept()))
             else {
                 break;
             };
