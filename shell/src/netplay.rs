@@ -209,13 +209,52 @@ impl AcceptErrors {
     }
 }
 
+/// A host's listener, which binds its address afresh after the app was
+/// suspended. iOS and tvOS stop answering a suspended app's listening
+/// socket, and its accepts keep reporting an empty queue rather than failing,
+/// so only a new socket hears joiners and rejoins again.
+struct HostListener {
+    address: SocketAddr,
+    /// `None` after a rebind failed; each accept tries binding again.
+    listener: Option<Listener>,
+    errors: AcceptErrors,
+}
+
+impl HostListener {
+    fn new(listener: Listener) -> io::Result<Self> {
+        Ok(Self {
+            address: listener.local_addr()?,
+            listener: Some(listener),
+            errors: AcceptErrors::default(),
+        })
+    }
+
+    /// The next waiting connection, if any. A listener lost to a failed
+    /// rebind tries binding again first.
+    fn accept(&mut self) -> Option<Connection> {
+        if self.listener.is_none() {
+            self.listener = Listener::bind(self.address).ok();
+        }
+        let accepted = self.listener.as_ref()?.try_accept();
+        self.errors.take(accepted)
+    }
+
+    /// Closes the listening socket and binds its address again.
+    fn relisten(&mut self) {
+        self.listener = None;
+        match Listener::bind(self.address) {
+            Ok(listener) => self.listener = Some(listener),
+            Err(error) => eprintln!("cannot listen again on {}: {error}", self.address),
+        }
+    }
+}
+
 /// The host's connections, one per client seat.
 pub(crate) struct HostLink {
     session: HostSession,
     peers: Vec<(PlayerId, Connection)>,
     /// Takes the connections of players probing or rejoining their seats.
-    listener: Option<Listener>,
-    accept_errors: AcceptErrors,
+    listener: Option<HostListener>,
     desk: Desk,
     visitors: Vec<(VisitorId, Connection)>,
     /// Finished connections of seats that left, flushing their last lines.
@@ -495,12 +534,20 @@ impl HostLink {
 }
 
 impl Link {
+    /// Binds a host's listener afresh, after the app was suspended.
+    pub(crate) fn relisten(&mut self) {
+        if let Self::Host(host) = self
+            && let Some(listener) = &mut host.listener
+        {
+            listener.relisten();
+        }
+    }
+
     pub(crate) fn host(started: Started, game: &Game, now: Duration) -> Self {
         Self::Host(HostLink {
             session: started.session,
             peers: started.peers,
             listener: started.listener,
-            accept_errors: AcceptErrors::default(),
             desk: Desk::new(&started.commit),
             visitors: Vec::new(),
             departing: Vec::new(),
@@ -810,9 +857,9 @@ impl HostLink {
     /// and hands an admitted visitor's connection to the session. The desk's
     /// lines go out first, so Go precedes anything the session says.
     fn serve_visitors(&mut self, game: &Game, now: Duration) {
-        if let Some(listener) = &self.listener {
+        if let Some(listener) = &mut self.listener {
             while self.visitors.len() < MAX_GREETING {
-                let Some(connection) = self.accept_errors.take(listener.try_accept()) else {
+                let Some(connection) = listener.accept() else {
                     break;
                 };
                 let visitor = self.desk.connected(now);
@@ -1278,8 +1325,7 @@ fn routed_from(probe: Ipv4Addr) -> Option<IpAddr> {
 /// publishes the room.
 pub(crate) struct HostLobby {
     /// Moves on to the match once it starts.
-    listener: Option<Listener>,
-    accept_errors: AcceptErrors,
+    listener: Option<HostListener>,
     address: String,
     commit: String,
     /// The TCP port joiners connect to.
@@ -1300,7 +1346,7 @@ pub(crate) struct HostLobby {
 pub(crate) struct Started {
     session: HostSession,
     peers: Vec<(PlayerId, Connection)>,
-    listener: Option<Listener>,
+    listener: Option<HostListener>,
     commit: String,
     installs: Vec<(PlayerId, InstallId)>,
 }
@@ -1318,6 +1364,17 @@ pub(crate) enum StartPoll {
 }
 
 impl HostLobby {
+    /// Binds the lobby's listener and its beacon socket afresh, after the
+    /// app was suspended.
+    pub(crate) fn relisten(&mut self) {
+        if let Some(listener) = &mut self.listener {
+            listener.relisten();
+        }
+        if self.advertiser.is_some() {
+            self.advertiser = Advertiser::new().ok();
+        }
+    }
+
     /// Listens on `address` for builds of `commit` to play `map`.
     pub(crate) fn open(address: &str, commit: &str, map: &Scenario) -> Result<Self> {
         let listener =
@@ -1326,9 +1383,10 @@ impl HostLobby {
             .local_addr()
             .with_context(|| format!("cannot listen on {address}"))?;
         let advertiser = advertises(bound).then(Advertiser::new).and_then(Result::ok);
+        let listener =
+            HostListener::new(listener).with_context(|| format!("cannot listen on {address}"))?;
         Ok(Self {
             listener: Some(listener),
-            accept_errors: AcceptErrors::default(),
             address: reachable(bound),
             commit: commit.to_owned(),
             port: bound.port(),
@@ -1419,11 +1477,7 @@ impl HostLobby {
             .filter(|(member, _)| self.gathering.name(*member).is_none())
             .count();
         while unnamed < MAX_GREETING {
-            let Some(connection) = self
-                .listener
-                .as_ref()
-                .and_then(|listener| self.accept_errors.take(listener.try_accept()))
-            else {
+            let Some(connection) = self.listener.as_mut().and_then(HostListener::accept) else {
                 break;
             };
             let member = self.gathering.connected(now);
