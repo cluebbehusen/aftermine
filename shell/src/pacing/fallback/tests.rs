@@ -202,17 +202,23 @@ fn an_unknown_refresh_never_engages_it() {
     assert_eq!(engaged(&fallback), None);
     let mut fallback = engaged_on(ms(4.0), 60.0);
     fallback.observe(unknown);
-    assert_eq!(fallback.wake(2, ms(0.0), ms(1.0)), None);
+    assert_eq!(
+        fallback.wake(2, Some(display(60.0)), ms(0.0), ms(1.0)),
+        None
+    );
 }
 
 #[test]
 fn nothing_sleeps_before_it_engages_or_at_the_full_rate_with_vsync() {
     let mut fallback = Fallback::default();
     feed(&mut fallback, frame(ms(33.3), 2, 60.0), ms(LONG));
-    assert_eq!(fallback.wake(2, ms(0.0), ms(1.0)), None);
+    assert_eq!(
+        fallback.wake(2, Some(display(60.0)), ms(0.0), ms(1.0)),
+        None
+    );
     let mut fallback = engaged_on(ms(16.7), 60.0);
     assert_eq!(
-        fallback.wake(1, ms(0.0), ms(1.0)),
+        fallback.wake(1, Some(display(60.0)), ms(0.0), ms(1.0)),
         None,
         "vsync already holds the full rate to the refresh"
     );
@@ -225,10 +231,13 @@ fn the_full_rate_without_vsync_is_held_to_the_refresh() {
     assert_eq!(engaged(&fallback), Some(Vsync::Off));
     let one = display(60.0).period();
     let start = ms(1_000.0);
-    assert_eq!(fallback.wake(1, start, start + ms(3.0)), Some(start + one));
+    assert_eq!(
+        fallback.wake(1, Some(display(60.0)), start, start + ms(3.0)),
+        Some(start + one)
+    );
     let began = start + one + ms(1.0);
     assert_eq!(
-        fallback.wake(1, began, began + ms(3.0)),
+        fallback.wake(1, Some(display(60.0)), began, began + ms(3.0)),
         Some(start + one * 2)
     );
 }
@@ -238,13 +247,13 @@ fn a_frame_held_to_every_refresh_wakes_half_a_refresh_before_its_target() {
     let mut fallback = engaged_on(ms(16.7), 60.0);
     let period = display(60.0).period();
     let start = ms(1_000.0);
-    let first = fallback.wake(2, start, start + ms(3.0));
+    let first = fallback.wake(2, Some(display(60.0)), start, start + ms(3.0));
     assert_eq!(first, Some(less(start + period * 2, period / 2)));
     // The swap waited for its refresh, so the next frame counts from when
     // it began.
     let waited = start + period * 2 + ms(0.2);
     assert_eq!(
-        fallback.wake(2, waited, waited + ms(3.0)),
+        fallback.wake(2, Some(display(60.0)), waited, waited + ms(3.0)),
         Some(less(waited + period * 2, period / 2))
     );
     // A driver that queues frames ahead returns at once; the next frame
@@ -252,16 +261,19 @@ fn a_frame_held_to_every_refresh_wakes_half_a_refresh_before_its_target() {
     let last_aim = waited + period * 2;
     let queued = less(last_aim, period / 2) + ms(0.5);
     assert_eq!(
-        fallback.wake(2, queued, queued + ms(3.0)),
+        fallback.wake(2, Some(display(60.0)), queued, queued + ms(3.0)),
         Some(less(last_aim + period * 2, period / 2))
     );
     // A frame whose work runs past its wake presents at once, and the
     // next counts from when it began.
     let aim = last_aim + period * 2;
-    assert_eq!(fallback.wake(4, aim, aim + period * 4), None);
+    assert_eq!(
+        fallback.wake(4, Some(display(60.0)), aim, aim + period * 4),
+        None
+    );
     let late = aim + period * 5;
     assert_eq!(
-        fallback.wake(4, late, late + ms(1.0)),
+        fallback.wake(4, Some(display(60.0)), late, late + ms(1.0)),
         Some(less(late + period * 4, period / 2))
     );
 }
@@ -272,24 +284,36 @@ fn a_frame_without_vsync_wakes_on_an_anchored_deadline() {
     let two = display(60.0).period() * 2;
     let start = ms(1_000.0);
     let first = start + two;
-    assert_eq!(fallback.wake(2, start, start + ms(3.0)), Some(first));
+    assert_eq!(
+        fallback.wake(2, Some(display(60.0)), start, start + ms(3.0)),
+        Some(first)
+    );
     // The next deadline counts from the last, not from when the frame
     // began after presenting.
     let began = first + ms(2.0);
-    assert_eq!(fallback.wake(2, began, began + ms(3.0)), Some(first + two));
+    assert_eq!(
+        fallback.wake(2, Some(display(60.0)), began, began + ms(3.0)),
+        Some(first + two)
+    );
     // A frame late by less than a whole frame presents at once and the
     // deadlines keep their beat.
     let behind = first + two * 2 + ms(10.0);
-    assert_eq!(fallback.wake(2, less(behind, ms(5.0)), behind), None);
     assert_eq!(
-        fallback.wake(2, behind, behind + ms(1.0)),
+        fallback.wake(2, Some(display(60.0)), less(behind, ms(5.0)), behind),
+        None
+    );
+    assert_eq!(
+        fallback.wake(2, Some(display(60.0)), behind, behind + ms(1.0)),
         Some(first + two * 3)
     );
     // A whole frame behind, the deadlines start over from now.
     let lost = first + two * 5;
-    assert_eq!(fallback.wake(2, less(lost, ms(5.0)), lost), None);
     assert_eq!(
-        fallback.wake(2, lost + ms(1.0), lost + ms(2.0)),
+        fallback.wake(2, Some(display(60.0)), less(lost, ms(5.0)), lost),
+        None
+    );
+    assert_eq!(
+        fallback.wake(2, Some(display(60.0)), lost + ms(1.0), lost + ms(2.0)),
         Some(lost + two)
     );
 }
@@ -300,16 +324,35 @@ fn a_change_of_interval_keeps_the_deadlines_beat() {
     let period = display(60.0).period();
     let start = ms(1_000.0);
     let first = start + period * 2;
-    assert_eq!(fallback.wake(2, start, start), Some(first));
+    assert_eq!(
+        fallback.wake(2, Some(display(60.0)), start, start),
+        Some(first)
+    );
     // Each frame begins a little after its deadline; the next deadline
     // still counts from the last, whatever interval it asks for.
     let began = first + ms(2.0);
     let second = first + period * 4;
-    assert_eq!(fallback.wake(4, began, began + ms(1.0)), Some(second));
+    assert_eq!(
+        fallback.wake(4, Some(display(60.0)), began, began + ms(1.0)),
+        Some(second)
+    );
     let began = second + ms(2.0);
     assert_eq!(
-        fallback.wake(1, began, began + ms(1.0)),
+        fallback.wake(1, Some(display(60.0)), began, began + ms(1.0)),
         Some(second + period),
         "the full rate keeps the beat too"
+    );
+}
+
+#[test]
+fn a_frame_on_a_display_with_another_refresh_never_sleeps() {
+    let mut fallback = engaged_on(ms(4.0), 60.0);
+    let start = ms(1_000.0);
+    assert_eq!(fallback.wake(2, Some(display(144.0)), start, start), None);
+    assert_eq!(fallback.wake(2, None, start, start), None);
+    assert!(
+        fallback
+            .wake(2, Some(display(60.0)), start, start)
+            .is_some()
     );
 }

@@ -925,7 +925,10 @@ impl App {
         // the wake and the half-refresh margin isn't spent on submission.
         set_default_camera();
         let now = self.clock.elapsed();
-        if let Some(wake) = self.fallback.wake(interval, self.frame_began, now) {
+        if let Some(wake) = self
+            .fallback
+            .wake(interval, self.refresh, self.frame_began, now)
+        {
             // std sleeps on a high-resolution timer from Windows 10 1803;
             // older Windows rounds a sleep up to its 15.6 ms tick, past the
             // half refresh a frame wakes early by.

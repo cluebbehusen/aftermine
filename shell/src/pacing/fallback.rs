@@ -136,7 +136,7 @@ impl Fallback {
 
     /// When to wake to present the frame that began at `start`, as of
     /// `now` on the same clock, or none to present at once. Only an engaged
-    /// fallback sleeps. At an interval of one it sleeps only without vsync,
+    /// fallback sleeps, and only while `current` is the refresh it judged. At an interval of one it sleeps only without vsync,
     /// holding the full rate to the refresh; the caller skips uncapped
     /// sessions, which run at that interval too.
     ///
@@ -147,12 +147,18 @@ impl Fallback {
     pub(crate) fn wake(
         &mut self,
         interval: u32,
+        current: Option<Refresh>,
         start: Duration,
         now: Duration,
     ) -> Option<Duration> {
         let (Some(refresh), Phase::Engaged { vsync, aim }) = (self.refresh, &mut self.phase) else {
             return None;
         };
+        // The window reached a display with another refresh after the last
+        // frame was watched: pacing by the old one would stall this frame.
+        if current != Some(refresh) {
+            return None;
+        }
         if interval <= 1 && matches!(vsync, Vsync::EveryRefresh) {
             *aim = None;
             return None;
