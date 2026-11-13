@@ -410,6 +410,32 @@ fn forward_faces(map: &Map) -> Vec<(TilePos, (i32, i32))> {
         .collect()
 }
 
+/// A cell's material in a byte, as [`Terraces`] keeps one per cell. Levels
+/// run below [`LAYERS`]'s length.
+fn pack(material: Option<Material>) -> u8 {
+    let levels = LAYERS.len();
+    let code = match material {
+        None => 0,
+        Some(Material::Void) => 1,
+        Some(Material::Riser(level)) => 2 + level,
+        Some(Material::Bench(level)) => 2 + levels + level,
+        Some(Material::Vignette(step)) => 2 + 2 * levels + usize::from(step),
+    };
+    code.fit::<u8>()
+}
+
+fn unpack(code: u8) -> Option<Material> {
+    let levels = LAYERS.len();
+    let code = usize::from(code);
+    match code {
+        0 => None,
+        1 => Some(Material::Void),
+        _ if code < 2 + levels => Some(Material::Riser(code - 2)),
+        _ if code < 2 + 2 * levels => Some(Material::Bench(code - 2 - levels)),
+        _ => Some(Material::Vignette((code - 2 - 2 * levels).fit::<u8>())),
+    }
+}
+
 /// The wall and the peaks as one terraced field over the map and its margin.
 pub(super) struct Terraces {
     frame: Frame,
@@ -418,6 +444,9 @@ pub(super) struct Terraces {
     /// Cliff tiles a peak's face stands on.
     forward: Vec<TilePos>,
     tall: TallFaces,
+    /// Each field cell's material, [packed](pack): drawing reads a cell's and
+    /// its neighbors' many times over, and working one out is slow.
+    materials: Vec<u8>,
 }
 
 impl Terraces {
@@ -449,13 +478,21 @@ impl Terraces {
         }
         let tall = TallFaces::build(map, Terrain::Peak, &field);
         terrace(&mut field, &frame, &peaks, &tall);
-        Self {
+        let mut terraces = Self {
             frame,
             field,
             peaks,
             forward: faces.into_iter().map(|(pos, _)| pos).collect(),
             tall,
-        }
+            materials: Vec::new(),
+        };
+        terraces.materials = (0..terraces.field.depth.len())
+            .map(|index| {
+                let (cx, cy) = world_cell(&terraces.field, index);
+                pack(terraces.find_material(cx, cy))
+            })
+            .collect();
+        terraces
     }
 
     fn depth(&self, cx: i32, cy: i32) -> u8 {
@@ -464,8 +501,27 @@ impl Terraces {
             .at(pos, cx.rem_euclid(CELLS), cy.rem_euclid(CELLS))
     }
 
+    /// The index of a cell in the field, if it lies inside.
+    fn cell_index(&self, cx: i32, cy: i32) -> Option<usize> {
+        let field = &self.field;
+        let (x, y) = (
+            cx - field.origin.x * field.cells,
+            cy - field.origin.y * field.cells,
+        );
+        let (columns, rows) = (field.width * field.cells, field.height * field.cells);
+        ((0..columns).contains(&x) && (0..rows).contains(&y)).then(|| as_index(y * columns + x))
+    }
+
     /// The material drawn at a cell.
     fn material(&self, cx: i32, cy: i32) -> Option<Material> {
+        self.cell_index(cx, cy).map_or_else(
+            || self.find_material(cx, cy),
+            |index| unpack(self.materials[index]),
+        )
+    }
+
+    /// Works out the material drawn at a cell from the field and the shapes.
+    fn find_material(&self, cx: i32, cy: i32) -> Option<Material> {
         let pos = TilePos::new(cx.div_euclid(CELLS), cy.div_euclid(CELLS));
         let steps = self.peaks.steps(cx, cy);
         let depth = self.depth(cx, cy);

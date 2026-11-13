@@ -443,3 +443,70 @@ fn a_flat_peak_is_untouched_by_tall_faces() {
     let lines = rows(&["..^^^^^^..", "..^^^^^^..", "..^^^^^^..", "..^^^^^^.."]);
     assert_eq!(terraced(&lines).tall.widths(9, 9, [1, 2, 3]), [1, 2, 3]);
 }
+
+#[test]
+fn every_material_packs_into_a_byte_and_back() {
+    let mut all = vec![None, Some(Material::Void)];
+    for level in 0..LAYERS.len() {
+        all.extend([Some(Material::Riser(level)), Some(Material::Bench(level))]);
+    }
+    for step in 1..=VIGNETTE_CELLS.fit::<u8>() {
+        all.push(Some(Material::Vignette(step)));
+    }
+    let packed: std::collections::BTreeSet<u8> = all.iter().map(|&m| pack(m)).collect();
+    assert_eq!(packed.len(), all.len(), "two materials share a byte");
+    for material in all {
+        assert_eq!(unpack(pack(material)), material);
+    }
+}
+
+#[test]
+fn every_cell_of_a_shipped_map_keeps_the_material_it_works_out_to() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../scenarios");
+    let mut paths: Vec<_> = std::fs::read_dir(&root)
+        .expect("scenario directory")
+        .map(|entry| entry.expect("scenario entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    paths.sort();
+    for path in paths {
+        let scenario = aftermine_sim::Scenario::load(&path).expect("shipped map loads");
+        let (map, _) = scenario
+            .parse_map_and_anchors()
+            .expect("shipped rows parse");
+        let terraces = Terraces::build(&map, &scenario.map);
+        let field = &terraces.field;
+        let (x0, y0) = (field.origin.x * CELLS, field.origin.y * CELLS);
+        let (x1, y1) = (x0 + field.width * CELLS, y0 + field.height * CELLS);
+        // A cell past the field's edge, as a neighbor's lookup reaches, works
+        // its material out afresh.
+        for cy in y0 - 2..y1 + 2 {
+            for cx in x0 - 2..x1 + 2 {
+                assert_eq!(
+                    terraces.material(cx, cy),
+                    terraces.find_material(cx, cy),
+                    "{} cell {cx},{cy}",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn drawing_reads_each_cell_from_the_table_built_with_the_field() {
+    let terraces = terraced(&rows(&["######", "#....#", "#.^^.#", "#....#", "######"]));
+    assert_eq!(terraces.materials.len(), terraces.field.depth.len());
+    let floor = (2 * CELLS + 1, CELLS + 1);
+    assert_eq!(terraces.material(floor.0, floor.1), None);
+    let mut altered = terraces;
+    let index = altered
+        .cell_index(floor.0, floor.1)
+        .expect("inside the field");
+    altered.materials[index] = pack(Some(Material::Void));
+    assert_eq!(
+        altered.material(floor.0, floor.1),
+        Some(Material::Void),
+        "the material was worked out again"
+    );
+}
