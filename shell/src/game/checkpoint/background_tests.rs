@@ -23,7 +23,7 @@ fn pause_save_bulk_advance_and_replacement_keep_the_settled_boundary() {
     }
     game.prepare_bot_decision();
     game.clock.paused = true;
-    assert!(!game.advance_wall_clock(1.0, None));
+    assert!(!game.advance_wall_clock(1.0, crate::pacing::LEAST_CATCH_UP, None));
     assert!(game.bot_decision.is_some());
     assert_eq!(crate::game::checkpoint::tests::saved(&game), settled);
     let mut loaded = crate::game::checkpoint::tests::load(settled.clone()).unwrap();

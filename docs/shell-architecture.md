@@ -134,8 +134,8 @@ The frame loop:
 5. Updates and draws the active screen, which advances the live or playback
    clock unless paused or seeking, then settles any change of screen and
    delivers the frame's notices.
-6. Captures requested screenshots, mixes audio, replies, and yields to
-   presentation.
+6. Captures requested screenshots, mixes audio, replies, paces the next frame
+   and yields to presentation.
 
 A transition that must show its destination at once reruns the loop inside the
 same presented frame. A rerun reads no hardware input, so the key that opened a
@@ -147,6 +147,20 @@ and cap their own catch-up, and a negative or non-finite reading counts as no
 time. Two consecutive live frames of `SUSPENSION_GAP_SECS` or more mean the app
 stopped presenting, as a suspended iPad app or sleeping Mac does, and the match
 opens the pause menu instead of catching up. Debug-server sessions are exempt.
+
+Frames present on every `n`th refresh of the display, so they stay evenly spaced
+and never tear. Before yielding, the loop asks `pacing` for `n` from the Frame
+rate setting, the display's current refresh, whether the screen holds still and
+whether the session runs uncapped, and tells the platform only when `n` changes.
+The choices are the refresh divided by one to four, down to 30 frames a second,
+and follow the refresh when it changes. The top choice is stored as Full, so it
+follows the display, and a cap takes the fastest choice within it. A screen that
+holds still (`Screen::still`) drops to the slowest choice once the player has
+given no input for a second, never while a LAN link runs. The paced rate sizes
+each frame's catch-up: the live and replay clocks run at most enough ticks for
+64x at that rate, never fewer than 24, and a seek in flight takes half the
+frame. The frame rate changes only how often the picture is drawn, never an
+outcome.
 
 `aftermine_protocol::RawEvent` is the common vocabulary for hardware and
 injected input, so both take the same path. `input::apply_events` turns gameplay
@@ -283,6 +297,13 @@ key has been pressed, and the controller pressed since the last key, click or
 tap as `platform::Hands`; a mouse that only moves leaves a controller in use.
 Lesson and tip cards follow the HUD instead. Outside pad mode, every screen
 offers a pointer path for what Escape does.
+
+Each platform's backend reports the refresh of the display the window is on and
+presents on every `n`th refresh in the display's own timing, on whichever
+display the window moves to. Where a platform reports no refresh, frames present
+at whatever rate it offers and the Frame rate row shows its value without
+stepping. A limiter outside the game, such as Steam's on Steam Deck, wins when
+it is slower; the shell never works against it.
 
 While a controller is in use, and always on a TV, the match HUD, the menus and
 the replay viewer stand in pad mode: they leave out the controls a controller's
@@ -440,7 +461,10 @@ open any compatible replay.
 ## Performance and diagnostics
 
 The player-facing Performance readout only observes completed frame
-measurements. Off adds no timing samples.
+measurements. Off adds no timing samples. Debug-server, automation and
+`--profile-frames` sessions run uncapped, presenting every frame the platform
+offers whatever the Frame rate setting says, so harnesses and measurements see
+the display's full rate.
 
 Crash and freeze diagnostics are always on and write nothing while play is
 healthy. The main thread publishes its stage and tick through atomics, each bot

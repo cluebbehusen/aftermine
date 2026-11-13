@@ -2839,7 +2839,7 @@ fn piledriver_impact_survives_a_frame_batch_past_visual_expiry() {
         game.presentation.sounds_pending.clear();
         game.clock.paused = false;
         game.clock.speed = speed;
-        game.advance_wall_clock(wall_dt, None);
+        game.advance_wall_clock(wall_dt, crate::pacing::LEAST_CATCH_UP, None);
         assert!(game.state.current_tick() >= 5);
         game.update_fx(wall_dt);
         let impacts = |game: &Game| {

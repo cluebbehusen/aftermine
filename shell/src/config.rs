@@ -49,6 +49,18 @@ impl PerformanceDisplay {
     }
 }
 
+/// How fast the shell draws. The rates on offer depend on the display, so
+/// `crate::pacing` turns this into one for the display in use.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FrameRate {
+    /// Every refresh, whatever rate the display runs at.
+    #[default]
+    Full,
+    /// At most this many frames a second.
+    Capped(u32),
+}
+
 /// Mixer bus volumes, 0..=1, applied multiplicatively with each clip's
 /// authored level.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -285,6 +297,8 @@ pub struct Config {
     pub markers: MarkerPrefs,
     /// Optional performance HUD.
     pub performance_display: PerformanceDisplay,
+    /// How fast the shell draws.
+    pub frame_rate: FrameRate,
     /// Shape version; mismatch resets to defaults.
     pub version: u32,
     /// The active binding profile.
@@ -339,6 +353,7 @@ impl Default for Config {
         Self {
             markers: MarkerPrefs::default(),
             performance_display: PerformanceDisplay::Off,
+            frame_rate: FrameRate::Full,
             version: CONFIG_VERSION,
             bindings: BindingMap::classic(),
             volumes: Volumes::default(),

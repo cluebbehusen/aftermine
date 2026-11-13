@@ -584,13 +584,13 @@ fn a_frame_that_leaves_live_play_runs_no_ticks() {
         Game::with_viewport(aftermine_sim::Scenario::skirmish(), vec2(1280.0, 800.0)).unwrap();
     let start = game.state.current_tick();
     let gap = SUSPENSION_GAP_SECS * 2.0;
-    advance_live_match(&mut game, gap, None, true);
+    advance_live_match(&mut game, FrameTime::measure(gap, None), None, true);
     assert_eq!(
         game.state.current_tick(),
         start,
         "the gap behind a pause request is never caught up"
     );
-    advance_live_match(&mut game, gap, None, false);
+    advance_live_match(&mut game, FrameTime::measure(gap, None), None, false);
     assert!(
         game.state.current_tick() > start,
         "a frame that stays in play runs what it owes"
@@ -612,7 +612,7 @@ fn only_a_local_match_holds_for_a_controller_and_apart_from_its_pause() {
     );
     let start = game.state.current_tick();
     let held = held_for_controller(&game, &input);
-    advance_live_match(&mut game, 1.0, None, held);
+    advance_live_match(&mut game, FrameTime::measure(1.0, None), None, held);
     assert_eq!(
         game.state.current_tick(),
         start,
@@ -642,6 +642,6 @@ fn only_a_local_match_holds_for_a_controller_and_apart_from_its_pause() {
         "a controller connecting lifts the hold"
     );
     let held = held_for_controller(&game, &input);
-    advance_live_match(&mut game, 1.0, None, held);
+    advance_live_match(&mut game, FrameTime::measure(1.0, None), None, held);
     assert!(game.state.current_tick() > start);
 }

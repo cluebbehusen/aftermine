@@ -8,15 +8,21 @@ use aftermine_protocol::Key;
 use macroquad::prelude::vec2;
 
 impl PlaybackSession {
-    /// A session whose seeks land in one frame however slow the machine,
-    /// so tests never depend on the wall-clock budget.
+    /// A viewer over `replay`, with no stored worlds to seek from.
     pub fn from_replay(replay: GameReplay) -> Result<Self> {
-        let mut session = Self::from_recording(aftermine_kit::Recording {
+        Self::from_recording(aftermine_kit::Recording {
             replay,
             keyframes: aftermine_kit::keyframes::Keyframes::default(),
-        })?;
-        session.seek_budget = std::time::Duration::MAX;
-        Ok(session)
+        })
+    }
+}
+
+/// A frame of `dt` whose seeks land at once however slow the machine, so
+/// tests never depend on the wall-clock budget.
+fn frame(dt: f32) -> FrameTime {
+    FrameTime {
+        seek_budget: std::time::Duration::MAX,
+        ..FrameTime::measure(dt, None)
     }
 }
 
@@ -30,7 +36,18 @@ impl PlaybackSession {
         prefs: crate::config::CameraPrefs,
         mouse: &mut Vec2,
     ) -> bool {
-        let time = FrameTime::measure(dt);
+        self.update_in(frame(dt), bindings, events, viewport, prefs, mouse)
+    }
+
+    fn update_in(
+        &mut self,
+        time: FrameTime,
+        bindings: &BindingMap,
+        events: &[RawEvent],
+        viewport: Vec2,
+        prefs: crate::config::CameraPrefs,
+        mouse: &mut Vec2,
+    ) -> bool {
         let leave = self.apply_input(bindings, events, time.presentation, viewport, prefs, mouse);
         if !leave {
             self.advance_frame(time, viewport);
@@ -174,7 +191,7 @@ fn transport_input_defers_replay_work_until_the_frame_advance() {
     ));
     assert_eq!(pb.engine.position(), 0);
     assert_eq!(pb.seeking, Some(60));
-    pb.advance_frame(FrameTime::measure(1.0), viewport);
+    pb.advance_frame(frame(1.0), viewport);
     assert_eq!(pb.engine.position(), 60);
     assert_eq!(pb.engine.state.current_tick(), 60);
 
@@ -190,7 +207,7 @@ fn transport_input_defers_replay_work_until_the_frame_advance() {
         },
         &mut mouse
     ));
-    pb.advance_frame(FrameTime::measure(0.0), viewport);
+    pb.advance_frame(frame(0.0), viewport);
     assert_eq!(pb.engine.position(), 0);
     assert!(!pb.apply_input(
         &crate::action::BindingMap::classic(),
@@ -205,7 +222,7 @@ fn transport_input_defers_replay_work_until_the_frame_advance() {
         &mut mouse
     ));
     assert_eq!(pb.engine.position(), 0);
-    pb.advance_frame(FrameTime::measure(0.1), viewport);
+    pb.advance_frame(frame(0.1), viewport);
     assert_eq!(pb.engine.position(), 2);
 }
 
@@ -214,7 +231,7 @@ fn a_suspension_length_frame_ages_effects_by_at_most_a_quarter_second() {
     let mut pb = session();
     let viewport = vec2(1280.0, 800.0);
     pb.presentation.toast("seek complete");
-    pb.advance_frame(FrameTime::measure(60.0), viewport);
+    pb.advance_frame(frame(60.0), viewport);
     assert!(
         pb.engine.position() > 0,
         "the replay clock still catches up on the unclamped time"
@@ -779,14 +796,17 @@ fn long_seeks_are_budgeted_and_a_new_transport_command_replaces_them() {
     use aftermine_protocol::DebugSession;
     let mut pb = long_session(5_000);
     // A spent budget leaves each frame its first slice, whatever the clock.
-    pb.seek_budget = std::time::Duration::ZERO;
+    let spent = FrameTime {
+        seek_budget: std::time::Duration::ZERO,
+        ..frame(0.0)
+    };
     let viewport = vec2(1280.0, 800.0);
     let mut mouse = Vec2::ZERO;
 
-    pb.update(
+    pb.update_in(
+        spent,
         &crate::action::BindingMap::classic(),
         &[RawEvent::KeyDown { key: Key::End }],
-        0.0,
         viewport,
         crate::config::CameraPrefs::default(),
         &mut mouse,
@@ -798,10 +818,10 @@ fn long_seeks_are_budgeted_and_a_new_transport_command_replaces_them() {
     );
     assert_eq!(pb.seeking, Some(5_000));
     while pb.engine.position() < 2_000 {
-        pb.update(
+        pb.update_in(
+            spent,
             &crate::action::BindingMap::classic(),
             &[],
-            0.0,
             viewport,
             crate::config::CameraPrefs::default(),
             &mut mouse,
@@ -809,7 +829,6 @@ fn long_seeks_are_budgeted_and_a_new_transport_command_replaces_them() {
     }
     assert_eq!(pb.seeking, Some(5_000), "the seek is still in flight");
 
-    pb.seek_budget = std::time::Duration::MAX;
     pb.update(
         &crate::action::BindingMap::classic(),
         &[RawEvent::KeyDown { key: Key::PageUp }],
@@ -881,7 +900,7 @@ fn statistics_build_in_the_background_and_stay_while_hidden() {
     while matches!(pb.stats, Stats::Building(_)) {
         assert!(std::time::Instant::now() < deadline);
         std::thread::yield_now();
-        pb.advance_frame(FrameTime::measure(0.0), vec2(1280.0, 800.0));
+        pb.advance_frame(frame(0.0), vec2(1280.0, 800.0));
     }
     let final_tick = pb.stats.ready().expect("statistics arrive").final_tick;
     assert_eq!(final_tick, pb.engine.total());

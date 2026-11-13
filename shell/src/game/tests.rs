@@ -1,4 +1,5 @@
 use super::*;
+use crate::pacing::LEAST_CATCH_UP;
 use aftermine_sim::scenario::ScenarioMode;
 
 impl std::ops::DerefMut for ReadOnlyState {
@@ -180,18 +181,63 @@ fn wall_clock_pause_and_hitch_rules_bound_simulation_debt() {
     )
     .expect("game");
     game.clock.paused = true;
-    assert!(!game.advance_wall_clock(10.0, None));
+    assert!(!game.advance_wall_clock(10.0, LEAST_CATCH_UP, None));
     assert_eq!(game.state.current_tick(), 0);
     assert_eq!(game.clock.render_alpha(), 1.0);
 
     game.clock.paused = false;
     game.clock.speed = 64.0;
-    assert!(!game.advance_wall_clock(1.0, None));
-    assert_eq!(game.state.current_tick(), u64::from(MAX_TICKS_PER_FRAME));
+    assert!(!game.advance_wall_clock(1.0, LEAST_CATCH_UP, None));
+    assert_eq!(game.state.current_tick(), u64::from(LEAST_CATCH_UP));
     assert!(
         game.presentation.tick_fraction() <= 1.0,
         "excess hitch debt is dropped"
     );
+}
+
+/// A frame of `1 / fps` seconds, paced at `fps`.
+fn frame_at(fps: u32) -> crate::frame_time::FrameTime {
+    let paced = crate::pacing::Refresh::from_hz(f64::from(fps)).map(|refresh| refresh.every(1));
+    crate::frame_time::FrameTime::measure(1.0 / fps as f32, paced)
+}
+
+#[test]
+fn the_frame_rate_never_changes_where_the_match_stands() {
+    let after_three_seconds = |fps: u32| {
+        let mut game = Game::with_viewport(
+            Scenario::skirmish(),
+            macroquad::prelude::vec2(1280.0, 800.0),
+        )
+        .expect("game");
+        // Half a tick owed first, so float rounding in the frame times can
+        // never land two rates on different ticks.
+        game.advance_wall_clock(TICK_DT * 0.5, LEAST_CATCH_UP, None);
+        let frame = frame_at(fps);
+        for _ in 0..fps * 3 {
+            game.advance_wall_clock(frame.raw, frame.catch_up, None);
+        }
+        (game.state.current_tick(), game.state.hash())
+    };
+    let at_20 = after_three_seconds(20);
+    assert_eq!(at_20.0, 60);
+    assert_eq!(after_three_seconds(60), at_20);
+    assert_eq!(after_three_seconds(120), at_20);
+}
+
+#[test]
+fn the_top_speed_keeps_up_at_thirty_frames_a_second() {
+    let mut game = Game::with_viewport(
+        Scenario::skirmish(),
+        macroquad::prelude::vec2(1280.0, 800.0),
+    )
+    .expect("game");
+    game.clock.speed = 64.0;
+    game.advance_wall_clock(TICK_DT * 0.5 / 64.0, LEAST_CATCH_UP, None);
+    let frame = frame_at(30);
+    for _ in 0..30 {
+        game.advance_wall_clock(frame.raw, frame.catch_up, None);
+    }
+    assert_eq!(game.state.current_tick(), 1280, "a second's ticks at 64x");
 }
 
 #[test]
@@ -624,7 +670,7 @@ fn wall_clock_profile_bound_cannot_overshoot_inside_a_multi_tick_frame() {
     .expect("skirmish builds");
     game.clock.speed = 8.0;
 
-    assert!(game.advance_wall_clock(1.0, Some(5)));
+    assert!(game.advance_wall_clock(1.0, LEAST_CATCH_UP, Some(5)));
     assert_eq!(game.state.current_tick(), 5);
     assert_eq!(game.presentation.tick_fraction(), 0.0);
 }

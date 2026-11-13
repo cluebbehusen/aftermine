@@ -2,7 +2,7 @@
 //! frame carries. The live match and the replay viewer each own one; the
 //! picture only learns where between ticks it is drawn.
 
-use super::{MAX_TICKS_PER_FRAME, TICK_DT};
+use super::TICK_DT;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Clock {
@@ -42,13 +42,13 @@ impl Clock {
     }
 
     /// Takes `dt` seconds of wall time at this clock's speed and returns the
-    /// whole ticks now due, at most a frame's cap. Debt past the cap is
+    /// whole ticks now due, at most `catch_up`. Debt past the cap is
     /// dropped, as after a hitch.
-    pub(crate) fn due_ticks(&mut self, dt: f32) -> u64 {
+    pub(crate) fn due_ticks(&mut self, dt: f32, catch_up: u32) -> u64 {
         self.accum += dt * crate::numeric::to_f32(self.speed);
         let ticks = crate::numeric::to_u64(self.accum / TICK_DT);
         self.accum -= ticks as f32 * TICK_DT;
-        ticks.min(u64::from(MAX_TICKS_PER_FRAME))
+        ticks.min(u64::from(catch_up))
     }
 }
 

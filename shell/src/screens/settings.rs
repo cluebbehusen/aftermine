@@ -10,6 +10,7 @@ use crate::menu::{Answer, Heading, Label, Line, Menu};
 use crate::nav::{Axis, Nav, step_line};
 use crate::numeric;
 use crate::numeric::Fit;
+use crate::pacing::{self, Refresh};
 use crate::platform::Platform;
 use crate::render;
 use crate::tabs::TabStrip;
@@ -312,6 +313,7 @@ pub(crate) enum Row {
     EffectsVolume,
     UiVolume,
     MusicVolume,
+    FrameRate,
     UiScale,
     ReducedMotion,
     TeamColors,
@@ -336,7 +338,7 @@ const SCALES: [f32; 4] = [render::MIN_USER_SCALE, 1.0, 1.25, render::MAX_USER_SC
 
 impl Row {
     /// Every row, in the order its tab shows them.
-    const ALL: [Row; 21] = [
+    const ALL: [Row; 22] = [
         Row::PlayerName,
         Row::MatchTips,
         Row::PerformanceDisplay,
@@ -346,6 +348,7 @@ impl Row {
         Row::EffectsVolume,
         Row::UiVolume,
         Row::MusicVolume,
+        Row::FrameRate,
         Row::UiScale,
         Row::ReducedMotion,
         Row::TeamColors,
@@ -369,7 +372,8 @@ impl Row {
             | Row::OpenDiagnostics
             | Row::ExportDiagnostics => Tab::General,
             Row::MasterVolume | Row::EffectsVolume | Row::UiVolume | Row::MusicVolume => Tab::Audio,
-            Row::UiScale
+            Row::FrameRate
+            | Row::UiScale
             | Row::ReducedMotion
             | Row::TeamColors
             | Row::ControlGroups
@@ -404,7 +408,9 @@ impl Row {
         }
     }
 
-    fn label(self, config: &Config) -> Label {
+    /// The row's label; the frame rate reads as the rate it gives at
+    /// `refresh`.
+    fn label(self, config: &Config, refresh: Option<Refresh>) -> Label {
         let pct = |v: f32| format!("{}%", (v * 100.0).round());
         let on = |v: bool| if v { "On" } else { "Off" }.to_string();
         let setting = |name: &str, value: String| Label::Setting {
@@ -422,6 +428,7 @@ impl Row {
             Row::EffectsVolume => setting("Effects volume", pct(config.volumes.effects)),
             Row::UiVolume => setting("UI volume", pct(config.volumes.ui)),
             Row::MusicVolume => setting("Music volume", pct(config.volumes.music)),
+            Row::FrameRate => setting("Frame rate", pacing::label(config.frame_rate, refresh)),
             Row::UiScale => setting("UI scale", pct(config.ui_scale)),
             Row::ReducedMotion => setting("Reduced motion", on(config.reduced_motion)),
             Row::TeamColors => setting("Colorblind team colors", on(config.team_colors)),
@@ -486,8 +493,13 @@ fn rows(tab: Tab, platform: Platform) -> Vec<Row> {
 /// A tab's lines: its rows, and on Controls the reset row, the
 /// controller section and the binding sections, the chosen chord column
 /// bracketed on every binding row.
-fn tab_lines(tab: Tab, config: &Config, selected_slot: usize) -> Vec<Line<Item>> {
-    let line = |row: Row| Line::Row(row.label(config), Item::Setting(row));
+fn tab_lines(
+    tab: Tab,
+    config: &Config,
+    selected_slot: usize,
+    refresh: Option<Refresh>,
+) -> Vec<Line<Item>> {
+    let line = |row: Row| Line::Row(row.label(config, refresh), Item::Setting(row));
     let (pad, rest): (Vec<Row>, Vec<Row>) = rows(tab, crate::platform::PLATFORM)
         .into_iter()
         .partition(|row| row.pad());
@@ -526,8 +538,13 @@ fn binding_lines(config: &Config, selected_slot: usize) -> Vec<Line<Item>> {
     lines
 }
 
-fn tab_menu(tab: Tab, config: &Config, selected_slot: usize) -> Menu<Item> {
-    let mut menu = Menu::new("SETTINGS", tab_lines(tab, config, selected_slot));
+fn tab_menu(
+    tab: Tab,
+    config: &Config,
+    selected_slot: usize,
+    refresh: Option<Refresh>,
+) -> Menu<Item> {
+    let mut menu = Menu::new("SETTINGS", tab_lines(tab, config, selected_slot, refresh));
     menu.wide = true;
     menu.heading = Heading::Page {
         band: crate::tabs::BAND,
@@ -589,8 +606,9 @@ fn level(values: &[f32], current: f32, step: Step) -> f32 {
 }
 
 /// Moves one settings row's value and applies it live. False on rows
-/// that act instead of holding a value.
-fn step_setting(config: &mut Config, row: Row, step: Step) -> bool {
+/// that act instead of holding a value, and on the frame rate while no
+/// `refresh` says which rates the display offers.
+fn step_setting(config: &mut Config, row: Row, step: Step, refresh: Option<Refresh>) -> bool {
     let toggle = |on: bool| stepped(2, usize::from(on), step) == 1;
     match row {
         Row::MasterVolume => config.volumes.master = level(&VOLUMES, config.volumes.master, step),
@@ -638,6 +656,21 @@ fn step_setting(config: &mut Config, row: Row, step: Step) -> bool {
             config.control_groups = toggle(config.control_groups);
             render::set_control_groups(config.control_groups);
         }
+        Row::FrameRate => {
+            let Some(refresh) = refresh else {
+                return false;
+            };
+            // Slowest first, so Right raises the rate as it raises every
+            // other value.
+            let count = pacing::choices(refresh).len();
+            let current = pacing::divisor(config.frame_rate, refresh).fit::<usize>();
+            let n = count - stepped(count, count - current, step);
+            // A press that lands on the shown choice keeps a cap stored on
+            // another display.
+            if n != current {
+                config.frame_rate = pacing::setting_at(refresh, n.fit::<u32>());
+            }
+        }
         Row::MarkerTiming => {
             // A hand-edited custom timing steps back onto Standard.
             let preset = config.markers.timing().map_or_else(
@@ -670,6 +703,8 @@ pub struct SettingsScreen {
     tabs: TabStrip,
     /// The name form, while it is open over the General tab.
     naming: Option<Form>,
+    /// The display's refresh, which decides the frame rates on offer.
+    refresh: Option<Refresh>,
 }
 
 fn name_check(name: &str) -> Result<(), &'static str> {
@@ -682,12 +717,26 @@ impl SettingsScreen {
     pub fn open(config: &Config) -> Self {
         Self {
             face: Face::Tab(Tab::General),
-            menu: tab_menu(Tab::General, config, 0),
+            menu: tab_menu(Tab::General, config, 0, None),
             notice: None,
             binding_slot: 0,
             back: crate::button::BackButton::default(),
             tabs: TabStrip::default(),
             naming: None,
+            refresh: None,
+        }
+    }
+
+    /// Takes the display's current refresh, relabeling the frame rate when
+    /// it changes. Without one, that row shows its value but cannot step.
+    pub fn set_refresh(&mut self, refresh: Option<Refresh>, config: &Config) {
+        if refresh == self.refresh {
+            return;
+        }
+        self.refresh = refresh;
+        // A form or a dialog holds the menu; leaving it rebuilds the tab.
+        if self.naming.is_none() && !matches!(self.face, Face::Confirming(_)) {
+            self.relabel(config);
         }
     }
 
@@ -721,7 +770,7 @@ impl SettingsScreen {
     /// Closes the name form, back on the Name row.
     fn end_naming(&mut self, config: &Config) {
         self.naming = None;
-        self.menu = tab_menu(self.face.tab(), config, self.binding_slot);
+        self.menu = tab_menu(self.face.tab(), config, self.binding_slot, self.refresh);
         self.menu
             .select_where(|item| *item == Item::Setting(Row::PlayerName));
     }
@@ -815,15 +864,19 @@ impl SettingsScreen {
     /// context it spoke about.
     fn show(&mut self, tab: Tab, config: &Config) {
         self.face = Face::Tab(tab);
-        self.menu = tab_menu(tab, config, self.binding_slot);
+        self.menu = tab_menu(tab, config, self.binding_slot, self.refresh);
         self.menu.cursor_hidden = self.tabs.focused();
         self.notice = None;
     }
 
     /// Relabels the tab's rows in place, keeping the cursor and scroll.
     fn relabel(&mut self, config: &Config) {
-        self.menu
-            .set_lines(tab_lines(self.face.tab(), config, self.binding_slot));
+        self.menu.set_lines(tab_lines(
+            self.face.tab(),
+            config,
+            self.binding_slot,
+            self.refresh,
+        ));
     }
 
     /// The tab step a frame's keys ask for. Menus receive the tab
@@ -1004,7 +1057,7 @@ impl SettingsScreen {
             match self.menu.value().copied() {
                 Some(Item::Setting(row)) if !column_only => {
                     let before = config.clone();
-                    if step_setting(config, row, step) && *config != before {
+                    if step_setting(config, row, step, self.refresh) && *config != before {
                         sounds.push((SoundKind::Click, None));
                         self.notice = None;
                         update.dirty = true;
@@ -1100,13 +1153,13 @@ impl SettingsScreen {
     /// Closes the dialog, back on the Controls row that opened it.
     fn end_confirming(&mut self, profile: Profile, config: &Config) {
         self.face = Face::Tab(Tab::Controls);
-        self.menu = tab_menu(Tab::Controls, config, self.binding_slot);
+        self.menu = tab_menu(Tab::Controls, config, self.binding_slot, self.refresh);
         self.menu.select_where(|item| *item == profile.item);
     }
 
     /// Activates a settings row: cycles its value, or does what it says.
     fn activate(&mut self, row: Row, config: &mut Config, update: &mut Update) {
-        if step_setting(config, row, Step::Cycle) {
+        if step_setting(config, row, Step::Cycle, self.refresh) {
             // Apply live, persist, keep the cursor on the row being tuned.
             update.dirty = true;
             self.relabel(config);

@@ -770,6 +770,33 @@ impl Screen {
         }
     }
 
+    /// Whether nothing on the screen moves unless the player acts, so the
+    /// frame loop may draw it at the idle rate: a menu, a save or load, or
+    /// live play `held` for want of a controller. Home holds still only
+    /// under `reduced_motion`, which freezes its backdrop. A paused match
+    /// still pans, the viewer and the report play on, and a LAN match runs
+    /// under every screen that holds it.
+    pub(super) fn still(&self, live: &Game, held: bool, reduced_motion: bool) -> bool {
+        let lan = live.net_role().is_some() && self.holds_live_match();
+        match self {
+            Self::Home(_) => reduced_motion,
+            Self::Playing => held && !lan,
+            Self::Settings { .. }
+            | Self::Codex { .. }
+            | Self::Lessons { .. }
+            | Self::Wizard(_)
+            | Self::Replays(_)
+            | Self::Pause(_)
+            | Self::Busy(_) => !lan,
+            Self::ColdOpen(_)
+            | Self::Lobby { .. }
+            | Self::Playback { .. }
+            | Self::Results(_)
+            | Self::FinalMap(_)
+            | Self::Waiting(_) => false,
+        }
+    }
+
     /// The text form on screen, which takes typed input and the system
     /// keyboard while it is up.
     pub(super) fn form(&mut self) -> Option<&mut Form> {

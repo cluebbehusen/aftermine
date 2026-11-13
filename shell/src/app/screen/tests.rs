@@ -310,3 +310,105 @@ fn frame_scripts_run_on_home_the_live_match_or_the_viewer() {
             .is_err()
     );
 }
+
+#[test]
+fn menus_and_a_held_match_hold_still_and_nothing_else_does() {
+    use crate::screens::lessons::LessonsScreen;
+    use crate::screens::waiting::{Absent, WaitingScreen};
+    use crate::screens::wizard::NewMatchDraft;
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).expect("game");
+    let home = || Screen::Home(HomeScreen::open());
+    let pause = || Screen::Pause(PauseScreen::open(false, true));
+    let settings = |back| Screen::Settings {
+        screen: SettingsScreen::open(&crate::config::Config::default()),
+        back: Box::new(back),
+    };
+    let still = [
+        settings(home()),
+        settings(pause()),
+        Screen::Codex {
+            screen: CodexScreen::open(),
+            back: Box::new(home()),
+        },
+        Screen::Lessons {
+            screen: LessonsScreen::open(&[], false),
+            back: Box::new(home()),
+        },
+        Screen::Wizard(Wizard::open(&NewMatchDraft::default())),
+        Screen::Replays(Shelf::open()),
+        pause(),
+    ];
+    for screen in still {
+        assert!(screen.still(&game, false, false), "{}", screen.mode());
+    }
+    let session = || super::super::live_playback(&game).expect("viewer");
+    let moving = [
+        Screen::ColdOpen(ColdOpenScreen::default()),
+        home(),
+        Screen::Lobby {
+            screen: Box::new(LobbyScreen::join("Connor", "10.0.0.2")),
+            back: Box::new(home()),
+        },
+        Screen::Playing,
+        viewer(session(), home()),
+        Screen::Results(ResultsScreen::open(false)),
+        Screen::FinalMap(FinalMapScreen::open()),
+        Screen::Waiting(WaitingScreen::open(
+            vec![Absent {
+                seat: aftermine_sim::PlayerId(1),
+                name: "Alex".to_owned(),
+                waited: std::time::Duration::ZERO,
+            }],
+            true,
+        )),
+    ];
+    for screen in moving {
+        assert!(!screen.still(&game, false, false), "{}", screen.mode());
+    }
+    assert!(
+        home().still(&game, false, true),
+        "reduced motion freezes the backdrop"
+    );
+    assert!(
+        !viewer(session(), home()).still(&game, false, true),
+        "a replay plays on under reduced motion"
+    );
+    assert!(
+        Screen::Playing.still(&game, true, false),
+        "held for a controller"
+    );
+    game.clock.paused = true;
+    assert!(
+        !Screen::Playing.still(&game, false, false),
+        "a paused match still pans"
+    );
+}
+
+#[test]
+fn no_screen_holding_a_lan_match_holds_still() {
+    let lan = Game::networked(
+        aftermine_sim::Scenario::skirmish(),
+        aftermine_sim::PlayerId(0),
+        crate::game::network::NetRole::Client,
+        macroquad::math::vec2(1280.0, 800.0),
+    )
+    .expect("lan match");
+    let pause = || Screen::Pause(PauseScreen::open(false, true));
+    assert!(!pause().still(&lan, false, false));
+    assert!(!Screen::Playing.still(&lan, true, false));
+    assert!(
+        !Screen::Codex {
+            screen: CodexScreen::open(),
+            back: Box::new(pause()),
+        }
+        .still(&lan, false, false)
+    );
+    assert!(
+        Screen::Codex {
+            screen: CodexScreen::open(),
+            back: Box::new(Screen::Home(HomeScreen::open())),
+        }
+        .still(&lan, false, false),
+        "a menu off Home holds no match"
+    );
+}

@@ -17,9 +17,6 @@ use std::{ops::Deref, sync::Arc};
 
 /// Seconds per sim tick.
 pub const TICK_DT: f32 = 1.0 / TICKS_PER_SECOND as f32;
-/// Catch-up limit before returning to presentation. Supports the 64x speed cap
-/// at 60 fps; expensive ticks can still exceed the frame budget.
-const MAX_TICKS_PER_FRAME: u32 = 24;
 
 pub use aftermine_kit::GameReplay;
 
@@ -653,15 +650,16 @@ impl Game {
         report
     }
 
-    /// Advances the ordinary live path while optionally stopping on one exact
-    /// tick. Native profiling supplies the bound so a multi-tick frame cannot
-    /// overshoot its requested sample window; ordinary play passes `None`.
-    pub fn advance_wall_clock(&mut self, dt: f32, stop_tick: Option<u64>) -> bool {
+    /// Advances the ordinary live path by at most `catch_up` ticks while
+    /// optionally stopping on one exact tick. Native profiling supplies the
+    /// bound so a multi-tick frame cannot overshoot its requested sample
+    /// window; ordinary play passes `None`.
+    pub fn advance_wall_clock(&mut self, dt: f32, catch_up: u32, stop_tick: Option<u64>) -> bool {
         if self.clock.paused {
             return false;
         }
         let stopped = |game: &Self| stop_tick.is_some_and(|tick| game.state.current_tick() >= tick);
-        self.pace(dt * numeric::to_f32(self.clock.speed), |game| {
+        self.pace(dt * numeric::to_f32(self.clock.speed), catch_up, |game| {
             if stopped(game) {
                 return false;
             }
@@ -678,13 +676,13 @@ impl Game {
         false
     }
 
-    /// Runs `tick` once for each whole tick of accumulated time, up to a
-    /// frame's cap. A declined tick or the cap drops the remaining debt
+    /// Runs `tick` once for each whole tick of accumulated time, up to
+    /// `catch_up` ticks. A declined tick or the cap drops the remaining debt
     /// rather than spiraling, leaving the render fraction at one full tick.
-    fn pace(&mut self, dt: f32, mut tick: impl FnMut(&mut Self) -> bool) {
+    fn pace(&mut self, dt: f32, catch_up: u32, mut tick: impl FnMut(&mut Self) -> bool) {
         self.clock.accum += dt;
         let mut ran = 0;
-        while self.clock.accum >= TICK_DT && ran < MAX_TICKS_PER_FRAME {
+        while self.clock.accum >= TICK_DT && ran < catch_up {
             self.settle_clock(self.clock.accum - TICK_DT);
             if !tick(self) {
                 self.clock.accum += TICK_DT;
