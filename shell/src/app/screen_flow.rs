@@ -40,7 +40,12 @@ const SUSPENSION_GAP_SECS: f32 = 2.0;
 /// frames on other screens) from reading as suspensions. Debug-server
 /// sessions are exempt because an agent may stall the loop on purpose.
 fn gap_opens_pause(raw_dt: f32, live_streak: u8, running: bool, exempt: bool) -> bool {
-    raw_dt >= SUSPENSION_GAP_SECS && live_streak >= 2 && running && !exempt
+    suspended(raw_dt) && live_streak >= 2 && running && !exempt
+}
+
+/// Whether a frame's wall time is long enough to be a suspension.
+pub(super) fn suspended(raw_dt: f32) -> bool {
+    raw_dt >= SUSPENSION_GAP_SECS
 }
 
 /// Opens the pause menu over the live match; entering it freezes the

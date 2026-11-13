@@ -1400,6 +1400,16 @@ pub(crate) fn draw_seat_card(card: &CardRects, view: &CardView, ui: f32) {
 }
 
 impl Wizard {
+    /// Binds a hosted LAN lobby's listener afresh, after the app was
+    /// suspended.
+    pub(crate) fn relisten(&mut self) {
+        if let Some(lan) = &mut self.lan {
+            lan.lobby.relisten();
+        }
+    }
+}
+
+impl Wizard {
     /// Opens at the map grid, the remembered map re-highlighted.
     pub fn open(draft: &NewMatchDraft) -> Self {
         let entries = discover_scenarios();

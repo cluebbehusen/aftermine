@@ -1208,3 +1208,35 @@ fn a_failing_listener_reports_each_new_kind_of_failure_once() {
         "an accepted connection clears the failure"
     );
 }
+
+#[test]
+fn a_host_listens_again_on_the_same_address() {
+    let mut listener = HostListener::new(Listener::bind("127.0.0.1:0").unwrap()).unwrap();
+    let address = listener.address;
+    let _queued = Connection::connect_any(address, Duration::from_secs(5)).unwrap();
+    listener.relisten();
+    assert!(
+        listener.accept().is_none(),
+        "the old socket and the call queued on it are gone"
+    );
+    let _client = Connection::connect_any(address, Duration::from_secs(5)).unwrap();
+    assert!(wait(|| listener.accept()).try_recv().is_ok());
+}
+
+#[test]
+fn a_failed_rebind_tries_again_until_the_address_is_free() {
+    let mut listener = HostListener::new(Listener::bind("127.0.0.1:0").unwrap()).unwrap();
+    let address = listener.address;
+    listener.listener = None;
+    let squatter = std::net::TcpListener::bind(address).unwrap();
+    assert!(listener.accept().is_none());
+    assert!(listener.listener.is_none(), "the address is taken");
+    drop(squatter);
+    assert!(listener.accept().is_none(), "nobody has called yet");
+    assert!(
+        listener.listener.is_some(),
+        "the next accept bound the address"
+    );
+    let _client = Connection::connect_any(address, Duration::from_secs(5)).unwrap();
+    let _host = wait(|| listener.accept());
+}

@@ -456,6 +456,16 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             },
             app.paced,
         );
+        // A suspended app's listening sockets stop answering, so a host
+        // listens afresh once it is back.
+        if screen_flow::suspended(time.raw) {
+            if let Some(link) = &mut app.net {
+                link.relisten();
+            }
+            if let Screen::Wizard(wizard) = &mut screen {
+                wizard.relisten();
+            }
+        }
         if first_pass
             && let Some(paused) = app
                 .frame_profiler
