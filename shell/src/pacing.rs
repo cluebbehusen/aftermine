@@ -9,6 +9,10 @@
 use crate::config::FrameRate;
 use std::time::Duration;
 
+mod fallback;
+
+pub(crate) use fallback::{Fallback, Frame};
+
 /// A frequency, in millihertz so a 59.94 Hz display keeps its fraction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Rate(u32);
@@ -91,6 +95,11 @@ impl Refresh {
     /// The divisor of the slowest choice.
     fn slowest(self) -> u32 {
         self.divisors().last().unwrap_or(1)
+    }
+
+    /// The time between refreshes.
+    fn period(self) -> Duration {
+        self.0.period()
     }
 }
 

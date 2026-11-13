@@ -177,6 +177,11 @@ struct App {
     /// The frame interval last asked of the platform; none before the
     /// first ask.
     interval: Option<u32>,
+    /// The shell's own pacing, where the platform presents faster than
+    /// asked.
+    fallback: crate::pacing::Fallback,
+    /// When the presented frame began, on the session clock.
+    frame_began: std::time::Duration,
 }
 
 /// A viewer over the live match's record so far; the match waits untouched.
@@ -384,6 +389,8 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         paced: None,
         quiet: crate::pacing::Quiet::default(),
         interval: None,
+        fallback: crate::pacing::Fallback::default(),
+        frame_began: std::time::Duration::ZERO,
     };
     // A rerun pass re-enters the loop inside the same presented frame;
     // the frame's starting screen is the one recorded before it.
@@ -737,8 +744,10 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         }
         app.paced = app.refresh.map(|refresh| refresh.every(interval));
         let wait_diagnostic_scope = visible_stage(&screen, &app, Stage::Present);
+        app.hold_frame(interval, uncapped);
         next_frame().await;
         drop(wait_diagnostic_scope);
+        app.begin_frame(interval);
     }
 }
 
@@ -904,6 +913,40 @@ impl App {
             && self.lingering.is_none()
             && self.quiet.quiet(self.clock.elapsed())
             && screen.still(&self.game, held, render::reduced_motion())
+    }
+
+    /// Sleeps until the frame asked to span `interval` refreshes may
+    /// present, where the platform presents faster than asked.
+    fn hold_frame(&mut self, interval: u32, uncapped: bool) {
+        if !crate::pacing::Fallback::WATCHED || uncapped {
+            return;
+        }
+        // Submit the frame's draws before sleeping, so only the swap follows
+        // the wake and the half-refresh margin isn't spent on submission.
+        set_default_camera();
+        let now = self.clock.elapsed();
+        if let Some(wake) = self.fallback.wake(interval, self.frame_began, now) {
+            // std sleeps on a high-resolution timer from Windows 10 1803;
+            // older Windows rounds a sleep up to its 15.6 ms tick, past the
+            // half refresh a frame wakes early by.
+            std::thread::sleep(wake.saturating_sub(now));
+        }
+    }
+
+    /// Starts timing a frame once the last, asked to span `interval`
+    /// refreshes, has presented.
+    fn begin_frame(&mut self, interval: u32) {
+        if !crate::pacing::Fallback::WATCHED {
+            return;
+        }
+        let began = self.clock.elapsed();
+        self.fallback.observe(crate::pacing::Frame {
+            took: began.saturating_sub(self.frame_began),
+            interval,
+            refresh: self.refresh,
+            hidden: input::reported_minimized() == Some(true),
+        });
+        self.frame_began = began;
     }
 
     /// The refresh whose frame rates Settings offers. An automation shell
