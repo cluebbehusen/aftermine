@@ -64,7 +64,7 @@ similar_names = "allow"
 # Apple platform, which the frame rate setting paces through. Drop the patch
 # once releases carry these changes.
 [patch.crates-io]
-miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "8c4066ef929343126059d0e70e55037ab260033e" }
+miniquad = { git = "https://github.com/cluebbehusen/miniquad", rev = "0e46510800fb81308c9d01cc3ef5c26528ee5114" }
 
 # quad-snd, macroquad's audio library, has no backend for tvOS, and on iOS and
 # tvOS it leaves the audio session in its default category, which stops other
