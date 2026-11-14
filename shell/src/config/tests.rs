@@ -638,3 +638,10 @@ fn config_text_round_trips_and_falls_back_to_defaults() {
         Config::default()
     );
 }
+
+#[test]
+fn a_tv_starts_at_a_larger_interface_scale() {
+    assert_eq!(default_ui_scale(Platform::Tv), 1.25);
+    assert_eq!(default_ui_scale(Platform::Desktop), 1.0);
+    assert_eq!(default_ui_scale(Platform::Touch), 1.0);
+}

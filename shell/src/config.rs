@@ -357,7 +357,7 @@ impl Default for Config {
             version: CONFIG_VERSION,
             bindings: BindingMap::classic(),
             volumes: Volumes::default(),
-            ui_scale: 1.0,
+            ui_scale: default_ui_scale(PLATFORM),
             camera: CameraPrefs::default(),
             pad: PadPrefs::default(),
             window: (1280, 800),
@@ -374,6 +374,12 @@ impl Default for Config {
             cold_open_seen: false,
         }
     }
+}
+
+/// The UI scale a fresh install starts at: a TV is read from across the
+/// room.
+fn default_ui_scale(platform: Platform) -> f32 {
+    if platform == Platform::Tv { 1.25 } else { 1.0 }
 }
 
 fn config_path() -> Option<PathBuf> {
@@ -406,7 +412,7 @@ impl Config {
         if scale.is_finite() {
             scale.clamp(crate::render::MIN_USER_SCALE, crate::render::MAX_USER_SCALE)
         } else {
-            1.0
+            default_ui_scale(PLATFORM)
         }
     }
 
