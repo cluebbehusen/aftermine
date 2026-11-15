@@ -427,6 +427,9 @@ pub(crate) fn decide(
         income,
         outlet,
     );
+    if let Some(army) = ledger.decision.army.as_mut() {
+        needs.describe_enemy(army);
+    }
     // A lift carries at least the stance's minimum army, so until the seat has
     // that much a lift could take it neither pulls toward an Airworks nor holds
     // production for carriers: an army and home defense come first.
@@ -776,7 +779,7 @@ pub(crate) fn decide(
             needs.coverage(gap, by_air);
         }
         if let Some(army) = ledger.decision.army.as_mut() {
-            needs.describe(army);
+            needs.describe_roles(army);
         }
         produce(observation, &producers, &mut needs, &mut ledger, saving);
         if !short {
