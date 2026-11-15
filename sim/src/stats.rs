@@ -1528,14 +1528,14 @@ const KESTREL: UnitStats = UnitStats {
 
 const CONDOR: UnitStats = UnitStats {
     contact_reach: None,
-    max_hp: 260,
+    max_hp: 400,
     speed: Fx::lit("0.11"),
     radius: Fx::lit("0.45"),
     cost: 700,
     train_ticks: 800,
     domain: Domain::Air,
     weapons: &[WeaponStats {
-        damage: 100,
+        damage: 110,
         range: Fx::lit("2.5"), // release point, not a standoff gun
         minimum_range: Fx::ZERO,
         cooldown_ticks: 150, // one bomb per pass
@@ -1585,8 +1585,8 @@ const BREAKER: UnitStats = UnitStats {
     max_hp: 900,
     speed: Fx::lit("0.055"),
     radius: Fx::lit("0.55"),
-    cost: 900,
-    train_ticks: 1200,
+    cost: 800,
+    train_ticks: 1000,
     domain: Domain::Ground,
     weapons: &[WeaponStats {
         damage: 115,
@@ -1810,8 +1810,8 @@ const MANTLE: UnitStats = UnitStats {
     max_hp: 350,
     speed: Fx::lit("0.07"),
     radius: Fx::lit("0.45"),
-    cost: 450,
-    train_ticks: 500,
+    cost: 500,
+    train_ticks: 600,
     domain: Domain::Ground,
     weapons: &[],
     aggro_range: Fx::ZERO,
@@ -1885,8 +1885,8 @@ const MAW: UnitStats = UnitStats {
     // The drum cuts with the hull against its target: its lowered edge is
     // the hull's collision edge.
     contact_reach: Some(Fx::lit("0.05")),
-    // Four Breakers' price in one hull: it outlasts a fortified position it
-    // reaches, and loses an open fight to the same scrap of machines.
+    // It outlasts a fortified position it reaches, and loses an open fight
+    // to the same scrap of machines.
     max_hp: 6000,
     speed: Fx::lit("0.045"), // 0.9 tiles/s
     radius: Fx::lit("1.4"),

@@ -420,7 +420,7 @@ fn crucible(state: &State) -> BuildingId {
 
 #[test]
 fn a_seat_saves_for_the_dear_unit_its_line_prefers_and_trains_it() {
-    let scenario = outlined(800);
+    let scenario = outlined(UnitKind::Breaker.stats().cost - 100);
     let state = scenario.build().unwrap();
     let mut opponent = seat_with(&scenario, 0, thrifty());
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
