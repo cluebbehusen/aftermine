@@ -18,6 +18,7 @@ pub struct Sprites {
     textures: Vec<Texture2D>,
     entity_lod: crate::entity_lod::EntityLod,
     ground_blend: crate::render::GroundBlend,
+    reticle_ink: crate::render::reticle::Ink,
     page_height: f32,
     regions: Regions,
 }
@@ -1082,6 +1083,7 @@ impl Sprites {
 
         let entity_lod = crate::entity_lod::EntityLod::load(&rects.rects, &pages, page_height)?;
         let ground_blend = crate::render::GroundBlend::load()?;
+        let reticle_ink = crate::render::reticle::Ink::load()?;
         let wordmark = Texture2D::from_image(
             &load_resource_image("assets/wordmark.png").context("loading assets/wordmark.png")?,
         );
@@ -1091,6 +1093,7 @@ impl Sprites {
             textures,
             entity_lod,
             ground_blend,
+            reticle_ink,
             page_height,
             regions: Regions::read(&rects)?,
         })
@@ -1130,6 +1133,10 @@ impl Sprites {
         size: Vec2,
     ) -> Option<Vec2> {
         self.entity_lod.contact(source, from, aim, origin, size)
+    }
+
+    pub(crate) fn reticle_ink(&self) -> &crate::render::reticle::Ink {
+        &self.reticle_ink
     }
 
     /// The shaders the terrain cache bakes and composites with.
