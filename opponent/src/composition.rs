@@ -118,7 +118,8 @@ pub struct Factors {
     pub reach: u64,
     /// A siege unit's firepower per scrap, any other's health per scrap.
     pub worth: u64,
-    /// Hitting both air and ground while the enemy has both.
+    /// Hitting both air and ground while the enemy fields armed aircraft and
+    /// ground units.
     pub coverage: u64,
     /// Splash against clustered enemies, or a lifted seat's bomber blast.
     pub splash: u64,
@@ -166,6 +167,9 @@ fn reach(kind: UnitKind) -> Option<Reach> {
 /// What the seat knows of the enemy army, weighted by confidence.
 struct Enemy {
     air: u64,
+    /// The part of `air` that carries a weapon. Scouts and transports count
+    /// toward anti-air but give nothing for a gun to cover.
+    armed_air: u64,
     /// The part of `air` armed only against the ground, which cannot shoot
     /// back at anti-air that flies.
     grounders: u64,
@@ -202,6 +206,7 @@ impl Enemy {
         let now = observation.tick;
         let mut enemy = Self {
             air: 0,
+            armed_air: 0,
             grounders: 0,
             ground: 0,
             heavy: 0,
@@ -226,6 +231,9 @@ impl Enemy {
             }
             if unit.kind.stats().domain == Domain::Air {
                 enemy.air += value;
+                if unit.kind.stats().can_fight() {
+                    enemy.armed_air += value;
+                }
                 if grounder(unit.kind) {
                     enemy.grounders += value;
                 }
@@ -255,6 +263,9 @@ impl Enemy {
                 let value = u64::from(machine.stats().cost);
                 if machine.stats().domain == Domain::Air {
                     enemy.air += value;
+                    if machine.stats().can_fight() {
+                        enemy.armed_air += value;
+                    }
                     if grounder(machine) {
                         enemy.grounders += value;
                     }
@@ -675,6 +686,7 @@ impl Needs {
     pub(crate) fn describe(&self, army: &mut ArmyReasons) {
         army.enemy = EnemyArmy {
             air: self.enemy.air,
+            armed_air: self.enemy.armed_air,
             grounders: self.enemy.grounders,
             ground: self.enemy.ground,
             heavy: self.enemy.heavy,
@@ -933,7 +945,7 @@ impl Needs {
                 }
             })
         };
-        let both = self.enemy.air > 0 && self.enemy.ground > 0 && hits(true) && hits(false);
+        let both = self.enemy.armed_air > 0 && self.enemy.ground > 0 && hits(true) && hits(false);
         let coverage = if both { 1_250 } else { 1_000 };
         let splashes = stats.weapons.iter().any(|weapon| weapon.splash.is_some());
         // A seat that can only lift its army leans on bombers, whose worth

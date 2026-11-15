@@ -59,6 +59,8 @@ pub struct ArmyReasons {
 pub struct EnemyArmy {
     /// Aircraft of every kind, armed or not.
     pub air: u64,
+    /// The part of `air` that carries a weapon.
+    pub armed_air: u64,
     /// The part of `air` armed only against the ground.
     pub grounders: u64,
     /// Ground units that can fight.
