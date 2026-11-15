@@ -73,8 +73,10 @@ normative for this crate.
 - **Traces:** `--decision-trace-out <file>`, with `--out` and `--candidate`,
   writes one JSONL row per decision. Opponent seats' rows carry this crate's
   `Trace`: tick, player, bank, received own events, spent, purchases, unit-order
-  count, allowance, saving target, protected scrap, and missions with their
-  phases.
+  count, allowance, saving target, protected scrap, missions with their phases,
+  and the army's reasons: the enemy army the seat knows, its income, each role's
+  deficit and weight, and for every army unit queued the rule that chose it and
+  the scored factors of the units it was weighed against.
 
 ## Report at handoff
 

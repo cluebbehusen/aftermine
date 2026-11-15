@@ -4,17 +4,20 @@
 
 use crate::memory::{Memory, SeenUnit};
 use crate::profile::PersonalityTraits;
+use crate::trace::{ArmyReasons, Candidate, EnemyArmy, RoleNeed};
 use aftermine_sim::observation::ObservationData;
 use aftermine_sim::scenario::BotStance;
 use aftermine_sim::stats::Domain;
 use aftermine_sim::{BuildingKind, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
+use serde::Serialize;
 use std::cmp::Reverse;
 
 /// The part of the army a unit fills.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Role {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
     /// Direct-fire ground fighters.
     Line,
     /// Long-range and anti-structure ground fire.
@@ -95,11 +98,53 @@ pub(crate) fn heavy(kind: UnitKind) -> bool {
 
 /// How far a unit's longest weapon reaches: under three tiles, up to five,
 /// or beyond.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Reach {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reach {
+    /// Under three tiles.
     Short,
+    /// Three to five tiles.
     Medium,
+    /// Beyond five tiles.
     Long,
+}
+
+/// The per-mille factors whose product scores how well a unit fills a role.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Factors {
+    /// The personality's weight for the role; the product starts here.
+    pub preference: u64,
+    /// Outranging the enemy's usual reach, or being outranged by it.
+    pub reach: u64,
+    /// A siege unit's firepower per scrap, any other's health per scrap.
+    pub worth: u64,
+    /// Hitting both air and ground while the enemy has both.
+    pub coverage: u64,
+    /// Splash against clustered enemies, or a lifted seat's bomber blast.
+    pub splash: u64,
+    /// Flying anti-air against enemy air that fires only at the ground.
+    pub immune: u64,
+    /// The unit's price against the seat's income.
+    pub affordable: u64,
+    /// Fewer of this kind among the role's units.
+    pub variety: u64,
+}
+
+impl Factors {
+    /// The product, applied in a fixed order so its rounding never varies.
+    pub(crate) fn score(&self) -> u64 {
+        [
+            self.reach,
+            self.worth,
+            self.coverage,
+            self.splash,
+            self.immune,
+            self.affordable,
+            self.variety,
+        ]
+        .into_iter()
+        .fold(self.preference, |score, factor| score * factor / 1_000)
+    }
 }
 
 fn reach(kind: UnitKind) -> Option<Reach> {
@@ -625,6 +670,56 @@ impl Needs {
         (self.suitability(kind, role), Reverse(kind.stats().cost))
     }
 
+    /// Writes what the seat knows of the enemy army, its income and each
+    /// role's deficit and weight into `army`.
+    pub(crate) fn describe(&self, army: &mut ArmyReasons) {
+        army.enemy = EnemyArmy {
+            air: self.enemy.air,
+            grounders: self.enemy.grounders,
+            ground: self.enemy.ground,
+            heavy: self.enemy.heavy,
+            clustered: self.enemy.clustered,
+            reach: self.enemy.reach,
+        };
+        army.income = self.income;
+        army.roles = ROLES
+            .into_iter()
+            .map(|role| RoleNeed {
+                role,
+                need: self.need[role as usize],
+                weight: self.weight[role as usize],
+            })
+            .collect();
+    }
+
+    /// Every unit for `role` that one of `producers` trains, best first, with
+    /// its score and the score's factors.
+    pub(crate) fn candidates(
+        &self,
+        observation: &ObservationData,
+        producers: impl IntoIterator<Item = BuildingKind>,
+        role: Role,
+    ) -> Vec<Candidate> {
+        let mut kinds: Vec<UnitKind> = producers
+            .into_iter()
+            .flat_map(|producer| producible(observation, producer))
+            .filter(|kind| self::role(*kind) == Some(role))
+            .collect();
+        kinds.sort_by_key(|kind| (Reverse(self.rank(*kind, role)), index(*kind)));
+        kinds.dedup();
+        kinds
+            .into_iter()
+            .map(|unit| {
+                let factors = self.factors(unit, role);
+                Candidate {
+                    unit,
+                    score: factors.score(),
+                    factors,
+                }
+            })
+            .collect()
+    }
+
     /// The best unit `producer` can train now for `role` within `budget`. A
     /// better unit it cannot afford yet gives way to the best one it can,
     /// since other producers spend the scrap meanwhile.
@@ -811,6 +906,11 @@ impl Needs {
     /// affordability at the seat's income, variety within the role, and
     /// personality.
     pub(crate) fn suitability(&self, kind: UnitKind, role: Role) -> u64 {
+        self.factors(kind, role).score()
+    }
+
+    /// The factors of [`Self::suitability`].
+    fn factors(&self, kind: UnitKind, role: Role) -> Factors {
         let stats = kind.stats();
         let reach = match (reach(kind), self.enemy.reach) {
             (Some(own), Some(enemy)) if own > enemy => 1_250,
@@ -861,17 +961,16 @@ impl Needs {
             Role::AirStrike => weight(self.traits.air),
             Role::Screen => weight(self.traits.support),
         };
-        [
+        Factors {
+            preference,
             reach,
             worth,
             coverage,
             splash,
             immune,
             affordable,
-            self.variety(kind, role),
-        ]
-        .into_iter()
-        .fold(preference, |score, factor| score * factor / 1_000)
+            variety: self.variety(kind, role),
+        }
     }
 
     /// Per mille: more for a kind the seat has few of among its units in

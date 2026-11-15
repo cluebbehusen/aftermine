@@ -13,7 +13,7 @@ use crate::missions::{Missions, Scratch, Settlement, Shortfall};
 use crate::placement;
 use crate::profile::ResolvedProfile;
 use crate::saving::Saving;
-use crate::trace::{NextPurchase, Purchase, SavingTarget};
+use crate::trace::{ArmyReasons, NextPurchase, Pick, PickPath, Purchase, SavingTarget};
 use crate::workers;
 use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::scenario::{BotDifficulty, BotStance};
@@ -34,6 +34,8 @@ pub(crate) struct Decision {
     pub(crate) allowance: u32,
     pub(crate) target: Option<SavingTarget>,
     pub(crate) protected: u32,
+    /// Why army units were chosen, recorded only for a traced decision.
+    pub(crate) army: Option<ArmyReasons>,
 }
 
 /// What carries from one decision to the next. Checkpoints save exactly this.
@@ -82,6 +84,14 @@ impl Ledger {
     /// Scrap this decision has not committed.
     pub(crate) fn available(&self) -> u32 {
         self.bank - self.decision.spent
+    }
+
+    /// Records why an army unit was queued. `pick` runs only in a traced
+    /// decision, so an untraced one never scores candidates for it.
+    fn explain(&mut self, pick: impl FnOnce() -> Pick) {
+        if let Some(army) = self.decision.army.as_mut() {
+            army.picks.push(pick());
+        }
     }
 
     /// Uncommitted scrap that is not protected for the saving target.
@@ -323,6 +333,7 @@ pub(crate) fn decide(
     frame: HomeFrame,
     profile: &ResolvedProfile,
     persistent: &mut Persistent,
+    traced: bool,
 ) -> Decision {
     let rejected = events
         .iter()
@@ -333,6 +344,7 @@ pub(crate) fn decide(
         observation.scrap,
         allowance(profile.difficulty),
     );
+    ledger.decision.army = traced.then(ArmyReasons::default);
     ledger.stuck = persistent.memory.stuck();
     let tick = observation.tick;
     let producers = producers(
@@ -763,6 +775,9 @@ pub(crate) fn decide(
         {
             needs.coverage(gap, by_air);
         }
+        if let Some(army) = ledger.decision.army.as_mut() {
+            needs.describe(army);
+        }
         produce(observation, &producers, &mut needs, &mut ledger, saving);
         if !short {
             // A scout joins its producer's queue behind whatever is there;
@@ -890,6 +905,12 @@ fn buy(
                 return;
             };
             if ledger.train_urgently(producer.building.id, kind) {
+                ledger.explain(|| Pick {
+                    unit: kind,
+                    building: producer.building.id,
+                    path: PickPath::Saved,
+                    candidates: Vec::new(),
+                });
                 needs.queued(kind);
                 ledger.protected = 0;
                 persistent.saving.attempted(step, producer.building.anchor);
@@ -1265,7 +1286,7 @@ fn produce(
     saving: Option<UnitKind>,
 ) {
     let mut idle = idle(observation, producers, ledger, saving);
-    while let Some((index, kind)) = needs.wanted().into_iter().find_map(|role| {
+    while let Some((index, kind, role, bar)) = needs.wanted().into_iter().find_map(|role| {
         let budget = ledger.spendable();
         let bar = producers
             .iter()
@@ -1282,9 +1303,20 @@ fn produce(
                     .map(|kind| (index, kind))
             })
             .max_by_key(|(index, kind)| (needs.rank(*kind, role), Reverse(*index)))
+            .map(|(index, kind)| (index, kind, role, bar))
     }) {
         let producer = idle.remove(index);
         if ledger.train(producer.building.id, kind) {
+            ledger.explain(|| Pick {
+                unit: kind,
+                building: producer.building.id,
+                path: PickPath::Wanted { role, bar },
+                candidates: needs.candidates(
+                    observation,
+                    producers.iter().map(|other| other.building.kind),
+                    role,
+                ),
+            });
             needs.queued(kind);
         }
     }
@@ -1318,6 +1350,12 @@ fn fill(
             && !instead(saving, unit)
             && ledger.train(producer.building.id, unit)
         {
+            ledger.explain(|| Pick {
+                unit,
+                building: producer.building.id,
+                path: PickPath::Fallback { role },
+                candidates: needs.candidates(observation, [kind], role),
+            });
             needs.queued(unit);
         }
     }
@@ -1434,6 +1472,12 @@ fn arm(
         if let Some(kind) = kind
             && ledger.train(producer.building.id, kind)
         {
+            ledger.explain(|| Pick {
+                unit: kind,
+                building: producer.building.id,
+                path: PickPath::Shortfall,
+                candidates: Vec::new(),
+            });
             needs.queued(kind);
             cover(&mut shortfalls, kind, at);
         }

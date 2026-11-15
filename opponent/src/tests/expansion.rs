@@ -308,6 +308,7 @@ fn a_half_explored_footprint_is_still_scouted() {
         home_frame(&observation, &model),
         &opponent.profile,
         &mut persistent,
+        false,
     );
     assert!(
         decision.commands.iter().any(|command| matches!(

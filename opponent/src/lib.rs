@@ -25,12 +25,16 @@ mod warheads;
 mod workers;
 
 pub use checkpoint::Checkpoint;
+pub use composition::{Factors, Reach, Role};
 pub use events::{OwnEvent, OwnEvents};
 pub use investments::{Investment, Step};
 pub use map::MapModel;
 pub use missions::{Launch, MissionKind, MissionStatus, Phase};
 pub use profile::{PersonalityTraits, ResolvedProfile, Specialty};
-pub use trace::{NextPurchase, Purchase, SavingTarget, Trace};
+pub use trace::{
+    ArmyReasons, Candidate, EnemyArmy, NextPurchase, Pick, PickPath, Purchase, RoleNeed,
+    SavingTarget, Trace,
+};
 
 use aftermine_sim::observation::ObservationData;
 use aftermine_sim::scenario::{BotConfig, BotDifficulty};
@@ -100,7 +104,7 @@ impl Opponent {
     /// Commands for this tick. A decision consumes the seat's buffered own
     /// events; a tick without one leaves them for the next.
     pub fn act(&mut self, state: &State, events: &mut OwnEvents) -> Vec<PlayerCommand> {
-        self.decide(state, events)
+        self.decide(state, events, false)
             .map_or_else(Vec::new, |(_, _, decision)| decision.commands)
     }
 
@@ -111,7 +115,7 @@ impl Opponent {
         state: &State,
         events: &mut OwnEvents,
     ) -> (Vec<PlayerCommand>, Option<Trace>) {
-        let Some((observation, events, decision)) = self.decide(state, events) else {
+        let Some((observation, events, decision)) = self.decide(state, events, true) else {
             return (Vec::new(), None);
         };
         let trace = Trace {
@@ -126,6 +130,9 @@ impl Opponent {
             target: decision.target,
             protected: decision.protected,
             missions: self.missions(),
+            army: decision
+                .army
+                .expect("a traced decision records its army reasons"),
         };
         (decision.commands, Some(trace))
     }
@@ -134,6 +141,7 @@ impl Opponent {
         &mut self,
         state: &State,
         events: &mut OwnEvents,
+        traced: bool,
     ) -> Option<(ObservationData, Vec<OwnEvent>, decision::Decision)> {
         if !self.decision_due(state)
             || state.player(self.player).resigned
@@ -158,6 +166,7 @@ impl Opponent {
             frame,
             &self.profile,
             &mut self.persistent,
+            traced,
         );
         self.launches = std::mem::take(&mut decision.launches);
         Some((observation, events, decision))
