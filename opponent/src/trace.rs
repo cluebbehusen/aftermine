@@ -54,16 +54,19 @@ pub struct ArmyReasons {
     pub picks: Vec<Pick>,
 }
 
-/// The enemy army as one seat knows it, in scrap weighted by confidence.
+/// The enemy army as one seat knows it, in scrap weighted by confidence,
+/// plus what known enemy production foretells.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct EnemyArmy {
-    /// Aircraft of every kind, armed or not.
+    /// Aircraft of every kind, armed or not, plus 200 for each known Airworks
+    /// and the full value of an aircraft a known cradle will stand up.
     pub air: u64,
     /// The part of `air` that carries a weapon.
     pub armed_air: u64,
     /// The part of `air` armed only against the ground.
     pub grounders: u64,
-    /// Ground units that can fight.
+    /// Ground units that can fight, plus the full value of a ground machine
+    /// a known cradle will stand up.
     pub ground: u64,
     /// The part of `ground` that is heavy machines.
     pub heavy: u64,

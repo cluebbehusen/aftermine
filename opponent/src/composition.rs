@@ -116,7 +116,8 @@ pub struct Factors {
     pub preference: u64,
     /// Outranging the enemy's usual reach, or being outranged by it.
     pub reach: u64,
-    /// A siege unit's firepower per scrap, any other's health per scrap.
+    /// A siege or anti-heavy unit's firepower per scrap, any other's health
+    /// per scrap.
     pub worth: u64,
     /// Hitting both air and ground while the enemy fields armed aircraft and
     /// ground units.
@@ -681,9 +682,9 @@ impl Needs {
         (self.suitability(kind, role), Reverse(kind.stats().cost))
     }
 
-    /// Writes what the seat knows of the enemy army, its income and each
-    /// role's deficit and weight into `army`.
-    pub(crate) fn describe(&self, army: &mut ArmyReasons) {
+    /// Writes what the seat knows of the enemy army and its income into
+    /// `army`.
+    pub(crate) fn describe_enemy(&self, army: &mut ArmyReasons) {
         army.enemy = EnemyArmy {
             air: self.enemy.air,
             armed_air: self.enemy.armed_air,
@@ -694,6 +695,10 @@ impl Needs {
             reach: self.enemy.reach,
         };
         army.income = self.income;
+    }
+
+    /// Writes each role's deficit and weight into `army`.
+    pub(crate) fn describe_roles(&self, army: &mut ArmyReasons) {
         army.roles = ROLES
             .into_iter()
             .map(|role| RoleNeed {
