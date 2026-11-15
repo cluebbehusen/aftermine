@@ -591,13 +591,9 @@ fn seen_enemy_heavies_bring_piledrivers_in_proportion() {
     let scenario = foundry_of_heavies();
     let breakers = [UnitKind::Breaker; 2];
     assert!(crucible_trains(&scenario, &breakers).contains(&UnitKind::Piledriver));
-    // As much value in light machines wants no anti-heavy shot.
-    let sentinels = [UnitKind::Sentinel; 20];
-    assert_eq!(
-        UnitKind::Sentinel.stats().cost * 20,
-        UnitKind::Breaker.stats().cost * 2,
-        "premise: equal value"
-    );
+    // At least as much value in light machines wants no anti-heavy shot.
+    let count = (2 * UnitKind::Breaker.stats().cost).div_ceil(UnitKind::Sentinel.stats().cost);
+    let sentinels = vec![UnitKind::Sentinel; usize::try_from(count).unwrap()];
     assert!(!crucible_trains(&scenario, &sentinels).contains(&UnitKind::Piledriver));
     assert!(!crucible_trains(&scenario, &[]).contains(&UnitKind::Piledriver));
 
