@@ -788,3 +788,59 @@ fn an_idle_foundry_waits_for_a_busy_producer_of_a_much_better_line_unit() {
         "a line mostly of Wardens, where a Warden is only a little better, does not"
     );
 }
+
+#[test]
+fn a_traced_decision_explains_each_army_unit_without_changing_it() {
+    let scenario = foundry_of_heavies();
+    let state = scenario.build().unwrap();
+    let seen = [UnitKind::Kestrel, UnitKind::Sentinel, UnitKind::Sentinel];
+    let (commands, trace) =
+        remembering(&scenario, &state, &seen).act_traced(&state, &mut OwnEvents::default());
+    assert_eq!(
+        commands,
+        remembering(&scenario, &state, &seen).act(&state, &mut OwnEvents::default()),
+        "tracing changes no command"
+    );
+    let army = trace.unwrap().army;
+    assert!(
+        army.enemy.air > 0 && army.enemy.ground > 0,
+        "{:?}",
+        army.enemy
+    );
+    let army_trains: Vec<(BuildingId, UnitKind)> = trains(&commands)
+        .into_iter()
+        .filter(|(_, kind)| composition::role(*kind).is_some())
+        .collect();
+    assert!(!army_trains.is_empty(), "premise: the seat trains its army");
+    assert_eq!(
+        army.picks
+            .iter()
+            .map(|pick| (pick.building, pick.unit))
+            .collect::<Vec<_>>(),
+        army_trains,
+        "every army unit is explained, in order"
+    );
+    for pick in &army.picks {
+        let PickPath::Wanted { role, bar } = pick.path else {
+            continue;
+        };
+        let chosen = pick
+            .candidates
+            .iter()
+            .find(|candidate| candidate.unit == pick.unit)
+            .unwrap();
+        assert!(chosen.score >= bar, "{pick:?}");
+        assert!(
+            pick.candidates
+                .iter()
+                .all(|candidate| composition::role(candidate.unit) == Some(role)),
+            "{pick:?}"
+        );
+        assert!(
+            pick.candidates
+                .windows(2)
+                .all(|pair| pair[0].score >= pair[1].score),
+            "best first: {pick:?}"
+        );
+    }
+}

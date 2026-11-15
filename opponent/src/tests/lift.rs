@@ -958,6 +958,16 @@ fn severed_seats_buy_carriers_and_the_airworks_they_need() {
     let short = banked(severed.clone(), 200);
     let (commands, _) = decide(&short);
     assert_eq!(army(&commands), 0, "cheaper units wait for the carrier");
+    let state = short.build().unwrap();
+    let seen = [(UnitId(900), UnitKind::Sentinel, TilePos::new(20, 5))];
+    let (_, trace) = remembering(&seat(&short, 0), &short, &state, &seen)
+        .act_traced(&state, &mut OwnEvents::default());
+    let reasons = trace.unwrap().army;
+    assert!(reasons.roles.is_empty(), "premise: production waits");
+    assert!(
+        reasons.enemy.ground > 0,
+        "a decision held for the carrier still reports the enemy it knows"
+    );
     let mut connected = banked(severed.clone(), 400);
     connected.map = FIELD.map(str::to_owned).to_vec();
     let (commands, _) = decide(&connected);

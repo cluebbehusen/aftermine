@@ -770,9 +770,11 @@ fn a_staged_foundry_spreads_its_harvesters_and_trains_its_army_first() {
         [(foundry, UnitKind::Sentinel)],
         "with no army, Harvesters that would cost more than it wait for it"
     );
+    let mut trace = trace.unwrap();
+    let army = std::mem::take(&mut trace.army);
     assert_eq!(
         trace,
-        Some(Trace {
+        Trace {
             tick: 0,
             player: PlayerId(0),
             bank: 200,
@@ -787,7 +789,16 @@ fn a_staged_foundry_spreads_its_harvesters_and_trains_its_army_first() {
             target: None,
             protected: 0,
             missions: Vec::new(),
-        })
+            army: ArmyReasons::default(),
+        }
+    );
+    assert_eq!(
+        army.picks
+            .iter()
+            .map(|pick| (pick.building, pick.unit))
+            .collect::<Vec<_>>(),
+        [(foundry, UnitKind::Sentinel)],
+        "the trace explains the purchase"
     );
     let report = state.tick(&commands);
     assert!(
