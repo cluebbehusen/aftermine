@@ -10,6 +10,7 @@ fn needs(reach: Option<Reach>, clustered: bool) -> Needs {
         lifted: false,
         enemy: Enemy {
             air: 0,
+            armed_air: 0,
             grounders: 0,
             ground: 1_000,
             heavy: 0,

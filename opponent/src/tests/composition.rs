@@ -729,6 +729,15 @@ fn lined(sentinels: i32, wardens: i32, lancers: i32) -> Scenario {
 /// What the west Foundry queues on the first decision after the Fabricator
 /// starts a Lancer.
 fn foundry_trains_beside_a_busy_fabricator(scenario: &Scenario) -> Vec<UnitKind> {
+    beside_a_busy_fabricator(scenario, |_| seat(scenario, 0))
+}
+
+/// What the west Foundry queues on the first decision after the Fabricator
+/// starts a Lancer, as the seat `opponent` builds for that state decides.
+fn beside_a_busy_fabricator(
+    scenario: &Scenario,
+    opponent: impl FnOnce(&State) -> Opponent,
+) -> Vec<UnitKind> {
     let mut state = scenario.build().unwrap();
     let at = fabricator(&state);
     state.tick(&[PlayerCommand {
@@ -744,7 +753,7 @@ fn foundry_trains_beside_a_busy_fabricator(scenario: &Scenario) -> Vec<UnitKind>
         &[],
     );
     let foundry = foundries(&state, PlayerId(0))[0];
-    trains(&seat(scenario, 0).act(&state, &mut OwnEvents::default()))
+    trains(&opponent(&state).act(&state, &mut OwnEvents::default()))
         .into_iter()
         .filter(|(building, _)| *building == foundry)
         .map(|(_, kind)| kind)
@@ -843,4 +852,25 @@ fn a_traced_decision_explains_each_army_unit_without_changing_it() {
             "best first: {pick:?}"
         );
     }
+}
+
+#[test]
+fn only_an_armed_enemy_aircraft_gives_a_sentinel_air_to_cover() {
+    // Long-range enemy guns outrange every line unit alike, so reach decides
+    // nothing between the Sentinel and the Warden.
+    let scenario = lined(2, 1, 8);
+    let with = |aircraft: UnitKind| {
+        let seen = [UnitKind::Bombard, UnitKind::Bombard, aircraft];
+        beside_a_busy_fabricator(&scenario, |state| remembering(&scenario, state, &seen))
+    };
+    assert_eq!(
+        with(UnitKind::Buzzard),
+        [UnitKind::Sentinel],
+        "a gun for both domains is worth a Sentinel now"
+    );
+    assert_eq!(
+        with(UnitKind::Kestrel),
+        [],
+        "an unarmed scout leaves the line waiting for a Warden"
+    );
 }

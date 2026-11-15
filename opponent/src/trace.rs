@@ -61,6 +61,9 @@ pub struct EnemyArmy {
     /// Aircraft of every kind, armed or not, plus 200 for each known Airworks
     /// and the full value of an aircraft a known cradle will stand up.
     pub air: u64,
+    /// The part of `air` that carries a weapon, counting an armed aircraft a
+    /// known cradle will stand up but never a known Airworks.
+    pub armed_air: u64,
     /// The part of `air` armed only against the ground.
     pub grounders: u64,
     /// Ground units that can fight, plus the full value of a ground machine
