@@ -168,8 +168,9 @@ fn reach(kind: UnitKind) -> Option<Reach> {
 /// What the seat knows of the enemy army, weighted by confidence.
 struct Enemy {
     air: u64,
-    /// The part of `air` that carries a weapon. Scouts and transports count
-    /// toward anti-air but give nothing for a gun to cover.
+    /// The part of `air` that carries a weapon, counting an armed aircraft a
+    /// known cradle will stand up but never a known Airworks. Scouts and
+    /// transports count toward anti-air but give nothing for a gun to cover.
     armed_air: u64,
     /// The part of `air` armed only against the ground, which cannot shoot
     /// back at anti-air that flies.
