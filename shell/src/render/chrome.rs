@@ -6,7 +6,7 @@
 use super::*;
 use crate::numeric;
 use crate::numeric::Fit;
-use crate::render::prim::{fill_circle, fill_rect, line_between, stroke_circle, stroke_rect};
+use crate::render::prim::{fill_circle, fill_rect, line_between, stroke_rect};
 use crate::theme::TEXT_ACCENT;
 
 /// The paused status names the pause key where one exists. A
@@ -669,80 +669,6 @@ fn strip_verb(action: crate::panel::CardAction) -> Option<&'static str> {
         CardAction::ClearQueues => Some("clear queues"),
         action if action.discards_work() => Some("cancel"),
         _ => None,
-    }
-}
-
-/// The controller's reticle, while a controller is the pointer: a ring with
-/// four ticks, which closes into brackets around the unit or structure it
-/// has snapped onto. While A paints, the brush around it is the reticle
-/// grown, and while a structure is armed its ghost is, tinted with what a
-/// press would do, so only its center dot remains. A dark under-stroke
-/// keeps it legible on pale ground.
-/// Only the live match draws it, over everything as a cursor is: the same
-/// input state reaches the backdrops behind menus and the replay viewer.
-pub(crate) fn draw_reticle(game: &crate::game::Scene<'_>, input: &InputState) {
-    // An open ring's hub stands where the reticle would.
-    if input.last_pointer != crate::input::Pointer::Pad || input.ring.is_some() {
-        return;
-    }
-    let alpha = game.clock.render_alpha();
-    let s = ui_scale();
-    let camera = &game.presentation.camera;
-    let shade = Color::new(0.05, 0.05, 0.07, 0.6);
-    if crate::input::painting(input) || input.placing().is_some() {
-        for (thickness, color) in [(3.5 * s, shade), (1.5 * s, BONE)] {
-            fill_circle(input.reticle.point(), thickness, color);
-        }
-        return;
-    }
-    // The snap was chosen before this frame's ticks, so check it again.
-    let snap = input.reticle.snap().filter(|snap| snap.seen(game));
-    let frame = snap.and_then(|snap| match snap {
-        crate::input::reticle::Picked::Unit(id, _) => {
-            let unit = game.state.unit(id)?;
-            let at = camera.to_screen(game.presentation.draw_pos(id, unit.pos, alpha));
-            let radius = crate::input::unit_pick_radius(unit.kind) * camera.zoom;
-            Some((at, Vec2::splat(radius)))
-        }
-        crate::input::reticle::Picked::Building(id, _) => {
-            let building = game.state.building(id)?;
-            let (w, h) = building.kind.size();
-            let min = vec2(building.anchor.x as f32, building.anchor.y as f32);
-            let a = camera.to_screen(min);
-            let b = camera.to_screen(min + vec2(w as f32, h as f32));
-            Some(((a + b) * 0.5, (b - a) * 0.5))
-        }
-    });
-    let point = input.reticle.point();
-    for (thickness, color) in [(3.5 * s, shade), (1.5 * s, BONE)] {
-        if let Some((center, half)) = frame {
-            // Brackets a little outside the target, each arm a third of
-            // the shorter side.
-            let half = half + Vec2::splat(4.0 * s);
-            let arm = (half.min_element() * 0.66).max(5.0 * s);
-            for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
-                let corner = center + vec2(sx * half.x, sy * half.y);
-                line_between(corner, corner - vec2(sx * arm, 0.0), thickness, color);
-                line_between(corner, corner - vec2(0.0, sy * arm), thickness, color);
-            }
-            fill_circle(point, thickness, color);
-        } else {
-            let radius = 11.0 * s;
-            stroke_circle(point, radius, thickness, color);
-            for dir in [
-                vec2(1.0, 0.0),
-                vec2(-1.0, 0.0),
-                vec2(0.0, 1.0),
-                vec2(0.0, -1.0),
-            ] {
-                line_between(
-                    point + dir * (radius - 4.0 * s),
-                    point + dir * (radius + 5.0 * s),
-                    thickness,
-                    color,
-                );
-            }
-        }
     }
 }
 

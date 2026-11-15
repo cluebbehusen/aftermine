@@ -54,17 +54,20 @@ fn a_sweep_selects_what_the_reticle_crossed_once_a_comes_up() {
         game.presentation.selection.units().is_empty(),
         "nothing selects while A is held"
     );
-    let preview = preview(&game.view(), &input).expect("the sweep shows");
-    assert_eq!(preview.kept, Some(Kept::Units(PlayerId(0), row(&game))));
-    assert_eq!(preview.brush, input.reticle.point());
     assert_eq!(
-        preview.radius,
+        caught(&game.view(), &input),
+        Some(Kept::Units(PlayerId(0), row(&game)))
+    );
+    assert_eq!(
+        match cursor(&input) {
+            Cursor::Sweeping(radius) => radius,
+            _ => panic!("the sweep shows"),
+        },
         super::super::reticle::reach(&input).unit_px(input.ui)
     );
-    assert_eq!(preview.trail.len(), 1);
     feed(&mut game, &mut input, &[up(PadButton::South)]);
     assert_eq!(game.presentation.selection.units(), row(&game));
-    assert!(preview_gone(&game, &input));
+    assert!(!painting(&input));
 }
 
 #[test]
@@ -84,7 +87,7 @@ fn a_press_that_never_leaves_its_spot_paints_nothing() {
     feed(&mut game, &mut input, &[down(PadButton::South)]);
     // Less than the reticle's reach: still a tap.
     push_until(&mut game, &mut input, (0.3, 0.0), FRAME, |g| g.x >= 26.9);
-    assert!(preview_gone(&game, &input));
+    assert!(!painting(&input));
     feed(&mut game, &mut input, &[up(PadButton::South)]);
     assert!(game.presentation.selection.units().is_empty());
 }
@@ -99,13 +102,13 @@ fn own_units_outrank_own_structures_and_foreign_units() {
     let mut input = pad_input(&mut game);
     sweep_right(&mut game, &mut input, 24.5, 27.5, FRAME);
     assert_eq!(
-        preview(&game.view(), &input).and_then(|p| p.kept),
+        caught(&game.view(), &input),
         Some(Kept::Buildings(PlayerId(0), vec![array])),
         "a structure alone is kept"
     );
     push_until(&mut game, &mut input, (1.0, 0.0), FRAME, |g| g.x >= 30.5);
     assert_eq!(
-        preview(&game.view(), &input).and_then(|p| p.kept),
+        caught(&game.view(), &input),
         Some(Kept::Buildings(PlayerId(0), vec![array])),
         "an own structure outranks a foreign unit"
     );
@@ -190,9 +193,9 @@ fn b_abandons_a_sweep_and_keeps_the_selection() {
     let below = unit_at(&game, 30, 23);
     game.presentation.selection.set_units(vec![below]);
     sweep_right(&mut game, &mut input, 26.5, 31.5, FRAME);
-    assert!(!preview_gone(&game, &input));
+    assert!(painting(&input));
     press(&mut game, &mut input, PadButton::East);
-    assert!(preview_gone(&game, &input));
+    assert!(!painting(&input));
     feed(&mut game, &mut input, &[up(PadButton::South)]);
     assert_eq!(
         game.presentation.selection.units(),
@@ -217,10 +220,6 @@ fn a_camera_jump_mid_sweep_paints_no_ground_between() {
     sweep_right(&mut game, &mut input, 26.5, 29.5, FRAME);
     rest_on(&mut game, &mut input, vec2(43.5, 20.5));
     push_until(&mut game, &mut input, (1.0, 0.0), FRAME, |g| g.x >= 46.5);
-    assert_eq!(
-        preview(&game.view(), &input).map(|p| p.trail.len()),
-        Some(2)
-    );
     feed(&mut game, &mut input, &[up(PadButton::South)]);
     let caught: Vec<UnitId> = [(28, 20), (29, 20), (45, 20), (46, 20)]
         .iter()
@@ -236,7 +235,7 @@ fn a_jump_before_the_sweep_begins_carries_the_press_along() {
     rest_on(&mut game, &mut input, vec2(20.5, 20.5));
     feed(&mut game, &mut input, &[down(PadButton::South)]);
     rest_on(&mut game, &mut input, vec2(26.5, 20.5));
-    assert!(preview_gone(&game, &input), "the jump swept nothing");
+    assert!(!painting(&input), "the jump swept nothing");
     push_until(&mut game, &mut input, (1.0, 0.0), FRAME, |g| g.x >= 31.5);
     feed(&mut game, &mut input, &[up(PadButton::South)]);
     assert_eq!(game.presentation.selection.units(), row(&game));
@@ -252,7 +251,7 @@ fn chrome_over_the_reticle_hides_the_ground_it_would_paint() {
     layout.performance = macroquad::prelude::Rect::new(0.0, 0.0, 1280.0, 800.0);
     game.presentation.layout.set(layout);
     push_until(&mut game, &mut input, (1.0, 0.0), FRAME, |g| g.x >= 31.5);
-    assert_eq!(preview(&game.view(), &input).and_then(|p| p.kept), None);
+    assert_eq!(caught(&game.view(), &input), None);
 }
 
 #[test]
@@ -288,19 +287,6 @@ fn only_the_pad_holding_a_ends_its_press() {
     assert!(game.presentation.selection.units().is_empty());
 }
 
-#[test]
-fn the_trail_keeps_a_bounded_number_of_points() {
-    let mut sweep = Sweep::at(vec2(0.0, 0.0), 0.0);
-    for step in 1..=2 * TRAIL_CAP {
-        sweep.extend_trail(vec2(step as f32, 0.0), 32.0, 1.0);
-    }
-    assert_eq!(sweep.trail.iter().map(Vec::len).sum::<usize>(), TRAIL_CAP);
-    // Points closer than a step apart are not laid.
-    let mut close = Sweep::at(vec2(0.0, 0.0), 0.0);
-    close.extend_trail(vec2(0.05, 0.0), 32.0, 1.0);
-    assert_eq!(close.trail, vec![vec![vec2(0.0, 0.0)]]);
-}
-
 /// Holds the stick still, frame by frame, until the wall clock reads
 /// `until` seconds.
 fn wait_until(game: &mut crate::game::Game, input: &mut InputState, until: f64) {
@@ -324,13 +310,11 @@ fn holding_a_still_grows_the_brush_to_its_full_size() {
     );
     let mut input = pad_input(&mut game);
     let near: Vec<UnitId> = (32..=34).map(|x| unit_at(&game, x, 20)).collect();
-    let kept = |game: &crate::game::Game, input: &InputState| {
-        preview(&game.view(), input).and_then(|p| p.kept)
-    };
+    let kept = |game: &crate::game::Game, input: &InputState| caught(&game.view(), input);
     rest_on(&mut game, &mut input, vec2(32.5, 20.5));
     feed(&mut game, &mut input, &[down(PadButton::South)]);
     wait_until(&mut game, &mut input, TAP_SECS / 2.0);
-    assert!(preview_gone(&game, &input), "still a tap");
+    assert!(!painting(&input), "still a tap");
     wait_until(&mut game, &mut input, TAP_SECS + 0.05);
     assert_eq!(
         kept(&game, &input),
@@ -343,9 +327,15 @@ fn holding_a_still_grows_the_brush_to_its_full_size() {
         Some(Kept::Units(PlayerId(0), near[..2].to_vec()))
     );
     wait_until(&mut game, &mut input, TAP_SECS + GROW_SECS * 2.0);
-    let full = preview(&game.view(), &input).expect("the sweep shows");
-    assert_eq!(full.radius, BRUSH * input.ui, "it stops at its full size");
-    assert_eq!(full.kept, Some(Kept::Units(PlayerId(0), near.clone())));
+    assert_eq!(
+        cursor(&input),
+        Cursor::Sweeping(BRUSH * input.ui),
+        "it stops at its full size"
+    );
+    assert_eq!(
+        caught(&game.view(), &input),
+        Some(Kept::Units(PlayerId(0), near.clone()))
+    );
     feed(&mut game, &mut input, &[up(PadButton::South)]);
     assert_eq!(game.presentation.selection.units(), near);
 }
@@ -402,20 +392,6 @@ fn nothing_the_reticle_rests_on_slows_a_sweep() {
     );
 }
 
-fn preview_gone(game: &crate::game::Game, input: &InputState) -> bool {
-    preview(&game.view(), input).is_none()
-}
-
-#[test]
-fn a_full_trail_starts_no_new_stroke() {
-    let mut sweep = Sweep::at(vec2(0.0, 0.0), 0.0);
-    for step in 1..TRAIL_CAP {
-        sweep.extend_trail(vec2(step as f32, 0.0), 32.0, 1.0);
-    }
-    sweep.break_stroke(vec2(-5.0, 0.0));
-    assert_eq!(sweep.trail.len(), 1, "a jump past the cap lays no stroke");
-}
-
 /// Holds A still on (32.5, 20.5) until the brush is full, three tiles
 /// across, with chrome over the screen from 60 pixels right of the
 /// reticle, and returns what the sweep would keep.
@@ -428,7 +404,7 @@ fn kept_beside_chrome(game: &mut crate::game::Game) -> Option<Kept> {
     game.presentation.layout.set(layout);
     feed(game, &mut input, &[down(PadButton::South)]);
     wait_until(game, &mut input, TAP_SECS + GROW_SECS * 2.0);
-    preview(&game.view(), &input).and_then(|p| p.kept)
+    caught(&game.view(), &input)
 }
 
 #[test]
@@ -455,4 +431,46 @@ fn chrome_beside_the_brush_hides_what_it_reaches_under_it() {
         kept_beside_chrome(&mut game),
         Some(Kept::Buildings(PlayerId(0), open))
     );
+}
+
+#[test]
+fn the_cursor_meets_each_snap_reach_before_the_sweep_grows() {
+    use crate::config::ReticleSnap;
+    for (snap, reach) in [
+        (ReticleSnap::Light, 16.0),
+        (ReticleSnap::Standard, 24.0),
+        (ReticleSnap::Strong, 32.0),
+    ] {
+        let mut game = row_scene();
+        let mut input = pad_input(&mut game);
+        input.pad_prefs.snap = snap;
+        rest_on(&mut game, &mut input, vec2(24.5, 20.5));
+        feed(&mut game, &mut input, &[down(PadButton::South)]);
+        let began = input.now;
+        assert_eq!(cursor(&input), Cursor::Held(11.0 * input.ui));
+        input.now = began + TAP_SECS;
+        assert_eq!(cursor(&input), Cursor::Held(reach * input.ui));
+        frame(&mut game, &mut input, 0.0);
+        assert_eq!(cursor(&input), Cursor::Sweeping(reach * input.ui));
+        feed(&mut game, &mut input, &[up(PadButton::South)]);
+        assert_eq!(cursor(&input), Cursor::Idle);
+    }
+}
+
+#[test]
+fn brush_growth_starts_and_finishes_gently_without_overshoot() {
+    let sweep = Sweep::at(0.0);
+    let reach = 24.0;
+    let radius = |fraction: f64| sweep.radius(fraction * GROW_SECS, reach, 1.0);
+    assert_eq!(radius(-1.0), reach);
+    assert_eq!(radius(0.0), reach);
+    assert_eq!(radius(0.5), 60.0);
+    assert_eq!(radius(1.0), BRUSH);
+    assert_eq!(radius(2.0), BRUSH);
+    assert!(radius(0.01) - reach < 0.001);
+    assert!(BRUSH - radius(0.99) < 0.001);
+    let radii: Vec<_> = (0..=100)
+        .map(|step| radius(f64::from(step) / 100.0))
+        .collect();
+    assert!(radii.windows(2).all(|pair| pair[0] <= pair[1]));
 }

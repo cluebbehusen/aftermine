@@ -21,11 +21,6 @@ const GROW_SECS: f64 = 0.6;
 /// The brush's full radius in logical pixels. It is the same whatever the
 /// snap setting, which changes only where the brush starts.
 const BRUSH: f32 = 96.0;
-/// Trail points one sweep keeps. Past them the trail runs straight on to
-/// the reticle, while the sweep itself keeps collecting.
-const TRAIL_CAP: usize = 512;
-/// Logical pixels the reticle travels between trail points.
-const TRAIL_STEP: f32 = 4.0;
 /// Logical pixels between two grounds that still read as one place: any
 /// farther between frames is a camera jump, not a sweep.
 const SAME_PLACE: f32 = 1.0;
@@ -53,18 +48,15 @@ pub(crate) struct Press {
 struct Sweep {
     units: BTreeSet<UnitId>,
     buildings: BTreeSet<BuildingId>,
-    /// The ground swept, one stroke per stretch between camera jumps.
-    trail: Vec<Vec<Vec2>>,
     /// The wall clock as the sweep began, which its brush grows from.
     began: f64,
 }
 
 impl Sweep {
-    fn at(ground: Vec2, now: f64) -> Self {
+    fn at(now: f64) -> Self {
         Self {
             units: BTreeSet::new(),
             buildings: BTreeSet::new(),
-            trail: vec![vec![ground]],
             began: now,
         }
     }
@@ -74,6 +66,7 @@ impl Sweep {
     /// `ui`.
     fn radius(&self, now: f64, reach: f32, ui: f32) -> f32 {
         let grown = crate::numeric::to_f32(((now - self.began) / GROW_SECS).clamp(0.0, 1.0));
+        let grown = (grown * grown * grown * (grown * (grown * 6.0 - 15.0) + 10.0)).clamp(0.0, 1.0);
         reach + (BRUSH * ui - reach).max(0.0) * grown
     }
 
@@ -82,29 +75,6 @@ impl Sweep {
         let (units, buildings) = select::swept_by_pad(game, from, to, radius);
         self.units.extend(units);
         self.buildings.extend(buildings);
-    }
-
-    /// Starts a new stroke at `at` after a camera jump, while the trail
-    /// has room for its point.
-    fn break_stroke(&mut self, at: Vec2) {
-        let points: usize = self.trail.iter().map(Vec::len).sum();
-        if points < TRAIL_CAP {
-            self.trail.push(vec![at]);
-        }
-    }
-
-    /// Lays a trail point at `to` once the reticle has come far enough.
-    fn extend_trail(&mut self, to: Vec2, zoom: f32, ui: f32) {
-        let points: usize = self.trail.iter().map(Vec::len).sum();
-        let Some(stroke) = self.trail.last_mut() else {
-            return;
-        };
-        let far = stroke
-            .last()
-            .is_none_or(|last| (to - *last).length() * zoom >= TRAIL_STEP * ui);
-        if points < TRAIL_CAP && far {
-            stroke.push(to);
-        }
     }
 }
 
@@ -151,10 +121,7 @@ pub(super) fn sweep(game: &Game, input: &mut InputState, before: Vec2) {
     };
     let jumped = (before - press.last).length() * camera.zoom > SAME_PLACE * ui;
     press.last = after;
-    let from = if let Some(sweep) = press.sweep.as_mut() {
-        if jumped {
-            sweep.break_stroke(before);
-        }
+    let from = if press.sweep.is_some() {
         before
     } else {
         if jumped {
@@ -167,9 +134,8 @@ pub(super) fn sweep(game: &Game, input: &mut InputState, before: Vec2) {
         }
         press.ground
     };
-    let sweep = press.sweep.get_or_insert_with(|| Sweep::at(from, now));
+    let sweep = press.sweep.get_or_insert_with(|| Sweep::at(now));
     sweep.catch(game, from, after, sweep.radius(now, reach, ui));
-    sweep.extend_trail(after, camera.zoom, ui);
 }
 
 /// A comes up on `pad`: a sweep selects what it caught, adding to the
@@ -181,7 +147,7 @@ pub(super) fn release(game: &mut Game, input: &mut InputState, pad: u64) -> Rele
     };
     // Held past a tap, it paints even if no frame has drawn the brush yet.
     if press.sweep.is_none() && input.now - press.at >= TAP_SECS {
-        let mut sweep = Sweep::at(press.ground, input.now);
+        let mut sweep = Sweep::at(input.now);
         let reach = super::reticle::reach(input).unit_px(input.ui);
         sweep.catch(game, press.ground, press.ground, reach);
         press.sweep = Some(sweep);
@@ -210,43 +176,41 @@ pub(crate) fn painting(input: &InputState) -> bool {
             .is_some_and(|press| press.sweep.is_some())
 }
 
-/// A sweep as the frame draws it.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Preview<'a> {
-    /// The brush's center on screen: the reticle.
-    pub(crate) brush: Vec2,
-    /// The brush's radius in logical pixels: what it catches now.
-    pub(crate) radius: f32,
-    /// The ground swept, stroke by stroke.
-    pub(crate) trail: &'a [Vec<Vec2>],
-    /// The ground under the reticle, where the last stroke runs on to.
-    pub(crate) head: Vec2,
-    /// What a release would select of what the sweep has caught.
-    pub(crate) kept: Option<Kept>,
+/// The controller cursor's visual radius before and during a paint sweep.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Cursor {
+    Idle,
+    Held(f32),
+    Sweeping(f32),
 }
 
-/// The sweep in progress, while the controller points.
-pub(crate) fn preview<'a>(
-    game: &crate::game::Scene<'_>,
-    input: &'a InputState,
-) -> Option<Preview<'a>> {
+pub(crate) fn cursor(input: &InputState) -> Cursor {
     if input.last_pointer != Pointer::Pad {
+        return Cursor::Idle;
+    }
+    let Some(press) = input.pad_press.as_ref() else {
+        return Cursor::Idle;
+    };
+    let reach = super::reticle::reach(input).unit_px(input.ui);
+    if let Some(sweep) = &press.sweep {
+        Cursor::Sweeping(sweep.radius(input.now, reach, input.ui))
+    } else {
+        let held = crate::numeric::to_f32(((input.now - press.at) / TAP_SECS).clamp(0.0, 1.0));
+        let anticipation = held * held * (3.0 - 2.0 * held);
+        let idle = 11.0 * input.ui;
+        Cursor::Held(idle + (reach - idle) * anticipation)
+    }
+}
+
+/// What a release of the sweep would select, using the same priority as a box.
+pub(crate) fn caught(game: &crate::game::Scene<'_>, input: &InputState) -> Option<Kept> {
+    if !painting(input) {
         return None;
     }
     let sweep = input.pad_press.as_ref()?.sweep.as_ref()?;
     let units: Vec<UnitId> = sweep.units.iter().copied().collect();
     let buildings: Vec<BuildingId> = sweep.buildings.iter().copied().collect();
-    Some(Preview {
-        brush: input.reticle.point(),
-        radius: sweep.radius(
-            input.now,
-            super::reticle::reach(input).unit_px(input.ui),
-            input.ui,
-        ),
-        trail: &sweep.trail,
-        head: input.reticle.ground(&game.presentation.camera),
-        kept: select::kept(game, &units, &buildings),
-    })
+    select::kept(game, &units, &buildings)
 }
 
 #[cfg(test)]

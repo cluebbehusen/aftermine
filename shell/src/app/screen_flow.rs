@@ -1092,7 +1092,7 @@ fn playing_frame(
         Some(app.performance.view()),
     );
     pass(FramePass::Hud, || {
-        render::draw_reticle(&app.game.view(), &app.input);
+        render::draw_reticle(&app.game.view(), &app.sprites, &app.input);
     });
     if let Some(card) = card {
         pass(FramePass::Hud, || {

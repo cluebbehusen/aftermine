@@ -117,6 +117,7 @@ pub struct Presentation {
     /// The fog veil's scan and meshes. A `RefCell` because drawing borrows
     /// presentation.
     pub(crate) fog_veil: std::cell::RefCell<crate::render::FogVeil>,
+    pub(crate) reticle_motion: std::cell::RefCell<crate::render::reticle::Motion>,
     /// The chrome geometry of the latest HUD layout pass. Hit-testing
     /// reads this same model so drawn and clickable regions cannot
     /// disagree. A `Cell` because drawing borrows presentation.
@@ -421,6 +422,7 @@ impl Presentation {
             ground_cache: std::cell::RefCell::default(),
             boundary_fog,
             fog_veil: std::cell::RefCell::default(),
+            reticle_motion: std::cell::RefCell::default(),
             toasts: Vec::new(),
             stall_reports: Vec::new(),
             net_notice: None,

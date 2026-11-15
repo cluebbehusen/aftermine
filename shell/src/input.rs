@@ -2241,7 +2241,7 @@ mod pad_controls;
 pub(crate) mod pad_dock;
 pub(crate) mod pad_ring;
 mod paint;
-pub(crate) use paint::{painting, preview as paint_preview};
+pub(crate) use paint::{Cursor as PaintCursor, caught as paint_caught, cursor as paint_cursor};
 pub(crate) use select::Kept;
 #[cfg(test)]
 mod funnel_tests;

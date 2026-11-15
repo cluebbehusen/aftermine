@@ -106,6 +106,7 @@ mod performance;
 mod pits;
 pub(crate) mod prim;
 mod radial;
+pub(crate) mod reticle;
 mod roc;
 pub(crate) mod sky;
 mod strategic;
@@ -118,7 +119,7 @@ mod terraces;
 pub(crate) mod tutorial_card;
 mod worker;
 mod world;
-pub(crate) use chrome::{controller_notice_text, draw_controller_notice, draw_reticle};
+pub(crate) use chrome::{controller_notice_text, draw_controller_notice};
 use chrome::{draw_hud, draw_overlay, draw_overlay_info, draw_result_overlay};
 use entities::{
     draw_blips, draw_breadcrumbs, draw_buildings, draw_drag_rect, draw_fx, draw_group_press_ring,
@@ -127,6 +128,7 @@ use entities::{
 };
 pub use minimap::*;
 use panel_draw::{draw_panel, draw_panel_tooltip};
+pub(crate) use reticle::draw as draw_reticle;
 pub(crate) use world::FogVeil;
 use world::{draw_fog, draw_scorches};
 
