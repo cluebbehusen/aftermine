@@ -4,6 +4,7 @@
 //! own falloff and resistance; nothing here persists between decisions.
 
 use crate::decision::Ledger;
+use crate::expansion::yields;
 use crate::frame::{HomeFrame, footprint_centre};
 use crate::investments::{Investment, Step};
 use crate::map::MapModel;
@@ -433,17 +434,6 @@ fn recovery(marks: &mut [Mark], units: &[UnitObs]) {
         mark.extra = extra;
         mark.last = last;
     }
-}
-
-/// Scrap an Extractor at `tier` earns over `ticks`, `supported` or remote.
-fn yields(tier: u8, supported: bool, ticks: u64) -> u64 {
-    let (amount, period) = match (tier > 0, supported) {
-        (false, false) => stats::EXTRACTOR_REMOTE_YIELD,
-        (false, true) => stats::EXTRACTOR_SUPPORTED_YIELD,
-        (true, false) => stats::DEEP_BORE_REMOTE_YIELD,
-        (true, true) => stats::DEEP_BORE_SUPPORTED_YIELD,
-    };
-    u64::from(amount) * ticks / period
 }
 
 /// Ticks raising `kind` again up to `tier` takes.

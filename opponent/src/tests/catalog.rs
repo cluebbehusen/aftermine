@@ -61,9 +61,6 @@ fn offered_lifting(
         waiting: None,
         margin: crate::missions::margin(aftermine_sim::scenario::BotDifficulty::Standard),
         economy: crate::economy(aftermine_sim::scenario::BotDifficulty::Scrapheap),
-        extractors_first: crate::extractors_first(
-            aftermine_sim::scenario::BotDifficulty::Scrapheap,
-        ),
         lift_flak: lift.unwrap_or(0),
         air_share: 0,
     };

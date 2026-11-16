@@ -86,6 +86,16 @@ the running total and mission state.
   reaches no enemy, since they are its army's only way there, and the Sappers
   attacks want against known defenses, which cost more than any army unit their
   producer trains and would otherwise never get one.
+- Extractors and Deep Bores score by payback: what each scrap spent on one
+  returns a minute, from the simulation's yields and prices, weighed by greed. A
+  frame an enemy start reaches by ground no later than the seat's own scores
+  half. A Crucible still to buy counts toward the first Deep Bore's price.
+  Growth outranks tech by what it pays back, never by a rule that holds tech
+  down.
+- A site of frames alone is taken once an ally's Foundry supports one of its
+  frames, so teammates do not crowd one expansion, or once the seat's own
+  Foundries support every frame no other seat holds. An enemy's Foundry never
+  takes it.
 - The top investment is funded through its next purchasable step. The Deep Bore
   upgrade is wanted before the Crucible it needs stands, so its worth funds the
   Crucible as that step. The bot keeps one optional saving target with its
@@ -191,9 +201,11 @@ starts, candidate sites, and the narrow passages every ground way from each
 start to a hostile start runs through) and shares it between clones. On a tiered
 map the model also keeps each tile's level, so the bot's checks on whether a
 shot lands follow the simulation's level rules and it never plans a building
-other than a wall or mine on a ramp. Danger is coarse known weapon coverage.
-Placement uses a fog-honest check over the observation. A stall or rejection
-triggers a re-plan instead of the order being proven in advance.
+other than a wall or mine on a ramp. Danger is coarse known weapon coverage: a
+known building counts only where one of its ground weapons reaches, and a
+remembered unit only if it can hurt a building. Placement uses a fog-honest
+check over the observation. A stall or rejection triggers a re-plan instead of
+the order being proven in advance.
 
 ## Computation
 
@@ -272,9 +284,8 @@ or assembles every unit kind.
   is its attention; how much strength an attack must bring over the known
   defense; and how fully it builds its economy: lower rungs staff their scrap
   nodes more thinly and want each kind of growth less, though never so little
-  that they stop growing. The lowest rung also saves for tech before it takes
-  the safe Extractor frames on its own half, and misjudges the enemy's strength
-  by a deterministic draw from its seed. Memory fades at the same rate on every
+  that they stop growing. The lowest rung also misjudges the enemy's strength by
+  a deterministic draw from its seed. Memory fades at the same rate on every
   rung. Difficulty also sets how well a seat carries out its repertoire: lower
   rungs attack piecemeal, pick targets worse, walk into known defenses as a
   column or gather short of them only briefly, count only the defenses around a

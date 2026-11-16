@@ -272,6 +272,9 @@ pub struct SeatEvidence {
     pub deliveries: Deliveries,
     /// Actual income against a saturation estimate at each checkpoint reached.
     pub income: Vec<IncomeSample>,
+    /// Tick the seat first held a Deep Bore, refitting or standing, to the
+    /// 12-tick check; absent if it never did.
+    pub first_deep_bore: Option<u64>,
     /// Situations the seat met and how it answered them.
     pub reactivity: SeatReactivity,
     /// What the seat's units and buildings did, valued in scrap.
@@ -296,6 +299,7 @@ impl SeatEvidence {
             idle_producers: Vec::new(),
             deliveries: Deliveries::default(),
             income: Vec::new(),
+            first_deep_bore: None,
             reactivity: SeatReactivity::default(),
             ledger: crate::ledger::SeatLedger::default(),
             attacks: AttackCalibration::default(),
@@ -526,7 +530,8 @@ pub fn evaluate_plan(
         evidence.failures = report.failures;
         evidence.idle_producers = report.idle_producers;
         evidence.deliveries = report.deliveries;
-        evidence.income = income;
+        evidence.income = income.samples;
+        evidence.first_deep_bore = income.first_deep_bore;
         evidence.reactivity = reactivity;
     }
 

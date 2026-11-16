@@ -1535,7 +1535,7 @@ fn minimap(state: &State) -> Vec<String> {
 }
 
 /// Ticks as a `m:ss` clock (minutes roll past 59 rather than into hours).
-fn clock(ticks: u64) -> String {
+pub(crate) fn clock(ticks: u64) -> String {
     let seconds = ticks / u64::from(TICKS_PER_SECOND);
     format!("{}:{:02}", seconds / 60, seconds % 60)
 }

@@ -1,4 +1,5 @@
-//! Actual income against a saturated-economy estimate.
+//! Actual income against a saturated-economy estimate, and when each seat
+//! first started a Deep Bore.
 //!
 //! Both figures are omniscient QA diagnostics computed by the evaluation loop.
 //! They never reach a controller.
@@ -47,6 +48,16 @@ pub(super) struct IncomeTracker {
     passive: Vec<u64>,
     window: Vec<Option<(u32, u64)>>,
     samples: Vec<Vec<IncomeSample>>,
+    first_deep_bore: Vec<Option<u64>>,
+}
+
+/// One seat's income evidence from a leg.
+pub(super) struct SeatIncome {
+    /// Checkpoint samples.
+    pub(super) samples: Vec<IncomeSample>,
+    /// The first sample at which the seat held an Extractor refitting into,
+    /// or standing as, a Deep Bore.
+    pub(super) first_deep_bore: Option<u64>,
 }
 
 impl IncomeTracker {
@@ -57,6 +68,7 @@ impl IncomeTracker {
             passive: vec![0; seats],
             window: vec![None; seats],
             samples: vec![Vec::new(); seats],
+            first_deep_bore: vec![None; seats],
         }
     }
 
@@ -67,6 +79,11 @@ impl IncomeTracker {
         let now = state.current_tick();
         if !now.is_multiple_of(period) {
             return;
+        }
+        for building in state.buildings() {
+            if building.kind == BuildingKind::Extractor && building.tier > 0 {
+                self.first_deep_bore[usize::from(building.player.0)].get_or_insert(now);
+            }
         }
         let window_start = INCOME_CHECKPOINTS.contains(&(now + INCOME_WINDOW_TICKS));
         let checkpoint = INCOME_CHECKPOINTS.contains(&now);
@@ -101,9 +118,16 @@ impl IncomeTracker {
         }
     }
 
-    /// Checkpoint samples by seat.
-    pub(super) fn finish(self) -> Vec<Vec<IncomeSample>> {
+    /// Each seat's income evidence, by seat.
+    pub(super) fn finish(self) -> Vec<SeatIncome> {
         self.samples
+            .into_iter()
+            .zip(self.first_deep_bore)
+            .map(|(samples, first_deep_bore)| SeatIncome {
+                samples,
+                first_deep_bore,
+            })
+            .collect()
     }
 }
 
