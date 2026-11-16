@@ -231,7 +231,6 @@ fn calm<'a>(
         waiting: None,
         margin: crate::missions::margin(BotDifficulty::Standard),
         economy: crate::economy(BotDifficulty::Standard),
-        extractors_first: crate::extractors_first(BotDifficulty::Standard),
         lift_flak: 0,
         air_share: 0,
     }

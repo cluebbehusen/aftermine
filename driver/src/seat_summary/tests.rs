@@ -7,6 +7,7 @@ fn complete(fields: serde_json::Value) -> serde_json::Value {
         "failures": SeatFailures::default(),
         "deliveries": Deliveries::default(),
         "income": [],
+        "first_deep_bore": null,
         "reactivity": SeatReactivity::default(),
         "ledger": SeatLedger::default(),
         "attacks": AttackCalibration::default(),
@@ -217,4 +218,25 @@ fn outcomes_pool_by_layout_and_difficulties_with_seat_stance_and_pacing_records(
     ] {
         assert!(text.contains(expected), "{expected:?} in\n{text}");
     }
+}
+
+#[test]
+fn the_first_deep_bore_pools_as_a_median_over_the_seats_that_held_one() {
+    let mut builder = SeatSummaryBuilder::default();
+    for first_deep_bore in [Some(6_000), Some(9_600), None] {
+        let evidence = SeatEvidence {
+            first_deep_bore,
+            ..SeatEvidence::default()
+        };
+        builder.add(&evidence, 12_000);
+    }
+    let summary = builder.finish();
+    assert_eq!(
+        (summary.deep_bore_seat_legs, summary.first_deep_bore),
+        (2, Some(9_600))
+    );
+    let mut text = String::new();
+    render(&mut text, &[("duel standard".to_string(), &summary)]);
+    assert!(text.contains("duel standard"), "{text}");
+    assert!(text.contains("8:00 (2/3)"), "{text}");
 }

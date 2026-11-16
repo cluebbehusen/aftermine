@@ -209,6 +209,22 @@ impl Footprint {
     fn tiles(self) -> impl Iterator<Item = TilePos> + Clone {
         crate::frame::tiles_of(self.anchor, (self.width, self.height))
     }
+
+    /// The footprint's point nearest a doubled `point`, doubled.
+    fn nearest(self, point: (i64, i64)) -> (i64, i64) {
+        let low = (i64::from(2 * self.anchor.x), i64::from(2 * self.anchor.y));
+        let high = (
+            i64::from(2 * (self.anchor.x + self.width)),
+            i64::from(2 * (self.anchor.y + self.height)),
+        );
+        (point.0.clamp(low.0, high.0), point.1.clamp(low.1, high.1))
+    }
+
+    /// The squared doubled distance from a doubled `point` to the footprint.
+    fn near(self, point: (i64, i64)) -> i64 {
+        let (x, y) = self.nearest(point);
+        (point.0 - x).pow(2) + (point.1 - y).pow(2)
+    }
 }
 
 /// What the seat knows can hit a building it would raise: known enemy guns,
@@ -235,33 +251,70 @@ struct Gun {
     shot: Shot,
 }
 
+impl Gun {
+    /// The weapons of a known enemy `building` that fire at ground. A site
+    /// seen still going up fires at nothing yet.
+    fn of(building: &BuildingObs) -> impl Iterator<Item = Gun> + '_ {
+        let (width, height) = building.kind.size();
+        let centre = (
+            i64::from(2 * building.anchor.x + width),
+            i64::from(2 * building.anchor.y + height),
+        );
+        building
+            .kind
+            .tier_stats(building.tier)
+            .weapons
+            .iter()
+            .filter(move |weapon| weapon.targets.ground && (building.built || !building.seen))
+            .map(move |weapon| Gun {
+                centre,
+                minimum: doubled(weapon.minimum_range),
+                range: doubled(weapon.range),
+                footing: building.anchor,
+                shot: Shot::of(weapon, Domain::Ground, Domain::Ground),
+            })
+    }
+
+    /// Whether this gun can hit `footprint`: the footprint's nearest point,
+    /// which the gun aims at and measures its range to, lies within its
+    /// reach and the shot there is clear.
+    fn hits(&self, map: &MapModel, footprint: Footprint) -> bool {
+        let distance = footprint.near(self.centre);
+        let world = |(x, y): (i64, i64)| Vec2Fx::new(Fx::from_num(x) / 2, Fx::from_num(y) / 2);
+        distance <= self.range * self.range
+            && distance >= self.minimum * self.minimum
+            && map.clear_shot(
+                world(self.centre),
+                world(footprint.nearest(self.centre)),
+                (self.footing, footprint.anchor),
+                self.shot,
+            )
+    }
+}
+
+/// Whether a ground weapon of the known enemy `building` can hit a `kind` at
+/// `anchor`.
+pub(crate) fn gun_hits(
+    map: &MapModel,
+    building: &BuildingObs,
+    kind: BuildingKind,
+    anchor: TilePos,
+) -> bool {
+    let footprint = Footprint::of(kind, anchor);
+    Gun::of(building).any(|gun| gun.hits(map, footprint))
+}
+
+/// A range in tiles, doubled.
+fn doubled(range: Fx) -> i64 {
+    (range + range).to_num::<i64>()
+}
+
 impl<'a> Danger<'a> {
     pub(crate) fn of(observation: &ObservationData, map: &'a MapModel, memory: &Memory) -> Self {
-        let doubled = |range: Fx| (range + range).to_num::<i64>();
         let guns = observation
             .enemy_buildings
             .iter()
-            // A site seen still going up fires at nothing yet.
-            .filter(|building| building.built || !building.seen)
-            .flat_map(|building| {
-                let stats = building.kind.tier_stats(building.tier);
-                let (width, height) = building.kind.size();
-                let centre = (
-                    i64::from(2 * building.anchor.x + width),
-                    i64::from(2 * building.anchor.y + height),
-                );
-                stats
-                    .weapons
-                    .iter()
-                    .filter(|weapon| weapon.targets.ground)
-                    .map(move |weapon| Gun {
-                        centre,
-                        minimum: doubled(weapon.minimum_range),
-                        range: doubled(weapon.range),
-                        footing: building.anchor,
-                        shot: Shot::of(weapon, Domain::Ground, Domain::Ground),
-                    })
-            })
+            .flat_map(Gun::of)
             .collect();
         let units = memory
             .units()
@@ -289,37 +342,11 @@ impl<'a> Danger<'a> {
     /// or it lately took losses beside it.
     pub(crate) fn hits(&self, kind: BuildingKind, anchor: TilePos) -> bool {
         let footprint = Footprint::of(kind, anchor);
-        let (low, high) = (
-            (i64::from(2 * anchor.x), i64::from(2 * anchor.y)),
-            (
-                i64::from(2 * (anchor.x + footprint.width)),
-                i64::from(2 * (anchor.y + footprint.height)),
-            ),
-        );
-        // The footprint's point nearest `point`, which a gun aims at and
-        // measures its range to, and its squared doubled distance.
-        let nearest =
-            |point: (i64, i64)| (point.0.clamp(low.0, high.0), point.1.clamp(low.1, high.1));
-        let near = |point: (i64, i64)| {
-            let (x, y) = nearest(point);
-            (point.0 - x).pow(2) + (point.1 - y).pow(2)
-        };
-        let world = |(x, y): (i64, i64)| Vec2Fx::new(Fx::from_num(x) / 2, Fx::from_num(y) / 2);
-        let gun = self.guns.iter().any(|gun| {
-            let distance = near(gun.centre);
-            distance <= gun.range * gun.range
-                && distance >= gun.minimum * gun.minimum
-                && self.map.clear_shot(
-                    world(gun.centre),
-                    world(nearest(gun.centre)),
-                    (gun.footing, anchor),
-                    gun.shot,
-                )
-        });
+        let gun = self.guns.iter().any(|gun| gun.hits(self.map, footprint));
         let unit = self
             .units
             .iter()
-            .any(|(at, reach)| near(*at) <= reach * reach);
+            .any(|(at, reach)| footprint.near(*at) <= reach * reach);
         let incident = self.incidents.iter().any(|tile| {
             let gap_x = (footprint.anchor.x - tile.x)
                 .max(tile.x - (footprint.anchor.x + footprint.width - 1));

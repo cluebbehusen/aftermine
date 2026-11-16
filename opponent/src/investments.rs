@@ -139,8 +139,6 @@ pub(crate) struct Situation<'a> {
     pub(crate) margin: u64,
     /// Per mille of its full economy the seat builds.
     pub(crate) economy: u64,
-    /// Whether safe Extractor frames on the seat's own half come before tech.
-    pub(crate) extractors_first: bool,
     /// The known anti-air around the next lift's target, at its value.
     pub(crate) lift_flak: u64,
     /// What of its army the seat's personality would have strike from the
@@ -295,8 +293,19 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
                 building: extractor.id,
                 tier: 1,
             };
-            list.push((deep_bore, grown(base * 2, situation.economy)));
-            if !built(observation, BuildingKind::Crucible) {
+            let crucible = !built(observation, BuildingKind::Crucible);
+            // Until a Crucible stands its price is part of the first Deep
+            // Bore's.
+            let price = BuildingKind::Extractor.tier_stats(1).construction.cost
+                + if crucible {
+                    expansion::construction_cost(BuildingKind::Crucible)
+                } else {
+                    0
+                };
+            let gain = expansion::yield_per_minute(1, true) - expansion::yield_per_minute(0, true);
+            let score = expansion::payback(gain, u64::from(price), traits.greed);
+            list.push((deep_bore, grown(score, situation.economy)));
+            if crucible {
                 early_bore = Some(deep_bore);
             }
         }
@@ -350,37 +359,6 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             for (investment, score) in &mut list {
                 if tech(investment) {
                     *score = (*score).min(ADOPT - 1);
-                }
-            }
-        }
-    }
-    // While a free Extractor frame on the seat's own half of its home ground
-    // has no known danger near it, tech scores below the best such frame by
-    // the margin that switches a saving target, so a seat does not starve its
-    // economy saving for a Crucible or Airworks. A severed seat is exempt: its
-    // tech is how its army reaches anyone.
-    if situation.extractors_first && !situation.severed {
-        let map = situation.map;
-        let me = observation.me;
-        let home = map.start(me).and_then(|start| map.component(start));
-        let safe = list
-            .iter()
-            .filter_map(|(investment, score)| match investment {
-                Investment::Extractor(frame)
-                    if map.component(*frame) == home
-                        && map.distance(me, *frame) < map.hostile_distance(me, *frame)
-                        && expansion::safe(observation, situation.memory, *frame) =>
-                {
-                    Some(*score)
-                }
-                _ => None,
-            })
-            .max();
-        if let Some(best) = safe {
-            let cap = (best * 4 / 5).min(best.saturating_sub(150));
-            for (investment, score) in &mut list {
-                if tech(investment) {
-                    *score = (*score).min(cap);
                 }
             }
         }

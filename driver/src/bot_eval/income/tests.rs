@@ -172,9 +172,9 @@ fn checkpoints_compare_the_last_minute_with_the_estimate() {
         let report = state.tick(&[]);
         tracker.observe(&state, &report.events, 12);
     }
-    let samples = tracker.finish();
-    let [sample] = samples[0].as_slice() else {
-        panic!("one checkpoint was reached: {samples:?}");
+    let seats = tracker.finish();
+    let [sample] = seats[0].samples.as_slice() else {
+        panic!("one checkpoint was reached: {:?}", seats[0].samples);
     };
     assert_eq!(sample.tick, INCOME_CHECKPOINTS[0]);
     assert_eq!(
@@ -204,6 +204,58 @@ fn a_seat_out_of_a_team_match_stops_sampling() {
         tracker.observe(&state, &report.events, 12);
     }
     assert!(state.result().is_none(), "seat one's ally plays on");
-    let samples: Vec<usize> = tracker.finish().iter().map(Vec::len).collect();
+    let samples: Vec<usize> = tracker
+        .finish()
+        .iter()
+        .map(|seat| seat.samples.len())
+        .collect();
     assert_eq!(samples, [1, 0, 1, 1]);
+}
+
+#[test]
+fn a_deep_bore_is_dated_to_the_check_after_its_refit_starts() {
+    let mut map = vec![".".repeat(30); 8];
+    map[2] = row(30, &[(2, '1'), (6, 'E'), (26, '2')]);
+    let building = |kind, x, y| BuildingSpec {
+        player: 0,
+        kind,
+        x,
+        y,
+    };
+    let mut scenario = scenario(
+        map,
+        vec![
+            building(BuildingKind::Extractor, 6, 2),
+            building(BuildingKind::Crucible, 2, 5),
+        ],
+    );
+    scenario.players[0].scrap = 1_000;
+    let mut state = scenario.build().unwrap();
+    let extractor = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Extractor)
+        .unwrap()
+        .id;
+    let mut tracker = IncomeTracker::new(&state);
+    while state.current_tick() < 60 {
+        let commands = if state.current_tick() == 30 {
+            vec![PlayerCommand {
+                player: PlayerId(0),
+                command: Command::UpgradeBuilding {
+                    building: extractor,
+                },
+            }]
+        } else {
+            Vec::new()
+        };
+        let report = state.tick(&commands);
+        tracker.observe(&state, &report.events, 12);
+    }
+    let first: Vec<Option<u64>> = tracker
+        .finish()
+        .iter()
+        .map(|seat| seat.first_deep_bore)
+        .collect();
+    assert_eq!(first, [Some(36), None]);
 }
