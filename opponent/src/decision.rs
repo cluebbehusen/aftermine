@@ -786,7 +786,7 @@ pub(crate) fn decide(
             // A scout joins its producer's queue behind whatever is there;
             // Scuttlers draw on the producers the army's roles leave.
             if lacking > 0 {
-                train_scout(observation, &producers, lacking, &mut ledger);
+                train_scout(&producers, &mut ledger);
             }
             let raiding = income.saturating_add(4 * u32::from(profile.traits.guile)) >= RAID_INCOME;
             let scuttlers = if raiding {
@@ -1143,48 +1143,22 @@ fn train_carriers(
         .is_some_and(|airworks| !ledger.train(airworks.building.id, UnitKind::Skyhook) && waiting)
 }
 
-/// Trains a scout while fewer are in production than the `lacking` stale
-/// places no scout could take but the one it would train could reach: a
-/// Kestrel at a built Airworks, else a Surveyor at a Foundry, queued behind
+/// Trains a scout for stale places no scout out or queued would see in time:
+/// a Kestrel at a built Airworks, else a Surveyor at a Foundry, queued behind
 /// whatever that producer already has: waiting for an idle one leaves stale
 /// points unseen while workers and the army keep every producer busy.
-/// Once an air scout can be trained a Surveyor no longer counts, since one
-/// that could reach a stale point would already be scouting.
-fn train_scout(
-    observation: &ObservationData,
-    producers: &[Producer<'_>],
-    lacking: usize,
-    ledger: &mut Ledger,
-) {
-    let air = UnitKind::Kestrel;
-    let airworks = producers
-        .iter()
-        .find(|producer| producer.building.kind == BuildingKind::Airworks);
-    let kinds: &[UnitKind] = if airworks.is_some() {
-        &[air]
-    } else {
-        &[air, UnitKind::Surveyor]
-    };
-    let coming = observation
-        .my_queues
-        .iter()
-        .flatten()
-        .filter(|kind| kinds.contains(kind))
-        .count()
-        + kinds.iter().map(|kind| ledger.queued(*kind)).sum::<usize>();
-    if coming >= lacking {
-        return;
-    }
-    let (producer, kind) = if let Some(producer) = airworks {
-        (producer, air)
-    } else {
-        let Some(foundry) = producers
+fn train_scout(producers: &[Producer<'_>], ledger: &mut Ledger) {
+    let producer = |kind: BuildingKind| {
+        producers
             .iter()
-            .find(|producer| producer.building.kind == BuildingKind::Foundry)
-        else {
-            return;
-        };
+            .find(|producer| producer.building.kind == kind)
+    };
+    let (producer, kind) = if let Some(airworks) = producer(BuildingKind::Airworks) {
+        (airworks, UnitKind::Kestrel)
+    } else if let Some(foundry) = producer(BuildingKind::Foundry) {
         (foundry, UnitKind::Surveyor)
+    } else {
+        return;
     };
     ledger.train(producer.building.id, kind);
 }

@@ -113,5 +113,12 @@ pub(crate) fn centre_distance(a: (i64, i64), b: (i64, i64)) -> u64 {
     (a.0.abs_diff(b.0)).max(a.1.abs_diff(b.1)) / 2
 }
 
+/// Octile distance between two doubled-coordinate points, in tenths of a tile.
+pub(crate) fn octile_tenths(a: (i64, i64), b: (i64, i64)) -> i64 {
+    let (dx, dy) = ((a.0 - b.0).abs(), (a.1 - b.1).abs());
+    let doubled = 10 * dx.max(dy) + 4 * dx.min(dy);
+    doubled / 2
+}
+
 #[cfg(test)]
 mod tests;
