@@ -253,7 +253,8 @@ scrap for every completed Foundry, at their straight-line round trip, plus those
 credits. No node counts for two Foundries. The estimate is a fixed yardstick for
 comparing runs, not the bot's own staffing, so income can exceed it. A seat
 stops sampling once it is eliminated, so a seat that is out while its team plays
-on adds no empty samples.
+on adds no empty samples. Beside income, the report gives the median time a seat
+first held a Deep Bore, refitting or standing, and how many seat-legs ever did.
 
 ## Pressure scenarios
 

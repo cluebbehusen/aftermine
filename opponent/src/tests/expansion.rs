@@ -618,3 +618,206 @@ fn a_lower_rung_wants_the_same_growth_in_the_same_order_but_less() {
         }
     }
 }
+
+/// A half-turn-symmetric open lane with one home node per seat and no field
+/// far enough out to be a site, so frames alone make the sites.
+const LANE: [&str; 14] = [
+    "########################################",
+    "#......................................#",
+    "#......................................#",
+    "#...s..................................#",
+    "#......................................#",
+    "#......................................#",
+    "#.1....................................#",
+    "#....................................2.#",
+    "#......................................#",
+    "#......................................#",
+    "#..................................s...#",
+    "#......................................#",
+    "#......................................#",
+    "########################################",
+];
+
+/// The lane with a frame at each of `frames`.
+fn lane(frames: &[(i32, i32)]) -> Scenario {
+    let mut scenario = arena(0);
+    scenario.map = LANE.map(str::to_owned).to_vec();
+    scenario.units.clear();
+    for (x, y) in frames {
+        let (x, y) = (usize::try_from(*x).unwrap(), usize::try_from(*y).unwrap());
+        scenario.map[y].replace_range(x..=x, "E");
+    }
+    scenario
+}
+
+/// West's Extractor candidate scores by frame.
+fn frame_scores(scenario: &Scenario) -> Vec<(TilePos, u32)> {
+    let state = scenario.build().unwrap();
+    let observation = mapped(&state, PlayerId(0));
+    expansion::candidates(&observation, &map(scenario), &Memory::default(), 50, 0)
+        .into_iter()
+        .filter_map(|(investment, score)| match investment {
+            Investment::Extractor(frame) => Some((frame, score)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn score_of(scores: &[(TilePos, u32)], x: i32, y: i32) -> u32 {
+    scores
+        .iter()
+        .find(|(frame, _)| *frame == TilePos::new(x, y))
+        .map(|(_, score)| *score)
+        .expect("the frame is a candidate")
+}
+
+#[test]
+fn frames_and_deep_bores_rank_by_what_they_pay_back() {
+    // Beside West's Foundry, out on West's side, and that frame's mirror on
+    // East's side.
+    let frames = lane(&[(6, 4), (14, 7), (24, 5)]);
+    let scores = frame_scores(&frames);
+    let (supported, own_side, enemy_side) = (
+        score_of(&scores, 6, 4),
+        score_of(&scores, 14, 7),
+        score_of(&scores, 24, 5),
+    );
+    assert!(supported > own_side, "{scores:?}");
+    assert_eq!(
+        enemy_side,
+        own_side / 2,
+        "a frame East reaches first is worth half"
+    );
+    let bore = |crucible: bool| {
+        let mut scenario = lane(&[(6, 4), (14, 7)]);
+        scenario
+            .buildings
+            .push(building(0, BuildingKind::Extractor, 6, 4));
+        if crucible {
+            scenario
+                .buildings
+                .push(building(0, BuildingKind::Crucible, 8, 9));
+        }
+        let state = scenario.build().unwrap();
+        let observation = mapped(&state, PlayerId(0));
+        let model = map(&scenario);
+        let memory = Memory::default();
+        let candidates = crate::investments::candidates(&crate::investments::Situation {
+            depletion: 500,
+            ..calm(&observation, &model, &memory)
+        });
+        let score = |wanted: fn(&Investment) -> bool| {
+            candidates
+                .iter()
+                .find(|candidate| wanted(&candidate.investment))
+                .map(|candidate| candidate.score)
+                .expect("the investment is a candidate")
+        };
+        (
+            score(|investment| *investment == Investment::Extractor(TilePos::new(14, 7))),
+            score(|investment| matches!(investment, Investment::Upgrade { tier: 1, .. })),
+        )
+    };
+    let (frame, deep_bore) = bore(true);
+    let (_, early) = bore(false);
+    assert!(
+        frame > deep_bore,
+        "an Extractor returns more for its price than a Deep Bore"
+    );
+    assert!(
+        deep_bore > early,
+        "a Crucible still to buy is part of the first Deep Bore's price"
+    );
+}
+
+/// A frames-only site of two frames in the lane's middle, with `foundries`
+/// as owner and anchor, and a West Kestrel overhead so West sees them.
+fn claimed_with(foundries: &[(u8, i32, i32)], allied: bool) -> bool {
+    let mut scenario = lane(&[(17, 10), (21, 10)]);
+    if allied {
+        scenario.map[11].replace_range(2..3, "3");
+        let ally = scenario.players[1].clone();
+        scenario.players.push(ally);
+        for (player, team) in scenario.players.iter_mut().zip([0, 1, 0]) {
+            player.team = Some(team);
+        }
+    }
+    scenario.units.push(unit(0, UnitKind::Kestrel, 20, 8));
+    for (owner, x, y) in foundries {
+        scenario
+            .buildings
+            .push(building(*owner, BuildingKind::Foundry, *x, *y));
+    }
+    let model = map(&scenario);
+    let site = model
+        .sites()
+        .iter()
+        .find(|site| {
+            site.nodes.is_empty()
+                && site.frames.contains(&TilePos::new(17, 10))
+                && site.frames.contains(&TilePos::new(21, 10))
+        })
+        .expect("the two frames make one site");
+    let state = scenario.build().unwrap();
+    let observation = mapped(&state, PlayerId(0));
+    expansion::value(&observation, &model, &Memory::default(), site, 50).is_none()
+}
+
+#[test]
+fn a_frames_only_site_is_claimed_by_an_ally_or_once_own_foundries_cover_it() {
+    // (9, 10) supports only the frame at (17, 10); (25, 10) only the one at
+    // (21, 10); (19, 11) both.
+    assert!(!claimed_with(&[], false), "premise");
+    assert!(
+        !claimed_with(&[(0, 9, 10)], false),
+        "an own Foundry covering one frame leaves the other to support"
+    );
+    assert!(claimed_with(&[(0, 9, 10), (0, 25, 10)], false));
+    assert!(
+        !claimed_with(&[(1, 19, 11)], false),
+        "an enemy Foundry supports only its own Extractors"
+    );
+    assert!(
+        claimed_with(&[(2, 9, 10)], true),
+        "teammates do not crowd one expansion"
+    );
+}
+
+#[test]
+fn only_guns_that_reach_a_frame_count_as_its_danger() {
+    let score = |guns: &[(BuildingKind, i32, i32)]| {
+        let mut scenario = lane(&[(14, 7)]);
+        scenario.units.push(unit(0, UnitKind::Kestrel, 16, 6));
+        for (kind, x, y) in guns {
+            scenario.buildings.push(building(1, *kind, *x, *y));
+        }
+        score_of(&frame_scores(&scenario), 14, 7)
+    };
+    let quiet = score(&[]);
+    assert_eq!(
+        score(&[
+            (BuildingKind::Turret, 22, 7),
+            (BuildingKind::FlakTurret, 13, 9)
+        ]),
+        quiet,
+        "a Turret out of range and a Flak Turret, which fires only at the air"
+    );
+    assert!(score(&[(BuildingKind::Turret, 19, 7)]) < quiet);
+}
+
+#[test]
+fn an_enemy_that_cannot_hurt_a_building_leaves_a_frame_wanted() {
+    let mut scenario = arena(0);
+    scenario.map[1].replace_range(6..7, "E");
+    let wanted = |kind| {
+        let mut scenario = scenario.clone();
+        scenario.units.push(unit(1, kind, 8, 2));
+        let state = scenario.build().unwrap();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        expansion::candidates(&observation, &map(&scenario), &Memory::default(), 50, 0)
+            .iter()
+            .any(|(investment, _)| *investment == Investment::Extractor(TilePos::new(6, 1)))
+    };
+    assert!(!wanted(UnitKind::Sentinel), "premise");
+    assert!(wanted(UnitKind::Flakhound));
+}

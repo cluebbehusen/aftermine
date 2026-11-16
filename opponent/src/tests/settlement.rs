@@ -20,7 +20,6 @@ fn island() -> Scenario {
             *cell = b'S';
         }
     }
-    grid[24][30] = b'E';
     scenario.map = grid
         .into_iter()
         .map(|row| String::from_utf8(row).unwrap())
@@ -133,6 +132,7 @@ fn a_connected_enemy_does_not_prevent_a_resource_island_foundry() {
 #[test]
 fn a_landed_builder_can_build_an_island_frame() {
     let mut scenario = island();
+    scenario.map[24].replace_range(30..31, "E");
     scenario.units.push(harvester(0, 28, 24));
     scenario.buildings.push(BuildingSpec {
         player: 0,
@@ -888,11 +888,11 @@ fn mainland_construction_uses_the_ordinary_builder_path() {
         BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 38),
     );
     let commands = bot.act(&state, &mut OwnEvents::default());
-    let anchor = commands
+    let (kind, anchor) = commands
         .iter()
         .find_map(|c| match &c.command {
             Command::Build {
-                kind: BuildingKind::Foundry,
+                kind: kind @ (BuildingKind::Foundry | BuildingKind::Extractor),
                 anchor,
                 units,
                 ..
@@ -903,7 +903,7 @@ fn mainland_construction_uses_the_ordinary_builder_path() {
                         .all(|id| state.units().iter().any(|u| u.id == *id && u.tile().y < 18)),
                     "a home worker walks to its site"
                 );
-                Some(*anchor)
+                Some((*kind, *anchor))
             }
             _ => None,
         })
@@ -924,7 +924,7 @@ fn mainland_construction_uses_the_ordinary_builder_path() {
         state
             .buildings()
             .iter()
-            .any(|b| b.kind == BuildingKind::Foundry && b.anchor == anchor)
+            .any(|b| b.kind == kind && b.anchor == anchor)
     );
 }
 
@@ -1179,8 +1179,16 @@ fn a_funded_island_raises_escort_capability_without_owning_future_units() {
     {
         unit.kind = UnitKind::Warden;
     }
+    // Island frames already worked by remote Extractors leave the Foundry
+    // that would support them as the island's purchase.
     for (x, y) in [(24, 20), (28, 20), (32, 20), (40, 29)] {
         scenario.map[y].replace_range(x..=x, "E");
+        scenario.buildings.push(BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Extractor,
+            x: i32::try_from(x).unwrap(),
+            y: i32::try_from(y).unwrap(),
+        });
     }
     scenario.units.extend([
         unit(0, UnitKind::Kestrel, 24, 28),
@@ -1550,6 +1558,7 @@ fn a_missing_airworks_then_a_missing_carrier_is_the_islands_next_purchase() {
         (true, Step::Train(UnitKind::Skyhook)),
     ] {
         let mut scenario = island();
+        scenario.map[24].replace_range(30..31, "E");
         scenario.units.retain(|u| u.kind != UnitKind::Skyhook);
         if !airworks {
             scenario

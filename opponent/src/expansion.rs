@@ -9,8 +9,10 @@ use crate::map::{MapModel, Site, UNREACHABLE};
 use crate::memory::Memory;
 use crate::workers::worker;
 use aftermine_sim::geometry::foundry_supports;
-use aftermine_sim::observation::ObservationData;
-use aftermine_sim::{BuildingKind, PlayerId, UnitKind};
+use aftermine_sim::observation::{BuildingObs, ObservationData};
+use aftermine_sim::stats;
+use aftermine_sim::{BuildingKind, PlayerId, TICKS_PER_SECOND, UnitKind};
+use chassis::fx::Fx;
 use chassis::grid::TilePos;
 
 /// Chebyshev reach around a site or frame that counts toward its danger.
@@ -22,6 +24,12 @@ const HELD_REACH: i32 = 6;
 
 /// Footprint of Foundries and Extractors, and so of sites and frames.
 const WORKS: (i32, i32) = (2, 2);
+
+/// Doubles each scrap a minute an investment returns per scrap it costs, so
+/// growth that pays for itself in a minute scores 2,000 at middling greed:
+/// above any tech building, which returns nothing, while growth that would
+/// take longer than about seven minutes to pay back falls under adoption.
+const PAYBACK_SCALE: u64 = 2;
 
 /// Expansion and Extractor investments with their scores. `greed` is the
 /// 0..=100 trait; `depletion` is the per-mille share of home scrap mined.
@@ -72,20 +80,51 @@ pub(crate) fn candidates(
         {
             continue;
         }
-        let supported = supported(observation, *frame);
-        let greed = u64::from(greed);
-        let base = if supported {
-            500 + 3 * greed
-        } else {
-            250 + 2 * greed
-        };
-        let score = base * 1_000 / (1_000 + danger(observation, memory, *frame));
+        let gain = yield_per_minute(0, supported(observation, *frame));
+        let mut score = u64::from(payback(
+            gain,
+            u64::from(construction_cost(BuildingKind::Extractor)),
+            greed,
+        ));
+        // An enemy's ground reaches this frame no later than the seat's, so
+        // it stands to be lost sooner than one on the seat's own side.
+        let me = observation.me;
+        let hostile = map.hostile_distance(me, *frame);
+        if hostile != UNREACHABLE && map.distance(me, *frame) >= hostile {
+            score /= 2;
+        }
+        let score = score * 1_000 / (1_000 + danger(observation, map, memory, *frame));
         list.push((
             Investment::Extractor(*frame),
             u32::try_from(score).unwrap_or(u32::MAX),
         ));
     }
     list
+}
+
+/// The score of growth that adds `gain` scrap a minute for `price` scrap:
+/// what each scrap spent returns a minute, weighted by greed as a site's
+/// resources are.
+pub(crate) fn payback(gain: u64, price: u64, greed: u8) -> u32 {
+    let weight = 750 + 5 * u64::from(greed);
+    let score = gain * 1_000 * PAYBACK_SCALE / price.max(1) * weight / 1_000;
+    u32::try_from(score).unwrap_or(u32::MAX)
+}
+
+/// Scrap an Extractor at `tier` earns over `ticks`, `supported` or remote.
+pub(crate) fn yields(tier: u8, supported: bool, ticks: u64) -> u64 {
+    let (amount, period) = match (tier > 0, supported) {
+        (false, false) => stats::EXTRACTOR_REMOTE_YIELD,
+        (false, true) => stats::EXTRACTOR_SUPPORTED_YIELD,
+        (true, false) => stats::DEEP_BORE_REMOTE_YIELD,
+        (true, true) => stats::DEEP_BORE_SUPPORTED_YIELD,
+    };
+    u64::from(amount) * ticks / period
+}
+
+/// Scrap an Extractor at `tier` earns a minute, `supported` or remote.
+pub(crate) fn yield_per_minute(tier: u8, supported: bool) -> u64 {
+    yields(tier, supported, 60 * u64::from(TICKS_PER_SECOND))
 }
 
 /// Whether a completed own Foundry supports an Extractor on `frame`, by the
@@ -138,7 +177,7 @@ fn lift_cost(observation: &ObservationData) -> u32 {
     }
 }
 
-fn construction_cost(kind: BuildingKind) -> u32 {
+pub(crate) fn construction_cost(kind: BuildingKind) -> u32 {
     kind.base_stats().construction.cost
 }
 
@@ -227,15 +266,42 @@ pub(crate) fn value(
     };
     let penalty = 8 * distance / 10
         + contested
-        + i64::try_from(danger(observation, memory, anchor)).unwrap_or(i64::MAX);
+        + i64::try_from(danger(observation, map, memory, anchor)).unwrap_or(i64::MAX);
     let weight = 750 + 5 * i64::from(greed);
     Some(resource * weight / 1_000 - penalty * (2_000 - weight) / 1_000)
 }
 
 /// Whether someone already works `site`: an own Foundry, or any other seat's
-/// building, near its nodes on the same ground, or, for a site of frames
-/// alone, any Foundry that already supports one of them.
+/// building, near its nodes on the same ground. A site of frames alone is
+/// worked once an ally's Foundry supports one of its frames, so teammates do
+/// not crowd one expansion, or once own Foundries support every frame no
+/// other seat holds. An enemy's Foundry supports only its own Extractors.
 fn claimed(observation: &ObservationData, map: &MapModel, site: &Site) -> bool {
+    if site.nodes.is_empty() {
+        let foundries = |buildings: &[BuildingObs]| {
+            buildings
+                .iter()
+                .filter(|building| building.kind == BuildingKind::Foundry)
+                .map(|building| building.anchor)
+                .collect::<Vec<_>>()
+        };
+        let allied = foundries(&observation.ally_buildings);
+        let own = foundries(&observation.my_buildings);
+        let others = |frame: TilePos| {
+            observation
+                .ally_buildings
+                .iter()
+                .chain(&observation.enemy_buildings)
+                .any(|building| gap(frame, WORKS, building.anchor, building.kind.size()) < 0)
+        };
+        return site.frames.iter().any(|frame| {
+            allied
+                .iter()
+                .any(|anchor| foundry_supports(*anchor, *frame))
+        }) || site.frames.iter().all(|frame| {
+            others(*frame) || own.iter().any(|anchor| foundry_supports(*anchor, *frame))
+        });
+    }
     let own = observation
         .my_buildings
         .iter()
@@ -251,12 +317,6 @@ fn claimed(observation: &ObservationData, map: &MapModel, site: &Site) -> bool {
             site.nodes
                 .iter()
                 .any(|(node, _)| local && gap(*node, (1, 1), building.anchor, size) <= HELD_REACH)
-                || (building.kind == BuildingKind::Foundry
-                    && site.nodes.is_empty()
-                    && site
-                        .frames
-                        .iter()
-                        .any(|frame| foundry_supports(building.anchor, *frame)))
         })
 }
 
@@ -289,29 +349,27 @@ fn held(observation: &ObservationData, anchor: TilePos, reach: i32) -> bool {
         .any(|building| gap(anchor, WORKS, building.anchor, building.kind.size()) <= reach)
 }
 
-/// Whether an armed enemy in sight stands near the two-by-two footprint at
-/// `anchor`: an Extractor lost there, or a new one, waits until it leaves.
+/// Whether an enemy in sight that could hurt a building stands near the
+/// two-by-two footprint at `anchor`: an Extractor lost there, or a new one,
+/// waits until it leaves.
 fn contested(observation: &ObservationData, anchor: TilePos) -> bool {
     observation.enemy_units.iter().any(|enemy| {
-        enemy.kind.stats().can_fight() && gap(anchor, WORKS, enemy.tile, (1, 1)) <= DANGER_REACH
+        crate::defenses::reach(enemy.kind) > Fx::ZERO
+            && gap(anchor, WORKS, enemy.tile, (1, 1)) <= DANGER_REACH
     })
 }
 
-/// Whether no remembered armed enemy unit and no known armed enemy building
-/// stands near the two-by-two footprint at `anchor`.
-pub(crate) fn safe(observation: &ObservationData, memory: &Memory, anchor: TilePos) -> bool {
-    danger(observation, memory, anchor) == 0
-}
-
-/// Remembered enemy units near the two-by-two footprint at `anchor`, weighted
-/// by confidence, plus known armed enemy buildings near it.
-fn danger(observation: &ObservationData, memory: &Memory, anchor: TilePos) -> u64 {
+/// Remembered enemy units that could hurt a building near the two-by-two
+/// footprint at `anchor`, weighted by confidence, plus known enemy buildings
+/// whose guns reach it.
+fn danger(observation: &ObservationData, map: &MapModel, memory: &Memory, anchor: TilePos) -> u64 {
     let now = observation.tick;
     let units: u64 = memory
         .units()
         .iter()
         .filter(|unit| {
-            unit.kind.stats().can_fight() && gap(anchor, WORKS, unit.tile, (1, 1)) <= DANGER_REACH
+            crate::defenses::reach(unit.kind) > Fx::ZERO
+                && gap(anchor, WORKS, unit.tile, (1, 1)) <= DANGER_REACH
         })
         .map(|unit| unit.value(now))
         .sum();
@@ -319,8 +377,7 @@ fn danger(observation: &ObservationData, memory: &Memory, anchor: TilePos) -> u6
         .enemy_buildings
         .iter()
         .filter(|building| {
-            !building.kind.base_stats().weapons.is_empty()
-                && gap(anchor, WORKS, building.anchor, building.kind.size()) <= DANGER_REACH
+            crate::placement::gun_hits(map, building, BuildingKind::Extractor, anchor)
         })
         .map(|building| u64::from(building.kind.base_stats().construction.cost))
         .sum();

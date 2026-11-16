@@ -35,6 +35,8 @@ pub struct SeatEvidence {
     pub deliveries: Deliveries,
     /// Income checkpoints reached.
     pub income: Vec<IncomeSample>,
+    /// Tick the seat first held a Deep Bore; absent if it never did.
+    pub first_deep_bore: Option<u64>,
     /// Situations met and how they were answered.
     pub reactivity: SeatReactivity,
     /// What the seat's units and buildings did.
@@ -81,6 +83,10 @@ pub struct SeatSummary {
     pub reactivity_ticks: u64,
     /// Income medians by checkpoint.
     pub income: Vec<IncomeMedian>,
+    /// Seat-legs that held a Deep Bore.
+    pub deep_bore_seat_legs: u32,
+    /// Median tick those seat-legs first held one.
+    pub first_deep_bore: Option<u64>,
     /// Pooled impact ledgers.
     pub ledger: LedgerPool,
     /// Attack calibration, summed.
@@ -100,6 +106,7 @@ pub struct SeatSummaryBuilder {
     reactivity: SeatReactivity,
     reactivity_ticks: u64,
     income: BTreeMap<u64, Vec<(u32, u32)>>,
+    first_deep_bore: Vec<u64>,
     ledger: LedgerPool,
     attacks: AttackCalibration,
 }
@@ -126,6 +133,7 @@ impl SeatSummaryBuilder {
                 .or_default()
                 .push((sample.actual_per_minute, sample.saturation_per_minute));
         }
+        self.first_deep_bore.extend(evidence.first_deep_bore);
         self.ledger.add(&evidence.ledger);
         self.attacks.add(&evidence.attacks);
     }
@@ -180,6 +188,9 @@ impl SeatSummaryBuilder {
                     .map(|percent| u32::try_from(percent).expect("a percentage fits in u32")),
                 })
                 .collect(),
+            deep_bore_seat_legs: u32::try_from(self.first_deep_bore.len())
+                .expect("lengths fit in u32"),
+            first_deep_bore: median(self.first_deep_bore),
             ledger: self.ledger,
             attacks: self.attacks,
         }
@@ -276,6 +287,21 @@ pub fn render(out: &mut String, groups: &[(String, &SeatSummary)]) {
             let _ = write!(out, " {cell:<22}");
         }
         let _ = writeln!(out);
+    }
+    let _ = writeln!(
+        out,
+        "\nfirst Deep Bore: median start (seat-legs that held one / seat-legs)"
+    );
+    for (label, summary) in groups {
+        let _ = writeln!(
+            out,
+            "  {label:<24} {} ({}/{})",
+            summary
+                .first_deep_bore
+                .map_or_else(|| "-".to_string(), crate::replay_summary::clock),
+            summary.deep_bore_seat_legs,
+            summary.seat_legs
+        );
     }
     for (label, summary) in groups {
         let _ = writeln!(out, "\nledger, {label}: {} seat-legs", summary.seat_legs);
