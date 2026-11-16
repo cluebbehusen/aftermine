@@ -87,9 +87,10 @@ the running total and mission state.
   otherwise never get one.
 - Extractors and Deep Bores score by payback: what each scrap spent on one
   returns a minute, from the simulation's yields and prices, weighed by greed. A
-  frame an enemy start reaches no sooner than the seat's own scores half. A
-  Crucible still to buy counts toward the first Deep Bore's price. Growth
-  outranks tech by what it pays back, never by a rule that holds tech down.
+  frame an enemy start reaches by ground no later than the seat's own scores
+  half. A Crucible still to buy counts toward the first Deep Bore's price.
+  Growth outranks tech by what it pays back, never by a rule that holds tech
+  down.
 - A site of frames alone is taken once an ally's Foundry supports one of its
   frames, so teammates do not crowd one expansion, or once the seat's own
   Foundries support every frame no other seat holds. An enemy's Foundry never
