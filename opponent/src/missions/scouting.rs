@@ -1,18 +1,20 @@
 //! Scouting: a scout looks at each place the seat has not seen for a while,
-//! first the one whose time unseen weighted by its value is greatest. For
-//! places no scout can take it asks production for more.
+//! first the one whose time unseen weighted by its value is greatest, then
+//! the next. For stale places no scout out or queued would see in time it
+//! asks production for more.
 
 use super::Scratch;
 use super::air::{self, Hazard};
 use super::{MISSION_CAP, Mission, Missions, Task, approach, mine, run};
 use crate::decision::Ledger;
 use crate::events::OwnEvent;
-use crate::frame::{HomeFrame, doubled, tiles_of};
+use crate::frame::{HomeFrame, doubled, footprint_centre, octile_tenths, tiles_of};
 use crate::map::MapModel;
 use crate::memory::Memory;
 use aftermine_sim::observation::{ObservationData, UnitObs};
 use aftermine_sim::stats::Domain;
 use aftermine_sim::{BuildingKind, Command, PlayerId, StallReason, UnitKind};
+use chassis::fx::Fx;
 use chassis::grid::TilePos;
 use std::cell::OnceCell;
 
@@ -80,10 +82,11 @@ pub(crate) fn seen_lately(
 
 impl Missions {
     /// Keeps a scout looking at each stale place, no two at one place.
-    /// Returns how many stale places no scout holds that the scout
-    /// production would train could reach, which production trains scouts
-    /// for: an aircraft once an Airworks stands, else a Surveyor. Zero while
-    /// no mission could take another.
+    /// Returns how many stale places no scout, out or queued, would see
+    /// within [`TRAVEL_TICKS`] that the scout production would train could
+    /// reach, which production trains scouts for: an aircraft once an
+    /// Airworks stands, else a Surveyor. Zero while no mission could take
+    /// another.
     pub(crate) fn scout(
         &mut self,
         observation: &ObservationData,
@@ -205,7 +208,50 @@ impl Missions {
         if self.list.len() >= MISSION_CAP {
             return 0;
         }
-        let taken = held(self, None);
+        let mut taken = held(self, None);
+        let board = Board {
+            now,
+            frame,
+            points: &points,
+            scouted,
+        };
+        // Scouts out take the points they would see after their own, ground
+        // scouts first as above; then scouts queued at producers do.
+        let mut out: Vec<(&UnitObs, TilePos)> = self
+            .list
+            .iter()
+            .filter(|mission| scouting(&mission.task))
+            .filter_map(|mission| Some((mine(observation, mission.units[0])?, mission.goal)))
+            .collect();
+        out.sort_by_key(|(unit, _)| {
+            (
+                flies(unit),
+                frame.rank(frame.home, doubled(unit.tile)),
+                unit.id,
+            )
+        });
+        for (unit, goal) in out {
+            let tourer = Tourer {
+                from: doubled(goal),
+                spent: travel(doubled(unit.tile), goal, unit.kind),
+                kind: unit.kind,
+            };
+            board.tour(tourer, goals.of(flies(unit)), &mut taken);
+        }
+        for (building, queue) in observation.my_buildings.iter().zip(&observation.my_queues) {
+            for kind in queue.iter().copied().filter(|kind| is_scout(*kind)) {
+                let tourer = Tourer {
+                    from: footprint_centre(building.kind, building.anchor),
+                    spent: 0,
+                    kind,
+                };
+                board.tour(
+                    tourer,
+                    goals.of(kind.stats().domain == Domain::Air),
+                    &mut taken,
+                );
+            }
+        }
         let air = crate::investments::built(observation, BuildingKind::Airworks);
         let reach = goals.of(air);
         scouted
@@ -260,6 +306,63 @@ pub(crate) fn look(observation: &ObservationData, map: &MapModel, memory: &mut M
 /// Whether `scout` flies.
 fn flies(scout: &UnitObs) -> bool {
     scout.kind.stats().domain == Domain::Air
+}
+
+/// Whether `kind` is trained to scout.
+fn is_scout(kind: UnitKind) -> bool {
+    kind == UnitKind::Kestrel || kind.stats().scouts
+}
+
+/// Ticks a `kind` takes from `from` to see `goal`, in a straight line.
+fn travel(from: (i64, i64), goal: TilePos, kind: UnitKind) -> u64 {
+    let tenths = octile_tenths(from, doubled(goal));
+    (Fx::from_num(tenths) / (Fx::from_num(10) * kind.stats().speed))
+        .ceil()
+        .to_num::<u64>()
+}
+
+/// What every scout's tour reads in one decision.
+struct Board<'a> {
+    now: u64,
+    frame: HomeFrame,
+    points: &'a [Point],
+    scouted: &'a [u64],
+}
+
+/// A scout as a tour starts it: where it will be, after how many ticks.
+#[derive(Clone, Copy)]
+struct Tourer {
+    from: (i64, i64),
+    spent: u64,
+    kind: UnitKind,
+}
+
+impl Board<'_> {
+    /// Adds to `taken` each stale point `tourer` would see within
+    /// [`TRAVEL_TICKS`], one after another in the order [`best`] would hand
+    /// them to it, so no other scout is trained for them.
+    fn tour(&self, tourer: Tourer, goals: &[Option<TilePos>], taken: &mut Vec<u16>) {
+        let Tourer {
+            mut from,
+            mut spent,
+            kind,
+        } = tourer;
+        while let Some((point, goal)) = best(
+            self.now,
+            self.frame,
+            self.points,
+            self.scouted,
+            taken,
+            goals,
+        ) {
+            spent = spent.saturating_add(travel(from, goal, kind));
+            if spent > TRAVEL_TICKS {
+                break;
+            }
+            taken.push(point);
+            from = doubled(goal);
+        }
+    }
 }
 
 /// Sends `scout` to `goal`: a ground scout scouts it, which keeps out of
@@ -371,3 +474,6 @@ fn best(
         })
         .and_then(|(index, goal, _)| Some((u16::try_from(index).ok()?, goal)))
 }
+
+#[cfg(test)]
+mod tests;

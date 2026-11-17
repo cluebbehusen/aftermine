@@ -78,13 +78,14 @@ the running total and mission state.
   while their army roles have need, and producers queue far enough to stay busy
   until the next decision. Small stocks such as scouts, Scuttlers, Sappers and
   carriers never add a producer. Scuttlers draw on the producers the army
-  leaves. A scout for a stale point no scout can take joins its producer's queue
-  behind whatever is there, as worker recovery does, rather than wait for an
-  idle producer while workers and the army keep every one busy. Two train ahead
-  of the army: carriers for a seat whose ground reaches no enemy, since they are
-  its army's only way there, and the Sappers attacks want against known
-  defenses, which cost more than any army unit their producer trains and would
-  otherwise never get one.
+  leaves. A stale point draws a new scout only when no scout already out or
+  queued would see it within the time a scout may take to reach a point; that
+  scout joins its producer's queue behind whatever is there, as worker recovery
+  does, rather than wait for an idle producer while workers and the army keep
+  every one busy. Two train ahead of the army: carriers for a seat whose ground
+  reaches no enemy, since they are its army's only way there, and the Sappers
+  attacks want against known defenses, which cost more than any army unit their
+  producer trains and would otherwise never get one.
 - Extractors and Deep Bores score by payback: what each scrap spent on one
   returns a minute, from the simulation's yields and prices, weighed by greed. A
   frame an enemy start reaches by ground no later than the seat's own scores

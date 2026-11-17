@@ -100,16 +100,37 @@ fn each_stale_start_draws_its_own_scout() {
     }
 }
 
+fn surveyors(commands: &[PlayerCommand]) -> usize {
+    trains(commands)
+        .into_iter()
+        .filter(|(_, kind)| *kind == UnitKind::Surveyor)
+        .count()
+}
+
 #[test]
-fn a_stale_start_no_scout_holds_trains_another() {
+fn a_scout_out_or_queued_takes_a_second_stale_start_it_reaches_in_time() {
     let (scenario, state) = stale_trio(vec![unit(0, UnitKind::Surveyor, 8, 9)], 1_000);
-    let foundry = foundries(&state, PlayerId(0))[0];
     let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
     let missions = scouts(&trace.unwrap().missions);
-    assert_eq!(missions.len(), 1, "premise: {missions:?}");
-    assert!(
-        trains(&commands).contains(&(foundry, UnitKind::Surveyor)),
-        "{commands:?}"
+    assert_eq!(missions.len(), 1, "premise: one start held: {missions:?}");
+    assert_eq!(
+        surveyors(&commands),
+        0,
+        "the scout out sees the other start next: {commands:?}"
+    );
+
+    let (scenario, mut state) = stale_trio(Vec::new(), 1_000);
+    let mut opponent = seat(&scenario, 0);
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert_eq!(surveyors(&commands), 1, "premise: no scout yet");
+    state.tick(&commands);
+    let interval = crate::decision_interval(BotDifficulty::Standard);
+    advance_to(&mut state, STALE + interval, &[]);
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert_eq!(
+        surveyors(&commands),
+        0,
+        "the queued scout will see both starts: {commands:?}"
     );
 }
 

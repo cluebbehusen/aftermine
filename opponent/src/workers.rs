@@ -3,7 +3,7 @@
 //! buildings and wounded units, and harvest.
 
 use crate::decision::{Ledger, Producer};
-use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
+use crate::frame::{HomeFrame, doubled, footprint_centre, gap, octile_tenths, ring};
 use crate::investments::built_foundries;
 use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
 use crate::missions::{Hazard, Meal, Scratch};
@@ -1205,13 +1205,6 @@ fn exposed(hazards: &[Hazard], source: TilePos) -> bool {
 /// Scrap a worker of `kind` carries in one load.
 fn capacity(kind: UnitKind) -> u32 {
     kind.stats().harvest.map_or(0, |harvest| harvest.capacity)
-}
-
-/// Octile distance between two doubled-coordinate points, in tenths of a tile.
-fn octile_tenths(a: (i64, i64), b: (i64, i64)) -> i64 {
-    let (dx, dy) = ((a.0 - b.0).abs(), (a.1 - b.1).abs());
-    let doubled = 10 * dx.max(dy) + 4 * dx.min(dy);
-    doubled / 2
 }
 
 #[cfg(test)]
