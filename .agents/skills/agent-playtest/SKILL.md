@@ -62,10 +62,12 @@ rates.
 
 Launch every lane at once; lanes share nothing but the machine.
 
-- **Claude:** one background Agent per lane, general-purpose, with only this
-  prompt: "Change to `<lane dir>`, read `brief.md` there and follow it. Write
-  `report.json` in that directory when you finish." Add nothing about the bot or
-  earlier rounds.
+- **Claude:** run `scripts/run-claude.sh <lane dir> <tick limit>` in the
+  background. It runs Claude Code headless in the lane with only the lane's own
+  setting sources, so no user or repository instructions, memory or skills reach
+  the player, and with permission only to run `./play`, read the lane's files
+  and edit `report.json`. Do not launch players through the Agent tool: a
+  subagent inherits the session's instructions and memory.
 - **Codex:** run `scripts/run-codex.sh <lane dir> <tick limit>` in the
   background. It runs `codex exec` headless in the lane, forces the report into
   the schema, and resumes Codex when it stops before the match ends. Each lane

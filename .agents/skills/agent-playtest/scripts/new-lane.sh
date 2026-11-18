@@ -79,6 +79,13 @@ dir="$round/$lane"
 	exit 1
 }
 mkdir -p "$dir" "$round/replays" "$round/sessions"
+# A driver named by AFTERMINE_DRIVER is copied into the round, so a player's
+# wrapper names no directory outside the round.
+if [ -n "${AFTERMINE_DRIVER:-}" ]; then
+	mkdir -p "$round/driver"
+	[ -x "$round/driver/aftermine-driver" ] || cp "$driver" "$round/driver/aftermine-driver"
+	driver="$round/driver/aftermine-driver"
+fi
 
 cp "$map" "$dir/map.json"
 "$driver" rules >"$dir/rules.txt"

@@ -6,10 +6,10 @@
 Usage: uv run lane-summary.py <round-dir> [lane...]
 
 For each lane (every lane directory in the round when none is named) it
-reads the lane's commands.log, its replay, its report and, for a Codex lane,
-events.jsonl, and prints one row: the result and final tick, the player's
+reads the lane's commands.log, its replay, its report and its events.jsonl
+from Codex or Claude Code, and prints one row: the result and final tick, the player's
 orders per game minute, how far it advanced at a time, how often it looked
-between advances, the wall time it spent, and the tokens Codex reports.
+between advances, the wall time it spent, and the tokens the player's events report.
 `--json` prints the same rows as JSON lines.
 """
 
@@ -77,6 +77,17 @@ def lane_row(round_dir: Path, lane: str) -> dict:
                 turn = event.get("usage", {})
                 usage["input"] += turn.get("input_tokens", 0)
                 usage["cached"] += turn.get("cached_input_tokens", 0)
+                usage["output"] += turn.get("output_tokens", 0)
+            elif event.get("type") == "result":
+                # Claude Code's stream-json closes each run with its usage.
+                turn = event.get("usage", {})
+                cached = turn.get("cache_read_input_tokens", 0)
+                usage["input"] += (
+                    turn.get("input_tokens", 0)
+                    + cached
+                    + turn.get("cache_creation_input_tokens", 0)
+                )
+                usage["cached"] += cached
                 usage["output"] += turn.get("output_tokens", 0)
         row["tokens"] = usage
     return row
