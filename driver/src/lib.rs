@@ -5,6 +5,7 @@ pub mod auto;
 pub mod bot_ab;
 pub mod bot_cost;
 pub mod bot_eval;
+pub mod bot_fork;
 pub mod bot_gauntlet;
 pub mod bot_ladder;
 pub mod bot_pressure;

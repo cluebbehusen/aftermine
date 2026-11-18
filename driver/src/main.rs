@@ -252,6 +252,23 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Game-state tests: restore each case's recorded game at its fork,
+    /// let this build's bot play on from a cold start against a scripted
+    /// continuation of the player, and check what the bot kept.
+    BotFork {
+        /// The case manifest (JSON: {"cases": [...]}).
+        #[arg(long)]
+        cases: PathBuf,
+        /// Continuation seeds, as from..to.
+        #[arg(long, default_value = "0..5", value_parser = parse_seed_range)]
+        seeds: std::ops::Range<u64>,
+        /// Games to play at once.
+        #[arg(long, default_value_t = std::num::NonZeroUsize::new(8).expect("nonzero"))]
+        jobs: std::num::NonZeroUsize,
+        /// Write every game's row here as JSON lines.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Run the staged pressure scenarios: a scripted attacker presses one
     /// situation on a bot seat, and each scenario reports whether the bot
     /// answered by its deadline.
@@ -1024,6 +1041,29 @@ fn main() -> Result<()> {
             }
             let records = bot_gauntlet::records(&rows);
             emit(json, &records, |records| bot_gauntlet::report(records))?;
+        }
+        Cmd::BotFork {
+            cases,
+            seeds,
+            jobs,
+            out,
+        } => {
+            use aftermine_driver::bot_fork;
+            let text = std::fs::read_to_string(&cases)
+                .with_context(|| format!("reading {}", cases.display()))?;
+            let manifest: bot_fork::Manifest = serde_json::from_str(&text)
+                .with_context(|| format!("parsing {}", cases.display()))?;
+            let rows = bot_fork::run(&manifest, seeds, jobs)?;
+            if let Some(path) = out {
+                let mut lines = String::new();
+                for row in &rows {
+                    lines.push_str(&serde_json::to_string(row)?);
+                    lines.push('\n');
+                }
+                std::fs::write(&path, lines)
+                    .with_context(|| format!("writing {}", path.display()))?;
+            }
+            print!("{}", bot_fork::report(&rows));
         }
         Cmd::BotPressure {
             dir,
