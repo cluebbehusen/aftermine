@@ -452,7 +452,7 @@ fn an_emergency_turret_guards_the_building_under_attack() {
     scenario
         .buildings
         .push(building(0, BuildingKind::Foundry, expansion.x, expansion.y));
-    scenario.units.push(unit(1, UnitKind::Sentinel, 16, 10));
+    scenario.units.push(unit(1, UnitKind::Sentinel, 18, 10));
     let state = scenario.build().unwrap();
     let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
     let [(BuildingKind::Turret, anchor)] = builds(&commands)[..] else {
@@ -493,7 +493,7 @@ fn each_pressed_building_gets_its_own_emergency_turret() {
         .buildings
         .push(building(0, BuildingKind::Foundry, expansion.x, expansion.y));
     scenario.units.extend([
-        unit(1, UnitKind::Sentinel, 16, 10),
+        unit(1, UnitKind::Sentinel, 18, 10),
         unit(1, UnitKind::Sentinel, 6, 5),
     ]);
     let state = scenario.build().unwrap();
@@ -528,7 +528,7 @@ fn the_least_valuable_of_many_buildings_is_guarded_too() {
         reclaimer.x,
         reclaimer.y,
     ));
-    scenario.units.push(unit(1, UnitKind::Sentinel, 22, 7));
+    scenario.units.push(unit(1, UnitKind::Scuttler, 22, 7));
     let state = scenario.build().unwrap();
     let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
     assert!(
@@ -1681,6 +1681,40 @@ fn a_standing_bastion_holds_only_ground_something_spots_for_it() {
         spotted < blind,
         "a teammate's radar lets the Bastion hold more of the way in: {spotted} against {blind}"
     );
+}
+
+#[test]
+fn an_emergency_turret_goes_up_beyond_the_raiders_reach() {
+    // A Sentinel would kill the Turret's builder before the site stands, and
+    // a Lancer the site too.
+    let expansion = TilePos::new(14, 8);
+    let raider = TilePos::new(18, 10);
+    for kind in [UnitKind::Sentinel, UnitKind::Lancer] {
+        let mut scenario = arena(200);
+        scenario
+            .buildings
+            .push(building(0, BuildingKind::Foundry, expansion.x, expansion.y));
+        scenario.units.push(unit(1, kind, raider.x, raider.y));
+        let state = scenario.build().unwrap();
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        let turrets: Vec<TilePos> = builds(&commands)
+            .into_iter()
+            .filter(|(built, _)| *built == BuildingKind::Turret)
+            .map(|(_, anchor)| anchor)
+            .collect();
+        assert!(
+            kind == UnitKind::Lancer || !turrets.is_empty(),
+            "a spot beyond a Sentinel still guards the Foundry: {commands:?}"
+        );
+        let reach = kind.stats().weapons[0].range;
+        let centre = (2 * i64::from(raider.x) + 1, 2 * i64::from(raider.y) + 1);
+        for anchor in turrets {
+            assert!(
+                !super::layout::within(BuildingKind::Turret, anchor, centre, reach),
+                "{kind:?} reaches {anchor:?}"
+            );
+        }
+    }
 }
 
 #[test]

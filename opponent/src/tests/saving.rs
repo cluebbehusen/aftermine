@@ -219,6 +219,102 @@ fn a_site_a_builder_found_no_route_to_waits_for_a_while() {
     );
 }
 
+#[test]
+fn no_builder_goes_back_to_a_site_where_a_raider_would_kill_it_first() {
+    // An East Sentinel beside a West Turret site shoots its builder while
+    // West's other Harvester, the one left to send back, mines out of the way.
+    let site = TilePos::new(10, 3);
+    let mut scenario = arena(400);
+    scenario.units.push(unit(1, UnitKind::Sentinel, 12, 3));
+    let mut state = scenario.build().unwrap();
+    let (builder, spare, raider) = (at(&state, 7, 6), at(&state, 6, 6), at(&state, 12, 3));
+    let order = |player: u8, command: Command| PlayerCommand {
+        player: PlayerId(player),
+        command,
+    };
+    state.tick(&[
+        order(
+            0,
+            Command::Build {
+                units: vec![builder],
+                kind: BuildingKind::Turret,
+                anchor: site,
+                queue: false,
+                defer: false,
+            },
+        ),
+        order(
+            0,
+            Command::Harvest {
+                units: vec![spare],
+                node: TilePos::new(7, 9),
+                queue: false,
+            },
+        ),
+        order(
+            1,
+            Command::Attack {
+                units: vec![raider],
+                target: AttackTarget::Unit(builder),
+                queue: false,
+            },
+        ),
+    ]);
+    while state.unit(builder).is_some() && state.current_tick() < 1_200 {
+        state.tick(&[]);
+    }
+    assert!(
+        state.unit(builder).is_none()
+            && state
+                .buildings()
+                .iter()
+                .any(|building| building.anchor == site && !building.built()),
+        "premise: the builder fell, leaving its site"
+    );
+    let next = state.current_tick().next_multiple_of(12);
+    advance_to(&mut state, next, &[]);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands).iter().all(|(_, anchor)| *anchor != site),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_site_the_fire_on_it_would_pull_down_is_cancelled() {
+    let site = TilePos::new(10, 3);
+    let mut scenario = arena(400);
+    for (x, y) in [(12, 3), (12, 4), (12, 2), (11, 5)] {
+        scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+    }
+    let mut state = scenario.build().unwrap();
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Build {
+            units: vec![at(&state, 7, 6)],
+            kind: BuildingKind::Turret,
+            anchor: site,
+            queue: false,
+            defer: false,
+        },
+    }]);
+    let next = (state.current_tick() + 60).next_multiple_of(12);
+    advance_to(&mut state, next, &[]);
+    let id = state
+        .buildings()
+        .iter()
+        .find(|building| building.anchor == site && !building.built())
+        .expect("premise: the site stands unfinished")
+        .id;
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        commands
+            .iter()
+            .any(|command| command.command == Command::Cancel { building: id }),
+        "{commands:?}"
+    );
+}
+
 fn first_site(state: &State) -> TilePos {
     state
         .buildings()

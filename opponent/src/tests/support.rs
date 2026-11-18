@@ -119,6 +119,20 @@ fn workers_weld_a_damaged_building_while_one_outpaces_the_fire_on_it() {
 }
 
 #[test]
+fn no_worker_welds_where_the_fire_would_kill_it_before_it_paid_its_way() {
+    // One Lancer's fire is slower than a welder's on the Foundry, but its
+    // first shot kills a Harvester.
+    let mut scenario = arena(200);
+    scenario.units.push(unit(1, UnitKind::Lancer, 9, 6));
+    let state = scenario.build().unwrap();
+    let foundry = foundries(&state, PlayerId(0))[0];
+    let max = BuildingKind::Foundry.base_stats().max_hp;
+    let state = damaged(&state, foundry, max / 2);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(repairs(&commands).is_empty(), "{commands:?}");
+}
+
+#[test]
 fn a_building_a_worker_tends_on_its_own_takes_no_second_welder() {
     let scenario = arena(200);
     let state = scenario.build().unwrap();

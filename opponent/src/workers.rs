@@ -343,10 +343,11 @@ pub(crate) fn run(
     ledger: &mut Ledger,
 ) {
     flee(observation, map, frame, hazards, ledger);
-    let open = |site: &BuildingObs| {
+    let open = |site: &BuildingObs, builder: Option<&UnitObs>| {
         !memory.failed(site.kind, site.anchor, observation.tick)
-            && crate::placement::stands(observation, site.kind, site.anchor)
+            && crate::placement::stands(observation, site.kind, site.anchor, site.hp, builder)
     };
+    cancel_doomed(observation, ledger);
     resume_sites(observation, map, frame, &open, ledger);
     crew_cradles(observation, map, frame, &open, ledger);
     weld(observation, map, frame, ledger);
@@ -451,9 +452,10 @@ fn refuge(
 }
 
 /// Sends the nearest free worker to weld each damaged own building nobody
-/// welds yet, the largest repair bill first, while one welder mends it faster
-/// than the enemies in sight and the known enemy guns that reach it damage it,
-/// and the seat has scrap to pay.
+/// welds yet, the largest repair bill first, while that welder mends it
+/// faster than the enemies in sight and the known enemy guns that reach it
+/// damage it and pays its way under their fire, and the seat has scrap to
+/// pay.
 fn weld(observation: &ObservationData, map: &MapModel, frame: HomeFrame, ledger: &mut Ledger) {
     // Buildings a worker already welds, on order or on its own.
     let tended: Vec<aftermine_sim::BuildingId> = observation
@@ -478,10 +480,6 @@ fn weld(observation: &ObservationData, map: &MapModel, frame: HomeFrame, ledger:
             }
             let size = building.kind.size();
             let centre = footprint_centre(building.kind, building.anchor);
-            if !crate::placement::mends(observation, building.kind, building.tier, building.anchor)
-            {
-                return None;
-            }
             // A building other buildings and rock wall in on every side
             // leaves a welder nowhere to stand.
             let ground = map.component(building.anchor)?;
@@ -510,8 +508,11 @@ fn weld(observation: &ObservationData, map: &MapModel, frame: HomeFrame, ledger:
         let Some(welder) = builder(observation, map, frame, building.anchor, centre, ledger) else {
             continue;
         };
+        if !crate::placement::mends(observation, building, welder) {
+            continue;
+        }
         if !ledger.order(Command::Repair {
-            units: vec![welder],
+            units: vec![welder.id],
             building: building.id,
             queue: false,
         }) {
@@ -644,21 +645,37 @@ fn weld_units(
 
 /// The nearest worker to `centre` that stands on the same ground as `site`,
 /// is not constructing or welding, and has no work from this decision yet.
-pub(crate) fn builder(
-    observation: &ObservationData,
+pub(crate) fn builder<'a>(
+    observation: &'a ObservationData,
     map: &MapModel,
     frame: HomeFrame,
     site: TilePos,
     centre: (i64, i64),
     ledger: &Ledger,
-) -> Option<UnitId> {
+) -> Option<&'a UnitObs> {
     let ground = map.component(site)?;
     observation
         .my_units
         .iter()
         .filter(|unit| free_on(unit, map, ground, ledger))
         .min_by_key(|unit| (frame.rank(centre, doubled(unit.tile)), unit.id))
-        .map(|unit| unit.id)
+}
+
+/// Cancels each own unfinished base-tier site that the fire reaching it would
+/// pull down before it stands, for the refund its health still earns.
+fn cancel_doomed(observation: &ObservationData, ledger: &mut Ledger) {
+    for site in observation
+        .my_buildings
+        .iter()
+        .filter(|site| !site.built && !site.provisional && site.tier == 0)
+    {
+        if crate::placement::stands(observation, site.kind, site.anchor, site.hp, None) {
+            continue;
+        }
+        if !ledger.order(Command::Cancel { building: site.id }) {
+            return;
+        }
+    }
 }
 
 /// Sends the nearest free worker to every paid base-tier site nobody is
@@ -668,7 +685,7 @@ fn resume_sites(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
-    open: &dyn Fn(&BuildingObs) -> bool,
+    open: &dyn Fn(&BuildingObs, Option<&UnitObs>) -> bool,
     ledger: &mut Ledger,
 ) {
     for site in &observation.my_buildings {
@@ -676,15 +693,18 @@ fn resume_sites(
             .my_units
             .iter()
             .any(|unit| unit.site == Some(site.id));
-        if site.built || site.provisional || site.tier > 0 || attended || !open(site) {
+        if site.built || site.provisional || site.tier > 0 || attended {
             continue;
         }
         let centre = footprint_centre(site.kind, site.anchor);
         let Some(builder) = builder(observation, map, frame, site.anchor, centre, ledger) else {
             continue;
         };
+        if !open(site, Some(builder)) {
+            continue;
+        }
         let command = Command::Build {
-            units: vec![builder],
+            units: vec![builder.id],
             kind: site.kind,
             anchor: site.anchor,
             queue: false,
@@ -704,14 +724,12 @@ fn crew_cradles(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
-    open: &dyn Fn(&BuildingObs) -> bool,
+    open: &dyn Fn(&BuildingObs, Option<&UnitObs>) -> bool,
     ledger: &mut Ledger,
 ) {
-    for site in observation
-        .my_buildings
-        .iter()
-        .filter(|building| building.kind.assembles().is_some() && !building.built && open(building))
-    {
+    for site in observation.my_buildings.iter().filter(|building| {
+        building.kind.assembles().is_some() && !building.built && open(building, None)
+    }) {
         let crew = observation
             .my_units
             .iter()
