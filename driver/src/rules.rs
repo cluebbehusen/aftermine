@@ -58,6 +58,12 @@ off for chosen workers.
 
 The Foundry takes half damage from warheads. Nothing else has armor.
 
+## Public structures
+
+Every seat knows where each Deep Bore stands from the moment its upgrade \
+starts, and where each assembly cradle stands, and how far along it is, from \
+its first work. The digest lists them under public structures.
+
 ## Orders
 
 - A unit ordered to attack a unit or a structure stays on that target while \

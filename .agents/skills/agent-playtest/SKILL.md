@@ -40,6 +40,10 @@ rates.
      --tick-limit 12000
    ```
 
+   Add `--min-step <ticks>` and `--orders-per-minute <n>` to hold the player to
+   a pace, which the brief then states. Set `AFTERMINE_DRIVER` to a copied
+   driver binary when the repository may be rebuilt while the round runs.
+
    The lane gets the shipped map unmodified, `rules.txt` from
    `aftermine-driver rules`, its brief (the
    [standing brief](references/player-brief.md) with the tick limit filled in,
@@ -47,9 +51,12 @@ rates.
    wrapper that logs every call to `commands.log` and answers `--help` with
    [the playtest's commands](assets/play-help.txt). The session refuses
    omniscient reads, every other seat and every file request, refuses an order
-   the game would reject with the reason, stops at the tick limit, and rewrites
-   `$ROUND/replays/<lane>.json` after each advance. Give every lane of a
-   comparison the same personality seed, so differences come from the players.
+   the game would reject with the reason, answers each advance with what the
+   seat saw happen, stops at the result or the tick limit, and rewrites
+   `$ROUND/replays/<lane>.json` after each advance. The lane's terms go to
+   `$ROUND/sessions/<lane>.json`, outside the lane, since they name the bot's
+   difficulty and seed. Give every lane of a comparison the same personality
+   seed, so differences come from the players.
 
 ## Launch the players
 
@@ -66,8 +73,10 @@ Launch every lane at once; lanes share nothing but the machine.
   and copying only your model settings, so no instructions, memories, skills or
   plugins of yours reach the player.
 
-Do not poll the lanes. Each notifies when it finishes. Note each lane's wall
-time and tokens from its completion notice or `events.jsonl`.
+Do not poll the lanes. Each notifies when it finishes. Then
+`uv run scripts/lane-summary.py "$ROUND"` prints each lane's result, orders per
+game minute, step sizes, looks per advance, wall time and Codex tokens; take a
+Claude lane's tokens from its completion notice.
 
 ## Audit each lane
 

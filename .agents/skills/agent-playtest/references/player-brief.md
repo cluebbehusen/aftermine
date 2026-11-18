@@ -40,10 +40,10 @@ weaknesses you find matter more than the result.
   contacts and remembered scrap. `./play digest --map` adds a map with a legend
   above it.
 - `./play advance <ticks>` runs the game and reports what your seat saw happen
-  meanwhile: your losses, finished structures, stalled orders and where you
-  took fire, enemy losses and warheads in sight, your income, and the result.
-  Nothing happens between advances. When the match ends, the advance stops on
-  that tick, and later advances are refused.
+  meanwhile: your losses, finished structures, stalled orders and where you took
+  fire, enemy losses and warheads in sight, your income, and the result. Nothing
+  happens between advances. When the match ends, the advance stops on that tick,
+  and later advances are refused.
 - `./play status` prints the tick and, once the match ends, its result.
 - `./play --help` lists the playtest's commands, and `./play <command> --help`
   explains one. Every order names your seat first, for example
