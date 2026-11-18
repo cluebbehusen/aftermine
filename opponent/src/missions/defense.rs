@@ -1,8 +1,8 @@
 //! The defend mission: every threatened Foundry recruits free units that can
-//! hit its threats and sends them at the threat nearest it once they match
-//! the force they would meet, then lets them go once the threat has been gone
-//! a while. Enemy scouts, spotters and builders among the seat's buildings,
-//! and enemy buildings raised among them, are threats too. An ally's Foundry under ground
+//! hit its threats and sends them at the threat nearest it once they match the
+//! force they would meet, then lets them go once the threat has been gone a
+//! while. Enemy scouts and builders among the seat's buildings, and enemy
+//! buildings raised among them, are threats too. An ally's Foundry under ground
 //! attack gets the units the seat's own Foundries leave free. Shells from a
 //! known enemy building send ground fighters beside it, shells from a gun out
 //! of sight advance them on where it probably stands, and a gun in sight is
@@ -52,10 +52,11 @@ impl Missions {
     /// threats until, in each domain it is attacked from, they outweigh the
     /// attackers by half again, and sends them at the grounded threat nearest
     /// the Foundry, else at a gun out of sight. Until the ground force they
-    /// make matches the ground force they would meet, they wait beside the
-    /// Foundry instead, and ones already out fall back there once they have
-    /// less than half of it, at a seat of `difficulty` that does not attack
-    /// piecemeal. Unarmed enemies and enemy buildings among the seat's
+    /// make matches the ground force they would meet, those hunting an enemy
+    /// that walks in wait beside the Foundry instead, and ones already out
+    /// fall back there once they have less than half of it, at a seat of
+    /// `difficulty` that does not attack piecemeal; artillery is still
+    /// reached. Unarmed enemies and enemy buildings among the seat's
     /// buildings draw defenders worth what they cost, and a shortfall
     /// counts only armed attackers. A shelling building counts
     /// with the known defense around it, and only while the units the
@@ -264,10 +265,14 @@ impl Missions {
                     gap,
                 });
             }
+            // Guns are reached rather than waited for: they shell from
+            // where they stand.
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
+            let hunting = matches!(pursuit, Pursuit::Hunt);
             let (goal, pursuit, gun) = match grounded
-                .filter(|_| concentrates(difficulty) && waits(mission, foundry, have[0], met))
+                .filter(|_| hunting && concentrates(difficulty))
+                .filter(|_| waits(mission, foundry, have[0], met))
                 .map(|threat| waiting_post(map, frame, foundry, threat))
             {
                 Some(Some(post)) => (post, Pursuit::Hunt, None),
@@ -467,8 +472,8 @@ fn waiting_post(
 struct Siege<'a> {
     /// Armed enemies in sight.
     units: Vec<&'a UnitObs>,
-    /// Unarmed enemies in sight among the seat's buildings: scouts, spotters
-    /// and builders.
+    /// Unarmed enemies on the ground in sight among the seat's buildings:
+    /// scouts and builders.
     strays: Vec<&'a UnitObs>,
     /// Known enemy buildings, in sight or remembered, whose shells land near
     /// the base or that stand among the seat's buildings, each with the tile
@@ -614,7 +619,10 @@ fn besieged<'a>(
             continue;
         }
         let armed = ground_reach(enemy);
-        if armed.is_none() && !ours(enemy.tile) {
+        // An unarmed flyer is a spotter or a carrier, which the guns it
+        // spots for and the landing it carries answer; only scouts and
+        // builders on the ground are strays.
+        if armed.is_none() && (enemy.body_domain() != Domain::Ground || !ours(enemy.tile)) {
             continue;
         }
         let reach = armed.unwrap_or(THREAT_GAP);

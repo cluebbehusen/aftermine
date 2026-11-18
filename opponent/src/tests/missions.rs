@@ -984,6 +984,31 @@ fn a_gun_in_sight_shelling_the_base_is_attacked() {
 }
 
 #[test]
+fn defenders_short_of_artillery_shelling_the_base_still_go_at_it() {
+    // Guns shell from where they stand, so defenders outweighed by them do
+    // not wait at home for them as for attackers that walk in: the picket
+    // alone, without its garrison, still goes at the gun.
+    let mut scenario = shelling(&[0]);
+    scenario
+        .units
+        .retain(|spec| spec.player != 0 || !GARRISON.contains(&turned(0, (spec.x, spec.y))));
+    scenario
+        .units
+        .push(unit(0, UnitKind::Scuttler, GUN.0 + 4, GUN.1));
+    let mut state = scenario.build().unwrap();
+    open_fire(&mut state, &[0]);
+    until_shells_come(&scenario, &mut state, &[0]);
+    let gun = at(&state, GUN.0, GUN.1);
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    assert!(
+        attacks(&commands)
+            .iter()
+            .any(|(_, target)| *target == AttackTarget::Unit(gun)),
+        "{commands:?}"
+    );
+}
+
+#[test]
 fn mirrored_seats_under_mirrored_shelling_answer_alike() {
     let (scenario, state) = shelled(&[0, 1]);
     let west = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
