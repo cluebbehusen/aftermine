@@ -37,6 +37,10 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
   checks each comparison against its gate.
 - `bot_pressure` (`bot-pressure`) runs staged scenarios where a scripted
   attacker presses one situation on a bot.
+- `challengers` holds scripted players, each playing one known way to beat the
+  bot from its seat's fog-honest view, with a seed that varies timings, counts
+  and targets within the plan. `bot_gauntlet` (`bot-gauntlet`) plays them
+  against the bot and reports each plan's record.
 - `bot_cost` (`bot-cost`) times bot decisions on fixed workloads.
 - `home_replays` (`home-replays`) records the matches behind Home into
   `assets/home`, each with a checkpoint at its fiercest fight.

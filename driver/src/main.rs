@@ -213,6 +213,45 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Play scripted challengers against the bot: one challenger seat and
+    /// one bot seat per game on two-seat maps, the challenger in seat 0 on
+    /// even seeds and seat 1 on odd ones, the bot's personality seed the
+    /// game's seed plus 9000. Prints each family's record per rung with a
+    /// 95% Wilson interval on its share of decided games.
+    BotGauntlet {
+        /// Families, comma-separated: forward-fabricator, scuttler-raid,
+        /// lancer-harass, held-army, buzzard-harass, bombard-siege,
+        /// ball-rush, kestrel-push, or "tuning" or "held-out".
+        #[arg(long, value_delimiter = ',', required = true)]
+        families: Vec<String>,
+        /// Two-seat maps, comma-separated.
+        #[arg(long, value_delimiter = ',', required = true)]
+        maps: Vec<String>,
+        /// The bot's rungs.
+        #[arg(long, value_delimiter = ',', default_value = "prime")]
+        difficulties: Vec<aftermine_sim::scenario::BotDifficulty>,
+        /// The bot's stances.
+        #[arg(long, value_delimiter = ',', default_value = "balanced")]
+        stances: Vec<aftermine_sim::scenario::BotStance>,
+        /// Game seeds as `from..to`, the last excluded.
+        #[arg(long, default_value = "0..10", value_parser = parse_seed_range)]
+        seeds: std::ops::Range<u64>,
+        /// The tick an undecided game stops at.
+        #[arg(long, default_value_t = 24_000)]
+        tick_limit: u64,
+        /// Games to play at once.
+        #[arg(long, default_value_t = std::num::NonZeroUsize::new(8).expect("nonzero"))]
+        jobs: std::num::NonZeroUsize,
+        /// Write every game's row here as JSON lines.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Save every game's replay in this directory.
+        #[arg(long)]
+        replay_dir: Option<PathBuf>,
+        /// Print the records as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Run the staged pressure scenarios: a scripted attacker presses one
     /// situation on a bot seat, and each scenario reports whether the bot
     /// answered by its deadline.
@@ -650,6 +689,23 @@ fn default_candidate() -> String {
     format!("{}-{revision}{dirty}", build.version)
 }
 
+/// A seed range written `from..to`, the last excluded.
+fn parse_seed_range(text: &str) -> Result<std::ops::Range<u64>, String> {
+    let (from, to) = text
+        .split_once("..")
+        .ok_or_else(|| format!("{text:?} is not a range like 0..10"))?;
+    let parse = |part: &str| {
+        part.trim()
+            .parse::<u64>()
+            .map_err(|error| format!("{part:?} in {text:?}: {error}"))
+    };
+    let (from, to) = (parse(from)?, parse(to)?);
+    if from >= to {
+        return Err(format!("{text:?} holds no seed"));
+    }
+    Ok(from..to)
+}
+
 /// Prints `value` as pretty JSON when `json` is set, else as `render` draws it.
 fn emit<T: serde::Serialize>(
     json: bool,
@@ -924,6 +980,50 @@ fn main() -> Result<()> {
                 Ok(())
             })?;
             println!("{}", serde_json::to_string_pretty(&standing)?);
+        }
+        Cmd::BotGauntlet {
+            families,
+            maps,
+            difficulties,
+            stances,
+            seeds,
+            tick_limit,
+            jobs,
+            out,
+            replay_dir,
+            json,
+        } => {
+            use aftermine_driver::bot_gauntlet;
+            use std::io::Write as _;
+            let maps = maps
+                .iter()
+                .map(|path| {
+                    let scenario = runner::load_scenario(path)?;
+                    let name = std::path::Path::new(path)
+                        .file_stem()
+                        .map_or_else(|| path.clone(), |stem| stem.to_string_lossy().into_owned());
+                    Ok((name, scenario))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let plan = bot_gauntlet::GauntletPlan {
+                families: bot_gauntlet::families(&families)?,
+                maps,
+                difficulties,
+                stances,
+                seeds,
+                tick_limit,
+                replay_dir,
+            };
+            let rows = bot_gauntlet::run(&plan, jobs)?;
+            if let Some(path) = out {
+                let mut file = std::fs::File::create(&path)
+                    .with_context(|| format!("creating {}", path.display()))?;
+                for row in &rows {
+                    writeln!(file, "{}", serde_json::to_string(row)?)?;
+                }
+            }
+            let records = bot_gauntlet::records(&rows);
+            emit(json, &records, |records| bot_gauntlet::report(records))?;
         }
         Cmd::BotPressure {
             dir,
