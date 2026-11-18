@@ -1,5 +1,5 @@
 # aftermine-opponent-ref
 
-A frozen copy of `aftermine-opponent` at lab commit 661cd63a, made by the lab's
+A frozen copy of `aftermine-opponent` at lab commit ca3de455, made by the lab's
 `refresh-ref.sh`, so A/B tests can seat the reference bot against a
 candidate in one match. Never edit it by hand.

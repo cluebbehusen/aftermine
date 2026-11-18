@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(unused_imports, dead_code))]
 #![doc = include_str!("../README.md")]
 // Floats and hash-ordered collections would break bit-identical replays.
 #![deny(clippy::float_arithmetic, clippy::disallowed_types)]
