@@ -138,8 +138,9 @@ fn a_cancelled_site_is_bought_again_elsewhere() {
     assert_ne!(second[0].1, first[0].1);
 }
 
-#[test]
-fn an_unattended_site_gets_a_builder() {
+/// A seat whose Fabricator builder started its site and was then stopped
+/// beside it, on the next decision tick, with the builder.
+fn stopped_builder() -> (State, crate::Opponent, UnitId) {
     let scenario = saturated(400);
     let mut state = scenario.build().unwrap();
     let mut opponent = seat_with(&scenario, 0, thrifty());
@@ -175,6 +176,12 @@ fn an_unattended_site_gets_a_builder() {
     };
     let next = state.current_tick().next_multiple_of(12);
     advance_to(&mut state, next, &[stop]);
+    (state, opponent, builder)
+}
+
+#[test]
+fn an_unattended_site_gets_a_builder() {
+    let (state, mut opponent, _) = stopped_builder();
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     assert_eq!(
         builds(&commands),
@@ -187,6 +194,28 @@ fn an_unattended_site_gets_a_builder() {
             .iter()
             .all(|purchase| !matches!(purchase, Purchase::Build { .. })),
         "resuming costs nothing"
+    );
+}
+
+#[test]
+fn a_site_a_builder_found_no_route_to_waits_for_a_while() {
+    let (state, mut opponent, builder) = stopped_builder();
+    let mut events = OwnEvents::default();
+    events.record(
+        PlayerId(0),
+        &[Event::OrderStalled {
+            unit: builder,
+            player: PlayerId(0),
+            pos: state.unit(builder).unwrap().pos,
+            reason: StallReason::NoRoute,
+        }],
+    );
+    let commands = opponent.act(&state, &mut events);
+    assert!(
+        builds(&commands)
+            .iter()
+            .all(|(kind, _)| *kind != BuildingKind::Fabricator),
+        "{commands:?}"
     );
 }
 

@@ -79,11 +79,22 @@ fn a_fabricator_turns_two_open_harvester_slots_into_an_excavator() {
 }
 
 #[test]
-fn workers_weld_a_damaged_building_unless_an_enemy_stands_near() {
-    let welded = |raider: bool| {
+fn workers_weld_a_damaged_building_while_one_outpaces_the_fire_on_it() {
+    // East Sentinels beside the Foundry, clear of West's Harvesters.
+    const BESIDE: [(i32, i32); 8] = [
+        (6, 4),
+        (7, 4),
+        (6, 5),
+        (7, 5),
+        (6, 7),
+        (7, 7),
+        (5, 8),
+        (6, 8),
+    ];
+    let welded = |raiders: usize| {
         let mut scenario = arena(200);
-        if raider {
-            scenario.units.push(unit(1, UnitKind::Sentinel, 10, 6));
+        for (x, y) in BESIDE.into_iter().take(raiders) {
+            scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
         }
         let state = scenario.build().unwrap();
         let foundry = foundries(&state, PlayerId(0))[0];
@@ -92,14 +103,19 @@ fn workers_weld_a_damaged_building_unless_an_enemy_stands_near() {
         let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
         (foundry, repairs(&commands))
     };
-    let (foundry, calm) = welded(false);
+    let (foundry, calm) = welded(0);
     let [(welders, patient)] = &calm[..] else {
         panic!("{calm:?}");
     };
     assert_eq!(*patient, foundry);
     assert_eq!(welders.len(), 1, "one worker at a time");
-    let (_, raided) = welded(true);
-    assert!(raided.is_empty(), "{raided:?}");
+    let (_, raided) = welded(1);
+    assert!(
+        matches!(&raided[..], [(_, patient)] if *patient == foundry),
+        "one welder outpaces one Sentinel: {raided:?}"
+    );
+    let (_, besieged) = welded(BESIDE.len());
+    assert!(besieged.is_empty(), "{besieged:?}");
 }
 
 #[test]
@@ -816,4 +832,25 @@ fn a_building_walled_in_on_every_side_is_not_welded() {
     };
     assert!(welded(false), "premise: one free tile is enough");
     assert!(!welded(true));
+}
+
+#[test]
+fn a_repair_bill_under_the_weld_floor_needs_only_itself() {
+    // Half a Foundry's health bills well under the weld floor: a bank that
+    // covers the bill welds it, one that does not waits.
+    let welded = |scrap: u32| {
+        let scenario = arena(scrap);
+        let state = scenario.build().unwrap();
+        let foundry = foundries(&state, PlayerId(0))[0];
+        let max = BuildingKind::Foundry.base_stats().max_hp;
+        let state = damaged(&state, foundry, max / 2);
+        repairs(&seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default()))
+    };
+    let bill = u64::from(aftermine_sim::stats::FOUNDRY_REPAIR_PRICE) / 2
+        * aftermine_sim::stats::REPAIR_COST_PERMILLE
+        / 1_000;
+    assert!(bill < u64::from(crate::workers::WELD_FLOOR), "premise");
+    let enough = u32::try_from(bill).unwrap() + 2;
+    assert_eq!(welded(enough).len(), 1, "a bank of {enough}");
+    assert!(welded(0).is_empty());
 }

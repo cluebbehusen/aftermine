@@ -546,7 +546,8 @@ pub(crate) fn investments(
 
 /// Buys a defense now beside each valuable building whose approach visible
 /// attackers near it find uncovered: a Turret against ground attackers, a
-/// Flak Turret against aircraft. Each such building has one standing
+/// Flak Turret against aircraft, on a spot where the site would stand before
+/// the fire on it pulls it down. Each such building has one standing
 /// unfinished at a time.
 pub(crate) fn emergency(
     observation: &ObservationData,
@@ -605,6 +606,9 @@ pub(crate) fn emergency(
             else {
                 continue;
             };
+            if !placement::stands(observation, kind, anchor) {
+                continue;
+            }
             let Ok(allowed) = placement::check(
                 guard.map,
                 observation,

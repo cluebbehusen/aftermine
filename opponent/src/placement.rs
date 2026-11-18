@@ -3,12 +3,14 @@
 //! can never change its verdict; the simulation re-checks on arrival and a
 //! refused order is re-planned.
 
-use crate::frame::{ring, tiles_of};
+use crate::frame::{gap, ring, tiles_of};
 use crate::map::{MapModel, Shot};
 use crate::memory::Memory;
 use aftermine_sim::BuildingKind;
 use aftermine_sim::observation::{BuildingObs, ObservationData};
-use aftermine_sim::stats::{Domain, HARVEST_INCIDENT_DANGER_RADIUS};
+use aftermine_sim::stats::{
+    Domain, FOUNDRY_REPAIR_TICKS, HARVEST_INCIDENT_DANGER_RADIUS, WeaponStats,
+};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 
@@ -52,6 +54,74 @@ pub(crate) enum Layout {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Allowed {
     pub(crate) defer: bool,
+}
+
+/// Damage per thousand ticks that the armed enemies in sight and the known
+/// enemy guns within reach of the footprint of `kind` at `anchor` deal it.
+fn fire_on(observation: &ObservationData, kind: BuildingKind, anchor: TilePos) -> u64 {
+    let size = kind.size();
+    let fire = |weapons: &[WeaponStats], gap: i32| -> u64 {
+        weapons
+            .iter()
+            .filter(|weapon| weapon.targets.ground && gap <= weapon.range.ceil().to_num::<i32>())
+            .map(|weapon| {
+                u64::from(weapon.building_damage.unwrap_or(weapon.damage)) * 1_000
+                    / u64::from(weapon.cooldown_ticks.max(1))
+            })
+            .sum()
+    };
+    let units: u64 = observation
+        .enemy_units
+        .iter()
+        .map(|enemy| {
+            fire(
+                enemy.kind.stats().weapons,
+                gap(anchor, size, enemy.tile, (1, 1)),
+            )
+        })
+        .sum();
+    let guns: u64 = observation
+        .enemy_buildings
+        .iter()
+        .map(|enemy| {
+            fire(
+                enemy.kind.tier_stats(enemy.tier).weapons,
+                gap(anchor, size, enemy.anchor, enemy.kind.size()),
+            )
+        })
+        .sum();
+    units + guns
+}
+
+/// Whether a site of `kind` raised at `anchor` would stand before the fire
+/// that reaches it pulls it down: it rises from a fifth of its health along
+/// its build time, so it stands while that fire takes less than its whole
+/// health over the build time. A site that would not only feeds the attackers
+/// its price and its builders.
+pub(crate) fn stands(observation: &ObservationData, kind: BuildingKind, anchor: TilePos) -> bool {
+    let stats = kind.base_stats();
+    u64::from(stats.max_hp) * 1_000
+        > fire_on(observation, kind, anchor) * u64::from(stats.construction.build_ticks)
+}
+
+/// Whether one worker welding the own `kind` at `tier` at `anchor` adds
+/// health faster than the fire that reaches it takes it away, along the
+/// simulation's welding ramp: a Foundry's own, any other building's build
+/// time.
+pub(crate) fn mends(
+    observation: &ObservationData,
+    kind: BuildingKind,
+    tier: u8,
+    anchor: TilePos,
+) -> bool {
+    let stats = kind.tier_stats(tier);
+    let ramp_ticks = if kind == BuildingKind::Foundry {
+        FOUNDRY_REPAIR_TICKS
+    } else {
+        stats.construction.build_ticks
+    };
+    let ramp = u64::from(stats.max_hp - stats.max_hp / 5);
+    ramp * 1_000 / u64::from(ramp_ticks.max(1)) > fire_on(observation, kind, anchor)
 }
 
 /// Checks `kind` at `anchor` against the seat's knowledge and the footprints
