@@ -243,6 +243,9 @@ fn own_unit(unit: &UnitView, tracks: &Tracks) -> String {
     if unit.landed {
         line.push_str(" landed");
     }
+    if unit.idle_weld == Some(false) {
+        line.push_str(" idle-weld off");
+    }
     let _ = write!(
         line,
         " | {}",
@@ -603,8 +606,21 @@ pub fn played(view: &PlayedView) -> String {
                 format!("your {} {} stood up at {}", kind.name(), unit.0, at(*pos))
             }
             Event::BuildCancelled {
-                building, refund, ..
-            } => format!("your site {} was cancelled, refunding {refund}", building.0),
+                player,
+                building,
+                refund,
+                ..
+            } if *player == seat => {
+                format!("your site {} was cancelled, refunding {refund}", building.0)
+            }
+            Event::BuildCancelled { player, .. } => format!(
+                "seat {}'s site {} is gone without being destroyed: cancelled",
+                player.0,
+                seen.note.as_deref().unwrap_or("in sight")
+            ),
+            Event::UnitTrained { unit, kind, .. } => {
+                format!("your {} {} is ready", kind.name(), unit.0)
+            }
             Event::CommandRejected { reason, .. } => {
                 format!("the game rejected an order when it ran: {reason:?}")
             }
@@ -646,6 +662,13 @@ pub fn played(view: &PlayedView) -> String {
         let _ = writeln!(
             out,
             "MATCH OVER at tick {} ({}): {verdict}. Advancing is refused from here.",
+            view.tick,
+            clock(view.tick)
+        );
+    } else if view.tick_limit == Some(view.tick) {
+        let _ = writeln!(
+            out,
+            "TICK LIMIT reached at tick {} ({}): the playtest ends here. Advancing is refused from here.",
             view.tick,
             clock(view.tick)
         );

@@ -217,6 +217,7 @@ fn an_advance_reads_as_what_the_seat_saw_happen() {
                     pos: at(10, 4),
                     grounded: true,
                 },
+                note: None,
             },
             SeenEvent {
                 tick: 2399,
@@ -227,15 +228,18 @@ fn an_advance_reads_as_what_the_seat_saw_happen() {
                     tier: 0,
                     pos: at(53, 39),
                 },
+                note: None,
             },
             SeenEvent {
                 tick: 2399,
                 event: Event::GameOver {
                     result: GameResult::Victory { team: 0 },
                 },
+                note: None,
             },
         ],
         result: Some(GameResult::Victory { team: 0 }),
+        tick_limit: Some(24_000),
     };
     let text = played(&view);
     assert!(

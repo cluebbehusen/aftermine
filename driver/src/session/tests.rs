@@ -555,3 +555,39 @@ fn a_refused_order_says_what_the_seat_can_tell_of_why() {
         "{error}"
     );
 }
+
+#[test]
+fn an_advance_reports_the_seat_s_new_units() {
+    let dir = scratch("playtest-trained");
+    let mut session = playtest_session(&dir, None);
+    let foundry = session
+        .state()
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0))
+        .map(|building| building.id)
+        .expect("the seat starts with a Foundry");
+    session
+        .handle(Request::SendCommand {
+            player: PlayerId(0),
+            command: Command::Train {
+                building: foundry,
+                kind: UnitKind::Harvester,
+            },
+        })
+        .unwrap();
+    let Ok(Reply::Played(played)) = session.handle(Request::AdvanceTicks { ticks: 300 }) else {
+        panic!("a playtest advances");
+    };
+    assert!(
+        played.log.iter().any(|seen| matches!(
+            seen.event,
+            Event::UnitTrained {
+                kind: UnitKind::Harvester,
+                ..
+            }
+        )),
+        "{played:?}"
+    );
+    assert!(super::super::digest::played(&played).contains("your harvester"));
+}

@@ -38,7 +38,7 @@ use anyhow::{Context, Result};
 use chassis::fx::Vec2Fx;
 use chassis::grid::TilePos;
 use chassis::replay::Replay;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -310,6 +310,7 @@ impl Session {
         let mut ran = 0;
         while ran < ticks && self.state.result().is_none() {
             let at = self.state.current_tick();
+            seen.look(&self.state);
             let events = self.step();
             seen.note(at, &self.state, &events);
             ran += 1;
@@ -329,6 +330,7 @@ impl Session {
             income: seen.income,
             log: seen.log,
             result: self.state.result(),
+            tick_limit: playtest.tick_limit,
         }))
     }
 
@@ -515,6 +517,9 @@ struct Seen {
     fire: BTreeSet<(i32, i32)>,
     /// Units and reasons already logged as stalled this advance.
     stalls: BTreeSet<(aftermine_sim::UnitId, String)>,
+    /// Other seats' structures in sight as the coming tick begins, by id,
+    /// so a site that vanishes in it can be named.
+    in_sight: BTreeMap<aftermine_sim::BuildingId, String>,
 }
 
 /// The side of a coarse cell, in tiles: fire in one cell logs once.
@@ -528,7 +533,57 @@ impl Seen {
             log: Vec::new(),
             fire: BTreeSet::new(),
             stalls: BTreeSet::new(),
+            in_sight: BTreeMap::new(),
         }
+    }
+
+    /// Notes other seats' structures the seat sees before a tick runs.
+    fn look(&mut self, state: &State) {
+        let vision = state.vision(self.seat);
+        self.in_sight = state
+            .buildings()
+            .iter()
+            .filter(|building| {
+                let (w, h) = building.kind.size();
+                building.player != self.seat
+                    && (0..h)
+                        .any(|dy| (0..w).any(|dx| vision.visible(building.anchor.offset(dx, dy))))
+            })
+            .map(|building| {
+                (
+                    building.id,
+                    format!(
+                        "{} at ({},{})",
+                        building.kind.tier_name(building.tier),
+                        building.anchor.x,
+                        building.anchor.y
+                    ),
+                )
+            })
+            .collect();
+    }
+
+    /// The own unit or structure at `pos` after a tick, as the seat names it.
+    fn own_at(&self, state: &State, pos: Vec2Fx) -> Option<String> {
+        if let Some(unit) = state
+            .units()
+            .iter()
+            .find(|unit| unit.player == self.seat && unit.pos == pos)
+        {
+            return Some(format!("{} {}", unit.kind.name(), unit.id.0));
+        }
+        let tile = TilePos::containing(pos);
+        state
+            .buildings()
+            .iter()
+            .find(|building| building.player == self.seat && building.contains(tile))
+            .map(|building| {
+                format!(
+                    "{} {}",
+                    building.kind.tier_name(building.tier),
+                    building.id.0
+                )
+            })
     }
 
     /// Keeps what the seat saw of tick `tick`'s `events`, judged against
@@ -539,6 +594,7 @@ impl Seen {
         let seat = self.seat;
         let sees = |pos: Vec2Fx| state.vision(seat).visible(TilePos::containing(pos));
         for event in events {
+            let mut note = None;
             let keep = match event {
                 Event::ScrapCredited { player, amount }
                 | Event::ScrapDeposited { player, amount, .. } => {
@@ -551,7 +607,14 @@ impl Seen {
                 | Event::BuildingDestroyed { player, pos, .. } => *player == seat || sees(*pos),
                 Event::WarheadLanded { player, at, .. }
                 | Event::ChargeDetonated { player, at, .. } => *player == seat || sees(*at),
-                Event::BuildingCompleted { player, .. }
+                Event::BuildCancelled {
+                    building, player, ..
+                } if *player != seat => {
+                    note = self.in_sight.get(building).cloned();
+                    note.is_some()
+                }
+                Event::UnitTrained { player, .. }
+                | Event::BuildingCompleted { player, .. }
                 | Event::BuildCancelled { player, .. }
                 | Event::UnitAssembled { player, .. }
                 | Event::CommandRejected { player, .. } => *player == seat,
@@ -563,10 +626,14 @@ impl Seen {
                 } => *player == seat && self.stalls.insert((*unit, format!("{reason:?}"))),
                 Event::DamageTaken { player, pos } => {
                     let tile = TilePos::containing(*pos);
-                    *player == seat
+                    let fresh = *player == seat
                         && self
                             .fire
-                            .insert((tile.x.div_euclid(FIRE_CELL), tile.y.div_euclid(FIRE_CELL)))
+                            .insert((tile.x.div_euclid(FIRE_CELL), tile.y.div_euclid(FIRE_CELL)));
+                    if fresh {
+                        note = self.own_at(state, *pos);
+                    }
+                    fresh
                 }
                 Event::PlayerResigned { .. } | Event::GameOver { .. } => true,
                 _ => false,
@@ -575,6 +642,7 @@ impl Seen {
                 self.log.push(SeenEvent {
                     tick,
                     event: event.clone(),
+                    note,
                 });
             }
         }

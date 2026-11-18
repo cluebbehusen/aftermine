@@ -250,12 +250,14 @@ pub struct PlayedView {
     pub tick: u64,
     /// Scrap the seat earned across the advance.
     pub income: u32,
-    /// What the seat saw, in tick order: its own losses, completions,
-    /// stalls and the places it took fire, and other seats' losses,
-    /// warheads and charges where it could see them.
+    /// What the seat saw, in tick order: its own losses, new units,
+    /// completions, stalls and what took fire, and other seats' losses,
+    /// vanished sites, warheads and charges where it could see them.
     pub log: Vec<SeenEvent>,
     /// The match's result once it has one; the advance stops on that tick.
     pub result: Option<aftermine_sim::GameResult>,
+    /// The tick the playtest stops at, if it has a limit.
+    pub tick_limit: Option<u64>,
 }
 
 /// One event a playtest seat saw, with the tick it happened on.
@@ -265,6 +267,9 @@ pub struct SeenEvent {
     pub tick: u64,
     /// The event.
     pub event: Event,
+    /// What the seat can name that the event does not: the own unit or
+    /// structure that took fire, or the site of another seat's that went.
+    pub note: Option<String>,
 }
 
 /// A frame-exact profiling workload. Each frame advances a fixed slice of

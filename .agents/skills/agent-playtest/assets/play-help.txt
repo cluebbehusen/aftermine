@@ -15,3 +15,19 @@ Orders. Each names your seat first: ./play hunt 0 --units 4,5 --to 30,20
 An order the game would reject is refused at once with its reason, and
 nothing is sent. Other commands of the debug client are not part of the
 playtest.
+
+Order labels in the digest:
+  idle          nothing to do; armed units fight what comes in range
+  run           walking to a tile without fighting
+  hunt          marching to a tile, fighting what it meets
+  advance       moving to a tile, shooting only what is already in range
+  attack        on one target until it is gone
+  harvest       mining and hauling scrap
+  return_cargo  taking carried scrap to a Foundry
+  build         working an own site
+  found         walking to place a deferred site; it turns into build once
+                the whole footprint is in sight
+  repair, repair_unit  welding a structure or unit on your order
+  tend          welding on its own while idle (see rules.txt)
+  accompany     escorting a unit
+  salvage, board, unload, land, retire, scout  as their verbs say

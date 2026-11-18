@@ -615,8 +615,10 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
                 event: Event::GameOver {
                     result: aftermine_sim::GameResult::Victory { team: 0 },
                 },
+                note: None,
             }],
             result: Some(aftermine_sim::GameResult::Victory { team: 0 }),
+            tick_limit: Some(24_000),
         }),
         Reply::Screenshot(ScreenshotView {
             path: "shots/x.png".into(),
