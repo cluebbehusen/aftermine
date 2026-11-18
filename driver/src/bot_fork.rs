@@ -3,9 +3,12 @@
 //! continuation of the player.
 //!
 //! A replay holds every seat's commands, so the state at the fork rebuilds
-//! exactly whatever bot recorded it. The bot seats then start cold at the
-//! fork, with no memory of the game so far, and a [`Challenger`] of the
-//! case's family takes over the player's seat and units. After the case's
+//! exactly whatever bot recorded it. By default this build's bot watches
+//! the recorded game up to the fork, deciding as it goes while the recorded
+//! commands drive the game, so it reaches the fork with its memory of the
+//! enemy; its own orders were never carried out, so its running plans can
+//! be stale. A cold start gives it no memory at all. Then a [`Challenger`]
+//! of the case's family takes over the player's seat and units. After the case's
 //! window the bot is checked for what it kept: its Foundry, or its
 //! Harvesters.
 
@@ -141,8 +144,9 @@ fn share(part: u64, other: u64) -> f64 {
     }
 }
 
-/// Plays `case` once with continuation seed `seed`.
-pub fn play(case: &Case, seed: u64) -> Result<ForkRow> {
+/// Plays `case` once with continuation seed `seed`, the bot watching the
+/// game up to the fork unless `cold`.
+pub fn play(case: &Case, seed: u64, cold: bool) -> Result<ForkRow> {
     let family: Family = case
         .family
         .parse()
@@ -150,9 +154,27 @@ pub fn play(case: &Case, seed: u64) -> Result<ForkRow> {
     let path = expand(&case.replay);
     let replay = aftermine_kit::load_replay(&path)
         .with_context(|| format!("case {}: loading {}", case.name, path.display()))?;
-    let mut state =
-        aftermine_kit::runner::run_replay_observed(&replay, None, Some(case.at), false, |_, _| {})
-            .with_context(|| format!("case {}: restoring tick {}", case.name, case.at))?;
+    let scenario = &replay.setup;
+    let mut bots = seat_controllers(scenario).context("seating the bot")?;
+    let mut state = aftermine_kit::runner::run_replay_observed(
+        &replay,
+        None,
+        Some(case.at),
+        false,
+        |state, report| {
+            if cold {
+                return;
+            }
+            record_events(&mut bots, report);
+            // The fork's own tick decides in the loop below.
+            if state.current_tick() < case.at {
+                for bot in &mut bots {
+                    let _ = bot.act(state);
+                }
+            }
+        },
+    )
+    .with_context(|| format!("case {}: restoring tick {}", case.name, case.at))?;
     ensure!(
         state.current_tick() == case.at,
         "case {}: the replay ends at {} before the fork at {}",
@@ -160,14 +182,12 @@ pub fn play(case: &Case, seed: u64) -> Result<ForkRow> {
         state.current_tick(),
         case.at
     );
-    let scenario = &replay.setup;
     let (bot, player) = seats(&state, scenario)?;
     ensure!(
         state.result().is_none(),
         "case {}: the match was over by the fork",
         case.name
     );
-    let mut bots = seat_controllers(scenario).context("seating the bot")?;
     let mut challenger = Challenger::new(family, player, seed, scenario)?;
     let harvesters_at_fork = harvesters(&state, bot);
     let share_at_fork = share_now(&state, bot);
@@ -214,10 +234,11 @@ pub fn play(case: &Case, seed: u64) -> Result<ForkRow> {
 }
 
 /// Plays every case of `manifest` with every seed in `seeds`, in case then
-/// seed order.
+/// seed order, the bot watching each game up to its fork unless `cold`.
 pub fn run(
     manifest: &Manifest,
     seeds: std::ops::Range<u64>,
+    cold: bool,
     jobs: NonZeroUsize,
 ) -> Result<Vec<ForkRow>> {
     let games: Vec<(&Case, u64)> = manifest
@@ -225,7 +246,7 @@ pub fn run(
         .iter()
         .flat_map(|case| seeds.clone().map(move |seed| (case, seed)))
         .collect();
-    crate::pool::fan_out_bounded(&games, jobs, |(case, seed)| play(case, *seed))
+    crate::pool::fan_out_bounded(&games, jobs, |(case, seed)| play(case, *seed, cold))
 }
 
 /// One line per case: passes of games, and the bot's mean worth share at

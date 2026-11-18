@@ -265,6 +265,10 @@ enum Cmd {
         /// Games to play at once.
         #[arg(long, default_value_t = std::num::NonZeroUsize::new(8).expect("nonzero"))]
         jobs: std::num::NonZeroUsize,
+        /// Start the bot cold at the fork instead of letting it watch the
+        /// game up to there.
+        #[arg(long)]
+        cold: bool,
         /// Write every game's row here as JSON lines.
         #[arg(long)]
         out: Option<PathBuf>,
@@ -1046,6 +1050,7 @@ fn main() -> Result<()> {
             cases,
             seeds,
             jobs,
+            cold,
             out,
         } => {
             use aftermine_driver::bot_fork;
@@ -1053,7 +1058,7 @@ fn main() -> Result<()> {
                 .with_context(|| format!("reading {}", cases.display()))?;
             let manifest: bot_fork::Manifest = serde_json::from_str(&text)
                 .with_context(|| format!("parsing {}", cases.display()))?;
-            let rows = bot_fork::run(&manifest, seeds, jobs)?;
+            let rows = bot_fork::run(&manifest, seeds, cold, jobs)?;
             if let Some(path) = out {
                 let mut lines = String::new();
                 for row in &rows {

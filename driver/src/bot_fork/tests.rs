@@ -37,7 +37,7 @@ fn a_fork_restores_the_game_and_checks_what_the_bot_kept() {
         family: "held-army".to_string(),
         check: Check::Harvesters,
     };
-    let row = play(&case, 1).unwrap();
+    let row = play(&case, 1, false).unwrap();
     assert_eq!(row.ticks, 500);
     assert!(!row.bot_lost);
     assert!(row.harvesters.0 > 0, "{row:?}");
@@ -45,9 +45,14 @@ fn a_fork_restores_the_game_and_checks_what_the_bot_kept() {
     assert!(row.foundries > 0);
     assert!((0.0..=1.0).contains(&row.worth_share.1));
     assert_eq!(
-        play(&case, 1).unwrap().worth_share,
+        play(&case, 1, false).unwrap().worth_share,
         row.worth_share,
         "deterministic"
+    );
+    let cold = play(&case, 1, true).unwrap();
+    assert_eq!(
+        cold.harvesters.0, row.harvesters.0,
+        "the fork's state does not depend on the bot's memory"
     );
 }
 
@@ -62,7 +67,7 @@ fn a_fork_past_the_recording_is_refused() {
         family: "held-army".to_string(),
         check: Check::Foundry,
     };
-    assert!(play(&case, 0).is_err());
+    assert!(play(&case, 0, false).is_err());
 }
 
 #[test]
