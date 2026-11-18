@@ -60,19 +60,40 @@ fn kind_named<K: Copy>(what: &str, all: &[K], name: fn(K) -> &'static str, s: &s
         .copied()
         .find(|kind| squash(name(*kind)) == squash(s))
         .with_context(|| {
-            let choices: Vec<_> = all
-                .iter()
-                .map(|kind| name(*kind).replace(' ', "-"))
-                .collect();
             format!(
                 "unknown {what} {s:?}; expected one of: {}",
-                choices.join(", ")
+                choices(all, name)
             )
         })
 }
 
+/// Every name a kind argument accepts, in its canonical spelling.
+fn choices<K: Copy>(all: &[K], name: fn(K) -> &'static str) -> String {
+    let names: Vec<String> = all
+        .iter()
+        .map(|kind| name(*kind).replace(' ', "-"))
+        .collect();
+    names.join(", ")
+}
+
 pub(crate) fn parse_unit_kind(s: &str) -> Result<UnitKind> {
     kind_named("unit kind", &UnitKind::ALL, UnitKind::name, s)
+}
+
+/// Help for a unit-kind argument, listing every kind it accepts.
+pub(crate) fn unit_kind_help() -> String {
+    format!(
+        "What to train: one of {}",
+        choices(&UnitKind::ALL, UnitKind::name)
+    )
+}
+
+/// Help for a building-kind argument, listing every kind it accepts.
+pub(crate) fn building_kind_help() -> String {
+    format!(
+        "What to construct: one of {}",
+        choices(&BuildingKind::ALL, BuildingKind::name)
+    )
 }
 
 /// Every building kind parses. The simulation's placement rules remain the

@@ -15,9 +15,17 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
 `aftermine-kit`, shared with the shell. The driver adds:
 
 - `client` speaks the debug protocol to a running shell, and `session` serves it
-  without a window.
+  without a window. A session started with `--player` is a playtest: one seat
+  plays against bots, and the session answers only what that seat could know and
+  refuses an order the game would reject, with the game's reason.
+- `digest` (`live digest`) prints a seat's fog view as compact text, with an
+  optional map.
+- `rules` (`rules`) prints every Roster page as plain text, with how often each
+  weapon fires.
 - `replay_inspect` and `replay_summary` give exact snapshots and a readable
   account of a match: battles, expansions, eliminations and per-seat digests.
+- `replay_trace` (`replay-trace`) re-runs a match's bots and prints one seat's
+  decision traces, refusing a bot that would have played differently.
 - `ledger` (`replay-ledger`) values what every unit and building did over a
   match in scrap: damage dealt, spotting, repair, income and spending.
 - `pacing` reports who led at minutes 5, 10 and 15, lead changes and comebacks,
@@ -62,7 +70,9 @@ cargo test -p aftermine-driver --locked
 The [aftermine-opponent skill](../.agents/skills/aftermine-opponent/SKILL.md)
 covers bot evaluation, the ladder and how to read their reports. The
 [aftermine-live-qa skill](../.agents/skills/aftermine-live-qa/SKILL.md) covers
-driving the native shell.
+driving the native shell, and the
+[agent-playtest skill](../.agents/skills/agent-playtest/SKILL.md) covers
+playtest sessions.
 
 ## Performance regression checks
 

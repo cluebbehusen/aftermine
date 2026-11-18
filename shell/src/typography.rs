@@ -4,33 +4,7 @@ use crate::numeric;
 use macroquad::prelude::*;
 use std::cell::RefCell;
 
-pub(crate) fn entity_name(name: &str) -> String {
-    let mut out = String::with_capacity(name.len());
-    let mut start = true;
-    for c in name.chars() {
-        if start {
-            out.extend(c.to_uppercase());
-        } else {
-            out.push(c);
-        }
-        start = c == ' ';
-    }
-    out
-}
-
-/// The plural of an entity name: "Foundry" to "Foundries", "Repair Bay"
-/// to "Repair Bays", and a name already ending in s, like "Airworks",
-/// unchanged.
-pub(crate) fn plural_name(name: &str) -> String {
-    let mut letters = name.chars().rev();
-    match (letters.next(), letters.next()) {
-        (Some('s'), _) => name.to_string(),
-        (Some('y'), Some(before)) if !"aeiou".contains(before) => {
-            format!("{}ies", &name[..name.len() - 1])
-        }
-        _ => format!("{name}s"),
-    }
-}
+pub(crate) use aftermine_kit::roster::{entity_name, plural_name, series};
 
 /// `text` with its first letter capitalized. Refusal reasons are
 /// lowercase fragments so they also read inside longer messages; a
@@ -53,16 +27,6 @@ thread_local! {
 
 pub(crate) fn install(font: Font) {
     DISPLAY.with(|current| *current.borrow_mut() = Some(font));
-}
-
-/// "x", "x and y", or "x, y, and z".
-pub(crate) fn series(items: &[String]) -> String {
-    match items {
-        [] => String::new(),
-        [one] => one.clone(),
-        [first, second] => format!("{first} and {second}"),
-        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
-    }
 }
 
 /// `text` cut to `max` characters, its last three spent on "...". Counts

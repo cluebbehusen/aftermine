@@ -19,7 +19,8 @@ boundary between simulation evidence and presentation evidence.
   deterministic simulation and replay questions.
 - Use `driver session` for a persistent windowless match driven through the same
   shared protocol as the shell. Treat its screenshots as CPU schematics, never
-  as visual-polish evidence.
+  as visual-polish evidence. `driver session --player` makes it a fog-only
+  playtest for one seat; the agent-playtest skill covers that.
 - Use `aftermine-shell --debug-server --paused` for real input, menus, camera,
   HUD, fog, audio, and GPU rendering under a driven clock.
 - Use `driver profile-graphics` to see where frame time goes across screens,

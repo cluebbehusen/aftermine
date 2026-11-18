@@ -13,6 +13,9 @@ while reusable game-independent primitives stay in `chassis`.
 
 - `controller` hosts one `aftermine-opponent` controller per bot seat and
   buffers each seat's own events between decisions.
+- `roster` holds the Roster's words: each unit's and structure's description,
+  figures and notes, from the stats table. The shell's Roster screen and the
+  driver's rules sheet both print them.
 - `bot_execution` collects bot commands in seat order, running due seats on a
   small worker pool. Live sessions can compute a decision ahead on controller
   clones and install it when its tick comes.

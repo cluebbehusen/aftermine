@@ -3,8 +3,8 @@
 //! is touched), and the capture-sequence contact-sheet helper.
 
 use crate::parse::{
-    parse_building_kind, parse_key, parse_mouse_button, parse_point, parse_tile, parse_unit_kind,
-    parse_wire_name,
+    building_kind_help, parse_building_kind, parse_key, parse_mouse_button, parse_point,
+    parse_tile, parse_unit_kind, parse_wire_name, unit_kind_help,
 };
 use aftermine_driver::client::Client;
 use aftermine_protocol::{Key, RawEvent, Request, RequestEnvelope, StateFilter};
@@ -31,6 +31,17 @@ pub(crate) enum LiveCmd {
     Fog {
         /// The seat whose knowledge to report.
         player: u8,
+    },
+    /// The seat's fog view as compact text: bank, own units and
+    /// structures, what it sees and remembers of other seats, and with
+    /// `--map`, a map of it all.
+    Digest {
+        /// The seat whose knowledge to report.
+        player: u8,
+        /// Draw the map too, with terrain from this scenario file (the map
+        /// every seat knows before the match).
+        #[arg(long, value_name = "SCENARIO")]
+        map: Option<std::path::PathBuf>,
     },
     /// Camera pose and visible world rect.
     Camera,
@@ -64,14 +75,17 @@ pub(crate) enum LiveCmd {
         /// e.g. 4.0 for fast-forward, 0.25 for slow motion.
         multiplier: f64,
     },
-    /// Send a raw sim command as JSON (see aftermine-sim's Command).
+    /// Send any sim command as JSON, for orders with no verb of their own.
+    /// Its `type` names the command in snake case; an unknown type lists
+    /// every command, and a missing field is named in the error.
     Send {
         /// Acting player index.
         player: u8,
         /// Command JSON, e.g. `{"type":"stop","units":[3]}`.
         json: String,
     },
-    /// Hunt units to a tile (engage everything on the way).
+    /// Hunt units to a tile, stopping to fight every enemy unit and
+    /// structure met on the way.
     Hunt {
         #[command(flatten)]
         squad: Squad,
@@ -136,34 +150,36 @@ pub(crate) enum LiveCmd {
         #[arg(long)]
         node: String,
     },
-    /// Queue a unit at a Foundry.
+    /// Queue a unit at an own structure that trains it.
     Train {
         /// Acting player index.
         player: u8,
         /// Producing building id.
         #[arg(long)]
         building: u32,
-        /// What to train.
-        #[arg(long, value_parser = parse_unit_kind)]
+        #[arg(long, value_parser = parse_unit_kind, help = unit_kind_help())]
         kind: aftermine_sim::UnitKind,
     },
-    /// Start a construction site with a harvester.
+    /// Start a construction site with harvesters, paid now. Repeating it
+    /// with an unfinished site's kind and anchor adds builders to that site.
     Build {
         #[command(flatten)]
         squad: Squad,
-        /// What to construct.
-        #[arg(long, value_parser = parse_building_kind)]
+        #[arg(long, value_parser = parse_building_kind, help = building_kind_help())]
         kind: aftermine_sim::BuildingKind,
         /// Anchor tile as "x,y" (top-left of the footprint).
         #[arg(long)]
         at: String,
-        /// Defer the claim: walk out and found on arrival (validated
-        /// against the seat's knowledge, paid when the ground is
-        /// claimed) — the shell's explored-but-unseen mode.
+        /// Build on explored ground out of sight, the shell's
+        /// explored-but-unseen mode: paid now, the site claims its ground
+        /// once its whole footprint is in sight, and a blocker found then
+        /// refunds it in full.
         #[arg(long)]
         defer: bool,
     },
-    /// Send harvesters to weld a damaged own built building.
+    /// Send harvesters to weld a damaged own finished building. To add
+    /// builders to an unfinished site, repeat `build` with its kind and
+    /// anchor.
     Repair {
         #[command(flatten)]
         squad: Squad,
@@ -195,6 +211,15 @@ pub(crate) enum LiveCmd {
         #[command(flatten)]
         squad: Squad,
         /// The building coming down.
+        #[arg(long)]
+        building: u32,
+    },
+    /// Lift an own finished building one rung up its upgrade ladder,
+    /// paid now; it is offline until the upgrade finishes.
+    Upgrade {
+        /// Acting player index.
+        player: u8,
+        /// The building to upgrade.
         #[arg(long)]
         building: u32,
     },
@@ -595,6 +620,12 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
             building: BuildingId(building),
             queue,
         }),
+        LiveCmd::Upgrade { player, building } => Request::SendCommand {
+            player: PlayerId(player),
+            command: Command::UpgradeBuilding {
+                building: BuildingId(building),
+            },
+        },
         LiveCmd::Cancel { player, building } => Request::SendCommand {
             player: PlayerId(player),
             command: Command::Cancel {
@@ -853,6 +884,7 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
         LiveCmd::CaptureSequence { .. } => {
             bail!("capture-sequence is executed directly, not mapped to requests")
         }
+        LiveCmd::Digest { .. } => bail!("digest is executed directly, not mapped to requests"),
         LiveCmd::Overlay => Request::ToggleOverlay,
         LiveCmd::Load { path } => Request::LoadScenario { path },
         LiveCmd::SaveReplay { path } => Request::SaveReplay { path },

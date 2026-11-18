@@ -2,7 +2,7 @@
 //! host has recorded for it.
 
 use aftermine_opponent::{MapModel, Opponent, OwnEvents};
-use aftermine_sim::scenario::{BotConfig, ScenarioError};
+use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance, ScenarioError};
 use aftermine_sim::{PlayerCommand, PlayerId, Scenario, State, TickReport};
 use serde::{Deserialize, Serialize};
 use std::cell::OnceCell;
@@ -129,6 +129,31 @@ pub fn record_events(bots: &mut [SeatController], report: &TickReport) {
     for bot in bots {
         bot.events.record(bot.controller.player(), &report.events);
     }
+}
+
+/// Leaves `human` as the scenario's one person and seats a bot at
+/// `difficulty` and `stance` in every other chair, seat `n` taking
+/// personality seed `seed_base + n`, the way a New Match seats its bots.
+pub fn seat_bots_around(
+    scenario: &mut Scenario,
+    human: PlayerId,
+    difficulty: BotDifficulty,
+    stance: BotStance,
+    seed_base: u64,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        usize::from(human.0) < scenario.players.len(),
+        "{} has no seat {}",
+        scenario.name,
+        human.0
+    );
+    for (index, seat) in scenario.players.iter_mut().enumerate() {
+        seat.bot = index != usize::from(human.0);
+        seat.bot_config = seat
+            .bot
+            .then(|| BotConfig::new(difficulty, stance, seed_base.wrapping_add(index as u64)));
+    }
+    Ok(())
 }
 
 /// Every controller a scenario configures, in seat order. A `bot` seat

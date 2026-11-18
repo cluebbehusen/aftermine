@@ -1,0 +1,15 @@
+Playtest commands. `./play <command> --help` explains one.
+
+  digest [--map]    What your seat knows now; --map adds a map.
+  advance <ticks>   Run the game. Orders take effect from the next tick.
+  status            The tick, and the result once the match ends.
+
+Orders. Each names your seat first: ./play hunt 0 --units 4,5 --to 30,20
+  run, hunt, advance-units, patrol, stop, attack-unit, attack-building,
+  accompany, harvest, build, repair, repair-unit, salvage, cancel,
+  upgrade, train, rally
+  send              Any command with no verb of its own, as JSON.
+
+An order the game would reject is refused at once with its reason, and
+nothing is sent. Other commands of the debug client are not part of the
+playtest.

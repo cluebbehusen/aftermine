@@ -148,3 +148,39 @@ fn seats_hear_only_their_own_failures_at_their_next_decision() {
     assert_eq!(serde_json::to_value(&trace.events).unwrap(), rejected);
     assert_eq!(saved(&seats)[0]["events"], serde_json::json!([]));
 }
+
+#[test]
+fn seating_bots_around_a_player_leaves_that_seat_alone() {
+    let mut scenario = Scenario::skirmish();
+    seat_bots_around(
+        &mut scenario,
+        PlayerId(0),
+        BotDifficulty::Prime,
+        BotStance::Aggressive,
+        40,
+    )
+    .expect("skirmish has a seat zero");
+    assert!(!scenario.players[0].bot);
+    assert_eq!(scenario.players[0].bot_config, None);
+    assert!(scenario.players[1].bot);
+    assert_eq!(
+        scenario.players[1].bot_config,
+        Some(BotConfig::new(
+            BotDifficulty::Prime,
+            BotStance::Aggressive,
+            41
+        ))
+    );
+    let bots = seat_controllers(&scenario).expect("the scenario builds bots");
+    assert_eq!(bots.len(), scenario.players.len() - 1);
+    assert!(
+        seat_bots_around(
+            &mut scenario,
+            PlayerId(9),
+            BotDifficulty::Prime,
+            BotStance::Balanced,
+            0
+        )
+        .is_err()
+    );
+}

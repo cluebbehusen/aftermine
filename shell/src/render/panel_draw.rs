@@ -2123,7 +2123,7 @@ fn draw_dock(
                     Some(ticks) => format!(
                         "{} building | {}",
                         group.active,
-                        crate::panel::tick_time_label(ticks)
+                        aftermine_kit::roster::tick_time_label(ticks)
                     ),
                     None => "waiting".into(),
                 },

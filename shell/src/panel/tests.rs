@@ -1,5 +1,6 @@
 use super::*;
 use crate::game::Game;
+use aftermine_kit::roster::weapon_lines;
 
 #[test]
 fn every_dock_chip_that_cancels_work_discards_it_and_nothing_else_does() {
@@ -1586,22 +1587,6 @@ fn a_foreign_program_is_never_enriched() {
 }
 
 #[test]
-fn weapon_lines_read_from_the_stats_table() {
-    let sentinel = weapon_lines(aftermine_sim::UnitKind::Sentinel);
-    assert_eq!(sentinel.len(), 2, "main gun and the anti-air poke");
-    assert!(sentinel[0].contains("dmg"));
-    assert!(sentinel[0].contains("tiles"));
-    assert!(sentinel[0].contains("ground"));
-    assert!(sentinel[1].contains("air"));
-    let bombard = weapon_lines(aftermine_sim::UnitKind::Bombard);
-    assert!(bombard[0].contains("| shell"));
-    assert!(bombard[0].contains("splash"));
-    let roc = weapon_lines(aftermine_sim::UnitKind::Roc);
-    assert_eq!(roc.len(), 1, "identical guns share a line: {roc:?}");
-    assert!(roc[0].starts_with("2 guns | "));
-}
-
-#[test]
 fn panel_copy_uses_only_supported_font_glyphs() {
     let units = [
         UnitKind::Harvester,
@@ -1675,7 +1660,7 @@ fn panel_copy_uses_only_supported_font_glyphs() {
     };
     for kind in units {
         assert!(
-            supported(&crate::description::unit_description(kind)),
+            supported(&aftermine_kit::roster::unit_description(kind)),
             "{} description",
             kind.name()
         );
@@ -1685,7 +1670,7 @@ fn panel_copy_uses_only_supported_font_glyphs() {
     }
     for kind in buildings {
         assert!(
-            supported(&crate::description::building_description(kind)),
+            supported(&aftermine_kit::roster::building_description(kind)),
             "{} description",
             kind.name()
         );

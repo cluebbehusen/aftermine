@@ -305,6 +305,23 @@ enum Cmd {
     },
     /// Inspect a replay as stable JSON: metadata, command activity, outcome,
     /// and exact snapshots at selected simulation ticks.
+    /// Re-run a recorded match's bots and print one seat's decision
+    /// traces as JSON lines: what it knew, wanted, bought and ran, and what
+    /// each attack it launched needed and sent. Refused at the first tick
+    /// this build's bot would have played differently.
+    ReplayTrace {
+        /// Replay path, JSON or `.amreplay`.
+        path: PathBuf,
+        /// The bot seat to trace.
+        #[arg(long)]
+        seat: u8,
+        /// First decision tick to print.
+        #[arg(long, default_value_t = 0)]
+        from: u64,
+        /// Last decision tick to print; the re-run stops after it.
+        #[arg(long, default_value_t = u64::MAX)]
+        to: u64,
+    },
     ReplayInspect {
         /// Replay path, JSON or `.amreplay`. A player save is refused.
         path: PathBuf,
@@ -470,7 +487,29 @@ enum Cmd {
         /// Seconds a silent connection may sit before it is closed.
         #[arg(long, default_value_t = 30 * 60, value_parser = clap::value_parser!(u64).range(1..))]
         idle_timeout: u64,
+        /// Make this a playtest for this seat: every other seat gets the
+        /// bot below, and the client may see and command only this seat.
+        #[arg(long, requires = "replay_out")]
+        player: Option<u8>,
+        /// The playtest bots' skill rung.
+        #[arg(long, requires = "player", default_value_t = aftermine_sim::scenario::BotDifficulty::Standard)]
+        difficulty: aftermine_sim::scenario::BotDifficulty,
+        /// The playtest bots' posture.
+        #[arg(long, requires = "player", default_value_t = aftermine_sim::scenario::BotStance::Balanced)]
+        stance: aftermine_sim::scenario::BotStance,
+        /// Seat `n`'s bot takes personality seed this plus `n`.
+        #[arg(long, requires = "player", default_value_t = 0)]
+        personality_seed: u64,
+        /// The tick a playtest stops at.
+        #[arg(long, requires = "player")]
+        tick_limit: Option<u64>,
+        /// Where a playtest rewrites its replay after every advance.
+        #[arg(long, requires = "player")]
+        replay_out: Option<PathBuf>,
     },
+    /// Print every Roster page as plain text: the rules a player reads in
+    /// game, for an agent that plays through `driver live`.
+    Rules,
     /// Automated end-to-end check against a live shell.
     Smoke {
         /// Shell debug-server address.
@@ -917,6 +956,35 @@ fn main() -> Result<()> {
                 bail!("hash mismatch: expected {expected}, got {hash}");
             }
         }
+        Cmd::ReplayTrace {
+            path,
+            seat,
+            from,
+            to,
+        } => {
+            let replay = aftermine_kit::load_replay(&path)
+                .map_err(|err| anyhow::anyhow!("loading {}: {err}", path.display()))?;
+            let build = build_identity().label();
+            if replay.meta.build != build || build.ends_with("-dirty") {
+                eprintln!(
+                    "note: the replay was recorded by {} and this is {build}; \
+                     a bot that would play differently is refused at its first divergence",
+                    replay.meta.build
+                );
+            }
+            let mut out = std::io::stdout().lock();
+            aftermine_driver::replay_trace::trace(
+                &replay,
+                aftermine_sim::PlayerId(seat),
+                from..=to,
+                |row| {
+                    use std::io::Write as _;
+                    serde_json::to_writer(&mut out, row)?;
+                    writeln!(out)?;
+                    Ok(())
+                },
+            )?;
+        }
         Cmd::ReplayInspect {
             path,
             ticks,
@@ -1028,6 +1096,30 @@ fn main() -> Result<()> {
             {
                 return capture_sequence(&addr, frames, ticks_between, present, &out);
             }
+            if let LiveCmd::Digest { player, map } = cmd {
+                let terrain = map
+                    .map(|path| {
+                        runner::load_scenario(&path.to_string_lossy())?
+                            .build()
+                            .context("building the scenario's map")
+                    })
+                    .transpose()?;
+                let mut client = Client::connect(&addr)?;
+                let Reply::Fog(view) = client.call(aftermine_protocol::Request::QueryFogView {
+                    player: aftermine_sim::PlayerId(player),
+                })?
+                else {
+                    bail!("the session answered a fog query with something else");
+                };
+                print!(
+                    "{}",
+                    aftermine_driver::digest::render(
+                        &view,
+                        terrain.as_ref().map(aftermine_sim::State::map)
+                    )
+                );
+                return Ok(());
+            }
             // Parse everything before touching the socket: a typo'd tile
             // should fail fast, not after connecting to a live game.
             let requests = live_requests(cmd)?;
@@ -1099,11 +1191,33 @@ fn main() -> Result<()> {
             port,
             scenario,
             idle_timeout,
-        } => aftermine_driver::session::serve(
-            port,
-            &scenario,
-            std::time::Duration::from_secs(idle_timeout),
-        )?,
+            player,
+            difficulty,
+            stance,
+            personality_seed,
+            tick_limit,
+            replay_out,
+        } => {
+            let playtest = player.zip(replay_out).map(|(seat, replay_out)| {
+                aftermine_driver::session::PlaytestSetup {
+                    playtest: aftermine_driver::session::Playtest {
+                        seat: aftermine_sim::PlayerId(seat),
+                        tick_limit,
+                        replay_out,
+                    },
+                    difficulty,
+                    stance,
+                    personality_seed_base: personality_seed,
+                }
+            });
+            aftermine_driver::session::serve(
+                port,
+                &scenario,
+                std::time::Duration::from_secs(idle_timeout),
+                playtest,
+            )?;
+        }
+        Cmd::Rules => print!("{}", aftermine_driver::rules::sheet()),
         Cmd::Smoke { addr, spawn } => smoke::run(&addr, spawn)?,
         Cmd::Shots {
             port,

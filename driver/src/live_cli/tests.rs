@@ -41,6 +41,32 @@ fn advance_units_speaks_the_zero_chase_sim_verb() {
 }
 
 #[test]
+fn upgrade_lifts_one_building_and_kind_help_lists_every_kind() {
+    #[derive(clap::Parser)]
+    struct Live {
+        #[command(subcommand)]
+        command: LiveCmd,
+    }
+    let parsed =
+        <Live as clap::Parser>::try_parse_from(["live", "upgrade", "0", "--building", "14"])
+            .unwrap();
+    assert_eq!(
+        live_requests(parsed.command).unwrap(),
+        vec![Request::SendCommand {
+            player: PlayerId(0),
+            command: Command::UpgradeBuilding {
+                building: BuildingId(14),
+            },
+        }]
+    );
+    let help = crate::parse::building_kind_help();
+    for kind in aftermine_sim::BuildingKind::ALL {
+        assert!(help.contains(&kind.name().replace(' ', "-")), "{help}");
+    }
+    assert!(crate::parse::unit_kind_help().contains("flakhound"));
+}
+
+#[test]
 fn raw_commands_use_the_strict_debug_wire_boundary() {
     let request = live_requests(LiveCmd::Send {
         player: 1,

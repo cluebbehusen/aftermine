@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Aftermine playtest report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "result",
+    "final_tick",
+    "plan",
+    "summary",
+    "weaknesses",
+    "bot_did_well",
+    "harness_problems"
+  ],
+  "properties": {
+    "result": {
+      "description": "The match result for your seat, or unfinished when the tick limit ended it.",
+      "enum": ["win", "loss", "unfinished"]
+    },
+    "final_tick": {
+      "description": "The tick the match ended or stopped at.",
+      "type": "integer"
+    },
+    "plan": {
+      "description": "How you carried out your assigned plan, and where and why you departed from it.",
+      "type": "string"
+    },
+    "summary": {
+      "description": "How the match went, with the ticks where it turned.",
+      "type": "string"
+    },
+    "weaknesses": {
+      "description": "Each place the bot played badly, in tick order.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from_tick", "to_tick", "bot_did", "should_have", "evidence"],
+        "properties": {
+          "from_tick": { "type": "integer" },
+          "to_tick": { "type": "integer" },
+          "bot_did": {
+            "description": "What the bot did, as you observed it.",
+            "type": "string"
+          },
+          "should_have": {
+            "description": "What a capable player in its seat would have done instead.",
+            "type": "string"
+          },
+          "evidence": {
+            "description": "What you saw that shows it: unit and structure ids, positions, hp, counts.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "bot_did_well": {
+      "description": "Responses of the bot's that worked against you, each with its ticks.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "harness_problems": {
+      "description": "Anything about the commands, the digest or the rules sheet that was missing, wrong or confusing.",
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
