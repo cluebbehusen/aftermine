@@ -1007,7 +1007,7 @@ fn a_defense_re_sends_only_members_that_found_a_route() {
     let staged = |x: i32, y: i32, tick: u64| {
         let scenario = raided(
             &[(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 6, 8)],
-            &[(UnitKind::Warden, x, y)],
+            &[(UnitKind::Sentinel, x, y)],
         );
         let mut state = scenario.build().unwrap();
         if tick > 0 {
@@ -1223,4 +1223,124 @@ fn mirrored_seats_shelled_by_mirrored_bastions_answer_alike() {
     let east = seat(&scenario, 1).act(&state, &mut OwnEvents::default());
     assert!(!hunts(&west).is_empty(), "premise: {west:?}");
     assert_eq!(mirror(&state, west), east);
+}
+
+#[test]
+fn defenders_short_of_a_ground_threat_wait_beside_the_foundry_until_they_match_it() {
+    // One Sentinel cannot match three: it waits beside the Foundry, where
+    // the raiders that come on meet it, instead of walking into them.
+    let raiders = [
+        (UnitKind::Sentinel, 9, 4),
+        (UnitKind::Sentinel, 9, 5),
+        (UnitKind::Sentinel, 9, 6),
+    ];
+    let scenario = raided(&[(UnitKind::Sentinel, 5, 8)], &raiders);
+    let state = scenario.build().unwrap();
+    let foundry = state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Foundry)
+        .unwrap();
+    let beside: Vec<TilePos> =
+        crate::frame::ring(foundry.anchor, BuildingKind::Foundry.size()).collect();
+    let waiting = hunts(&seat(&scenario, 0).act(&state, &mut OwnEvents::default()));
+    assert!(
+        matches!(&waiting[..], [(_, goal)] if beside.contains(goal)),
+        "{waiting:?}"
+    );
+
+    // Four match them and go at the nearest.
+    let scenario = raided(
+        &[
+            (UnitKind::Sentinel, 5, 8),
+            (UnitKind::Sentinel, 6, 8),
+            (UnitKind::Sentinel, 5, 9),
+            (UnitKind::Sentinel, 6, 9),
+        ],
+        &raiders,
+    );
+    let state = scenario.build().unwrap();
+    let going = hunts(&seat(&scenario, 0).act(&state, &mut OwnEvents::default()));
+    assert!(
+        matches!(&going[..], [(units, goal)] if units.len() == 4 && goal.x == 9),
+        "{going:?}"
+    );
+
+    // The lowest rung sends what it has piecemeal.
+    let scenario = raided(&[(UnitKind::Sentinel, 5, 8)], &raiders);
+    let state = scenario.build().unwrap();
+    let piecemeal = hunts(
+        &seat_with(&scenario, 0, rung(BotDifficulty::Scrapheap))
+            .act(&state, &mut OwnEvents::default()),
+    );
+    assert!(
+        matches!(&piecemeal[..], [(_, goal)] if goal.x == 9),
+        "{piecemeal:?}"
+    );
+}
+
+#[test]
+fn an_unarmed_enemy_among_the_seat_s_buildings_draws_a_defender_without_a_shortfall() {
+    // A Surveyor parked by the Foundry on the seat's side of the map.
+    let scenario = raided(
+        &[(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 6, 8)],
+        &[(UnitKind::Surveyor, 8, 3)],
+    );
+    let state = scenario.build().unwrap();
+    let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
+    let sent = hunts(&commands);
+    assert!(
+        matches!(&sent[..], [(units, goal)] if !units.is_empty() && *goal == TilePos::new(8, 3)),
+        "{commands:?}"
+    );
+    assert!(
+        builds(&commands)
+            .iter()
+            .all(|(kind, _)| *kind != BuildingKind::Turret),
+        "a scout is no emergency: {commands:?}"
+    );
+    assert!(
+        trace
+            .unwrap()
+            .missions
+            .iter()
+            .any(|mission| matches!(mission.kind, MissionKind::Defend { .. }))
+    );
+
+    // One on the enemy's side of the map is left alone.
+    let scenario = raided(
+        &[(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 6, 8)],
+        &[(UnitKind::Surveyor, 14, 3)],
+    );
+    let state = scenario.build().unwrap();
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    assert!(hunts(&commands).is_empty(), "{commands:?}");
+}
+
+#[test]
+fn an_enemy_building_raised_among_the_seat_s_buildings_is_attacked() {
+    let mut scenario = raided(
+        &[(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 6, 8)],
+        &[],
+    );
+    scenario.buildings.push(BuildingSpec {
+        player: 1,
+        kind: BuildingKind::Fabricator,
+        x: 8,
+        y: 1,
+    });
+    let state = scenario.build().unwrap();
+    let fabricator = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Fabricator)
+        .unwrap();
+    let beside: Vec<TilePos> =
+        crate::frame::ring(fabricator.anchor, BuildingKind::Fabricator.size()).collect();
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let sent = hunts(&commands);
+    assert!(
+        matches!(&sent[..], [(units, goal)] if !units.is_empty() && beside.contains(goal)),
+        "{commands:?}"
+    );
 }

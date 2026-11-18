@@ -94,19 +94,19 @@ fn no_raid_sets_out_while_a_defense_is_under_way() {
 #[test]
 fn a_quiet_local_guard_leaves_raiders_free_to_raid() {
     let mut scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
-    // A West expansion on the south of the field with Sentinels beside it,
-    // and an East Sentinel standing off it: near enough to post a guard, too
-    // far to defend against.
+    // A West expansion on the south of the field, out of the outpost's
+    // threat gap, with Sentinels beside it, and an East Sentinel standing off
+    // it: near enough to post a guard, too far to defend against.
     scenario.buildings.push(BuildingSpec {
         player: 0,
         kind: BuildingKind::Foundry,
         x: 20,
-        y: 19,
+        y: 20,
     });
     for x in 25..28 {
-        scenario.units.push(unit(0, UnitKind::Sentinel, x, 20));
+        scenario.units.push(unit(0, UnitKind::Sentinel, x, 21));
     }
-    scenario.units.push(unit(1, UnitKind::Sentinel, 33, 21));
+    scenario.units.push(unit(1, UnitKind::Sentinel, 33, 22));
     let state = scenario.build().unwrap();
     let (_, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
     let missions = trace.unwrap().missions;

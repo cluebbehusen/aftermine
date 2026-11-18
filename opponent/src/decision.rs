@@ -551,6 +551,14 @@ pub(crate) fn decide(
     let short = !shortfalls.is_empty();
     ledger.hold(persistent.missions.held_workers(observation));
     workers::recover(observation, &foundries, &mut ledger);
+    // Until the army reaches the stance minimum, its next unit keeps its
+    // price ahead of the saving target and workers, so the scrap the army
+    // leaves waits for it.
+    let reserve = if exposed {
+        awaited(observation, &producers, &needs)
+    } else {
+        0
+    };
     if short {
         ledger.protected = 0;
         defenses::emergency(
@@ -569,13 +577,14 @@ pub(crate) fn decide(
             &producers,
             persistent,
             &mut needs,
+            reserve,
             &mut ledger,
         );
     }
     // A short defense leaves scrap to the army: only the recovery Harvester
     // above is trained while it lasts. Until the army reaches the stance
     // minimum, workers that would cost more than it take only what the army
-    // leaves, after production.
+    // leaves after production, less the price of the unit it waits for.
     let pace = if exposed {
         army(observation).saturating_sub(workforce(observation))
     } else {
@@ -815,13 +824,14 @@ pub(crate) fn decide(
         }
     }
     if !short && exposed {
+        let reserve = awaited(observation, &producers, &needs);
         workers::train(
             observation,
             map,
             &foundries,
             &staffing,
             profile.traits.greed,
-            u64::MAX,
+            u64::from(ledger.spendable().saturating_sub(reserve)),
             &mut ledger,
         );
     }
@@ -837,10 +847,16 @@ pub(crate) fn decide(
     }
 }
 
-/// Buys the saving target's next step once the whole uncommitted bank covers
-/// it: an upgrade, a unit at the nearest ready producer that trains it, or a
+/// Buys the saving target's next step once the uncommitted bank covers it,
+/// less what `reserve`, the price of the army unit an exposed seat waits for,
+/// keeps of the unprotected scrap: an upgrade, a unit at the nearest ready producer that trains it, or a
 /// building on the first spot the seat's knowledge allows, raised by the
-/// nearest free Harvester.
+/// nearest free Harvester. A unit or a defense the seat saves for waits for
+/// no army unit.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the purchase reads the decision's producers, needs and reserve"
+)]
 fn buy(
     observation: &ObservationData,
     map: &MapModel,
@@ -848,6 +864,7 @@ fn buy(
     producers: &[Producer<'_>],
     persistent: &mut Persistent,
     needs: &mut Needs,
+    reserve: u32,
     ledger: &mut Ledger,
 ) {
     let Some(investment) = persistent.saving.investment() else {
@@ -860,7 +877,16 @@ fn buy(
     else {
         return;
     };
-    let affordable = ledger.available() >= price;
+    // Scrap protected for the target is the target's; only the rest keeps
+    // the army's next unit its price. A unit or a defense the seat saves for
+    // defends it as the army would, and waits for nothing.
+    let reserve =
+        if matches!(step, Step::Train(_)) || matches!(investment, Investment::Defense { .. }) {
+            0
+        } else {
+            ledger.spendable().min(reserve)
+        };
+    let affordable = ledger.available() - reserve >= price;
     let tick = observation.tick;
     match step {
         Step::Upgrade(id) => {
@@ -1296,6 +1322,41 @@ fn produce(
             needs.queued(kind);
         }
     }
+}
+
+/// The price of the army's next unit: the cheapest that production would take
+/// for the most wanted role a producer serves, or with none, the cheapest any
+/// producer trains for its fallback role. Zero when the army waits for
+/// nothing.
+fn awaited(observation: &ObservationData, producers: &[Producer<'_>], needs: &Needs) -> u32 {
+    let kinds = || producers.iter().map(|producer| producer.building.kind);
+    let cheapest = |role: crate::Role, bar: u64| {
+        kinds()
+            .flat_map(|producer| composition::producible(observation, producer))
+            .filter(|kind| composition::role(*kind) == Some(role))
+            .filter(|kind| needs.suitability(*kind, role) >= bar)
+            .map(|kind| kind.stats().cost)
+            .min()
+    };
+    // Production skips a wanted role no producer serves, as this does.
+    for role in needs.wanted() {
+        let bar = kinds()
+            .filter_map(|producer| needs.unit(observation, producer, role, u32::MAX))
+            .map(|kind| needs.suitability(kind, role))
+            .max()
+            .map_or(0, |best| best * WAIT_FOR_BETTER / 1_000);
+        if let Some(cost) = cheapest(role, bar) {
+            return cost;
+        }
+    }
+    if !needs.fallback() {
+        return 0;
+    }
+    kinds()
+        .filter_map(|producer| needs.fallback_role(observation, producer))
+        .filter_map(|role| cheapest(role, 0))
+        .min()
+        .unwrap_or(0)
 }
 
 /// Ready producers left with no wanted role and no small stock train ground
