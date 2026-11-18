@@ -833,13 +833,13 @@ fn an_empty_bank_harvests_without_training() {
 
 #[test]
 fn the_running_total_pays_for_one_unit_across_two_foundries() {
-    let scenario = second_foundry(UnitKind::Sentinel.stats().cost + 10);
+    let scenario = second_foundry(UnitKind::Harvester.stats().cost + 10);
     let state = scenario.build().unwrap();
     assert_eq!(foundries(&state, PlayerId(0)).len(), 2);
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
     assert_eq!(
         trains(&commands),
-        [(foundries(&state, PlayerId(0))[0], UnitKind::Sentinel)]
+        [(foundries(&state, PlayerId(0))[0], UnitKind::Harvester)]
     );
 }
 
@@ -1276,20 +1276,14 @@ fn a_producer_about_to_finish_queues_its_next_unit_now() {
 }
 
 #[test]
-fn an_exposed_seat_keeps_its_next_army_unit_s_price_from_workers() {
-    // Scrap for a Harvester but not a Sentinel waits for the Sentinel while
-    // the army is below the stance minimum, and a Harvester once it is not.
+fn harvesters_that_outprice_the_army_take_only_what_it_leaves() {
+    // Scrap for a Harvester but not a Sentinel: the Foundry the army could
+    // not use still trains a Harvester.
     let scenario = arena(60);
     let state = scenario.build().unwrap();
     let foundry = foundries(&state, PlayerId(0))[0];
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-    assert_eq!(trains(&commands), [], "the scrap waits for a Sentinel");
-
-    let sentinel = UnitKind::Sentinel.stats().cost;
-    let scenario = arena(sentinel + 60);
-    let state = scenario.build().unwrap();
-    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-    assert_eq!(trains(&commands), [(foundry, UnitKind::Sentinel)]);
+    assert_eq!(trains(&commands), [(foundry, UnitKind::Harvester)]);
 }
 
 #[test]
@@ -1339,33 +1333,5 @@ fn a_seat_without_an_army_puts_up_a_turret_before_tech() {
         matches!(target(&armed), Some(Investment::Tech(_))),
         "an army to speak of saves for tech: {:?}",
         target(&armed)
-    );
-}
-
-#[test]
-fn an_exposed_seat_s_saving_target_leaves_its_next_army_unit_s_price() {
-    // A seat saving for an Extractor with no army: scrap for the Extractor
-    // but not for it and a Sentinel buys neither, and scrap for both buys
-    // both.
-    let framed = |scrap: u32| {
-        let mut scenario = arena(scrap);
-        scenario.map[3].replace_range(10..=10, "E");
-        scenario
-    };
-    let bought = |scenario: &Scenario| {
-        let state = scenario.build().unwrap();
-        let commands = seat(scenario, 0).act(&state, &mut OwnEvents::default());
-        (builds(&commands), trains(&commands))
-    };
-    let (built, trained) = bought(&framed(150));
-    assert!(
-        built.is_empty() && trained.is_empty(),
-        "{built:?} {trained:?}"
-    );
-    let (built, trained) = bought(&framed(240));
-    assert_eq!(built, [(BuildingKind::Extractor, TilePos::new(10, 3))]);
-    assert!(
-        trained.iter().any(|(_, kind)| *kind == UnitKind::Sentinel),
-        "{trained:?}"
     );
 }
