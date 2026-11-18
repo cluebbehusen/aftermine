@@ -1387,10 +1387,12 @@ fn saved_for(
 }
 
 /// While a defense is short, ready producers the wanted roles left idle each
-/// train the costliest armed unit the scrap on hand buys that can reach and hit
-/// a Foundry still short, until what this decision queued makes up each
-/// Foundry's shortfall: a seat too poor for its line unit or a gun still
-/// fields what it can afford. A ground unit helps only a Foundry on its
+/// train the armed unit that best answers a Foundry still short, among those
+/// the scrap on hand buys that can reach and hit its attackers, until what
+/// this decision queued makes up each Foundry's shortfall. A unit worth less
+/// than half the best answer any producer could train is not bought, so the
+/// bank saves for that answer rather than feeding units that die before they
+/// pay. A ground unit helps only a Foundry on its
 /// producer's ground; an aircraft helps any.
 fn arm(
     observation: &ObservationData,
@@ -1447,6 +1449,35 @@ fn arm(
     for (building, kind) in queued {
         cover(&mut shortfalls, kind, ground(building));
     }
+    // How well `kind` answers `short`: attacker value it destroys per scrap
+    // against the attackers the shortfall counts, or its price when it
+    // counts none.
+    let score = |kind: UnitKind, short: &Shortfall| -> u64 {
+        let total: u64 = short.attackers.iter().map(|(_, value)| *value).sum();
+        if total == 0 {
+            return u64::from(kind.stats().cost);
+        }
+        short
+            .attackers
+            .iter()
+            .map(|(attacker, value)| composition::matchup(kind, *attacker) * value)
+            .sum::<u64>()
+            / total
+    };
+    // The best answer to `short` any producer could train, ready or not: a
+    // unit worth less than half of it is not bought while the bank saves.
+    let best = |short: &Shortfall| -> u64 {
+        producers
+            .iter()
+            .flat_map(|producer| {
+                let at = map.component(producer.building.anchor);
+                composition::producible(observation, producer.building.kind)
+                    .filter(move |kind| helps(*kind, at, short))
+            })
+            .map(|kind| score(kind, short))
+            .max()
+            .unwrap_or(0)
+    };
     let idle: Vec<&Producer<'_>> = producers
         .iter()
         .filter(|producer| producer.ready && !ledger.queued_at(producer.building.id))
@@ -1455,9 +1486,14 @@ fn arm(
         let budget = ledger.spendable();
         let at = map.component(producer.building.anchor);
         let kind = shortfalls.iter().find_map(|short| {
+            let best = best(short);
             composition::producible(observation, producer.building.kind)
-                .filter(|kind| kind.stats().cost <= budget && helps(*kind, at, short))
-                .max_by_key(|kind| kind.stats().cost)
+                .filter(|kind| {
+                    kind.stats().cost <= budget
+                        && helps(*kind, at, short)
+                        && 2 * score(*kind, short) >= best
+                })
+                .max_by_key(|kind| (score(*kind, short), kind.stats().cost))
         });
         if let Some(kind) = kind
             && ledger.train(producer.building.id, kind)

@@ -597,6 +597,60 @@ pub(crate) fn needs(
     }
 }
 
+/// Damage per thousand ticks `kind`'s weapons deal to a target in `domain`.
+fn damage_rate(kind: UnitKind, domain: Domain) -> u64 {
+    kind.stats()
+        .weapons
+        .iter()
+        .filter(|weapon| weapon.targets.covers(domain))
+        .map(|weapon| u64::from(weapon.damage) * 1_000 / u64::from(weapon.cooldown_ticks.max(1)))
+        .sum()
+}
+
+/// `kind`'s longest weapon range against `domain`, in thousandths of a tile.
+fn range_milli(kind: UnitKind, domain: Domain) -> u64 {
+    kind.stats()
+        .weapons
+        .iter()
+        .filter(|weapon| weapon.targets.covers(domain))
+        .map(|weapon| (weapon.range * Fx::from_num(1_000)).to_num::<u64>())
+        .max()
+        .unwrap_or(0)
+}
+
+/// Per mille of its price in attacker value a unit of `kind` destroys
+/// fighting units of `attacker` before they kill it: what it deals over its
+/// life, which an outranged unit spends partly closing in under fire, and
+/// to which one that outranges adds the time the attacker spends closing.
+pub(crate) fn matchup(kind: UnitKind, attacker: UnitKind) -> u64 {
+    let (own, theirs) = (kind.stats(), attacker.stats());
+    let dealt_rate = damage_rate(kind, theirs.domain);
+    if dealt_rate == 0 {
+        return 0;
+    }
+    let taken_rate = damage_rate(attacker, own.domain);
+    // Ticks it lives under the attacker's fire.
+    let life = (u64::from(own.max_hp) * 1_000)
+        .checked_div(taken_rate)
+        .unwrap_or(100_000);
+    let (reach, outreach) = (
+        range_milli(kind, theirs.domain),
+        range_milli(attacker, own.domain),
+    );
+    let speed = |stats: aftermine_sim::stats::UnitStats| {
+        (stats.speed * Fx::from_num(1_000)).to_num::<u64>().max(1)
+    };
+    let firing = if reach >= outreach {
+        // The attacker closes the difference under its fire first.
+        life + (reach - outreach) / speed(*theirs)
+    } else {
+        life.saturating_sub((outreach - reach) / speed(*own))
+    };
+    let dealt = dealt_rate * firing / 1_000;
+    dealt * u64::from(theirs.cost) / u64::from(theirs.max_hp.max(1)) * 1_000
+        / u64::from(own.cost.max(1))
+}
+
 /// Per mille: `kind`'s damage per second per 100 scrap against ground,
 /// 1000 at ten, within a band narrow enough that variety still gives every
 /// kind its turn. A Lancer's rail tops it; a Bombard's single slow shell

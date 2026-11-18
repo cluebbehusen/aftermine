@@ -874,3 +874,31 @@ fn only_an_armed_enemy_aircraft_gives_a_sentinel_air_to_cover() {
         "an unarmed scout leaves the line waiting for a Warden"
     );
 }
+
+#[test]
+fn a_defense_short_of_wardens_saves_for_an_answer_rather_than_feed_scuttlers() {
+    let wardens = [(UnitKind::Warden, 7, 4), (UnitKind::Warden, 7, 6)];
+    let trained = |scrap: u32| {
+        let mut scenario = armed(&wardens, &[]);
+        scenario.players[0].scrap = scrap;
+        let state = scenario.build().unwrap();
+        trains(
+            &seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+                .act(&state, &mut OwnEvents::default()),
+        )
+        .into_iter()
+        .map(|(_, kind)| kind)
+        .collect::<Vec<_>>()
+    };
+    let poor = trained(60);
+    assert!(
+        !poor.contains(&UnitKind::Scuttler),
+        "a Scuttler only feeds the Wardens: {poor:?}"
+    );
+    let rich = trained(400);
+    assert!(
+        rich.iter()
+            .any(|kind| matches!(kind, UnitKind::Lancer | UnitKind::Warden)),
+        "an answer that outlasts or outranges them: {rich:?}"
+    );
+}

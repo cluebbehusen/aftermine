@@ -517,3 +517,18 @@ fn a_known_roc_counts_as_air_that_cannot_shoot_aircraft() {
     assert!(!grounder(UnitKind::Skyhook), "unarmed");
     assert!(!grounder(UnitKind::Sentinel), "on the ground");
 }
+
+#[test]
+fn a_matchup_favors_what_outranges_and_outlasts_the_attacker() {
+    let (scuttler, sentinel, lancer, warden) = (
+        UnitKind::Scuttler,
+        UnitKind::Sentinel,
+        UnitKind::Lancer,
+        UnitKind::Warden,
+    );
+    // A Warden kills a Scuttler as it closes; a Lancer outranges it.
+    assert!(matchup(lancer, warden) > 2 * matchup(scuttler, warden));
+    assert!(matchup(lancer, warden) > matchup(sentinel, warden));
+    // Nothing that cannot hit an aircraft answers one.
+    assert_eq!(matchup(UnitKind::Lancer, UnitKind::Buzzard), 0);
+}
