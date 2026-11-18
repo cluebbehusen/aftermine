@@ -427,6 +427,12 @@ pub(crate) fn decide(
             0
         },
     };
+    let unseen = composition::unseen(
+        observation,
+        &persistent.memory,
+        persistent.income.total(),
+        estimate_share(profile.difficulty),
+    );
     let mut needs = composition::needs(
         observation,
         &persistent.memory,
@@ -434,6 +440,7 @@ pub(crate) fn decide(
         profile.stance,
         income,
         outlet,
+        unseen,
     );
     if let Some(army) = ledger.decision.army.as_mut() {
         needs.describe_enemy(army);
@@ -1729,6 +1736,17 @@ pub(crate) fn army_horizon(difficulty: BotDifficulty) -> u64 {
         BotDifficulty::Standard => 1_800,
         BotDifficulty::Veteran => 3_000,
         BotDifficulty::Prime => 3_600,
+    }
+}
+
+/// Per mille of an enemy's unexplained spending the seat reckons is army it
+/// has not seen: a difficulty limit on estimate accuracy.
+pub(crate) fn estimate_share(difficulty: BotDifficulty) -> u64 {
+    match difficulty {
+        BotDifficulty::Scrapheap => 0,
+        BotDifficulty::Standard => 300,
+        BotDifficulty::Veteran => 450,
+        BotDifficulty::Prime => 600,
     }
 }
 

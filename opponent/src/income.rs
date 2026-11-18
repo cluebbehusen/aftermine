@@ -12,6 +12,9 @@ const TICKS_PER_MINUTE: u64 = 60 * TICKS_PER_SECOND as u64;
 pub(crate) struct Income {
     previous: Option<Previous>,
     per_minute: u32,
+    /// Everything the seat has earned so far.
+    #[serde(default)]
+    total: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,12 +44,18 @@ impl Income {
         let rate = u32::try_from(rate).unwrap_or(u32::MAX);
         self.per_minute = u32::try_from((3 * u64::from(self.per_minute) + u64::from(rate)) / 4)
             .expect("an average of u32 rates fits in u32");
+        self.total = self.total.saturating_add(u64::from(earned));
         earned
     }
 
     /// Records the decision the next sample is measured from.
     pub(crate) fn record(&mut self, tick: u64, bank: u32, spent: u32) {
         self.previous = Some(Previous { tick, bank, spent });
+    }
+
+    /// Everything the seat has earned so far.
+    pub(crate) fn total(&self) -> u64 {
+        self.total
     }
 
     /// Smoothed scrap per minute.

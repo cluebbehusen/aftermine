@@ -958,3 +958,32 @@ fn heavies_seen_long_enough_ago_that_their_positions_are_forgotten_still_bring_p
         "two Breakers seen 48 s ago still count toward the enemy's army"
     );
 }
+
+#[test]
+fn a_seat_that_has_earned_much_and_seen_little_of_the_enemy_wants_a_line() {
+    let scenario = armed(&[], &[]);
+    let state = scenario.build().unwrap();
+    let line_need = |earned: u64| -> i64 {
+        let seat = restored_with(
+            &seat_with(&scenario, 0, rung(BotDifficulty::Prime)),
+            &scenario,
+            &state,
+            |json| json["income"]["total"] = serde_json::json!(earned),
+        );
+        let (_, trace) = seat.clone().act_traced(&state, &mut OwnEvents::default());
+        let trace = serde_json::to_value(trace.unwrap()).unwrap();
+        trace["army"]["roles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|role| role["role"] == "line")
+            .and_then(|role| role["need"].as_i64())
+            .unwrap()
+    };
+    assert!(
+        line_need(6_000) > line_need(0).max(0) + 1_000,
+        "an enemy that earned as much may hold an army the seat has not seen: {} against {}",
+        line_need(6_000),
+        line_need(0)
+    );
+}

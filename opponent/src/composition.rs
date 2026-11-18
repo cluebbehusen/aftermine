@@ -203,8 +203,61 @@ fn grounder(kind: UnitKind) -> bool {
 /// on what the seat knows.
 const BLAST_TARGETS: usize = 64;
 
+/// Scrap of army an enemy has likely bought out of the seat's sight: `share`
+/// per mille of what a seat that earned `earned` has spent beyond what the
+/// seat has seen it buy and what the seat's own workers cost. The seat's own
+/// earnings and workers stand in for the enemy's, which it cannot see.
+pub(crate) fn unseen(
+    observation: &ObservationData,
+    memory: &Memory,
+    earned: u64,
+    share: u64,
+) -> u64 {
+    if share == 0 {
+        return 0;
+    }
+    let price = |kind: BuildingKind, tier: u8| -> u64 {
+        (0..=tier)
+            .map(|rung| u64::from(kind.tier_stats(rung).construction.cost))
+            .sum()
+    };
+    // Each seat's first Foundry came with the map.
+    let mut free: Vec<aftermine_sim::PlayerId> = Vec::new();
+    let mut known: u64 = 0;
+    for building in &observation.enemy_buildings {
+        if building.kind == BuildingKind::Foundry && !free.contains(&building.player) {
+            free.push(building.player);
+            continue;
+        }
+        known += price(building.kind, building.tier);
+    }
+    known += observation
+        .public_buildings
+        .iter()
+        .filter(|public| {
+            !observation
+                .enemy_buildings
+                .iter()
+                .any(|building| building.anchor == public.anchor)
+        })
+        .map(|public| price(public.kind, public.tier))
+        .sum::<u64>();
+    known += memory
+        .army()
+        .iter()
+        .map(|unit| u64::from(unit.kind.stats().cost))
+        .sum::<u64>();
+    let workers: u64 = observation
+        .my_units
+        .iter()
+        .filter(|unit| unit.kind.stats().harvest.is_some())
+        .map(|unit| u64::from(unit.kind.stats().cost))
+        .sum();
+    earned.saturating_sub(known + workers) * share / 1_000
+}
+
 impl Enemy {
-    fn of(observation: &ObservationData, memory: &Memory) -> Self {
+    fn of(observation: &ObservationData, memory: &Memory, unseen: u64) -> Self {
         let now = observation.tick;
         let mut enemy = Self {
             air: 0,
@@ -254,6 +307,8 @@ impl Enemy {
                 reaches[reach as usize] += value;
             }
         }
+        // Army bought out of sight walks in on the ground until seen.
+        enemy.ground += unseen;
         enemy.reach = [Reach::Short, Reach::Medium, Reach::Long]
             .into_iter()
             .filter(|reach| reaches[*reach as usize] > 0)
@@ -506,8 +561,9 @@ pub(crate) fn needs(
     stance: BotStance,
     income: u32,
     outlet: Outlet,
+    unseen: u64,
 ) -> Needs {
-    let enemy = Enemy::of(observation, memory);
+    let enemy = Enemy::of(observation, memory, unseen);
     let mut own = [0_i64; ROLES.len()];
     let mut kinds = [0_u32; UnitKind::ALL.len()];
     let owned = observation

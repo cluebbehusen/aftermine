@@ -55,6 +55,7 @@ fn a_seat_wants_siege_behind_its_line_by_stance_unless_it_lifts_its_army() {
             stance,
             0,
             outlet,
+            0,
         )
         .need[Role::Siege as usize]
     };
@@ -113,7 +114,7 @@ fn clustering_reads_the_most_recently_seen_enemies() {
     let mut memory = Memory::default();
     memory.observe(&observation);
     assert!(
-        !Enemy::of(&observation, &memory).clustered,
+        !Enemy::of(&observation, &memory, 0).clustered,
         "premise: spread out"
     );
     observation.tick = 300;
@@ -127,7 +128,7 @@ fn clustering_reads_the_most_recently_seen_enemies() {
         })
         .collect();
     memory.observe(&observation);
-    assert!(Enemy::of(&observation, &memory).clustered);
+    assert!(Enemy::of(&observation, &memory, 0).clustered);
 }
 
 #[test]
@@ -419,6 +420,7 @@ fn once_anti_heavy_units_can_be_trained_the_line_leaves_the_heavies_to_them() {
             BotStance::Balanced,
             1_000,
             outlet,
+            0,
         );
         (
             needs.need[Role::Line as usize],
@@ -460,6 +462,7 @@ fn a_known_enemy_cradle_raises_the_need_its_machine_raises_before_it_stands() {
             BotStance::Balanced,
             0,
             outlet,
+            0,
         )
         .need[role as usize]
     };
@@ -559,5 +562,54 @@ fn a_structure_is_scored_against_the_damage_it_takes_as_a_structure() {
         matchup(turret, UnitKind::Maw) < 500,
         "{}",
         matchup(turret, UnitKind::Maw)
+    );
+}
+
+#[test]
+fn spending_the_seat_has_not_seen_counts_as_unseen_army() {
+    use aftermine_sim::{PlayerId, Scenario};
+    let state = Scenario::skirmish().build().unwrap();
+    let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let memory = Memory::default();
+    let workers: u64 = observation
+        .my_units
+        .iter()
+        .filter(|unit| unit.kind.stats().harvest.is_some())
+        .map(|unit| u64::from(unit.kind.stats().cost))
+        .sum();
+    assert_eq!(
+        unseen(&observation, &memory, 2_000, 0),
+        0,
+        "no estimate at share 0"
+    );
+    assert_eq!(
+        unseen(&observation, &memory, 2_000, 600),
+        (2_000 - workers) * 600 / 1_000
+    );
+    // The enemy's starting Foundry came with the map; an Extractor it built
+    // is spending explained.
+    let foundry = observation.my_buildings[0].clone();
+    observation.enemy_buildings = vec![
+        aftermine_sim::observation::BuildingObs {
+            player: PlayerId(1),
+            seen: false,
+            ..foundry.clone()
+        },
+        aftermine_sim::observation::BuildingObs {
+            player: PlayerId(1),
+            kind: BuildingKind::Extractor,
+            seen: false,
+            ..foundry
+        },
+    ];
+    let extractor = u64::from(BuildingKind::Extractor.base_stats().construction.cost);
+    assert_eq!(
+        unseen(&observation, &memory, 2_000, 600),
+        (2_000 - workers - extractor) * 600 / 1_000
+    );
+    assert_eq!(
+        unseen(&observation, &memory, workers, 600),
+        0,
+        "never negative"
     );
 }
