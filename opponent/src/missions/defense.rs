@@ -1,9 +1,9 @@
 //! The defend mission: every threatened Foundry recruits free units that can
-//! hit its threats and sends them at the threat nearest it once they match
-//! the force they would meet, then lets them go once the threat has been gone
-//! a while. Enemy scouts and builders among the seat's buildings, and enemy
-//! buildings raised among them, are threats too. An ally's Foundry under
-//! ground attack gets the units the seat's own Foundries leave free. Shells from a
+//! hit its threats and sends them at the threat nearest it once they match the
+//! force they would meet, then lets them go once the threat has been gone a
+//! while. Enemy scouts and builders among the seat's buildings, and enemy
+//! buildings raised among them, are threats too. An ally's Foundry under ground
+//! attack gets the units the seat's own Foundries leave free. Shells from a
 //! known enemy building send ground fighters beside it, shells from a gun out
 //! of sight advance them on where it probably stands, and a gun in sight is
 //! attacked.
