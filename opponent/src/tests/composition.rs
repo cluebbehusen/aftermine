@@ -924,3 +924,37 @@ fn attackers_in_a_domain_already_covered_do_not_set_the_answer() {
             < crate::decision::answer(flakhound, &both([0, 120]))
     );
 }
+
+#[test]
+fn heavies_seen_long_enough_ago_that_their_positions_are_forgotten_still_bring_piledrivers() {
+    let scenario = foundry_of_heavies();
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 960, &[]);
+    let at = state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Crucible)
+        .unwrap()
+        .id;
+    let ledger = |army: bool| {
+        let seat = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            let breakers = remembered(
+                (0..2_u32).map(|index| (1_000 + index, UnitKind::Breaker, TilePos::new(20, 1), 0)),
+            );
+            json["memory"]["units"] = serde_json::json!([]);
+            json["memory"]["army"] = if army {
+                breakers
+            } else {
+                serde_json::json!([])
+            };
+        });
+        trains(&seat.clone().act(&state, &mut OwnEvents::default()))
+            .into_iter()
+            .any(|(building, kind)| building == at && kind == UnitKind::Piledriver)
+    };
+    assert!(!ledger(false), "premise: nothing known, no Piledriver");
+    assert!(
+        ledger(true),
+        "two Breakers seen 48 s ago still count toward the enemy's army"
+    );
+}

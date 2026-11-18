@@ -222,6 +222,8 @@ impl Enemy {
         let defender = defender();
         let heaviest = heaviest_projectile();
         let mut reaches = [0_u64; 3];
+        // Shells come from guns where the seat last saw them; the army's
+        // size from the ledger, which keeps units that walked out of sight.
         for unit in memory.units() {
             let value = unit.value(now);
             if let Some((_, stats)) = defender {
@@ -231,6 +233,9 @@ impl Enemy {
                     enemy.shelling += value;
                 }
             }
+        }
+        for unit in memory.army() {
+            let value = memory.army_value(unit, now);
             if unit.kind.stats().domain == Domain::Air {
                 enemy.air += value;
                 if unit.kind.stats().can_fight() {

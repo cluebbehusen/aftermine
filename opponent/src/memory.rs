@@ -31,6 +31,10 @@ const UNIT_TICKS: u64 = 600;
 /// there long after a mobile unit would have moved on.
 const STRANDED_TICKS: u64 = 3_600;
 
+/// Ticks an enemy unit counts at full value in the army ledger after it was
+/// last seen, before it starts to fade.
+const HOLD_TICKS: u64 = 1_200;
+
 /// Enemy units remembered at once, the stalest forgotten first: a computation
 /// bound that normal play stays under, since units seen more than
 /// `UNIT_TICKS` ago are forgotten anyway.
@@ -64,6 +68,20 @@ pub(crate) struct Memory {
     /// Anchors of the seat's own Extractors, sites included, at the last
     /// decision, in order.
     extractors: Vec<TilePos>,
+    /// The army ledger: enemy units counted toward the enemy's army, by id,
+    /// wherever they went after they were last seen, until they fade by
+    /// `horizon` or vanish in plain sight.
+    #[serde(default)]
+    army: Vec<SeenUnit>,
+    /// The tick of the last look, so a unit seen then and gone from its tile
+    /// in sight now can be told from one that walked off.
+    #[serde(default)]
+    observed: u64,
+    /// Ticks the army ledger keeps a unit, set each decision from the rung:
+    /// how well the seat keeps track of what it has seen. Zero means
+    /// `UNIT_TICKS`.
+    #[serde(default)]
+    pub(crate) horizon: u64,
 }
 
 /// An own unit whose order stalled for want of a route or a firing position:
@@ -135,6 +153,74 @@ impl Memory {
                 .expect("over the cap");
             self.units.remove(stalest);
         }
+        self.tally(observation);
+    }
+
+    /// Brings the army ledger up to this look: every enemy unit in sight
+    /// counts afresh; one seen at the last look whose tile is in sight
+    /// without it now vanished in plain sight, most likely killed, and is
+    /// dropped; the rest count until the horizon.
+    fn tally(&mut self, observation: &ObservationData) {
+        let now = observation.tick;
+        let previous = self.observed;
+        let horizon = self.horizon();
+        for unit in &observation.enemy_units {
+            let seen = SeenUnit {
+                id: unit.id,
+                kind: unit.kind,
+                tile: unit.tile,
+                seen: now,
+            };
+            match self.army.binary_search_by_key(&unit.id, |known| known.id) {
+                Ok(index) => self.army[index] = seen,
+                Err(index) => self.army.insert(index, seen),
+            }
+        }
+        self.army.retain(|unit| {
+            unit.seen == now
+                || (now < unit.seen + horizon
+                    && !(unit.seen == previous && observation.visible(unit.tile)))
+        });
+        while self.army.len() > UNIT_CAP {
+            let stalest = self
+                .army
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, unit)| (unit.seen, unit.id))
+                .map(|(index, _)| index)
+                .expect("over the cap");
+            self.army.remove(stalest);
+        }
+        self.observed = now;
+    }
+
+    /// Ticks the army ledger keeps a unit.
+    fn horizon(&self) -> u64 {
+        if self.horizon == 0 {
+            UNIT_TICKS
+        } else {
+            self.horizon
+        }
+    }
+
+    /// The army ledger, by id.
+    pub(crate) fn army(&self) -> &[SeenUnit] {
+        &self.army
+    }
+
+    /// `unit`'s price weighted by how sure the seat is it is still in the
+    /// enemy's army: full for `HOLD_TICKS` after it was last seen when the
+    /// horizon is longer, then fading to nothing at the horizon.
+    pub(crate) fn army_value(&self, unit: &SeenUnit, now: u64) -> u64 {
+        let horizon = self.horizon();
+        let hold = if horizon > HOLD_TICKS { HOLD_TICKS } else { 0 };
+        let age = now.saturating_sub(unit.seen);
+        let confidence = if age <= hold {
+            1_000
+        } else {
+            (horizon.saturating_sub(age)) * 1_000 / (horizon - hold)
+        };
+        u64::from(unit.kind.stats().cost) * confidence / 1_000
     }
 
     /// Remembers each machine of a seat `hostile` names that `events` report
@@ -165,6 +251,10 @@ impl Memory {
                 match self.units.binary_search_by_key(&unit, |known| known.id) {
                     Ok(index) => self.units[index] = seen,
                     Err(index) => self.units.insert(index, seen),
+                }
+                match self.army.binary_search_by_key(&unit, |known| known.id) {
+                    Ok(index) => self.army[index] = seen,
+                    Err(index) => self.army.insert(index, seen),
                 }
             }
         }

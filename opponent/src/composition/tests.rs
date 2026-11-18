@@ -391,6 +391,10 @@ fn once_anti_heavy_units_can_be_trained_the_line_leaves_the_heavies_to_them() {
             {"id": 1_000, "kind": "breaker", "tile": {"x": 40, "y": 2}, "seen": observation.tick},
             {"id": 1_001, "kind": "breaker", "tile": {"x": 40, "y": 3}, "seen": observation.tick},
         ],
+        "army": [
+            {"id": 1_000, "kind": "breaker", "tile": {"x": 40, "y": 2}, "seen": observation.tick},
+            {"id": 1_001, "kind": "breaker", "tile": {"x": 40, "y": 3}, "seen": observation.tick},
+        ],
         "failures": [],
         "abandoned": [],
         "raided": [],

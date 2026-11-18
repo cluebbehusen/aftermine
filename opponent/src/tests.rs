@@ -178,6 +178,12 @@ fn restored_with(
 ) -> Opponent {
     let mut json = serde_json::to_value(opponent.checkpoint()).unwrap();
     edit(&mut json);
+    // A staged remembered unit counts toward the enemy's army too, unless
+    // the edit staged the army ledger itself.
+    let memory = &mut json["memory"];
+    if memory["army"].as_array().is_none_or(Vec::is_empty) {
+        memory["army"] = memory["units"].clone();
+    }
     let checkpoint: Checkpoint = serde_json::from_value(json).unwrap();
     Opponent::restore(&checkpoint, scenario, state, map(scenario)).unwrap()
 }

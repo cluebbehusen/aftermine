@@ -369,6 +369,7 @@ pub(crate) fn decide(
     persistent.memory.assembled(observation, events, |owner| {
         map.hostile(observation.me, owner)
     });
+    persistent.memory.horizon = army_horizon(profile.difficulty);
     persistent.memory.observe_stranded(observation, |unit| {
         crate::missions::stranded(unit, map, home)
     });
@@ -1719,6 +1720,17 @@ const RAID_INCOME: u32 = 900;
 
 /// What a needed lift adds to the Airworks' investment score.
 const LIFT_PULL: u32 = 600;
+
+/// Ticks the seat keeps counting an enemy unit toward the enemy's army after
+/// it was last seen: a difficulty limit on estimate accuracy.
+pub(crate) fn army_horizon(difficulty: BotDifficulty) -> u64 {
+    match difficulty {
+        BotDifficulty::Scrapheap => 600,
+        BotDifficulty::Standard => 1_800,
+        BotDifficulty::Veteran => 3_000,
+        BotDifficulty::Prime => 3_600,
+    }
+}
 
 /// Unit orders one decision may issue: a difficulty limit on attention.
 pub(crate) fn allowance(difficulty: BotDifficulty) -> u32 {
