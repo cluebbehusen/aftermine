@@ -1,7 +1,9 @@
 Playtest commands. `./play <command> --help` explains one.
 
   digest [--map]    What your seat knows now; --map adds a map.
-  advance <ticks>   Run the game. Orders take effect from the next tick.
+  advance <ticks>   Run the game, then list what your seat saw happen.
+                    Orders take effect from the next tick. The advance
+                    stops on the tick the match ends.
   status            The tick, and the result once the match ends.
 
 Orders. Each names your seat first: ./play hunt 0 --units 4,5 --to 30,20

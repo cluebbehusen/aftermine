@@ -24,8 +24,10 @@ weaknesses you find matter more than the result.
   before your first order.
 - `map.json` is the map. You are seat 0, the first entry under `players`. In its
   rows, `.` and `,` are open ground (`,` is only decoration), `#` rock, `^`
-  peak, `~` pit, `=` cliff, `/` ramp, `E` an Extractor frame, `s` scrap, `S` a
-  rich scrap pile, and a digit a seat's starting Foundry: `1` is seat 0's.
+  peak, `~` pit, `=` cliff, `/` ramp, `E` an Extractor frame's anchor, `s`
+  scrap, `S` a rich scrap pile, and a digit a seat's starting Foundry: `1` is
+  seat 0's. A frame covers the 2x2 tiles from its `E` rightward and down; build
+  the Extractor at the `E`.
 - 20 ticks are one second. You lose when all your Foundries are destroyed, and
   win when every enemy Foundry is.
 - Tile coordinates are `x,y` from the top-left corner. Unit positions are in
@@ -37,7 +39,11 @@ weaknesses you find matter more than the result.
   structures with their orders, what you see and remember of the enemy, radar
   contacts and remembered scrap. `./play digest --map` adds a map with a legend
   above it.
-- `./play advance <ticks>` runs the game. Nothing happens between advances.
+- `./play advance <ticks>` runs the game and reports what your seat saw happen
+  meanwhile: your losses, finished structures, stalled orders and where you
+  took fire, enemy losses and warheads in sight, your income, and the result.
+  Nothing happens between advances. When the match ends, the advance stops on
+  that tick, and later advances are refused.
 - `./play status` prints the tick and, once the match ends, its result.
 - `./play --help` lists the playtest's commands, and `./play <command> --help`
   explains one. Every order names your seat first, for example
@@ -56,7 +62,7 @@ weaknesses you find matter more than the result.
 You choose how far to advance between looks. Short steps react better and cost
 more of your time. A human player sees the screen continuously but can only do
 so much at once, so do not try to control every unit every tick; play as a sharp
-player would.
+player would.@PACE@
 
 ## Report
 
