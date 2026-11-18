@@ -7,6 +7,7 @@ description = "Headless harness and live-game client for Aftermine"
 
 [dependencies]
 aftermine-opponent = { workspace = true }
+aftermine-opponent-ref = { workspace = true }
 chassis = { workspace = true }
 aftermine-sim = { workspace = true }
 aftermine-protocol = { workspace = true }

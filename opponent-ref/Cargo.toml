@@ -1,0 +1,18 @@
+[package]
+name = "aftermine-opponent-ref"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "A frozen copy of aftermine-opponent for A/B tests"
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+chassis = { workspace = true }
+aftermine-sim = { workspace = true }
+serde = { workspace = true }
+
+[lints]
+workspace = true

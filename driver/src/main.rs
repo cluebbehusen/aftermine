@@ -180,6 +180,39 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Play this build's bot against the reference bot compiled in as
+    /// aftermine-opponent-ref: pairs with the bots exchanging seats, in
+    /// batches until a 99% interval on the candidate's mean pair score
+    /// settles the comparison or the pair budget runs out.
+    BotAb {
+        /// Two-seat maps, comma-separated.
+        #[arg(long, value_delimiter = ',', required = true)]
+        maps: Vec<String>,
+        /// Rungs both bots play at.
+        #[arg(long, value_delimiter = ',', default_value = "prime")]
+        difficulties: Vec<aftermine_sim::scenario::BotDifficulty>,
+        /// Stances both bots play at.
+        #[arg(long, value_delimiter = ',', default_value = "balanced")]
+        stances: Vec<aftermine_sim::scenario::BotStance>,
+        /// The first batch's personality seed; batch n plays this plus n.
+        #[arg(long, default_value_t = 9000)]
+        seed_base: u64,
+        /// The tick an undecided leg stops at, scored by net worth share.
+        #[arg(long, default_value_t = 24_000)]
+        tick_limit: u64,
+        /// The most pairs to play.
+        #[arg(long, default_value_t = 400)]
+        max_pairs: usize,
+        /// The smallest edge worth finding, as a share of the score.
+        #[arg(long, default_value_t = 0.03)]
+        margin: f64,
+        /// Games to play at once.
+        #[arg(long, default_value_t = std::num::NonZeroUsize::new(8).expect("nonzero"))]
+        jobs: std::num::NonZeroUsize,
+        /// Write every leg's result here as JSON lines.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Run the staged pressure scenarios: a scripted attacker presses one
     /// situation on a bot seat, and each scenario reports whether the bot
     /// answered by its deadline.
@@ -839,6 +872,58 @@ fn main() -> Result<()> {
             emit(json, &games, |games| {
                 aftermine_driver::replay_ledger::render(games)
             })?;
+        }
+        Cmd::BotAb {
+            maps,
+            difficulties,
+            stances,
+            seed_base,
+            tick_limit,
+            max_pairs,
+            margin,
+            jobs,
+            out,
+        } => {
+            use aftermine_driver::bot_ab;
+            use std::io::Write as _;
+            let maps = maps
+                .iter()
+                .map(|path| {
+                    let scenario = runner::load_scenario(path)?;
+                    let name = std::path::Path::new(path)
+                        .file_stem()
+                        .map_or_else(|| path.clone(), |stem| stem.to_string_lossy().into_owned());
+                    Ok((name, scenario))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let plan = bot_ab::AbPlan {
+                maps,
+                difficulties,
+                stances,
+                seed_base,
+                tick_limit,
+                max_pairs,
+                margin,
+            };
+            let mut sink = out
+                .map(|path| {
+                    std::fs::File::create(&path)
+                        .with_context(|| format!("creating {}", path.display()))
+                })
+                .transpose()?;
+            let standing = bot_ab::run(&plan, jobs, |legs, standing| {
+                if let Some(file) = sink.as_mut() {
+                    for leg in legs {
+                        writeln!(file, "{}", serde_json::to_string(leg)?)?;
+                    }
+                }
+                eprintln!(
+                    "{} pairs: candidate {:.3} [{:.3}, {:.3}] {:?}",
+                    standing.pairs, standing.mean, standing.low, standing.high, standing.verdict
+                );
+                Ok(())
+            })?;
+            println!("{}", serde_json::to_string_pretty(&standing)?);
         }
         Cmd::BotPressure {
             dir,

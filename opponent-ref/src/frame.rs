@@ -1,0 +1,121 @@
+//! Seat-relative tie-breaking. Distances and components are exact and need no
+//! orientation; only equal choices need a rule, and that rule must mirror
+//! between mirrored seats.
+
+use crate::map::MapModel;
+use aftermine_sim::BuildingKind;
+use aftermine_sim::observation::ObservationData;
+use chassis::grid::TilePos;
+use std::cmp::Reverse;
+
+/// Ranks targets in the seat's home-relative frame, in doubled coordinates so
+/// tile and footprint centres stay integral.
+///
+/// Nearer targets come first. Equal distances prefer the target further along
+/// the ray from the map centre to home, then the one clockwise of it. A
+/// half-turn of the map negates both that ray and every offset, preserving
+/// both products, so mirrored seats break mirrored ties the same way.
+#[derive(Clone, Copy)]
+pub(crate) struct HomeFrame {
+    pub(crate) home: (i64, i64),
+    radial: (i64, i64),
+}
+
+impl HomeFrame {
+    /// The frame around the seat's authored start, if it has one.
+    pub(crate) fn of(observation: &ObservationData, map: &MapModel) -> Option<Self> {
+        let anchor = map.start(observation.me)?;
+        Some(Self::at(
+            anchor,
+            observation.map_width,
+            observation.map_height,
+        ))
+    }
+
+    /// A frame around `home` whose ties follow `radial`, both in doubled
+    /// coordinates scaled alike.
+    pub(crate) fn around(home: (i64, i64), radial: (i64, i64)) -> Self {
+        Self { home, radial }
+    }
+
+    /// The frame around a Foundry at `anchor` on a map of the given size.
+    pub(crate) fn at(anchor: TilePos, width: i32, height: i32) -> Self {
+        let home = footprint_centre(BuildingKind::Foundry, anchor);
+        Self {
+            home,
+            radial: (home.0 - i64::from(width), home.1 - i64::from(height)),
+        }
+    }
+
+    /// Ranks `to` as seen from `from`, both in doubled coordinates. A home
+    /// exactly at the map centre has no ray; the trailing row-major key then
+    /// only keeps the order total.
+    pub(crate) fn rank(
+        self,
+        from: (i64, i64),
+        to: (i64, i64),
+    ) -> (i64, Reverse<i64>, i64, i64, i64) {
+        let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+        let dot = self.radial.0 * dx + self.radial.1 * dy;
+        let cross = self.radial.0 * dy - self.radial.1 * dx;
+        (dx * dx + dy * dy, Reverse(dot), cross, to.1, to.0)
+    }
+}
+
+/// Empty tiles between two footprints along the wider axis; negative when
+/// they overlap. Measuring between whole footprints keeps it the same for
+/// mirrored pairs, which a distance from a top-left anchor would not.
+pub(crate) fn gap(a: TilePos, a_size: (i32, i32), b: TilePos, b_size: (i32, i32)) -> i32 {
+    let dx = (b.x - (a.x + a_size.0)).max(a.x - (b.x + b_size.0));
+    let dy = (b.y - (a.y + a_size.1)).max(a.y - (b.y + b_size.1));
+    dx.max(dy)
+}
+
+/// The tiles bordering the footprint of `size` at `anchor`.
+pub(crate) fn ring(anchor: TilePos, size: (i32, i32)) -> impl Iterator<Item = TilePos> {
+    let (width, height) = size;
+    (-1..=height)
+        .flat_map(move |dy| (-1..=width).map(move |dx| (dx, dy)))
+        .filter(move |(dx, dy)| !(0..width).contains(dx) || !(0..height).contains(dy))
+        .map(move |(dx, dy)| anchor.offset(dx, dy))
+}
+
+/// A tile's centre in doubled coordinates.
+pub(crate) fn doubled(tile: TilePos) -> (i64, i64) {
+    (i64::from(tile.x) * 2 + 1, i64::from(tile.y) * 2 + 1)
+}
+
+/// A building footprint's centre in doubled coordinates.
+pub(crate) fn footprint_centre(kind: BuildingKind, anchor: TilePos) -> (i64, i64) {
+    centre_of(anchor, kind.size())
+}
+
+/// The centre of the footprint of `size` at `anchor`, in doubled coordinates.
+pub(crate) fn centre_of(anchor: TilePos, (width, height): (i32, i32)) -> (i64, i64) {
+    (
+        i64::from(anchor.x) * 2 + i64::from(width),
+        i64::from(anchor.y) * 2 + i64::from(height),
+    )
+}
+
+/// The tiles of the footprint of `size` at `anchor`, a row at a time.
+pub(crate) fn tiles_of(
+    anchor: TilePos,
+    (width, height): (i32, i32),
+) -> impl Iterator<Item = TilePos> + Clone {
+    (0..height).flat_map(move |dy| (0..width).map(move |dx| anchor.offset(dx, dy)))
+}
+
+/// Chebyshev distance in tiles, rounded down, between two points in doubled
+/// coordinates, such as footprint centres. Unlike anchors, centres keep their
+/// distances under a half-turn whatever the footprints' sizes.
+pub(crate) fn centre_distance(a: (i64, i64), b: (i64, i64)) -> u64 {
+    (a.0.abs_diff(b.0)).max(a.1.abs_diff(b.1)) / 2
+}
+
+/// Octile distance between two doubled-coordinate points, in tenths of a tile.
+pub(crate) fn octile_tenths(a: (i64, i64), b: (i64, i64)) -> i64 {
+    let (dx, dy) = ((a.0 - b.0).abs(), (a.1 - b.1).abs());
+    let doubled = 10 * dx.max(dy) + 4 * dx.min(dy);
+    doubled / 2
+}

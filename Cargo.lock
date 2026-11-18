@@ -24,6 +24,7 @@ dependencies = [
  "aftermine-kit",
  "aftermine-net",
  "aftermine-opponent",
+ "aftermine-opponent-ref",
  "aftermine-protocol",
  "aftermine-sim",
  "anyhow",
@@ -68,6 +69,15 @@ dependencies = [
  "chassis",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "aftermine-opponent-ref"
+version = "0.1.0"
+dependencies = [
+ "aftermine-sim",
+ "chassis",
+ "serde",
 ]
 
 [[package]]
