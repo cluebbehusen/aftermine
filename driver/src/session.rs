@@ -26,12 +26,19 @@ use aftermine_kit::controller::{SeatController, record_events, seat_controllers}
 use aftermine_kit::runner;
 use aftermine_protocol::framing::{IncomingRequest, Limits, incoming};
 use aftermine_protocol::{
-    AdvancedView, DebugSession, PresentedView, Reply, Request, ResponseEnvelope, SavedView,
-    ScreenshotView, StatusView, dispatch_shared, hash_hex,
+    AdvancedView, DebugSession, PlayedView, PresentedView, Reply, Request, ResponseEnvelope,
+    SavedView, ScreenshotView, SeenEvent, StatusView, dispatch_shared, hash_hex,
 };
-use aftermine_sim::{Event, PlayerCommand, PlayerId, SIM_VERSION, Scenario, State};
+use aftermine_sim::command::RejectReason;
+use aftermine_sim::{
+    BuildingKind, Command, Event, GameResult, PlaceRefusal, PlayerCommand, PlayerId, SIM_VERSION,
+    Scenario, State,
+};
 use anyhow::{Context, Result};
+use chassis::fx::Vec2Fx;
+use chassis::grid::TilePos;
 use chassis::replay::Replay;
+use std::collections::BTreeSet;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -47,7 +54,15 @@ pub struct Playtest {
     /// client cannot save or read a replay through the protocol, since a
     /// replay holds every seat's commands.
     pub replay_out: PathBuf,
+    /// The fewest ticks one advance may run, short of the tick limit: how
+    /// often a player at this pace may look at the game.
+    pub min_step: Option<u64>,
+    /// The most orders the player may send in any minute of game time.
+    pub orders_per_minute: Option<u32>,
 }
+
+/// Game ticks in a minute, the window an order rate is counted over.
+const MINUTE: u64 = 60 * aftermine_sim::TICKS_PER_SECOND as u64;
 
 /// A headless match a debug client can drive: the same session shape as
 /// the shell's `Game`, minus everything presentational.
@@ -256,24 +271,49 @@ impl Session {
             .with_context(|| format!("writing {}", path.display()))
     }
 
-    /// A playtest's advance: up to the tick limit, then the replay is
-    /// rewritten whole, through a temporary file, so a session killed at
-    /// any moment leaves its last complete replay.
+    /// A playtest's advance: up to the tick limit or the tick the match
+    /// ends, whichever comes first, answered with what the seat saw. Then
+    /// the replay is rewritten whole, through a temporary file, so a
+    /// session killed at any moment leaves its last complete replay.
     fn playtest_advance(&mut self, ticks: u64) -> Result<Reply, String> {
         let Some(playtest) = self.playtest.clone() else {
             unreachable!("only a playtest advances through here")
         };
         let tick = self.state.current_tick();
+        if let Some(result) = self.state.result() {
+            return Err(format!(
+                "the match is over: {}; it ended by tick {tick}",
+                self.outcome(playtest.seat, result)
+            ));
+        }
         let mut ticks = ticks.min(aftermine_protocol::MAX_ADVANCE_TICKS);
+        let mut left = None;
         if let Some(limit) = playtest.tick_limit {
             if tick >= limit {
                 return Err(format!(
                     "the playtest ended at its tick limit, {limit}; the match stops there"
                 ));
             }
+            left = Some(limit - tick);
             ticks = ticks.min(limit - tick);
         }
-        let view = DebugSession::advance(self, ticks);
+        if let Some(least) = playtest.min_step
+            && ticks < least
+            && left.is_none_or(|left| ticks < left)
+        {
+            return Err(format!(
+                "this playtest advances at least {least} ticks ({}) at a time",
+                clock(least)
+            ));
+        }
+        let mut seen = Seen::new(playtest.seat);
+        let mut ran = 0;
+        while ran < ticks && self.state.result().is_none() {
+            let at = self.state.current_tick();
+            let events = self.step();
+            seen.note(at, &self.state, &events);
+            ran += 1;
+        }
         let partial = playtest.replay_out.with_extension("partial");
         self.save_replay(&partial)
             .and_then(|()| {
@@ -281,16 +321,38 @@ impl Session {
                     .with_context(|| format!("replacing {}", playtest.replay_out.display()))
             })
             .map_err(|err| format!("writing the playtest replay: {err:#}"))?;
-        Ok(Reply::Advanced(view))
+        Ok(Reply::Played(PlayedView {
+            player: playtest.seat,
+            team: self.state.player(playtest.seat).team,
+            ticks: ran,
+            tick: self.state.current_tick(),
+            income: seen.income,
+            log: seen.log,
+            result: self.state.result(),
+        }))
     }
 
-    /// A playtest's order: staged when the game will take it, and otherwise
-    /// refused with the game's reason, as the shell tells its player.
-    /// Commands apply in order before anything else in a tick, and a
-    /// rejected one changes nothing, so every order already staged was
-    /// taken and a trial tick on a copy of the world reaches the next
+    /// `result` as the playing seat would read it.
+    fn outcome(&self, seat: PlayerId, result: GameResult) -> String {
+        match result {
+            GameResult::Draw => "a draw".to_string(),
+            GameResult::Victory { team } if self.state.winners().contains(&seat) => {
+                format!("your team, {team}, won")
+            }
+            GameResult::Victory { team } => format!("team {team} won and you lost"),
+        }
+    }
+
+    /// A playtest's order: staged when the game will take it and the pace
+    /// allows it, and otherwise refused with the reason, as the shell tells
+    /// its player. Commands apply in order before anything else in a tick,
+    /// and a rejected one changes nothing, so every order already staged
+    /// was taken and a trial tick on a copy of the world reaches the next
     /// tick's verdict on this one.
     fn playtest_send(&mut self, order: PlayerCommand) -> Result<Reply, String> {
+        if let Some(refusal) = self.over_pace() {
+            return Err(refusal);
+        }
         let mut trial = self.pending.clone();
         trial.push(order.clone());
         let report = self.state.clone().tick(&trial);
@@ -299,16 +361,80 @@ impl Session {
             _ => None,
         });
         if let Some(reason) = rejection {
-            let reason = serde_json::to_value(reason)
+            let name = serde_json::to_value(reason)
                 .ok()
                 .and_then(|value| value.as_str().map(|name| name.replace('_', " ")))
                 .unwrap_or_else(|| format!("{reason:?}"));
             return Err(format!(
-                "the game rejects this order ({reason}); nothing was sent"
+                "the game rejects this order ({name}){}; nothing was sent",
+                self.why(&order, reason)
             ));
         }
         self.pending.push(order);
         Ok(Reply::Ok)
+    }
+
+    /// Why the seat may not send another order yet at its pace, if so.
+    fn over_pace(&self) -> Option<String> {
+        let playtest = self.playtest.as_ref()?;
+        let cap = usize::try_from(playtest.orders_per_minute?).ok()?;
+        let now = self.state.current_tick();
+        let mut recent: Vec<u64> = self
+            .recorder
+            .commands
+            .iter()
+            .filter(|timed| timed.command.player == playtest.seat && timed.tick + MINUTE > now)
+            .map(|timed| timed.tick)
+            .chain(self.pending.iter().map(|_| now))
+            .collect();
+        if recent.len() < cap {
+            return None;
+        }
+        recent.sort_unstable();
+        let frees = recent[recent.len() - cap.max(1)] + MINUTE;
+        Some(format!(
+            "this playtest allows {cap} orders in any minute of game time; \
+             your next order may go from tick {frees}"
+        ))
+    }
+
+    /// What the seat can learn of why the game rejected `order`, as a
+    /// clause after the reason, or nothing.
+    fn why(&self, order: &PlayerCommand, reason: RejectReason) -> String {
+        let seat = order.player;
+        match (reason, &order.command) {
+            (RejectReason::NotEnoughScrap, _) if !self.pending.is_empty() => {
+                let mut after = self.state.clone();
+                after.tick(&self.pending);
+                format!(
+                    ": the orders you already sent this step leave about {} of your {} scrap",
+                    after.player(seat).scrap,
+                    self.state.player(seat).scrap
+                )
+            }
+            (
+                RejectReason::BadSite,
+                Command::Build {
+                    units,
+                    kind,
+                    anchor,
+                    queue,
+                    defer,
+                },
+            ) => {
+                let refusal = if *defer {
+                    let replaced = if *queue { &[][..] } else { units.as_slice() };
+                    self.state
+                        .place_intent_refusal(seat, *kind, *anchor, replaced)
+                } else {
+                    self.state.place_refusal(seat, *kind, *anchor)
+                };
+                refusal.map_or_else(String::new, |refusal| {
+                    site_refusal(&self.state, seat, *kind, *anchor, refusal)
+                })
+            }
+            _ => String::new(),
+        }
     }
 
     fn screenshot(&self, path: &str) -> Result<Reply> {
@@ -376,6 +502,146 @@ fn playtest_refusal(seat: PlayerId, request: &Request) -> Option<String> {
         | Request::RunFrameScript { .. }
         | Request::InjectEvent { .. }
         | Request::ToggleOverlay => None,
+    }
+}
+
+/// What a playtest seat sees happen, gathered tick by tick across one
+/// advance: the same events the seat's own screen would show it.
+struct Seen {
+    seat: PlayerId,
+    income: u32,
+    log: Vec<SeenEvent>,
+    /// Coarse map cells already logged as taking fire this advance.
+    fire: BTreeSet<(i32, i32)>,
+    /// Units and reasons already logged as stalled this advance.
+    stalls: BTreeSet<(aftermine_sim::UnitId, String)>,
+}
+
+/// The side of a coarse cell, in tiles: fire in one cell logs once.
+const FIRE_CELL: i32 = 4;
+
+impl Seen {
+    fn new(seat: PlayerId) -> Self {
+        Self {
+            seat,
+            income: 0,
+            log: Vec::new(),
+            fire: BTreeSet::new(),
+            stalls: BTreeSet::new(),
+        }
+    }
+
+    /// Keeps what the seat saw of tick `tick`'s `events`, judged against
+    /// `state`, the world after that tick: its own losses, completions,
+    /// stalls and the places it took fire, and other seats' losses,
+    /// warheads and charges where its vision reaches.
+    fn note(&mut self, tick: u64, state: &State, events: &[Event]) {
+        let seat = self.seat;
+        let sees = |pos: Vec2Fx| state.vision(seat).visible(TilePos::containing(pos));
+        for event in events {
+            let keep = match event {
+                Event::ScrapCredited { player, amount }
+                | Event::ScrapDeposited { player, amount, .. } => {
+                    if *player == seat {
+                        self.income += amount;
+                    }
+                    false
+                }
+                Event::UnitDied { player, pos, .. }
+                | Event::BuildingDestroyed { player, pos, .. } => *player == seat || sees(*pos),
+                Event::WarheadLanded { player, at, .. }
+                | Event::ChargeDetonated { player, at, .. } => *player == seat || sees(*at),
+                Event::BuildingCompleted { player, .. }
+                | Event::BuildCancelled { player, .. }
+                | Event::UnitAssembled { player, .. }
+                | Event::CommandRejected { player, .. } => *player == seat,
+                Event::OrderStalled {
+                    unit,
+                    player,
+                    reason,
+                    ..
+                } => *player == seat && self.stalls.insert((*unit, format!("{reason:?}"))),
+                Event::DamageTaken { player, pos } => {
+                    let tile = TilePos::containing(*pos);
+                    *player == seat
+                        && self
+                            .fire
+                            .insert((tile.x.div_euclid(FIRE_CELL), tile.y.div_euclid(FIRE_CELL)))
+                }
+                Event::PlayerResigned { .. } | Event::GameOver { .. } => true,
+                _ => false,
+            };
+            if keep {
+                self.log.push(SeenEvent {
+                    tick,
+                    event: event.clone(),
+                });
+            }
+        }
+    }
+}
+
+/// `ticks` as clock time.
+fn clock(ticks: u64) -> String {
+    let seconds = ticks / u64::from(aftermine_sim::TICKS_PER_SECOND);
+    format!("{seconds} s")
+}
+
+/// Why a site was refused, as a clause after the reason: what the seat can
+/// tell about its own footprint from the map it holds and what it sees or
+/// remembers, never what fog hides.
+fn site_refusal(
+    state: &State,
+    seat: PlayerId,
+    kind: BuildingKind,
+    anchor: TilePos,
+    refusal: PlaceRefusal,
+) -> String {
+    let (w, h) = kind.size();
+    let footprint = || (0..h).flat_map(move |dy| (0..w).map(move |dx| anchor.offset(dx, dy)));
+    let (map, vision) = (state.map(), state.vision(seat));
+    match refusal {
+        PlaceRefusal::Fog => {
+            ": part of the footprint is not in sight now; bring a unit to see it, \
+             or add --defer to have the site placed once it is"
+                .to_string()
+        }
+        PlaceRefusal::Terrain => footprint()
+            .find_map(|at| {
+                use aftermine_sim::map::Terrain;
+                let tile = map.tile(at);
+                let scrap = if vision.visible(at) {
+                    tile.map_or(0, |tile| tile.scrap)
+                } else {
+                    vision.remembered_scrap(at)
+                };
+                let ground = match tile.map(|tile| tile.terrain) {
+                    Some(Terrain::Rock) => "rock",
+                    Some(Terrain::Peak) => "a peak",
+                    Some(Terrain::Pit) => "a pit",
+                    Some(Terrain::Cliff) => "a cliff",
+                    Some(Terrain::Ground) if map.is_ramp(at) && !kind.fits_ramp() => {
+                        "a ramp, where this structure cannot stand"
+                    }
+                    Some(Terrain::Ground) if scrap > 0 => "a scrap pile",
+                    Some(Terrain::Ground) => return None,
+                    None => "off the map",
+                };
+                Some(format!(": tile ({},{}) is {ground}", at.x, at.y))
+            })
+            .unwrap_or_else(|| ": the footprint is not open ground".to_string()),
+        PlaceRefusal::Building => ": a structure you know of stands on the footprint".to_string(),
+        PlaceRefusal::Unit => ": an enemy ground unit stands on the footprint".to_string(),
+        PlaceRefusal::FrameRequired => {
+            ": an Extractor goes only on an Extractor frame, anchored where map.json has an E"
+                .to_string()
+        }
+        PlaceRefusal::FrameBlocked => {
+            ": the footprint covers part of an Extractor frame, which only an Extractor may use"
+                .to_string()
+        }
+        PlaceRefusal::Prerequisite => ": the structures it requires are not built".to_string(),
+        PlaceRefusal::OutOfPlay => ": your seat is out of the match".to_string(),
     }
 }
 

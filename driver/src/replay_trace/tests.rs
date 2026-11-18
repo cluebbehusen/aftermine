@@ -26,6 +26,8 @@ fn played(name: &str) -> GameReplay {
             seat: PlayerId(0),
             tick_limit: None,
             replay_out: out.clone(),
+            min_step: None,
+            orders_per_minute: None,
         },
     )
     .unwrap();

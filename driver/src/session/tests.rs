@@ -1,7 +1,8 @@
 use super::*;
 use aftermine_sim::scenario::BotDifficulty;
 use aftermine_sim::scenario::BotStance;
-use aftermine_sim::{Command, PlayerId, UnitKind};
+use aftermine_sim::{BuildingKind, Command, Event, PlayerId, UnitKind};
+use chassis::grid::TilePos;
 
 #[test]
 fn replay_resume_keeps_pending_controller_events_and_recording() {
@@ -202,6 +203,16 @@ fn commands_from_unknown_players_are_not_staged() {
 /// Skirmish as a playtest for seat zero against a Prime bot, replaying to
 /// `dir`.
 fn playtest_session(dir: &std::path::Path, tick_limit: Option<u64>) -> Session {
+    paced_session(dir, tick_limit, None, None)
+}
+
+/// [`playtest_session`] held to a pace.
+fn paced_session(
+    dir: &std::path::Path,
+    tick_limit: Option<u64>,
+    min_step: Option<u64>,
+    orders_per_minute: Option<u32>,
+) -> Session {
     let mut scenario = Scenario::skirmish();
     aftermine_kit::controller::seat_bots_around(
         &mut scenario,
@@ -217,6 +228,8 @@ fn playtest_session(dir: &std::path::Path, tick_limit: Option<u64>) -> Session {
             seat: PlayerId(0),
             tick_limit,
             replay_out: dir.join("replays/playtest.json"),
+            min_step,
+            orders_per_minute,
         },
     )
     .unwrap()
@@ -298,11 +311,11 @@ fn a_playtest_answers_only_what_its_seat_could_know_and_do() {
 fn a_playtest_stops_at_its_tick_limit_and_leaves_a_replay_of_every_advance() {
     let dir = scratch("playtest-limit");
     let mut session = playtest_session(&dir, Some(50));
-    let Ok(Reply::Advanced(first)) = session.handle(Request::AdvanceTicks { ticks: 30 }) else {
+    let Ok(Reply::Played(first)) = session.handle(Request::AdvanceTicks { ticks: 30 }) else {
         panic!("a playtest advances");
     };
     assert_eq!((first.ticks, first.tick), (30, 30));
-    let Ok(Reply::Advanced(capped)) = session.handle(Request::AdvanceTicks { ticks: 30 }) else {
+    let Ok(Reply::Played(capped)) = session.handle(Request::AdvanceTicks { ticks: 30 }) else {
         panic!("a playtest advances to its limit");
     };
     assert_eq!((capped.ticks, capped.tick), (20, 50));
@@ -332,6 +345,8 @@ fn a_playtest_seat_must_be_one_no_bot_plays() {
         seat,
         tick_limit: None,
         replay_out: dir.join("replay.json"),
+        min_step: None,
+        orders_per_minute: None,
     };
     assert!(Session::playtest(scenario.clone(), playtest(PlayerId(1))).is_err());
     assert!(Session::playtest(scenario, playtest(PlayerId(7))).is_err());
@@ -387,5 +402,156 @@ fn a_playtest_refuses_an_order_the_game_would_reject_with_its_reason() {
         session.state().players()[0].scrap,
         bank - u32::try_from(taken).unwrap() * price,
         "every staged order was taken"
+    );
+}
+
+/// The seat's first unit of `kind`.
+fn own(session: &Session, kind: UnitKind) -> aftermine_sim::UnitId {
+    session
+        .state()
+        .units()
+        .iter()
+        .find(|unit| unit.player == PlayerId(0) && unit.kind == kind)
+        .map(|unit| unit.id)
+        .expect("the seat starts with one")
+}
+
+#[test]
+fn a_playtest_advance_stops_on_the_tick_the_match_ends_and_says_so() {
+    let dir = scratch("playtest-result");
+    let mut session = playtest_session(&dir, None);
+    session
+        .handle(Request::SendCommand {
+            player: PlayerId(0),
+            command: Command::Surrender,
+        })
+        .unwrap();
+    let Ok(Reply::Played(played)) = session.handle(Request::AdvanceTicks { ticks: 200 }) else {
+        panic!("a playtest advances");
+    };
+    assert_eq!(
+        played.ticks, 1,
+        "the advance stops on the tick the match ends"
+    );
+    assert!(played.result.is_some());
+    assert!(
+        played
+            .log
+            .iter()
+            .any(|seen| matches!(seen.event, Event::GameOver { .. }) && seen.tick == 0),
+        "{played:?}"
+    );
+    assert!(super::super::digest::played(&played).contains("you lost"));
+    let error = session
+        .handle(Request::AdvanceTicks { ticks: 1 })
+        .unwrap_err();
+    assert!(error.contains("the match is over"), "{error}");
+}
+
+#[test]
+fn a_paced_playtest_holds_its_player_to_the_pace() {
+    let dir = scratch("playtest-pace");
+    let mut session = paced_session(&dir, Some(130), Some(100), Some(2));
+    let error = session
+        .handle(Request::AdvanceTicks { ticks: 40 })
+        .unwrap_err();
+    assert!(error.contains("at least 100 ticks"), "{error}");
+    session
+        .handle(Request::AdvanceTicks { ticks: 100 })
+        .unwrap();
+    // Short of the limit, the last step may be as short as what is left.
+    session.handle(Request::AdvanceTicks { ticks: 30 }).unwrap();
+
+    let mut session = paced_session(&dir, None, None, Some(2));
+    let stop = |session: &Session| Request::SendCommand {
+        player: PlayerId(0),
+        command: Command::Stop {
+            units: vec![own(session, UnitKind::Harvester)],
+        },
+    };
+    session.handle(stop(&session)).unwrap();
+    session.handle(stop(&session)).unwrap();
+    let error = session.handle(stop(&session)).unwrap_err();
+    assert!(error.contains("2 orders in any minute"), "{error}");
+    assert!(error.contains("from tick 1200"), "{error}");
+}
+
+#[test]
+fn a_refused_order_says_what_the_seat_can_tell_of_why() {
+    let dir = scratch("playtest-why");
+    let mut session = playtest_session(&dir, None);
+    let harvesters: Vec<aftermine_sim::UnitId> = session
+        .state()
+        .units()
+        .iter()
+        .filter(|unit| unit.player == PlayerId(0) && unit.kind == UnitKind::Harvester)
+        .map(|unit| unit.id)
+        .collect();
+    let foundry = session
+        .state()
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0))
+        .map(|building| building.anchor)
+        .expect("the seat starts with a Foundry");
+    let build_with = |harvester, kind, anchor, defer| Request::SendCommand {
+        player: PlayerId(0),
+        command: Command::Build {
+            units: vec![harvester],
+            kind,
+            anchor,
+            queue: false,
+            defer,
+        },
+    };
+    let build = |kind, anchor, defer| build_with(harvesters[0], kind, anchor, defer);
+    let unseen = TilePos::new(
+        session.state().map().width() - 1 - foundry.x,
+        session.state().map().height() - 1 - foundry.y,
+    );
+    let error = session
+        .handle(build(BuildingKind::Turret, unseen, false))
+        .unwrap_err();
+    assert!(error.contains("--defer"), "{error}");
+    let error = session
+        .handle(build(BuildingKind::Extractor, foundry.offset(-3, 0), false))
+        .unwrap_err();
+    assert!(error.contains("only on an Extractor frame"), "{error}");
+
+    let scrap = session.state().player(PlayerId(0)).scrap;
+    let fabricator = BuildingKind::Fabricator.base_stats().construction.cost;
+    assert!(
+        scrap >= fabricator && scrap < 2 * fabricator,
+        "premise: {scrap}"
+    );
+    let (width, _) = BuildingKind::Fabricator.size();
+    let open: Vec<TilePos> = (-12..12)
+        .flat_map(|dx| (-12..12).map(move |dy| foundry.offset(dx, dy)))
+        .filter(|&anchor| {
+            session
+                .state()
+                .place_refusal(PlayerId(0), BuildingKind::Fabricator, anchor)
+                .is_none()
+        })
+        .collect();
+    let first = *open.first().expect("premise: room near the Foundry");
+    let second = *open
+        .iter()
+        .find(|anchor| anchor.y == first.y && anchor.x >= first.x + width)
+        .expect("premise: room for two");
+    session
+        .handle(build(BuildingKind::Fabricator, first, false))
+        .unwrap();
+    let error = session
+        .handle(build_with(
+            harvesters[1],
+            BuildingKind::Fabricator,
+            second,
+            false,
+        ))
+        .unwrap_err();
+    assert!(
+        error.contains("the orders you already sent this step leave"),
+        "{error}"
     );
 }

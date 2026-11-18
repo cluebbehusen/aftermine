@@ -75,13 +75,14 @@ fn reply_tag(reply: &Reply) -> usize {
         Reply::Hash(_) => 7,
         Reply::Advanced(_) => 8,
         Reply::Presented(_) => 9,
-        Reply::Screenshot(_) => 10,
-        Reply::Overlay(_) => 11,
-        Reply::Saved(_) => 12,
+        Reply::Played(_) => 10,
+        Reply::Screenshot(_) => 11,
+        Reply::Overlay(_) => 12,
+        Reply::Saved(_) => 13,
     }
 }
 
-const REPLY_VARIANTS: usize = 13;
+const REPLY_VARIANTS: usize = 14;
 
 /// Contiguous index per [`Command`] variant, in declaration order.
 /// The sim's verbs ride this wire through [`Request::SendCommand`],
@@ -602,6 +603,20 @@ fn every_reply_variant_survives_an_envelope_roundtrip() {
                 player: PlayerId(0),
                 reason: aftermine_sim::command::RejectReason::BadSite,
             }],
+        }),
+        Reply::Played(PlayedView {
+            player: PlayerId(0),
+            team: 0,
+            ticks: 5,
+            tick: 22,
+            income: 30,
+            log: vec![SeenEvent {
+                tick: 20,
+                event: Event::GameOver {
+                    result: aftermine_sim::GameResult::Victory { team: 0 },
+                },
+            }],
+            result: Some(aftermine_sim::GameResult::Victory { team: 0 }),
         }),
         Reply::Screenshot(ScreenshotView {
             path: "shots/x.png".into(),

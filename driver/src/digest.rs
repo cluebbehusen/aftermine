@@ -5,7 +5,7 @@
 //! seat knows. The optional map adds terrain from the scenario file, which
 //! every seat knows before the match starts, and never live scrap or wrecks.
 
-use aftermine_protocol::{BuildingView, FogView, UnitView};
+use aftermine_protocol::{BuildingView, FogView, PlayedView, UnitView};
 use aftermine_sim::map::Map;
 use aftermine_sim::vision::ContactTrack;
 use chassis::grid::TilePos;
@@ -13,20 +13,28 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-/// The seat's contact tracks by id, so an order aimed at a contact can name
-/// the unit behind it while the seat sees that unit.
-type Tracks<'a> = BTreeMap<u64, &'a ContactTrack>;
+/// What an order's target can be named by: the seat's contact tracks by
+/// id, so an order aimed at a contact names the unit behind it while the
+/// seat sees that unit, and the structures in sight, so an order aimed at a
+/// remembered structure names it while the seat sees it.
+struct Tracks<'a> {
+    contacts: BTreeMap<u64, &'a ContactTrack>,
+    buildings: &'a [BuildingView],
+}
 
 /// `view` as text: the clock and bank, own units and structures, then
 /// everything the seat knows of other seats and the ground, and with
 /// `terrain`, a map of all of it.
 pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
     let mut out = String::new();
-    let tracks: Tracks = view
-        .contact_tracks
-        .iter()
-        .map(|track| (u64::from(track.id.0), track))
-        .collect();
+    let tracks = Tracks {
+        contacts: view
+            .contact_tracks
+            .iter()
+            .map(|track| (u64::from(track.id.0), track))
+            .collect(),
+        buildings: &view.buildings,
+    };
     let seconds = view.tick / u64::from(aftermine_sim::TICKS_PER_SECOND);
     let _ = writeln!(
         out,
@@ -104,7 +112,7 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
                 if building.built {
                     String::new()
                 } else {
-                    format!(" under construction {}", building.progress)
+                    construction(building)
                 }
             )
         },
@@ -262,7 +270,7 @@ fn own_building(building: &BuildingView, tracks: &Tracks) -> String {
         building.hp
     );
     if !building.built {
-        let _ = write!(line, " under construction {}", building.progress);
+        line.push_str(&construction(building));
     }
     if let Some(queue) = building.queue.as_ref().filter(|queue| !queue.is_empty()) {
         let names: Vec<&str> = queue.iter().map(|kind| kind.name()).collect();
@@ -278,6 +286,23 @@ fn own_building(building: &BuildingView, tracks: &Tracks) -> String {
         let _ = write!(line, " | focus {}", compact(focus, tracks));
     }
     line
+}
+
+/// A site's or upgrade's progress against the work its rung needs.
+fn construction(building: &BuildingView) -> String {
+    let total = building
+        .kind
+        .tiers()
+        .get(usize::from(building.tier))
+        .map_or(0, |stats| stats.construction.build_ticks);
+    if total == 0 {
+        return format!(" under construction {}", building.progress);
+    }
+    format!(
+        " under construction {}/{total} ({}%)",
+        building.progress,
+        u64::from(building.progress) * 100 / u64::from(total)
+    )
 }
 
 /// Whether a unit has nothing to do.
@@ -351,21 +376,33 @@ fn target(kind: &str, id: &Value, tracks: &Tracks) -> Option<String> {
     Some(match kind {
         "unit" => format!("unit {id}"),
         "building" => format!("structure {id}"),
-        "contact" => match tracks.get(&id.as_u64()?) {
+        "contact" => match tracks.contacts.get(&id.as_u64()?) {
             Some(track) => match track.visible_unit {
                 Some(unit) => format!("unit {}", unit.0),
                 None => format!("contact at ({},{})", track.tile.x, track.tile.y),
             },
-            None => "a lost contact".to_string(),
+            None => "a contact no longer tracked".to_string(),
         },
         "remembered_building" => {
             let anchor = id.get("anchor")?;
-            format!(
-                "remembered {} at ({},{})",
-                id.get("building_kind")?.as_str()?.replace('_', " "),
-                anchor.get("x")?,
-                anchor.get("y")?
-            )
+            let (x, y) = (anchor.get("x")?.as_i64()?, anchor.get("y")?.as_i64()?);
+            let kind = id.get("building_kind")?.as_str()?;
+            let owner = id.get("owner")?.as_u64()?;
+            let in_sight = tracks.buildings.iter().find(|building| {
+                u64::from(building.player) == owner
+                    && i64::from(building.anchor[0]) == x
+                    && i64::from(building.anchor[1]) == y
+                    && serde_json::to_value(building.kind)
+                        .is_ok_and(|name| name.as_str() == Some(kind))
+            });
+            match in_sight {
+                Some(building) => format!(
+                    "structure {} {} at ({x},{y})",
+                    building.id,
+                    building.kind.tier_name(building.tier)
+                ),
+                None => format!("remembered {} at ({x},{y})", kind.replace('_', " ")),
+            }
         }
         _ => return None,
     })
@@ -381,7 +418,8 @@ fn position(pos: [f64; 2]) -> String {
 
 /// The map as the seat knows it, one character per tile, with a ruler.
 /// Terrain: `#` rock, `^` peak, `~` pit, `=` cliff, `/` ramp, `E` an empty
-/// Extractor frame. Ground: `.` in sight now, `-` explored but dark, blank
+/// Extractor frame's anchor, where an Extractor is built, and `e` the rest
+/// of its frame. Ground: `.` in sight now, `-` explored but dark, blank
 /// never seen. `s` remembered scrap, `w` remembered wreck. `o` own unit,
 /// `O` own structure, `x` another seat's unit in sight, `X` its structure
 /// in sight, `g` a remembered structure, `?` a radar contact.
@@ -450,7 +488,8 @@ fn grid(view: &FogView, map: &Map) -> String {
     }
 
     let mut out = String::from(
-        "MAP: # rock, ^ peak, ~ pit, = cliff, / ramp, E Extractor frame; \
+        "MAP: # rock, ^ peak, ~ pit, = cliff, / ramp, E Extractor frame anchor (build an \
+         Extractor here), e rest of the frame; \
          . in sight, - explored but dark, blank never seen; s scrap, w wreck; \
          o own unit, O own structure, x other seat's unit, X its structure, \
          g remembered structure, ? radar contact\n",
@@ -471,8 +510,11 @@ fn grid(view: &FogView, map: &Map) -> String {
 
 fn terrain_char(map: &Map, pos: TilePos, sight: char) -> char {
     use aftermine_sim::map::Terrain;
-    if map.tile_in_extractor_frame(pos) {
+    if map.is_extractor_frame(pos) {
         return 'E';
+    }
+    if map.tile_in_extractor_frame(pos) {
+        return 'e';
     }
     match map.tile(pos).map(|tile| tile.terrain) {
         Some(Terrain::Rock) => '#',
@@ -487,6 +529,128 @@ fn terrain_char(map: &Map, pos: TilePos, sight: char) -> char {
         },
         None => ' ',
     }
+}
+
+/// A playtest advance as text: how far the clock moved, the seat's income,
+/// then what it saw happen, tick by tick, and the result once there is one.
+pub fn played(view: &PlayedView) -> String {
+    use aftermine_sim::{Event, GameResult};
+    let seat = view.player;
+    let clock = |tick: u64| {
+        let seconds = tick / u64::from(aftermine_sim::TICKS_PER_SECOND);
+        format!("{}:{:02}", seconds / 60, seconds % 60)
+    };
+    let at = |pos: chassis::fx::Vec2Fx| {
+        let tile = TilePos::containing(pos);
+        format!("({},{})", tile.x, tile.y)
+    };
+    let whose = |player: aftermine_sim::PlayerId| {
+        if player == seat {
+            "your".to_string()
+        } else {
+            format!("seat {}'s", player.0)
+        }
+    };
+    let mut out = String::new();
+    let per_minute = (u64::from(view.income) * 60 * u64::from(aftermine_sim::TICKS_PER_SECOND))
+        .checked_div(view.ticks)
+        .unwrap_or(0);
+    let _ = writeln!(
+        out,
+        "ADVANCED {} ticks to {} ({}) | income {} scrap, {per_minute} a minute",
+        view.ticks,
+        view.tick,
+        clock(view.tick),
+        view.income
+    );
+    for seen in &view.log {
+        let line = match &seen.event {
+            Event::UnitDied {
+                unit,
+                kind,
+                player,
+                pos,
+                ..
+            } => format!(
+                "{} {} {} died at {}",
+                whose(*player),
+                kind.name(),
+                unit.0,
+                at(*pos)
+            ),
+            Event::BuildingDestroyed {
+                building,
+                kind,
+                player,
+                tier,
+                pos,
+            } => format!(
+                "{} {} {} was destroyed at {}",
+                whose(*player),
+                kind.tier_name(*tier),
+                building.0,
+                at(*pos)
+            ),
+            Event::BuildingCompleted {
+                building,
+                kind,
+                tier,
+                ..
+            } => format!("your {} {} is finished", kind.tier_name(*tier), building.0),
+            Event::UnitAssembled {
+                unit, kind, pos, ..
+            } => {
+                format!("your {} {} stood up at {}", kind.name(), unit.0, at(*pos))
+            }
+            Event::BuildCancelled {
+                building, refund, ..
+            } => format!("your site {} was cancelled, refunding {refund}", building.0),
+            Event::CommandRejected { reason, .. } => {
+                format!("the game rejected an order when it ran: {reason:?}")
+            }
+            Event::OrderStalled {
+                unit, reason, pos, ..
+            } => format!("your unit {} at {} stalled: {reason:?}", unit.0, at(*pos)),
+            Event::DamageTaken { pos, .. } => {
+                format!("your units or structures took fire near {}", at(*pos))
+            }
+            Event::WarheadLanded {
+                player, at: impact, ..
+            } => {
+                format!("{} warhead landed at {}", whose(*player), at(*impact))
+            }
+            Event::ChargeDetonated {
+                player, at: blast, ..
+            } => {
+                format!(
+                    "{} Scuttle Charge went off at {}",
+                    whose(*player),
+                    at(*blast)
+                )
+            }
+            Event::PlayerResigned { player } => format!("seat {} surrendered", player.0),
+            Event::GameOver { result } => match result {
+                GameResult::Draw => "the match is over: a draw".to_string(),
+                GameResult::Victory { team } => format!("the match is over: team {team} won"),
+            },
+            other => format!("{other:?}"),
+        };
+        let _ = writeln!(out, "  {} ({}) {line}", seen.tick, clock(seen.tick));
+    }
+    if let Some(result) = view.result {
+        let verdict = match result {
+            GameResult::Draw => "a draw".to_string(),
+            GameResult::Victory { team } if team == view.team => "you won".to_string(),
+            GameResult::Victory { .. } => "you lost".to_string(),
+        };
+        let _ = writeln!(
+            out,
+            "MATCH OVER at tick {} ({}): {verdict}. Advancing is refused from here.",
+            view.tick,
+            clock(view.tick)
+        );
+    }
+    out
 }
 
 #[cfg(test)]

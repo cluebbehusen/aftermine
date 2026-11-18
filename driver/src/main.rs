@@ -506,6 +506,14 @@ enum Cmd {
         /// Where a playtest rewrites its replay after every advance.
         #[arg(long, requires = "player")]
         replay_out: Option<PathBuf>,
+        /// With --player: the fewest ticks one advance may run, short of
+        /// the tick limit, to hold the player to a pace.
+        #[arg(long, requires = "player")]
+        min_step: Option<u64>,
+        /// With --player: the most orders the player may send in any
+        /// minute of game time.
+        #[arg(long, requires = "player")]
+        orders_per_minute: Option<u32>,
     },
     /// Print every Roster page as plain text: the rules a player reads in
     /// game, for an agent that plays through `driver live`.
@@ -1128,8 +1136,12 @@ fn main() -> Result<()> {
             for request in requests {
                 last = Some(client.call(request)?);
             }
-            if let Some(reply) = last {
-                println!("{}", serde_json::to_string_pretty(&reply)?);
+            match last {
+                Some(Reply::Played(played)) => {
+                    print!("{}", aftermine_driver::digest::played(&played));
+                }
+                Some(reply) => println!("{}", serde_json::to_string_pretty(&reply)?),
+                None => {}
             }
         }
         Cmd::ProfileShell {
@@ -1197,6 +1209,8 @@ fn main() -> Result<()> {
             personality_seed,
             tick_limit,
             replay_out,
+            min_step,
+            orders_per_minute,
         } => {
             let playtest = player.zip(replay_out).map(|(seat, replay_out)| {
                 aftermine_driver::session::PlaytestSetup {
@@ -1204,6 +1218,8 @@ fn main() -> Result<()> {
                         seat: aftermine_sim::PlayerId(seat),
                         tick_limit,
                         replay_out,
+                        min_step,
+                        orders_per_minute,
                     },
                     difficulty,
                     stance,

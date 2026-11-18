@@ -189,6 +189,9 @@ pub enum Reply {
     Advanced(AdvancedView),
     /// Answer to [`Request::PresentTicks`].
     Presented(PresentedView),
+    /// A playtest session's answer to [`Request::AdvanceTicks`]: what the
+    /// playing seat saw happen.
+    Played(PlayedView),
     /// Answer to [`Request::Screenshot`].
     Screenshot(ScreenshotView),
     /// Answer to [`Request::ToggleOverlay`].
@@ -228,6 +231,40 @@ pub struct PresentedView {
     pub hash: String,
     /// Events emitted across the interval, in tick and event order.
     pub events: Vec<Event>,
+}
+
+/// A playtest seat's advance: the clock, and what the seat saw happen. A
+/// playtest answers [`Request::AdvanceTicks`] with this instead of
+/// [`AdvancedView`], whose hash and events cover every seat.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlayedView {
+    /// The playing seat.
+    pub player: PlayerId,
+    /// The playing seat's team, which a [`aftermine_sim::GameResult`]
+    /// names.
+    pub team: u8,
+    /// Ticks actually run: fewer than asked when the match ended or the
+    /// playtest's tick limit came first.
+    pub ticks: u64,
+    /// Tick counter afterwards.
+    pub tick: u64,
+    /// Scrap the seat earned across the advance.
+    pub income: u32,
+    /// What the seat saw, in tick order: its own losses, completions,
+    /// stalls and the places it took fire, and other seats' losses,
+    /// warheads and charges where it could see them.
+    pub log: Vec<SeenEvent>,
+    /// The match's result once it has one; the advance stops on that tick.
+    pub result: Option<aftermine_sim::GameResult>,
+}
+
+/// One event a playtest seat saw, with the tick it happened on.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SeenEvent {
+    /// The tick the event happened on.
+    pub tick: u64,
+    /// The event.
+    pub event: Event,
 }
 
 /// A frame-exact profiling workload. Each frame advances a fixed slice of
