@@ -55,10 +55,10 @@ selects actions in precedence order:
    Harvester's trips there repay it within a horizon set by stance and greed,
    and stance, greed and difficulty set how fully it is staffed. Workers left
    without a place salvage other known wreck. Until the army reaches the stance
-   minimum, workers that would cost more than the army wait for army production
-   and leave the unprotected scrap its next unit needs, and a seat that exposed
-   puts up a Turret before any tech. A worker the simulation sent welding on its
-   own stays free for these orders and leaves known fire like an idle one;
+   minimum, workers that would cost more than the army wait for army production,
+   and a seat that exposed puts up a Turret before any tech. A worker the
+   simulation sent welding on its own stays free for these orders and leaves
+   known fire like an idle one;
 5. missions, advancing their phases and recruiting as needed;
 6. production toward composition needs, from scrap not protected for saving.
 
@@ -105,13 +105,11 @@ the running total and mission state.
 - While saving, a share of income is protected for the target, capped by the
   target's price and the real bank. Other purchases spend only the unprotected
   part. Stance, personality and threat set the share.
-- An affordable target is bought ahead of everything except emergencies; until
-  the army reaches the stance minimum, a target other than a unit or a defense
-  leaves the unprotected scrap the army's next unit needs. Targets switch only
-  when another scores clearly higher or the reason disappears; protected scrap
-  carries over. Emergencies may spend protected scrap. A rejected, cancelled or
-  refunded purchase keeps the target and recomputes the protected amount from
-  the bank.
+- An affordable target is bought ahead of everything except emergencies. Targets
+  switch only when another scores clearly higher or the reason disappears;
+  protected scrap carries over. Emergencies may spend protected scrap. A
+  rejected, cancelled or refunded purchase keeps the target and recomputes the
+  protected amount from the bank.
 
 ## Missions and production
 
