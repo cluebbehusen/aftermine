@@ -256,9 +256,9 @@ impl Missions {
             // Guns are reached rather than waited for: they shell from
             // where they stand.
             let mission = index.map(|index| &self.list[index]);
-            let met = pressing[0] * 2 / 3 + guns;
+            let met = pressing[0] * 2 / 3 + guns + siege.company;
             let go = sortie(*own, siege, met, difficulty);
-            let hunting = matches!(pursuit, Pursuit::Hunt);
+            let hunting = matches!(pursuit, Pursuit::Hunt) || (gun.is_some() && siege.escorted());
             let post = grounded.and_then(|threat| waiting_post(map, frame, foundry, threat));
             let front = front(observation, members, post);
             let (goal, pursuit, gun) = match grounded
@@ -689,6 +689,9 @@ struct Siege<'a> {
     /// worth, against ground and air, by how sure the seat is they are still
     /// there.
     remembered: [u64; 2],
+    /// What armed enemies on the ground in sight standing with the units
+    /// above, and not among them, are worth: what a defense going out meets.
+    company: u64,
     /// Whether something armed threatens the Foundry that the lists above
     /// leave out: a gun the seat cannot beat yet, left to production, or a
     /// gun out of sight shelling it while threats in sight hold its entry.
@@ -696,6 +699,16 @@ struct Siege<'a> {
 }
 
 impl Siege<'_> {
+    /// Whether its guns have company on the ground, which the defense meets
+    /// as it meets other attackers: together, once it holds the edge.
+    fn escorted(&self) -> bool {
+        self.company > 0
+            || self
+                .units
+                .iter()
+                .any(|threat| !walking_gun(threat) && threat.body_domain() == Domain::Ground)
+    }
+
     /// Leaves a battery among defenses the seat's `force` cannot beat now to
     /// production: fighters sent beside it would only feed its guns. An armed
     /// one left still marks the siege armed.
@@ -938,6 +951,29 @@ fn besieged<'a>(
             groups[index].1.units.push(enemy);
         } else if reachable {
             groups[index].1.strays.push(enemy);
+        }
+    }
+    // An attacker brings its company: armed enemies on the ground standing
+    // with one that threatens the base are met with it, though they stand
+    // further back.
+    for enemy in &observation.enemy_units {
+        if claimed.contains(&enemy.id)
+            || ground_reach(enemy).is_none()
+            || enemy.body_domain() != Domain::Ground
+            || groups
+                .iter()
+                .any(|(_, siege)| siege.units.iter().any(|unit| unit.id == enemy.id))
+        {
+            continue;
+        }
+        let company = groups.iter().position(|(_, siege)| {
+            siege
+                .units
+                .iter()
+                .any(|threat| gap(threat.tile, (1, 1), enemy.tile, (1, 1)) < THREAT_GAP)
+        });
+        if let Some(index) = company {
+            groups[index].1.company += value(enemy);
         }
     }
     // An attacker that steps out of sight is still there: counting only those

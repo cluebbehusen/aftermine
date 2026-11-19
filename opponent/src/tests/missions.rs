@@ -1494,3 +1494,39 @@ fn the_upper_rungs_go_out_at_raiders_only_with_an_edge() {
         "Standard goes at even odds"
     );
 }
+
+#[test]
+fn an_escorted_gun_is_met_only_with_an_edge_over_its_company() {
+    // A Bombard in reach of West's Foundry. Alone, Prime's Sentinels go at
+    // it; with Lancers standing behind it, out of the Foundry's reach, they
+    // wait for an edge over the whole group.
+    let defenders = [
+        (UnitKind::Sentinel, 8, 8),
+        (UnitKind::Sentinel, 9, 8),
+        (UnitKind::Sentinel, 8, 9),
+        (UnitKind::Sentinel, 9, 9),
+    ];
+    let gun = (UnitKind::Bombard, 12, 5);
+    let company = [
+        (UnitKind::Lancer, 14, 6),
+        (UnitKind::Lancer, 14, 7),
+        (UnitKind::Lancer, 15, 7),
+    ];
+    let goes_at_the_gun = |raiders: &[(UnitKind, i32, i32)]| {
+        let scenario = raided(&defenders, raiders);
+        let state = scenario.build().unwrap();
+        let bombard = at(&state, 12, 5);
+        let commands = seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+            .act(&state, &mut OwnEvents::default());
+        attacks(&commands)
+            .iter()
+            .any(|(_, target)| *target == AttackTarget::Unit(bombard))
+    };
+    assert!(goes_at_the_gun(&[gun]), "a lone gun is reached");
+    let mut escorted = vec![gun];
+    escorted.extend(company);
+    assert!(
+        !goes_at_the_gun(&escorted),
+        "an escorted gun waits for an edge"
+    );
+}
