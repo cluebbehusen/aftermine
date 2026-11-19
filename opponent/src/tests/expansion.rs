@@ -929,3 +929,37 @@ fn a_frame_no_enemy_walks_to_is_still_theirs_when_their_guns_reach_it() {
     assert_eq!(wanted(0), vec![TilePos::new(7, 9)]);
     assert_eq!(wanted(1), vec![TilePos::new(31, 3)]);
 }
+
+#[test]
+fn a_plateau_the_seat_holds_with_a_foundry_keeps_its_frames() {
+    // A pit-ringed plateau beside East's start, in reach of East's ground,
+    // with West's Foundry standing on it: its frame is West's to build.
+    let mut scenario = lane(&[(31, 3)]);
+    for row in 1..=6 {
+        let pits = if row == 1 || row == 6 { 26..34 } else { 26..27 };
+        scenario.map[row].replace_range(pits.clone(), &"~".repeat(pits.len()));
+        if row != 1 && row != 6 {
+            scenario.map[row].replace_range(33..34, "~");
+        }
+    }
+    let wanted = |scenario: &Scenario| {
+        let state = scenario.build().unwrap();
+        expansion::candidates(
+            &mapped(&state, PlayerId(0)),
+            &map(scenario),
+            &Memory::default(),
+            (50, true),
+            0,
+        )
+        .iter()
+        .any(|(investment, _)| *investment == Investment::Extractor(TilePos::new(31, 3)))
+    };
+    assert!(!wanted(&scenario), "an enemy's guns reach the plateau");
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Foundry,
+        x: 27,
+        y: 2,
+    });
+    assert!(wanted(&scenario), "West holds the plateau");
+}

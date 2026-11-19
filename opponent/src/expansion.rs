@@ -11,7 +11,6 @@ use crate::workers::worker;
 use aftermine_sim::geometry::foundry_supports;
 use aftermine_sim::observation::{BuildingObs, ObservationData};
 use aftermine_sim::stats;
-use aftermine_sim::stats::Domain;
 use aftermine_sim::{BuildingKind, PlayerId, TICKS_PER_SECOND, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
@@ -98,34 +97,41 @@ pub(crate) fn candidates(
     for frame in &observation.known_frames {
         let me = observation.me;
         // Measured to the nearest tile of the frame, so mirrored frames
-        // measure alike.
-        let (distance, hostile) = crate::frame::tiles_of(*frame, WORKS).fold(
-            (UNREACHABLE, UNREACHABLE),
-            |(home, enemy), tile| {
-                (
-                    home.min(map.distance(me, tile)),
-                    enemy.min(map.hostile_distance(me, tile)),
-                )
-            },
-        );
-        // A frame no enemy walks to is still theirs to hold when their
-        // ground units shoot it from where they walk: such a frame measures,
-        // for every seat, from the nearest ground in a ground unit's reach.
-        let shot = hostile == UNREACHABLE;
-        let (distance, hostile) = if shot {
-            shot_from(map, me, *frame)
-        } else {
-            (distance, hostile)
+        // measure alike. A seat that walks to no tile of it holds it from
+        // the nearest ground its ground units shoot it from.
+        let walk = |player: PlayerId| {
+            crate::frame::tiles_of(*frame, WORKS)
+                .map(|tile| map.distance(player, tile))
+                .min()
+                .unwrap_or(UNREACHABLE)
         };
+        let reach = |player: PlayerId| match walk(player) {
+            UNREACHABLE => map.firing_distance(player, *frame),
+            walked => walked,
+        };
+        // Ground the seat or an ally already holds with a Foundry is home.
+        let settled = walk(me) == UNREACHABLE
+            && observation
+                .my_buildings
+                .iter()
+                .chain(&observation.ally_buildings)
+                .any(|building| {
+                    building.kind == BuildingKind::Foundry
+                        && building.built
+                        && map.component(building.anchor) == map.component(*frame)
+                });
+        let distance = if settled { 0 } else { reach(me) };
+        let hostile = map.hostiles(me).map(reach).min().unwrap_or(UNREACHABLE);
+        let walked = map.hostiles(me).any(|other| walk(other) != UNREACHABLE);
         // A frame deep in enemy ground, at least twice as near an enemy as
         // home, is theirs to hold: a scout that finds one there gives the
         // seat nothing to build. One its home ground does not reach is left
         // to the rules for other ground, unless only an enemy's guns reach it.
         if hostile != UNREACHABLE
             && if distance == UNREACHABLE {
-                shot
+                !walked
             } else {
-                u64::from(hostile) * 2 <= u64::from(distance)
+                hostile < distance && u64::from(hostile) * 2 <= u64::from(distance)
             }
         {
             continue;
@@ -147,7 +153,7 @@ pub(crate) fn candidates(
         // half on the line between them, and less the nearer the enemy, so a
         // frame a scout finds at an enemy's door is not worth saving for.
         if hostile != UNREACHABLE && distance != UNREACHABLE && distance >= hostile {
-            score = score * u64::from(hostile) / (2 * u64::from(distance).max(1));
+            score = score * u64::from(hostile.max(1)) / (2 * u64::from(distance).max(1));
         }
         let score = score * 1_000 / (1_000 + danger(observation, map, memory, *frame));
         list.push((
@@ -156,33 +162,6 @@ pub(crate) fn candidates(
         ));
     }
     list
-}
-
-/// The nearest ground distances from the seat's start, and from any hostile
-/// start, to ground from which a ground unit hits an Extractor at `frame`.
-fn shot_from(map: &MapModel, me: PlayerId, frame: TilePos) -> (u16, u16) {
-    let reach = ground_reach();
-    let mut nearest = (UNREACHABLE, UNREACHABLE);
-    for dy in -reach..WORKS.1 + reach {
-        for dx in -reach..WORKS.0 + reach {
-            let tile = frame.offset(dx, dy);
-            nearest.0 = nearest.0.min(map.distance(me, tile));
-            nearest.1 = nearest.1.min(map.hostile_distance(me, tile));
-        }
-    }
-    nearest
-}
-
-/// How many tiles out a ground unit hits a building it sees for itself: the
-/// longest ground reach within the unit's own sight, in whole tiles. Reach
-/// past sight needs a spotter.
-fn ground_reach() -> i32 {
-    UnitKind::ALL
-        .iter()
-        .filter(|kind| kind.stats().domain == Domain::Ground)
-        .map(|kind| crate::defenses::reach(*kind).min(Fx::from_num(kind.stats().vision)))
-        .max()
-        .map_or(0, |reach| reach.to_num::<i32>())
 }
 
 /// What a Foundry at `anchor` would pay back through the seat's remote
