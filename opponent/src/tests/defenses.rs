@@ -985,6 +985,7 @@ fn remembered(kind: &str, count: usize) -> Memory {
         "raided": [],
         "scouted": [],
         "stuck": [],
+        "extractors": [],
     }))
     .unwrap()
 }

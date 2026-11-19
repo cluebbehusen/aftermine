@@ -61,6 +61,9 @@ pub(crate) struct Memory {
     /// Own units whose orders stalled for want of a route or a firing
     /// position, by id.
     stuck: Vec<Stuck>,
+    /// Anchors of the seat's own Extractors, sites included, at the last
+    /// decision, in order.
+    extractors: Vec<TilePos>,
 }
 
 /// An own unit whose order stalled for want of a route or a firing position:
@@ -309,6 +312,31 @@ impl Memory {
         self.stuck.iter().map(|stuck| stuck.unit).collect()
     }
 
+    /// Remembers as failed each frame whose own Extractor, standing or begun
+    /// at the last decision, is gone: raiders waiting out of sight are known
+    /// only by what they kill.
+    pub(crate) fn lost_extractors(&mut self, observation: &ObservationData) {
+        let mut standing: Vec<TilePos> = observation
+            .my_buildings
+            .iter()
+            .filter(|building| building.kind == BuildingKind::Extractor)
+            .map(|building| building.anchor)
+            .collect();
+        standing.sort_unstable();
+        standing.dedup();
+        for anchor in std::mem::take(&mut self.extractors) {
+            if standing.binary_search(&anchor).is_err() {
+                record(
+                    &mut self.failures,
+                    BuildingKind::Extractor,
+                    anchor,
+                    observation.tick,
+                );
+            }
+        }
+        self.extractors = standing;
+    }
+
     /// Forgets failures old enough to try again.
     pub(crate) fn forget(&mut self, now: u64) {
         self.failures
@@ -342,6 +370,7 @@ impl Memory {
             || full(&self.raided)
             || self.units.len() > UNIT_CAP
             || self.stuck.len() > STUCK_CAP
+            || self.extractors.len() > FAILURE_CAP
         {
             return Err("checkpoint remembers too much".into());
         }
@@ -355,6 +384,11 @@ impl Memory {
                 .all(|stuck| stuck.at <= now && on_map(stuck.tile));
         if !stuck {
             return Err("checkpoint stuck units are malformed".into());
+        }
+        let extractors = self.extractors.windows(2).all(|pair| pair[0] < pair[1])
+            && self.extractors.iter().all(|anchor| on_map(*anchor));
+        if !extractors {
+            return Err("checkpoint own Extractors are malformed".into());
         }
         let by_id = self.units.windows(2).all(|pair| pair[0].id < pair[1].id);
         if !by_id || self.units.iter().any(|unit| unit.seen > now) {
