@@ -264,7 +264,10 @@ impl Missions {
                     ground: component,
                     gap,
                     attackers: siege.attackers(gap, crate::reads_threats(difficulty)),
-                    read: crate::reads_threats(difficulty),
+                    // Builders and producers with nothing armed beside them
+                    // are met with the cheapest unit: the first one there
+                    // soonest stops the site going up.
+                    read: crate::reads_threats(difficulty) && !siege.unarmed_only(),
                 });
             }
             // Guns are reached rather than waited for: they shell from
@@ -494,6 +497,17 @@ struct Siege<'a> {
 }
 
 impl Siege<'_> {
+    /// Whether nothing armed threatens: no armed enemy in sight, no gun among
+    /// its batteries and none out of sight.
+    fn unarmed_only(&self) -> bool {
+        self.units.is_empty()
+            && self.unseen.is_none()
+            && self
+                .batteries
+                .iter()
+                .all(|(building, _)| building.kind.tier_stats(building.tier).weapons.is_empty())
+    }
+
     /// How far `have` falls short of the armed attackers, `pressing`, and
     /// the enemy producers and builders among the buildings: a seat with no
     /// army must train one for them. Scouts don't count, or every look at the
