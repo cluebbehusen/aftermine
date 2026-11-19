@@ -584,8 +584,8 @@ fn moved(
 /// ground force worth `met`, with `have` all of them and their recruits
 /// against ground and `front` those out at it: short of `go`, the force the
 /// seat's rung goes out to it with, at the post; once out, when all of them
-/// are short of the force and those out are short of two thirds of it, so a
-/// front the reserve cannot bring level comes back to it.
+/// are short of that and those out are short of two thirds of the force, so
+/// a front the reserve cannot bring level comes back to it.
 fn waits(
     mission: Option<&Mission>,
     foundry: &BuildingObs,
@@ -597,7 +597,7 @@ fn waits(
             && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
     });
     if out {
-        have < met && front * 3 < met * 2
+        have < go && front * 3 < met * 2
     } else {
         have < go
     }
@@ -643,17 +643,12 @@ fn waiting_post(
 }
 
 /// What a defense against `siege`'s ground force worth `met` must hold to go
-/// out at it: the rung's edge over mobile attackers on the ground at the
-/// seat's `own` Foundry, even odds otherwise. Guns that stand and shell never
-/// come to the post, an aircraft's answer would be held back with the ground
-/// units, and an ally's defense has no shortfall training behind it.
+/// out at it: the rung's edge at the seat's `own` Foundry when nothing that
+/// stands and shells is among the attackers, even odds otherwise. Guns that
+/// stand never come to the post, and an ally's defense has no shortfall
+/// training behind a wait.
 fn sortie(own: bool, siege: &Siege<'_>, met: u64, difficulty: BotDifficulty) -> u64 {
-    let mobile = siege.batteries.is_empty()
-        && siege
-            .units
-            .iter()
-            .all(|threat| threat.body_domain() == Domain::Ground);
-    if own && mobile {
+    if own && siege.batteries.is_empty() {
         met * engage_margin(difficulty) / 1_000
     } else {
         met
