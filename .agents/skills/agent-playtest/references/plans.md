@@ -84,3 +84,11 @@ Play as a strong, experienced player. Scout early and keep scouting, so you
 learn what the opponent is doing before it reaches you, and answer what you see
 at once rather than following a fixed build. Keep your economy growing behind
 your answers, and attack when you are clearly ahead.
+
+## Ready for a proxy
+
+Play as a strong, experienced player who has seen this opponent build production
+close to its enemy's base early. Scout your own side of the map as well as
+theirs from the start, and be ready to answer forward production before it
+fields an army. Keep your economy growing behind your answers, and attack when
+you are clearly ahead.
