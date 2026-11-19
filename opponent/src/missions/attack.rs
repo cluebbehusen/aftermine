@@ -753,6 +753,26 @@ fn engage_on(
         Some(target.objective().owner),
         ENGAGE_TICKS,
     );
+    let standing = standing(observation, target.objective());
+    // A target seen gone ends the attack on it at once: waiting for every
+    // member to idle, or for the fight's progress to stall, never ends with
+    // a large army, since some member is always busy and damage anywhere
+    // counts as progress.
+    let onward = plan.best(Some(target)).filter(|next| {
+        !standing
+            && plan.meets(
+                members.iter().map(|unit| striking(unit)).sum(),
+                *next,
+                breaching(observation, &mission.units),
+                plan.margin,
+            )
+    });
+    if let Some(next) = onward {
+        if ledger.order(hunt(army, next.approach)) {
+            mission.attack_phase(next, AttackPhase::Travel, now, Some(next.approach));
+        }
+        return None;
+    }
     if !all_idle && going {
         return None;
     }
@@ -763,7 +783,6 @@ fn engage_on(
         fight.press(now);
         return None;
     }
-    let standing = standing(observation, target.objective());
     // An army that cleared everything in reach short of its target, such as
     // a line in front of a base, goes on to the target it still knows of
     // instead of counting the attack as failed. The fight's time still
