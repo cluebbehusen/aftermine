@@ -196,5 +196,16 @@ pub(crate) fn economy(difficulty: BotDifficulty) -> u64 {
     }
 }
 
+/// Growth sites a seat keeps going up at once: one at Scrapheap, two at
+/// Standard, as many as it wants above. A difficulty limit on attention: a
+/// newer player tends one thing at a time.
+pub(crate) fn growing(difficulty: BotDifficulty) -> Option<usize> {
+    match difficulty {
+        BotDifficulty::Scrapheap => Some(1),
+        BotDifficulty::Standard => Some(2),
+        BotDifficulty::Veteran | BotDifficulty::Prime => None,
+    }
+}
+
 #[cfg(test)]
 mod tests;

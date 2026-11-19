@@ -139,6 +139,8 @@ pub(crate) struct Situation<'a> {
     pub(crate) margin: u64,
     /// Per mille of its full economy the seat builds.
     pub(crate) economy: u64,
+    /// Growth sites the seat keeps going up at once, if it is limited.
+    pub(crate) growing: Option<usize>,
     /// The known anti-air around the next lift's target, at its value.
     pub(crate) lift_flak: u64,
     /// What of its army the seat's personality would have strike from the
@@ -363,8 +365,19 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             }
         }
     }
+    // A seat that tends one growth site at a time starts no other until
+    // it stands.
+    let busy = situation.growing.is_some_and(|limit| {
+        observation
+            .my_buildings
+            .iter()
+            .filter(|building| !building.built && growth_site(building.kind))
+            .count()
+            >= limit
+    });
     let mut list: Vec<Candidate> = list
         .into_iter()
+        .filter(|(investment, _)| !busy || !grows(*investment))
         .filter(|(_, score)| *score > 0)
         .map(|(investment, score)| Candidate {
             investment,
@@ -383,6 +396,25 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         )
     });
     list
+}
+
+/// Whether `kind` is a structure that grows the economy.
+fn growth_site(kind: BuildingKind) -> bool {
+    matches!(
+        kind,
+        BuildingKind::Extractor | BuildingKind::Foundry | BuildingKind::Reclaimer
+    )
+}
+
+/// Whether `investment` puts up a structure that grows the economy.
+fn grows(investment: Investment) -> bool {
+    matches!(
+        investment,
+        Investment::Extractor(_)
+            | Investment::Expansion(_)
+            | Investment::Reclaimer
+            | Investment::Capacity(BuildingKind::Foundry)
+    )
 }
 
 /// Where a located investment would stand, as a footprint centre: an

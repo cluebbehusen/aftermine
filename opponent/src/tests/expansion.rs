@@ -215,6 +215,59 @@ fn a_free_frame_near_home_gets_an_extractor_at_every_rung() {
 }
 
 #[test]
+fn the_lowest_rung_starts_a_second_extractor_only_once_the_first_stands() {
+    let mut scenario = arena(1_000);
+    scenario.map[1].replace_range(6..7, "E");
+    scenario.map[9].replace_range(9..10, "E");
+    scenario
+        .units
+        .extend([harvester(0, 5, 7), harvester(0, 4, 7), harvester(0, 5, 4)]);
+    // The tick each frame's site was ordered and the tick the first stood.
+    let orders = |difficulty| {
+        let mut state = scenario.build().unwrap();
+        let mut opponent = seat_with(&scenario, 0, rung(difficulty));
+        let mut events = OwnEvents::default();
+        let mut ordered: Vec<(TilePos, u64)> = Vec::new();
+        let mut first_stood = None;
+        while state.current_tick() < 2_400 && ordered.len() < 2 {
+            let commands = opponent.act(&state, &mut events);
+            for command in &commands {
+                if let Command::Build {
+                    kind: BuildingKind::Extractor,
+                    anchor,
+                    ..
+                } = command.command
+                    && !ordered.iter().any(|(frame, _)| *frame == anchor)
+                {
+                    ordered.push((anchor, state.current_tick()));
+                }
+            }
+            events.record(PlayerId(0), &state.tick(&commands).events);
+            if first_stood.is_none()
+                && state.buildings().iter().any(|b| {
+                    b.player == PlayerId(0) && b.kind == BuildingKind::Extractor && b.built()
+                })
+            {
+                first_stood = Some(state.current_tick());
+            }
+        }
+        (ordered, first_stood)
+    };
+    let (prime, prime_stood) = orders(BotDifficulty::Prime);
+    assert_eq!(prime.len(), 2, "premise: Prime takes both frames");
+    assert!(
+        prime[1].1 < prime_stood.unwrap_or(u64::MAX),
+        "Prime starts the second before the first stands: {prime:?} {prime_stood:?}"
+    );
+    let (scrapheap, stood) = orders(BotDifficulty::Scrapheap);
+    assert_eq!(scrapheap.len(), 2, "Scrapheap takes both frames in time");
+    assert!(
+        scrapheap[1].1 >= stood.unwrap(),
+        "Scrapheap waits for the first: {scrapheap:?} {stood:?}"
+    );
+}
+
+#[test]
 fn only_frames_the_seat_has_seen_add_to_a_site() {
     let mut scenario = frontier(0);
     scenario.map[9].replace_range(16..18, "E.");

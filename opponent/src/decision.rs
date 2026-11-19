@@ -492,6 +492,7 @@ pub(crate) fn decide(
         waiting,
         margin: crate::missions::margin(profile.difficulty),
         economy: crate::economy(profile.difficulty),
+        growing: crate::growing(profile.difficulty),
         lift_flak: persistent.missions.lift_flak(
             observation,
             map,
