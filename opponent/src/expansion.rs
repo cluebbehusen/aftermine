@@ -74,6 +74,14 @@ pub(crate) fn candidates(
         ));
     }
     for frame in &observation.known_frames {
+        let me = observation.me;
+        let hostile = map.hostile_distance(me, *frame);
+        // A frame deep in enemy ground, twice as near an enemy as home, is
+        // theirs to hold: a scout that finds one there gives the seat
+        // nothing to build.
+        if hostile != UNREACHABLE && u64::from(hostile) * 2 < u64::from(map.distance(me, *frame)) {
+            continue;
+        }
         if held(observation, *frame, -1)
             || memory.failed(BuildingKind::Extractor, *frame, observation.tick)
             || contested(observation, *frame)
@@ -90,8 +98,6 @@ pub(crate) fn candidates(
         // it stands to be lost sooner than one on the seat's own side: worth
         // half on the line between them, and less the nearer the enemy, so a
         // frame a scout finds at an enemy's door is not worth saving for.
-        let me = observation.me;
-        let hostile = map.hostile_distance(me, *frame);
         let distance = map.distance(me, *frame);
         if hostile != UNREACHABLE && distance >= hostile {
             score = score * u64::from(hostile) / (2 * u64::from(distance).max(1));

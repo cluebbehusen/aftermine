@@ -700,11 +700,10 @@ fn frames_and_deep_bores_rank_by_what_they_pay_back() {
     // East's side, and one at East's door.
     let frames = lane(&[(6, 4), (14, 7), (24, 5), (32, 5)]);
     let scores = frame_scores(&frames);
-    let (supported, own_side, enemy_side, door) = (
+    let (supported, own_side, enemy_side) = (
         score_of(&scores, 6, 4),
         score_of(&scores, 14, 7),
         score_of(&scores, 24, 5),
-        score_of(&scores, 32, 5),
     );
     assert!(supported > own_side, "{scores:?}");
     assert!(
@@ -712,8 +711,10 @@ fn frames_and_deep_bores_rank_by_what_they_pay_back() {
         "a frame East reaches first is worth less: {scores:?}"
     );
     assert!(
-        door * 2 < enemy_side,
-        "and less the nearer East it lies: {scores:?}"
+        !scores
+            .iter()
+            .any(|(frame, _)| *frame == TilePos::new(32, 5)),
+        "and one at East's door is East's to hold: {scores:?}"
     );
     let bore = |crucible: bool| {
         let mut scenario = lane(&[(6, 4), (14, 7)]);
