@@ -12,7 +12,7 @@ fn recorded(name: &str, ticks: u64) -> PathBuf {
     let mut scenario = aftermine_sim::Scenario::skirmish();
     aftermine_kit::controller::seat_bots_around(
         &mut scenario,
-        PlayerId(0),
+        &[PlayerId(0)],
         BotDifficulty::Prime,
         BotStance::Balanced,
         9000,

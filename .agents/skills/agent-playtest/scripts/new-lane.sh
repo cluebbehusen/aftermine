@@ -14,6 +14,11 @@
 # repository's release build, so a rebuild never changes a running round.
 # The lane's terms are recorded in sessions/<lane>.json, outside the lane,
 # since they name the bot's difficulty and seed.
+#
+# LANE_SEAT (default 0) is the seat the player plays, LANE_BRIEF and
+# LANE_SCHEMA name the brief template and report schema (default the bot
+# playtest's), and LANE_SESSION=0 sets the lane up without starting its own
+# session, for a match whose one session new-match.sh starts.
 set -eu
 
 if [ "$#" -lt 5 ]; then
@@ -59,6 +64,10 @@ if [ -n "$step" ] || [ -n "$rate" ]; then
 fi
 
 skill=$(cd "$(dirname "$0")/.." && pwd)
+seat=${LANE_SEAT:-0}
+digit=$((seat + 1))
+brief=${LANE_BRIEF:-$skill/references/player-brief.md}
+schema=${LANE_SCHEMA:-$skill/assets/report.schema.json}
 repo=$(git -C "$skill" rev-parse --show-toplevel)
 driver=${AFTERMINE_DRIVER:-$repo/target/release/aftermine-driver}
 [ -x "$driver" ] || {
@@ -91,10 +100,10 @@ fi
 
 cp "$map" "$dir/map.json"
 "$driver" rules >"$dir/rules.txt"
-cp "$skill/assets/report.schema.json" "$dir/report.schema.json"
-cp "$skill/assets/play-help.txt" "$dir/play-help.txt"
+cp "$schema" "$dir/report.schema.json"
+sed -e "s/@SEAT@/$seat/g" "$skill/assets/play-help.txt" >"$dir/play-help.txt"
 {
-	sed -e "s/@TICK_LIMIT@/$stop/" -e "s/@PACE@/$pace/" "$skill/references/player-brief.md"
+	sed -e "s/@TICK_LIMIT@/$stop/" -e "s/@PACE@/$pace/" -e "s/@SEAT@/$seat/g" -e "s/@DIGIT@/$digit/g" "$brief"
 	echo
 	printf '%s\n' "$plan"
 } >"$dir/brief.md"
@@ -112,15 +121,19 @@ if [ "\${1:-}" = digest ]; then
 		;;
 	esac
 	if [ "\${2:-}" = --map ]; then
-		exec "$driver" live --addr 127.0.0.1:$port digest 0 --map "$dir/map.json"
+		exec "$driver" live --addr 127.0.0.1:$port digest $seat --map "$dir/map.json"
 	fi
-	exec "$driver" live --addr 127.0.0.1:$port digest 0
+	exec "$driver" live --addr 127.0.0.1:$port digest $seat
 fi
 exec "$driver" live --addr 127.0.0.1:$port "\$@"
 EOF
 chmod +x "$dir/play"
 
-"$driver" session --port "$port" --scenario "$dir/map.json" --player 0 \
+if [ "${LANE_SESSION:-1}" = 0 ]; then
+	echo "$dir"
+	exit 0
+fi
+"$driver" session --port "$port" --scenario "$dir/map.json" --player "$seat" \
 	--replay-out "$round/replays/$lane.json" "$@" \
 	>"$round/sessions/$lane.log" 2>&1 &
 echo $! >"$round/sessions/$lane.pid"

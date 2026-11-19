@@ -4,9 +4,10 @@ description:
   Run rounds of agent playtests against Aftermine's bot. Claude and Codex
   players each take one seat in a fog-only session with an assigned plan, report
   where the bot played badly, and each weakness is diagnosed from the replay and
-  the bot's decision trace. Use when asked to playtest the bot with agents, to
-  find strategies that beat it, or to check whether a bot change closed a
-  weakness an agent found.
+  the bot's decision trace. Versus matches seat two agents against each other
+  for balance questions. Use when asked to playtest the bot with agents, to find
+  strategies that beat it, to check whether a bot change closed a weakness an
+  agent found, or to have agents play each other.
 ---
 
 # Agent playtests
@@ -79,6 +80,24 @@ Do not poll the lanes. Each notifies when it finishes. Then
 `uv run scripts/lane-summary.py "$ROUND"` prints each lane's result, orders per
 game minute, step sizes, looks per advance, wall time and Codex tokens; take a
 Claude lane's tokens from its completion notice.
+
+## Versus matches
+
+Two agents can play each other, one per seat, to ask balance questions the bot
+can't answer, such as whether a competent defender holds a rush:
+
+```sh
+.agents/skills/agent-playtest/scripts/new-match.sh "$ROUND" duel-1 4141 \
+  scenarios/open-pit.json "$PLAN_A" "$PLAN_B" --tick-limit 48000
+```
+
+Seat 0 plays from lane `duel-1-a` on the given port and seat 1 from `duel-1-b`
+on the next. Each gets the versus brief and report schema, and neither learns
+who or what the other is. The clock moves once both have asked, by the shorter
+step; an advance asked alone waits up to 25 s, then says to advance again, and
+the next advance returns the step's report. Pace flags hold both players to one
+pace. Launch each lane with the same runners as a bot lane. For balance, use the
+same model on both seats and swap the plans between runs.
 
 ## Audit each lane
 

@@ -131,24 +131,26 @@ pub fn record_events(bots: &mut [SeatController], report: &TickReport) {
     }
 }
 
-/// Leaves `human` as the scenario's one person and seats a bot at
-/// `difficulty` and `stance` in every other chair, seat `n` taking
-/// personality seed `seed_base + n`, the way a New Match seats its bots.
+/// Leaves `humans` as the scenario's people and seats a bot at `difficulty`
+/// and `stance` in every other chair, seat `n` taking personality seed
+/// `seed_base + n`, the way a New Match seats its bots.
 pub fn seat_bots_around(
     scenario: &mut Scenario,
-    human: PlayerId,
+    humans: &[PlayerId],
     difficulty: BotDifficulty,
     stance: BotStance,
     seed_base: u64,
 ) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        usize::from(human.0) < scenario.players.len(),
-        "{} has no seat {}",
-        scenario.name,
-        human.0
-    );
+    for human in humans {
+        anyhow::ensure!(
+            usize::from(human.0) < scenario.players.len(),
+            "{} has no seat {}",
+            scenario.name,
+            human.0
+        );
+    }
     for (index, seat) in scenario.players.iter_mut().enumerate() {
-        seat.bot = index != usize::from(human.0);
+        seat.bot = !humans.iter().any(|human| usize::from(human.0) == index);
         seat.bot_config = seat
             .bot
             .then(|| BotConfig::new(difficulty, stance, seed_base.wrapping_add(index as u64)));

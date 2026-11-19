@@ -581,10 +581,13 @@ enum Cmd {
         /// Seconds a silent connection may sit before it is closed.
         #[arg(long, default_value_t = 30 * 60, value_parser = clap::value_parser!(u64).range(1..))]
         idle_timeout: u64,
-        /// Make this a playtest for this seat: every other seat gets the
-        /// bot below, and the client may see and command only this seat.
-        #[arg(long, requires = "replay_out")]
-        player: Option<u8>,
+        /// Make this a playtest for these seats, comma-separated: every
+        /// other seat gets the bot below. With one seat the client plays it
+        /// on --port; with several, seat i's client connects to --port + i,
+        /// sees and commands only that seat, and the clock moves once every
+        /// seat has asked it to, by the shortest step.
+        #[arg(long, requires = "replay_out", value_delimiter = ',')]
+        player: Vec<u8>,
         /// The playtest bots' skill rung.
         #[arg(long, requires = "player", default_value_t = aftermine_sim::scenario::BotDifficulty::Standard)]
         difficulty: aftermine_sim::scenario::BotDifficulty,
@@ -1452,10 +1455,13 @@ fn main() -> Result<()> {
             min_step,
             orders_per_minute,
         } => {
-            let playtest = player.zip(replay_out).map(|(seat, replay_out)| {
+            let playtest = replay_out.filter(|_| !player.is_empty()).map(|replay_out| {
                 aftermine_driver::session::PlaytestSetup {
                     playtest: aftermine_driver::session::Playtest {
-                        seat: aftermine_sim::PlayerId(seat),
+                        seats: player
+                            .iter()
+                            .map(|seat| aftermine_sim::PlayerId(*seat))
+                            .collect(),
                         tick_limit,
                         replay_out,
                         min_step,

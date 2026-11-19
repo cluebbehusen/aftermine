@@ -6,7 +6,7 @@ Playtest commands. `./play <command> --help` explains one.
                     stops on the tick the match ends.
   status            The tick, and the result once the match ends.
 
-Orders. Each names your seat first: ./play hunt 0 --units 4,5 --to 30,20
+Orders. Each names your seat first: ./play hunt @SEAT@ --units 4,5 --to 30,20
   run, hunt, advance-units, patrol, stop, attack-unit, attack-building,
   accompany, harvest, build, repair, repair-unit, salvage, cancel,
   upgrade, train, rally

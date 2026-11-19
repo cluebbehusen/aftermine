@@ -216,7 +216,7 @@ fn paced_session(
     let mut scenario = Scenario::skirmish();
     aftermine_kit::controller::seat_bots_around(
         &mut scenario,
-        PlayerId(0),
+        &[PlayerId(0)],
         BotDifficulty::Prime,
         BotStance::Balanced,
         7,
@@ -225,7 +225,7 @@ fn paced_session(
     Session::playtest(
         scenario,
         Playtest {
-            seat: PlayerId(0),
+            seats: vec![PlayerId(0)],
             tick_limit,
             replay_out: dir.join("replays/playtest.json"),
             min_step,
@@ -342,7 +342,7 @@ fn a_playtest_seat_must_be_one_no_bot_plays() {
     let scenario = Scenario::skirmish();
     assert!(scenario.players[1].bot);
     let playtest = |seat| Playtest {
-        seat,
+        seats: vec![seat],
         tick_limit: None,
         replay_out: dir.join("replay.json"),
         min_step: None,
@@ -612,4 +612,146 @@ fn an_advance_reports_the_seat_s_new_units() {
         "{played:?}"
     );
     assert!(super::super::digest::played(&played).contains("your harvester"));
+}
+
+/// Skirmish with both seats played by clients, replaying to `dir`.
+fn two_seat_session(dir: &std::path::Path) -> Session {
+    let mut scenario = Scenario::skirmish();
+    aftermine_kit::controller::seat_bots_around(
+        &mut scenario,
+        &[PlayerId(0), PlayerId(1)],
+        BotDifficulty::Prime,
+        BotStance::Balanced,
+        7,
+    )
+    .unwrap();
+    Session::playtest(
+        scenario,
+        Playtest {
+            seats: vec![PlayerId(0), PlayerId(1)],
+            tick_limit: None,
+            replay_out: dir.join("replays/match.json"),
+            min_step: None,
+            orders_per_minute: None,
+        },
+    )
+    .unwrap()
+}
+
+#[test]
+fn two_players_move_the_clock_together_by_the_shorter_step() {
+    let dir = scratch("playtest-two-seats");
+    let mut session = two_seat_session(&dir);
+    let error = session
+        .handle_from(Some(PlayerId(0)), Request::AdvanceTicks { ticks: 100 })
+        .unwrap_err();
+    assert!(error.contains("waiting for the other player"), "{error}");
+    assert_eq!(
+        session.state().current_tick(),
+        0,
+        "one seat alone moves nothing"
+    );
+    let Reply::Played(view) = session
+        .handle_from(Some(PlayerId(1)), Request::AdvanceTicks { ticks: 60 })
+        .unwrap()
+    else {
+        panic!("the second seat's advance runs the step")
+    };
+    assert_eq!((view.player, view.ticks, view.tick), (PlayerId(1), 60, 60));
+    let waited = session
+        .take_unread(PlayerId(0))
+        .expect("seat 0's report is kept");
+    assert_eq!((waited.player, waited.ticks), (PlayerId(0), 60));
+    assert!(session.take_unread(PlayerId(0)).is_none(), "collected once");
+}
+
+#[test]
+fn each_player_sees_and_commands_only_its_own_seat() {
+    let dir = scratch("playtest-two-seats-refusals");
+    let mut session = two_seat_session(&dir);
+    let harvester = |session: &Session, seat: u8| {
+        session
+            .state()
+            .units()
+            .iter()
+            .find(|unit| unit.player == PlayerId(seat) && unit.kind == UnitKind::Harvester)
+            .unwrap()
+            .id
+    };
+    let stop = |player: u8, unit| Request::SendCommand {
+        player: PlayerId(player),
+        command: Command::Stop { units: vec![unit] },
+    };
+    let theirs = harvester(&session, 1);
+    let error = session
+        .handle_from(Some(PlayerId(0)), stop(1, theirs))
+        .unwrap_err();
+    assert!(error.contains("seat 1 is not yours"), "{error}");
+    let error = session
+        .handle_from(
+            Some(PlayerId(0)),
+            Request::QueryFogView {
+                player: PlayerId(1),
+            },
+        )
+        .unwrap_err();
+    assert!(error.contains("seat 1 is not yours"), "{error}");
+    let mine = harvester(&session, 1);
+    session
+        .handle_from(Some(PlayerId(1)), stop(1, mine))
+        .unwrap();
+    session
+        .handle_from(Some(PlayerId(0)), Request::AdvanceTicks { ticks: 1 })
+        .unwrap_err();
+    session
+        .handle_from(Some(PlayerId(1)), Request::AdvanceTicks { ticks: 1 })
+        .unwrap();
+    let recorded = |session: &mut Session, seat: u8| {
+        let Reply::Status(status) = session
+            .handle_from(Some(PlayerId(seat)), Request::Status)
+            .unwrap()
+        else {
+            panic!("a status")
+        };
+        status.recorded_commands
+    };
+    assert_eq!(recorded(&mut session, 1), 1);
+    assert_eq!(
+        recorded(&mut session, 0),
+        0,
+        "a seat counts only its own orders"
+    );
+}
+
+#[test]
+fn two_players_on_their_own_ports_get_their_reports_when_both_advance() {
+    let dir = scratch("playtest-two-seats-server");
+    let session = two_seat_session(&dir);
+    let bind = || std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let (first, second) = (bind(), bind());
+    let addresses = [first.local_addr().unwrap(), second.local_addr().unwrap()];
+    std::thread::spawn(move || {
+        serve_seats(
+            vec![(PlayerId(0), first), (PlayerId(1), second)],
+            Limits::default(),
+            session,
+        );
+    });
+    let advance = |address: std::net::SocketAddr, ticks: u64| {
+        std::thread::spawn(move || {
+            crate::client::Client::connect(&address.to_string())
+                .unwrap()
+                .call(Request::AdvanceTicks { ticks })
+        })
+    };
+    let waiting = advance(addresses[0], 120);
+    std::thread::sleep(Duration::from_millis(200));
+    let second = advance(addresses[1], 80).join().unwrap().unwrap();
+    let first = waiting.join().unwrap().unwrap();
+    let ticks = |reply: Reply| match reply {
+        Reply::Played(view) => (view.player, view.ticks),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(ticks(first), (PlayerId(0), 80));
+    assert_eq!(ticks(second), (PlayerId(1), 80));
 }
