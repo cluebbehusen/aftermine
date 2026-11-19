@@ -97,23 +97,42 @@ pub(crate) fn candidates(
     for frame in &observation.known_frames {
         let me = observation.me;
         // Measured to the nearest tile of the frame, so mirrored frames
-        // measure alike.
-        let (distance, hostile) = crate::frame::tiles_of(*frame, WORKS).fold(
-            (UNREACHABLE, UNREACHABLE),
-            |(home, enemy), tile| {
-                (
-                    home.min(map.distance(me, tile)),
-                    enemy.min(map.hostile_distance(me, tile)),
-                )
-            },
-        );
+        // measure alike. A seat that walks to no tile of it holds it from
+        // the nearest ground its ground units shoot it from.
+        let walk = |player: PlayerId| {
+            crate::frame::tiles_of(*frame, WORKS)
+                .map(|tile| map.distance(player, tile))
+                .min()
+                .unwrap_or(UNREACHABLE)
+        };
+        let reach = |player: PlayerId| match walk(player) {
+            UNREACHABLE => map.firing_distance(player, *frame),
+            walked => walked,
+        };
+        // Ground the seat or an ally already holds with a Foundry is home.
+        let settled = walk(me) == UNREACHABLE
+            && observation
+                .my_buildings
+                .iter()
+                .chain(&observation.ally_buildings)
+                .any(|building| {
+                    building.kind == BuildingKind::Foundry
+                        && building.built
+                        && map.component(building.anchor) == map.component(*frame)
+                });
+        let distance = if settled { 0 } else { reach(me) };
+        let hostile = map.hostiles(me).map(reach).min().unwrap_or(UNREACHABLE);
+        let walked = map.hostiles(me).any(|other| walk(other) != UNREACHABLE);
         // A frame deep in enemy ground, at least twice as near an enemy as
         // home, is theirs to hold: a scout that finds one there gives the
         // seat nothing to build. One its home ground does not reach is left
-        // to the rules for other ground.
+        // to the rules for other ground, unless only an enemy's guns reach it.
         if hostile != UNREACHABLE
-            && distance != UNREACHABLE
-            && u64::from(hostile) * 2 <= u64::from(distance)
+            && if distance == UNREACHABLE {
+                !walked
+            } else {
+                hostile < distance && u64::from(hostile) * 2 <= u64::from(distance)
+            }
         {
             continue;
         }
@@ -134,7 +153,7 @@ pub(crate) fn candidates(
         // half on the line between them, and less the nearer the enemy, so a
         // frame a scout finds at an enemy's door is not worth saving for.
         if hostile != UNREACHABLE && distance != UNREACHABLE && distance >= hostile {
-            score = score * u64::from(hostile) / (2 * u64::from(distance).max(1));
+            score = score * u64::from(hostile.max(1)) / (2 * u64::from(distance).max(1));
         }
         let score = score * 1_000 / (1_000 + danger(observation, map, memory, *frame));
         list.push((

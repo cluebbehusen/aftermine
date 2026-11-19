@@ -5,8 +5,9 @@
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, tiles_of};
 use aftermine_sim::map::{Elevation, Map};
 use aftermine_sim::scenario::ScenarioError;
-use aftermine_sim::{BuildingKind, PlayerId, Scenario};
-use chassis::fx::Vec2Fx;
+use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingKind, PlayerId, Scenario, UnitKind};
+use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::{Grid, TilePos};
 use std::borrow::Cow;
 use std::cmp::Reverse;
@@ -101,6 +102,9 @@ pub struct MapModel {
     cuts: Vec<Vec<Cut>>,
     /// Each seat's gate tiles, sorted, where it never builds.
     gated: Vec<Vec<TilePos>>,
+    /// Each Extractor frame, sorted, with by seat the nearest ground
+    /// distance from its start to ground a ground unit shoots the frame from.
+    firing: Vec<(TilePos, Vec<u16>)>,
 }
 
 /// How a shot travels between its two bodies, for the fire rules.
@@ -130,6 +134,18 @@ impl Shot {
             _ => Self::Air,
         }
     }
+}
+
+/// How far a ground unit hits a building it sees for itself: the longest
+/// ground reach within the unit's own sight. Reach past sight needs a
+/// spotter.
+fn ground_reach() -> Fx {
+    UnitKind::ALL
+        .iter()
+        .filter(|kind| kind.stats().domain == Domain::Ground)
+        .map(|kind| crate::defenses::reach(*kind).min(Fx::from_num(kind.stats().vision)))
+        .max()
+        .unwrap_or(Fx::ZERO)
 }
 
 /// A few narrow passages that every ground route from a seat's start to a
@@ -371,7 +387,9 @@ impl MapModel {
             sites,
             cuts: Vec::new(),
             gated: Vec::new(),
+            firing: Vec::new(),
         };
+        model.firing = model.firing(map.extractor_frames());
         model.cuts = (0..seats)
             .map(|seat| model.find_cuts(PlayerId::from_index(seat), &fixed))
             .collect();
@@ -644,6 +662,59 @@ impl MapModel {
             .and_then(Option::as_ref)
             .and_then(|field| field.get(tile).copied())
             .unwrap_or(UNREACHABLE)
+    }
+
+    /// The nearest ground distance from `player`'s start to ground a ground
+    /// unit shoots the Extractor frame at `frame` from.
+    pub(crate) fn firing_distance(&self, player: PlayerId, frame: TilePos) -> u16 {
+        self.firing
+            .binary_search_by_key(&frame, |(anchor, _)| *anchor)
+            .ok()
+            .and_then(|index| self.firing[index].1.get(usize::from(player.0)).copied())
+            .unwrap_or(UNREACHABLE)
+    }
+
+    /// Each of `frames` with, by seat, the nearest ground distance from its
+    /// start to a tile whose centre lies within a ground unit's unaided reach
+    /// of the frame with a clear direct shot at it.
+    fn firing(&self, frames: &[TilePos]) -> Vec<(TilePos, Vec<u16>)> {
+        let reach = ground_reach();
+        let span = reach.ceil().to_num::<i32>();
+        let half = Fx::from_num(1) / 2;
+        let mut firing: Vec<_> = frames
+            .iter()
+            .map(|frame| {
+                let (low, high) = (
+                    Vec2Fx::new(Fx::from_num(frame.x), Fx::from_num(frame.y)),
+                    Vec2Fx::new(Fx::from_num(frame.x + 2), Fx::from_num(frame.y + 2)),
+                );
+                let centre = Vec2Fx::new(Fx::from_num(frame.x + 1), Fx::from_num(frame.y + 1));
+                let mut nearest = vec![UNREACHABLE; self.starts.len()];
+                for dy in -span..2 + span {
+                    for dx in -span..2 + span {
+                        let tile = frame.offset(dx, dy);
+                        if self.component(tile).is_none() {
+                            continue;
+                        }
+                        let from =
+                            Vec2Fx::new(Fx::from_num(tile.x) + half, Fx::from_num(tile.y) + half);
+                        let near =
+                            Vec2Fx::new(from.x.clamp(low.x, high.x), from.y.clamp(low.y, high.y));
+                        if from.dist_sq(near) > reach * reach
+                            || !self.clear_shot(from, centre, (tile, *frame), Shot::Ground)
+                        {
+                            continue;
+                        }
+                        for (seat, slot) in nearest.iter_mut().enumerate() {
+                            *slot = (*slot).min(self.distance(PlayerId::from_index(seat), tile));
+                        }
+                    }
+                }
+                (*frame, nearest)
+            })
+            .collect();
+        firing.sort_unstable_by_key(|(frame, _)| *frame);
+        firing
     }
 
     /// The nearest distance from any hostile seat's start to `tile`.

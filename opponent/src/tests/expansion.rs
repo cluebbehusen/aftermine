@@ -892,3 +892,74 @@ fn a_secure_seat_scores_a_site_by_the_support_its_remote_extractor_would_get() {
         "support for the stranded Extractor counts once the army holds: {secure} vs {insecure}"
     );
 }
+
+#[test]
+fn a_frame_no_enemy_walks_to_is_still_theirs_when_their_guns_reach_it() {
+    // Two frames on pit-ringed plateaus no ground unit walks onto, one
+    // beside each seat. Each seat wants the one beside it; the one beside
+    // the enemy is in reach of the enemy's ground and wanted by neither.
+    let mut scenario = lane(&[(31, 3), (7, 9)]);
+    for (row, columns) in [(2, 30..34), (5, 30..34), (8, 6..10), (11, 6..10)] {
+        scenario.map[row].replace_range(columns.clone(), &"~".repeat(columns.len()));
+    }
+    for (rows, columns) in [(3..5, [30, 33]), (9..11, [6, 9])] {
+        for row in rows {
+            for column in columns {
+                scenario.map[row].replace_range(column..=column, "~");
+            }
+        }
+    }
+    let state = scenario.build().unwrap();
+    let model = map(&scenario);
+    let wanted = |player: u8| -> Vec<TilePos> {
+        expansion::candidates(
+            &mapped(&state, PlayerId(player)),
+            &model,
+            &Memory::default(),
+            (50, true),
+            0,
+        )
+        .into_iter()
+        .filter_map(|(investment, _)| match investment {
+            Investment::Extractor(frame) => Some(frame),
+            _ => None,
+        })
+        .collect()
+    };
+    assert_eq!(wanted(0), vec![TilePos::new(7, 9)]);
+    assert_eq!(wanted(1), vec![TilePos::new(31, 3)]);
+}
+
+#[test]
+fn a_plateau_the_seat_holds_with_a_foundry_keeps_its_frames() {
+    // A pit-ringed plateau beside East's start, in reach of East's ground,
+    // with West's Foundry standing on it: its frame is West's to build.
+    let mut scenario = lane(&[(31, 3)]);
+    for row in 1..=6 {
+        let pits = if row == 1 || row == 6 { 26..34 } else { 26..27 };
+        scenario.map[row].replace_range(pits.clone(), &"~".repeat(pits.len()));
+        if row != 1 && row != 6 {
+            scenario.map[row].replace_range(33..34, "~");
+        }
+    }
+    let wanted = |scenario: &Scenario| {
+        let state = scenario.build().unwrap();
+        expansion::candidates(
+            &mapped(&state, PlayerId(0)),
+            &map(scenario),
+            &Memory::default(),
+            (50, true),
+            0,
+        )
+        .iter()
+        .any(|(investment, _)| *investment == Investment::Extractor(TilePos::new(31, 3)))
+    };
+    assert!(!wanted(&scenario), "an enemy's guns reach the plateau");
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Foundry,
+        x: 27,
+        y: 2,
+    });
+    assert!(wanted(&scenario), "West holds the plateau");
+}
