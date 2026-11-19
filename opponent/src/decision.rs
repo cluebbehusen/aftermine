@@ -740,7 +740,7 @@ pub(crate) fn decide(
         map,
         &producers,
         guard_gaps,
-        false,
+        true,
         income,
         &mut needs,
         &mut ledger,
@@ -1575,8 +1575,10 @@ fn arm(
         .filter(|producer| producer.ready && !ledger.queued_at(producer.building.id))
         .collect();
     for producer in idle {
-        // An active defense spends what it kept from emergency structures;
-        // a quiet guard only what is free.
+        // A defense spends what it kept from emergency structures, and so do
+        // local guards: a guard at a raided expansion that waited for free
+        // scrap lost more games to harass and raids (280-game gauntlets at
+        // Prime) than the scrap it took from a defense elsewhere cost.
         let budget = if urgent {
             ledger.available()
         } else {
