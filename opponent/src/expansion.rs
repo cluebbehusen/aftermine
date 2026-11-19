@@ -117,13 +117,13 @@ pub(crate) fn candidates(
     list
 }
 
-/// What a Foundry at `anchor` would pay back through the Extractors it
-/// supports, scored as other growth is: what supported Extractors yield over
-/// remote ones, for each of the seat's remote Extractors and each free known
-/// frame in its reach, and once a Crucible stands, what the Deep Bores it
-/// would let those remote Extractors become yield over them, at their
-/// refit's price; over the Foundry's price and `lift`, what landing a builder
-/// still costs.
+/// What a Foundry at `anchor` would pay back through the seat's remote
+/// Extractors in its reach, scored as other growth is: what they would yield
+/// supported over what they yield now, and once a Crucible stands, what the
+/// Deep Bores they could then become yield over that, at their refit's
+/// price; over the Foundry's price and `lift`, what landing a builder still
+/// costs. Free frames are left to the Extractor investments, so a Foundry
+/// comes for Extractors stranded without support rather than as an opener.
 fn support_payback(observation: &ObservationData, anchor: TilePos, lift: u32, greed: u8) -> u32 {
     let remote = observation
         .my_buildings
@@ -136,15 +136,9 @@ fn support_payback(observation: &ObservationData, anchor: TilePos, lift: u32, gr
                 && foundry_supports(anchor, building.anchor)
         })
         .count();
-    let free = observation
-        .known_frames
-        .iter()
-        .filter(|frame| foundry_supports(anchor, **frame) && !held(observation, **frame, -1))
-        .count();
     let remote = u64::try_from(remote).expect("building counts fit in u64");
-    let free = u64::try_from(free).expect("frame counts fit in u64");
     let support = yield_per_minute(0, true) - yield_per_minute(0, false);
-    let mut gain = support * (remote + free);
+    let mut gain = support * remote;
     let mut price = u64::from(construction_cost(BuildingKind::Foundry) + lift);
     if crate::investments::built(observation, BuildingKind::Crucible) {
         gain += (yield_per_minute(1, true) - yield_per_minute(0, true)) * remote;
