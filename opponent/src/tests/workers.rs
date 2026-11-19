@@ -1084,3 +1084,108 @@ fn known_scrap_under_fire_is_waited_out_not_left() {
         "a Harvester that knows of scrap past the Turret waits rather than wanders"
     );
 }
+
+#[test]
+fn the_upper_rungs_pull_a_home_harvester_out_of_a_raiders_reach() {
+    let ran = |difficulty: BotDifficulty| {
+        let mut scenario = fielded((40, 20));
+        scenario.units.push(harvester(0, 6, 10));
+        scenario.units.push(unit(1, UnitKind::Lancer, 10, 10));
+        let state = scenario.build().unwrap();
+        let worker = at(&state, 6, 10);
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        assert!(
+            observation
+                .enemy_units
+                .iter()
+                .any(|enemy| enemy.kind == UnitKind::Lancer),
+            "premise: West sees the Lancer"
+        );
+        let mut opponent = seat_with(&scenario, 0, rung(difficulty));
+        runs(&opponent.act(&state, &mut OwnEvents::default()))
+            .into_iter()
+            .find(|(units, _)| units.contains(&worker))
+            .map(|(_, goal)| goal)
+    };
+    let refuge = ran(BotDifficulty::Prime).expect("Prime pulls it out");
+    let lancer = TilePos::new(10, 10);
+    assert!(
+        refuge.chebyshev(lancer) > 7,
+        "to a refuge out of the Lancer's reach: {refuge:?}"
+    );
+    assert_eq!(
+        ran(BotDifficulty::Standard),
+        None,
+        "Standard leaves it to the defense"
+    );
+}
+
+#[test]
+fn a_worker_tending_into_fire_stops_welding_and_home_calm_restores_it() {
+    // A wounded Sentinel draws an idle Harvester out to weld it, inside a
+    // Lancer's reach: the upper rungs pull the Harvester out with its
+    // welding off.
+    let mut scenario = fielded((40, 20));
+    scenario.players[0].scrap = 40;
+    scenario.units.push(harvester(0, 6, 12));
+    scenario.units.push(unit(0, UnitKind::Sentinel, 8, 12));
+    scenario.units.push(unit(1, UnitKind::Lancer, 14, 12));
+    let built = scenario.build().unwrap();
+    let sentinel = at(&built, 8, 12);
+    let mut state = wounded(&built, sentinel, 20);
+    let worker = at(&state, 6, 12);
+    let lancer = at(&state, 14, 12);
+    let mut tending = false;
+    while !tending {
+        assert!(
+            state.current_tick() < 300,
+            "premise: the Harvester goes to weld"
+        );
+        state.tick(&[PlayerCommand {
+            player: PlayerId(1),
+            command: Command::Stop {
+                units: vec![lancer],
+            },
+        }]);
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        // Out at the Sentinel, inside the Lancer's reach and margin.
+        tending = observation.my_units.iter().any(|unit| {
+            unit.id == worker
+                && unit.repair == Some(aftermine_sim::observation::RepairWork::Tending)
+                && unit.tile.x >= 7
+        });
+    }
+    while !state.current_tick().is_multiple_of(6) {
+        state.tick(&[]);
+    }
+    let mut opponent = seat_with(&scenario, 0, rung(BotDifficulty::Prime));
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        commands.iter().any(|command| matches!(
+            &command.command,
+            Command::SetIdleWeld { units, enabled: false } if units.contains(&worker)
+        )),
+        "{commands:?}"
+    );
+    assert!(
+        runs(&commands)
+            .iter()
+            .any(|(units, _)| units.contains(&worker)),
+        "{commands:?}"
+    );
+
+    // With no fire about home, every worker may weld again on the beat.
+    let calm = field();
+    let mut calm_scenario = calm.clone();
+    calm_scenario.units.push(harvester(0, 6, 12));
+    let mut state = calm_scenario.build().unwrap();
+    advance_to(&mut state, 600, &[]);
+    let commands = seat_with(&calm_scenario, 0, rung(BotDifficulty::Prime))
+        .act(&state, &mut OwnEvents::default());
+    assert!(
+        commands
+            .iter()
+            .any(|command| matches!(&command.command, Command::SetIdleWeld { enabled: true, .. })),
+        "{commands:?}"
+    );
+}
