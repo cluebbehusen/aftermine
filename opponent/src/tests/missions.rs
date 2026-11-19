@@ -1466,3 +1466,31 @@ fn a_defense_out_short_of_its_attackers_holds_its_recruit_at_the_post() {
         "level together: it goes on"
     );
 }
+
+#[test]
+fn the_upper_rungs_go_out_at_raiders_only_with_an_edge() {
+    // Three Sentinels against three raiders: even odds. Prime waits beside
+    // the Foundry for an edge; Standard goes out at even odds.
+    let raiders = [
+        (UnitKind::Sentinel, 9, 4),
+        (UnitKind::Sentinel, 9, 5),
+        (UnitKind::Sentinel, 9, 6),
+    ];
+    let defenders = [
+        (UnitKind::Sentinel, 5, 8),
+        (UnitKind::Sentinel, 6, 8),
+        (UnitKind::Sentinel, 5, 9),
+    ];
+    let goes_out = |difficulty: BotDifficulty| {
+        let scenario = raided(&defenders, &raiders);
+        let state = scenario.build().unwrap();
+        hunts(&seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default()))
+            .iter()
+            .any(|(_, goal)| goal.x == 9)
+    };
+    assert!(!goes_out(BotDifficulty::Prime), "Prime waits for an edge");
+    assert!(
+        goes_out(BotDifficulty::Standard),
+        "Standard goes at even odds"
+    );
+}
