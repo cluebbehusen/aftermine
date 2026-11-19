@@ -258,9 +258,15 @@ impl Missions {
                 )
             });
             let mut recruits = fill(candidates, need, &mut have, room);
-            // Unarmed threats among the buildings and guns count as well as
-            // armed attackers: a seat with no army must train one for them.
-            let gap = [0, 1].map(|index| need[index].saturating_sub(have[index]));
+            // An enemy producer among the buildings counts as well as armed
+            // attackers: a seat with no army must train one for it. Scouts
+            // and other strays do not, or every look at the base would cost
+            // the seat its economy.
+            let producers = siege.producers();
+            let gap = [0, 1].map(|index| {
+                (pressing[index] + if index == 0 { producers } else { 0 })
+                    .saturating_sub(have[index])
+            });
             if *own && gap != [0, 0] {
                 shortfalls.push(Shortfall {
                     ground: component,
@@ -491,6 +497,18 @@ struct Siege<'a> {
 }
 
 impl Siege<'_> {
+    /// The whole price of the unarmed enemy producers among its batteries.
+    fn producers(&self) -> u64 {
+        self.batteries
+            .iter()
+            .filter(|(building, _)| {
+                building.kind.tier_stats(building.tier).weapons.is_empty()
+                    && !building.kind.base_stats().produces.is_empty()
+            })
+            .map(|(building, _)| u64::from(building.kind.invested_cost(building.tier)))
+            .sum()
+    }
+
     /// Its armed enemies in sight, by kind, with their value.
     fn attackers(&self) -> Vec<(UnitKind, u64)> {
         self.units
