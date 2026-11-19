@@ -2043,8 +2043,8 @@ pub(super) fn lends(difficulty: BotDifficulty) -> bool {
 /// Whether units freed while an attack travels or fights join it where it
 /// is, rather than waiting at home until it comes back to regroup: a
 /// difficulty limit.
-fn reinforces(difficulty: BotDifficulty) -> bool {
-    matches!(difficulty, BotDifficulty::Veteran | BotDifficulty::Prime)
+fn reinforces(_difficulty: BotDifficulty) -> bool {
+    false
 }
 
 /// Whether a fight still being won goes on past its time: a difficulty
