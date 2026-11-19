@@ -1010,16 +1010,43 @@ fn spire_tech_on_the_enemy_side_brings_a_lattice_before_any_spire_is_seen() {
         lattice_score(&offers(true, true, &[])) > lattice_score(&offers(true, false, &[])),
         "both halves of the tech press harder than one"
     );
-    // One half guards only the most valuable base; both guard every one.
+    // Tech alone guards only the most valuable base: a Spire seen going up
+    // leaves time to guard the rest.
     let home = lattice_sites(&offers(true, false, &[]))[0];
     let covered = [(home.x, home.y)];
     assert!(lattice_sites(&offers(true, false, &covered)).is_empty());
-    let [expansion] = lattice_sites(&offers(true, true, &covered))[..] else {
-        panic!("both halves guard the lone Extractor too");
-    };
     assert!(
-        expansion.x > 14,
-        "{expansion:?} guards the Extractor at (22, 3)"
+        lattice_sites(&offers(true, true, &covered)).is_empty(),
+        "both halves of the tech still leave the lone Extractor to a seen Spire"
+    );
+}
+
+#[test]
+fn a_lattice_loads_interceptors_on_its_own_only_once_an_enemy_spire_is_known() {
+    // West's Lattice beside its Foundry, built, with the simulation's own
+    // autofill.
+    let lattice = [(9, 8)];
+    let autofill = |scenario: &Scenario, state: &State| {
+        seat(scenario, 0)
+            .act(state, &mut OwnEvents::default())
+            .iter()
+            .find_map(|command| match &command.command {
+                Command::SetAutofill { enabled, .. } => Some(*enabled),
+                _ => None,
+            })
+    };
+    let (scenario, state) = spire_tech(true, true, &lattice);
+    assert_eq!(
+        autofill(&scenario, &state),
+        Some(false),
+        "Spire tech alone leaves the magazine empty"
+    );
+    let scenario = guarded(&[(30, 4)], &lattice);
+    let state = scenario.build().unwrap();
+    assert_eq!(
+        autofill(&scenario, &state),
+        None,
+        "a seen Spire keeps the magazine filling"
     );
 }
 
