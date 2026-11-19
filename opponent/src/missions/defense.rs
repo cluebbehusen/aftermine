@@ -258,15 +258,7 @@ impl Missions {
                 )
             });
             let mut recruits = fill(candidates, need, &mut have, room);
-            // An enemy producer among the buildings counts as well as armed
-            // attackers: a seat with no army must train one for it. Scouts
-            // and other strays do not, or every look at the base would cost
-            // the seat its economy.
-            let producers = siege.producers();
-            let gap = [0, 1].map(|index| {
-                (pressing[index] + if index == 0 { producers } else { 0 })
-                    .saturating_sub(have[index])
-            });
+            let gap = siege.gap(pressing, have);
             if *own && gap != [0, 0] {
                 shortfalls.push(Shortfall {
                     ground: component,
@@ -497,6 +489,17 @@ struct Siege<'a> {
 }
 
 impl Siege<'_> {
+    /// How far `have` falls short of the armed attackers, `pressing`, and
+    /// the enemy producers among the buildings: a seat with no army must
+    /// train one for a producer. Scouts and other strays don't count, or
+    /// every look at the base would cost the seat its economy.
+    fn gap(&self, pressing: [u64; 2], have: [u64; 2]) -> [u64; 2] {
+        let producers = self.producers();
+        [0, 1].map(|index| {
+            (pressing[index] + if index == 0 { producers } else { 0 }).saturating_sub(have[index])
+        })
+    }
+
     /// The whole price of the unarmed enemy producers among its batteries.
     fn producers(&self) -> u64 {
         self.batteries
