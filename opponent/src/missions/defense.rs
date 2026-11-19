@@ -263,13 +263,7 @@ impl Missions {
                 shortfalls.push(Shortfall {
                     ground: component,
                     gap,
-                    // The lower rungs judge a threat by its size, not by
-                    // what beats it.
-                    attackers: if crate::reads_threats(difficulty) {
-                        siege.attackers(gap)
-                    } else {
-                        Vec::new()
-                    },
+                    attackers: siege.attackers(gap, crate::reads_threats(difficulty)),
                 });
             }
             // Guns are reached rather than waited for: they shell from
@@ -527,10 +521,12 @@ impl Siege<'_> {
     /// Its armed enemies in sight, by kind, with their value.
     /// The armed attackers in a domain that `gap` leaves short, so an answer
     /// is weighed against the attackers it must still beat, not those
-    /// already covered.
-    fn attackers(&self, gap: [u64; 2]) -> Vec<(UnitKind, u64)> {
+    /// already covered; none for a seat that does not `read` what they are
+    /// and judges the threat by its size.
+    fn attackers(&self, gap: [u64; 2], read: bool) -> Vec<(UnitKind, u64)> {
         self.units
             .iter()
+            .filter(|_| read)
             .filter(|threat| gap[usize::from(threat.body_domain() == Domain::Air)] > 0)
             .map(|threat| (threat.kind, value(threat)))
             .collect()
