@@ -677,13 +677,19 @@ fn lane(frames: &[(i32, i32)]) -> Scenario {
 fn frame_scores(scenario: &Scenario) -> Vec<(TilePos, u32)> {
     let state = scenario.build().unwrap();
     let observation = mapped(&state, PlayerId(0));
-    expansion::candidates(&observation, &map(scenario), &Memory::default(), 50, 0)
-        .into_iter()
-        .filter_map(|(investment, score)| match investment {
-            Investment::Extractor(frame) => Some((frame, score)),
-            _ => None,
-        })
-        .collect()
+    expansion::candidates(
+        &observation,
+        &map(scenario),
+        &Memory::default(),
+        (50, true),
+        0,
+    )
+    .into_iter()
+    .filter_map(|(investment, score)| match investment {
+        Investment::Extractor(frame) => Some((frame, score)),
+        _ => None,
+    })
+    .collect()
 }
 
 fn score_of(scores: &[(TilePos, u32)], x: i32, y: i32) -> u32 {
@@ -842,10 +848,47 @@ fn an_enemy_that_cannot_hurt_a_building_leaves_a_frame_wanted() {
         scenario.units.push(unit(1, kind, 8, 2));
         let state = scenario.build().unwrap();
         let observation = ObservationData::fog_honest(&state, PlayerId(0));
-        expansion::candidates(&observation, &map(&scenario), &Memory::default(), 50, 0)
-            .iter()
-            .any(|(investment, _)| *investment == Investment::Extractor(TilePos::new(6, 1)))
+        expansion::candidates(
+            &observation,
+            &map(&scenario),
+            &Memory::default(),
+            (50, true),
+            0,
+        )
+        .iter()
+        .any(|(investment, _)| *investment == Investment::Extractor(TilePos::new(6, 1)))
     };
     assert!(!wanted(UnitKind::Sentinel), "premise");
     assert!(wanted(UnitKind::Flakhound));
+}
+
+#[test]
+fn a_secure_seat_scores_a_site_by_the_support_its_remote_extractor_would_get() {
+    let frame = TilePos::new(16, 9);
+    let mut scenario = frontier(0);
+    scenario.map[9].replace_range(16..18, "E.");
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Extractor,
+        x: frame.x,
+        y: frame.y,
+    });
+    let model = map(&scenario);
+    let (index, _) = site_with(&model, TilePos::new(12, 10));
+    let score = |scenario: &Scenario, secure: bool| {
+        let state = scenario.build().unwrap();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        expansion::candidates(&observation, &model, &Memory::default(), (50, secure), 0)
+            .into_iter()
+            .find(|(investment, _)| {
+                *investment == Investment::Expansion(u16::try_from(index).unwrap())
+            })
+            .map(|(_, score)| score)
+    };
+    let insecure = score(&scenario, false).expect("the site is a candidate");
+    let secure = score(&scenario, true).expect("the site is a candidate");
+    assert!(
+        secure > insecure,
+        "support for the stranded Extractor counts once the army holds: {secure} vs {insecure}"
+    );
 }

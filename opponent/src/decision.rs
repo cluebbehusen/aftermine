@@ -1692,7 +1692,7 @@ fn workforce(observation: &ObservationData) -> u64 {
 }
 
 /// What the seat's armed units cost.
-fn army(observation: &ObservationData) -> u64 {
+pub(crate) fn army(observation: &ObservationData) -> u64 {
     // A drone comes and goes from its host's bay, so only machines count.
     observation
         .my_units
