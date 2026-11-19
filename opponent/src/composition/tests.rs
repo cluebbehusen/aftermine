@@ -526,9 +526,21 @@ fn a_matchup_favors_what_outranges_and_outlasts_the_attacker() {
         UnitKind::Lancer,
         UnitKind::Warden,
     );
+    let unit = Fighter::Unit;
     // A Warden kills a Scuttler as it closes; a Lancer outranges it.
-    assert!(matchup(lancer, warden) > 2 * matchup(scuttler, warden));
-    assert!(matchup(lancer, warden) > matchup(sentinel, warden));
+    assert!(matchup(unit(lancer), warden) > 2 * matchup(unit(scuttler), warden));
+    assert!(matchup(unit(lancer), warden) > matchup(unit(sentinel), warden));
     // Nothing that cannot hit an aircraft answers one.
-    assert_eq!(matchup(UnitKind::Lancer, UnitKind::Buzzard), 0);
+    assert_eq!(matchup(unit(lancer), UnitKind::Buzzard), 0);
+    // A Turret answers what it outranges, and nothing that outranges it.
+    let turret = Fighter::Structure(BuildingKind::Turret);
+    assert!(matchup(turret, sentinel) > matchup(unit(sentinel), sentinel));
+    assert_eq!(matchup(turret, lancer), 0);
+    // Flak answers Buzzards far better than a Sentinel's light gun.
+    assert!(
+        matchup(
+            Fighter::Structure(BuildingKind::FlakTurret),
+            UnitKind::Buzzard
+        ) > 4 * matchup(unit(sentinel), UnitKind::Buzzard)
+    );
 }
