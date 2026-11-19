@@ -32,12 +32,14 @@ const WORKS: (i32, i32) = (2, 2);
 const PAYBACK_SCALE: u64 = 2;
 
 /// Expansion and Extractor investments with their scores. `greed` is the
-/// 0..=100 trait; `depletion` is the per-mille share of home scrap mined.
+/// 0..=100 trait; `secure` whether the army holds what the seat knows of the
+/// enemy's, so an expansion may count what its support pays back;
+/// `depletion` is the per-mille share of home scrap mined.
 pub(crate) fn candidates(
     observation: &ObservationData,
     map: &MapModel,
     memory: &Memory,
-    greed: u8,
+    (greed, secure): (u8, bool),
     depletion: u32,
 ) -> Vec<(Investment, u32)> {
     let mut list = Vec::new();
@@ -68,12 +70,53 @@ pub(crate) fn candidates(
                 score = score * price / (price + i64::from(lift_cost(observation)));
             }
         }
+        // Scored as other growth is, by what it pays back, this already counts
+        // a lift's cost.
+        let lift = if settled(observation, map, ground) {
+            0
+        } else {
+            lift_cost(observation)
+        };
+        // Scored at the anchor a Foundry would go up at: the first not failed.
+        let open = anchors(map, observation.me, site)
+            .into_iter()
+            .find(|anchor| !memory.failed(BuildingKind::Foundry, *anchor, observation.tick));
+        if secure && let Some(anchor) = open.as_ref() {
+            score = score.max(i64::from(support_payback(
+                observation,
+                *anchor,
+                lift,
+                greed,
+            )));
+        }
         list.push((
             Investment::Expansion(u16::try_from(index).expect("site counts fit in u16")),
             u32::try_from(score.max(0)).unwrap_or(u32::MAX),
         ));
     }
     for frame in &observation.known_frames {
+        let me = observation.me;
+        // Measured to the nearest tile of the frame, so mirrored frames
+        // measure alike.
+        let (distance, hostile) = crate::frame::tiles_of(*frame, WORKS).fold(
+            (UNREACHABLE, UNREACHABLE),
+            |(home, enemy), tile| {
+                (
+                    home.min(map.distance(me, tile)),
+                    enemy.min(map.hostile_distance(me, tile)),
+                )
+            },
+        );
+        // A frame deep in enemy ground, at least twice as near an enemy as
+        // home, is theirs to hold: a scout that finds one there gives the
+        // seat nothing to build. One its home ground does not reach is left
+        // to the rules for other ground.
+        if hostile != UNREACHABLE
+            && distance != UNREACHABLE
+            && u64::from(hostile) * 2 <= u64::from(distance)
+        {
+            continue;
+        }
         if held(observation, *frame, -1)
             || memory.failed(BuildingKind::Extractor, *frame, observation.tick)
             || contested(observation, *frame)
@@ -87,11 +130,11 @@ pub(crate) fn candidates(
             greed,
         ));
         // An enemy's ground reaches this frame no later than the seat's, so
-        // it stands to be lost sooner than one on the seat's own side.
-        let me = observation.me;
-        let hostile = map.hostile_distance(me, *frame);
-        if hostile != UNREACHABLE && map.distance(me, *frame) >= hostile {
-            score /= 2;
+        // it stands to be lost sooner than one on the seat's own side: worth
+        // half on the line between them, and less the nearer the enemy, so a
+        // frame a scout finds at an enemy's door is not worth saving for.
+        if hostile != UNREACHABLE && distance != UNREACHABLE && distance >= hostile {
+            score = score * u64::from(hostile) / (2 * u64::from(distance).max(1));
         }
         let score = score * 1_000 / (1_000 + danger(observation, map, memory, *frame));
         list.push((
@@ -100,6 +143,45 @@ pub(crate) fn candidates(
         ));
     }
     list
+}
+
+/// What a Foundry at `anchor` would pay back through the seat's remote
+/// Extractors in its reach, scored as other growth is: what they would yield
+/// supported over what they yield now, and once a Crucible stands, what the
+/// Deep Bores they could then become yield over that, at their refit's
+/// price; over the Foundry's price and `lift`, what landing a builder still
+/// costs. Free frames are left to the Extractor investments, so a Foundry
+/// comes for Extractors stranded without support rather than as an opener.
+fn support_payback(observation: &ObservationData, anchor: TilePos, lift: u32, greed: u8) -> u32 {
+    let remote = observation
+        .my_buildings
+        .iter()
+        .filter(|building| {
+            building.kind == BuildingKind::Extractor
+                && building.built
+                && building.tier == 0
+                && !supported(observation, building.anchor)
+                && foundry_supports(anchor, building.anchor)
+                // A Foundry already going up in reach will support it.
+                && !observation.my_buildings.iter().any(|site| {
+                    site.kind == BuildingKind::Foundry
+                        && !site.built
+                        && foundry_supports(site.anchor, building.anchor)
+                })
+        })
+        .count();
+    let remote = u64::try_from(remote).expect("building counts fit in u64");
+    let support = yield_per_minute(0, true) - yield_per_minute(0, false);
+    let mut gain = support * remote;
+    let mut price = u64::from(construction_cost(BuildingKind::Foundry) + lift);
+    if crate::investments::built(observation, BuildingKind::Crucible) {
+        gain += (yield_per_minute(1, true) - yield_per_minute(0, true)) * remote;
+        price += u64::from(BuildingKind::Extractor.tier_stats(1).construction.cost) * remote;
+    }
+    if gain == 0 {
+        return 0;
+    }
+    payback(gain, price, greed)
 }
 
 /// The score of growth that adds `gain` scrap a minute for `price` scrap:

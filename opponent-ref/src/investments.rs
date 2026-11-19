@@ -227,11 +227,27 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
             severed: situation.severed,
         },
     ));
+    // Growth paid back by support only once the army holds what the seat
+    // knows of the enemy's: an earlier Foundry, bought while exposed, is
+    // what an early raid punishes.
+    let now = observation.tick;
+    let known: u64 = situation
+        .memory
+        .units()
+        .iter()
+        .filter(|seen| {
+            let stats = seen.kind.stats();
+            // Drones come and go from their host, as the own count leaves them.
+            (!stats.weapons.is_empty() || stats.demolition.is_some()) && !stats.docks()
+        })
+        .map(|seen| seen.value(now))
+        .sum();
+    let secure = !situation.exposed && crate::decision::army(observation) >= known;
     let growth = expansion::candidates(
         observation,
         situation.map,
         situation.memory,
-        traits.greed,
+        (traits.greed, secure),
         situation.depletion,
     );
     let stranded = !growth

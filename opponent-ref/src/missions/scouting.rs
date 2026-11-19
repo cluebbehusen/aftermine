@@ -258,6 +258,9 @@ impl Missions {
             .iter()
             .enumerate()
             .filter(|(index, seen)| {
+                // Scouts already standing set out at once; another is
+                // trained only for a place unseen that long in play, so the
+                // opening's first purchases stay the economy's and army's.
                 now - **seen >= STALE_TICKS
                     && reach[*index].is_some()
                     && u16::try_from(*index).is_ok_and(|point| !taken.contains(&point))
@@ -412,13 +415,19 @@ struct Goals<'a> {
 
 impl Goals<'_> {
     /// Each point's goal for a scout, an aircraft when `air`, `None` where it
-    /// cannot go: the point's footprint tile nearest home, since a Scout
+    /// cannot go or is in sight now: the point's footprint tile nearest home, since a Scout
     /// order that stops short guarantees a view of its goal tile alone.
     fn of(&self, air: bool) -> &[Option<TilePos>] {
         let frame = self.frame;
+        let observation = self.observation;
+        // A point in sight now needs no scout; at the first tick it reads as
+        // never seen.
         let nearest = move |point: &Point| {
-            tiles_of(point.anchor, BuildingKind::Foundry.size())
-                .min_by_key(|tile| frame.rank(frame.home, doubled(*tile)))
+            let tiles = tiles_of(point.anchor, BuildingKind::Foundry.size());
+            if tiles.clone().any(|tile| observation.visible(tile)) {
+                return None;
+            }
+            tiles.min_by_key(|tile| frame.rank(frame.home, doubled(*tile)))
         };
         if air {
             self.air
@@ -445,6 +454,13 @@ impl Goals<'_> {
     }
 }
 
+/// Ticks a point last in sight at `seen` has gone unseen by `now`. A point
+/// never seen, recorded at zero, counts as unseen for as long as the ranking
+/// counts, so the seat's scouts set out from the first decision.
+fn age(now: u64, seen: u64) -> u64 {
+    if seen == 0 { AGE_CAP } else { now - seen }
+}
+
 /// The stale point no other scout holds that a scout with `goals` should look
 /// at next and where to send it, with the point's index.
 fn best(
@@ -460,10 +476,10 @@ fn best(
         .zip(scouted)
         .zip(goals)
         .enumerate()
-        .filter(|(_, ((_, seen), _))| now - **seen >= STALE_TICKS)
+        .filter(|(_, ((_, seen), _))| age(now, **seen) >= STALE_TICKS)
         .filter(|(index, _)| u16::try_from(*index).is_ok_and(|point| !held.contains(&point)))
         .filter_map(|(index, ((point, seen), goal))| {
-            let score = (now - seen).min(AGE_CAP) * point.value;
+            let score = age(now, *seen).min(AGE_CAP) * point.value;
             Some((index, (*goal)?, score))
         })
         .max_by_key(|(_, goal, score)| {
