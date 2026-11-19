@@ -930,3 +930,26 @@ fn attackers_in_a_domain_already_covered_do_not_set_the_answer() {
             < crate::decision::answer(flakhound, &both([0, 120]))
     );
 }
+
+#[test]
+fn a_seat_with_nothing_that_beats_the_attacker_alone_throws_its_cheapest_unit() {
+    // Only a Foundry against a Lancer at the gate: no unit it trains pays
+    // back alone against a Lancer, so waiting buys nothing.
+    let mut scenario = arena(100);
+    scenario.units.push(unit(1, UnitKind::Lancer, 9, 5));
+    let state = scenario.build().unwrap();
+    let trained = trains(
+        &seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default()),
+    );
+    assert!(
+        trained.iter().any(
+            |(_, kind)| kind.stats().cost <= UnitKind::Sentinel.stats().cost
+                && kind
+                    .stats()
+                    .weapons
+                    .iter()
+                    .any(|weapon| weapon.targets.covers(aftermine_sim::stats::Domain::Ground))
+        ),
+        "{trained:?}"
+    );
+}

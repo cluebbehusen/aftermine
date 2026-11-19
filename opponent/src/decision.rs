@@ -547,7 +547,7 @@ pub(crate) fn decide(
     persistent
         .missions
         .prune(observation, &mut persistent.memory);
-    let shortfalls = persistent.missions.defend(
+    let mut shortfalls = persistent.missions.defend(
         observation,
         map,
         frame,
@@ -555,6 +555,7 @@ pub(crate) fn decide(
         profile.difficulty,
         &mut ledger,
     );
+    swarm(observation, map, &producers, &mut shortfalls);
     let short = !shortfalls.is_empty();
     ledger.hold(persistent.missions.held_workers(observation));
     workers::recover(observation, &foundries, &mut ledger);
@@ -1501,6 +1502,28 @@ fn best_answer(
         .map(|fighter| (fighter, answer(fighter, short)))
         .filter(|(_, score)| short.attackers.is_empty() || *score >= PAYS_BACK)
         .max_by_key(|(fighter, score)| (*score, fighter.cost()))
+}
+
+/// Makes each shortfall that nothing the seat can make answers alone, by
+/// paying back half its price at any price, one the seat meets with its
+/// cheapest unit that helps: what one fighter cannot beat, several thrown at
+/// it together may, and buying nothing loses for certain. An answer the bank
+/// only has to grow into is still saved for.
+fn swarm(
+    observation: &ObservationData,
+    map: &MapModel,
+    producers: &[Producer<'_>],
+    shortfalls: &mut [Shortfall],
+) {
+    for short in shortfalls.iter_mut() {
+        if short.read
+            && !short.attackers.is_empty()
+            && best_answer(observation, map, producers, short, u64::MAX).is_none()
+        {
+            short.read = false;
+            short.attackers.clear();
+        }
+    }
 }
 
 /// What a short defense keeps from its emergency structures this decision:
