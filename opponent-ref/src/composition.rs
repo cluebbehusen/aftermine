@@ -648,11 +648,22 @@ impl Fighter {
 
     /// Damage per thousand ticks its weapons deal to a target in `domain`.
     fn damage_rate(self, domain: Domain) -> u64 {
+        self.damage_rate_against(domain, false)
+    }
+
+    /// [`Self::damage_rate`] against a structure when `structure`, whose
+    /// weapons may hit structures harder.
+    fn damage_rate_against(self, domain: Domain, structure: bool) -> u64 {
         self.weapons()
             .iter()
             .filter(|weapon| weapon.targets.covers(domain))
             .map(|weapon| {
-                u64::from(weapon.damage) * 1_000 / u64::from(weapon.cooldown_ticks.max(1))
+                let damage = if structure {
+                    weapon.building_damage.unwrap_or(weapon.damage)
+                } else {
+                    weapon.damage
+                };
+                u64::from(damage) * 1_000 / u64::from(weapon.cooldown_ticks.max(1))
             })
             .sum()
     }
@@ -680,7 +691,8 @@ pub(crate) fn matchup(fighter: Fighter, attacker: UnitKind) -> u64 {
     if dealt_rate == 0 {
         return 0;
     }
-    let taken_rate = theirs.damage_rate(fighter.domain());
+    let taken_rate =
+        theirs.damage_rate_against(fighter.domain(), matches!(fighter, Fighter::Structure(_)));
     // Ticks it lives under the attacker's fire.
     let life = (fighter.max_hp() * 1_000)
         .checked_div(taken_rate)
