@@ -159,6 +159,10 @@ pub(crate) enum LiveCmd {
         building: u32,
         #[arg(long, value_parser = parse_unit_kind, help = unit_kind_help())]
         kind: aftermine_sim::UnitKind,
+        /// How many to queue, 1 to 5. A paced playtest counts them as one
+        /// order.
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=5))]
+        count: u8,
     },
     /// Start a construction site with harvesters, paid now. Repeating it
     /// with an unfinished site's kind and anchor adds builders to that site.
@@ -574,13 +578,17 @@ pub(crate) fn live_requests(cmd: LiveCmd) -> Result<Vec<Request>> {
             player,
             building,
             kind,
-        } => Request::SendCommand {
-            player: PlayerId(player),
-            command: Command::Train {
-                building: BuildingId(building),
-                kind,
-            },
-        },
+            count,
+        } => {
+            let train = Request::SendCommand {
+                player: PlayerId(player),
+                command: Command::Train {
+                    building: BuildingId(building),
+                    kind,
+                },
+            };
+            return Ok(vec![train; usize::from(count)]);
+        }
         LiveCmd::Stop { player, units: ids } => Request::SendCommand {
             player: PlayerId(player),
             command: Command::Stop { units: units(ids) },

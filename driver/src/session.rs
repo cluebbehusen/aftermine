@@ -64,6 +64,9 @@ pub struct Playtest {
 /// Game ticks in a minute, the window an order rate is counted over.
 const MINUTE: u64 = 60 * aftermine_sim::TICKS_PER_SECOND as u64;
 
+/// Trains of one kind at one structure a paced player queues as one order.
+const TRAIN_BURST: u32 = 5;
+
 /// A headless match a debug client can drive: the same session shape as
 /// the shell's `Game`, minus everything presentational.
 pub struct Session {
@@ -352,7 +355,7 @@ impl Session {
     /// was taken and a trial tick on a copy of the world reaches the next
     /// tick's verdict on this one.
     fn playtest_send(&mut self, order: PlayerCommand) -> Result<Reply, String> {
-        if let Some(refusal) = self.over_pace() {
+        if let Some(refusal) = self.over_pace(&order.command) {
             return Err(refusal);
         }
         let mut trial = self.pending.clone();
@@ -376,19 +379,47 @@ impl Session {
         Ok(Reply::Ok)
     }
 
-    /// Why the seat may not send another order yet at its pace, if so.
-    fn over_pace(&self) -> Option<String> {
+    /// Why the seat may not send `next` yet at its pace, if so. Up to
+    /// [`TRAIN_BURST`] trains of one kind at one structure in one tick are one
+    /// order, as a player clicks a unit's button a few times at once.
+    fn over_pace(&self, next: &Command) -> Option<String> {
         let playtest = self.playtest.as_ref()?;
         let cap = usize::try_from(playtest.orders_per_minute?).ok()?;
         let now = self.state.current_tick();
-        let mut recent: Vec<u64> = self
+        let sent = self
             .recorder
             .commands
             .iter()
             .filter(|timed| timed.command.player == playtest.seat && timed.tick + MINUTE > now)
-            .map(|timed| timed.tick)
-            .chain(self.pending.iter().map(|_| now))
-            .collect();
+            .map(|timed| (timed.tick, &timed.command.command))
+            .chain(self.pending.iter().map(|order| (now, &order.command)));
+        let mut recent: Vec<u64> = Vec::new();
+        let mut burst = None;
+        for (tick, command) in sent {
+            match (command, burst) {
+                (Command::Train { building, kind }, Some((at, at_building, at_kind, count)))
+                    if (at, at_building, at_kind) == (tick, *building, *kind)
+                        && count < TRAIN_BURST =>
+                {
+                    burst = Some((at, at_building, at_kind, count + 1));
+                }
+                (Command::Train { building, kind }, _) => {
+                    burst = Some((tick, *building, *kind, 1));
+                    recent.push(tick);
+                }
+                _ => {
+                    burst = None;
+                    recent.push(tick);
+                }
+            }
+        }
+        if let (Command::Train { building, kind }, Some((at, at_building, at_kind, count))) =
+            (next, burst)
+            && (at, at_building, at_kind) == (now, *building, *kind)
+            && count < TRAIN_BURST
+        {
+            return None;
+        }
         if recent.len() < cap {
             return None;
         }

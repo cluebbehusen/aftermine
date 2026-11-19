@@ -54,7 +54,7 @@ pace=
 if [ -n "$step" ] || [ -n "$rate" ]; then
 	pace=' This playtest holds you to a pace:'
 	[ -z "$step" ] || pace="$pace each advance runs at least $step ticks ($((step / 20)) s), short of the end;"
-	[ -z "$rate" ] || pace="$pace you may send at most $rate orders in any minute of game time;"
+	[ -z "$rate" ] || pace="$pace you may send at most $rate orders in any minute of game time, and up to five of one unit queued at one structure at once (train --count) is one order;"
 	pace="${pace%;}. The session refuses anything faster."
 fi
 

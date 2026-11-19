@@ -10,6 +10,7 @@ Orders. Each names your seat first: ./play hunt 0 --units 4,5 --to 30,20
   run, hunt, advance-units, patrol, stop, attack-unit, attack-building,
   accompany, harvest, build, repair, repair-unit, salvage, cancel,
   upgrade, train, rally
+  train             --count 1-5 queues several of one unit at once.
   send              Any command with no verb of its own, as JSON.
 
 An order the game would reject is refused at once with its reason, and

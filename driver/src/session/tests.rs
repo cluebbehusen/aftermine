@@ -474,6 +474,28 @@ fn a_paced_playtest_holds_its_player_to_the_pace() {
     let error = session.handle(stop(&session)).unwrap_err();
     assert!(error.contains("2 orders in any minute"), "{error}");
     assert!(error.contains("from tick 1200"), "{error}");
+
+    // A few trains of one kind at one structure at once are one order.
+    let mut session = paced_session(&dir, None, None, Some(2));
+    let foundry = session
+        .state()
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0))
+        .map(|building| building.id)
+        .expect("the seat starts with a Foundry");
+    let train = Request::SendCommand {
+        player: PlayerId(0),
+        command: Command::Train {
+            building: foundry,
+            kind: UnitKind::Harvester,
+        },
+    };
+    session.handle(train.clone()).unwrap();
+    session.handle(train.clone()).unwrap();
+    session.handle(stop(&session)).unwrap();
+    let error = session.handle(train).unwrap_err();
+    assert!(error.contains("2 orders in any minute"), "{error}");
 }
 
 #[test]
