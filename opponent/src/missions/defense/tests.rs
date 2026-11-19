@@ -115,3 +115,48 @@ fn an_enemy_producer_among_the_buildings_counts_its_whole_price() {
         u64::from(BuildingKind::Extractor.invested_cost(0)) / 2
     );
 }
+
+#[test]
+fn only_a_siege_with_nothing_armed_in_it_is_unarmed() {
+    let site = |kind: BuildingKind| BuildingObs {
+        provisional: false,
+        id: aftermine_sim::BuildingId(0),
+        player: PlayerId(1),
+        kind,
+        anchor: TilePos::new(9, 7),
+        hp: 1,
+        built: false,
+        seen: true,
+        tier: 0,
+    };
+    let (fabricator, turret) = (site(BuildingKind::Fabricator), site(BuildingKind::Turret));
+    let beside = TilePos::new(8, 7);
+    let (observation, _) = viewed(&[(0, UnitKind::Sentinel, 3, 3)]);
+    let enemy = |kind: UnitKind| aftermine_sim::observation::UnitObs {
+        kind,
+        player: PlayerId(1),
+        ..observation.my_units[0].clone()
+    };
+    let (harvester, scuttler) = (enemy(UnitKind::Harvester), enemy(UnitKind::Scuttler));
+    let builder = Siege {
+        strays: vec![&harvester],
+        batteries: vec![(&fabricator, beside)],
+        ..Siege::default()
+    };
+    assert!(builder.unarmed_only(), "a builder and its producer");
+    let raider = Siege {
+        units: vec![&scuttler],
+        ..Siege::default()
+    };
+    assert!(!raider.unarmed_only(), "an armed raider");
+    let gun = Siege {
+        batteries: vec![(&turret, beside)],
+        ..Siege::default()
+    };
+    assert!(!gun.unarmed_only(), "a gun among the batteries");
+    let unseen = Siege {
+        unseen: Some(beside),
+        ..Siege::default()
+    };
+    assert!(!unseen.unarmed_only(), "a gun out of sight");
+}
