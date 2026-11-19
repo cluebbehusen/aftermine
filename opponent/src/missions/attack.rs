@@ -607,7 +607,8 @@ impl Missions {
         // waiting at home for it to regroup, unless this decision pulled it
         // back or sent it on: they would only be turned around. A staging
         // army takes none: they would keep it waiting for them, and wait
-        // at home for the next attack instead.
+        // at home for the next attack instead. They join as a group worth
+        // the stance's minimum attack.
         if reinforces(plan.difficulty)
             && matches!(phase, AttackPhase::Travel | AttackPhase::Engage { .. })
             && let Some(mission) = self.list.get_mut(index).filter(|mission| mission.id == id)
@@ -640,7 +641,18 @@ impl Missions {
                 component,
                 room,
             );
-            if !recruits.is_empty() && ledger.order(hunt(recruits.clone(), target.approach)) {
+            // Sent one or two at a time as they come off the line, they reach
+            // the fight alone: they go once together they would make an
+            // attack of their own, in one order the march keeps together.
+            let worth: u64 = fit
+                .iter()
+                .filter(|unit| recruits.contains(&unit.id))
+                .map(|unit| striking(unit))
+                .sum();
+            if !recruits.is_empty()
+                && worth >= plan.minimum
+                && ledger.order(hunt(recruits.clone(), target.approach))
+            {
                 for id in recruits {
                     insert(&mut mission.units, id);
                 }

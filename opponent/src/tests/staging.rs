@@ -407,15 +407,34 @@ fn a_breacher_that_cannot_move_on_holds_no_one_up() {
 
 #[test]
 fn a_staging_army_takes_none_of_the_units_freed_at_home() {
-    let scenario = guarded(BotDifficulty::Veteran, &LINE, (28, 11));
-    for (phase, joins) in [("stage", false), ("travel", true)] {
-        let (state, mut opponent, _) = staging_on(scenario.clone(), phase, 408, &THERE[..4], true);
-        let free: Vec<UnitId> = WEST[4..].iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    // Four freed Sentinels fall short of the Balanced minimum attack; seven
+    // make one. A travelling army takes them only as a group that would.
+    let more = [(6, 3), (7, 3), (8, 3)];
+    for (phase, extra, joins) in [
+        ("stage", &more[..], false),
+        ("travel", &[][..], false),
+        ("travel", &more[..], true),
+    ] {
+        let mut scenario = guarded(BotDifficulty::Veteran, &LINE, (28, 11));
+        for (x, y) in extra {
+            scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+        }
+        let (state, mut opponent, _) = staging_on(scenario, phase, 408, &THERE[..4], true);
+        let free: Vec<UnitId> = WEST[4..]
+            .iter()
+            .chain(extra)
+            .map(|(x, y)| at(&state, *x, *y))
+            .collect();
         let (commands, _) = opponent.act_traced(&state, &mut OwnEvents::default());
         let sent = hunts(&commands)
             .iter()
             .any(|(units, _)| units.iter().any(|unit| free.contains(unit)));
-        assert_eq!(sent, joins, "{phase}: {commands:?}");
+        assert_eq!(
+            sent,
+            joins,
+            "{phase} with {} more: {commands:?}",
+            extra.len()
+        );
     }
 }
 
