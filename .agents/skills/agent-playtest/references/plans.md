@@ -81,6 +81,6 @@ clearly ahead, with a large mixed army.
 ## Sharp player
 
 Play as a strong, experienced player. Scout early and keep scouting, so you
-learn what the opponent is doing before it reaches you, and answer what you
-see at once rather than following a fixed build. Keep your economy growing
-behind your answers, and attack when you are clearly ahead.
+learn what the opponent is doing before it reaches you, and answer what you see
+at once rather than following a fixed build. Keep your economy growing behind
+your answers, and attack when you are clearly ahead.
