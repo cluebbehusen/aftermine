@@ -79,3 +79,34 @@ fn a_shell_from_beyond_a_bastions_reach_is_blamed_on_a_citadel() {
     assert!(!battery(&gun(0), impact), "past the Bastion's reach");
     assert!(battery(&gun(1), impact), "inside the Citadel's");
 }
+
+#[test]
+fn an_enemy_producer_among_the_buildings_counts_its_whole_price() {
+    let site = |kind: BuildingKind| BuildingObs {
+        provisional: false,
+        id: aftermine_sim::BuildingId(0),
+        player: PlayerId(1),
+        kind,
+        anchor: TilePos::new(9, 7),
+        hp: 1,
+        built: false,
+        seen: true,
+        tier: 0,
+    };
+    let unarmed = |building: &BuildingObs| {
+        Siege {
+            batteries: vec![(building, TilePos::new(8, 7))],
+            ..Siege::default()
+        }
+        .unarmed()[0]
+    };
+    // A Fabricator site barely begun is still everything it will train.
+    let fabricator = site(BuildingKind::Fabricator);
+    assert_eq!(
+        unarmed(&fabricator),
+        u64::from(BuildingKind::Fabricator.invested_cost(0))
+    );
+    // A structure that trains nothing counts by its health, as before.
+    let extractor = site(BuildingKind::Extractor);
+    assert!(unarmed(&extractor) < u64::from(BuildingKind::Extractor.invested_cost(0)));
+}

@@ -258,7 +258,7 @@ impl Missions {
                 )
             });
             let mut recruits = fill(candidates, need, &mut have, room);
-            let gap = [0, 1].map(|index| pressing[index].saturating_sub(have[index]));
+            let gap = siege.gap(pressing, have);
             if *own && gap != [0, 0] {
                 shortfalls.push(Shortfall {
                     ground: component,
@@ -489,6 +489,35 @@ struct Siege<'a> {
 }
 
 impl Siege<'_> {
+    /// How far `have` falls short of the armed attackers, `pressing`, and
+    /// the enemy producers and builders among the buildings: a seat with no
+    /// army must train one for them. Scouts don't count, or every look at the
+    /// base would cost the seat its economy.
+    fn gap(&self, pressing: [u64; 2], have: [u64; 2]) -> [u64; 2] {
+        let builders: u64 = self
+            .strays
+            .iter()
+            .filter(|stray| stray.kind.stats().harvest.is_some())
+            .map(|stray| u64::from(stray.kind.stats().cost))
+            .sum();
+        let producers = self.producers() + builders;
+        [0, 1].map(|index| {
+            (pressing[index] + if index == 0 { producers } else { 0 }).saturating_sub(have[index])
+        })
+    }
+
+    /// The whole price of the unarmed enemy producers among its batteries.
+    fn producers(&self) -> u64 {
+        self.batteries
+            .iter()
+            .filter(|(building, _)| {
+                building.kind.tier_stats(building.tier).weapons.is_empty()
+                    && !building.kind.base_stats().produces.is_empty()
+            })
+            .map(|(building, _)| u64::from(building.kind.invested_cost(building.tier)))
+            .sum()
+    }
+
     /// Its armed enemies in sight, by kind, with their value.
     fn attackers(&self) -> Vec<(UnitKind, u64)> {
         self.units
@@ -520,11 +549,19 @@ impl Siege<'_> {
     /// and the buildings among the batteries that carry no gun. Defenders
     /// worth as much go after them.
     fn unarmed(&self) -> [u64; 2] {
+        // An enemy producer going up among the seat's buildings is worth its
+        // whole price, whatever its health: units will come out of it.
         let raised: u64 = self
             .batteries
             .iter()
             .filter(|(building, _)| building.kind.tier_stats(building.tier).weapons.is_empty())
-            .map(|(building, _)| building_value(building))
+            .map(|(building, _)| {
+                if building.kind.base_stats().produces.is_empty() {
+                    building_value(building)
+                } else {
+                    u64::from(building.kind.invested_cost(building.tier))
+                }
+            })
             .sum();
         [Domain::Ground, Domain::Air].map(|domain| {
             let strays: u64 = self
