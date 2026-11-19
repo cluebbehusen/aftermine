@@ -1,6 +1,7 @@
 //! One decision: the precedence it follows, its running total and its
 //! unit-order allowance.
 
+use crate::composition::Fighter;
 use crate::composition::{self, Needs};
 use crate::defenses;
 use crate::events::OwnEvent;
@@ -553,7 +554,16 @@ pub(crate) fn decide(
     ledger.hold(persistent.missions.held_workers(observation));
     workers::recover(observation, &foundries, &mut ledger);
     if short {
-        ledger.protected = 0;
+        // The best answer to a shortfall, when it is a unit, is kept from
+        // emergency structures so production can train it.
+        ledger.protected = awaited(
+            observation,
+            map,
+            &producers,
+            &shortfalls,
+            income,
+            ledger.available(),
+        );
         defenses::emergency(
             observation,
             map,
@@ -730,6 +740,7 @@ pub(crate) fn decide(
         map,
         &producers,
         guard_gaps,
+        income,
         &mut needs,
         &mut ledger,
     );
@@ -811,6 +822,7 @@ pub(crate) fn decide(
                 map,
                 &producers,
                 shortfalls,
+                income,
                 &mut needs,
                 &mut ledger,
             );
@@ -1386,41 +1398,130 @@ fn saved_for(
     })
 }
 
-/// While a defense is short, ready producers the wanted roles left idle each
-/// train the costliest armed unit the scrap on hand buys that can reach and hit
-/// a Foundry still short, until what this decision queued makes up each
-/// Foundry's shortfall: a seat too poor for its line unit or a gun still
-/// fields what it can afford. A ground unit helps only a Foundry on its
-/// producer's ground; an aircraft helps any.
+/// Whether `kind`, trained on ground `at`, can help `short`: it can reach
+/// the Foundry and hit a domain the shortfall is short in.
+fn helps(kind: UnitKind, at: Option<u32>, short: &Shortfall) -> bool {
+    (kind.stats().domain == Domain::Air || (at.is_some() && at == short.ground))
+        && [Domain::Ground, Domain::Air]
+            .into_iter()
+            .enumerate()
+            .any(|(index, domain)| short.gap[index] > 0 && hits(kind, domain))
+}
+
+fn hits(kind: UnitKind, domain: Domain) -> bool {
+    kind.stats()
+        .weapons
+        .iter()
+        .any(|weapon| weapon.targets.covers(domain))
+}
+
+/// How well `fighter` answers `short`: attacker value it destroys per scrap
+/// against the attackers the shortfall counts, or its price when it counts
+/// none.
+fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
+    let total: u64 = short.attackers.iter().map(|(_, value)| *value).sum();
+    if total == 0 {
+        return fighter.cost();
+    }
+    short
+        .attackers
+        .iter()
+        .map(|(attacker, value)| composition::matchup(fighter, *attacker) * value)
+        .sum::<u64>()
+        / total
+}
+
+/// Per mille of its price in attacker value a unit must destroy for a short
+/// defense to buy it: one that dies having paid back less than half its price
+/// only feeds the attackers.
+const PAYS_BACK: u64 = 500;
+
+/// Ticks of income a short defense waits for a better answer than its bank
+/// buys now.
+const SAVE_TICKS: u64 = 300;
+
+/// The structures an emergency puts up against a short defense's attackers.
+const EMERGENCY_KINDS: [BuildingKind; 2] = [BuildingKind::Turret, BuildingKind::FlakTurret];
+
+/// Scrap the bank gains in [`SAVE_TICKS`] at `income` a minute.
+fn soon(income: u32) -> u64 {
+    u64::from(income) * SAVE_TICKS / (60 * u64::from(aftermine_sim::TICKS_PER_SECOND))
+}
+
+/// The best answer to `short` whose price is within `reach`: a unit a
+/// finished producer trains, or an emergency structure, with its score.
+fn best_answer(
+    observation: &ObservationData,
+    map: &MapModel,
+    producers: &[Producer<'_>],
+    short: &Shortfall,
+    reach: u64,
+) -> Option<(Fighter, u64)> {
+    let units = producers
+        .iter()
+        .filter(|producer| producer.building.built)
+        .flat_map(|producer| {
+            let at = map.component(producer.building.anchor);
+            composition::producible(observation, producer.building.kind)
+                .filter(move |kind| helps(*kind, at, short))
+                .map(Fighter::Unit)
+        });
+    let structures = EMERGENCY_KINDS.into_iter().map(Fighter::Structure);
+    units
+        .chain(structures)
+        .filter(|fighter| fighter.cost() <= reach)
+        .map(|fighter| (fighter, answer(fighter, short)))
+        .filter(|(_, score)| short.attackers.is_empty() || *score >= PAYS_BACK)
+        .max_by_key(|(fighter, score)| (*score, fighter.cost()))
+}
+
+/// What a short defense keeps from its emergency structures this decision:
+/// the price of the dearest best answer to its shortfalls that is a unit the
+/// bank reaches soon, so production can train it. A structure that answers
+/// best leaves the bank to the emergency.
+fn awaited(
+    observation: &ObservationData,
+    map: &MapModel,
+    producers: &[Producer<'_>],
+    shortfalls: &[Shortfall],
+    income: u32,
+    bank: u32,
+) -> u32 {
+    let reach = u64::from(bank) + soon(income);
+    shortfalls
+        .iter()
+        .filter_map(|short| best_answer(observation, map, producers, short, reach))
+        .filter_map(|(fighter, _)| match fighter {
+            Fighter::Unit(kind) => Some(kind.stats().cost),
+            Fighter::Structure(_) => None,
+        })
+        .max()
+        .unwrap_or(0)
+        .min(bank)
+}
+
+/// At each producer free to train while one of the seat's Foundries is short,
+/// train the unit that best answers a Foundry still short among those the
+/// bank buys, until what this decision queued makes up each shortfall. A unit
+/// that would not pay back half its price against the attackers is never
+/// bought, and one worth less than half the best answer the bank reaches
+/// soon, unit or structure, waits for it: units that die before they pay only
+/// feed the attackers.
 fn arm(
     observation: &ObservationData,
     map: &MapModel,
     producers: &[Producer<'_>],
     mut shortfalls: Vec<Shortfall>,
+    income: u32,
     needs: &mut Needs,
     ledger: &mut Ledger,
 ) {
-    const DOMAINS: [Domain; 2] = [Domain::Ground, Domain::Air];
     if shortfalls.is_empty() {
         return;
     }
-    let hits = |kind: UnitKind, domain: Domain| {
-        kind.stats()
-            .weapons
-            .iter()
-            .any(|weapon| weapon.targets.covers(domain))
-    };
-    // Whether `kind`, trained on ground `at`, can help `short`.
-    let helps = |kind: UnitKind, at: Option<u32>, short: &Shortfall| {
-        (kind.stats().domain == Domain::Air || (at.is_some() && at == short.ground))
-            && DOMAINS
-                .into_iter()
-                .enumerate()
-                .any(|(index, domain)| short.gap[index] > 0 && hits(kind, domain))
-    };
     let cover = |shortfalls: &mut [Shortfall], kind: UnitKind, at: Option<u32>| {
         if let Some(short) = shortfalls.iter_mut().find(|short| helps(kind, at, short)) {
-            for (index, domain) in DOMAINS.into_iter().enumerate() {
+            for (index, domain) in [Domain::Ground, Domain::Air].into_iter().enumerate() {
                 if hits(kind, domain) {
                     short.gap[index] =
                         short.gap[index].saturating_sub(u64::from(kind.stats().cost));
@@ -1452,15 +1553,30 @@ fn arm(
         .filter(|producer| producer.ready && !ledger.queued_at(producer.building.id))
         .collect();
     for producer in idle {
-        let budget = ledger.spendable();
+        // The defense spends what it kept from emergency structures.
+        let budget = ledger.available();
         let at = map.component(producer.building.anchor);
         let kind = shortfalls.iter().find_map(|short| {
+            let best = best_answer(
+                observation,
+                map,
+                producers,
+                short,
+                u64::from(budget) + soon(income),
+            )
+            .map_or(0, |(_, score)| score);
+            let worth = |kind: UnitKind| answer(Fighter::Unit(kind), short);
             composition::producible(observation, producer.building.kind)
-                .filter(|kind| kind.stats().cost <= budget && helps(*kind, at, short))
-                .max_by_key(|kind| kind.stats().cost)
+                .filter(|kind| {
+                    kind.stats().cost <= budget
+                        && helps(*kind, at, short)
+                        && (short.attackers.is_empty() || worth(*kind) >= PAYS_BACK)
+                        && 2 * worth(*kind) >= best
+                })
+                .max_by_key(|kind| (worth(*kind), kind.stats().cost))
         });
         if let Some(kind) = kind
-            && ledger.train(producer.building.id, kind)
+            && ledger.train_urgently(producer.building.id, kind)
         {
             ledger.explain(|| Pick {
                 unit: kind,
