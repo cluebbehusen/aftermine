@@ -680,11 +680,14 @@ fn besieged<'a>(
             continue;
         }
         let reach = armed.unwrap_or(THREAT_GAP);
-        // A gun shelling the base from beyond the threat gap still counts.
+        // A gun shelling the base from beyond the threat gap still counts,
+        // and so does a raider closing on the seat's own workers on its side
+        // of the map: a harvest line is home as much as the buildings.
         let near = buildings
             .iter()
             .any(|building| gap(building.anchor, building.kind.size(), enemy.tile, (1, 1)) < reach)
-            || (armed.is_some() && shelled.iter().any(|impact| lobs(enemy, *impact)));
+            || (armed.is_some() && shelled.iter().any(|impact| lobs(enemy, *impact)))
+            || (armed.is_some() && raids(observation, enemy, ours));
         if !near {
             continue;
         }
@@ -734,6 +737,21 @@ fn besieged<'a>(
         !siege.units.is_empty() || !siege.strays.is_empty() || !siege.batteries.is_empty()
     });
     groups
+}
+
+/// Tiles beyond its weapon's reach inside which an armed enemy is closing on
+/// a worker: about what it covers before the next look.
+const CLOSING: i32 = 2;
+
+/// Whether armed `enemy` is within reach of one of the seat's own workers
+/// standing on the seat's side of the map, as `ours` tells.
+fn raids(observation: &ObservationData, enemy: &UnitObs, ours: impl Fn(TilePos) -> bool) -> bool {
+    let reach = crate::defenses::reach(enemy.kind).ceil().to_num::<i32>() + CLOSING;
+    observation.my_units.iter().any(|unit| {
+        crate::workers::worker(unit.kind)
+            && ours(unit.tile)
+            && unit.tile.chebyshev(enemy.tile) <= reach
+    })
 }
 
 /// The built Foundries among `buildings`, nearest home first.

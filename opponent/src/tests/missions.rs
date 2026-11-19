@@ -1402,3 +1402,33 @@ fn an_air_raider_already_answered_does_not_stop_training_for_an_enemy_builder() 
         "Flakhounds that cover the Buzzard leave the ground shortfall to answer"
     );
 }
+
+#[test]
+fn a_raider_on_a_worker_beyond_the_threat_gap_draws_defenders() {
+    // A Harvester on West's side of the field, eleven tiles from its Foundry,
+    // and a Scuttler beside it: beyond the gap at which an enemy threatens a
+    // building.
+    let staged = |raider: bool| {
+        let mut scenario = field();
+        scenario.units.extend([
+            unit(0, UnitKind::Sentinel, 5, 13),
+            unit(0, UnitKind::Harvester, 16, 11),
+        ]);
+        if raider {
+            scenario.units.push(unit(1, UnitKind::Scuttler, 18, 11));
+        }
+        let state = scenario.build().unwrap();
+        seat(&scenario, 0).act(&state, &mut OwnEvents::default())
+    };
+    assert!(
+        hunts(&staged(false)).is_empty(),
+        "premise: nothing to defend"
+    );
+    let commands = staged(true);
+    assert!(
+        hunts(&commands)
+            .iter()
+            .any(|(_, goal)| goal.chebyshev(TilePos::new(18, 11)) <= 2),
+        "the Sentinel goes to the raided worker: {commands:?}"
+    );
+}
