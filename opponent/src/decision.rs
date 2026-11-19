@@ -740,6 +740,7 @@ pub(crate) fn decide(
         map,
         &producers,
         guard_gaps,
+        false,
         income,
         &mut needs,
         &mut ledger,
@@ -822,6 +823,7 @@ pub(crate) fn decide(
                 map,
                 &producers,
                 shortfalls,
+                true,
                 income,
                 &mut needs,
                 &mut ledger,
@@ -1416,15 +1418,23 @@ fn hits(kind: UnitKind, domain: Domain) -> bool {
 }
 
 /// How well `fighter` answers `short`: attacker value it destroys per scrap
-/// against the attackers the shortfall counts, or its price when it counts
-/// none.
-fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
-    let total: u64 = short.attackers.iter().map(|(_, value)| *value).sum();
+/// against the attackers the shortfall counts in a domain still short, or its
+/// price when it counts none there.
+pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
+    let short_in = |attacker: UnitKind| match attacker.stats().domain {
+        Domain::Ground => short.gap[0] > 0,
+        Domain::Air => short.gap[1] > 0,
+    };
+    let pressing: Vec<&(UnitKind, u64)> = short
+        .attackers
+        .iter()
+        .filter(|(attacker, _)| short_in(*attacker))
+        .collect();
+    let total: u64 = pressing.iter().map(|(_, value)| *value).sum();
     if total == 0 {
         return fighter.cost();
     }
-    short
-        .attackers
+    pressing
         .iter()
         .map(|(attacker, value)| composition::matchup(fighter, *attacker) * value)
         .sum::<u64>()
@@ -1466,7 +1476,14 @@ fn best_answer(
                 .filter(move |kind| helps(*kind, at, short))
                 .map(Fighter::Unit)
         });
-    let structures = EMERGENCY_KINDS.into_iter().map(Fighter::Structure);
+    // A structure answers only where a worker could put it up.
+    let builder = observation.my_units.iter().any(|unit| {
+        unit.kind.stats().harvest.is_some() && map.component(unit.tile) == short.ground
+    });
+    let structures = EMERGENCY_KINDS
+        .into_iter()
+        .filter(|_| builder)
+        .map(Fighter::Structure);
     units
         .chain(structures)
         .filter(|fighter| fighter.cost() <= reach)
@@ -1507,11 +1524,16 @@ fn awaited(
 /// bought, and one worth less than half the best answer the bank reaches
 /// soon, unit or structure, waits for it: units that die before they pay only
 /// feed the attackers.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a defense's answer reads the seat's producers, income and ledger"
+)]
 fn arm(
     observation: &ObservationData,
     map: &MapModel,
     producers: &[Producer<'_>],
     mut shortfalls: Vec<Shortfall>,
+    urgent: bool,
     income: u32,
     needs: &mut Needs,
     ledger: &mut Ledger,
@@ -1553,8 +1575,13 @@ fn arm(
         .filter(|producer| producer.ready && !ledger.queued_at(producer.building.id))
         .collect();
     for producer in idle {
-        // The defense spends what it kept from emergency structures.
-        let budget = ledger.available();
+        // An active defense spends what it kept from emergency structures;
+        // a quiet guard only what is free.
+        let budget = if urgent {
+            ledger.available()
+        } else {
+            ledger.spendable()
+        };
         let at = map.component(producer.building.anchor);
         let kind = shortfalls.iter().find_map(|short| {
             let best = best_answer(
@@ -1575,9 +1602,14 @@ fn arm(
                 })
                 .max_by_key(|kind| (worth(*kind), kind.stats().cost))
         });
-        if let Some(kind) = kind
-            && ledger.train_urgently(producer.building.id, kind)
-        {
+        let trained = kind.is_some_and(|kind| {
+            if urgent {
+                ledger.train_urgently(producer.building.id, kind)
+            } else {
+                ledger.train(producer.building.id, kind)
+            }
+        });
+        if let Some(kind) = kind.filter(|_| trained) {
             ledger.explain(|| Pick {
                 unit: kind,
                 building: producer.building.id,

@@ -902,3 +902,25 @@ fn a_defense_short_of_wardens_saves_for_an_answer_rather_than_feed_scuttlers() {
         "an answer that outlasts or outranges them: {rich:?}"
     );
 }
+
+#[test]
+fn attackers_in_a_domain_already_covered_do_not_set_the_answer() {
+    use crate::composition::Fighter;
+    use crate::missions::Shortfall;
+    let flakhound = Fighter::Unit(UnitKind::Flakhound);
+    let both = |gap: [u64; 2]| Shortfall {
+        ground: None,
+        gap,
+        attackers: vec![(UnitKind::Scuttler, 200), (UnitKind::Buzzard, 120)],
+    };
+    // With only the air short, the Scuttlers on the ground don't dilute what
+    // a Flakhound is worth against the Buzzard.
+    assert_eq!(
+        crate::decision::answer(flakhound, &both([0, 120])),
+        crate::composition::matchup(flakhound, UnitKind::Buzzard)
+    );
+    assert!(
+        crate::decision::answer(flakhound, &both([200, 120]))
+            < crate::decision::answer(flakhound, &both([0, 120]))
+    );
+}

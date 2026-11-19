@@ -544,3 +544,15 @@ fn a_matchup_favors_what_outranges_and_outlasts_the_attacker() {
         ) > 4 * matchup(unit(sentinel), UnitKind::Buzzard)
     );
 }
+
+#[test]
+fn a_structure_is_scored_against_the_damage_it_takes_as_a_structure() {
+    // The Maw hits structures far harder than units; a Turret's score must
+    // count that, not the Maw's damage against units.
+    let turret = Fighter::Structure(BuildingKind::Turret);
+    assert!(
+        matchup(turret, UnitKind::Maw) < 500,
+        "{}",
+        matchup(turret, UnitKind::Maw)
+    );
+}
