@@ -1034,3 +1034,47 @@ fn both_worker_passes_fill_one_open_slot_once() {
     }
     assert_eq!(ledger.queued(UnitKind::Harvester), 1);
 }
+
+#[test]
+fn idle_harvesters_with_no_known_scrap_go_looking() {
+    let mut scenario = field();
+    scenario.map[11].replace_range(30..31, "s");
+    scenario.units.extend([harvester(0, 5, 11), harvester(0, 5, 12)]);
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let ours = seat_units(&state, PlayerId(0));
+    let mut opponent = seat_with(&scenario, 0, fortified());
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        harvests(&commands).is_empty(),
+        "premise: no scrap is in sight"
+    );
+    let sent: Vec<(Vec<UnitId>, TilePos)> = runs(&commands)
+        .into_iter()
+        .filter(|(units, _)| units.iter().any(|unit| ours.contains(unit)))
+        .collect();
+    assert!(!sent.is_empty(), "the idle Harvesters go looking");
+    for (_, goal) in &sent {
+        assert!(!observation.explored(*goal), "{goal:?} was already seen");
+    }
+}
+
+#[test]
+fn known_scrap_under_fire_is_waited_out_not_left() {
+    let mut scenario = walled(true);
+    scenario.units.push(harvester(0, 5, 11));
+    let state = scenario.build().unwrap();
+    let ours = seat_units(&state, PlayerId(0));
+    let worker = *ours
+        .iter()
+        .find(|id| state.unit(**id).is_some_and(|unit| unit.kind == UnitKind::Harvester))
+        .unwrap();
+    let mut opponent = seat_with(&scenario, 0, fortified());
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        !runs(&commands)
+            .into_iter()
+            .any(|(units, _)| units.contains(&worker)),
+        "a Harvester that knows of scrap past the Turret waits rather than wanders"
+    );
+}

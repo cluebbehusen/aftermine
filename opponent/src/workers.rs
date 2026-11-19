@@ -1257,26 +1257,30 @@ fn assign_idle(
 }
 
 /// Sends idle, empty workers that nothing employed this decision, on ground
-/// where the seat knows no scrap or wreck, to the nearest tile their team has
-/// never seen there, one order a ground. A start with no scrap in sight would
-/// otherwise leave them idle until a scout happens to find some. Runs last,
-/// so builders and settlements take the workers they need first; known scrap
-/// under fire is waited out, not left.
+/// where the seat knows no scrap or wreck at all, each to the nearest tile
+/// its team has never seen there and no known fire covers, one order a
+/// goal. A start with no scrap in sight would otherwise leave them idle until
+/// a scout happens to find some. Runs last, so builders and settlements take
+/// the workers they need first; known scrap under fire is waited out, not
+/// left.
 pub(crate) fn seek(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
-    staffing: &Staffing,
+    hazards: &[Hazard],
     ledger: &mut Ledger,
 ) {
+    if !ledger.can_order() {
+        return;
+    }
     let barren = |ground: u32| {
-        !staffing
-            .reachable
+        !observation
+            .known_scrap
             .iter()
-            .chain(staffing.wrecks.iter().map(|(tile, _)| tile))
-            .any(|source| map.touches(*source, ground))
+            .chain(&observation.known_wrecks)
+            .any(|(source, _)| map.touches(*source, ground))
     };
-    let seekers: Vec<&UnitObs> = observation
+    let seekers: Vec<(&UnitObs, u32)> = observation
         .my_units
         .iter()
         .filter(|unit| {
@@ -1285,32 +1289,46 @@ pub(crate) fn seek(
                 && worker(unit.kind)
                 && !ledger.employs(unit.id)
                 && !ledger.stuck(unit.id)
-                && map.component(unit.tile).is_some_and(barren)
+        })
+        .filter_map(|unit| {
+            Some((
+                unit,
+                map.component(unit.tile).filter(|ground| barren(*ground))?,
+            ))
         })
         .collect();
-    let mut grounds: Vec<u32> = seekers
-        .iter()
-        .filter_map(|unit| map.component(unit.tile))
-        .collect();
-    grounds.sort_unstable();
-    grounds.dedup();
+    if seekers.is_empty() {
+        return;
+    }
     let (width, height) = map.size();
-    for ground in grounds {
-        let units: Vec<UnitId> = seekers
-            .iter()
-            .filter(|unit| map.component(unit.tile) == Some(ground))
-            .map(|unit| unit.id)
-            .collect();
-        let goal = (0..height)
-            .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
-            .filter(|tile| map.component(*tile) == Some(ground) && !observation.explored(*tile))
-            .min_by_key(|tile| frame.rank(frame.home, doubled(*tile)));
-        let Some(goal) = goal else {
-            continue;
-        };
+    let frontier: Vec<(u32, TilePos)> = (0..height)
+        .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
+        .filter(|tile| !observation.explored(*tile) && !exposed(hazards, *tile))
+        .filter_map(|tile| {
+            let ground = map.component(tile)?;
+            seekers
+                .iter()
+                .any(|(_, own)| *own == ground)
+                .then_some((ground, tile))
+        })
+        .collect();
+    let mut goals: Vec<(TilePos, UnitId)> = seekers
+        .iter()
+        .filter_map(|(unit, ground)| {
+            let from = doubled(unit.tile);
+            frontier
+                .iter()
+                .filter(|(own, _)| own == ground)
+                .map(|(_, tile)| *tile)
+                .min_by_key(|tile| frame.rank(from, doubled(*tile)))
+                .map(|goal| (goal, unit.id))
+        })
+        .collect();
+    goals.sort_by_key(|(goal, unit)| (frame.rank(frame.home, doubled(*goal)), *unit));
+    for group in goals.chunk_by(|a, b| a.0 == b.0) {
         if !ledger.order(Command::Run {
-            units,
-            goal,
+            units: group.iter().map(|(_, unit)| *unit).collect(),
+            goal: group[0].0,
             queue: false,
         }) {
             return;
