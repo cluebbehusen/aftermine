@@ -77,3 +77,10 @@ base early: a Bastion, about three Turrets in front, two Flak Turrets, an Array
 and a Repair Bay, upgraded as you can afford it. Expand behind your defenses,
 tech toward the strongest units and structures, and attack only when you are
 clearly ahead, with a large mixed army.
+
+## Sharp player
+
+Play as a strong, experienced player. Scout early and keep scouting, so you
+learn what the opponent is doing before it reaches you, and answer what you
+see at once rather than following a fixed build. Keep your economy growing
+behind your answers, and attack when you are clearly ahead.
