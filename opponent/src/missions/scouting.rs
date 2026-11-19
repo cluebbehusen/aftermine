@@ -415,13 +415,19 @@ struct Goals<'a> {
 
 impl Goals<'_> {
     /// Each point's goal for a scout, an aircraft when `air`, `None` where it
-    /// cannot go: the point's footprint tile nearest home, since a Scout
+    /// cannot go or is in sight now: the point's footprint tile nearest home, since a Scout
     /// order that stops short guarantees a view of its goal tile alone.
     fn of(&self, air: bool) -> &[Option<TilePos>] {
         let frame = self.frame;
+        let observation = self.observation;
+        // A point in sight now needs no scout; at the first tick it reads as
+        // never seen.
         let nearest = move |point: &Point| {
-            tiles_of(point.anchor, BuildingKind::Foundry.size())
-                .min_by_key(|tile| frame.rank(frame.home, doubled(*tile)))
+            let tiles = tiles_of(point.anchor, BuildingKind::Foundry.size());
+            if tiles.clone().any(|tile| observation.visible(tile)) {
+                return None;
+            }
+            tiles.min_by_key(|tile| frame.rank(frame.home, doubled(*tile)))
         };
         if air {
             self.air

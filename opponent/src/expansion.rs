@@ -75,11 +75,25 @@ pub(crate) fn candidates(
     }
     for frame in &observation.known_frames {
         let me = observation.me;
-        let hostile = map.hostile_distance(me, *frame);
-        // A frame deep in enemy ground, twice as near an enemy as home, is
-        // theirs to hold: a scout that finds one there gives the seat
-        // nothing to build.
-        if hostile != UNREACHABLE && u64::from(hostile) * 2 < u64::from(map.distance(me, *frame)) {
+        // Measured to the nearest tile of the frame, so mirrored frames
+        // measure alike.
+        let (distance, hostile) = crate::frame::tiles_of(*frame, WORKS).fold(
+            (UNREACHABLE, UNREACHABLE),
+            |(home, enemy), tile| {
+                (
+                    home.min(map.distance(me, tile)),
+                    enemy.min(map.hostile_distance(me, tile)),
+                )
+            },
+        );
+        // A frame deep in enemy ground, at least twice as near an enemy as
+        // home, is theirs to hold: a scout that finds one there gives the
+        // seat nothing to build. One its home ground does not reach is left
+        // to the rules for other ground.
+        if hostile != UNREACHABLE
+            && distance != UNREACHABLE
+            && u64::from(hostile) * 2 <= u64::from(distance)
+        {
             continue;
         }
         if held(observation, *frame, -1)
@@ -98,8 +112,7 @@ pub(crate) fn candidates(
         // it stands to be lost sooner than one on the seat's own side: worth
         // half on the line between them, and less the nearer the enemy, so a
         // frame a scout finds at an enemy's door is not worth saving for.
-        let distance = map.distance(me, *frame);
-        if hostile != UNREACHABLE && distance >= hostile {
+        if hostile != UNREACHABLE && distance != UNREACHABLE && distance >= hostile {
             score = score * u64::from(hostile) / (2 * u64::from(distance).max(1));
         }
         let score = score * 1_000 / (1_000 + danger(observation, map, memory, *frame));
