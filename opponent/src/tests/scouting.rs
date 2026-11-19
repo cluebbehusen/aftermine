@@ -598,9 +598,11 @@ fn a_scout_at_many_points_leaves_room_to_defend() {
 }
 
 /// The field with two West Kestrels and East Flakhounds across the middle,
-/// out of sight of the East start.
+/// out of sight of the East start, and scrap beside the West Foundry, so its
+/// workers mine rather than go looking for scrap.
 fn flak_crossing() -> Scenario {
     let mut scenario = field();
+    scenario.map[11].replace_range(6..7, "s");
     scenario.units.push(unit(0, UnitKind::Kestrel, 6, 9));
     scenario.units.push(unit(0, UnitKind::Kestrel, 6, 13));
     for y in 9..=13 {
