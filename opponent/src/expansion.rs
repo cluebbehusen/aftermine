@@ -87,11 +87,14 @@ pub(crate) fn candidates(
             greed,
         ));
         // An enemy's ground reaches this frame no later than the seat's, so
-        // it stands to be lost sooner than one on the seat's own side.
+        // it stands to be lost sooner than one on the seat's own side: worth
+        // half on the line between them, and less the nearer the enemy, so a
+        // frame a scout finds at an enemy's door is not worth saving for.
         let me = observation.me;
         let hostile = map.hostile_distance(me, *frame);
-        if hostile != UNREACHABLE && map.distance(me, *frame) >= hostile {
-            score /= 2;
+        let distance = map.distance(me, *frame);
+        if hostile != UNREACHABLE && distance >= hostile {
+            score = score * u64::from(hostile) / (2 * u64::from(distance).max(1));
         }
         let score = score * 1_000 / (1_000 + danger(observation, map, memory, *frame));
         list.push((

@@ -696,20 +696,24 @@ fn score_of(scores: &[(TilePos, u32)], x: i32, y: i32) -> u32 {
 
 #[test]
 fn frames_and_deep_bores_rank_by_what_they_pay_back() {
-    // Beside West's Foundry, out on West's side, and that frame's mirror on
-    // East's side.
-    let frames = lane(&[(6, 4), (14, 7), (24, 5)]);
+    // Beside West's Foundry, out on West's side, that frame's mirror on
+    // East's side, and one at East's door.
+    let frames = lane(&[(6, 4), (14, 7), (24, 5), (32, 5)]);
     let scores = frame_scores(&frames);
-    let (supported, own_side, enemy_side) = (
+    let (supported, own_side, enemy_side, door) = (
         score_of(&scores, 6, 4),
         score_of(&scores, 14, 7),
         score_of(&scores, 24, 5),
+        score_of(&scores, 32, 5),
     );
     assert!(supported > own_side, "{scores:?}");
-    assert_eq!(
-        enemy_side,
-        own_side / 2,
-        "a frame East reaches first is worth half"
+    assert!(
+        enemy_side < own_side,
+        "a frame East reaches first is worth less: {scores:?}"
+    );
+    assert!(
+        door * 2 < enemy_side,
+        "and less the nearer East it lies: {scores:?}"
     );
     let bore = |crucible: bool| {
         let mut scenario = lane(&[(6, 4), (14, 7)]);
