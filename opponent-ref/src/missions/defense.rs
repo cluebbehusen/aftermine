@@ -263,7 +263,13 @@ impl Missions {
                 shortfalls.push(Shortfall {
                     ground: component,
                     gap,
-                    attackers: siege.attackers(gap),
+                    // The lower rungs judge a threat by its size, not by
+                    // what beats it.
+                    attackers: if crate::reads_threats(difficulty) {
+                        siege.attackers(gap)
+                    } else {
+                        Vec::new()
+                    },
                 });
             }
             // Guns are reached rather than waited for: they shell from
