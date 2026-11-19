@@ -374,7 +374,7 @@ pub(crate) fn decide(
     });
     crate::missions::look(observation, map, &mut persistent.memory);
     // A setting on own buildings spends nothing and is no unit order.
-    if let Some(command) = crate::defenses::autofill(observation) {
+    for command in crate::defenses::autofill(observation) {
         ledger.push(command);
     }
     let mut scratch = Scratch::new(

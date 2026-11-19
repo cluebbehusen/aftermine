@@ -1022,31 +1022,47 @@ fn spire_tech_on_the_enemy_side_brings_a_lattice_before_any_spire_is_seen() {
 }
 
 #[test]
-fn a_lattice_loads_interceptors_on_its_own_only_once_an_enemy_spire_is_known() {
-    // West's Lattice beside its Foundry, built, with the simulation's own
-    // autofill.
+fn a_lattice_keeps_one_interceptor_on_spire_tech_and_fills_once_a_spire_is_known() {
+    // West's Lattice beside its Foundry, its magazine holding `loaded`
+    // interceptors with the simulation's autofill set to `autofill`.
     let lattice = [(9, 8)];
-    let autofill = |scenario: &Scenario, state: &State| {
+    let staged = |state: &State, loaded: u8, autofill: bool| -> State {
+        let mut value = serde_json::to_value(state).unwrap();
+        for building in value["buildings"].as_array_mut().unwrap() {
+            if building["kind"] == json!("lattice") {
+                building["magazine"]["loaded"] = json!(loaded);
+                building["magazine"]["autofill"] = json!(autofill);
+            }
+        }
+        serde_json::from_value(value).unwrap()
+    };
+    let switched = |scenario: &Scenario, state: &State| {
         seat(scenario, 0)
             .act(state, &mut OwnEvents::default())
             .iter()
-            .find_map(|command| match &command.command {
+            .filter_map(|command| match &command.command {
                 Command::SetAutofill { enabled, .. } => Some(*enabled),
                 _ => None,
             })
+            .collect::<Vec<_>>()
     };
     let (scenario, state) = spire_tech(true, true, &lattice);
     assert_eq!(
-        autofill(&scenario, &state),
-        Some(false),
-        "Spire tech alone leaves the magazine empty"
+        switched(&scenario, &staged(&state, 0, true)),
+        Vec::<bool>::new(),
+        "an empty magazine buys its first interceptor on Spire tech alone"
+    );
+    assert_eq!(
+        switched(&scenario, &staged(&state, 1, true)),
+        [false],
+        "one interceptor is enough until a Spire is known"
     );
     let scenario = guarded(&[(30, 4)], &lattice);
     let state = scenario.build().unwrap();
     assert_eq!(
-        autofill(&scenario, &state),
-        None,
-        "a seen Spire keeps the magazine filling"
+        switched(&scenario, &staged(&state, 1, false)),
+        [true],
+        "a seen Spire fills the magazine"
     );
 }
 
