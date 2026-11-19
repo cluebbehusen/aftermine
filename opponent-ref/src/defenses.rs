@@ -10,6 +10,8 @@ mod approaches;
 mod bay;
 mod guns;
 mod lattice;
+
+pub(crate) use lattice::autofill;
 mod obstacles;
 
 use crate::composition;
