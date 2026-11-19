@@ -112,11 +112,13 @@ impl Missions {
                 .sum();
             siege.leave_unbeaten(observation, memory, force);
         }
+        // Attackers remembered out of sight keep a defense from standing down.
         groups.retain(|(_, siege, _)| {
             !siege.units.is_empty()
                 || !siege.strays.is_empty()
                 || !siege.batteries.is_empty()
                 || siege.unseen.is_some()
+                || siege.remembered != [0, 0]
         });
         for mission in &mut self.list {
             let Task::Defend { asset, phase } = &mut mission.task else {
@@ -301,13 +303,10 @@ impl Missions {
                 DefendPhase::Recover | DefendPhase::Guard => None,
             };
             let lost = lost(observation, gun, focus);
-            // Chasing a threat off the Foundry's ground, such as a flyer over a
-            // chasm, would stall every defender each time it moved.
             let resend = recovering
                 || lost
                 || (gun.is_some() && focus != gun)
-                || (mission.goal.chebyshev(goal) > RETARGET_TILES
-                    && map.component(goal) == component);
+                || moved(map, (mission.goal, goal), post, component);
             // A defense out at its attackers short of their value holds its
             // recruits and whoever is back at the post as a reserve there,
             // and sends them on together once all of it would match the
@@ -431,19 +430,32 @@ impl Missions {
         front: &[UnitId],
     ) -> (Vec<UnitId>, Vec<UnitId>) {
         let mut sent = recruits.to_vec();
-        let mut waiting_ordered = Vec::new();
+        let waiting_ordered = Vec::new();
         if let Some(post) = reserve {
-            if !recruits.is_empty() {
-                let mut waiting = recruits.to_vec();
-                waiting.sort_unstable();
-                let ordered = dispatch(observation, ledger, waiting, post, Pursuit::Hunt);
-                for id in &ordered {
-                    insert(&mut self.list[index].units, *id);
-                }
-                take(free, &ordered);
-                waiting_ordered = ordered;
+            // Recruits that hit ground wait at the post outside the mission,
+            // so no order to it reaches them, and count again as recruits
+            // the next decision; those answering only aircraft go on.
+            let (waiting, going): (Vec<UnitId>, Vec<UnitId>) =
+                recruits.iter().copied().partition(|id| {
+                    mine(observation, *id).is_some_and(|unit| hits(unit, Domain::Ground))
+                });
+            let mut walking: Vec<UnitId> = waiting
+                .iter()
+                .copied()
+                .filter(|id| {
+                    mine(observation, *id)
+                        .is_some_and(|unit| !unit.idle || unit.tile.chebyshev(post) > RESERVE_TILES)
+                })
+                .collect();
+            walking.sort_unstable();
+            if !walking.is_empty() {
+                dispatch(observation, ledger, walking, post, Pursuit::Hunt);
             }
-            sent = if resend { front.to_vec() } else { Vec::new() };
+            take(free, &waiting);
+            sent = going;
+            if resend {
+                sent.extend_from_slice(front);
+            }
         } else if resend {
             sent.extend_from_slice(&self.list[index].units);
         } else if onward {
@@ -550,6 +562,21 @@ fn dispatch(
         ordered.sort_unstable();
     }
     ordered
+}
+
+/// Whether a defense with its goal at `from` moves enough going to `to` to
+/// order its members again: far, on its own ground, or between the waiting
+/// `post` and the fight however close the two stand. Chasing a threat off
+/// the Foundry's ground, such as a flyer over a chasm, would stall every
+/// defender each time it moved.
+fn moved(
+    map: &MapModel,
+    (from, to): (TilePos, TilePos),
+    post: Option<TilePos>,
+    ground: Option<u32>,
+) -> bool {
+    (from.chebyshev(to) > RETARGET_TILES && map.component(to) == ground)
+        || post.is_some_and(|post| (to == post) != (from == post))
 }
 
 /// Whether `mission`'s defenders wait beside `foundry` rather than meet a
@@ -948,7 +975,10 @@ fn besieged<'a>(
         }
     }
     groups.retain(|(_, siege)| {
-        !siege.units.is_empty() || !siege.strays.is_empty() || !siege.batteries.is_empty()
+        !siege.units.is_empty()
+            || !siege.strays.is_empty()
+            || !siege.batteries.is_empty()
+            || siege.remembered != [0, 0]
     });
     groups
 }
