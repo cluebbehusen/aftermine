@@ -10,8 +10,8 @@
 
 use super::attack::{building_value, concentrates, defense, defense_around};
 use super::{
-    AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, fill, hits, hunt,
-    insert, mine, value, walking_gun, worth,
+    AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
+    fill, hits, hunt, insert, mine, value, walking_gun, worth,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
@@ -84,7 +84,7 @@ impl Missions {
     ) -> Vec<Shortfall> {
         let now = observation.tick;
         let lendable = self.available(observation, Some(difficulty));
-        let mut groups = threats(observation, map, frame);
+        let mut groups = threats(observation, map, frame, memory);
         for (foundry, siege, _) in &mut groups {
             let component = map.component(foundry.anchor);
             // What the Foundry's defense holds and could take, not units out
@@ -198,12 +198,13 @@ impl Missions {
                 _ => None,
             };
             let pressing = [Domain::Ground, Domain::Air].map(|domain| {
-                siege
+                (siege
                     .units
                     .iter()
                     .filter(|threat| threat.body_domain() == domain)
                     .map(|threat| value(threat))
                     .sum::<u64>()
+                    + siege.remembered[usize::from(domain == Domain::Air)])
                     * 3
                     / 2
             });
@@ -490,6 +491,10 @@ struct Siege<'a> {
     batteries: Vec<(&'a BuildingObs, TilePos)>,
     /// Where a gun shelling the base from out of sight probably stands.
     unseen: Option<TilePos>,
+    /// What armed enemies remembered out of sight near the buildings are
+    /// worth, against ground and air, by how sure the seat is they are still
+    /// there.
+    remembered: [u64; 2],
     /// Whether something armed threatens the Foundry that the lists above
     /// leave out: a gun the seat cannot beat yet, left to production, or a
     /// gun out of sight shelling it while threats in sight hold its entry.
@@ -621,6 +626,7 @@ fn threats<'a>(
     observation: &'a ObservationData,
     map: &MapModel,
     frame: HomeFrame,
+    memory: &Memory,
 ) -> Vec<(&'a BuildingObs, Siege<'a>, bool)> {
     let mut groups: Vec<(&BuildingObs, Siege, bool)> = Vec::new();
     let mut claimed: Vec<UnitId> = Vec::new();
@@ -636,8 +642,8 @@ fn threats<'a>(
             map,
             frame,
             (buildings, side),
-            &claimed,
-            &claimed_batteries,
+            (&claimed, &claimed_batteries),
+            own.then_some(memory),
         ) {
             claimed.extend(
                 siege
@@ -678,14 +684,15 @@ fn threats<'a>(
 /// home-nearest first. For buildings of `side`, the seat's own, unarmed
 /// enemies and enemy buildings within the threat gap of one count too, when
 /// they stand on its side of the map: nearer its start by ground than any
-/// hostile start.
+/// hostile start. With the seat's `memory`, armed enemies remembered out of
+/// sight where they would join a group count toward its force.
 fn besieged<'a>(
     observation: &'a ObservationData,
     map: &MapModel,
     frame: HomeFrame,
     (buildings, side): (&'a [BuildingObs], Option<PlayerId>),
-    claimed: &[UnitId],
-    claimed_batteries: &[TilePos],
+    (claimed, claimed_batteries): (&[UnitId], &[TilePos]),
+    memory: Option<&Memory>,
 ) -> Vec<(&'a BuildingObs, Siege<'a>)> {
     let ours = |tile: TilePos| {
         side.is_some_and(|me| map.distance(me, tile) < map.hostile_distance(me, tile))
@@ -737,6 +744,38 @@ fn besieged<'a>(
             groups[index].1.units.push(enemy);
         } else if reachable {
             groups[index].1.strays.push(enemy);
+        }
+    }
+    // An attacker that steps out of sight is still there: counting only those
+    // in sight, a defense facing one that blinks at the edge of its sight
+    // marches out and back with every blink.
+    for seen in memory.map_or(&[][..], Memory::units) {
+        if seen.seen >= observation.tick {
+            continue;
+        }
+        let reach = crate::defenses::reach(seen.kind);
+        if reach <= Fx::ZERO {
+            continue;
+        }
+        let reach = reach.ceil().to_num::<i32>().max(THREAT_GAP);
+        if !buildings
+            .iter()
+            .any(|building| gap(building.anchor, building.kind.size(), seen.tile, (1, 1)) < reach)
+        {
+            continue;
+        }
+        let Some(index) = nearest(seen.tile, (1, 1), doubled(seen.tile)) else {
+            continue;
+        };
+        let reachable = map
+            .component(foundries[index].anchor)
+            .is_some_and(|component| {
+                map.component(seen.tile) == Some(component) || map.touches(seen.tile, component)
+            });
+        if reachable {
+            let domain = usize::from(seen.kind.stats().domain == Domain::Air);
+            groups[index].1.remembered[domain] +=
+                seen.value(observation.tick) * against_machines(seen.kind) / 1_000;
         }
     }
     for building in &observation.enemy_buildings {
