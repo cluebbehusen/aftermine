@@ -257,7 +257,7 @@ impl Missions {
             // where they stand.
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
-            let go = met * engage_margin(difficulty) / 1_000;
+            let go = sortie(*own, siege, met, difficulty);
             let hunting = matches!(pursuit, Pursuit::Hunt);
             let post = grounded.and_then(|threat| waiting_post(map, frame, foundry, threat));
             let front = front(observation, members, post);
@@ -584,8 +584,8 @@ fn moved(
 /// ground force worth `met`, with `have` all of them and their recruits
 /// against ground and `front` those out at it: short of `go`, the force the
 /// seat's rung goes out to it with, at the post; once out, when all of them
-/// are short of that and those out are short of two thirds of the force, so
-/// a front the reserve cannot bring level comes back to it.
+/// are short of the force and those out are short of two thirds of it, so a
+/// front the reserve cannot bring level comes back to it.
 fn waits(
     mission: Option<&Mission>,
     foundry: &BuildingObs,
@@ -597,7 +597,7 @@ fn waits(
             && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
     });
     if out {
-        have < go && front * 3 < met * 2
+        have < met && front * 3 < met * 2
     } else {
         have < go
     }
@@ -640,6 +640,24 @@ fn waiting_post(
     ring(foundry.anchor, foundry.kind.size())
         .filter(|tile| map.component(*tile) == Some(component))
         .min_by_key(|tile| frame.rank(doubled(threat), doubled(*tile)))
+}
+
+/// What a defense against `siege`'s ground force worth `met` must hold to go
+/// out at it: the rung's edge over mobile attackers on the ground at the
+/// seat's `own` Foundry, even odds otherwise. Guns that stand and shell never
+/// come to the post, an aircraft's answer would be held back with the ground
+/// units, and an ally's defense has no shortfall training behind it.
+fn sortie(own: bool, siege: &Siege<'_>, met: u64, difficulty: BotDifficulty) -> u64 {
+    let mobile = siege.batteries.is_empty()
+        && siege
+            .units
+            .iter()
+            .all(|threat| threat.body_domain() == Domain::Ground);
+    if own && mobile {
+        met * engage_margin(difficulty) / 1_000
+    } else {
+        met
+    }
 }
 
 /// Per mille of the attackers' worth a defense must hold to go out at them:
