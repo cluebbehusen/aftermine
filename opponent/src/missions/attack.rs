@@ -757,18 +757,31 @@ fn engage_on(
     // A target seen gone ends the attack on it at once: waiting for every
     // member to idle, or for the fight's progress to stall, never ends with
     // a large army, since some member is always busy and damage anywhere
-    // counts as progress.
+    // counts as progress. A volley under way finishes first. Only the
+    // members the order moves count: a Sapper on its way to a charge keeps
+    // that order, and units sitting out orders stay.
+    let onward_army: Vec<&UnitObs> = members
+        .iter()
+        .copied()
+        .filter(|unit| {
+            army.contains(&unit.id)
+                && !ledger.stuck(unit.id)
+                && (unit.kind != UnitKind::Sapper || unit.idle)
+        })
+        .collect();
     let onward = plan.best(Some(target)).filter(|next| {
         !standing
+            && fight.focus.is_none()
             && plan.meets(
-                members.iter().map(|unit| striking(unit)).sum(),
+                onward_army.iter().map(|unit| striking(unit)).sum(),
                 *next,
                 breaching(observation, &mission.units),
                 plan.margin,
             )
     });
     if let Some(next) = onward {
-        if ledger.order(hunt(army, next.approach)) {
+        let movers = onward_army.iter().map(|unit| unit.id).collect();
+        if ledger.order(hunt(movers, next.approach)) {
             mission.attack_phase(next, AttackPhase::Travel, now, Some(next.approach));
         }
         return None;
