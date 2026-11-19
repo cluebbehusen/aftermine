@@ -32,3 +32,9 @@ Order labels in the digest:
   tend          welding on its own while idle (see rules.txt)
   accompany     escorting a unit
   salvage, board, unload, land, retire, scout  as their verbs say
+
+Digest sections:
+  MAGAZINES     each Spire or Lattice you know of: building is its id,
+                loaded its rounds ready, assembly the ticks of work on the
+                round being built (none while nothing is ordered); your own
+                add how many are ordered and whether they refill on their own

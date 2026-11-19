@@ -1364,8 +1364,17 @@ fn main() -> Result<()> {
             let requests = live_requests(cmd)?;
             let mut client = Client::connect(&addr)?;
             let mut last: Option<Reply> = None;
-            for request in requests {
-                last = Some(client.call(request)?);
+            let total = requests.len();
+            for (sent, request) in requests.into_iter().enumerate() {
+                match client.call(request) {
+                    Ok(reply) => last = Some(reply),
+                    // A batch such as `train --count` keeps what went
+                    // through; say how much did.
+                    Err(error) if sent > 0 => {
+                        anyhow::bail!("{sent} of {total} sent; the next was refused: {error:#}")
+                    }
+                    Err(error) => return Err(error),
+                }
             }
             match last {
                 Some(Reply::Played(played)) => {
