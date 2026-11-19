@@ -101,7 +101,7 @@ fn families_parse_from_and_print_as_their_kebab_case_names() {
     }
     assert!("forward_fabricator".parse::<Family>().is_err());
     assert_eq!(
-        Family::TUNING.len() + Family::HELD_OUT.len(),
+        Family::TUNING.len() + Family::HELD_OUT.len() + Family::YARDSTICK.len(),
         Family::ALL.len()
     );
     assert!(Family::HELD_OUT.iter().all(|f| f.held_out()));
@@ -185,6 +185,10 @@ fn each_family_opens_its_plan_against_a_passive_seat() {
             Family::KestrelPush => {
                 units(state, UnitKind::Kestrel) >= 1 && units(state, UnitKind::Lancer) >= 1
             }
+            Family::Novice => state
+                .buildings()
+                .iter()
+                .any(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Fabricator),
         };
         assert!(
             key,

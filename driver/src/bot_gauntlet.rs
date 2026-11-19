@@ -210,6 +210,7 @@ pub fn families(names: &[String]) -> Result<Vec<Family>> {
         let named = match name.as_str() {
             "tuning" => Family::TUNING.to_vec(),
             "held-out" => Family::HELD_OUT.to_vec(),
+            "yardstick" => Family::YARDSTICK.to_vec(),
             name => vec![name.parse()?],
         };
         for family in named {
