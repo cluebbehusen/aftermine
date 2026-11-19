@@ -339,10 +339,10 @@ pub(crate) fn run(
     hazards: &[Hazard],
     staffing: &Staffing,
     patients: &[UnitId],
-    support: u8,
+    (support, home_lines): (u8, bool),
     ledger: &mut Ledger,
 ) {
-    flee(observation, map, frame, hazards, ledger);
+    flee(observation, map, frame, hazards, home_lines, ledger);
     let open = |site: &BuildingObs, builder: Option<&UnitObs>| {
         !memory.failed(site.kind, site.anchor, observation.tick)
             && crate::placement::stands(observation, site.kind, site.anchor, site.hp, builder)
@@ -383,30 +383,36 @@ fn flee(
     map: &MapModel,
     frame: HomeFrame,
     hazards: &[Hazard],
+    home_lines: bool,
     ledger: &mut Ledger,
 ) {
     let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
     if hazards.is_empty() {
         return;
     }
+    let covered = |tile: TilePos| hazards.iter().any(|hazard| hazard.covers(doubled(tile)));
+    let mut fleeing: Vec<(TilePos, UnitId)> = Vec::new();
     for unit in &observation.my_units {
         let working =
             unit.idle || unit.repair == Some(RepairWork::Tending) || unit.harvesting.is_some();
         if !worker(unit.kind) || !working || ledger.employs(unit.id) {
             continue;
         }
-        let threatened = hazards
-            .iter()
-            .any(|hazard| hazard.covers(doubled(unit.tile)));
-        if !threatened || at_home(&foundries, unit.tile) {
+        if !covered(unit.tile) || (!home_lines && at_home(&foundries, unit.tile)) {
             continue;
         }
-        let Some(refuge) = refuge(map, frame, &foundries, unit.tile) else {
+        // Beside home, a refuge in the same fire is no refuge.
+        let safe = |tile: TilePos| !home_lines || !covered(tile);
+        let Some(refuge) = refuge(map, frame, &foundries, unit.tile, safe) else {
             continue;
         };
+        fleeing.push((refuge, unit.id));
+    }
+    fleeing.sort_by_key(|(refuge, unit)| (frame.rank(frame.home, doubled(*refuge)), *unit));
+    for group in fleeing.chunk_by(|a, b| a.0 == b.0) {
         if !ledger.order(Command::Run {
-            units: vec![unit.id],
-            goal: refuge,
+            units: group.iter().map(|(_, unit)| *unit).collect(),
+            goal: group[0].0,
             queue: false,
         }) {
             return;
@@ -434,12 +440,14 @@ fn free_on(unit: &UnitObs, map: &MapModel, ground: u32, ledger: &Ledger) -> bool
         && !ledger.stuck(unit.id)
 }
 
-/// The tile beside one of `foundries` on the ground of `tile` nearest it.
+/// The tile beside one of `foundries` on the ground of `tile` nearest it
+/// that `safe` allows.
 fn refuge(
     map: &MapModel,
     frame: HomeFrame,
     foundries: &[&BuildingObs],
     tile: TilePos,
+    safe: impl Fn(TilePos) -> bool,
 ) -> Option<TilePos> {
     let size = BuildingKind::Foundry.size();
     let ground = map.component(tile)?;
@@ -447,7 +455,7 @@ fn refuge(
     foundries
         .iter()
         .flat_map(|foundry| ring(foundry.anchor, size))
-        .filter(|beside| map.component(*beside) == Some(ground))
+        .filter(|beside| map.component(*beside) == Some(ground) && safe(*beside))
         .min_by_key(|beside| (frame.rank(from, doubled(*beside)), *beside))
 }
 
@@ -1230,7 +1238,7 @@ fn assign_idle(
     // in which none can is refused.
     let returning: Vec<UnitId> = loaded
         .iter()
-        .filter(|unit| refuge(map, frame, &foundries, unit.tile).is_some())
+        .filter(|unit| refuge(map, frame, &foundries, unit.tile, |_| true).is_some())
         .map(|unit| unit.id)
         .collect();
     if !returning.is_empty()
@@ -1243,7 +1251,7 @@ fn assign_idle(
         return;
     }
     for unit in stranded {
-        let Some(refuge) = refuge(map, frame, &foundries, unit.tile) else {
+        let Some(refuge) = refuge(map, frame, &foundries, unit.tile, |_| true) else {
             continue;
         };
         if !ledger.order(Command::Run {
