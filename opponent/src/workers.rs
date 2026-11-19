@@ -339,10 +339,10 @@ pub(crate) fn run(
     hazards: &[Hazard],
     staffing: &Staffing,
     patients: &[UnitId],
-    support: u8,
+    (support, home_lines): (u8, bool),
     ledger: &mut Ledger,
 ) {
-    flee(observation, map, frame, hazards, ledger);
+    flee(observation, map, frame, hazards, home_lines, ledger);
     let open = |site: &BuildingObs, builder: Option<&UnitObs>| {
         !memory.failed(site.kind, site.anchor, observation.tick)
             && crate::placement::stands(observation, site.kind, site.anchor, site.hp, builder)
@@ -383,34 +383,116 @@ fn flee(
     map: &MapModel,
     frame: HomeFrame,
     hazards: &[Hazard],
+    home_lines: bool,
     ledger: &mut Ledger,
 ) {
     let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
+    let covered = |tile: TilePos| hazards.iter().any(|hazard| hazard.covers(doubled(tile)));
+    if home_lines {
+        rest_welders(observation, &foundries, &covered, ledger);
+    }
     if hazards.is_empty() {
         return;
     }
+    let mut fleeing: Vec<(TilePos, UnitId, TilePos)> = Vec::new();
+    let mut tending: Vec<UnitId> = Vec::new();
     for unit in &observation.my_units {
         let working =
             unit.idle || unit.repair == Some(RepairWork::Tending) || unit.harvesting.is_some();
         if !worker(unit.kind) || !working || ledger.employs(unit.id) {
             continue;
         }
-        let threatened = hazards
-            .iter()
-            .any(|hazard| hazard.covers(doubled(unit.tile)));
-        if !threatened || at_home(&foundries, unit.tile) {
+        if !covered(unit.tile) || (!home_lines && at_home(&foundries, unit.tile)) {
             continue;
         }
-        let Some(refuge) = refuge(map, frame, &foundries, unit.tile) else {
+        // Beside home, a refuge in the same fire is no refuge, nor one on
+        // scrap the worker cannot stand on.
+        let safe =
+            |tile: TilePos| !home_lines || (!covered(tile) && !observation.known_scrap_at(tile));
+        let Some(refuge) = refuge(map, frame, &foundries, unit.tile, safe) else {
             continue;
         };
+        fleeing.push((refuge, unit.id, unit.tile));
+        if unit.repair == Some(RepairWork::Tending) {
+            tending.push(unit.id);
+        }
+    }
+    // One order each: a crowd sent to one tile spreads around it, some into
+    // the fire or off their ground.
+    fleeing.sort_by_key(|(refuge, unit, from)| {
+        (
+            frame.rank(frame.home, doubled(*refuge)),
+            frame.rank(frame.home, doubled(*from)),
+            *unit,
+        )
+    });
+    let mut ran: Vec<UnitId> = Vec::new();
+    for (refuge, unit, _) in &fleeing {
         if !ledger.order(Command::Run {
-            units: vec![unit.id],
-            goal: refuge,
+            units: vec![*unit],
+            goal: *refuge,
             queue: false,
         }) {
-            return;
+            break;
         }
+        ran.push(*unit);
+    }
+    // A worker that walked out to weld into the fire would walk back once
+    // idle at its refuge: one sent out of it stops welding on its own until
+    // home is calm.
+    tending.retain(|id| ran.contains(id));
+    if home_lines && !tending.is_empty() {
+        ledger.order(Command::SetIdleWeld {
+            units: tending,
+            enabled: false,
+        });
+    }
+}
+
+/// Ticks between the orders that let idle workers weld on their own again
+/// once home is calm: a computation bound on how often a seat repeats a
+/// setting it cannot read back, not a count of anything.
+const WELD_RESTORE_TICKS: u64 = 600;
+
+/// Lets the workers at home around each Foundry no known fire reaches weld
+/// on their own again, every [`WELD_RESTORE_TICKS`]: a worker stopped from
+/// welding into a fight goes back to tending once it is over there, whatever
+/// another base faces. The setting cannot be read back, so it is repeated,
+/// one order.
+fn rest_welders(
+    observation: &ObservationData,
+    foundries: &[&BuildingObs],
+    covered: &dyn Fn(TilePos) -> bool,
+    ledger: &mut Ledger,
+) {
+    if !observation.tick.is_multiple_of(WELD_RESTORE_TICKS) {
+        return;
+    }
+    let (width, height) = BuildingKind::Foundry.size();
+    // Calm where no known fire reaches the home tiles around a Foundry, the
+    // ground its workers tend: calm at its ring alone would send a tender
+    // straight back out into the fire beyond it.
+    let calm = |foundry: &BuildingObs| {
+        let reach = HOME_TILES;
+        !(-reach..height + reach)
+            .any(|dy| (-reach..width + reach).any(|dx| covered(foundry.anchor.offset(dx, dy))))
+    };
+    let calm: Vec<&BuildingObs> = foundries
+        .iter()
+        .copied()
+        .filter(|foundry| calm(foundry))
+        .collect();
+    let workers: Vec<UnitId> = observation
+        .my_units
+        .iter()
+        .filter(|unit| worker(unit.kind) && at_home(&calm, unit.tile))
+        .map(|unit| unit.id)
+        .collect();
+    if !workers.is_empty() {
+        ledger.order(Command::SetIdleWeld {
+            units: workers,
+            enabled: true,
+        });
     }
 }
 
@@ -434,12 +516,14 @@ fn free_on(unit: &UnitObs, map: &MapModel, ground: u32, ledger: &Ledger) -> bool
         && !ledger.stuck(unit.id)
 }
 
-/// The tile beside one of `foundries` on the ground of `tile` nearest it.
+/// The tile beside one of `foundries` on the ground of `tile` nearest it
+/// that `safe` allows.
 fn refuge(
     map: &MapModel,
     frame: HomeFrame,
     foundries: &[&BuildingObs],
     tile: TilePos,
+    safe: impl Fn(TilePos) -> bool,
 ) -> Option<TilePos> {
     let size = BuildingKind::Foundry.size();
     let ground = map.component(tile)?;
@@ -447,7 +531,7 @@ fn refuge(
     foundries
         .iter()
         .flat_map(|foundry| ring(foundry.anchor, size))
-        .filter(|beside| map.component(*beside) == Some(ground))
+        .filter(|beside| map.component(*beside) == Some(ground) && safe(*beside))
         .min_by_key(|beside| (frame.rank(from, doubled(*beside)), *beside))
 }
 
@@ -1230,7 +1314,7 @@ fn assign_idle(
     // in which none can is refused.
     let returning: Vec<UnitId> = loaded
         .iter()
-        .filter(|unit| refuge(map, frame, &foundries, unit.tile).is_some())
+        .filter(|unit| refuge(map, frame, &foundries, unit.tile, |_| true).is_some())
         .map(|unit| unit.id)
         .collect();
     if !returning.is_empty()
@@ -1243,12 +1327,92 @@ fn assign_idle(
         return;
     }
     for unit in stranded {
-        let Some(refuge) = refuge(map, frame, &foundries, unit.tile) else {
+        let Some(refuge) = refuge(map, frame, &foundries, unit.tile, |_| true) else {
             continue;
         };
         if !ledger.order(Command::Run {
             units: vec![unit.id],
             goal: refuge,
+            queue: false,
+        }) {
+            return;
+        }
+    }
+}
+
+/// Sends idle, empty workers that nothing employed this decision, on ground
+/// where the seat knows no scrap or wreck at all, each to the nearest tile
+/// its team has never seen there and no known fire covers, one order a
+/// goal. A start with no scrap in sight would otherwise leave them idle until
+/// a scout happens to find some. Runs last, so builders and settlements take
+/// the workers they need first; known scrap under fire is waited out, not
+/// left.
+pub(crate) fn seek(
+    observation: &ObservationData,
+    map: &MapModel,
+    frame: HomeFrame,
+    hazards: &[Hazard],
+    ledger: &mut Ledger,
+) {
+    if !ledger.can_order() {
+        return;
+    }
+    let barren = |ground: u32| {
+        !observation
+            .known_scrap
+            .iter()
+            .chain(&observation.known_wrecks)
+            .any(|(source, _)| map.touches(*source, ground))
+    };
+    let seekers: Vec<(&UnitObs, u32)> = observation
+        .my_units
+        .iter()
+        .filter(|unit| {
+            unit.idle
+                && unit.carrying == 0
+                && worker(unit.kind)
+                && !ledger.employs(unit.id)
+                && !ledger.stuck(unit.id)
+        })
+        .filter_map(|unit| {
+            Some((
+                unit,
+                map.component(unit.tile).filter(|ground| barren(*ground))?,
+            ))
+        })
+        .collect();
+    if seekers.is_empty() {
+        return;
+    }
+    let (width, height) = map.size();
+    let frontier: Vec<(u32, TilePos)> = (0..height)
+        .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
+        .filter(|tile| !observation.explored(*tile) && !exposed(hazards, *tile))
+        .filter_map(|tile| {
+            let ground = map.component(tile)?;
+            seekers
+                .iter()
+                .any(|(_, own)| *own == ground)
+                .then_some((ground, tile))
+        })
+        .collect();
+    let mut goals: Vec<(TilePos, UnitId)> = seekers
+        .iter()
+        .filter_map(|(unit, ground)| {
+            let from = doubled(unit.tile);
+            frontier
+                .iter()
+                .filter(|(own, _)| own == ground)
+                .map(|(_, tile)| *tile)
+                .min_by_key(|tile| frame.rank(from, doubled(*tile)))
+                .map(|goal| (goal, unit.id))
+        })
+        .collect();
+    goals.sort_by_key(|(goal, unit)| (frame.rank(frame.home, doubled(*goal)), *unit));
+    for group in goals.chunk_by(|a, b| a.0 == b.0) {
+        if !ledger.order(Command::Run {
+            units: group.iter().map(|(_, unit)| *unit).collect(),
+            goal: group[0].0,
             queue: false,
         }) {
             return;

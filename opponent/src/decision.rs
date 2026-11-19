@@ -161,6 +161,11 @@ impl Ledger {
         self.decision.launches.push(launch);
     }
 
+    /// Whether the allowance has room for another unit order.
+    pub(crate) fn can_order(&self) -> bool {
+        self.decision.unit_orders < self.decision.allowance
+    }
+
     /// Issues one unit order while the allowance lasts, leaving out units
     /// sitting out orders. An order left with no units issues nothing and
     /// counts as given. Purchases never count against the allowance.
@@ -621,7 +626,10 @@ pub(crate) fn decide(
         &scratch.ground,
         &staffing,
         &patients,
-        profile.traits.support,
+        (
+            profile.traits.support,
+            crate::guards_home_lines(profile.difficulty),
+        ),
         &mut ledger,
     );
     // Settlements move before guards so an escort let go at its site joins
@@ -849,6 +857,7 @@ pub(crate) fn decide(
         );
     }
 
+    workers::seek(observation, map, frame, &scratch.ground, &mut ledger);
     persistent.saving.keep_at_most(ledger.available());
     persistent
         .income
@@ -1686,7 +1695,7 @@ fn workforce(observation: &ObservationData) -> u64 {
 }
 
 /// What the seat's armed units cost.
-fn army(observation: &ObservationData) -> u64 {
+pub(crate) fn army(observation: &ObservationData) -> u64 {
     // A drone comes and goes from its host's bay, so only machines count.
     observation
         .my_units

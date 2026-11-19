@@ -1406,3 +1406,91 @@ fn an_air_raider_already_answered_does_not_stop_training_for_an_enemy_builder() 
         "Flakhounds that cover the Buzzard leave the ground shortfall to answer"
     );
 }
+
+#[test]
+fn a_defense_out_short_of_its_attackers_holds_its_recruit_at_the_post() {
+    // Sentinels already out at six raiders hold their ground. Four and a
+    // fifth would still be short, so the recruit waits beside the Foundry
+    // instead of walking into the fight alone; five and a sixth match them,
+    // so it goes on.
+    let raiders: Vec<(UnitKind, i32, i32)> = (4..=6)
+        .flat_map(|y| [(UnitKind::Sentinel, 9, y), (UnitKind::Sentinel, 10, y)])
+        .collect();
+    let recruit_waits = |front: &[(i32, i32)]| {
+        let mut defenders: Vec<(UnitKind, i32, i32)> = front
+            .iter()
+            .map(|(x, y)| (UnitKind::Sentinel, *x, *y))
+            .collect();
+        defenders.push((UnitKind::Sentinel, 2, 8));
+        let scenario = raided(&defenders, &raiders);
+        let state = scenario.build().unwrap();
+        let home = state
+            .buildings()
+            .iter()
+            .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+            .unwrap();
+        let mut members: Vec<UnitId> = front.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+        members.sort_unstable();
+        let recruit = at(&state, 2, 8);
+        let missions = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": 9, "y": 5},
+            }],
+        });
+        let mut json = serde_json::to_value(seat(&scenario, 0).checkpoint()).unwrap();
+        json["missions"] = missions;
+        let checkpoint: crate::checkpoint::Checkpoint = serde_json::from_value(json).unwrap();
+        let mut opponent =
+            Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        let beside: Vec<TilePos> =
+            crate::frame::ring(home.anchor, BuildingKind::Foundry.size()).collect();
+        hunts(&commands)
+            .into_iter()
+            .find(|(units, _)| units.contains(&recruit))
+            .map(|(_, goal)| beside.contains(&goal))
+    };
+    assert_eq!(
+        recruit_waits(&[(8, 7), (8, 8), (9, 8), (10, 8)]),
+        Some(true),
+        "short together: the recruit waits at the post"
+    );
+    assert_eq!(
+        recruit_waits(&[(8, 7), (8, 8), (9, 8), (10, 8), (11, 8)]),
+        Some(false),
+        "level together: it goes on"
+    );
+}
+
+#[test]
+fn the_upper_rungs_go_out_at_raiders_only_with_an_edge() {
+    // Three Sentinels against three raiders: even odds. Prime waits beside
+    // the Foundry for an edge; Standard goes out at even odds.
+    let raiders = [
+        (UnitKind::Sentinel, 9, 4),
+        (UnitKind::Sentinel, 9, 5),
+        (UnitKind::Sentinel, 9, 6),
+    ];
+    let defenders = [
+        (UnitKind::Sentinel, 5, 8),
+        (UnitKind::Sentinel, 6, 8),
+        (UnitKind::Sentinel, 5, 9),
+    ];
+    let goes_out = |difficulty: BotDifficulty| {
+        let scenario = raided(&defenders, &raiders);
+        let state = scenario.build().unwrap();
+        hunts(&seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default()))
+            .iter()
+            .any(|(_, goal)| goal.x == 9)
+    };
+    assert!(!goes_out(BotDifficulty::Prime), "Prime waits for an edge");
+    assert!(
+        goes_out(BotDifficulty::Standard),
+        "Standard goes at even odds"
+    );
+}
