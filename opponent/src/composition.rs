@@ -691,12 +691,31 @@ pub(crate) fn matchup(fighter: Fighter, attacker: UnitKind) -> u64 {
     if dealt_rate == 0 {
         return 0;
     }
-    let taken_rate =
-        theirs.damage_rate_against(fighter.domain(), matches!(fighter, Fighter::Structure(_)));
-    // Ticks it lives under the attacker's fire.
+    let structure = matches!(fighter, Fighter::Structure(_));
+    let taken_rate = theirs.damage_rate_against(fighter.domain(), structure);
+    // Ticks it lives under the attacker's fire, at most the attacker's shots
+    // to kill it after the first, which lands on contact: a Lancer's one
+    // shot kills a Sentinel however slowly its gun averages out.
+    let burst = theirs
+        .weapons()
+        .iter()
+        .filter(|weapon| weapon.targets.covers(fighter.domain()))
+        .map(|weapon| {
+            let damage = if structure {
+                weapon.building_damage.unwrap_or(weapon.damage)
+            } else {
+                weapon.damage
+            };
+            (u64::from(damage).max(1), u64::from(weapon.cooldown_ticks))
+        })
+        .max()
+        .map_or(u64::MAX, |(damage, cooldown)| {
+            (fighter.max_hp().div_ceil(damage) - 1) * cooldown
+        });
     let life = (fighter.max_hp() * 1_000)
         .checked_div(taken_rate)
-        .unwrap_or(100_000);
+        .unwrap_or(100_000)
+        .min(burst);
     let (reach, outreach) = (
         fighter.reach(theirs.domain()),
         theirs.reach(fighter.domain()),
