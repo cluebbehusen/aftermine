@@ -849,6 +849,7 @@ pub(crate) fn decide(
         );
     }
 
+    workers::seek(observation, map, frame, &staffing, &mut ledger);
     persistent.saving.keep_at_most(ledger.available());
     persistent
         .income

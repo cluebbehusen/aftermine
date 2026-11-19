@@ -1256,6 +1256,68 @@ fn assign_idle(
     }
 }
 
+/// Sends idle, empty workers that nothing employed this decision, on ground
+/// where the seat knows no scrap or wreck, to the nearest tile their team has
+/// never seen there, one order a ground. A start with no scrap in sight would
+/// otherwise leave them idle until a scout happens to find some. Runs last,
+/// so builders and settlements take the workers they need first; known scrap
+/// under fire is waited out, not left.
+pub(crate) fn seek(
+    observation: &ObservationData,
+    map: &MapModel,
+    frame: HomeFrame,
+    staffing: &Staffing,
+    ledger: &mut Ledger,
+) {
+    let barren = |ground: u32| {
+        !staffing
+            .reachable
+            .iter()
+            .chain(staffing.wrecks.iter().map(|(tile, _)| tile))
+            .any(|source| map.touches(*source, ground))
+    };
+    let seekers: Vec<&UnitObs> = observation
+        .my_units
+        .iter()
+        .filter(|unit| {
+            unit.idle
+                && unit.carrying == 0
+                && worker(unit.kind)
+                && !ledger.employs(unit.id)
+                && !ledger.stuck(unit.id)
+                && map.component(unit.tile).is_some_and(barren)
+        })
+        .collect();
+    let mut grounds: Vec<u32> = seekers
+        .iter()
+        .filter_map(|unit| map.component(unit.tile))
+        .collect();
+    grounds.sort_unstable();
+    grounds.dedup();
+    let (width, height) = map.size();
+    for ground in grounds {
+        let units: Vec<UnitId> = seekers
+            .iter()
+            .filter(|unit| map.component(unit.tile) == Some(ground))
+            .map(|unit| unit.id)
+            .collect();
+        let goal = (0..height)
+            .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
+            .filter(|tile| map.component(*tile) == Some(ground) && !observation.explored(*tile))
+            .min_by_key(|tile| frame.rank(frame.home, doubled(*tile)));
+        let Some(goal) = goal else {
+            continue;
+        };
+        if !ledger.order(Command::Run {
+            units,
+            goal,
+            queue: false,
+        }) {
+            return;
+        }
+    }
+}
+
 /// Whether known enemy ground fire covers `source`.
 fn exposed(hazards: &[Hazard], source: TilePos) -> bool {
     let point = doubled(source);
