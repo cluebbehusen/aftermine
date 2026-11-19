@@ -30,7 +30,9 @@ how the game gets balanced.
   seat's starting Foundry: `@DIGIT@` is yours. A frame covers the 2x2 tiles from
   its `E` rightward and down; build the Extractor at the `E`.
 - 20 ticks are one second. You lose when all your Foundries are destroyed, and
-  win when every enemy Foundry is.
+  win when every enemy Foundry is. A Foundry site, or a paid Foundry blueprint
+  on its way, keeps a seat in the match. When the match ends, the final tick
+  reported is one past the tick of the deciding events.
 - Tile coordinates are `x,y` from the top-left corner. Unit positions are in
   tiles.
 
