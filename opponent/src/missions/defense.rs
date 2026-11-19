@@ -271,14 +271,18 @@ impl Missions {
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
             let hunting = matches!(pursuit, Pursuit::Hunt);
+            let short = waits(mission, foundry, have[0], met);
             let (goal, pursuit, gun) = match grounded
                 .filter(|_| hunting && concentrates(difficulty))
-                .filter(|_| waits(mission, foundry, have[0], met))
                 .map(|threat| waiting_post(map, frame, foundry, threat))
             {
-                Some(Some(post)) => (post, Pursuit::Hunt, None),
-                Some(None) => continue,
-                None => (goal, pursuit, gun),
+                Some(Some(post))
+                    if short || scattered(observation, mission, foundry, &recruits, post, met) =>
+                {
+                    (post, Pursuit::Hunt, None)
+                }
+                Some(None) if short => continue,
+                _ => (goal, pursuit, gun),
             };
 
             let Some(index) = index else {
@@ -448,11 +452,45 @@ fn dispatch(
 /// `foundry` rather than meet a ground force worth `met`: short of it, or
 /// once out at it, short of half of it.
 fn waits(mission: Option<&Mission>, foundry: &BuildingObs, have: u64, met: u64) -> bool {
-    let out = mission.is_some_and(|mission| {
+    have < if out(mission, foundry) { met / 2 } else { met }
+}
+
+/// Whether `mission`'s defenders have gone out from beside `foundry`.
+fn out(mission: Option<&Mission>, foundry: &BuildingObs) -> bool {
+    mission.is_some_and(|mission| {
         !mission.units.is_empty()
             && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
-    });
-    have < if out { met / 2 } else { met }
+    })
+}
+
+/// Tiles from the waiting post within which a defender counts as gathered.
+const GATHERED: i32 = 3;
+
+/// Whether a defense that has not yet gone out from `foundry` must still
+/// gather at `post` before it does: its members and `recruits` within
+/// [`GATHERED`] tiles of the post are worth less against the ground than the
+/// force they must meet, `met`. Sent out from wherever they stand, they would
+/// meet it one by one.
+fn scattered(
+    observation: &ObservationData,
+    mission: Option<&Mission>,
+    foundry: &BuildingObs,
+    recruits: &[UnitId],
+    post: TilePos,
+    met: u64,
+) -> bool {
+    if out(mission, foundry) {
+        return false;
+    }
+    let gathered: u64 = mission
+        .map_or(&[][..], |mission| &mission.units[..])
+        .iter()
+        .chain(recruits)
+        .filter_map(|id| mine(observation, *id))
+        .filter(|unit| hits(unit, Domain::Ground) && unit.tile.chebyshev(post) <= GATHERED)
+        .map(value)
+        .sum();
+    gathered < met
 }
 
 /// Where defenders short of a ground force wait: beside `foundry` on its
