@@ -159,4 +159,20 @@ fn only_a_siege_with_nothing_armed_in_it_is_unarmed() {
         ..Siege::default()
     };
     assert!(!unseen.unarmed_only(), "a gun out of sight");
+    let charge = site(BuildingKind::ScuttleCharge);
+    let mined = Siege {
+        strays: vec![&harvester],
+        batteries: vec![(&charge, beside)],
+        ..Siege::default()
+    };
+    assert!(!mined.unarmed_only(), "a mine beside the builder");
+    let left = Siege {
+        strays: vec![&harvester],
+        armed: true,
+        ..Siege::default()
+    };
+    assert!(
+        !left.unarmed_only(),
+        "a gun left to production or shelling from out of sight"
+    );
 }
