@@ -90,7 +90,10 @@ fn the_map_draws_remembered_scrap_and_never_the_live_ground() {
 
 #[test]
 fn orders_read_as_a_tag_and_fields() {
-    let tracks = Tracks::new();
+    let tracks = Tracks {
+        contacts: BTreeMap::new(),
+        buildings: &[],
+    };
     assert_eq!(
         flatten(
             &serde_json::json!({"order": "harvest", "node": {"x": 4, "y": 3}}),
@@ -135,7 +138,11 @@ fn an_attack_names_its_target_as_the_seat_knows_it() {
         visible_unit: None,
         ..seen.clone()
     };
-    let tracks: Tracks = [(126, &seen), (127, &dark)].into_iter().collect();
+    let (_, view) = opening();
+    let tracks = Tracks {
+        contacts: [(126, &seen), (127, &dark)].into_iter().collect(),
+        buildings: &view.buildings,
+    };
     let attack = |target| {
         compact(
             &Order::Attack {
@@ -156,7 +163,7 @@ fn an_attack_names_its_target_as_the_seat_knows_it() {
     );
     assert_eq!(
         attack(AttackTarget::Contact(ContactId(9))),
-        "attack target=a lost contact"
+        "attack target=a contact no longer tracked"
     );
     assert_eq!(
         attack(AttackTarget::RememberedBuilding(
@@ -167,5 +174,88 @@ fn an_attack_names_its_target_as_the_seat_knows_it() {
             }
         )),
         "attack target=remembered turret at (21,9)"
+    );
+    let foundry = &view.buildings[0];
+    assert_eq!(
+        attack(AttackTarget::RememberedBuilding(
+            aftermine_sim::RememberedBuilding {
+                owner: aftermine_sim::PlayerId(foundry.player),
+                building_kind: foundry.kind,
+                anchor: TilePos::new(foundry.anchor[0], foundry.anchor[1]),
+            }
+        )),
+        format!(
+            "attack target=structure {} {} at ({},{})",
+            foundry.id,
+            foundry.kind.tier_name(foundry.tier),
+            foundry.anchor[0],
+            foundry.anchor[1]
+        ),
+        "a structure in sight is named, not remembered"
+    );
+}
+
+#[test]
+fn an_advance_reads_as_what_the_seat_saw_happen() {
+    use aftermine_protocol::SeenEvent;
+    use aftermine_sim::{BuildingId, BuildingKind, Event, GameResult, UnitId, UnitKind};
+    use chassis::fx::{Fx, Vec2Fx};
+    let at = |x: i32, y: i32| Vec2Fx::new(Fx::from_num(x), Fx::from_num(y));
+    let view = PlayedView {
+        player: PlayerId(0),
+        team: 0,
+        ticks: 1200,
+        tick: 2400,
+        income: 300,
+        log: vec![
+            SeenEvent {
+                tick: 1300,
+                event: Event::UnitDied {
+                    unit: UnitId(3),
+                    kind: UnitKind::Harvester,
+                    player: PlayerId(0),
+                    pos: at(10, 4),
+                    grounded: true,
+                },
+                note: None,
+            },
+            SeenEvent {
+                tick: 2399,
+                event: Event::BuildingDestroyed {
+                    building: BuildingId(1),
+                    kind: BuildingKind::Foundry,
+                    player: PlayerId(1),
+                    tier: 0,
+                    pos: at(53, 39),
+                },
+                note: None,
+            },
+            SeenEvent {
+                tick: 2399,
+                event: Event::GameOver {
+                    result: GameResult::Victory { team: 0 },
+                },
+                note: None,
+            },
+        ],
+        result: Some(GameResult::Victory { team: 0 }),
+        tick_limit: Some(24_000),
+    };
+    let text = played(&view);
+    assert!(
+        text.starts_with("ADVANCED 1200 ticks to 2400 (2:00) | income 300 scrap, 300 a minute"),
+        "{text}"
+    );
+    assert!(
+        text.contains("1300 (1:05) your harvester 3 died at (10,4)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("seat 1's foundry 1 was destroyed at (53,39)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("MATCH OVER at tick 2400 (2:00): you won"),
+        "{text}"
     );
 }

@@ -154,7 +154,7 @@ fn seating_bots_around_a_player_leaves_that_seat_alone() {
     let mut scenario = Scenario::skirmish();
     seat_bots_around(
         &mut scenario,
-        PlayerId(0),
+        &[PlayerId(0)],
         BotDifficulty::Prime,
         BotStance::Aggressive,
         40,
@@ -176,7 +176,7 @@ fn seating_bots_around_a_player_leaves_that_seat_alone() {
     assert!(
         seat_bots_around(
             &mut scenario,
-            PlayerId(9),
+            &[PlayerId(9)],
             BotDifficulty::Prime,
             BotStance::Balanced,
             0

@@ -762,7 +762,7 @@ fn line(out: &mut String, group: &str, tally: &Tally, report: &ComparisonReport)
 
 /// The 95% Wilson score interval for `wins` of `n`, which stays inside
 /// 0..1 and remains accurate at small counts.
-fn wilson(wins: u32, n: u32) -> [f64; 2] {
+pub(crate) fn wilson(wins: u32, n: u32) -> [f64; 2] {
     const Z: f64 = 1.959_963_984_540_054;
     let n = f64::from(n);
     let p = f64::from(wins) / n;

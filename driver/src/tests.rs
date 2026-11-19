@@ -156,3 +156,49 @@ fn profile_shell_parses_an_exact_replay_window() {
     assert_eq!(speed, 8.0);
     assert!(!dev);
 }
+
+#[test]
+fn bot_gauntlet_takes_families_maps_and_a_seed_range() {
+    let cli = Cli::try_parse_from([
+        "aftermine-driver",
+        "bot-gauntlet",
+        "--families",
+        "tuning,ball-rush",
+        "--maps",
+        "skirmish",
+        "--seeds",
+        "3..7",
+    ])
+    .expect("bot-gauntlet parses");
+    let Cmd::BotGauntlet {
+        families,
+        seeds,
+        tick_limit,
+        difficulties,
+        ..
+    } = cli.cmd
+    else {
+        panic!("bot-gauntlet parsed as another command")
+    };
+    assert_eq!(families, ["tuning", "ball-rush"]);
+    assert_eq!((seeds, tick_limit), (3..7, 24_000));
+    assert_eq!(
+        difficulties,
+        [aftermine_sim::scenario::BotDifficulty::Prime]
+    );
+    for refused in ["7..3", "4..4", "a..b", "5"] {
+        assert!(
+            !parses(&[
+                "bot-gauntlet",
+                "--families",
+                "held-army",
+                "--maps",
+                "skirmish",
+                "--seeds",
+                refused,
+            ]),
+            "{refused}"
+        );
+    }
+    assert!(!parses(&["bot-gauntlet", "--maps", "skirmish"]));
+}
