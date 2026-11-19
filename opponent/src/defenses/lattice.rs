@@ -30,7 +30,9 @@ impl Guard<'_> {
         let kind = BuildingKind::Lattice;
         let (expected, every_asset, share) = match spire_threat(observation) {
             SpireThreat::None => return None,
-            SpireThreat::Capable { signals } => (1, signals >= SPIRE_SIGNALS, signals),
+            // Tech alone guards only the most valuable base: a Spire seen
+            // going up leaves time to guard the rest and load interceptors.
+            SpireThreat::Capable { signals } => (1, false, signals),
             SpireThreat::Known(spires) => (spires, true, SPIRE_SIGNALS),
         };
         if !buildable(observation, kind) {
@@ -140,6 +142,33 @@ impl Guard<'_> {
         };
         site_among(&near).or_else(|| site_among(&rest))
     }
+}
+
+/// The command that sets the seat's built Lattices to order interceptors on
+/// their own once an enemy Spire is known, and not before, if any differs.
+/// A Lattice raised on Spire tech alone waits empty: interceptors build faster
+/// than a seen Spire can load and fire its first warhead.
+pub(crate) fn autofill(observation: &ObservationData) -> Option<aftermine_sim::Command> {
+    let wanted = matches!(spire_threat(observation), SpireThreat::Known(_));
+    let mut buildings: Vec<aftermine_sim::BuildingId> = observation
+        .my_buildings
+        .iter()
+        .filter(|building| building.kind == BuildingKind::Lattice && building.built)
+        .filter(|building| {
+            observation
+                .magazines
+                .iter()
+                .find(|magazine| magazine.building == building.id)
+                .and_then(|magazine| magazine.detail)
+                .is_some_and(|detail| detail.autofill != wanted)
+        })
+        .map(|building| building.id)
+        .collect();
+    buildings.sort_unstable();
+    (!buildings.is_empty()).then_some(aftermine_sim::Command::SetAutofill {
+        buildings,
+        enabled: wanted,
+    })
 }
 
 /// Centres of the enemy Spires the seat knows, seen or remembered, in
