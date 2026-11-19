@@ -1424,7 +1424,8 @@ fn hits(kind: UnitKind, domain: Domain) -> bool {
 
 /// How well `fighter` answers `short`: attacker value it destroys per scrap
 /// against the attackers the shortfall counts in a domain still short, or its
-/// price when it counts none there.
+/// price when it counts none there; for a seat that does not read the
+/// attackers, how cheap it is.
 pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
     let short_in = |attacker: UnitKind| match attacker.stats().domain {
         Domain::Ground => short.gap[0] > 0,
@@ -1435,6 +1436,11 @@ pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
         .iter()
         .filter(|(attacker, _)| short_in(*attacker))
         .collect();
+    // A seat that judges the threat by its size alone answers with what is
+    // cheapest to throw at it.
+    if !short.read {
+        return 1_000_000 / fighter.cost().max(1);
+    }
     let total: u64 = pressing.iter().map(|(_, value)| *value).sum();
     if total == 0 {
         return fighter.cost();
