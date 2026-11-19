@@ -530,12 +530,8 @@ fn the_least_valuable_of_many_buildings_is_guarded_too() {
     ));
     scenario.units.push(unit(1, UnitKind::Scuttler, 22, 7));
     let state = scenario.build().unwrap();
-    // A rung that reads what the raider is, so the Turret is its answer.
-    let config = BotConfig {
-        difficulty: BotDifficulty::Veteran,
-        ..thrifty()
-    };
-    let commands = seat_with(&scenario, 0, config).act(&state, &mut OwnEvents::default());
+    // Standard reads no raider's kind, and its emergency Turret still goes up.
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
     assert!(
         builds(&commands).iter().any(|(kind, anchor)| {
             *kind == BuildingKind::Turret

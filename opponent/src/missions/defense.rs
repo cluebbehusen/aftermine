@@ -264,6 +264,7 @@ impl Missions {
                     ground: component,
                     gap,
                     attackers: siege.attackers(gap, crate::reads_threats(difficulty)),
+                    read: crate::reads_threats(difficulty),
                 });
             }
             // Guns are reached rather than waited for: they shell from
@@ -366,6 +367,10 @@ pub(crate) struct Shortfall {
     /// value, so what is trained can be what beats them; empty when the
     /// shortfall answers no particular force.
     pub(crate) attackers: Vec<(UnitKind, u64)>,
+    /// Whether the seat reads what the attackers are. One that only judges
+    /// their size keeps no scrap back for a unit answer, so its emergency
+    /// structures go up as before.
+    pub(crate) read: bool,
 }
 
 /// Removes `taken` from the sorted `free`.

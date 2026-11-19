@@ -1383,7 +1383,8 @@ fn an_air_raider_already_answered_does_not_stop_training_for_an_enemy_builder() 
             scenario.units.push(unit(1, UnitKind::Buzzard, 9, 5));
         }
         let state = scenario.build().unwrap();
-        seat(&scenario, 0)
+        // A rung that reads the raiders' kinds.
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime))
             .act(&state, &mut OwnEvents::default())
             .iter()
             .any(|command| {

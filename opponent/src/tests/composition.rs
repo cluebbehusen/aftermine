@@ -917,6 +917,7 @@ fn attackers_in_a_domain_already_covered_do_not_set_the_answer() {
         ground: None,
         gap,
         attackers: vec![(UnitKind::Scuttler, 200), (UnitKind::Buzzard, 120)],
+        read: true,
     };
     // With only the air short, the Scuttlers on the ground don't dilute what
     // a Flakhound is worth against the Buzzard.

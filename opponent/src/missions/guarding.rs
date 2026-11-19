@@ -180,6 +180,7 @@ impl Missions {
                     ground,
                     gap,
                     attackers: Vec::new(),
+                    read: true,
                 });
             }
             kept.sort_unstable();

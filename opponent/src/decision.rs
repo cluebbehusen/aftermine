@@ -1512,6 +1512,7 @@ fn awaited(
     let reach = u64::from(bank) + soon(income);
     shortfalls
         .iter()
+        .filter(|short| short.read)
         .filter_map(|short| best_answer(observation, map, producers, short, reach))
         .filter_map(|(fighter, _)| match fighter {
             Fighter::Unit(kind) => Some(kind.stats().cost),
