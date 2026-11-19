@@ -38,7 +38,14 @@ pub(super) enum Intent {
 pub(super) struct Orders {
     last: BTreeMap<UnitId, (Intent, u64)>,
     rallies: BTreeMap<BuildingId, TilePos>,
+    /// Anchors the challenger ordered a structure at, with the tick: one
+    /// whose order the game refused, for what the seat could not see there,
+    /// is passed over for a while instead of tried again every decision.
+    placed: Vec<(TilePos, u64)>,
 }
+
+/// Ticks a site the challenger ordered and never saw go up is passed over.
+const PLACE_RETRY_TICKS: u64 = 300;
 
 impl Orders {
     /// Forgets units and buildings the seat no longer has.
@@ -47,6 +54,8 @@ impl Orders {
             .retain(|id, _| obs.my_units.iter().any(|unit| unit.id == *id));
         self.rallies
             .retain(|id, _| obs.my_buildings.iter().any(|b| b.id == *id));
+        self.placed
+            .retain(|(_, at)| obs.tick < at + PLACE_RETRY_TICKS);
     }
 
     /// The order last given to `unit`.
@@ -560,7 +569,7 @@ impl<'a> Turn<'a> {
             .copied()
             .filter(|id| !self.busy(*id))
             .collect();
-        if builders.is_empty() || !self.room() {
+        if builders.is_empty() || !self.room() || self.tried(anchor) {
             return false;
         }
         self.push(Command::Build {
@@ -574,7 +583,16 @@ impl<'a> Turn<'a> {
             self.ordered.insert(id);
             self.orders.last.insert(id, (Intent::Build, self.tick));
         }
+        self.orders.placed.push((anchor, self.tick));
         true
+    }
+
+    /// Whether the challenger ordered work at `anchor` a moment ago: a site
+    /// still not up then was refused, for what the seat could not see.
+    fn tried(&self, anchor: TilePos) -> bool {
+        self.orders.placed.iter().any(|(at, tick)| {
+            *at == anchor && self.tick > *tick && self.tick < tick + PLACE_RETRY_TICKS
+        })
     }
 
     /// Gives every own site nobody is working on the free worker nearest
@@ -613,6 +631,7 @@ impl<'a> Turn<'a> {
         });
         self.ordered.insert(builder);
         self.orders.last.insert(builder, (Intent::Build, self.tick));
+        self.orders.placed.push((anchor, self.tick));
     }
 
     /// The free ground for `kind` nearest `near` within `radius` that keeps
@@ -633,7 +652,7 @@ impl<'a> Turn<'a> {
                         continue;
                     }
                     let anchor = near.offset(dx, dy);
-                    if !self.clear_ring(anchor, size) {
+                    if self.tried(anchor) || !self.clear_ring(anchor, size) {
                         continue;
                     }
                     let tiles: Vec<TilePos> = footprint(anchor, size).collect();
