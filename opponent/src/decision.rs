@@ -1504,11 +1504,11 @@ fn best_answer(
         .max_by_key(|(fighter, score)| (*score, fighter.cost()))
 }
 
-/// Makes each shortfall that nothing the seat can make answers alone, by
-/// paying back half its price at any price, one the seat meets with its
+/// Makes each shortfall that no unit the seat's finished producers train
+/// answers alone, by paying back half its price, one the seat meets with its
 /// cheapest unit that helps: what one fighter cannot beat, several thrown at
-/// it together may, and buying nothing loses for certain. An answer the bank
-/// only has to grow into is still saved for.
+/// it together may, and a structure that would takes a builder the attackers
+/// can shoot. A unit answer the bank only has to grow into is still saved for.
 fn swarm(
     observation: &ObservationData,
     map: &MapModel,
@@ -1516,10 +1516,16 @@ fn swarm(
     shortfalls: &mut [Shortfall],
 ) {
     for short in shortfalls.iter_mut() {
-        if short.read
-            && !short.attackers.is_empty()
-            && best_answer(observation, map, producers, short, u64::MAX).is_none()
-        {
+        let answered = producers
+            .iter()
+            .filter(|producer| producer.building.built)
+            .any(|producer| {
+                let at = map.component(producer.building.anchor);
+                composition::producible(observation, producer.building.kind).any(|kind| {
+                    helps(kind, at, short) && answer(Fighter::Unit(kind), short) >= PAYS_BACK
+                })
+            });
+        if short.read && !short.attackers.is_empty() && !answered {
             short.read = false;
             short.attackers.clear();
         }
