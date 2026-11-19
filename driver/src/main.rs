@@ -221,7 +221,8 @@ enum Cmd {
     BotGauntlet {
         /// Families, comma-separated: forward-fabricator, scuttler-raid,
         /// lancer-harass, held-army, buzzard-harass, bombard-siege,
-        /// ball-rush, kestrel-push, or "tuning" or "held-out".
+        /// ball-rush, kestrel-push, novice, or "tuning", "held-out" or
+        /// "yardstick".
         #[arg(long, value_delimiter = ',', required = true)]
         families: Vec<String>,
         /// Two-seat maps, comma-separated.

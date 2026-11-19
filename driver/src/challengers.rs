@@ -19,6 +19,7 @@ mod held_army;
 mod kestrel_push;
 mod lancer_harass;
 mod map;
+mod novice;
 mod scuttler_raid;
 mod tactics;
 mod turn;
@@ -60,11 +61,14 @@ pub enum Family {
     BallRush,
     /// A Lancer push spotted by a Kestrel at about five minutes.
     KestrelPush,
+    /// A new player: a thin, slow economy, a small mixed army and one late
+    /// attack. The lower rungs' yardstick, never a tuning target.
+    Novice,
 }
 
 impl Family {
     /// Every family, tuning families first.
-    pub const ALL: [Family; 8] = [
+    pub const ALL: [Family; 9] = [
         Family::ForwardFabricator,
         Family::ScuttlerRaid,
         Family::LancerHarass,
@@ -73,6 +77,7 @@ impl Family {
         Family::BombardSiege,
         Family::BallRush,
         Family::KestrelPush,
+        Family::Novice,
     ];
 
     /// The families the bot may be tuned against.
@@ -88,6 +93,9 @@ impl Family {
     /// The families kept out of tuning, to check that a change generalizes.
     pub const HELD_OUT: [Family; 2] = [Family::BallRush, Family::KestrelPush];
 
+    /// Weaker players the lower rungs are measured against, never tuned on.
+    pub const YARDSTICK: [Family; 1] = [Family::Novice];
+
     /// The kebab-case name.
     pub fn name(self) -> &'static str {
         match self {
@@ -99,6 +107,7 @@ impl Family {
             Family::BombardSiege => "bombard-siege",
             Family::BallRush => "ball-rush",
             Family::KestrelPush => "kestrel-push",
+            Family::Novice => "novice",
         }
     }
 
@@ -139,6 +148,7 @@ enum Plan {
     BombardSiege(bombard_siege::Params),
     BallRush(ball_rush::Params),
     KestrelPush(kestrel_push::Params),
+    Novice(novice::Params),
 }
 
 /// The small phase memory a plan keeps between decisions. Everything else
@@ -196,6 +206,7 @@ impl Challenger {
             Family::BombardSiege => Plan::BombardSiege(bombard_siege::Params::draw(&mut rng)),
             Family::BallRush => Plan::BallRush(ball_rush::Params::draw(&mut rng)),
             Family::KestrelPush => Plan::KestrelPush(kestrel_push::Params::draw(&mut rng)),
+            Family::Novice => Plan::Novice(novice::Params::draw(&mut rng)),
         };
         Ok(Self {
             family,
@@ -235,6 +246,7 @@ impl Challenger {
             Plan::BombardSiege(p) => format!("{p:?}"),
             Plan::BallRush(p) => format!("{p:?}"),
             Plan::KestrelPush(p) => format!("{p:?}"),
+            Plan::Novice(p) => format!("{p:?}"),
         }
     }
 
@@ -257,6 +269,7 @@ impl Challenger {
             Plan::BombardSiege(p) => bombard_siege::decide(&mut turn, p, memory),
             Plan::BallRush(p) => ball_rush::decide(&mut turn, p, memory),
             Plan::KestrelPush(p) => kestrel_push::decide(&mut turn, p, memory),
+            Plan::Novice(p) => novice::decide(&mut turn, p, memory),
         }
         turn.harvest_idle();
         turn.finish()
