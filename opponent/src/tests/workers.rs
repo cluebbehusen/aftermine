@@ -1084,3 +1084,38 @@ fn known_scrap_under_fire_is_waited_out_not_left() {
         "a Harvester that knows of scrap past the Turret waits rather than wanders"
     );
 }
+
+#[test]
+fn the_upper_rungs_pull_a_home_harvester_out_of_a_raiders_reach() {
+    let ran = |difficulty: BotDifficulty| {
+        let mut scenario = fielded((40, 20));
+        scenario.units.push(harvester(0, 6, 10));
+        scenario.units.push(unit(1, UnitKind::Lancer, 10, 10));
+        let state = scenario.build().unwrap();
+        let worker = at(&state, 6, 10);
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        assert!(
+            observation
+                .enemy_units
+                .iter()
+                .any(|enemy| enemy.kind == UnitKind::Lancer),
+            "premise: West sees the Lancer"
+        );
+        let mut opponent = seat_with(&scenario, 0, rung(difficulty));
+        runs(&opponent.act(&state, &mut OwnEvents::default()))
+            .into_iter()
+            .find(|(units, _)| units.contains(&worker))
+            .map(|(_, goal)| goal)
+    };
+    let refuge = ran(BotDifficulty::Prime).expect("Prime pulls it out");
+    let lancer = TilePos::new(10, 10);
+    assert!(
+        refuge.chebyshev(lancer) > 7,
+        "to a refuge out of the Lancer's reach: {refuge:?}"
+    );
+    assert_eq!(
+        ran(BotDifficulty::Standard),
+        None,
+        "Standard leaves it to the defense"
+    );
+}
