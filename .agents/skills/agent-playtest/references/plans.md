@@ -69,3 +69,11 @@ badly, and use that. If your first plan fails, change it.
 Play the way a typical decent player would: a sound economy, a mixed army, an
 attack when you feel ahead. Do not hunt for tricks or exploit exact numbers;
 make the plays a person who has played a few matches would make.
+
+## Fortified tech
+
+Play a patient game and never rush. Build a strong economy and fortify your main
+base early: a Bastion, about three Turrets in front, two Flak Turrets, an Array
+and a Repair Bay, upgraded as you can afford it. Expand behind your defenses,
+tech toward the strongest units and structures, and attack only when you are
+clearly ahead, with a large mixed army.

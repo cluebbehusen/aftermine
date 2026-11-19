@@ -15,9 +15,11 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
 `aftermine-kit`, shared with the shell. The driver adds:
 
 - `client` speaks the debug protocol to a running shell, and `session` serves it
-  without a window. A session started with `--player` is a playtest: one seat
-  plays against bots, and the session answers only what that seat could know and
-  refuses an order the game would reject, with the game's reason.
+  without a window. A session started with `--player` is a playtest: its seats
+  play against bots or each other, one client per seat, and the session answers
+  only what a seat could know and refuses an order the game would reject, with
+  the game's reason. With several seats the clock moves once every seat has
+  asked it to, by the shortest step.
 - `digest` (`live digest`) prints a seat's fog view as compact text, with an
   optional map.
 - `rules` (`rules`) prints every Roster page as plain text, with how often each
