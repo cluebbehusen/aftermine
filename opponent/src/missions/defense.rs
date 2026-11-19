@@ -460,13 +460,16 @@ impl Missions {
         } else if resend {
             sent.extend_from_slice(&self.list[index].units);
         } else if onward {
-            // Going on together: the reserve at the post goes with them.
+            // Going on together: the reserve at the post goes with them, and
+            // with recruits so does the front, under one order, so the march
+            // brings the walkers in together; those fighting are not held.
+            let all = !recruits.is_empty();
             sent.extend(
                 self.list[index]
                     .units
                     .iter()
                     .copied()
-                    .filter(|id| !front.contains(id)),
+                    .filter(|id| all || !front.contains(id)),
             );
         }
         (sent, waiting_ordered)

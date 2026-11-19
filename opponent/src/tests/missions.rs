@@ -1412,7 +1412,7 @@ fn a_defense_out_short_of_its_attackers_holds_its_recruit_at_the_post() {
     // Sentinels already out at six raiders hold their ground. Four and a
     // fifth would still be short, so the recruit waits beside the Foundry
     // instead of walking into the fight alone; five and a sixth match them,
-    // so it goes on.
+    // so it goes on, under one order with the front so they march together.
     let raiders: Vec<(UnitKind, i32, i32)> = (4..=6)
         .flat_map(|y| [(UnitKind::Sentinel, 9, y), (UnitKind::Sentinel, 10, y)])
         .collect();
@@ -1453,17 +1453,22 @@ fn a_defense_out_short_of_its_attackers_holds_its_recruit_at_the_post() {
         hunts(&commands)
             .into_iter()
             .find(|(units, _)| units.contains(&recruit))
-            .map(|(_, goal)| beside.contains(&goal))
+            .map(|(units, goal)| {
+                (
+                    beside.contains(&goal),
+                    members.iter().all(|member| units.contains(member)),
+                )
+            })
     };
     assert_eq!(
-        recruit_waits(&[(8, 7), (8, 8), (9, 8), (10, 8)]),
+        recruit_waits(&[(8, 7), (8, 8), (9, 8), (10, 8)]).map(|(post, _)| post),
         Some(true),
         "short together: the recruit waits at the post"
     );
     assert_eq!(
         recruit_waits(&[(8, 7), (8, 8), (9, 8), (10, 8), (11, 8)]),
-        Some(false),
-        "level together: it goes on"
+        Some((false, true)),
+        "level together: it goes on with the front"
     );
 }
 
