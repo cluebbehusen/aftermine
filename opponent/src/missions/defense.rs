@@ -258,7 +258,9 @@ impl Missions {
                 )
             });
             let mut recruits = fill(candidates, need, &mut have, room);
-            let gap = [0, 1].map(|index| pressing[index].saturating_sub(have[index]));
+            // Unarmed threats among the buildings and guns count as well as
+            // armed attackers: a seat with no army must train one for them.
+            let gap = [0, 1].map(|index| need[index].saturating_sub(have[index]));
             if *own && gap != [0, 0] {
                 shortfalls.push(Shortfall {
                     ground: component,
@@ -520,11 +522,19 @@ impl Siege<'_> {
     /// and the buildings among the batteries that carry no gun. Defenders
     /// worth as much go after them.
     fn unarmed(&self) -> [u64; 2] {
+        // An enemy producer going up among the seat's buildings is worth its
+        // whole price, whatever its health: units will come out of it.
         let raised: u64 = self
             .batteries
             .iter()
             .filter(|(building, _)| building.kind.tier_stats(building.tier).weapons.is_empty())
-            .map(|(building, _)| building_value(building))
+            .map(|(building, _)| {
+                if building.kind.base_stats().produces.is_empty() {
+                    building_value(building)
+                } else {
+                    u64::from(building.kind.invested_cost(building.tier))
+                }
+            })
             .sum();
         [Domain::Ground, Domain::Air].map(|domain| {
             let strays: u64 = self
