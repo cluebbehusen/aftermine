@@ -856,3 +856,34 @@ fn an_enemy_that_cannot_hurt_a_building_leaves_a_frame_wanted() {
     assert!(!wanted(UnitKind::Sentinel), "premise");
     assert!(wanted(UnitKind::Flakhound));
 }
+
+#[test]
+fn a_secure_seat_scores_a_site_by_the_support_its_remote_extractor_would_get() {
+    let frame = TilePos::new(16, 9);
+    let mut scenario = frontier(0);
+    scenario.map[9].replace_range(16..18, "E.");
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Extractor,
+        x: frame.x,
+        y: frame.y,
+    });
+    let model = map(&scenario);
+    let (index, _) = site_with(&model, TilePos::new(12, 10));
+    let score = |scenario: &Scenario, secure: bool| {
+        let state = scenario.build().unwrap();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        expansion::candidates(&observation, &model, &Memory::default(), (50, secure), 0)
+            .into_iter()
+            .find(|(investment, _)| {
+                *investment == Investment::Expansion(u16::try_from(index).unwrap())
+            })
+            .map(|(_, score)| score)
+    };
+    let insecure = score(&scenario, false).expect("the site is a candidate");
+    let secure = score(&scenario, true).expect("the site is a candidate");
+    assert!(
+        secure > insecure,
+        "support for the stranded Extractor counts once the army holds: {secure} vs {insecure}"
+    );
+}

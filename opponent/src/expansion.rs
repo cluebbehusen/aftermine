@@ -77,7 +77,11 @@ pub(crate) fn candidates(
         } else {
             lift_cost(observation)
         };
-        if secure && let Some(anchor) = anchors(map, observation.me, site).first() {
+        // Scored at the anchor a Foundry would go up at: the first not failed.
+        let open = anchors(map, observation.me, site)
+            .into_iter()
+            .find(|anchor| !memory.failed(BuildingKind::Foundry, *anchor, observation.tick));
+        if secure && let Some(anchor) = open.as_ref() {
             score = score.max(i64::from(support_payback(
                 observation,
                 *anchor,
@@ -136,6 +140,12 @@ fn support_payback(observation: &ObservationData, anchor: TilePos, lift: u32, gr
                 && building.tier == 0
                 && !supported(observation, building.anchor)
                 && foundry_supports(anchor, building.anchor)
+                // A Foundry already going up in reach will support it.
+                && !observation.my_buildings.iter().any(|site| {
+                    site.kind == BuildingKind::Foundry
+                        && !site.built
+                        && foundry_supports(site.anchor, building.anchor)
+                })
         })
         .count();
     let remote = u64::try_from(remote).expect("building counts fit in u64");

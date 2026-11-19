@@ -235,7 +235,11 @@ pub(crate) fn candidates(situation: &Situation<'_>) -> Vec<Candidate> {
         .memory
         .units()
         .iter()
-        .filter(|seen| !seen.kind.stats().weapons.is_empty())
+        .filter(|seen| {
+            let stats = seen.kind.stats();
+            // Drones come and go from their host, as the own count leaves them.
+            (!stats.weapons.is_empty() || stats.demolition.is_some()) && !stats.docks()
+        })
         .map(|seen| seen.value(now))
         .sum();
     let secure = !situation.exposed && crate::decision::army(observation) >= known;
