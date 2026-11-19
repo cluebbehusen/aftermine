@@ -355,7 +355,8 @@ fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
     };
     let scenario = threatened(400);
     let state = scenario.build().unwrap();
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let commands =
+        seat_with(&scenario, 0, reading_thrifty()).act(&state, &mut OwnEvents::default());
     assert!(
         commands.iter().all(|command| !matches!(
             command.command,
@@ -368,7 +369,7 @@ fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
     let state = scenario.build().unwrap();
     let mut calm = scenario.clone();
     calm.units.pop();
-    let (quiet, trace) = seat_with(&calm, 0, thrifty())
+    let (quiet, trace) = seat_with(&calm, 0, reading_thrifty())
         .act_traced(&calm.build().unwrap(), &mut OwnEvents::default());
     assert!(trace.unwrap().protected > 0, "premise: scrap is protected");
     assert!(trains(&quiet).is_empty(), "premise");
@@ -383,12 +384,14 @@ fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
             )
         })
     };
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let commands =
+        seat_with(&scenario, 0, reading_thrifty()).act(&state, &mut OwnEvents::default());
     assert!(turret(&commands), "an emergency Turret first: {commands:?}");
 
     let scenario = threatened(200);
     let state = scenario.build().unwrap();
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let commands =
+        seat_with(&scenario, 0, reading_thrifty()).act(&state, &mut OwnEvents::default());
     let foundry = foundries(&state, PlayerId(0))[0];
     assert!(turret(&commands), "{commands:?}");
     assert_eq!(trains(&commands), [(foundry, UnitKind::Sentinel)]);
@@ -1367,5 +1370,39 @@ fn an_enemy_building_raised_among_the_seat_s_buildings_is_attacked() {
     assert!(
         matches!(&sent[..], [(units, goal)] if !units.is_empty() && beside.contains(goal)),
         "{commands:?}"
+    );
+}
+
+#[test]
+fn an_air_raider_already_answered_does_not_stop_training_for_an_enemy_builder() {
+    let trains = |buzzard: bool| {
+        let mut scenario = arena(40);
+        scenario.units.extend([
+            unit(0, UnitKind::Flakhound, 5, 7),
+            unit(0, UnitKind::Flakhound, 5, 8),
+            unit(1, UnitKind::Harvester, 8, 3),
+        ]);
+        if buzzard {
+            scenario.units.push(unit(1, UnitKind::Buzzard, 9, 5));
+        }
+        let state = scenario.build().unwrap();
+        // A rung that reads the raiders' kinds.
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+            .act(&state, &mut OwnEvents::default())
+            .iter()
+            .any(|command| {
+                matches!(
+                    command.command,
+                    Command::Train {
+                        kind: UnitKind::Scuttler,
+                        ..
+                    }
+                )
+            })
+    };
+    assert!(trains(false), "premise: an enemy builder draws a Scuttler");
+    assert!(
+        trains(true),
+        "Flakhounds that cover the Buzzard leave the ground shortfall to answer"
     );
 }

@@ -30,7 +30,9 @@ impl Guard<'_> {
         let kind = BuildingKind::Lattice;
         let (expected, every_asset, share) = match spire_threat(observation) {
             SpireThreat::None => return None,
-            SpireThreat::Capable { signals } => (1, signals >= SPIRE_SIGNALS, signals),
+            // Tech alone guards only the most valuable base: a Spire seen
+            // going up leaves time to guard the rest.
+            SpireThreat::Capable { signals } => (1, false, signals),
             SpireThreat::Known(spires) => (spires, true, SPIRE_SIGNALS),
         };
         if !buildable(observation, kind) {
@@ -140,6 +142,45 @@ impl Guard<'_> {
         };
         site_among(&near).or_else(|| site_among(&rest))
     }
+}
+
+/// The commands that set each of the seat's Lattices to order interceptors
+/// on its own: always once an enemy Spire is known, and otherwise only while
+/// it holds no interceptor, loaded or ordered. One round stops the first strike
+/// of a Spire the seat never saw, which flies faster than an interceptor
+/// builds; a Spire seen going up leaves time to fill the rest.
+pub(crate) fn autofill(observation: &ObservationData) -> Vec<aftermine_sim::Command> {
+    let known = matches!(spire_threat(observation), SpireThreat::Known(_));
+    let mut switch: [Vec<aftermine_sim::BuildingId>; 2] = [Vec::new(), Vec::new()];
+    for lattice in observation
+        .my_buildings
+        .iter()
+        .filter(|building| building.kind == BuildingKind::Lattice)
+    {
+        let Some(magazine) = observation
+            .magazines
+            .iter()
+            .find(|magazine| magazine.building == lattice.id)
+        else {
+            continue;
+        };
+        let Some(detail) = magazine.detail else {
+            continue;
+        };
+        let wanted = known || u16::from(magazine.loaded) + u16::from(detail.ordered) == 0;
+        if detail.autofill != wanted {
+            switch[usize::from(wanted)].push(lattice.id);
+        }
+    }
+    let [off, on] = switch;
+    [(off, false), (on, true)]
+        .into_iter()
+        .filter(|(buildings, _)| !buildings.is_empty())
+        .map(|(mut buildings, enabled)| {
+            buildings.sort_unstable();
+            aftermine_sim::Command::SetAutofill { buildings, enabled }
+        })
+        .collect()
 }
 
 /// Centres of the enemy Spires the seat knows, seen or remembered, in

@@ -78,3 +78,47 @@ fn units_that_cannot_leave_their_ground_are_remembered_longer() {
     memory.observe_stranded(&observation, stranded);
     assert!(remembered(&memory).is_empty());
 }
+
+#[test]
+fn a_frame_whose_extractor_vanished_is_remembered_as_failed() {
+    use aftermine_sim::{PlayerId, Scenario};
+    let state = Scenario::skirmish().build().unwrap();
+    let mut observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let mut extractor = observation.my_buildings[0].clone();
+    extractor.kind = BuildingKind::Extractor;
+    let (kept, lost) = (TilePos::new(3, 3), TilePos::new(9, 9));
+    observation.my_buildings = [kept, lost]
+        .map(|anchor| {
+            let mut building = extractor.clone();
+            building.anchor = anchor;
+            building
+        })
+        .to_vec();
+    observation.tick = 100;
+    let mut memory = Memory::default();
+    memory.lost_extractors(&observation);
+    assert!(!memory.failed(BuildingKind::Extractor, lost, 100));
+
+    observation
+        .my_buildings
+        .retain(|building| building.anchor == kept);
+    observation.tick = 112;
+    memory.lost_extractors(&observation);
+    assert!(memory.failed(BuildingKind::Extractor, lost, 112));
+    assert!(!memory.failed(BuildingKind::Extractor, kept, 112));
+    assert_eq!(memory.validate(112, 16, 16, 0), Ok(()));
+
+    memory.extractors = vec![lost, kept];
+    assert!(
+        memory.validate(112, 16, 16, 0).is_err(),
+        "own Extractors out of order"
+    );
+    memory.extractors = vec![TilePos::new(20, 0)];
+    assert!(
+        memory.validate(112, 16, 16, 0).is_err(),
+        "an own Extractor off the map"
+    );
+    // A seat may own more Extractors than failures are remembered.
+    memory.extractors = (0..300).map(|x| TilePos::new(x * 2, 0)).collect();
+    assert_eq!(memory.validate(112, 600, 2, 0), Ok(()));
+}

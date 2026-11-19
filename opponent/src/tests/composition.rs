@@ -874,3 +874,86 @@ fn only_an_armed_enemy_aircraft_gives_a_sentinel_air_to_cover() {
         "an unarmed scout leaves the line waiting for a Warden"
     );
 }
+
+#[test]
+fn a_defense_short_of_wardens_saves_for_an_answer_rather_than_feed_scuttlers() {
+    let wardens = [(UnitKind::Warden, 7, 4), (UnitKind::Warden, 7, 6)];
+    let trained_at = |difficulty, scrap: u32| {
+        let mut scenario = armed(&wardens, &[]);
+        scenario.players[0].scrap = scrap;
+        let state = scenario.build().unwrap();
+        trains(&seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default()))
+            .into_iter()
+            .map(|(_, kind)| kind)
+            .collect::<Vec<_>>()
+    };
+    let trained = |scrap| trained_at(BotDifficulty::Prime, scrap);
+    // The lowest rung judges the Wardens by their size alone and feeds them
+    // what the bank holds: its readable mistake.
+    let lowest = trained_at(BotDifficulty::Scrapheap, 60);
+    assert!(
+        lowest.contains(&UnitKind::Scuttler),
+        "Scrapheap answers with what it can afford: {lowest:?}"
+    );
+    let poor = trained(60);
+    assert!(
+        !poor.contains(&UnitKind::Scuttler),
+        "a Scuttler only feeds the Wardens: {poor:?}"
+    );
+    let rich = trained(400);
+    assert!(
+        rich.iter()
+            .any(|kind| matches!(kind, UnitKind::Lancer | UnitKind::Warden)),
+        "an answer that outlasts or outranges them: {rich:?}"
+    );
+}
+
+#[test]
+fn attackers_in_a_domain_already_covered_do_not_set_the_answer() {
+    use crate::composition::Fighter;
+    use crate::missions::Shortfall;
+    let flakhound = Fighter::Unit(UnitKind::Flakhound);
+    let both = |gap: [u64; 2]| Shortfall {
+        ground: None,
+        gap,
+        attackers: vec![(UnitKind::Scuttler, 200), (UnitKind::Buzzard, 120)],
+        read: true,
+    };
+    // With only the air short, the Scuttlers on the ground don't dilute what
+    // a Flakhound is worth against the Buzzard.
+    assert_eq!(
+        crate::decision::answer(flakhound, &both([0, 120])),
+        crate::composition::matchup(flakhound, UnitKind::Buzzard)
+    );
+    assert!(
+        crate::decision::answer(flakhound, &both([200, 120]))
+            < crate::decision::answer(flakhound, &both([0, 120]))
+    );
+}
+
+#[test]
+fn a_lone_enemy_builder_draws_the_cheapest_unit_before_general_production() {
+    // An enemy Harvester beside West's Foundry and nothing armed: the defense
+    // trains its cheapest unit at the Foundry before general production takes
+    // it, and an armed raider is weighed for what it is instead.
+    let trained = |raider: bool| {
+        let mut scenario = arena(130);
+        scenario.units.push(harvester(1, 8, 3));
+        if raider {
+            scenario.units.push(unit(1, UnitKind::Scuttler, 8, 4));
+        }
+        let state = scenario.build().unwrap();
+        trains(
+            &seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+                .act(&state, &mut OwnEvents::default()),
+        )
+        .into_iter()
+        .map(|(_, kind)| kind)
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(trained(false).first(), Some(&UnitKind::Scuttler));
+    assert!(
+        !trained(true).contains(&UnitKind::Scuttler),
+        "a Scuttler is no answer to a raider it only feeds"
+    );
+}
