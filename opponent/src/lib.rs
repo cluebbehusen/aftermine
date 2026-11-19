@@ -196,5 +196,13 @@ pub(crate) fn economy(difficulty: BotDifficulty) -> u64 {
     }
 }
 
+/// Whether a short defense weighs what the attackers are, to train what
+/// beats them, or only how much of them there is, training what the bank
+/// holds: Veteran and Prime read them, Standard and Scrapheap don't. A
+/// difficulty limit on estimate accuracy.
+pub(crate) fn reads_threats(difficulty: BotDifficulty) -> bool {
+    matches!(difficulty, BotDifficulty::Veteran | BotDifficulty::Prime)
+}
+
 #[cfg(test)]
 mod tests;
