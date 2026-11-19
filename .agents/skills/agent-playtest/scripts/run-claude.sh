@@ -3,10 +3,11 @@
 #
 # Usage: run-claude.sh <lane-dir> <tick-limit> [resumes] [model]
 #
-# Claude runs in the lane directory with no setting sources but the lane's
-# own, so no user or repository instructions, memory or skills reach the
-# player, and with permission only to run ./play, read the lane's files and
-# edit report.json; anything else is denied without asking. Its events go to
+# Claude runs in the lane directory in safe mode, with no setting sources but
+# the lane's own: no user or repository CLAUDE.md, memory, skills, plugins or
+# hooks reach the player (setting sources alone still load the user's
+# CLAUDE.md). It may only run ./play, read the lane's files and edit
+# report.json; anything else is denied without asking. Its events go to
 # events.jsonl. When it stops while the match is still running, it is resumed
 # with a reminder, at most `resumes` times (default 3).
 set -eu
@@ -21,7 +22,7 @@ play() {
 	prompt=$1
 	shift
 	# shellcheck disable=SC2086 # $model_flag is empty or one flag pair.
-	claude -p "$prompt" $model_flag --setting-sources project --permission-mode dontAsk \
+	claude -p "$prompt" $model_flag --safe-mode --setting-sources project --permission-mode dontAsk \
 		--allowedTools "Bash(./play:*)" "Read(./**)" "Edit(./report.json)" \
 		--output-format stream-json --verbose "$@" </dev/null >>events.jsonl 2>>run.log
 }
