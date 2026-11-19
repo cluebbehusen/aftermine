@@ -1256,6 +1256,86 @@ fn assign_idle(
     }
 }
 
+/// Sends idle, empty workers that nothing employed this decision, on ground
+/// where the seat knows no scrap or wreck at all, each to the nearest tile
+/// its team has never seen there and no known fire covers, one order a
+/// goal. A start with no scrap in sight would otherwise leave them idle until
+/// a scout happens to find some. Runs last, so builders and settlements take
+/// the workers they need first; known scrap under fire is waited out, not
+/// left.
+pub(crate) fn seek(
+    observation: &ObservationData,
+    map: &MapModel,
+    frame: HomeFrame,
+    hazards: &[Hazard],
+    ledger: &mut Ledger,
+) {
+    if !ledger.can_order() {
+        return;
+    }
+    let barren = |ground: u32| {
+        !observation
+            .known_scrap
+            .iter()
+            .chain(&observation.known_wrecks)
+            .any(|(source, _)| map.touches(*source, ground))
+    };
+    let seekers: Vec<(&UnitObs, u32)> = observation
+        .my_units
+        .iter()
+        .filter(|unit| {
+            unit.idle
+                && unit.carrying == 0
+                && worker(unit.kind)
+                && !ledger.employs(unit.id)
+                && !ledger.stuck(unit.id)
+        })
+        .filter_map(|unit| {
+            Some((
+                unit,
+                map.component(unit.tile).filter(|ground| barren(*ground))?,
+            ))
+        })
+        .collect();
+    if seekers.is_empty() {
+        return;
+    }
+    let (width, height) = map.size();
+    let frontier: Vec<(u32, TilePos)> = (0..height)
+        .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
+        .filter(|tile| !observation.explored(*tile) && !exposed(hazards, *tile))
+        .filter_map(|tile| {
+            let ground = map.component(tile)?;
+            seekers
+                .iter()
+                .any(|(_, own)| *own == ground)
+                .then_some((ground, tile))
+        })
+        .collect();
+    let mut goals: Vec<(TilePos, UnitId)> = seekers
+        .iter()
+        .filter_map(|(unit, ground)| {
+            let from = doubled(unit.tile);
+            frontier
+                .iter()
+                .filter(|(own, _)| own == ground)
+                .map(|(_, tile)| *tile)
+                .min_by_key(|tile| frame.rank(from, doubled(*tile)))
+                .map(|goal| (goal, unit.id))
+        })
+        .collect();
+    goals.sort_by_key(|(goal, unit)| (frame.rank(frame.home, doubled(*goal)), *unit));
+    for group in goals.chunk_by(|a, b| a.0 == b.0) {
+        if !ledger.order(Command::Run {
+            units: group.iter().map(|(_, unit)| *unit).collect(),
+            goal: group[0].0,
+            queue: false,
+        }) {
+            return;
+        }
+    }
+}
+
 /// Whether known enemy ground fire covers `source`.
 fn exposed(hazards: &[Hazard], source: TilePos) -> bool {
     let point = doubled(source);

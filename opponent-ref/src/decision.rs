@@ -161,6 +161,11 @@ impl Ledger {
         self.decision.launches.push(launch);
     }
 
+    /// Whether the allowance has room for another unit order.
+    pub(crate) fn can_order(&self) -> bool {
+        self.decision.unit_orders < self.decision.allowance
+    }
+
     /// Issues one unit order while the allowance lasts, leaving out units
     /// sitting out orders. An order left with no units issues nothing and
     /// counts as given. Purchases never count against the allowance.
@@ -849,6 +854,7 @@ pub(crate) fn decide(
         );
     }
 
+    workers::seek(observation, map, frame, &scratch.ground, &mut ledger);
     persistent.saving.keep_at_most(ledger.available());
     persistent
         .income
