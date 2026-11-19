@@ -476,7 +476,8 @@ fn an_air_raid_gets_its_emergency_flak_when_a_turret_is_out_of_reach() {
         unit(1, UnitKind::Buzzard, 16, 9),
     ]);
     let state = scenario.build().unwrap();
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let commands =
+        seat_with(&scenario, 0, reading_thrifty()).act(&state, &mut OwnEvents::default());
     assert!(
         builds(&commands)
             .iter()

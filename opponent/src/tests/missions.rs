@@ -355,7 +355,8 @@ fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
     };
     let scenario = threatened(400);
     let state = scenario.build().unwrap();
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let commands =
+        seat_with(&scenario, 0, reading_thrifty()).act(&state, &mut OwnEvents::default());
     assert!(
         commands.iter().all(|command| !matches!(
             command.command,
@@ -368,7 +369,7 @@ fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
     let state = scenario.build().unwrap();
     let mut calm = scenario.clone();
     calm.units.pop();
-    let (quiet, trace) = seat_with(&calm, 0, thrifty())
+    let (quiet, trace) = seat_with(&calm, 0, reading_thrifty())
         .act_traced(&calm.build().unwrap(), &mut OwnEvents::default());
     assert!(trace.unwrap().protected > 0, "premise: scrap is protected");
     assert!(trains(&quiet).is_empty(), "premise");
@@ -383,12 +384,14 @@ fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
             )
         })
     };
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let commands =
+        seat_with(&scenario, 0, reading_thrifty()).act(&state, &mut OwnEvents::default());
     assert!(turret(&commands), "an emergency Turret first: {commands:?}");
 
     let scenario = threatened(200);
     let state = scenario.build().unwrap();
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let commands =
+        seat_with(&scenario, 0, reading_thrifty()).act(&state, &mut OwnEvents::default());
     let foundry = foundries(&state, PlayerId(0))[0];
     assert!(turret(&commands), "{commands:?}");
     assert_eq!(trains(&commands), [(foundry, UnitKind::Sentinel)]);

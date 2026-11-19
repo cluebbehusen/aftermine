@@ -368,8 +368,8 @@ pub(crate) struct Shortfall {
     /// shortfall answers no particular force.
     pub(crate) attackers: Vec<(UnitKind, u64)>,
     /// Whether the seat reads what the attackers are. One that only judges
-    /// their size keeps no scrap back for a unit answer, so its emergency
-    /// structures go up as before.
+    /// their size answers with what is cheapest, which leaves its emergency
+    /// structures the rest of the bank.
     pub(crate) read: bool,
 }
 

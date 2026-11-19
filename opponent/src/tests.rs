@@ -112,6 +112,12 @@ fn thrifty() -> BotConfig {
     BotConfig::new(BotDifficulty::Standard, BotStance::Aggressive, 38)
 }
 
+/// [`thrifty`] at a rung that reads what attackers are, for stagings of
+/// which answer a short defense picks.
+fn reading_thrifty() -> BotConfig {
+    BotConfig::new(BotDifficulty::Veteran, BotStance::Aggressive, 38)
+}
+
 /// A seat that fortifies readily.
 fn fortified() -> BotConfig {
     BotConfig::new(BotDifficulty::Standard, BotStance::Turtle, 35)
