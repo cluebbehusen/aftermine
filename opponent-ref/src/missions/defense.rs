@@ -263,6 +263,7 @@ impl Missions {
                 shortfalls.push(Shortfall {
                     ground: component,
                     gap,
+                    attackers: siege.attackers(),
                 });
             }
             // Guns are reached rather than waited for: they shell from
@@ -361,6 +362,10 @@ pub(crate) struct Shortfall {
     pub(crate) ground: Option<u32>,
     /// The shortfall, in scrap, against ground and air attackers.
     pub(crate) gap: [u64; 2],
+    /// The attackers in sight the shortfall counts, by kind with their
+    /// value, so what is trained can be what beats them; empty when the
+    /// shortfall answers no particular force.
+    pub(crate) attackers: Vec<(UnitKind, u64)>,
 }
 
 /// Removes `taken` from the sorted `free`.
@@ -484,6 +489,14 @@ struct Siege<'a> {
 }
 
 impl Siege<'_> {
+    /// Its armed enemies in sight, by kind, with their value.
+    fn attackers(&self) -> Vec<(UnitKind, u64)> {
+        self.units
+            .iter()
+            .map(|threat| (threat.kind, value(threat)))
+            .collect()
+    }
+
     /// Where its threats on the ground stand: enemies in sight and the tiles
     /// beside its batteries.
     fn grounded(&self) -> impl Iterator<Item = TilePos> + '_ {
