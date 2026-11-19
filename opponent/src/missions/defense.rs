@@ -257,12 +257,13 @@ impl Missions {
             // where they stand.
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
+            let go = met * engage_margin(difficulty) / 1_000;
             let hunting = matches!(pursuit, Pursuit::Hunt);
             let post = grounded.and_then(|threat| waiting_post(map, frame, foundry, threat));
             let front = front(observation, members, post);
             let (goal, pursuit, gun) = match grounded
                 .filter(|_| hunting && concentrates(difficulty))
-                .filter(|_| waits(mission, foundry, [have[0], front.1], met))
+                .filter(|_| waits(mission, foundry, [have[0], front.1], [met, go]))
                 .map(|threat| waiting_post(map, frame, foundry, threat))
             {
                 Some(Some(post)) => (post, Pursuit::Hunt, None),
@@ -315,7 +316,7 @@ impl Missions {
                 concentrates(difficulty)
                     && hunting
                     && goal != *post
-                    && have[0] < met
+                    && have[0] < go
                     && !mission.units.is_empty()
             });
             let onward =
@@ -581,23 +582,24 @@ fn moved(
 
 /// Whether `mission`'s defenders wait beside `foundry` rather than meet a
 /// ground force worth `met`, with `have` all of them and their recruits
-/// against ground and `front` those out at it: short of it at the post; once
-/// out, when all of them are short of it and those out are short of two
-/// thirds of it, so a front the reserve cannot bring level comes back to it.
+/// against ground and `front` those out at it: short of `go`, the force the
+/// seat's rung goes out to it with, at the post; once out, when all of them
+/// are short of that and those out are short of two thirds of the force, so
+/// a front the reserve cannot bring level comes back to it.
 fn waits(
     mission: Option<&Mission>,
     foundry: &BuildingObs,
     [have, front]: [u64; 2],
-    met: u64,
+    [met, go]: [u64; 2],
 ) -> bool {
     let out = mission.is_some_and(|mission| {
         !mission.units.is_empty()
             && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
     });
     if out {
-        have < met && front * 3 < met * 2
+        have < go && front * 3 < met * 2
     } else {
-        have < met
+        have < go
     }
 }
 
@@ -638,6 +640,17 @@ fn waiting_post(
     ring(foundry.anchor, foundry.kind.size())
         .filter(|tile| map.component(*tile) == Some(component))
         .min_by_key(|tile| frame.rank(doubled(threat), doubled(*tile)))
+}
+
+/// Per mille of the attackers' worth a defense must hold to go out at them:
+/// the upper rungs go out only with the edge their attacks keep before
+/// withdrawing, the lower at even odds. A difficulty limit on how well a seat
+/// defends.
+fn engage_margin(difficulty: BotDifficulty) -> u64 {
+    match difficulty {
+        BotDifficulty::Scrapheap | BotDifficulty::Standard => 1_000,
+        BotDifficulty::Veteran | BotDifficulty::Prime => 1_250,
+    }
 }
 
 /// How near the waiting post a defender stands to count as its reserve: a
