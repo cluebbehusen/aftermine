@@ -118,4 +118,7 @@ fn a_frame_whose_extractor_vanished_is_remembered_as_failed() {
         memory.validate(112, 16, 16, 0).is_err(),
         "an own Extractor off the map"
     );
+    // A seat may own more Extractors than failures are remembered.
+    memory.extractors = (0..300).map(|x| TilePos::new(x * 2, 0)).collect();
+    assert_eq!(memory.validate(112, 600, 2, 0), Ok(()));
 }

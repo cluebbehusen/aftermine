@@ -386,12 +386,24 @@ fn a_lost_extractor_is_rebuilt_a_while_after_its_attacker_is_gone() {
         if lost && !present {
             gone_at.get_or_insert(state.current_tick());
         }
-        rebuilt = lost && !present && builds_frame(&commands);
+        let ordered = lost && !present && builds_frame(&commands);
         if state.current_tick() == 0 {
             commands.push(attack.clone());
         }
         lost |= state.building(extractor).is_none();
-        events.record(PlayerId(0), &state.tick(&commands).events);
+        let report = state.tick(&commands);
+        // The order counts only if the simulation took it.
+        rebuilt = ordered
+            && !report.events.iter().any(|event| {
+                matches!(
+                    event,
+                    Event::CommandRejected {
+                        player: PlayerId(0),
+                        ..
+                    }
+                )
+            });
+        events.record(PlayerId(0), &report.events);
     }
     assert!(lost, "premise: the Extractor falls");
     assert!(held > 0, "premise: the seat acts while the attacker stays");

@@ -370,7 +370,6 @@ impl Memory {
             || full(&self.raided)
             || self.units.len() > UNIT_CAP
             || self.stuck.len() > STUCK_CAP
-            || self.extractors.len() > FAILURE_CAP
         {
             return Err("checkpoint remembers too much".into());
         }
@@ -385,6 +384,8 @@ impl Memory {
         if !stuck {
             return Err("checkpoint stuck units are malformed".into());
         }
+        // Distinct anchors on the map: bounded by the map, as the seat's own
+        // Extractors are.
         let extractors = self.extractors.windows(2).all(|pair| pair[0] < pair[1])
             && self.extractors.iter().all(|anchor| on_map(*anchor));
         if !extractors {
