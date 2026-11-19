@@ -930,3 +930,30 @@ fn attackers_in_a_domain_already_covered_do_not_set_the_answer() {
             < crate::decision::answer(flakhound, &both([0, 120]))
     );
 }
+
+#[test]
+fn a_lone_enemy_builder_draws_the_cheapest_unit_before_general_production() {
+    // An enemy Harvester beside West's Foundry and nothing armed: the defense
+    // trains its cheapest unit at the Foundry before general production takes
+    // it, and an armed raider is weighed for what it is instead.
+    let trained = |raider: bool| {
+        let mut scenario = arena(130);
+        scenario.units.push(harvester(1, 8, 3));
+        if raider {
+            scenario.units.push(unit(1, UnitKind::Scuttler, 8, 4));
+        }
+        let state = scenario.build().unwrap();
+        trains(
+            &seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+                .act(&state, &mut OwnEvents::default()),
+        )
+        .into_iter()
+        .map(|(_, kind)| kind)
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(trained(false).first(), Some(&UnitKind::Scuttler));
+    assert!(
+        !trained(true).contains(&UnitKind::Scuttler),
+        "a Scuttler is no answer to a raider it only feeds"
+    );
+}
