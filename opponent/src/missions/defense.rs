@@ -490,11 +490,17 @@ struct Siege<'a> {
 
 impl Siege<'_> {
     /// How far `have` falls short of the armed attackers, `pressing`, and
-    /// the enemy producers among the buildings: a seat with no army must
-    /// train one for a producer. Scouts and other strays don't count, or
-    /// every look at the base would cost the seat its economy.
+    /// the enemy producers and builders among the buildings: a seat with no
+    /// army must train one for them. Scouts don't count, or every look at the
+    /// base would cost the seat its economy.
     fn gap(&self, pressing: [u64; 2], have: [u64; 2]) -> [u64; 2] {
-        let producers = self.producers();
+        let builders: u64 = self
+            .strays
+            .iter()
+            .filter(|stray| stray.kind.stats().harvest.is_some())
+            .map(|stray| u64::from(stray.kind.stats().cost))
+            .sum();
+        let producers = self.producers() + builders;
         [0, 1].map(|index| {
             (pressing[index] + if index == 0 { producers } else { 0 }).saturating_sub(have[index])
         })
