@@ -10,7 +10,7 @@
 
 use super::attack::{building_value, concentrates, defense, defense_around};
 use super::{
-    AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, fill, hits, hunt,
+    AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, fill_by, hits, hunt,
     insert, mine, value, walking_gun, worth,
 };
 use crate::decision::Ledger;
@@ -223,14 +223,22 @@ impl Missions {
                 |mission| matches!(mission.task, Task::Defend { asset, .. } if asset == foundry.id),
             );
             let members = index.map_or(&[][..], |index| &self.list[index].units);
-            let mut have = [Domain::Ground, Domain::Air].map(|domain| {
-                members
-                    .iter()
-                    .filter_map(|id| mine(observation, *id))
-                    .filter(|unit| hits(unit, domain))
-                    .map(value)
-                    .sum::<u64>()
-            });
+            // Defenders count for what they beat of the armed attackers in
+            // each domain, not their price: two Sentinels a Lancer kills one
+            // shot at a time are no match for it.
+            let read = crate::reads_threats(difficulty);
+            let strength = |unit: &UnitObs| {
+                if read {
+                    siege.matched(unit)
+                } else {
+                    super::force(unit.kind, unit.hp)
+                }
+            };
+            let mut have = members
+                .iter()
+                .filter_map(|id| mine(observation, *id))
+                .map(strength)
+                .fold([0, 0], |sum, added| [sum[0] + added[0], sum[1] + added[1]]);
             let room = UNIT_CAP - members.len();
             let mut candidates: Vec<&UnitObs> = free
                 .iter()
@@ -257,7 +265,7 @@ impl Missions {
                     unit.id,
                 )
             });
-            let mut recruits = fill(candidates, need, &mut have, room);
+            let mut recruits = fill_by(candidates, need, &mut have, room, strength);
             let gap = siege.gap(pressing, have);
             if *own && gap != [0, 0] {
                 shortfalls.push(Shortfall {
@@ -494,6 +502,35 @@ struct Siege<'a> {
 }
 
 impl Siege<'_> {
+    /// What `unit` brings against the armed attackers in each domain: its
+    /// value there scaled by the value it destroys per scrap against them,
+    /// one on one, up to its whole value; its whole value against a domain
+    /// with no armed attackers.
+    fn matched(&self, unit: &UnitObs) -> [u64; 2] {
+        let force = super::force(unit.kind, unit.hp);
+        [(0, Domain::Ground), (1, Domain::Air)].map(|(index, domain)| {
+            let attackers: Vec<(UnitKind, u64)> = self
+                .units
+                .iter()
+                .filter(|threat| threat.body_domain() == domain)
+                .map(|threat| (threat.kind, value(threat)))
+                .collect();
+            let total: u64 = attackers.iter().map(|(_, value)| value).sum();
+            if total == 0 {
+                return force[index];
+            }
+            let per_mille = attackers
+                .iter()
+                .map(|(kind, value)| {
+                    crate::composition::matchup(crate::composition::Fighter::Unit(unit.kind), *kind)
+                        * value
+                })
+                .sum::<u64>()
+                / total;
+            force[index] * per_mille.min(1_000) / 1_000
+        })
+    }
+
     /// How far `have` falls short of the armed attackers, `pressing`, and
     /// the enemy producers and builders among the buildings: a seat with no
     /// army must train one for them. Scouts don't count, or every look at the

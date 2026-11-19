@@ -983,6 +983,17 @@ fn fill<'a>(
     have: &mut [u64; 2],
     room: usize,
 ) -> Vec<UnitId> {
+    fill_by(units, need, have, room, |unit| force(unit.kind, unit.hp))
+}
+
+/// [`fill`] counting each unit as `strength` says.
+fn fill_by<'a>(
+    units: impl IntoIterator<Item = &'a UnitObs>,
+    need: [u64; 2],
+    have: &mut [u64; 2],
+    room: usize,
+    strength: impl Fn(&UnitObs) -> [u64; 2],
+) -> Vec<UnitId> {
     let mut taken = Vec::new();
     for unit in units {
         if taken.len() >= room || (have[0] >= need[0] && have[1] >= need[1]) {
@@ -993,7 +1004,7 @@ fn fill<'a>(
             .enumerate()
             .any(|(index, domain)| have[index] < need[index] && hits(unit, domain))
         {
-            let added = force(unit.kind, unit.hp);
+            let added = strength(unit);
             *have = [have[0] + added[0], have[1] + added[1]];
             taken.push(unit.id);
         }
