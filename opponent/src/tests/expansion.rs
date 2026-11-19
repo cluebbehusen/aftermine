@@ -677,13 +677,19 @@ fn lane(frames: &[(i32, i32)]) -> Scenario {
 fn frame_scores(scenario: &Scenario) -> Vec<(TilePos, u32)> {
     let state = scenario.build().unwrap();
     let observation = mapped(&state, PlayerId(0));
-    expansion::candidates(&observation, &map(scenario), &Memory::default(), 50, 0)
-        .into_iter()
-        .filter_map(|(investment, score)| match investment {
-            Investment::Extractor(frame) => Some((frame, score)),
-            _ => None,
-        })
-        .collect()
+    expansion::candidates(
+        &observation,
+        &map(scenario),
+        &Memory::default(),
+        (50, true),
+        0,
+    )
+    .into_iter()
+    .filter_map(|(investment, score)| match investment {
+        Investment::Extractor(frame) => Some((frame, score)),
+        _ => None,
+    })
+    .collect()
 }
 
 fn score_of(scores: &[(TilePos, u32)], x: i32, y: i32) -> u32 {
@@ -837,9 +843,15 @@ fn an_enemy_that_cannot_hurt_a_building_leaves_a_frame_wanted() {
         scenario.units.push(unit(1, kind, 8, 2));
         let state = scenario.build().unwrap();
         let observation = ObservationData::fog_honest(&state, PlayerId(0));
-        expansion::candidates(&observation, &map(&scenario), &Memory::default(), 50, 0)
-            .iter()
-            .any(|(investment, _)| *investment == Investment::Extractor(TilePos::new(6, 1)))
+        expansion::candidates(
+            &observation,
+            &map(&scenario),
+            &Memory::default(),
+            (50, true),
+            0,
+        )
+        .iter()
+        .any(|(investment, _)| *investment == Investment::Extractor(TilePos::new(6, 1)))
     };
     assert!(!wanted(UnitKind::Sentinel), "premise");
     assert!(wanted(UnitKind::Flakhound));

@@ -32,12 +32,14 @@ const WORKS: (i32, i32) = (2, 2);
 const PAYBACK_SCALE: u64 = 2;
 
 /// Expansion and Extractor investments with their scores. `greed` is the
-/// 0..=100 trait; `depletion` is the per-mille share of home scrap mined.
+/// 0..=100 trait; `secure` whether the army holds what the seat knows of the
+/// enemy's, so an expansion may count what its support pays back;
+/// `depletion` is the per-mille share of home scrap mined.
 pub(crate) fn candidates(
     observation: &ObservationData,
     map: &MapModel,
     memory: &Memory,
-    greed: u8,
+    (greed, secure): (u8, bool),
     depletion: u32,
 ) -> Vec<(Investment, u32)> {
     let mut list = Vec::new();
@@ -75,7 +77,7 @@ pub(crate) fn candidates(
         } else {
             lift_cost(observation)
         };
-        if let Some(anchor) = anchors(map, observation.me, site).first() {
+        if secure && let Some(anchor) = anchors(map, observation.me, site).first() {
             score = score.max(i64::from(support_payback(
                 observation,
                 *anchor,
