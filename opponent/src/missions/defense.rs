@@ -227,13 +227,7 @@ impl Missions {
             // each domain, not their price: two Sentinels a Lancer kills one
             // shot at a time are no match for it.
             let read = crate::reads_threats(difficulty);
-            let strength = |unit: &UnitObs| {
-                if read {
-                    siege.matched(unit)
-                } else {
-                    super::force(unit.kind, unit.hp)
-                }
-            };
+            let strength = |unit: &UnitObs| siege.matched(unit, read);
             let mut have = members
                 .iter()
                 .filter_map(|id| mine(observation, *id))
@@ -502,12 +496,16 @@ struct Siege<'a> {
 }
 
 impl Siege<'_> {
-    /// What `unit` brings against the armed attackers in each domain: its
-    /// value there scaled by the value it destroys per scrap against them,
-    /// one on one, up to its whole value; its whole value against a domain
-    /// with no armed attackers.
-    fn matched(&self, unit: &UnitObs) -> [u64; 2] {
+    /// What `unit` brings against the armed attackers in each domain, for a
+    /// seat that does `read` them: its value there scaled by the value it
+    /// destroys per scrap against them, one on one, up to its whole value;
+    /// its whole value against a domain with no armed attackers, or for a
+    /// seat that reads only their size.
+    fn matched(&self, unit: &UnitObs, read: bool) -> [u64; 2] {
         let force = super::force(unit.kind, unit.hp);
+        if !read {
+            return force;
+        }
         [(0, Domain::Ground), (1, Domain::Air)].map(|(index, domain)| {
             let attackers: Vec<(UnitKind, u64)> = self
                 .units
