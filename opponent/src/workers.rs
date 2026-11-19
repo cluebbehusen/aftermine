@@ -459,7 +459,7 @@ fn rest_welders(
     let size = BuildingKind::Foundry.size();
     let calm = foundries
         .iter()
-        .all(|foundry| !ring(foundry.anchor, size).any(|tile| covered(tile)));
+        .all(|foundry| !ring(foundry.anchor, size).any(covered));
     let workers: Vec<UnitId> = observation
         .my_units
         .iter()
