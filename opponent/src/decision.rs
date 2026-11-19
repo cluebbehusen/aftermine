@@ -595,9 +595,11 @@ pub(crate) fn decide(
     }
     // A short defense leaves scrap to the army: only the recovery Harvester
     // above is trained while it lasts. Until the army reaches the stance
-    // minimum, workers that would cost more than it take only what the army
+    // minimum, or while it is worth less than what the seat knows of the
+    // enemy's, workers that would cost more than it take only what the army
     // leaves, after production.
-    let pace = if exposed {
+    let outweighed = exposed || army(observation) < known_army(observation, &persistent.memory);
+    let pace = if outweighed {
         army(observation).saturating_sub(workforce(observation))
     } else {
         u64::MAX
@@ -845,7 +847,7 @@ pub(crate) fn decide(
         }
         fill(observation, &producers, &mut needs, &mut ledger, saving);
     }
-    if !short && exposed {
+    if !short && outweighed {
         workers::train(
             observation,
             map,
@@ -1695,6 +1697,22 @@ fn workforce(observation: &ObservationData) -> u64 {
 }
 
 /// What the seat's armed units cost.
+/// What the seat remembers of its enemies' armed units, by how sure it is
+/// they are still there: drones, which come and go from their host, left
+/// out as [`army`] leaves its own.
+pub(crate) fn known_army(observation: &ObservationData, memory: &Memory) -> u64 {
+    let now = observation.tick;
+    memory
+        .units()
+        .iter()
+        .filter(|seen| {
+            let stats = seen.kind.stats();
+            (!stats.weapons.is_empty() || stats.demolition.is_some()) && !stats.docks()
+        })
+        .map(|seen| seen.value(now))
+        .sum()
+}
+
 pub(crate) fn army(observation: &ObservationData) -> u64 {
     // A drone comes and goes from its host's bay, so only machines count.
     observation
