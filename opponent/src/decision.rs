@@ -361,6 +361,7 @@ pub(crate) fn decide(
         .collect();
     let earned = persistent.income.observe(tick, observation.scrap, rejected);
     persistent.memory.forget(tick);
+    persistent.memory.lost_extractors(observation);
     let home = map
         .start(observation.me)
         .and_then(|start| map.component(start));

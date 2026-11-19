@@ -396,6 +396,7 @@ fn once_anti_heavy_units_can_be_trained_the_line_leaves_the_heavies_to_them() {
         "raided": [],
         "scouted": [],
         "stuck": [],
+        "extractors": [],
     }))
     .unwrap();
     let outlet = Outlet {

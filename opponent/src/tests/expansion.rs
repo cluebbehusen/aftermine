@@ -321,7 +321,7 @@ fn a_half_explored_footprint_is_still_scouted() {
 }
 
 #[test]
-fn a_lost_extractor_is_rebuilt_once_its_attacker_is_gone() {
+fn a_lost_extractor_is_rebuilt_a_while_after_its_attacker_is_gone() {
     let mut scenario = arena(1_000);
     scenario.map[1].replace_range(6..7, "E");
     scenario.units.extend([
@@ -372,7 +372,8 @@ fn a_lost_extractor_is_rebuilt_once_its_attacker_is_gone() {
     let mut lost = false;
     let mut held = 0;
     let mut rebuilt = false;
-    while state.current_tick() < 3_000 && !rebuilt {
+    let mut gone_at = None;
+    while state.current_tick() < 8_000 && !rebuilt {
         let mut commands = opponent.act(&state, &mut events);
         let present = state.units().iter().any(|unit| unit.id == raider);
         if lost && present {
@@ -381,6 +382,9 @@ fn a_lost_extractor_is_rebuilt_once_its_attacker_is_gone() {
                 "rebuilt while its attacker stands beside the frame"
             );
             held += usize::from(!commands.is_empty());
+        }
+        if lost && !present {
+            gone_at.get_or_insert(state.current_tick());
         }
         rebuilt = lost && !present && builds_frame(&commands);
         if state.current_tick() == 0 {
@@ -394,6 +398,13 @@ fn a_lost_extractor_is_rebuilt_once_its_attacker_is_gone() {
     assert!(
         rebuilt,
         "a new Extractor goes on the frame once the attacker is gone"
+    );
+    // Raiders that killed it may be waiting out of sight: the frame rests
+    // for a while first.
+    let waited = state.current_tick() - gone_at.unwrap();
+    assert!(
+        waited > 1_200,
+        "rebuilt {waited} ticks after the attacker left"
     );
 }
 
