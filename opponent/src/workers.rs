@@ -394,7 +394,7 @@ fn flee(
     if hazards.is_empty() {
         return;
     }
-    let mut fleeing: Vec<(TilePos, UnitId)> = Vec::new();
+    let mut fleeing: Vec<(TilePos, UnitId, TilePos)> = Vec::new();
     let mut tending: Vec<UnitId> = Vec::new();
     for unit in &observation.my_units {
         let working =
@@ -405,36 +405,47 @@ fn flee(
         if !covered(unit.tile) || (!home_lines && at_home(&foundries, unit.tile)) {
             continue;
         }
-        // Beside home, a refuge in the same fire is no refuge.
-        let safe = |tile: TilePos| !home_lines || !covered(tile);
+        // Beside home, a refuge in the same fire is no refuge, nor one on
+        // scrap the worker cannot stand on.
+        let safe =
+            |tile: TilePos| !home_lines || (!covered(tile) && !observation.known_scrap_at(tile));
         let Some(refuge) = refuge(map, frame, &foundries, unit.tile, safe) else {
             continue;
         };
-        fleeing.push((refuge, unit.id));
+        fleeing.push((refuge, unit.id, unit.tile));
         if unit.repair == Some(RepairWork::Tending) {
             tending.push(unit.id);
         }
     }
-    // A worker that walked out to weld into the fire would walk back once
-    // idle at its refuge: it stops welding on its own until home is calm.
-    if home_lines
-        && !tending.is_empty()
-        && !ledger.order(Command::SetIdleWeld {
-            units: tending,
-            enabled: false,
-        })
-    {
-        return;
-    }
-    fleeing.sort_by_key(|(refuge, unit)| (frame.rank(frame.home, doubled(*refuge)), *unit));
-    for group in fleeing.chunk_by(|a, b| a.0 == b.0) {
+    // One order each: a crowd sent to one tile spreads around it, some into
+    // the fire or off their ground.
+    fleeing.sort_by_key(|(refuge, unit, from)| {
+        (
+            frame.rank(frame.home, doubled(*refuge)),
+            frame.rank(frame.home, doubled(*from)),
+            *unit,
+        )
+    });
+    let mut ran: Vec<UnitId> = Vec::new();
+    for (refuge, unit, _) in &fleeing {
         if !ledger.order(Command::Run {
-            units: group.iter().map(|(_, unit)| *unit).collect(),
-            goal: group[0].0,
+            units: vec![*unit],
+            goal: *refuge,
             queue: false,
         }) {
-            return;
+            break;
         }
+        ran.push(*unit);
+    }
+    // A worker that walked out to weld into the fire would walk back once
+    // idle at its refuge: one sent out of it stops welding on its own until
+    // home is calm.
+    tending.retain(|id| ran.contains(id));
+    if home_lines && !tending.is_empty() {
+        ledger.order(Command::SetIdleWeld {
+            units: tending,
+            enabled: false,
+        });
     }
 }
 
@@ -443,10 +454,11 @@ fn flee(
 /// setting it cannot read back, not a count of anything.
 const WELD_RESTORE_TICKS: u64 = 600;
 
-/// Lets every worker weld on its own again, every [`WELD_RESTORE_TICKS`],
-/// while no known fire covers the ground around the seat's Foundries: a
-/// worker stopped from welding into a fight goes back to tending once it is
-/// over. The setting cannot be read back, so it is repeated, one order.
+/// Lets the workers at home around each Foundry no known fire reaches weld
+/// on their own again, every [`WELD_RESTORE_TICKS`]: a worker stopped from
+/// welding into a fight goes back to tending once it is over there, whatever
+/// another base faces. The setting cannot be read back, so it is repeated,
+/// one order.
 fn rest_welders(
     observation: &ObservationData,
     foundries: &[&BuildingObs],
@@ -456,17 +468,27 @@ fn rest_welders(
     if !observation.tick.is_multiple_of(WELD_RESTORE_TICKS) {
         return;
     }
-    let size = BuildingKind::Foundry.size();
-    let calm = foundries
+    let (width, height) = BuildingKind::Foundry.size();
+    // Calm where no known fire reaches the home tiles around a Foundry, the
+    // ground its workers tend: calm at its ring alone would send a tender
+    // straight back out into the fire beyond it.
+    let calm = |foundry: &BuildingObs| {
+        let reach = HOME_TILES;
+        !(-reach..height + reach)
+            .any(|dy| (-reach..width + reach).any(|dx| covered(foundry.anchor.offset(dx, dy))))
+    };
+    let calm: Vec<&BuildingObs> = foundries
         .iter()
-        .all(|foundry| !ring(foundry.anchor, size).any(covered));
+        .copied()
+        .filter(|foundry| calm(foundry))
+        .collect();
     let workers: Vec<UnitId> = observation
         .my_units
         .iter()
-        .filter(|unit| worker(unit.kind))
+        .filter(|unit| worker(unit.kind) && at_home(&calm, unit.tile))
         .map(|unit| unit.id)
         .collect();
-    if calm && !workers.is_empty() {
+    if !workers.is_empty() {
         ledger.order(Command::SetIdleWeld {
             units: workers,
             enabled: true,
