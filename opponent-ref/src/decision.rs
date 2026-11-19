@@ -821,7 +821,8 @@ pub(crate) fn decide(
                 &mut ledger,
             );
         }
-        fill(observation, &producers, &mut needs, &mut ledger, saving);
+        // A short defense trains first, so its answer gets the producer
+        // before general production queues something else there.
         if short {
             arm(
                 observation,
@@ -834,6 +835,7 @@ pub(crate) fn decide(
                 &mut ledger,
             );
         }
+        fill(observation, &producers, &mut needs, &mut ledger, saving);
     }
     if !short && exposed {
         workers::train(

@@ -110,11 +110,7 @@ impl Missions {
                 })
                 .map(value)
                 .sum();
-            // A battery among defenses the seat cannot beat now is left to
-            // production: fighters sent beside it would only feed its guns.
-            siege
-                .batteries
-                .retain(|(_, beside)| defense(observation, memory, *beside) * 3 / 2 <= force);
+            siege.leave_unbeaten(observation, memory, force);
         }
         groups.retain(|(_, siege, _)| {
             !siege.units.is_empty()
@@ -494,18 +490,33 @@ struct Siege<'a> {
     batteries: Vec<(&'a BuildingObs, TilePos)>,
     /// Where a gun shelling the base from out of sight probably stands.
     unseen: Option<TilePos>,
+    /// Whether something armed threatens the Foundry that the lists above
+    /// leave out: a gun the seat cannot beat yet, left to production, or a
+    /// gun out of sight shelling it while threats in sight hold its entry.
+    armed: bool,
 }
 
 impl Siege<'_> {
-    /// Whether nothing armed threatens: no armed enemy in sight, no gun among
-    /// its batteries and none out of sight.
+    /// Leaves a battery among defenses the seat's `force` cannot beat now to
+    /// production: fighters sent beside it would only feed its guns. An armed
+    /// one left still marks the siege armed.
+    fn leave_unbeaten(&mut self, observation: &ObservationData, memory: &Memory, force: u64) {
+        let beaten = |beside: TilePos| defense(observation, memory, beside) * 3 / 2 <= force;
+        self.armed |= self
+            .batteries
+            .iter()
+            .any(|(battery, beside)| !beaten(*beside) && armed(battery));
+        self.batteries.retain(|(_, beside)| beaten(*beside));
+    }
+
+    /// Whether nothing armed threatens: no armed enemy in sight, no gun or
+    /// mine among its batteries, none left to production and none out of
+    /// sight.
     fn unarmed_only(&self) -> bool {
         self.units.is_empty()
             && self.unseen.is_none()
-            && self
-                .batteries
-                .iter()
-                .all(|(building, _)| building.kind.tier_stats(building.tier).weapons.is_empty())
+            && !self.armed
+            && !self.batteries.iter().any(|(building, _)| armed(building))
     }
 
     /// How far `have` falls short of the armed attackers, `pressing`, and
@@ -643,7 +654,12 @@ fn threats<'a>(
             // answered together, shelling that never stops keeps the defense
             // recruiting ground units and the army never leaves home.
             for (foundry, gun) in unseen(observation, map, frame) {
-                if !groups.iter().any(|(other, _, _)| other.id == foundry.id) {
+                if let Some((_, siege, _)) = groups
+                    .iter_mut()
+                    .find(|(other, _, _)| other.id == foundry.id)
+                {
+                    siege.armed = true;
+                } else {
                     let siege = Siege {
                         unseen: Some(gun),
                         ..Siege::default()
@@ -755,6 +771,12 @@ fn besieged<'a>(
         !siege.units.is_empty() || !siege.strays.is_empty() || !siege.batteries.is_empty()
     });
     groups
+}
+
+/// Whether `building` can hurt ground units: a gun, or a mine.
+fn armed(building: &BuildingObs) -> bool {
+    !building.kind.tier_stats(building.tier).weapons.is_empty()
+        || building.kind == BuildingKind::ScuttleCharge
 }
 
 /// The built Foundries among `buildings`, nearest home first.
