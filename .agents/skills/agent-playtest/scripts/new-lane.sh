@@ -80,11 +80,13 @@ dir="$round/$lane"
 }
 mkdir -p "$dir" "$round/replays" "$round/sessions"
 # A driver named by AFTERMINE_DRIVER is copied into the round, so a player's
-# wrapper names no directory outside the round.
+# wrapper names no directory outside the round. Each distinct binary gets its
+# own copy, so lanes of one round can play different builds of the bot.
 if [ -n "${AFTERMINE_DRIVER:-}" ]; then
-	mkdir -p "$round/driver"
-	[ -x "$round/driver/aftermine-driver" ] || cp "$driver" "$round/driver/aftermine-driver"
-	driver="$round/driver/aftermine-driver"
+	build=$(shasum -a 256 "$driver" | cut -c1-12)
+	mkdir -p "$round/driver/$build"
+	[ -x "$round/driver/$build/aftermine-driver" ] || cp "$driver" "$round/driver/$build/aftermine-driver"
+	driver="$round/driver/$build/aftermine-driver"
 fi
 
 cp "$map" "$dir/map.json"
