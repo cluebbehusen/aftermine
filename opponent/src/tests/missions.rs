@@ -1369,3 +1369,36 @@ fn an_enemy_building_raised_among_the_seat_s_buildings_is_attacked() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn an_air_raider_already_answered_does_not_stop_training_for_an_enemy_builder() {
+    let trains = |buzzard: bool| {
+        let mut scenario = arena(40);
+        scenario.units.extend([
+            unit(0, UnitKind::Flakhound, 5, 7),
+            unit(0, UnitKind::Flakhound, 5, 8),
+            unit(1, UnitKind::Harvester, 8, 3),
+        ]);
+        if buzzard {
+            scenario.units.push(unit(1, UnitKind::Buzzard, 9, 5));
+        }
+        let state = scenario.build().unwrap();
+        seat(&scenario, 0)
+            .act(&state, &mut OwnEvents::default())
+            .iter()
+            .any(|command| {
+                matches!(
+                    command.command,
+                    Command::Train {
+                        kind: UnitKind::Scuttler,
+                        ..
+                    }
+                )
+            })
+    };
+    assert!(trains(false), "premise: an enemy builder draws a Scuttler");
+    assert!(
+        trains(true),
+        "Flakhounds that cover the Buzzard leave the ground shortfall to answer"
+    );
+}

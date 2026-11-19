@@ -263,7 +263,7 @@ impl Missions {
                 shortfalls.push(Shortfall {
                     ground: component,
                     gap,
-                    attackers: siege.attackers(),
+                    attackers: siege.attackers(gap),
                 });
             }
             // Guns are reached rather than waited for: they shell from
@@ -498,7 +498,7 @@ impl Siege<'_> {
             .strays
             .iter()
             .filter(|stray| stray.kind.stats().harvest.is_some())
-            .map(|stray| u64::from(stray.kind.stats().cost))
+            .map(|stray| worth(stray.kind, stray.hp))
             .sum();
         let producers = self.producers() + builders;
         [0, 1].map(|index| {
@@ -519,9 +519,13 @@ impl Siege<'_> {
     }
 
     /// Its armed enemies in sight, by kind, with their value.
-    fn attackers(&self) -> Vec<(UnitKind, u64)> {
+    /// The armed attackers in a domain that `gap` leaves short, so an answer
+    /// is weighed against the attackers it must still beat, not those
+    /// already covered.
+    fn attackers(&self, gap: [u64; 2]) -> Vec<(UnitKind, u64)> {
         self.units
             .iter()
+            .filter(|threat| gap[usize::from(threat.body_domain() == Domain::Air)] > 0)
             .map(|threat| (threat.kind, value(threat)))
             .collect()
     }

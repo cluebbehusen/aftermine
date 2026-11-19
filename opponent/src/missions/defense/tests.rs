@@ -82,13 +82,13 @@ fn a_shell_from_beyond_a_bastions_reach_is_blamed_on_a_citadel() {
 
 #[test]
 fn an_enemy_producer_among_the_buildings_counts_its_whole_price() {
-    let site = |kind: BuildingKind| BuildingObs {
+    let site = |kind: BuildingKind, hp: u32| BuildingObs {
         provisional: false,
         id: aftermine_sim::BuildingId(0),
         player: PlayerId(1),
         kind,
         anchor: TilePos::new(9, 7),
-        hp: 1,
+        hp,
         built: false,
         seen: true,
         tier: 0,
@@ -101,12 +101,17 @@ fn an_enemy_producer_among_the_buildings_counts_its_whole_price() {
         .unarmed()[0]
     };
     // A Fabricator site barely begun is still everything it will train.
-    let fabricator = site(BuildingKind::Fabricator);
+    let fabricator = site(BuildingKind::Fabricator, 1);
     assert_eq!(
         unarmed(&fabricator),
         u64::from(BuildingKind::Fabricator.invested_cost(0))
     );
-    // A structure that trains nothing counts by its health, as before.
-    let extractor = site(BuildingKind::Extractor);
-    assert!(unarmed(&extractor) < u64::from(BuildingKind::Extractor.invested_cost(0)));
+    // A structure that trains nothing counts by its health: half of it, half
+    // its price.
+    let max_hp = BuildingKind::Extractor.tier_stats(0).max_hp;
+    let extractor = site(BuildingKind::Extractor, max_hp / 2);
+    assert_eq!(
+        unarmed(&extractor),
+        u64::from(BuildingKind::Extractor.invested_cost(0)) / 2
+    );
 }
