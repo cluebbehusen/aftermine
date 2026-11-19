@@ -387,11 +387,15 @@ fn flee(
     ledger: &mut Ledger,
 ) {
     let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
+    let covered = |tile: TilePos| hazards.iter().any(|hazard| hazard.covers(doubled(tile)));
+    if home_lines {
+        rest_welders(observation, &foundries, &covered, ledger);
+    }
     if hazards.is_empty() {
         return;
     }
-    let covered = |tile: TilePos| hazards.iter().any(|hazard| hazard.covers(doubled(tile)));
     let mut fleeing: Vec<(TilePos, UnitId)> = Vec::new();
+    let mut tending: Vec<UnitId> = Vec::new();
     for unit in &observation.my_units {
         let working =
             unit.idle || unit.repair == Some(RepairWork::Tending) || unit.harvesting.is_some();
@@ -407,6 +411,20 @@ fn flee(
             continue;
         };
         fleeing.push((refuge, unit.id));
+        if unit.repair == Some(RepairWork::Tending) {
+            tending.push(unit.id);
+        }
+    }
+    // A worker that walked out to weld into the fire would walk back once
+    // idle at its refuge: it stops welding on its own until home is calm.
+    if home_lines
+        && !tending.is_empty()
+        && !ledger.order(Command::SetIdleWeld {
+            units: tending,
+            enabled: false,
+        })
+    {
+        return;
     }
     fleeing.sort_by_key(|(refuge, unit)| (frame.rank(frame.home, doubled(*refuge)), *unit));
     for group in fleeing.chunk_by(|a, b| a.0 == b.0) {
@@ -417,6 +435,42 @@ fn flee(
         }) {
             return;
         }
+    }
+}
+
+/// Ticks between the orders that let idle workers weld on their own again
+/// once home is calm: a computation bound on how often a seat repeats a
+/// setting it cannot read back, not a count of anything.
+const WELD_RESTORE_TICKS: u64 = 600;
+
+/// Lets every worker weld on its own again, every [`WELD_RESTORE_TICKS`],
+/// while no known fire covers the ground around the seat's Foundries: a
+/// worker stopped from welding into a fight goes back to tending once it is
+/// over. The setting cannot be read back, so it is repeated, one order.
+fn rest_welders(
+    observation: &ObservationData,
+    foundries: &[&BuildingObs],
+    covered: &dyn Fn(TilePos) -> bool,
+    ledger: &mut Ledger,
+) {
+    if !observation.tick.is_multiple_of(WELD_RESTORE_TICKS) {
+        return;
+    }
+    let size = BuildingKind::Foundry.size();
+    let calm = foundries
+        .iter()
+        .all(|foundry| !ring(foundry.anchor, size).any(|tile| covered(tile)));
+    let workers: Vec<UnitId> = observation
+        .my_units
+        .iter()
+        .filter(|unit| worker(unit.kind))
+        .map(|unit| unit.id)
+        .collect();
+    if calm && !workers.is_empty() {
+        ledger.order(Command::SetIdleWeld {
+            units: workers,
+            enabled: true,
+        });
     }
 }
 
