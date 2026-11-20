@@ -784,3 +784,51 @@ fn two_players_on_their_own_ports_get_their_reports_when_both_advance() {
     assert_eq!(ticks(first), (PlayerId(0), 80));
     assert_eq!(ticks(second), (PlayerId(1), 80));
 }
+
+#[test]
+fn an_enemy_seen_dying_counts_though_the_seat_s_last_eye_on_it_fell_too() {
+    // Seat zero's Sentinel and the enemy one it watches trade their last
+    // shots in one tick; after it, nothing of seat zero's sees the spot.
+    let mut scenario = human_scenario("last-eye");
+    let after = scenario.build().unwrap();
+    let spot = TilePos::new(25, 2);
+    assert!(
+        !after.can_see(PlayerId(0), spot),
+        "premise: nothing else sees there"
+    );
+    scenario.units.extend([
+        aftermine_sim::scenario::UnitSpec {
+            player: 0,
+            kind: UnitKind::Sentinel,
+            x: spot.x - 1,
+            y: spot.y,
+        },
+        aftermine_sim::scenario::UnitSpec {
+            player: 1,
+            kind: UnitKind::Sentinel,
+            x: spot.x,
+            y: spot.y,
+        },
+    ]);
+    let before = scenario.build().unwrap();
+    let enemy = before
+        .units()
+        .iter()
+        .find(|unit| unit.player == PlayerId(1) && unit.kind == UnitKind::Sentinel)
+        .unwrap();
+    let died = Event::UnitDied {
+        unit: enemy.id,
+        kind: enemy.kind,
+        player: enemy.player,
+        pos: enemy.pos,
+        grounded: true,
+    };
+    let mut seen = Seen::new(PlayerId(0));
+    seen.look(&before);
+    seen.note(before.current_tick(), &after, std::slice::from_ref(&died));
+    assert!(
+        seen.log.iter().any(|logged| logged.event == died),
+        "{:?}",
+        seen.log
+    );
+}

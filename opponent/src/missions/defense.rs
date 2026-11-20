@@ -50,8 +50,9 @@ pub(super) fn timeout(phase: DefendPhase) -> Option<u64> {
 impl Missions {
     /// Answers every threatened Foundry: recruits free units that can hit its
     /// threats until, in each domain it is attacked from, they outweigh the
-    /// attackers by half again, and sends them at the grounded threat nearest
-    /// the Foundry, else at a gun out of sight. Until the ground force they
+    /// attackers by half again, and sends them at the armed grounded threat
+    /// nearest the Foundry, else the nearest unarmed one, else at a gun out
+    /// of sight. Until the ground force they
     /// make matches the ground force they would meet, those hunting an enemy
     /// that walks in wait beside the Foundry instead, and ones already out
     /// fall back there once they have less than half of it, at a seat of
@@ -173,7 +174,10 @@ impl Missions {
             let nearest = |tiles: &mut dyn Iterator<Item = TilePos>| {
                 tiles.min_by_key(|tile| frame.rank(centre, doubled(*tile)))
             };
-            let grounded = nearest(&mut siege.grounded());
+            // Armed attackers come before scouts, builders and unarmed sites,
+            // however much nearer those stand.
+            let grounded =
+                nearest(&mut siege.armed_grounded()).or_else(|| nearest(&mut siege.grounded()));
             let Some(goal) = grounded.or(siege.unseen).or_else(|| {
                 let flyer = nearest(&mut siege.sighted())?;
                 own.then(|| guard(observation, map, frame, component, flyer))?
@@ -783,6 +787,21 @@ impl Siege<'_> {
             .map(|threat| threat.id)
             .chain(self.recalled.iter().copied())
             .collect()
+    }
+
+    /// Where its armed threats on the ground stand: armed enemies in sight
+    /// and the tiles beside its batteries that can hurt ground units.
+    fn armed_grounded(&self) -> impl Iterator<Item = TilePos> + '_ {
+        self.units
+            .iter()
+            .filter(|threat| threat.body_domain() == Domain::Ground)
+            .map(|threat| threat.tile)
+            .chain(
+                self.batteries
+                    .iter()
+                    .filter(|(building, _)| armed(building))
+                    .map(|(_, beside)| *beside),
+            )
     }
 
     /// Where its enemies in sight stand, on the ground or in the air.

@@ -10,7 +10,7 @@
 # report.json; anything else is denied without asking. Its events go to
 # events.jsonl. When it stops while the match is still running, it is resumed
 # with a reminder, at most `resumes` times (default 3). It fails when Claude
-# still stops early.
+# still stops early or the session no longer answers.
 set -eu
 
 dir=$(cd "$1" && pwd)
@@ -43,7 +43,11 @@ while [ "$resumes" -gt 0 ]; do
 	resumes=$((resumes - 1))
 	play "The match is not over: ./play status shows no result. Keep playing to a result or the tick limit, then write report.json." --resume "$session"
 done
-status=$(./play status 2>&1 || true)
+status=$(./play status 2>&1) || {
+	printf '%s\n' "$status" >&2
+	echo "The session did not answer ./play status after Claude stopped." >&2
+	exit 1
+}
 printf '%s\n' "$status"
 case "$status" in
 *'"result": null'*)

@@ -1467,9 +1467,9 @@ fn hits(kind: UnitKind, domain: Domain) -> bool {
 }
 
 /// How well `fighter` answers `short`: attacker value it destroys per scrap
-/// against the attackers the shortfall counts in a domain still short, or its
-/// price when it counts none there; for a seat that does not read the
-/// attackers, how cheap it is.
+/// against the attackers the shortfall counts in a domain still short; when
+/// it counts none there, or the seat does not read the attackers, how cheap
+/// it is.
 pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
     let short_in = |attacker: UnitKind| match attacker.stats().domain {
         Domain::Ground => short.gap[0] > 0,
@@ -1481,13 +1481,11 @@ pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
         .filter(|(attacker, _)| short_in(*attacker))
         .collect();
     // A seat that judges the threat by its size alone answers with what is
-    // cheapest to throw at it.
-    if !short.read {
-        return 1_000_000 / fighter.cost().max(1);
-    }
+    // cheapest to throw at it, as does one short only of builders and
+    // producers: the first unit there soonest stops what they raise.
     let total: u64 = pressing.iter().map(|(_, value)| *value).sum();
-    if total == 0 {
-        return fighter.cost();
+    if !short.read || total == 0 {
+        return 1_000_000 / fighter.cost().max(1);
     }
     pressing
         .iter()
@@ -1514,13 +1512,15 @@ fn soon(income: u32) -> u64 {
 }
 
 /// The best answer to `short` whose price is within `reach`: a unit a
-/// finished producer trains, or an emergency structure, with its score.
+/// finished producer trains, or one of the emergency `structures`, with its
+/// score.
 fn best_answer(
     observation: &ObservationData,
     map: &MapModel,
     producers: &[Producer<'_>],
     short: &Shortfall,
     reach: u64,
+    structures: &[BuildingKind],
 ) -> Option<(Fighter, u64)> {
     // Only a producer free to train now answers: a unit queued behind
     // others comes too late to keep scrap from the emergency for it.
@@ -1537,10 +1537,10 @@ fn best_answer(
     let builder = observation.my_units.iter().any(|unit| {
         unit.kind.stats().harvest.is_some() && map.component(unit.tile) == short.ground
     });
-    let structures = EMERGENCY_KINDS
-        .into_iter()
+    let structures = structures
+        .iter()
         .filter(|_| builder)
-        .map(Fighter::Structure);
+        .map(|kind| Fighter::Structure(*kind));
     units
         .chain(structures)
         .filter(|fighter| fighter.cost() <= reach)
@@ -1564,7 +1564,9 @@ fn awaited(
     let reach = u64::from(bank) + soon(income);
     shortfalls
         .iter()
-        .filter_map(|short| best_answer(observation, map, producers, short, reach))
+        .filter_map(|short| {
+            best_answer(observation, map, producers, short, reach, &EMERGENCY_KINDS)
+        })
         .filter_map(|(fighter, _)| match fighter {
             Fighter::Unit(kind) => Some(kind.stats().cost),
             Fighter::Structure(_) => None,
@@ -1579,8 +1581,8 @@ fn awaited(
 /// bank buys, until what this decision queued makes up each shortfall. A unit
 /// that would not pay back half its price against the attackers is never
 /// bought, and one worth less than half the best answer the bank reaches
-/// soon, unit or structure, waits for it: units that die before they pay only
-/// feed the attackers.
+/// soon, a unit or an emergency structure this decision put up, waits for
+/// it: units that die before they pay only feed the attackers.
 #[expect(
     clippy::too_many_arguments,
     reason = "a defense's answer reads the seat's producers, income and ledger"
@@ -1627,6 +1629,17 @@ fn arm(
     for (building, kind) in queued {
         cover(&mut shortfalls, kind, ground(building));
     }
+    // A structure answers only once the emergency has put one up: one it
+    // passed over, its approach already covered or no site found, is no
+    // reason to hold back a unit.
+    let raised: Vec<BuildingKind> = EMERGENCY_KINDS
+        .into_iter()
+        .filter(|kind| {
+            ledger.decision.purchases.iter().any(
+                |purchase| matches!(purchase, Purchase::Build { building, .. } if building == kind),
+            )
+        })
+        .collect();
     let idle: Vec<&Producer<'_>> = producers
         .iter()
         .filter(|producer| producer.ready && !ledger.queued_at(producer.building.id))
@@ -1649,6 +1662,7 @@ fn arm(
                 producers,
                 short,
                 u64::from(budget) + soon(income),
+                &raised,
             )
             .map_or(0, |(_, score)| score);
             let worth = |kind: UnitKind| answer(Fighter::Unit(kind), short);
