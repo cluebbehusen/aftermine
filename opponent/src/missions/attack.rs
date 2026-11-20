@@ -681,8 +681,8 @@ fn travel_on(
 
 /// Keeps a travelling army together: a column meets whatever stands on the
 /// way with its fastest members alone. Ground members more than the gathered
-/// distance ahead of the army's middle, by ground distance from home, stop;
-/// idle ones no longer ahead go on.
+/// distance ahead of the army's rear quarter, by ground distance from home,
+/// stop; idle ones no longer ahead go on.
 fn keep_together(plan: &Plan<'_>, target: Target, members: &[&UnitObs], ledger: &mut Ledger) {
     let me = plan.observation.me;
     let mut walking: Vec<(u16, &UnitObs)> = members
@@ -695,10 +695,10 @@ fn keep_together(plan: &Plan<'_>, target: Target, members: &[&UnitObs], ledger: 
         return;
     }
     walking.sort_by_key(|(distance, unit)| (*distance, unit.id));
-    let middle = walking[(walking.len() - 1) / 2].0;
+    let rear = walking[(walking.len() - 1) / 4].0;
     // Ground distances are in tenths of a tile.
     let ahead =
-        |distance: u16| u32::from(distance) > u32::from(middle) + GATHER_TILES.unsigned_abs() * 10;
+        |distance: u16| u32::from(distance) > u32::from(rear) + GATHER_TILES.unsigned_abs() * 10;
     let leaders: Vec<UnitId> = walking
         .iter()
         .filter(|(distance, unit)| ahead(*distance) && !unit.idle)
