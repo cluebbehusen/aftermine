@@ -816,3 +816,43 @@ fn a_scout_with_nothing_left_to_see_runs_home() {
         "{goal:?}"
     );
 }
+
+#[test]
+fn a_scout_that_finds_no_safe_view_counts_its_point_as_seen() {
+    // Halfway to the East start, out of home and before seeing it, the
+    // Surveyor reports no safe view of it. The start counts as seen, so the Surveyor is not
+    // sent on toward it and, with nothing else to see, comes home.
+    let (scenario, mut state) = scouting(STALE);
+    let surveyor = at(&state, 6, 9);
+    let mut opponent = seat(&scenario, 0);
+    let mut events = OwnEvents::default();
+    let commands = opponent.act(&state, &mut events);
+    assert_eq!(looks(&commands).len(), 1, "premise: the Surveyor sets out");
+    state.tick(&commands);
+    let x = |state: &State| TilePos::containing(state.unit(surveyor).unwrap().pos).x;
+    while x(&state) < 24 || !opponent.decision_due(&state) {
+        assert!(state.current_tick() < STALE + 2_000, "premise: halfway");
+        let commands = opponent.act(&state, &mut events);
+        state.tick(&commands);
+    }
+    assert_eq!(scouts(&opponent.missions()).len(), 1, "premise: still out");
+    let pos = state.unit(surveyor).unwrap().pos;
+    events.record(
+        PlayerId(0),
+        &[Event::OrderStalled {
+            unit: surveyor,
+            player: PlayerId(0),
+            pos,
+            reason: StallReason::NoSafeVantage,
+        }],
+    );
+    let (commands, trace) = opponent.act_traced(&state, &mut events);
+    assert!(scouts(&trace.unwrap().missions).is_empty(), "{commands:?}");
+    assert!(looks(&commands).is_empty(), "{commands:?}");
+    assert!(
+        runs(&commands)
+            .iter()
+            .any(|(units, _)| units == &[surveyor]),
+        "{commands:?}"
+    );
+}

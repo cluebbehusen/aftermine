@@ -290,11 +290,13 @@ timing, tech prerequisites, memory of failed objectives, a response to stalled
 production, focus fire, and pulling wounded units back between fights. A
 scouting point whose scout was lost on the way, or found no safe view, waits to
 go stale again rather than drawing scouts into the same fire one after another.
-A frame whose Extractor was lost rests three minutes before the seat builds
-there again. It does no other per-unit micro, except keeping point defenders
-over the army they travel with and sending a wounded Roc home from a lift's
-fight or a clearance. It builds every building kind, reaches every upgrade tier,
-and trains or assembles every unit kind.
+A scout with no stale point left comes back beside its Foundry rather than stand
+where its last point stays in its own sight until something finds it. A frame
+whose Extractor was lost rests three minutes before the seat builds there again.
+It does no other per-unit micro, except keeping point defenders over the army
+they travel with and sending a wounded Roc home from a lift's fight or a
+clearance. It builds every building kind, reaches every upgrade tier, and trains
+or assembles every unit kind.
 
 ## Difficulty, stance and personality
 

@@ -140,7 +140,7 @@ impl Missions {
                 continue;
             };
             let others = held(self, Some(id));
-            match best(
+            if let Some((next, goal)) = best(
                 now,
                 frame,
                 &points,
@@ -148,29 +148,26 @@ impl Missions {
                 &others,
                 goals.of(flies(scout)),
             ) {
-                Some((next, goal)) => {
-                    if send(observation, frame, hazards, scout, goal, ledger) {
-                        let mission = &mut self.list[index];
-                        mission.task = Task::Scout { point: next };
-                        mission.since = now;
-                        mission.goal = goal;
+                if send(observation, frame, hazards, scout, goal, ledger) {
+                    let mission = &mut self.list[index];
+                    mission.task = Task::Scout { point: next };
+                    mission.since = now;
+                    mission.goal = goal;
+                }
+            } else {
+                // Standing where the tour ended would keep its last
+                // places fresh in its own sight, so it would never be
+                // sent on, and it would wait there for whatever finds it.
+                if !defense::at_home(observation, map, scout.tile)
+                    && let Some(post) = defense::home_post(observation, map, frame, scout.tile)
+                {
+                    if flies(scout) {
+                        send(observation, frame, hazards, scout, post, ledger);
+                    } else {
+                        ledger.order(run(vec![scout.id], post));
                     }
                 }
-                None => {
-                    // Standing where the tour ended would keep its last
-                    // places fresh in its own sight, so it would never be
-                    // sent on, and it would wait there for whatever finds it.
-                    if !defense::at_home(observation, map, scout.tile)
-                        && let Some(post) = defense::home_post(observation, map, frame, scout.tile)
-                    {
-                        if flies(scout) {
-                            send(observation, frame, hazards, scout, post, ledger);
-                        } else {
-                            ledger.order(run(vec![scout.id], post));
-                        }
-                    }
-                    self.list.remove(index);
-                }
+                self.list.remove(index);
             }
         }
 
