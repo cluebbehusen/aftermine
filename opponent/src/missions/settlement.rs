@@ -159,7 +159,7 @@ impl<'a> Settlement<'a> {
             self.danger,
             investment,
             kind,
-            &[],
+            None,
         )
     }
 
@@ -455,7 +455,8 @@ impl Missions {
             source,
             doubled(source),
             ledger,
-        ) else {
+        )
+        .map(|unit| unit.id) else {
             return;
         };
         let Some(landing) = context
@@ -675,7 +676,7 @@ impl Missions {
                     ledger,
                 )
             {
-                payload.push(builder);
+                payload.push(builder.id);
             }
             let mut extra = members.clone();
             self.load_settlers(context, source, &payload, &mut extra, ledger);

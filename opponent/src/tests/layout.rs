@@ -263,7 +263,7 @@ fn under(threat: impl Fn(&mut Scenario)) -> Vec<(BuildingKind, TilePos)> {
 
 /// Whether a `kind` at `anchor` lies within `range` tiles of `centre`, in
 /// doubled coordinates, measured to the footprint's nearest point.
-fn within(kind: BuildingKind, anchor: TilePos, centre: (i64, i64), range: Fx) -> bool {
+pub(super) fn within(kind: BuildingKind, anchor: TilePos, centre: (i64, i64), range: Fx) -> bool {
     let (width, height) = kind.size();
     let axis = |v: i64, low: i32, len: i32| {
         let (low, high) = (2 * i64::from(low), 2 * i64::from(low + len));

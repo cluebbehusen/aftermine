@@ -602,13 +602,25 @@ pub(crate) fn emergency(
             .iter()
             .filter(|asset| pressed(asset) && unanswered(asset))
         {
-            let Some((anchor, _)) = guard.best_where(kind, |other| other.anchor == asset.anchor)
-            else {
+            let builder = |anchor: TilePos| {
+                let centre = footprint_centre(kind, anchor);
+                workers::builder(observation, map, frame, anchor, centre, ledger)
+            };
+            let Some((anchor, _)) = guard.best_where(
+                kind,
+                |other| other.anchor == asset.anchor,
+                |anchor| {
+                    placement::stands(
+                        observation,
+                        map,
+                        placement::Raising::fresh(kind, anchor),
+                        &[],
+                        builder(anchor).as_slice(),
+                    )
+                },
+            ) else {
                 continue;
             };
-            if !placement::stands(observation, kind, anchor) {
-                continue;
-            }
             let Ok(allowed) = placement::check(
                 guard.map,
                 observation,
@@ -619,13 +631,11 @@ pub(crate) fn emergency(
             ) else {
                 continue;
             };
-            let centre = footprint_centre(kind, anchor);
             if ledger.spendable() < price {
                 break;
             }
-            if let Some(builder) = workers::builder(observation, map, frame, anchor, centre, ledger)
-            {
-                ledger.build(builder, kind, anchor, allowed.defer, price);
+            if let Some(builder) = builder(anchor) {
+                ledger.build(builder.id, kind, anchor, allowed.defer, price);
             }
         }
     }

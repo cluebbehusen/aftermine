@@ -38,14 +38,16 @@ impl Guard<'_> {
     /// only a guess from public facts. Sites are tried best first, so few
     /// placement checks run.
     pub(super) fn best(&self, kind: BuildingKind) -> Option<(TilePos, u64)> {
-        self.best_where(kind, |_| true)
+        self.best_where(kind, |_| true, |_| true)
     }
 
-    /// The best site for `kind` guarding one of the assets `guarded` allows.
+    /// The best site for `kind` that `site` allows, guarding one of the
+    /// assets `guarded` allows.
     pub(super) fn best_where(
         &self,
         kind: BuildingKind,
         guarded: impl Fn(&Asset) -> bool,
+        site: impl Fn(TilePos) -> bool,
     ) -> Option<(TilePos, u64)> {
         if !buildable(self.observation, kind) {
             return None;
@@ -81,7 +83,7 @@ impl Guard<'_> {
         let mut sites: BinaryHeap<Reverse<(Reverse<u64>, _, TilePos)>> = BinaryHeap::new();
         for (bound, asset, approach) in candidates {
             while let Some(Reverse((Reverse(worth), _, anchor))) = sites.peek() {
-                if !self.placeable(kind, *anchor) {
+                if !self.placeable(kind, *anchor) || !site(*anchor) {
                     sites.pop();
                 } else if *worth > bound {
                     return Some((*anchor, *worth));
@@ -106,7 +108,7 @@ impl Guard<'_> {
             }
         }
         while let Some(Reverse((Reverse(worth), _, anchor))) = sites.pop() {
-            if self.placeable(kind, anchor) {
+            if self.placeable(kind, anchor) && site(anchor) {
                 return Some((anchor, worth));
             }
         }

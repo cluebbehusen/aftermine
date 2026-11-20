@@ -219,6 +219,438 @@ fn a_site_a_builder_found_no_route_to_waits_for_a_while() {
     );
 }
 
+#[test]
+fn no_builder_goes_back_to_a_site_where_a_raider_would_kill_it_first() {
+    // An East Sentinel beside a West Turret site shoots its builder while
+    // West's other Harvester, the one left to send back, mines out of the way.
+    let site = TilePos::new(10, 3);
+    let mut scenario = arena(400);
+    scenario.units.push(unit(1, UnitKind::Sentinel, 12, 3));
+    let mut state = scenario.build().unwrap();
+    let (builder, spare, raider) = (at(&state, 7, 6), at(&state, 6, 6), at(&state, 12, 3));
+    let order = |player: u8, command: Command| PlayerCommand {
+        player: PlayerId(player),
+        command,
+    };
+    state.tick(&[
+        order(
+            0,
+            Command::Build {
+                units: vec![builder],
+                kind: BuildingKind::Turret,
+                anchor: site,
+                queue: false,
+                defer: false,
+            },
+        ),
+        order(
+            0,
+            Command::Harvest {
+                units: vec![spare],
+                node: TilePos::new(7, 9),
+                queue: false,
+            },
+        ),
+        order(
+            1,
+            Command::Attack {
+                units: vec![raider],
+                target: AttackTarget::Unit(builder),
+                queue: false,
+            },
+        ),
+    ]);
+    while state.unit(builder).is_some() && state.current_tick() < 1_200 {
+        state.tick(&[]);
+    }
+    assert!(
+        state.unit(builder).is_none()
+            && state
+                .buildings()
+                .iter()
+                .any(|building| building.anchor == site && !building.built()),
+        "premise: the builder fell, leaving its site"
+    );
+    let next = state.current_tick().next_multiple_of(12);
+    advance_to(&mut state, next, &[]);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands).iter().all(|(_, anchor)| *anchor != site),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_site_the_fire_on_it_would_pull_down_is_cancelled() {
+    let site = TilePos::new(10, 3);
+    let mut scenario = arena(400);
+    for (x, y) in [(12, 3), (12, 4), (12, 2), (11, 5)] {
+        scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+    }
+    let mut state = scenario.build().unwrap();
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Build {
+            units: vec![at(&state, 7, 6)],
+            kind: BuildingKind::Turret,
+            anchor: site,
+            queue: false,
+            defer: false,
+        },
+    }]);
+    let next = (state.current_tick() + 60).next_multiple_of(12);
+    advance_to(&mut state, next, &[]);
+    let id = state
+        .buildings()
+        .iter()
+        .find(|building| building.anchor == site && !building.built())
+        .expect("premise: the site stands unfinished")
+        .id;
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        commands
+            .iter()
+            .any(|command| command.command == Command::Cancel { building: id }),
+        "{commands:?}"
+    );
+}
+
+/// `state` with `site` turned back into a site `progress` ticks of work in,
+/// at `hp`.
+fn raised(state: &State, site: BuildingId, hp: u32, progress: u32) -> State {
+    let mut value = serde_json::to_value(state).unwrap();
+    let entry = value["buildings"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["id"] == site.0)
+        .unwrap();
+    entry["hp"] = hp.into();
+    entry["phase"] = serde_json::json!({ "phase": "site", "progress": progress });
+    serde_json::from_value(value).unwrap()
+}
+
+fn cancels(commands: &[PlayerCommand]) -> Vec<BuildingId> {
+    commands_of(commands, |command| match command {
+        Command::Cancel { building } => Some(*building),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_crew_that_outbuilds_the_fire_keeps_its_cradle() {
+    // A Maw cradle half raised, its four Excavators at work, and a Sentinel
+    // firing on it: the crew finishes it long before the Sentinel could pull
+    // it down.
+    let anchor = TilePos::new(6, 13);
+    let mut scenario = field();
+    scenario.map[4].replace_range(8..9, "E");
+    scenario.players[0].scrap = UnitKind::Maw.stats().cost + 400;
+    scenario
+        .units
+        .extend((5..9).map(|x| unit(0, UnitKind::Excavator, x, 17)));
+    scenario.units.push(unit(1, UnitKind::Sentinel, 10, 14));
+    scenario.buildings.extend([
+        building(0, BuildingKind::Crucible, 3, 16),
+        building(0, BuildingKind::Extractor, 8, 4),
+    ]);
+    let mut state = bored(&scenario);
+    let crew: Vec<UnitId> = (5..9).map(|x| at(&state, x, 17)).collect();
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Build {
+            units: crew,
+            kind: BuildingKind::MawCradle,
+            anchor,
+            queue: false,
+            defer: false,
+        },
+    }]);
+    let cradle = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::MawCradle)
+        .expect("premise: the cradle is placed")
+        .id;
+    let ramp = BuildingKind::MawCradle.base_stats().max_hp * 4 / 5;
+    let build = BuildingKind::MawCradle
+        .base_stats()
+        .construction
+        .build_ticks;
+    let mut state = raised(&state, cradle, ramp / 4 + ramp / 2, build / 2);
+    let next = state.current_tick().next_multiple_of(12);
+    advance_to(&mut state, next, &[]);
+    let observation = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(
+        observation
+            .my_units
+            .iter()
+            .filter(|unit| unit.site == Some(cradle))
+            .count()
+            == 4
+            && !observation.enemy_units.is_empty(),
+        "premise: the crew is at it under fire"
+    );
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(!cancels(&commands).contains(&cradle), "{commands:?}");
+}
+
+#[test]
+fn a_cradle_crew_goes_only_where_it_outlasts_the_fire() {
+    // A Maw cradle a hundred ticks of work from done, its founder at it,
+    // stands up to three Lancers, but their first volley kills any more
+    // Excavators sent to finish it.
+    let anchor = TilePos::new(6, 13);
+    let mut scenario = field();
+    scenario.map[4].replace_range(8..9, "E");
+    scenario.players[0].scrap = UnitKind::Maw.stats().cost + 400;
+    scenario
+        .units
+        .extend((1..5).map(|x| unit(0, UnitKind::Excavator, x, 21)));
+    scenario.units.extend([
+        unit(0, UnitKind::Excavator, 5, 17),
+        unit(0, UnitKind::Kestrel, 11, 10),
+    ]);
+    for y in 13..16 {
+        scenario.units.push(unit(1, UnitKind::Lancer, 12, y));
+    }
+    scenario.buildings.extend([
+        building(0, BuildingKind::Crucible, 3, 16),
+        building(0, BuildingKind::Extractor, 8, 4),
+    ]);
+    let mut state = bored(&scenario);
+    let founder = at(&state, 5, 17);
+    let order = |command: Command| PlayerCommand {
+        player: PlayerId(0),
+        command,
+    };
+    state.tick(&[order(Command::Build {
+        units: vec![founder],
+        kind: BuildingKind::MawCradle,
+        anchor,
+        queue: false,
+        defer: false,
+    })]);
+    let next = state.current_tick().next_multiple_of(12);
+    advance_to(&mut state, next, &[]);
+    let cradle = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::MawCradle)
+        .expect("premise: the cradle is placed")
+        .id;
+    let stats = BuildingKind::MawCradle.base_stats();
+    let state = raised(
+        &state,
+        cradle,
+        stats.max_hp - 100,
+        stats.construction.build_ticks - 100,
+    );
+    let observation = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(
+        observation.enemy_units.len() == 3
+            && observation
+                .my_units
+                .iter()
+                .filter(|unit| unit.site == Some(cradle))
+                .count()
+                == 1,
+        "premise: the Lancers are in sight and only the founder is at the cradle"
+    );
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .all(|(kind, _)| *kind != BuildingKind::MawCradle),
+        "{commands:?}"
+    );
+    assert!(!cancels(&commands).contains(&cradle), "{commands:?}");
+}
+
+#[test]
+fn a_nearly_finished_site_is_judged_by_its_work_not_its_wounds() {
+    // A Turret twenty ticks of work from done, battered down to 150 health:
+    // two Lancers cannot pull it down in the time left.
+    let mut scenario = arena(400);
+    scenario.units.extend([
+        harvester(0, 9, 3),
+        unit(1, UnitKind::Lancer, 13, 2),
+        unit(1, UnitKind::Lancer, 13, 4),
+    ]);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Turret, 10, 3));
+    let state = scenario.build().unwrap();
+    let id = state
+        .buildings()
+        .iter()
+        .find(|building| building.kind == BuildingKind::Turret)
+        .unwrap()
+        .id;
+    let build = BuildingKind::Turret.base_stats().construction.build_ticks;
+    let state = raised(&state, id, 150, build - 20);
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(!cancels(&commands).contains(&id), "{commands:?}");
+}
+
+#[test]
+fn a_site_behind_rock_is_kept_from_guns_that_cannot_hit_it() {
+    let site = TilePos::new(10, 3);
+    let cancelled = |walled: bool| {
+        let mut scenario = arena(400);
+        if walled {
+            for row in &mut scenario.map[1..7] {
+                row.replace_range(12..13, "#");
+            }
+        }
+        scenario.units.push(unit(1, UnitKind::Lancer, 13, 3));
+        let mut state = scenario.build().unwrap();
+        state.tick(&[PlayerCommand {
+            player: PlayerId(0),
+            command: Command::Build {
+                units: vec![at(&state, 7, 6)],
+                kind: BuildingKind::Turret,
+                anchor: site,
+                queue: false,
+                defer: false,
+            },
+        }]);
+        let next = state.current_tick().next_multiple_of(12);
+        advance_to(&mut state, next, &[]);
+        let id = state
+            .buildings()
+            .iter()
+            .find(|building| building.anchor == site && !building.built())
+            .expect("premise: the site stands unfinished")
+            .id;
+        let observation =
+            aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+        assert!(
+            !observation.enemy_units.is_empty(),
+            "premise: the seat sees the Lancer"
+        );
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        cancels(&commands).contains(&id)
+    };
+    assert!(cancelled(false), "premise: the Lancers would pull it down");
+    assert!(!cancelled(true));
+}
+
+#[test]
+fn every_doomed_site_is_cancelled_however_few_orders_the_rung_gives() {
+    // Scrapheap gives two unit orders a decision; cancelling moves no unit.
+    let anchors = [
+        TilePos::new(10, 2),
+        TilePos::new(10, 5),
+        TilePos::new(10, 8),
+    ];
+    let mut scenario = arena(600);
+    scenario.units.push(harvester(0, 6, 7));
+    for anchor in anchors {
+        scenario
+            .units
+            .push(unit(1, UnitKind::Lancer, anchor.x + 3, anchor.y));
+    }
+    let mut state = scenario.build().unwrap();
+    let builders = [at(&state, 7, 6), at(&state, 6, 6), at(&state, 6, 7)];
+    let orders: Vec<PlayerCommand> = anchors
+        .iter()
+        .zip(builders)
+        .map(|(anchor, builder)| PlayerCommand {
+            player: PlayerId(0),
+            command: Command::Build {
+                units: vec![builder],
+                kind: BuildingKind::Turret,
+                anchor: *anchor,
+                queue: false,
+                defer: false,
+            },
+        })
+        .collect();
+    state.tick(&orders);
+    let next = state.current_tick().next_multiple_of(24);
+    advance_to(&mut state, next, &[]);
+    let sites: Vec<BuildingId> = state
+        .buildings()
+        .iter()
+        .filter(|building| building.kind == BuildingKind::Turret && !building.built())
+        .map(|building| building.id)
+        .collect();
+    assert_eq!(sites.len(), 3, "premise");
+    let commands = seat_with(&scenario, 0, rung(BotDifficulty::Scrapheap))
+        .act(&state, &mut OwnEvents::default());
+    let mut cancelled = cancels(&commands);
+    cancelled.sort_unstable();
+    assert_eq!(cancelled, sites, "{commands:?}");
+}
+
+#[test]
+fn a_site_far_from_its_builder_must_outlast_the_walk() {
+    // A fresh Turret beside an East Sentinel stands while an Excavator raises
+    // it from the start; sent from across the arena, the Sentinel takes the
+    // fifth of its health it stands at before the Excavator arrives.
+    let anchor = TilePos::new(18, 2);
+    let mut scenario = arena(400);
+    scenario.units.extend([
+        unit(0, UnitKind::Excavator, 17, 3),
+        unit(0, UnitKind::Excavator, 1, 10),
+        unit(1, UnitKind::Sentinel, 20, 2),
+    ]);
+    let state = scenario.build().unwrap();
+    let observation = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(!observation.enemy_units.is_empty(), "premise");
+    let excavator = |x: i32, y: i32| {
+        observation
+            .my_units
+            .iter()
+            .find(|unit| unit.tile == TilePos::new(x, y))
+            .unwrap()
+    };
+    let map = map(&scenario);
+    let stands = |builder: &aftermine_sim::observation::UnitObs| {
+        crate::placement::stands(
+            &observation,
+            &map,
+            crate::placement::Raising::fresh(BuildingKind::Turret, anchor),
+            &[],
+            &[builder],
+        )
+    };
+    assert!(stands(excavator(17, 3)));
+    assert!(!stands(excavator(1, 10)));
+}
+
+#[test]
+fn a_worker_on_the_far_side_of_a_site_is_outside_a_gun_s_blind_ring() {
+    // The Avalanche stands inside its blind ring of the footprint itself, but
+    // a worker on the ring's far side lies in its range.
+    let anchor = TilePos::new(10, 3);
+    let mut scenario = arena(400);
+    scenario.units.extend([
+        unit(0, UnitKind::Excavator, 9, 2),
+        unit(1, UnitKind::Avalanche, 14, 4),
+    ]);
+    let state = scenario.build().unwrap();
+    let observation = aftermine_sim::observation::ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(!observation.enemy_units.is_empty(), "premise");
+    let builder = observation
+        .my_units
+        .iter()
+        .find(|unit| unit.kind == UnitKind::Excavator)
+        .unwrap();
+    let map = map(&scenario);
+    assert!(
+        !crate::placement::stands(
+            &observation,
+            &map,
+            crate::placement::Raising::fresh(BuildingKind::Fabricator, anchor),
+            &[],
+            &[builder],
+        ),
+        "the Avalanche's shells find the Excavator"
+    );
+}
+
 fn first_site(state: &State) -> TilePos {
     state
         .buildings()

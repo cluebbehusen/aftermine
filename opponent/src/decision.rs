@@ -178,6 +178,12 @@ impl Ledger {
         true
     }
 
+    /// Scraps an own unfinished `building`. It moves no unit, so like a
+    /// purchase it never counts against the allowance.
+    pub(crate) fn cancel(&mut self, building: BuildingId) {
+        self.push(Command::Cancel { building });
+    }
+
     /// Issues every launch of one volley as a single unit order while the
     /// allowance lasts.
     pub(crate) fn salvo(&mut self, launches: impl IntoIterator<Item = Command>) {
@@ -932,7 +938,7 @@ fn buy(
                     &danger,
                     investment,
                     kind,
-                    &ledger.planned,
+                    Some((frame, ledger)),
                 ) {
                     Site::At(anchor, allowed) => (anchor, allowed),
                     Site::Unseen(anchor) => {
@@ -980,7 +986,7 @@ fn buy(
             else {
                 return;
             };
-            ledger.build(builder, kind, anchor, allowed.defer, price);
+            ledger.build(builder.id, kind, anchor, allowed.defer, price);
             ledger.protected = 0;
             persistent.saving.attempted(step, anchor);
         }
@@ -1005,8 +1011,11 @@ pub(crate) enum Site {
 }
 
 /// The first of the anchors toward `investment` that the seat's knowledge
-/// allows or has not fully seen, skipping those refused lately and, but for
-/// a defense, those something the seat knows of could hit.
+/// allows or has not fully seen, skipping those refused lately, those where
+/// the site would not stand and, but for a defense, those something the seat
+/// knows of could hit. A site bought now beside this decision's `ledger`
+/// keeps clear of the footprints it planned and needs a builder that pays
+/// its way.
 pub(crate) fn site(
     observation: &ObservationData,
     map: &MapModel,
@@ -1014,15 +1023,28 @@ pub(crate) fn site(
     danger: &placement::Danger,
     investment: Investment,
     kind: BuildingKind,
-    planned: &[(BuildingKind, TilePos)],
+    ledger: Option<(HomeFrame, &Ledger)>,
 ) -> Site {
     let tick = observation.tick;
+    let planned = ledger.map_or(&[][..], |(_, ledger)| ledger.planned());
     let defense =
         matches!(investment, Investment::Defense { kind: defense, .. } if defense == kind);
     investments::anchors(map, observation, investment, kind)
         .filter(|anchor| !memory.failed(kind, *anchor, tick))
         .filter(|anchor| defense || !danger.hits(kind, *anchor))
-        .filter(|anchor| placement::stands(observation, kind, *anchor))
+        .filter(|anchor| {
+            let builder = ledger.and_then(|(frame, ledger)| {
+                let centre = footprint_centre(kind, *anchor);
+                workers::builder(observation, map, frame, *anchor, centre, ledger)
+            });
+            placement::stands(
+                observation,
+                map,
+                placement::Raising::fresh(kind, *anchor),
+                &[],
+                builder.as_slice(),
+            )
+        })
         .find_map(|anchor| {
             match placement::check(
                 map,
@@ -1080,7 +1102,7 @@ fn explore(
     let centre = footprint_centre(kind, anchor);
     if let Some(builder) = workers::builder(observation, map, frame, anchor, centre, ledger) {
         ledger.order(Command::Run {
-            units: vec![builder],
+            units: vec![builder.id],
             goal: anchor,
             queue: false,
         });

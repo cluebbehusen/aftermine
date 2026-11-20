@@ -7,7 +7,7 @@ use crate::frame::{gap, ring, tiles_of};
 use crate::map::{MapModel, Shot};
 use crate::memory::Memory;
 use aftermine_sim::BuildingKind;
-use aftermine_sim::observation::{BuildingObs, ObservationData};
+use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::stats::{
     Domain, FOUNDRY_REPAIR_TICKS, HARVEST_INCIDENT_DANGER_RADIUS, WeaponStats,
 };
@@ -56,72 +56,249 @@ pub(crate) struct Allowed {
     pub(crate) defer: bool,
 }
 
-/// Damage per thousand ticks that the armed enemies in sight and the known
-/// enemy guns within reach of the footprint of `kind` at `anchor` deal it.
-fn fire_on(observation: &ObservationData, kind: BuildingKind, anchor: TilePos) -> u64 {
-    let size = kind.size();
-    let fire = |weapons: &[WeaponStats], gap: i32| -> u64 {
-        weapons
-            .iter()
-            .filter(|weapon| weapon.targets.ground && gap <= weapon.range.ceil().to_num::<i32>())
-            .map(|weapon| {
-                u64::from(weapon.building_damage.unwrap_or(weapon.damage)) * 1_000
-                    / u64::from(weapon.cooldown_ticks.max(1))
-            })
-            .sum()
-    };
-    let units: u64 = observation
-        .enemy_units
-        .iter()
-        .map(|enemy| {
-            fire(
+/// What the fire of the armed enemies in sight and the known enemy guns within
+/// reach of a footprint deals one target there: one volley of every weapon at
+/// once, then their damage per thousand ticks.
+#[derive(Clone, Copy, Default)]
+struct Barrage {
+    volley: u64,
+    rate: u64,
+}
+
+impl Barrage {
+    /// Whether `hp` of health outlasts this fire, all turned on it, for
+    /// `ticks`: the volley lands at once and the rest follows on it.
+    fn spares(self, hp: u32, ticks: u32) -> bool {
+        u64::from(hp) * 1_000 > self.volley * 1_000 + self.rate * u64::from(ticks)
+    }
+
+    /// Whether `worker` pays its way at a job beside the footprint worth
+    /// `worth` scrap that takes it `ticks`, were all this fire turned on it:
+    /// it finishes before it falls, or does at least its own price of the job
+    /// first.
+    fn pays(self, worker: &UnitObs, worth: u64, ticks: u32) -> bool {
+        if self.spares(worker.hp, ticks) {
+            return true;
+        }
+        let lasts =
+            (u64::from(worker.hp) * 1_000).saturating_sub(self.volley * 1_000) / self.rate.max(1);
+        worth * lasts >= u64::from(worker.kind.stats().cost) * u64::from(ticks)
+    }
+}
+
+/// The fire that reaches the footprint of `kind` at `anchor`: what it deals
+/// the building, and what it deals a worker anywhere on the ring beside it.
+struct Fire {
+    building: Barrage,
+    worker: Barrage,
+}
+
+impl Fire {
+    fn on(
+        observation: &ObservationData,
+        map: &MapModel,
+        kind: BuildingKind,
+        anchor: TilePos,
+    ) -> Self {
+        let footprint = Footprint::of(kind, anchor);
+        let ring = footprint.grown();
+        let mut fire = Fire {
+            building: Barrage::default(),
+            worker: Barrage::default(),
+        };
+        let world = |(x, y): (i64, i64)| Vec2Fx::new(Fx::from_num(x) / 2, Fx::from_num(y) / 2);
+        // A weapon's range runs from its shooter's doubled `centre` to the
+        // target's nearest point, and the shot there must clear rock and
+        // levels. A worker stands somewhere on the ring, so a gun reaches it
+        // when any of the ring lies between the gun's blind ring and its
+        // range.
+        let mut add =
+            |weapons: &[WeaponStats], centre: (i64, i64), footing: TilePos, from: Domain| {
+                for weapon in weapons.iter().filter(|weapon| weapon.targets.ground) {
+                    let (reach, minimum) = (
+                        weapon.range + weapon.range,
+                        weapon.minimum_range + weapon.minimum_range,
+                    );
+                    let (reach, minimum) = (reach * reach, minimum * minimum);
+                    let shot = Shot::of(weapon, from, Domain::Ground);
+                    let clear = |target: Footprint| {
+                        let near = target.nearest(centre);
+                        map.clear_shot(
+                            world(centre),
+                            world(near),
+                            (footing, target.tile_at(near)),
+                            shot,
+                        )
+                    };
+                    let cooldown = u64::from(weapon.cooldown_ticks.max(1));
+                    let building = Fx::from_num(footprint.near(centre)) <= reach
+                        && Fx::from_num(footprint.near(centre)) >= minimum
+                        && clear(footprint);
+                    let worker = Fx::from_num(ring.near(centre)) <= reach
+                        && Fx::from_num(ring.far(centre)) >= minimum
+                        && clear(ring);
+                    for (barrage, hits, damage) in [
+                        (
+                            &mut fire.building,
+                            building,
+                            weapon.building_damage.unwrap_or(weapon.damage),
+                        ),
+                        (&mut fire.worker, worker, weapon.damage),
+                    ] {
+                        if hits {
+                            barrage.volley += u64::from(damage);
+                            barrage.rate += u64::from(damage) * 1_000 / cooldown;
+                        }
+                    }
+                }
+            };
+        for enemy in &observation.enemy_units {
+            let centre = (
+                i64::from(2 * enemy.tile.x + 1),
+                i64::from(2 * enemy.tile.y + 1),
+            );
+            add(
                 enemy.kind.stats().weapons,
-                gap(anchor, size, enemy.tile, (1, 1)),
-            )
-        })
-        .sum();
-    let guns: u64 = observation
-        .enemy_buildings
-        .iter()
-        .map(|enemy| {
-            fire(
+                centre,
+                enemy.tile,
+                enemy.body_domain(),
+            );
+        }
+        // A site seen still going up fires at nothing yet.
+        for enemy in observation
+            .enemy_buildings
+            .iter()
+            .filter(|enemy| enemy.built || !enemy.seen)
+        {
+            let (width, height) = enemy.kind.size();
+            let centre = (
+                i64::from(2 * enemy.anchor.x + width),
+                i64::from(2 * enemy.anchor.y + height),
+            );
+            add(
                 enemy.kind.tier_stats(enemy.tier).weapons,
-                gap(anchor, size, enemy.anchor, enemy.kind.size()),
-            )
+                centre,
+                enemy.anchor,
+                Domain::Ground,
+            );
+        }
+        fire
+    }
+}
+
+/// A site going up: its kind and anchor, its health, and the construction
+/// work done on it.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Raising {
+    kind: BuildingKind,
+    anchor: TilePos,
+    hp: u32,
+    progress: u32,
+}
+
+impl Raising {
+    /// A site the seat would claim: placed at a fifth of its health with no
+    /// work done.
+    pub(crate) fn fresh(kind: BuildingKind, anchor: TilePos) -> Self {
+        Self {
+            kind,
+            anchor,
+            hp: kind.base_stats().max_hp / 5,
+            progress: 0,
+        }
+    }
+
+    /// The own unfinished `site` as its owner sees it.
+    pub(crate) fn of(observation: &ObservationData, site: &BuildingObs) -> Self {
+        let progress = observation
+            .my_buildings
+            .iter()
+            .position(|building| building.id == site.id)
+            .and_then(|index| observation.own_build_progress(index))
+            .unwrap_or(0);
+        Self {
+            kind: site.kind,
+            anchor: site.anchor,
+            hp: site.hp,
+            progress,
+        }
+    }
+}
+
+/// Whether `site` would stand before the fire that reaches it pulls it down,
+/// raised by the `crew` already at it together with the `sent` workers, each
+/// of whom pays their way under that fire. Nobody works a site before a
+/// builder reaches it, so it stands at its health until the nearest of them
+/// walks there; then it rises to full health over the work left at their
+/// combined rate. A site that would not stand only
+/// feeds the attackers its price and its builders.
+pub(crate) fn stands(
+    observation: &ObservationData,
+    map: &MapModel,
+    site: Raising,
+    crew: &[&UnitObs],
+    sent: &[&UnitObs],
+) -> bool {
+    let stats = site.kind.base_stats();
+    let (build, max) = (stats.construction.build_ticks, stats.max_hp);
+    let rate: u32 = crew
+        .iter()
+        .chain(sent)
+        .map(|worker| worker.kind.stats().build_rate)
+        .sum::<u32>()
+        .max(1);
+    let left = build.saturating_sub(site.progress);
+    let ticks = left.div_ceil(rate);
+    let walk = crew
+        .iter()
+        .chain(sent)
+        .map(|worker| walk_ticks(worker, site))
+        .min()
+        .unwrap_or(0);
+    let worth = u64::from(stats.construction.cost) * u64::from(left) / u64::from(build.max(1));
+    let fire = Fire::on(observation, map, site.kind, site.anchor);
+    fire.building.spares(site.hp.min(max), walk)
+        && fire.building.spares(max, walk.saturating_add(ticks))
+        && sent.iter().all(|worker| {
+            let share = worth * u64::from(worker.kind.stats().build_rate) / u64::from(rate);
+            fire.worker.pays(worker, share, ticks)
         })
-        .sum();
-    units + guns
 }
 
-/// Whether a site of `kind` raised at `anchor` would stand before the fire
-/// that reaches it pulls it down: it rises from a fifth of its health along
-/// its build time, so it stands while that fire takes less than its whole
-/// health over the build time. A site that would not only feeds the attackers
-/// its price and its builders.
-pub(crate) fn stands(observation: &ObservationData, kind: BuildingKind, anchor: TilePos) -> bool {
-    let stats = kind.base_stats();
-    u64::from(stats.max_hp) * 1_000
-        > fire_on(observation, kind, anchor) * u64::from(stats.construction.build_ticks)
+/// The ticks `worker` takes to walk to `site`, as the crow flies.
+fn walk_ticks(worker: &UnitObs, site: Raising) -> u32 {
+    let tiles = gap(site.anchor, site.kind.size(), worker.tile, (1, 1)).max(0);
+    let speed = worker.kind.stats().speed;
+    if speed <= Fx::ZERO {
+        return u32::MAX;
+    }
+    (Fx::from_num(tiles) / speed).ceil().to_num::<u32>()
 }
 
-/// Whether one worker welding the own `kind` at `tier` at `anchor` adds
-/// health faster than the fire that reaches it takes it away, along the
-/// simulation's welding ramp: a Foundry's own, any other building's build
-/// time.
+/// Whether `welder` welding the own `building` adds health faster than the
+/// fire that reaches it takes it away, along the simulation's welding ramp (a
+/// Foundry's own, any other building's build time), and pays its way under
+/// that fire: the health it restores is worth its share of what the building
+/// cost.
 pub(crate) fn mends(
     observation: &ObservationData,
-    kind: BuildingKind,
-    tier: u8,
-    anchor: TilePos,
+    map: &MapModel,
+    building: &BuildingObs,
+    welder: &UnitObs,
 ) -> bool {
+    let (kind, tier) = (building.kind, building.tier);
     let stats = kind.tier_stats(tier);
     let ramp_ticks = if kind == BuildingKind::Foundry {
         FOUNDRY_REPAIR_TICKS
     } else {
         stats.construction.build_ticks
     };
-    let ramp = u64::from(stats.max_hp - stats.max_hp / 5);
-    ramp * 1_000 / u64::from(ramp_ticks.max(1)) > fire_on(observation, kind, anchor)
+    let ramp = u64::from(stats.max_hp - stats.max_hp / 5) * 1_000 / u64::from(ramp_ticks.max(1));
+    let missing = u64::from(stats.max_hp.saturating_sub(building.hp));
+    let worth = u64::from(kind.invested_cost(tier)) * missing / u64::from(stats.max_hp.max(1));
+    let ticks = u32::try_from((missing * 1_000).div_ceil(ramp.max(1))).unwrap_or(u32::MAX);
+    let fire = Fire::on(observation, map, kind, building.anchor);
+    ramp > fire.building.rate && fire.worker.pays(welder, worth, ticks)
 }
 
 /// Checks `kind` at `anchor` against the seat's knowledge and the footprints
@@ -294,6 +471,32 @@ impl Footprint {
     fn near(self, point: (i64, i64)) -> i64 {
         let (x, y) = self.nearest(point);
         (point.0 - x).pow(2) + (point.1 - y).pow(2)
+    }
+
+    /// The squared doubled distance from a doubled `point` to the
+    /// footprint's farthest point.
+    fn far(self, point: (i64, i64)) -> i64 {
+        let low = (i64::from(2 * self.anchor.x), i64::from(2 * self.anchor.y));
+        let high = (
+            i64::from(2 * (self.anchor.x + self.width)),
+            i64::from(2 * (self.anchor.y + self.height)),
+        );
+        let dx = (point.0 - low.0).abs().max((point.0 - high.0).abs());
+        let dy = (point.1 - low.1).abs().max((point.1 - high.1).abs());
+        dx.pow(2) + dy.pow(2)
+    }
+
+    /// The footprint's tile holding the doubled `point` on or in it.
+    fn tile_at(self, point: (i64, i64)) -> TilePos {
+        let tile = |doubled: i64, low: i32, span: i32| {
+            i32::try_from(doubled / 2)
+                .unwrap_or(low)
+                .clamp(low, low + span - 1)
+        };
+        TilePos::new(
+            tile(point.0, self.anchor.x, self.width),
+            tile(point.1, self.anchor.y, self.height),
+        )
     }
 }
 
