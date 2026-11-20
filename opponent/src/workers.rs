@@ -465,7 +465,7 @@ fn weld(observation: &ObservationData, map: &MapModel, frame: HomeFrame, ledger:
             Target::Unit(_) => None,
         })
         .collect();
-    let mut patients: Vec<(u64, (i64, i64), &BuildingObs)> = observation
+    let mut patients: Vec<(u64, u64, (i64, i64), &BuildingObs)> = observation
         .my_buildings
         .iter()
         .filter(|building| building.built && !building.provisional)
@@ -488,22 +488,21 @@ fn weld(observation: &ObservationData, map: &MapModel, frame: HomeFrame, ledger:
             if room(observation, map, building.anchor, size, ground) == 0 {
                 return None;
             }
-            let price = building.kind.repair_basis(building.tier);
-            let missing = u64::from(price) * (max - hp) / max;
-            Some((missing, centre, building))
+            let price = u64::from(building.kind.repair_basis(building.tier)) * (max - hp);
+            // The simulation bills the weld's ceiling, rounded once.
+            let bill = (price * REPAIR_COST_PERMILLE).div_ceil(max * 1_000);
+            Some((price / max, bill, centre, building))
         })
         .collect();
-    patients.sort_by_key(|(missing, centre, building)| {
+    patients.sort_by_key(|(missing, _, centre, building)| {
         (
             Reverse(*missing),
             frame.rank(frame.home, *centre),
             building.id,
         )
     });
-    for (missing, centre, building) in patients {
-        let bill = u32::try_from((missing * REPAIR_COST_PERMILLE).div_ceil(1_000))
-            .unwrap_or(u32::MAX)
-            .max(1);
+    for (_, bill, centre, building) in patients {
+        let bill = u32::try_from(bill).unwrap_or(u32::MAX).max(1);
         if ledger.spendable() < WELD_FLOOR.min(bill) {
             continue;
         }
