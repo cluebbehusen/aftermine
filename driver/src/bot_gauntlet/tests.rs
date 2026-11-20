@@ -43,6 +43,7 @@ fn family_lists_name_families_and_groups_once_each() {
             Family::HeldArmy,
             Family::BuzzardHarass,
             Family::BombardSiege,
+            Family::RangedHold,
         ]
     );
     assert_eq!(

@@ -2,6 +2,7 @@ use super::*;
 use aftermine_kit::controller::{record_events, seat_controllers};
 use aftermine_sim::scenario::{BotConfig, BotDifficulty, BotStance, UnitSpec};
 use aftermine_sim::{BuildingKind, Command, Event, UnitKind};
+use chassis::grid::TilePos;
 
 /// One challenger game: the challenger's commands by tick, how many the
 /// game rejected, and the final state.
@@ -185,6 +186,14 @@ fn each_family_opens_its_plan_against_a_passive_seat() {
             Family::KestrelPush => {
                 units(state, UnitKind::Kestrel) >= 1 && units(state, UnitKind::Lancer) >= 1
             }
+            Family::RangedHold => {
+                finished(state, BuildingKind::Fabricator) >= 1
+                    && state.units().iter().any(|u| {
+                        u.player == PlayerId(0)
+                            && u.kind == UnitKind::Lancer
+                            && u.tile().chebyshev(home) * 3 >= home.chebyshev(enemy)
+                    })
+            }
             Family::Novice => state
                 .buildings()
                 .iter()
@@ -221,6 +230,41 @@ fn the_held_army_stays_home_until_its_hour() {
             );
         }
     }
+}
+
+#[test]
+fn the_ranged_hold_holds_a_line_in_the_middle_until_it_marches() {
+    let scenario = passive_skirmish();
+    let mut state = scenario.build().unwrap();
+    let mut challenger = Challenger::new(Family::RangedHold, PlayerId(0), 5, &scenario).unwrap();
+    let map = map::MapFacts::new(&scenario, PlayerId(0)).unwrap();
+    let route = map.route_length();
+    let army = |state: &State| -> Vec<TilePos> {
+        state
+            .units()
+            .iter()
+            .filter(|u| {
+                u.player == PlayerId(0) && matches!(u.kind, UnitKind::Lancer | UnitKind::Warden)
+            })
+            .map(aftermine_sim::Unit::tile)
+            .collect()
+    };
+    while state.current_tick() < 8800 {
+        let commands = challenger.act(&state);
+        state.tick(&commands);
+        for tile in army(&state) {
+            assert!(
+                map.steps_from_enemy(tile) * 100 >= route * 30,
+                "the army passed the line at tick {}",
+                state.current_tick()
+            );
+        }
+    }
+    let out = army(&state)
+        .into_iter()
+        .filter(|tile| map.steps_from_home(*tile) * 100 >= route * 35)
+        .count();
+    assert!(out >= 3, "{out} of the army stands out on the line");
 }
 
 #[test]

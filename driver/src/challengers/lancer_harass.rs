@@ -1,6 +1,6 @@
 //! A Fabricator at home, Lancers in pairs or threes raiding the enemy's
-//! harvest lines and Extractors from beyond its turrets' reach, then a main
-//! push.
+//! harvest lines and Extractors from beyond its turrets' reach, or the
+//! Turrets guarding them, which a Lancer out-ranges, then a main push.
 
 use super::tactics::{
     add_producer, campaign, gather, grow_economy, guard_home, home_post, raid, train_mix,
@@ -43,7 +43,7 @@ impl Params {
             fabricator_at: u64::from(between(rng, 0, 8)) * 100,
             group: between(rng, 2, 3),
             site: between(rng, 0, 3),
-            prey: pick(rng, &[Prey::Workers, Prey::Extractors]),
+            prey: pick(rng, &[Prey::Workers, Prey::Extractors, Prey::Defenses]),
             guards: between(rng, 1, 2),
             force: between(rng, 6, 9),
             main_at: u64::from(between(rng, 48, 72)) * 100,
