@@ -1383,14 +1383,7 @@ pub(crate) fn seek(
     if !ledger.can_order() {
         return;
     }
-    let barren = |ground: u32| {
-        !observation
-            .known_scrap
-            .iter()
-            .chain(&observation.known_wrecks)
-            .any(|(source, _)| map.touches(*source, ground))
-    };
-    let seekers: Vec<(&UnitObs, u32)> = observation
+    let mut seekers: Vec<(&UnitObs, u32)> = observation
         .my_units
         .iter()
         .filter(|unit| {
@@ -1400,26 +1393,32 @@ pub(crate) fn seek(
                 && !ledger.employs(unit.id)
                 && !ledger.stuck(unit.id)
         })
-        .filter_map(|unit| {
-            Some((
-                unit,
-                map.component(unit.tile).filter(|ground| barren(*ground))?,
-            ))
-        })
+        .filter_map(|unit| Some((unit, map.component(unit.tile)?)))
         .collect();
+    // Each ground's known scrap is looked over once, however many workers
+    // stand idle on it.
+    let mut barren: Vec<u32> = seekers.iter().map(|(_, ground)| *ground).collect();
+    barren.sort_unstable();
+    barren.dedup();
+    barren.retain(|ground| {
+        !observation
+            .known_scrap
+            .iter()
+            .chain(&observation.known_wrecks)
+            .any(|(source, _)| map.touches(*source, *ground))
+    });
+    seekers.retain(|(_, ground)| barren.binary_search(ground).is_ok());
     if seekers.is_empty() {
         return;
     }
     let (width, height) = map.size();
     let frontier: Vec<(u32, TilePos)> = (0..height)
         .flat_map(|y| (0..width).map(move |x| TilePos::new(x, y)))
-        .filter(|tile| !observation.explored(*tile) && !exposed(hazards, *tile))
+        .filter(|tile| !observation.explored(*tile))
         .filter_map(|tile| {
             let ground = map.component(tile)?;
-            seekers
-                .iter()
-                .any(|(_, own)| *own == ground)
-                .then_some((ground, tile))
+            barren.binary_search(&ground).ok()?;
+            (!exposed(hazards, tile)).then_some((ground, tile))
         })
         .collect();
     let mut goals: Vec<(TilePos, UnitId)> = seekers
