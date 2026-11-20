@@ -1869,15 +1869,20 @@ fn a_front_outweighed_falls_back_onto_the_army() {
     // Two Sentinels in contact with four East Sentinels, six more of the
     // attack far behind: the two alone would lose, the eight together win.
     // The two fall back onto the six rather than fight alone or turn the
-    // army home. With all eight there it fights on; with the two alone, the
-    // attack turns home.
+    // army home. With all eight there it fights on; with the two alone, or
+    // with only anti-air behind them, the attack turns home.
     let front = [(30, 11), (30, 12)];
     let behind = [(14, 3), (15, 3), (16, 3), (14, 4), (15, 4), (16, 4)];
     let near = [(29, 10), (29, 11), (29, 12), (28, 10), (28, 11), (28, 12)];
-    let decide = |rest: &[(i32, i32)]| {
+    let decide = |rest: &[(i32, i32)], escort: UnitKind| {
         let mut scenario = field();
-        for (x, y) in front.iter().chain(rest) {
-            scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+        for (index, (x, y)) in front.iter().chain(rest).enumerate() {
+            let kind = if index < front.len() {
+                UnitKind::Sentinel
+            } else {
+                escort
+            };
+            scenario.units.push(unit(0, kind, *x, *y));
         }
         for (x, y) in [(33, 10), (33, 11), (33, 12), (34, 11)] {
             scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
@@ -1922,9 +1927,31 @@ fn a_front_outweighed_falls_back_onto_the_army() {
         let falls_back = runs(&commands)
             .iter()
             .any(|(units, goal)| *units == ahead && goal.x < 20);
-        (withdraws, falls_back)
+        // Back with the army, the front goes on with it, and no focus order
+        // turns it around first.
+        let rejoins = commands.iter().any(|command| {
+            matches!(&command.command, Command::Hunt { units, queue: true, .. } if *units == ahead)
+        });
+        let refocused = commands.iter().any(|command| {
+            matches!(&command.command, Command::Attack { units, .. } if units.iter().any(|id| ahead.contains(id)))
+        });
+        (withdraws, falls_back && rejoins && !refocused)
     };
-    assert_eq!(decide(&near), (false, false), "all eight fight on");
-    assert_eq!(decide(&behind), (false, true), "the front falls back");
-    assert!(decide(&[]).0, "alone, the attack turns home");
+    let sentinel = UnitKind::Sentinel;
+    assert_eq!(
+        decide(&near, sentinel),
+        (false, false),
+        "all eight fight on"
+    );
+    assert_eq!(
+        decide(&behind, sentinel),
+        (false, true),
+        "the front falls back"
+    );
+    assert!(decide(&[], sentinel).0, "alone, the attack turns home");
+    // Escorts that hit only aircraft hold no ground fight.
+    assert!(
+        decide(&behind, UnitKind::Flakhound).0,
+        "with only anti-air behind, the attack turns home"
+    );
 }

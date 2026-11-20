@@ -211,6 +211,13 @@ impl Ledger {
         self.stuck.binary_search(&unit).is_ok()
     }
 
+    /// Whether `unit` was sent running this decision.
+    pub(crate) fn running(&self, unit: UnitId) -> bool {
+        self.decision.commands.iter().any(|command| {
+            matches!(&command.command, Command::Run { units, queue: false, .. } if units.contains(&unit))
+        })
+    }
+
     /// Keeps `unit` at a Repair Bay for the rest of this decision: no
     /// mission or welder takes it.
     pub(crate) fn dock(&mut self, unit: UnitId) {

@@ -25,7 +25,7 @@ use crate::profile::ResolvedProfile;
 use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use aftermine_sim::stats::Domain;
-use aftermine_sim::{BuildingKind, PlayerId, UnitId, UnitKind};
+use aftermine_sim::{BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
 use chassis::rng::Pcg32;
@@ -740,12 +740,10 @@ fn engage_on(
         }
         return None;
     }
-    if plan.fall_back(members, opposition, mission.goal, ledger) {
-        return None;
-    }
     if peel(mission, &outflown, rally, ledger) {
         return None;
     }
+    let goal = mission.goal;
     let Some(fight) = mission.task.fight_mut() else {
         unreachable!("an engaged attack's fight");
     };
@@ -756,6 +754,12 @@ fn engage_on(
         ENGAGE_TICKS,
     );
     let standing = standing(observation, target.objective());
+    // A front falls back onto the army only while the fight goes on at a
+    // target still standing: the fight's time and a target seen gone still
+    // end the attack.
+    if going && standing && plan.fall_back(members, opposition, goal, ledger) {
+        return None;
+    }
     // A target seen gone ends the attack on it at once: waiting for every
     // member to idle, or for the fight's progress to stall, never ends with
     // a large army, since some member is always busy and damage anywhere
@@ -896,9 +900,6 @@ fn stage_on(
             mission.attack_phase(target, AttackPhase::Withdraw, now, Some(rally));
             return Some(target.objective());
         }
-        return None;
-    }
-    if plan.fall_back(members, opposition, mission.goal, ledger) {
         return None;
     }
     if peel(mission, &outflown, rally, ledger) {
@@ -1724,19 +1725,17 @@ impl<'a> Plan<'a> {
     /// outfly every member. Enemies that outweigh only the members already
     /// in the fight turn back the front alone, onto the army.
     fn outweighs(&self, members: &[&UnitObs], opposition: u64, outflown: &[UnitId]) -> bool {
-        let strength: u64 = members
-            .iter()
-            .filter(|unit| !unit.kind.stats().weapons.is_empty())
-            .map(|unit| value(unit))
-            .sum();
+        // Escorts that hit only aircraft hold no ground fight.
+        let strength: u64 = members.iter().map(|unit| striking(unit)).sum();
         opposition * 1_000 > strength * self.retreat
             || (!outflown.is_empty() && outflown.len() == members.len())
     }
 
     /// Pulls the members in the fight back onto the army when the enemies
     /// around it outweigh them alone though not the whole army, so the front
-    /// neither fights alone nor turns the army home; idle members away from
-    /// the fight go on. Returns whether it did.
+    /// neither fights alone nor turns the army home; back with the army they
+    /// go on with it, and idle members away from the fight go on too.
+    /// Returns whether any fell back.
     fn fall_back(
         &self,
         members: &[&UnitObs],
@@ -1745,7 +1744,7 @@ impl<'a> Plan<'a> {
         ledger: &mut Ledger,
     ) -> bool {
         let front = self.front(members);
-        let fighting: u64 = front.iter().map(|unit| value(unit)).sum();
+        let fighting: u64 = front.iter().map(|unit| striking(unit)).sum();
         if opposition * 1_000 <= fighting * self.retreat {
             return false;
         }
@@ -1763,8 +1762,16 @@ impl<'a> Plan<'a> {
             .filter(|unit| unit.tile.chebyshev(middle.tile) > GATHER_TILES)
             .map(|unit| unit.id)
             .collect();
-        if !back.is_empty() {
-            ledger.order(run(back, middle.tile));
+        if back.is_empty() {
+            return false;
+        }
+        // Back with the army, they go on with it.
+        if ledger.order(run(back.clone(), middle.tile)) {
+            ledger.order(Command::Hunt {
+                units: back,
+                goal,
+                queue: true,
+            });
         }
         let on: Vec<UnitId> = body
             .iter()
