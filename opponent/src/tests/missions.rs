@@ -1373,6 +1373,27 @@ fn an_enemy_building_raised_among_the_seat_s_buildings_is_attacked() {
 }
 
 #[test]
+fn armed_raiders_draw_the_defense_before_a_nearer_unarmed_intruder() {
+    // An enemy Harvester stands nearer the Foundry than the raider, but
+    // chasing it would leave the raider to the base.
+    let mut scenario = raided(
+        &[
+            (UnitKind::Sentinel, 5, 8),
+            (UnitKind::Sentinel, 6, 8),
+            (UnitKind::Sentinel, 5, 9),
+        ],
+        &[(UnitKind::Sentinel, 9, 5)],
+    );
+    scenario.units.push(unit(1, UnitKind::Harvester, 6, 3));
+    let state = scenario.build().unwrap();
+    let goals: Vec<TilePos> = hunts(&seat(&scenario, 0).act(&state, &mut OwnEvents::default()))
+        .into_iter()
+        .map(|(_, goal)| goal)
+        .collect();
+    assert_eq!(goals, [TilePos::new(9, 5)]);
+}
+
+#[test]
 fn an_escort_beside_an_enemy_building_counts_once() {
     // Three Sentinels match two escorting a forward Fabricator and go at
     // them; counted twice, the escort would hold them beside the Foundry.
