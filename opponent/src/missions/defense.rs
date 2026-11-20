@@ -236,10 +236,23 @@ impl Missions {
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
             let go = sortie(*own, siege, met, difficulty);
+            // A defense already out gives up only below even odds, so an
+            // estimate hovering at the margin does not turn it out and back
+            // each decision through the attackers' fire.
+            let engaged = mission.is_some_and(|mission| {
+                matches!(
+                    mission.task,
+                    Task::Defend {
+                        phase: DefendPhase::Engage { .. },
+                        ..
+                    }
+                )
+            });
+            let bar = if engaged { met } else { go };
             if *own
                 && hunting
                 && met > 0
-                && siege.held < go
+                && siege.held < bar
                 && !kept(observation, map, foundry, goal)
             {
                 self.give_up(index, observation, map, frame, goal, ledger);
