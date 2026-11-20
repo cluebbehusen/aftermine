@@ -139,7 +139,7 @@ fn a_seen_point_waits_until_stale() {
     let (scenario, state) = scouting(3_600);
     let staged = |seen: u64| {
         let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
-            json["memory"]["scouted"] = serde_json::json!([seen]);
+            json["memory"]["scouted"] = scouted(&scenario, seen);
         });
         looks(&opponent.act(&state, &mut OwnEvents::default()))
     };
@@ -887,4 +887,35 @@ fn a_scout_out_of_time_before_it_sees_its_point_keeps_going() {
             .all(|(units, _)| units != &[surveyor]),
         "{commands:?}"
     );
+}
+
+#[test]
+fn an_army_that_knows_no_enemy_building_sends_a_scout_searching() {
+    // West saw East's start lately and found nothing there; East has
+    // rebuilt elsewhere, out of sight. With an army to attack with and no
+    // target it knows, West's Surveyor searches the field. With no such
+    // army, it waits for the start to go stale.
+    let searches = |army: bool| {
+        let mut scenario = field();
+        scenario.units.push(unit(0, UnitKind::Surveyor, 6, 9));
+        if army {
+            for x in 4..12 {
+                scenario.units.push(unit(0, UnitKind::Lancer, x, 14));
+            }
+        }
+        scenario
+            .buildings
+            .push(building(1, BuildingKind::Foundry, 40, 19));
+        let mut state = scenario.build().unwrap();
+        advance_to(&mut state, STALE, &[]);
+        let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            json["memory"]["scouted"] = scouted(&scenario, STALE - 600);
+        });
+        looks(&opponent.act(&state, &mut OwnEvents::default()))
+    };
+    let [(_, goal)] = &searches(true)[..] else {
+        panic!("one scout searches");
+    };
+    assert!(goal.chebyshev(TilePos::new(43, 11)) > 4, "{goal:?}");
+    assert!(searches(false).is_empty(), "no army, no search");
 }

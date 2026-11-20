@@ -525,6 +525,14 @@ fn field() -> Scenario {
     scenario
 }
 
+/// Scouting memory for West in `scenario` with East's start, its first
+/// point, last seen at `seen` and every other point never.
+fn scouted(scenario: &Scenario, seen: u64) -> serde_json::Value {
+    let mut scouted = vec![0; crate::missions::points(&map(scenario), PlayerId(0)).len()];
+    scouted[0] = seen;
+    serde_json::json!(scouted)
+}
+
 fn runs(commands: &[PlayerCommand]) -> Vec<(Vec<UnitId>, TilePos)> {
     commands_of(commands, |command| match command {
         Command::Run { units, goal, .. } => Some((units.clone(), *goal)),

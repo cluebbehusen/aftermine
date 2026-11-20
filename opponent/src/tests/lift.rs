@@ -1512,7 +1512,7 @@ fn recalled(
     let mut scenario = strait();
     scenario.players[0].bot_config = Some(config);
     let opponent = restored_with(&seat(&scenario, 0), &scenario, state, |json| {
-        json["memory"]["scouted"] = serde_json::json!([looked]);
+        json["memory"]["scouted"] = scouted(&scenario, looked);
         json["memory"]["units"] = units;
     });
     (scenario, opponent)
@@ -2188,7 +2188,7 @@ fn free_riders_walk_to_a_start_seen_empty_only_once_it_is_worth_another_look() {
     advance_to(&mut state, crate::missions::STALE_TICKS + 12, &[]);
     let walking = |seen: u64| {
         let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
-            json["memory"]["scouted"] = serde_json::json!([seen]);
+            json["memory"]["scouted"] = scouted(&scenario, seen);
         });
         walking_to_start(&opponent.act(&state, &mut OwnEvents::default()))
     };
