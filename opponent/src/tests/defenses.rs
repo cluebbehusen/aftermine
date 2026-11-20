@@ -1682,3 +1682,34 @@ fn a_standing_bastion_holds_only_ground_something_spots_for_it() {
         "a teammate's radar lets the Bastion hold more of the way in: {spotted} against {blind}"
     );
 }
+
+#[test]
+fn no_emergency_turret_goes_where_the_attackers_would_pull_its_site_down() {
+    // One Sentinel at the expansion draws a Turret (see above); a crowd of
+    // them around it would shoot the site down before it stands.
+    let expansion = TilePos::new(14, 8);
+    let mut scenario = arena(200);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Foundry, expansion.x, expansion.y));
+    for (x, y) in [
+        (16, 10),
+        (17, 10),
+        (16, 9),
+        (17, 9),
+        (18, 9),
+        (17, 8),
+        (16, 7),
+        (17, 7),
+    ] {
+        scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+    }
+    let state = scenario.build().unwrap();
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .all(|(kind, _)| *kind != BuildingKind::Turret),
+        "{commands:?}"
+    );
+}

@@ -204,8 +204,10 @@ shot lands follow the simulation's level rules and it never plans a building
 other than a wall or mine on a ramp. Danger is coarse known weapon coverage: a
 known building counts only where one of its ground weapons reaches, and a
 remembered unit only if it can hurt a building. Placement uses a fog-honest
-check over the observation. A stall or rejection triggers a re-plan instead of
-the order being proven in advance.
+check over the observation. A site goes up, and builders go back to one, only
+where it would stand before the fire in sight on it pulls it down, and a site a
+builder found no route to waits a while. A stall or rejection triggers a re-plan
+instead of the order being proven in advance.
 
 ## Computation
 
@@ -247,6 +249,7 @@ Each behavior is proven by a staged scenario test.
 | Expensive investment wanted                                | Save for it while keeping an army share                                                                                                                                                                                                                                                                                |
 | Several enemies                                            | Choose a target with hysteresis                                                                                                                                                                                                                                                                                        |
 | Wounded units and a calm Repair Bay                        | Drive or fly the free wounded into the reach of a Bay with a free slot, and keep them there while they heal                                                                                                                                                                                                            |
+| Own building damaged, under fire or not                    | Weld it while one welder mends it faster than the fire in sight on it takes it down, from scrap that covers the bill                                                                                                                                                                                                   |
 | Known strike worth a warhead                               | Build and load every empty Spire for a strike worth its rounds and the Spires lacking; launch them as one order when what warheads past known interceptors cost to recover, plus those drawn, is their price                                                                                                           |
 | Strike on known holdings                                   | Count recovery: the rebuild less repair owed or the repair bill, a site's whole price, income stopped, rounds lost, units seen standing still, and a seat's last known Foundry as all it is known to hold                                                                                                              |
 | Strike on a known Lattice or Spire                         | Count a Lattice's magazine when something under it is worth a warhead without it, and a Spire's threat where the seat lies unguarded                                                                                                                                                                                   |

@@ -339,6 +339,7 @@ pub(crate) fn decide(
         .iter()
         .any(|event| matches!(event, OwnEvent::CommandRejected { .. }));
     persistent.memory.stalls(observation, events);
+    workers::unreached(observation, events, &mut persistent.memory);
     let mut ledger = Ledger::new(
         observation.me,
         observation.scrap,
@@ -601,6 +602,7 @@ pub(crate) fn decide(
         observation,
         map,
         frame,
+        &persistent.memory,
         &scratch.ground,
         &staffing,
         &patients,
@@ -1020,6 +1022,7 @@ pub(crate) fn site(
     investments::anchors(map, observation, investment, kind)
         .filter(|anchor| !memory.failed(kind, *anchor, tick))
         .filter(|anchor| defense || !danger.hits(kind, *anchor))
+        .filter(|anchor| placement::stands(observation, kind, *anchor))
         .find_map(|anchor| {
             match placement::check(
                 map,
