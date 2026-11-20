@@ -1010,16 +1010,59 @@ fn spire_tech_on_the_enemy_side_brings_a_lattice_before_any_spire_is_seen() {
         lattice_score(&offers(true, true, &[])) > lattice_score(&offers(true, false, &[])),
         "both halves of the tech press harder than one"
     );
-    // One half guards only the most valuable base; both guard every one.
+    // Tech alone guards only the most valuable base: a Spire seen going up
+    // leaves time to guard the rest.
     let home = lattice_sites(&offers(true, false, &[]))[0];
     let covered = [(home.x, home.y)];
     assert!(lattice_sites(&offers(true, false, &covered)).is_empty());
-    let [expansion] = lattice_sites(&offers(true, true, &covered))[..] else {
-        panic!("both halves guard the lone Extractor too");
-    };
     assert!(
-        expansion.x > 14,
-        "{expansion:?} guards the Extractor at (22, 3)"
+        lattice_sites(&offers(true, true, &covered)).is_empty(),
+        "both halves of the tech still leave the lone Extractor to a seen Spire"
+    );
+}
+
+#[test]
+fn a_lattice_keeps_one_interceptor_on_spire_tech_and_fills_once_a_spire_is_known() {
+    // West's Lattice beside its Foundry, its magazine holding `loaded`
+    // interceptors with the simulation's autofill set to `autofill`.
+    let lattice = [(9, 8)];
+    let staged = |state: &State, loaded: u8, autofill: bool| -> State {
+        let mut value = serde_json::to_value(state).unwrap();
+        for building in value["buildings"].as_array_mut().unwrap() {
+            if building["kind"] == json!("lattice") {
+                building["magazine"]["loaded"] = json!(loaded);
+                building["magazine"]["autofill"] = json!(autofill);
+            }
+        }
+        serde_json::from_value(value).unwrap()
+    };
+    let switched = |scenario: &Scenario, state: &State| {
+        seat(scenario, 0)
+            .act(state, &mut OwnEvents::default())
+            .iter()
+            .filter_map(|command| match &command.command {
+                Command::SetAutofill { enabled, .. } => Some(*enabled),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let (scenario, state) = spire_tech(true, true, &lattice);
+    assert_eq!(
+        switched(&scenario, &staged(&state, 0, true)),
+        Vec::<bool>::new(),
+        "an empty magazine buys its first interceptor on Spire tech alone"
+    );
+    assert_eq!(
+        switched(&scenario, &staged(&state, 1, true)),
+        [false],
+        "one interceptor is enough until a Spire is known"
+    );
+    let scenario = guarded(&[(30, 4)], &lattice);
+    let state = scenario.build().unwrap();
+    assert_eq!(
+        switched(&scenario, &staged(&state, 1, false)),
+        [true],
+        "a seen Spire fills the magazine"
     );
 }
 

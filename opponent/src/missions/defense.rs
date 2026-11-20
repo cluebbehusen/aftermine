@@ -111,11 +111,7 @@ impl Missions {
                 })
                 .map(value)
                 .sum();
-            // A battery among defenses the seat cannot beat now is left to
-            // production: fighters sent beside it would only feed its guns.
-            siege
-                .batteries
-                .retain(|(_, beside)| defense(observation, memory, *beside) * 3 / 2 <= force);
+            siege.leave_unbeaten(observation, memory, force);
         }
         groups.retain(|(_, siege, _)| {
             !siege.units.is_empty()
@@ -265,11 +261,16 @@ impl Missions {
                 )
             });
             let mut recruits = fill(candidates, need, &mut have, room);
-            let gap = [0, 1].map(|index| pressing[index].saturating_sub(have[index]));
+            let gap = siege.gap(pressing, have);
             if *own && gap != [0, 0] {
                 shortfalls.push(Shortfall {
                     ground: component,
                     gap,
+                    attackers: siege.attackers(gap, crate::reads_threats(difficulty)),
+                    // Builders and producers with nothing armed beside them
+                    // are met with the cheapest unit: the first one there
+                    // soonest stops the site going up.
+                    read: crate::reads_threats(difficulty) && !siege.unarmed_only(),
                 });
             }
             // Guns are reached rather than waited for: they shell from
@@ -368,6 +369,14 @@ pub(crate) struct Shortfall {
     pub(crate) ground: Option<u32>,
     /// The shortfall, in scrap, against ground and air attackers.
     pub(crate) gap: [u64; 2],
+    /// The attackers in sight the shortfall counts, by kind with their
+    /// value, so what is trained can be what beats them; empty when the
+    /// shortfall answers no particular force.
+    pub(crate) attackers: Vec<(UnitKind, u64)>,
+    /// Whether the seat reads what the attackers are. One that only judges
+    /// their size answers with what is cheapest, which leaves its emergency
+    /// structures the rest of the bank.
+    pub(crate) read: bool,
 }
 
 /// Removes `taken` from the sorted `free`.
@@ -488,9 +497,78 @@ struct Siege<'a> {
     batteries: Vec<(&'a BuildingObs, TilePos)>,
     /// Where a gun shelling the base from out of sight probably stands.
     unseen: Option<TilePos>,
+    /// Whether something armed threatens the Foundry that the lists above
+    /// leave out: a gun the seat cannot beat yet, left to production, or a
+    /// gun out of sight shelling it while threats in sight hold its entry.
+    armed: bool,
 }
 
 impl Siege<'_> {
+    /// Leaves a battery among defenses the seat's `force` cannot beat now to
+    /// production: fighters sent beside it would only feed its guns. An armed
+    /// one left still marks the siege armed.
+    fn leave_unbeaten(&mut self, observation: &ObservationData, memory: &Memory, force: u64) {
+        let beaten = |beside: TilePos| defense(observation, memory, beside) * 3 / 2 <= force;
+        self.armed |= self
+            .batteries
+            .iter()
+            .any(|(battery, beside)| !beaten(*beside) && armed(battery));
+        self.batteries.retain(|(_, beside)| beaten(*beside));
+    }
+
+    /// Whether nothing armed threatens: no armed enemy in sight, no gun or
+    /// mine among its batteries, none left to production and none out of
+    /// sight.
+    fn unarmed_only(&self) -> bool {
+        self.units.is_empty()
+            && self.unseen.is_none()
+            && !self.armed
+            && !self.batteries.iter().any(|(building, _)| armed(building))
+    }
+
+    /// How far `have` falls short of the armed attackers, `pressing`, and
+    /// the enemy producers and builders among the buildings: a seat with no
+    /// army must train one for them. Scouts don't count, or every look at the
+    /// base would cost the seat its economy.
+    fn gap(&self, pressing: [u64; 2], have: [u64; 2]) -> [u64; 2] {
+        let builders: u64 = self
+            .strays
+            .iter()
+            .filter(|stray| stray.kind.stats().harvest.is_some())
+            .map(|stray| worth(stray.kind, stray.hp))
+            .sum();
+        let producers = self.producers() + builders;
+        [0, 1].map(|index| {
+            (pressing[index] + if index == 0 { producers } else { 0 }).saturating_sub(have[index])
+        })
+    }
+
+    /// The whole price of the unarmed enemy producers among its batteries.
+    fn producers(&self) -> u64 {
+        self.batteries
+            .iter()
+            .filter(|(building, _)| {
+                building.kind.tier_stats(building.tier).weapons.is_empty()
+                    && !building.kind.base_stats().produces.is_empty()
+            })
+            .map(|(building, _)| u64::from(building.kind.invested_cost(building.tier)))
+            .sum()
+    }
+
+    /// Its armed enemies in sight, by kind, with their value.
+    /// The armed attackers in a domain that `gap` leaves short, so an answer
+    /// is weighed against the attackers it must still beat, not those
+    /// already covered; none for a seat that does not `read` what they are
+    /// and judges the threat by its size.
+    fn attackers(&self, gap: [u64; 2], read: bool) -> Vec<(UnitKind, u64)> {
+        self.units
+            .iter()
+            .filter(|_| read)
+            .filter(|threat| gap[usize::from(threat.body_domain() == Domain::Air)] > 0)
+            .map(|threat| (threat.kind, value(threat)))
+            .collect()
+    }
+
     /// Where its threats on the ground stand: enemies in sight and the tiles
     /// beside its batteries.
     fn grounded(&self) -> impl Iterator<Item = TilePos> + '_ {
@@ -503,7 +581,7 @@ impl Siege<'_> {
     }
 
     /// Where its armed threats on the ground stand: armed enemies in sight
-    /// and the tiles beside its batteries that fire on ground.
+    /// and the tiles beside its batteries that can hurt ground units.
     fn armed_grounded(&self) -> impl Iterator<Item = TilePos> + '_ {
         self.units
             .iter()
@@ -512,14 +590,7 @@ impl Siege<'_> {
             .chain(
                 self.batteries
                     .iter()
-                    .filter(|(building, _)| {
-                        building
-                            .kind
-                            .tier_stats(building.tier)
-                            .weapons
-                            .iter()
-                            .any(|weapon| weapon.targets.ground)
-                    })
+                    .filter(|(building, _)| armed(building))
                     .map(|(_, beside)| *beside),
             )
     }
@@ -536,6 +607,8 @@ impl Siege<'_> {
     /// and the buildings among the batteries that carry no gun against
     /// ground, such as a Flak Turret. Defenders worth as much go after them.
     fn unarmed(&self) -> [u64; 2] {
+        // An enemy producer going up among the seat's buildings is worth its
+        // whole price, whatever its health: units will come out of it.
         let raised: u64 = self
             .batteries
             .iter()
@@ -547,7 +620,13 @@ impl Siege<'_> {
                     .iter()
                     .any(|weapon| weapon.targets.ground)
             })
-            .map(|(building, _)| building_value(building))
+            .map(|(building, _)| {
+                if building.kind.base_stats().produces.is_empty() {
+                    building_value(building)
+                } else {
+                    u64::from(building.kind.invested_cost(building.tier))
+                }
+            })
             .sum();
         [Domain::Ground, Domain::Air].map(|domain| {
             let strays: u64 = self
@@ -604,7 +683,12 @@ fn threats<'a>(
             // answered together, shelling that never stops keeps the defense
             // recruiting ground units and the army never leaves home.
             for (foundry, gun) in unseen(observation, map, frame) {
-                if !groups.iter().any(|(other, _, _)| other.id == foundry.id) {
+                if let Some((_, siege, _)) = groups
+                    .iter_mut()
+                    .find(|(other, _, _)| other.id == foundry.id)
+                {
+                    siege.armed = true;
+                } else {
                     let siege = Siege {
                         unseen: Some(gun),
                         ..Siege::default()
@@ -716,6 +800,17 @@ fn besieged<'a>(
         !siege.units.is_empty() || !siege.strays.is_empty() || !siege.batteries.is_empty()
     });
     groups
+}
+
+/// Whether `building` can hurt ground units: a gun, or a mine.
+fn armed(building: &BuildingObs) -> bool {
+    building
+        .kind
+        .tier_stats(building.tier)
+        .weapons
+        .iter()
+        .any(|weapon| weapon.targets.ground)
+        || building.kind == BuildingKind::ScuttleCharge
 }
 
 /// The built Foundries among `buildings`, nearest home first.

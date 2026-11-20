@@ -176,7 +176,12 @@ impl Missions {
             }
             let gap = [0, 1].map(|i| need[i].saturating_sub(have[i]));
             if gap != [0, 0] {
-                gaps.push(Shortfall { ground, gap });
+                gaps.push(Shortfall {
+                    ground,
+                    gap,
+                    attackers: Vec::new(),
+                    read: true,
+                });
             }
             kept.sort_unstable();
             let changed = members != kept;

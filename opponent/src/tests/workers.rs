@@ -491,6 +491,7 @@ fn checkpoints_reject_malformed_stuck_units() {
             "raided": [],
             "scouted": [],
             "stuck": stuck,
+            "extractors": [],
         }))
         .unwrap();
         memory.validate(100, 24, 12, 0)
