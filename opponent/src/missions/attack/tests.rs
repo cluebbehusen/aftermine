@@ -19,7 +19,7 @@ fn defenders_around_several_tiles_count_once() {
     let one = defense(&observation, &memory, a);
     assert_eq!(one, 100, "premise: the Turret guards each tile");
     assert_eq!(defense(&observation, &memory, b), one);
-    assert_eq!(defense_around(&observation, &memory, &[a, b]), one);
+    assert_eq!(defense_around(&observation, &memory, &[a, b], &[]), one);
 }
 
 #[test]

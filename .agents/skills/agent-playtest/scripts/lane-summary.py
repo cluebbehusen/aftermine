@@ -6,9 +6,10 @@
 Usage: uv run lane-summary.py <round-dir> [lane...]
 
 For each lane (every lane directory in the round when none is named) it
-reads the lane's commands.log, its replay, its report and its events.jsonl
-from Codex or Claude Code, and prints one row: the result and final tick, the player's
-orders per game minute, how far it advanced at a time, how often it looked
+reads the lane's commands.log, its replay (its match's, for a lane in a
+match), its report and its events.jsonl from Codex or Claude Code, and prints
+one row: the result and final tick, the player's orders per game minute,
+counted as the session paces them, how far it advanced at a time, how often it looked
 between advances, the wall time it spent, and the tokens the player's events report.
 `--json` prints the same rows as JSON lines.
 """
@@ -21,6 +22,45 @@ from pathlib import Path
 TICKS_PER_MINUTE = 1200
 LOOKS = {"digest"}
 CLOCK = {"advance", "status"}
+# The session counts up to this many trains of one kind at one structure in
+# one tick as one order, as a player clicks a unit's button a few times.
+TRAIN_BURST = 5
+
+
+def replay_and_seat(round_dir: Path, lane: str) -> tuple[Path, int]:
+    """The replay a lane played into and the seat it played: a lane of its
+    own writes replays/<lane>.json from seat 0; a lane in a match writes its
+    match's replay from its place in the match's lane list."""
+    for terms_path in sorted((round_dir / "sessions").glob("*.json")):
+        try:
+            terms = json.loads(terms_path.read_text())
+        except json.JSONDecodeError:
+            continue
+        lanes = terms.get("lanes", [])
+        if lane in lanes and "match" in terms:
+            return round_dir / "replays" / f"{terms['match']}.json", lanes.index(lane)
+    return round_dir / "replays" / f"{lane}.json", 0
+
+
+def orders_of(commands: list, seat: int) -> int:
+    """The seat's orders as the session paces them: a burst of trains of one
+    kind at one structure in one tick counts once."""
+    orders = 0
+    burst = None
+    for timed in commands:
+        if timed["command"]["player"] != seat:
+            continue
+        command = timed["command"]["command"]
+        if command.get("type") == "train":
+            key = (timed["tick"], command.get("building"), command.get("kind"))
+            if burst and burst[0] == key and burst[1] < TRAIN_BURST:
+                burst = (key, burst[1] + 1)
+                continue
+            burst = (key, 1)
+        else:
+            burst = None
+        orders += 1
+    return orders
 
 
 def lane_row(round_dir: Path, lane: str) -> dict:
@@ -47,11 +87,11 @@ def lane_row(round_dir: Path, lane: str) -> dict:
     if calls:
         row["wall_seconds"] = calls[-1][0] - calls[0][0]
 
-    replay_path = round_dir / "replays" / f"{lane}.json"
+    replay_path, seat = replay_and_seat(round_dir, lane)
     if replay_path.exists():
         replay = json.loads(replay_path.read_text())
         ticks = replay.get("meta", {}).get("ticks") or 0
-        orders = sum(1 for timed in replay["commands"] if timed["command"]["player"] == 0)
+        orders = orders_of(replay["commands"], seat)
         row["final_tick"] = ticks
         row["orders"] = orders
         if ticks:

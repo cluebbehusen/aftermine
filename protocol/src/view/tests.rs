@@ -548,6 +548,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     let mut compared_hostile_works = false;
     let mut compared_wreck = false;
     let mut cradle_ordered = false;
+    let mut compared_own_site = false;
     for tick in 0..1_500 {
         if tick % 25 == 0 {
             for seat in [PlayerId(0), PlayerId(1)] {
@@ -592,6 +593,21 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     fog_buildings, obs_buildings,
                     "tick {tick} seat {seat:?} buildings"
                 );
+                for (index, own) in obs.my_buildings.iter().enumerate() {
+                    let seen = fog
+                        .buildings
+                        .iter()
+                        .find(|b| b.id == own.id.0)
+                        .expect("the owner's buildings are in both views");
+                    if !seen.built {
+                        assert_eq!(
+                            obs.own_build_progress(index),
+                            Some(seen.progress),
+                            "tick {tick} seat {seat:?} site progress"
+                        );
+                        compared_own_site = true;
+                    }
+                }
                 let fog_works: Vec<_> = fog
                     .buildings
                     .iter()
@@ -766,6 +782,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
         compared_wreck,
         "a wreck remembered out of sight was compared"
     );
+    assert!(compared_own_site, "an own site's progress was compared");
 }
 
 #[test]

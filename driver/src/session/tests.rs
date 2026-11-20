@@ -229,7 +229,7 @@ fn paced_session(
             tick_limit,
             replay_out: dir.join("replays/playtest.json"),
             min_step,
-            orders_per_minute,
+            orders_per_minute: orders_per_minute.map(|cap| cap.try_into().unwrap()),
         },
     )
     .unwrap()
@@ -636,6 +636,35 @@ fn two_seat_session(dir: &std::path::Path) -> Session {
         },
     )
     .unwrap()
+}
+
+#[test]
+fn players_who_share_a_match_fill_every_seat() {
+    let dir = scratch("playtest-three-seats");
+    let mut scenario = Scenario::skirmish();
+    let third = scenario.players[1].clone();
+    scenario.players.push(third);
+    aftermine_kit::controller::seat_bots_around(
+        &mut scenario,
+        &[PlayerId(0), PlayerId(1)],
+        BotDifficulty::Prime,
+        BotStance::Balanced,
+        7,
+    )
+    .unwrap();
+    let error = Session::playtest(
+        scenario,
+        Playtest {
+            seats: vec![PlayerId(0), PlayerId(1)],
+            tick_limit: None,
+            replay_out: dir.join("replays/match.json"),
+            min_step: None,
+            orders_per_minute: None,
+        },
+    )
+    .err()
+    .expect("a bot would sit beside the players");
+    assert!(error.to_string().contains("fill every seat"), "{error}");
 }
 
 #[test]

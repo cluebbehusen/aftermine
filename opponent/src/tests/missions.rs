@@ -1347,29 +1347,77 @@ fn an_unarmed_enemy_among_the_seat_s_buildings_draws_a_defender_without_a_shortf
 
 #[test]
 fn an_enemy_building_raised_among_the_seat_s_buildings_is_attacked() {
-    let mut scenario = raided(
-        &[(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 6, 8)],
-        &[],
-    );
-    scenario.buildings.push(BuildingSpec {
-        player: 1,
-        kind: BuildingKind::Fabricator,
-        x: 8,
-        y: 1,
-    });
+    // A Flak Turret's gun cannot touch the ground units sent at it.
+    for kind in [BuildingKind::Fabricator, BuildingKind::FlakTurret] {
+        let mut scenario = raided(
+            &[(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 6, 8)],
+            &[],
+        );
+        scenario.buildings.push(BuildingSpec {
+            player: 1,
+            kind,
+            x: 8,
+            y: 1,
+        });
+        let state = scenario.build().unwrap();
+        let raised = state
+            .buildings()
+            .iter()
+            .find(|building| building.kind == kind)
+            .unwrap();
+        let beside: Vec<TilePos> = crate::frame::ring(raised.anchor, kind.size()).collect();
+        let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+        let sent = hunts(&commands);
+        assert!(
+            matches!(&sent[..], [(units, goal)] if !units.is_empty() && beside.contains(goal)),
+            "{kind:?}: {commands:?}"
+        );
+    }
+}
+
+#[test]
+fn an_escort_beside_an_enemy_building_counts_once() {
+    // Three Sentinels match two escorting a forward Fabricator and go at
+    // them; counted twice, the escort would hold them beside the Foundry.
+    let escorted = |defenders: &[(UnitKind, i32, i32)]| {
+        let mut scenario = raided(
+            defenders,
+            &[(UnitKind::Sentinel, 11, 2), (UnitKind::Sentinel, 11, 3)],
+        );
+        scenario.buildings.push(BuildingSpec {
+            player: 1,
+            kind: BuildingKind::Fabricator,
+            x: 8,
+            y: 1,
+        });
+        scenario
+    };
+    let scenario = escorted(&[
+        (UnitKind::Sentinel, 5, 8),
+        (UnitKind::Sentinel, 6, 8),
+        (UnitKind::Sentinel, 5, 9),
+    ]);
     let state = scenario.build().unwrap();
-    let fabricator = state
+    let foundry = state
         .buildings()
         .iter()
-        .find(|building| building.kind == BuildingKind::Fabricator)
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Foundry)
         .unwrap();
-    let beside: Vec<TilePos> =
-        crate::frame::ring(fabricator.anchor, BuildingKind::Fabricator.size()).collect();
-    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-    let sent = hunts(&commands);
+    let post: Vec<TilePos> =
+        crate::frame::ring(foundry.anchor, BuildingKind::Foundry.size()).collect();
+    let going = hunts(&seat(&scenario, 0).act(&state, &mut OwnEvents::default()));
     assert!(
-        matches!(&sent[..], [(units, goal)] if !units.is_empty() && beside.contains(goal)),
-        "{commands:?}"
+        matches!(&going[..], [(units, goal)] if units.len() == 3 && !post.contains(goal)),
+        "{going:?}"
+    );
+
+    // One does not match them and waits.
+    let scenario = escorted(&[(UnitKind::Sentinel, 5, 8)]);
+    let state = scenario.build().unwrap();
+    let waiting = hunts(&seat(&scenario, 0).act(&state, &mut OwnEvents::default()));
+    assert!(
+        matches!(&waiting[..], [(_, goal)] if post.contains(goal)),
+        "{waiting:?}"
     );
 }
 

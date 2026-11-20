@@ -156,6 +156,15 @@ pub fn play(case: &Case, seed: u64, cold: bool) -> Result<ForkRow> {
         .with_context(|| format!("case {}: loading {}", case.name, path.display()))?;
     let scenario = &replay.setup;
     let mut bots = seat_controllers(scenario).context("seating the bot")?;
+    if !cold {
+        // Playback reports each tick after it runs, so the opening decision
+        // is taken here, on the recording's first state.
+        let opening = aftermine_kit::recording::initial_state(&replay)
+            .with_context(|| format!("case {}: the recording's first state", case.name))?;
+        for bot in &mut bots {
+            let _ = bot.act(&opening);
+        }
+    }
     let mut state = aftermine_kit::runner::run_replay_observed(
         &replay,
         None,
@@ -196,11 +205,9 @@ pub fn play(case: &Case, seed: u64, cold: bool) -> Result<ForkRow> {
     while state.current_tick() < end && state.result().is_none() {
         let mut commands = challenger.act(&state);
         let bot_commands = aftermine_kit::bot_execution::commands(&state, &mut bots);
-        if player.0 == 0 {
-            commands.extend(bot_commands);
-        } else {
-            commands.splice(0..0, bot_commands);
-        }
+        // A player's commands go before the bots', as the shell and the
+        // session stage them.
+        commands.extend(bot_commands);
         let report = state.tick(&commands);
         record_events(&mut bots, &report);
         ledger.observe(&state, &report);

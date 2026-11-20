@@ -1772,7 +1772,7 @@ enum Against {
 /// The known ground defense around `tile`: remembered armed enemy units by
 /// confidence, and known enemy buildings that fire on ground by health.
 pub(super) fn defense(observation: &ObservationData, memory: &Memory, tile: TilePos) -> u64 {
-    defense_around(observation, memory, &[tile])
+    defense_around(observation, memory, &[tile], &[])
 }
 
 /// The known army an attack on `tiles` would meet: every armed enemy the seat
@@ -1831,16 +1831,18 @@ fn breaching(observation: &ObservationData, units: &[UnitId]) -> u64 {
 }
 
 /// The known ground defense around any of `tiles`, each defender counted
-/// once.
+/// once, leaving out the units in `counted`.
 pub(super) fn defense_around(
     observation: &ObservationData,
     memory: &Memory,
     tiles: &[TilePos],
+    counted: &[UnitId],
 ) -> u64 {
     let now = observation.tick;
     let units: u64 = memory
         .units()
         .iter()
+        .filter(|unit| !counted.contains(&unit.id))
         .filter(|unit| crate::defenses::reach(unit.kind) > Fx::ZERO)
         .filter(|unit| {
             tiles

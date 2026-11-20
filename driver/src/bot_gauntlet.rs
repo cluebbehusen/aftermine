@@ -143,11 +143,9 @@ fn play(
         let mut commands = challenger.act(&state);
         issued += commands.len() as u64;
         let bot_commands = aftermine_kit::bot_execution::commands(&state, &mut bots);
-        if challenger_seat == 0 {
-            commands.extend(bot_commands);
-        } else {
-            commands.splice(0..0, bot_commands);
-        }
+        // A player's commands go before the bots', as the shell and the
+        // session stage them.
+        commands.extend(bot_commands);
         let report = aftermine_kit::runner::record_and_tick(&mut state, &commands, replay.as_mut());
         record_events(&mut bots, &report);
         rejected += report

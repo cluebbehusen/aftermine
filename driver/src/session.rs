@@ -59,7 +59,7 @@ pub struct Playtest {
     /// often a player at this pace may look at the game.
     pub min_step: Option<u64>,
     /// The most orders the player may send in any minute of game time.
-    pub orders_per_minute: Option<u32>,
+    pub orders_per_minute: Option<std::num::NonZeroU32>,
 }
 
 /// Game ticks in a minute, the window an order rate is counted over.
@@ -138,6 +138,14 @@ impl Session {
                 seat.0
             );
         }
+        // Players who share a match fill it, so none of them is paired with a
+        // bot as an ally or left a bot to fight beside.
+        anyhow::ensure!(
+            playtest.seats.len() == 1 || playtest.seats.len() == scenario.players.len(),
+            "{} has {} seats; players who share a match fill every seat",
+            scenario.name,
+            scenario.players.len()
+        );
         Ok(Self {
             playtest: Some(playtest),
             ..Self::new(scenario)?
@@ -484,7 +492,7 @@ impl Session {
     /// order, as a player clicks a unit's button a few times at once.
     fn over_pace(&self, seat: PlayerId, next: &Command) -> Option<String> {
         let playtest = self.playtest.as_ref()?;
-        let cap = usize::try_from(playtest.orders_per_minute?).ok()?;
+        let cap = usize::try_from(playtest.orders_per_minute?.get()).ok()?;
         let now = self.state.current_tick();
         let sent = self
             .recorder
@@ -529,7 +537,7 @@ impl Session {
             return None;
         }
         recent.sort_unstable();
-        let frees = recent[recent.len() - cap.max(1)] + MINUTE;
+        let frees = recent[recent.len() - cap] + MINUTE;
         Some(format!(
             "this playtest allows {cap} orders in any minute of game time; \
              your next order may go from tick {frees}"

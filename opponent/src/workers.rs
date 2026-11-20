@@ -9,6 +9,7 @@ use crate::investments::built_foundries;
 use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
 use crate::memory::Memory;
 use crate::missions::{Hazard, Meal, Scratch};
+use crate::placement::Raising;
 use crate::profile::ResolvedProfile;
 use aftermine_sim::TICKS_PER_SECOND;
 use aftermine_sim::ids::Target;
@@ -343,11 +344,17 @@ pub(crate) fn run(
     ledger: &mut Ledger,
 ) {
     flee(observation, map, frame, hazards, home_lines, ledger);
-    let open = |site: &BuildingObs, builder: Option<&UnitObs>| {
+    let open = |site: &BuildingObs, sent: &[&UnitObs]| {
         !memory.failed(site.kind, site.anchor, observation.tick)
-            && crate::placement::stands(observation, site.kind, site.anchor, site.hp, builder)
+            && crate::placement::stands(
+                observation,
+                map,
+                Raising::of(observation, site),
+                &attending(observation, site),
+                sent,
+            )
     };
-    cancel_doomed(observation, ledger);
+    cancel_doomed(observation, map, ledger);
     resume_sites(observation, map, frame, &open, ledger);
     crew_cradles(observation, map, frame, &open, ledger);
     weld(observation, map, frame, ledger);
@@ -551,7 +558,7 @@ fn weld(observation: &ObservationData, map: &MapModel, frame: HomeFrame, ledger:
             Target::Unit(_) => None,
         })
         .collect();
-    let mut patients: Vec<(u64, (i64, i64), &BuildingObs)> = observation
+    let mut patients: Vec<(u64, u64, (i64, i64), &BuildingObs)> = observation
         .my_buildings
         .iter()
         .filter(|building| building.built && !building.provisional)
@@ -570,29 +577,28 @@ fn weld(observation: &ObservationData, map: &MapModel, frame: HomeFrame, ledger:
             if room(observation, map, building.anchor, size, ground) == 0 {
                 return None;
             }
-            let price = building.kind.repair_basis(building.tier);
-            let missing = u64::from(price) * (max - hp) / max;
-            Some((missing, centre, building))
+            let price = u64::from(building.kind.repair_basis(building.tier)) * (max - hp);
+            // The simulation bills the weld's ceiling, rounded once.
+            let bill = (price * REPAIR_COST_PERMILLE).div_ceil(max * 1_000);
+            Some((price / max, bill, centre, building))
         })
         .collect();
-    patients.sort_by_key(|(missing, centre, building)| {
+    patients.sort_by_key(|(missing, _, centre, building)| {
         (
             Reverse(*missing),
             frame.rank(frame.home, *centre),
             building.id,
         )
     });
-    for (missing, centre, building) in patients {
-        let bill = u32::try_from((missing * REPAIR_COST_PERMILLE).div_ceil(1_000))
-            .unwrap_or(u32::MAX)
-            .max(1);
+    for (_, bill, centre, building) in patients {
+        let bill = u32::try_from(bill).unwrap_or(u32::MAX).max(1);
         if ledger.spendable() < WELD_FLOOR.min(bill) {
             continue;
         }
         let Some(welder) = builder(observation, map, frame, building.anchor, centre, ledger) else {
             continue;
         };
-        if !crate::placement::mends(observation, building, welder) {
+        if !crate::placement::mends(observation, map, building, welder) {
             continue;
         }
         if !ledger.order(Command::Repair {
@@ -745,19 +751,32 @@ pub(crate) fn builder<'a>(
         .min_by_key(|unit| (frame.rank(centre, doubled(unit.tile)), unit.id))
 }
 
+/// The own workers at or bound for `site`.
+fn attending<'a>(observation: &'a ObservationData, site: &BuildingObs) -> Vec<&'a UnitObs> {
+    observation
+        .my_units
+        .iter()
+        .filter(|unit| unit.site == Some(site.id))
+        .collect()
+}
+
 /// Cancels each own unfinished base-tier site that the fire reaching it would
-/// pull down before it stands, for the refund its health still earns.
-fn cancel_doomed(observation: &ObservationData, ledger: &mut Ledger) {
+/// pull down before its crew raises it, for the refund its health still earns.
+fn cancel_doomed(observation: &ObservationData, map: &MapModel, ledger: &mut Ledger) {
     for site in observation
         .my_buildings
         .iter()
         .filter(|site| !site.built && !site.provisional && site.tier == 0)
     {
-        if crate::placement::stands(observation, site.kind, site.anchor, site.hp, None) {
-            continue;
-        }
-        if !ledger.order(Command::Cancel { building: site.id }) {
-            return;
+        let raising = Raising::of(observation, site);
+        if !crate::placement::stands(
+            observation,
+            map,
+            raising,
+            &attending(observation, site),
+            &[],
+        ) {
+            ledger.cancel(site.id);
         }
     }
 }
@@ -769,7 +788,7 @@ fn resume_sites(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
-    open: &dyn Fn(&BuildingObs, Option<&UnitObs>) -> bool,
+    open: &dyn Fn(&BuildingObs, &[&UnitObs]) -> bool,
     ledger: &mut Ledger,
 ) {
     for site in &observation.my_buildings {
@@ -784,7 +803,7 @@ fn resume_sites(
         let Some(builder) = builder(observation, map, frame, site.anchor, centre, ledger) else {
             continue;
         };
-        if !open(site, Some(builder)) {
+        if !open(site, &[builder]) {
             continue;
         }
         let command = Command::Build {
@@ -808,11 +827,11 @@ fn crew_cradles(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
-    open: &dyn Fn(&BuildingObs, Option<&UnitObs>) -> bool,
+    open: &dyn Fn(&BuildingObs, &[&UnitObs]) -> bool,
     ledger: &mut Ledger,
 ) {
     for site in observation.my_buildings.iter().filter(|building| {
-        building.kind.assembles().is_some() && !building.built && open(building, None)
+        building.kind.assembles().is_some() && !building.built && open(building, &[])
     }) {
         let crew = observation
             .my_units
@@ -849,10 +868,12 @@ fn crew_cradles(
                 unit.id,
             )
         });
-        let mut units: Vec<UnitId> = free.iter().take(room).map(|unit| unit.id).collect();
-        if units.is_empty() {
+        free.truncate(room);
+        // The crew it would send each pays their way under the fire on it.
+        if free.is_empty() || !open(site, &free) {
             continue;
         }
+        let mut units: Vec<UnitId> = free.iter().map(|unit| unit.id).collect();
         units.sort_unstable();
         let command = Command::Build {
             units,
