@@ -2072,3 +2072,54 @@ fn home_is_never_given_up() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
+    // Two Sentinels out where the raiders were, the raiders gone: they come
+    // back beside the Foundry rather than be let go out there.
+    let scenario = raided(
+        &[(UnitKind::Sentinel, 13, 8), (UnitKind::Sentinel, 14, 8)],
+        &[],
+    );
+    let state = scenario.build().unwrap();
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    let mut members = vec![at(&state, 13, 8), at(&state, 14, 8)];
+    members.sort_unstable();
+    let mut opponent = restored_with(
+        &seat_with(&scenario, 0, rung(BotDifficulty::Prime)),
+        &scenario,
+        &state,
+        |json| {
+            json["missions"] = serde_json::json!({
+                "next": 1,
+                "list": [{
+                    "id": 0,
+                    "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                    "since": 0,
+                    "units": members,
+                    "goal": {"x": 15, "y": 6},
+                }],
+            });
+        },
+    );
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let beside = beside_foundry(&state, 0, None);
+    assert!(
+        hunts(&commands)
+            .iter()
+            .any(|(units, goal)| units == &members && beside.contains(goal)),
+        "{commands:?}"
+    );
+    assert!(
+        trace
+            .unwrap()
+            .missions
+            .iter()
+            .any(|mission| mission.phase == Phase::Recover),
+        "the defense recovers"
+    );
+}

@@ -100,23 +100,7 @@ impl Missions {
                 || siege.unseen.is_some()
                 || siege.remembered != [0, 0]
         });
-        for mission in &mut self.list {
-            let Task::Defend { asset, phase } = &mut mission.task else {
-                continue;
-            };
-            let threatened = groups.iter().any(|(foundry, _, _)| foundry.id == *asset);
-            if let DefendPhase::Engage { focus } = *phase
-                && !threatened
-            {
-                // A focus order chases its target; without a fresh Hunt the
-                // members would follow a retreating enemy out of the base.
-                if focus.is_some() {
-                    ledger.order(hunt(mission.units.clone(), mission.goal));
-                }
-                *phase = DefendPhase::Recover;
-                mission.since = now;
-            }
-        }
+        self.stand_down(observation, (map, frame), &groups, ledger);
         self.list.retain(|mission| {
             !matches!(
                 mission.task,
@@ -363,6 +347,49 @@ impl Missions {
             self.release_from_others(index, &joined);
         }
         shortfalls
+    }
+
+    /// Puts every engaged defense whose Foundry no threat presses any more
+    /// into recovery, sending its members back to the post beside their
+    /// Foundry.
+    fn stand_down(
+        &mut self,
+        observation: &ObservationData,
+        (map, frame): (&MapModel, HomeFrame),
+        groups: &[(&BuildingObs, Siege<'_>, bool)],
+        ledger: &mut Ledger,
+    ) {
+        let now = observation.tick;
+        for mission in &mut self.list {
+            let Task::Defend { asset, phase } = &mut mission.task else {
+                continue;
+            };
+            let threatened = groups.iter().any(|(foundry, _, _)| foundry.id == *asset);
+            if let DefendPhase::Engage { focus } = *phase
+                && !threatened
+            {
+                // Its members come back to the post beside their Foundry:
+                // left where the fight ended, often by the enemy's line,
+                // they are let go there and picked off. Without a post, a
+                // focus order is replaced so they stop chasing a retreating
+                // enemy out of the base.
+                let post = observation
+                    .my_buildings
+                    .iter()
+                    .chain(&observation.ally_buildings)
+                    .find(|building| building.id == *asset)
+                    .and_then(|foundry| waiting_post(map, frame, foundry, mission.goal));
+                if let Some(post) = post {
+                    if ledger.order(hunt(mission.units.clone(), post)) {
+                        mission.goal = post;
+                    }
+                } else if focus.is_some() {
+                    ledger.order(hunt(mission.units.clone(), mission.goal));
+                }
+                *phase = DefendPhase::Recover;
+                mission.since = now;
+            }
+        }
     }
 
     /// Notes on each siege in `groups` what its Foundry's defense holds and
