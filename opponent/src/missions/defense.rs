@@ -220,23 +220,30 @@ impl Missions {
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
             let go = sortie(*own, siege, met, difficulty);
-            // A defense already in its fight is not given up: turned out
-            // under fire, its members only die on the way home, and the next
-            // look sends them back. It falls back to its post instead.
-            let engaged = mission.is_some_and(|mission| {
+            // A defense already out at its fight is not given up short of the
+            // margin: turned out under fire, its members only die on the way
+            // home, and the next look sends them back. Where the rung falls
+            // back to the post, that rule takes it from there; a rung that
+            // never falls back still gives up below even odds. One waiting at
+            // its post is not out yet.
+            let out = mission.is_some_and(|mission| {
                 matches!(
                     mission.task,
                     Task::Defend {
                         phase: DefendPhase::Engage { .. },
                         ..
                     }
-                )
+                ) && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
             });
+            let bar = match (out, concentrates(difficulty)) {
+                (false, _) => Some(go),
+                (true, true) => None,
+                (true, false) => Some(met),
+            };
             if *own
                 && hunting
-                && !engaged
                 && met > 0
-                && siege.held < go
+                && bar.is_some_and(|bar| siege.held < bar)
                 && !kept(observation, map, foundry, goal)
             {
                 self.give_up(index, observation, map, frame, goal, ledger);

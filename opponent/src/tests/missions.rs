@@ -1999,8 +1999,8 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
     // A defense already engaged there is not given up: turned out under
     // fire, its members would only die on the way home and be sent back at
     // the next look. It stays a defense, and nobody is turned home.
-    let scenario = expansion_raided(&[(5, 8)]);
-    let mut scenario = scenario;
+    let mut scenario = expansion_raided(&[(5, 8)]);
+    scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
     scenario.units.extend([
         unit(0, UnitKind::Sentinel, 24, 9),
         unit(0, UnitKind::Sentinel, 25, 9),
@@ -2077,10 +2077,11 @@ fn home_is_never_given_up() {
 fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
     // Two Sentinels out where the raiders were, the raiders gone: they come
     // back beside the Foundry rather than be let go out there.
-    let scenario = raided(
+    let mut scenario = raided(
         &[(UnitKind::Sentinel, 13, 8), (UnitKind::Sentinel, 14, 8)],
         &[],
     );
+    scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
     let state = scenario.build().unwrap();
     let home = state
         .buildings()
@@ -2121,5 +2122,71 @@ fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
             .iter()
             .any(|mission| mission.phase == Phase::Recover),
         "the defense recovers"
+    );
+}
+
+#[test]
+fn only_a_defense_out_at_its_fight_holds_on_and_only_where_it_can_fall_back() {
+    // One Sentinel at home and two by the expansion against six raiders: under
+    // even odds. A Prime defense out at the raiders holds on and falls back by
+    // its own rule; one still waiting at the expansion's post is given up; at
+    // Scrapheap, which never falls back, one out at them is given up too.
+    let expansion = TilePos::new(24, 5);
+    let defended = |config: BotConfig, goal: TilePos| {
+        let mut scenario = expansion_raided(&[(5, 8)]);
+        scenario.players[0].bot_config = Some(config);
+        scenario.units.extend([
+            unit(0, UnitKind::Sentinel, 24, 9),
+            unit(0, UnitKind::Sentinel, 25, 9),
+        ]);
+        let state = scenario.build().unwrap();
+        let outpost = state
+            .buildings()
+            .iter()
+            .find(|b| b.player == PlayerId(0) && b.anchor == expansion)
+            .unwrap()
+            .id;
+        let mut members = vec![at(&state, 24, 9), at(&state, 25, 9)];
+        members.sort_unstable();
+        let mut opponent = restored_with(
+            &seat_with(&scenario, 0, config),
+            &scenario,
+            &state,
+            |json| {
+                json["missions"] = serde_json::json!({
+                    "next": 1,
+                    "list": [{
+                        "id": 0,
+                        "task": {"task": "defend", "asset": outpost.0, "phase": {"engage": {"focus": null}}},
+                        "since": 0,
+                        "units": members,
+                        "goal": {"x": goal.x, "y": goal.y},
+                    }],
+                });
+            },
+        );
+        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        trace
+            .unwrap()
+            .missions
+            .iter()
+            .any(|mission| matches!(mission.kind, MissionKind::Defend { .. }))
+    };
+    let out = TilePos::new(28, 5);
+    // A tile beside the expansion, on the raiders' side.
+    let post = crate::frame::ring(expansion, BuildingKind::Foundry.size())
+        .max_by_key(|tile| (tile.x, tile.y))
+        .unwrap();
+    assert!(
+        defended(rung(BotDifficulty::Prime), out),
+        "out at the fight"
+    );
+    assert!(
+        !defended(rung(BotDifficulty::Prime), post),
+        "waiting at the post"
+    );
+    assert!(
+        !defended(rung(BotDifficulty::Scrapheap), out),
+        "never falls back"
     );
 }
