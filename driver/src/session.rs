@@ -664,6 +664,9 @@ struct Seen {
     /// Other seats' structures in sight as the coming tick begins, by id,
     /// so a site that vanishes in it can be named.
     in_sight: BTreeMap<aftermine_sim::BuildingId, String>,
+    /// Other seats' units in sight as the coming tick begins: the seat sees
+    /// one die there even when its last observer falls in the same tick.
+    units_in_sight: BTreeSet<aftermine_sim::UnitId>,
 }
 
 /// The side of a coarse cell, in tiles: fire in one cell logs once.
@@ -678,11 +681,19 @@ impl Seen {
             fire: BTreeSet::new(),
             stalls: BTreeSet::new(),
             in_sight: BTreeMap::new(),
+            units_in_sight: BTreeSet::new(),
         }
     }
 
-    /// Notes other seats' structures the seat sees before a tick runs.
+    /// Notes other seats' units and structures the seat sees before a tick
+    /// runs.
     fn look(&mut self, state: &State) {
+        self.units_in_sight = state
+            .units()
+            .iter()
+            .filter(|unit| unit.player != self.seat && state.sees_unit(self.seat, unit))
+            .map(|unit| unit.id)
+            .collect();
         let vision = state.vision(self.seat);
         self.in_sight = state
             .buildings()
@@ -747,8 +758,15 @@ impl Seen {
                     }
                     false
                 }
-                Event::UnitDied { player, pos, .. }
-                | Event::BuildingDestroyed { player, pos, .. } => *player == seat || sees(*pos),
+                Event::UnitDied {
+                    unit, player, pos, ..
+                } => *player == seat || sees(*pos) || self.units_in_sight.contains(unit),
+                Event::BuildingDestroyed {
+                    building,
+                    player,
+                    pos,
+                    ..
+                } => *player == seat || sees(*pos) || self.in_sight.contains_key(building),
                 Event::WarheadLanded { player, at, .. }
                 | Event::ChargeDetonated { player, at, .. } => *player == seat || sees(*at),
                 Event::BuildCancelled {

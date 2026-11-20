@@ -92,3 +92,28 @@ fn a_record_the_bot_would_not_send_is_refused() {
         "seat zero has no bot"
     );
 }
+
+#[test]
+fn a_record_holding_more_than_the_bot_sends_is_refused() {
+    let mut replay = played("padded");
+    let tick = replay
+        .commands
+        .iter()
+        .rev()
+        .find(|timed| timed.command.player == PlayerId(1))
+        .expect("the bot sent commands")
+        .tick;
+    let first = replay
+        .commands
+        .iter()
+        .position(|timed| timed.tick == tick && timed.command.player == PlayerId(1))
+        .unwrap();
+    let mut extra = replay.commands[first].clone();
+    extra.command.command = aftermine_sim::Command::Stop { units: Vec::new() };
+    replay.commands.insert(first, extra);
+    let error = rows(&replay, 0..=u64::MAX).expect_err("an extra command is refused");
+    assert!(
+        error.to_string().contains(&format!("at tick {tick}")),
+        "{error}"
+    );
+}
