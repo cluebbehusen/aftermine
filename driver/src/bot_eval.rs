@@ -282,6 +282,8 @@ pub struct SeatEvidence {
     /// What `aftermine-opponent` believed when it launched each attack, against
     /// how the attack went.
     pub attacks: AttackCalibration,
+    /// How the seat went into the match's fights.
+    pub fights: crate::fights::SeatFights,
 }
 
 impl SeatEvidence {
@@ -303,6 +305,7 @@ impl SeatEvidence {
             reactivity: SeatReactivity::default(),
             ledger: crate::ledger::SeatLedger::default(),
             attacks: AttackCalibration::default(),
+            fights: crate::fights::SeatFights::default(),
         }
     }
 
@@ -451,6 +454,7 @@ pub fn evaluate_plan(
     let mut income = income::IncomeTracker::new(&state);
     let mut ledger = crate::ledger::ImpactLedger::new(&state);
     let mut attacks = calibration::AttackFollower::new(seats);
+    let mut fights = crate::fights::FightTracker::new(&state);
 
     let mut stall_loop = None;
     'run: while state.current_tick() < tick_limit && state.result().is_none() {
@@ -478,6 +482,7 @@ pub fn evaluate_plan(
             attacks.open(bot.player().0, bot.opponent().launches(), &ledger);
         }
         ledger.observe(&state, &report);
+        fights.observe(&state, &report);
         failures.observe_events(&state, &report.events, tick);
         reactions.observe_events(&state, &report.events, tick);
         for event in &report.events {
@@ -515,15 +520,20 @@ pub fn evaluate_plan(
     }
     let calibrations = attacks.finish(&ledger);
     let ledgers = ledger.finish(&state);
-    for (seat, (((((evidence, report), income), reactivity), seat_ledger), calibration)) in evidence
+    for (
+        seat,
+        ((((((evidence, report), income), reactivity), seat_ledger), calibration), fought),
+    ) in evidence
         .iter_mut()
         .zip(failures.finish())
         .zip(income.finish())
         .zip(reactions.finish())
         .zip(ledgers)
         .zip(calibrations)
+        .zip(fights.finish())
         .enumerate()
     {
+        evidence.fights = fought;
         evidence.ledger = seat_ledger;
         evidence.attacks = calibration;
         evidence.eliminated_at = state.players()[seat].eliminated_at;

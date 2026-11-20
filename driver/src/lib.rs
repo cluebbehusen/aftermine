@@ -13,6 +13,7 @@ pub mod client;
 pub mod device;
 pub mod digest;
 pub mod evaluation;
+pub mod fights;
 pub mod home_replays;
 pub mod ledger;
 pub mod mac;
