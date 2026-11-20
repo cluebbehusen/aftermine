@@ -143,5 +143,6 @@ agent time on new weaknesses instead of old ones.
 
 ## Clean up
 
-Kill each session with the pid in `$ROUND/sessions/<lane>.pid`. Keep the round
+Kill each session with the pids in `$ROUND/sessions/*.pid`: one per lane of its
+own, and one per versus match, which its two lanes share. Keep the round
 directory until its report is written; nothing from it is committed.
