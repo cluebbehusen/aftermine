@@ -221,9 +221,11 @@ where it would stand before the fire in sight on it pulls it down, judged by the
 work left on it, how fast its crew builds and how long the nearest builder walks
 to it, and each builder sent would finish it, or do work worth its own price,
 before that fire kills it. Fire counts only where its shot clears rock and
-levels. A site that fire would pull down before it stands is cancelled for its
-refund, and a site a builder found no route to waits a while. A stall or
-rejection triggers a re-plan instead of the order being proven in advance.
+levels. Away from home, a defense site is not placed where the known enemy force
+near it outweighs its price and the seat's armed units beside it. A site that
+fire would pull down before it stands is cancelled for its refund, and a site a
+builder found no route to waits a while. A stall or rejection triggers a re-plan
+instead of the order being proven in advance.
 
 ## Computation
 

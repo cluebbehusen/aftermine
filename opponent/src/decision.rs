@@ -1085,6 +1085,9 @@ pub(crate) fn site(
         .filter(|anchor| !memory.failed(kind, *anchor, tick))
         .filter(|anchor| defense || !danger.hits(kind, *anchor))
         .filter(|anchor| {
+            !defense || !crate::missions::meeting::overruns(observation, memory, map, kind, *anchor)
+        })
+        .filter(|anchor| {
             let builder = ledger.and_then(|(frame, ledger)| {
                 let centre = footprint_centre(kind, *anchor);
                 workers::builder(observation, map, frame, *anchor, centre, ledger)

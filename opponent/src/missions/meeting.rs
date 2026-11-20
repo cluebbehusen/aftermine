@@ -8,9 +8,9 @@ use super::{against_machines, value};
 use crate::frame::{HomeFrame, doubled};
 use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
 use crate::memory::Memory;
-use aftermine_sim::UnitKind;
 use aftermine_sim::observation::ObservationData;
 use aftermine_sim::stats::Domain;
+use aftermine_sim::{BuildingKind, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
 
@@ -20,12 +20,18 @@ use chassis::grid::TilePos;
 /// out of sight by how sure the seat is they still are. An enemy holding a
 /// line a few tiles behind the one that came near counts, since it joins the
 /// fight once the seat's units walk into reach of it.
-pub(super) fn opposed(observation: &ObservationData, memory: &Memory, place: TilePos) -> u64 {
+pub(crate) fn opposed(observation: &ObservationData, memory: &Memory, place: TilePos) -> u64 {
+    within(observation, memory, place, LOCAL_REACH)
+}
+
+/// [`opposed`] counting enemies within `near` tiles of `place`, or their
+/// reach if longer.
+fn within(observation: &ObservationData, memory: &Memory, place: TilePos, near: i32) -> u64 {
     let fights = |kind: UnitKind, tile: TilePos| {
         let reach = crate::defenses::reach(kind);
         kind.stats().domain == Domain::Ground
             && reach > Fx::ZERO
-            && tile.chebyshev(place) <= reach.ceil().to_num::<i32>().max(LOCAL_REACH)
+            && tile.chebyshev(place) <= reach.ceil().to_num::<i32>().max(near)
     };
     let seen: u64 = observation
         .enemy_units
@@ -85,4 +91,34 @@ pub(super) fn on_the_way(
         tile = next;
     }
     most
+}
+
+/// Tiles from a site going up within which enemies, and the seat's units,
+/// would fight over it: a model of who stands at a site, not a count.
+const SITE_TILES: i32 = 8;
+
+/// Whether the known enemy force near a defense of `kind` placed at `anchor`
+/// outweighs the site's price and the seat's armed ground units near it: a
+/// lone Turret raised in front of an army only feeds it its price and its
+/// builder. Never at home, where a short defense may raise one as its answer.
+pub(crate) fn overruns(
+    observation: &ObservationData,
+    memory: &Memory,
+    map: &MapModel,
+    kind: BuildingKind,
+    anchor: TilePos,
+) -> bool {
+    // Home's own answer to raiders stands whatever stands near it.
+    if at_home(observation, map, anchor) {
+        return false;
+    }
+    let held: u64 = observation
+        .my_units
+        .iter()
+        .filter(|unit| super::hits(unit, Domain::Ground))
+        .filter(|unit| unit.tile.chebyshev(anchor) <= SITE_TILES)
+        .map(value)
+        .sum();
+    within(observation, memory, anchor, SITE_TILES)
+        > u64::from(kind.base_stats().construction.cost) + held
 }

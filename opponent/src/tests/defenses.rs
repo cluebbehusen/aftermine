@@ -1750,3 +1750,37 @@ fn no_emergency_turret_goes_where_the_attackers_would_pull_its_site_down() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn an_outpost_gets_no_turret_in_front_of_an_army_but_home_does() {
+    // On an arena drawn out in the middle, a lone Sentinel by the expansion
+    // draws a Turret beyond its reach; with two more standing behind it, out
+    // of reach of every spot but near enough to fight over the site, the
+    // Turret would only feed them its price and builder, so none goes up. The
+    // same group at home still meets home's Turret.
+    let turrets = |raiders: &[(i32, i32)]| {
+        let mut scenario = super::missions::widened(arena(400), 12, 20);
+        scenario
+            .buildings
+            .push(building(0, BuildingKind::Foundry, 24, 8));
+        for (x, y) in raiders {
+            scenario.units.push(unit(1, UnitKind::Sentinel, *x, *y));
+        }
+        let state = scenario.build().unwrap();
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        builds(&commands)
+            .into_iter()
+            .filter(|(built, _)| *built == BuildingKind::Turret)
+            .map(|(_, anchor)| anchor)
+            .collect::<Vec<_>>()
+    };
+    let lone = turrets(&[(28, 10)]);
+    assert!(
+        lone.iter().any(|anchor| anchor.x > 20),
+        "premise: a lone raider draws an outpost Turret: {lone:?}"
+    );
+    let army = turrets(&[(28, 10), (31, 9), (31, 10)]);
+    assert!(army.iter().all(|anchor| anchor.x < 20), "{army:?}");
+    let home = turrets(&[(9, 5), (12, 4), (12, 5), (12, 6)]);
+    assert!(!home.is_empty(), "home still raises its Turret");
+}
