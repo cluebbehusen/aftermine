@@ -5,7 +5,7 @@
 
 use super::Scratch;
 use super::air::{self, Hazard};
-use super::{MISSION_CAP, Mission, Missions, Task, approach, mine, run};
+use super::{MISSION_CAP, Mission, Missions, Task, approach, defense, mine, run};
 use crate::decision::Ledger;
 use crate::events::OwnEvent;
 use crate::frame::{HomeFrame, doubled, footprint_centre, octile_tenths, tiles_of};
@@ -157,6 +157,18 @@ impl Missions {
                     }
                 }
                 None => {
+                    // Standing where the tour ended would keep its last
+                    // places fresh in its own sight, so it would never be
+                    // sent on, and it would wait there for whatever finds it.
+                    if !defense::at_home(observation, map, scout.tile)
+                        && let Some(post) = defense::home_post(observation, map, frame, scout.tile)
+                    {
+                        if flies(scout) {
+                            send(observation, frame, hazards, scout, post, ledger);
+                        } else {
+                            ledger.order(run(vec![scout.id], post));
+                        }
+                    }
                     self.list.remove(index);
                 }
             }

@@ -1823,7 +1823,7 @@ pub(super) fn widened(mut scenario: Scenario, at: i32, columns: i32) -> Scenario
 }
 
 /// The tiles beside `player`'s Foundry at `anchor`.
-fn beside_foundry(state: &State, player: u8, anchor: Option<TilePos>) -> Vec<TilePos> {
+pub(super) fn beside_foundry(state: &State, player: u8, anchor: Option<TilePos>) -> Vec<TilePos> {
     let foundry = state
         .buildings()
         .iter()

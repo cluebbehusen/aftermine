@@ -491,17 +491,20 @@ fn a_scout_kept_off_a_guarded_point_still_sees_it_and_moves_on() {
     let surveyor = at(&state, 6, 9);
     let mut opponent = seat(&scenario, 0);
     let mut events = OwnEvents::default();
-    let mut stalled = None;
-    while stalled.is_none() && state.current_tick() < STALE + 3_000 {
+    let mut done = false;
+    while !done && state.current_tick() < STALE + 3_000 {
         let commands = opponent.act(&state, &mut events);
+        done = runs(&commands)
+            .iter()
+            .any(|(units, _)| units == &[surveyor]);
         let report = state.tick(&commands);
-        stalled = report.events.iter().find_map(|event| match event {
-            Event::OrderStalled { unit, reason, .. } if *unit == surveyor => Some(*reason),
-            _ => None,
+        done |= report.events.iter().any(|event| {
+            matches!(event, Event::OrderStalled { unit, reason: StallReason::SafeVantage, .. }
+                if *unit == surveyor)
         });
         events.record(PlayerId(0), &report.events);
     }
-    assert_eq!(stalled, Some(StallReason::SafeVantage));
+    assert!(done, "the Surveyor stopped short or turned for home");
     let (width, height) = BuildingKind::Foundry.size();
     assert!(
         (0..height).any(|dy| (0..width).any(|dx| state
@@ -780,5 +783,36 @@ fn a_standing_scout_sets_out_at_the_first_decision() {
             .iter()
             .all(|(_, kind)| *kind != UnitKind::Surveyor),
         "no second scout is trained for places never seen yet"
+    );
+}
+
+#[test]
+fn a_scout_with_nothing_left_to_see_runs_home() {
+    // The East start is the field's one place to see. Once the Surveyor has
+    // seen it, standing there would keep it fresh in its own sight, so the
+    // Surveyor comes back beside its Foundry instead.
+    let (scenario, mut state) = scouting(STALE);
+    let surveyor = at(&state, 6, 9);
+    let mut opponent = seat(&scenario, 0);
+    let mut events = OwnEvents::default();
+    let mut looked = false;
+    let mut home = None;
+    while home.is_none() && state.current_tick() < STALE + 4_000 {
+        let commands = opponent.act(&state, &mut events);
+        looked |= looks(&commands)
+            .iter()
+            .any(|(units, _)| units == &[surveyor]);
+        home = runs(&commands)
+            .into_iter()
+            .find(|(units, _)| units == &[surveyor])
+            .map(|(_, goal)| goal);
+        let report = state.tick(&commands);
+        events.record(PlayerId(0), &report.events);
+    }
+    assert!(looked, "premise: the Surveyor went to look");
+    let goal = home.expect("the Surveyor is sent home");
+    assert!(
+        super::missions::beside_foundry(&state, 0, None).contains(&goal),
+        "{goal:?}"
     );
 }

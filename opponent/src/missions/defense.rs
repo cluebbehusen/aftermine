@@ -851,7 +851,7 @@ pub(super) fn at_home(observation: &ObservationData, map: &MapModel, tile: TileP
 
 /// Where defenders given up on a threat at `toward` fall back to: the
 /// waiting post beside the seat's home-nearest Foundry.
-fn home_post(
+pub(super) fn home_post(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
