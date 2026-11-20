@@ -1996,8 +1996,9 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
         "premise: a match is defended: {commands:?}"
     );
 
-    // Defenders already out there when the seat cannot match the raiders
-    // fall back home.
+    // A defense already engaged there is not given up: turned out under
+    // fire, its members would only die on the way home and be sent back at
+    // the next look. It stays a defense, and nobody is turned home.
     let scenario = expansion_raided(&[(5, 8)]);
     let mut scenario = scenario;
     scenario.units.extend([
@@ -2035,7 +2036,8 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
     assert!(
         hunts(&commands)
             .iter()
-            .any(|(units, goal)| units == &members && home.contains(goal)),
+            .chain(&runs(&commands))
+            .all(|(units, goal)| !(units.contains(&members[0]) && home.contains(goal))),
         "{commands:?}"
     );
     assert!(
@@ -2043,8 +2045,8 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
             .unwrap()
             .missions
             .iter()
-            .all(|mission| !matches!(mission.kind, MissionKind::Defend { .. })),
-        "the defense ends"
+            .any(|mission| matches!(mission.kind, MissionKind::Defend { .. })),
+        "the defense goes on"
     );
 }
 
