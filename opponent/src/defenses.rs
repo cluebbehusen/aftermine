@@ -610,8 +610,13 @@ pub(crate) fn emergency(
                 kind,
                 |other| other.anchor == asset.anchor,
                 |anchor| {
-                    let fifth = kind.base_stats().max_hp / 5;
-                    placement::stands(observation, kind, anchor, fifth, builder(anchor))
+                    placement::stands(
+                        observation,
+                        map,
+                        placement::Raising::fresh(kind, anchor),
+                        &[],
+                        builder(anchor).as_slice(),
+                    )
                 },
             ) else {
                 continue;
