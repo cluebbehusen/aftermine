@@ -2114,7 +2114,7 @@ fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
         );
         let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         let beside = beside_foundry(&state, 0, None);
-        let home = hunts(&commands)
+        let home = runs(&commands)
             .iter()
             .any(|(units, goal)| units == &members && beside.contains(goal));
         let recovers = trace

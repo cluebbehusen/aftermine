@@ -309,7 +309,7 @@ fn lifecycle(config: BotConfig) -> (u32, u32) {
         let now = state.current_tick();
         let (mut commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         if now == 1 {
-            commands.push(run(1, scuttlers.clone(), 20, 2));
+            commands.push(run(1, scuttlers.clone(), 12, 2));
         }
         if let Some(trace) = trace {
             let travelling =

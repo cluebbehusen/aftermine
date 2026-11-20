@@ -13,7 +13,7 @@ use super::attack::{building_value, concentrates, defense, defense_around};
 use super::reserve::LOCAL_REACH;
 use super::{
     AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
-    fill, hits, hunt, insert, meeting, mine, value, walking_gun, worth,
+    fill, hits, hunt, insert, meeting, mine, run, value, walking_gun, worth,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
@@ -354,7 +354,9 @@ impl Missions {
             self.release_from_others(index, &joined);
         }
         // Defenses that stood down go home last, so their orders never
-        // take the allowance from a defense answering an attack now.
+        // take the allowance from a defense answering an attack now. They
+        // run: nothing in sight can hit them, and a hunt would keep chasing
+        // whatever it last touched, such as a scout, across the map.
         for (id, post) in returning {
             if let Some(mission) = self.list.iter_mut().find(|mission| {
                 mission.id == id
@@ -365,7 +367,7 @@ impl Missions {
                             ..
                         }
                     )
-            }) && ledger.order(hunt(mission.units.clone(), post))
+            }) && ledger.order(run(mission.units.clone(), post))
             {
                 mission.goal = post;
             }

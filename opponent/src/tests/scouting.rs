@@ -397,7 +397,7 @@ fn checkpoints_reject_foreign_scouting_and_stray_focus() {
 }
 
 #[test]
-fn a_defense_that_stops_fighting_trades_its_focus_for_its_hunt() {
+fn a_defense_that_stops_fighting_trades_its_focus_for_the_way_home() {
     let (scenario, state, _) = skirmish([(8, 5), (8, 6)], 55);
     let mut opponent = seat_with(&scenario, 0, veteran());
     let commands = opponent.act(&state, &mut OwnEvents::default());
@@ -410,7 +410,7 @@ fn a_defense_that_stops_fighting_trades_its_focus_for_its_hunt() {
     let mut members = vec![at(&state, 8, 5), at(&state, 8, 6)];
     members.sort_unstable();
     let commands = opponent.act(&state, &mut OwnEvents::default());
-    let sent = hunts(&commands);
+    let sent = runs(&commands);
     assert_eq!(sent.len(), 1, "{commands:?}");
     assert_eq!(sent[0].0, members);
     let json = serde_json::to_value(opponent.checkpoint()).unwrap();
