@@ -612,13 +612,14 @@ pub(crate) fn emergency(
                 kind,
                 |other| other.anchor == asset.anchor,
                 |anchor| {
-                    placement::stands(
-                        observation,
-                        map,
-                        placement::Raising::fresh(kind, anchor),
-                        &[],
-                        builder(anchor).as_slice(),
-                    )
+                    !crate::missions::meeting::overruns(observation, memory, kind, anchor)
+                        && placement::stands(
+                            observation,
+                            map,
+                            placement::Raising::fresh(kind, anchor),
+                            &[],
+                            builder(anchor).as_slice(),
+                        )
                 },
             ) else {
                 continue;
