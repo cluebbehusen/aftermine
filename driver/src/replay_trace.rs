@@ -76,13 +76,8 @@ pub fn trace(
             }
             let (sent, decision) = bot.act_traced(&state);
             let held = recorded.get(&tick).map_or(&[][..], Vec::as_slice);
-            // A client may also have commanded the seat; the bot's
-            // commands are recorded after the client's.
-            let ours = held
-                .get(held.len().saturating_sub(sent.len())..)
-                .unwrap_or(&[]);
-            if ours.len() != sent.len()
-                || ours.iter().zip(&sent).any(|(held, sent)| **held != *sent)
+            if held.len() != sent.len()
+                || held.iter().zip(&sent).any(|(held, sent)| **held != *sent)
             {
                 bail!(
                     "at tick {tick} seat {}'s bot sends {} command(s) where the replay holds {}; \
