@@ -577,7 +577,7 @@ pub(crate) fn decide(
     persistent
         .missions
         .prune(observation, &mut persistent.memory);
-    let shortfalls = persistent.missions.defend(
+    let (shortfalls, given_up) = persistent.missions.defend(
         observation,
         map,
         frame,
@@ -585,6 +585,11 @@ pub(crate) fn decide(
         profile.difficulty,
         &mut ledger,
     );
+    for anchor in given_up {
+        persistent
+            .memory
+            .abandon(BuildingKind::Foundry, anchor, observation.tick);
+    }
     let short = !shortfalls.is_empty();
     ledger.hold(persistent.missions.held_workers(observation));
     workers::recover(observation, &foundries, &mut ledger);

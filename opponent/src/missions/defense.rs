@@ -87,8 +87,9 @@ impl Missions {
         memory: &Memory,
         difficulty: BotDifficulty,
         ledger: &mut Ledger,
-    ) -> Vec<Shortfall> {
+    ) -> (Vec<Shortfall>, Vec<TilePos>) {
         let now = observation.tick;
+        let mut given_up = Vec::new();
         let lendable = self.available(observation, Some(difficulty));
         let mut groups = threats(observation, map, frame, memory);
         self.weigh((observation, map, memory, ledger), &lendable, &mut groups);
@@ -235,8 +236,12 @@ impl Missions {
                     }
                 ) && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
             });
+            // A place given up lately is defended again only with half again
+            // the margin: an estimate hovering at it would otherwise send the
+            // defense out and back through the attackers' fire.
+            let rested = memory.abandoned(foundry.kind, foundry.anchor, now);
             let bar = match (out, concentrates(difficulty)) {
-                (false, _) => Some(go),
+                (false, _) => Some(if rested { go * 3 / 2 } else { go }),
                 (true, true) => None,
                 (true, false) => Some(met),
             };
@@ -246,6 +251,9 @@ impl Missions {
                 && bar.is_some_and(|bar| siege.held < bar)
                 && !kept(observation, map, foundry, goal)
             {
+                if index.is_some() {
+                    given_up.push(foundry.anchor);
+                }
                 self.give_up(index, observation, map, frame, goal, ledger);
                 continue;
             }
@@ -353,7 +361,7 @@ impl Missions {
             joined.extend(recruits);
             self.release_from_others(index, &joined);
         }
-        shortfalls
+        (shortfalls, given_up)
     }
 
     /// Puts every engaged defense whose Foundry no threat presses any more
