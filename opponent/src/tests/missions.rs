@@ -1422,6 +1422,66 @@ fn an_escort_beside_an_enemy_building_counts_once() {
 }
 
 #[test]
+fn an_escort_remembered_beside_an_enemy_building_counts_once() {
+    // As above, with the escort just lost from sight beyond the Fabricator:
+    // remembered near the base, it presses the defense and counts once.
+    let goals = |defenders: &[(UnitKind, i32, i32)]| {
+        let mut scenario = raided(defenders, &[]);
+        scenario.buildings.push(BuildingSpec {
+            player: 1,
+            kind: BuildingKind::Fabricator,
+            x: 8,
+            y: 1,
+        });
+        let mut state = scenario.build().unwrap();
+        for _ in 0..12 {
+            state.tick(&[]);
+        }
+        let escort = [TilePos::new(12, 1), TilePos::new(12, 2)];
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        assert!(
+            escort.iter().all(|tile| !observation.visible(*tile)),
+            "premise: the escort is out of sight"
+        );
+        let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            json["memory"]["units"] = remembered(
+                (900..)
+                    .zip(escort)
+                    .map(|(id, tile)| (id, UnitKind::Sentinel, tile, 11)),
+            );
+        });
+        let foundry = state
+            .buildings()
+            .iter()
+            .find(|building| {
+                building.player == PlayerId(0) && building.kind == BuildingKind::Foundry
+            })
+            .unwrap();
+        let post: Vec<TilePos> =
+            crate::frame::ring(foundry.anchor, BuildingKind::Foundry.size()).collect();
+        hunts(&opponent.act(&state, &mut OwnEvents::default()))
+            .into_iter()
+            .map(|(units, goal)| (units.len(), post.contains(&goal)))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        goals(&[
+            (UnitKind::Sentinel, 5, 8),
+            (UnitKind::Sentinel, 6, 8),
+            (UnitKind::Sentinel, 5, 9),
+        ]),
+        [(3, false)],
+        "three Sentinels match the escort and go"
+    );
+    assert!(
+        goals(&[(UnitKind::Sentinel, 5, 8)])
+            .iter()
+            .all(|(_, home)| *home),
+        "premise: one does not match the escort and stays home"
+    );
+}
+
+#[test]
 fn an_air_raider_already_answered_does_not_stop_training_for_an_enemy_builder() {
     let trains = |buzzard: bool| {
         let mut scenario = arena(40);
@@ -1595,6 +1655,99 @@ fn a_defense_s_reserve_is_not_taken_back_by_a_regrouping_attack() {
                 |mission| !matches!(mission.kind, MissionKind::Attack { .. }) || mission.units == 0
             ),
         "the attack lets the recruit go"
+    );
+}
+
+#[test]
+fn a_defense_s_reserve_waits_at_its_post_through_the_decision() {
+    // The defense out at six raiders, still short with a wounded recruit,
+    // holds it at the post. A calm Repair Bay takes a wounded Flakhound no
+    // mission holds, but leaves the recruit there this decision.
+    const WEST: i32 = 14;
+    let raiders: Vec<(UnitKind, i32, i32)> = (4..=6)
+        .flat_map(|y| [(UnitKind::Sentinel, 9, y), (UnitKind::Sentinel, 10, y)])
+        .collect();
+    let front = [(10, 7), (11, 7), (10, 8), (11, 8), (12, 8)];
+    let mut defenders: Vec<(UnitKind, i32, i32)> = front
+        .iter()
+        .map(|(x, y)| (UnitKind::Sentinel, *x, *y))
+        .collect();
+    defenders.extend([(UnitKind::Sentinel, 2, 8), (UnitKind::Flakhound, 2, 9)]);
+    let mut scenario = raided(&defenders, &raiders);
+    // The arena drawn out west, so a Bay at its far end stands clear of the
+    // raiders.
+    scenario.map = ARENA
+        .iter()
+        .map(|row| {
+            let fill = if row.starts_with("##") { "#" } else { "." };
+            format!("{}{}{}", &row[..1], fill.repeat(WEST as usize), &row[1..])
+        })
+        .collect();
+    for unit in &mut scenario.units {
+        unit.x += WEST;
+    }
+    scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::RepairBay,
+        x: 1,
+        y: 1,
+    });
+    let state = scenario.build().unwrap();
+    let (recruit, flakhound) = (at(&state, 2 + WEST, 8), at(&state, 2 + WEST, 9));
+    let state = wounded(&wounded(&state, recruit, 40), flakhound, 40);
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    let mut members: Vec<UnitId> = front
+        .iter()
+        .map(|(x, y)| at(&state, x + WEST, *y))
+        .collect();
+    members.sort_unstable();
+    let mut opponent = restored_with(
+        &seat_with(&scenario, 0, rung(BotDifficulty::Prime)),
+        &scenario,
+        &state,
+        |json| {
+            json["missions"] = serde_json::json!({
+                "next": 1,
+                "list": [{
+                    "id": 0,
+                    "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                    "since": 0,
+                    "units": members,
+                    "goal": {"x": 9 + WEST, "y": 5},
+                }],
+            });
+        },
+    );
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let ordered = |unit: UnitId| -> Vec<&Command> {
+        commands
+            .iter()
+            .map(|command| &command.command)
+            .filter(|command| {
+                serde_json::to_value(command).unwrap()["units"]
+                    .as_array()
+                    .is_some_and(|units| units.contains(&unit.0.into()))
+            })
+            .collect()
+    };
+    assert!(
+        matches!(ordered(flakhound)[..], [Command::Run { goal, .. }] if goal.x < 4),
+        "premise: the Bay takes the wounded no mission holds: {:?}",
+        ordered(flakhound)
+    );
+    let beside: Vec<TilePos> =
+        crate::frame::ring(home.anchor, BuildingKind::Foundry.size()).collect();
+    assert!(
+        ordered(recruit)
+            .iter()
+            .all(|order| matches!(order, Command::Hunt { goal, .. } if beside.contains(goal))),
+        "{:?}",
+        ordered(recruit)
     );
 }
 
