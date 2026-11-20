@@ -326,9 +326,10 @@ pub(crate) struct Producer<'a> {
 /// fire and scouting, then production: carriers for a severed seat and the
 /// Sappers attacks want first, then the army's roles, then scouts queued
 /// behind whatever their producer has and Scuttlers on the producers the army
-/// leaves, then ground units on any still idle. A short defense instead buys
-/// an emergency static defense, trains no Harvester beyond worker recovery or
-/// scouts, and frees protected scrap for this decision's production.
+/// leaves, then ground units on any still idle. A short defense instead keeps
+/// the price of its best answer from an emergency static defense, trains that
+/// answer before the army's roles, and trains no Harvester beyond worker
+/// recovery or scouts.
 #[expect(
     clippy::too_many_lines,
     reason = "one decision in its documented priority order"
@@ -756,6 +757,23 @@ pub(crate) fn decide(
         &mut needs,
         &mut ledger,
     );
+    // A short defense trains next, so its answer gets the producer before
+    // general production queues something else there. What it spends of the
+    // scrap kept for its answer is kept no longer.
+    if short {
+        let before = ledger.available();
+        arm(
+            observation,
+            map,
+            &producers,
+            shortfalls,
+            true,
+            income,
+            &mut needs,
+            &mut ledger,
+        );
+        ledger.protected = ledger.protected.saturating_sub(before - ledger.available());
+    }
     let carrying = lift
         && !short
         && train_carriers(
@@ -824,20 +842,6 @@ pub(crate) fn decide(
                 (scuttlers, 0),
                 &persistent.missions.held_outside_raids(),
                 &free,
-                &mut ledger,
-            );
-        }
-        // A short defense trains first, so its answer gets the producer
-        // before general production queues something else there.
-        if short {
-            arm(
-                observation,
-                map,
-                &producers,
-                shortfalls,
-                true,
-                income,
-                &mut needs,
                 &mut ledger,
             );
         }
@@ -1491,9 +1495,11 @@ fn best_answer(
     short: &Shortfall,
     reach: u64,
 ) -> Option<(Fighter, u64)> {
+    // Only a producer free to train now answers: a unit queued behind
+    // others comes too late to keep scrap from the emergency for it.
     let units = producers
         .iter()
-        .filter(|producer| producer.building.built)
+        .filter(|producer| producer.ready)
         .flat_map(|producer| {
             let at = map.component(producer.building.anchor);
             composition::producible(observation, producer.building.kind)

@@ -785,7 +785,12 @@ fn besieged<'a>(
 
 /// Whether `building` can hurt ground units: a gun, or a mine.
 fn armed(building: &BuildingObs) -> bool {
-    !building.kind.tier_stats(building.tier).weapons.is_empty()
+    building
+        .kind
+        .tier_stats(building.tier)
+        .weapons
+        .iter()
+        .any(|weapon| weapon.targets.ground)
         || building.kind == BuildingKind::ScuttleCharge
 }
 

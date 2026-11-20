@@ -72,24 +72,18 @@ fn seen_enemy_air_brings_anti_air_in_proportion() {
         "no air, no anti-air"
     );
 
+    // Over the base, the Buzzards are a defense's to meet first, with half
+    // again their worth.
     let mut covered = armed(&buzzards, &[]);
-    covered.units.extend([
-        UnitSpec {
-            player: 0,
-            kind: UnitKind::Flakhound,
-            x: 9,
-            y: 6,
-        },
-        UnitSpec {
-            player: 0,
-            kind: UnitKind::Flakhound,
-            x: 10,
-            y: 6,
-        },
-    ]);
+    covered.units.extend((9..13).map(|x| UnitSpec {
+        player: 0,
+        kind: UnitKind::Flakhound,
+        x,
+        y: 6,
+    }));
     assert!(
         !anti_air(&fabricator_trains(&covered)),
-        "two Flakhounds already answer two Buzzards"
+        "four Flakhounds already answer two Buzzards"
     );
 }
 
@@ -909,6 +903,48 @@ fn a_defense_short_of_wardens_saves_for_an_answer_rather_than_feed_scuttlers() {
 }
 
 #[test]
+fn a_short_defense_trains_its_answer_before_general_production_takes_the_producer() {
+    // A rich bank: general production would queue an army unit at the only
+    // Fabricator first and leave the defense no producer for its answer.
+    let scenario = armed(&[(UnitKind::Warden, 7, 4), (UnitKind::Warden, 7, 6)], &[]);
+    let state = scenario.build().unwrap();
+    let (_, trace) = seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+        .act_traced(&state, &mut OwnEvents::default());
+    let fabricator = fabricator(&state);
+    let picks = trace.unwrap().army.picks;
+    assert!(
+        matches!(
+            picks.iter().find(|pick| pick.building == fabricator),
+            Some(pick) if pick.path == PickPath::Shortfall
+        ),
+        "{picks:?}"
+    );
+}
+
+#[test]
+fn a_busy_producer_keeps_no_scrap_from_an_answer_trained_now() {
+    // A Lancer raids the base and the Fabricator has Lancers queued past this
+    // decision: the Lancer it would answer with comes too late to hold the
+    // bank, so the Foundry trains what helps now.
+    let mut scenario = armed(&[(UnitKind::Lancer, 8, 3)], &[]);
+    scenario.players[0].scrap = 150;
+    let state = scenario.build().unwrap();
+    let fabricator = fabricator(&state);
+    let mut value = serde_json::to_value(&state).unwrap();
+    let entry = value["buildings"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["id"] == fabricator.0)
+        .unwrap();
+    entry["queue"] = serde_json::json!(["lancer", "lancer"]);
+    let state: State = serde_json::from_value(value).unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(!trains(&commands).is_empty(), "{commands:?}");
+}
+
+#[test]
 fn attackers_in_a_domain_already_covered_do_not_set_the_answer() {
     use crate::composition::Fighter;
     use crate::missions::Shortfall;
@@ -936,11 +972,16 @@ fn a_lone_enemy_builder_draws_the_cheapest_unit_before_general_production() {
     // An enemy Harvester beside West's Foundry and nothing armed: the defense
     // trains its cheapest unit at the Foundry before general production takes
     // it, and an armed raider is weighed for what it is instead.
-    let trained = |raider: bool| {
+    let trained_beside = |raider: bool, flak: bool| {
         let mut scenario = arena(130);
         scenario.units.push(harvester(1, 8, 3));
         if raider {
             scenario.units.push(unit(1, UnitKind::Scuttler, 8, 4));
+        }
+        if flak {
+            scenario
+                .buildings
+                .push(building(1, BuildingKind::FlakTurret, 7, 2));
         }
         let state = scenario.build().unwrap();
         trains(
@@ -951,9 +992,15 @@ fn a_lone_enemy_builder_draws_the_cheapest_unit_before_general_production() {
         .map(|(_, kind)| kind)
         .collect::<Vec<_>>()
     };
+    let trained = |raider: bool| trained_beside(raider, false);
     assert_eq!(trained(false).first(), Some(&UnitKind::Scuttler));
     assert!(
         !trained(true).contains(&UnitKind::Scuttler),
         "a Scuttler is no answer to a raider it only feeds"
+    );
+    assert_eq!(
+        trained_beside(false, true).first(),
+        Some(&UnitKind::Scuttler),
+        "a Flak Turret cannot hurt what goes after the builder"
     );
 }
