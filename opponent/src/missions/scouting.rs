@@ -31,17 +31,26 @@ pub(super) const TRAVEL_TICKS: u64 = 1_800;
 pub(crate) struct Point {
     pub(crate) anchor: TilePos,
     value: u64,
+    /// A search point: worth a look only while the seat knows no standing
+    /// hostile building.
+    pub(crate) search: bool,
 }
 
 /// The seat's scouting points: hostile starts, then expansion sites by
-/// their best Foundry anchor. Starts are worth most, then sites nearer an
-/// enemy than home.
+/// their best Foundry anchor, then search points. Starts are worth most,
+/// then sites nearer an enemy than home. Search points lie on a grid spaced
+/// twice a Surveyor's vision over open ground, so a seat that has lost
+/// track of every enemy building can find one wherever it was built.
 pub(crate) fn points(map: &MapModel, me: PlayerId) -> Vec<Point> {
     let footprint = |anchor: TilePos| tiles_of(anchor, BuildingKind::Foundry.size());
     let starts = map
         .hostiles(me)
         .filter_map(|owner| map.start(owner))
-        .map(|anchor| Point { anchor, value: 3 });
+        .map(|anchor| Point {
+            anchor,
+            value: 3,
+            search: false,
+        });
     let sites = map
         .sites()
         .iter()
@@ -54,9 +63,28 @@ pub(crate) fn points(map: &MapModel, me: PlayerId) -> Vec<Point> {
             Point {
                 anchor,
                 value: if hostile < own { 2 } else { 1 },
+                search: false,
             }
         });
-    starts.chain(sites).collect()
+    let spacing = usize::try_from(UnitKind::Surveyor.stats().vision * 2)
+        .unwrap_or(1)
+        .max(1);
+    let (width, height) = map.size();
+    let search = (spacing / 2..usize::try_from(height).unwrap_or(0))
+        .step_by(spacing)
+        .flat_map(|y| {
+            (spacing / 2..usize::try_from(width).unwrap_or(0))
+                .step_by(spacing)
+                .map(move |x| (x, y))
+        })
+        .filter_map(|(x, y)| Some(TilePos::new(i32::try_from(x).ok()?, i32::try_from(y).ok()?)))
+        .filter(|anchor| footprint(*anchor).all(|tile| map.component(tile).is_some()))
+        .map(|anchor| Point {
+            anchor,
+            value: 1,
+            search: true,
+        });
+    starts.chain(sites).chain(search).collect()
 }
 
 /// Whether the seat saw `owner`'s start lately enough that its scouting
@@ -86,18 +114,36 @@ impl Missions {
     /// within [`TRAVEL_TICKS`] that the scout production would train could
     /// reach, which production trains scouts for: an aircraft once an
     /// Airworks stands, else a Surveyor. Zero while no mission could take
-    /// another.
+    /// another. `armed` says the seat has an army big enough to attack.
     pub(crate) fn scout(
         &mut self,
         observation: &ObservationData,
-        map: &MapModel,
-        frame: HomeFrame,
+        (map, frame): (&MapModel, HomeFrame),
         memory: &mut Memory,
         scratch: &Scratch,
+        armed: bool,
         ledger: &mut Ledger,
     ) -> usize {
         let now = observation.tick;
-        let points = points(map, observation.me);
+        let mut points = points(map, observation.me);
+        let search: Vec<bool> = points.iter().map(|point| point.search).collect();
+        // A seat with an army to attack with that has seen every hostile
+        // start yet knows no standing hostile building has lost track of the
+        // enemy: the search points are then worth a look like any other
+        // place. Hostile starts lead the points.
+        let starts = map
+            .hostiles(observation.me)
+            .filter(|hostile| map.start(*hostile).is_some())
+            .count();
+        if armed
+            && observation.enemy_buildings.is_empty()
+            && starts > 0
+            && (0..starts).all(|start| memory.seen(start) > 0)
+        {
+            for point in &mut points {
+                point.search = false;
+            }
+        }
         let goals = Goals {
             observation,
             map,
@@ -272,7 +318,7 @@ impl Missions {
         }
         let air = crate::investments::built(observation, BuildingKind::Airworks);
         let reach = goals.of(air);
-        scouted
+        let stale: Vec<usize> = scouted
             .iter()
             .enumerate()
             .filter(|(index, seen)| {
@@ -280,10 +326,15 @@ impl Missions {
                 // trained only for a place unseen that long in play, so the
                 // opening's first purchases stay the economy's and army's.
                 now - **seen >= STALE_TICKS
+                    && !points[*index].search
                     && reach[*index].is_some()
                     && u16::try_from(*index).is_ok_and(|point| !taken.contains(&point))
             })
-            .count()
+            .map(|(index, _)| index)
+            .collect();
+        // One scout searches; the search points never train a fleet.
+        let searches = stale.iter().filter(|index| search[**index]).count();
+        stale.len() - searches + searches.min(1)
     }
 
     /// Counts the point of each scout that stopped short of it, or gave it
@@ -494,6 +545,7 @@ fn best(
         .zip(scouted)
         .zip(goals)
         .enumerate()
+        .filter(|(_, ((point, _), _))| !point.search)
         .filter(|(_, ((_, seen), _))| age(now, **seen) >= STALE_TICKS)
         .filter(|(index, _)| u16::try_from(*index).is_ok_and(|point| !held.contains(&point)))
         .filter_map(|(index, ((point, seen), goal))| {

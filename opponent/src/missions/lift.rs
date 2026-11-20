@@ -1285,7 +1285,7 @@ impl<'a> Lifting<'a> {
         super::points(self.map, self.observation.me)
             .iter()
             .enumerate()
-            .filter(|(_, point)| self.map.component(point.anchor) == island)
+            .filter(|(_, point)| !point.search && self.map.component(point.anchor) == island)
             .min_by_key(|(_, point)| {
                 (
                     point.anchor.chebyshev(target.anchor),

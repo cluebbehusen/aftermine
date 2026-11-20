@@ -750,12 +750,15 @@ pub(crate) fn decide(
     persistent
         .missions
         .scouts_stopped(events, &mut persistent.memory, tick);
+    // An army big enough to attack that knows no target has lost track of
+    // the enemy, and the scouts search for it.
+    let lost = army(observation) >= crate::missions::minimum(profile.stance);
     let lacking = persistent.missions.scout(
         observation,
-        map,
-        frame,
+        (map, frame),
         &mut persistent.memory,
         &scratch,
+        lost,
         &mut ledger,
     );
     let saving = match persistent.saving.investment() {

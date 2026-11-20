@@ -8,6 +8,7 @@ fn row(xs: &[i32]) -> (Vec<Point>, Vec<Option<TilePos>>) {
         .map(|x| Point {
             anchor: TilePos::new(*x, 0),
             value: 1,
+            search: false,
         })
         .collect();
     let goals = points.iter().map(|point| Some(point.anchor)).collect();
