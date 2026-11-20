@@ -922,6 +922,67 @@ fn a_short_defense_trains_its_answer_before_general_production_takes_the_produce
 }
 
 #[test]
+fn a_flak_turret_the_emergency_passes_over_does_not_hold_back_the_answer() {
+    // Buzzards raid the base past a standing Flak Turret: the emergency puts
+    // no second one up on an approach already covered, so production trains
+    // anti-air rather than wait for a structure that never comes.
+    let mut scenario = armed(&[(UnitKind::Buzzard, 9, 5), (UnitKind::Buzzard, 9, 6)], &[]);
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::FlakTurret,
+        x: 5,
+        y: 2,
+    });
+    let state = scenario.build().unwrap();
+    let (commands, trace) = seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+        .act_traced(&state, &mut OwnEvents::default());
+    assert!(
+        !commands.iter().any(|command| matches!(
+            command.command,
+            Command::Build {
+                kind: BuildingKind::FlakTurret,
+                ..
+            }
+        )),
+        "premise: no second Flak Turret goes up: {commands:?}"
+    );
+    let picks = trace.unwrap().army.picks;
+    assert!(
+        picks
+            .iter()
+            .any(|pick| pick.path == PickPath::Shortfall && pick.unit == UnitKind::Flakhound),
+        "{picks:?}"
+    );
+}
+
+#[test]
+fn an_enemy_builder_alone_short_is_met_with_the_cheapest_unit() {
+    // Flakhounds already cover the Buzzard, so only the enemy Harvester among
+    // the buildings leaves the defense short: a rich bank still sends the
+    // cheapest unit, the first one there soonest.
+    let mut scenario = armed(
+        &[(UnitKind::Harvester, 8, 3), (UnitKind::Buzzard, 9, 5)],
+        &[],
+    );
+    scenario.units.extend([
+        unit(0, UnitKind::Flakhound, 5, 7),
+        unit(0, UnitKind::Flakhound, 5, 8),
+    ]);
+    let state = scenario.build().unwrap();
+    let (_, trace) = seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+        .act_traced(&state, &mut OwnEvents::default());
+    let picks: Vec<UnitKind> = trace
+        .unwrap()
+        .army
+        .picks
+        .iter()
+        .filter(|pick| pick.path == PickPath::Shortfall)
+        .map(|pick| pick.unit)
+        .collect();
+    assert_eq!(picks, [UnitKind::Scuttler]);
+}
+
+#[test]
 fn a_busy_producer_keeps_no_scrap_from_an_answer_trained_now() {
     // A Lancer raids the base and the Fabricator has Lancers queued past this
     // decision: the Lancer it would answer with comes too late to hold the

@@ -581,7 +581,7 @@ impl Siege<'_> {
     }
 
     /// Where its armed threats on the ground stand: armed enemies in sight
-    /// and the tiles beside its batteries that fire on ground.
+    /// and the tiles beside its batteries that can hurt ground units.
     fn armed_grounded(&self) -> impl Iterator<Item = TilePos> + '_ {
         self.units
             .iter()
@@ -590,14 +590,7 @@ impl Siege<'_> {
             .chain(
                 self.batteries
                     .iter()
-                    .filter(|(building, _)| {
-                        building
-                            .kind
-                            .tier_stats(building.tier)
-                            .weapons
-                            .iter()
-                            .any(|weapon| weapon.targets.ground)
-                    })
+                    .filter(|(building, _)| armed(building))
                     .map(|(_, beside)| *beside),
             )
     }
