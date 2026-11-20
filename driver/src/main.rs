@@ -577,7 +577,7 @@ enum Cmd {
         /// With --player: the most orders the player may send in any
         /// minute of game time.
         #[arg(long, requires = "player")]
-        orders_per_minute: Option<u32>,
+        orders_per_minute: Option<std::num::NonZeroU32>,
     },
     /// Print every Roster page as plain text: the rules a player reads in
     /// game, for an agent that plays through `driver live`.

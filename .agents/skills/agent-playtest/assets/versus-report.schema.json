@@ -20,6 +20,7 @@
       "enum": [
         "win",
         "loss",
+        "draw",
         "unfinished"
       ]
     },
