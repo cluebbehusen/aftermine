@@ -174,10 +174,7 @@ impl Missions {
             let nearest = |tiles: &mut dyn Iterator<Item = TilePos>| {
                 tiles.min_by_key(|tile| frame.rank(centre, doubled(*tile)))
             };
-            // Armed attackers come before scouts, builders and unarmed sites,
-            // however much nearer those stand.
-            let grounded =
-                nearest(&mut siege.armed_grounded()).or_else(|| nearest(&mut siege.grounded()));
+            let grounded = siege.nearest_grounded(|tile| frame.rank(centre, doubled(tile)));
             let Some(goal) = grounded.or(siege.unseen).or_else(|| {
                 let flyer = nearest(&mut siege.sighted())?;
                 own.then(|| guard(observation, map, frame, component, flyer))?
@@ -787,6 +784,15 @@ impl Siege<'_> {
             .map(|threat| threat.id)
             .chain(self.recalled.iter().copied())
             .collect()
+    }
+
+    /// Where its grounded threat nearest by `rank` stands: an armed one
+    /// before scouts, builders and unarmed sites, however much nearer those
+    /// stand.
+    fn nearest_grounded<K: Ord>(&self, rank: impl Fn(TilePos) -> K) -> Option<TilePos> {
+        self.armed_grounded()
+            .min_by_key(|tile| rank(*tile))
+            .or_else(|| self.grounded().min_by_key(|tile| rank(*tile)))
     }
 
     /// Where its armed threats on the ground stand: armed enemies in sight
