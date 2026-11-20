@@ -7,7 +7,7 @@
 //! each blows up the nearest defense once the fight begins.
 
 use super::Scratch;
-use super::defense::{artillery, battery, lobs};
+use super::defense::{GATHER_TILES, artillery, battery, lobs};
 use super::fight::Fight;
 use super::raid::{aim, blast};
 use super::reserve::LOCAL_REACH;
@@ -1671,14 +1671,18 @@ impl<'a> Plan<'a> {
 
     /// The armed enemies the seat knows of within contact of the members,
     /// before any breacher answers them.
-    /// What the armed members within local reach of the enemies in contact
-    /// with the army are worth: those in the fight. Members still walking up
-    /// behind it count for nothing until they arrive, so a front that cannot
-    /// win alone turns back rather than wait to be fed.
+    /// What the armed members in the fight are worth: those within local
+    /// reach of the enemies in contact with the army, and the column joined
+    /// to them, each member within the gathered distance of the next.
+    /// Stragglers apart from that body count for nothing until they arrive,
+    /// so a front that cannot win alone turns back rather than wait to be
+    /// fed, while the body of an army arriving behind its front still counts.
     fn fighting(&self, members: &[&UnitObs]) -> u64 {
-        let armed = members
+        let armed: Vec<&UnitObs> = members
             .iter()
-            .filter(|unit| !unit.kind.stats().weapons.is_empty());
+            .copied()
+            .filter(|unit| !unit.kind.stats().weapons.is_empty())
+            .collect();
         let touches = |anchor: TilePos, size: (i32, i32)| {
             members
                 .iter()
@@ -1703,13 +1707,28 @@ impl<'a> Plan<'a> {
             .chain(buildings)
             .filter(|(anchor, size)| touches(*anchor, *size))
             .collect();
-        armed
-            .filter(|unit| {
+        let mut joined: Vec<bool> = armed
+            .iter()
+            .map(|unit| {
                 contacts
                     .iter()
                     .any(|(anchor, size)| gap(*anchor, *size, unit.tile, (1, 1)) <= LOCAL_REACH)
             })
-            .map(|unit| value(unit))
+            .collect();
+        let mut frontier: Vec<usize> = (0..armed.len()).filter(|index| joined[*index]).collect();
+        while let Some(index) = frontier.pop() {
+            for (next, unit) in armed.iter().enumerate() {
+                if !joined[next] && unit.tile.chebyshev(armed[index].tile) <= GATHER_TILES {
+                    joined[next] = true;
+                    frontier.push(next);
+                }
+            }
+        }
+        armed
+            .iter()
+            .zip(joined)
+            .filter(|(_, joined)| *joined)
+            .map(|(unit, _)| value(unit))
             .sum()
     }
 

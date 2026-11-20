@@ -1868,10 +1868,14 @@ fn an_engaged_army_whose_target_is_gone_moves_on_while_busy() {
 fn a_front_outweighed_withdraws_without_counting_stragglers_behind() {
     // Two Sentinels in contact with four East Sentinels, six more of the
     // attack far behind: together they would win, but the six are not in
-    // the fight, so the front turns back. With all eight there it fights on.
+    // the fight, so the front turns back. With all eight there, or the six
+    // strung out in a column joined to the front, it fights on.
     let front = [(30, 11), (30, 12)];
     let behind = [(14, 3), (15, 3), (16, 3), (14, 4), (15, 4), (16, 4)];
     let near = [(29, 10), (29, 11), (29, 12), (28, 10), (28, 11), (28, 12)];
+    // A column strung out behind the front, each within a few tiles of the
+    // next: the body of the army arriving, not stragglers.
+    let column = [(24, 11), (18, 11), (12, 11), (18, 12), (12, 12), (6, 12)];
     let withdraws = |rest: &[(i32, i32)], difficulty: BotDifficulty| {
         let mut scenario = field();
         for (x, y) in front.iter().chain(rest) {
@@ -1917,4 +1921,8 @@ fn a_front_outweighed_withdraws_without_counting_stragglers_behind() {
         "premise: all eight fight on"
     );
     assert!(withdraws(&behind, BotDifficulty::Prime));
+    assert!(
+        !withdraws(&column, BotDifficulty::Prime),
+        "the column behind the front fights on with it"
+    );
 }

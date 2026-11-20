@@ -808,7 +808,7 @@ const RESERVE_TILES: i32 = 3;
 /// How near the waiting post or the fight a defender stands to count as
 /// there: a model of "together", since one farther off arrives after the
 /// fight began. Not a count of units.
-const GATHER_TILES: i32 = 6;
+pub(super) const GATHER_TILES: i32 = 6;
 
 /// What `units` that can hit ground are worth where a defense would fight:
 /// those within the gather distance of its waiting `post` or of its `goal`.
