@@ -186,11 +186,28 @@ impl Missions {
             }
             let gap = [0, 1].map(|i| need[i].saturating_sub(have[i]));
             if gap != [0, 0] {
+                // The known enemies the need comes from, so a seat that reads
+                // threats answers them with what beats them rather than the
+                // cheapest unit, which only stands there to be killed.
+                let attackers = memory
+                    .units()
+                    .iter()
+                    .filter(|unit| unit.kind.stats().can_fight())
+                    .filter(|unit| {
+                        unit.kind.stats().domain == Domain::Air
+                            || map.component(unit.tile) == ground
+                    })
+                    .filter(|unit| {
+                        crate::frame::gap(asset.anchor, asset.kind.size(), unit.tile, (1, 1))
+                            <= LOCAL_REACH
+                    })
+                    .map(|unit| (unit.kind, unit.value(observation.tick)))
+                    .collect();
                 gaps.push(Shortfall {
                     ground,
                     gap,
-                    attackers: Vec::new(),
-                    read: true,
+                    attackers,
+                    read: crate::reads_threats(difficulty),
                 });
             }
             let met = meeting::opposed(observation, memory, goal);

@@ -162,9 +162,10 @@ purchase, and the escort's shortfall raises production needs; no future units
 are promised. The escort is sized as the site's local guard will be, holds the
 landing while known enemies stand near, and joins that guard once the building
 is placed. Expansion guards follow nearby known threats, without a quiet
-minimum, and completed guns release mobile defenders. A late delivery turns its
-passengers home; a builder already on the island builds there on the next
-attempt.
+minimum, and completed guns release mobile defenders. A guard short of those
+threats is answered with what beats them at the rungs that read threats. A late
+delivery turns its passengers home; a builder already on the island builds there
+on the next attempt.
 
 ## Persistent state
 

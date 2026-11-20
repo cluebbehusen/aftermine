@@ -2199,3 +2199,45 @@ fn only_a_defense_out_at_its_fight_holds_on_and_only_where_it_can_fall_back() {
         "never falls back"
     );
 }
+
+#[test]
+fn a_guard_short_of_known_enemies_is_answered_with_what_beats_them() {
+    // Lancers stand near a bare expansion, not near enough to attack it, in a
+    // West scout's sight. Its guard is short; a seat that reads threats trains
+    // what beats them, not Scuttlers, while Standard, which judges the threat
+    // by its size, still answers with the cheapest unit.
+    let trained = |difficulty: BotDifficulty| {
+        let mut scenario = widened(arena(400), 12, 20);
+        scenario.players[0].bot_config = Some(rung(difficulty));
+        scenario.buildings.extend([
+            BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Foundry,
+                x: 24,
+                y: 8,
+            },
+            BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Fabricator,
+                x: 6,
+                y: 1,
+            },
+        ]);
+        scenario.units.push(unit(0, UnitKind::Surveyor, 33, 9));
+        for y in [9, 10] {
+            scenario.units.push(unit(1, UnitKind::Lancer, 35, y));
+        }
+        let state = scenario.build().unwrap();
+        let commands =
+            seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default());
+        trains(&commands)
+            .into_iter()
+            .map(|(_, kind)| kind)
+            .collect::<Vec<_>>()
+    };
+    let prime = trained(BotDifficulty::Prime);
+    assert!(!prime.is_empty(), "premise: the short guard trains");
+    assert!(!prime.contains(&UnitKind::Scuttler), "{prime:?}");
+    let standard = trained(BotDifficulty::Standard);
+    assert!(standard.contains(&UnitKind::Scuttler), "{standard:?}");
+}
