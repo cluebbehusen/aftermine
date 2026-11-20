@@ -12,7 +12,10 @@ fn the_sheet_has_a_page_for_every_kind() {
         let heading = format!("## {}\n", aftermine_kit::roster::entity_name(kind.name()));
         assert!(sheet.contains(&heading), "{heading}");
     }
-    assert!(sheet.starts_with("# FOUNDRY\n"));
+    assert!(
+        sheet.contains("\n# FOUNDRY\n"),
+        "the Roster follows the mechanics"
+    );
     assert!(sheet.contains(&aftermine_kit::roster::unit_description(UnitKind::Sapper)));
 }
 
@@ -43,4 +46,16 @@ fn every_armed_page_says_how_often_it_fires() {
     );
     assert!(!page("Harvester").contains("Fires"));
     assert!(page("Turret").contains("Heavy Turret fires once every"));
+}
+
+#[test]
+fn the_sheet_opens_with_the_rules_a_player_cannot_watch() {
+    let sheet = sheet();
+    assert!(sheet.starts_with("# How the game works"), "{sheet}");
+    assert!(
+        sheet.contains("pays 180 scrap a minute instead of 120"),
+        "the support rates come from the stats table"
+    );
+    assert!(sheet.contains("within 8 tiles"), "{sheet}");
+    assert!(sheet.contains("costs 85% of the price"), "{sheet}");
 }

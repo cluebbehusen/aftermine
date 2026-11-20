@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Aftermine versus report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "result",
+    "final_tick",
+    "plan",
+    "summary",
+    "decided",
+    "strong",
+    "weak",
+    "opponent",
+    "harness_problems"
+  ],
+  "properties": {
+    "result": {
+      "description": "The match result for your seat, or unfinished when the tick limit ended it.",
+      "enum": [
+        "win",
+        "loss",
+        "draw",
+        "unfinished"
+      ]
+    },
+    "final_tick": {
+      "description": "The tick the match ended or stopped at.",
+      "type": "integer"
+    },
+    "plan": {
+      "description": "How you carried out your assigned plan, and where and why you departed from it.",
+      "type": "string"
+    },
+    "summary": {
+      "description": "How the match went, with the ticks where it turned.",
+      "type": "string"
+    },
+    "decided": {
+      "description": "When and by what the match was decided, as far as you could tell from your seat.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tick",
+        "how"
+      ],
+      "properties": {
+        "tick": {
+          "type": "integer"
+        },
+        "how": {
+          "type": "string"
+        }
+      }
+    },
+    "strong": {
+      "description": "Units, structures, tactics or map features that felt too strong for their price or too hard to answer, each with ticks and evidence.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "weak": {
+      "description": "Units, structures or tech you found not worth their price, or that never got a chance to matter, each with why.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "opponent": {
+      "description": "What the other player did that you had to respond to, with ticks.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "harness_problems": {
+      "description": "Anything about the commands, the digest or the rules sheet that was missing, wrong or confusing.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

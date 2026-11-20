@@ -180,6 +180,67 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Play scripted challengers against the bot: one challenger seat and
+    /// one bot seat per game on two-seat maps, the challenger in seat 0 on
+    /// even seeds and seat 1 on odd ones, the bot's personality seed the
+    /// game's seed plus 9000. Prints each family's record per rung with a
+    /// 95% Wilson interval on its share of decided games.
+    BotGauntlet {
+        /// Families, comma-separated: forward-fabricator, scuttler-raid,
+        /// lancer-harass, held-army, buzzard-harass, bombard-siege,
+        /// ball-rush, kestrel-push, novice, or "tuning", "held-out" or
+        /// "yardstick".
+        #[arg(long, value_delimiter = ',', required = true)]
+        families: Vec<String>,
+        /// Two-seat maps, comma-separated.
+        #[arg(long, value_delimiter = ',', required = true)]
+        maps: Vec<String>,
+        /// The bot's rungs.
+        #[arg(long, value_delimiter = ',', default_value = "prime")]
+        difficulties: Vec<aftermine_sim::scenario::BotDifficulty>,
+        /// The bot's stances.
+        #[arg(long, value_delimiter = ',', default_value = "balanced")]
+        stances: Vec<aftermine_sim::scenario::BotStance>,
+        /// Game seeds as `from..to`, the last excluded.
+        #[arg(long, default_value = "0..10", value_parser = parse_seed_range)]
+        seeds: std::ops::Range<u64>,
+        /// The tick an undecided game stops at.
+        #[arg(long, default_value_t = 24_000)]
+        tick_limit: u64,
+        /// Games to play at once.
+        #[arg(long, default_value_t = std::num::NonZeroUsize::new(8).expect("nonzero"))]
+        jobs: std::num::NonZeroUsize,
+        /// Write every game's row here as JSON lines.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Save every game's replay in this directory.
+        #[arg(long)]
+        replay_dir: Option<PathBuf>,
+        /// Print the records as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Game-state tests: restore each case's recorded game at its fork,
+    /// let this build's bot play on from a cold start against a scripted
+    /// continuation of the player, and check what the bot kept.
+    BotFork {
+        /// The case manifest (JSON: {"cases": [...]}).
+        #[arg(long)]
+        cases: PathBuf,
+        /// Continuation seeds, as from..to.
+        #[arg(long, default_value = "0..5", value_parser = parse_seed_range)]
+        seeds: std::ops::Range<u64>,
+        /// Games to play at once.
+        #[arg(long, default_value_t = std::num::NonZeroUsize::new(8).expect("nonzero"))]
+        jobs: std::num::NonZeroUsize,
+        /// Start the bot cold at the fork instead of letting it watch the
+        /// game up to there.
+        #[arg(long)]
+        cold: bool,
+        /// Write every game's row here as JSON lines.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Run the staged pressure scenarios: a scripted attacker presses one
     /// situation on a bot seat, and each scenario reports whether the bot
     /// answered by its deadline.
@@ -487,10 +548,13 @@ enum Cmd {
         /// Seconds a silent connection may sit before it is closed.
         #[arg(long, default_value_t = 30 * 60, value_parser = clap::value_parser!(u64).range(1..))]
         idle_timeout: u64,
-        /// Make this a playtest for this seat: every other seat gets the
-        /// bot below, and the client may see and command only this seat.
-        #[arg(long, requires = "replay_out")]
-        player: Option<u8>,
+        /// Make this a playtest for these seats, comma-separated: every
+        /// other seat gets the bot below. With one seat the client plays it
+        /// on --port; with several, seat i's client connects to --port + i,
+        /// sees and commands only that seat, and the clock moves once every
+        /// seat has asked it to, by the shortest step.
+        #[arg(long, requires = "replay_out", value_delimiter = ',')]
+        player: Vec<u8>,
         /// The playtest bots' skill rung.
         #[arg(long, requires = "player", default_value_t = aftermine_sim::scenario::BotDifficulty::Standard)]
         difficulty: aftermine_sim::scenario::BotDifficulty,
@@ -506,6 +570,14 @@ enum Cmd {
         /// Where a playtest rewrites its replay after every advance.
         #[arg(long, requires = "player")]
         replay_out: Option<PathBuf>,
+        /// With --player: the fewest ticks one advance may run, short of
+        /// the tick limit, to hold the player to a pace.
+        #[arg(long, requires = "player")]
+        min_step: Option<u64>,
+        /// With --player: the most orders the player may send in any
+        /// minute of game time.
+        #[arg(long, requires = "player")]
+        orders_per_minute: Option<std::num::NonZeroU32>,
     },
     /// Print every Roster page as plain text: the rules a player reads in
     /// game, for an agent that plays through `driver live`.
@@ -607,6 +679,23 @@ fn default_candidate() -> String {
     let revision: String = build.revision.chars().take(12).collect();
     let dirty = if build.dirty == "false" { "" } else { "-dirty" };
     format!("{}-{revision}{dirty}", build.version)
+}
+
+/// A seed range written `from..to`, the last excluded.
+fn parse_seed_range(text: &str) -> Result<std::ops::Range<u64>, String> {
+    let (from, to) = text
+        .split_once("..")
+        .ok_or_else(|| format!("{text:?} is not a range like 0..10"))?;
+    let parse = |part: &str| {
+        part.trim()
+            .parse::<u64>()
+            .map_err(|error| format!("{part:?} in {text:?}: {error}"))
+    };
+    let (from, to) = (parse(from)?, parse(to)?);
+    if from >= to {
+        return Err(format!("{text:?} holds no seed"));
+    }
+    Ok(from..to)
 }
 
 /// Prints `value` as pretty JSON when `json` is set, else as `render` draws it.
@@ -831,6 +920,74 @@ fn main() -> Result<()> {
             emit(json, &games, |games| {
                 aftermine_driver::replay_ledger::render(games)
             })?;
+        }
+        Cmd::BotGauntlet {
+            families,
+            maps,
+            difficulties,
+            stances,
+            seeds,
+            tick_limit,
+            jobs,
+            out,
+            replay_dir,
+            json,
+        } => {
+            use aftermine_driver::bot_gauntlet;
+            use std::io::Write as _;
+            let maps = maps
+                .iter()
+                .map(|path| {
+                    let scenario = runner::load_scenario(path)?;
+                    let name = std::path::Path::new(path)
+                        .file_stem()
+                        .map_or_else(|| path.clone(), |stem| stem.to_string_lossy().into_owned());
+                    Ok((name, scenario))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let plan = bot_gauntlet::GauntletPlan {
+                families: bot_gauntlet::families(&families)?,
+                maps,
+                difficulties,
+                stances,
+                seeds,
+                tick_limit,
+                replay_dir,
+            };
+            let rows = bot_gauntlet::run(&plan, jobs)?;
+            if let Some(path) = out {
+                let mut file = std::fs::File::create(&path)
+                    .with_context(|| format!("creating {}", path.display()))?;
+                for row in &rows {
+                    writeln!(file, "{}", serde_json::to_string(row)?)?;
+                }
+            }
+            let records = bot_gauntlet::records(&rows);
+            emit(json, &records, |records| bot_gauntlet::report(records))?;
+        }
+        Cmd::BotFork {
+            cases,
+            seeds,
+            jobs,
+            cold,
+            out,
+        } => {
+            use aftermine_driver::bot_fork;
+            let text = std::fs::read_to_string(&cases)
+                .with_context(|| format!("reading {}", cases.display()))?;
+            let manifest: bot_fork::Manifest = serde_json::from_str(&text)
+                .with_context(|| format!("parsing {}", cases.display()))?;
+            let rows = bot_fork::run(&manifest, seeds, cold, jobs)?;
+            if let Some(path) = out {
+                let mut lines = String::new();
+                for row in &rows {
+                    lines.push_str(&serde_json::to_string(row)?);
+                    lines.push('\n');
+                }
+                std::fs::write(&path, lines)
+                    .with_context(|| format!("writing {}", path.display()))?;
+            }
+            print!("{}", bot_fork::report(&rows));
         }
         Cmd::BotPressure {
             dir,
@@ -1125,11 +1282,24 @@ fn main() -> Result<()> {
             let requests = live_requests(cmd)?;
             let mut client = Client::connect(&addr)?;
             let mut last: Option<Reply> = None;
-            for request in requests {
-                last = Some(client.call(request)?);
+            let total = requests.len();
+            for (sent, request) in requests.into_iter().enumerate() {
+                match client.call(request) {
+                    Ok(reply) => last = Some(reply),
+                    // A batch such as `train --count` keeps what went
+                    // through; say how much did.
+                    Err(error) if sent > 0 => {
+                        anyhow::bail!("{sent} of {total} sent; the next was refused: {error:#}")
+                    }
+                    Err(error) => return Err(error),
+                }
             }
-            if let Some(reply) = last {
-                println!("{}", serde_json::to_string_pretty(&reply)?);
+            match last {
+                Some(Reply::Played(played)) => {
+                    print!("{}", aftermine_driver::digest::played(&played));
+                }
+                Some(reply) => println!("{}", serde_json::to_string_pretty(&reply)?),
+                None => {}
             }
         }
         Cmd::ProfileShell {
@@ -1197,13 +1367,20 @@ fn main() -> Result<()> {
             personality_seed,
             tick_limit,
             replay_out,
+            min_step,
+            orders_per_minute,
         } => {
-            let playtest = player.zip(replay_out).map(|(seat, replay_out)| {
+            let playtest = replay_out.filter(|_| !player.is_empty()).map(|replay_out| {
                 aftermine_driver::session::PlaytestSetup {
                     playtest: aftermine_driver::session::Playtest {
-                        seat: aftermine_sim::PlayerId(seat),
+                        seats: player
+                            .iter()
+                            .map(|seat| aftermine_sim::PlayerId(*seat))
+                            .collect(),
                         tick_limit,
                         replay_out,
+                        min_step,
+                        orders_per_minute,
                     },
                     difficulty,
                     stance,

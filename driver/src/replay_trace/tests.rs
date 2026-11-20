@@ -13,7 +13,7 @@ fn played(name: &str) -> GameReplay {
     let mut scenario = Scenario::skirmish();
     aftermine_kit::controller::seat_bots_around(
         &mut scenario,
-        PlayerId(0),
+        &[PlayerId(0)],
         BotDifficulty::Standard,
         BotStance::Balanced,
         3,
@@ -23,9 +23,11 @@ fn played(name: &str) -> GameReplay {
     let mut session = Session::playtest(
         scenario,
         Playtest {
-            seat: PlayerId(0),
+            seats: vec![PlayerId(0)],
             tick_limit: None,
             replay_out: out.clone(),
+            min_step: None,
+            orders_per_minute: None,
         },
     )
     .unwrap();
