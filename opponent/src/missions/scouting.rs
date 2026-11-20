@@ -155,19 +155,28 @@ impl Missions {
                     mission.goal = goal;
                 }
             } else {
-                // Standing where the tour ended would keep its last
-                // places fresh in its own sight, so it would never be
-                // sent on, and it would wait there for whatever finds it.
-                if !defense::at_home(observation, map, scout.tile)
-                    && let Some(post) = defense::home_post(observation, map, frame, scout.tile)
-                {
-                    if flies(scout) {
-                        send(observation, frame, hazards, scout, post, ledger);
-                    } else {
-                        ledger.order(run(vec![scout.id], post));
-                    }
+                // Standing where the tour ended would keep its last places
+                // fresh in its own sight, so it would never be sent on, and
+                // it would wait there for whatever finds it. A scout that
+                // only ran out of time keeps going; one whose way home is
+                // not ordered this decision keeps its mission to try again.
+                let recalled = !arrived
+                    || defense::at_home(observation, map, scout.tile)
+                    || match defense::home_post(observation, map, frame, scout.tile) {
+                        Some(post) if flies(scout) => {
+                            send(observation, frame, hazards, scout, post, ledger)
+                        }
+                        Some(post) if map.component(post) == map.component(scout.tile) => ledger
+                            .order(Command::Scout {
+                                units: vec![scout.id],
+                                goal: post,
+                                queue: false,
+                            }),
+                        _ => true,
+                    };
+                if recalled {
+                    self.list.remove(index);
                 }
-                self.list.remove(index);
             }
         }
 

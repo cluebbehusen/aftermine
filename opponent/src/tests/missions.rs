@@ -2075,16 +2075,13 @@ fn home_is_never_given_up() {
 
 #[test]
 fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
-    // Two Sentinels out where the raiders were, the raiders gone: they come
+    // Two defenders out where the raiders were, the raiders gone: they come
     // back beside the Foundry rather than be let go out there, unless an
-    // enemy can still hit them.
-    let stand_down = |lancer: bool| {
-        let mut scenario = raided(
-            &[(UnitKind::Sentinel, 13, 8), (UnitKind::Sentinel, 14, 8)],
-            &[],
-        );
-        if lancer {
-            scenario.units.push(unit(1, UnitKind::Lancer, 19, 8));
+    // enemy can still hit them, aircraft too.
+    let stand_down = |defender: UnitKind, threat: Option<(UnitKind, i32)>| {
+        let mut scenario = raided(&[(defender, 13, 8), (defender, 14, 8)], &[]);
+        if let Some((threat, x)) = threat {
+            scenario.units.push(unit(1, threat, x, 8));
         }
         scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
         let state = scenario.build().unwrap();
@@ -2124,13 +2121,29 @@ fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
             .any(|mission| mission.phase == Phase::Recover);
         (home, recovers)
     };
-    assert_eq!(stand_down(false), (true, true), "the raiders gone: home");
+    assert_eq!(
+        stand_down(UnitKind::Sentinel, None),
+        (true, true),
+        "the raiders gone: home"
+    );
     // A Lancer beyond the base's threat gap but still in reach of the two:
     // they do not turn their backs to it.
     assert_eq!(
-        stand_down(true),
+        stand_down(UnitKind::Sentinel, Some((UnitKind::Lancer, 19))),
         (false, false),
         "still under fire: they stay"
+    );
+    // Nor do two Talons with an enemy Talon on them, though it cannot hit
+    // the ground.
+    assert_eq!(
+        stand_down(UnitKind::Talon, None),
+        (true, true),
+        "premise: Talons come home"
+    );
+    assert_eq!(
+        stand_down(UnitKind::Talon, Some((UnitKind::Talon, 17))),
+        (false, false),
+        "Talons under fire stay"
     );
 }
 

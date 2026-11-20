@@ -388,17 +388,38 @@ impl Missions {
     ) -> Vec<(u64, TilePos)> {
         let now = observation.tick;
         let mut returning = Vec::new();
+        // An enemy in sight, unit or building, whose weapons reach a member
+        // in its own domain, aircraft too.
         let in_reach = |members: &[UnitId]| {
-            observation.enemy_units.iter().any(|enemy| {
-                let reach = crate::defenses::reach(enemy.kind);
-                reach > Fx::ZERO
-                    && members
-                        .iter()
-                        .filter_map(|id| mine(observation, *id))
-                        .any(|unit| {
-                            Fx::from_num(unit.tile.chebyshev(enemy.tile)) <= reach + Fx::from_num(1)
-                        })
-            })
+            let reach = |weapons: &[WeaponStats], domain: Domain| {
+                weapons
+                    .iter()
+                    .filter(|weapon| weapon.targets.covers(domain))
+                    .map(|weapon| weapon.range)
+                    .max()
+                    .unwrap_or(Fx::ZERO)
+            };
+            members
+                .iter()
+                .filter_map(|id| mine(observation, *id))
+                .any(|unit| {
+                    let domain = unit.kind.stats().domain;
+                    let near = |gap: i32, reach: Fx| {
+                        reach > Fx::ZERO && Fx::from_num(gap) <= reach + Fx::from_num(1)
+                    };
+                    observation.enemy_units.iter().any(|enemy| {
+                        let reach = if domain == Domain::Ground {
+                            crate::defenses::reach(enemy.kind)
+                        } else {
+                            reach(enemy.kind.stats().weapons, domain)
+                        };
+                        near(unit.tile.chebyshev(enemy.tile), reach)
+                    }) || observation.enemy_buildings.iter().any(|building| {
+                        let gap = gap(building.anchor, building.kind.size(), unit.tile, (1, 1));
+                        let tier = building.kind.tiers()[usize::from(building.tier)];
+                        near(gap, reach(tier.weapons, domain))
+                    })
+                })
         };
         for mission in &mut self.list {
             let Task::Defend { asset, phase } = &mut mission.task else {

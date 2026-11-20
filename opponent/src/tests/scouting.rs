@@ -494,9 +494,9 @@ fn a_scout_kept_off_a_guarded_point_still_sees_it_and_moves_on() {
     let mut done = false;
     while !done && state.current_tick() < STALE + 3_000 {
         let commands = opponent.act(&state, &mut events);
-        done = runs(&commands)
+        done = looks(&commands)
             .iter()
-            .any(|(units, _)| units == &[surveyor]);
+            .any(|(units, goal)| units == &[surveyor] && goal.x < 24);
         let report = state.tick(&commands);
         done |= report.events.iter().any(|event| {
             matches!(event, Event::OrderStalled { unit, reason: StallReason::SafeVantage, .. }
@@ -787,34 +787,31 @@ fn a_standing_scout_sets_out_at_the_first_decision() {
 }
 
 #[test]
-fn a_scout_with_nothing_left_to_see_runs_home() {
+fn a_scout_with_nothing_left_to_see_comes_home() {
     // The East start is the field's one place to see. Once the Surveyor has
     // seen it, standing there would keep it fresh in its own sight, so the
-    // Surveyor comes back beside its Foundry instead.
+    // Surveyor comes back beside its Foundry instead, by a scout's way, which
+    // keeps off known guns.
     let (scenario, mut state) = scouting(STALE);
     let surveyor = at(&state, 6, 9);
+    let beside = super::missions::beside_foundry(&state, 0, None);
     let mut opponent = seat(&scenario, 0);
     let mut events = OwnEvents::default();
     let mut looked = false;
-    let mut home = None;
-    while home.is_none() && state.current_tick() < STALE + 4_000 {
+    let mut home = false;
+    while !home && state.current_tick() < STALE + 4_000 {
         let commands = opponent.act(&state, &mut events);
-        looked |= looks(&commands)
-            .iter()
-            .any(|(units, _)| units == &[surveyor]);
-        home = runs(&commands)
-            .into_iter()
-            .find(|(units, _)| units == &[surveyor])
-            .map(|(_, goal)| goal);
+        for (units, goal) in looks(&commands) {
+            if units == [surveyor] {
+                looked |= !beside.contains(&goal);
+                home |= beside.contains(&goal);
+            }
+        }
         let report = state.tick(&commands);
         events.record(PlayerId(0), &report.events);
     }
     assert!(looked, "premise: the Surveyor went to look");
-    let goal = home.expect("the Surveyor is sent home");
-    assert!(
-        super::missions::beside_foundry(&state, 0, None).contains(&goal),
-        "{goal:?}"
-    );
+    assert!(home, "the Surveyor is sent home");
 }
 
 #[test]
@@ -848,11 +845,46 @@ fn a_scout_that_finds_no_safe_view_counts_its_point_as_seen() {
     );
     let (commands, trace) = opponent.act_traced(&state, &mut events);
     assert!(scouts(&trace.unwrap().missions).is_empty(), "{commands:?}");
-    assert!(looks(&commands).is_empty(), "{commands:?}");
+    let beside = super::missions::beside_foundry(&state, 0, None);
+    let sent: Vec<TilePos> = looks(&commands)
+        .into_iter()
+        .filter(|(units, _)| units == &[surveyor])
+        .map(|(_, goal)| goal)
+        .collect();
+    assert_eq!(sent.len(), 1, "{commands:?}");
+    assert!(beside.contains(&sent[0]), "not sent on, but home: {sent:?}");
+}
+
+#[test]
+fn a_scout_out_of_time_before_it_sees_its_point_keeps_going() {
+    // The Surveyor is halfway out to the East start and has been on its way
+    // longer than a scout may take: the start counts as seen for the next
+    // scout's sake, but this one is not called home before it gets there.
+    let mut scenario = field();
+    scenario.units.push(unit(0, UnitKind::Surveyor, 24, 9));
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, STALE, &[]);
+    let surveyor = at(&state, 24, 9);
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "scout", "point": 0},
+                "since": 0,
+                "units": [surveyor],
+                "goal": {"x": 42, "y": 11},
+            }],
+            "waiting": null,
+        });
+    });
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert!(scouts(&trace.unwrap().missions).is_empty(), "{commands:?}");
     assert!(
-        runs(&commands)
+        looks(&commands)
             .iter()
-            .any(|(units, _)| units == &[surveyor]),
+            .chain(&runs(&commands))
+            .all(|(units, _)| units != &[surveyor]),
         "{commands:?}"
     );
 }
