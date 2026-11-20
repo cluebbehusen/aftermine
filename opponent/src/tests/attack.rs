@@ -1863,3 +1863,58 @@ fn an_engaged_army_whose_target_is_gone_moves_on_while_busy() {
         "the whole army hunts on: {commands:?}"
     );
 }
+
+#[test]
+fn a_front_outweighed_withdraws_without_counting_stragglers_behind() {
+    // Two Sentinels in contact with four East Sentinels, six more of the
+    // attack far behind: together they would win, but the six are not in
+    // the fight, so the front turns back. With all eight there it fights on.
+    let front = [(30, 11), (30, 12)];
+    let behind = [(14, 3), (15, 3), (16, 3), (14, 4), (15, 4), (16, 4)];
+    let near = [(29, 10), (29, 11), (29, 12), (28, 10), (28, 11), (28, 12)];
+    let withdraws = |rest: &[(i32, i32)], difficulty: BotDifficulty| {
+        let mut scenario = field();
+        for (x, y) in front.iter().chain(rest) {
+            scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+        }
+        for (x, y) in [(33, 10), (33, 11), (33, 12), (34, 11)] {
+            scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+        }
+        scenario.players[0].bot_config = Some(rung(difficulty));
+        let state = scenario.build().unwrap();
+        let mut members: Vec<UnitId> = front
+            .iter()
+            .chain(rest)
+            .map(|(x, y)| at(&state, *x, *y))
+            .collect();
+        members.sort_unstable();
+        let missions = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "attack",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                    "phase": {"engage": {"focus": null, "progressed": 0}},
+                },
+                "since": 0,
+                "units": members,
+                "goal": {"x": 42, "y": 11},
+            }],
+        });
+        let mut state = state;
+        advance_to(&mut state, crate::decision_interval(difficulty), &[]);
+        let mut opponent = restaged(&scenario, &state, missions);
+        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        trace
+            .unwrap()
+            .missions
+            .iter()
+            .any(|mission| mission.phase == Phase::Withdraw)
+    };
+    assert!(
+        !withdraws(&near, BotDifficulty::Prime),
+        "premise: all eight fight on"
+    );
+    assert!(withdraws(&behind, BotDifficulty::Prime));
+}

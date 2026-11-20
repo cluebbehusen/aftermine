@@ -2,16 +2,18 @@
 //! as the known threats near it call for beyond the completed guns covering
 //! it. The start keeps its own reserve, which offense already respects.
 
+use super::defense::{at_home, engage_margin};
 use super::reserve::{self, LOCAL_REACH};
 use super::{
-    DefendPhase, MISSION_CAP, Mission, Missions, Shortfall, Task, UNIT_CAP, fill, force, hunt, mine,
+    DefendPhase, MISSION_CAP, Mission, Missions, Shortfall, Task, UNIT_CAP, fill, force, hits,
+    hunt, meeting, mine, value,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, doubled, footprint_centre, gap, ring};
 use crate::map::MapModel;
 use crate::memory::Memory;
 use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
-use aftermine_sim::scenario::BotStance;
+use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use aftermine_sim::stats::Domain;
 use aftermine_sim::{BuildingKind, UnitId};
 
@@ -84,8 +86,11 @@ impl Missions {
 
     /// Keeps each guarded building's local guard at what its need calls for:
     /// its current guards and free units nearest it first, never what home
-    /// keeps in reserve, and disbands a guard nothing threatens. A guard is a
-    /// defense mission in its Guard phase, so a defense that answers an
+    /// keeps in reserve, and disbands a guard nothing threatens. A base away
+    /// from home whose known enemies nearby the units it could take would not
+    /// match, by the margin a defense of `difficulty` goes out with, is given
+    /// up: its guard falls back home rather than wait there to be overrun. A
+    /// guard is a defense mission in its Guard phase, so a defense that answers an
     /// attack on the building takes its guards along, and the guard takes
     /// over again only once that defense has finished recovering. Returns
     /// what each guard still lacks beyond the units training nearby.
@@ -95,7 +100,7 @@ impl Missions {
         map: &MapModel,
         scratch: &super::Scratch,
         memory: &Memory,
-        stance: BotStance,
+        (stance, difficulty): (BotStance, BotDifficulty),
         ledger: &mut Ledger,
     ) -> Vec<Shortfall> {
         let frame = scratch.frame;
@@ -157,6 +162,11 @@ impl Missions {
                     u.id,
                 )
             });
+            let could: u64 = pool
+                .iter()
+                .filter(|u| hits(u, Domain::Ground))
+                .map(|u| value(u))
+                .sum();
             let mut have = [0_u64; 2];
             let mut kept = fill(pool, need, &mut have, UNIT_CAP);
             for (producer, queue) in observation.my_buildings.iter().zip(&observation.my_queues) {
@@ -182,6 +192,14 @@ impl Missions {
                     attackers: Vec::new(),
                     read: true,
                 });
+            }
+            let met = meeting::opposed(observation, memory, goal);
+            if !at_home(observation, map, goal)
+                && met > 0
+                && could * 1_000 < met * engage_margin(difficulty)
+            {
+                self.give_up(index, observation, map, frame, goal, ledger);
+                continue;
             }
             kept.sort_unstable();
             let changed = members != kept;

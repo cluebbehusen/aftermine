@@ -1799,3 +1799,274 @@ fn the_upper_rungs_go_out_at_raiders_only_with_an_edge() {
         "Standard goes at even odds"
     );
 }
+
+/// `scenario` with `columns` more columns of open ground inserted before map
+/// column `at`, and every unit and building from there on moved over.
+pub(super) fn widened(mut scenario: Scenario, at: i32, columns: i32) -> Scenario {
+    let index = usize::try_from(at).unwrap();
+    let width = usize::try_from(columns).unwrap();
+    scenario.map = scenario
+        .map
+        .iter()
+        .map(|row| {
+            let fill = if row.starts_with("##") { "#" } else { "." };
+            format!("{}{}{}", &row[..index], fill.repeat(width), &row[index..])
+        })
+        .collect();
+    for unit in scenario.units.iter_mut().filter(|unit| unit.x >= at) {
+        unit.x += columns;
+    }
+    for building in scenario.buildings.iter_mut().filter(|b| b.x >= at) {
+        building.x += columns;
+    }
+    scenario
+}
+
+/// The tiles beside `player`'s Foundry at `anchor`.
+fn beside_foundry(state: &State, player: u8, anchor: Option<TilePos>) -> Vec<TilePos> {
+    let foundry = state
+        .buildings()
+        .iter()
+        .find(|b| {
+            b.player == PlayerId(player)
+                && b.kind == BuildingKind::Foundry
+                && anchor.is_none_or(|anchor| b.anchor == anchor)
+        })
+        .unwrap();
+    crate::frame::ring(foundry.anchor, BuildingKind::Foundry.size()).collect()
+}
+
+#[test]
+fn defenders_still_walking_in_wait_at_the_post_until_they_arrive() {
+    // Five Sentinels would beat three raiders by Prime's edge, but three are
+    // still far off: all five gather at the post beside the Foundry rather
+    // than the two already there meeting the raiders alone. Once all five
+    // stand beside the Foundry, they go together.
+    const WEST: i32 = 14;
+    let raiders = [
+        (UnitKind::Sentinel, 9, 4),
+        (UnitKind::Sentinel, 9, 5),
+        (UnitKind::Sentinel, 9, 6),
+    ];
+    let sent = |others: [(i32, i32); 3]| {
+        let near = [(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 6, 8)];
+        let mut scenario = widened(raided(&near, &raiders), 1, WEST);
+        scenario.units.extend(
+            others
+                .iter()
+                .map(|(x, y)| unit(0, UnitKind::Sentinel, *x, *y)),
+        );
+        let state = scenario.build().unwrap();
+        let beside = beside_foundry(&state, 0, None);
+        hunts(
+            &seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+                .act(&state, &mut OwnEvents::default()),
+        )
+        .into_iter()
+        .map(|(units, goal)| (units.len(), beside.contains(&goal)))
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        sent([(2, 2), (2, 3), (2, 4)]),
+        [(5, true)],
+        "three still far off: all gather at the post"
+    );
+    assert_eq!(
+        sent([(5 + WEST, 9), (6 + WEST, 9), (7 + WEST, 8)]),
+        [(5, false)],
+        "all beside the Foundry: they go"
+    );
+}
+
+#[test]
+fn defenders_count_the_line_behind_the_raider_they_would_meet() {
+    // One raider beside the base and four more holding a line in sight,
+    // beyond reach of its buildings but near the fight: Prime's three
+    // Sentinels would meet all five, so they wait beside the Foundry rather
+    // than walk into the line. Without the line they go at the raider.
+    let defenders = [
+        (UnitKind::Sentinel, 5, 8),
+        (UnitKind::Sentinel, 6, 8),
+        (UnitKind::Sentinel, 5, 9),
+    ];
+    let line = [(14, 4), (14, 5), (15, 4), (15, 5)];
+    let sent = |with_line: bool| {
+        let mut raiders = vec![(UnitKind::Sentinel, 9, 5)];
+        if with_line {
+            raiders.extend(line.iter().map(|(x, y)| (UnitKind::Sentinel, *x, *y)));
+        }
+        let mut scenario = raided(&defenders, &raiders);
+        // An unarmed scout gives West sight of the line.
+        scenario.units.push(unit(0, UnitKind::Surveyor, 12, 7));
+        let state = scenario.build().unwrap();
+        assert_eq!(
+            ObservationData::fog_honest(&state, PlayerId(0))
+                .enemy_units
+                .iter()
+                .filter(|enemy| enemy.kind == UnitKind::Sentinel)
+                .count(),
+            raiders.len(),
+            "premise: West sees every raider"
+        );
+        let beside = beside_foundry(&state, 0, None);
+        hunts(
+            &seat_with(&scenario, 0, rung(BotDifficulty::Prime))
+                .act(&state, &mut OwnEvents::default()),
+        )
+        .into_iter()
+        .map(|(_, goal)| beside.contains(&goal))
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(sent(false), [false], "the raider alone: they go at it");
+    assert_eq!(sent(true), [true], "with the line: they wait at the post");
+}
+
+/// The arena drawn out in the middle, with a West expansion Foundry out on
+/// it, six East Sentinels beside the expansion, and West Sentinels at home
+/// on `home`.
+fn expansion_raided(home: &[(i32, i32)]) -> Scenario {
+    let mut scenario = widened(arena(0), 12, 20);
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Foundry,
+        x: 24,
+        y: 5,
+    });
+    for (x, y) in home {
+        scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+    }
+    for x in 28..=29 {
+        for y in 4..=6 {
+            scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+        }
+    }
+    scenario
+}
+
+#[test]
+fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
+    let expansion = Some(TilePos::new(24, 5));
+    // Three Sentinels at home against six at the expansion: no defense or
+    // guard goes out to it.
+    let few = [(5, 8), (6, 8), (5, 9)];
+    let scenario = expansion_raided(&few);
+    let state = scenario.build().unwrap();
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        hunts(&commands).iter().all(|(_, goal)| goal.x < 20),
+        "{commands:?}"
+    );
+
+    // An Aggressive seat keeps less home, so its local guard could take
+    // some of six; they would not match the raiders either, so none go.
+    let six = [(5, 8), (6, 8), (7, 8), (5, 9), (6, 9), (8, 9)];
+    let scenario = expansion_raided(&six);
+    let state = scenario.build().unwrap();
+    let aggressive = BotConfig::new(BotDifficulty::Prime, BotStance::Aggressive, 11);
+    let commands = seat_with(&scenario, 0, aggressive).act(&state, &mut OwnEvents::default());
+    assert!(
+        hunts(&commands)
+            .iter()
+            .all(|(_, goal)| goal.chebyshev(TilePos::new(25, 6)) > 8),
+        "{commands:?}"
+    );
+
+    // Eight would match them by Prime's edge: they gather beside the
+    // expansion.
+    let many = [
+        (5, 8),
+        (6, 8),
+        (7, 8),
+        (8, 8),
+        (9, 8),
+        (5, 9),
+        (6, 9),
+        (8, 9),
+    ];
+    let scenario = expansion_raided(&many);
+    let state = scenario.build().unwrap();
+    let beside = beside_foundry(&state, 0, expansion);
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        hunts(&commands)
+            .iter()
+            .any(|(_, goal)| beside.contains(goal)),
+        "premise: a match is defended: {commands:?}"
+    );
+
+    // Defenders already out there when the seat cannot match the raiders
+    // fall back home.
+    let scenario = expansion_raided(&[(5, 8)]);
+    let mut scenario = scenario;
+    scenario.units.extend([
+        unit(0, UnitKind::Sentinel, 24, 9),
+        unit(0, UnitKind::Sentinel, 25, 9),
+    ]);
+    let state = scenario.build().unwrap();
+    let outpost = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && Some(b.anchor) == expansion)
+        .unwrap()
+        .id;
+    let mut members = vec![at(&state, 24, 9), at(&state, 25, 9)];
+    members.sort_unstable();
+    let mut opponent = restored_with(
+        &seat_with(&scenario, 0, rung(BotDifficulty::Prime)),
+        &scenario,
+        &state,
+        |json| {
+            json["missions"] = serde_json::json!({
+                "next": 1,
+                "list": [{
+                    "id": 0,
+                    "task": {"task": "defend", "asset": outpost.0, "phase": {"engage": {"focus": null}}},
+                    "since": 0,
+                    "units": members,
+                    "goal": {"x": 28, "y": 5},
+                }],
+            });
+        },
+    );
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let home = beside_foundry(&state, 0, Some(TilePos::new(3, 5)));
+    assert!(
+        hunts(&commands)
+            .iter()
+            .any(|(units, goal)| units == &members && home.contains(goal)),
+        "{commands:?}"
+    );
+    assert!(
+        trace
+            .unwrap()
+            .missions
+            .iter()
+            .all(|mission| !matches!(mission.kind, MissionKind::Defend { .. })),
+        "the defense ends"
+    );
+}
+
+#[test]
+fn home_is_never_given_up() {
+    // Six raiders at home against three Sentinels and an expansion: the
+    // defenders wait beside the home Foundry rather than leave it.
+    let mut scenario = expansion_raided(&[(5, 8), (6, 8), (5, 9)]);
+    scenario
+        .units
+        .retain(|unit| unit.player == 0 || unit.x < 28);
+    for x in 9..=10 {
+        for y in 4..=6 {
+            scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+        }
+    }
+    let state = scenario.build().unwrap();
+    let home = beside_foundry(&state, 0, Some(TilePos::new(3, 5)));
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        hunts(&commands).iter().any(|(_, goal)| home.contains(goal)),
+        "{commands:?}"
+    );
+}

@@ -339,24 +339,28 @@ fn a_focus_is_not_reissued_while_it_holds() {
 
 #[test]
 fn mirrored_seats_focus_alike_at_every_rung() {
-    let mut scenario = arena(0);
+    // Two raids, one on each base, far enough apart on an arena drawn out in
+    // the middle that each defense meets only the raiders at its own base.
+    // No workers, so Scrapheap's two orders go to the defense and its focus.
+    let mut scenario = super::missions::widened(arena(0), 12, 10);
+    scenario.units.clear();
     scenario.units.extend([
-        unit(0, UnitKind::Sentinel, 8, 5),
-        unit(0, UnitKind::Sentinel, 8, 6),
-        unit(1, UnitKind::Sentinel, 15, 6),
-        unit(1, UnitKind::Sentinel, 15, 5),
-        unit(1, UnitKind::Sentinel, 10, 5),
-        unit(1, UnitKind::Sentinel, 10, 6),
-        unit(0, UnitKind::Sentinel, 13, 6),
-        unit(0, UnitKind::Sentinel, 13, 5),
+        unit(0, UnitKind::Sentinel, 7, 1),
+        unit(0, UnitKind::Sentinel, 8, 1),
+        unit(1, UnitKind::Sentinel, 26, 10),
+        unit(1, UnitKind::Sentinel, 25, 10),
+        unit(1, UnitKind::Sentinel, 9, 1),
+        unit(1, UnitKind::Sentinel, 10, 1),
+        unit(0, UnitKind::Sentinel, 24, 10),
+        unit(0, UnitKind::Sentinel, 23, 10),
     ]);
     let state = scenario.build().unwrap();
-    let state = wounded(&state, at(&state, 10, 5), 20);
-    let state = wounded(&state, at(&state, 13, 6), 20);
+    let state = wounded(&state, at(&state, 9, 1), 20);
+    let state = wounded(&state, at(&state, 24, 10), 20);
     for config in [veteran(), config(), scrapheap()] {
         let west = seat_with(&scenario, 0, config).act(&state, &mut OwnEvents::default());
         let east = seat_with(&scenario, 1, config).act(&state, &mut OwnEvents::default());
-        assert_eq!(attacks(&west).len(), 1);
+        assert_eq!(attacks(&west).len(), 1, "{west:?}");
         assert_eq!(mirror(&state, west), east);
     }
 }

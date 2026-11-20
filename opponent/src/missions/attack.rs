@@ -10,6 +10,7 @@ use super::Scratch;
 use super::defense::{artillery, battery, lobs};
 use super::fight::Fight;
 use super::raid::{aim, blast};
+use super::reserve::LOCAL_REACH;
 use super::{
     AttackPhase, MISSION_CAP, Mission, Missions, Objective, Task, UNIT_CAP, against_buildings,
     approach, breacher, distant_worth, hits, hunt, insert, known, mine, presumed, run, standing,
@@ -577,7 +578,7 @@ impl Missions {
                 (target, rally),
                 &members,
                 breach,
-                (strength, all_idle),
+                all_idle,
                 ledger,
             ),
             AttackPhase::Travel => travel_on(
@@ -732,7 +733,7 @@ fn engage_on(
         .collect();
     let opposition = plan.opposition(members);
     let outflown = plan.outflown(members);
-    if opposition * 1_000 > strength * plan.retreat
+    if opposition * 1_000 > plan.fighting(members) * plan.retreat
         || (!outflown.is_empty() && outflown.len() == members.len())
     {
         if ledger.order(run(leaving, rally)) {
@@ -865,7 +866,7 @@ fn stage_on(
     (target, rally): (Target, TilePos),
     members: &[&UnitObs],
     breach: u64,
-    (strength, all_idle): (u64, bool),
+    all_idle: bool,
     ledger: &mut Ledger,
 ) -> Option<Objective> {
     let observation = plan.observation;
@@ -889,7 +890,7 @@ fn stage_on(
         .collect();
     let opposition = plan.opposition(members);
     let outflown = plan.outflown(members);
-    if opposition * 1_000 > strength * plan.retreat
+    if opposition * 1_000 > plan.fighting(members) * plan.retreat
         || (!outflown.is_empty() && outflown.len() == members.len())
     {
         if ledger.order(run(mission.units.clone(), rally)) {
@@ -1670,6 +1671,48 @@ impl<'a> Plan<'a> {
 
     /// The armed enemies the seat knows of within contact of the members,
     /// before any breacher answers them.
+    /// What the armed members within local reach of the enemies in contact
+    /// with the army are worth: those in the fight. Members still walking up
+    /// behind it count for nothing until they arrive, so a front that cannot
+    /// win alone turns back rather than wait to be fed.
+    fn fighting(&self, members: &[&UnitObs]) -> u64 {
+        let armed = members
+            .iter()
+            .filter(|unit| !unit.kind.stats().weapons.is_empty());
+        let touches = |anchor: TilePos, size: (i32, i32)| {
+            members
+                .iter()
+                .any(|member| gap(anchor, size, member.tile, (1, 1)) < CONTACT_TILES)
+        };
+        let units = self
+            .memory
+            .units()
+            .iter()
+            .filter(|unit| {
+                crate::defenses::reach(unit.kind) > Fx::ZERO
+                    || unit.kind.stats().can_target(Domain::Air)
+            })
+            .map(|unit| (unit.tile, (1, 1)));
+        let buildings = self
+            .observation
+            .enemy_buildings
+            .iter()
+            .filter(|building| !building.kind.base_stats().weapons.is_empty())
+            .map(|building| (building.anchor, building.kind.size()));
+        let contacts: Vec<(TilePos, (i32, i32))> = units
+            .chain(buildings)
+            .filter(|(anchor, size)| touches(*anchor, *size))
+            .collect();
+        armed
+            .filter(|unit| {
+                contacts
+                    .iter()
+                    .any(|(anchor, size)| gap(*anchor, *size, unit.tile, (1, 1)) <= LOCAL_REACH)
+            })
+            .map(|unit| value(unit))
+            .sum()
+    }
+
     fn armed(&self, members: &[&UnitObs]) -> Armed {
         let now = self.observation.tick;
         // What an enemy in contact with members by `contact` counts against,

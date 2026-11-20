@@ -851,8 +851,8 @@ fn outlined(scrap: u32) -> Scenario {
     scenario.buildings.push(BuildingSpec {
         player: 0,
         kind: BuildingKind::Crucible,
-        x: 5,
-        y: 7,
+        x: 3,
+        y: 8,
     });
     // West's line keeps just the Aggressive minimum army.
     scenario

@@ -1,7 +1,8 @@
 //! The defend mission: every threatened Foundry recruits free units that can
-//! hit its threats and sends them at the threat nearest it once they match the
-//! force they would meet, then lets them go once the threat has been gone a
-//! while. Enemy scouts and builders among the seat's buildings, and enemy
+//! hit its threats and sends them at the threat nearest it once those
+//! gathered match the force they would meet there, gives up a place away
+//! from home it could never match, then lets them go once the threat has
+//! been gone a while. Enemy scouts and builders among the seat's buildings, and enemy
 //! buildings raised among them, are threats too. An ally's Foundry under ground
 //! attack gets the units the seat's own Foundries leave free. Shells from a
 //! known enemy building send ground fighters beside it, shells from a gun out
@@ -9,9 +10,10 @@
 //! attacked.
 
 use super::attack::{building_value, concentrates, defense, defense_around};
+use super::reserve::LOCAL_REACH;
 use super::{
     AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
-    fill, hits, hunt, insert, mine, value, walking_gun, worth,
+    fill, hits, hunt, insert, meeting, mine, value, walking_gun, worth,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
@@ -52,12 +54,15 @@ impl Missions {
     /// threats until, in each domain it is attacked from, they outweigh the
     /// attackers by half again, and sends them at the armed grounded threat
     /// nearest the Foundry, else the nearest unarmed one, else at a gun out
-    /// of sight. Until the ground force they
-    /// make matches the ground force they would meet, those hunting an enemy
-    /// that walks in wait beside the Foundry instead, and ones already out
-    /// fall back there once they have less than half of it, at a seat of
-    /// `difficulty` that does not attack piecemeal; artillery is still
-    /// reached. Unarmed enemies and enemy buildings among the seat's
+    /// of sight. The ground force they would meet is every known enemy near
+    /// that threat, not only those near the buildings. Until the defenders
+    /// gathered beside the Foundry or already at the fight match it, those
+    /// hunting an enemy that walks in wait beside the Foundry instead, and
+    /// ones already out fall back there once they have less than two thirds
+    /// of it, at a seat of `difficulty` that does not attack piecemeal;
+    /// artillery is still reached. A threat away from home that everything
+    /// the defense could take would not match is given up, and defenders
+    /// out at it fall back home. Unarmed enemies and enemy buildings among the seat's
     /// buildings draw defenders worth what they cost, and a shortfall
     /// counts only armed attackers. A shelling building counts
     /// with the known defense around it, and only while the units the
@@ -86,33 +91,7 @@ impl Missions {
         let now = observation.tick;
         let lendable = self.available(observation, Some(difficulty));
         let mut groups = threats(observation, map, frame, memory);
-        for (foundry, siege, _) in &mut groups {
-            let component = map.component(foundry.anchor);
-            // What the Foundry's defense holds and could take, not units out
-            // on missions that will not lend them.
-            let defenders = self
-                .list
-                .iter()
-                .filter(|mission| {
-                    matches!(mission.task, Task::Defend { asset, .. } if asset == foundry.id)
-                })
-                .flat_map(|mission| mission.units.iter().copied());
-            // A recovering defense lends its units, so they may be in both.
-            let mut pool: Vec<UnitId> = lendable.iter().copied().chain(defenders).collect();
-            pool.sort_unstable();
-            pool.dedup();
-            let force: u64 = pool
-                .into_iter()
-                .filter(|id| !ledger.stuck(*id))
-                .filter_map(|id| mine(observation, id))
-                .filter(|unit| hits(unit, Domain::Ground))
-                .filter(|unit| {
-                    unit.kind.stats().domain == Domain::Air || map.component(unit.tile) == component
-                })
-                .map(value)
-                .sum();
-            siege.leave_unbeaten(observation, memory, force);
-        }
+        self.weigh((observation, map, memory, ledger), &lendable, &mut groups);
         // Attackers remembered out of sight keep a defense from standing down.
         groups.retain(|(_, siege, _)| {
             !siege.units.is_empty()
@@ -200,17 +179,14 @@ impl Missions {
                 Pursuit::Gun(id) => Some(id),
                 _ => None,
             };
-            let pressing = [Domain::Ground, Domain::Air].map(|domain| {
-                (siege
-                    .units
-                    .iter()
-                    .filter(|threat| threat.body_domain() == domain)
-                    .map(|threat| value(threat))
-                    .sum::<u64>()
-                    + siege.remembered[usize::from(domain == Domain::Air)])
-                    * 3
-                    / 2
-            });
+            let hunting = matches!(pursuit, Pursuit::Hunt);
+            // Defenders hunting a ground threat meet whatever stands near
+            // it, not only the enemies that came near the buildings: a line
+            // held a few tiles behind them joins in.
+            let meets = grounded
+                .filter(|_| hunting)
+                .map_or(0, |goal| meeting::opposed(observation, memory, goal));
+            let pressing = siege.pressing_value(meets);
             let besides: Vec<TilePos> = siege.batteries.iter().map(|(_, beside)| *beside).collect();
             // An escort beside a battery is pressing already: it counts once.
             let guns = defense_around(observation, memory, &besides, &siege.pressing())
@@ -260,12 +236,26 @@ impl Missions {
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
             let go = sortie(*own, siege, met, difficulty);
-            let hunting = matches!(pursuit, Pursuit::Hunt);
+            if *own
+                && hunting
+                && met > 0
+                && siege.held < go
+                && !kept(observation, map, foundry, goal)
+            {
+                self.give_up(index, observation, map, frame, goal, ledger);
+                continue;
+            }
             let post = grounded.and_then(|threat| waiting_post(map, frame, foundry, threat));
             let front = front(observation, members, post);
+            // Only defenders at the post or already at the fight count
+            // toward going out: those still on their way would reach it
+            // after it began.
+            let gathered = post.map_or(have[0], |post| {
+                together(observation, members.iter().chain(&recruits), [post, goal])
+            });
             let (goal, pursuit, gun) = match grounded
                 .filter(|_| hunting && concentrates(difficulty))
-                .filter(|_| waits(mission, foundry, [have[0], front.1], [met, go]))
+                .filter(|_| waits(mission, foundry, [gathered, front.1], [met, go]))
                 .map(|threat| waiting_post(map, frame, foundry, threat))
             {
                 Some(Some(post)) => (post, Pursuit::Hunt, None),
@@ -318,7 +308,7 @@ impl Missions {
                 concentrates(difficulty)
                     && hunting
                     && goal != *post
-                    && have[0] < go
+                    && gathered < go
                     && !mission.units.is_empty()
             });
             let onward =
@@ -360,6 +350,68 @@ impl Missions {
             self.release_from_others(index, &joined);
         }
         shortfalls
+    }
+
+    /// Notes on each siege in `groups` what its Foundry's defense holds and
+    /// could take from `lendable` against ground, not units out on missions
+    /// that will not lend them, and leaves to production the batteries that
+    /// force cannot beat.
+    fn weigh(
+        &self,
+        (observation, map, memory, ledger): (&ObservationData, &MapModel, &Memory, &Ledger),
+        lendable: &[UnitId],
+        groups: &mut [(&BuildingObs, Siege<'_>, bool)],
+    ) {
+        for (foundry, siege, _) in groups {
+            let component = map.component(foundry.anchor);
+            let defenders = self
+                .list
+                .iter()
+                .filter(|mission| {
+                    matches!(mission.task, Task::Defend { asset, .. } if asset == foundry.id)
+                })
+                .flat_map(|mission| mission.units.iter().copied());
+            // A recovering defense lends its units, so they may be in both.
+            let mut pool: Vec<UnitId> = lendable.iter().copied().chain(defenders).collect();
+            pool.sort_unstable();
+            pool.dedup();
+            let force: u64 = pool
+                .into_iter()
+                .filter(|id| !ledger.stuck(*id))
+                .filter_map(|id| mine(observation, id))
+                .filter(|unit| hits(unit, Domain::Ground))
+                .filter(|unit| {
+                    unit.kind.stats().domain == Domain::Air || map.component(unit.tile) == component
+                })
+                .map(value)
+                .sum();
+            siege.held = force;
+            siege.leave_unbeaten(observation, memory, force);
+        }
+    }
+
+    /// Gives up the defense or guard at `index`, if any, against a threat at
+    /// `goal` the seat cannot match there: its members fall back to home's
+    /// waiting post and the mission ends. Without a post on home's ground they are
+    /// let go where they stand. Production still answers the shortfall.
+    pub(super) fn give_up(
+        &mut self,
+        index: Option<usize>,
+        observation: &ObservationData,
+        map: &MapModel,
+        frame: HomeFrame,
+        goal: TilePos,
+        ledger: &mut Ledger,
+    ) {
+        let Some(index) = index else {
+            return;
+        };
+        let units = self.list[index].units.clone();
+        if home_post(observation, map, frame, goal)
+            .is_none_or(|post| ledger.order(hunt(units, post)))
+        {
+            self.list.remove(index);
+        }
     }
 
     /// Adds `recruits` to the defense at `index`, moves its goal to `goal`
@@ -662,7 +714,7 @@ fn sortie(own: bool, siege: &Siege<'_>, met: u64, difficulty: BotDifficulty) -> 
 /// the upper rungs go out only with the edge their attacks keep before
 /// withdrawing, the lower at even odds. A difficulty limit on how well a seat
 /// defends.
-fn engage_margin(difficulty: BotDifficulty) -> u64 {
+pub(super) fn engage_margin(difficulty: BotDifficulty) -> u64 {
     match difficulty {
         BotDifficulty::Scrapheap | BotDifficulty::Standard => 1_000,
         BotDifficulty::Veteran | BotDifficulty::Prime => 1_250,
@@ -672,6 +724,62 @@ fn engage_margin(difficulty: BotDifficulty) -> u64 {
 /// How near the waiting post a defender stands to count as its reserve: a
 /// computation bound on "at the post", not a count of units.
 const RESERVE_TILES: i32 = 3;
+
+/// How near the waiting post or the fight a defender stands to count as
+/// there: a model of "together", since one farther off arrives after the
+/// fight began. Not a count of units.
+const GATHER_TILES: i32 = 6;
+
+/// What `units` that can hit ground are worth where a defense would fight:
+/// those within the gather distance of its waiting `post` or of its `goal`.
+fn together<'a>(
+    observation: &ObservationData,
+    units: impl Iterator<Item = &'a UnitId>,
+    [post, goal]: [TilePos; 2],
+) -> u64 {
+    let mut ids: Vec<UnitId> = units.copied().collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids.into_iter()
+        .filter_map(|id| mine(observation, id))
+        .filter(|unit| hits(unit, Domain::Ground))
+        .filter(|unit| {
+            unit.tile.chebyshev(post) <= GATHER_TILES || unit.tile.chebyshev(goal) <= GATHER_TILES
+        })
+        .map(value)
+        .sum()
+}
+
+/// Whether a threat at `goal`, grouped to `foundry`, is one the seat never
+/// gives up: at home, or at its last Foundry.
+fn kept(
+    observation: &ObservationData,
+    map: &MapModel,
+    foundry: &BuildingObs,
+    goal: TilePos,
+) -> bool {
+    at_home(observation, map, goal)
+        || (crate::investments::built_foundries(&observation.my_buildings).count() <= 1
+            && gap(foundry.anchor, foundry.kind.size(), goal, (1, 1)) <= LOCAL_REACH)
+}
+
+/// Whether `tile` lies at home: within local reach of the seat's start.
+pub(super) fn at_home(observation: &ObservationData, map: &MapModel, tile: TilePos) -> bool {
+    map.start(observation.me)
+        .is_some_and(|start| gap(start, BuildingKind::Foundry.size(), tile, (1, 1)) <= LOCAL_REACH)
+}
+
+/// Where defenders given up on a threat at `toward` fall back to: the
+/// waiting post beside the seat's home-nearest Foundry.
+fn home_post(
+    observation: &ObservationData,
+    map: &MapModel,
+    frame: HomeFrame,
+    toward: TilePos,
+) -> Option<TilePos> {
+    let home = *foundries_from_home(&observation.my_buildings, frame).first()?;
+    waiting_post(map, frame, home, toward)
+}
 
 /// What threatens a Foundry: enemies in sight and shelling enemy buildings,
 /// or, with neither, a gun out of sight.
@@ -694,6 +802,9 @@ struct Siege<'a> {
     remembered: [u64; 2],
     /// Those remembered enemies, by id.
     recalled: Vec<UnitId>,
+    /// What the units the Foundry's defense holds or could take on its
+    /// ground are worth against ground: the most it could bring.
+    held: u64,
     /// Whether something armed threatens the Foundry that the lists above
     /// leave out: a gun the seat cannot beat yet, left to production, or a
     /// gun out of sight shelling it while threats in sight hold its entry.
@@ -775,6 +886,23 @@ impl Siege<'_> {
             .filter(|threat| threat.body_domain() == Domain::Ground)
             .map(|threat| threat.tile)
             .chain(self.batteries.iter().map(|(_, beside)| *beside))
+    }
+
+    /// What its armed attackers are worth against ground and air, by half
+    /// again: those in sight and remembered near the buildings, or on the
+    /// ground what the defenders would `meet` where they fight, if more.
+    fn pressing_value(&self, meet: u64) -> [u64; 2] {
+        [Domain::Ground, Domain::Air].map(|domain| {
+            let near = self
+                .units
+                .iter()
+                .filter(|threat| threat.body_domain() == domain)
+                .map(|threat| value(threat))
+                .sum::<u64>()
+                + self.remembered[usize::from(domain == Domain::Air)];
+            let met = if domain == Domain::Ground { meet } else { 0 };
+            near.max(met) * 3 / 2
+        })
     }
 
     /// Its armed enemies in sight and remembered near the buildings, by id.
