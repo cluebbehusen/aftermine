@@ -598,9 +598,11 @@ fn a_scout_at_many_points_leaves_room_to_defend() {
 }
 
 /// The field with two West Kestrels and East Flakhounds across the middle,
-/// out of sight of the East start.
+/// out of sight of the East start, and scrap beside the West Foundry, so its
+/// workers mine rather than go looking for scrap.
 fn flak_crossing() -> Scenario {
     let mut scenario = field();
+    scenario.map[11].replace_range(6..7, "s");
     scenario.units.push(unit(0, UnitKind::Kestrel, 6, 9));
     scenario.units.push(unit(0, UnitKind::Kestrel, 6, 13));
     for y in 9..=13 {
@@ -751,5 +753,28 @@ fn a_heavy_first_gun_keeps_its_own_aim_out_of_the_weakest_focus() {
     assert!(
         focus.iter().all(|(units, _)| !units.contains(&gun)),
         "the Piledriver picks its own: {commands:?}"
+    );
+}
+
+#[test]
+fn a_standing_scout_sets_out_at_the_first_decision() {
+    let mut scenario = field();
+    scenario.units.push(unit(0, UnitKind::Surveyor, 5, 11));
+    let state = scenario.build().unwrap();
+    let surveyor = at(&state, 5, 11);
+    let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
+    assert!(
+        commands.iter().any(|command| matches!(
+            &command.command,
+            Command::Scout { units, .. } if units.contains(&surveyor)
+        )),
+        "{commands:?}"
+    );
+    assert!(!scouts(&trace.unwrap().missions).is_empty());
+    assert!(
+        trains(&commands)
+            .iter()
+            .all(|(_, kind)| *kind != UnitKind::Surveyor),
+        "no second scout is trained for places never seen yet"
     );
 }

@@ -1811,3 +1811,55 @@ fn anti_heavy_units_join_an_attack() {
     assert_eq!(sent.len(), 1, "{commands:?}");
     assert!(guns.iter().all(|gun| sent[0].0.contains(gun)), "{sent:?}");
 }
+
+#[test]
+fn an_engaged_army_whose_target_is_gone_moves_on_while_busy() {
+    // Ten Sentinels at the empty site of an East Foundry they fought for, one
+    // still walking, with the fight's progress fresh: only the target being
+    // gone says the attack on it is over.
+    let spots: Vec<(i32, i32)> = (3..=7).flat_map(|y| [(29, y), (32, y)]).collect();
+    let mut scenario = armed(8, &[]);
+    for (x, y) in &spots {
+        scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+    }
+    let mut state = scenario.build().unwrap();
+    let mut members: Vec<UnitId> = spots.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    members.sort_unstable();
+    advance_to(&mut state, 3_594, &[]);
+    let walk = PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Run {
+            units: vec![members[0]],
+            goal: TilePos::new(20, 5),
+            queue: false,
+        },
+    };
+    advance_to(&mut state, 3_600, &[walk]);
+    let now = state.current_tick();
+    let missions = serde_json::json!({
+        "next": 1,
+        "list": [{
+            "id": 0,
+            "task": {
+                "task": "attack",
+                "target": {"owner": 1, "building": "foundry", "anchor": {"x": 30, "y": 5}},
+                "phase": {"engage": {"focus": null, "progressed": now - 6}},
+            },
+            "since": now - 6,
+            "units": members,
+            "goal": {"x": 30, "y": 7},
+        }],
+    });
+    let mut opponent = restaged(&scenario, &state, missions);
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let mission = attack(&trace.unwrap().missions).unwrap();
+    assert_eq!(mission.phase, Phase::Travel, "{commands:?}");
+    assert_eq!(mission.kind, east_start());
+    assert!(
+        commands.iter().any(|command| matches!(
+            &command.command,
+            Command::Hunt { units, .. } if *units == members
+        )),
+        "the whole army hunts on: {commands:?}"
+    );
+}

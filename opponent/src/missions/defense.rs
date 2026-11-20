@@ -10,8 +10,8 @@
 
 use super::attack::{building_value, concentrates, defense, defense_around};
 use super::{
-    AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, fill, hits, hunt,
-    insert, mine, value, walking_gun, worth,
+    AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
+    fill, hits, hunt, insert, mine, value, walking_gun, worth,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
@@ -85,7 +85,7 @@ impl Missions {
     ) -> Vec<Shortfall> {
         let now = observation.tick;
         let lendable = self.available(observation, Some(difficulty));
-        let mut groups = threats(observation, map, frame);
+        let mut groups = threats(observation, map, frame, memory);
         for (foundry, siege, _) in &mut groups {
             let component = map.component(foundry.anchor);
             // What the Foundry's defense holds and could take, not units out
@@ -113,11 +113,13 @@ impl Missions {
                 .sum();
             siege.leave_unbeaten(observation, memory, force);
         }
+        // Attackers remembered out of sight keep a defense from standing down.
         groups.retain(|(_, siege, _)| {
             !siege.units.is_empty()
                 || !siege.strays.is_empty()
                 || !siege.batteries.is_empty()
                 || siege.unseen.is_some()
+                || siege.remembered != [0, 0]
         });
         for mission in &mut self.list {
             let Task::Defend { asset, phase } = &mut mission.task else {
@@ -172,10 +174,7 @@ impl Missions {
             let nearest = |tiles: &mut dyn Iterator<Item = TilePos>| {
                 tiles.min_by_key(|tile| frame.rank(centre, doubled(*tile)))
             };
-            // Armed attackers come before scouts, builders and unarmed sites,
-            // however much nearer those stand.
-            let grounded =
-                nearest(&mut siege.armed_grounded()).or_else(|| nearest(&mut siege.grounded()));
+            let grounded = siege.nearest_grounded(|tile| frame.rank(centre, doubled(tile)));
             let Some(goal) = grounded.or(siege.unseen).or_else(|| {
                 let flyer = nearest(&mut siege.sighted())?;
                 own.then(|| guard(observation, map, frame, component, flyer))?
@@ -202,20 +201,19 @@ impl Missions {
                 _ => None,
             };
             let pressing = [Domain::Ground, Domain::Air].map(|domain| {
-                siege
+                (siege
                     .units
                     .iter()
                     .filter(|threat| threat.body_domain() == domain)
                     .map(|threat| value(threat))
                     .sum::<u64>()
+                    + siege.remembered[usize::from(domain == Domain::Air)])
                     * 3
                     / 2
             });
             let besides: Vec<TilePos> = siege.batteries.iter().map(|(_, beside)| *beside).collect();
-            // Armed units in sight are pressing already: an escort beside a
-            // battery counts once.
-            let in_sight: Vec<UnitId> = siege.units.iter().map(|threat| threat.id).collect();
-            let guns = defense_around(observation, memory, &besides, &in_sight)
+            // An escort beside a battery is pressing already: it counts once.
+            let guns = defense_around(observation, memory, &besides, &siege.pressing())
                 + siege.unseen.map_or(0, |_| gun_value());
             let unarmed = siege.unarmed();
             let need = [
@@ -235,24 +233,8 @@ impl Missions {
                     .sum::<u64>()
             });
             let room = UNIT_CAP - members.len();
-            let mut candidates: Vec<&UnitObs> = free
-                .iter()
-                .filter_map(|id| mine(observation, *id))
-                .filter(|unit| !members.contains(&unit.id) && !ledger.stuck(unit.id))
-                // A loaded carrier, or one a lift counts on, stays with it.
-                .filter(|unit| {
-                    !super::lift::carrier(unit.kind) || (unit.cargo == 0 && !self.lifts(unit.id))
-                })
-                .filter(|unit| {
-                    [Domain::Ground, Domain::Air]
-                        .into_iter()
-                        .enumerate()
-                        .any(|(index, domain)| need[index] > 0 && hits(unit, domain))
-                })
-                .filter(|unit| {
-                    unit.kind.stats().domain == Domain::Air || map.component(unit.tile) == component
-                })
-                .collect();
+            let mut candidates =
+                self.candidates((observation, map, ledger), &free, members, need, component);
             candidates.sort_by_key(|unit| {
                 (
                     regrouping.binary_search(&unit.id).is_ok(),
@@ -277,10 +259,13 @@ impl Missions {
             // where they stand.
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
+            let go = sortie(*own, siege, met, difficulty);
             let hunting = matches!(pursuit, Pursuit::Hunt);
+            let post = grounded.and_then(|threat| waiting_post(map, frame, foundry, threat));
+            let front = front(observation, members, post);
             let (goal, pursuit, gun) = match grounded
                 .filter(|_| hunting && concentrates(difficulty))
-                .filter(|_| waits(mission, foundry, have[0], met))
+                .filter(|_| waits(mission, foundry, [have[0], front.1], [met, go]))
                 .map(|threat| waiting_post(map, frame, foundry, threat))
             {
                 Some(Some(post)) => (post, Pursuit::Hunt, None),
@@ -311,55 +296,183 @@ impl Missions {
                 }
                 continue;
             };
-            let mission = &mut self.list[index];
-            let Task::Defend { phase, .. } = &mut mission.task else {
+            let mission = &self.list[index];
+            let Task::Defend { phase, .. } = mission.task else {
                 unreachable!("a defend mission's task");
             };
-            let recovering = matches!(*phase, DefendPhase::Recover | DefendPhase::Guard);
-            let focus = match *phase {
+            let recovering = matches!(phase, DefendPhase::Recover | DefendPhase::Guard);
+            let focus = match phase {
                 DefendPhase::Engage { focus } => focus,
                 DefendPhase::Recover | DefendPhase::Guard => None,
             };
             let lost = lost(observation, gun, focus);
-            // Chasing a threat off the Foundry's ground, such as a flyer over a
-            // chasm, would stall every defender each time it moved.
             let resend = recovering
                 || lost
                 || (gun.is_some() && focus != gun)
-                || (mission.goal.chebyshev(goal) > RETARGET_TILES
-                    && map.component(goal) == component);
-            let mut sent = recruits.clone();
-            if resend {
-                sent.extend_from_slice(&mission.units);
-            }
+                || moved(map, (mission.goal, goal), post, component);
+            // A defense out at its attackers short of their value holds its
+            // recruits and whoever is back at the post as a reserve there,
+            // and sends them on together once all of it would match the
+            // attackers: one at a time, they only feed the fight.
+            let reserve = post.filter(|post| {
+                concentrates(difficulty)
+                    && hunting
+                    && goal != *post
+                    && have[0] < go
+                    && !mission.units.is_empty()
+            });
+            let onward =
+                concentrates(difficulty) && hunting && post.is_some_and(|post| goal != post);
+            let (mut sent, waiting) = self.reserve(
+                index,
+                (observation, ledger, &mut free),
+                &recruits,
+                (reserve, onward, resend),
+                &front.0,
+            );
             if sent.is_empty() {
+                // Releasing may drop emptied missions, so it comes last.
+                self.release_from_others(index, &waiting);
                 continue;
             }
             sent.sort_unstable();
+            sent.dedup();
             let ordered = dispatch(observation, ledger, sent, goal, pursuit);
-            if !ordered.is_empty() {
-                // Only recruits that were given an order join.
-                let recruits: Vec<UnitId> = recruits
-                    .into_iter()
-                    .filter(|id| ordered.contains(id))
-                    .collect();
-                for id in &recruits {
-                    insert(&mut mission.units, *id);
-                }
-                take(&mut free, &recruits);
-                if resend {
-                    mission.goal = goal;
-                }
-                if recovering || lost || gun.is_some() {
-                    *phase = DefendPhase::Engage { focus: gun };
-                }
-                if recovering {
-                    mission.since = now;
-                }
-                self.release_from_others(index, &recruits);
+            let mut joined = waiting;
+            if ordered.is_empty() {
+                self.release_from_others(index, &joined);
+                continue;
             }
+            // Only recruits that were given an order join.
+            let recruits: Vec<UnitId> = recruits
+                .into_iter()
+                .filter(|id| ordered.contains(id))
+                .collect();
+            take(&mut free, &recruits);
+            let engage = recovering || lost || gun.is_some();
+            self.joined(
+                index,
+                &recruits,
+                (resend.then_some(goal), engage, gun, recovering),
+                now,
+            );
+            joined.extend(recruits);
+            self.release_from_others(index, &joined);
         }
         shortfalls
+    }
+
+    /// Adds `recruits` to the defense at `index`, moves its goal to `goal`
+    /// when given, puts it in Engage on `focus` when it should `engage`, and
+    /// restarts its clock at `now` when it was `recovering`.
+    fn joined(
+        &mut self,
+        index: usize,
+        recruits: &[UnitId],
+        (goal, engage, focus, recovering): (Option<TilePos>, bool, Option<UnitId>, bool),
+        now: u64,
+    ) {
+        let mission = &mut self.list[index];
+        for id in recruits {
+            insert(&mut mission.units, *id);
+        }
+        if let Some(goal) = goal {
+            mission.goal = goal;
+        }
+        if engage && let Task::Defend { phase, .. } = &mut mission.task {
+            *phase = DefendPhase::Engage { focus };
+        }
+        if recovering {
+            mission.since = now;
+        }
+    }
+
+    /// The `free` units a defense of `members` on `ground` could recruit
+    /// against a `need`: not sitting out orders, not a loaded carrier or one
+    /// a lift counts on, able to hit a domain in need, and on its ground
+    /// unless they fly.
+    fn candidates<'a>(
+        &self,
+        (observation, map, ledger): (&'a ObservationData, &MapModel, &Ledger),
+        free: &[UnitId],
+        members: &[UnitId],
+        need: [u64; 2],
+        ground: Option<u32>,
+    ) -> Vec<&'a UnitObs> {
+        free.iter()
+            .filter_map(|id| mine(observation, *id))
+            .filter(|unit| !members.contains(&unit.id) && !ledger.stuck(unit.id))
+            // A loaded carrier, or one a lift counts on, stays with it.
+            .filter(|unit| {
+                !super::lift::carrier(unit.kind) || (unit.cargo == 0 && !self.lifts(unit.id))
+            })
+            .filter(|unit| {
+                [Domain::Ground, Domain::Air]
+                    .into_iter()
+                    .enumerate()
+                    .any(|(index, domain)| need[index] > 0 && hits(unit, domain))
+            })
+            .filter(|unit| {
+                unit.kind.stats().domain == Domain::Air || map.component(unit.tile) == ground
+            })
+            .collect()
+    }
+
+    /// What the defense at `index` sends on to its goal this decision, and
+    /// the recruits it holds at `reserve`, the waiting post, instead: with a
+    /// reserve, its recruits wait there and only the `front` goes on, when
+    /// it `resend`s; going `onward` together, the units waiting at the post
+    /// go with the recruits; else as before, the recruits, and on `resend`
+    /// every member.
+    fn reserve(
+        &mut self,
+        index: usize,
+        (observation, ledger, free): (&ObservationData, &mut Ledger, &mut Vec<UnitId>),
+        recruits: &[UnitId],
+        (reserve, onward, resend): (Option<TilePos>, bool, bool),
+        front: &[UnitId],
+    ) -> (Vec<UnitId>, Vec<UnitId>) {
+        let mut sent = recruits.to_vec();
+        let mut waiting = Vec::new();
+        if let Some(post) = reserve {
+            // Recruits that hit ground wait at the post outside the mission,
+            // so no order to it reaches them, and count again as recruits
+            // the next decision; those answering only aircraft go on.
+            let going: Vec<UnitId>;
+            (waiting, going) = recruits.iter().copied().partition(|id| {
+                mine(observation, *id).is_some_and(|unit| hits(unit, Domain::Ground))
+            });
+            let mut walking: Vec<UnitId> = waiting
+                .iter()
+                .copied()
+                .filter(|id| {
+                    mine(observation, *id)
+                        .is_some_and(|unit| !unit.idle || unit.tile.chebyshev(post) > RESERVE_TILES)
+                })
+                .collect();
+            walking.sort_unstable();
+            if !walking.is_empty() {
+                dispatch(observation, ledger, walking, post, Pursuit::Hunt);
+            }
+            take(free, &waiting);
+            ledger.reserve(&waiting);
+            sent = going;
+            if resend {
+                sent.extend_from_slice(front);
+            }
+        } else if resend {
+            sent.extend_from_slice(&self.list[index].units);
+        } else if onward {
+            // Going on together: the reserve at the post goes with them.
+            sent.extend(
+                self.list[index]
+                    .units
+                    .iter()
+                    .copied()
+                    .filter(|id| !front.contains(id)),
+            );
+        }
+        (sent, waiting)
     }
 }
 
@@ -455,15 +568,65 @@ fn dispatch(
     ordered
 }
 
-/// Whether `mission`'s defenders, worth `have` against ground, wait beside
-/// `foundry` rather than meet a ground force worth `met`: short of it, or
-/// once out at it, short of half of it.
-fn waits(mission: Option<&Mission>, foundry: &BuildingObs, have: u64, met: u64) -> bool {
+/// Whether a defense with its goal at `from` moves enough going to `to` to
+/// order its members again: far, on its own ground, or between the waiting
+/// `post` and the fight however close the two stand. Chasing a threat off
+/// the Foundry's ground, such as a flyer over a chasm, would stall every
+/// defender each time it moved.
+fn moved(
+    map: &MapModel,
+    (from, to): (TilePos, TilePos),
+    post: Option<TilePos>,
+    ground: Option<u32>,
+) -> bool {
+    (from.chebyshev(to) > RETARGET_TILES && map.component(to) == ground)
+        || post.is_some_and(|post| (to == post) != (from == post))
+}
+
+/// Whether `mission`'s defenders wait beside `foundry` rather than meet a
+/// ground force worth `met`, with `have` all of them and their recruits
+/// against ground and `front` those out at it: short of `go`, the force the
+/// seat's rung goes out to it with, at the post; once out, when all of them
+/// are short of that and those out are short of two thirds of the force, so
+/// a front the reserve cannot bring level comes back to it.
+fn waits(
+    mission: Option<&Mission>,
+    foundry: &BuildingObs,
+    [have, front]: [u64; 2],
+    [met, go]: [u64; 2],
+) -> bool {
     let out = mission.is_some_and(|mission| {
         !mission.units.is_empty()
             && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
     });
-    have < if out { met / 2 } else { met }
+    if out {
+        have < go && front * 3 < met * 2
+    } else {
+        have < go
+    }
+}
+
+/// The defenders among `members` out away from the waiting `post` or on
+/// their way, with what they are worth against ground; the rest stand idle
+/// at the post as its reserve. Without a post all are out.
+fn front(
+    observation: &ObservationData,
+    members: &[UnitId],
+    post: Option<TilePos>,
+) -> (Vec<UnitId>, u64) {
+    let out: Vec<&UnitObs> = members
+        .iter()
+        .filter_map(|id| mine(observation, *id))
+        .filter(|unit| {
+            post.is_none_or(|post| !unit.idle || unit.tile.chebyshev(post) > RESERVE_TILES)
+        })
+        .collect();
+    let value = out
+        .iter()
+        .filter(|unit| hits(unit, Domain::Ground))
+        .map(|unit| value(unit))
+        .sum();
+    (out.iter().map(|unit| unit.id).collect(), value)
 }
 
 /// Where defenders short of a ground force wait: beside `foundry` on its
@@ -482,6 +645,34 @@ fn waiting_post(
         .min_by_key(|tile| frame.rank(doubled(threat), doubled(*tile)))
 }
 
+/// What a defense against `siege`'s ground force worth `met` must hold to go
+/// out at it: the rung's edge at the seat's `own` Foundry when nothing that
+/// stands and shells is among the attackers, even odds otherwise. Guns that
+/// stand never come to the post, and an ally's defense has no shortfall
+/// training behind a wait.
+fn sortie(own: bool, siege: &Siege<'_>, met: u64, difficulty: BotDifficulty) -> u64 {
+    if own && siege.batteries.is_empty() {
+        met * engage_margin(difficulty) / 1_000
+    } else {
+        met
+    }
+}
+
+/// Per mille of the attackers' worth a defense must hold to go out at them:
+/// the upper rungs go out only with the edge their attacks keep before
+/// withdrawing, the lower at even odds. A difficulty limit on how well a seat
+/// defends.
+fn engage_margin(difficulty: BotDifficulty) -> u64 {
+    match difficulty {
+        BotDifficulty::Scrapheap | BotDifficulty::Standard => 1_000,
+        BotDifficulty::Veteran | BotDifficulty::Prime => 1_250,
+    }
+}
+
+/// How near the waiting post a defender stands to count as its reserve: a
+/// computation bound on "at the post", not a count of units.
+const RESERVE_TILES: i32 = 3;
+
 /// What threatens a Foundry: enemies in sight and shelling enemy buildings,
 /// or, with neither, a gun out of sight.
 #[derive(Default)]
@@ -497,6 +688,12 @@ struct Siege<'a> {
     batteries: Vec<(&'a BuildingObs, TilePos)>,
     /// Where a gun shelling the base from out of sight probably stands.
     unseen: Option<TilePos>,
+    /// What armed enemies remembered out of sight near the buildings are
+    /// worth, against ground and air, by how sure the seat is they are still
+    /// there.
+    remembered: [u64; 2],
+    /// Those remembered enemies, by id.
+    recalled: Vec<UnitId>,
     /// Whether something armed threatens the Foundry that the lists above
     /// leave out: a gun the seat cannot beat yet, left to production, or a
     /// gun out of sight shelling it while threats in sight hold its entry.
@@ -580,6 +777,24 @@ impl Siege<'_> {
             .chain(self.batteries.iter().map(|(_, beside)| *beside))
     }
 
+    /// Its armed enemies in sight and remembered near the buildings, by id.
+    fn pressing(&self) -> Vec<UnitId> {
+        self.units
+            .iter()
+            .map(|threat| threat.id)
+            .chain(self.recalled.iter().copied())
+            .collect()
+    }
+
+    /// Where its grounded threat nearest by `rank` stands: an armed one
+    /// before scouts, builders and unarmed sites, however much nearer those
+    /// stand.
+    fn nearest_grounded<K: Ord>(&self, rank: impl Fn(TilePos) -> K) -> Option<TilePos> {
+        self.armed_grounded()
+            .min_by_key(|tile| rank(*tile))
+            .or_else(|| self.grounded().min_by_key(|tile| rank(*tile)))
+    }
+
     /// Where its armed threats on the ground stand: armed enemies in sight
     /// and the tiles beside its batteries that can hurt ground units.
     fn armed_grounded(&self) -> impl Iterator<Item = TilePos> + '_ {
@@ -650,6 +865,7 @@ fn threats<'a>(
     observation: &'a ObservationData,
     map: &MapModel,
     frame: HomeFrame,
+    memory: &Memory,
 ) -> Vec<(&'a BuildingObs, Siege<'a>, bool)> {
     let mut groups: Vec<(&BuildingObs, Siege, bool)> = Vec::new();
     let mut claimed: Vec<UnitId> = Vec::new();
@@ -665,8 +881,8 @@ fn threats<'a>(
             map,
             frame,
             (buildings, side),
-            &claimed,
-            &claimed_batteries,
+            (&claimed, &claimed_batteries),
+            own.then_some(memory),
         ) {
             claimed.extend(
                 siege
@@ -707,14 +923,15 @@ fn threats<'a>(
 /// home-nearest first. For buildings of `side`, the seat's own, unarmed
 /// enemies and enemy buildings within the threat gap of one count too, when
 /// they stand on its side of the map: nearer its start by ground than any
-/// hostile start.
+/// hostile start. With the seat's `memory`, armed enemies remembered out of
+/// sight where they would join a group count toward its force.
 fn besieged<'a>(
     observation: &'a ObservationData,
     map: &MapModel,
     frame: HomeFrame,
     (buildings, side): (&'a [BuildingObs], Option<PlayerId>),
-    claimed: &[UnitId],
-    claimed_batteries: &[TilePos],
+    (claimed, claimed_batteries): (&[UnitId], &[TilePos]),
+    memory: Option<&Memory>,
 ) -> Vec<(&'a BuildingObs, Siege<'a>)> {
     let ours = |tile: TilePos| {
         side.is_some_and(|me| map.distance(me, tile) < map.hostile_distance(me, tile))
@@ -768,6 +985,39 @@ fn besieged<'a>(
             groups[index].1.strays.push(enemy);
         }
     }
+    // An attacker that steps out of sight is still there: counting only those
+    // in sight, a defense facing one that blinks at the edge of its sight
+    // marches out and back with every blink.
+    for seen in memory.map_or(&[][..], Memory::units) {
+        if seen.seen >= observation.tick {
+            continue;
+        }
+        let reach = crate::defenses::reach(seen.kind);
+        if reach <= Fx::ZERO {
+            continue;
+        }
+        let reach = reach.ceil().to_num::<i32>().max(THREAT_GAP);
+        if !buildings
+            .iter()
+            .any(|building| gap(building.anchor, building.kind.size(), seen.tile, (1, 1)) < reach)
+        {
+            continue;
+        }
+        let Some(index) = nearest(seen.tile, (1, 1), doubled(seen.tile)) else {
+            continue;
+        };
+        let reachable = map
+            .component(foundries[index].anchor)
+            .is_some_and(|component| {
+                map.component(seen.tile) == Some(component) || map.touches(seen.tile, component)
+            });
+        if reachable {
+            let domain = usize::from(seen.kind.stats().domain == Domain::Air);
+            groups[index].1.remembered[domain] +=
+                seen.value(observation.tick) * against_machines(seen.kind) / 1_000;
+            groups[index].1.recalled.push(seen.id);
+        }
+    }
     for building in &observation.enemy_buildings {
         let size = building.kind.size();
         let among = !building.provisional
@@ -797,7 +1047,10 @@ fn besieged<'a>(
         }
     }
     groups.retain(|(_, siege)| {
-        !siege.units.is_empty() || !siege.strays.is_empty() || !siege.batteries.is_empty()
+        !siege.units.is_empty()
+            || !siege.strays.is_empty()
+            || !siege.batteries.is_empty()
+            || siege.remembered != [0, 0]
     });
     groups
 }

@@ -62,6 +62,8 @@ pub(crate) struct Ledger {
     held: Vec<UnitId>,
     /// Wounded own units at or sent to a Repair Bay this decision, by id.
     docked: Vec<UnitId>,
+    /// Units a defense holds at its waiting post this decision, by id.
+    reserved: Vec<UnitId>,
     decision: Decision,
 }
 
@@ -75,6 +77,7 @@ impl Ledger {
             stuck: Vec::new(),
             held: Vec::new(),
             docked: Vec::new(),
+            reserved: Vec::new(),
             decision: Decision {
                 allowance,
                 ..Decision::default()
@@ -161,6 +164,11 @@ impl Ledger {
         self.decision.launches.push(launch);
     }
 
+    /// Whether the allowance has room for another unit order.
+    pub(crate) fn can_order(&self) -> bool {
+        self.decision.unit_orders < self.decision.allowance
+    }
+
     /// Issues one unit order while the allowance lasts, leaving out units
     /// sitting out orders. An order left with no units issues nothing and
     /// counts as given. Purchases never count against the allowance.
@@ -214,6 +222,21 @@ impl Ledger {
     /// Whether `unit` is at or bound for a Repair Bay this decision.
     pub(crate) fn docked(&self, unit: UnitId) -> bool {
         self.docked.binary_search(&unit).is_ok()
+    }
+
+    /// Keeps `units` waiting at a defense's post for the rest of this
+    /// decision: they join no mission, so no later mission takes them.
+    pub(crate) fn reserve(&mut self, units: &[UnitId]) {
+        for unit in units {
+            if let Err(index) = self.reserved.binary_search(unit) {
+                self.reserved.insert(index, *unit);
+            }
+        }
+    }
+
+    /// Whether a defense holds `unit` at its waiting post this decision.
+    pub(crate) fn reserved(&self, unit: UnitId) -> bool {
+        self.reserved.binary_search(&unit).is_ok()
     }
 
     /// Unit orders this decision may still issue.
@@ -628,7 +651,10 @@ pub(crate) fn decide(
         &scratch.ground,
         &staffing,
         &patients,
-        profile.traits.support,
+        (
+            profile.traits.support,
+            crate::guards_home_lines(profile.difficulty),
+        ),
         &mut ledger,
     );
     // Settlements move before guards so an escort let go at its site joins
@@ -859,6 +885,7 @@ pub(crate) fn decide(
         );
     }
 
+    workers::seek(observation, map, frame, &scratch.ground, &mut ledger);
     persistent.saving.keep_at_most(ledger.available());
     persistent
         .income
@@ -1717,7 +1744,7 @@ fn workforce(observation: &ObservationData) -> u64 {
 }
 
 /// What the seat's armed units cost.
-fn army(observation: &ObservationData) -> u64 {
+pub(crate) fn army(observation: &ObservationData) -> u64 {
     // A drone comes and goes from its host's bay, so only machines count.
     observation
         .my_units
