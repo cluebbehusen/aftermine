@@ -1516,6 +1516,89 @@ fn a_defense_out_short_of_its_attackers_holds_its_recruit_at_the_post() {
 }
 
 #[test]
+fn a_defense_s_reserve_is_not_taken_back_by_a_regrouping_attack() {
+    // The recruit gathers with an attack forming at home. The defense out at
+    // six raiders, still short with it, borrows it to wait at the post; the
+    // attack lets it go, and nothing else orders it this decision.
+    let raiders: Vec<(UnitKind, i32, i32)> = (4..=6)
+        .flat_map(|y| [(UnitKind::Sentinel, 9, y), (UnitKind::Sentinel, 10, y)])
+        .collect();
+    let front = [(10, 7), (11, 7), (10, 8), (11, 8), (12, 8)];
+    let mut defenders: Vec<(UnitKind, i32, i32)> = front
+        .iter()
+        .map(|(x, y)| (UnitKind::Sentinel, *x, *y))
+        .collect();
+    defenders.push((UnitKind::Sentinel, 2, 8));
+    let mut scenario = raided(&defenders, &raiders);
+    scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
+    let state = scenario.build().unwrap();
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    let mut members: Vec<UnitId> = front.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+    members.sort_unstable();
+    let recruit = at(&state, 2, 8);
+    let mut json =
+        serde_json::to_value(seat_with(&scenario, 0, rung(BotDifficulty::Prime)).checkpoint())
+            .unwrap();
+    json["missions"] = serde_json::json!({
+        "next": 2,
+        "list": [
+            {
+                "id": 0,
+                "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": 9, "y": 5},
+            },
+            {
+                "id": 1,
+                "task": {
+                    "task": "attack",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 19, "y": 5}},
+                    "phase": "gather",
+                },
+                "since": 0,
+                "units": [recruit],
+                "goal": {"x": 2, "y": 2},
+            },
+        ],
+    });
+    let checkpoint: crate::checkpoint::Checkpoint = serde_json::from_value(json).unwrap();
+    let mut opponent = Opponent::restore(&checkpoint, &scenario, &state, map(&scenario)).unwrap();
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    let beside: Vec<TilePos> =
+        crate::frame::ring(home.anchor, BuildingKind::Foundry.size()).collect();
+    let orders: Vec<&Command> = commands
+        .iter()
+        .map(|command| &command.command)
+        .filter(|command| {
+            serde_json::to_value(command).unwrap()["units"]
+                .as_array()
+                .is_some_and(|units| units.contains(&recruit.0.into()))
+        })
+        .collect();
+    assert!(
+        orders
+            .iter()
+            .all(|order| matches!(order, Command::Hunt { goal, .. } if beside.contains(goal))),
+        "{orders:?}"
+    );
+    assert!(
+        trace
+            .unwrap()
+            .missions
+            .iter()
+            .all(
+                |mission| !matches!(mission.kind, MissionKind::Attack { .. }) || mission.units == 0
+            ),
+        "the attack lets the recruit go"
+    );
+}
+
+#[test]
 fn the_upper_rungs_go_out_at_raiders_only_with_an_edge() {
     // Three Sentinels against three raiders: even odds. Prime waits beside
     // the Foundry for an edge; Standard goes out at even odds.

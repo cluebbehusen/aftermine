@@ -211,10 +211,8 @@ impl Missions {
                     / 2
             });
             let besides: Vec<TilePos> = siege.batteries.iter().map(|(_, beside)| *beside).collect();
-            // Armed units in sight are pressing already: an escort beside a
-            // battery counts once.
-            let in_sight: Vec<UnitId> = siege.units.iter().map(|threat| threat.id).collect();
-            let guns = defense_around(observation, memory, &besides, &in_sight)
+            // An escort beside a battery is pressing already: it counts once.
+            let guns = defense_around(observation, memory, &besides, &siege.pressing())
                 + siege.unseen.map_or(0, |_| gun_value());
             let unarmed = siege.unarmed();
             let need = [
@@ -324,7 +322,7 @@ impl Missions {
             });
             let onward =
                 concentrates(difficulty) && hunting && post.is_some_and(|post| goal != post);
-            let (mut sent, waiting_ordered) = self.reserve(
+            let (mut sent, waiting) = self.reserve(
                 index,
                 (observation, ledger, &mut free),
                 &recruits,
@@ -333,13 +331,13 @@ impl Missions {
             );
             if sent.is_empty() {
                 // Releasing may drop emptied missions, so it comes last.
-                self.release_from_others(index, &waiting_ordered);
+                self.release_from_others(index, &waiting);
                 continue;
             }
             sent.sort_unstable();
             sent.dedup();
             let ordered = dispatch(observation, ledger, sent, goal, pursuit);
-            let mut joined = waiting_ordered;
+            let mut joined = waiting;
             if ordered.is_empty() {
                 self.release_from_others(index, &joined);
                 continue;
@@ -434,15 +432,15 @@ impl Missions {
         front: &[UnitId],
     ) -> (Vec<UnitId>, Vec<UnitId>) {
         let mut sent = recruits.to_vec();
-        let waiting_ordered = Vec::new();
+        let mut waiting = Vec::new();
         if let Some(post) = reserve {
             // Recruits that hit ground wait at the post outside the mission,
             // so no order to it reaches them, and count again as recruits
             // the next decision; those answering only aircraft go on.
-            let (waiting, going): (Vec<UnitId>, Vec<UnitId>) =
-                recruits.iter().copied().partition(|id| {
-                    mine(observation, *id).is_some_and(|unit| hits(unit, Domain::Ground))
-                });
+            let going: Vec<UnitId>;
+            (waiting, going) = recruits.iter().copied().partition(|id| {
+                mine(observation, *id).is_some_and(|unit| hits(unit, Domain::Ground))
+            });
             let mut walking: Vec<UnitId> = waiting
                 .iter()
                 .copied()
@@ -456,6 +454,7 @@ impl Missions {
                 dispatch(observation, ledger, walking, post, Pursuit::Hunt);
             }
             take(free, &waiting);
+            ledger.reserve(&waiting);
             sent = going;
             if resend {
                 sent.extend_from_slice(front);
@@ -472,7 +471,7 @@ impl Missions {
                     .filter(|id| !front.contains(id)),
             );
         }
-        (sent, waiting_ordered)
+        (sent, waiting)
     }
 }
 
@@ -692,6 +691,8 @@ struct Siege<'a> {
     /// worth, against ground and air, by how sure the seat is they are still
     /// there.
     remembered: [u64; 2],
+    /// Those remembered enemies, by id.
+    recalled: Vec<UnitId>,
     /// Whether something armed threatens the Foundry that the lists above
     /// leave out: a gun the seat cannot beat yet, left to production, or a
     /// gun out of sight shelling it while threats in sight hold its entry.
@@ -773,6 +774,15 @@ impl Siege<'_> {
             .filter(|threat| threat.body_domain() == Domain::Ground)
             .map(|threat| threat.tile)
             .chain(self.batteries.iter().map(|(_, beside)| *beside))
+    }
+
+    /// Its armed enemies in sight and remembered near the buildings, by id.
+    fn pressing(&self) -> Vec<UnitId> {
+        self.units
+            .iter()
+            .map(|threat| threat.id)
+            .chain(self.recalled.iter().copied())
+            .collect()
     }
 
     /// Where its enemies in sight stand, on the ground or in the air.
@@ -980,6 +990,7 @@ fn besieged<'a>(
             let domain = usize::from(seen.kind.stats().domain == Domain::Air);
             groups[index].1.remembered[domain] +=
                 seen.value(observation.tick) * against_machines(seen.kind) / 1_000;
+            groups[index].1.recalled.push(seen.id);
         }
     }
     for building in &observation.enemy_buildings {

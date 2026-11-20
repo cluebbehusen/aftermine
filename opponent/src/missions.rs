@@ -715,10 +715,13 @@ impl Missions {
 
     /// Units no mission holds that may take orders: a unit sitting out after
     /// its order found no route joins no mission, since it would be sent
-    /// nowhere, and a wounded unit at or bound for a Repair Bay stays there.
+    /// nowhere, a wounded unit at or bound for a Repair Bay stays there, and
+    /// a defense's reserve waits at its post.
     fn free(&self, observation: &ObservationData, ledger: &Ledger) -> Vec<UnitId> {
         let mut free = self.available(observation, None);
-        free.retain(|unit| !ledger.stuck(*unit) && !ledger.docked(*unit));
+        free.retain(|unit| {
+            !ledger.stuck(*unit) && !ledger.docked(*unit) && !ledger.reserved(*unit)
+        });
         free
     }
 

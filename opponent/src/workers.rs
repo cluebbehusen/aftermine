@@ -433,22 +433,27 @@ fn flee(
             *unit,
         )
     });
+    // A worker that walked out to weld into the fire would walk back once
+    // idle at its refuge: one sent out of it stops welding on its own until
+    // home is calm. That takes an order of its own, kept back from the runs
+    // for the first tending worker sent.
     let mut ran: Vec<UnitId> = Vec::new();
+    let mut toggle = false;
     for (refuge, unit, _) in &fleeing {
-        if !ledger.order(Command::Run {
+        let tends = home_lines && tending.contains(unit);
+        if ledger.room() < 1 + u32::from(tends || toggle) {
+            continue;
+        }
+        ledger.order(Command::Run {
             units: vec![*unit],
             goal: *refuge,
             queue: false,
-        }) {
-            break;
-        }
+        });
         ran.push(*unit);
+        toggle |= tends;
     }
-    // A worker that walked out to weld into the fire would walk back once
-    // idle at its refuge: one sent out of it stops welding on its own until
-    // home is calm.
     tending.retain(|id| ran.contains(id));
-    if home_lines && !tending.is_empty() {
+    if toggle {
         ledger.order(Command::SetIdleWeld {
             units: tending,
             enabled: false,

@@ -62,6 +62,8 @@ pub(crate) struct Ledger {
     held: Vec<UnitId>,
     /// Wounded own units at or sent to a Repair Bay this decision, by id.
     docked: Vec<UnitId>,
+    /// Units a defense holds at its waiting post this decision, by id.
+    reserved: Vec<UnitId>,
     decision: Decision,
 }
 
@@ -75,6 +77,7 @@ impl Ledger {
             stuck: Vec::new(),
             held: Vec::new(),
             docked: Vec::new(),
+            reserved: Vec::new(),
             decision: Decision {
                 allowance,
                 ..Decision::default()
@@ -219,6 +222,21 @@ impl Ledger {
     /// Whether `unit` is at or bound for a Repair Bay this decision.
     pub(crate) fn docked(&self, unit: UnitId) -> bool {
         self.docked.binary_search(&unit).is_ok()
+    }
+
+    /// Keeps `units` waiting at a defense's post for the rest of this
+    /// decision: they join no mission, so no later mission takes them.
+    pub(crate) fn reserve(&mut self, units: &[UnitId]) {
+        for unit in units {
+            if let Err(index) = self.reserved.binary_search(unit) {
+                self.reserved.insert(index, *unit);
+            }
+        }
+    }
+
+    /// Whether a defense holds `unit` at its waiting post this decision.
+    pub(crate) fn reserved(&self, unit: UnitId) -> bool {
+        self.reserved.binary_search(&unit).is_ok()
     }
 
     /// Unit orders this decision may still issue.

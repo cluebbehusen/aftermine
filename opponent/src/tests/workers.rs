@@ -1124,10 +1124,20 @@ fn the_upper_rungs_pull_a_home_harvester_out_of_a_raiders_reach() {
 fn a_worker_tending_into_fire_stops_welding_and_home_calm_restores_it() {
     // A wounded Sentinel draws an idle Harvester out to weld it, inside a
     // Lancer's reach: the upper rungs pull the Harvester out with its
-    // welding off.
+    // welding off, even when more workers flee than the rung has orders.
+    for crowd in [0, 12] {
+        tending_worker_stops_welding(crowd);
+    }
+    calm_home_restores_welding();
+}
+
+fn tending_worker_stops_welding(crowd: i32) {
     let mut scenario = fielded((40, 20));
     scenario.players[0].scrap = 40;
     scenario.units.push(harvester(0, 6, 12));
+    scenario
+        .units
+        .extend((0..crowd).map(|index| harvester(0, 12 + index % 2, 6 + index / 2)));
     scenario.units.push(unit(0, UnitKind::Sentinel, 8, 12));
     scenario.units.push(unit(1, UnitKind::Lancer, 14, 12));
     let built = scenario.build().unwrap();
@@ -1173,8 +1183,14 @@ fn a_worker_tending_into_fire_stops_welding_and_home_calm_restores_it() {
             .any(|(units, _)| units.contains(&worker)),
         "{commands:?}"
     );
+    assert!(
+        crowd == 0 || runs(&commands).len() >= 9,
+        "premise: the crowd flees as far as the orders go: {commands:?}"
+    );
+}
 
-    // With no fire about home, every worker may weld again on the beat.
+/// With no fire about home, every worker may weld again on the beat.
+fn calm_home_restores_welding() {
     let calm = field();
     let mut calm_scenario = calm.clone();
     calm_scenario.units.push(harvester(0, 6, 12));
