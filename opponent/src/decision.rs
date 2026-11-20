@@ -771,21 +771,9 @@ pub(crate) fn decide(
         .copied()
         .filter(|producer| !saved_for(observation, producer, saving))
         .collect();
-    // Local guards rank ahead of lifts, so their gaps train before a lift
-    // holds production for carriers.
-    arm(
-        observation,
-        map,
-        &producers,
-        guard_gaps,
-        true,
-        income,
-        &mut needs,
-        &mut ledger,
-    );
-    // A short defense trains next, so its answer gets the producer before
-    // general production queues something else there. What it spends of the
-    // scrap kept for its answer is kept no longer.
+    // A short defense trains first, so its answer gets the producer before a
+    // quiet base's guard or general production queues something else there.
+    // What it spends of the scrap kept for its answer is kept no longer.
     if short {
         let before = ledger.available();
         arm(
@@ -800,6 +788,18 @@ pub(crate) fn decide(
         );
         ledger.protected = ledger.protected.saturating_sub(before - ledger.available());
     }
+    // Local guards rank ahead of lifts, so their gaps train before a lift
+    // holds production for carriers.
+    arm(
+        observation,
+        map,
+        &producers,
+        guard_gaps,
+        true,
+        income,
+        &mut needs,
+        &mut ledger,
+    );
     let carrying = lift
         && !short
         && train_carriers(
