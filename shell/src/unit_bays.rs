@@ -3,7 +3,8 @@
 
 use crate::action::{Action, BindingMap};
 use crate::game::Scene;
-use crate::panel::{Card, CardAction, CardIcon, DroneColumn, VerbIcon, tick_time_label};
+use crate::panel::{Card, CardAction, CardIcon, DroneColumn, VerbIcon};
+use aftermine_kit::roster::tick_time_label;
 use aftermine_sim::stats::BayStats;
 use aftermine_sim::{Command, Unit, UnitId};
 

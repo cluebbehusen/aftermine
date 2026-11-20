@@ -1,0 +1,4 @@
+interface:
+  display_name: "Aftermine Agent Playtests"
+  short_description: "Run fog-only agent playtests against the Aftermine bot"
+  default_prompt: "Use $agent-playtest to run a round of agent playtests against the Aftermine bot and report its weaknesses."

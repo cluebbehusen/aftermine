@@ -3,8 +3,9 @@
 use crate::action::{Action, BindingMap};
 use crate::game::{Game, Scene};
 use crate::numeric::Fit;
-use crate::panel::{Card, CardAction, CardIcon, RallyVerb, VerbIcon, tick_time_label};
+use crate::panel::{Card, CardAction, CardIcon, RallyVerb, VerbIcon};
 use crate::typography::entity_name;
+use aftermine_kit::roster::tick_time_label;
 use aftermine_sim::stats::Prerequisite;
 use aftermine_sim::{Building, BuildingId, BuildingKind, Command};
 use chassis::grid::TilePos;

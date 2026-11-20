@@ -116,7 +116,8 @@ const NAMED: &[&str] = &[
     "Unclaimed Extractor",
 ];
 
-/// Every production source file in the shell. Unit tests and the debug
+/// Every production source file in the shell, plus the Roster's words in
+/// `aftermine-kit`, which the shell shows players. Unit tests and the debug
 /// server, which speaks to tools and not players, are not player text, and
 /// neither are the environment variable names in `paths.rs`.
 fn production_sources() -> Vec<PathBuf> {
@@ -140,8 +141,10 @@ fn production_sources() -> Vec<PathBuf> {
             }
         }
     }
-    let mut out = Vec::new();
-    walk(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut out);
+    let shell = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut out = vec![shell.join("../kit/src/roster.rs")];
+    walk(&shell.join("src"), &mut out);
+    walk(&shell.join("../kit/src/roster"), &mut out);
     out.sort();
     out
 }

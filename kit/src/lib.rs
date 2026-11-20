@@ -14,6 +14,7 @@ pub mod playback;
 pub mod recording;
 pub mod render;
 mod replay;
+pub mod roster;
 pub mod runner;
 pub mod stats;
 pub mod world_snapshot;

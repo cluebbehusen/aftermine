@@ -1,7 +1,7 @@
 use super::*;
 use aftermine_sim::scenario::BotDifficulty;
 use aftermine_sim::scenario::BotStance;
-use aftermine_sim::{Command, PlayerId};
+use aftermine_sim::{Command, PlayerId, UnitKind};
 
 #[test]
 fn replay_resume_keeps_pending_controller_events_and_recording() {
@@ -197,4 +197,195 @@ fn commands_from_unknown_players_are_not_staged() {
     assert!(error.contains("no such player"));
     session.handle(Request::PresentTicks { ticks: 1 }).unwrap();
     assert_eq!(session.status().recorded_commands, 0);
+}
+
+/// Skirmish as a playtest for seat zero against a Prime bot, replaying to
+/// `dir`.
+fn playtest_session(dir: &std::path::Path, tick_limit: Option<u64>) -> Session {
+    let mut scenario = Scenario::skirmish();
+    aftermine_kit::controller::seat_bots_around(
+        &mut scenario,
+        PlayerId(0),
+        BotDifficulty::Prime,
+        BotStance::Balanced,
+        7,
+    )
+    .unwrap();
+    Session::playtest(
+        scenario,
+        Playtest {
+            seat: PlayerId(0),
+            tick_limit,
+            replay_out: dir.join("replays/playtest.json"),
+        },
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_playtest_answers_only_what_its_seat_could_know_and_do() {
+    let dir = scratch("playtest-refusals");
+    let mut session = playtest_session(&dir, None);
+    let path = dir.join("anything").to_string_lossy().into_owned();
+    let refused = [
+        Request::QueryState {
+            filter: aftermine_protocol::StateFilter::default(),
+        },
+        Request::StateHash,
+        Request::Screenshot {
+            path: Some(path.clone()),
+        },
+        Request::PresentTicks { ticks: 1 },
+        Request::LoadScenario { path: path.clone() },
+        Request::LoadReplay { path: path.clone() },
+        Request::SaveReplay { path },
+        Request::QueryFogView {
+            player: PlayerId(1),
+        },
+        Request::SendCommand {
+            player: PlayerId(1),
+            command: Command::Stop { units: Vec::new() },
+        },
+    ];
+    for request in refused {
+        let label = format!("{request:?}");
+        assert!(session.handle(request).is_err(), "{label} was answered");
+    }
+    assert!(
+        !dir.join("anything").exists(),
+        "a refused request touched a file"
+    );
+    assert_eq!(session.state().current_tick(), 0);
+
+    assert!(matches!(
+        session.handle(Request::QueryFogView {
+            player: PlayerId(0)
+        }),
+        Ok(Reply::Fog(_))
+    ));
+    let own = session
+        .state()
+        .units()
+        .iter()
+        .find(|unit| unit.player == PlayerId(0))
+        .map(|unit| unit.id)
+        .expect("the seat starts with units");
+    session
+        .handle(Request::SendCommand {
+            player: PlayerId(0),
+            command: Command::Stop { units: vec![own] },
+        })
+        .unwrap();
+    session.handle(Request::AdvanceTicks { ticks: 60 }).unwrap();
+    let Ok(Reply::Status(status)) = session.handle(Request::Status) else {
+        panic!("a playtest reports its status");
+    };
+    assert!(
+        session
+            .recorder
+            .commands
+            .iter()
+            .any(|timed| timed.command.player == PlayerId(1)),
+        "the Prime bot played"
+    );
+    assert_eq!(
+        status.recorded_commands, 1,
+        "the status counts the seat's own commands, never the bot's"
+    );
+}
+
+#[test]
+fn a_playtest_stops_at_its_tick_limit_and_leaves_a_replay_of_every_advance() {
+    let dir = scratch("playtest-limit");
+    let mut session = playtest_session(&dir, Some(50));
+    let Ok(Reply::Advanced(first)) = session.handle(Request::AdvanceTicks { ticks: 30 }) else {
+        panic!("a playtest advances");
+    };
+    assert_eq!((first.ticks, first.tick), (30, 30));
+    let Ok(Reply::Advanced(capped)) = session.handle(Request::AdvanceTicks { ticks: 30 }) else {
+        panic!("a playtest advances to its limit");
+    };
+    assert_eq!((capped.ticks, capped.tick), (20, 50));
+    assert!(session.handle(Request::AdvanceTicks { ticks: 1 }).is_err());
+    assert_eq!(session.state().current_tick(), 50);
+
+    let out = dir.join("replays/playtest.json");
+    assert!(!out.with_extension("partial").exists());
+    let replay = aftermine_kit::load_replay(&out).expect("the playtest replay loads");
+    assert_eq!(replay.meta.ticks, Some(50));
+    assert_eq!(
+        replay.setup.players[1]
+            .bot_config
+            .map(|c| c.personality_seed),
+        Some(8)
+    );
+    let resumed = Session::resume(replay).expect("the replay resumes");
+    assert_eq!(resumed.state().hash(), session.state().hash());
+}
+
+#[test]
+fn a_playtest_seat_must_be_one_no_bot_plays() {
+    let dir = scratch("playtest-bot-seat");
+    let scenario = Scenario::skirmish();
+    assert!(scenario.players[1].bot);
+    let playtest = |seat| Playtest {
+        seat,
+        tick_limit: None,
+        replay_out: dir.join("replay.json"),
+    };
+    assert!(Session::playtest(scenario.clone(), playtest(PlayerId(1))).is_err());
+    assert!(Session::playtest(scenario, playtest(PlayerId(7))).is_err());
+}
+
+#[test]
+fn a_playtest_refuses_an_order_the_game_would_reject_with_its_reason() {
+    let dir = scratch("playtest-rejections");
+    let mut session = playtest_session(&dir, None);
+    let foundry = session
+        .state()
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0))
+        .map(|building| building.id)
+        .expect("the seat starts with a Foundry");
+    let train = || Request::SendCommand {
+        player: PlayerId(0),
+        command: Command::Train {
+            building: foundry,
+            kind: UnitKind::Harvester,
+        },
+    };
+    let bank = session.state().players()[0].scrap;
+    let mut taken = 0;
+    let refusal = loop {
+        match session.handle(train()) {
+            Ok(Reply::Ok) => taken += 1,
+            Ok(other) => panic!("an order answers ok or a refusal, not {other:?}"),
+            Err(refusal) => break refusal,
+        }
+        assert!(
+            taken < 64,
+            "the staged orders never ran out of scrap or room"
+        );
+    };
+    assert!(
+        refusal.contains("not enough scrap") || refusal.contains("queue full"),
+        "{refusal}"
+    );
+    let refusal = session
+        .handle(Request::SendCommand {
+            player: PlayerId(0),
+            command: Command::Stop { units: Vec::new() },
+        })
+        .expect_err("an order for no units is rejected");
+    assert!(refusal.contains("no valid units"), "{refusal}");
+    assert_eq!(session.pending.len(), taken);
+
+    session.handle(Request::AdvanceTicks { ticks: 1 }).unwrap();
+    let price = UnitKind::Harvester.stats().cost;
+    assert_eq!(
+        session.state().players()[0].scrap,
+        bank - u32::try_from(taken).unwrap() * price,
+        "every staged order was taken"
+    );
 }

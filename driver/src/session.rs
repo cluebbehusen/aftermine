@@ -13,6 +13,13 @@
 //! `driver/tests/session_parity.rs` drives the same script through this
 //! server and the live shell and asserts hash, event, and status identity;
 //! its headless half runs in CI.
+//!
+//! A [`Playtest`] session is played by one seat against bots, as a person
+//! plays a New Match. It answers only what that seat could know and do: its
+//! own fog view and commands, and an advancing clock. It refuses everything
+//! omniscient, every other seat, and every file request, refuses an order the
+//! game would reject with the game's reason, and writes its own replay after
+//! each advance.
 
 use aftermine_kit::GameReplay;
 use aftermine_kit::controller::{SeatController, record_events, seat_controllers};
@@ -22,11 +29,25 @@ use aftermine_protocol::{
     AdvancedView, DebugSession, PresentedView, Reply, Request, ResponseEnvelope, SavedView,
     ScreenshotView, StatusView, dispatch_shared, hash_hex,
 };
-use aftermine_sim::{Event, PlayerCommand, SIM_VERSION, Scenario, State};
+use aftermine_sim::{Event, PlayerCommand, PlayerId, SIM_VERSION, Scenario, State};
 use anyhow::{Context, Result};
 use chassis::replay::Replay;
 use std::net::TcpListener;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+/// One seat's terms for a playtest session.
+#[derive(Clone, Debug)]
+pub struct Playtest {
+    /// The seat the client plays; the session refuses every other seat.
+    pub seat: PlayerId,
+    /// The tick the match stops at, if any.
+    pub tick_limit: Option<u64>,
+    /// Where the session rewrites its replay after every advance. The
+    /// client cannot save or read a replay through the protocol, since a
+    /// replay holds every seat's commands.
+    pub replay_out: PathBuf,
+}
 
 /// A headless match a debug client can drive: the same session shape as
 /// the shell's `Game`, minus everything presentational.
@@ -38,6 +59,8 @@ pub struct Session {
     /// Socket commands staged for the next tick, as a paused shell stages
     /// them.
     pending: Vec<PlayerCommand>,
+    /// The one seat a playtest client plays, when this is a playtest.
+    playtest: Option<Playtest>,
 }
 
 impl Session {
@@ -56,6 +79,25 @@ impl Session {
             bots,
             recorder,
             pending: Vec::new(),
+            playtest: None,
+        })
+    }
+
+    /// Opens a playtest: `playtest.seat` is the client's, and every
+    /// request beyond what that seat could know or do is refused.
+    pub fn playtest(scenario: Scenario, playtest: Playtest) -> Result<Self> {
+        anyhow::ensure!(
+            !scenario
+                .players
+                .get(usize::from(playtest.seat.0))
+                .with_context(|| format!("{} has no seat {}", scenario.name, playtest.seat.0))?
+                .bot,
+            "seat {} is a bot's; a playtest client plays a seat no bot does",
+            playtest.seat.0
+        );
+        Ok(Self {
+            playtest: Some(playtest),
+            ..Self::new(scenario)?
         })
     }
 
@@ -71,6 +113,7 @@ impl Session {
             bots,
             recorder: replay,
             pending: Vec::new(),
+            playtest: None,
         })
     }
 
@@ -100,6 +143,18 @@ impl Session {
     /// clock) go through the protocol dispatcher; every other method is
     /// implemented here or refused with a reason.
     pub fn handle(&mut self, request: Request) -> Result<Reply, String> {
+        if let Some(playtest) = &self.playtest {
+            if let Some(refusal) = playtest_refusal(playtest.seat, &request) {
+                return Err(refusal);
+            }
+            match request {
+                Request::AdvanceTicks { ticks } => return self.playtest_advance(ticks),
+                Request::SendCommand { player, command } => {
+                    return self.playtest_send(PlayerCommand { player, command });
+                }
+                _ => {}
+            }
+        }
         if let Some(outcome) = dispatch_shared(self, &request) {
             return outcome;
         }
@@ -137,21 +192,13 @@ impl Session {
                     *self = fresh;
                     Reply::Status(self.status())
                 }),
-            Request::SaveReplay { path } => {
-                self.recorder.meta.ticks = Some(self.state.current_tick());
-                if let Some(parent) = std::path::Path::new(&path).parent()
-                    && !parent.as_os_str().is_empty()
-                {
-                    std::fs::create_dir_all(parent).ok();
-                }
-                match self.recorder.save(&path) {
-                    Ok(()) => Ok(Reply::Saved(SavedView {
-                        path,
-                        commands: self.recorder.commands.len(),
-                    })),
-                    Err(err) => Err(format!("saving replay: {err}")),
-                }
-            }
+            Request::SaveReplay { path } => match self.save_replay(Path::new(&path)) {
+                Ok(()) => Ok(Reply::Saved(SavedView {
+                    path,
+                    commands: self.recorder.commands.len(),
+                })),
+                Err(err) => Err(format!("saving replay: {err:#}")),
+            },
             // Each refusal names what is missing and, where one exists, the
             // headless way to get the same information.
             Request::QueryCamera => Err(
@@ -195,6 +242,75 @@ impl Session {
         }
     }
 
+    /// Writes the recording so far to `path`, creating its directory.
+    fn save_replay(&mut self, path: &Path) -> Result<()> {
+        self.recorder.meta.ticks = Some(self.state.current_tick());
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
+        }
+        self.recorder
+            .save(path)
+            .with_context(|| format!("writing {}", path.display()))
+    }
+
+    /// A playtest's advance: up to the tick limit, then the replay is
+    /// rewritten whole, through a temporary file, so a session killed at
+    /// any moment leaves its last complete replay.
+    fn playtest_advance(&mut self, ticks: u64) -> Result<Reply, String> {
+        let Some(playtest) = self.playtest.clone() else {
+            unreachable!("only a playtest advances through here")
+        };
+        let tick = self.state.current_tick();
+        let mut ticks = ticks.min(aftermine_protocol::MAX_ADVANCE_TICKS);
+        if let Some(limit) = playtest.tick_limit {
+            if tick >= limit {
+                return Err(format!(
+                    "the playtest ended at its tick limit, {limit}; the match stops there"
+                ));
+            }
+            ticks = ticks.min(limit - tick);
+        }
+        let view = DebugSession::advance(self, ticks);
+        let partial = playtest.replay_out.with_extension("partial");
+        self.save_replay(&partial)
+            .and_then(|()| {
+                std::fs::rename(&partial, &playtest.replay_out)
+                    .with_context(|| format!("replacing {}", playtest.replay_out.display()))
+            })
+            .map_err(|err| format!("writing the playtest replay: {err:#}"))?;
+        Ok(Reply::Advanced(view))
+    }
+
+    /// A playtest's order: staged when the game will take it, and otherwise
+    /// refused with the game's reason, as the shell tells its player.
+    /// Commands apply in order before anything else in a tick, and a
+    /// rejected one changes nothing, so every order already staged was
+    /// taken and a trial tick on a copy of the world reaches the next
+    /// tick's verdict on this one.
+    fn playtest_send(&mut self, order: PlayerCommand) -> Result<Reply, String> {
+        let mut trial = self.pending.clone();
+        trial.push(order.clone());
+        let report = self.state.clone().tick(&trial);
+        let rejection = report.events.iter().find_map(|event| match event {
+            Event::CommandRejected { player, reason } if *player == order.player => Some(*reason),
+            _ => None,
+        });
+        if let Some(reason) = rejection {
+            let reason = serde_json::to_value(reason)
+                .ok()
+                .and_then(|value| value.as_str().map(|name| name.replace('_', " ")))
+                .unwrap_or_else(|| format!("{reason:?}"));
+            return Err(format!(
+                "the game rejects this order ({reason}); nothing was sent"
+            ));
+        }
+        self.pending.push(order);
+        Ok(Reply::Ok)
+    }
+
     fn screenshot(&self, path: &str) -> Result<Reply> {
         let pixmap = aftermine_kit::render::render_state(&self.state);
         if let Some(parent) = std::path::Path::new(path).parent()
@@ -216,6 +332,53 @@ impl Session {
     }
 }
 
+/// Why a playtest client may not make `request`, or `None` when it may.
+/// A playtest answers only what `seat` could know and do in a match: its
+/// own fog view and commands, the status, and an advancing clock.
+fn playtest_refusal(seat: PlayerId, request: &Request) -> Option<String> {
+    let own_seat_only = |player: PlayerId| {
+        (player != seat).then(|| {
+            format!(
+                "a playtest client plays seat {} only; seat {} is not yours",
+                seat.0, player.0
+            )
+        })
+    };
+    match request {
+        Request::QueryFogView { player } | Request::SendCommand { player, .. } => {
+            own_seat_only(*player)
+        }
+        Request::QueryState { .. } | Request::StateHash | Request::Screenshot { .. } => {
+            Some(format!(
+                "a playtest shows only what your seat sees; query_fog_view for seat {}",
+                seat.0
+            ))
+        }
+        Request::PresentTicks { .. } => Some(
+            "a playtest's events cover every seat; advance_ticks and query_fog_view instead"
+                .to_string(),
+        ),
+        Request::LoadScenario { .. } | Request::LoadReplay { .. } | Request::SaveReplay { .. } => {
+            Some(
+                "a playtest plays one match and writes its own replay; it reads and saves no files"
+                    .to_string(),
+            )
+        }
+        Request::Status
+        | Request::AdvanceTicks { .. }
+        | Request::Pause
+        | Request::Resume
+        | Request::SetSpeed { .. }
+        | Request::QueryCamera
+        | Request::QueryUi
+        | Request::QueryPerformance { .. }
+        | Request::BeginPerformanceWindow { .. }
+        | Request::RunFrameScript { .. }
+        | Request::InjectEvent { .. }
+        | Request::ToggleOverlay => None,
+    }
+}
+
 const NO_CLOCK: &str = "the headless session has no wall clock; sim time moves only through \
      advance_ticks and present_ticks";
 
@@ -233,7 +396,16 @@ impl DebugSession for Session {
             scenario: self.scenario.name.clone(),
             sim_version: SIM_VERSION,
             result: self.state.result(),
-            recorded_commands: self.recorder.commands.len(),
+            // A playtest client learns nothing of the bots' commands.
+            recorded_commands: match &self.playtest {
+                Some(playtest) => self
+                    .recorder
+                    .commands
+                    .iter()
+                    .filter(|timed| timed.command.player == playtest.seat)
+                    .count(),
+                None => self.recorder.commands.len(),
+            },
         }
     }
 
@@ -274,11 +446,42 @@ impl DebugSession for Session {
     }
 }
 
+/// How `aftermine-driver session --player` seats its match: the client's
+/// seat and terms, and the bot every other seat gets.
+#[derive(Clone, Debug)]
+pub struct PlaytestSetup {
+    /// The client's seat, tick limit and replay path.
+    pub playtest: Playtest,
+    /// Every other seat's skill rung.
+    pub difficulty: aftermine_sim::scenario::BotDifficulty,
+    /// Every other seat's posture.
+    pub stance: aftermine_sim::scenario::BotStance,
+    /// Seat `n`'s personality seed is this plus `n`.
+    pub personality_seed_base: u64,
+}
+
 /// Binds, announces, and answers until the process ends: the
 /// `aftermine-driver session` subcommand.
-pub fn serve(port: u16, scenario: &str, idle_timeout: Duration) -> Result<()> {
-    let scenario = runner::load_scenario(scenario)?;
-    let session = Session::new(scenario)?;
+pub fn serve(
+    port: u16,
+    scenario: &str,
+    idle_timeout: Duration,
+    playtest: Option<PlaytestSetup>,
+) -> Result<()> {
+    let mut scenario = runner::load_scenario(scenario)?;
+    let session = match playtest {
+        Some(setup) => {
+            aftermine_kit::controller::seat_bots_around(
+                &mut scenario,
+                setup.playtest.seat,
+                setup.difficulty,
+                setup.stance,
+                setup.personality_seed_base,
+            )?;
+            Session::playtest(scenario, setup.playtest)?
+        }
+        None => Session::new(scenario)?,
+    };
     let listener = TcpListener::bind(("127.0.0.1", port))
         .with_context(|| format!("binding session server to 127.0.0.1:{port}"))?;
     eprintln!(
