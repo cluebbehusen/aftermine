@@ -227,7 +227,8 @@ Each behavior is proven by a staged scenario test.
 | Enemy air seen                                             | Anti-air proportional to seen enemy air                                                                                                                                                                                                                                                                                |
 | Enemy heavies seen                                         | Anti-heavy units proportional to seen enemy heavies                                                                                                                                                                                                                                                                    |
 | Enemy Airworks seen                                        | Raise the anti-air need before enemy air arrives                                                                                                                                                                                                                                                                       |
-| Ground threat at base or expansion                         | Defend                                                                                                                                                                                                                                                                                                                 |
+| Ground threat at base or expansion                         | Defend; defenders that cannot yet match the ground force walking in wait beside the Foundry, and ones out fall back there once they have less than half of it; artillery is still reached                                                                                                                              |
+| Enemy scout, builder or building among own ones            | On the seat's side of the map, send defenders worth what it cost, without treating it as an emergency                                                                                                                                                                                                                  |
 | Air raid on base or expansion                              | Defend with anti-air or fighters                                                                                                                                                                                                                                                                                       |
 | Richer economy than the enemy                              | Larger attacks, ground and air, since each attack takes the whole free army                                                                                                                                                                                                                                            |
 | Known defenses at target or on route                       | Bring siege, or pick another target                                                                                                                                                                                                                                                                                    |
@@ -287,11 +288,11 @@ or assembles every unit kind.
   that they stop growing. The lowest rung also misjudges the enemy's strength by
   a deterministic draw from its seed. Memory fades at the same rate on every
   rung. Difficulty also sets how well a seat carries out its repertoire: lower
-  rungs attack piecemeal, pick targets worse, walk into known defenses as a
-  column or gather short of them only briefly, count only the defenses around a
-  target, let a defense call back an army on its way, focus fire on the nearest
-  enemy or by a rough read of its wounds, leave reinforcements at home, end a
-  fight that stops making progress on time even while winning, withdraw at even
-  odds, and lift without a fresh look or without counting bomber cover. Every
-  rung keeps every capability. Lower rungs make understandable mistakes, and
-  higher rungs beat lower ones.
+  rungs attack and defend piecemeal, pick targets worse, walk into known
+  defenses as a column or gather short of them only briefly, count only the
+  defenses around a target, let a defense call back an army on its way, focus
+  fire on the nearest enemy or by a rough read of its wounds, leave
+  reinforcements at home, end a fight that stops making progress on time even
+  while winning, withdraw at even odds, and lift without a fresh look or without
+  counting bomber cover. Every rung keeps every capability. Lower rungs make
+  understandable mistakes, and higher rungs beat lower ones.
