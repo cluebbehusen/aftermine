@@ -364,8 +364,6 @@ enum Cmd {
         #[arg(long)]
         allow_long: bool,
     },
-    /// Inspect a replay as stable JSON: metadata, command activity, outcome,
-    /// and exact snapshots at selected simulation ticks.
     /// Re-run a recorded match's bots and print one seat's decision
     /// traces as JSON lines: what it knew, wanted, bought and ran, and what
     /// each attack it launched needed and sent. Refused at the first tick
@@ -383,6 +381,8 @@ enum Cmd {
         #[arg(long, default_value_t = u64::MAX)]
         to: u64,
     },
+    /// Inspect a replay as stable JSON: metadata, command activity, outcome,
+    /// and exact snapshots at selected simulation ticks.
     ReplayInspect {
         /// Replay path, JSON or `.amreplay`. A player save is refused.
         path: PathBuf,
@@ -577,7 +577,7 @@ enum Cmd {
         /// With --player: the most orders the player may send in any
         /// minute of game time.
         #[arg(long, requires = "player")]
-        orders_per_minute: Option<u32>,
+        orders_per_minute: Option<std::num::NonZeroU32>,
     },
     /// Print every Roster page as plain text: the rules a player reads in
     /// game, for an agent that plays through `driver live`.

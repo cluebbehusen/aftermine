@@ -208,7 +208,10 @@ impl Missions {
                     / 2
             });
             let besides: Vec<TilePos> = siege.batteries.iter().map(|(_, beside)| *beside).collect();
-            let guns = defense_around(observation, memory, &besides)
+            // Armed units in sight are pressing already: an escort beside a
+            // battery counts once.
+            let in_sight: Vec<UnitId> = siege.units.iter().map(|threat| threat.id).collect();
+            let guns = defense_around(observation, memory, &besides, &in_sight)
                 + siege.unseen.map_or(0, |_| gun_value());
             let unarmed = siege.unarmed();
             let need = [
@@ -582,15 +585,22 @@ impl Siege<'_> {
     }
 
     /// What the unarmed intruders cost, against ground and air: the strays,
-    /// and the buildings among the batteries that carry no gun. Defenders
-    /// worth as much go after them.
+    /// and the buildings among the batteries that carry no gun against
+    /// ground, such as a Flak Turret. Defenders worth as much go after them.
     fn unarmed(&self) -> [u64; 2] {
         // An enemy producer going up among the seat's buildings is worth its
         // whole price, whatever its health: units will come out of it.
         let raised: u64 = self
             .batteries
             .iter()
-            .filter(|(building, _)| building.kind.tier_stats(building.tier).weapons.is_empty())
+            .filter(|(building, _)| {
+                !building
+                    .kind
+                    .tier_stats(building.tier)
+                    .weapons
+                    .iter()
+                    .any(|weapon| weapon.targets.ground)
+            })
             .map(|(building, _)| {
                 if building.kind.base_stats().produces.is_empty() {
                     building_value(building)

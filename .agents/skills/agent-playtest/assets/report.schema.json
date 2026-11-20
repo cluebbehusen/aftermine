@@ -15,7 +15,7 @@
   "properties": {
     "result": {
       "description": "The match result for your seat, or unfinished when the tick limit ended it.",
-      "enum": ["win", "loss", "unfinished"]
+      "enum": ["win", "loss", "draw", "unfinished"]
     },
     "final_tick": {
       "description": "The tick the match ended or stopped at.",
