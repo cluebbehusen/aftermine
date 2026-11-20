@@ -686,6 +686,15 @@ impl Fighter {
 /// time the attacker spends closing. A structure keeps
 /// [`STRUCTURE_SHARE`] of it.
 pub(crate) fn matchup(fighter: Fighter, attacker: UnitKind) -> u64 {
+    matchup_under(fighter, attacker, 1)
+}
+
+/// [`matchup`] against a group of `shooters` attackers: an outranged unit
+/// closes in under all of their fire, not one's, so a cheap short-ranged unit
+/// that would reach one Lancer dies on the way in to a line of them. Once in
+/// reach the exchange is one on one, as the group's fire spreads over the
+/// answer's own numbers.
+pub(crate) fn matchup_under(fighter: Fighter, attacker: UnitKind, shooters: u64) -> u64 {
     let theirs = Fighter::Unit(attacker);
     let dealt_rate = fighter.damage_rate(theirs.domain());
     if dealt_rate == 0 {
@@ -707,7 +716,7 @@ pub(crate) fn matchup(fighter: Fighter, attacker: UnitKind) -> u64 {
     } else if fighter.speed() == 0 {
         0
     } else {
-        life.saturating_sub((outreach - reach) / fighter.speed())
+        life.saturating_sub(shooters.max(1) * ((outreach - reach) / fighter.speed()))
     };
     let dealt = dealt_rate * firing / 1_000;
     let score = dealt * theirs.cost() / theirs.max_hp().max(1) * 1_000 / fighter.cost().max(1);

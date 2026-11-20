@@ -1490,9 +1490,15 @@ pub(crate) fn answer(fighter: Fighter, short: &Shortfall) -> u64 {
     if !short.read || total == 0 {
         return 1_000_000 / fighter.cost().max(1);
     }
+    // How many attackers fire on an answer while it closes in.
+    let shooters: u64 = pressing
+        .iter()
+        .map(|(attacker, value)| value / u64::from(attacker.stats().cost.max(1)))
+        .sum::<u64>()
+        .max(1);
     pressing
         .iter()
-        .map(|(attacker, value)| composition::matchup(fighter, *attacker) * value)
+        .map(|(attacker, value)| composition::matchup_under(fighter, *attacker, shooters) * value)
         .sum::<u64>()
         / total
 }
