@@ -236,6 +236,10 @@ pub struct ObservationData {
     /// Current progress of the front training item per own building, aligned
     /// with `my_buildings` and `my_queues`. Empty queues report zero.
     pub my_queue_progress: Vec<u32>,
+    /// Construction work done on each own unfinished site or upgrade, aligned
+    /// with `my_buildings`, as the owner sees it on the site. A built
+    /// building reports zero.
+    pub my_build_progress: Vec<u32>,
     /// Active repair targets of own workers, tending welds included, sorted
     /// by worker id. Allied and hostile programs remain opaque even when
     /// their bodies are visible.
@@ -328,6 +332,15 @@ impl ObservationData {
         }
     }
 
+    /// Construction work done on one own building, by its index in
+    /// `my_buildings`. Malformed alignment yields none.
+    pub fn own_build_progress(&self, index: usize) -> Option<u32> {
+        if self.my_build_progress.len() != self.my_buildings.len() {
+            return None;
+        }
+        self.my_build_progress.get(index).copied()
+    }
+
     /// Whether `tile` is known impassable terrain: a binary search of
     /// `known_rock`, which is sorted by (y, x).
     pub fn known_rock_at(&self, tile: TilePos) -> bool {
@@ -407,6 +420,8 @@ impl ObservationData {
                 } else {
                     b.training_progress()
                 });
+                obs.my_build_progress
+                    .push(b.construction_progress().unwrap_or(0));
             } else if !state.hostile(me, b.player) {
                 obs.ally_buildings.push(BuildingObs {
                     provisional: b.provisional(),
@@ -519,6 +534,7 @@ impl ObservationData {
             my_buildings: Vec::new(),
             my_queues: Vec::new(),
             my_queue_progress: Vec::new(),
+            my_build_progress: Vec::new(),
             ally_units: Vec::new(),
             my_repair_targets: Vec::new(),
             ally_buildings: Vec::new(),

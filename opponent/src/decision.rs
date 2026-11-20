@@ -178,6 +178,12 @@ impl Ledger {
         true
     }
 
+    /// Scraps an own unfinished `building`. It moves no unit, so like a
+    /// purchase it never counts against the allowance.
+    pub(crate) fn cancel(&mut self, building: BuildingId) {
+        self.push(Command::Cancel { building });
+    }
+
     /// Issues every launch of one volley as a single unit order while the
     /// allowance lasts.
     pub(crate) fn salvo(&mut self, launches: impl IntoIterator<Item = Command>) {
@@ -1031,8 +1037,13 @@ pub(crate) fn site(
                 let centre = footprint_centre(kind, *anchor);
                 workers::builder(observation, map, frame, *anchor, centre, ledger)
             });
-            let fifth = kind.base_stats().max_hp / 5;
-            placement::stands(observation, kind, *anchor, fifth, builder)
+            placement::stands(
+                observation,
+                map,
+                placement::Raising::fresh(kind, *anchor),
+                &[],
+                builder.as_slice(),
+            )
         })
         .find_map(|anchor| {
             match placement::check(

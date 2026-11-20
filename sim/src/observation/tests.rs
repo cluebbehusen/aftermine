@@ -34,6 +34,8 @@ fn omniscient(state: &State, me: PlayerId) -> Observation {
             } else {
                 b.training_progress()
             });
+            obs.my_build_progress
+                .push(b.construction_progress().unwrap_or(0));
         } else if !state.hostile(me, b.player) {
             obs.ally_buildings.push(BuildingObs {
                 provisional: b.provisional(),
@@ -269,6 +271,53 @@ fn owner_training_progress_is_exact_aligned_and_required_by_the_schema() {
             "an older snapshot must not silently invent exact progress"
         );
     }
+}
+
+#[test]
+fn owner_build_progress_is_aligned_and_the_rival_never_sees_it() {
+    let mut state = Scenario::skirmish()
+        .build()
+        .expect("the skirmish scenario builds");
+    let site = state
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Foundry)
+        .expect("player zero has a Foundry")
+        .id;
+    state.building_mut(site).expect("the Foundry is live").phase =
+        crate::state::BuildingPhase::Site { progress: 40 };
+    for observation in [
+        ObservationData::fog_honest(&state, PlayerId(0)),
+        omniscient(&state, PlayerId(0)),
+    ] {
+        let index = observation
+            .my_buildings
+            .iter()
+            .position(|building| building.id == site)
+            .expect("the owner observes its site");
+        assert_eq!(observation.own_build_progress(index), Some(40));
+        assert!(
+            observation
+                .my_buildings
+                .iter()
+                .enumerate()
+                .all(|(index, building)| building.id == site
+                    || observation.own_build_progress(index) == Some(0))
+        );
+    }
+    let rival = ObservationData::fog_honest(&state, PlayerId(1));
+    assert!(
+        rival
+            .my_buildings
+            .iter()
+            .all(|building| building.id != site)
+    );
+    assert!(
+        rival
+            .my_build_progress
+            .iter()
+            .all(|progress| *progress == 0)
+    );
 }
 
 #[test]

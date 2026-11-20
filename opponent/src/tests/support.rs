@@ -239,6 +239,30 @@ fn welders_rank_buildings_by_the_repair_bill_the_simulation_charges() {
 }
 
 #[test]
+fn a_weld_waits_for_the_scrap_the_simulation_bills() {
+    // A Turret missing 38 of 350 health bills 10 scrap, not the 9 a
+    // truncated share of its price would give.
+    let welds = |scrap: u32| {
+        let mut scenario = arena(scrap);
+        scenario
+            .buildings
+            .push(building(0, BuildingKind::Turret, 10, 7));
+        let state = scenario.build().unwrap();
+        let turret = state
+            .buildings()
+            .iter()
+            .find(|building| building.kind == BuildingKind::Turret)
+            .unwrap()
+            .id;
+        let state = damaged(&state, turret, 312);
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        repairs(&commands)
+    };
+    assert!(welds(9).is_empty(), "{:?}", welds(9));
+    assert!(!welds(10).is_empty());
+}
+
+#[test]
 fn idle_workers_keep_off_a_node_in_known_danger() {
     let nodes = |raider: bool| {
         let mut scenario = arena(0);

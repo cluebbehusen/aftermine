@@ -64,9 +64,9 @@ selects actions in precedence order:
 
 Spending and ownership are coordinated through one running total that lives
 inside the decision and never outlives it as a type. Difficulty limits unit
-orders per decision; purchases do not count against that allowance. The
-allowance is consumed as actions are selected, so only selected actions affect
-the running total and mission state.
+orders per decision; purchases and cancellations do not count against that
+allowance. The allowance is consumed as actions are selected, so only selected
+actions affect the running total and mission state.
 
 ## Investments and saving
 
@@ -205,9 +205,11 @@ other than a wall or mine on a ramp. Danger is coarse known weapon coverage: a
 known building counts only where one of its ground weapons reaches, and a
 remembered unit only if it can hurt a building. Placement uses a fog-honest
 check over the observation. A site goes up, and builders go back to one, only
-where it would stand before the fire in sight on it pulls it down and its
-builder would finish it, or do work worth its own price, before that fire kills
-it. A site that fire would pull down before it stands is cancelled for its
+where it would stand before the fire in sight on it pulls it down, judged by the
+work left on it, how fast its crew builds and how long the nearest builder walks
+to it, and each builder sent would finish it, or do work worth its own price,
+before that fire kills it. Fire counts only where its shot clears rock and
+levels. A site that fire would pull down before it stands is cancelled for its
 refund, and a site a builder found no route to waits a while. A stall or
 rejection triggers a re-plan instead of the order being proven in advance.
 
