@@ -13,7 +13,7 @@ use super::attack::{building_value, concentrates, defense, defense_around};
 use super::reserve::LOCAL_REACH;
 use super::{
     AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
-    fill, hits, hunt, insert, meeting, mine, value, walking_gun, worth,
+    fill, hits, hunt, insert, meeting, mine, run, value, walking_gun, worth,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
@@ -391,8 +391,9 @@ impl Missions {
     }
 
     /// Gives up the defense or guard at `index`, if any, against a threat at
-    /// `goal` the seat cannot match there: its members fall back to home's
-    /// waiting post and the mission ends. Without a post on home's ground they are
+    /// `goal` the seat cannot match there: its members run back to home's
+    /// waiting post, not stopping to fight whatever chases them, and the
+    /// mission ends. Without a post on home's ground they are
     /// let go where they stand. Production still answers the shortfall.
     pub(super) fn give_up(
         &mut self,
@@ -408,7 +409,7 @@ impl Missions {
         };
         let units = self.list[index].units.clone();
         if home_post(observation, map, frame, goal)
-            .is_none_or(|post| ledger.order(hunt(units, post)))
+            .is_none_or(|post| ledger.order(run(units, post)))
         {
             self.list.remove(index);
         }

@@ -1997,7 +1997,7 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
     );
 
     // Defenders already out there when the seat cannot match the raiders
-    // fall back home.
+    // run back home, not stopping to fight on the way.
     let scenario = expansion_raided(&[(5, 8)]);
     let mut scenario = scenario;
     scenario.units.extend([
@@ -2033,7 +2033,7 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
     let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     let home = beside_foundry(&state, 0, Some(TilePos::new(3, 5)));
     assert!(
-        hunts(&commands)
+        runs(&commands)
             .iter()
             .any(|(units, goal)| units == &members && home.contains(goal)),
         "{commands:?}"
