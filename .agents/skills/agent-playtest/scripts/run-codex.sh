@@ -7,7 +7,7 @@
 # access for the session's local port. Its events go to events.jsonl and its
 # final message, shaped by the report schema, to report.json. When Codex
 # stops while the match is still running, it is resumed with a reminder, at
-# most `resumes` times (default 3).
+# most `resumes` times (default 3). It fails when Codex still stops early.
 set -eu
 
 dir=$(cd "$1" && pwd)
@@ -50,4 +50,14 @@ while [ "$resumes" -gt 0 ]; do
 		"The match is not over: ./play status shows no result. Keep playing to a result or the tick limit, then write the report." \
 		</dev/null >>events.jsonl
 done
-./play status
+status=$(./play status 2>&1 || true)
+printf '%s\n' "$status"
+case "$status" in
+*'"result": null'*)
+	tick=$(printf '%s\n' "$status" | sed -n 's/.*"tick": \([0-9]*\).*/\1/p')
+	if [ "${tick:-0}" -lt "$limit" ]; then
+		echo "Codex stopped at tick ${tick:-0} with no result, before the tick limit." >&2
+		exit 1
+	fi
+	;;
+esac
