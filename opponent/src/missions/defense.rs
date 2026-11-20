@@ -100,7 +100,7 @@ impl Missions {
                 || siege.unseen.is_some()
                 || siege.remembered != [0, 0]
         });
-        self.stand_down(observation, (map, frame), &groups, ledger);
+        let returning = self.stand_down(observation, (map, frame), &groups, ledger);
         self.list.retain(|mission| {
             !matches!(
                 mission.task,
@@ -353,20 +353,51 @@ impl Missions {
             joined.extend(recruits);
             self.release_from_others(index, &joined);
         }
+        // Defenses that stood down go home last, so their orders never
+        // take the allowance from a defense answering an attack now.
+        for (id, post) in returning {
+            if let Some(mission) = self.list.iter_mut().find(|mission| {
+                mission.id == id
+                    && matches!(
+                        mission.task,
+                        Task::Defend {
+                            phase: DefendPhase::Recover,
+                            ..
+                        }
+                    )
+            }) && ledger.order(hunt(mission.units.clone(), post))
+            {
+                mission.goal = post;
+            }
+        }
         shortfalls
     }
 
-    /// Puts every engaged defense whose Foundry no threat presses any more
-    /// into recovery, sending its members back to the post beside their
-    /// Foundry.
+    /// Puts every engaged defense whose Foundry no threat presses any more,
+    /// and none of whose members an enemy in sight can still hit, into
+    /// recovery. Returns each with the post beside its Foundry its members
+    /// go back to, once this decision's defenses have been sent.
     fn stand_down(
         &mut self,
         observation: &ObservationData,
         (map, frame): (&MapModel, HomeFrame),
         groups: &[(&BuildingObs, Siege<'_>, bool)],
         ledger: &mut Ledger,
-    ) {
+    ) -> Vec<(u64, TilePos)> {
         let now = observation.tick;
+        let mut returning = Vec::new();
+        let in_reach = |members: &[UnitId]| {
+            observation.enemy_units.iter().any(|enemy| {
+                let reach = crate::defenses::reach(enemy.kind);
+                reach > Fx::ZERO
+                    && members
+                        .iter()
+                        .filter_map(|id| mine(observation, *id))
+                        .any(|unit| {
+                            Fx::from_num(unit.tile.chebyshev(enemy.tile)) <= reach + Fx::from_num(1)
+                        })
+            })
+        };
         for mission in &mut self.list {
             let Task::Defend { asset, phase } = &mut mission.task else {
                 continue;
@@ -374,6 +405,7 @@ impl Missions {
             let threatened = groups.iter().any(|(foundry, _, _)| foundry.id == *asset);
             if let DefendPhase::Engage { focus } = *phase
                 && !threatened
+                && !in_reach(&mission.units)
             {
                 // Its members come back to the post beside their Foundry:
                 // left where the fight ended, often by the enemy's line,
@@ -387,9 +419,7 @@ impl Missions {
                     .find(|building| building.id == *asset)
                     .and_then(|foundry| waiting_post(map, frame, foundry, mission.goal));
                 if let Some(post) = post {
-                    if ledger.order(hunt(mission.units.clone(), post)) {
-                        mission.goal = post;
-                    }
+                    returning.push((mission.id, post));
                 } else if focus.is_some() {
                     ledger.order(hunt(mission.units.clone(), mission.goal));
                 }
@@ -397,6 +427,7 @@ impl Missions {
                 mission.since = now;
             }
         }
+        returning
     }
 
     /// Notes on each siege in `groups` what its Foundry's defense holds and

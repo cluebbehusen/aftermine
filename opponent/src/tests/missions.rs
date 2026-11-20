@@ -2076,52 +2076,61 @@ fn home_is_never_given_up() {
 #[test]
 fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
     // Two Sentinels out where the raiders were, the raiders gone: they come
-    // back beside the Foundry rather than be let go out there.
-    let mut scenario = raided(
-        &[(UnitKind::Sentinel, 13, 8), (UnitKind::Sentinel, 14, 8)],
-        &[],
-    );
-    scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
-    let state = scenario.build().unwrap();
-    let home = state
-        .buildings()
-        .iter()
-        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
-        .unwrap();
-    let mut members = vec![at(&state, 13, 8), at(&state, 14, 8)];
-    members.sort_unstable();
-    let mut opponent = restored_with(
-        &seat_with(&scenario, 0, rung(BotDifficulty::Prime)),
-        &scenario,
-        &state,
-        |json| {
-            json["missions"] = serde_json::json!({
-                "next": 1,
-                "list": [{
-                    "id": 0,
-                    "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
-                    "since": 0,
-                    "units": members,
-                    "goal": {"x": 15, "y": 6},
-                }],
-            });
-        },
-    );
-    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
-    let beside = beside_foundry(&state, 0, None);
-    assert!(
-        hunts(&commands)
+    // back beside the Foundry rather than be let go out there, unless an
+    // enemy can still hit them.
+    let stand_down = |lancer: bool| {
+        let mut scenario = raided(
+            &[(UnitKind::Sentinel, 13, 8), (UnitKind::Sentinel, 14, 8)],
+            &[],
+        );
+        if lancer {
+            scenario.units.push(unit(1, UnitKind::Lancer, 19, 8));
+        }
+        scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
+        let state = scenario.build().unwrap();
+        let home = state
+            .buildings()
             .iter()
-            .any(|(units, goal)| units == &members && beside.contains(goal)),
-        "{commands:?}"
-    );
-    assert!(
-        trace
+            .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+            .unwrap();
+        let mut members = vec![at(&state, 13, 8), at(&state, 14, 8)];
+        members.sort_unstable();
+        let mut opponent = restored_with(
+            &seat_with(&scenario, 0, rung(BotDifficulty::Prime)),
+            &scenario,
+            &state,
+            |json| {
+                json["missions"] = serde_json::json!({
+                    "next": 1,
+                    "list": [{
+                        "id": 0,
+                        "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                        "since": 0,
+                        "units": members,
+                        "goal": {"x": 15, "y": 6},
+                    }],
+                });
+            },
+        );
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let beside = beside_foundry(&state, 0, None);
+        let home = hunts(&commands)
+            .iter()
+            .any(|(units, goal)| units == &members && beside.contains(goal));
+        let recovers = trace
             .unwrap()
             .missions
             .iter()
-            .any(|mission| mission.phase == Phase::Recover),
-        "the defense recovers"
+            .any(|mission| mission.phase == Phase::Recover);
+        (home, recovers)
+    };
+    assert_eq!(stand_down(false), (true, true), "the raiders gone: home");
+    // A Lancer beyond the base's threat gap but still in reach of the two:
+    // they do not turn their backs to it.
+    assert_eq!(
+        stand_down(true),
+        (false, false),
+        "still under fire: they stay"
     );
 }
 

@@ -1784,3 +1784,87 @@ fn an_outpost_gets_no_turret_in_front_of_an_army_but_home_does() {
     let home = turrets(&[(9, 5), (12, 4), (12, 5), (12, 6)]);
     assert!(!home.is_empty(), "home still raises its Turret");
 }
+
+#[test]
+fn mirrored_outposts_are_judged_alike_for_a_turret() {
+    // Each seat's expansion with a raider and two more behind it, rotated
+    // half a turn: the two seats raise the same Turrets, or none, mirrored.
+    let mut scenario = super::missions::widened(arena(400), 12, 20);
+    let (width, height) = (44, 12);
+    let (w, h) = BuildingKind::Foundry.size();
+    let west = (24, 8);
+    let east = (width - west.0 - w, height - west.1 - h);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Foundry, west.0, west.1));
+    scenario
+        .buildings
+        .push(building(1, BuildingKind::Foundry, east.0, east.1));
+    for (x, y) in [(28, 10), (31, 9), (31, 10)] {
+        scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+        scenario
+            .units
+            .push(unit(0, UnitKind::Sentinel, width - 1 - x, height - 1 - y));
+    }
+    let state = scenario.build().unwrap();
+    assert_eq!(state.map().width(), width, "premise: the arena's width");
+    let west_commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let east_commands = seat_with(&scenario, 1, thrifty()).act(&state, &mut OwnEvents::default());
+    let turrets = |commands: &[PlayerCommand]| -> Vec<TilePos> {
+        builds(commands)
+            .into_iter()
+            .filter(|(kind, _)| *kind == BuildingKind::Turret)
+            .map(|(_, anchor)| anchor)
+            .collect()
+    };
+    let (tw, th) = BuildingKind::Turret.size();
+    let mirrored: Vec<TilePos> = turrets(&west_commands)
+        .into_iter()
+        .map(|a| TilePos::new(width - a.x - tw, height - a.y - th))
+        .collect();
+    assert_eq!(mirrored, turrets(&east_commands));
+}
+
+#[test]
+fn a_site_is_judged_by_its_footprint_on_either_side() {
+    // Three Sentinels seven empty tiles from a Bastion's footprint, once on
+    // its west and once on its east, each in a West scout's sight: the same
+    // force at the same distance, so the same verdict either way.
+    let (bw, _) = BuildingKind::Bastion.size();
+    let anchor = TilePos::new(30, 4);
+    let verdict = |x: i32| {
+        let mut scenario = super::missions::widened(arena(400), 12, 20);
+        scenario
+            .buildings
+            .push(building(0, BuildingKind::Foundry, 24, 8));
+        for y in 1..=3 {
+            scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+        }
+        scenario.units.push(unit(0, UnitKind::Surveyor, x - 1, 2));
+        let state = scenario.build().unwrap();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        assert_eq!(
+            observation
+                .enemy_units
+                .iter()
+                .filter(|enemy| enemy.kind == UnitKind::Sentinel)
+                .count(),
+            3,
+            "premise: West sees the Sentinels"
+        );
+        crate::missions::meeting::overruns(
+            &observation,
+            &crate::memory::Memory::default(),
+            &map(&scenario),
+            BuildingKind::Bastion,
+            anchor,
+        )
+    };
+    let west = anchor.x - 8;
+    let east = anchor.x + bw + 7;
+    assert_eq!(verdict(west), verdict(east));
+    assert!(
+        verdict(west),
+        "premise: three Sentinels outweigh a Bastion alone"
+    );
+}

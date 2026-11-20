@@ -5,7 +5,7 @@
 use super::defense::at_home;
 use super::reserve::LOCAL_REACH;
 use super::{against_machines, value};
-use crate::frame::{HomeFrame, doubled};
+use crate::frame::{HomeFrame, doubled, gap};
 use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
 use crate::memory::Memory;
 use aftermine_sim::observation::ObservationData;
@@ -100,7 +100,10 @@ const SITE_TILES: i32 = 8;
 /// Whether the known enemy force near a defense of `kind` placed at `anchor`
 /// outweighs the site's price and the seat's armed ground units near it: a
 /// lone Turret raised in front of an army only feeds it its price and its
-/// builder. Never at home, where a short defense may raise one as its answer.
+/// builder. An enemy counts within its reach of the footprint, or within the
+/// site's reach when it can walk there; distances run from the footprint, so
+/// mirrored sites are judged alike. Never at home or by the seat's last
+/// Foundry, where a short defense may raise one as its answer.
 pub(crate) fn overruns(
     observation: &ObservationData,
     memory: &Memory,
@@ -108,17 +111,48 @@ pub(crate) fn overruns(
     kind: BuildingKind,
     anchor: TilePos,
 ) -> bool {
-    // Home's own answer to raiders stands whatever stands near it.
+    let size = kind.size();
     if at_home(observation, map, anchor) {
         return false;
     }
+    let mut foundries = crate::investments::built_foundries(&observation.my_buildings);
+    match (foundries.next(), foundries.next()) {
+        (None, _) => return false,
+        (Some(only), None) if gap(only.anchor, only.kind.size(), anchor, size) <= LOCAL_REACH => {
+            return false;
+        }
+        _ => {}
+    }
+    let ground = map.component(anchor);
+    let near = |kind: UnitKind, tile: TilePos| {
+        let reach = crate::defenses::reach(kind);
+        let apart = gap(anchor, size, tile, (1, 1));
+        kind.stats().domain == Domain::Ground
+            && reach > Fx::ZERO
+            && (apart <= reach.ceil().to_num::<i32>()
+                || (apart <= SITE_TILES
+                    && ground.is_some_and(|component| {
+                        map.component(tile) == Some(component) || map.touches(tile, component)
+                    })))
+    };
+    let seen: u64 = observation
+        .enemy_units
+        .iter()
+        .filter(|enemy| near(enemy.kind, enemy.tile))
+        .map(value)
+        .sum();
+    let remembered: u64 = memory
+        .units()
+        .iter()
+        .filter(|unit| unit.seen < observation.tick && near(unit.kind, unit.tile))
+        .map(|unit| unit.value(observation.tick) * against_machines(unit.kind) / 1_000)
+        .sum();
     let held: u64 = observation
         .my_units
         .iter()
-        .filter(|unit| super::hits(unit, Domain::Ground))
-        .filter(|unit| unit.tile.chebyshev(anchor) <= SITE_TILES)
+        .filter(|unit| unit.body_domain() == Domain::Ground && super::hits(unit, Domain::Ground))
+        .filter(|unit| gap(anchor, size, unit.tile, (1, 1)) <= SITE_TILES)
         .map(value)
         .sum();
-    within(observation, memory, anchor, SITE_TILES)
-        > u64::from(kind.base_stats().construction.cost) + held
+    seen + remembered > u64::from(kind.base_stats().construction.cost) + held
 }
