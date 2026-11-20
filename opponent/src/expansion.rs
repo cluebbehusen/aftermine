@@ -165,33 +165,36 @@ pub(crate) fn candidates(
 }
 
 /// What a Foundry at `anchor` would pay back through the seat's remote
-/// Extractors in its reach, scored as other growth is: what they would yield
-/// supported over what they yield now, and once a Crucible stands, what the
-/// Deep Bores they could then become yield over that, at their refit's
-/// price; over the Foundry's price and `lift`, what landing a builder still
-/// costs. Free frames are left to the Extractor investments, so a Foundry
+/// Extractors and Deep Bores in its reach, scored as other growth is: what
+/// they would yield supported over what they yield now, and once a Crucible
+/// stands, what the Deep Bores the Extractors could then become yield over
+/// that, at their refit's price; over the Foundry's price and `lift`, what
+/// landing a builder still costs. Free frames are left to the Extractor investments, so a Foundry
 /// comes for Extractors stranded without support rather than as an opener.
 fn support_payback(observation: &ObservationData, anchor: TilePos, lift: u32, greed: u8) -> u32 {
-    let remote = observation
-        .my_buildings
-        .iter()
-        .filter(|building| {
-            building.kind == BuildingKind::Extractor
-                && building.built
-                && building.tier == 0
-                && !supported(observation, building.anchor)
-                && foundry_supports(anchor, building.anchor)
-                // A Foundry already going up in reach will support it.
-                && !observation.my_buildings.iter().any(|site| {
-                    site.kind == BuildingKind::Foundry
-                        && !site.built
-                        && foundry_supports(site.anchor, building.anchor)
-                })
-        })
-        .count();
-    let remote = u64::try_from(remote).expect("building counts fit in u64");
-    let support = yield_per_minute(0, true) - yield_per_minute(0, false);
-    let mut gain = support * remote;
+    let stranded = |bored: bool| -> u64 {
+        let count = observation
+            .my_buildings
+            .iter()
+            .filter(|building| {
+                building.kind == BuildingKind::Extractor
+                    && building.built
+                    && (building.tier > 0) == bored
+                    && !supported(observation, building.anchor)
+                    && foundry_supports(anchor, building.anchor)
+                    // A Foundry already going up in reach will support it.
+                    && !observation.my_buildings.iter().any(|site| {
+                        site.kind == BuildingKind::Foundry
+                            && !site.built
+                            && foundry_supports(site.anchor, building.anchor)
+                    })
+            })
+            .count();
+        u64::try_from(count).expect("building counts fit in u64")
+    };
+    let (remote, bores) = (stranded(false), stranded(true));
+    let support = |tier: u8| yield_per_minute(tier, true) - yield_per_minute(tier, false);
+    let mut gain = support(0) * remote + support(1) * bores;
     let mut price = u64::from(construction_cost(BuildingKind::Foundry) + lift);
     if crate::investments::built(observation, BuildingKind::Crucible) {
         gain += (yield_per_minute(1, true) - yield_per_minute(0, true)) * remote;

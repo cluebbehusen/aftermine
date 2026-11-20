@@ -688,7 +688,6 @@ impl MapModel {
                     Vec2Fx::new(Fx::from_num(frame.x), Fx::from_num(frame.y)),
                     Vec2Fx::new(Fx::from_num(frame.x + 2), Fx::from_num(frame.y + 2)),
                 );
-                let centre = Vec2Fx::new(Fx::from_num(frame.x + 1), Fx::from_num(frame.y + 1));
                 let mut nearest = vec![UNREACHABLE; self.starts.len()];
                 for dy in -span..2 + span {
                     for dx in -span..2 + span {
@@ -701,7 +700,7 @@ impl MapModel {
                         let near =
                             Vec2Fx::new(from.x.clamp(low.x, high.x), from.y.clamp(low.y, high.y));
                         if from.dist_sq(near) > reach * reach
-                            || !self.clear_shot(from, centre, (tile, *frame), Shot::Ground)
+                            || !self.clear_shot(from, near, (tile, *frame), Shot::Ground)
                         {
                             continue;
                         }

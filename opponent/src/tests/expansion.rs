@@ -894,6 +894,36 @@ fn a_secure_seat_scores_a_site_by_the_support_its_remote_extractor_would_get() {
 }
 
 #[test]
+fn a_stranded_deep_bore_draws_its_foundry_back_harder_than_an_extractor() {
+    // Support lifts a Deep Bore's yield by more than an Extractor's, so a
+    // Foundry that would support one stranded there scores higher.
+    let frame = TilePos::new(16, 9);
+    let mut scenario = frontier(0);
+    scenario.map[9].replace_range(16..18, "E.");
+    scenario.buildings.push(BuildingSpec {
+        player: 0,
+        kind: BuildingKind::Extractor,
+        x: frame.x,
+        y: frame.y,
+    });
+    let model = map(&scenario);
+    let (index, _) = site_with(&model, TilePos::new(12, 10));
+    let score = |state: &State| {
+        let observation = ObservationData::fog_honest(state, PlayerId(0));
+        expansion::candidates(&observation, &model, &Memory::default(), (50, true), 0)
+            .into_iter()
+            .find(|(investment, _)| {
+                *investment == Investment::Expansion(u16::try_from(index).unwrap())
+            })
+            .map(|(_, score)| score)
+            .expect("the site is a candidate")
+    };
+    let extractor = score(&scenario.build().unwrap());
+    let bore = score(&bored(&scenario));
+    assert!(bore > extractor, "{bore} vs {extractor}");
+}
+
+#[test]
 fn a_frame_no_enemy_walks_to_is_still_theirs_when_their_guns_reach_it() {
     // Two frames on pit-ringed plateaus no ground unit walks onto, one
     // beside each seat. Each seat wants the one beside it; the one beside
@@ -928,6 +958,53 @@ fn a_frame_no_enemy_walks_to_is_still_theirs_when_their_guns_reach_it() {
     };
     assert_eq!(wanted(0), vec![TilePos::new(7, 9)]);
     assert_eq!(wanted(1), vec![TilePos::new(31, 3)]);
+}
+
+#[test]
+fn ground_shoots_a_frame_where_its_near_edge_is_in_view() {
+    // A frame alone among pits, East's lane coming up from the south: a rock
+    // below the frame hides its centre from the lane's end, but not its
+    // near corner, and the simulation aims at that.
+    let frame = TilePos::new(14, 4);
+    let mut map: Vec<String> = (0..22)
+        .map(|row| {
+            if row == 0 || row == 21 {
+                "#".repeat(40)
+            } else {
+                format!("#{}#", "~".repeat(38))
+            }
+        })
+        .collect();
+    let mut paint = |x: usize, y: usize, tiles: &str| {
+        map[y].replace_range(x..x + tiles.len(), tiles);
+    };
+    for y in 1..6 {
+        paint(1, y, ".....");
+    }
+    paint(2, 2, "1");
+    for y in 15..21 {
+        paint(30, y, ".........");
+    }
+    paint(36, 18, "2");
+    paint(14, 4, "E.");
+    paint(14, 5, "..");
+    paint(15, 7, "#");
+    for y in 10..21 {
+        paint(17, y, ".");
+    }
+    paint(17, 20, &".".repeat(13));
+    let mut scenario = lane(&[]);
+    scenario.map = map;
+    let model = self::map(&scenario);
+    assert!(
+        model.distance(PlayerId(1), TilePos::new(17, 10)) != crate::map::UNREACHABLE
+            && model.distance(PlayerId(1), frame) == crate::map::UNREACHABLE,
+        "premise: East walks the lane but not onto the frame"
+    );
+    assert_ne!(
+        model.firing_distance(PlayerId(1), frame),
+        crate::map::UNREACHABLE
+    );
 }
 
 #[test]
