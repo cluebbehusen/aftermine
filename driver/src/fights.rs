@@ -4,14 +4,14 @@
 //! omniscient QA evidence that never reaches a controller.
 //!
 //! An armed unit's death joins the fight whose last death came at most
-//! [`GAP_TICKS`] before it and whose centre, the mean of its deaths, lies
-//! within [`GAP_TILES`]; otherwise it starts one. A fight needs two deaths.
-//! Every seat with armed units within [`NEAR_TILES`] of a fight's centre, from
-//! [`GAP_TICKS`] before its first death to its last, or with a loss in it,
+//! `GAP_TICKS` before it and whose centre, the mean of its deaths, lies
+//! within `GAP_TILES`; otherwise it starts one. A fight needs two deaths.
+//! Every seat with armed units within `NEAR_TILES` of a fight's centre, from
+//! `GAP_TICKS` before its first death to its last, or with a loss in it,
 //! took part. For each, the fight records how strong its team stood against
 //! the others near the centre when they first met there, when each of its
 //! units arrived, which of its losses died with no armed ally within
-//! [`ALONE_TILES`], and the price of the units each side lost.
+//! `ALONE_TILES`, and the price of the units each side lost.
 
 use aftermine_sim::stats::UnitKind;
 use aftermine_sim::{Event, PlayerId, State, TickReport, UnitId};
@@ -52,11 +52,11 @@ pub struct SeatFights {
     pub met_short: u32,
     /// Armed units it lost in fights.
     pub losses: u32,
-    /// Of those, losses with no armed ally within [`ALONE_TILES`].
+    /// Of those, losses with no armed ally within `ALONE_TILES`.
     pub alone: u32,
     /// Its armed units that came into fights.
     pub arrivals: u32,
-    /// Of those, units that came [`LATE_TICKS`] or more after its first in
+    /// Of those, units that came `LATE_TICKS` or more after its first in
     /// the same fight.
     pub late: u32,
     /// Price of its armed units lost in fights.
