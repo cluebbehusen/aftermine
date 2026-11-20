@@ -7,7 +7,7 @@
 //! each blows up the nearest defense once the fight begins.
 
 use super::Scratch;
-use super::defense::{artillery, battery, lobs};
+use super::defense::{GATHER_TILES, artillery, battery, lobs};
 use super::fight::Fight;
 use super::raid::{aim, blast};
 use super::reserve::LOCAL_REACH;
@@ -25,7 +25,7 @@ use crate::profile::ResolvedProfile;
 use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use aftermine_sim::stats::Domain;
-use aftermine_sim::{BuildingKind, PlayerId, UnitId, UnitKind};
+use aftermine_sim::{BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
 use chassis::rng::Pcg32;
@@ -581,14 +581,9 @@ impl Missions {
                 all_idle,
                 ledger,
             ),
-            AttackPhase::Travel => travel_on(
-                observation,
-                mission,
-                (target, rally),
-                &members,
-                all_idle,
-                ledger,
-            ),
+            AttackPhase::Travel => {
+                travel_on(plan, mission, (target, rally), &members, all_idle, ledger)
+            }
             AttackPhase::Engage { .. } => engage_on(
                 plan,
                 mission,
@@ -655,13 +650,14 @@ impl Missions {
 /// enemy, and turns home when its army stands idle short of the target or
 /// its time is up. Returns the target when it gave up on it.
 fn travel_on(
-    observation: &ObservationData,
+    plan: &Plan<'_>,
     mission: &mut Mission,
     (target, rally): (Target, TilePos),
     members: &[&UnitObs],
     all_idle: bool,
     ledger: &mut Ledger,
 ) -> Option<Objective> {
+    let observation = plan.observation;
     let now = observation.tick;
     let arrived = members
         .iter()
@@ -677,7 +673,48 @@ fn travel_on(
         mission.attack_phase(target, AttackPhase::Recover, now, Some(rally));
         return Some(target.objective());
     }
+    if staging(plan.difficulty).is_some() {
+        keep_together(plan, target, members, ledger);
+    }
     None
+}
+
+/// Keeps a travelling army together: a column meets whatever stands on the
+/// way with its fastest members alone. Ground members more than the gathered
+/// distance ahead of the army's middle, by ground distance from home, stop;
+/// idle ones no longer ahead go on.
+fn keep_together(plan: &Plan<'_>, target: Target, members: &[&UnitObs], ledger: &mut Ledger) {
+    let me = plan.observation.me;
+    let mut walking: Vec<(u16, &UnitObs)> = members
+        .iter()
+        .filter(|unit| unit.kind.stats().domain == Domain::Ground)
+        .map(|unit| (plan.map.distance(me, unit.tile), *unit))
+        .filter(|(distance, _)| *distance != UNREACHABLE)
+        .collect();
+    if walking.len() < 2 {
+        return;
+    }
+    walking.sort_by_key(|(distance, unit)| (*distance, unit.id));
+    let middle = walking[(walking.len() - 1) / 2].0;
+    // Ground distances are in tenths of a tile.
+    let ahead =
+        |distance: u16| u32::from(distance) > u32::from(middle) + GATHER_TILES.unsigned_abs() * 10;
+    let leaders: Vec<UnitId> = walking
+        .iter()
+        .filter(|(distance, unit)| ahead(*distance) && !unit.idle)
+        .map(|(_, unit)| unit.id)
+        .collect();
+    let waiting: Vec<UnitId> = walking
+        .iter()
+        .filter(|(distance, unit)| !ahead(*distance) && unit.idle)
+        .map(|(_, unit)| unit.id)
+        .collect();
+    if !leaders.is_empty() {
+        ledger.order(Command::Stop { units: leaders });
+    }
+    if !waiting.is_empty() {
+        ledger.order(hunt(waiting, target.approach));
+    }
 }
 
 /// Moves a fighting attack on: its idle Sappers and breachers cut the

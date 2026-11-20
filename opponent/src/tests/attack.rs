@@ -1918,3 +1918,62 @@ fn a_front_outweighed_withdraws_without_counting_stragglers_behind() {
     );
     assert!(withdraws(&behind, BotDifficulty::Prime));
 }
+
+#[test]
+fn a_travelling_army_keeps_its_front_with_the_body() {
+    // A Scuttler has run far ahead of three Wardens on the way to the East
+    // start: it stops until they come up, rather than meet what stands on
+    // the way alone. The lowest rung walks on as a column.
+    let stops = |difficulty: BotDifficulty| {
+        let mut scenario = field();
+        scenario.units.extend([
+            unit(0, UnitKind::Scuttler, 26, 9),
+            unit(0, UnitKind::Warden, 12, 9),
+            unit(0, UnitKind::Warden, 12, 10),
+            unit(0, UnitKind::Warden, 13, 9),
+        ]);
+        scenario.players[0].bot_config = Some(rung(difficulty));
+        let mut state = scenario.build().unwrap();
+        let scuttler = at(&state, 26, 9);
+        let mut members = vec![
+            scuttler,
+            at(&state, 12, 9),
+            at(&state, 12, 10),
+            at(&state, 13, 9),
+        ];
+        members.sort_unstable();
+        let going = PlayerCommand {
+            player: PlayerId(0),
+            command: Command::Hunt {
+                units: members.clone(),
+                goal: TilePos::new(42, 11),
+                queue: false,
+            },
+        };
+        state.tick(&[going]);
+        advance_to(&mut state, crate::decision_interval(difficulty), &[]);
+        let missions = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "attack",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                    "phase": "travel",
+                },
+                "since": 0,
+                "units": members,
+                "goal": {"x": 42, "y": 11},
+            }],
+        });
+        let mut opponent = restaged(&scenario, &state, missions);
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        commands_of(&commands, |command| match command {
+            Command::Stop { units } => Some(units.clone()),
+            _ => None,
+        })
+        .contains(&vec![scuttler])
+    };
+    assert!(stops(BotDifficulty::Prime));
+    assert!(!stops(BotDifficulty::Scrapheap));
+}
