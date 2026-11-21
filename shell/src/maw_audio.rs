@@ -4,7 +4,7 @@
 
 use crate::audio_engine::Sound;
 use crate::game::{Scene, SoundKind};
-use crate::loop_audio::{LoopBank, Motor, camera_gain, densest};
+use crate::loop_audio::{LoopBank, Motor, camera_voice, densest};
 use aftermine_sim::{UnitId, UnitKind};
 
 pub(crate) const MAW_VOICES: usize = 4;
@@ -24,9 +24,12 @@ pub(crate) fn maw_motors(game: &Scene<'_>) -> Vec<Motor<UnitId>> {
             continue;
         };
         let at = game.presentation.draw_pos(unit.id, unit.pos, alpha);
-        let gain = camera_gain(game, SoundKind::MawCut, at) * motion.grind(alpha);
-        if gain > 0.0 {
-            cuts.push(Motor { key: unit.id, gain });
+        let voice = camera_voice(game, SoundKind::MawCut, at).scaled(motion.grind(alpha));
+        if voice.gain > 0.0 {
+            cuts.push(Motor {
+                key: unit.id,
+                voice,
+            });
         }
     }
     densest(cuts, MAW_VOICES)

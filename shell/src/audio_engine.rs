@@ -387,6 +387,14 @@ pub(crate) fn set_sound_volume(sound: &Sound, volume: f32) {
     }
 }
 
+/// Moves every loop `sound` is playing across the speakers, from -1, the
+/// left only, to 1, the right.
+pub(crate) fn set_sound_panning(sound: &Sound, pan: f32) {
+    for playing in sound.loops.borrow_mut().iter_mut() {
+        playing.set_panning(Panning(pan.clamp(-1.0, 1.0)), Tween::default());
+    }
+}
+
 /// Stops every loop `sound` is playing.
 pub(crate) fn stop_sound(sound: &Sound) {
     for mut playing in sound.loops.borrow_mut().drain(..) {

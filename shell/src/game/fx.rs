@@ -1147,10 +1147,9 @@ impl Presentation {
         }
     }
 
-    /// Tells the music about a hit on a structure: one of this seat's under
-    /// attack, or late in a match one of a hostile seat's that this seat's
-    /// unit hit where it can see.
-    fn note_pressure(
+    /// Late in a match, tells the music about this seat's unit hitting a
+    /// hostile structure it can see.
+    fn note_push(
         &mut self,
         state: &State,
         attacker: aftermine_sim::UnitId,
@@ -1161,9 +1160,7 @@ impl Presentation {
         let (Some(aftermine_sim::Target::Building(_)), Some(owner)) = (target, target_owner) else {
             return;
         };
-        if owner == self.human {
-            self.pressure.structure_hit(self.fx_clock);
-        } else if target_seen
+        if target_seen
             && state.current_tick() >= crate::soundtrack::FINAL_PUSH_AFTER
             && state.hostile(self.human, owner)
             && state
@@ -1201,6 +1198,15 @@ impl Presentation {
         for event in events {
             match event {
                 Event::DamageTaken { player, pos } if *player == self.human => {
+                    // Damage from any weapon counts toward a siege: a
+                    // structure reports its centre when it takes a hit.
+                    if state
+                        .buildings()
+                        .iter()
+                        .any(|building| building.player == *player && building.center() == *pos)
+                    {
+                        self.pressure.structure_hit(self.fx_clock);
+                    }
                     self.raise_alert(world_vec(*pos));
                 }
                 Event::AttackHit {
@@ -1229,7 +1235,7 @@ impl Presentation {
                     }
                     let target_owner =
                         target.and_then(|target| event_target_owner(state, events, target));
-                    self.note_pressure(
+                    self.note_push(
                         state,
                         *attacker,
                         *target,

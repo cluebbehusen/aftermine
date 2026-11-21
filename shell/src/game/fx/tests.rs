@@ -3167,22 +3167,30 @@ fn fire_on_a_seat_s_own_structures_cues_the_score_only_when_it_lasts() {
         .iter()
         .find(|building| building.player == human)
         .expect("a structure of the seat's own");
-    let (id, at) = (building.id, building.anchor.center());
-    let hit = |gun: u32| Event::AttackHit {
-        attacker: UnitId(1000 + gun),
-        attacker_kind: UnitKind::Sentinel,
-        weapon: 0,
-        target: Some(Target::Building(id)),
-        attacker_pos: at,
-        target_pos: at,
+    let (id, at, center) = (building.id, building.anchor.center(), building.center());
+    let hit = |gun: u32| {
+        [
+            Event::AttackHit {
+                attacker: UnitId(1000 + gun),
+                attacker_kind: UnitKind::Sentinel,
+                weapon: 0,
+                target: Some(Target::Building(id)),
+                attacker_pos: at,
+                target_pos: at,
+            },
+            Event::DamageTaken {
+                player: human,
+                pos: center,
+            },
+        ]
     };
-    game.presentation.spawn_fx(&game.state, &[hit(0)]);
+    game.presentation.spawn_fx(&game.state, &hit(0));
     let stray = game.presentation.score_cues();
     assert!(!stray.siege, "one stray shot is no siege");
     assert_eq!(stray.guns, 1, "but its gun is heard");
     for gun in 1..=20 {
         game.presentation.update_fx(&game.state, 0.2);
-        game.presentation.spawn_fx(&game.state, &[hit(gun)]);
+        game.presentation.spawn_fx(&game.state, &hit(gun));
     }
     let cues = game.presentation.score_cues();
     assert!(cues.siege, "sustained fire on the base is a siege");
@@ -3191,6 +3199,52 @@ fn fire_on_a_seat_s_own_structures_cues_the_score_only_when_it_lasts() {
         "twenty guns heard at once are a big battle"
     );
     assert!(!cues.final_push);
+
+    game.presentation.reset_after_jump(&game.state);
+    assert_eq!(
+        game.presentation.score_cues(),
+        crate::soundtrack::Cues::default(),
+        "a jump leaves the fight it heard behind"
+    );
+}
+
+#[test]
+fn shelling_a_seat_s_structures_lays_siege_but_hits_on_its_units_do_not() {
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    let human = game.presentation.human;
+    let structure = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.player == human)
+        .expect("a structure of the seat's own")
+        .center();
+    let unit = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human)
+        .expect("a unit of the seat's own")
+        .pos;
+    let damage = |pos| [Event::DamageTaken { player: human, pos }];
+    for _ in 0..20 {
+        game.presentation.update_fx(&game.state, 0.2);
+        game.presentation.spawn_fx(&game.state, &damage(unit));
+    }
+    assert!(
+        !game.presentation.score_cues().siege,
+        "hits on its units are no siege"
+    );
+    for _ in 0..20 {
+        game.presentation.update_fx(&game.state, 0.2);
+        game.presentation.spawn_fx(&game.state, &damage(structure));
+    }
+    let cues = game.presentation.score_cues();
+    assert!(
+        cues.siege,
+        "shells and splash from guns it cannot see still lay siege"
+    );
+    assert_eq!(cues.guns, 0, "but say nothing of those guns");
 }
 
 #[test]
