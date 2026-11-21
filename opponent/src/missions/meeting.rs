@@ -5,7 +5,7 @@
 use super::attack::{building_value, guards};
 use super::defense::at_home;
 use super::reserve::LOCAL_REACH;
-use super::{against_machines, value};
+use super::{against_machines, artillery, value};
 use crate::frame::{HomeFrame, doubled, gap};
 use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
 use crate::memory::Memory;
@@ -15,10 +15,11 @@ use aftermine_sim::{BuildingKind, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
 
-/// A known armed enemy ground unit that could join a fight: where it stands,
-/// how near a fight it joins from, and what it is worth against the seat's
-/// units.
+/// A known armed enemy ground unit that could join a fight: what it is,
+/// where it stands, how near a fight it joins from, and what it is worth
+/// against the seat's units.
 struct Foe {
+    kind: UnitKind,
     tile: TilePos,
     reach: i32,
     worth: u64,
@@ -45,6 +46,7 @@ fn foes(observation: &ObservationData, memory: &Memory) -> Vec<Foe> {
     visible.sort_unstable();
     let seen = observation.enemy_units.iter().filter_map(|enemy| {
         joins(enemy.kind).map(|reach| Foe {
+            kind: enemy.kind,
             tile: enemy.tile,
             reach,
             worth: value(enemy),
@@ -56,6 +58,7 @@ fn foes(observation: &ObservationData, memory: &Memory) -> Vec<Foe> {
         .filter(|unit| visible.binary_search(&unit.id).is_err())
         .filter_map(|unit| {
             joins(unit.kind).map(|reach| Foe {
+                kind: unit.kind,
                 tile: unit.tile,
                 reach,
                 worth: unit.value(observation.tick) * against_machines(unit.kind) / 1_000,
@@ -76,6 +79,17 @@ fn joining(foes: &[Foe], place: TilePos) -> u64 {
 /// `place` are worth against the seat's units.
 pub(super) fn opposed(observation: &ObservationData, memory: &Memory, place: TilePos) -> u64 {
     joining(&foes(observation, memory), place)
+}
+
+/// What the known armed enemy ground units other than guns that could join a
+/// fight at a gun standing at `place` are worth: its escort, which defenders
+/// going at the gun meet on the way.
+pub(super) fn escort(observation: &ObservationData, memory: &Memory, place: TilePos) -> u64 {
+    let foes: Vec<Foe> = foes(observation, memory)
+        .into_iter()
+        .filter(|foe| !artillery(foe.kind))
+        .collect();
+    joining(&foes, place)
 }
 
 /// Steps along a way between the places it is judged at, each within local
