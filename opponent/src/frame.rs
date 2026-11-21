@@ -8,6 +8,9 @@ use aftermine_sim::observation::ObservationData;
 use chassis::grid::TilePos;
 use std::cmp::Reverse;
 
+/// A target's place in a [`HomeFrame`]'s order, lowest first.
+pub(crate) type Rank = (i64, Reverse<i64>, i64, i64, i64);
+
 /// Ranks targets in the seat's home-relative frame, in doubled coordinates so
 /// tile and footprint centres stay integral.
 ///
@@ -50,11 +53,7 @@ impl HomeFrame {
     /// Ranks `to` as seen from `from`, both in doubled coordinates. A home
     /// exactly at the map centre has no ray; the trailing row-major key then
     /// only keeps the order total.
-    pub(crate) fn rank(
-        self,
-        from: (i64, i64),
-        to: (i64, i64),
-    ) -> (i64, Reverse<i64>, i64, i64, i64) {
+    pub(crate) fn rank(self, from: (i64, i64), to: (i64, i64)) -> Rank {
         let (dx, dy) = (to.0 - from.0, to.1 - from.1);
         let dot = self.radial.0 * dx + self.radial.1 * dy;
         let cross = self.radial.0 * dy - self.radial.1 * dx;

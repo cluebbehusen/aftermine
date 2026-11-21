@@ -7,7 +7,7 @@
 //! each blows up the nearest defense once the fight begins.
 
 use super::Scratch;
-use super::defense::{artillery, battery, lobs};
+use super::defense::{GATHER_TILES, artillery, battery, lobs};
 use super::fight::Fight;
 use super::raid::{aim, blast};
 use super::reserve::LOCAL_REACH;
@@ -25,7 +25,7 @@ use crate::profile::ResolvedProfile;
 use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::scenario::{BotDifficulty, BotStance};
 use aftermine_sim::stats::Domain;
-use aftermine_sim::{BuildingKind, PlayerId, UnitId, UnitKind};
+use aftermine_sim::{BuildingKind, Command, PlayerId, UnitId, UnitKind};
 use chassis::fx::Fx;
 use chassis::grid::{Grid, TilePos};
 use chassis::rng::Pcg32;
@@ -731,12 +731,9 @@ fn engage_on(
             !blasting.contains(id) || mine(observation, *id).is_some_and(|unit| breacher(unit.kind))
         })
         .collect();
-    let near = plan.in_fight(members);
-    let opposition = plan.opposition(members, &near);
+    let opposition = plan.opposition(members, members);
     let outflown = plan.outflown(members);
-    if opposition * 1_000 > fighting(&near) * plan.retreat
-        || (!outflown.is_empty() && outflown.len() == members.len())
-    {
+    if plan.outweighs(members, opposition, &outflown) {
         if ledger.order(run(leaving, rally)) {
             mission.attack_phase(target, AttackPhase::Withdraw, now, Some(rally));
             return Some(target.objective());
@@ -746,6 +743,7 @@ fn engage_on(
     if peel(mission, &outflown, rally, ledger) {
         return None;
     }
+    let goal = mission.goal;
     let Some(fight) = mission.task.fight_mut() else {
         unreachable!("an engaged attack's fight");
     };
@@ -756,6 +754,12 @@ fn engage_on(
         ENGAGE_TICKS,
     );
     let standing = standing(observation, target.objective());
+    // A front falls back onto the army only while the fight goes on at a
+    // target still standing: the fight's time and a target seen gone still
+    // end the attack.
+    if going && standing && plan.fall_back(members, goal, ledger) {
+        return None;
+    }
     // A target seen gone ends the attack on it at once: waiting for every
     // member to idle, or for the fight's progress to stall, never ends with
     // a large army, since some member is always busy and damage anywhere
@@ -889,12 +893,9 @@ fn stage_on(
         .copied()
         .filter(|unit| unit.kind != UnitKind::Sapper && !breacher(unit.kind))
         .collect();
-    let near = plan.in_fight(members);
-    let opposition = plan.opposition(members, &near);
+    let opposition = plan.opposition(members, members);
     let outflown = plan.outflown(members);
-    if opposition * 1_000 > fighting(&near) * plan.retreat
-        || (!outflown.is_empty() && outflown.len() == members.len())
-    {
+    if plan.outweighs(members, opposition, &outflown) {
         if ledger.order(run(mission.units.clone(), rally)) {
             mission.attack_phase(target, AttackPhase::Withdraw, now, Some(rally));
             return Some(target.objective());
@@ -1087,6 +1088,26 @@ fn gun_reach(observation: &ObservationData, impact: TilePos) -> i32 {
     })
 }
 
+/// The member of `army` nearest its middle, ties broken toward `goal` by the
+/// home frame, then by id.
+fn middle_of<'b>(frame: HomeFrame, army: &[&'b UnitObs], goal: TilePos) -> Option<&'b UnitObs> {
+    let count = i64::try_from(army.len()).unwrap_or(i64::MAX);
+    let (sum_x, sum_y) = army.iter().fold((0_i64, 0_i64), |(x, y), unit| {
+        (x + i64::from(unit.tile.x), y + i64::from(unit.tile.y))
+    });
+    // Distances to the middle are compared scaled by the member count, so
+    // the middle never rounds onto one side of a mirrored army.
+    army.iter().copied().min_by_key(|unit| {
+        let dx = i64::from(unit.tile.x) * count - sum_x;
+        let dy = i64::from(unit.tile.y) * count - sum_y;
+        (
+            dx * dx + dy * dy,
+            frame.rank(doubled(goal), doubled(unit.tile)),
+            unit.id,
+        )
+    })
+}
+
 /// Sends the attack's point defenders that have drifted from its army back
 /// over it: to the fighting member nearest the army's middle, once a
 /// defender stands farther from that member than half its reach, so the
@@ -1103,21 +1124,7 @@ fn keep_screens(plan: &Plan<'_>, mission: &Mission, ledger: &mut Ledger) {
         .copied()
         .filter(|unit| !screens(unit) && unit.kind != UnitKind::Sapper)
         .collect();
-    let count = i64::try_from(fighting.len()).unwrap_or(i64::MAX);
-    let (sum_x, sum_y) = fighting.iter().fold((0_i64, 0_i64), |(x, y), unit| {
-        (x + i64::from(unit.tile.x), y + i64::from(unit.tile.y))
-    });
-    // Distances to the middle are compared scaled by the member count, so
-    // the middle never rounds onto one side of a mirrored army.
-    let Some(middle) = fighting.iter().min_by_key(|unit| {
-        let dx = i64::from(unit.tile.x) * count - sum_x;
-        let dy = i64::from(unit.tile.y) * count - sum_y;
-        (
-            dx * dx + dy * dy,
-            plan.frame.rank(doubled(mission.goal), doubled(unit.tile)),
-            unit.id,
-        )
-    }) else {
+    let Some(middle) = middle_of(plan.frame, &fighting, mission.goal) else {
         return;
     };
     let drifted: Vec<UnitId> = members
@@ -1711,6 +1718,73 @@ impl<'a> Plan<'a> {
             .collect()
     }
 
+    /// Whether the known enemies around the army turn it home: they outweigh
+    /// its whole armed strength by the odds the seat gives a fight up at, or
+    /// outfly every member. Enemies that outweigh only the members already
+    /// in the fight turn back the front alone, onto the army.
+    fn outweighs(&self, members: &[&UnitObs], opposition: u64, outflown: &[UnitId]) -> bool {
+        // Escorts that hit only aircraft hold no ground fight.
+        let strength: u64 = members.iter().map(|unit| striking(unit)).sum();
+        opposition * 1_000 > strength * self.retreat
+            || (!outflown.is_empty() && outflown.len() == members.len())
+    }
+
+    /// Pulls the members in the fight back onto the army when the enemies
+    /// around it outweigh them alone though not the whole army, so the front
+    /// neither fights alone nor turns the army home; back with the army they
+    /// go on with it, and idle members away from the fight go on too.
+    /// Returns whether any fell back.
+    fn fall_back(&self, members: &[&UnitObs], goal: TilePos, ledger: &mut Ledger) -> bool {
+        let near = self.in_fight(members);
+        // Only the breachers in the fight answer the guns the front meets.
+        let opposition = self.opposition(members, &near);
+        let front: Vec<&UnitObs> = near
+            .iter()
+            .copied()
+            .filter(|unit| !unit.kind.stats().weapons.is_empty())
+            .collect();
+        let fighting: u64 = front.iter().map(|unit| striking(unit)).sum();
+        if opposition * 1_000 <= fighting * self.retreat {
+            return false;
+        }
+        let body: Vec<&UnitObs> = members
+            .iter()
+            .copied()
+            .filter(|unit| !front.iter().any(|ahead| ahead.id == unit.id))
+            .filter(|unit| unit.kind != UnitKind::Sapper && !breacher(unit.kind))
+            .collect();
+        let Some(middle) = middle_of(self.frame, &body, goal) else {
+            return false;
+        };
+        let back: Vec<UnitId> = front
+            .iter()
+            .filter(|unit| unit.tile.chebyshev(middle.tile) > GATHER_TILES)
+            .map(|unit| unit.id)
+            .collect();
+        if back.is_empty() {
+            return false;
+        }
+        let on: Vec<UnitId> = body
+            .iter()
+            .filter(|unit| unit.idle)
+            .map(|unit| unit.id)
+            .collect();
+        if !on.is_empty() {
+            ledger.order(hunt(on, goal));
+        }
+        // Back with the army, they go on with it. With too few orders left
+        // for both, the front fights on until the army reaches it rather
+        // than come back for nothing or head in again alone.
+        if ledger.room() >= 2 && ledger.order(run(back.clone(), middle.tile)) {
+            ledger.order(Command::Hunt {
+                units: back,
+                goal,
+                queue: true,
+            });
+        }
+        true
+    }
+
     fn armed(&self, members: &[&UnitObs]) -> Armed {
         let now = self.observation.tick;
         // What an enemy in contact with members by `contact` counts against,
@@ -1860,17 +1934,6 @@ fn opposed_parts(
         .map(building_value)
         .sum();
     (units, buildings)
-}
-
-/// What the armed members `in_fight` are worth. Members still walking up
-/// count for nothing until they arrive, so a front that cannot win alone
-/// turns back rather than wait to be fed.
-fn fighting(in_fight: &[&UnitObs]) -> u64 {
-    in_fight
-        .iter()
-        .filter(|unit| !unit.kind.stats().weapons.is_empty())
-        .map(|unit| value(unit))
-        .sum()
 }
 
 /// What the breachers among `units` bring against buildings.

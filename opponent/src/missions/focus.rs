@@ -35,6 +35,8 @@ impl Missions {
                 .iter()
                 .filter_map(|id| mine(observation, *id))
                 .filter(|unit| unit.kind.stats().target_priority == TargetPriority::Danger)
+                // One sent running this decision keeps that order.
+                .filter(|unit| !ledger.running(unit.id))
                 .collect();
             let defending = matches!(mission.task, Task::Defend { .. });
             let Some(focus) = mission.task.focus() else {
