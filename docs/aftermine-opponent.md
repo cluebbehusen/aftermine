@@ -293,13 +293,14 @@ go stale again rather than drawing scouts into the same fire one after another.
 A scout with no stale point left comes back beside its Foundry rather than stand
 where its last point stays in its own sight until something finds it. A seat
 with an army big enough to attack that has seen every hostile start yet knows no
-standing hostile building has lost track of the enemy, and one scout searches
-the map on a grid spaced to a Surveyor's sight until it finds one. A frame whose
-Extractor was lost rests three minutes before the seat builds there again. It
-does no other per-unit micro, except keeping point defenders over the army they
-travel with and sending a wounded Roc home from a lift's fight or a clearance.
-It builds every building kind, reaches every upgrade tier, and trains or
-assembles every unit kind.
+standing hostile building has lost track of the enemy, and its free scouts
+search the map on a grid spaced to a Surveyor's sight until they find one; it
+trains at most one more scout for the search. A frame whose Extractor was lost
+rests three minutes before the seat builds there again. It does no other
+per-unit micro, except keeping point defenders over the army they travel with
+and sending a wounded Roc home from a lift's fight or a clearance. It builds
+every building kind, reaches every upgrade tier, and trains or assembles every
+unit kind.
 
 ## Difficulty, stance and personality
 

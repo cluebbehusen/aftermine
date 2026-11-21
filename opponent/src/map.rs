@@ -2,7 +2,7 @@
 //! map. Terrain and the authored starts never change, so nothing here depends
 //! on what any seat has seen, and every seat of a match shares one model.
 
-use crate::frame::{HomeFrame, doubled, footprint_centre, gap, tiles_of};
+use crate::frame::{HomeFrame, Rank, doubled, footprint_centre, gap, tiles_of};
 use aftermine_sim::map::{Elevation, Map};
 use aftermine_sim::scenario::ScenarioError;
 use aftermine_sim::stats::Domain;
@@ -11,7 +11,7 @@ use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::{Grid, TilePos};
 use std::borrow::Cow;
 use std::cmp::Reverse;
-use std::collections::BinaryHeap;
+use std::collections::{BTreeMap, BinaryHeap};
 
 /// The layout of a base around each Foundry: blocks four tiles a side, with
 /// a lane one tile wide between them every `PERIOD` tiles each way, laid
@@ -1035,27 +1035,48 @@ fn spot_grid(map: &Map, components: &Grid<u32>, size: i32) -> Grid<bool> {
 /// cell of a grid a Surveyor's vision across, the Foundry anchor among `spot`
 /// nearest the cell's middle, on whatever ground it lies. Every place a
 /// Foundry fits lies in a cell with a point, so a search finds it; a wider
-/// grid would leave ground that nobody looks at.
+/// grid would leave ground that nobody looks at. The grid is laid out from
+/// the map's centre and a cell's ties follow the ray from the centre to its
+/// middle, so a half-turn of the map turns the points onto themselves and
+/// mirrored seats search alike; an anchor on a cell's edge counts in both.
 fn search_points(spot: &Grid<bool>) -> Vec<TilePos> {
-    let spacing = UnitKind::Surveyor.stats().vision.max(1);
-    let step = usize::try_from(spacing).unwrap_or(1);
-    let (width, height) = (spot.width(), spot.height());
+    let spacing = i64::from(UnitKind::Surveyor.stats().vision.max(1));
+    let centre = (i64::from(spot.width()), i64::from(spot.height()));
     let (foundry_width, foundry_height) = BuildingKind::Foundry.size();
-    let mut points = Vec::new();
-    for top in (0..height).step_by(step) {
-        for left in (0..width).step_by(step) {
-            let middle = (2 * left + spacing, 2 * top + spacing);
-            let nearest = (top..(top + spacing).min(height))
-                .flat_map(|y| (left..(left + spacing).min(width)).map(move |x| TilePos::new(x, y)))
-                .filter(|anchor| spot.get(*anchor).copied().unwrap_or(false))
-                .min_by_key(|anchor| {
-                    let dx = 2 * anchor.x + foundry_width - middle.0;
-                    let dy = 2 * anchor.y + foundry_height - middle.1;
-                    (dx * dx + dy * dy, anchor.y, anchor.x)
-                });
-            points.extend(nearest);
+    // The cells whose middles, `centre + 2 * k * spacing` in doubled
+    // coordinates, lie within `spacing` of `at`.
+    let cells = |at: i64, centre: i64| {
+        let low = -(-(at - centre - spacing)).div_euclid(2 * spacing);
+        let high = (at - centre + spacing).div_euclid(2 * spacing);
+        low..=high
+    };
+    let mut best: BTreeMap<(i64, i64), (Rank, TilePos)> = BTreeMap::new();
+    for (anchor, open) in spot.iter() {
+        if !*open {
+            continue;
+        }
+        let at = (
+            2 * i64::from(anchor.x) + i64::from(foundry_width),
+            2 * i64::from(anchor.y) + i64::from(foundry_height),
+        );
+        for row in cells(at.1, centre.1) {
+            for column in cells(at.0, centre.0) {
+                let middle = (
+                    centre.0 + 2 * column * spacing,
+                    centre.1 + 2 * row * spacing,
+                );
+                let radial = (middle.0 - centre.0, middle.1 - centre.1);
+                let key = HomeFrame::around(middle, radial).rank(middle, at);
+                let entry = best.entry((row, column)).or_insert((key, anchor));
+                if key < entry.0 {
+                    *entry = (key, anchor);
+                }
+            }
         }
     }
+    let mut points: Vec<TilePos> = best.into_values().map(|(_, anchor)| anchor).collect();
+    points.sort_unstable_by_key(|anchor| (anchor.y, anchor.x));
+    points.dedup();
     points
 }
 

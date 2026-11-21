@@ -421,7 +421,8 @@ impl Missions {
                 .iter()
                 .filter_map(|id| mine(observation, *id))
                 .any(|unit| {
-                    let domain = unit.kind.stats().domain;
+                    // A landed aircraft is hit as a ground body.
+                    let domain = unit.body_domain();
                     let near = |gap: i32, reach: Fx| {
                         reach > Fx::ZERO && Fx::from_num(gap) <= reach + Fx::from_num(1)
                     };

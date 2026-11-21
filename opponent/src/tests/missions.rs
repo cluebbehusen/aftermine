@@ -2233,6 +2233,102 @@ fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
 }
 
 #[test]
+fn a_landed_defender_under_ground_fire_stays() {
+    // A Condor defending out where raiders were has set down, and a Lancer,
+    // which cannot hit aircraft in flight, walks up within reach of it:
+    // landed, it is under fire, so it does not stand down.
+    let mut scenario = widened(arena(0), 12, 20);
+    scenario.units.extend([
+        unit(0, UnitKind::Condor, 13, 8),
+        unit(1, UnitKind::Lancer, 40, 1),
+    ]);
+    scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
+    let mut state = scenario.build().unwrap();
+    let condor = at(&state, 13, 8);
+    let lancer = at(&state, 40, 1);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Run {
+            units: vec![condor],
+            goal: TilePos::new(13, 8),
+            queue: false,
+        },
+    }]);
+    let landed = |state: &State| {
+        state
+            .unit(condor)
+            .is_some_and(aftermine_sim::state::Unit::landed)
+    };
+    while !landed(&state) {
+        assert!(state.current_tick() < 1_500, "premise: the Condor lands");
+        state.tick(&[]);
+    }
+    let parked = state.unit(condor).unwrap().tile();
+    state.tick(&[PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Run {
+            units: vec![lancer],
+            goal: parked.offset(5, 0),
+            queue: false,
+        },
+    }]);
+    while state
+        .unit(lancer)
+        .is_some_and(|unit| unit.tile().chebyshev(parked) > 5)
+    {
+        assert!(state.current_tick() < 3_000, "premise: the Lancer walks up");
+        state.tick(&[]);
+    }
+    let interval = crate::decision_interval(BotDifficulty::Prime);
+    while !state.current_tick().is_multiple_of(interval) {
+        state.tick(&[]);
+    }
+    assert!(
+        landed(&state)
+            && state
+                .unit(lancer)
+                .is_some_and(|unit| unit.tile().chebyshev(parked) <= 5),
+        "premise: the Lancer stands in reach of the landed Condor"
+    );
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap()
+        .id;
+    let mut opponent = restored_with(
+        &seat_with(&scenario, 0, rung(BotDifficulty::Prime)),
+        &scenario,
+        &state,
+        |json| {
+            json["missions"] = serde_json::json!({
+                "next": 1,
+                "list": [{
+                    "id": 0,
+                    "task": {"task": "defend", "asset": home.0, "phase": {"engage": {"focus": null}}},
+                    "since": 0,
+                    "units": [condor],
+                    "goal": {"x": 15, "y": 6},
+                }],
+            });
+        },
+    );
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert!(
+        runs(&commands).iter().all(|(units, _)| units != &[condor]),
+        "{commands:?}"
+    );
+    assert!(
+        trace
+            .unwrap()
+            .missions
+            .iter()
+            .all(|mission| mission.phase != Phase::Recover),
+        "it stays engaged"
+    );
+}
+
+#[test]
 fn a_defense_whose_order_home_finds_no_room_stays_engaged() {
     // Two defenders out where raiders by the start were, the raiders gone,
     // while raiders press two other Foundries: at Scrapheap, answering those

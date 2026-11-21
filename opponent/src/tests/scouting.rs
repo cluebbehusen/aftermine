@@ -890,6 +890,30 @@ fn a_scout_out_of_time_before_it_sees_its_point_keeps_going() {
 }
 
 #[test]
+fn search_points_turn_onto_themselves_with_a_half_turned_map() {
+    // The arena and its widened form are the same after a half-turn, but
+    // neither is a whole number of Surveyor sights across.
+    for scenario in [arena(0), super::missions::widened(arena(0), 12, 20)] {
+        let map = MapModel::from_scenario(&scenario).unwrap();
+        let (width, height) = map.size();
+        let (foundry_width, foundry_height) = BuildingKind::Foundry.size();
+        let search: Vec<TilePos> = crate::missions::points(&map, PlayerId(0))
+            .iter()
+            .filter(|point| point.search)
+            .map(|point| point.anchor)
+            .collect();
+        assert!(!search.is_empty(), "premise: the map has search points");
+        for anchor in &search {
+            let turned = TilePos::new(
+                width - foundry_width - anchor.x,
+                height - foundry_height - anchor.y,
+            );
+            assert!(search.contains(&turned), "{anchor:?} has no {turned:?}");
+        }
+    }
+}
+
+#[test]
 fn an_island_in_a_wide_pit_has_a_search_point() {
     // A pit splits the field, and an island in it holds room for one
     // Foundry, farther than a Surveyor sees from any open ground.

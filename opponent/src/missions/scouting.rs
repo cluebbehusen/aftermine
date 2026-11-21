@@ -320,7 +320,7 @@ impl Missions {
             })
             .map(|(index, _)| index)
             .collect();
-        // One scout searches; the search points never train a fleet.
+        // Free scouts search; the search points train at most one more.
         let searches = stale.iter().filter(|index| search[**index]).count();
         stale.len() - searches + searches.min(1)
     }
