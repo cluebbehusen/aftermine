@@ -1972,3 +1972,74 @@ fn a_front_outweighed_falls_back_onto_the_army() {
         "short of orders, the six come on to the two"
     );
 }
+
+#[test]
+fn breachers_on_their_way_answer_no_guns_at_the_front() {
+    // Two Sentinels in contact with two East Sentinels and two Turrets, the
+    // rest of the attack far behind with a Maw: the Maw would smash the
+    // Turrets once there, but on its way it answers nothing, so the front
+    // falls back onto the army. With the Maw beside the front, it answers
+    // them and the front fights on.
+    let front = [(30, 11), (30, 12)];
+    let behind = [(14, 3), (15, 3), (14, 7), (15, 7)];
+    let falls_back = |maw: (i32, i32)| {
+        let mut scenario = field();
+        for (x, y) in front.iter().chain(&behind) {
+            scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+        }
+        scenario.units.push(unit(0, UnitKind::Maw, maw.0, maw.1));
+        for (x, y) in [(33, 11), (33, 12)] {
+            scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+        }
+        for (x, y) in [(32, 10), (32, 13)] {
+            scenario
+                .buildings
+                .push(building(1, BuildingKind::Turret, x, y));
+        }
+        scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
+        let state = scenario.build().unwrap();
+        let mut members: Vec<UnitId> = front
+            .iter()
+            .chain(&behind)
+            .chain([&maw])
+            .map(|(x, y)| at(&state, *x, *y))
+            .collect();
+        members.sort_unstable();
+        let mut ahead: Vec<UnitId> = front.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+        ahead.sort_unstable();
+        let missions = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "attack",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                    "phase": {"engage": {"focus": null, "progressed": 0}},
+                },
+                "since": 0,
+                "units": members,
+                "goal": {"x": 42, "y": 11},
+            }],
+        });
+        let mut state = state;
+        advance_to(
+            &mut state,
+            crate::decision_interval(BotDifficulty::Prime),
+            &[],
+        );
+        let mut opponent = restaged(&scenario, &state, missions);
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let withdraws = trace
+            .unwrap()
+            .missions
+            .iter()
+            .any(|mission| mission.phase == Phase::Withdraw);
+        assert!(!withdraws, "the whole army is not outweighed");
+        runs(&commands).iter().any(|(units, _)| *units == ahead)
+    };
+    assert!(
+        !falls_back((27, 11)),
+        "premise: beside the front, it fights on"
+    );
+    assert!(falls_back((14, 5)), "on its way, it answers nothing");
+}
