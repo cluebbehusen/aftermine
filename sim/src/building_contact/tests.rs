@@ -17,6 +17,37 @@ fn every_outline() -> Vec<(BuildingKind, Outline)> {
     all
 }
 
+/// Every distinct outline alone, then each site's outline joined by the
+/// outlines it is yet to show, as its builder meets it. Each comes with the
+/// single outlines it joins.
+fn every_surface(anchor: TilePos) -> Vec<(BuildingKind, Surface, Vec<Surface>)> {
+    let single = |kind: BuildingKind, outline: Outline| Surface {
+        outline,
+        later: &[],
+        finished: None,
+        anchor,
+        size: kind.size(),
+    };
+    let mut all: Vec<_> = every_outline()
+        .into_iter()
+        .map(|(kind, shown)| (kind, single(kind, shown), vec![single(kind, shown)]))
+        .collect();
+    for kind in BuildingKind::ALL {
+        for tier in 0..u8::try_from(kind.tiers().len()).unwrap() {
+            for stage in 0..CONSTRUCTION_STAGES {
+                let surface = single(kind, outline(kind, tier, Some(stage)))
+                    .with_outlines_to_come(kind, tier, stage);
+                let parts: Vec<_> = surface.outlines().map(|part| single(kind, part)).collect();
+                if parts.iter().all(|part| part.outline == surface.outline) {
+                    continue;
+                }
+                all.push((kind, surface, parts));
+            }
+        }
+    }
+    all
+}
+
 #[test]
 fn edges_join_each_corner_to_the_next_and_close_the_outline() {
     for (kind, outline) in every_outline() {
@@ -27,6 +58,8 @@ fn edges_join_each_corner_to_the_next_and_close_the_outline() {
         ] {
             let surface = Surface {
                 outline,
+                later: &[],
+                finished: None,
                 anchor,
                 size: kind.size(),
             };
@@ -149,7 +182,8 @@ fn outlines_near_mirror_symmetry_are_exactly_symmetric() {
 }
 
 /// The pruned queries against a plain walk over every edge, around every
-/// outline, from points inside, beside, and well clear of it.
+/// outline and every builder's union of outlines, from points inside,
+/// beside, and well clear of it.
 #[test]
 fn pruned_surface_queries_match_a_walk_over_every_edge() {
     let mut rng = chassis::rng::Pcg32::new(41, 7);
@@ -160,13 +194,12 @@ fn pruned_surface_queries_match_a_walk_over_every_edge() {
             )
     };
     let (mut blocked, mut open) = (0, 0);
-    for (kind, outline) in every_outline() {
+    let mut joined = 0;
+    for (kind, surface, parts) in every_surface(TilePos::new(10, 20)) {
         let size = kind.size();
-        let surface = Surface {
-            outline,
-            anchor: TilePos::new(10, 20),
-            size,
-        };
+        joined += usize::from(parts.len() > 1);
+        let edges = || parts.iter().flat_map(|part| part.edges());
+        let inside = |point: Vec2Fx| parts.iter().any(|part| part.contains(point));
         let center = Vec2Fx::new(Fx::from_num(10), Fx::from_num(20))
             + Vec2Fx::new(Fx::from_num(size.0), Fx::from_num(size.1)) / Fx::from_num(2);
         for _ in 0..400 {
@@ -174,15 +207,14 @@ fn pruned_surface_queries_match_a_walk_over_every_edge() {
             let to =
                 from + (Vec2Fx::new(near(10, size.0), near(20, size.1)) - from) / Fx::from_num(4);
             let radius = near(0, 0) / 8 + Fx::lit("0.2");
-            let closest = surface
-                .edges()
+            let closest = edges()
                 .map(|(a, b)| closest_on_segment(from, a, b))
                 .min_by_key(|p| (from.dist_sq(*p), cross(from - center, *p - center)))
                 .expect("nonempty outline");
             assert_eq!(surface.closest(from), closest, "{kind:?} {from:?}");
-            let clear = !surface.contains(from)
-                && !surface.contains(to)
-                && surface.edges().all(|(a, b)| {
+            let clear = !inside(from)
+                && !inside(to)
+                && edges().all(|(a, b)| {
                     !segments_cross(from, to, a, b)
                         && [
                             from.dist_sq(closest_on_segment(from, a, b)),
@@ -199,7 +231,7 @@ fn pruned_surface_queries_match_a_walk_over_every_edge() {
                 "{kind:?} {from:?} {to:?}"
             );
             let reach = radius.abs() + ROUNDING_MARGIN;
-            let meets = surface.edges().any(|(a, b)| {
+            let meets = edges().any(|(a, b)| {
                 segments_cross(from, to, a, b)
                     || [
                         from.dist_sq(closest_on_segment(from, a, b)),
@@ -220,8 +252,8 @@ fn pruned_surface_queries_match_a_walk_over_every_edge() {
         }
     }
     assert!(
-        blocked > 200 && open > 200,
-        "{blocked} blocked, {open} open"
+        blocked > 200 && open > 200 && joined > 0,
+        "{blocked} blocked, {open} open, {joined} joined"
     );
 }
 
@@ -232,6 +264,8 @@ fn sides_hull_each_outline_and_face_outward() {
     for (kind, outline) in every_outline() {
         let surface = Surface {
             outline,
+            later: &[],
+            finished: None,
             anchor: TilePos::new(10, 20),
             size: kind.size(),
         };
@@ -252,6 +286,8 @@ fn sides_hull_each_outline_and_face_outward() {
     let count = |kind: BuildingKind, outline: Outline| {
         Surface {
             outline,
+            later: &[],
+            finished: None,
             anchor: TilePos::new(10, 20),
             size: kind.size(),
         }
@@ -272,6 +308,8 @@ fn sides_hull_each_outline_and_face_outward() {
 fn a_flat_tool_meets_only_a_side_it_faces_square() {
     let surface = Surface {
         outline: SCAFFOLD,
+        later: &[],
+        finished: None,
         anchor: TilePos::new(10, 20),
         size: (2, 2),
     };
@@ -351,6 +389,8 @@ fn every_closest_surface_point_lies_on_the_footprint() {
         let size = kind.size();
         let surface = Surface {
             outline,
+            later: &[],
+            finished: None,
             anchor,
             size,
         };
@@ -386,7 +426,7 @@ fn surface_work_reach(state: &State, unit: &crate::Unit, building: crate::Buildi
         return false;
     };
     let reach = work_reach(unit);
-    let surface = state.contact_surface(b);
+    let surface = state.work_surface(unit, b);
     unit.pos.dist_sq(surface.closest(unit.pos)) <= reach * reach
         && surface.clear(unit.pos, unit.pos, unit.kind.stats().radius)
         && state
@@ -471,5 +511,106 @@ fn work_reach_matches_the_surface_alone() {
     assert!(
         reached > 0 && missed > 0 && skipped > 0,
         "{reached} reached, {missed} missed, {skipped} beyond the footprint reject"
+    );
+}
+
+/// A builder docked at its stance, at any stage of a site, stays in reach
+/// with its hull clear through every stage the site shows after, and its
+/// hull stays clear of the finished building. Docked against the current
+/// outline alone, some would not.
+#[test]
+fn a_docked_builder_stays_clear_of_every_outline_still_to_come() {
+    use crate::state::BuildingPhase;
+    let (map, _) = crate::map::Map::parse(&vec![".".repeat(24); 24]).unwrap();
+    let seat = crate::state::Player {
+        name: "p".into(),
+        team: 0,
+        scrap: 0,
+        recovery: crate::state::Recovery::Ready,
+        resigned: false,
+        eliminated_at: None,
+    };
+    let mut state = State::assemble(map, vec![seat]);
+    let anchor = TilePos::new(10, 10);
+    let site = state.place_building(crate::PlayerId(0), BuildingKind::Foundry, anchor);
+    let builders: Vec<_> = crate::stats::UnitKind::ALL
+        .iter()
+        .filter(|kind| kind.stats().harvest.is_some())
+        .map(|&kind| {
+            assert!(kind.stats().contact_reach.is_none(), "{kind:?}");
+            state.spawn_unit(crate::PlayerId(0), kind, anchor.center())
+        })
+        .collect();
+    assert!(!builders.is_empty());
+    let (mut docked, mut spoiled) = (0, 0);
+    for kind in BuildingKind::ALL {
+        if kind.crew_pads().is_some() {
+            continue;
+        }
+        for tier in 0..u8::try_from(kind.tiers().len()).unwrap() {
+            let b = state.building_mut(site).unwrap();
+            (b.kind, b.tier) = (kind, tier);
+            let total = b.stats().construction.build_ticks;
+            let at = |stage: u8| BuildingPhase::Site {
+                progress: u32::from(stage) * total / u32::from(CONSTRUCTION_STAGES),
+            };
+            for stage in 0..CONSTRUCTION_STAGES {
+                for &builder in &builders {
+                    state.building_mut(site).unwrap().phase = at(stage);
+                    state.unit_mut(builder).unwrap().order = crate::Order::Build { site };
+                    let unit = state.unit(builder).unwrap();
+                    let radius = unit.kind.stats().radius;
+                    let clearance = radius + crate::stats::WORK_FOOTPRINT_GAP;
+                    let b = state.building(site).unwrap();
+                    let (surface, shown) = (state.work_surface(unit, b), state.contact_surface(b));
+                    let entries = crate::geometry::work_positions(
+                        anchor,
+                        kind.size(),
+                        clearance,
+                        radius * crate::stats::CONTACT_COMPRESSION,
+                    );
+                    for entry in entries {
+                        for (pos, joined) in [
+                            (surface.stance(entry, clearance), true),
+                            (shown.stance(entry, clearance), false),
+                        ] {
+                            state.unit_mut(builder).unwrap().pos = pos;
+                            for next in stage..CONSTRUCTION_STAGES {
+                                state.building_mut(site).unwrap().phase = at(next);
+                                let reached = state
+                                    .in_building_work_reach(state.unit(builder).unwrap(), site);
+                                if joined {
+                                    assert!(
+                                        reached,
+                                        "{kind:?} tier {tier}: docked at stage {stage} from {entry:?}, out of reach at stage {next}"
+                                    );
+                                    docked += 1;
+                                } else {
+                                    spoiled += usize::from(!reached);
+                                }
+                            }
+                            state.building_mut(site).unwrap().phase =
+                                BuildingPhase::Built { training: 0 };
+                            let clear = state
+                                .contact_surface(state.building(site).unwrap())
+                                .clear(pos, pos, radius);
+                            if joined {
+                                assert!(
+                                    clear,
+                                    "{kind:?} tier {tier}: docked at stage {stage} from {entry:?}, under the finished building"
+                                );
+                            } else {
+                                spoiled += usize::from(!clear);
+                            }
+                            state.building_mut(site).unwrap().phase = at(stage);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        docked > 0 && spoiled > 0,
+        "{docked} docked, {spoiled} spoiled"
     );
 }

@@ -3041,9 +3041,11 @@ pub const GOAL_SNAP_RADIUS: i32 = 3;
 /// tile but peaks, so their nearest open sky can sit farther out.
 pub const AIR_GOAL_SNAP_RADIUS: i32 = GOAL_SNAP_RADIUS + 3;
 
-/// Same-owner bodies may close to this fraction of their combined radii,
-/// so a friendly group packs tighter than it spaces from enemies.
-pub const SAME_OWNER_COMPRESSION: Fx = Fx::lit("0.65");
+/// Bodies of one seat may close to this fraction of their combined radii
+/// where one of them works or strikes in contact and neither fires from
+/// range, so crews and cutters pack round a node or structure tighter than
+/// bodies space anywhere else.
+pub const CONTACT_COMPRESSION: Fx = Fx::lit("0.65");
 
 /// How far from its body a neighbor's destination may lie and still count
 /// as a claim on that position.

@@ -237,3 +237,40 @@ fn the_staleness_ramp_is_fresh_then_caps() {
         "old memories fade to a floor, never vanish"
     );
 }
+
+#[test]
+fn larger_bodies_draw_over_smaller_ones_and_equal_bodies_keep_id_order() {
+    use aftermine_sim::UnitKind;
+    let kinds = [
+        UnitKind::Piledriver,
+        UnitKind::Lancer,
+        UnitKind::Warden,
+        UnitKind::Sentinel,
+        UnitKind::Breaker,
+        UnitKind::Harvester,
+    ];
+    let scenario: aftermine_sim::Scenario = serde_json::from_value(serde_json::json!({
+        "name": "draw order", "mode": "sandbox", "map": vec![".".repeat(16); 6],
+        "players": [{"name": "Local", "scrap": 0, "bot": false}],
+        "units": kinds.iter().enumerate().map(|(i, kind)| serde_json::json!({
+            "player": 0, "kind": kind, "x": 2 + 2 * i, "y": 3
+        })).collect::<Vec<_>>(),
+    }))
+    .unwrap();
+    let state = scenario.build().unwrap();
+    let order: Vec<_> = super::unit_draw_order(state.units().iter())
+        .into_iter()
+        .map(|unit| unit.kind)
+        .collect();
+    assert_eq!(
+        order,
+        [
+            UnitKind::Lancer,
+            UnitKind::Sentinel,
+            UnitKind::Harvester,
+            UnitKind::Warden,
+            UnitKind::Piledriver,
+            UnitKind::Breaker,
+        ]
+    );
+}

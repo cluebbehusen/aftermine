@@ -21,6 +21,7 @@ pub(in crate::tick) mod march;
 
 pub(in crate::tick) use hulls::{make_way, round_standing_hulls, route_round_hulls};
 
+use super::crowding::Post;
 use super::flight;
 use crate::map::Map;
 use crate::state::{GroundTerrain, Motor, Order, ParkedBodies, PathFollow, State};
@@ -1026,7 +1027,7 @@ pub(super) fn resolve_collisions(
     let Some(pairs) = collision_pairs(state, reversed, index, &owner_ranks) else {
         return;
     };
-    let productive = productive_posts(state, &pairs);
+    let posts = posts(state, &pairs);
     let drop_offs = super::brain::DropOffs::standing(state);
     let mut spent = vec![Fx::ZERO; state.units.len()];
     for _ in 0..COLLISION_ITERATIONS {
@@ -1035,7 +1036,7 @@ pub(super) fn resolve_collisions(
             &drop_offs,
             travel,
             &owner_ranks,
-            &productive,
+            &posts,
             &mut spent,
             &pairs,
         ) {
@@ -1044,23 +1045,23 @@ pub(super) fn resolve_collisions(
     }
 }
 
-/// Whether each body in a candidate pair holds a productive post, read once
-/// before any correction. A post can hang on another body (an attacker's
+/// The post each body in a candidate pair holds, read once before any
+/// correction. A post can hang on another body (an attacker's
 /// target must stay in range), so reading it between corrections would let
 /// one seat's pairs see the other seat's half-resolved positions, and mirror
 /// seats would stop resolving alike.
-fn productive_posts(state: &State, pairs: &[(usize, usize)]) -> Vec<bool> {
+fn posts(state: &State, pairs: &[(usize, usize)]) -> Vec<Option<Post>> {
     let mut read = vec![false; state.units.len()];
-    let mut productive = vec![false; state.units.len()];
+    let mut posts = vec![None; state.units.len()];
     for &(i, j) in pairs {
         for slot in [i, j] {
             if !read[slot] {
                 read[slot] = true;
-                productive[slot] = super::crowding::productive(state, &state.units[slot]);
+                posts[slot] = super::crowding::post(state, &state.units[slot]);
             }
         }
     }
-    productive
+    posts
 }
 
 /// Correction candidates for one body of an overlapping pair, best
@@ -1436,7 +1437,7 @@ fn relaxation_pass(
     drop_offs: &super::brain::DropOffs,
     travel: &[Vec2Fx],
     owner_ranks: &[usize],
-    productive: &[bool],
+    posts: &[Option<Post>],
     spent: &mut Vec<Fx>,
     pairs: &[(usize, usize)],
 ) -> bool {
@@ -1471,12 +1472,8 @@ fn relaxation_pass(
         if dist_sq >= full_spacing * full_spacing {
             continue;
         }
-        let (productive_i, productive_j) = (productive[i], productive[j]);
-        let min_dist = if productive_i || productive_j {
-            super::crowding::spacing(&state.units[i], &state.units[j])
-        } else {
-            full_spacing
-        };
+        let min_dist =
+            super::crowding::spacing((&state.units[i], posts[i]), (&state.units[j], posts[j]));
         let rest = min_dist - COLLISION_SLOP;
         if dist_sq >= rest * rest {
             continue;
@@ -1497,9 +1494,9 @@ fn relaxation_pass(
         let (share_i, share_j) = push_shares(
             (state.units[i].landed(), state.units[j].landed()),
             (
-                is_anchored(&state.units[i]) && productive_i
+                is_anchored(&state.units[i]) && posts[i].is_some()
                     || state.units[i].kind.stats().structural,
-                is_anchored(&state.units[j]) && productive_j
+                is_anchored(&state.units[j]) && posts[j].is_some()
                     || state.units[j].kind.stats().structural,
             ),
             (radius_i, radius_j),

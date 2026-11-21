@@ -6,24 +6,46 @@ use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use std::collections::BTreeSet;
 
-pub(crate) fn spacing(a: &Unit, b: &Unit) -> Fx {
+/// How a body standing still in reach meets its work or target. Bodies
+/// in contact pack close beside their own side, as a crew round a node or
+/// cutters round a structure. A body firing from range keeps every body
+/// at full spacing: a firing line packed that tight draws each hull over
+/// the next.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Post {
+    Contact,
+    Ranged,
+}
+
+/// How close two bodies may stand, each at its post if it holds one.
+/// Bodies of one seat pack only where one of them is in contact and
+/// neither fires from range, so a worker still reaches a packed position
+/// past a crewmate that is not working yet.
+pub(crate) fn spacing(
+    (a, a_post): (&Unit, Option<Post>),
+    (b, b_post): (&Unit, Option<Post>),
+) -> Fx {
     let distance = a.kind.stats().radius + b.kind.stats().radius;
-    if a.player == b.player {
-        distance * crate::stats::SAME_OWNER_COMPRESSION
+    let packed = a.player == b.player
+        && (a_post == Some(Post::Contact) || b_post == Some(Post::Contact))
+        && a_post != Some(Post::Ranged)
+        && b_post != Some(Post::Ranged);
+    if packed {
+        distance * crate::stats::CONTACT_COMPRESSION
     } else {
         distance
     }
 }
-/// Whether another body works or arrives at `point` before `id` may.
-/// `index` holds the bodies as they stand now.
+/// Whether another body works or arrives at `point` before the asking
+/// unit may hold it at its post. `index` holds the bodies as they stand now.
 pub(in crate::tick) fn claimed(
     state: &State,
     index: &UnitIndex,
-    id: UnitId,
+    asker: (UnitId, Post),
     point: Vec2Fx,
     retained: bool,
 ) -> bool {
-    let pressure = Pressure::new(state, index, id, point, Fx::ZERO);
+    let pressure = Pressure::new(state, index, asker, point, Fx::ZERO);
     let (occupied, _, arriving) = pressure.rank(point, retained);
     occupied > 0 || arriving > 0
 }
@@ -32,7 +54,7 @@ struct Neighbor {
     pos: Vec2Fx,
     destination: Option<Vec2Fx>,
     spacing: Fx,
-    productive: bool,
+    post: Option<Post>,
     /// For a unit of the same seat, whether its id comes first; unit ids
     /// order different seats unevenly, so they never rank across seats.
     earlier: Option<bool>,
@@ -54,7 +76,13 @@ impl Pressure {
     /// within that distance of `center`, for the widest body, are walked,
     /// in the index's order: [`rank`](Self::rank) only counts, so the order
     /// of the neighbors never matters.
-    fn new(state: &State, index: &UnitIndex, id: UnitId, center: Vec2Fx, reach: Fx) -> Self {
+    fn new(
+        state: &State,
+        index: &UnitIndex,
+        (id, post): (UnitId, Post),
+        center: Vec2Fx,
+        reach: Fx,
+    ) -> Self {
         let unit = state.unit(id).expect("position owner");
         let window = reach
             + unit.kind.stats().radius
@@ -77,7 +105,8 @@ impl Pressure {
                 .filter(|other| {
                     // Margin for fixed-point rounding in the squared distances.
                     let bound = reach
-                        + spacing(unit, other)
+                        + unit.kind.stats().radius
+                        + other.kind.stats().radius
                         + crate::stats::ARRIVAL_WINDOW
                         + const { Fx::lit("0.0625") };
                     other.pos.dist_sq(center) < bound * bound
@@ -91,11 +120,12 @@ impl Pressure {
                             other.pos.dist_sq(point)
                                 <= crate::stats::ARRIVAL_WINDOW * crate::stats::ARRIVAL_WINDOW
                         });
+                    let other_post = self::post(state, other);
                     Neighbor {
                         pos: other.pos,
                         destination,
-                        spacing: spacing(unit, other),
-                        productive: productive(state, other),
+                        spacing: spacing((unit, Some(post)), (other, other_post)),
+                        post: other_post,
                         earlier: (other.player == unit.player).then_some(other.id < id),
                     }
                 })
@@ -121,7 +151,7 @@ impl Pressure {
         for other in &self.neighbors {
             let distance = other.spacing * other.spacing;
             bodies += usize::from(point.dist_sq(other.pos) < distance);
-            occupied += usize::from(other.productive && point.dist_sq(other.pos) < distance);
+            occupied += usize::from(other.post.is_some() && point.dist_sq(other.pos) < distance);
             arriving += usize::from(other.destination.is_some_and(|destination| {
                 point.dist_sq(destination) < distance
                     && (!retained || self.precedes(other, destination, point))
@@ -162,13 +192,22 @@ pub(in crate::tick) fn sort_stances(
 pub(in crate::tick) fn choose(
     state: &State,
     index: &UnitIndex,
-    id: UnitId,
+    asker: (UnitId, Post),
     candidates: Vec<Position>,
     center: Vec2Fx,
     open: impl Fn(chassis::grid::TilePos) -> bool,
     route: impl FnMut(chassis::grid::TilePos) -> Option<Vec<chassis::grid::TilePos>>,
 ) -> Option<crate::state::PathFollow> {
-    choose_admitted(state, index, id, candidates, center, open, |_| true, route)
+    choose_admitted(
+        state,
+        index,
+        asker,
+        candidates,
+        center,
+        open,
+        |_| true,
+        route,
+    )
 }
 
 /// [`choose`] among the `candidates` that `admit` accepts, for an
@@ -181,7 +220,7 @@ pub(in crate::tick) fn choose(
 pub(in crate::tick) fn choose_admitted(
     state: &State,
     index: &UnitIndex,
-    id: UnitId,
+    (id, post): (UnitId, Post),
     mut candidates: Vec<Position>,
     center: Vec2Fx,
     open: impl Fn(chassis::grid::TilePos) -> bool,
@@ -198,7 +237,7 @@ pub(in crate::tick) fn choose_admitted(
         .max()
         .unwrap_or(Fx::ZERO)
         + push;
-    let pressure = Pressure::new(state, index, id, center, reach);
+    let pressure = Pressure::new(state, index, (id, post), center, reach);
     candidates.sort_by_cached_key(|candidate| pressure.rank(candidate.point, false));
     let first = candidates.iter().position(&admit);
     candidates.drain(..first.unwrap_or(candidates.len()));
@@ -268,43 +307,54 @@ pub(in crate::tick) fn choose_admitted(
     }
     None
 }
-pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
+/// The post `unit` holds where it stands, if it is stopped in reach of
+/// its work or of a target it can hit.
+pub(crate) fn post(state: &State, unit: &Unit) -> Option<Post> {
     if unit.kind.stats().turn_rate > 0 || !unit.work_stopped() {
-        return false;
+        return None;
     }
     if unit.unloading().is_some() {
-        return true;
+        return Some(Post::Contact);
     }
     if let Some(patient) = unit.order.torch() {
         return state
             .unit(patient)
-            .is_some_and(|p| p.work_stopped() && unit.in_repair_reach(p));
+            .is_some_and(|p| p.work_stopped() && unit.in_repair_reach(p))
+            .then_some(Post::Contact);
     }
     match unit.order {
         crate::Order::Harvest {
             node,
             withdrawing: false,
             ..
-        } => {
-            unit.kind
-                .stats()
-                .harvest
-                .is_some_and(|h| unit.carrying() < h.capacity)
-                && unit.in_work_reach(node, (1, 1))
-        }
-        crate::Order::Build { site } => state.in_building_work_reach(unit, site),
+        } => (unit
+            .kind
+            .stats()
+            .harvest
+            .is_some_and(|h| unit.carrying() < h.capacity)
+            && unit.in_work_reach(node, (1, 1)))
+        .then_some(Post::Contact),
+        crate::Order::Build { site } => state
+            .in_building_work_reach(unit, site)
+            .then_some(Post::Contact),
         crate::Order::Repair { building }
         | crate::Order::Salvage { building }
         | crate::Order::Tend {
             weld: Some(crate::Target::Building(building)),
             ..
-        } => state.in_building_work_reach(unit, building),
-        crate::Order::Retire { crucible, .. } => state.building(crucible).is_some_and(|b| {
-            unit.pos.dist_sq(b.closest_point_to(unit.pos))
-                <= crate::stats::RETIRE_REACH * crate::stats::RETIRE_REACH
-        }),
-        crate::Order::Attack { target, .. } => {
-            state.attack_view(unit.player, target).is_some_and(|view| {
+        } => state
+            .in_building_work_reach(unit, building)
+            .then_some(Post::Contact),
+        crate::Order::Retire { crucible, .. } => state
+            .building(crucible)
+            .is_some_and(|b| {
+                unit.pos.dist_sq(b.closest_point_to(unit.pos))
+                    <= crate::stats::RETIRE_REACH * crate::stats::RETIRE_REACH
+            })
+            .then_some(Post::Contact),
+        crate::Order::Attack { target, .. } => state
+            .attack_view(unit.player, target)
+            .is_some_and(|view| {
                 let aim = match view.entity {
                     Some(crate::Target::Building(id))
                         if unit.kind.stats().contact_reach.is_some() =>
@@ -329,8 +379,12 @@ pub(crate) fn productive(state: &State, unit: &Unit) -> bool {
                         )
                 })
             })
-        }
-        _ => false,
+            .then_some(if unit.kind.stats().contact_reach.is_some() {
+                Post::Contact
+            } else {
+                Post::Ranged
+            }),
+        _ => None,
     }
 }
 

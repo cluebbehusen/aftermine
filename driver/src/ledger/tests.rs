@@ -877,7 +877,7 @@ fn a_crash_is_credited_to_the_aircraft_that_fell() {
     // Sentinels however they jostle while shooting.
     let mut units = vec![(0, UnitKind::Condor, 16, 6)];
     for y in 3..10 {
-        for x in 12..21 {
+        for x in 8..21 {
             if (x, y) != (16, 6) {
                 units.push((1, UnitKind::Sentinel, x, y));
             }

@@ -259,14 +259,14 @@ fn mirrored_collision_pushes_agree_at_rock_faces_and_corners() {
             let ranks = owner_local_ranks(&state);
             let mut index = UnitIndex::new();
             let pairs = collision_pairs(&state, false, &mut index, &ranks).unwrap_or_default();
-            let productive = productive_posts(&state, &pairs);
+            let posts = posts(&state, &pairs);
             let drop_offs = crate::tick::brain::DropOffs::standing(&state);
             relaxation_pass(
                 &mut state,
                 &drop_offs,
                 &[Vec2Fx::ZERO; 4],
                 &ranks,
-                &productive,
+                &posts,
                 &mut vec![],
                 &pairs,
             );
@@ -1015,14 +1015,14 @@ fn collision_finds_border_crossing_pairs_in_either_id_order() {
 
             assert!(
                 {
-                    let productive = productive_posts(&state, &pairs);
+                    let posts = posts(&state, &pairs);
                     let drop_offs = crate::tick::brain::DropOffs::standing(&state);
                     relaxation_pass(
                         &mut state,
                         &drop_offs,
                         &travel,
                         &owner_ranks,
-                        &productive,
+                        &posts,
                         &mut spent,
                         &pairs,
                     )

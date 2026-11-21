@@ -982,9 +982,9 @@ fn approach_source(
     let keep = unit.path.as_ref().is_some_and(|path| {
         goal_matches(path.goal)
             && (from.chebyshev(path.goal) > 1
-                || path
-                    .final_point
-                    .is_none_or(|point| !crowding::claimed(state, index, id, point, true)))
+                || path.final_point.is_none_or(|point| {
+                    !crowding::claimed(state, index, (id, crowding::Post::Contact), point, true)
+                }))
             && keep_flagged_route(state, id, path, |waypoint| {
                 danger.route_safe_from(from, waypoint)
             })
@@ -1029,9 +1029,9 @@ fn approach_authoritative_source(
             keep_flagged_route(state, id, path, open) && !round_hull_now(state, id, path, open);
         if near_route_is_clear
             && (from.chebyshev(path.goal) > 1
-                || path
-                    .final_point
-                    .is_none_or(|point| !crowding::claimed(state, index, id, point, true)))
+                || path.final_point.is_none_or(|point| {
+                    !crowding::claimed(state, index, (id, crowding::Post::Contact), point, true)
+                }))
         {
             state
                 .unit_mut(id)
@@ -1141,7 +1141,7 @@ fn source_route_avoiding_danger(
         (1, 1),
         crate::geometry::work_approach_distance(unit.kind.stats().radius)
             + const { Fx::lit("0.06") },
-        unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
+        unit.kind.stats().radius * crate::stats::CONTACT_COMPRESSION,
     )
     .into_iter()
     .map(|point| crowding::Position {
@@ -1200,7 +1200,7 @@ fn source_route_avoiding_danger(
     crowding::choose(
         state,
         index,
-        id,
+        (id, crowding::Post::Contact),
         candidates,
         source.pos.center(),
         |tile| {
@@ -1321,7 +1321,7 @@ fn try_drop_offs(
                 && (from.chebyshev(path.goal) > 1
                     || path
                         .final_point
-                        .is_none_or(|point| !crowding::claimed(state, index, id, point, true)))
+                        .is_none_or(|point| !crowding::claimed(state, index, (id, crowding::Post::Contact), point, true)))
                 && keep_flagged_route(state, id, path, |waypoint| {
                     known_ground_passable(state, danger, player, waypoint)
                         && danger.route_safe_from(from, waypoint)
@@ -1437,7 +1437,7 @@ fn known_rect_route(
         anchor,
         size,
         contact::clearance(unit),
-        unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
+        unit.kind.stats().radius * crate::stats::CONTACT_COMPRESSION,
     )
     .into_iter()
     .filter_map(|entry| {
@@ -1467,7 +1467,7 @@ fn known_rect_route(
     crowding::choose_admitted(
         state,
         index,
-        id,
+        (id, crowding::Post::Contact),
         candidates,
         anchor.center()
             + Vec2Fx::new(Fx::from_num(size.0 - 1), Fx::from_num(size.1 - 1)) / Fx::from_num(2),
