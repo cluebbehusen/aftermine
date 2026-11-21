@@ -1105,6 +1105,7 @@ pub(crate) fn site(
             placement::stands(
                 observation,
                 map,
+                memory,
                 placement::Raising::fresh(kind, *anchor),
                 &[],
                 builder.as_slice(),

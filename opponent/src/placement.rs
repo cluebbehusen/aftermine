@@ -6,11 +6,11 @@
 use crate::frame::{gap, ring, tiles_of};
 use crate::map::{MapModel, Shot};
 use crate::memory::Memory;
-use aftermine_sim::BuildingKind;
 use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::stats::{
     Domain, FOUNDRY_REPAIR_TICKS, HARVEST_INCIDENT_DANGER_RADIUS, WeaponStats,
 };
+use aftermine_sim::{BuildingKind, UnitId};
 use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 
@@ -86,8 +86,11 @@ impl Barrage {
     }
 }
 
-/// The fire that reaches the footprint of `kind` at `anchor`: what it deals
+/// The fire known to reach the footprint of `kind` at `anchor`: what it deals
 /// the building, and what it deals a worker anywhere on the ring beside it.
+/// Enemies in sight count in full, and those remembered out of sight by how
+/// sure the seat is they are still there: a gun that outranges what it hits
+/// shoots from the fog.
 struct Fire {
     building: Barrage,
     worker: Barrage,
@@ -97,6 +100,7 @@ impl Fire {
     fn on(
         observation: &ObservationData,
         map: &MapModel,
+        memory: &Memory,
         kind: BuildingKind,
         anchor: TilePos,
     ) -> Self {
@@ -112,46 +116,51 @@ impl Fire {
         // levels. A worker stands somewhere on the ring, so a gun reaches it
         // when any of the ring lies between the gun's blind ring and its
         // range.
-        let mut add =
-            |weapons: &[WeaponStats], centre: (i64, i64), footing: TilePos, from: Domain| {
-                for weapon in weapons.iter().filter(|weapon| weapon.targets.ground) {
-                    let (reach, minimum) = (
-                        weapon.range + weapon.range,
-                        weapon.minimum_range + weapon.minimum_range,
-                    );
-                    let (reach, minimum) = (reach * reach, minimum * minimum);
-                    let shot = Shot::of(weapon, from, Domain::Ground);
-                    let clear = |target: Footprint| {
-                        let near = target.nearest(centre);
-                        map.clear_shot(
-                            world(centre),
-                            world(near),
-                            (footing, target.tile_at(near)),
-                            shot,
-                        )
-                    };
-                    let cooldown = u64::from(weapon.cooldown_ticks.max(1));
-                    let building = Fx::from_num(footprint.near(centre)) <= reach
-                        && Fx::from_num(footprint.near(centre)) >= minimum
-                        && clear(footprint);
-                    let worker = Fx::from_num(ring.near(centre)) <= reach
-                        && Fx::from_num(ring.far(centre)) >= minimum
-                        && clear(ring);
-                    for (barrage, hits, damage) in [
-                        (
-                            &mut fire.building,
-                            building,
-                            weapon.building_damage.unwrap_or(weapon.damage),
-                        ),
-                        (&mut fire.worker, worker, weapon.damage),
-                    ] {
-                        if hits {
-                            barrage.volley += u64::from(damage);
-                            barrage.rate += u64::from(damage) * 1_000 / cooldown;
-                        }
+        // `sure` is per mille of a shooter's fire counted: all of it for one in
+        // sight, less for one remembered.
+        let mut add = |weapons: &[WeaponStats],
+                       centre: (i64, i64),
+                       footing: TilePos,
+                       from: Domain,
+                       sure: u64| {
+            for weapon in weapons.iter().filter(|weapon| weapon.targets.ground) {
+                let (reach, minimum) = (
+                    weapon.range + weapon.range,
+                    weapon.minimum_range + weapon.minimum_range,
+                );
+                let (reach, minimum) = (reach * reach, minimum * minimum);
+                let shot = Shot::of(weapon, from, Domain::Ground);
+                let clear = |target: Footprint| {
+                    let near = target.nearest(centre);
+                    map.clear_shot(
+                        world(centre),
+                        world(near),
+                        (footing, target.tile_at(near)),
+                        shot,
+                    )
+                };
+                let cooldown = u64::from(weapon.cooldown_ticks.max(1));
+                let building = Fx::from_num(footprint.near(centre)) <= reach
+                    && Fx::from_num(footprint.near(centre)) >= minimum
+                    && clear(footprint);
+                let worker = Fx::from_num(ring.near(centre)) <= reach
+                    && Fx::from_num(ring.far(centre)) >= minimum
+                    && clear(ring);
+                for (barrage, hits, damage) in [
+                    (
+                        &mut fire.building,
+                        building,
+                        weapon.building_damage.unwrap_or(weapon.damage),
+                    ),
+                    (&mut fire.worker, worker, weapon.damage),
+                ] {
+                    if hits {
+                        barrage.volley += u64::from(damage) * sure / 1_000;
+                        barrage.rate += u64::from(damage) * sure / cooldown;
                     }
                 }
-            };
+            }
+        };
         for enemy in &observation.enemy_units {
             let centre = (
                 i64::from(2 * enemy.tile.x + 1),
@@ -162,6 +171,31 @@ impl Fire {
                 centre,
                 enemy.tile,
                 enemy.body_domain(),
+                1_000,
+            );
+        }
+        let now = observation.tick;
+        let mut visible: Vec<UnitId> = observation
+            .enemy_units
+            .iter()
+            .map(|enemy| enemy.id)
+            .collect();
+        visible.sort_unstable();
+        for seen in memory
+            .units()
+            .iter()
+            .filter(|seen| visible.binary_search(&seen.id).is_err())
+        {
+            let centre = (
+                i64::from(2 * seen.tile.x + 1),
+                i64::from(2 * seen.tile.y + 1),
+            );
+            add(
+                seen.kind.stats().weapons,
+                centre,
+                seen.tile,
+                seen.kind.stats().domain,
+                u64::from(seen.confidence(now)),
             );
         }
         // A site seen still going up fires at nothing yet.
@@ -180,6 +214,7 @@ impl Fire {
                 centre,
                 enemy.anchor,
                 Domain::Ground,
+                1_000,
             );
         }
         fire
@@ -235,6 +270,7 @@ impl Raising {
 pub(crate) fn stands(
     observation: &ObservationData,
     map: &MapModel,
+    memory: &Memory,
     site: Raising,
     crew: &[&UnitObs],
     sent: &[&UnitObs],
@@ -256,7 +292,7 @@ pub(crate) fn stands(
         .min()
         .unwrap_or(0);
     let worth = u64::from(stats.construction.cost) * u64::from(left) / u64::from(build.max(1));
-    let fire = Fire::on(observation, map, site.kind, site.anchor);
+    let fire = Fire::on(observation, map, memory, site.kind, site.anchor);
     fire.building.spares(site.hp.min(max), walk)
         && fire.building.spares(max, walk.saturating_add(ticks))
         && sent.iter().all(|worker| {
@@ -283,6 +319,7 @@ fn walk_ticks(worker: &UnitObs, site: Raising) -> u32 {
 pub(crate) fn mends(
     observation: &ObservationData,
     map: &MapModel,
+    memory: &Memory,
     building: &BuildingObs,
     welder: &UnitObs,
 ) -> bool {
@@ -297,7 +334,7 @@ pub(crate) fn mends(
     let missing = u64::from(stats.max_hp.saturating_sub(building.hp));
     let worth = u64::from(kind.invested_cost(tier)) * missing / u64::from(stats.max_hp.max(1));
     let ticks = u32::try_from((missing * 1_000).div_ceil(ramp.max(1))).unwrap_or(u32::MAX);
-    let fire = Fire::on(observation, map, kind, building.anchor);
+    let fire = Fire::on(observation, map, memory, kind, building.anchor);
     ramp > fire.building.rate && fire.worker.pays(welder, worth, ticks)
 }
 
