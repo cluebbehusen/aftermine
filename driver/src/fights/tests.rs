@@ -163,6 +163,52 @@ fn allies_dying_beside_each_other_on_one_tick_do_not_die_alone() {
 }
 
 #[test]
+fn a_fight_begun_between_samples_looks_back_no_further_than_its_window() {
+    // West's unit stood by the fight 205 ticks before its first death, which
+    // falls between samples: too long before to have taken part.
+    let mut fights = tracker(2);
+    fights.step(10, vec![], Some(vec![armed(1, 0, 5, 6)]));
+    fights.step(210, vec![], Some(Vec::new()));
+    fights.step(215, vec![death(1, 5, 5, false)], None);
+    fights.step(216, vec![death(1, 6, 5, false)], None);
+    let seats = fights.finish();
+    assert_eq!((seats[0].fights, seats[0].arrivals), (0, 0));
+}
+
+#[test]
+fn a_team_s_seats_in_a_fight_share_each_enemy_loss() {
+    // Two West seats on one team and one East seat each lose units in one
+    // fight: West's seats together count East's losses once.
+    let mut fights = FightTracker {
+        teams: vec![0, 0, 1],
+        history: VecDeque::new(),
+        open: Vec::new(),
+        seats: vec![SeatFights::default(); 3],
+    };
+    let lost = |seat: u8, team: u8, x: i32, price: u64| Death {
+        seat,
+        team,
+        tile: TilePos::new(x, 5),
+        price,
+        alone: false,
+    };
+    fights.step(
+        10,
+        vec![
+            lost(0, 0, 5, 100),
+            lost(1, 0, 6, 100),
+            lost(2, 1, 7, 90),
+            lost(2, 1, 8, 101),
+        ],
+        None,
+    );
+    let seats = fights.finish();
+    assert_eq!(seats[0].killed + seats[1].killed, 191);
+    assert_eq!((seats[0].killed, seats[1].killed), (96, 95));
+    assert_eq!(seats[2].killed, 200);
+}
+
+#[test]
 fn units_far_from_the_fight_neither_take_part_nor_arrive() {
     let mut fights = tracker(3);
     fights.step(
@@ -184,13 +230,23 @@ fn units_far_from_the_fight_neither_take_part_nor_arrive() {
 fn pooled_ratios_weigh_each_seat_leg_and_widen_with_their_spread() {
     assert_eq!(pooled_ratio([(0, 0)].into_iter()), None);
     assert_eq!(
-        pooled_ratio([(5, 10), (5, 10)].into_iter()),
-        Some((0.5, [0.5, 0.5]))
+        pooled_ratio([(3, 10), (0, 0)].into_iter()),
+        Some((0.3, None)),
+        "one seat-leg with evidence has no spread"
     );
-    let (ratio, [low, high]) = pooled_ratio([(0, 10), (10, 10)].into_iter()).unwrap();
+    assert_eq!(
+        pooled_ratio([(5, 10), (5, 10)].into_iter()),
+        Some((0.5, Some([0.5, 0.5])))
+    );
+    let (ratio, Some([low, high])) = pooled_ratio([(0, 10), (10, 10)].into_iter()).unwrap() else {
+        panic!("two seat-legs give an interval");
+    };
     assert!((ratio - 0.5).abs() < 1e-9);
     assert!(low < 0.0 && high > 1.0, "{low} {high}");
-    let (ratio, [low, high]) = pooled_ratio([(1, 10), (3, 30), (2, 20)].into_iter()).unwrap();
+    let (ratio, Some([low, high])) = pooled_ratio([(1, 10), (3, 30), (2, 20)].into_iter()).unwrap()
+    else {
+        panic!("three seat-legs give an interval");
+    };
     assert!((ratio - 0.1).abs() < 1e-9 && (low - 0.1).abs() < 1e-9 && (high - 0.1).abs() < 1e-9);
 }
 
