@@ -170,7 +170,7 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
         compact(known, &tracks)
     });
     section(&mut out, "WARHEADS", view.warheads.iter(), |known| {
-        warhead(known, view.tick)
+        warhead(known, view.player, view.tick)
     });
     remembered_tiles(&mut out, "REMEMBERED SCRAP", &view.scrap);
     remembered_tiles(&mut out, "REMEMBERED WRECKS", &view.wrecks);
@@ -411,21 +411,21 @@ fn target(kind: &str, id: &Value, tracks: &Tracks) -> Option<String> {
     })
 }
 
-/// A warhead in flight as the seat knows it, in tiles and ticks: where it
-/// is, and once its line is tracked, where and when it lands.
-fn warhead(known: &aftermine_sim::strike::KnownWarhead, now: u64) -> String {
+/// A warhead in flight as `seat` knows it, in tiles and ticks: whose it is,
+/// where it is, and once its line is tracked, where and when it lands.
+fn warhead(known: &aftermine_sim::strike::KnownWarhead, seat: u8, now: u64) -> String {
     let at = |pos: chassis::fx::Vec2Fx| {
         let tile = TilePos::containing(pos);
         format!("({},{})", tile.x, tile.y)
     };
-    let mut line = format!(
-        "{} {}",
-        known.id.0,
-        if known.hostile { "hostile" } else { "own" }
-    );
-    if let Some(player) = known.player {
-        let _ = write!(line, " from seat {}", player.0);
-    }
+    let side = match known.player {
+        Some(player) if !known.hostile && player.0 == seat => "own".to_string(),
+        Some(player) if known.hostile => format!("hostile from seat {}", player.0),
+        Some(player) => format!("allied from seat {}", player.0),
+        None if known.hostile => "hostile".to_string(),
+        None => "allied".to_string(),
+    };
+    let mut line = format!("{} {side}", known.id.0);
     let _ = write!(line, " at {}", at(known.position));
     match known.line {
         Some(flight) => {

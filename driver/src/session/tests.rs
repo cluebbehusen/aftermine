@@ -897,3 +897,98 @@ fn took_fire_names_a_unit_hit_on_the_move() {
     }
     panic!("premise: the Lancer never hit the Breaker while it ran");
 }
+
+#[test]
+fn took_fire_names_each_victim_hit_in_one_tick() {
+    // Enemy Scuttlers claw at the seat's Foundry while others claw at its
+    // Mantle elsewhere; in a tick both take fire, each line names its own
+    // victim.
+    let mut scenario = human_scenario("two-victims");
+    let built = scenario.build().unwrap();
+    let foundry = built
+        .buildings()
+        .iter()
+        .find(|building| building.player == PlayerId(0) && building.kind == BuildingKind::Foundry)
+        .unwrap();
+    let (foundry_id, center, anchor) = (foundry.id, foundry.center(), foundry.anchor);
+    let (width, _) = foundry.kind.size();
+    let mantle = TilePos::new(14, 2);
+    let besiegers =
+        [(width + 1, 0), (width + 1, 1), (width + 2, 0)].map(|(dx, dy)| anchor.offset(dx, dy));
+    let raiders = [(3, 0), (4, 0), (5, 0)].map(|(dx, dy)| mantle.offset(dx, dy));
+    scenario.units.push(aftermine_sim::scenario::UnitSpec {
+        player: 0,
+        kind: UnitKind::Mantle,
+        x: mantle.x,
+        y: mantle.y,
+    });
+    for tile in besiegers.iter().chain(&raiders) {
+        scenario.units.push(aftermine_sim::scenario::UnitSpec {
+            player: 1,
+            kind: UnitKind::Scuttler,
+            x: tile.x,
+            y: tile.y,
+        });
+    }
+    let mut state = scenario.build().unwrap();
+    let at = |state: &aftermine_sim::State,
+              player: u8,
+              tiles: &[TilePos]|
+     -> Vec<aftermine_sim::UnitId> {
+        state
+            .units()
+            .iter()
+            .filter(|unit| {
+                unit.player == PlayerId(player) && tiles.contains(&TilePos::containing(unit.pos))
+            })
+            .map(|unit| unit.id)
+            .collect()
+    };
+    let mantle = at(&state, 0, &[mantle])[0];
+    let attack = |units, target| PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Attack {
+            units,
+            target,
+            queue: false,
+        },
+    };
+    let mut commands = vec![
+        attack(
+            at(&state, 1, &besiegers),
+            aftermine_sim::AttackTarget::Building(foundry_id),
+        ),
+        attack(
+            at(&state, 1, &raiders),
+            aftermine_sim::AttackTarget::Unit(mantle),
+        ),
+    ];
+    for _ in 0..400 {
+        let mut seen = Seen::new(PlayerId(0));
+        seen.look(&state);
+        let report = state.tick(&std::mem::take(&mut commands));
+        let hits: Vec<Vec2Fx> = report
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                Event::DamageTaken { player, pos } if *player == PlayerId(0) => Some(*pos),
+                _ => None,
+            })
+            .collect();
+        if !hits.contains(&center) || hits.iter().all(|pos| *pos == center) {
+            continue;
+        }
+        seen.note(report.tick, &state, &report.events);
+        let note_at = |at: Vec2Fx| {
+            seen.log
+                .iter()
+                .find(|logged| matches!(logged.event, Event::DamageTaken { pos, .. } if pos == at))
+                .and_then(|logged| logged.note.clone())
+        };
+        assert_eq!(note_at(center), Some(format!("foundry {}", foundry_id.0)));
+        let unit_hit = hits.iter().find(|pos| **pos != center).unwrap();
+        assert_eq!(note_at(*unit_hit), Some(format!("mantle {}", mantle.0)));
+        return;
+    }
+    panic!("premise: the Foundry and the Mantle never took fire in the same tick");
+}

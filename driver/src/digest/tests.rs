@@ -291,8 +291,42 @@ fn a_warhead_reads_in_tiles_and_ticks() {
             exposure: Some(3),
             interceptor: None,
         },
+        KnownWarhead {
+            id: WarheadId(2),
+            player: Some(PlayerId(0)),
+            hostile: false,
+            position: at("26.0", "5.0"),
+            line: Some(WarheadLine {
+                launch: at("26.0", "5.0"),
+                impact: at("50.5", "30.5"),
+                arrival: 13_900,
+            }),
+            exposure: None,
+            interceptor: None,
+        },
+        KnownWarhead {
+            id: WarheadId(3),
+            player: Some(PlayerId(2)),
+            hostile: false,
+            position: at("12.0", "30.0"),
+            line: Some(WarheadLine {
+                launch: at("12.0", "30.0"),
+                impact: at("50.5", "30.5"),
+                arrival: 13_950,
+            }),
+            exposure: None,
+            interceptor: None,
+        },
     ];
     let text = render(&view, None);
+    assert!(
+        text.contains("  2 own at (26,5) lands at (50,30)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("  3 allied from seat 2 at (12,30) lands at (50,30)"),
+        "a teammate's warhead is not the seat's own: {text}"
+    );
     assert!(
         text.contains(
             "  0 hostile from seat 1 at (47,10) lands at (47,10) on tick 13855 (in 55 ticks), \
