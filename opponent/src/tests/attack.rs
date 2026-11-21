@@ -1918,3 +1918,67 @@ fn a_front_outweighed_withdraws_without_counting_stragglers_behind() {
     );
     assert!(withdraws(&behind, BotDifficulty::Prime));
 }
+
+#[test]
+fn breachers_on_their_way_answer_no_guns_at_the_front() {
+    // Two Sentinels in contact with two East Sentinels and two Turrets, a
+    // Maw of the attack far behind: it would smash the Turrets once there,
+    // but on its way it answers nothing, so the front turns back. Beside the
+    // front, it answers them and the fight goes on.
+    let front = [(30, 11), (30, 12)];
+    let withdraws = |maw: (i32, i32)| {
+        let mut scenario = field();
+        for (x, y) in front {
+            scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
+        }
+        scenario.units.push(unit(0, UnitKind::Maw, maw.0, maw.1));
+        for (x, y) in [(33, 11), (33, 12)] {
+            scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+        }
+        for (x, y) in [(32, 10), (32, 13)] {
+            scenario
+                .buildings
+                .push(building(1, BuildingKind::Turret, x, y));
+        }
+        scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
+        let state = scenario.build().unwrap();
+        let mut members: Vec<UnitId> = front
+            .iter()
+            .chain([&maw])
+            .map(|(x, y)| at(&state, *x, *y))
+            .collect();
+        members.sort_unstable();
+        let missions = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {
+                    "task": "attack",
+                    "target": {"owner": 1, "building": "foundry", "anchor": {"x": 43, "y": 11}},
+                    "phase": {"engage": {"focus": null, "progressed": 0}},
+                },
+                "since": 0,
+                "units": members,
+                "goal": {"x": 42, "y": 11},
+            }],
+        });
+        let mut state = state;
+        advance_to(
+            &mut state,
+            crate::decision_interval(BotDifficulty::Prime),
+            &[],
+        );
+        let mut opponent = restaged(&scenario, &state, missions);
+        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        trace
+            .unwrap()
+            .missions
+            .iter()
+            .any(|mission| mission.phase == Phase::Withdraw)
+    };
+    assert!(
+        !withdraws((27, 11)),
+        "premise: beside the front, it fights on"
+    );
+    assert!(withdraws((14, 4)), "on its way, it answers nothing");
+}

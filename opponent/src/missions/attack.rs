@@ -731,9 +731,10 @@ fn engage_on(
             !blasting.contains(id) || mine(observation, *id).is_some_and(|unit| breacher(unit.kind))
         })
         .collect();
-    let opposition = plan.opposition(members);
+    let near = plan.in_fight(members);
+    let opposition = plan.opposition(members, &near);
     let outflown = plan.outflown(members);
-    if opposition * 1_000 > plan.fighting(members) * plan.retreat
+    if opposition * 1_000 > fighting(&near) * plan.retreat
         || (!outflown.is_empty() && outflown.len() == members.len())
     {
         if ledger.order(run(leaving, rally)) {
@@ -888,9 +889,10 @@ fn stage_on(
         .copied()
         .filter(|unit| unit.kind != UnitKind::Sapper && !breacher(unit.kind))
         .collect();
-    let opposition = plan.opposition(members);
+    let near = plan.in_fight(members);
+    let opposition = plan.opposition(members, &near);
     let outflown = plan.outflown(members);
-    if opposition * 1_000 > plan.fighting(members) * plan.retreat
+    if opposition * 1_000 > fighting(&near) * plan.retreat
         || (!outflown.is_empty() && outflown.len() == members.len())
     {
         if ledger.order(run(mission.units.clone(), rally)) {
@@ -1638,11 +1640,12 @@ impl<'a> Plan<'a> {
 
     /// Value of the armed enemies the seat knows of that can hit ground and
     /// a member within contact of them, which the whole army answers:
-    /// remembered units by confidence, and known armed buildings by health.
-    fn opposition(&self, members: &[&UnitObs]) -> u64 {
+    /// remembered units by confidence, and known armed buildings by health,
+    /// less what the breachers among `breaching` bring against them.
+    fn opposition(&self, members: &[&UnitObs], breaching: &[&UnitObs]) -> u64 {
         let armed = self.armed(members);
-        // Breachers among the members answer the armed buildings first.
-        let breach: u64 = members.iter().map(|unit| against_buildings(unit)).sum();
+        // Breachers answer the armed buildings first.
+        let breach: u64 = breaching.iter().map(|unit| against_buildings(unit)).sum();
         (armed.units + armed.buildings.saturating_sub(breach)) * self.misjudge / 1_000
     }
 
@@ -1669,16 +1672,10 @@ impl<'a> Plan<'a> {
         }
     }
 
-    /// The armed enemies the seat knows of within contact of the members,
-    /// before any breacher answers them.
-    /// What the armed members within local reach of the enemies in contact
-    /// with the army are worth: those in the fight. Members still walking up
-    /// behind it count for nothing until they arrive, so a front that cannot
-    /// win alone turns back rather than wait to be fed.
-    fn fighting(&self, members: &[&UnitObs]) -> u64 {
-        let armed = members
-            .iter()
-            .filter(|unit| !unit.kind.stats().weapons.is_empty());
+    /// The members within local reach of the armed enemies in contact with
+    /// the army: those in the fight. Members still walking up behind it are
+    /// not in it until they arrive.
+    fn in_fight<'b>(&self, members: &[&'b UnitObs]) -> Vec<&'b UnitObs> {
         let touches = |anchor: TilePos, size: (i32, i32)| {
             members
                 .iter()
@@ -1703,14 +1700,15 @@ impl<'a> Plan<'a> {
             .chain(buildings)
             .filter(|(anchor, size)| touches(*anchor, *size))
             .collect();
-        armed
+        members
+            .iter()
+            .copied()
             .filter(|unit| {
                 contacts
                     .iter()
                     .any(|(anchor, size)| gap(*anchor, *size, unit.tile, (1, 1)) <= LOCAL_REACH)
             })
-            .map(|unit| value(unit))
-            .sum()
+            .collect()
     }
 
     fn armed(&self, members: &[&UnitObs]) -> Armed {
@@ -1862,6 +1860,17 @@ fn opposed_parts(
         .map(building_value)
         .sum();
     (units, buildings)
+}
+
+/// What the armed members `in_fight` are worth. Members still walking up
+/// count for nothing until they arrive, so a front that cannot win alone
+/// turns back rather than wait to be fed.
+fn fighting(in_fight: &[&UnitObs]) -> u64 {
+    in_fight
+        .iter()
+        .filter(|unit| !unit.kind.stats().weapons.is_empty())
+        .map(|unit| value(unit))
+        .sum()
 }
 
 /// What the breachers among `units` bring against buildings.
