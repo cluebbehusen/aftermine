@@ -26,6 +26,7 @@ fn row(family: Family, difficulty: &str, winner: Winner) -> GameRow {
         bot_worth: 1,
         challenger_commands: 0,
         challenger_rejected: 0,
+        bot_fights: crate::fights::SeatFights::default(),
     }
 }
 
@@ -81,7 +82,11 @@ fn records_pool_games_by_family_and_rung() {
     );
     assert_eq!((records[2].share, records[2].wilson), (None, None));
     let table = report(&records);
-    assert!(table.lines().count() == 4, "{table}");
+    let (wins, fights) = table
+        .split_once("\nfights:")
+        .expect("a fights table follows");
+    assert!(wins.lines().count() == 4, "{table}");
+    assert!(fights.lines().count() == 4, "{table}");
     assert!(table.contains("ball-rush") && table.contains("held-army"));
 }
 

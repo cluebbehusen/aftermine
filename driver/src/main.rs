@@ -189,7 +189,8 @@ enum Cmd {
         /// Families, comma-separated: forward-fabricator, scuttler-raid,
         /// lancer-harass, held-army, buzzard-harass, bombard-siege,
         /// ball-rush, kestrel-push, novice, or "tuning", "held-out" or
-        /// "yardstick".
+        /// "yardstick". The bot's fights in each family's games follow its
+        /// record.
         #[arg(long, value_delimiter = ',', required = true)]
         families: Vec<String>,
         /// Two-seat maps, comma-separated.

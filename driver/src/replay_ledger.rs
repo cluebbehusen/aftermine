@@ -3,6 +3,7 @@
 //! [`crate::ledger::ImpactLedger`]; the text report pools seats by
 //! controller.
 
+use crate::fights::{FightPool, FightTracker, SeatFights};
 use crate::ledger::{ImpactLedger, LedgerPool, SeatLedger, WORTH_PERIOD};
 use aftermine_kit::GameReplay;
 use aftermine_sim::SIM_VERSION;
@@ -29,6 +30,8 @@ pub struct LedgerSeat {
     pub controller: SeatPlayer,
     /// What its units and buildings did.
     pub ledger: SeatLedger,
+    /// How it went into the game's fights.
+    pub fights: SeatFights,
 }
 
 /// Who played a seat.
@@ -65,10 +68,12 @@ pub fn ledger(path: &Path, replay: &GameReplay) -> Result<GameLedger> {
     let mut state = aftermine_kit::recording::initial_state(replay)?;
     let start = state.current_tick();
     let mut ledger = ImpactLedger::new(&state);
+    let mut fights = FightTracker::new(&state);
     let mut playback = aftermine_kit::ReplayPlayback::new(replay);
     while state.current_tick() < total {
         let report = playback.step(&mut state);
         ledger.observe(&state, &report);
+        fights.observe(&state, &report);
     }
     let ledgers = ledger.finish(&state);
     let seats = replay
@@ -77,14 +82,18 @@ pub fn ledger(path: &Path, replay: &GameReplay) -> Result<GameLedger> {
         .iter()
         .zip(seat_players(replay))
         .zip(ledgers)
+        .zip(fights.finish())
         .enumerate()
-        .map(|(seat, ((spec, controller), ledger))| LedgerSeat {
-            seat: u8::try_from(seat).expect("seat indices fit in u8"),
-            name: spec.name.clone(),
-            team: state.players()[seat].team,
-            controller,
-            ledger,
-        })
+        .map(
+            |(seat, (((spec, controller), ledger), fights))| LedgerSeat {
+                seat: u8::try_from(seat).expect("seat indices fit in u8"),
+                name: spec.name.clone(),
+                team: state.players()[seat].team,
+                controller,
+                ledger,
+                fights,
+            },
+        )
         .collect();
     Ok(GameLedger {
         path: path.to_owned(),
@@ -126,12 +135,17 @@ impl SeatPlayer {
 /// The text report over `games`.
 pub fn render(games: &[GameLedger]) -> String {
     let mut pools: BTreeMap<String, LedgerPool> = BTreeMap::new();
+    let mut fights: BTreeMap<String, FightPool> = BTreeMap::new();
     for game in games {
         for seat in &game.seats {
             pools
                 .entry(seat.controller.label())
                 .or_default()
                 .add(&seat.ledger);
+            fights
+                .entry(seat.controller.label())
+                .or_default()
+                .add(&seat.fights);
         }
     }
     let mut out = String::new();
@@ -145,6 +159,11 @@ pub fn render(games: &[GameLedger]) -> String {
         let _ = writeln!(out, "\n== {label} ({} seat-games)", pool.seats);
         pool.render(&mut out, "  ", None);
     }
+    let fights: Vec<(String, &FightPool)> = fights
+        .iter()
+        .map(|(label, pool)| (label.clone(), pool))
+        .collect();
+    crate::fights::render(&mut out, &fights);
     if let [game] = games {
         let _ = writeln!(out, "\n== net worth by minute (army, buildings and bank)");
         for seat in &game.seats {
