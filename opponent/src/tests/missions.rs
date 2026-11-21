@@ -2049,6 +2049,91 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
 }
 
 #[test]
+fn the_last_foundry_keeps_its_guard() {
+    // West's start falls and its expansion stands alone: six raiders in
+    // reach of it, though not yet at it, outweigh its two Sentinels, yet it
+    // keeps them as its guard.
+    let mut scenario = widened(arena(0), 12, 20);
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Foundry, 24, 5));
+    scenario.units.retain(|unit| unit.player == 1);
+    scenario.units.extend([
+        unit(0, UnitKind::Sentinel, 21, 8),
+        unit(0, UnitKind::Sentinel, 22, 8),
+        unit(0, UnitKind::Sentinel, 21, 9),
+        unit(0, UnitKind::Sentinel, 22, 9),
+        unit(0, UnitKind::Surveyor, 29, 9),
+        unit(1, UnitKind::Sentinel, 7, 4),
+        unit(1, UnitKind::Sentinel, 7, 5),
+    ]);
+    for y in [1, 2, 3, 4, 7, 8, 9, 10] {
+        scenario.units.push(unit(1, UnitKind::Sentinel, 35, y));
+    }
+    let state = scenario.build().unwrap();
+    let start = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.anchor == TilePos::new(3, 5))
+        .unwrap()
+        .id;
+    let mut state = damaged(&state, start, 1);
+    let raze = PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Attack {
+            units: vec![at(&state, 7, 4), at(&state, 7, 5)],
+            target: AttackTarget::Building(start),
+            queue: false,
+        },
+    };
+    advance_to(&mut state, 24, &[raze]);
+    assert_eq!(
+        foundries(&state, PlayerId(0)).len(),
+        1,
+        "premise: West's start fell"
+    );
+    let expansion = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.anchor == TilePos::new(24, 5))
+        .unwrap()
+        .id;
+    let mut members = vec![
+        at(&state, 21, 8),
+        at(&state, 22, 8),
+        at(&state, 21, 9),
+        at(&state, 22, 9),
+    ];
+    members.sort_unstable();
+    let mut opponent = restored_with(
+        &seat_with(&scenario, 0, rung(BotDifficulty::Prime)),
+        &scenario,
+        &state,
+        |json| {
+            json["missions"] = serde_json::json!({
+                "next": 1,
+                "list": [{
+                    "id": 0,
+                    "task": {"task": "defend", "asset": expansion.0, "phase": "guard"},
+                    "since": 0,
+                    "units": members,
+                    "goal": {"x": 23, "y": 6},
+                }],
+            });
+        },
+    );
+    let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert!(
+        trace
+            .unwrap()
+            .missions
+            .iter()
+            .any(|mission| matches!(mission.kind, MissionKind::Defend { .. })),
+        "the last Foundry keeps its guard"
+    );
+}
+
+#[test]
 fn home_is_never_given_up() {
     // Six raiders at home against three Sentinels and an expansion: the
     // defenders wait beside the home Foundry rather than leave it.
