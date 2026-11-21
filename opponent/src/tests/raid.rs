@@ -770,3 +770,44 @@ fn sappers_raid_a_deep_bore_nobody_on_the_team_has_seen() {
         )]
     );
 }
+
+#[test]
+fn a_raid_does_not_cross_a_line_held_on_its_way() {
+    // The field drawn out between West's home and the raiders by the
+    // outpost: the way back from it runs past four East Sentinels holding a
+    // line, beyond the target's own guard but on the way, in a West scout's
+    // sight. The raid stays home; with the way open it goes.
+    let raids = |line: Option<bool>, config: BotConfig| {
+        let mut scenario =
+            super::missions::widened(outpost(UnitKind::Scuttler, BuildingKind::Foundry), 10, 20);
+        scenario.units.push(unit(0, UnitKind::Surveyor, 23, 8));
+        match line {
+            Some(true) => {
+                for (x, y) in [(25, 4), (25, 5), (26, 4), (26, 5)] {
+                    scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
+                }
+            }
+            Some(false) => {
+                for (x, y) in [(25, 4), (25, 6)] {
+                    scenario
+                        .buildings
+                        .push(building(1, BuildingKind::Turret, x, y));
+                }
+            }
+            None => {}
+        }
+        let state = scenario.build().unwrap();
+        let (_, trace) =
+            seat_with(&scenario, 0, config).act_traced(&state, &mut OwnEvents::default());
+        raid(&trace.unwrap().missions).is_some()
+    };
+    assert!(raids(None, config()), "premise: an open way is raided");
+    assert!(
+        !raids(Some(true), config()),
+        "a line on the way keeps the raiders home"
+    );
+    assert!(
+        !raids(Some(false), config()),
+        "guns on the way keep the raiders home"
+    );
+}

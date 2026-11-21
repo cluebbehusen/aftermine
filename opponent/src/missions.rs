@@ -30,6 +30,7 @@ mod fight;
 mod focus;
 mod guarding;
 mod lift;
+mod meeting;
 mod raid;
 mod repair;
 mod reserve;

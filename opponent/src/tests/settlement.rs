@@ -1154,7 +1154,7 @@ fn an_incoming_guard_counts_before_more_defenders_are_trained() {
                 &model,
                 &scratch,
                 &bot.persistent.memory,
-                bot.profile.stance,
+                (bot.profile.stance, bot.profile.difficulty),
                 &mut ledger,
             )
             .is_empty()
