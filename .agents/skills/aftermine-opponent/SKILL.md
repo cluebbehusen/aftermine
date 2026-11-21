@@ -139,13 +139,14 @@ Then each rung's seats, and in `bot-summary` each team layout and rung's:
   ground: their scrap delivered, lost and left at home.
 - **Reactivity**: the situations below, how many arose, the share answered in
   time, missed and moot, and the mean ticks to an answer.
-- **Fights**: armed units' deaths within 10 s and 15 tiles of each other make
-  one fight. Over the seat's fights: the share of its losses that died with no
-  armed ally within 6 tiles, the share of fights it met at under half the
-  others' worth near the fight, the share of its units that came 10 s or more
-  after its first, and the price of units killed per price lost, each with a 95%
-  interval over seat-legs. They move with far fewer legs than win share, but
-  they follow losing in general, not one kind of loss.
+- **Fights**: an armed unit's death joins a fight when it comes within 10 s of
+  the fight's last death and 15 tiles of its centre, the mean of its deaths; a
+  fight needs two deaths. Over the seat's fights: the share of its losses that
+  died with no armed ally within 6 tiles, the share of fights it met at under
+  half the others' worth near the fight, the share of its units that came 10 s
+  or more after its first, and the price of units killed per price lost, each
+  with a 95% interval over seat-legs. They move with far fewer legs than win
+  share, but they follow losing in general, not one kind of loss.
 - **Ledger**:
   - **Attacks**, grouped by strength sent against the known defense at launch:
     how many withdrew, fought on or never met the enemy, and value dealt over

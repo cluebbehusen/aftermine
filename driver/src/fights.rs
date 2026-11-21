@@ -62,7 +62,8 @@ pub struct SeatFights {
     pub late: u32,
     /// Price of its armed units lost in fights.
     pub lost: u64,
-    /// Price of other teams' armed units lost in its fights.
+    /// Its share of the price of other teams' armed units lost in its fights,
+    /// split evenly among its team's seats in each fight.
     pub killed: u64,
 }
 
@@ -278,6 +279,13 @@ impl FightTracker {
     /// Takes in the deaths of tick `tick` and, on a sample tick, the armed
     /// units standing after it.
     fn step(&mut self, tick: u64, deaths: Vec<Death>, units: Option<Vec<Armed>>) {
+        while self
+            .history
+            .front()
+            .is_some_and(|oldest| oldest.tick + GAP_TICKS < tick)
+        {
+            self.history.pop_front();
+        }
         for death in deaths {
             self.die(tick, death);
         }
@@ -294,13 +302,6 @@ impl FightTracker {
                 fight.samples.push(Rc::clone(&sample));
             }
             self.history.push_back(sample);
-            while self
-                .history
-                .front()
-                .is_some_and(|oldest| oldest.tick + GAP_TICKS < tick)
-            {
-                self.history.pop_front();
-            }
         }
     }
 
@@ -337,8 +338,19 @@ impl FightTracker {
             .collect();
         seats.sort_unstable();
         seats.dedup();
-        for seat in seats {
+        for &seat in &seats {
             let team = self.teams[usize::from(seat)];
+            // Each enemy loss is shared among the team's seats in the fight,
+            // so a team's seats together count it once.
+            let mates: Vec<u8> = seats
+                .iter()
+                .copied()
+                .filter(|other| self.teams[usize::from(*other)] == team)
+                .collect();
+            let count = u64::try_from(mates.len()).expect("seat counts fit in u64");
+            let rank = u64::try_from(mates.iter().position(|other| *other == seat).unwrap_or(0))
+                .expect("seat counts fit in u64");
+            let share = |price: u64| price / count + u64::from(rank < price % count);
             let record = &mut self.seats[usize::from(seat)];
             record.fights += 1;
             if let Some((own, others)) = near.met.get(&seat) {
@@ -353,7 +365,7 @@ impl FightTracker {
                     record.alone += u32::from(death.alone);
                     record.lost += death.price;
                 } else if death.team != team {
-                    record.killed += death.price;
+                    record.killed += share(death.price);
                 }
             }
             let came: Vec<u64> = near
@@ -417,7 +429,7 @@ impl FightPool {
         &self,
         part: impl Fn(&SeatFights) -> u64,
         whole: impl Fn(&SeatFights) -> u64,
-    ) -> Option<(f64, [f64; 2])> {
+    ) -> Option<(f64, Option<[f64; 2]>)> {
         pooled_ratio(self.legs.iter().map(|leg| (part(leg), whole(leg))))
     }
 
@@ -425,23 +437,23 @@ impl FightPool {
     #[must_use]
     pub fn line(&self) -> String {
         let total = self.total();
-        let share = |ratio: Option<(f64, [f64; 2])>| {
-            ratio.map_or_else(
-                || "-".to_string(),
-                |(value, [low, high])| {
-                    format!(
-                        "{:.0}% [{:.0}-{:.0}%]",
-                        value * 100.0,
-                        low.max(0.0) * 100.0,
-                        high.min(1.0) * 100.0
-                    )
-                },
-            )
+        let share = |ratio: Option<(f64, Option<[f64; 2]>)>| match ratio {
+            None => "-".to_string(),
+            Some((value, None)) => format!("{:.0}%", value * 100.0),
+            Some((value, Some([low, high]))) => format!(
+                "{:.0}% [{:.0}-{:.0}%]",
+                value * 100.0,
+                low.max(0.0) * 100.0,
+                high.min(1.0) * 100.0
+            ),
         };
-        let traded = self.ratio(|leg| leg.killed, |leg| leg.lost).map_or_else(
-            || "-".to_string(),
-            |(value, [low, high])| format!("{value:.2} [{:.2}-{high:.2}]", low.max(0.0)),
-        );
+        let traded = match self.ratio(|leg| leg.killed, |leg| leg.lost) {
+            None => "-".to_string(),
+            Some((value, None)) => format!("{value:.2}"),
+            Some((value, Some([low, high]))) => {
+                format!("{value:.2} [{:.2}-{high:.2}]", low.max(0.0))
+            }
+        };
         format!(
             "{} fights; lost alone {} of {}; met short {} of {}; late {} of {}; killed per lost {traded}",
             total.fights,
@@ -457,11 +469,12 @@ impl FightPool {
 
 /// The ratio of the parts' sum to the wholes' sum over `pairs`, one pair a
 /// sample, with a 95% interval from the spread of each sample around that
-/// ratio; `None` when the wholes sum to zero. One sample gives no interval
-/// width.
+/// ratio; `None` when the wholes sum to zero. Only samples with a whole
+/// count, and fewer than two give no interval: one sample has no spread.
 #[must_use]
-pub fn pooled_ratio(pairs: impl Iterator<Item = (u64, u64)>) -> Option<(f64, [f64; 2])> {
+pub fn pooled_ratio(pairs: impl Iterator<Item = (u64, u64)>) -> Option<(f64, Option<[f64; 2]>)> {
     let pairs: Vec<(f64, f64)> = pairs
+        .filter(|(_, whole)| *whole > 0)
         .map(|(part, whole)| (part as f64, whole as f64))
         .collect();
     let whole: f64 = pairs.iter().map(|(_, whole)| whole).sum();
@@ -471,14 +484,14 @@ pub fn pooled_ratio(pairs: impl Iterator<Item = (u64, u64)>) -> Option<(f64, [f6
     let ratio = pairs.iter().map(|(part, _)| part).sum::<f64>() / whole;
     let samples = pairs.len() as f64;
     if pairs.len() < 2 {
-        return Some((ratio, [ratio, ratio]));
+        return Some((ratio, None));
     }
     let spread: f64 = pairs
         .iter()
         .map(|(part, whole)| (part - ratio * whole).powi(2))
         .sum();
     let error = (spread * samples / (samples - 1.0)).sqrt() / whole;
-    Some((ratio, [ratio - 1.96 * error, ratio + 1.96 * error]))
+    Some((ratio, Some([ratio - 1.96 * error, ratio + 1.96 * error])))
 }
 
 /// Renders each labelled pool's fight measures, one line a group.
