@@ -54,14 +54,14 @@ selects actions in precedence order:
 4. workers, to keep harvesting saturated. A known node or wreck is worked when a
    Harvester's trips there repay it within a horizon set by stance and greed,
    and stance, greed and difficulty set how fully it is staffed. Workers left
-   without a place salvage other known wreck. Until the army reaches the stance
-   minimum, workers that would cost more than the army wait for army production,
-   and a seat that exposed puts up a Turret before any tech. A worker the
-   simulation sent welding on its own stays free for these orders and leaves
-   known fire like an idle one. Idle workers that know no scrap go looking for
-   it. At Veteran and Prime, workers in known fire beside a Foundry leave too,
-   for a refuge out of it, and those the simulation sent welding into a fight
-   weld no more on their own until no known fire covers home;
+   without a place salvage other known wreck. Workers that would cost more than
+   the army is worth wait for army production, and a seat that exposed puts up a
+   Turret before any tech. A worker the simulation sent welding on its own stays
+   free for these orders and leaves known fire like an idle one. Idle workers
+   that know no scrap go looking for it. At Veteran and Prime, workers in known
+   fire beside a Foundry leave too, for a refuge out of it, and those the
+   simulation sent welding into a fight weld no more on their own until no known
+   fire covers home;
 5. missions, advancing their phases and recruiting as needed;
 6. production toward composition needs, from scrap not protected for saving.
 

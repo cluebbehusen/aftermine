@@ -1205,3 +1205,30 @@ fn calm_home_restores_welding() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn workers_wait_while_the_army_is_worth_less_than_they_are() {
+    // A seat past its stance minimum with scrap nodes wanting more
+    // Harvesters, whose army is worth less than its workers, trains no more
+    // workers ahead of the army; with an army worth more, it does.
+    let trained = |lancers: i32| {
+        let mut scenario = field();
+        scenario.players[0].scrap = 300;
+        for row in [5, 7] {
+            scenario.map[row].replace_range(6..16, "ssssssssss");
+        }
+        for x in 0..lancers {
+            scenario.units.push(unit(0, UnitKind::Lancer, 4 + x, 15));
+        }
+        for x in 0..14 {
+            scenario.units.push(harvester(0, 4 + x, 17));
+        }
+        let state = scenario.build().unwrap();
+        let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+        trains(&commands)
+            .into_iter()
+            .any(|(_, kind)| kind == UnitKind::Harvester)
+    };
+    assert!(trained(14), "premise: an army worth more than its workers");
+    assert!(!trained(6), "an army worth less: workers wait");
+}

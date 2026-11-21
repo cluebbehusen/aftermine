@@ -626,14 +626,10 @@ pub(crate) fn decide(
         );
     }
     // A short defense leaves scrap to the army: only the recovery Harvester
-    // above is trained while it lasts. Until the army reaches the stance
-    // minimum, workers that would cost more than it take only what the army
-    // leaves, after production.
-    let pace = if exposed {
-        army(observation).saturating_sub(workforce(observation))
-    } else {
-        u64::MAX
-    };
+    // above is trained while it lasts. Workers that would cost more than the
+    // army is worth take only what the army leaves, after production: an
+    // army keeps pace with the workforce it guards.
+    let pace = army(observation).saturating_sub(workforce(observation));
     if !short {
         workers::train(
             observation,
