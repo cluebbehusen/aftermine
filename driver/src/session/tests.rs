@@ -832,3 +832,68 @@ fn an_enemy_seen_dying_counts_though_the_seat_s_last_eye_on_it_fell_too() {
         seen.log
     );
 }
+
+#[test]
+fn took_fire_names_a_unit_hit_on_the_move() {
+    // A Breaker runs past an enemy Lancer. Fire lands before movement in a
+    // tick, so a hit Breaker has already left the place it was hit.
+    let mut scenario = human_scenario("hit-on-the-move");
+    let (start, lancer) = (TilePos::new(12, 2), TilePos::new(25, 2));
+    scenario.units.extend([
+        aftermine_sim::scenario::UnitSpec {
+            player: 0,
+            kind: UnitKind::Breaker,
+            x: start.x,
+            y: start.y,
+        },
+        aftermine_sim::scenario::UnitSpec {
+            player: 1,
+            kind: UnitKind::Lancer,
+            x: lancer.x,
+            y: lancer.y,
+        },
+    ]);
+    let mut state = scenario.build().unwrap();
+    let runner = state
+        .units()
+        .iter()
+        .find(|unit| unit.player == PlayerId(0) && TilePos::containing(unit.pos) == start)
+        .unwrap()
+        .id;
+    let mut commands = vec![PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Run {
+            units: vec![runner],
+            goal: TilePos::new(30, 2),
+            queue: false,
+        },
+    }];
+    for _ in 0..400 {
+        let mut seen = Seen::new(PlayerId(0));
+        seen.look(&state);
+        let report = state.tick(&std::mem::take(&mut commands));
+        let hit = report.events.iter().find_map(|event| match event {
+            Event::DamageTaken { player, pos } if *player == PlayerId(0) => Some(*pos),
+            _ => None,
+        });
+        let Some(pos) = hit else { continue };
+        let Some(unit) = state.unit(runner) else {
+            break;
+        };
+        if unit.pos == pos {
+            continue;
+        }
+        seen.note(report.tick, &state, &report.events);
+        let logged = seen
+            .log
+            .iter()
+            .find(|logged| matches!(logged.event, Event::DamageTaken { .. }))
+            .unwrap();
+        assert_eq!(
+            logged.note.as_deref(),
+            Some(format!("breaker {}", runner.0).as_str())
+        );
+        return;
+    }
+    panic!("premise: the Lancer never hit the Breaker while it ran");
+}

@@ -104,8 +104,9 @@ tick on its own.
 /// How the game works where the Roster is silent, then every Roster page in
 /// Roster order, as Markdown: a heading per section,
 /// then each kind's name, its domain and price, and its page. Each page
-/// ends with how often its weapons fire, which a player of the shell sees
-/// and one reading the game through the protocol cannot.
+/// ends with how often its weapons fire and, for a gun that plants, how it
+/// plants, which a player of the shell sees and one reading the game
+/// through the protocol cannot.
 pub fn sheet() -> String {
     let mut out = mechanics();
     for (title, entries) in sections() {
@@ -120,6 +121,9 @@ pub fn sheet() -> String {
                 }
             }
             for line in fire_intervals(entry) {
+                let _ = writeln!(out, "{line}");
+            }
+            if let Some(line) = planting(entry) {
                 let _ = writeln!(out, "{line}");
             }
             out.push('\n');
@@ -148,6 +152,41 @@ fn fire_intervals(entry: Entry) -> Vec<String> {
                 fire_interval(&subject, stats.weapons)
             })
             .collect(),
+    }
+}
+
+/// How a gun that fires only from planted spades plants and stows them,
+/// which a player of the shell watches happen.
+fn planting(entry: Entry) -> Option<String> {
+    let Entry::Unit(kind) = entry else {
+        return None;
+    };
+    let brace = kind.stats().brace?;
+    let deploy = tick_time_label(u32::from(brace.deploy_ticks));
+    let stow = tick_time_label(u32::from(
+        brace.deploy_ticks.div_ceil(brace.retract_per_tick),
+    ));
+    let recoil = tick_time_label(brace.recoil_ticks);
+    let stowing = format!("it stows them in {stow}, starting no sooner than {recoil} after a shot");
+    let after = match brace.traverse {
+        Some(traverse) => format!(
+            "Planted, it follows a target up to {} either way; to aim further off or to drive, {stowing}.",
+            degrees(traverse.arc)
+        ),
+        None => format!("To turn or drive, {stowing}."),
+    };
+    Some(format!(
+        "Plants its spades in {deploy} once stopped and turned to its target, and fires only while planted. {after}"
+    ))
+}
+
+/// `steps` of the 256-step compass in degrees, to a tenth.
+fn degrees(steps: u8) -> String {
+    let tenths = u32::from(steps) * 3600 / 256;
+    if tenths.is_multiple_of(10) {
+        format!("{}°", tenths / 10)
+    } else {
+        format!("{}.{}°", tenths / 10, tenths % 10)
     }
 }
 

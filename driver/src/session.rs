@@ -718,12 +718,16 @@ impl Seen {
             .collect();
     }
 
-    /// The own unit or structure at `pos` after a tick, as the seat names it.
-    fn own_at(&self, state: &State, pos: Vec2Fx) -> Option<String> {
+    /// The own unit hit at `pos` in tick `tick`, or the own structure
+    /// there, as the seat names it, judged against `state`, the world after
+    /// that tick. Fire lands before movement in a tick, so a unit hit on the
+    /// move has left `pos`: the nearest own unit hit in that tick is the one.
+    fn hit_at(&self, tick: u64, state: &State, pos: Vec2Fx) -> Option<String> {
         if let Some(unit) = state
             .units()
             .iter()
-            .find(|unit| unit.player == self.seat && unit.pos == pos)
+            .filter(|unit| unit.player == self.seat && unit.damaged_at == Some(tick))
+            .min_by_key(|unit| unit.pos.dist_sq(pos))
         {
             return Some(format!("{} {}", unit.kind.name(), unit.id.0));
         }
@@ -793,7 +797,7 @@ impl Seen {
                             .fire
                             .insert((tile.x.div_euclid(FIRE_CELL), tile.y.div_euclid(FIRE_CELL)));
                     if fresh {
-                        note = self.own_at(state, *pos);
+                        note = self.hit_at(tick, state, *pos);
                     }
                     fresh
                 }

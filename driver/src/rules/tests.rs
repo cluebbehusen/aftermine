@@ -49,6 +49,50 @@ fn every_armed_page_says_how_often_it_fires() {
 }
 
 #[test]
+fn a_gun_that_plants_says_how_long_planting_takes() {
+    let sheet = sheet();
+    let page = |name: &str| {
+        let start = sheet
+            .find(&format!("## {name}\n"))
+            .unwrap_or_else(|| panic!("no page for {name}"));
+        let rest = &sheet[start + 3..];
+        rest[..rest.find("\n## ").unwrap_or(rest.len())].to_string()
+    };
+    let label = aftermine_kit::roster::tick_time_label;
+    let piledriver = UnitKind::Piledriver.stats().brace.unwrap();
+    let text = page("Piledriver");
+    assert!(
+        text.contains(&format!(
+            "Plants its spades in {} once stopped and turned to its target",
+            label(u32::from(piledriver.deploy_ticks))
+        )),
+        "{text}"
+    );
+    assert!(
+        text.contains("up to 22.5° either way"),
+        "the arc is 16 of 256 compass steps: {text}"
+    );
+    assert!(
+        text.contains(&format!(
+            "it stows them in {}, starting no sooner than {} after a shot",
+            label(u32::from(
+                piledriver
+                    .deploy_ticks
+                    .div_ceil(piledriver.retract_per_tick)
+            )),
+            label(piledriver.recoil_ticks)
+        )),
+        "{text}"
+    );
+    let bombard = page("Bombard");
+    assert!(
+        bombard.contains("To turn or drive, it stows them"),
+        "{bombard}"
+    );
+    assert!(!page("Lancer").contains("Plants its spades"));
+}
+
+#[test]
 fn the_sheet_opens_with_the_rules_a_player_cannot_watch() {
     let sheet = sheet();
     assert!(sheet.starts_with("# How the game works"), "{sheet}");

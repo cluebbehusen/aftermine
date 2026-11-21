@@ -259,3 +259,90 @@ fn an_advance_reads_as_what_the_seat_saw_happen() {
         "{text}"
     );
 }
+
+#[test]
+fn a_warhead_reads_in_tiles_and_ticks() {
+    use aftermine_sim::strike::{KnownWarhead, WarheadLine};
+    use aftermine_sim::{BuildingId, WarheadId};
+    use chassis::fx::{Fx, Vec2Fx};
+    let at = |x: &str, y: &str| Vec2Fx::new(Fx::lit(x), Fx::lit(y));
+    let (_, mut view) = opening();
+    view.tick = 13_800;
+    view.warheads = vec![
+        KnownWarhead {
+            id: WarheadId(0),
+            player: Some(PlayerId(1)),
+            hostile: true,
+            position: at("47.3", "10.6"),
+            line: Some(WarheadLine {
+                launch: at("26.0", "5.0"),
+                impact: at("47.5", "10.5"),
+                arrival: 13_855,
+            }),
+            exposure: Some(60),
+            interceptor: Some(BuildingId(66)),
+        },
+        KnownWarhead {
+            id: WarheadId(1),
+            player: None,
+            hostile: true,
+            position: at("30.9", "8.1"),
+            line: None,
+            exposure: Some(3),
+            interceptor: None,
+        },
+    ];
+    let text = render(&view, None);
+    assert!(
+        text.contains(
+            "  0 hostile from seat 1 at (47,10) lands at (47,10) on tick 13855 (in 55 ticks), \
+             launched from (26,5) | held 60 ticks | interceptor structure 66 expected"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("  1 hostile at (30,8) landing point not yet tracked | held 3 ticks"),
+        "{text}"
+    );
+    assert!(!text.contains("bits"), "{text}");
+    view.tick = 13_855;
+    assert!(
+        render(&view, None).contains("lands at (47,10) this tick"),
+        "{}",
+        render(&view, None)
+    );
+}
+
+#[test]
+fn took_fire_names_what_was_hit_when_the_seat_can() {
+    use aftermine_protocol::SeenEvent;
+    use aftermine_sim::Event;
+    use chassis::fx::{Fx, Vec2Fx};
+    let fire = |note: Option<&str>| SeenEvent {
+        tick: 1300,
+        event: Event::DamageTaken {
+            player: PlayerId(0),
+            pos: Vec2Fx::new(Fx::from_num(12), Fx::from_num(7)),
+        },
+        note: note.map(str::to_string),
+    };
+    let view = PlayedView {
+        player: PlayerId(0),
+        team: 0,
+        ticks: 200,
+        tick: 1400,
+        income: 0,
+        log: vec![fire(Some("lancer 72")), fire(None)],
+        result: None,
+        tick_limit: None,
+    };
+    let text = played(&view);
+    assert!(
+        text.contains("1300 (1:05) your lancer 72 took fire at (12,7)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("1300 (1:05) your units or structures took fire near (12,7)"),
+        "{text}"
+    );
+}

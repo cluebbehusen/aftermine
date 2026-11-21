@@ -170,7 +170,7 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
         compact(known, &tracks)
     });
     section(&mut out, "WARHEADS", view.warheads.iter(), |known| {
-        compact(known, &tracks)
+        warhead(known, view.tick)
     });
     remembered_tiles(&mut out, "REMEMBERED SCRAP", &view.scrap);
     remembered_tiles(&mut out, "REMEMBERED WRECKS", &view.wrecks);
@@ -411,6 +411,48 @@ fn target(kind: &str, id: &Value, tracks: &Tracks) -> Option<String> {
     })
 }
 
+/// A warhead in flight as the seat knows it, in tiles and ticks: where it
+/// is, and once its line is tracked, where and when it lands.
+fn warhead(known: &aftermine_sim::strike::KnownWarhead, now: u64) -> String {
+    let at = |pos: chassis::fx::Vec2Fx| {
+        let tile = TilePos::containing(pos);
+        format!("({},{})", tile.x, tile.y)
+    };
+    let mut line = format!(
+        "{} {}",
+        known.id.0,
+        if known.hostile { "hostile" } else { "own" }
+    );
+    if let Some(player) = known.player {
+        let _ = write!(line, " from seat {}", player.0);
+    }
+    let _ = write!(line, " at {}", at(known.position));
+    match known.line {
+        Some(flight) => {
+            let left = flight.arrival.saturating_sub(now);
+            let when = if left == 0 {
+                "this tick".to_string()
+            } else {
+                format!("on tick {} (in {left} ticks)", flight.arrival)
+            };
+            let _ = write!(
+                line,
+                " lands at {} {when}, launched from {}",
+                at(flight.impact),
+                at(flight.launch)
+            );
+        }
+        None => line.push_str(" landing point not yet tracked"),
+    }
+    if let Some(held) = known.exposure {
+        let _ = write!(line, " | held {held} ticks");
+    }
+    if let Some(battery) = known.interceptor {
+        let _ = write!(line, " | interceptor structure {} expected", battery.0);
+    }
+    line
+}
+
 fn tile(at: [i32; 2]) -> String {
     format!("({},{})", at[0], at[1])
 }
@@ -627,9 +669,10 @@ pub fn played(view: &PlayedView) -> String {
             Event::OrderStalled {
                 unit, reason, pos, ..
             } => format!("your unit {} at {} stalled: {reason:?}", unit.0, at(*pos)),
-            Event::DamageTaken { pos, .. } => {
-                format!("your units or structures took fire near {}", at(*pos))
-            }
+            Event::DamageTaken { pos, .. } => match &seen.note {
+                Some(hit) => format!("your {hit} took fire at {}", at(*pos)),
+                None => format!("your units or structures took fire near {}", at(*pos)),
+            },
             Event::WarheadLanded {
                 player, at: impact, ..
             } => {
