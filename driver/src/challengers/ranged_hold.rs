@@ -92,10 +92,20 @@ pub(super) fn decide(turn: &mut Turn<'_>, params: &Params, memory: &mut Memory) 
                 Domain::Ground => ground,
                 Domain::Air => air,
             })
-            .map(|u| u.tile);
+            .map(|u| (u.tile, u.body_domain()));
         match threat {
-            Some(tile) => {
-                turn.hunt(&army, tile);
+            Some((tile, domain)) => {
+                // Only those that can hit it go, so one aircraft never pulls
+                // the line off.
+                let (able, rest): (Vec<UnitId>, Vec<UnitId>) =
+                    army.iter().copied().partition(|id| {
+                        turn.obs
+                            .my_units
+                            .iter()
+                            .any(|u| u.id == *id && u.kind.stats().can_target(domain))
+                    });
+                turn.hunt(&able, tile);
+                gather(turn, &rest, line, Prey::Defenses);
             }
             None => gather(turn, &army, line, Prey::Defenses),
         }
@@ -125,3 +135,6 @@ pub(super) fn decide(turn: &mut Turn<'_>, params: &Params, memory: &mut Memory) 
     let sites = turn.map.enemy_harvest_sites(14);
     turn.scout_sites(&sites, 0);
 }
+
+#[cfg(test)]
+mod tests;

@@ -6,12 +6,12 @@
 //! An armed unit's death joins the fight whose last death came at most
 //! `GAP_TICKS` before it and whose centre, the mean of its deaths, lies
 //! within `GAP_TILES`; otherwise it starts one. A fight needs two deaths.
-//! Every seat with armed units within `NEAR_TILES` of a fight's centre, from
-//! `GAP_TICKS` before its first death to its last, or with a loss in it,
-//! took part. For each, the fight records how strong its team stood against
-//! the others near the centre when they first met there, when each of its
-//! units arrived, which of its losses died with no armed ally within
-//! `ALONE_TILES`, and the price of the units each side lost.
+//! Every seat with armed units within `NEAR_TILES` of a fight's final
+//! centre, from `GAP_TICKS` before its first death to its last, or with a
+//! loss in it, took part. For each, the fight records how strong its team
+//! stood against the others near the centre when they first met there, when
+//! each of its units arrived, which of its losses died with no armed ally
+//! within `ALONE_TILES`, and the price of the units each side lost.
 
 use aftermine_sim::stats::UnitKind;
 use aftermine_sim::{Event, PlayerId, State, TickReport, UnitId};
@@ -19,6 +19,7 @@ use chassis::grid::TilePos;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Write as _;
+use std::rc::Rc;
 
 /// Ticks between position samples: half a second.
 const SAMPLE_TICKS: u64 = 10;
@@ -35,8 +36,8 @@ const NEAR_TILES: i32 = 10;
 /// Tiles inside which an armed ally keeps a dying unit from dying alone.
 const ALONE_TILES: i32 = 6;
 
-/// Ticks after its side's first arrival at which a unit arrives late: ten
-/// seconds.
+/// Ticks after its seat's first unit in a fight at which another arrives
+/// late: ten seconds.
 const LATE_TICKS: u64 = 200;
 
 /// What one seat did over a match's fights. Counts only, so seat-legs add.
@@ -112,6 +113,14 @@ struct Open {
     deaths: Vec<Death>,
     /// Sum of the deaths' tiles, for the centre.
     sum: (i64, i64),
+    /// The samples from `GAP_TICKS` before its first death on. Who stood
+    /// near is judged once it closes, against its final centre and up to its
+    /// last death.
+    samples: Vec<Rc<Sample>>,
+}
+
+/// Who stood near a closed fight.
+struct Near {
     /// Each unit that came near, with its seat and the sample it came at.
     arrivals: BTreeMap<UnitId, (u8, u64)>,
     /// Each seat's team worth against the others' at the first sample both
@@ -134,34 +143,41 @@ impl Open {
         self.deaths.push(death);
     }
 
-    /// Notes who stood near the centre at `sample`.
-    fn sample(&mut self, sample: &Sample) {
+    /// Who stood near the centre at the samples up to the last death.
+    fn near(&self) -> Near {
         let centre = self.centre();
-        let near: Vec<&Armed> = sample
-            .units
-            .iter()
-            .filter(|unit| unit.tile.chebyshev(centre) <= NEAR_TILES)
-            .collect();
-        for unit in &near {
-            self.arrivals
-                .entry(unit.id)
-                .or_insert((unit.seat, sample.tick));
-        }
-        for unit in &near {
-            if self.met.contains_key(&unit.seat) {
-                continue;
+        let mut seen = Near {
+            arrivals: BTreeMap::new(),
+            met: BTreeMap::new(),
+        };
+        for sample in self.samples.iter().filter(|sample| sample.tick <= self.end) {
+            let near: Vec<&Armed> = sample
+                .units
+                .iter()
+                .filter(|unit| unit.tile.chebyshev(centre) <= NEAR_TILES)
+                .collect();
+            for unit in &near {
+                seen.arrivals
+                    .entry(unit.id)
+                    .or_insert((unit.seat, sample.tick));
             }
-            let (own, others) = near.iter().fold((0, 0), |(own, others), other| {
-                if other.team == unit.team {
-                    (own + other.worth, others)
-                } else {
-                    (own, others + other.worth)
+            for unit in &near {
+                if seen.met.contains_key(&unit.seat) {
+                    continue;
                 }
-            });
-            if others > 0 {
-                self.met.insert(unit.seat, (own, others));
+                let (own, others) = near.iter().fold((0, 0), |(own, others), other| {
+                    if other.team == unit.team {
+                        (own + other.worth, others)
+                    } else {
+                        (own, others + other.worth)
+                    }
+                });
+                if others > 0 {
+                    seen.met.insert(unit.seat, (own, others));
+                }
             }
         }
+        seen
     }
 }
 
@@ -169,7 +185,7 @@ impl Open {
 #[derive(Debug)]
 pub struct FightTracker {
     teams: Vec<u8>,
-    history: VecDeque<Sample>,
+    history: VecDeque<Rc<Sample>>,
     open: Vec<Open>,
     seats: Vec<SeatFights>,
 }
@@ -200,37 +216,44 @@ impl FightTracker {
     /// Takes in the tick that produced `state` and `report`.
     pub fn observe(&mut self, state: &State, report: &TickReport) {
         let tick = state.current_tick();
-        let mut deaths = Vec::new();
-        for event in &report.events {
-            let Event::UnitDied {
-                unit,
-                kind,
-                player,
-                pos,
-                ..
-            } = event
-            else {
-                continue;
-            };
-            if !armed(*kind) {
-                continue;
-            }
-            let tile = TilePos::containing(*pos);
-            let team = self.team(*player);
-            let alone = !state.units().iter().any(|other| {
-                other.id != *unit
-                    && armed(other.kind)
-                    && self.team(other.player) == team
-                    && other.tile().chebyshev(tile) <= ALONE_TILES
-            });
-            deaths.push(Death {
-                seat: player.0,
-                team,
-                tile,
-                price: u64::from(kind.stats().cost),
-                alone,
-            });
-        }
+        let dying: Vec<(UnitId, PlayerId, UnitKind, TilePos)> = report
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                Event::UnitDied {
+                    unit,
+                    kind,
+                    player,
+                    pos,
+                    ..
+                } if armed(*kind) => Some((*unit, *player, *kind, TilePos::containing(*pos))),
+                _ => None,
+            })
+            .collect();
+        // The tick's dead are already gone from `state`, so an ally dying
+        // beside a unit on the same tick is looked for among them.
+        let deaths = dying
+            .iter()
+            .map(|&(unit, player, kind, tile)| {
+                let team = self.team(player);
+                let beside = |other: UnitId, owner: PlayerId, at: TilePos| {
+                    other != unit && self.team(owner) == team && at.chebyshev(tile) <= ALONE_TILES
+                };
+                let alone =
+                    !state.units().iter().any(|other| {
+                        armed(other.kind) && beside(other.id, other.player, other.tile())
+                    }) && !dying
+                        .iter()
+                        .any(|&(other, owner, _, at)| beside(other, owner, at));
+                Death {
+                    seat: player.0,
+                    team,
+                    tile,
+                    price: u64::from(kind.stats().cost),
+                    alone,
+                }
+            })
+            .collect();
         let units = tick.is_multiple_of(SAMPLE_TICKS).then(|| {
             state
                 .units()
@@ -266,9 +289,9 @@ impl FightTracker {
             self.close(fight);
         }
         if let Some(units) = units {
-            let sample = Sample { tick, units };
+            let sample = Rc::new(Sample { tick, units });
             for fight in &mut self.open {
-                fight.sample(&sample);
+                fight.samples.push(Rc::clone(&sample));
             }
             self.history.push_back(sample);
             while self
@@ -282,7 +305,7 @@ impl FightTracker {
     }
 
     /// Adds `death` at `tick` to the fight it joins, or starts one, which
-    /// looks back over the samples kept to see who was already near.
+    /// keeps the samples kept to see who was already near.
     fn die(&mut self, tick: u64, death: Death) {
         if let Some(fight) = self.open.iter_mut().find(|fight| {
             tick <= fight.end + GAP_TICKS && fight.centre().chebyshev(death.tile) <= GAP_TILES
@@ -295,13 +318,9 @@ impl FightTracker {
             end: tick,
             deaths: Vec::new(),
             sum: (0, 0),
-            arrivals: BTreeMap::new(),
-            met: BTreeMap::new(),
+            samples: self.history.iter().cloned().collect(),
         };
         fight.take(death);
-        for sample in &self.history {
-            fight.sample(sample);
-        }
         self.open.push(fight);
     }
 
@@ -309,7 +328,8 @@ impl FightTracker {
         if fight.deaths.len() < 2 {
             return;
         }
-        let mut seats: Vec<u8> = fight
+        let near = fight.near();
+        let mut seats: Vec<u8> = near
             .arrivals
             .values()
             .map(|(seat, _)| *seat)
@@ -321,7 +341,7 @@ impl FightTracker {
             let team = self.teams[usize::from(seat)];
             let record = &mut self.seats[usize::from(seat)];
             record.fights += 1;
-            if let Some((own, others)) = fight.met.get(&seat) {
+            if let Some((own, others)) = near.met.get(&seat) {
                 record.met += 1;
                 if own * 2 < *others {
                     record.met_short += 1;
@@ -336,7 +356,7 @@ impl FightTracker {
                     record.killed += death.price;
                 }
             }
-            let came: Vec<u64> = fight
+            let came: Vec<u64> = near
                 .arrivals
                 .values()
                 .filter(|(at, _)| *at == seat)
@@ -465,7 +485,7 @@ pub fn pooled_ratio(pairs: impl Iterator<Item = (u64, u64)>) -> Option<(f64, [f6
 pub fn render(out: &mut String, groups: &[(String, &FightPool)]) {
     let _ = writeln!(
         out,
-        "\nfights: losses that died with no armed ally within {ALONE_TILES} tiles, fights met at under half the others' worth, units that came {} s or more after their side's first, price of units killed per price lost (95% intervals over seat-legs)",
+        "\nfights: losses that died with no armed ally within {ALONE_TILES} tiles, fights met at under half the others' worth, units that came {} s or more after their seat's first, price of units killed per price lost (95% intervals over seat-legs)",
         LATE_TICKS / u64::from(aftermine_sim::TICKS_PER_SECOND)
     );
     for (label, pool) in groups {
