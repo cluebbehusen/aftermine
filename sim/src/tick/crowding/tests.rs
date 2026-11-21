@@ -444,10 +444,11 @@ fn lazily_admitted_choices_match_choices_among_admitted_candidates() {
         UnitKind::Harvester,
         TilePos::new(10, 8).center(),
     );
+    state.unit_mut(asker).unwrap().order = crate::Order::Build { site };
     let b = state.building(site).unwrap().clone();
     let unit = state.unit(asker).unwrap().clone();
     let clearance = crate::tick::brain::contact::clearance(&unit);
-    let surface = state.contact_surface(&b);
+    let surface = state.work_surface(&unit, &b);
     let positions: Vec<Position> = crate::geometry::work_positions(
         b.anchor,
         b.kind.size(),

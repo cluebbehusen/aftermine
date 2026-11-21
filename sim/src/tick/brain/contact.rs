@@ -78,7 +78,7 @@ fn stance_positions(
     b: &crate::Building,
     pads: Option<Vec<Vec2Fx>>,
 ) -> Vec<crowding::Position> {
-    let surface = state.contact_surface(b);
+    let surface = state.work_surface(unit, b);
     pads.unwrap_or_else(|| {
         crate::geometry::work_positions(
             b.anchor,
@@ -473,7 +473,7 @@ fn admissible(
     let outlines = cut_outlines(state, unit, point);
     state
         .ground_terrain()
-        .with_contact(Some(state.contact_surface(building)))
+        .with_contact(Some(state.work_surface(unit, building)))
         .with_outlines(&outlines)
         .contact_clear(goal.center(), point, collision_radius(unit))
 }
@@ -558,7 +558,7 @@ pub(in crate::tick) fn surface_for(
                 })
                 .flatten()
         })?;
-    Some(state.contact_surface(b))
+    Some(state.work_surface(unit, b))
 }
 
 /// The drop-off whose surface bounds a loaded Harvest worker, if it is unloading,

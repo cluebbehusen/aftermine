@@ -578,10 +578,22 @@ pub fn outline(kind: BuildingKind, tier: u8, stage: Option<u8>) -> Outline {
     }
 }
 
-/// A building's contact surface, without a navigation mesh or cache.
+/// The outlines a site of `kind` at `tier` shows after `stage`.
+fn stages_after(kind: BuildingKind, tier: u8, stage: u8) -> &'static [Outline] {
+    let site: &'static [Stages] = outlines(kind).site;
+    let stages = &site[usize::from(tier).min(site.len() - 1)];
+    stages.get(usize::from(stage) + 1..).unwrap_or(&[])
+}
+
+/// A building's contact surface, without a navigation mesh or cache: the
+/// outline its art shows now, joined by any outlines it is yet to show, the
+/// `later` stages of a site and its `finished` building. Queries meet the
+/// union of them all.
 #[derive(Clone, Copy)]
 pub struct Surface {
     outline: Outline,
+    later: &'static [Outline],
+    finished: Option<Outline>,
     anchor: TilePos,
     size: (i32, i32),
 }
@@ -591,9 +603,27 @@ impl Surface {
     pub fn new(building: &Building) -> Self {
         Self {
             outline: outline(building.kind, building.tier, building.construction_stage()),
+            later: &[],
+            finished: None,
             anchor: building.anchor,
             size: building.kind.size(),
         }
+    }
+
+    /// This surface of a site of `kind` at `tier` and `stage`, joined by
+    /// every outline the site is yet to show: its later stages and the
+    /// finished building.
+    fn with_outlines_to_come(mut self, kind: BuildingKind, tier: u8, stage: u8) -> Self {
+        self.later = stages_after(kind, tier, stage);
+        let finished = outline(kind, tier, None);
+        self.finished = (!self.outlines().any(|shown| shown == finished)).then_some(finished);
+        self
+    }
+
+    fn outlines(self) -> impl Iterator<Item = Outline> {
+        std::iter::once(self.outline)
+            .chain(self.later.iter().copied())
+            .chain(self.finished)
     }
 
     fn vertex(self, (x, y): (i32, i32)) -> Vec2Fx {
@@ -603,13 +633,18 @@ impl Surface {
         )
     }
 
-    /// The outline's edges in winding order, closing back to the first
-    /// corner. Each corner is placed once and carried to the next edge:
-    /// every contact query walks these.
+    /// Every outline's edges in winding order, each outline closing back
+    /// to its first corner. Each corner is placed once and carried to the
+    /// next edge: every contact query walks these.
     fn edges(self) -> impl Iterator<Item = (Vec2Fx, Vec2Fx)> {
-        let first = self.vertex(self.outline[0]);
+        self.outlines()
+            .flat_map(move |outline| self.outline_edges(outline))
+    }
+
+    fn outline_edges(self, outline: Outline) -> impl Iterator<Item = (Vec2Fx, Vec2Fx)> {
+        let first = self.vertex(outline[0]);
         let mut from = first;
-        self.outline[1..]
+        outline[1..]
             .iter()
             .map(move |&corner| self.vertex(corner))
             .chain(std::iter::once(first))
@@ -640,16 +675,16 @@ impl Surface {
     }
 
     /// The straight sides a flat tool can press against, each from one end
-    /// to the other in the outline's winding: the edges of the outline's
-    /// convex hull, which is all a straight edge can meet, less any edge
+    /// to the other in the outline's winding: the edges of the convex hull
+    /// of every outline, which is all a straight edge can meet, less any edge
     /// under two fifths of the longer edge beside it. Such a short edge
     /// bevels a corner: a tool squared to it would stand askew to both
     /// sides it cuts across. Outlines wind clockwise on screen, as the hull
     /// does.
     pub fn sides(self) -> Vec<(Vec2Fx, Vec2Fx)> {
         let mut points: Vec<(i64, i64)> = self
-            .outline
-            .iter()
+            .outlines()
+            .flatten()
             .map(|&(x, y)| (i64::from(x * self.size.0), i64::from(y * self.size.1)))
             .collect();
         points.sort_unstable();
@@ -776,16 +811,20 @@ impl Surface {
         }
     }
 
+    /// Whether `point` lies inside any outline. Outlines overlap, so each
+    /// takes its own crossing count.
     fn contains(self, point: Vec2Fx) -> bool {
-        let mut inside = false;
-        for (a, b) in self.edges() {
-            if (a.y > point.y) != (b.y > point.y)
-                && point.x < a.x + (point.y - a.y) * (b.x - a.x) / (b.y - a.y)
-            {
-                inside = !inside;
+        self.outlines().any(|outline| {
+            let mut inside = false;
+            for (a, b) in self.outline_edges(outline) {
+                if (a.y > point.y) != (b.y > point.y)
+                    && point.x < a.x + (point.y - a.y) * (b.x - a.x) / (b.y - a.y)
+                {
+                    inside = !inside;
+                }
             }
-        }
-        inside
+            inside
+        })
     }
 
     /// A short, swept chassis movement cannot cross the occupied body.
@@ -885,7 +924,7 @@ impl State {
         if unit.pos.dist_sq(b.closest_point_to(unit.pos)) > reach * reach {
             return false;
         }
-        let surface = self.contact_surface(b);
+        let surface = self.work_surface(unit, b);
         unit.pos.dist_sq(surface.closest(unit.pos)) <= reach * reach
             && surface.clear(unit.pos, unit.pos, unit.kind.stats().radius)
             && self
@@ -915,6 +954,23 @@ impl State {
     /// Contact artwork and tools use this surface; ranged distance remains rectangular.
     pub fn contact_surface(&self, building: &Building) -> Surface {
         Surface::new(building)
+    }
+
+    /// The surface `unit` works `building` from. A site's builder meets
+    /// every outline the site is yet to show as well as its current one: a
+    /// later stage or the finished building can reach past the outline
+    /// before, and would otherwise land on the hull of a builder docked
+    /// against it.
+    pub fn work_surface(&self, unit: &crate::Unit, building: &Building) -> Surface {
+        let surface = Surface::new(building);
+        if unit.order == (crate::Order::Build { site: building.id })
+            && building.under_construction()
+            && let Some(stage) = building.construction_stage()
+        {
+            surface.with_outlines_to_come(building.kind, building.tier, stage)
+        } else {
+            surface
+        }
     }
 }
 

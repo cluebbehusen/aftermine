@@ -255,20 +255,39 @@ fn builders_reach_a_stance_past_a_neighboring_footprint_corner() {
 fn paid_site(
     kind: aftermine_sim::BuildingKind,
     anchor: TilePos,
-    mut buildings: serde_json::Value,
+    buildings: serde_json::Value,
 ) -> (State, aftermine_sim::UnitId, aftermine_sim::BuildingId) {
+    let map = vec!["................................".to_string(); 24];
+    order_site(
+        site_scene(&map, anchor.offset(0, 4), buildings),
+        kind,
+        anchor,
+    )
+}
+
+/// A sandbox on `map` with a Harvester on `start` beside `buildings` and a
+/// distant Fabricator.
+fn site_scene(map: &[String], start: TilePos, mut buildings: serde_json::Value) -> State {
     buildings
         .as_array_mut()
         .unwrap()
         .push(json!({"player":0,"kind":"fabricator","x":28,"y":20}));
     let scenario: Scenario = serde_json::from_value(json!({
-        "name":"paid site", "mode":"sandbox", "map":vec!["................................";24],
+        "name":"paid site", "mode":"sandbox", "map":map,
         "players":[{"name":"Local","scrap":10000,"bot":false}],
-        "units":[{"player":0,"kind":"harvester","x":anchor.x,"y":anchor.y + 4}],
+        "units":[{"player":0,"kind":"harvester","x":start.x,"y":start.y}],
         "buildings": buildings,
     }))
     .unwrap();
-    let mut state = scenario.build().unwrap();
+    scenario.build().unwrap()
+}
+
+/// `state` once its first unit is ordered to build a `kind` at `anchor`.
+fn order_site(
+    mut state: State,
+    kind: aftermine_sim::BuildingKind,
+    anchor: TilePos,
+) -> (State, aftermine_sim::UnitId, aftermine_sim::BuildingId) {
     let id = state.units()[0].id;
     let report = state.tick(&[command(orders::build([id], kind, anchor))]);
     let site = state
@@ -357,7 +376,7 @@ fn a_builder_in_reach_works_where_it_stands_from_every_side_and_corner() {
         let (state, id, site) = paid_site(kind, anchor, json!([]));
         let clearance =
             UnitKind::Harvester.stats().radius + aftermine_sim::stats::WORK_FOOTPRINT_GAP;
-        let surface = state.contact_surface(state.building(site).unwrap());
+        let surface = state.work_surface(state.unit(id).unwrap(), state.building(site).unwrap());
         for side in around {
             let from = beside(anchor, size, side);
             let to = beside(anchor, size, (-side.0, -side.1));
@@ -465,40 +484,86 @@ fn a_docked_worker_backs_off_a_footprint_its_first_leg_would_graze() {
 }
 
 /// A site's outline follows its scaffold, then the raised frame, then the
-/// finished building. Each redraw can leave the builder out of reach or
-/// pressed against the new face; it works on or re-seats within a moment,
-/// to completion.
+/// finished building, and a later outline can reach past the one before.
+/// From whichever side it arrives, a builder docks clear of every outline
+/// the site will show: once its first weld lands it welds every tick to
+/// completion and never sets out again, and the finished building stands
+/// clear of its hull.
 #[test]
 fn a_builder_raises_a_site_through_every_outline_it_shows() {
     use aftermine_sim::BuildingKind;
-    for kind in [BuildingKind::Bastion, BuildingKind::Foundry] {
-        let (mut state, _, site) = paid_site(kind, TilePos::new(14, 10), json!([]));
-        let (mut stages, mut idle, mut longest) = (vec![], 0, 0);
-        let mut done = 0;
-        for _ in 0..2000 {
-            state.tick(&[]);
-            let b = state.building(site).unwrap();
-            if b.built() {
-                break;
-            }
-            let progress = b.construction_progress().unwrap();
-            idle = if progress == done && progress > 0 {
-                idle + 1
-            } else {
-                0
-            };
-            longest = longest.max(idle);
-            done = progress;
-            if stages.last() != Some(&b.construction_stage()) {
-                stages.push(b.construction_stage());
-            }
+    let (anchor, bore) = (TilePos::new(14, 10), TilePos::new(2, 2));
+    let mut map = vec!["................................".to_string(); 24];
+    for frame in [anchor, bore] {
+        let column = usize::try_from(frame.x).unwrap();
+        map[usize::try_from(frame.y).unwrap()].replace_range(column..=column, "E");
+    }
+    // A Deep Bore and a Crucible unlock the kinds the Fabricator does not.
+    let tech = json!([
+        {"player":0,"kind":"extractor","x":bore.x,"y":bore.y},
+        {"player":0,"kind":"crucible","x":24,"y":2},
+    ]);
+    for kind in BuildingKind::ALL {
+        if kind.crew_pads().is_some() {
+            continue;
         }
-        assert!(
-            state.building(site).unwrap().built(),
-            "{kind:?} never built"
-        );
-        assert_eq!(stages, [Some(0), Some(1), Some(2)], "{kind:?}");
-        assert!(longest <= 30, "{kind:?} stood idle {longest} ticks");
+        let (w, h) = kind.size();
+        let mut map = map.clone();
+        if kind != BuildingKind::Extractor {
+            let column = usize::try_from(anchor.x).unwrap();
+            map[usize::try_from(anchor.y).unwrap()].replace_range(column..=column, ".");
+        }
+        for start in [
+            anchor.offset(0, -4),
+            anchor.offset(w + 3, 0),
+            anchor.offset(0, h + 3),
+            anchor.offset(-4, 0),
+        ] {
+            let mut scene = serde_json::to_value(site_scene(&map, start, tech.clone())).unwrap();
+            for b in scene["buildings"].as_array_mut().unwrap() {
+                if b["kind"] == json!("extractor") {
+                    b["tier"] = json!(1);
+                }
+            }
+            let (mut state, id, site) =
+                order_site(serde_json::from_value(scene).unwrap(), kind, anchor);
+            let mut stages = vec![];
+            let mut welding = false;
+            for _ in 0..2000 {
+                let before = state
+                    .building(site)
+                    .unwrap()
+                    .construction_progress()
+                    .unwrap();
+                state.tick(&[]);
+                let b = state.building(site).unwrap();
+                if b.built() {
+                    break;
+                }
+                let progress = b.construction_progress().unwrap();
+                if welding {
+                    let unit = state.unit(id).unwrap();
+                    assert!(
+                        progress > before && unit.path.is_none(),
+                        "{kind:?} from {start:?} stopped welding at stage {:?}: {unit:?}",
+                        b.construction_stage()
+                    );
+                }
+                welding = progress > 0;
+                if stages.last() != Some(&b.construction_stage()) {
+                    stages.push(b.construction_stage());
+                }
+            }
+            let b = state.building(site).unwrap();
+            assert!(b.built(), "{kind:?} from {start:?} never built");
+            assert_eq!(stages.first(), Some(&Some(0)), "{kind:?} from {start:?}");
+            let unit = state.unit(id).unwrap();
+            let radius = unit.kind.stats().radius;
+            assert!(
+                unit.pos.dist_sq(state.contact_surface(b).closest(unit.pos)) >= radius * radius,
+                "{kind:?} from {start:?} finished on its builder: {unit:?}"
+            );
+        }
     }
 }
 
