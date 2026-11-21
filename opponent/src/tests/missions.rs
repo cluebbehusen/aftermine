@@ -338,6 +338,56 @@ fn defense_outranks_workers_under_a_small_allowance() {
 }
 
 #[test]
+fn a_short_defense_nothing_pays_back_against_keeps_its_savings() {
+    // Lancers outrange a Turret and outfight what the seat could train: no
+    // answer pays back against them, so the scrap kept for the saving target
+    // stays kept rather than feed the attackers. A seat that judges the threat
+    // by its size answers with its cheapest unit, as before.
+    let threatened = |lancers: bool| {
+        let mut scenario = arena(100);
+        scenario.units.extend(workforce(0));
+        scenario.buildings.push(BuildingSpec {
+            player: 0,
+            kind: BuildingKind::Turret,
+            x: 13,
+            y: 9,
+        });
+        if lancers {
+            scenario.units.extend([
+                unit(1, UnitKind::Lancer, 9, 5),
+                unit(1, UnitKind::Lancer, 9, 6),
+            ]);
+        }
+        scenario
+    };
+    let calm = threatened(false);
+    let (_, trace) = seat_with(&calm, 0, reading_thrifty())
+        .act_traced(&calm.build().unwrap(), &mut OwnEvents::default());
+    assert!(trace.unwrap().protected > 0, "premise: scrap is protected");
+
+    let scenario = threatened(true);
+    let state = scenario.build().unwrap();
+    let (commands, trace) =
+        seat_with(&scenario, 0, reading_thrifty()).act_traced(&state, &mut OwnEvents::default());
+    // Armed enemies near the base lower the share protected, but what is
+    // protected stays so: nothing is trained from it.
+    assert!(trace.unwrap().protected > 0, "{commands:?}");
+    assert!(trains(&commands).is_empty(), "{commands:?}");
+    assert!(
+        commands.iter().all(|command| !matches!(
+            command.command,
+            Command::Build {
+                kind: BuildingKind::Turret,
+                ..
+            }
+        )),
+        "{commands:?}"
+    );
+    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    assert!(!trains(&commands).is_empty(), "{commands:?}");
+}
+
+#[test]
 fn a_short_defense_defers_the_saving_target_and_spends_protected_scrap() {
     let threatened = |scrap: u32| {
         let mut scenario = arena(scrap);

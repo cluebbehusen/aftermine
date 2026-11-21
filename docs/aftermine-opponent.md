@@ -82,14 +82,16 @@ actions affect the running total and mission state.
   until the next decision. Small stocks such as scouts, Scuttlers, Sappers and
   carriers never add a producer. Scuttlers draw on the producers the army
   leaves. A point never seen is stale from the start, so scouting begins at
-  once. A stale point draws a new scout only when no scout already out or queued
-  would see it within the time a scout may take to reach a point; that scout
-  joins its producer's queue behind whatever is there, as worker recovery does,
-  rather than wait for an idle producer while workers and the army keep every
-  one busy. Two train ahead of the army: carriers for a seat whose ground
-  reaches no enemy, since they are its army's only way there, and the Sappers
-  attacks want against known defenses, which cost more than any army unit their
-  producer trains and would otherwise never get one.
+  once. While the seat knows no armed enemy unit, a standing scout looks again
+  at a point once what it saw there is forgotten; only a point unseen the full
+  time draws a new scout. A stale point draws a new scout only when no scout
+  already out or queued would see it within the time a scout may take to reach a
+  point; that scout joins its producer's queue behind whatever is there, as
+  worker recovery does, rather than wait for an idle producer while workers and
+  the army keep every one busy. Two train ahead of the army: carriers for a seat
+  whose ground reaches no enemy, since they are its army's only way there, and
+  the Sappers attacks want against known defenses, which cost more than any army
+  unit their producer trains and would otherwise never get one.
 - Extractors and Deep Bores score by payback: what each scrap spent on one
   returns a minute, from the simulation's yields and prices, weighed by greed. A
   frame an enemy start reaches by ground no later than the seat's own scores
@@ -116,9 +118,10 @@ actions affect the running total and mission state.
   part. Stance, personality and threat set the share.
 - An affordable target is bought ahead of everything except emergencies. Targets
   switch only when another scores clearly higher or the reason disappears;
-  protected scrap carries over. Emergencies may spend protected scrap. A
-  rejected, cancelled or refunded purchase keeps the target and recomputes the
-  protected amount from the bank.
+  protected scrap carries over. Emergencies may spend protected scrap on an
+  answer the bank reaches soon; at the rungs that read threats, only on one that
+  pays back. A rejected, cancelled or refunded purchase keeps the target and
+  recomputes the protected amount from the bank.
 
 ## Missions and production
 
@@ -247,7 +250,8 @@ Each behavior is proven by a staged scenario test.
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Enemy air seen                                             | Anti-air proportional to seen enemy air                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Enemy heavies seen                                         | Anti-heavy units proportional to seen enemy heavies                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Enemy Airworks seen                                        | Raise the anti-air need before enemy air arrives                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Enemy Airworks seen                                        | Raise the anti-air need by its price before enemy air arrives                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Enemy Fabricator seen                                      | Raise the line need by its price before enemy ground units arrive                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Ground threat at base or expansion                         | Defend; defenders wait beside the Foundry until those gathered there or already at the fight match the ground force they would meet: every known enemy near where they would fight, not only those near the buildings, counting attackers just lost from sight while any stay in sight. A defense stands down only once none are remembered near, and its members come back beside their Foundry. At their own Foundry, against no standing guns, Veteran and Prime wait for a quarter more than it is worth. Recruits wait there too while those gathered are short, and those out fall back once all of them are short and those out hold less than two thirds of it; artillery is still reached. Away from home, a place the whole army a defense could take would not match by that margin is given up before a defense goes out, and local guards fall back home; a defense already in its fight is not given up. Home and the seat's last Foundry are never given up. A defense short of its attackers trains first, choosing among units and emergency structures by what each destroys of the attackers per scrap |
 | Enemy scout, builder or building among own ones            | On the seat's side of the map, send defenders worth what it cost. A scout is no emergency; a builder or a producer going up is, and with nothing armed beside it the cheapest unit answers, since the first one there soonest stops the site                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Air raid on base or expansion                              | Defend with anti-air or fighters                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -289,18 +293,18 @@ defense sized to hold off the known threat, Extractor restoration, expansion
 timing, tech prerequisites, memory of failed objectives, a response to stalled
 production, focus fire, and pulling wounded units back between fights. A
 scouting point whose scout was lost on the way, or found no safe view, waits to
-go stale again rather than drawing scouts into the same fire one after another.
-A scout with no stale point left comes back beside its Foundry rather than stand
-where its last point stays in its own sight until something finds it. A seat
-with an army big enough to attack that has seen every hostile start yet knows no
-standing hostile building has lost track of the enemy, and its free scouts
-search the map on a grid spaced to a Surveyor's sight until they find one; it
-trains at most one more scout for the search. A frame whose Extractor was lost
-rests three minutes before the seat builds there again. It does no other
-per-unit micro, except keeping point defenders over the army they travel with
-and sending a wounded Roc home from a lift's fight or a clearance. It builds
-every building kind, reaches every upgrade tier, and trains or assembles every
-unit kind.
+go stale again, as any point seen does, rather than drawing scouts into the same
+fire one after another. A scout with no stale point left comes back beside its
+Foundry rather than stand where its last point stays in its own sight until
+something finds it. A seat with an army big enough to attack that has seen every
+hostile start yet knows no standing hostile building has lost track of the
+enemy, and its free scouts search the map on a grid spaced to a Surveyor's sight
+until they find one; it trains at most one more scout for the search. A frame
+whose Extractor was lost rests three minutes before the seat builds there again.
+It does no other per-unit micro, except keeping point defenders over the army
+they travel with and sending a wounded Roc home from a lift's fight or a
+clearance. It builds every building kind, reaches every upgrade tier, and trains
+or assembles every unit kind.
 
 ## Difficulty, stance and personality
 

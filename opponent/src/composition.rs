@@ -254,8 +254,14 @@ impl Enemy {
             .filter(|reach| reaches[*reach as usize] > 0)
             .max_by_key(|reach| reaches[*reach as usize]);
         for building in &observation.enemy_buildings {
-            if building.kind == BuildingKind::Airworks {
-                enemy.air += 200;
+            // A known producer a seat adds to field an army counts as the
+            // threat it paid for before any unit of it is seen: an Airworks
+            // against the air, a Fabricator on the ground.
+            let price = u64::from(building.kind.base_stats().construction.cost);
+            match building.kind {
+                BuildingKind::Airworks => enemy.air += price,
+                BuildingKind::Fabricator => enemy.ground += price,
+                _ => {}
             }
             // A known cradle counts as the machine it will stand up, before it
             // does: the fire that answers that machine wants to be ready for

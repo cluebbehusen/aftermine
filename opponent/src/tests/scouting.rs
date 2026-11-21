@@ -136,15 +136,55 @@ fn a_scout_out_or_queued_takes_a_second_stale_start_it_reaches_in_time() {
 
 #[test]
 fn a_seen_point_waits_until_stale() {
+    // A seat that knows an armed enemy unit looks again once a point is
+    // stale; one that knows none looks again once what it saw there is
+    // forgotten, since the army it has not seen may be forming there.
     let (scenario, state) = scouting(3_600);
-    let staged = |seen: u64| {
+    let staged = |seen: u64, armed: bool| {
         let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
             json["memory"]["scouted"] = scouted(&scenario, seen);
+            if armed {
+                json["memory"]["units"] =
+                    remembered([(900, UnitKind::Lancer, TilePos::new(40, 20), 3_600 - 12)]);
+            }
         });
         looks(&opponent.act(&state, &mut OwnEvents::default()))
     };
-    assert!(staged(3_600 - STALE + 12).is_empty(), "seen too recently");
-    assert_eq!(staged(3_600 - STALE).len(), 1, "stale again");
+    assert!(
+        staged(3_600 - STALE + 12, true).is_empty(),
+        "seen too recently"
+    );
+    assert_eq!(staged(3_600 - STALE, true).len(), 1, "stale again");
+    let forgotten = crate::memory::UNIT_TICKS;
+    assert!(
+        staged(3_600 - forgotten + 12, false).is_empty(),
+        "no army known, but seen too recently"
+    );
+    assert_eq!(
+        staged(3_600 - forgotten, false).len(),
+        1,
+        "no army known: a look again once what was seen is forgotten"
+    );
+}
+
+#[test]
+fn a_seat_that_knows_no_enemy_army_trains_no_scout_sooner() {
+    // A standing scout looks again sooner while the seat knows no armed enemy
+    // unit, but a new one is trained only for a point unseen the full time.
+    let mut scenario = field();
+    scenario.players[0].scrap = 1_000;
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, 3_600, &[]);
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["memory"]["scouted"] = scouted(&scenario, 3_600 - STALE + 12);
+    });
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        trains(&commands)
+            .iter()
+            .all(|(_, kind)| *kind != UnitKind::Surveyor),
+        "{commands:?}"
+    );
 }
 
 #[test]
@@ -640,7 +680,11 @@ fn a_scout_lost_on_the_way_waits_out_its_point_before_another_goes() {
     let survivor = *kestrels.iter().find(|id| alive(&state, **id)).unwrap();
     assert!(!sent.contains(&survivor), "premise: one scout went");
 
-    while state.current_tick() < lost + STALE - 24 {
+    // The flak that shot it down is no army: the seat knows no armed enemy
+    // unit, so the point is worth another look once what was seen there is
+    // forgotten.
+    let wait = crate::memory::UNIT_TICKS;
+    while state.current_tick() < lost + wait - 24 {
         let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         assert!(
             runs(&commands)
@@ -653,7 +697,7 @@ fn a_scout_lost_on_the_way_waits_out_its_point_before_another_goes() {
         state.tick(&commands);
     }
     let mut goes = false;
-    while !goes && state.current_tick() < lost + STALE + 600 {
+    while !goes && state.current_tick() < lost + wait + 600 {
         let commands = opponent.act(&state, &mut OwnEvents::default());
         goes = runs(&commands)
             .iter()
@@ -955,7 +999,8 @@ fn an_army_that_knows_no_enemy_building_sends_a_scout_searching() {
     // West saw East's start lately and found nothing there; East has
     // rebuilt elsewhere, out of sight. With an army to attack with and no
     // target it knows, West's Surveyor searches the field. With no such
-    // army, it waits for the start to go stale.
+    // army, it waits for the start to go stale, which, knowing no armed
+    // enemy unit, is once what it saw there is forgotten.
     let searches = |army: bool| {
         let mut scenario = field();
         scenario.units.push(unit(0, UnitKind::Surveyor, 6, 9));
@@ -970,7 +1015,7 @@ fn an_army_that_knows_no_enemy_building_sends_a_scout_searching() {
         let mut state = scenario.build().unwrap();
         advance_to(&mut state, STALE, &[]);
         let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
-            json["memory"]["scouted"] = scouted(&scenario, STALE - 600);
+            json["memory"]["scouted"] = scouted(&scenario, STALE - crate::memory::UNIT_TICKS + 12);
         });
         looks(&opponent.act(&state, &mut OwnEvents::default()))
     };
