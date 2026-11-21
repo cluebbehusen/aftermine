@@ -356,7 +356,13 @@ fn lifecycle(config: BotConfig) -> (u32, u32) {
         .expect("the second raid is defended");
     let before = attack(&traces[answered - 1].missions).unwrap();
     assert_eq!(before.phase, Phase::Travel);
-    let after = attack(&traces[answered].missions).map_or(0, |mission| mission.units);
+    // A defense may first take the units at home and draw on the attack at
+    // its next decision.
+    let after = traces[answered..traces.len().min(answered + 2)]
+        .iter()
+        .map(|trace| attack(&trace.missions).map_or(0, |mission| mission.units))
+        .min()
+        .unwrap();
     (before.units, after)
 }
 

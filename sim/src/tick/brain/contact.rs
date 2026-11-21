@@ -28,7 +28,7 @@ pub(super) fn approach(
     // unable to land there. A crew holds only a pad.
     if unit.path.as_ref().is_some_and(|path| {
         path.final_point.is_some_and(|point| {
-            !crowding::claimed(state, index, id, point, true)
+            !crowding::claimed(state, index, (id, crowding::Post::Contact), point, true)
                 && admissible(state, unit, b, path.goal, point)
                 && pads.as_ref().is_none_or(|pads| {
                     pads.iter().any(|&entry| {
@@ -51,7 +51,7 @@ pub(super) fn approach(
         crowding::choose_admitted(
             state,
             index,
-            id,
+            (id, crowding::Post::Contact),
             candidates,
             anchor.center()
                 + Vec2Fx::new(Fx::from_num(size.0 - 1), Fx::from_num(size.1 - 1)) / Fx::from_num(2),
@@ -84,7 +84,7 @@ fn stance_positions(
             b.anchor,
             b.kind.size(),
             clearance(unit),
-            unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
+            unit.kind.stats().radius * crate::stats::CONTACT_COMPRESSION,
         )
     })
     .into_iter()
@@ -144,7 +144,7 @@ fn pads_at_work(state: &State, unit: &crate::Unit, site: &crate::Building) -> Ve
                 && other.hp > 0
                 && other.player == unit.player
                 && other.order == (Order::Build { site: site.id })
-                && crowding::productive(state, other)
+                && crowding::post(state, other).is_some()
         })
         .map(crate::Unit::tile)
         .collect()
