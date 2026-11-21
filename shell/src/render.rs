@@ -1281,12 +1281,16 @@ fn draw_unit_pass(
     const CULL_MARGIN: f32 = 2.5;
     let zoom = game.presentation.camera.zoom;
     let airborne = domain == aftermine_sim::stats::Domain::Air;
-    for unit in game.state.units() {
-        // The body's current layer, not its kind's: a parked airframe
-        // draws among ground bodies with no shadow or lift.
-        if unit.domain() != domain {
-            continue;
-        }
+    // The body's current layer, not its kind's: a parked airframe draws
+    // among ground bodies with no shadow or lift.
+    let layer = unit_draw_order(
+        game.state
+            .units()
+            .iter()
+            .filter(|unit| unit.domain() == domain),
+    );
+    let mut bars = Vec::with_capacity(layer.len());
+    for unit in layer {
         if !game.sees_unit(unit) {
             continue;
         }
@@ -1460,6 +1464,10 @@ fn draw_unit_pass(
                 zoom,
             );
         }
+        bars.push((unit, screen, draw_scale));
+    }
+    // Bars draw after every body of the layer, so no larger hull covers one.
+    for (unit, screen, draw_scale) in bars {
         let max_hp = unit.kind.stats().max_hp;
         let w = zoom * hp_bar_tiles(unit.kind, draw_scale);
         if unit.hp < max_hp {
@@ -1484,6 +1492,17 @@ fn draw_unit_pass(
             draw_rectangle(x, y, w * fraction.min(1.0), 3.0, SCRAP_COLOR);
         }
     }
+}
+
+/// The order a layer's units draw in: larger bodies over smaller ones, so a
+/// small unit beside a heavy hull never cuts off its barrel or hull. Equal
+/// bodies keep id order.
+fn unit_draw_order<'a>(
+    units: impl Iterator<Item = &'a aftermine_sim::Unit>,
+) -> Vec<&'a aftermine_sim::Unit> {
+    let mut units: Vec<_> = units.collect();
+    units.sort_by(|a, b| unit_visual_radius(a.kind).total_cmp(&unit_visual_radius(b.kind)));
+    units
 }
 
 /// A little pennant marking a selected building's rally tile.
