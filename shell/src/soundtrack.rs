@@ -48,6 +48,19 @@ pub(crate) enum Scene {
     Defeat,
 }
 
+/// The scene to score this frame, and whether a match screen should start
+/// its music over. A holding screen, `None`, keeps the last scene a screen
+/// named; a newly installed match restarts once a screen shows it.
+fn follow(held: &mut Scene, fresh: &mut bool, scene: Option<Scene>) -> (Scene, bool) {
+    match scene {
+        None => (*held, false),
+        Some(scene) => {
+            *held = scene;
+            (scene, std::mem::take(fresh) && scene.role() == Role::Match)
+        }
+    }
+}
+
 impl Scene {
     fn role(self) -> Role {
         match self {
@@ -341,6 +354,11 @@ pub(crate) struct Soundtrack {
     layers: Layers,
     /// A section failed to load; the score is silent until the next piece.
     failed: bool,
+    /// The scene a holding screen keeps playing.
+    held: Scene,
+    /// A new match was installed; its music starts from the top once a
+    /// match screen shows it.
+    fresh: bool,
 }
 
 impl Soundtrack {
@@ -366,18 +384,28 @@ impl Soundtrack {
             voices: Vec::new(),
             layers: Layers::default(),
             failed: false,
+            held: Scene::Menu,
+            fresh: false,
         })
     }
 
+    /// Starts the next match screen's music from a new song's intro, for a
+    /// match that replaced the one before it.
+    pub fn new_match(&mut self) {
+        self.fresh = true;
+    }
+
     /// Follows the screen and the match, and queues sections as they come
-    /// due.
-    pub fn update(&mut self, scene: Scene, cues: Cues, dt: f32) {
+    /// due. `None` holds the music already playing, as a loading screen
+    /// does.
+    pub fn update(&mut self, scene: Option<Scene>, cues: Cues, dt: f32) {
         self.voices.retain(|voice| !voice.finished());
         let Some(now) = audio_engine::score_tick() else {
             return;
         };
+        let (scene, restart) = follow(&mut self.held, &mut self.fresh, scene);
         let role = scene.role();
-        if self.role != Some(role) {
+        if self.role != Some(role) || restart {
             self.change_piece(role);
         } else if !self.awaiting
             && !self.failed

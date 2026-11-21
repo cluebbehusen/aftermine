@@ -166,3 +166,33 @@ fn soundtrack_context_tracks_pause_victory_and_surrender() {
         "a surrender that loses the match scores as a defeat"
     );
 }
+
+#[test]
+fn a_loading_screen_holds_the_music_and_a_new_match_starts_from_the_top() {
+    let (mut held, mut fresh) = (Scene::Menu, false);
+    assert_eq!(follow(&mut held, &mut fresh, None), (Scene::Menu, false));
+    fresh = true;
+    assert_eq!(
+        follow(&mut held, &mut fresh, None),
+        (Scene::Menu, false),
+        "loading from Home keeps the menu music"
+    );
+    assert!(fresh, "the new match waits for its screen");
+    assert_eq!(
+        follow(&mut held, &mut fresh, Some(Scene::Match)),
+        (Scene::Match, true)
+    );
+    assert_eq!(
+        follow(&mut held, &mut fresh, Some(Scene::Match)),
+        (Scene::Match, false)
+    );
+    assert_eq!(
+        follow(&mut held, &mut fresh, Some(Scene::Pause)),
+        (Scene::Pause, false)
+    );
+    assert_eq!(
+        follow(&mut held, &mut fresh, None),
+        (Scene::Pause, false),
+        "saving from Pause keeps the match ducked"
+    );
+}

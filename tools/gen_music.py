@@ -24,8 +24,10 @@ section starts) and its full length with the tail, in frames at 44.1 kHz.
 --check renders everything again and requires manifest.json to match exactly.
 An Ogg file passes when it decodes to the same 16-bit audio as a fresh
 encode, or, because libvorbis and libm round differently across platforms,
-to audio of the same length whose difference is at least 40 dB below the
-checked-in file's RMS level.
+to audio of the same length whose difference is at least 25 dB below the
+checked-in file's RMS level. The encoder is chaotic: nudging a thousandth of
+a file's samples by one step moves its decoded audio to about 33 dB below
+the level, so a stricter floor fails on another platform's rounding.
 
 Pass --out DIRECTORY to write a complete alternate bank for review without
 touching the checked-in assets.
@@ -71,7 +73,7 @@ PIECES = (
 # seconds fade to silence.
 SLOT_TAIL = 6.0
 SLOT_FADE = 0.5
-CHECK_FLOOR_DB = 40.0
+CHECK_FLOOR_DB = 25.0
 
 
 def section_path(piece: str, index: int, name: str, layer: str) -> str:

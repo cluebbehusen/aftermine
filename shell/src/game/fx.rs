@@ -1717,6 +1717,11 @@ impl Presentation {
                             self.pressure.gun_heard(gun, self.fx_clock);
                         }
                     }
+                    if let aftermine_sim::Target::Unit(attacker) = shooter {
+                        let target_owner =
+                            target.and_then(|target| event_target_owner(state, events, target));
+                        self.note_push(state, *attacker, *target, target_owner, sees(self, *to));
+                    }
                 }
                 Event::ShellIntercepted {
                     defender,

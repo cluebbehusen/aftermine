@@ -880,6 +880,9 @@ impl App {
         }
         self.performance.reset();
         self.input.reset_session();
+        if let Some(soundtrack) = &mut self.soundtrack {
+            soundtrack.new_match();
+        }
     }
 
     /// Keeps the ticket of the seat this client plays while it can still be

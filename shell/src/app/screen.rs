@@ -557,16 +557,18 @@ impl Screen {
     }
 
     /// What the soundtrack scores under this screen: the match on screen,
-    /// held under a menu or a paused viewer, or the menus' own music.
-    pub(super) fn soundtrack_scene(&self, live: &Game) -> crate::soundtrack::Scene {
+    /// held under a menu or a paused viewer, or the menus' own music. A
+    /// loading screen answers `None` and keeps whatever is playing.
+    pub(super) fn soundtrack_scene(&self, live: &Game) -> Option<crate::soundtrack::Scene> {
         use crate::soundtrack::match_scene;
-        match self {
+        Some(match self {
+            Self::Busy(_) => return None,
             Self::Playing | Self::Results(_) => match_scene(&live.view(), false),
             Self::Playback { session, .. } => match_scene(
                 &session.view(),
                 session.clock.paused || session.seeking.is_some(),
             ),
-            Self::FinalMap(_) | Self::Busy(_) | Self::Pause(_) | Self::Waiting(_) => {
+            Self::FinalMap(_) | Self::Pause(_) | Self::Waiting(_) => {
                 match_scene(&live.view(), true)
             }
             Self::Settings { .. } | Self::Codex { .. } | Self::Lessons { .. }
@@ -582,7 +584,7 @@ impl Screen {
             | Self::Lessons { .. }
             | Self::Wizard(_)
             | Self::Replays(_) => crate::soundtrack::Scene::Menu,
-        }
+        })
     }
 
     /// Draws a save's `status` on this screen, under the save that covers

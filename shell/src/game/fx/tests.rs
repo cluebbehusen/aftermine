@@ -3284,6 +3284,47 @@ fn hitting_hostile_structures_early_is_no_final_push() {
 }
 
 #[test]
+fn an_artillery_assault_late_in_a_match_is_a_final_push() {
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    let mut wire = serde_json::to_value(&*game.state).unwrap();
+    wire["tick"] = serde_json::json!(crate::soundtrack::FINAL_PUSH_AFTER);
+    let state: aftermine_sim::State = serde_json::from_value(wire).unwrap();
+    game.replace_state_after_jump(&state);
+    game.presentation.overlay = true;
+    let human = game.presentation.human;
+    let gun = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human)
+        .expect("a unit of the seat's own")
+        .id;
+    let building = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| game.state.hostile(human, building.player))
+        .expect("a hostile structure");
+    let (id, at) = (building.id, building.anchor.center());
+    for _ in 0..20 {
+        game.presentation.update_fx(&game.state, 0.2);
+        game.presentation.spawn_fx(
+            &game.state,
+            &[Event::ShellLaunched {
+                shooter: Target::Unit(gun),
+                unit_pose: None,
+                target: Some(Target::Building(id)),
+                player: human,
+                from: at,
+                to: at,
+                flight: 20,
+            }],
+        );
+    }
+    assert!(game.presentation.score_cues().final_push);
+}
+
+#[test]
 fn a_seat_s_news_is_heard_from_where_it_happened() {
     let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
     let human = game.presentation.human;

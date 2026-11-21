@@ -137,12 +137,12 @@ class OggSerialTests(unittest.TestCase):
 
 
 class CheckRuleTests(unittest.TestCase):
-    def test_passes_equal_audio_and_differences_40_db_down(self) -> None:
+    def test_passes_equal_audio_and_differences_25_db_down(self) -> None:
         expected = tone(gen_music.SR)
         self.assertIsNone(gen_music.audio_difference(expected, expected.copy()))
         noise = np.random.default_rng(3).standard_normal(expected.shape)
         noise *= gen_music.rms(expected) / gen_music.rms(noise)
-        for below, passes in ((45.0, True), (35.0, False)):
+        for below, passes in ((30.0, True), (20.0, False)):
             actual = np.round(expected + noise * 10 ** (-below / 20)).astype(np.int16)
             with self.subTest(below=below):
                 self.assertEqual(gen_music.audio_difference(expected, actual) is None, passes)
