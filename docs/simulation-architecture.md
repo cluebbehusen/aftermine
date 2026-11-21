@@ -278,13 +278,14 @@ Workers and contact weapons route to perimeter tiles, then make a short,
 collision-checked approach to the building's contact outline. Each kind has an
 outline per tier and per construction stage, traced from its art, and a shell
 test keeps every outline close to its art. A site's builder stands clear of
-every outline the site is yet to show, so a later stage never lands on its hull.
-Outlines never change tile passability. Routes run between tile centres, so a
-body pushed off its tile's centre whose straight leg would scrape an outline
-returns to that centre first. Work, melee and ranged attacks on buildings share
-one crowd-aware position chooser. When two claims overlap, the unit nearer its
-own position keeps its claim whatever its seat, so allied crowds cannot all
-yield to each other; an exact tie goes to the earlier unit of one seat.
+every outline the site is yet to show, so neither a later stage nor the finished
+building lands on its hull. Outlines never change tile passability. Routes run
+between tile centres, so a body pushed off its tile's centre whose straight leg
+would scrape an outline returns to that centre first. Work, melee and ranged
+attacks on buildings share one crowd-aware position chooser. When two claims
+overlap, the unit nearer its own position keeps its claim whatever its seat, so
+allied crowds cannot all yield to each other; an exact tie goes to the earlier
+unit of one seat.
 
 A cradle crew member stops only on the pad it set out for, never sets out for or
 through a pad a crewmate already works from, and reports `NoRoute` when it can

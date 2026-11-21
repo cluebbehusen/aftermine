@@ -487,7 +487,8 @@ fn a_docked_worker_backs_off_a_footprint_its_first_leg_would_graze() {
 /// finished building, and a later outline can reach past the one before.
 /// From whichever side it arrives, a builder docks clear of every outline
 /// the site will show: once its first weld lands it welds every tick to
-/// completion and never sets out again.
+/// completion and never sets out again, and the finished building stands
+/// clear of its hull.
 #[test]
 fn a_builder_raises_a_site_through_every_outline_it_shows() {
     use aftermine_sim::BuildingKind;
@@ -553,11 +554,15 @@ fn a_builder_raises_a_site_through_every_outline_it_shows() {
                     stages.push(b.construction_stage());
                 }
             }
-            assert!(
-                state.building(site).unwrap().built(),
-                "{kind:?} from {start:?} never built"
-            );
+            let b = state.building(site).unwrap();
+            assert!(b.built(), "{kind:?} from {start:?} never built");
             assert_eq!(stages.first(), Some(&Some(0)), "{kind:?} from {start:?}");
+            let unit = state.unit(id).unwrap();
+            let radius = unit.kind.stats().radius;
+            assert!(
+                unit.pos.dist_sq(state.contact_surface(b).closest(unit.pos)) >= radius * radius,
+                "{kind:?} from {start:?} finished on its builder: {unit:?}"
+            );
         }
     }
 }

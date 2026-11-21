@@ -586,12 +586,14 @@ fn stages_after(kind: BuildingKind, tier: u8, stage: u8) -> &'static [Outline] {
 }
 
 /// A building's contact surface, without a navigation mesh or cache: the
-/// outline its art shows now, joined by any `later` outlines it is yet to
-/// show. Queries meet the union of them all.
+/// outline its art shows now, joined by any outlines it is yet to show, the
+/// `later` stages of a site and its `finished` building. Queries meet the
+/// union of them all.
 #[derive(Clone, Copy)]
 pub struct Surface {
     outline: Outline,
     later: &'static [Outline],
+    finished: Option<Outline>,
     anchor: TilePos,
     size: (i32, i32),
 }
@@ -602,13 +604,26 @@ impl Surface {
         Self {
             outline: outline(building.kind, building.tier, building.construction_stage()),
             later: &[],
+            finished: None,
             anchor: building.anchor,
             size: building.kind.size(),
         }
     }
 
+    /// This surface of a site of `kind` at `tier` and `stage`, joined by
+    /// every outline the site is yet to show: its later stages and the
+    /// finished building.
+    fn with_outlines_to_come(mut self, kind: BuildingKind, tier: u8, stage: u8) -> Self {
+        self.later = stages_after(kind, tier, stage);
+        let finished = outline(kind, tier, None);
+        self.finished = (!self.outlines().any(|shown| shown == finished)).then_some(finished);
+        self
+    }
+
     fn outlines(self) -> impl Iterator<Item = Outline> {
-        std::iter::once(self.outline).chain(self.later.iter().copied())
+        std::iter::once(self.outline)
+            .chain(self.later.iter().copied())
+            .chain(self.finished)
     }
 
     fn vertex(self, (x, y): (i32, i32)) -> Vec2Fx {
@@ -943,17 +958,19 @@ impl State {
 
     /// The surface `unit` works `building` from. A site's builder meets
     /// every outline the site is yet to show as well as its current one: a
-    /// later stage can reach past the one before, and would otherwise land
-    /// on the hull of a builder docked against it.
+    /// later stage or the finished building can reach past the outline
+    /// before, and would otherwise land on the hull of a builder docked
+    /// against it.
     pub fn work_surface(&self, unit: &crate::Unit, building: &Building) -> Surface {
-        let mut surface = Surface::new(building);
+        let surface = Surface::new(building);
         if unit.order == (crate::Order::Build { site: building.id })
             && building.under_construction()
             && let Some(stage) = building.construction_stage()
         {
-            surface.later = stages_after(building.kind, building.tier, stage);
+            surface.with_outlines_to_come(building.kind, building.tier, stage)
+        } else {
+            surface
         }
-        surface
     }
 }
 

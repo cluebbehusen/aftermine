@@ -18,12 +18,13 @@ fn every_outline() -> Vec<(BuildingKind, Outline)> {
 }
 
 /// Every distinct outline alone, then each site's outline joined by the
-/// stages it is yet to show, as its builder meets it. Each comes with the
+/// outlines it is yet to show, as its builder meets it. Each comes with the
 /// single outlines it joins.
 fn every_surface(anchor: TilePos) -> Vec<(BuildingKind, Surface, Vec<Surface>)> {
     let single = |kind: BuildingKind, outline: Outline| Surface {
         outline,
         later: &[],
+        finished: None,
         anchor,
         size: kind.size(),
     };
@@ -34,16 +35,12 @@ fn every_surface(anchor: TilePos) -> Vec<(BuildingKind, Surface, Vec<Surface>)> 
     for kind in BuildingKind::ALL {
         for tier in 0..u8::try_from(kind.tiers().len()).unwrap() {
             for stage in 0..CONSTRUCTION_STAGES {
-                let shown = outline(kind, tier, Some(stage));
-                let later = stages_after(kind, tier, stage);
-                if later.iter().all(|&next| next == shown) {
+                let surface = single(kind, outline(kind, tier, Some(stage)))
+                    .with_outlines_to_come(kind, tier, stage);
+                let parts: Vec<_> = surface.outlines().map(|part| single(kind, part)).collect();
+                if parts.iter().all(|part| part.outline == surface.outline) {
                     continue;
                 }
-                let surface = Surface {
-                    later,
-                    ..single(kind, shown)
-                };
-                let parts = surface.outlines().map(|part| single(kind, part)).collect();
                 all.push((kind, surface, parts));
             }
         }
@@ -62,6 +59,7 @@ fn edges_join_each_corner_to_the_next_and_close_the_outline() {
             let surface = Surface {
                 outline,
                 later: &[],
+                finished: None,
                 anchor,
                 size: kind.size(),
             };
@@ -267,6 +265,7 @@ fn sides_hull_each_outline_and_face_outward() {
         let surface = Surface {
             outline,
             later: &[],
+            finished: None,
             anchor: TilePos::new(10, 20),
             size: kind.size(),
         };
@@ -288,6 +287,7 @@ fn sides_hull_each_outline_and_face_outward() {
         Surface {
             outline,
             later: &[],
+            finished: None,
             anchor: TilePos::new(10, 20),
             size: kind.size(),
         }
@@ -309,6 +309,7 @@ fn a_flat_tool_meets_only_a_side_it_faces_square() {
     let surface = Surface {
         outline: SCAFFOLD,
         later: &[],
+        finished: None,
         anchor: TilePos::new(10, 20),
         size: (2, 2),
     };
@@ -389,6 +390,7 @@ fn every_closest_surface_point_lies_on_the_footprint() {
         let surface = Surface {
             outline,
             later: &[],
+            finished: None,
             anchor,
             size,
         };
@@ -513,10 +515,11 @@ fn work_reach_matches_the_surface_alone() {
 }
 
 /// A builder docked at its stance, at any stage of a site, stays in reach
-/// with its hull clear through every stage the site shows after. Docked
-/// against the current outline alone, some would not.
+/// with its hull clear through every stage the site shows after, and its
+/// hull stays clear of the finished building. Docked against the current
+/// outline alone, some would not.
 #[test]
-fn a_docked_builder_stays_in_reach_through_every_later_stage() {
+fn a_docked_builder_stays_clear_of_every_outline_still_to_come() {
     use crate::state::BuildingPhase;
     let (map, _) = crate::map::Map::parse(&vec![".".repeat(24); 24]).unwrap();
     let seat = crate::state::Player {
@@ -585,6 +588,19 @@ fn a_docked_builder_stays_in_reach_through_every_later_stage() {
                                 } else {
                                     spoiled += usize::from(!reached);
                                 }
+                            }
+                            state.building_mut(site).unwrap().phase =
+                                BuildingPhase::Built { training: 0 };
+                            let clear = state
+                                .contact_surface(state.building(site).unwrap())
+                                .clear(pos, pos, radius);
+                            if joined {
+                                assert!(
+                                    clear,
+                                    "{kind:?} tier {tier}: docked at stage {stage} from {entry:?}, under the finished building"
+                                );
+                            } else {
+                                spoiled += usize::from(!clear);
                             }
                             state.building_mut(site).unwrap().phase = at(stage);
                         }
