@@ -890,6 +890,43 @@ fn a_scout_out_of_time_before_it_sees_its_point_keeps_going() {
 }
 
 #[test]
+fn an_island_in_a_wide_pit_has_a_search_point() {
+    // A pit splits the field, and an island in it holds room for one
+    // Foundry, farther than a Surveyor sees from any open ground.
+    let island = TilePos::new(22, 9);
+    let mut scenario = super::missions::widened(arena(0), 12, 20);
+    for (y, row) in scenario.map.iter_mut().enumerate() {
+        let y = i32::try_from(y).unwrap();
+        *row = row
+            .chars()
+            .enumerate()
+            .map(|(x, glyph)| {
+                let tile = TilePos::new(i32::try_from(x).unwrap(), y);
+                let on =
+                    (0..2).contains(&(tile.x - island.x)) && (0..2).contains(&(tile.y - island.y));
+                match glyph {
+                    '#' => glyph,
+                    _ if on => '.',
+                    _ if (12..33).contains(&tile.x) => '~',
+                    _ => glyph,
+                }
+            })
+            .collect();
+    }
+    let map = MapModel::from_scenario(&scenario).unwrap();
+    let ground = map.component(island);
+    assert!(
+        ground.is_some() && ground != map.component(TilePos::new(3, 5)),
+        "premise: the island is ground of its own"
+    );
+    assert!(
+        crate::missions::points(&map, PlayerId(0))
+            .iter()
+            .any(|point| point.search && map.component(point.anchor) == ground)
+    );
+}
+
+#[test]
 fn an_army_that_knows_no_enemy_building_sends_a_scout_searching() {
     // West saw East's start lately and found nothing there; East has
     // rebuilt elsewhere, out of sight. With an army to attack with and no

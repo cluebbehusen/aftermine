@@ -1868,3 +1868,37 @@ fn a_site_is_judged_by_its_footprint_on_either_side() {
         "premise: three Sentinels outweigh a Bastion alone"
     );
 }
+
+#[test]
+fn aircraft_that_hit_ground_beside_a_site_hold_it() {
+    // Three Sentinels near a Bastion's site away from home, in a West
+    // scout's sight, outweigh it alone; West's Buzzards beside the site hold
+    // them as well as ground units would.
+    let anchor = TilePos::new(30, 4);
+    let verdict = |buzzards: bool| {
+        let mut scenario = super::missions::widened(arena(400), 12, 20);
+        scenario
+            .buildings
+            .push(building(0, BuildingKind::Foundry, 24, 8));
+        for y in 1..=3 {
+            scenario.units.push(unit(1, UnitKind::Sentinel, 39, y));
+        }
+        scenario.units.push(unit(0, UnitKind::Surveyor, 37, 2));
+        if buzzards {
+            for x in 29..=31 {
+                scenario.units.push(unit(0, UnitKind::Buzzard, x, 7));
+            }
+        }
+        let state = scenario.build().unwrap();
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        crate::missions::meeting::overruns(
+            &observation,
+            &crate::memory::Memory::default(),
+            &map(&scenario),
+            BuildingKind::Bastion,
+            anchor,
+        )
+    };
+    assert!(verdict(false), "premise: the Sentinels overrun the site");
+    assert!(!verdict(true), "Buzzards beside it hold them");
+}

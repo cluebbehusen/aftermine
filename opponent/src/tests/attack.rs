@@ -1869,12 +1869,14 @@ fn a_front_outweighed_falls_back_onto_the_army() {
     // Two Sentinels in contact with four East Sentinels, six more of the
     // attack far behind: the two alone would lose, the eight together win.
     // The two fall back onto the six rather than fight alone or turn the
-    // army home. With all eight there it fights on; with the two alone, or
-    // with only anti-air behind them, the attack turns home.
+    // army home, and the six come on. With all eight there it fights on; with
+    // the two alone, or with only anti-air behind them, the attack turns
+    // home. Scrapheap, with orders for only the six and the two's way back,
+    // sends the six on and leaves the two fighting until they arrive.
     let front = [(30, 11), (30, 12)];
     let behind = [(14, 3), (15, 3), (16, 3), (14, 4), (15, 4), (16, 4)];
     let near = [(29, 10), (29, 11), (29, 12), (28, 10), (28, 11), (28, 12)];
-    let decide = |rest: &[(i32, i32)], escort: UnitKind| {
+    let decide_at = |rest: &[(i32, i32)], escort: UnitKind, difficulty: BotDifficulty| {
         let mut scenario = field();
         for (index, (x, y)) in front.iter().chain(rest).enumerate() {
             let kind = if index < front.len() {
@@ -1887,7 +1889,7 @@ fn a_front_outweighed_falls_back_onto_the_army() {
         for (x, y) in [(33, 10), (33, 11), (33, 12), (34, 11)] {
             scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
         }
-        scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
+        scenario.players[0].bot_config = Some(rung(difficulty));
         let state = scenario.build().unwrap();
         let mut members: Vec<UnitId> = front
             .iter()
@@ -1897,6 +1899,8 @@ fn a_front_outweighed_falls_back_onto_the_army() {
         members.sort_unstable();
         let mut ahead: Vec<UnitId> = front.iter().map(|(x, y)| at(&state, *x, *y)).collect();
         ahead.sort_unstable();
+        let mut body: Vec<UnitId> = rest.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+        body.sort_unstable();
         let missions = serde_json::json!({
             "next": 1,
             "list": [{
@@ -1912,11 +1916,7 @@ fn a_front_outweighed_falls_back_onto_the_army() {
             }],
         });
         let mut state = state;
-        advance_to(
-            &mut state,
-            crate::decision_interval(BotDifficulty::Prime),
-            &[],
-        );
+        advance_to(&mut state, crate::decision_interval(difficulty), &[]);
         let mut opponent = restaged(&scenario, &state, missions);
         let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         let withdraws = trace
@@ -1935,7 +1935,14 @@ fn a_front_outweighed_falls_back_onto_the_army() {
         let refocused = commands.iter().any(|command| {
             matches!(&command.command, Command::Attack { units, .. } if units.iter().any(|id| ahead.contains(id)))
         });
-        (withdraws, falls_back && rejoins && !refocused)
+        let comes_on = hunts(&commands)
+            .iter()
+            .any(|(units, _)| !body.is_empty() && *units == body);
+        (withdraws, falls_back && rejoins && !refocused, comes_on)
+    };
+    let decide = |rest: &[(i32, i32)], escort: UnitKind| {
+        let (withdraws, falls_back, _) = decide_at(rest, escort, BotDifficulty::Prime);
+        (withdraws, falls_back)
     };
     let sentinel = UnitKind::Sentinel;
     assert_eq!(
@@ -1953,5 +1960,15 @@ fn a_front_outweighed_falls_back_onto_the_army() {
     assert!(
         decide(&behind, UnitKind::Flakhound).0,
         "with only anti-air behind, the attack turns home"
+    );
+    assert_eq!(
+        decide_at(&behind, sentinel, BotDifficulty::Prime),
+        (false, true, true),
+        "the six come on"
+    );
+    assert_eq!(
+        decide_at(&behind, sentinel, BotDifficulty::Scrapheap),
+        (false, false, true),
+        "short of orders, the six come on to the two"
     );
 }

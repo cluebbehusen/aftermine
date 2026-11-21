@@ -98,6 +98,8 @@ pub struct MapModel {
     teams: Vec<Option<u8>>,
     /// Starting scrap fields away from every start.
     sites: Vec<Site>,
+    /// Where a seat that has lost track of the enemy searches, row by row.
+    search: Vec<TilePos>,
     /// Each seat's cuts, by player index.
     cuts: Vec<Vec<Cut>>,
     /// Each seat's gate tiles, sorted, where it never builds.
@@ -352,6 +354,7 @@ impl MapModel {
         let spot = spot_grid(map, &components, 2);
         let tile_spot = spot_grid(map, &components, 1);
         let cradle_spot = spot_grid(map, &components, 3);
+        let search = search_points(&spot);
         let extents = extents(&components);
         // Ground the map fixes buildings on: Extractor frames and expansion
         // anchors, which no gate may hold.
@@ -385,6 +388,7 @@ impl MapModel {
             distances,
             teams,
             sites,
+            search,
             cuts: Vec::new(),
             gated: Vec::new(),
             firing: Vec::new(),
@@ -652,6 +656,12 @@ impl MapModel {
     /// Expansion sites, in a fixed order whose index names a site.
     pub(crate) fn sites(&self) -> &[Site] {
         &self.sites
+    }
+
+    /// Foundry anchors a seat that has lost track of every enemy building
+    /// searches, in a fixed order.
+    pub(crate) fn search(&self) -> &[TilePos] {
+        &self.search
     }
 
     /// Ground distance from the seat's start to `tile`, in tenths of a tile,
@@ -1019,6 +1029,34 @@ fn spot_grid(map: &Map, components: &Grid<u32>, size: i32) -> Grid<bool> {
         }
     }
     spot
+}
+
+/// Where a seat that has lost track of every enemy building looks: in each
+/// cell of a grid a Surveyor's vision across, the Foundry anchor among `spot`
+/// nearest the cell's middle, on whatever ground it lies. Every place a
+/// Foundry fits lies in a cell with a point, so a search finds it; a wider
+/// grid would leave ground that nobody looks at.
+fn search_points(spot: &Grid<bool>) -> Vec<TilePos> {
+    let spacing = UnitKind::Surveyor.stats().vision.max(1);
+    let step = usize::try_from(spacing).unwrap_or(1);
+    let (width, height) = (spot.width(), spot.height());
+    let (foundry_width, foundry_height) = BuildingKind::Foundry.size();
+    let mut points = Vec::new();
+    for top in (0..height).step_by(step) {
+        for left in (0..width).step_by(step) {
+            let middle = (2 * left + spacing, 2 * top + spacing);
+            let nearest = (top..(top + spacing).min(height))
+                .flat_map(|y| (left..(left + spacing).min(width)).map(move |x| TilePos::new(x, y)))
+                .filter(|anchor| spot.get(*anchor).copied().unwrap_or(false))
+                .min_by_key(|anchor| {
+                    let dx = 2 * anchor.x + foundry_width - middle.0;
+                    let dy = 2 * anchor.y + foundry_height - middle.1;
+                    (dx * dx + dy * dy, anchor.y, anchor.x)
+                });
+            points.extend(nearest);
+        }
+    }
+    points
 }
 
 /// Each ground component's bounding box, by component.

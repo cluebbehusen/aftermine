@@ -135,13 +135,14 @@ pub(super) fn on_the_way(
 /// would fight over it: a model of who stands at a site, not a count.
 const SITE_TILES: i32 = 8;
 
-/// Whether the known enemy force near a defense of `kind` placed at `anchor`
-/// outweighs the site's price and the seat's armed ground units near it: a
-/// lone Turret raised in front of an army only feeds it its price and its
-/// builder. An enemy counts within its reach of the footprint, or within the
-/// site's reach when it can walk there; distances run from the footprint, so
-/// mirrored sites are judged alike. Never at home or by the seat's last
-/// Foundry, where a short defense may raise one as its answer.
+/// Whether the known enemy ground force near a defense of `kind` placed at
+/// `anchor` outweighs the site's price and the seat's units near it that hit
+/// ground, aircraft too: a lone Turret raised in front of an army only feeds
+/// it its price and its builder. An enemy counts within its reach of the
+/// footprint, or within the site's reach when it can walk there; distances
+/// run from the footprint, so mirrored sites are judged alike. Never at home
+/// or by the seat's last Foundry, where a short defense may raise one as its
+/// answer.
 pub(crate) fn overruns(
     observation: &ObservationData,
     memory: &Memory,
@@ -173,6 +174,14 @@ pub(crate) fn overruns(
                         map.component(tile) == Some(component) || map.touches(tile, component)
                     })))
     };
+    // A machine reported standing up out of sight is remembered as seen at
+    // this decision, so what is in sight is told apart by id.
+    let mut visible: Vec<UnitId> = observation
+        .enemy_units
+        .iter()
+        .map(|enemy| enemy.id)
+        .collect();
+    visible.sort_unstable();
     let seen: u64 = observation
         .enemy_units
         .iter()
@@ -182,13 +191,13 @@ pub(crate) fn overruns(
     let remembered: u64 = memory
         .units()
         .iter()
-        .filter(|unit| unit.seen < observation.tick && near(unit.kind, unit.tile))
+        .filter(|unit| visible.binary_search(&unit.id).is_err() && near(unit.kind, unit.tile))
         .map(|unit| unit.value(observation.tick) * against_machines(unit.kind) / 1_000)
         .sum();
     let held: u64 = observation
         .my_units
         .iter()
-        .filter(|unit| unit.body_domain() == Domain::Ground && super::hits(unit, Domain::Ground))
+        .filter(|unit| super::hits(unit, Domain::Ground))
         .filter(|unit| gap(anchor, size, unit.tile, (1, 1)) <= SITE_TILES)
         .map(value)
         .sum();

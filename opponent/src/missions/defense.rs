@@ -225,7 +225,7 @@ impl Missions {
             // home, and the next look sends them back. Where the rung falls
             // back to the post, that rule takes it from there; a rung that
             // never falls back still gives up below even odds. One waiting at
-            // its post is not out yet.
+            // its post, or still on its way out, is not out yet.
             let out = mission.is_some_and(|mission| {
                 matches!(
                     mission.task,
@@ -234,6 +234,7 @@ impl Missions {
                         ..
                     }
                 ) && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
+                    && together(observation, mission.units.iter(), [mission.goal, goal]) > 0
             });
             let bar = match (out, concentrates(difficulty)) {
                 (false, _) => Some(go),
@@ -354,11 +355,23 @@ impl Missions {
             self.release_from_others(index, &joined);
         }
         // Defenses that stood down go home last, so their orders never
-        // take the allowance from a defense answering an attack now. They
-        // run: nothing in sight can hit them, and a hunt would keep chasing
-        // whatever it last touched, such as a scout, across the map.
-        for (id, post) in returning {
-            if let Some(mission) = self.list.iter_mut().find(|mission| {
+        // take the allowance from a defense answering an attack now.
+        self.send_home(returning, ledger);
+        shortfalls
+    }
+
+    /// Runs each defense that stood down, in `returning`, back to its post:
+    /// nothing in sight can hit them, and a hunt would keep chasing whatever
+    /// it last touched, such as a scout, across the map. One whose order
+    /// finds no room keeps its last order and stays engaged as it was, to
+    /// stand down again at a later look.
+    fn send_home(
+        &mut self,
+        returning: Vec<(u64, TilePos, Option<UnitId>, u64)>,
+        ledger: &mut Ledger,
+    ) {
+        for (id, post, focus, since) in returning {
+            let Some(mission) = self.list.iter_mut().find(|mission| {
                 mission.id == id
                     && matches!(
                         mission.task,
@@ -367,25 +380,30 @@ impl Missions {
                             ..
                         }
                     )
-            }) && ledger.order(run(mission.units.clone(), post))
-            {
+            }) else {
+                continue;
+            };
+            if ledger.order(run(mission.units.clone(), post)) {
                 mission.goal = post;
+            } else if let Task::Defend { phase, .. } = &mut mission.task {
+                *phase = DefendPhase::Engage { focus };
+                mission.since = since;
             }
         }
-        shortfalls
     }
 
     /// Puts every engaged defense whose Foundry no threat presses any more,
     /// and none of whose members an enemy in sight can still hit, into
     /// recovery. Returns each with the post beside its Foundry its members
-    /// go back to, once this decision's defenses have been sent.
+    /// go back to, once this decision's defenses have been sent, and the
+    /// focus and start of its engagement.
     fn stand_down(
         &mut self,
         observation: &ObservationData,
         (map, frame): (&MapModel, HomeFrame),
         groups: &[(&BuildingObs, Siege<'_>, bool)],
         ledger: &mut Ledger,
-    ) -> Vec<(u64, TilePos)> {
+    ) -> Vec<(u64, TilePos, Option<UnitId>, u64)> {
         let now = observation.tick;
         let mut returning = Vec::new();
         // An enemy in sight, unit or building, whose weapons reach a member
@@ -442,7 +460,7 @@ impl Missions {
                     .find(|building| building.id == *asset)
                     .and_then(|foundry| waiting_post(map, frame, foundry, mission.goal));
                 if let Some(post) = post {
-                    returning.push((mission.id, post));
+                    returning.push((mission.id, post, focus, mission.since));
                 } else if focus.is_some() {
                     ledger.order(hunt(mission.units.clone(), mission.goal));
                 }

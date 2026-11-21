@@ -1765,14 +1765,6 @@ impl<'a> Plan<'a> {
         if back.is_empty() {
             return false;
         }
-        // Back with the army, they go on with it.
-        if ledger.order(run(back.clone(), middle.tile)) {
-            ledger.order(Command::Hunt {
-                units: back,
-                goal,
-                queue: true,
-            });
-        }
         let on: Vec<UnitId> = body
             .iter()
             .filter(|unit| unit.idle)
@@ -1780,6 +1772,16 @@ impl<'a> Plan<'a> {
             .collect();
         if !on.is_empty() {
             ledger.order(hunt(on, goal));
+        }
+        // Back with the army, they go on with it. With too few orders left
+        // for both, the front fights on until the army reaches it rather
+        // than come back for nothing or head in again alone.
+        if ledger.room() >= 2 && ledger.order(run(back.clone(), middle.tile)) {
+            ledger.order(Command::Hunt {
+                units: back,
+                goal,
+                queue: true,
+            });
         }
         true
     }

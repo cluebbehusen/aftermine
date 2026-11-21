@@ -38,11 +38,10 @@ pub(crate) struct Point {
 
 /// The seat's scouting points: hostile starts, then expansion sites by
 /// their best Foundry anchor, then search points. Starts are worth most,
-/// then sites nearer an enemy than home. Search points lie on a grid spaced
-/// a Surveyor's vision apart over open ground, so a seat that has lost
-/// track of every enemy building can find one wherever it was built: a point
-/// counts as seen once its footprint is, and a wider grid would leave ground
-/// between points that nobody looks at.
+/// then sites nearer an enemy than home. Search points, one in each cell of
+/// a grid a Surveyor's vision across where a Foundry fits, let a seat that
+/// has lost track of every enemy building find one wherever it was built: a
+/// point counts as seen once its footprint is.
 pub(crate) fn points(map: &MapModel, me: PlayerId) -> Vec<Point> {
     let footprint = |anchor: TilePos| tiles_of(anchor, BuildingKind::Foundry.size());
     let starts = map
@@ -68,24 +67,11 @@ pub(crate) fn points(map: &MapModel, me: PlayerId) -> Vec<Point> {
                 search: false,
             }
         });
-    let spacing = usize::try_from(UnitKind::Surveyor.stats().vision)
-        .unwrap_or(1)
-        .max(1);
-    let (width, height) = map.size();
-    let search = (spacing / 2..usize::try_from(height).unwrap_or(0))
-        .step_by(spacing)
-        .flat_map(|y| {
-            (spacing / 2..usize::try_from(width).unwrap_or(0))
-                .step_by(spacing)
-                .map(move |x| (x, y))
-        })
-        .filter_map(|(x, y)| Some(TilePos::new(i32::try_from(x).ok()?, i32::try_from(y).ok()?)))
-        .filter(|anchor| footprint(*anchor).all(|tile| map.component(tile).is_some()))
-        .map(|anchor| Point {
-            anchor,
-            value: 1,
-            search: true,
-        });
+    let search = map.search().iter().map(|anchor| Point {
+        anchor: *anchor,
+        value: 1,
+        search: true,
+    });
     starts.chain(sites).chain(search).collect()
 }
 

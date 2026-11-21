@@ -2233,18 +2233,88 @@ fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
 }
 
 #[test]
+fn a_defense_whose_order_home_finds_no_room_stays_engaged() {
+    // Two defenders out where raiders by the start were, the raiders gone,
+    // while raiders press two other Foundries: at Scrapheap, answering those
+    // takes every order this look, so the two stay engaged rather than
+    // recover without their order home.
+    let mut scenario = widened(arena(0), 12, 20);
+    scenario.buildings.extend([
+        building(0, BuildingKind::Foundry, 24, 2),
+        building(0, BuildingKind::Foundry, 24, 8),
+    ]);
+    scenario.units.extend([
+        unit(0, UnitKind::Sentinel, 9, 8),
+        unit(0, UnitKind::Sentinel, 10, 8),
+        unit(0, UnitKind::Sentinel, 22, 2),
+        unit(0, UnitKind::Sentinel, 22, 3),
+        unit(0, UnitKind::Sentinel, 22, 4),
+        unit(0, UnitKind::Sentinel, 22, 8),
+        unit(0, UnitKind::Sentinel, 22, 9),
+        unit(0, UnitKind::Sentinel, 22, 10),
+        unit(1, UnitKind::Sentinel, 28, 2),
+        unit(1, UnitKind::Sentinel, 28, 9),
+    ]);
+    scenario.players[0].bot_config = Some(rung(BotDifficulty::Scrapheap));
+    let state = scenario.build().unwrap();
+    let start = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.anchor == TilePos::new(3, 5))
+        .unwrap()
+        .id;
+    let mut members = vec![at(&state, 9, 8), at(&state, 10, 8)];
+    members.sort_unstable();
+    let mut opponent = restored_with(
+        &seat_with(&scenario, 0, rung(BotDifficulty::Scrapheap)),
+        &scenario,
+        &state,
+        |json| {
+            json["missions"] = serde_json::json!({
+                "next": 1,
+                "list": [{
+                    "id": 0,
+                    "task": {"task": "defend", "asset": start.0, "phase": {"engage": {"focus": null}}},
+                    "since": 0,
+                    "units": members,
+                    "goal": {"x": 11, "y": 6},
+                }],
+            });
+        },
+    );
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert_eq!(
+        hunts(&commands).len(),
+        2,
+        "premise: both raids are answered: {commands:?}"
+    );
+    assert!(
+        runs(&commands).iter().all(|(units, _)| units != &members),
+        "{commands:?}"
+    );
+    let missions = trace.unwrap().missions;
+    assert!(
+        missions
+            .iter()
+            .any(|mission| mission.id == 0 && mission.phase == Phase::Engage),
+        "{missions:?}"
+    );
+}
+
+#[test]
 fn only_a_defense_out_at_its_fight_holds_on_and_only_where_it_can_fall_back() {
     // One Sentinel at home and two by the expansion against six raiders: under
     // even odds. A Prime defense out at the raiders holds on and falls back by
-    // its own rule; one still waiting at the expansion's post is given up; at
-    // Scrapheap, which never falls back, one out at them is given up too.
+    // its own rule; one still waiting at the expansion's post, or sent at the
+    // raiders but still on its way, is given up; at Scrapheap, which never
+    // falls back, one out at them is given up too.
     let expansion = TilePos::new(24, 5);
-    let defended = |config: BotConfig, goal: TilePos| {
+    let defended = |config: BotConfig, goal: TilePos, x: i32| {
         let mut scenario = expansion_raided(&[(5, 8)]);
         scenario.players[0].bot_config = Some(config);
         scenario.units.extend([
-            unit(0, UnitKind::Sentinel, 24, 9),
-            unit(0, UnitKind::Sentinel, 25, 9),
+            unit(0, UnitKind::Sentinel, x, 9),
+            unit(0, UnitKind::Sentinel, x + 1, 9),
         ]);
         let state = scenario.build().unwrap();
         let outpost = state
@@ -2253,7 +2323,7 @@ fn only_a_defense_out_at_its_fight_holds_on_and_only_where_it_can_fall_back() {
             .find(|b| b.player == PlayerId(0) && b.anchor == expansion)
             .unwrap()
             .id;
-        let mut members = vec![at(&state, 24, 9), at(&state, 25, 9)];
+        let mut members = vec![at(&state, x, 9), at(&state, x + 1, 9)];
         members.sort_unstable();
         let mut opponent = restored_with(
             &seat_with(&scenario, 0, config),
@@ -2285,15 +2355,19 @@ fn only_a_defense_out_at_its_fight_holds_on_and_only_where_it_can_fall_back() {
         .max_by_key(|tile| (tile.x, tile.y))
         .unwrap();
     assert!(
-        defended(rung(BotDifficulty::Prime), out),
+        defended(rung(BotDifficulty::Prime), out, 24),
         "out at the fight"
     );
     assert!(
-        !defended(rung(BotDifficulty::Prime), post),
+        !defended(rung(BotDifficulty::Prime), post, 24),
         "waiting at the post"
     );
     assert!(
-        !defended(rung(BotDifficulty::Scrapheap), out),
+        !defended(rung(BotDifficulty::Prime), out, 17),
+        "on its way out"
+    );
+    assert!(
+        !defended(rung(BotDifficulty::Scrapheap), out, 24),
         "never falls back"
     );
 }
