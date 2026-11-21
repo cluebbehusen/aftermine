@@ -1,20 +1,23 @@
 #!/bin/sh
 # Plays one lane with Codex, headless, and returns when its match is over.
 #
-# Usage: run-codex.sh <lane-dir> <tick-limit> [resumes]
+# Usage: run-codex.sh <lane-dir> <tick-limit> [resumes] [effort]
 #
 # Codex runs in the lane directory, with a home of its own and network
 # access for the session's local port. Its events go to events.jsonl and its
 # final message, shaped by the report schema, to report.json. When Codex
 # stops while the match is still running, it is resumed with a reminder, at
 # most `resumes` times (default 3). It fails when Codex still stops early or
-# the session no longer answers.
+# the session no longer answers. `effort` sets the lane's reasoning effort,
+# such as low or high, over the one in the user's Codex settings.
 set -eu
 
 dir=$(cd "$1" && pwd)
 limit=$2
 resumes=${3:-3}
+effort=${4:-}
 config="-c sandbox_mode=workspace-write -c sandbox_workspace_write.network_access=true"
+[ -z "$effort" ] || config="$config -c model_reasoning_effort=$effort"
 
 # Codex loads instructions, memories, skills and plugins from its home, and
 # a player must start from none of them. Each lane gets a home of its own

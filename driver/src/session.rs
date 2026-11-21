@@ -667,6 +667,9 @@ struct Seen {
     /// Other seats' units in sight as the coming tick begins: the seat sees
     /// one die there even when its last observer falls in the same tick.
     units_in_sight: BTreeSet<aftermine_sim::UnitId>,
+    /// Where the seat's own units stood as the coming tick begins, so a
+    /// unit hit before it moved on can be named.
+    own_before: BTreeMap<aftermine_sim::UnitId, Vec2Fx>,
 }
 
 /// The side of a coarse cell, in tiles: fire in one cell logs once.
@@ -682,12 +685,19 @@ impl Seen {
             stalls: BTreeSet::new(),
             in_sight: BTreeMap::new(),
             units_in_sight: BTreeSet::new(),
+            own_before: BTreeMap::new(),
         }
     }
 
-    /// Notes other seats' units and structures the seat sees before a tick
-    /// runs.
+    /// Notes other seats' units and structures the seat sees, and where its
+    /// own units stand, before a tick runs.
     fn look(&mut self, state: &State) {
+        self.own_before = state
+            .units()
+            .iter()
+            .filter(|unit| unit.player == self.seat)
+            .map(|unit| (unit.id, unit.pos))
+            .collect();
         self.units_in_sight = state
             .units()
             .iter()
@@ -718,13 +728,17 @@ impl Seen {
             .collect();
     }
 
-    /// The own unit or structure at `pos` after a tick, as the seat names it.
-    fn own_at(&self, state: &State, pos: Vec2Fx) -> Option<String> {
-        if let Some(unit) = state
-            .units()
-            .iter()
-            .find(|unit| unit.player == self.seat && unit.pos == pos)
-        {
+    /// The own unit hit at `pos` in tick `tick`, or the own structure
+    /// there, as the seat names it, judged against `state`, the world after
+    /// that tick. Most fire lands before units move in a tick and crashes
+    /// and charges after, so a unit hit there stood at `pos` as the tick
+    /// began or as it ended.
+    fn hit_at(&self, tick: u64, state: &State, pos: Vec2Fx) -> Option<String> {
+        if let Some(unit) = state.units().iter().find(|unit| {
+            unit.player == self.seat
+                && unit.damaged_at == Some(tick)
+                && (unit.pos == pos || self.own_before.get(&unit.id) == Some(&pos))
+        }) {
             return Some(format!("{} {}", unit.kind.name(), unit.id.0));
         }
         let tile = TilePos::containing(pos);
@@ -793,7 +807,7 @@ impl Seen {
                             .fire
                             .insert((tile.x.div_euclid(FIRE_CELL), tile.y.div_euclid(FIRE_CELL)));
                     if fresh {
-                        note = self.own_at(state, *pos);
+                        note = self.hit_at(tick, state, *pos);
                     }
                     fresh
                 }

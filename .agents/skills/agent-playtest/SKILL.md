@@ -74,7 +74,8 @@ Launch every lane at once; lanes share nothing but the machine.
   the schema, and resumes Codex when it stops before the match ends. Each lane
   gets a Codex home of its own under `$ROUND/codex-homes/`, linking your login
   and copying only your model settings, so no instructions, memories, skills or
-  plugins of yours reach the player.
+  plugins of yours reach the player. A fourth argument, after the number of
+  resumes, sets the lane's reasoning effort over yours.
 
 Do not poll the lanes. Each notifies when it finishes. Then
 `uv run scripts/lane-summary.py "$ROUND"` prints each lane's result, orders per
