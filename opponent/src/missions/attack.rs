@@ -2013,7 +2013,7 @@ fn covers(building: &BuildingObs, way: &Grid<u16>) -> bool {
 }
 
 /// Whether `building` fires on ground and stands around `tile`.
-fn guards(building: &BuildingObs, tile: TilePos) -> bool {
+pub(super) fn guards(building: &BuildingObs, tile: TilePos) -> bool {
     building
         .kind
         .base_stats()

@@ -211,7 +211,12 @@ impl Missions {
                 });
             }
             let met = meeting::opposed(observation, memory, goal);
+            // The seat's last Foundry is never given up, as at home.
+            let last = asset.kind == BuildingKind::Foundry
+                && asset.built
+                && crate::investments::built_foundries(&observation.my_buildings).count() == 1;
             if !at_home(observation, map, goal)
+                && !last
                 && met > 0
                 && could * 1_000 < met * engage_margin(difficulty)
             {

@@ -62,12 +62,12 @@ pub enum Family {
     BallRush,
     /// A Lancer push spotted by a Kestrel at about five minutes.
     KestrelPush,
-    /// A ranged army held on a line across the middle of the route, fighting
-    /// only what comes within reach of it, then a late march.
-    RangedHold,
     /// A new player: a thin, slow economy, a small mixed army and one late
     /// attack. The lower rungs' yardstick, never a tuning target.
     Novice,
+    /// A ranged army held on a line across the middle of the route, fighting
+    /// only what comes within reach of it, then a late march.
+    RangedHold,
 }
 
 impl Family {
