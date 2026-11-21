@@ -860,12 +860,13 @@ fn waiting_post(
 }
 
 /// What a defense against `siege`'s ground force worth `met` must hold to go
-/// out at it: the rung's edge at the seat's `own` Foundry when nothing that
-/// stands and shells is among the attackers, even odds otherwise. Guns that
-/// stand never come to the post, and an ally's defense has no shortfall
+/// out at it: the rung's edge at the seat's `own` Foundry when no gun,
+/// standing or walking, is among the attackers, even odds otherwise. Guns
+/// shell the post rather than come to it, so waiting there for the edge
+/// only gets the defenders shelled, and an ally's defense has no shortfall
 /// training behind a wait.
 fn sortie(own: bool, siege: &Siege<'_>, met: u64, difficulty: BotDifficulty) -> u64 {
-    if own && siege.batteries.is_empty() {
+    if own && siege.batteries.is_empty() && !siege.units.iter().any(|threat| walking_gun(threat)) {
         met * engage_margin(difficulty) / 1_000
     } else {
         met

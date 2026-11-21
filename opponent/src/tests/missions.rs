@@ -1087,6 +1087,20 @@ fn defenders_short_of_an_escorted_gun_gather_beside_the_foundry_first() {
     let commands = scrapheap.act(&later, &mut OwnEvents::default());
     assert!(at_gun(&commands), "{commands:?}");
 
+    // Prime waits at home for a quarter more than it would meet, but beside
+    // a gun waiting only gets the defenders shelled: once they match it and
+    // its escort, they go.
+    let (scenario, state) = staged(&[(2, 9), (3, 9)]);
+    let gun = at(&state, GUN.0, GUN.1);
+    let commands =
+        seat_with(&scenario, 0, rung(BotDifficulty::Prime)).act(&state, &mut OwnEvents::default());
+    assert!(
+        attacks(&commands)
+            .iter()
+            .any(|(_, target)| *target == AttackTarget::Unit(gun)),
+        "{commands:?}"
+    );
+
     // Enough beside the Foundry to match the gun and its escort: they go.
     let (scenario, state) = staged(&[(2, 9), (3, 9), (4, 9), (5, 9), (2, 10), (5, 10)]);
     let gun = at(&state, GUN.0, GUN.1);
