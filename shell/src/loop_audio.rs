@@ -3,8 +3,8 @@
 //! a fixed number of voices, each its own clip instance, and admits the
 //! loudest loops the frame wants.
 
+use crate::audio_engine::{Bus, PlaySoundParams, Sound, play_sound, set_sound_volume, stop_sound};
 use crate::game::{Scene, SoundKind};
-use macroquad::audio::{PlaySoundParams, Sound, play_sound, set_sound_volume, stop_sound};
 use macroquad::prelude::Vec2;
 
 /// One loop the frame wants sounding, keyed by what it follows.
@@ -91,10 +91,7 @@ impl<K: Copy + PartialEq, const N: usize> LoopBank<K, N> {
             match change {
                 Change::Start(slot, gain) => play_sound(
                     &clips[slot],
-                    PlaySoundParams {
-                        looped: true,
-                        volume: volume * gain,
-                    },
+                    PlaySoundParams::new(Bus::Effects, true, volume * gain),
                 ),
                 Change::Gain(slot, gain) => set_sound_volume(&clips[slot], volume * gain),
                 Change::Stop(slot) => stop_sound(&clips[slot]),

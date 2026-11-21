@@ -41,7 +41,7 @@ pub(crate) struct MawMotion {
     spin_rate: f32,
     grind: [f32; 2],
     belt: [f32; 2],
-    belt_rate: [f32; 2],
+    belt_rate: f32,
     heat: [f32; 2],
     loads: Vec<Load>,
     next_load: f32,
@@ -57,7 +57,7 @@ impl MawMotion {
             spin_rate: 0.0,
             grind: [0.0; 2],
             belt: [0.0; 2],
-            belt_rate: [0.0; 2],
+            belt_rate: 0.0,
             heat: [0.0; 2],
             loads: Vec::new(),
             next_load: 0.0,
@@ -79,7 +79,7 @@ impl MawMotion {
             motion.grind = [1.0; 2];
         }
         if feeding {
-            motion.belt_rate = [BELT_SPEED; 2];
+            motion.belt_rate = BELT_SPEED;
             motion.heat = [1.0; 2];
             let mut along = 0.0;
             while along + LOAD_SPACING < BELT_RUN {
@@ -129,9 +129,8 @@ impl MawMotion {
 
         let carrying = !self.loads.is_empty();
         let belt_target = if feeding || carrying { BELT_SPEED } else { 0.0 };
-        let belt_rate = approach(self.belt_rate[1], belt_target, BELT_EASE);
-        self.belt_rate = [self.belt_rate[1], belt_rate];
-        let belt = self.belt[1] + belt_rate;
+        self.belt_rate = approach(self.belt_rate, belt_target, BELT_EASE);
+        let belt = self.belt[1] + self.belt_rate;
         self.belt = [self.belt[1], belt];
         if feeding {
             while self.next_load <= belt {
@@ -175,11 +174,6 @@ impl MawMotion {
 
     pub(crate) fn belt(&self, alpha: f32) -> f32 {
         lerp(self.belt, alpha)
-    }
-
-    /// How fast the belt runs, 0 stopped to 1 at full speed.
-    pub(crate) fn belt_speed(&self, alpha: f32) -> f32 {
-        lerp(self.belt_rate, alpha) / BELT_SPEED
     }
 
     pub(crate) fn heat(&self, alpha: f32) -> f32 {

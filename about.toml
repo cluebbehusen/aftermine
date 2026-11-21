@@ -26,3 +26,26 @@ ignore-build-dependencies = true
 ignore-dev-dependencies = true
 # The workspace crates are the product, not a dependency.
 private = { ignore = true }
+
+# kira's parameter updates pass through triple_buffer, and it decodes the
+# music through symphonia; deny.toml makes the same exceptions.
+[triple_buffer]
+accepted = ["MPL-2.0"]
+
+[symphonia]
+accepted = ["MPL-2.0"]
+
+[symphonia-codec-vorbis]
+accepted = ["MPL-2.0"]
+
+[symphonia-common]
+accepted = ["MPL-2.0"]
+
+[symphonia-core]
+accepted = ["MPL-2.0"]
+
+[symphonia-format-ogg]
+accepted = ["MPL-2.0"]
+
+[symphonia-metadata]
+accepted = ["MPL-2.0"]

@@ -1,112 +1,147 @@
 use super::*;
 
-fn settle(score: &mut Soundtrack, scene: Scene, volumes: Volumes) -> Mix {
-    let mut mix = Mix::default();
-    for _ in 0..100 {
-        mix = score.update(scene, false, 0.1, volumes);
+fn settle(layers: &mut Layers, scene: Scene, guns: usize, special: bool) -> Volumes {
+    let mut volumes = layers.update(scene, guns, special, 0.0);
+    for _ in 0..200 {
+        volumes = layers.update(scene, guns, special, 0.1);
     }
-    mix
+    volumes
 }
 
 #[test]
-fn menu_and_match_crossfade_without_a_restart_or_jump() {
-    let volumes = Volumes::default();
-    let mut score = Soundtrack::default();
-    let menu = settle(&mut score, Scene::Menu, volumes);
-    assert_eq!(menu.menu, 0.16);
-    assert_eq!(menu.calm, 0.0);
+fn a_skirmish_leaves_the_music_calm_and_a_real_fight_brings_the_fight_layer() {
+    let mut layers = Layers::default();
+    let skirmish = settle(&mut layers, Scene::Match, CALM_GUNS, false);
+    assert_eq!((skirmish.calm, skirmish.fight), (1.0, 0.0));
 
-    let first_match = score.update(Scene::Match, false, 0.1, volumes);
+    let middling = settle(&mut layers, Scene::Match, CALM_GUNS + 3, false);
     assert!(
-        first_match.menu > 0.0 && first_match.menu < menu.menu,
-        "the old bed fades instead of stopping"
+        middling.fight > 0.0 && middling.fight < 1.0,
+        "a middling fight blends the two"
     );
     assert!(
-        first_match.calm > 0.0 && first_match.calm < 0.16,
-        "the new bed fades in instead of restarting loudly"
+        (middling.calm + middling.fight - 1.0).abs() < 1e-6,
+        "the two layers of one song share the level"
     );
-    let calm = settle(&mut score, Scene::Match, volumes);
-    assert_eq!(calm.menu, 0.0);
-    assert_eq!(calm.calm, 0.16);
+
+    let battle = settle(&mut layers, Scene::Match, FIGHT_GUNS + 5, false);
+    assert_eq!((battle.calm, battle.fight), (0.0, 1.0));
+    assert!(!layers.calm());
+    let after = settle(&mut layers, Scene::Match, 0, false);
+    assert_eq!((after.calm, after.fight), (1.0, 0.0));
+    assert!(layers.calm());
 }
 
 #[test]
-fn a_combat_impulse_layers_pressure_then_returns_to_calm() {
-    let volumes = Volumes::default();
-    let mut score = Soundtrack::default();
-    settle(&mut score, Scene::Match, volumes);
-    score.update(Scene::Match, true, 0.1, volumes);
-    let mut battle = Mix::default();
-    for _ in 0..10 {
-        battle = score.update(Scene::Match, false, 0.1, volumes);
+fn the_fight_layer_rises_over_seconds_and_falls_slower() {
+    let mut layers = Layers::default();
+    let mut rise = 0.0;
+    let mut volumes = layers.update(Scene::Match, FIGHT_GUNS, false, 0.1);
+    while volumes.fight < 1.0 {
+        rise += 0.1;
+        volumes = layers.update(Scene::Match, FIGHT_GUNS, false, 0.1);
     }
-    assert!(battle.combat > 0.1, "one volley has a useful musical tail");
-    assert!(
-        battle.calm < 0.16,
-        "the pressure layer makes room for itself"
-    );
-
-    let calm = settle(&mut score, Scene::Match, volumes);
-    assert_eq!(calm.combat, 0.0);
-    assert_eq!(calm.calm, 0.16);
-}
-
-#[test]
-fn pause_ducks_the_match_bed_without_silencing_it() {
-    let volumes = Volumes::default();
-    let mut score = Soundtrack::default();
-    settle(&mut score, Scene::Match, volumes);
-    let paused = settle(&mut score, Scene::Pause, volumes);
-    assert_eq!(paused.calm, 0.05);
-    assert_eq!(paused.combat, 0.0);
-}
-
-#[test]
-fn neutral_victory_and_defeat_results_have_distinct_beds() {
-    for (scene, field) in [(Scene::Result, 3), (Scene::Victory, 4), (Scene::Defeat, 5)] {
-        let mut score = Soundtrack::default();
-        let mix = settle(&mut score, scene, Volumes::default());
-        let values = [
-            mix.menu,
-            mix.calm,
-            mix.combat,
-            mix.result,
-            mix.victory,
-            mix.defeat,
-        ];
-        assert!(values[field] > 0.14);
-        assert!(
-            values
-                .iter()
-                .enumerate()
-                .all(|(index, value)| index == field || *value == 0.0),
-            "{scene:?} owns exactly one result bed"
-        );
+    let mut fall = 0.0;
+    while volumes.fight > 0.0 {
+        fall += 0.1;
+        volumes = layers.update(Scene::Match, 0, false, 0.1);
     }
+    assert!((2.5..3.5).contains(&rise), "rises in {rise} s");
+    assert!((5.5..6.5).contains(&fall), "falls in {fall} s");
 }
 
 #[test]
-fn mute_and_volume_edits_fade_and_scale_the_music_bus() {
-    let mut score = Soundtrack::default();
-    let full = settle(&mut score, Scene::Menu, Volumes::default());
-    let muted = Volumes {
-        music: 0.0,
-        ..Volumes::default()
-    };
-    let first_muted = score.update(Scene::Menu, false, 0.1, muted);
-    assert!(
-        first_muted.menu > 0.0 && first_muted.menu < full.menu,
-        "mute is a short fade, not a click"
-    );
-    assert_eq!(settle(&mut score, Scene::Menu, muted), Mix::default());
+fn a_special_section_holds_the_fight_layer_without_a_fight() {
+    let mut layers = Layers::default();
+    let held = settle(&mut layers, Scene::Match, 0, true);
+    assert_eq!((held.calm, held.fight), (0.0, 1.0));
+}
 
-    let half = Volumes {
-        master: 0.5,
-        music: 0.5,
-        ..Volumes::default()
-    };
-    let mix = settle(&mut score, Scene::Menu, half);
-    assert!((mix.menu - 0.04).abs() < 1.0e-6);
+#[test]
+fn pause_ducks_the_music_without_silencing_it() {
+    let mut layers = Layers::default();
+    settle(&mut layers, Scene::Match, 0, false);
+    let paused = settle(&mut layers, Scene::Pause, 0, false);
+    assert_eq!(paused.calm, PAUSE_DUCK);
+    assert_eq!(paused.solo, PAUSE_DUCK);
+    let back = settle(&mut layers, Scene::Match, 0, false);
+    assert_eq!(back.calm, 1.0);
+}
+
+#[test]
+fn every_scene_has_its_music() {
+    assert_eq!(Scene::Menu.role(), Role::Menu);
+    assert_eq!(Scene::Match.role(), Role::Match);
+    assert_eq!(Scene::Pause.role(), Role::Match, "pause keeps the song");
+    assert_eq!(Scene::Result.role(), Role::Draw);
+    assert_eq!(Scene::Victory.role(), Role::Victory);
+    assert_eq!(Scene::Defeat.role(), Role::Defeat);
+}
+
+#[test]
+fn a_stray_hit_is_no_siege_but_sustained_fire_is_and_it_fades() {
+    let mut pressure = Pressure::default();
+    pressure.structure_hit(0.0);
+    assert!(!pressure.cues(0.0, false).siege);
+    for step in 1..=8 {
+        pressure.structure_hit(step as f32 * 0.5);
+    }
+    assert!(
+        pressure.cues(4.0, false).siege,
+        "two hits a second for four seconds"
+    );
+    assert!(
+        !pressure.cues(4.0, true).siege,
+        "a spectator defends no seat"
+    );
+    assert!(
+        !pressure.cues(20.0, false).siege,
+        "it passes once the guns stop"
+    );
+}
+
+#[test]
+fn a_final_push_builds_like_a_siege() {
+    let mut pressure = Pressure::default();
+    for step in 0..10 {
+        pressure.push_hit(step as f32 * 0.5);
+    }
+    let cues = pressure.cues(4.5, false);
+    assert!(cues.final_push && !cues.siege);
+}
+
+#[test]
+fn a_big_battle_needs_many_guns_heard_lately() {
+    let mut pressure = Pressure::default();
+    let gun = |id: u32| aftermine_sim::Target::Unit(aftermine_sim::UnitId(id));
+    for id in 0..u32::try_from(BATTLE_GUNS).unwrap() - 1 {
+        pressure.gun_heard(gun(id), 1.0);
+        pressure.gun_heard(gun(id), 2.0);
+    }
+    let cues = pressure.cues(2.0, false);
+    assert_eq!(cues.guns, BATTLE_GUNS - 1, "the same guns count once");
+    assert!(!cues.big_battle);
+    pressure.gun_heard(
+        aftermine_sim::Target::Building(aftermine_sim::BuildingId(0)),
+        2.0,
+    );
+    assert!(
+        pressure.cues(2.0, false).big_battle,
+        "a turret is a gun beside the units"
+    );
+    assert!(
+        pressure.cues(2.0, true).big_battle,
+        "a replay hears battles too"
+    );
+    let later = pressure.cues(2.0 + BATTLE_SECS, false);
+    assert_eq!((later.guns, later.big_battle), (0, false));
+    for id in 1000..1300 {
+        pressure.gun_heard(gun(id), id as f32);
+    }
+    assert!(
+        pressure.guns.len() <= 4 * BATTLE_GUNS + 1,
+        "guns heard long ago are forgotten"
+    );
 }
 
 #[test]

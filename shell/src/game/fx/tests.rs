@@ -131,6 +131,17 @@ fn unseen_buildings_do_not_supply_surface_facts() {
     );
 }
 
+/// Points the camera away from `at`, so an alert raised there sounds.
+fn look_away(game: &mut Game, at: Vec2) {
+    for corner in [Vec2::splat(1.0e4), Vec2::ZERO] {
+        game.presentation.camera.show(corner, 96.0);
+        if !game.presentation.camera.in_view(at, 0.0) {
+            return;
+        }
+    }
+    panic!("no framing leaves {at} off screen");
+}
+
 fn blind_bulwark_scene(victim: UnitKind) -> Game {
     let mut scenario = aftermine_sim::Scenario::skirmish();
     let mut rows = vec![vec!['.'; 40]; 30];
@@ -218,6 +229,8 @@ fn blind_hitscan_damage_alerts_only_its_owner_in_live_and_playback() {
     let mut live = blind_bulwark_scene(UnitKind::Excavator);
     let victim = live.state.units()[0].id;
     let before = live.state.unit(victim).unwrap().hp;
+    let at = world_vec(live.state.unit(victim).unwrap().pos);
+    look_away(&mut live, at);
     let report = live.do_tick();
     assert_eq!(live.state.unit(victim).unwrap().hp, before - 60);
     assert!(
@@ -922,6 +935,7 @@ fn charge_detonation_plays_one_blast_and_preserves_other_building_losses() {
             if viewer == 0 {
                 assert!(!game.my_vision().visible(tile));
             }
+            look_away(&mut game, world_vec(tile.center()));
             let report = game.do_tick();
             if viewer == 0 {
                 assert!(game.presentation.alerts.is_empty());
@@ -1014,7 +1028,10 @@ fn charge_detonation_plays_one_blast_and_preserves_other_building_losses() {
                 32.0,
             );
             assert_eq!(mixed.len(), expected.len());
-            assert!(mixed.iter().all(|sound| sound.gain == 1.0));
+            assert!(
+                mixed.iter().all(|sound| sound.gain > 0.99),
+                "blasts beside the camera's center play at full level"
+            );
         }
     }
 }
@@ -2999,7 +3016,9 @@ fn a_replay_gives_none_of_its_seats_private_feedback() {
             .units()
             .iter()
             .find(|unit| unit.player == player)
-            .expect("the seat starts with a unit");
+            .expect("the seat starts with a unit")
+            .clone();
+        look_away(&mut game, world_vec(trained.pos));
         let events = [
             Event::CommandRejected {
                 player,
@@ -3136,4 +3155,162 @@ fn coincident_impacts_each_sound_their_own_payload() {
         .map(|(kind, _)| *kind)
         .collect();
     assert_eq!(heard, [SoundKind::Artillery, SoundKind::RocketImpact]);
+}
+
+#[test]
+fn fire_on_a_seat_s_own_structures_cues_the_score_only_when_it_lasts() {
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    let human = game.presentation.human;
+    let building = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.player == human)
+        .expect("a structure of the seat's own");
+    let (id, at) = (building.id, building.anchor.center());
+    let hit = |gun: u32| Event::AttackHit {
+        attacker: UnitId(1000 + gun),
+        attacker_kind: UnitKind::Sentinel,
+        weapon: 0,
+        target: Some(Target::Building(id)),
+        attacker_pos: at,
+        target_pos: at,
+    };
+    game.presentation.spawn_fx(&game.state, &[hit(0)]);
+    let stray = game.presentation.score_cues();
+    assert!(!stray.siege, "one stray shot is no siege");
+    assert_eq!(stray.guns, 1, "but its gun is heard");
+    for gun in 1..=20 {
+        game.presentation.update_fx(&game.state, 0.2);
+        game.presentation.spawn_fx(&game.state, &[hit(gun)]);
+    }
+    let cues = game.presentation.score_cues();
+    assert!(cues.siege, "sustained fire on the base is a siege");
+    assert!(
+        cues.big_battle,
+        "twenty guns heard at once are a big battle"
+    );
+    assert!(!cues.final_push);
+}
+
+#[test]
+fn hitting_hostile_structures_early_is_no_final_push() {
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    let human = game.presentation.human;
+    let gun = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human)
+        .expect("a unit of the seat's own")
+        .id;
+    let building = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| game.state.hostile(human, building.player))
+        .expect("a hostile structure");
+    let (id, at) = (building.id, building.anchor.center());
+    for _ in 0..20 {
+        game.presentation.update_fx(&game.state, 0.2);
+        game.presentation.spawn_fx(
+            &game.state,
+            &[Event::AttackHit {
+                attacker: gun,
+                attacker_kind: UnitKind::Sentinel,
+                weapon: 0,
+                target: Some(Target::Building(id)),
+                attacker_pos: at,
+                target_pos: at,
+            }],
+        );
+    }
+    assert!(game.state.current_tick() < crate::soundtrack::FINAL_PUSH_AFTER);
+    assert!(!game.presentation.score_cues().final_push);
+}
+
+#[test]
+fn a_seat_s_news_is_heard_from_where_it_happened() {
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    let human = game.presentation.human;
+    let foundry = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.player == human && building.kind == BuildingKind::Foundry)
+        .expect("the seat's Foundry");
+    let (building, center) = (foundry.id, world_vec(foundry.center()));
+    let unit = game
+        .state
+        .units()
+        .iter()
+        .find(|unit| unit.player == human)
+        .expect("the seat starts with a unit");
+    let (id, kind, pos) = (unit.id, unit.kind, unit.pos);
+    game.presentation.spawn_fx(
+        &game.state,
+        &[
+            Event::BuildingCompleted {
+                building,
+                player: human,
+                kind: BuildingKind::Foundry,
+                tier: 0,
+            },
+            Event::BuildingCompleted {
+                building,
+                player: human,
+                kind: BuildingKind::Foundry,
+                tier: 1,
+            },
+            Event::UnitTrained {
+                building,
+                unit: id,
+                kind,
+                player: human,
+            },
+            Event::UnitAssembled {
+                cradle: BuildingId(999),
+                unit: id,
+                kind,
+                player: human,
+                pos,
+            },
+        ],
+    );
+    assert_eq!(
+        game.presentation.sounds_pending,
+        [
+            (SoundKind::TrainDone, Some(center)),
+            (SoundKind::UpgradeDone, Some(center)),
+            (SoundKind::TrainDone, Some(world_vec(pos))),
+            (SoundKind::TrainDone, Some(world_vec(pos))),
+        ]
+    );
+}
+
+#[test]
+fn a_drop_off_is_heard_from_the_foundry_that_took_it() {
+    let mut game = Game::new(aftermine_sim::Scenario::skirmish()).unwrap();
+    let human = game.presentation.human;
+    let foundry = game
+        .state
+        .buildings()
+        .iter()
+        .find(|building| building.player == human && building.kind == BuildingKind::Foundry)
+        .expect("the seat's Foundry");
+    let (id, center) = (foundry.id, world_vec(foundry.center()));
+    game.presentation.spawn_fx(
+        &game.state,
+        &[Event::ScrapDeposited {
+            unit: UnitId(999),
+            foundry: id,
+            player: human,
+            amount: 5,
+        }],
+    );
+    assert_eq!(
+        game.presentation.sounds_pending,
+        [(SoundKind::Deposit, Some(center))],
+        "positioned, so the camera's distance applies to it"
+    );
 }

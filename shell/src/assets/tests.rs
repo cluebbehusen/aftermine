@@ -19,7 +19,7 @@ pub(crate) fn unit_action_frames(kind: UnitKind) -> usize {
     }
 }
 
-const SOUND_NAMES: [&str; 55] = [
+const SOUND_NAMES: [&str; 46] = [
     "ack",
     "alert",
     "artillery_boom",
@@ -43,7 +43,6 @@ const SOUND_NAMES: [&str; 55] = [
     "bomb_release",
     "building_boom",
     "click",
-    "defeat",
     "demolition_boom",
     "denied",
     "deposit",
@@ -57,13 +56,6 @@ const SOUND_NAMES: [&str; 55] = [
     "laser",
     "laser2",
     "maw_cut",
-    "maw_kiln",
-    "music_calm",
-    "music_combat",
-    "music_defeat",
-    "music_menu",
-    "music_result",
-    "music_victory",
     "piledriver_deploy",
     "piledriver_fold",
     "piledriver_impact",
@@ -72,7 +64,6 @@ const SOUND_NAMES: [&str; 55] = [
     "train_done",
     "unit_death",
     "upgrade_done",
-    "victory",
     "warhead_detonation",
     "warhead_flight",
 ];
@@ -310,14 +301,9 @@ fn generated_sound_bank_is_complete_and_has_valid_pcm_metadata() {
             "{} must stay mono",
             path.display()
         );
-        let expected_rate = if name.starts_with("music_") {
-            22_050
-        } else {
-            44_100
-        };
         assert_eq!(
             u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]),
-            expected_rate,
+            44_100,
             "{} changed sample rate",
             path.display()
         );
@@ -327,16 +313,6 @@ fn generated_sound_bank_is_complete_and_has_valid_pcm_metadata() {
             "{} must stay 16-bit PCM",
             path.display()
         );
-        if name.starts_with("music_") {
-            let data_bytes =
-                u32::from_le_bytes([bytes[40], bytes[41], bytes[42], bytes[43]]) as usize;
-            assert_eq!(
-                data_bytes,
-                12 * 22_050 * 2,
-                "{} is not the authored twelve-second loop",
-                path.display()
-            );
-        }
     }
 }
 

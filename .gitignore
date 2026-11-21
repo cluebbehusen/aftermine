@@ -5,7 +5,7 @@ __pycache__/
 /.pytest_cache/
 .playwright-cli/
 
-# Local product-direction workspace. Production approvals live in docs/.
+# Local product-direction workspace.
 /art-direction-archive/
 /review-*/
 /map-review/

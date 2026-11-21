@@ -3,11 +3,11 @@
 //! allied missiles, and for a hostile one over a tile the viewer sees now,
 //! or in an omniscient view (see [`crate::render::sky::missile_seen`]).
 
+use crate::audio_engine::Sound;
 use crate::game::{EffectKind, INTERCEPT_OVERLAP_TICKS, Scene, SoundKind, TICK_DT};
 use crate::loop_audio::{LoopBank, Motor, camera_gain, densest};
 use crate::render::sky::{missile_seen, warhead_track};
 use aftermine_sim::WarheadId;
-use macroquad::audio::Sound;
 
 pub(crate) const WARHEAD_VOICES: usize = 8;
 pub(crate) const INTERCEPTOR_VOICES: usize = 4;
