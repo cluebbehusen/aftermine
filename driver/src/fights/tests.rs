@@ -97,6 +97,72 @@ fn arrivals_are_late_after_their_side_s_first_and_a_meeting_is_judged_when_both_
 }
 
 #[test]
+fn units_that_come_near_after_the_last_death_do_not_arrive() {
+    let mut fights = tracker(2);
+    fights.step(10, vec![death(0, 5, 5, false)], None);
+    fights.step(20, vec![death(1, 6, 5, false)], None);
+    fights.step(30, vec![], Some(vec![armed(1, 0, 5, 6), armed(2, 1, 6, 6)]));
+    let seats = fights.finish();
+    assert_eq!(
+        (seats[0].fights, seats[0].arrivals, seats[0].met),
+        (1, 0, 0)
+    );
+    assert_eq!(
+        (seats[1].fights, seats[1].arrivals, seats[1].met),
+        (1, 0, 0)
+    );
+}
+
+#[test]
+fn who_stood_near_is_judged_against_the_fight_s_final_centre() {
+    // Deaths at x 20 and 35 put the centre at 27: West's unit at 15 stood
+    // near only the first death, East's at 37 only the second.
+    let mut fights = tracker(2);
+    fights.step(
+        50,
+        vec![],
+        Some(vec![armed(1, 0, 15, 5), armed(2, 1, 37, 5)]),
+    );
+    fights.step(100, vec![death(0, 20, 5, true)], None);
+    fights.step(110, vec![death(1, 35, 5, true)], None);
+    let seats = fights.finish();
+    assert_eq!((seats[0].fights, seats[0].arrivals), (1, 0));
+    assert_eq!((seats[1].fights, seats[1].arrivals), (1, 1));
+}
+
+#[test]
+fn allies_dying_beside_each_other_on_one_tick_do_not_die_alone() {
+    let mut scenario = Scenario::skirmish();
+    for player in &mut scenario.players {
+        player.bot = false;
+        player.bot_config = None;
+    }
+    let state = scenario.build().unwrap();
+    let died = |unit: u32, x: i32| Event::UnitDied {
+        unit: UnitId(unit),
+        kind: UnitKind::Sentinel,
+        player: PlayerId(0),
+        pos: chassis::fx::Vec2Fx::new(chassis::fx::Fx::from_num(x), chassis::fx::Fx::from_num(30)),
+        grounded: true,
+    };
+    assert!(
+        !state.units().iter().any(
+            |unit| super::armed(unit.kind) && unit.tile().chebyshev(TilePos::new(30, 30)) <= 10
+        ),
+        "premise: no armed unit stands near"
+    );
+    let mut fights = FightTracker::new(&state);
+    let report = TickReport {
+        tick: state.current_tick(),
+        events: vec![died(9_000, 30), died(9_001, 32)],
+        movement: Vec::new(),
+    };
+    fights.observe(&state, &report);
+    let seats = fights.finish();
+    assert_eq!((seats[0].losses, seats[0].alone), (2, 0));
+}
+
+#[test]
 fn units_far_from_the_fight_neither_take_part_nor_arrive() {
     let mut fights = tracker(3);
     fights.step(
