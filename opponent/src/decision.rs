@@ -676,7 +676,7 @@ pub(crate) fn decide(
         map,
         &scratch,
         &persistent.memory,
-        profile.stance,
+        (profile.stance, profile.difficulty),
         &mut ledger,
     );
     if !short {

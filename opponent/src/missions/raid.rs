@@ -12,7 +12,7 @@ use super::attack::{
 };
 use super::{
     MISSION_CAP, Mission, Missions, Objective, RaidPhase, Task, approach, distant_worth, hunt,
-    mine, run, standing, value,
+    meeting, mine, run, standing, value,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, ring};
@@ -395,7 +395,7 @@ impl<'a> Foray<'a> {
         };
         match kind {
             Raider::Sapper => candidates
-                .filter(|(_, goal)| defense(observation, self.memory, *goal) <= self.light)
+                .filter(|(_, goal)| self.guarded(*goal) <= self.light)
                 .filter_map(|(target, goal)| {
                     // Enough blasts for what is left of the building.
                     let hp = observation
@@ -434,7 +434,7 @@ impl<'a> Foray<'a> {
                         Raider::Bomber => {
                             air::cover(self.air, footprint_centre(target.building, target.anchor))
                         }
-                        _ => defense(observation, self.memory, goal),
+                        _ => self.guarded(goal),
                     };
                     let need = (guarded * self.margin / 1_000).max(1);
                     (need <= strength && (kind != Raider::Scuttler || guarded <= self.light))
@@ -443,6 +443,18 @@ impl<'a> Foray<'a> {
                 .min_by_key(|(guarded, target, _, _)| (*guarded, distance(target), rank(target)))
                 .map(|(_, target, goal, need)| (target, goal, need)),
         }
+    }
+
+    /// What a ground raid on `goal` meets: its known guard there, or the
+    /// strongest known enemy force on its way, whichever is more. A line held
+    /// across the way stops raiders as surely as a guard at the target.
+    fn guarded(&self, goal: TilePos) -> u64 {
+        defense(self.observation, self.memory, goal).max(meeting::on_the_way(
+            self.observation,
+            self.memory,
+            (self.map, self.frame),
+            goal,
+        ))
     }
 
     /// What a Sapper aims at to blow up `target`.
