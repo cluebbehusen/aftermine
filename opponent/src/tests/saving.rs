@@ -1662,7 +1662,8 @@ fn a_crew_the_fire_would_kill_before_it_paid_leaves_its_site() {
         advance_to(&mut state, next, &[]);
     }
     assert!(state.unit(builder).is_some(), "premise: the builder stands");
-    let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+    let mut opponent = seat_with(&scenario, 0, thrifty());
+    let commands = opponent.act(&state, &mut OwnEvents::default());
     let foundry = state
         .buildings()
         .iter()
@@ -1675,6 +1676,15 @@ fn a_crew_the_fire_would_kill_before_it_paid_leaves_its_site() {
             .iter()
             .any(|(units, goal)| units.contains(&builder) && beside.contains(goal)),
         "{commands:?}"
+    );
+    // While that fire stands, nobody is sent back to the site.
+    state.tick(&commands);
+    let next = state.current_tick().next_multiple_of(12);
+    advance_to(&mut state, next, &[]);
+    let later = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&later).iter().all(|(_, anchor)| *anchor != site),
+        "{later:?}"
     );
 }
 
@@ -1749,4 +1759,81 @@ fn a_welder_the_fire_would_kill_before_it_paid_leaves_the_building() {
             .any(|(units, _)| units.contains(&welder)),
         "{commands:?}"
     );
+}
+
+#[test]
+fn a_welder_with_no_refuge_out_of_the_fire_keeps_welding() {
+    // East Lancers shell West's Foundry and cover every tile beside it. A
+    // welder at it would not pay its way, but with nowhere out of the fire to
+    // go it keeps welding; given a second Foundry out of reach, it goes there.
+    let welded = |refuge: bool| {
+        let mut scenario = field();
+        scenario.players[0].scrap = 400;
+        if refuge {
+            scenario.buildings.push(BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Foundry,
+                x: 20,
+                y: 20,
+            });
+        }
+        scenario.units.extend([
+            unit(0, UnitKind::Harvester, 5, 13),
+            unit(1, UnitKind::Lancer, 8, 11),
+            unit(1, UnitKind::Lancer, 8, 12),
+        ]);
+        let mut state = scenario.build().unwrap();
+        let home = state
+            .buildings()
+            .iter()
+            .find(|building| {
+                building.player == PlayerId(0)
+                    && building.kind == BuildingKind::Foundry
+                    && building.anchor != TilePos::new(20, 20)
+            })
+            .unwrap()
+            .id;
+        let welder = at(&state, 5, 13);
+        let lancers = vec![at(&state, 8, 11), at(&state, 8, 12)];
+        state.tick(&[PlayerCommand {
+            player: PlayerId(1),
+            command: Command::Attack {
+                units: lancers,
+                target: AttackTarget::Building(home),
+                queue: false,
+            },
+        }]);
+        let whole = |state: &State| {
+            state.buildings().iter().any(|building| {
+                building.id == home && building.hp == building.kind.base_stats().max_hp
+            })
+        };
+        while whole(&state) && state.current_tick() < 600 {
+            state.tick(&[]);
+        }
+        state.tick(&[PlayerCommand {
+            player: PlayerId(0),
+            command: Command::Repair {
+                units: vec![welder],
+                building: home,
+                queue: false,
+            },
+        }]);
+        let next = (state.current_tick() + 24).next_multiple_of(12);
+        advance_to(&mut state, next, &[]);
+        assert!(
+            ObservationData::fog_honest(&state, PlayerId(0))
+                .my_units
+                .iter()
+                .any(|unit| unit.id == welder
+                    && unit.repair == Some(aftermine_sim::observation::RepairWork::Ordered)),
+            "premise: the welder is at it"
+        );
+        let commands = seat_with(&scenario, 0, thrifty()).act(&state, &mut OwnEvents::default());
+        runs(&commands)
+            .iter()
+            .any(|(units, _)| units.contains(&welder))
+    };
+    assert!(welded(true), "premise: out of the fire, it would go");
+    assert!(!welded(false), "nowhere to go: it keeps welding");
 }
