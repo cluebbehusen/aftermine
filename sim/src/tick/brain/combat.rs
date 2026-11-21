@@ -13,6 +13,7 @@ pub(super) use mounts::{
     Sight as MountSight, face_idle as face_mounted_idle, fire as fire_mounts, hunt as mounted_hunt,
 };
 
+use super::super::crowding::Post;
 use super::super::fire::{Fire, Landing, ShotEnd, blast_reaches, clear_line, levels_allow};
 use super::super::flight;
 use super::super::landing;
@@ -3043,7 +3044,8 @@ fn approach_firing_area(
     };
     if unit.path.as_ref().is_some_and(|path| {
         let point = path.final_point.unwrap_or(path.goal.center());
-        legal(point) && !crate::tick::crowding::claimed(state, index, id, point, true)
+        legal(point)
+            && !crate::tick::crowding::claimed(state, index, (id, Post::Ranged), point, true)
     }) {
         return true;
     }
@@ -3080,7 +3082,7 @@ fn approach_firing_area(
     let path = crate::tick::crowding::choose(
         state,
         index,
-        id,
+        (id, Post::Ranged),
         candidates,
         b.center(),
         |tile| state.passable_for(domain, tile),

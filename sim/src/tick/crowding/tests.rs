@@ -29,19 +29,45 @@ fn allied_arrivals_claim_positions_with_full_cross_owner_spacing() {
         next: 0,
         clearing: false,
     });
-    assert!(claimed(&state, &indexed(&state), id, point, false));
+    assert!(claimed(
+        &state,
+        &indexed(&state),
+        (id, Post::Contact),
+        point,
+        false
+    ));
     assert!(
-        !claimed(&state, &indexed(&state), id, point, true),
+        !claimed(&state, &indexed(&state), (id, Post::Contact), point, true),
         "the nearer body keeps a contested position"
     );
     state.unit_mut(id).unwrap().path = state.unit(ally).unwrap().path.clone();
-    assert!(claimed(&state, &indexed(&state), ally, point, true));
+    assert!(claimed(
+        &state,
+        &indexed(&state),
+        (ally, Post::Contact),
+        point,
+        true
+    ));
     assert_eq!(
-        Pressure::new(&state, &indexed(&state), id, point, Fx::ZERO).neighbors[0].spacing,
+        Pressure::new(
+            &state,
+            &indexed(&state),
+            (id, Post::Contact),
+            point,
+            Fx::ZERO
+        )
+        .neighbors[0]
+            .spacing,
         UnitKind::Harvester.stats().radius * 2
     );
     state.players[1].team = state.players[0].team.wrapping_add(1);
-    assert!(!claimed(&state, &indexed(&state), id, point, false));
+    assert!(!claimed(
+        &state,
+        &indexed(&state),
+        (id, Post::Contact),
+        point,
+        false
+    ));
 }
 
 /// Two workers of one seat and one of an allied seat converge on one
@@ -72,7 +98,7 @@ fn exactly_the_nearest_of_mixed_allied_arrivals_keeps_a_position() {
     }
     let keeps: Vec<_> = [farthest, nearest, middle]
         .into_iter()
-        .filter(|&id| !claimed(&state, &indexed(&state), id, point, true))
+        .filter(|&id| !claimed(&state, &indexed(&state), (id, Post::Contact), point, true))
         .collect();
     assert_eq!(keeps, [nearest]);
 }
@@ -95,7 +121,13 @@ fn a_destination_claims_its_point_from_across_the_arrival_window() {
         next: 0,
         clearing: false,
     });
-    assert!(claimed(&state, &indexed(&state), id, point, false));
+    assert!(claimed(
+        &state,
+        &indexed(&state),
+        (id, Post::Contact),
+        point,
+        false
+    ));
 }
 
 /// Two workers bound for overlapping positions after their paths
@@ -126,8 +158,20 @@ fn crossed_arrivals_to_overlapping_positions_keep_exactly_one() {
             clearing: false,
         });
     }
-    assert!(claimed(&state, &indexed(&state), farther, mine, true));
-    assert!(!claimed(&state, &indexed(&state), nearer, theirs, true));
+    assert!(claimed(
+        &state,
+        &indexed(&state),
+        (farther, Post::Contact),
+        mine,
+        true
+    ));
+    assert!(!claimed(
+        &state,
+        &indexed(&state),
+        (nearer, Post::Contact),
+        theirs,
+        true
+    ));
 }
 
 #[test]
@@ -154,8 +198,20 @@ fn same_owner_precedence_is_unchanged_by_enemy_id_interleaving() {
                 clearing: false,
             });
         }
-        assert!(!claimed(&state, &indexed(&state), first, point, true));
-        assert!(claimed(&state, &indexed(&state), second, point, true));
+        assert!(!claimed(
+            &state,
+            &indexed(&state),
+            (first, Post::Contact),
+            point,
+            true
+        ));
+        assert!(claimed(
+            &state,
+            &indexed(&state),
+            (second, Post::Contact),
+            point,
+            true
+        ));
     }
 }
 
@@ -181,17 +237,17 @@ fn only_nearby_arrivals_claim_a_position_across_body_sizes() {
             clearing: false,
         });
         assert!(
-            !claimed(&state, &indexed(&state), id, point, false),
+            !claimed(&state, &indexed(&state), (id, Post::Contact), point, false),
             "distant {kind:?} reserved the destination"
         );
         state.unit_mut(other).unwrap().pos = point - Vec2Fx::new(Fx::lit("0.5"), Fx::ZERO);
         assert!(
-            claimed(&state, &indexed(&state), id, point, false),
+            claimed(&state, &indexed(&state), (id, Post::Contact), point, false),
             "nearby {kind:?} lost its arrival claim"
         );
         state.unit_mut(other).unwrap().path = None;
         assert!(
-            !claimed(&state, &indexed(&state), id, point, true),
+            !claimed(&state, &indexed(&state), (id, Post::Contact), point, true),
             "idle traffic cancelled an admitted route"
         );
     }
@@ -219,7 +275,7 @@ fn chooser_finds_a_farther_reachable_position_after_four_sealed_candidates() {
     let path = choose(
         &state,
         &indexed(&state),
-        id,
+        (id, Post::Ranged),
         candidates,
         TilePos::new(10, 5).center(),
         |tile| state.passable(tile),
@@ -252,7 +308,7 @@ fn chooser_prefers_free_space_and_still_accepts_an_occupied_fallback() {
     let path = choose(
         &state,
         &indexed(&state),
-        id,
+        (id, Post::Contact),
         vec![position(busy), position(free)],
         TilePos::new(17, 8).center(),
         |_| true,
@@ -263,7 +319,7 @@ fn chooser_prefers_free_space_and_still_accepts_an_occupied_fallback() {
     let path = choose(
         &state,
         &indexed(&state),
-        id,
+        (id, Post::Contact),
         vec![position(busy)],
         TilePos::new(17, 8).center(),
         |_| true,
@@ -284,10 +340,14 @@ fn pressure_ranks_ignore_only_neighbors_beyond_reach() {
     let everywhere = Fx::from_num(4096);
     let mut claims = 0;
     for unit in state.units().iter().filter(|unit| unit.hp > 0) {
-        for reach in [Fx::ZERO, Fx::lit("1.5"), Fx::from_num(3)] {
+        for (reach, post) in [Fx::ZERO, Fx::lit("1.5"), Fx::from_num(3)]
+            .into_iter()
+            .flat_map(|reach| [(reach, Post::Contact), (reach, Post::Ranged)])
+        {
             let center = unit.pos;
-            let near = Pressure::new(&state, &indexed(&state), unit.id, center, reach);
-            let all = Pressure::new(&state, &indexed(&state), unit.id, center, everywhere);
+            let asker = (unit.id, post);
+            let near = Pressure::new(&state, &indexed(&state), asker, center, reach);
+            let all = Pressure::new(&state, &indexed(&state), asker, center, everywhere);
             for dy in -4..=4 {
                 for dx in -4..=4 {
                     let offset =
@@ -309,7 +369,7 @@ fn pressure_ranks_ignore_only_neighbors_beyond_reach() {
 }
 
 /// What [`Pressure::new`] keeps of a neighbor, comparably.
-type Kept = (UnitId, Option<Vec2Fx>, Fx, bool, Option<bool>);
+type Kept = (UnitId, Option<Vec2Fx>, Fx, Option<Post>, Option<bool>);
 
 /// Sorted by unit: the order of the neighbors never matters.
 fn kept(pressure: &Pressure, state: &State) -> Vec<Kept> {
@@ -323,16 +383,16 @@ fn kept(pressure: &Pressure, state: &State) -> Vec<Kept> {
                 .find(|u| u.pos == n.pos)
                 .expect("a neighbor stands where a unit does")
                 .id;
-            (id, n.destination, n.spacing, n.productive, n.earlier)
+            (id, n.destination, n.spacing, n.post, n.earlier)
         })
         .collect();
-    kept.sort_unstable();
+    kept.sort_unstable_by_key(|kept| kept.0);
     kept
 }
 
 /// The neighbors a walk over every unit keeps, as `Pressure::new` kept
 /// them before it walked a window of the unit index.
-fn scanned(state: &State, id: UnitId, center: Vec2Fx, reach: Fx) -> Vec<Kept> {
+fn scanned(state: &State, (id, post): (UnitId, Post), center: Vec2Fx, reach: Fx) -> Vec<Kept> {
     let unit = state.unit(id).expect("position owner");
     state
         .units()
@@ -345,7 +405,8 @@ fn scanned(state: &State, id: UnitId, center: Vec2Fx, reach: Fx) -> Vec<Kept> {
         })
         .filter(|other| {
             let bound = reach
-                + spacing(unit, other)
+                + unit.kind.stats().radius
+                + other.kind.stats().radius
                 + crate::stats::ARRIVAL_WINDOW
                 + const { Fx::lit("0.0625") };
             other.pos.dist_sq(center) < bound * bound
@@ -359,11 +420,12 @@ fn scanned(state: &State, id: UnitId, center: Vec2Fx, reach: Fx) -> Vec<Kept> {
                     other.pos.dist_sq(point)
                         <= crate::stats::ARRIVAL_WINDOW * crate::stats::ARRIVAL_WINDOW
                 });
+            let other_post = super::post(state, other);
             (
                 other.id,
                 destination,
-                spacing(unit, other),
-                productive(state, other),
+                spacing((unit, Some(post)), (other, other_post)),
+                other_post,
                 (other.player == unit.player).then_some(other.id < id),
             )
         })
@@ -410,10 +472,13 @@ fn indexed_pressure_keeps_exactly_the_neighbors_a_walk_over_every_unit_keeps() {
     let mut compared = 0;
     for unit in state.units() {
         for reach in [Fx::ZERO, Fx::lit("1.5"), Fx::lit("4.25")] {
-            for (dx, dy) in [(0, 0), (3, -2), (-5, 1), (2, 6)] {
+            for ((dx, dy), post) in [(0, 0), (3, -2), (-5, 1), (2, 6)]
+                .into_iter()
+                .zip([Post::Contact, Post::Ranged].into_iter().cycle())
+            {
                 let center = unit.pos + Vec2Fx::new(Fx::from_num(dx) / 2, Fx::from_num(dy) / 2);
-                let pressure = Pressure::new(&state, &index, unit.id, center, reach);
-                let reference = scanned(&state, unit.id, center, reach);
+                let pressure = Pressure::new(&state, &index, (unit.id, post), center, reach);
+                let reference = scanned(&state, (unit.id, post), center, reach);
                 assert_eq!(
                     kept(&pressure, &state),
                     reference,
@@ -453,7 +518,7 @@ fn lazily_admitted_choices_match_choices_among_admitted_candidates() {
         b.anchor,
         b.kind.size(),
         clearance,
-        unit.kind.stats().radius * crate::stats::SAME_OWNER_COMPRESSION,
+        unit.kind.stats().radius * crate::stats::CONTACT_COMPRESSION,
     )
     .into_iter()
     .map(|entry| Position {
@@ -484,7 +549,7 @@ fn lazily_admitted_choices_match_choices_among_admitted_candidates() {
         let eager = choose(
             &state,
             &index,
-            asker,
+            (asker, Post::Contact),
             positions.iter().copied().filter(admit).collect(),
             center,
             |tile| state.passable(tile),
@@ -498,7 +563,7 @@ fn lazily_admitted_choices_match_choices_among_admitted_candidates() {
         let lazy = choose_admitted(
             &state,
             &index,
-            asker,
+            (asker, Post::Contact),
             positions.clone(),
             center,
             |tile| state.passable(tile),
@@ -522,4 +587,79 @@ fn lazily_admitted_choices_match_choices_among_admitted_candidates() {
         }
     }
     assert!(waited > 0, "no choice fell back to a waiting position");
+}
+
+#[test]
+fn bodies_pack_only_beside_contact_and_never_beside_ranged_fire() {
+    let mut state = Scenario::skirmish().build().unwrap();
+    state.units.clear();
+    let spawn = |state: &mut State, player, x| {
+        state.spawn_unit(
+            PlayerId(player),
+            UnitKind::Sentinel,
+            TilePos::new(x, 8).center(),
+        )
+    };
+    let ids = [
+        spawn(&mut state, 0, 10),
+        spawn(&mut state, 0, 12),
+        spawn(&mut state, 1, 14),
+    ];
+    let [a, b, foe] = ids.map(|id| state.unit(id).unwrap());
+    let full = UnitKind::Sentinel.stats().radius * 2;
+    let packed = full * crate::stats::CONTACT_COMPRESSION;
+    let (contact, ranged) = (Some(Post::Contact), Some(Post::Ranged));
+    for (a_post, b_post, expected) in [
+        (None, None, full),
+        (contact, None, packed),
+        (None, contact, packed),
+        (contact, contact, packed),
+        (ranged, None, full),
+        (None, ranged, full),
+        (ranged, contact, full),
+        (contact, ranged, full),
+        (ranged, ranged, full),
+    ] {
+        assert_eq!(
+            spacing((a, a_post), (b, b_post)),
+            expected,
+            "{a_post:?} beside {b_post:?}"
+        );
+        assert_eq!(
+            spacing((a, a_post), (foe, b_post)),
+            full,
+            "{a_post:?} beside a hostile {b_post:?}"
+        );
+    }
+}
+
+/// A ranged shooter claims a position clear of an idle crewmate's whole
+/// body, where a unit in contact would pack beside it.
+#[test]
+fn shooters_claim_clear_of_idle_crewmates_that_contact_packs_beside() {
+    let mut state = Scenario::skirmish().build().unwrap();
+    state.units.clear();
+    let point = TilePos::new(15, 8).center();
+    let id = state.spawn_unit(
+        PlayerId(0),
+        UnitKind::Sentinel,
+        TilePos::new(10, 8).center(),
+    );
+    state.spawn_unit(
+        PlayerId(0),
+        UnitKind::Sentinel,
+        point + Vec2Fx::new(Fx::lit("0.5"), Fx::ZERO),
+    );
+    let index = indexed(&state);
+    let neighbor = |post| {
+        let pressure = Pressure::new(&state, &index, (id, post), point, Fx::ZERO);
+        assert_eq!(pressure.neighbors.len(), 1);
+        pressure.neighbors[0].spacing
+    };
+    let full = UnitKind::Sentinel.stats().radius * 2;
+    assert_eq!(neighbor(Post::Ranged), full);
+    assert_eq!(
+        neighbor(Post::Contact),
+        full * crate::stats::CONTACT_COMPRESSION
+    );
 }

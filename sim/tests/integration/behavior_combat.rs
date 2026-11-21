@@ -5,7 +5,9 @@ use aftermine_sim::scenario::ScenarioMode;
 
 use aftermine_sim::scenario::BuildingSpec;
 use aftermine_sim::{BuildingKind, Event, Order, Scenario, Target, UnitId, UnitKind};
+use chassis::fx::Fx;
 use chassis::grid::TilePos;
+use std::collections::BTreeSet;
 
 use common::*;
 
@@ -1748,4 +1750,84 @@ fn a_gun_still_takes_on_a_structure_it_can_shell_from_across_a_pit() {
     run_until(&mut state, 600, |s, _| {
         s.building(fabricator).is_none_or(|b| b.hp < full)
     });
+}
+
+/// Units firing side by side keep their full body spacing: packed the way a
+/// work crew packs, each hull in a firing line draws over the next.
+#[test]
+fn a_firing_line_keeps_full_body_spacing() {
+    let mut units = Vec::new();
+    for i in 0..8 {
+        units.push(unit(0, UnitKind::Sentinel, 25 + i % 4, 9 + i / 4 * 2));
+    }
+    for i in 0..6 {
+        units.push(unit(0, UnitKind::Lancer, 25 + i % 3, 15 + i / 3 * 2));
+    }
+    let mut state = Scenario {
+        levels: Vec::new(),
+        name: "firing-line".into(),
+        mode: ScenarioMode::Sandbox,
+        map: vec![".".repeat(48); 28],
+        players: players(0),
+        units,
+        buildings: vec![common::building(1, BuildingKind::Foundry, 32, 11)],
+        meta: None,
+    }
+    .build()
+    .unwrap();
+    let attackers: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
+    let foundry = Target::Building(state.buildings()[0].id);
+    state.tick(&[cmd(0, orders::attack(attackers, foundry))]);
+    for _ in 1..120 {
+        state.tick(&[]);
+    }
+    let before: Vec<_> = state.units().iter().map(|u| u.pos).collect();
+    let mut firing = BTreeSet::new();
+    for _ in 0..40 {
+        firing.extend(
+            state
+                .tick(&[])
+                .events
+                .iter()
+                .filter_map(|event| match event {
+                    Event::AttackHit { attacker, .. } => Some(*attacker),
+                    _ => None,
+                }),
+        );
+    }
+    assert!(
+        state.buildings()[0].hp > 0,
+        "the target fell before the line settled"
+    );
+    let settled: Vec<_> = state
+        .units()
+        .iter()
+        .zip(before)
+        .filter(|(u, before)| {
+            firing.contains(&u.id)
+                && u.path.is_none()
+                && u.pos.dist_sq(*before) <= Fx::lit("0.0001")
+        })
+        .map(|(u, _)| u)
+        .collect();
+    let mut touching = 0;
+    for (at, a) in settled.iter().enumerate() {
+        for b in &settled[at + 1..] {
+            let (full, apart) = (
+                a.kind.stats().radius + b.kind.stats().radius,
+                a.pos.dist(b.pos),
+            );
+            assert!(
+                apart >= full - aftermine_sim::stats::COLLISION_SLOP,
+                "{:?} and {:?} fire {apart:?} apart",
+                a.id,
+                b.id
+            );
+            touching += usize::from(apart < full + Fx::lit("0.1"));
+        }
+    }
+    assert!(
+        touching >= 4,
+        "the line never closed up: {touching} touching pairs"
+    );
 }
