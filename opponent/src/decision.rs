@@ -211,6 +211,13 @@ impl Ledger {
         self.stuck.binary_search(&unit).is_ok()
     }
 
+    /// Whether `unit` was sent running this decision.
+    pub(crate) fn running(&self, unit: UnitId) -> bool {
+        self.decision.commands.iter().any(|command| {
+            matches!(&command.command, Command::Run { units, queue: false, .. } if units.contains(&unit))
+        })
+    }
+
     /// Keeps `unit` at a Repair Bay for the rest of this decision: no
     /// mission or welder takes it.
     pub(crate) fn dock(&mut self, unit: UnitId) {
@@ -750,12 +757,15 @@ pub(crate) fn decide(
     persistent
         .missions
         .scouts_stopped(events, &mut persistent.memory, tick);
+    // An army big enough to attack that knows no target has lost track of
+    // the enemy, and the scouts search for it.
+    let lost = army(observation) >= crate::missions::minimum(profile.stance);
     let lacking = persistent.missions.scout(
         observation,
-        map,
-        frame,
+        (map, frame),
         &mut persistent.memory,
         &scratch,
+        lost,
         &mut ledger,
     );
     let saving = match persistent.saving.investment() {
@@ -1084,6 +1094,9 @@ pub(crate) fn site(
     investments::anchors(map, observation, investment, kind)
         .filter(|anchor| !memory.failed(kind, *anchor, tick))
         .filter(|anchor| defense || !danger.hits(kind, *anchor))
+        .filter(|anchor| {
+            !defense || !crate::missions::meeting::overruns(observation, memory, map, kind, *anchor)
+        })
         .filter(|anchor| {
             let builder = ledger.and_then(|(frame, ledger)| {
                 let centre = footprint_centre(kind, *anchor);

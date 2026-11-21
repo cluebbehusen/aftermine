@@ -309,7 +309,7 @@ fn lifecycle(config: BotConfig) -> (u32, u32) {
         let now = state.current_tick();
         let (mut commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         if now == 1 {
-            commands.push(run(1, scuttlers.clone(), 30, 22));
+            commands.push(run(1, scuttlers.clone(), 12, 2));
         }
         if let Some(trace) = trace {
             let travelling =
@@ -1865,17 +1865,26 @@ fn an_engaged_army_whose_target_is_gone_moves_on_while_busy() {
 }
 
 #[test]
-fn a_front_outweighed_withdraws_without_counting_stragglers_behind() {
+fn a_front_outweighed_falls_back_onto_the_army() {
     // Two Sentinels in contact with four East Sentinels, six more of the
-    // attack far behind: together they would win, but the six are not in
-    // the fight, so the front turns back. With all eight there it fights on.
+    // attack far behind: the two alone would lose, the eight together win.
+    // The two fall back onto the six rather than fight alone or turn the
+    // army home, and the six come on. With all eight there it fights on; with
+    // the two alone, or with only anti-air behind them, the attack turns
+    // home. Scrapheap, with orders for only the six and the two's way back,
+    // sends the six on and leaves the two fighting until they arrive.
     let front = [(30, 11), (30, 12)];
     let behind = [(14, 3), (15, 3), (16, 3), (14, 4), (15, 4), (16, 4)];
     let near = [(29, 10), (29, 11), (29, 12), (28, 10), (28, 11), (28, 12)];
-    let withdraws = |rest: &[(i32, i32)], difficulty: BotDifficulty| {
+    let decide_at = |rest: &[(i32, i32)], escort: UnitKind, difficulty: BotDifficulty| {
         let mut scenario = field();
-        for (x, y) in front.iter().chain(rest) {
-            scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
+        for (index, (x, y)) in front.iter().chain(rest).enumerate() {
+            let kind = if index < front.len() {
+                UnitKind::Sentinel
+            } else {
+                escort
+            };
+            scenario.units.push(unit(0, kind, *x, *y));
         }
         for (x, y) in [(33, 10), (33, 11), (33, 12), (34, 11)] {
             scenario.units.push(unit(1, UnitKind::Sentinel, x, y));
@@ -1888,6 +1897,10 @@ fn a_front_outweighed_withdraws_without_counting_stragglers_behind() {
             .map(|(x, y)| at(&state, *x, *y))
             .collect();
         members.sort_unstable();
+        let mut ahead: Vec<UnitId> = front.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+        ahead.sort_unstable();
+        let mut body: Vec<UnitId> = rest.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+        body.sort_unstable();
         let missions = serde_json::json!({
             "next": 1,
             "list": [{
@@ -1905,31 +1918,74 @@ fn a_front_outweighed_withdraws_without_counting_stragglers_behind() {
         let mut state = state;
         advance_to(&mut state, crate::decision_interval(difficulty), &[]);
         let mut opponent = restaged(&scenario, &state, missions);
-        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
-        trace
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let withdraws = trace
             .unwrap()
             .missions
             .iter()
-            .any(|mission| mission.phase == Phase::Withdraw)
+            .any(|mission| mission.phase == Phase::Withdraw);
+        let falls_back = runs(&commands)
+            .iter()
+            .any(|(units, goal)| *units == ahead && goal.x < 20);
+        // Back with the army, the front goes on with it, and no focus order
+        // turns it around first.
+        let rejoins = commands.iter().any(|command| {
+            matches!(&command.command, Command::Hunt { units, queue: true, .. } if *units == ahead)
+        });
+        let refocused = commands.iter().any(|command| {
+            matches!(&command.command, Command::Attack { units, .. } if units.iter().any(|id| ahead.contains(id)))
+        });
+        let comes_on = hunts(&commands)
+            .iter()
+            .any(|(units, _)| !body.is_empty() && *units == body);
+        (withdraws, falls_back && rejoins && !refocused, comes_on)
     };
-    assert!(
-        !withdraws(&near, BotDifficulty::Prime),
-        "premise: all eight fight on"
+    let decide = |rest: &[(i32, i32)], escort: UnitKind| {
+        let (withdraws, falls_back, _) = decide_at(rest, escort, BotDifficulty::Prime);
+        (withdraws, falls_back)
+    };
+    let sentinel = UnitKind::Sentinel;
+    assert_eq!(
+        decide(&near, sentinel),
+        (false, false),
+        "all eight fight on"
     );
-    assert!(withdraws(&behind, BotDifficulty::Prime));
+    assert_eq!(
+        decide(&behind, sentinel),
+        (false, true),
+        "the front falls back"
+    );
+    assert!(decide(&[], sentinel).0, "alone, the attack turns home");
+    // Escorts that hit only aircraft hold no ground fight.
+    assert!(
+        decide(&behind, UnitKind::Flakhound).0,
+        "with only anti-air behind, the attack turns home"
+    );
+    assert_eq!(
+        decide_at(&behind, sentinel, BotDifficulty::Prime),
+        (false, true, true),
+        "the six come on"
+    );
+    assert_eq!(
+        decide_at(&behind, sentinel, BotDifficulty::Scrapheap),
+        (false, false, true),
+        "short of orders, the six come on to the two"
+    );
 }
 
 #[test]
 fn breachers_on_their_way_answer_no_guns_at_the_front() {
-    // Two Sentinels in contact with two East Sentinels and two Turrets, a
-    // Maw of the attack far behind: it would smash the Turrets once there,
-    // but on its way it answers nothing, so the front turns back. Beside the
-    // front, it answers them and the fight goes on.
+    // Two Sentinels in contact with two East Sentinels and two Turrets, the
+    // rest of the attack far behind with a Maw: the Maw would smash the
+    // Turrets once there, but on its way it answers nothing, so the front
+    // falls back onto the army. With the Maw beside the front, it answers
+    // them and the front fights on.
     let front = [(30, 11), (30, 12)];
-    let withdraws = |maw: (i32, i32)| {
+    let behind = [(14, 3), (15, 3), (14, 7), (15, 7)];
+    let falls_back = |maw: (i32, i32)| {
         let mut scenario = field();
-        for (x, y) in front {
-            scenario.units.push(unit(0, UnitKind::Sentinel, x, y));
+        for (x, y) in front.iter().chain(&behind) {
+            scenario.units.push(unit(0, UnitKind::Sentinel, *x, *y));
         }
         scenario.units.push(unit(0, UnitKind::Maw, maw.0, maw.1));
         for (x, y) in [(33, 11), (33, 12)] {
@@ -1944,10 +2000,13 @@ fn breachers_on_their_way_answer_no_guns_at_the_front() {
         let state = scenario.build().unwrap();
         let mut members: Vec<UnitId> = front
             .iter()
+            .chain(&behind)
             .chain([&maw])
             .map(|(x, y)| at(&state, *x, *y))
             .collect();
         members.sort_unstable();
+        let mut ahead: Vec<UnitId> = front.iter().map(|(x, y)| at(&state, *x, *y)).collect();
+        ahead.sort_unstable();
         let missions = serde_json::json!({
             "next": 1,
             "list": [{
@@ -1969,16 +2028,18 @@ fn breachers_on_their_way_answer_no_guns_at_the_front() {
             &[],
         );
         let mut opponent = restaged(&scenario, &state, missions);
-        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
-        trace
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let withdraws = trace
             .unwrap()
             .missions
             .iter()
-            .any(|mission| mission.phase == Phase::Withdraw)
+            .any(|mission| mission.phase == Phase::Withdraw);
+        assert!(!withdraws, "the whole army is not outweighed");
+        runs(&commands).iter().any(|(units, _)| *units == ahead)
     };
     assert!(
-        !withdraws((27, 11)),
+        !falls_back((27, 11)),
         "premise: beside the front, it fights on"
     );
-    assert!(withdraws((14, 4)), "on its way, it answers nothing");
+    assert!(falls_back((14, 5)), "on its way, it answers nothing");
 }

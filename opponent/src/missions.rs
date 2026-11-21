@@ -30,7 +30,7 @@ mod fight;
 mod focus;
 mod guarding;
 mod lift;
-mod meeting;
+pub(crate) mod meeting;
 mod raid;
 mod repair;
 mod reserve;
