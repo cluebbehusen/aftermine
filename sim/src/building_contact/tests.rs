@@ -567,7 +567,7 @@ fn a_docked_builder_stays_clear_of_every_outline_still_to_come() {
                         anchor,
                         kind.size(),
                         clearance,
-                        radius * crate::stats::SAME_OWNER_COMPRESSION,
+                        radius * crate::stats::CONTACT_COMPRESSION,
                     );
                     for entry in entries {
                         for (pos, joined) in [
