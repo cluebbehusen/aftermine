@@ -7,6 +7,7 @@
 //! Results are omniscient QA evidence and never reach either player.
 
 use crate::challengers::{Challenger, Family};
+use crate::fights::{FightPool, FightTracker, SeatFights};
 use crate::ledger::{ImpactLedger, worth_at};
 use aftermine_kit::GameReplay;
 use aftermine_kit::controller::{record_events, seat_controllers};
@@ -90,6 +91,8 @@ pub struct GameRow {
     pub challenger_commands: u64,
     /// Of those, commands the game rejected.
     pub challenger_rejected: u64,
+    /// How the bot went into the game's fights.
+    pub bot_fights: SeatFights,
 }
 
 /// Plays one game to its result or `tick_limit`.
@@ -138,6 +141,7 @@ fn play(
         replay
     });
     let mut ledger = ImpactLedger::new(&state);
+    let mut fights = FightTracker::new(&state);
     let (mut issued, mut rejected) = (0_u64, 0_u64);
     while state.current_tick() < tick_limit && state.result().is_none() {
         let mut commands = challenger.act(&state);
@@ -156,8 +160,10 @@ fn play(
             )
             .count() as u64;
         ledger.observe(&state, &report);
+        fights.observe(&state, &report);
     }
     let ticks = state.current_tick();
+    let bot_fights = fights.finish()[usize::from(bot_seat)];
     let winners = state.winners();
     let ledgers = ledger.finish(&state);
     let worth = |seat: u8| {
@@ -197,6 +203,7 @@ fn play(
         bot_worth: worth(bot_seat),
         challenger_commands: issued,
         challenger_rejected: rejected,
+        bot_fights,
     })
 }
 
@@ -285,6 +292,8 @@ pub struct Record {
     pub share: Option<f64>,
     /// The 95% Wilson interval of that share.
     pub wilson: Option<[f64; 2]>,
+    /// The bot's fights, each game's.
+    pub fights: FightPool,
 }
 
 /// Pools `rows` by family and rung, in first-seen order.
@@ -304,11 +313,13 @@ pub fn records(rows: &[GameRow]) -> Vec<Record> {
                 undecided: 0,
                 share: None,
                 wilson: None,
+                fights: FightPool::default(),
             });
             records.len() - 1
         });
         let record = &mut records[index];
         record.games += 1;
+        record.fights.add(&row.bot_fights);
         match row.winner {
             Winner::Challenger => record.challenger_wins += 1,
             Winner::Bot => record.bot_wins += 1,
@@ -346,6 +357,11 @@ pub fn report(records: &[Record]) -> String {
             r.undecided,
         );
     }
+    let fights: Vec<(String, &FightPool)> = records
+        .iter()
+        .map(|r| (format!("{} {}", r.family.name(), r.difficulty), &r.fights))
+        .collect();
+    crate::fights::render(&mut out, &fights);
     out
 }
 

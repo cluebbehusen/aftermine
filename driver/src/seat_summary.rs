@@ -8,6 +8,7 @@ use crate::bot_eval::{
     AttackCalibration, Deliveries, INCOME_CHECKPOINTS, IncomeSample, SeatFailures, SeatReactivity,
 };
 use crate::evaluation::MatchMode;
+use crate::fights::{FightPool, SeatFights};
 use crate::ledger::{LedgerPool, SeatLedger};
 use crate::pacing::{Pacing, PacingSummary};
 use aftermine_sim::GameResult;
@@ -43,6 +44,8 @@ pub struct SeatEvidence {
     pub ledger: SeatLedger,
     /// What it believed when it launched each attack, and how they went.
     pub attacks: AttackCalibration,
+    /// How it went into the match's fights.
+    pub fights: SeatFights,
 }
 
 /// Median income at one checkpoint.
@@ -91,6 +94,8 @@ pub struct SeatSummary {
     pub ledger: LedgerPool,
     /// Attack calibration, summed.
     pub attacks: AttackCalibration,
+    /// Each seat-leg's fights.
+    pub fights: FightPool,
 }
 
 /// Pools seat evidence into a [`SeatSummary`].
@@ -109,6 +114,7 @@ pub struct SeatSummaryBuilder {
     first_deep_bore: Vec<u64>,
     ledger: LedgerPool,
     attacks: AttackCalibration,
+    fights: FightPool,
 }
 
 impl SeatSummaryBuilder {
@@ -136,6 +142,7 @@ impl SeatSummaryBuilder {
         self.first_deep_bore.extend(evidence.first_deep_bore);
         self.ledger.add(&evidence.ledger);
         self.attacks.add(&evidence.attacks);
+        self.fights.add(&evidence.fights);
     }
 
     /// The pooled summary.
@@ -193,6 +200,7 @@ impl SeatSummaryBuilder {
             first_deep_bore: median(self.first_deep_bore),
             ledger: self.ledger,
             attacks: self.attacks,
+            fights: self.fights,
         }
     }
 }
@@ -254,6 +262,11 @@ pub fn render(out: &mut String, groups: &[(String, &SeatSummary)]) {
         }
     }
     render_reactivity(out, groups);
+    let fights: Vec<(String, &FightPool)> = groups
+        .iter()
+        .map(|(label, summary)| (label.clone(), &summary.fights))
+        .collect();
+    crate::fights::render(out, &fights);
     let _ = writeln!(
         out,
         "\nincome per minute: median percent of saturation (actual/saturation, samples)"

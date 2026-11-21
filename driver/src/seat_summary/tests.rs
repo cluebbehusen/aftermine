@@ -11,6 +11,7 @@ fn complete(fields: serde_json::Value) -> serde_json::Value {
         "reactivity": SeatReactivity::default(),
         "ledger": SeatLedger::default(),
         "attacks": AttackCalibration::default(),
+        "fights": SeatFights::default(),
     });
     let serde_json::Value::Object(fields) = fields else {
         panic!("evidence fields");

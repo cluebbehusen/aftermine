@@ -30,6 +30,10 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
   decision traces, refusing a bot that would have played differently.
 - `ledger` (`replay-ledger`) values what every unit and building did over a
   match in scrap: damage dealt, spotting, repair, income and spending.
+- `fights` groups armed units' deaths into fights and records how each seat went
+  into them: losses with no armed ally near, fights met at under half the
+  others' worth, late arrivals and the price traded. `bot-eval`, `bot-summary`,
+  `bot-ladder`, `bot-gauntlet` and `replay-ledger` report it.
 - `pacing` reports who led at minutes 5, 10 and 15, lead changes and comebacks,
   from each side's net worth.
 - `bot_eval` (`bot-eval`) plays bots to a result and writes one JSONL row per
