@@ -13,7 +13,7 @@ use super::attack::{building_value, concentrates, defense, defense_around};
 use super::reserve::LOCAL_REACH;
 use super::{
     AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
-    fill, hits, hunt, insert, meeting, mine, value, walking_gun, worth,
+    fill, hits, hunt, insert, meeting, mine, run, value, walking_gun, worth,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
@@ -100,23 +100,7 @@ impl Missions {
                 || siege.unseen.is_some()
                 || siege.remembered != [0, 0]
         });
-        for mission in &mut self.list {
-            let Task::Defend { asset, phase } = &mut mission.task else {
-                continue;
-            };
-            let threatened = groups.iter().any(|(foundry, _, _)| foundry.id == *asset);
-            if let DefendPhase::Engage { focus } = *phase
-                && !threatened
-            {
-                // A focus order chases its target; without a fresh Hunt the
-                // members would follow a retreating enemy out of the base.
-                if focus.is_some() {
-                    ledger.order(hunt(mission.units.clone(), mission.goal));
-                }
-                *phase = DefendPhase::Recover;
-                mission.since = now;
-            }
-        }
+        let returning = self.stand_down(observation, (map, frame), &groups, ledger);
         self.list.retain(|mission| {
             !matches!(
                 mission.task,
@@ -236,10 +220,30 @@ impl Missions {
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
             let go = sortie(*own, siege, met, difficulty);
+            // A defense already out at its fight is not given up short of the
+            // margin: turned out under fire, its members only die on the way
+            // home, and the next look sends them back. Where the rung falls
+            // back to the post, that rule takes it from there; a rung that
+            // never falls back still gives up below even odds. One waiting at
+            // its post is not out yet.
+            let out = mission.is_some_and(|mission| {
+                matches!(
+                    mission.task,
+                    Task::Defend {
+                        phase: DefendPhase::Engage { .. },
+                        ..
+                    }
+                ) && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
+            });
+            let bar = match (out, concentrates(difficulty)) {
+                (false, _) => Some(go),
+                (true, true) => None,
+                (true, false) => Some(met),
+            };
             if *own
                 && hunting
                 && met > 0
-                && siege.held < go
+                && bar.is_some_and(|bar| siege.held < bar)
                 && !kept(observation, map, foundry, goal)
             {
                 self.give_up(index, observation, map, frame, goal, ledger);
@@ -349,7 +353,104 @@ impl Missions {
             joined.extend(recruits);
             self.release_from_others(index, &joined);
         }
+        // Defenses that stood down go home last, so their orders never
+        // take the allowance from a defense answering an attack now. They
+        // run: nothing in sight can hit them, and a hunt would keep chasing
+        // whatever it last touched, such as a scout, across the map.
+        for (id, post) in returning {
+            if let Some(mission) = self.list.iter_mut().find(|mission| {
+                mission.id == id
+                    && matches!(
+                        mission.task,
+                        Task::Defend {
+                            phase: DefendPhase::Recover,
+                            ..
+                        }
+                    )
+            }) && ledger.order(run(mission.units.clone(), post))
+            {
+                mission.goal = post;
+            }
+        }
         shortfalls
+    }
+
+    /// Puts every engaged defense whose Foundry no threat presses any more,
+    /// and none of whose members an enemy in sight can still hit, into
+    /// recovery. Returns each with the post beside its Foundry its members
+    /// go back to, once this decision's defenses have been sent.
+    fn stand_down(
+        &mut self,
+        observation: &ObservationData,
+        (map, frame): (&MapModel, HomeFrame),
+        groups: &[(&BuildingObs, Siege<'_>, bool)],
+        ledger: &mut Ledger,
+    ) -> Vec<(u64, TilePos)> {
+        let now = observation.tick;
+        let mut returning = Vec::new();
+        // An enemy in sight, unit or building, whose weapons reach a member
+        // in its own domain, aircraft too.
+        let in_reach = |members: &[UnitId]| {
+            let reach = |weapons: &[WeaponStats], domain: Domain| {
+                weapons
+                    .iter()
+                    .filter(|weapon| weapon.targets.covers(domain))
+                    .map(|weapon| weapon.range)
+                    .max()
+                    .unwrap_or(Fx::ZERO)
+            };
+            members
+                .iter()
+                .filter_map(|id| mine(observation, *id))
+                .any(|unit| {
+                    let domain = unit.kind.stats().domain;
+                    let near = |gap: i32, reach: Fx| {
+                        reach > Fx::ZERO && Fx::from_num(gap) <= reach + Fx::from_num(1)
+                    };
+                    observation.enemy_units.iter().any(|enemy| {
+                        let reach = if domain == Domain::Ground {
+                            crate::defenses::reach(enemy.kind)
+                        } else {
+                            reach(enemy.kind.stats().weapons, domain)
+                        };
+                        near(unit.tile.chebyshev(enemy.tile), reach)
+                    }) || observation.enemy_buildings.iter().any(|building| {
+                        let gap = gap(building.anchor, building.kind.size(), unit.tile, (1, 1));
+                        let tier = building.kind.tiers()[usize::from(building.tier)];
+                        near(gap, reach(tier.weapons, domain))
+                    })
+                })
+        };
+        for mission in &mut self.list {
+            let Task::Defend { asset, phase } = &mut mission.task else {
+                continue;
+            };
+            let threatened = groups.iter().any(|(foundry, _, _)| foundry.id == *asset);
+            if let DefendPhase::Engage { focus } = *phase
+                && !threatened
+                && !in_reach(&mission.units)
+            {
+                // Its members come back to the post beside their Foundry:
+                // left where the fight ended, often by the enemy's line,
+                // they are let go there and picked off. Without a post, a
+                // focus order is replaced so they stop chasing a retreating
+                // enemy out of the base.
+                let post = observation
+                    .my_buildings
+                    .iter()
+                    .chain(&observation.ally_buildings)
+                    .find(|building| building.id == *asset)
+                    .and_then(|foundry| waiting_post(map, frame, foundry, mission.goal));
+                if let Some(post) = post {
+                    returning.push((mission.id, post));
+                } else if focus.is_some() {
+                    ledger.order(hunt(mission.units.clone(), mission.goal));
+                }
+                *phase = DefendPhase::Recover;
+                mission.since = now;
+            }
+        }
+        returning
     }
 
     /// Notes on each siege in `groups` what its Foundry's defense holds and
@@ -728,7 +829,7 @@ const RESERVE_TILES: i32 = 3;
 /// How near the waiting post or the fight a defender stands to count as
 /// there: a model of "together", since one farther off arrives after the
 /// fight began. Not a count of units.
-const GATHER_TILES: i32 = 6;
+pub(super) const GATHER_TILES: i32 = 6;
 
 /// What `units` that can hit ground are worth where a defense would fight:
 /// those within the gather distance of its waiting `post` or of its `goal`.
@@ -771,7 +872,7 @@ pub(super) fn at_home(observation: &ObservationData, map: &MapModel, tile: TileP
 
 /// Where defenders given up on a threat at `toward` fall back to: the
 /// waiting post beside the seat's home-nearest Foundry.
-fn home_post(
+pub(super) fn home_post(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,

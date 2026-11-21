@@ -139,7 +139,7 @@ fn a_seen_point_waits_until_stale() {
     let (scenario, state) = scouting(3_600);
     let staged = |seen: u64| {
         let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
-            json["memory"]["scouted"] = serde_json::json!([seen]);
+            json["memory"]["scouted"] = scouted(&scenario, seen);
         });
         looks(&opponent.act(&state, &mut OwnEvents::default()))
     };
@@ -397,7 +397,7 @@ fn checkpoints_reject_foreign_scouting_and_stray_focus() {
 }
 
 #[test]
-fn a_defense_that_stops_fighting_trades_its_focus_for_its_hunt() {
+fn a_defense_that_stops_fighting_trades_its_focus_for_the_way_home() {
     let (scenario, state, _) = skirmish([(8, 5), (8, 6)], 55);
     let mut opponent = seat_with(&scenario, 0, veteran());
     let commands = opponent.act(&state, &mut OwnEvents::default());
@@ -410,7 +410,7 @@ fn a_defense_that_stops_fighting_trades_its_focus_for_its_hunt() {
     let mut members = vec![at(&state, 8, 5), at(&state, 8, 6)];
     members.sort_unstable();
     let commands = opponent.act(&state, &mut OwnEvents::default());
-    let sent = hunts(&commands);
+    let sent = runs(&commands);
     assert_eq!(sent.len(), 1, "{commands:?}");
     assert_eq!(sent[0].0, members);
     let json = serde_json::to_value(opponent.checkpoint()).unwrap();
@@ -491,17 +491,20 @@ fn a_scout_kept_off_a_guarded_point_still_sees_it_and_moves_on() {
     let surveyor = at(&state, 6, 9);
     let mut opponent = seat(&scenario, 0);
     let mut events = OwnEvents::default();
-    let mut stalled = None;
-    while stalled.is_none() && state.current_tick() < STALE + 3_000 {
+    let mut done = false;
+    while !done && state.current_tick() < STALE + 3_000 {
         let commands = opponent.act(&state, &mut events);
+        done = looks(&commands)
+            .iter()
+            .any(|(units, goal)| units == &[surveyor] && goal.x < 24);
         let report = state.tick(&commands);
-        stalled = report.events.iter().find_map(|event| match event {
-            Event::OrderStalled { unit, reason, .. } if *unit == surveyor => Some(*reason),
-            _ => None,
+        done |= report.events.iter().any(|event| {
+            matches!(event, Event::OrderStalled { unit, reason: StallReason::SafeVantage, .. }
+                if *unit == surveyor)
         });
         events.record(PlayerId(0), &report.events);
     }
-    assert_eq!(stalled, Some(StallReason::SafeVantage));
+    assert!(done, "the Surveyor stopped short or turned for home");
     let (width, height) = BuildingKind::Foundry.size();
     assert!(
         (0..height).any(|dy| (0..width).any(|dx| state
@@ -781,4 +784,138 @@ fn a_standing_scout_sets_out_at_the_first_decision() {
             .all(|(_, kind)| *kind != UnitKind::Surveyor),
         "no second scout is trained for places never seen yet"
     );
+}
+
+#[test]
+fn a_scout_with_nothing_left_to_see_comes_home() {
+    // The East start is the field's one place to see. Once the Surveyor has
+    // seen it, standing there would keep it fresh in its own sight, so the
+    // Surveyor comes back beside its Foundry instead, by a scout's way, which
+    // keeps off known guns.
+    let (scenario, mut state) = scouting(STALE);
+    let surveyor = at(&state, 6, 9);
+    let beside = super::missions::beside_foundry(&state, 0, None);
+    let mut opponent = seat(&scenario, 0);
+    let mut events = OwnEvents::default();
+    let mut looked = false;
+    let mut home = false;
+    while !home && state.current_tick() < STALE + 4_000 {
+        let commands = opponent.act(&state, &mut events);
+        for (units, goal) in looks(&commands) {
+            if units == [surveyor] {
+                looked |= !beside.contains(&goal);
+                home |= beside.contains(&goal);
+            }
+        }
+        let report = state.tick(&commands);
+        events.record(PlayerId(0), &report.events);
+    }
+    assert!(looked, "premise: the Surveyor went to look");
+    assert!(home, "the Surveyor is sent home");
+}
+
+#[test]
+fn a_scout_that_finds_no_safe_view_counts_its_point_as_seen() {
+    // Halfway to the East start, out of home and before seeing it, the
+    // Surveyor reports no safe view of it. The start counts as seen, so the Surveyor is not
+    // sent on toward it and, with nothing else to see, comes home.
+    let (scenario, mut state) = scouting(STALE);
+    let surveyor = at(&state, 6, 9);
+    let mut opponent = seat(&scenario, 0);
+    let mut events = OwnEvents::default();
+    let commands = opponent.act(&state, &mut events);
+    assert_eq!(looks(&commands).len(), 1, "premise: the Surveyor sets out");
+    state.tick(&commands);
+    let x = |state: &State| TilePos::containing(state.unit(surveyor).unwrap().pos).x;
+    while x(&state) < 24 || !opponent.decision_due(&state) {
+        assert!(state.current_tick() < STALE + 2_000, "premise: halfway");
+        let commands = opponent.act(&state, &mut events);
+        state.tick(&commands);
+    }
+    assert_eq!(scouts(&opponent.missions()).len(), 1, "premise: still out");
+    let pos = state.unit(surveyor).unwrap().pos;
+    events.record(
+        PlayerId(0),
+        &[Event::OrderStalled {
+            unit: surveyor,
+            player: PlayerId(0),
+            pos,
+            reason: StallReason::NoSafeVantage,
+        }],
+    );
+    let (commands, trace) = opponent.act_traced(&state, &mut events);
+    assert!(scouts(&trace.unwrap().missions).is_empty(), "{commands:?}");
+    let beside = super::missions::beside_foundry(&state, 0, None);
+    let sent: Vec<TilePos> = looks(&commands)
+        .into_iter()
+        .filter(|(units, _)| units == &[surveyor])
+        .map(|(_, goal)| goal)
+        .collect();
+    assert_eq!(sent.len(), 1, "{commands:?}");
+    assert!(beside.contains(&sent[0]), "not sent on, but home: {sent:?}");
+}
+
+#[test]
+fn a_scout_out_of_time_before_it_sees_its_point_keeps_going() {
+    // The Surveyor is halfway out to the East start and has been on its way
+    // longer than a scout may take: the start counts as seen for the next
+    // scout's sake, but this one is not called home before it gets there.
+    let mut scenario = field();
+    scenario.units.push(unit(0, UnitKind::Surveyor, 24, 9));
+    let mut state = scenario.build().unwrap();
+    advance_to(&mut state, STALE, &[]);
+    let surveyor = at(&state, 24, 9);
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "scout", "point": 0},
+                "since": 0,
+                "units": [surveyor],
+                "goal": {"x": 42, "y": 11},
+            }],
+            "waiting": null,
+        });
+    });
+    let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+    assert!(scouts(&trace.unwrap().missions).is_empty(), "{commands:?}");
+    assert!(
+        looks(&commands)
+            .iter()
+            .chain(&runs(&commands))
+            .all(|(units, _)| units != &[surveyor]),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn an_army_that_knows_no_enemy_building_sends_a_scout_searching() {
+    // West saw East's start lately and found nothing there; East has
+    // rebuilt elsewhere, out of sight. With an army to attack with and no
+    // target it knows, West's Surveyor searches the field. With no such
+    // army, it waits for the start to go stale.
+    let searches = |army: bool| {
+        let mut scenario = field();
+        scenario.units.push(unit(0, UnitKind::Surveyor, 6, 9));
+        if army {
+            for x in 4..12 {
+                scenario.units.push(unit(0, UnitKind::Lancer, x, 14));
+            }
+        }
+        scenario
+            .buildings
+            .push(building(1, BuildingKind::Foundry, 40, 19));
+        let mut state = scenario.build().unwrap();
+        advance_to(&mut state, STALE, &[]);
+        let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            json["memory"]["scouted"] = scouted(&scenario, STALE - 600);
+        });
+        looks(&opponent.act(&state, &mut OwnEvents::default()))
+    };
+    let [(_, goal)] = &searches(true)[..] else {
+        panic!("one scout searches");
+    };
+    assert!(goal.chebyshev(TilePos::new(43, 11)) > 4, "{goal:?}");
+    assert!(searches(false).is_empty(), "no army, no search");
 }

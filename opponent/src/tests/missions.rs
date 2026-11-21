@@ -1823,7 +1823,7 @@ pub(super) fn widened(mut scenario: Scenario, at: i32, columns: i32) -> Scenario
 }
 
 /// The tiles beside `player`'s Foundry at `anchor`.
-fn beside_foundry(state: &State, player: u8, anchor: Option<TilePos>) -> Vec<TilePos> {
+pub(super) fn beside_foundry(state: &State, player: u8, anchor: Option<TilePos>) -> Vec<TilePos> {
     let foundry = state
         .buildings()
         .iter()
@@ -1996,10 +1996,11 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
         "premise: a match is defended: {commands:?}"
     );
 
-    // Defenders already out there when the seat cannot match the raiders
-    // fall back home.
-    let scenario = expansion_raided(&[(5, 8)]);
-    let mut scenario = scenario;
+    // A defense already engaged there is not given up: turned out under
+    // fire, its members would only die on the way home and be sent back at
+    // the next look. It stays a defense, and nobody is turned home.
+    let mut scenario = expansion_raided(&[(5, 8)]);
+    scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
     scenario.units.extend([
         unit(0, UnitKind::Sentinel, 24, 9),
         unit(0, UnitKind::Sentinel, 25, 9),
@@ -2035,7 +2036,8 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
     assert!(
         hunts(&commands)
             .iter()
-            .any(|(units, goal)| units == &members && home.contains(goal)),
+            .chain(&runs(&commands))
+            .all(|(units, goal)| !(units.contains(&members[0]) && home.contains(goal))),
         "{commands:?}"
     );
     assert!(
@@ -2043,8 +2045,8 @@ fn a_place_away_from_home_the_army_cannot_match_is_given_up() {
             .unwrap()
             .missions
             .iter()
-            .all(|mission| !matches!(mission.kind, MissionKind::Defend { .. })),
-        "the defense ends"
+            .any(|mission| matches!(mission.kind, MissionKind::Defend { .. })),
+        "the defense goes on"
     );
 }
 
@@ -2069,4 +2071,186 @@ fn home_is_never_given_up() {
         hunts(&commands).iter().any(|(_, goal)| home.contains(goal)),
         "{commands:?}"
     );
+}
+
+#[test]
+fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
+    // Two defenders out where the raiders were, the raiders gone: they come
+    // back beside the Foundry rather than be let go out there, unless an
+    // enemy can still hit them, aircraft too.
+    let stand_down = |defender: UnitKind, threat: Option<(UnitKind, i32)>| {
+        let mut scenario = raided(&[(defender, 13, 8), (defender, 14, 8)], &[]);
+        if let Some((threat, x)) = threat {
+            scenario.units.push(unit(1, threat, x, 8));
+        }
+        scenario.players[0].bot_config = Some(rung(BotDifficulty::Prime));
+        let state = scenario.build().unwrap();
+        let home = state
+            .buildings()
+            .iter()
+            .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+            .unwrap();
+        let mut members = vec![at(&state, 13, 8), at(&state, 14, 8)];
+        members.sort_unstable();
+        let mut opponent = restored_with(
+            &seat_with(&scenario, 0, rung(BotDifficulty::Prime)),
+            &scenario,
+            &state,
+            |json| {
+                json["missions"] = serde_json::json!({
+                    "next": 1,
+                    "list": [{
+                        "id": 0,
+                        "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                        "since": 0,
+                        "units": members,
+                        "goal": {"x": 15, "y": 6},
+                    }],
+                });
+            },
+        );
+        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let beside = beside_foundry(&state, 0, None);
+        let home = runs(&commands)
+            .iter()
+            .any(|(units, goal)| units == &members && beside.contains(goal));
+        let recovers = trace
+            .unwrap()
+            .missions
+            .iter()
+            .any(|mission| mission.phase == Phase::Recover);
+        (home, recovers)
+    };
+    assert_eq!(
+        stand_down(UnitKind::Sentinel, None),
+        (true, true),
+        "the raiders gone: home"
+    );
+    // A Lancer beyond the base's threat gap but still in reach of the two:
+    // they do not turn their backs to it.
+    assert_eq!(
+        stand_down(UnitKind::Sentinel, Some((UnitKind::Lancer, 19))),
+        (false, false),
+        "still under fire: they stay"
+    );
+    // Nor do two Talons with an enemy Talon on them, though it cannot hit
+    // the ground.
+    assert_eq!(
+        stand_down(UnitKind::Talon, None),
+        (true, true),
+        "premise: Talons come home"
+    );
+    assert_eq!(
+        stand_down(UnitKind::Talon, Some((UnitKind::Talon, 17))),
+        (false, false),
+        "Talons under fire stay"
+    );
+}
+
+#[test]
+fn only_a_defense_out_at_its_fight_holds_on_and_only_where_it_can_fall_back() {
+    // One Sentinel at home and two by the expansion against six raiders: under
+    // even odds. A Prime defense out at the raiders holds on and falls back by
+    // its own rule; one still waiting at the expansion's post is given up; at
+    // Scrapheap, which never falls back, one out at them is given up too.
+    let expansion = TilePos::new(24, 5);
+    let defended = |config: BotConfig, goal: TilePos| {
+        let mut scenario = expansion_raided(&[(5, 8)]);
+        scenario.players[0].bot_config = Some(config);
+        scenario.units.extend([
+            unit(0, UnitKind::Sentinel, 24, 9),
+            unit(0, UnitKind::Sentinel, 25, 9),
+        ]);
+        let state = scenario.build().unwrap();
+        let outpost = state
+            .buildings()
+            .iter()
+            .find(|b| b.player == PlayerId(0) && b.anchor == expansion)
+            .unwrap()
+            .id;
+        let mut members = vec![at(&state, 24, 9), at(&state, 25, 9)];
+        members.sort_unstable();
+        let mut opponent = restored_with(
+            &seat_with(&scenario, 0, config),
+            &scenario,
+            &state,
+            |json| {
+                json["missions"] = serde_json::json!({
+                    "next": 1,
+                    "list": [{
+                        "id": 0,
+                        "task": {"task": "defend", "asset": outpost.0, "phase": {"engage": {"focus": null}}},
+                        "since": 0,
+                        "units": members,
+                        "goal": {"x": goal.x, "y": goal.y},
+                    }],
+                });
+            },
+        );
+        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        trace
+            .unwrap()
+            .missions
+            .iter()
+            .any(|mission| matches!(mission.kind, MissionKind::Defend { .. }))
+    };
+    let out = TilePos::new(28, 5);
+    // A tile beside the expansion, on the raiders' side.
+    let post = crate::frame::ring(expansion, BuildingKind::Foundry.size())
+        .max_by_key(|tile| (tile.x, tile.y))
+        .unwrap();
+    assert!(
+        defended(rung(BotDifficulty::Prime), out),
+        "out at the fight"
+    );
+    assert!(
+        !defended(rung(BotDifficulty::Prime), post),
+        "waiting at the post"
+    );
+    assert!(
+        !defended(rung(BotDifficulty::Scrapheap), out),
+        "never falls back"
+    );
+}
+
+#[test]
+fn a_guard_short_of_known_enemies_is_answered_with_what_beats_them() {
+    // Lancers stand near a bare expansion, not near enough to attack it, in a
+    // West scout's sight. Its guard is short; a seat that reads threats trains
+    // what beats them, not Scuttlers, while Standard, which judges the threat
+    // by its size, still answers with the cheapest unit.
+    let trained = |difficulty: BotDifficulty| {
+        let mut scenario = widened(arena(400), 12, 20);
+        scenario.players[0].bot_config = Some(rung(difficulty));
+        scenario.buildings.extend([
+            BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Foundry,
+                x: 24,
+                y: 8,
+            },
+            BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Fabricator,
+                x: 6,
+                y: 1,
+            },
+        ]);
+        scenario.units.push(unit(0, UnitKind::Surveyor, 33, 9));
+        for y in [9, 10] {
+            scenario.units.push(unit(1, UnitKind::Lancer, 35, y));
+        }
+        let state = scenario.build().unwrap();
+        let commands =
+            seat_with(&scenario, 0, rung(difficulty)).act(&state, &mut OwnEvents::default());
+        trains(&commands)
+            .into_iter()
+            .map(|(_, kind)| kind)
+            .collect::<Vec<_>>()
+    };
+    let prime = trained(BotDifficulty::Prime);
+    assert!(!prime.is_empty(), "premise: the short guard trains");
+    assert!(!prime.contains(&UnitKind::Scuttler), "{prime:?}");
+    let standard = trained(BotDifficulty::Standard);
+    assert!(standard.contains(&UnitKind::Scuttler), "{standard:?}");
 }
