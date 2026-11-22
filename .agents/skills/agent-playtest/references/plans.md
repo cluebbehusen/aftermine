@@ -53,6 +53,24 @@ Win by landing an army where the enemy is weakest. Build toward air transport,
 carry ground units past the enemy's defenses, and drop them on its workers,
 Extractors or Foundries.
 
+## Distract
+
+Win by keeping the enemy's army busy in the wrong place. Build a sound economy
+and army. Draw the enemy's army to one place, by pressing one of its outposts
+with a force that can hold it there, or by letting it attack an outpost of
+yours. While its army is committed there, send your main attack somewhere else:
+its main base, its workers or its production. If a distraction works, use it
+again.
+
+## Hidden base
+
+Win from a base the enemy does not know about. Build a sound economy and army,
+and keep pressure on the enemy's main base so its scouts and army stay busy.
+Meanwhile send a builder to a corner of the map the enemy has not scouted and
+raise a Foundry there; mine and build from it while keeping it out of the
+enemy's sight. If your main base falls, fight on from the hidden one. Do not
+attack from the hidden base until it could survive being found.
+
 ## Late tech
 
 Defend with as little as you need while you tech toward the strongest late units
