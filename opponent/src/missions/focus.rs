@@ -43,13 +43,19 @@ impl Missions {
                 continue;
             };
             let legal = |enemy: &UnitObs| !shooters(map, &members, enemy).is_empty();
-            // A defense sent at artillery closes on it before it can shoot.
+            // A defense sent at artillery closes on it before it can shoot,
+            // and one sent at an unarmed intruder, such as a builder raising
+            // a site, holds the target it chose.
             let kept = focus.and_then(|id| {
                 observation
                     .enemy_units
                     .iter()
                     .find(|enemy| enemy.id == id)
-                    .filter(|enemy| legal(enemy) || (defending && walking_gun(enemy)))
+                    .filter(|enemy| {
+                        legal(enemy)
+                            || (defending
+                                && (walking_gun(enemy) || enemy.kind.stats().weapons.is_empty()))
+                    })
             });
             if kept.is_some() {
                 continue;

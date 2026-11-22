@@ -1486,10 +1486,12 @@ fn an_unarmed_enemy_among_the_seat_s_buildings_draws_a_defender_without_a_shortf
         &[(UnitKind::Surveyor, 8, 3)],
     );
     let state = scenario.build().unwrap();
+    let surveyor = at(&state, 8, 3);
     let (commands, trace) = seat(&scenario, 0).act_traced(&state, &mut OwnEvents::default());
-    let sent = hunts(&commands);
+    // Attacked, not hunted: a hunt would chase whatever stands nearest.
+    assert!(hunts(&commands).is_empty(), "{commands:?}");
     assert!(
-        matches!(&sent[..], [(units, goal)] if !units.is_empty() && *goal == TilePos::new(8, 3)),
+        matches!(&attacks(&commands)[..], [(units, AttackTarget::Unit(target))] if !units.is_empty() && *target == surveyor),
         "{commands:?}"
     );
     assert!(
@@ -1513,7 +1515,10 @@ fn an_unarmed_enemy_among_the_seat_s_buildings_draws_a_defender_without_a_shortf
     );
     let state = scenario.build().unwrap();
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-    assert!(hunts(&commands).is_empty(), "{commands:?}");
+    assert!(
+        hunts(&commands).is_empty() && attacks(&commands).is_empty(),
+        "{commands:?}"
+    );
 }
 
 #[test]
@@ -1535,12 +1540,11 @@ fn an_enemy_building_raised_among_the_seat_s_buildings_is_attacked() {
             .buildings()
             .iter()
             .find(|building| building.kind == kind)
-            .unwrap();
-        let beside: Vec<TilePos> = crate::frame::ring(raised.anchor, kind.size()).collect();
+            .unwrap()
+            .id;
         let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-        let sent = hunts(&commands);
         assert!(
-            matches!(&sent[..], [(units, goal)] if !units.is_empty() && beside.contains(goal)),
+            matches!(&attacks(&commands)[..], [(units, AttackTarget::Building(target))] if !units.is_empty() && *target == raised),
             "{kind:?}: {commands:?}"
         );
     }
@@ -2709,4 +2713,110 @@ fn a_guard_short_of_known_enemies_is_answered_with_what_beats_them() {
     assert!(!prime.contains(&UnitKind::Scuttler), "{prime:?}");
     let standard = trained(BotDifficulty::Standard);
     assert!(standard.contains(&UnitKind::Scuttler), "{standard:?}");
+}
+
+#[test]
+fn a_builder_raising_a_site_is_attacked_before_a_nearer_scout() {
+    // An east Harvester raises a Fabricator among the west buildings while
+    // a Surveyor stands nearer the Foundry. Killing the builder stops the
+    // site soonest, so the defenders attack it and hold it; a hunt would
+    // chase the scout.
+    let mut scenario = raided(
+        &[(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 6, 8)],
+        &[(UnitKind::Harvester, 10, 3), (UnitKind::Surveyor, 7, 4)],
+    );
+    scenario.players[1].scrap = 400;
+    let mut state = scenario.build().unwrap();
+    let builder = at(&state, 10, 3);
+    let surveyor = at(&state, 7, 4);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Build {
+            units: vec![builder],
+            kind: BuildingKind::Fabricator,
+            anchor: TilePos::new(9, 1),
+            queue: false,
+            defer: false,
+        },
+    }]);
+    let raising = |state: &State| {
+        state
+            .buildings()
+            .iter()
+            .any(|building| building.kind == BuildingKind::Fabricator && !building.built())
+    };
+    while !raising(&state) && state.current_tick() < 240 {
+        state.tick(&[]);
+    }
+    assert!(raising(&state), "premise: the site is going up");
+    let next = state.current_tick().next_multiple_of(12);
+    advance_to(&mut state, next, &[]);
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    assert!(
+        matches!(&attacks(&commands)[..], [(units, AttackTarget::Unit(target))] if !units.is_empty() && *target == builder),
+        "{commands:?}"
+    );
+    assert!(
+        attacks(&commands)
+            .iter()
+            .all(|(_, target)| *target != AttackTarget::Unit(surveyor)),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn a_defense_held_on_a_builder_turns_when_an_armed_enemy_comes() {
+    // West Sentinels are attacking an east builder when a Lancer walks in
+    // beside it: held on the builder, they would stand under its fire.
+    let mut scenario = raided(
+        &[(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 6, 8)],
+        &[(UnitKind::Harvester, 9, 3), (UnitKind::Lancer, 10, 4)],
+    );
+    scenario.players[1].scrap = 400;
+    let state = scenario.build().unwrap();
+    let builder = at(&state, 9, 3);
+    let lancer = at(&state, 10, 4);
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    let mut members = vec![at(&state, 5, 8), at(&state, 6, 8)];
+    members.sort_unstable();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": builder}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": 9, "y": 3},
+            }],
+        });
+    });
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        ObservationData::fog_honest(&state, PlayerId(0))
+            .enemy_units
+            .iter()
+            .any(|enemy| enemy.id == lancer),
+        "premise: the Lancer is in sight"
+    );
+    let ordered: Vec<UnitId> = hunts(&commands)
+        .into_iter()
+        .map(|(units, _)| units)
+        .chain(attacks(&commands).into_iter().map(|(units, _)| units))
+        .flatten()
+        .collect();
+    assert!(
+        members.iter().all(|member| ordered.contains(member)),
+        "{commands:?}"
+    );
+    assert!(
+        attacks(&commands)
+            .iter()
+            .all(|(_, target)| *target != AttackTarget::Unit(builder)),
+        "{commands:?}"
+    );
 }

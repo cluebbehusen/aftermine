@@ -227,3 +227,24 @@ fn a_defense_given_up_ends_only_once_every_member_falls_back() {
     assert_eq!(given_up(1), 1, "one member still has its last order");
     assert_eq!(given_up(2), 0);
 }
+
+#[test]
+fn a_defender_far_off_chasing_is_in_neither_fight() {
+    // One defender stands at the fight and another has chased far off: both
+    // are out from the post, but only the one at the fight is worth anything
+    // there, so the post's reserve does not wait on the chaser.
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Sentinel, 9, 4),
+        (0, UnitKind::Sentinel, 18, 8),
+    ]);
+    let (at_fight, chaser) = (ids[0], ids[1]);
+    let (out, worth) = front(
+        &observation,
+        &[at_fight, chaser],
+        Some(TilePos::new(4, 1)),
+        TilePos::new(10, 4),
+    );
+    assert!(out.contains(&at_fight) && out.contains(&chaser), "{out:?}");
+    let alone = value(mine(&observation, at_fight).unwrap());
+    assert_eq!(worth, alone);
+}
