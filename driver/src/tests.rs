@@ -23,10 +23,15 @@ fn run_all_bots_is_an_explicit_complete_match_mode() {
 }
 
 #[test]
-fn bot_pressure_defaults_to_the_shipped_scenarios() {
+fn bot_pressure_defaults_to_the_shipped_scenarios_across_the_variant_grid() {
+    use aftermine_sim::scenario::BotDifficulty;
     let cli = Cli::try_parse_from(["aftermine-driver", "bot-pressure"]).expect("parses");
     let Cmd::BotPressure {
         dir,
+        difficulties,
+        seeds,
+        no_mirror,
+        jobs,
         json,
         replay_dir,
     } = cli.cmd
@@ -34,7 +39,45 @@ fn bot_pressure_defaults_to_the_shipped_scenarios() {
         panic!("bot-pressure parsed as another command")
     };
     assert_eq!(dir, PathBuf::from("driver/evaluation/pressure"));
+    assert_eq!(difficulties, BotDifficulty::ALL);
+    assert_eq!(seeds, 0..3);
+    assert_eq!((no_mirror, jobs.get()), (false, 4));
     assert_eq!((json, replay_dir), (false, None));
+
+    let cli = Cli::try_parse_from([
+        "aftermine-driver",
+        "bot-pressure",
+        "--difficulties",
+        "prime,scrapheap",
+        "--seeds",
+        "4..6",
+        "--no-mirror",
+        "--jobs",
+        "8",
+    ])
+    .expect("parses");
+    let Cmd::BotPressure {
+        difficulties,
+        seeds,
+        no_mirror,
+        jobs,
+        ..
+    } = cli.cmd
+    else {
+        panic!("bot-pressure parsed as another command")
+    };
+    assert_eq!(
+        difficulties,
+        [BotDifficulty::Prime, BotDifficulty::Scrapheap]
+    );
+    assert_eq!((seeds, no_mirror, jobs.get()), (4..6, true, 8));
+    for refused in [
+        ["bot-pressure", "--seeds", "3..3"],
+        ["bot-pressure", "--jobs", "0"],
+        ["bot-pressure", "--difficulties", "hard"],
+    ] {
+        assert!(!parses(&refused), "{refused:?}");
+    }
 }
 
 #[test]
@@ -47,6 +90,31 @@ fn bot_summary_requires_rows() {
     };
     assert_eq!(rows, [PathBuf::from("a.jsonl")]);
     assert!(json);
+}
+
+#[test]
+fn bot_ladder_diff_takes_a_base_and_a_branch_run() {
+    let cli = Cli::try_parse_from([
+        "aftermine-driver",
+        "bot-ladder-diff",
+        "main/rows.jsonl",
+        "branch/rows.jsonl",
+        "--json",
+    ])
+    .expect("bot-ladder-diff parses");
+    let Cmd::BotLadderDiff { base, branch, json } = cli.cmd else {
+        panic!("bot-ladder-diff parsed as another command")
+    };
+    assert_eq!(
+        (base, branch),
+        (
+            PathBuf::from("main/rows.jsonl"),
+            PathBuf::from("branch/rows.jsonl")
+        )
+    );
+    assert!(json);
+    assert!(!parses(&["bot-ladder-diff", "main/rows.jsonl"]));
+    assert!(!parses(&["bot-ladder-diff", "a", "b", "c"]));
 }
 
 /// Whether `aftermine-driver <args>` parses.

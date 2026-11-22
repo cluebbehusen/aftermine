@@ -185,7 +185,7 @@ fn row(run: u64, leg: EvaluationLeg, won: Option<BotDifficulty>) -> ScoredLadder
     }
 }
 
-fn pair(
+pub(crate) fn pair(
     run: u64,
     forward: Option<BotDifficulty>,
     swapped: Option<BotDifficulty>,

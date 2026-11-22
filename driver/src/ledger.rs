@@ -1887,20 +1887,7 @@ pub fn worth_shares(pairs: &PairShares) -> Vec<WorthShare> {
                     (!shares.is_empty()).then(|| shares.iter().sum::<f64>() / shares.len() as f64)
                 })
                 .collect();
-            if means.is_empty() {
-                return None;
-            }
-            let n = means.len() as f64;
-            let mean = means.iter().sum::<f64>() / n;
-            let interval = (means.len() >= 2).then(|| {
-                let variance = means
-                    .iter()
-                    .map(|value| (value - mean).powi(2))
-                    .sum::<f64>()
-                    / (n - 1.0);
-                let half = 1.96 * (variance / n).sqrt();
-                [mean - half, mean + half]
-            });
+            let (mean, interval) = mean_interval(&means)?;
             Some(WorthShare {
                 tick: *tick,
                 pairs: u32::try_from(means.len()).expect("lengths fit in u32"),
@@ -1909,6 +1896,26 @@ pub fn worth_shares(pairs: &PairShares) -> Vec<WorthShare> {
             })
         })
         .collect()
+}
+
+/// The mean of `samples` with a 95% interval, absent with fewer than two
+/// samples; `None` without any.
+pub(crate) fn mean_interval(samples: &[f64]) -> Option<(f64, Option<[f64; 2]>)> {
+    if samples.is_empty() {
+        return None;
+    }
+    let n = samples.len() as f64;
+    let mean = samples.iter().sum::<f64>() / n;
+    let interval = (samples.len() >= 2).then(|| {
+        let variance = samples
+            .iter()
+            .map(|value| (value - mean).powi(2))
+            .sum::<f64>()
+            / (n - 1.0);
+        let half = 1.96 * (variance / n).sqrt();
+        [mean - half, mean + half]
+    });
+    Some((mean, interval))
 }
 
 /// The shares as one line: `6k 52% [48-56%]`, and so on.
