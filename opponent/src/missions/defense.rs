@@ -789,10 +789,9 @@ fn exposed(observation: &ObservationData, unit: &UnitObs) -> bool {
 
 /// Whether the known enemies that would join a fight where `unit` stands,
 /// and the enemy guns that reach it, outweigh the `members` of its defense
-/// beside it that can hit what `unit` is hit as, by the `margin` per mille a
-/// fight needs,
-/// all judged in the domain `unit` is hit in: an aircraft by what can hit
-/// aircraft there.
+/// beside it by the `margin` per mille a fight needs, the aircraft that can
+/// hit it against the members that hit aircraft and the rest against the
+/// members that hit the ground. A landed aircraft is hit as a ground body.
 fn outweighed(
     (observation, memory): (&ObservationData, &Memory),
     members: &[UnitId],
@@ -800,53 +799,59 @@ fn outweighed(
     margin: u64,
 ) -> bool {
     let domain = unit.body_domain();
-    let met = if domain == Domain::Ground {
+    let reach = |weapons: &[WeaponStats]| {
+        weapons
+            .iter()
+            .filter(|weapon| weapon.targets.covers(domain))
+            .map(|weapon| weapon.range)
+            .max()
+            .unwrap_or(Fx::ZERO)
+    };
+    let near = |reach: Fx, tile: TilePos| {
+        reach > Fx::ZERO
+            && tile.chebyshev(unit.tile) <= reach.ceil().to_num::<i32>().max(LOCAL_REACH)
+    };
+    let enemies = |body: Domain| {
+        observation
+            .enemy_units
+            .iter()
+            .filter(move |enemy| enemy.body_domain() == body)
+            .filter(|enemy| near(reach(enemy.kind.stats().weapons), enemy.tile))
+            .map(value)
+            .sum::<u64>()
+    };
+    let flying = enemies(Domain::Air);
+    let standing = if domain == Domain::Ground {
         // The guns alone: remembered units near are the meeting's already.
         let counted: Vec<UnitId> = memory.units().iter().map(|seen| seen.id).collect();
         meeting::opposed(observation, memory, unit.tile)
             + defense_around(observation, memory, &[unit.tile], &counted)
     } else {
-        let near = |reach: Fx, tile: TilePos| {
-            reach > Fx::ZERO
-                && tile.chebyshev(unit.tile) <= reach.ceil().to_num::<i32>().max(LOCAL_REACH)
-        };
-        observation
-            .enemy_units
-            .iter()
-            .filter(|enemy| near(air_reach(enemy.kind.stats().weapons), enemy.tile))
-            .map(value)
-            .sum::<u64>()
+        enemies(Domain::Ground)
             + observation
                 .enemy_buildings
                 .iter()
                 .filter(|building| {
                     // A gun joins no fight: it counts only within its reach.
                     let tier = building.kind.tiers()[usize::from(building.tier)];
-                    let reach = air_reach(tier.weapons);
+                    let reach = reach(tier.weapons);
                     let gap = gap(building.anchor, building.kind.size(), unit.tile, (1, 1));
                     reach > Fx::ZERO && Fx::from_num(gap) <= reach
                 })
                 .map(building_value)
                 .sum::<u64>()
     };
-    let could: u64 = members
-        .iter()
-        .filter_map(|id| mine(observation, *id))
-        .filter(|other| other.tile.chebyshev(unit.tile) <= GATHER_TILES)
-        .filter(|other| hits(other, domain))
-        .map(value)
-        .sum();
-    met > 0 && could * 1_000 < met * margin
-}
-
-/// The longest reach of `weapons` against aircraft.
-fn air_reach(weapons: &[WeaponStats]) -> Fx {
-    weapons
-        .iter()
-        .filter(|weapon| weapon.targets.covers(Domain::Air))
-        .map(|weapon| weapon.range)
-        .max()
-        .unwrap_or(Fx::ZERO)
+    let beats = |met: u64, against: Domain| {
+        let could: u64 = members
+            .iter()
+            .filter_map(|id| mine(observation, *id))
+            .filter(|other| other.tile.chebyshev(unit.tile) <= GATHER_TILES)
+            .filter(|other| hits(other, against))
+            .map(value)
+            .sum();
+        met > 0 && could * 1_000 < met * margin
+    };
+    beats(standing, Domain::Ground) || beats(flying, Domain::Air)
 }
 
 /// Whether `tile` lies within `reach` of one of the seat's or its allies'

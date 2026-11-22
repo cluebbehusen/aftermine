@@ -922,3 +922,63 @@ fn a_raider_still_on_its_way_in_is_not_sent_home() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn a_raider_that_ran_home_is_released_there() {
+    // A raider that ran home from a chase leaves the raid once it stands idle
+    // at home, so other missions can take it while the rest strike on.
+    let strike = |extra: (i32, i32), hunting: bool| {
+        let mut scenario = outpost(UnitKind::Scuttler, BuildingKind::Foundry);
+        scenario
+            .units
+            .push(unit(0, UnitKind::Scuttler, extra.0, extra.1));
+        let mut state = scenario.build().unwrap();
+        let extra = at(&state, extra.0, extra.1);
+        let mut members = raiders(&state);
+        let hunters = if hunting { vec![extra] } else { Vec::new() };
+        members.push(extra);
+        members.sort_unstable();
+        let mut hunting: Vec<UnitId> = raiders(&state).into_iter().chain(hunters).collect();
+        hunting.sort_unstable();
+        state.tick(&[PlayerCommand {
+            player: PlayerId(0),
+            command: Command::Hunt {
+                units: hunting,
+                goal: TilePos::new(21, 10),
+                queue: false,
+            },
+        }]);
+        while state.current_tick() < 12 {
+            state.tick(&[]);
+        }
+        let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+            json["missions"] = serde_json::json!({
+                "next": 1,
+                "list": [{
+                    "id": 0,
+                    "task": {
+                        "task": "raid",
+                        "target": {"owner": 1, "building": "foundry", "anchor": {"x": 22, "y": 10}},
+                        "phase": "strike",
+                    },
+                    "since": 0,
+                    "units": members,
+                    "goal": {"x": 21, "y": 10},
+                }],
+            });
+        });
+        let commands = opponent.act(&state, &mut OwnEvents::default());
+        let checkpoint = serde_json::to_value(opponent.checkpoint()).unwrap();
+        let units: Vec<u32> =
+            serde_json::from_value(checkpoint["missions"]["list"][0]["units"].clone()).unwrap();
+        (extra, commands, units)
+    };
+    let (stray, commands, _) = strike((36, 10), true);
+    let home = runs(&commands)
+        .into_iter()
+        .find(|(units, _)| units == &[stray])
+        .expect("premise: the stray runs home")
+        .1;
+    let (back, _, units) = strike((home.x, home.y), false);
+    assert!(!units.contains(&back.0), "{units:?}");
+}

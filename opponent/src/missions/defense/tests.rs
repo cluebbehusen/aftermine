@@ -365,3 +365,20 @@ fn only_a_member_that_can_hit_a_site_ends_its_attack_by_standing_idle() {
     }
     assert!(idle_at_site(&observation, &ids, site));
 }
+
+#[test]
+fn a_ground_defender_bombed_by_aircraft_it_cannot_hit_is_outweighed() {
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Scuttler, 4, 4),
+        (0, UnitKind::Scuttler, 4, 5),
+        (1, UnitKind::Buzzard, 6, 4),
+    ]);
+    let memory = Memory::default();
+    let scuttler = mine(&observation, ids[0]).unwrap();
+    assert!(outweighed(
+        (&observation, &memory),
+        &[ids[0], ids[1]],
+        scuttler,
+        engage_margin(BotDifficulty::Prime)
+    ));
+}
