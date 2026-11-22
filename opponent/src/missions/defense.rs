@@ -222,15 +222,7 @@ impl Missions {
             let mut recruits = fill(candidates, need, &mut have, room);
             let gap = siege.gap(pressing, have);
             if *own && gap != [0, 0] {
-                shortfalls.push(Shortfall {
-                    ground: component,
-                    gap,
-                    attackers: siege.attackers(gap, crate::reads_threats(difficulty)),
-                    // Builders and producers with nothing armed beside them
-                    // are met with the cheapest unit: the first one there
-                    // soonest stops the site going up.
-                    read: crate::reads_threats(difficulty) && !siege.unarmed_only(),
-                });
+                shortfalls.push(siege.shortfall(component, gap, difficulty));
             }
             // Guns are reached rather than waited for: they shell from
             // where they stand.
@@ -276,7 +268,12 @@ impl Missions {
                 .or_else(|| {
                     concentrates(difficulty)
                         .then(|| {
-                            close_up(observation, (map, frame, foundry), (pursuit, fight), sent)
+                            close_up(
+                                observation,
+                                (map, frame, foundry),
+                                (pursuit, fight, mission),
+                                sent,
+                            )
                         })?
                         .map(Some)
                 }) {
@@ -1061,20 +1058,26 @@ fn out_at(
 }
 
 /// Where defenders going at a gun close up first: the waiting post beside
-/// `foundry`, while none of the units it would send is at the `fight` yet
-/// and one of them stands apart from the one nearest it.
+/// `foundry`, while the defense has not set out, none of the units it would
+/// send is at the `fight` yet and one of them stands apart from the one
+/// nearest it.
 /// Sent from where they stand, they would reach its shells in turn and die
 /// in pairs; together, however few, they beat guns that are weak up close.
 fn close_up<'a>(
     observation: &ObservationData,
     (map, frame, foundry): (&MapModel, HomeFrame, &BuildingObs),
-    (pursuit, fight): (Pursuit, TilePos),
+    (pursuit, fight, mission): (Pursuit, TilePos, Option<&Mission>),
     sent: impl Iterator<Item = &'a UnitId>,
 ) -> Option<TilePos> {
     if !matches!(pursuit, Pursuit::Gun(_) | Pursuit::Advance) {
         return None;
     }
     let post = waiting_post(map, frame, foundry, fight)?;
+    // Only before setting out: a group of fast and slow units strings out on
+    // its way, and calling it back each time would never let it arrive.
+    if mission.is_some_and(|mission| !mission.units.is_empty() && mission.goal != post) {
+        return None;
+    }
     let shooters: Vec<&UnitObs> = sent
         .filter_map(|id| mine(observation, *id))
         .filter(|unit| hits(unit, Domain::Ground))
@@ -1358,6 +1361,25 @@ impl Siege<'_> {
             .map(|threat| threat.id)
             .chain(self.recalled.iter().copied())
             .collect()
+    }
+
+    /// The shortfall `gap` of the defense of a Foundry on `ground`, with the
+    /// attackers it answers at a `difficulty` that reads them. Builders and
+    /// producers with nothing armed beside them are met with the cheapest
+    /// unit: the first one there soonest stops the site going up.
+    fn shortfall(
+        &self,
+        ground: Option<u32>,
+        gap: [u64; 2],
+        difficulty: BotDifficulty,
+    ) -> Shortfall {
+        let read = crate::reads_threats(difficulty);
+        Shortfall {
+            ground,
+            gap,
+            attackers: self.attackers(gap, read),
+            read: read && !self.unarmed_only(),
+        }
     }
 
     /// Whether anything still presses: attackers remembered out of sight, or

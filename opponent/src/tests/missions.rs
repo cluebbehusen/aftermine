@@ -3312,3 +3312,45 @@ fn a_search_comes_before_an_unarmed_intruder() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn defenders_that_set_out_at_a_gun_are_not_called_back_to_close_up() {
+    // A defense already on its way at a gun out of sight has strung out, a
+    // Scuttler running ahead of the Sentinels. Called back to close up each
+    // time, a group of fast and slow units would never arrive: it goes on.
+    let mut scenario = shelling(&[0]);
+    scenario.units.push(unit(0, UnitKind::Scuttler, 10, 17));
+    let mut state = scenario.build().unwrap();
+    let scuttler = at(&state, 10, 17);
+    let picket = at(&state, PICKET.0, PICKET.1);
+    open_fire(&mut state, &[0]);
+    until_shells_come(&scenario, &mut state, &[0]);
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    let mut members = vec![picket, scuttler];
+    members.sort_unstable();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": 22, "y": 12},
+            }],
+        });
+    });
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    let beside = beside_foundry(&state, 0, None);
+    assert!(
+        runs(&commands)
+            .iter()
+            .chain(&hunts(&commands))
+            .all(|(units, goal)| !units.contains(&scuttler) || !beside.contains(goal)),
+        "{commands:?}"
+    );
+}
