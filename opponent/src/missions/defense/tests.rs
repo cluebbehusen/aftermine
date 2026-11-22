@@ -297,6 +297,48 @@ fn only_the_site_owner_s_builder_beside_it_comes_first() {
 }
 
 #[test]
+fn an_aircraft_defender_is_judged_by_what_can_hit_its_attackers() {
+    // A West Talon faces an East Talon. Two Buzzards beside it cannot hit
+    // aircraft, so they do not make the fight even; a Flak Turret ten tiles
+    // off cannot reach it, so it does not weigh in either.
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Talon, 4, 4),
+        (0, UnitKind::Buzzard, 4, 5),
+        (0, UnitKind::Buzzard, 5, 4),
+        (1, UnitKind::Talon, 6, 4),
+    ]);
+    let memory = Memory::default();
+    let talon = mine(&observation, ids[0]).unwrap();
+    let margin = engage_margin(BotDifficulty::Prime);
+    assert!(outweighed(
+        (&observation, &memory),
+        &[ids[0], ids[1], ids[2]],
+        talon,
+        margin
+    ));
+    let (observation, ids) = viewed(&[(0, UnitKind::Talon, 3, 4)]);
+    let mut observation = observation;
+    observation.enemy_buildings.push(BuildingObs {
+        provisional: false,
+        id: aftermine_sim::BuildingId(77),
+        player: PlayerId(1),
+        kind: BuildingKind::FlakTurret,
+        anchor: TilePos::new(14, 4),
+        hp: BuildingKind::FlakTurret.base_stats().max_hp,
+        built: true,
+        seen: true,
+        tier: 0,
+    });
+    let talon = mine(&observation, ids[0]).unwrap();
+    assert!(!outweighed(
+        (&observation, &memory),
+        &[ids[0]],
+        talon,
+        margin
+    ));
+}
+
+#[test]
 fn a_sapper_is_no_unarmed_intruder() {
     let (observation, ids) = viewed(&[
         (0, UnitKind::Sentinel, 3, 4),
@@ -322,4 +364,21 @@ fn only_a_member_that_can_hit_a_site_ends_its_attack_by_standing_idle() {
         unit.idle = true;
     }
     assert!(idle_at_site(&observation, &ids, site));
+}
+
+#[test]
+fn a_ground_defender_bombed_by_aircraft_it_cannot_hit_is_outweighed() {
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Scuttler, 4, 4),
+        (0, UnitKind::Scuttler, 4, 5),
+        (1, UnitKind::Buzzard, 6, 4),
+    ]);
+    let memory = Memory::default();
+    let scuttler = mine(&observation, ids[0]).unwrap();
+    assert!(outweighed(
+        (&observation, &memory),
+        &[ids[0], ids[1]],
+        scuttler,
+        engage_margin(BotDifficulty::Prime)
+    ));
 }

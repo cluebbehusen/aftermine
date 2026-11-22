@@ -472,7 +472,7 @@ fn air_defenders_guard_the_building_a_flyer_raids() {
     ]);
     let state = scenario.build().unwrap();
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-    let [(_, goal)] = &hunts(&commands)[..] else {
+    let [(_, goal)] = &advances(&commands)[..] else {
         panic!("{commands:?}");
     };
     let size = BuildingKind::Fabricator.size();
