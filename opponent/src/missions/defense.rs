@@ -328,7 +328,7 @@ impl Missions {
                 DefendPhase::Engage { focus } => focus,
                 DefendPhase::Recover | DefendPhase::Guard => None,
             };
-            let lost = lost(observation, gun, focus);
+            let lost = lost(observation, (gun, focus), (&mission.units, pursuit));
             // A defense after an intruder sends again when it chooses
             // another, a site after its builder included, and when something
             // armed comes: held on a builder, defenders would stand under an
@@ -711,16 +711,35 @@ fn take(free: &mut Vec<UnitId>, taken: &[UnitId]) {
 
 /// Whether a defense's `focus` no longer holds while it has no `gun` to go
 /// after: its target fell, left sight, or is a gun this Foundry no longer
-/// faces. Any other focus is focus fire's, kept while it lasts.
-fn lost(observation: &ObservationData, gun: Option<UnitId>, focus: Option<UnitId>) -> bool {
-    gun.is_none()
-        && focus.is_some_and(|id| {
-            observation
-                .enemy_units
-                .iter()
-                .find(|enemy| enemy.id == id)
-                .is_none_or(walking_gun)
-        })
+/// faces. Any other focus is focus fire's, kept while it lasts. Its attack
+/// on a site is over too once a member stands idle.
+fn lost(
+    observation: &ObservationData,
+    (gun, focus): (Option<UnitId>, Option<UnitId>),
+    (members, pursuit): (&[UnitId], Pursuit),
+) -> bool {
+    idle_at_site(observation, members, pursuit)
+        || gun.is_none()
+            && focus.is_some_and(|id| {
+                observation
+                    .enemy_units
+                    .iter()
+                    .find(|enemy| enemy.id == id)
+                    .is_none_or(walking_gun)
+            })
+}
+
+/// Whether a defense attacking an unarmed site has a member standing idle:
+/// its attack ended, the site it was on fallen, while another it chose
+/// stands too near the first to move the goal.
+fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Pursuit) -> bool {
+    matches!(
+        pursuit,
+        Pursuit::Quarry(AttackTarget::Building(_) | AttackTarget::RememberedBuilding(_))
+    ) && members
+        .iter()
+        .filter_map(|id| mine(observation, *id))
+        .any(|unit| unit.idle)
 }
 
 /// Whether `focus` is an unarmed enemy in sight: an intruder a defense

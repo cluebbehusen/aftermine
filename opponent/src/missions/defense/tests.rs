@@ -29,10 +29,22 @@ fn a_gun_the_foundry_no_longer_faces_is_lost_but_focus_fire_is_kept() {
     ]);
     let (gun, raider) = (ids[1], ids[2]);
     assert!(observation.enemy_units.len() == 2, "premise: both in sight");
-    assert!(lost(&observation, None, Some(gun)));
-    assert!(!lost(&observation, None, Some(raider)));
-    assert!(lost(&observation, None, Some(UnitId(999))));
-    assert!(!lost(&observation, Some(gun), Some(gun)));
+    assert!(lost(&observation, (None, Some(gun)), (&[], Pursuit::Hunt)));
+    assert!(!lost(
+        &observation,
+        (None, Some(raider)),
+        (&[], Pursuit::Hunt)
+    ));
+    assert!(lost(
+        &observation,
+        (None, Some(UnitId(999))),
+        (&[], Pursuit::Hunt)
+    ));
+    assert!(!lost(
+        &observation,
+        (Some(gun), Some(gun)),
+        (&[], Pursuit::Hunt)
+    ));
 }
 
 #[test]
