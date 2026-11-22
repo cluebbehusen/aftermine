@@ -18,8 +18,8 @@ use chassis::grid::TilePos;
 /// Chebyshev reach around a site or frame that counts toward its danger.
 const DANGER_REACH: i32 = 10;
 
-/// A Foundry of the seat's own, or another seat's building, this close to a
-/// site's nodes means someone already works it.
+/// An own or enemy Foundry, or any ally building, this close to a site's
+/// nodes means someone already works it.
 const HELD_REACH: i32 = 6;
 
 /// Footprint of Foundries and Extractors, and so of sites and frames.
@@ -375,11 +375,13 @@ pub(crate) fn value(
     Some(resource * weight / 1_000 - penalty * (2_000 - weight) / 1_000)
 }
 
-/// Whether someone already works `site`: an own Foundry, or any other seat's
-/// building, near its nodes on the same ground. A site of frames alone is
-/// worked once an ally's Foundry supports one of its frames, so teammates do
-/// not crowd one expansion, or once own Foundries support every frame no
-/// other seat holds. An enemy's Foundry supports only its own Extractors.
+/// Whether someone already works `site`: an own or enemy Foundry, or any
+/// ally building, near its nodes on the same ground. Another enemy building
+/// there is danger, which the site's value weighs, not a claim. A site of
+/// frames alone is worked once an ally's Foundry supports one of its frames,
+/// so teammates do not crowd one expansion, or once own Foundries support
+/// every frame no other seat holds. An enemy's Foundry supports only its own
+/// Extractors.
 fn claimed(observation: &ObservationData, map: &MapModel, site: &Site) -> bool {
     if site.nodes.is_empty() {
         let foundries = |buildings: &[BuildingObs]| {
@@ -406,12 +408,11 @@ fn claimed(observation: &ObservationData, map: &MapModel, site: &Site) -> bool {
             others(*frame) || own.iter().any(|anchor| foundry_supports(*anchor, *frame))
         });
     }
-    let own = observation
-        .my_buildings
-        .iter()
-        .filter(|building| building.kind == BuildingKind::Foundry);
+    let foundry = |building: &&BuildingObs| building.kind == BuildingKind::Foundry;
+    let own = observation.my_buildings.iter().filter(foundry);
+    let enemy = observation.enemy_buildings.iter().filter(foundry);
     own.chain(&observation.ally_buildings)
-        .chain(&observation.enemy_buildings)
+        .chain(enemy)
         .any(|building| {
             let size = building.kind.size();
             let local = site
