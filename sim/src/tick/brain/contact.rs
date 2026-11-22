@@ -226,8 +226,7 @@ fn round_pads(
 /// a small body, as the Maw does: it cuts a building only with the drum
 /// pressed flat against one of its sides.
 pub(in crate::tick) fn square_cutter(kind: crate::UnitKind) -> bool {
-    kind.stats().contact_reach.is_some()
-        && crate::stats::hull_excess(kind.stats().radius) > Fx::ZERO
+    kind.crushes()
 }
 
 /// Half the width of a wide cutter's drum, end plate to end plate, as the

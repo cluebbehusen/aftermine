@@ -760,3 +760,59 @@ fn a_seen_point_defenders_charges_reach_owner_and_enemy_alike() {
     let blind = Observation::fog_honest(&watched_mantle((2, 2)), PlayerId(1));
     assert!(blind.enemy_units.is_empty(), "unseen, unshown");
 }
+
+#[test]
+fn a_machine_in_sight_shows_which_way_it_faces() {
+    let mut scenario = Scenario::skirmish();
+    scenario.name = "observation-heading".into();
+    scenario.units = vec![
+        UnitSpec {
+            player: 0,
+            kind: UnitKind::Sentinel,
+            x: 27,
+            y: 12,
+        },
+        UnitSpec {
+            player: 1,
+            kind: UnitKind::Sentinel,
+            x: 30,
+            y: 12,
+        },
+    ];
+    let mut state = scenario.build().expect("the heading scenario builds");
+    let walker = state
+        .units()
+        .iter()
+        .find(|unit| unit.player == PlayerId(0))
+        .expect("the walker exists")
+        .id;
+    state.tick(&[PlayerCommand {
+        player: PlayerId(0),
+        command: Command::Run {
+            units: vec![walker],
+            goal: TilePos::new(27, 8),
+            queue: false,
+        },
+    }]);
+    for _ in 0..40 {
+        state.tick(&[]);
+    }
+    let heading = state.unit(walker).expect("the walker lives").heading;
+    let seen = ObservationData::fog_honest(&state, PlayerId(1));
+    let walking = seen
+        .enemy_units
+        .iter()
+        .find(|unit| unit.id == walker)
+        .expect("the watcher sees the walker");
+    assert_eq!(walking.heading, heading);
+    let own = ObservationData::fog_honest(&state, PlayerId(0));
+    let mine = own.my_units.iter().find(|unit| unit.id == walker).unwrap();
+    assert_eq!(mine.heading, heading);
+    let at_rest = state
+        .units()
+        .iter()
+        .find(|unit| unit.player == PlayerId(1))
+        .unwrap()
+        .heading;
+    assert_ne!(heading, at_rest, "premise: the walker turned to go north");
+}

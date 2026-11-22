@@ -610,16 +610,9 @@ pub(super) fn blast_catches_charge(
     )
 }
 
-/// A machine a wide cutter's front goes over: a ground body of a radius
-/// under this.
-const CRUSHED_RADIUS: Fx = Fx::lit("0.5");
-
 /// Damage a wide cutter's front deals each tick to every small hostile
 /// machine under it: a Sentinel lasts about a second.
 const CRUSH_DAMAGE: u32 = 25;
-
-/// How far past touching a small machine still counts as under the front.
-const CRUSH_SLACK: Fx = Fx::lit("0.1");
 
 /// A wide cutter crushes every small hostile ground machine touching the
 /// front half of its hull, whatever its order. As with splash, no sight
@@ -639,7 +632,7 @@ pub(super) fn crush(
     };
     let forward = chassis::compass::dir(cutter.heading);
     let radius = cutter.kind.stats().radius;
-    let reach = (radius + CRUSHED_RADIUS + CRUSH_SLACK)
+    let reach = (radius + crate::stats::CRUSHED_RADIUS + crate::stats::CRUSH_SLACK)
         .floor()
         .to_num::<i32>()
         + 1;
@@ -649,9 +642,9 @@ pub(super) fn crush(
             let u = &state.units[slot];
             let offset = u.pos - cutter.pos;
             let small = u.kind.stats().radius;
-            let touch = radius + small + CRUSH_SLACK;
+            let touch = crate::stats::crush_touch(cutter.kind, u.kind);
             if u.hp == 0
-                || small >= CRUSHED_RADIUS
+                || !u.kind.crushable()
                 || u.domain() != Domain::Ground
                 || !state.hostile(cutter.player, u.player)
                 || offset.x * forward.x + offset.y * forward.y <= Fx::ZERO
