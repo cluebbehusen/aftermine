@@ -2836,6 +2836,29 @@ fn a_defense_held_on_a_builder_turns_when_an_armed_enemy_comes() {
             .all(|(_, target)| *target != AttackTarget::Unit(builder)),
         "{commands:?}"
     );
+    // The builder no longer holds the defense, and once the Lancer has gone
+    // the defenders go back to it.
+    let checkpoint = opponent.checkpoint();
+    let json = serde_json::to_value(&checkpoint).unwrap();
+    assert_eq!(
+        json["missions"]["list"][0]["task"]["phase"]["engage"]["focus"],
+        serde_json::Value::Null,
+        "{json}"
+    );
+    let mut gone = scenario.clone();
+    gone.units.retain(|spec| spec.kind != UnitKind::Lancer);
+    let state = gone.build().unwrap();
+    let mut opponent = Opponent::restore(&checkpoint, &gone, &state, map(&gone)).unwrap();
+    let next = (state.current_tick() + 1).next_multiple_of(12);
+    let mut state = state;
+    advance_to(&mut state, next, &[]);
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        attacks(&commands)
+            .iter()
+            .any(|(_, target)| *target == AttackTarget::Unit(builder)),
+        "{commands:?}"
+    );
 }
 
 #[test]
