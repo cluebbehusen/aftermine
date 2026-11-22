@@ -1,5 +1,5 @@
-//! The seat's own order failures and hits, and the machines every seat sees
-//! stand up from public cradles, which the host buffers between decisions.
+//! The seat's own order failures, and the machines every seat sees stand up
+//! from public cradles, which the host buffers between decisions.
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::{Event, PlayerId, StallReason, UnitId, UnitKind};
@@ -9,14 +9,9 @@ use std::collections::VecDeque;
 
 /// Events a buffer holds, the oldest dropped first beyond it: a computation
 /// bound that normal play stays under, since the buffer keeps one stall per
-/// unit and reason, one rejection per reason and one hit per place, and a
-/// cradle stands its machine up only after minutes of crew work.
+/// unit and reason and one rejection per reason, and a cradle stands its
+/// machine up only after minutes of crew work.
 const CAP: usize = 1_024;
-
-/// Places hit a buffer holds, later ones dropped: a computation bound. A
-/// structure is hit at one place, its footprint's centre, so a battle among
-/// moving units fills it before a structure's hits could be lost.
-const HITS: usize = 256;
 
 /// One of the seat's own order failures, or another seat's machine standing
 /// up from its cradle, as the simulation reported it.
@@ -37,13 +32,6 @@ pub enum OwnEvent {
     CommandRejected {
         /// Why.
         reason: RejectReason,
-    },
-    /// One of the seat's own units or structures was hit. The simulation
-    /// names neither combatant, only where the victim stood: for a
-    /// structure, its footprint's centre.
-    Hit {
-        /// Where.
-        pos: Vec2Fx,
     },
     /// Another seat's machine stood up from its cradle. A cradle is public
     /// once its crew starts, so every seat learns where its machine stands.
@@ -75,7 +63,6 @@ impl OwnEvent {
             (Self::CommandRejected { reason }, Self::CommandRejected { reason: why }) => {
                 reason == why
             }
-            (Self::Hit { pos }, Self::Hit { pos: again }) => pos == again,
             _ => false,
         }
     }
@@ -92,7 +79,6 @@ impl OwnEvent {
                 player: issuer,
                 reason,
             } if issuer == player => Some(Self::CommandRejected { reason }),
-            Event::DamageTaken { player: owner, pos } if owner == player => Some(Self::Hit { pos }),
             Event::UnitAssembled {
                 unit,
                 kind,
@@ -118,11 +104,10 @@ impl OwnEvent {
 pub struct OwnEvents(VecDeque<OwnEvent>);
 
 impl OwnEvents {
-    /// Appends `player`'s own stalls, rejections and hits, and other seats'
-    /// machines standing up, from one tick's events, in report order. A
-    /// repeat of a stall of the same unit for the same reason, of a
-    /// rejection for the same reason or of a hit at the same place, replaces
-    /// the earlier one in its place.
+    /// Appends `player`'s own stalls and rejections, and other seats'
+    /// machines standing up, from one tick's events, in report order. A repeat of a stall of the same unit for the same
+    /// reason, or of a rejection for the same reason, replaces the earlier
+    /// one in its place.
     pub fn record(&mut self, player: PlayerId, events: &[Event]) {
         for event in events
             .iter()
@@ -130,10 +115,6 @@ impl OwnEvents {
         {
             if let Some(held) = self.0.iter_mut().find(|held| held.repeats(&event)) {
                 *held = event;
-                continue;
-            }
-            let hit = |event: &OwnEvent| matches!(event, OwnEvent::Hit { .. });
-            if hit(&event) && self.0.iter().filter(|held| hit(held)).count() >= HITS {
                 continue;
             }
             if self.0.len() == CAP {

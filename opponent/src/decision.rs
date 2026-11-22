@@ -584,7 +584,7 @@ pub(crate) fn decide(
     persistent
         .missions
         .prune(observation, &mut persistent.memory);
-    let unseen = placement::unexplained(observation, map, events);
+    let unseen = placement::unexplained(observation, map);
     let shortfalls = persistent.missions.defend(
         observation,
         map,

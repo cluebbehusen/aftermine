@@ -2941,8 +2941,7 @@ fn a_structure_hit_by_fire_nobody_sees_draws_a_search_and_no_welder() {
         .unwrap()
         .id;
     let lancer = at(&state, 19, 5);
-    let mut events = OwnEvents::default();
-    let report = state.tick(&[PlayerCommand {
+    state.tick(&[PlayerCommand {
         player: PlayerId(1),
         command: Command::Attack {
             units: vec![lancer],
@@ -2950,7 +2949,6 @@ fn a_structure_hit_by_fire_nobody_sees_draws_a_search_and_no_welder() {
             queue: false,
         },
     }]);
-    events.record(PlayerId(0), &report.events);
     // Hurt enough that a welder would otherwise be sent.
     let hurt = |state: &State| {
         state.building(extractor).is_some_and(|building| {
@@ -2959,8 +2957,7 @@ fn a_structure_hit_by_fire_nobody_sees_draws_a_search_and_no_welder() {
     };
     while !hurt(&state) || !state.current_tick().is_multiple_of(12) {
         assert!(state.current_tick() < 1_200, "premise: the Lancer hits it");
-        let report = state.tick(&[]);
-        events.record(PlayerId(0), &report.events);
+        state.tick(&[]);
     }
     assert!(
         ObservationData::fog_honest(&state, PlayerId(0))
@@ -2968,7 +2965,7 @@ fn a_structure_hit_by_fire_nobody_sees_draws_a_search_and_no_welder() {
             .is_empty(),
         "premise: the Lancer is out of sight"
     );
-    let commands = seat(&scenario, 0).act(&state, &mut events);
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
     let anchor = TilePos::new(12, 4);
     let beside: Vec<TilePos> = crate::frame::ring(anchor, BuildingKind::Extractor.size()).collect();
     assert!(
@@ -2989,8 +2986,9 @@ fn a_structure_hit_by_fire_nobody_sees_draws_a_search_and_no_welder() {
 #[test]
 fn a_hit_the_seat_can_explain_draws_no_search() {
     // The same Extractor hit while a West Surveyor sees the Lancer: the hit
-    // is the Lancer's, met like any threat in sight, not a search.
-    let staged = |spotted: bool| {
+    // is the Lancer's, met like any threat in sight, and leaves nothing
+    // unexplained. Out of sight, the same hit is unexplained.
+    let unexplained = |spotted: bool| {
         let mut scenario = field();
         scenario.map[4].replace_range(12..13, "E");
         if spotted {
@@ -3000,30 +2998,40 @@ fn a_hit_the_seat_can_explain_draws_no_search() {
         scenario
             .buildings
             .push(building(0, BuildingKind::Extractor, 12, 4));
-        let state = scenario.build().unwrap();
-        (scenario, state)
+        let mut state = scenario.build().unwrap();
+        let extractor = state
+            .buildings()
+            .iter()
+            .find(|b| b.kind == BuildingKind::Extractor)
+            .unwrap()
+            .id;
+        let lancer = at(&state, 19, 5);
+        state.tick(&[PlayerCommand {
+            player: PlayerId(1),
+            command: Command::Attack {
+                units: vec![lancer],
+                target: AttackTarget::Building(extractor),
+                queue: false,
+            },
+        }]);
+        let full = BuildingKind::Extractor.base_stats().max_hp;
+        while state.building(extractor).is_some_and(|b| b.hp == full) {
+            assert!(state.current_tick() < 600, "premise: the Lancer hits it");
+            state.tick(&[]);
+        }
+        let observation = ObservationData::fog_honest(&state, PlayerId(0));
+        assert_eq!(
+            observation.enemy_units.is_empty(),
+            !spotted,
+            "premise: the Lancer is in sight only when spotted"
+        );
+        crate::placement::unexplained(&observation, &map(&scenario)).len()
     };
-    let centre = aftermine_sim::geometry::footprint_center(
-        TilePos::new(12, 4),
-        BuildingKind::Extractor.size(),
-    );
-    let hit = [crate::events::OwnEvent::Hit { pos: centre }];
-    let (scenario, state) = staged(true);
-    let observation = ObservationData::fog_honest(&state, PlayerId(0));
-    assert!(
-        !observation.enemy_units.is_empty(),
-        "premise: the Lancer is in sight"
-    );
-    let map = map(&scenario);
-    assert!(crate::placement::unexplained(&observation, &map, &hit).is_empty());
-    let (_, state) = staged(false);
-    let observation = ObservationData::fog_honest(&state, PlayerId(0));
-    assert_eq!(
-        crate::placement::unexplained(&observation, &map, &hit).len(),
-        1
-    );
+    assert_eq!(unexplained(true), 0);
+    assert_eq!(unexplained(false), 1);
 }
 
+#[test]
 fn an_aircraft_defender_chased_past_the_base_runs_back_too() {
     // A Buzzard in the defense has followed an earlier raider out past the
     // base: hunting, it would chase on, so it is brought back like a ground

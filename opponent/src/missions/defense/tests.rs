@@ -283,3 +283,43 @@ fn only_the_site_owner_s_builder_beside_it_comes_first() {
     assert_eq!(quarry(&builder), Some(AttackTarget::Unit(builder.id)));
     assert_eq!(quarry(&passer), Some(AttackTarget::Building(site.id)));
 }
+
+#[test]
+fn a_search_goes_from_a_foundry_to_its_nearest_hit_structure_on_its_ground() {
+    // Two West Turrets are hit by fire nobody sees, and a third across a
+    // chasm. The Foundry looks over the nearer on its own ground; the one
+    // its ground units cannot reach draws no search.
+    let mut scenario = crate::tests::match_on(crate::tests::strip(true), &["West", "East"], &[]);
+    for (x, y) in [(4, 4), (6, 7), (10, 4)] {
+        scenario
+            .buildings
+            .push(aftermine_sim::scenario::BuildingSpec {
+                player: 0,
+                kind: BuildingKind::Turret,
+                x,
+                y,
+            });
+    }
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let map = MapModel::from_scenario(&scenario).unwrap();
+    let frame = crate::frame::HomeFrame::of(&observation, &map).unwrap();
+    let turret = |x: i32| {
+        observation
+            .my_buildings
+            .iter()
+            .find(|b| b.kind == BuildingKind::Turret && b.anchor.x == x)
+            .unwrap()
+    };
+    let searched = [turret(6), turret(4), turret(10)];
+    let found = searches(&observation, &map, frame, &searched);
+    assert_eq!(found.len(), 1, "one search for the one Foundry");
+    let (_, (beside, need)) = found[0];
+    let near = turret(4);
+    assert!(
+        crate::frame::ring(near.anchor, near.kind.size()).any(|tile| tile == beside),
+        "{beside:?}"
+    );
+    assert_eq!(need, u64::from(BuildingKind::Turret.invested_cost(0)));
+    assert!(searches(&observation, &map, frame, &[turret(10)]).is_empty());
+}

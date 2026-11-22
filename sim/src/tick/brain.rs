@@ -538,7 +538,10 @@ fn resolve_hits(
                     })
                 });
                 if let Some(b) = state.building_mut(bid) {
-                    let relevant_hit = b.kind == crate::stats::BuildingKind::Reclaimer;
+                    // Any structure but a Foundry: danger left on the drop-off
+                    // itself would hold every loaded Harvester while it is
+                    // shelled from out of sight.
+                    let relevant_hit = b.kind != crate::stats::BuildingKind::Foundry;
                     let relevant_loss = hit.damage >= b.hp;
                     if b.hp > 0
                         && hit.damage > 0

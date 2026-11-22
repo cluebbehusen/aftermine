@@ -412,6 +412,63 @@ fn mirrored_lethal_hits_record_mirrored_footprint_incidents() {
 }
 
 #[test]
+fn a_structure_hit_from_out_of_sight_leaves_an_incident_but_a_foundry_does_not() {
+    use crate::scenario::{BuildingSpec, UnitSpec};
+    use crate::{BuildingKind, Order, PlayerId, Target, UnitKind};
+
+    // An East Lancer the West team cannot see hits a West structure once.
+    let incidents = |kind: BuildingKind| {
+        let mut scenario = calibration_open();
+        scenario.units = vec![UnitSpec {
+            player: 1,
+            kind: UnitKind::Lancer,
+            x: 31,
+            y: 13,
+        }];
+        let anchor = TilePos::new(25, 13);
+        scenario.buildings = vec![BuildingSpec {
+            player: 0,
+            kind,
+            x: anchor.x,
+            y: anchor.y,
+        }];
+        let mut state = scenario.build().expect("the staged hit builds");
+        let victim = state
+            .buildings
+            .iter()
+            .find(|building| building.player == PlayerId(0) && building.anchor == anchor)
+            .expect("the victim exists")
+            .id;
+        let shooter = state.units[0].id;
+        state.unit_mut(shooter).unwrap().order = Order::Attack {
+            pursue: false,
+            target: Target::Building(victim).into(),
+            resume: None,
+        };
+        let full = state.building(victim).unwrap().hp;
+        for _ in 0..200 {
+            let tile = state.unit(shooter).unwrap().tile();
+            state.vision[0].conceal(tile);
+            state.tick(&[]);
+            if state.building(victim).unwrap().hp < full {
+                break;
+            }
+        }
+        assert!(
+            state.building(victim).unwrap().hp < full,
+            "premise: the Lancer hits the {kind:?}"
+        );
+        state.vision(PlayerId(0)).salvage_incidents().len()
+    };
+    assert_eq!(incidents(BuildingKind::Fabricator), 1);
+    assert_eq!(
+        incidents(BuildingKind::Foundry),
+        0,
+        "danger on the drop-off would hold every loaded Harvester"
+    );
+}
+
+#[test]
 fn adjacency_excludes_inside_and_far() {
     let anchor = TilePos::new(3, 3);
     assert!(!tile_adjacent_to_rect(TilePos::new(3, 3), anchor, (2, 2)));

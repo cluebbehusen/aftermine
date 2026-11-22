@@ -1468,7 +1468,7 @@ fn threats<'a>(
             }
             // A structure hit by fire nobody sees is looked over from beside
             // it; once the shooter is seen it is a threat like any other.
-            for (foundry, search) in searches(observation, map, frame, memory, searched) {
+            for (foundry, search) in searches(observation, map, frame, searched) {
                 if let Some((_, siege, _)) = groups
                     .iter_mut()
                     .find(|(other, _, _)| other.id == foundry.id)
@@ -1488,66 +1488,47 @@ fn threats<'a>(
 }
 
 /// For each built Foundry, the structure among `searched`, hit by fire the
-/// seat cannot see, nearest it: the tile beside that structure toward the
-/// nearest hostile start, where defenders go to see the shooter, and what
-/// they bring, the structure's price or the armed enemies remembered within
-/// local reach of it if worth more.
+/// seat cannot see, nearest it on its own ground: the tile beside that
+/// structure toward the nearest hostile start, where defenders go to see the
+/// shooter, and what they bring, the structure's price. Enemies remembered
+/// near it already press the defense.
 fn searches<'a>(
     observation: &'a ObservationData,
     map: &MapModel,
     frame: HomeFrame,
-    memory: &Memory,
     searched: &[&BuildingObs],
 ) -> Vec<(&'a BuildingObs, (TilePos, u64))> {
-    let foundries = foundries_from_home(&observation.my_buildings, frame);
     let me = observation.me;
-    let mut found: Vec<(&BuildingObs, (TilePos, u64))> = Vec::new();
-    for structure in searched {
-        let centre = footprint_centre(structure.kind, structure.anchor);
-        let Some(foundry) = foundries.iter().copied().min_by_key(|foundry| {
-            (
-                gap(
-                    foundry.anchor,
-                    foundry.kind.size(),
-                    structure.anchor,
-                    structure.kind.size(),
-                ),
-                frame.rank(centre, footprint_centre(foundry.kind, foundry.anchor)),
-            )
-        }) else {
-            continue;
-        };
-        if found.iter().any(|(other, _)| other.id == foundry.id) {
-            continue;
-        }
-        let ground = map.component(structure.anchor);
-        let Some(beside) = ring(structure.anchor, structure.kind.size())
-            .filter(|tile| map.component(*tile) == ground)
-            .min_by_key(|tile| {
-                (
-                    map.hostiles(me)
-                        .map(|hostile| map.distance(hostile, *tile))
-                        .min(),
-                    frame.rank(centre, doubled(*tile)),
-                )
-            })
-        else {
-            continue;
-        };
-        let now = observation.tick;
-        let near: u64 = memory
-            .units()
-            .iter()
-            .filter(|unit| unit.kind.stats().can_fight())
-            .filter(|unit| {
-                gap(structure.anchor, structure.kind.size(), unit.tile, (1, 1)) <= LOCAL_REACH
-            })
-            .map(|unit| unit.value(now))
-            .sum();
-        let price = u64::from(structure.kind.invested_cost(structure.tier));
-        found.push((foundry, (beside, price.max(near))));
-    }
-    found
+    foundries_from_home(&observation.my_buildings, frame)
+        .into_iter()
+        .filter_map(|foundry| {
+            let ground = map.component(foundry.anchor);
+            let home = footprint_centre(foundry.kind, foundry.anchor);
+            let structure = searched
+                .iter()
+                .filter(|structure| map.component(structure.anchor) == ground)
+                .min_by_key(|structure| {
+                    let size = structure.kind.size();
+                    (
+                        gap(foundry.anchor, foundry.kind.size(), structure.anchor, size),
+                        frame.rank(home, footprint_centre(structure.kind, structure.anchor)),
+                    )
+                })?;
+            let centre = footprint_centre(structure.kind, structure.anchor);
+            let beside = ring(structure.anchor, structure.kind.size())
+                .filter(|tile| map.component(*tile) == ground)
+                .min_by_key(|tile| {
+                    (
+                        map.hostiles(me)
+                            .map(|hostile| map.distance(hostile, *tile))
+                            .min(),
+                        frame.rank(centre, doubled(*tile)),
+                    )
+                })?;
+            let price = u64::from(structure.kind.invested_cost(structure.tier));
+            Some((foundry, (beside, price)))
+        })
+        .collect()
 }
 
 /// Visible enemies not `claimed` that could hit one of `buildings`, and known
