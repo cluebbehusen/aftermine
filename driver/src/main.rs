@@ -256,16 +256,35 @@ enum Cmd {
         out: Option<PathBuf>,
     },
     /// Run the staged pressure scenarios: a scripted attacker presses one
-    /// situation on a bot seat, and each scenario reports whether the bot
-    /// answered by its deadline.
+    /// situation on a bot seat, and each run reports whether the bot answered
+    /// by its deadline. Every scenario runs at each difficulty and
+    /// personality seed, as authored and reflected left to right, and the
+    /// report gives each scenario's passes over its runs.
     BotPressure {
         /// Directory of pressure scenarios.
         #[arg(long, default_value = "driver/evaluation/pressure")]
         dir: PathBuf,
-        /// Print outcomes as JSON.
+        /// The defender's rungs.
+        #[arg(
+            long,
+            value_delimiter = ',',
+            default_value = "scrapheap,standard,veteran,prime"
+        )]
+        difficulties: Vec<aftermine_sim::scenario::BotDifficulty>,
+        /// The defender's personality seeds as `from..to`, the last excluded.
+        #[arg(long, default_value = "0..3", value_parser = parse_seed_range)]
+        seeds: std::ops::Range<u64>,
+        /// Run each scenario only as authored, not also reflected.
+        #[arg(long)]
+        no_mirror: bool,
+        /// Runs to play at once.
+        #[arg(long, default_value = "4")]
+        jobs: std::num::NonZeroUsize,
+        /// Print every run's outcome as JSON.
         #[arg(long)]
         json: bool,
-        /// Save each scenario's replay here, named after the scenario.
+        /// Save each run's replay here, named
+        /// `{scenario}-{difficulty}-seed{n}[-mirrored].json`.
         #[arg(long)]
         replay_dir: Option<PathBuf>,
     },
@@ -1012,20 +1031,20 @@ fn main() -> Result<()> {
         }
         Cmd::BotPressure {
             dir,
+            difficulties,
+            seeds,
+            no_mirror,
+            jobs,
             json,
             replay_dir,
         } => {
             use aftermine_driver::bot_pressure;
-            let mut outcomes = Vec::new();
-            for pressure in bot_pressure::load_all(&dir)? {
-                let (outcome, replay) = bot_pressure::run(&pressure, replay_dir.is_some())?;
-                if let (Some(dir), Some(replay)) = (&replay_dir, replay) {
-                    std::fs::create_dir_all(dir)?;
-                    let name = format!("{}.json", pressure.name.replace(' ', "-"));
-                    replay.save(dir.join(name))?;
-                }
-                outcomes.push(outcome);
-            }
+            let outcomes = bot_pressure::run_all(
+                &bot_pressure::load_all(&dir)?,
+                &bot_pressure::variants(&difficulties, seeds, !no_mirror),
+                jobs,
+                replay_dir.as_deref(),
+            )?;
             emit(json, &outcomes, |outcomes| bot_pressure::report(outcomes))?;
         }
         Cmd::TickScan {

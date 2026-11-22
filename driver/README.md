@@ -43,7 +43,8 @@ Headless execution (`runner`, `render`, `playback` and `stats`) lives in
   checks each comparison against its gate. `ladder_diff` (`bot-ladder-diff`)
   compares two runs of it game by game.
 - `bot_pressure` (`bot-pressure`) runs staged scenarios where a scripted
-  attacker presses one situation on a bot.
+  attacker presses one situation on a bot, at each difficulty and personality
+  seed, as authored and mirrored left to right.
 - `challengers` holds scripted players, each playing one known way to beat the
   bot from its seat's fog-honest view, with a seed that varies timings, counts
   and targets within the plan. `bot_gauntlet` (`bot-gauntlet`) plays them

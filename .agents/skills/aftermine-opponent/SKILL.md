@@ -82,8 +82,8 @@ normative for this crate.
 
 When handing off a PR, tell Connor its net production and test line change,
 average and p99 time per decision with total CPU, the full ladder against the
-base, and the pressure scenarios that pass, including when they are unfavorable.
-Keep them out of the PR description.
+base, and each pressure scenario's passes over its variants, including when they
+are unfavorable. Keep them out of the PR description.
 
 - **Lines:** `uv run tools/line_report.py <base>` prints the net production and
   test line change per top-level directory from the merge base; `--help` defines
@@ -275,14 +275,20 @@ first held a Deep Bore, refitting or standing, and how many seat-legs ever did.
 
 ## Pressure scenarios
 
-`cargo run --release -p aftermine-driver -- bot-pressure` runs the staged
-scenarios in `driver/evaluation/pressure/`; `--replay-dir` saves each run for
-`replay-summary`. A scripted attacker seat issues tick-stamped commands for its
-preset units while the bot defends. Its Foundry stands in a walled corner: for
-early rush, air switch and siege the corner opens at its far end, so the
+`cargo run --release -p aftermine-driver -- bot-pressure --jobs 8` runs the
+staged scenarios in `driver/evaluation/pressure/`; `--replay-dir` saves each run
+for `replay-summary`. A scripted attacker seat issues tick-stamped commands for
+its preset units while the bot defends. Its Foundry stands in a walled corner:
+for early rush, air switch and siege the corner opens at its far end, so the
 defender's ground reaches it only by a long route and the defender is not cut
 off from its enemy; for lift drop it is an island no ground unit reaches, since
 the drop must come by air.
+
+Each scenario runs at every difficulty with personality seeds 0 to 2, as
+authored and reflected left to right; `--difficulties`, `--seeds` and
+`--no-mirror` narrow the grid. The report gives each scenario's passes over its
+runs with a 95% Wilson interval, by difficulty and by orientation, then every
+failing run; `--json` gives every run.
 
 - **Early rush:** Sentinels and Scuttlers attack the base; the Foundry must
   stand at the deadline.
@@ -301,8 +307,13 @@ the drop must come by air.
 - **Breach:** a Maw walks on the base from open ground; by the deadline it must
   be destroyed with the Foundry still standing.
 
+Every check but air switch's also needs a starting Foundry to stand: one the
+defender held built at tick zero. A Foundry placed later, finished or not, does
+not count.
+
 Scenario files are JSON: the staged scenario, the defender and attacker seats, a
-deadline, the script (unit ids follow scenario order) and the check.
+deadline, the script (unit ids follow scenario order) and the check. A script
+command whose tiles cannot be reflected is refused when mirroring.
 
 ## Review play
 
