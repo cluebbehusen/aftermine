@@ -1553,10 +1553,14 @@ fn an_escort_beside_an_enemy_building_counts_once() {
         "{going:?}"
     );
 
-    // One does not match them and waits.
+    // One does not match them and waits, running to the post.
     let scenario = escorted(&[(UnitKind::Sentinel, 5, 8)]);
     let state = scenario.build().unwrap();
-    let waiting = hunts(&seat(&scenario, 0).act(&state, &mut OwnEvents::default()));
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let waiting: Vec<_> = hunts(&commands)
+        .into_iter()
+        .chain(runs(&commands))
+        .collect();
     assert!(
         matches!(&waiting[..], [(_, goal)] if post.contains(goal)),
         "{waiting:?}"

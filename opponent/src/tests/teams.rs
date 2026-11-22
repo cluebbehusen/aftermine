@@ -185,9 +185,11 @@ fn an_ally_s_defenders_come_home_when_home_is_attacked() {
         defends(&trace.unwrap().missions).contains(&own),
         "{commands:?}"
     );
+    // Away from home's post, they run back to it.
     assert!(
         hunts(&commands)
             .iter()
+            .chain(&runs(&commands))
             .any(|(units, _)| units.iter().any(|unit| relievers.contains(unit))),
         "the ally's defenders are sent home: {commands:?}"
     );

@@ -81,13 +81,14 @@ pub(super) fn opposed(observation: &ObservationData, memory: &Memory, place: Til
     joining(&foes(observation, memory), place)
 }
 
-/// What the known armed enemy ground units other than guns that could join a
-/// fight at a gun standing at `place` are worth: its escort, which defenders
-/// going at the gun meet on the way.
+/// What the known armed enemy ground units other than the gun standing at
+/// `place` that could join a fight at it are worth: its escort, which
+/// defenders going at the gun meet on the way. Another gun beside it is
+/// escort too.
 pub(super) fn escort(observation: &ObservationData, memory: &Memory, place: TilePos) -> u64 {
     let foes: Vec<Foe> = foes(observation, memory)
         .into_iter()
-        .filter(|foe| !artillery(foe.kind))
+        .filter(|foe| !(foe.tile == place && artillery(foe.kind)))
         .collect();
     joining(&foes, place)
 }

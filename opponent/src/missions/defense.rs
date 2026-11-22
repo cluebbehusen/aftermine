@@ -543,9 +543,13 @@ impl Missions {
             return;
         };
         let units = self.list[index].units.clone();
-        if home_post(observation, map, frame, goal).is_none_or(|post| {
-            units.is_empty() || !fall_back(observation, ledger, units, post).is_empty()
-        }) {
+        // Ended only once every member has its order: one left on its last
+        // order would fight on with no mission to bring it back.
+        let mut members = units.clone();
+        members.sort_unstable();
+        if home_post(observation, map, frame, goal)
+            .is_none_or(|post| fall_back(observation, ledger, units, post) == members)
+        {
             self.list.remove(index);
         }
     }
@@ -759,10 +763,10 @@ fn dispatch(
     ordered
 }
 
-/// Sends `units` back to the waiting `post`: those farther from it than the
-/// gather distance run, so they do not stop to fight whatever stands on the
-/// way, and those nearer hunt there, so a defender already fighting at the
-/// post fights on. Returns the units given an order.
+/// Sends `units` back to the waiting `post`: those not already at it run, so
+/// they do not stop to fight whatever stands on the way, and those at it
+/// hunt there, so a defender already fighting at the post fights on. Returns
+/// the units given an order, sorted.
 fn fall_back(
     observation: &ObservationData,
     ledger: &mut Ledger,
@@ -770,7 +774,7 @@ fn fall_back(
     post: TilePos,
 ) -> Vec<UnitId> {
     let (far, near): (Vec<UnitId>, Vec<UnitId>) = units.into_iter().partition(|id| {
-        mine(observation, *id).is_some_and(|unit| unit.tile.chebyshev(post) > GATHER_TILES)
+        mine(observation, *id).is_some_and(|unit| unit.tile.chebyshev(post) > RESERVE_TILES)
     });
     let mut ordered = Vec::new();
     for (units, order) in [(far, run as fn(_, _) -> _), (near, hunt)] {
