@@ -67,7 +67,9 @@ fn a_crew_under_unseen_fire_beside_its_only_foundry_still_leaves_the_site() {
         tier: 0,
     };
     observation.my_buildings.push(site);
-    observation.salvage_incidents.push(anchor);
+    observation
+        .salvage_incidents
+        .push(crate::tests::fire_mark(anchor, 0));
     let crew = observation
         .my_units
         .iter_mut()

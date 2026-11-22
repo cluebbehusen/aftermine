@@ -620,6 +620,23 @@ fn a_hidden_artillery_hit_diverts_autonomous_work_without_revealing_the_gun() {
         !state.can_see(PlayerId(0), state.unit(bombard).unwrap().tile()),
         "taking damage does not disclose the hidden shooter's tile"
     );
+    let doc = serde_json::to_value(&state).unwrap();
+    let incidents = doc["vision"][0]["salvage_incidents"]
+        .as_array()
+        .expect("the hit is remembered");
+    assert!(
+        incidents.iter().all(|incident| {
+            incident.as_object().unwrap().keys().collect::<Vec<_>>()
+                == ["expires_at", "from", "tile"]
+        }),
+        "the memory keeps a tile and a compass point, never the gun: {incidents:?}"
+    );
+    assert!(
+        incidents
+            .iter()
+            .any(|incident| incident["from"] == json!(0)),
+        "the fire came from the east, where the Bombard stands: {incidents:?}"
+    );
 
     state.tick(&[]);
     assert!(matches!(

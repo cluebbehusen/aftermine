@@ -2837,7 +2837,7 @@ fn piledriver_impact_waits_for_visual_contact_and_clears_on_seek() {
 
 #[test]
 fn piledriver_impact_survives_a_frame_batch_past_visual_expiry() {
-    for (speed, wall_dt) in [(1.0, 0.3), (16.0, 1.0 / 60.0), (64.0, 1.0 / 60.0)] {
+    for (speed, wall_dt) in [(1.0, 0.45), (32.0, 1.0 / 60.0), (64.0, 1.0 / 60.0)] {
         let mut game =
             Game::with_viewport(aftermine_sim::Scenario::skirmish(), Vec2::new(1280., 800.))
                 .unwrap();
@@ -2857,7 +2857,11 @@ fn piledriver_impact_survives_a_frame_batch_past_visual_expiry() {
         game.clock.paused = false;
         game.clock.speed = speed;
         game.advance_wall_clock(wall_dt, crate::pacing::LEAST_CATCH_UP, None);
-        assert!(game.state.current_tick() >= 5);
+        assert!(
+            game.state.current_tick() as f32 * crate::game::TICK_DT
+                >= crate::game::ShotStyle::Kinetic { heavy: true }.life(),
+            "premise: one batch outlives the report"
+        );
         game.update_fx(wall_dt);
         let impacts = |game: &Game| {
             game.presentation

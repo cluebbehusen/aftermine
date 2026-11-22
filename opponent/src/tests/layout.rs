@@ -365,7 +365,7 @@ fn danger_covers_reach_minimum_range_and_recent_losses() {
     let spot = TilePos::new(9, 6);
     assert!(!quiet.hits(BuildingKind::Fabricator, spot));
 
-    observation.salvage_incidents = vec![TilePos::new(14, 6)];
+    observation.salvage_incidents = vec![crate::tests::fire_mark(TilePos::new(14, 6), 0)];
     let lost = Danger::of(&observation, &model, &Memory::default());
     assert!(lost.hits(BuildingKind::Fabricator, spot), "four tiles off");
     assert!(

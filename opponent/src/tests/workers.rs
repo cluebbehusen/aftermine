@@ -828,7 +828,7 @@ fn routes_around_a_loss_judge_every_source_afresh_though_traced_before() {
     let homes = foundries(&observation);
     let tiles = every_tile(&model);
     // The gap in the wall every route east passes through.
-    let incidents = [TilePos::new(20, 3)];
+    let incidents = [crate::tests::fire_mark(TilePos::new(20, 3), 0)];
     let fresh: Vec<bool> = tiles
         .iter()
         .map(|tile| {
@@ -844,7 +844,8 @@ fn routes_around_a_loss_judge_every_source_afresh_though_traced_before() {
             .iter()
             .zip(before.iter().zip(&fresh))
             .any(|(tile, (was, is))| {
-                *was && !*is && tile.chebyshev(incidents[0]) > HARVEST_INCIDENT_DANGER_RADIUS + 1
+                *was && !*is
+                    && tile.chebyshev(incidents[0].tile) > HARVEST_INCIDENT_DANGER_RADIUS + 1
             }),
         "premise: the loss cuts routes that pass it"
     );
@@ -884,7 +885,7 @@ fn warned(state: &State, x: i32, y: i32) -> State {
     let mut value = serde_json::to_value(state).unwrap();
     let expires = state.current_tick() + aftermine_sim::stats::HARVEST_INCIDENT_MEMORY_TICKS;
     value["vision"][0]["salvage_incidents"] =
-        serde_json::json!([{"tile": {"x": x, "y": y}, "expires_at": expires}]);
+        serde_json::json!([{"tile": {"x": x, "y": y}, "from": 0, "expires_at": expires}]);
     serde_json::from_value(value).unwrap()
 }
 

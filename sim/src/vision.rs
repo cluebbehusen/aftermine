@@ -16,6 +16,7 @@
 use crate::ids::PlayerId;
 use crate::state::State;
 use crate::stats::{BuildingKind, Domain};
+use chassis::compass::CompassPoint;
 use chassis::fx::{Fx, HALF, Vec2Fx};
 use chassis::grid::{CARDINALS, Grid, TilePos, as_index};
 use chassis::path::AstarScratch;
@@ -127,29 +128,45 @@ impl GhostBuilding {
 /// A tile a team remembers for a short while: where one of its own assets
 /// was hit, or where it saw a hostile shell land.
 ///
-/// Only the tile is retained. The record deliberately does not identify or
-/// locate the attacker, so artillery landing from fog adds caution without
-/// turning damage into reconnaissance.
+/// The record keeps the tile and the compass point the fire came from, the
+/// direction a player reads from a round crossing visible ground. It never
+/// identifies or locates the attacker, so fire from fog adds caution and a
+/// bearing without turning damage into reconnaissance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecentTile {
     /// Where it happened.
     pub tile: TilePos,
+    /// The point the fire came from, seen from `tile`.
+    pub from: CompassPoint,
     /// First tick on which the memory no longer applies.
     pub expires_at: crate::Tick,
 }
 
-/// Remembers `tile` until `expires_at` in `memory`, which stays sorted and
-/// deduplicated by (y, x), keeping the later expiry, and holds at most `cap`
-/// tiles of a map `dims` in size.
+impl RecentTile {
+    /// The order a memory keeps its records in, which no two share.
+    pub(crate) fn key(&self) -> (i32, i32, CompassPoint) {
+        (self.tile.y, self.tile.x, self.from)
+    }
+}
+
+/// Remembers fire from `from` on `tile` until `expires_at` in `memory`,
+/// which stays sorted and deduplicated by [`RecentTile::key`], keeping the
+/// later expiry, and holds at most `cap` records of a map `dims` in size.
 fn remember_recent(
     memory: &mut Vec<RecentTile>,
     cap: usize,
     dims: (i32, i32),
     tile: TilePos,
+    from: CompassPoint,
     expires_at: crate::Tick,
 ) {
-    let key = (tile.y, tile.x);
-    match memory.binary_search_by_key(&key, |recent| (recent.tile.y, recent.tile.x)) {
+    let record = RecentTile {
+        tile,
+        from,
+        expires_at,
+    };
+    let key = record.key();
+    match memory.binary_search_by_key(&key, RecentTile::key) {
         Ok(index) => memory[index].expires_at = memory[index].expires_at.max(expires_at),
         Err(mut index) => {
             if memory.len() == cap {
@@ -165,18 +182,18 @@ fn remember_recent(
                             recent.expires_at,
                             std::cmp::Reverse(recent.tile.center().dist_sq(tile.center())),
                             frame.rank(tile, recent.tile),
-                            recent.tile.y,
-                            recent.tile.x,
+                            frame.rank_point(recent.from),
+                            recent.key(),
                         )
                     })
                     .map(|(index, _)| index)
                     .expect("a full memory is nonempty");
                 memory.remove(evict);
                 index = memory
-                    .binary_search_by_key(&key, |recent| (recent.tile.y, recent.tile.x))
+                    .binary_search_by_key(&key, RecentTile::key)
                     .unwrap_or_else(|index| index);
             }
-            memory.insert(index, RecentTile { tile, expires_at });
+            memory.insert(index, record);
         }
     }
 }
@@ -204,12 +221,12 @@ pub struct Vision {
     /// its domain but no kind, owner or memory (rebuilt every tick).
     contacts: Vec<RadarContact>,
     tracking: tracking::Tracking,
-    /// Recent tiles where this team saw one of its own assets take damage.
-    /// Sorted and deduplicated by (y, x).
+    /// Recent tiles where this team saw one of its own assets take damage
+    /// from out of sight. Sorted and deduplicated by [`RecentTile::key`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     salvage_incidents: Vec<RecentTile>,
     /// Recent tiles where this team saw a hostile shell land. Sorted and
-    /// deduplicated by (y, x).
+    /// deduplicated by [`RecentTile::key`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     shell_impacts: Vec<RecentTile>,
     /// Hostile warheads in flight this team has had in sight or radar,
@@ -361,22 +378,40 @@ impl Vision {
         &self.salvage_incidents
     }
 
-    pub(crate) fn remember_salvage_incident(&mut self, tile: TilePos, expires_at: crate::Tick) {
+    pub(crate) fn remember_salvage_incident(
+        &mut self,
+        tile: TilePos,
+        from: CompassPoint,
+        expires_at: crate::Tick,
+    ) {
         let dims = (self.visible.width(), self.visible.height());
         let cap = crate::stats::HARVEST_INCIDENT_CAP;
-        remember_recent(&mut self.salvage_incidents, cap, dims, tile, expires_at);
+        remember_recent(
+            &mut self.salvage_incidents,
+            cap,
+            dims,
+            tile,
+            from,
+            expires_at,
+        );
     }
 
     /// Recent tiles where this team saw a hostile shell land, sorted by
-    /// (y, x). A record still listed on its expiry tick no longer counts.
+    /// (y, x, compass point). A record still listed on its expiry tick no
+    /// longer counts.
     pub fn shell_impacts(&self) -> &[RecentTile] {
         &self.shell_impacts
     }
 
-    pub(crate) fn remember_shell_impact(&mut self, tile: TilePos, expires_at: crate::Tick) {
+    pub(crate) fn remember_shell_impact(
+        &mut self,
+        tile: TilePos,
+        from: CompassPoint,
+        expires_at: crate::Tick,
+    ) {
         let dims = (self.visible.width(), self.visible.height());
         let cap = crate::stats::SHELL_IMPACT_CAP;
-        remember_recent(&mut self.shell_impacts, cap, dims, tile, expires_at);
+        remember_recent(&mut self.shell_impacts, cap, dims, tile, from, expires_at);
     }
 
     fn forget_expired(&mut self, tick: crate::Tick) {
@@ -800,12 +835,14 @@ impl GroundSalvageDanger {
             merge_spans(row);
         }
         let cell_count = chassis::grid::cell_count(state.map.width(), state.map.height());
-        let incidents: Vec<TilePos> = vision
+        let mut incidents: Vec<TilePos> = vision
             .salvage_incidents()
             .iter()
             .filter(|incident| incident.expires_at > state.tick)
             .map(|incident| incident.tile)
             .collect();
+        // Fire from two points on one tile is one danger.
+        incidents.dedup();
         let (width, height) = (state.map.width(), state.map.height());
         let lanes: Vec<Cell<u16>> = std::iter::repeat_with(|| Cell::new(0))
             .take(cell_count)

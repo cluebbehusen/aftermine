@@ -37,6 +37,29 @@ pub struct CarriedUnitObs {
     pub hp: u32,
 }
 
+/// Where fire from out of sight or a hostile shell came down lately, and
+/// the compass point it came from: never who fired, or from how far.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FireMark {
+    /// Where it came down.
+    pub tile: TilePos,
+    /// The point it came from, seen from `tile`.
+    pub from: chassis::compass::CompassPoint,
+}
+
+impl FireMark {
+    fn recent(state: &State, memory: &[crate::vision::RecentTile]) -> Vec<Self> {
+        memory
+            .iter()
+            .filter(|recent| recent.expires_at > state.current_tick())
+            .map(|recent| Self {
+                tile: recent.tile,
+                from: recent.from,
+            })
+            .collect()
+    }
+}
+
 /// One unit as a bot sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnitObs {
@@ -280,11 +303,13 @@ pub struct ObservationData {
     /// Wreck salvage as known: `(tile, amount)`, with remembered amounts.
     /// Sorted by (y, x).
     pub known_wrecks: Vec<(TilePos, u32)>,
-    /// Recent allied damage or loss locations that remain unsafe for
-    /// autonomous salvage. These are anonymous team-shared warning tiles,
-    /// already bounded and expired by the authoritative vision system.
+    /// Recent allied damage or loss from out of sight that leaves its
+    /// ground unsafe for autonomous salvage: anonymous team-shared warning
+    /// tiles with the point the fire came from, already bounded and expired
+    /// by the authoritative vision system. Sorted by
+    /// (y, x, compass point).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub salvage_incidents: Vec<TilePos>,
+    pub salvage_incidents: Vec<FireMark>,
     /// Radar blips: unidentified hostile contacts and their domains inside
     /// an allied radar ring but out of sight. In
     /// [`crate::vision::RadarContact::sort_key`] order.
@@ -298,10 +323,11 @@ pub struct ObservationData {
     /// (y, x).
     pub incoming_shells: Vec<TilePos>,
     /// Tiles where hostile shells this seat's team saw land came down
-    /// lately, so fire from out of sight stays known between shells. Bounded
-    /// and expired by the authoritative vision system; sorted by (y, x).
+    /// lately, with the point each came from, so fire from out of sight
+    /// stays known between shells. Bounded and expired by the authoritative
+    /// vision system; sorted by (y, x, compass point).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub shell_impacts: Vec<TilePos>,
+    pub shell_impacts: Vec<FireMark>,
     /// Magazines this seat may know of, in building-id order: its team's
     /// in full, hostile ones' loaded rounds, round in assembly and deck
     /// while in sight.
@@ -556,13 +582,7 @@ impl ObservationData {
             known_rock: Vec::new(),
             known_frames: Vec::new(),
             known_wrecks: Vec::new(),
-            salvage_incidents: state
-                .vision(me)
-                .salvage_incidents()
-                .iter()
-                .filter(|incident| incident.expires_at > state.current_tick())
-                .map(|incident| incident.tile)
-                .collect(),
+            salvage_incidents: unseen_fire(state, me),
             blips: Vec::new(),
             public_buildings: hostile_public_buildings(state, me),
             incoming_shells: Vec::new(),
@@ -589,16 +609,18 @@ pub fn incoming_shells(state: &State, me: PlayerId) -> Vec<TilePos> {
     tiles
 }
 
-/// Tiles where hostile shells `me`'s team saw land came down and are still
-/// remembered, sorted by (y, x).
-pub fn shell_impacts(state: &State, me: PlayerId) -> Vec<TilePos> {
-    state
-        .vision(me)
-        .shell_impacts()
-        .iter()
-        .filter(|impact| impact.expires_at > state.current_tick())
-        .map(|impact| impact.tile)
-        .collect()
+/// Where `me`'s team lately took fire from out of sight that still leaves
+/// salvage there unsafe, with the point it came from, sorted by
+/// (y, x, compass point).
+pub fn unseen_fire(state: &State, me: PlayerId) -> Vec<FireMark> {
+    FireMark::recent(state, state.vision(me).salvage_incidents())
+}
+
+/// Where hostile shells `me`'s team saw land came down and are still
+/// remembered, with the point each came from, sorted by
+/// (y, x, compass point).
+pub fn shell_impacts(state: &State, me: PlayerId) -> Vec<FireMark> {
+    FireMark::recent(state, state.vision(me).shell_impacts())
 }
 
 /// The public buildings hostile to `me`, sorted by (y, x, owner). Own and

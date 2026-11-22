@@ -3041,6 +3041,174 @@ fn a_structure_hit_by_fire_nobody_sees_draws_a_search_and_no_welder() {
 }
 
 #[test]
+fn a_search_looks_out_from_the_side_unseen_fire_came_from() {
+    // A Lancer nobody sees shoots a West Extractor from the south, away
+    // from East's start. Defenders advance to the Extractor's southern side.
+    let mut scenario = field();
+    scenario.map[4].replace_range(12..13, "E");
+    garrison(&mut scenario);
+    scenario.units.push(unit(1, UnitKind::Lancer, 13, 12));
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Extractor, 12, 4));
+    let mut state = scenario.build().unwrap();
+    let extractor = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Extractor)
+        .unwrap()
+        .id;
+    let lancer = at(&state, 13, 12);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Attack {
+            units: vec![lancer],
+            target: AttackTarget::Building(extractor),
+            queue: false,
+        },
+    }]);
+    let opponent = seat(&scenario, 0);
+    let map = map(&scenario);
+    while !opponent.decision_due(&state)
+        || crate::placement::unexplained(&ObservationData::fog_honest(&state, PlayerId(0)), &map)
+            .is_empty()
+    {
+        assert!(state.current_tick() < 1_200, "premise: the Lancer hits it");
+        state.tick(&[]);
+    }
+    assert!(
+        ObservationData::fog_honest(&state, PlayerId(0))
+            .enemy_units
+            .is_empty(),
+        "premise: the Lancer is out of sight"
+    );
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let south = 4 + BuildingKind::Extractor.size().1;
+    assert!(
+        advances(&commands)
+            .iter()
+            .any(|(units, goal)| !units.is_empty()
+                && goal.y == south
+                && (12..=13).contains(&goal.x)),
+        "{commands:?}"
+    );
+}
+
+#[test]
+fn mirrored_seats_search_alike_under_mirrored_unseen_fire() {
+    let mut scenario = field();
+    scenario.map[4].replace_range(12..13, "E");
+    scenario.map[18].replace_range(34..35, "E");
+    for player in [0, 1] {
+        for spot in GARRISON {
+            let (x, y) = turned(player, spot);
+            scenario.units.push(unit(player, UnitKind::Sentinel, x, y));
+        }
+    }
+    for player in [0, 1] {
+        let (x, y) = turned(player, (13, 12));
+        scenario
+            .units
+            .push(unit(1 - player, UnitKind::Lancer, x, y));
+    }
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Extractor, 12, 4));
+    scenario
+        .buildings
+        .push(building(1, BuildingKind::Extractor, 34, 18));
+    let mut state = scenario.build().unwrap();
+    let orders: Vec<PlayerCommand> = [0, 1]
+        .into_iter()
+        .map(|player| {
+            let (x, y) = turned(player, (13, 12));
+            let extractor = state
+                .buildings()
+                .iter()
+                .find(|b| b.kind == BuildingKind::Extractor && b.player == PlayerId(player))
+                .unwrap()
+                .id;
+            PlayerCommand {
+                player: PlayerId(1 - player),
+                command: Command::Attack {
+                    units: vec![at(&state, x, y)],
+                    target: AttackTarget::Building(extractor),
+                    queue: false,
+                },
+            }
+        })
+        .collect();
+    state.tick(&orders);
+    let opponent = seat(&scenario, 0);
+    let map = map(&scenario);
+    let unexplained = |state: &State, player: u8| {
+        !crate::placement::unexplained(&ObservationData::fog_honest(state, PlayerId(player)), &map)
+            .is_empty()
+    };
+    while !opponent.decision_due(&state) || !unexplained(&state, 0) || !unexplained(&state, 1) {
+        assert!(state.current_tick() < 1_200, "premise: both Lancers hit");
+        state.tick(&[]);
+    }
+    let west = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let east = seat(&scenario, 1).act(&state, &mut OwnEvents::default());
+    assert!(!advances(&west).is_empty(), "premise: {west:?}");
+    assert_eq!(mirror(&state, west), east);
+}
+
+#[test]
+fn a_gun_out_of_sight_is_sought_back_along_its_shells_line() {
+    // A Bombard nobody sees shells West's picket from the south, away from
+    // East's start. Once a shell has landed, defenders advance south.
+    let mut scenario = field();
+    garrison(&mut scenario);
+    scenario
+        .units
+        .push(unit(0, UnitKind::Sentinel, PICKET.0, PICKET.1));
+    let gun = (PICKET.0, PICKET.1 + 9);
+    scenario
+        .units
+        .push(unit(1, UnitKind::Bombard, gun.0, gun.1));
+    scenario
+        .units
+        .push(unit(1, UnitKind::Kestrel, SPOTTER.0, SPOTTER.1));
+    let mut state = scenario.build().unwrap();
+    let bombard = at(&state, gun.0, gun.1);
+    let picket = at(&state, PICKET.0, PICKET.1);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Attack {
+            units: vec![bombard],
+            target: AttackTarget::Unit(picket),
+            queue: false,
+        },
+    }]);
+    let opponent = seat(&scenario, 0);
+    while !opponent.decision_due(&state)
+        || ObservationData::fog_honest(&state, PlayerId(0))
+            .shell_impacts
+            .is_empty()
+    {
+        assert!(state.current_tick() < 900, "premise: a shell lands");
+        state.tick(&[]);
+    }
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    assert!(
+        observation
+            .enemy_units
+            .iter()
+            .all(|enemy| enemy.kind != UnitKind::Bombard),
+        "premise: the gun is out of sight"
+    );
+    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    assert!(
+        advances(&commands).iter().any(|(units, goal)| {
+            !units.is_empty() && goal.y >= PICKET.1 + 6 && goal.x.abs_diff(PICKET.0) <= 2
+        }),
+        "south, back along the shell's line, not toward East's start: {commands:?}"
+    );
+}
+
+#[test]
 fn a_hit_the_seat_can_explain_draws_no_search() {
     // The same Extractor hit while a West Surveyor sees the Lancer: the hit
     // is the Lancer's, met like any threat in sight, and leaves nothing
@@ -3248,7 +3416,9 @@ fn a_visible_enemy_that_cannot_reach_a_structure_does_not_explain_its_hit() {
             .any(|enemy| enemy.kind == UnitKind::Lancer),
         "premise: the Lancer is in sight"
     );
-    observation.salvage_incidents.push(TilePos::new(12, 4));
+    observation
+        .salvage_incidents
+        .push(crate::tests::fire_mark(TilePos::new(12, 4), 0));
     let map = map(&scenario);
     assert_eq!(crate::placement::unexplained(&observation, &map).len(), 1);
 }

@@ -32,6 +32,15 @@ mod teams;
 mod warheads;
 mod workers;
 
+/// Fire from out of sight or a landed shell at `tile`, come from compass
+/// point `from`.
+pub(crate) fn fire_mark(tile: TilePos, from: u8) -> aftermine_sim::observation::FireMark {
+    aftermine_sim::observation::FireMark {
+        tile,
+        from: chassis::compass::CompassPoint::try_from(from).expect("a compass point"),
+    }
+}
+
 /// A 20 by 9 field with starts at (2, 1) and (17, 1), and a one-tile chasm
 /// down column 8 when `chasm` holds.
 pub(crate) fn strip(chasm: bool) -> Vec<String> {

@@ -422,9 +422,6 @@ pub enum ShotStyle {
 /// Seconds one flak round flies from its yoke to the burst.
 pub(crate) const FLAK_ROUND_TRAVEL: f32 = 0.10;
 
-/// The share of a kinetic report's life its round spends in flight.
-const KINETIC_TRAVEL_FRACTION: f32 = 0.60;
-
 impl ShotStyle {
     /// Seconds before the shot reaches its contact and the impact begins:
     /// none for a rail or a contact tool, the last yoke's round for flak.
@@ -433,7 +430,8 @@ impl ShotStyle {
             ShotStyle::Contact | ShotStyle::Rail => 0.0,
             ShotStyle::ForgeSpot => 0.12,
             ShotStyle::Mortar => 0.144,
-            ShotStyle::Kinetic { .. } => KINETIC_TRAVEL_FRACTION * self.life(),
+            ShotStyle::Kinetic { heavy: false } => 0.108,
+            ShotStyle::Kinetic { heavy: true } => 0.144,
             ShotStyle::FlakBurst { yoke_delay, .. } => yoke_delay.seconds() + FLAK_ROUND_TRAVEL,
         }
     }
@@ -443,8 +441,8 @@ impl ShotStyle {
         match self {
             ShotStyle::Contact => 0.12,
             ShotStyle::ForgeSpot => 0.32,
-            ShotStyle::Kinetic { heavy: false } => 0.18,
-            ShotStyle::Kinetic { heavy: true } => 0.24,
+            ShotStyle::Kinetic { heavy: false } => 0.26,
+            ShotStyle::Kinetic { heavy: true } => 0.36,
             ShotStyle::Mortar => 0.64,
             ShotStyle::Rail => 0.24,
             ShotStyle::FlakBurst { .. } => 0.30,
@@ -954,7 +952,7 @@ impl Presentation {
                 impact_sound,
                 ..
             } = &mut fx.kind
-                && age >= style.life() * 0.6
+                && age >= style.travel_time()
                 && let Some(sound) = impact_sound.take()
             {
                 self.sounds_pending.push((sound, Some(*to)));

@@ -833,6 +833,8 @@ fn direct_contact_radius_follows_style_and_splash() {
         (ShotStyle::ForgeSpot, None, 0.55),
         (ShotStyle::Mortar, None, 0.9),
         (ShotStyle::Mortar, Some(1.4), 1.4),
+        (ShotStyle::Kinetic { heavy: true }, None, 0.8),
+        (ShotStyle::Kinetic { heavy: false }, None, 0.5),
     ] {
         let contact = direct_contact(style, None, Vec2::ZERO, Vec2::ZERO, splash, 0.2, 7)
             .expect("a direct style leaves a contact mark");
@@ -840,7 +842,7 @@ fn direct_contact_radius_follows_style_and_splash() {
     }
     assert!(
         direct_contact(
-            ShotStyle::Kinetic { heavy: true },
+            ShotStyle::Contact,
             None,
             Vec2::ZERO,
             Vec2::ZERO,
@@ -853,7 +855,7 @@ fn direct_contact_radius_follows_style_and_splash() {
 }
 
 #[test]
-fn kinetic_reports_reach_impact_before_fading_and_respect_fog() {
+fn kinetic_reports_reach_impact_before_fading() {
     use crate::game::ShotStyle;
     for heavy in [false, true] {
         let style = ShotStyle::Kinetic { heavy };
@@ -861,34 +863,89 @@ fn kinetic_reports_reach_impact_before_fading_and_respect_fog() {
         assert_eq!(shot_impact_progress(style, style.life() * 0.25), 0.0);
         assert!(shot_impact_progress(style, style.life() * 0.9) > 0.5);
         assert_eq!(shot_impact_progress(style, style.life()), 1.0);
-        assert_eq!(
-            shot_visibility(style, false, true),
-            ShotVisibility::ImpactOnly
-        );
-        assert_eq!(shot_visibility(style, true, false), ShotVisibility::Hidden);
     }
 }
 
-#[test]
-fn shot_visibility_never_points_into_fog() {
-    use crate::game::ShotStyle;
+/// Sight over a strip of tiles: `seen` lists the visible columns of row 0.
+fn columns(seen: &[i32]) -> impl Fn(chassis::grid::TilePos) -> bool + '_ {
+    move |tile| tile.y == 0 && seen.contains(&tile.x)
+}
 
+#[test]
+fn a_hit_shows_where_its_contact_is_seen_though_the_centre_is_fogged() {
+    let (contact, centre) = (vec2(3.2, 4.5), vec2(4.5, 4.5));
+    let seen = |columns: &'static [i32]| move |at: Vec2| columns.contains(&numeric::tile_at(at).x);
     assert_eq!(
-        shot_visibility(ShotStyle::Rail, true, true),
-        ShotVisibility::Full
+        seen_contact(Some(contact), centre, seen(&[3])),
+        Some(contact),
+        "a wide body's seen edge takes the hit"
     );
     assert_eq!(
-        shot_visibility(ShotStyle::ForgeSpot, false, true),
-        ShotVisibility::ImpactOnly
+        seen_contact(Some(contact), centre, seen(&[4])),
+        Some(centre)
     );
-    assert_eq!(
-        shot_visibility(ShotStyle::Contact, true, true),
-        ShotVisibility::ImpactOnly
-    );
-    assert_eq!(
-        shot_visibility(ShotStyle::ForgeSpot, true, false),
-        ShotVisibility::Hidden
-    );
+    assert_eq!(seen_contact(None, centre, seen(&[4])), Some(centre));
+    assert_eq!(seen_contact(Some(contact), centre, seen(&[])), None);
+}
+
+#[test]
+fn a_shot_out_of_the_fog_shows_from_the_edge_of_sight() {
+    // A gun at column 0 fires along row 0 at column 9; only columns 6 to 9
+    // are seen. The round shows from where it enters column 6.
+    let (from, to) = (vec2(0.5, 0.5), vec2(9.5, 0.5));
+    let runs = visible_runs(from, to, columns(&[6, 7, 8, 9]));
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    let (entered, left) = runs[0];
+    assert!((from.lerp(to, entered).x - 6.0).abs() < 1e-4, "{runs:?}");
+    assert_eq!(left, 1.0);
+    assert!(run_at(&runs, 0.3).is_none(), "still in the fog");
+    assert!(run_at(&runs, 0.8).is_some(), "over seen ground");
+}
+
+#[test]
+fn a_seen_gun_firing_into_the_fog_shows_up_to_its_edge() {
+    let (from, to) = (vec2(0.5, 0.5), vec2(9.5, 0.5));
+    let runs = visible_runs(from, to, columns(&[0, 1, 2]));
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    assert_eq!(runs[0].0, 0.0);
+    assert!((from.lerp(to, runs[0].1).x - 3.0).abs() < 1e-4, "{runs:?}");
+}
+
+#[test]
+fn a_shot_over_a_fogged_gap_shows_on_both_sides_of_it() {
+    let (from, to) = (vec2(0.5, 0.5), vec2(9.5, 0.5));
+    let runs = visible_runs(from, to, columns(&[0, 1, 2, 7, 8, 9]));
+    assert_eq!(runs.len(), 2, "{runs:?}");
+    assert!(run_at(&runs, 0.5).is_none(), "over the gap");
+    assert!(visible_runs(from, to, columns(&[])).is_empty());
+}
+
+#[test]
+fn a_diagonal_shot_walks_every_tile_it_crosses() {
+    // A line from (0.5, 0.5) to (3.5, 2.5) crosses six tiles; seeing all of
+    // them leaves one unbroken run, and hiding the one it only clips breaks
+    // it.
+    let (from, to) = (vec2(0.5, 0.5), vec2(3.5, 2.5));
+    let crossed = [(0, 0), (1, 0), (1, 1), (2, 1), (2, 2), (3, 2)];
+    let sees = |hidden: Option<(i32, i32)>| {
+        move |tile: chassis::grid::TilePos| {
+            crossed.contains(&(tile.x, tile.y)) && Some((tile.x, tile.y)) != hidden
+        }
+    };
+    assert_eq!(visible_runs(from, to, sees(None)), [(0.0, 1.0)]);
+    for hidden in crossed {
+        assert_eq!(
+            visible_runs(from, to, sees(Some(hidden))).len(),
+            if hidden == (0, 0) || hidden == (3, 2) {
+                1
+            } else {
+                2
+            },
+            "{hidden:?}"
+        );
+    }
+    let backward = visible_runs(to, from, sees(None));
+    assert_eq!(backward, [(0.0, 1.0)], "the walk runs either way");
 }
 
 #[test]

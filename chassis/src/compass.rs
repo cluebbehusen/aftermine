@@ -7,6 +7,7 @@
 //! bits.
 
 use crate::fx::{Fx, Vec2Fx};
+use serde::{Deserialize, Serialize};
 
 /// Unit direction vector for each compass step.
 pub const COMPASS_256: [Vec2Fx; 256] = [
@@ -342,6 +343,61 @@ fn best_step(v: Vec2Fx, steps: impl IntoIterator<Item = u8>) -> u8 {
         }
     }
     best
+}
+
+/// One of sixteen compass points, each spanning sixteen compass steps:
+/// point `p` is centred on step `16 * p`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub struct CompassPoint(u8);
+
+impl CompassPoint {
+    /// How many points the compass has.
+    pub const COUNT: u8 = 16;
+
+    /// The point `v` falls in. A step exactly between two points belongs
+    /// to the one a turn toward +y reaches, so `of(-v)` is
+    /// `of(v).opposite()`. The zero vector gives point zero.
+    pub fn of(v: Vec2Fx) -> Self {
+        Self((heading_of(v).wrapping_add(8) >> 4) & (Self::COUNT - 1))
+    }
+
+    /// The compass step at this point's centre.
+    pub const fn heading(self) -> u8 {
+        self.0 << 4
+    }
+
+    /// The point half a turn away.
+    #[must_use]
+    pub const fn opposite(self) -> Self {
+        Self((self.0 + Self::COUNT / 2) & (Self::COUNT - 1))
+    }
+
+    /// The point's index, counting from +x toward +y.
+    pub const fn index(self) -> u8 {
+        self.0
+    }
+}
+
+impl TryFrom<u8> for CompassPoint {
+    type Error = String;
+
+    fn try_from(index: u8) -> Result<Self, Self::Error> {
+        if index < Self::COUNT {
+            Ok(Self(index))
+        } else {
+            Err(format!(
+                "compass point {index} is not below {}",
+                Self::COUNT
+            ))
+        }
+    }
+}
+
+impl From<CompassPoint> for u8 {
+    fn from(point: CompassPoint) -> Self {
+        point.0
+    }
 }
 
 /// Whether `v` points along `d` or turned from it toward +y, by the exact
