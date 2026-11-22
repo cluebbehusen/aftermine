@@ -492,13 +492,18 @@ impl LadderDiff {
 fn render_comparison(out: &mut String, comparison: &ComparisonDiff) {
     let _ = writeln!(
         out,
-        "{}: {} against {}: {} games, {} identical, {} winners changed",
+        "{}: {} against {}: {} games, {} identical, {} {} changed",
         comparison.manifest,
         comparison.higher,
         comparison.lower,
         comparison.games,
         comparison.identical,
-        comparison.flips.len()
+        comparison.flips.len(),
+        if comparison.flips.len() == 1 {
+            "winner"
+        } else {
+            "winners"
+        }
     );
     let share = |tally: &Tally, verdict: Verdict| match (tally.share, tally.wilson) {
         (Some(share), Some([low, high])) => format!(
