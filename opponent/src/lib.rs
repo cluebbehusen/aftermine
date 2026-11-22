@@ -205,13 +205,5 @@ pub(crate) fn reads_threats(difficulty: BotDifficulty) -> bool {
     matches!(difficulty, BotDifficulty::Veteran | BotDifficulty::Prime)
 }
 
-/// Whether workers in an enemy's reach beside a Foundry leave it too, not
-/// only those out at the far nodes: Veteran and Prime watch their home lines,
-/// Standard and Scrapheap leave them to the defense. A difficulty limit on
-/// attention.
-pub(crate) fn guards_home_lines(difficulty: BotDifficulty) -> bool {
-    matches!(difficulty, BotDifficulty::Veteran | BotDifficulty::Prime)
-}
-
 #[cfg(test)]
 mod tests;

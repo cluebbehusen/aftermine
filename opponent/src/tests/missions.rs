@@ -1838,9 +1838,9 @@ fn a_defense_out_short_of_its_attackers_holds_its_recruit_at_the_post() {
 #[test]
 fn a_defense_s_reserve_is_not_taken_back_by_a_regrouping_attack() {
     // The recruit gathers with an attack forming at home. The defense out at
-    // six raiders, still short with it, borrows it to wait at the post; the
+    // eight raiders, still short with it, borrows it to wait at the post; the
     // attack lets it go, and nothing else orders it this decision.
-    let raiders: Vec<(UnitKind, i32, i32)> = (4..=6)
+    let raiders: Vec<(UnitKind, i32, i32)> = (3..=6)
         .flat_map(|y| [(UnitKind::Sentinel, 9, y), (UnitKind::Sentinel, 10, y)])
         .collect();
     let front = [(10, 7), (11, 7), (10, 8), (11, 8), (12, 8)];
@@ -2012,9 +2012,9 @@ fn a_defense_s_reserve_waits_at_its_post_through_the_decision() {
 }
 
 #[test]
-fn the_upper_rungs_go_out_at_raiders_only_with_an_edge() {
-    // Three Sentinels against three raiders: even odds. Prime waits beside
-    // the Foundry for an edge; Standard goes out at even odds.
+fn every_rung_goes_out_at_raiders_at_even_odds() {
+    // Three Sentinels against three raiders: even odds, and no rung waits
+    // beside the Foundry for an edge.
     let raiders = [
         (UnitKind::Sentinel, 9, 4),
         (UnitKind::Sentinel, 9, 5),
@@ -2032,11 +2032,9 @@ fn the_upper_rungs_go_out_at_raiders_only_with_an_edge() {
             .iter()
             .any(|(_, goal)| goal.x == 9)
     };
-    assert!(!goes_out(BotDifficulty::Prime), "Prime waits for an edge");
-    assert!(
-        goes_out(BotDifficulty::Standard),
-        "Standard goes at even odds"
-    );
+    for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
+        assert!(goes_out(difficulty), "{difficulty:?}");
+    }
 }
 
 /// `scenario` with `columns` more columns of open ground inserted before map
@@ -2496,12 +2494,12 @@ fn a_defense_standing_down_brings_its_members_back_beside_the_foundry() {
         (false, false),
         "Talons under fire stay"
     );
-    // Judged in the air: one Talon facing an equal one at Prime's margin is
-    // outweighed and comes home.
+    // Judged in the air: a lone Buzzard, which cannot hit the Talon on it,
+    // is outweighed and comes home.
     assert_eq!(
-        stand_down_with(&[(13, 8)], UnitKind::Talon, Some((UnitKind::Talon, 17))),
+        stand_down_with(&[(13, 8)], UnitKind::Buzzard, Some((UnitKind::Talon, 17))),
         (true, true),
-        "a lone Talon outweighed in the air comes home"
+        "a lone Buzzard outweighed in the air comes home"
     );
 }
 

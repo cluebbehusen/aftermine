@@ -1271,23 +1271,17 @@ fn the_upper_rungs_send_new_units_after_an_attack_under_way() {
 }
 
 #[test]
-fn the_upper_rungs_press_a_fight_past_its_time() {
-    // An East Turret in contact with the attack, short of its reach; without
-    // it no armed enemy is left around the army and the fight is over.
-    for (difficulty, guarded, presses) in [
-        (BotDifficulty::Prime, true, true),
-        (BotDifficulty::Standard, true, false),
-        (BotDifficulty::Prime, false, false),
-    ] {
+fn a_fight_that_stops_making_progress_ends_on_time() {
+    // An East Turret in contact with the attack, short of its reach, keeps
+    // no rung fighting past the fight's time.
+    for difficulty in [BotDifficulty::Standard, BotDifficulty::Prime] {
         let mut scenario = advanced(difficulty, &[]);
-        if guarded {
-            scenario.buildings.push(BuildingSpec {
-                player: 1,
-                kind: BuildingKind::Turret,
-                x: 30,
-                y: 11,
-            });
-        }
+        scenario.buildings.push(BuildingSpec {
+            player: 1,
+            kind: BuildingKind::Turret,
+            x: 30,
+            y: 11,
+        });
         let mut state = scenario.build().unwrap();
         advance_to(&mut state, 3_588, &[]);
         let (members, missions) = under_way(
@@ -1295,27 +1289,11 @@ fn the_upper_rungs_press_a_fight_past_its_time() {
             &serde_json::json!({"engage": {"focus": null, "progressed": 0}}),
             0,
         );
-        advance_to(&mut state, 3_600, &[run(0, members.clone(), 20, 16)]);
+        advance_to(&mut state, 3_600, &[run(0, members, 20, 16)]);
         let mut opponent = restaged(&scenario, &state, missions);
-        let (commands, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
+        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
         let mission = attack(&trace.unwrap().missions).unwrap();
-        let ordered = runs(&commands)
-            .into_iter()
-            .chain(hunts(&commands))
-            .any(|(units, _)| units.iter().any(|id| members.contains(id)));
-        if presses {
-            assert_eq!(mission.phase, Phase::Engage, "{difficulty:?}");
-            assert!(
-                !ordered,
-                "{difficulty:?} leaves a fight under way be: {commands:?}"
-            );
-        } else {
-            assert_eq!(
-                mission.phase,
-                Phase::Recover,
-                "{difficulty:?}, guarded {guarded}: ends it on time"
-            );
-        }
+        assert_eq!(mission.phase, Phase::Recover, "{difficulty:?}");
     }
 }
 
@@ -1488,38 +1466,6 @@ fn progress_never_holds_an_outweighed_fight() {
     let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
     let mission = attack(&trace.unwrap().missions).unwrap();
     assert_eq!(mission.phase, Phase::Withdraw);
-}
-
-#[test]
-fn the_upper_rungs_hold_a_fight_they_are_only_slightly_outweighed_in() {
-    // Eight East Sentinels in contact with seven attackers, short of their
-    // aggro.
-    let east: Vec<(UnitKind, i32, i32)> = [(28, 8), (28, 15)]
-        .into_iter()
-        .chain((9..15).map(|y| (29, y)))
-        .map(|(x, y)| (UnitKind::Sentinel, x, y))
-        .collect();
-    for (difficulty, withdraws) in [
-        (BotDifficulty::Prime, false),
-        (BotDifficulty::Standard, true),
-    ] {
-        let scenario = advanced(difficulty, &east);
-        let mut state = scenario.build().unwrap();
-        let (_, missions) = under_way(
-            &state,
-            &serde_json::json!({"engage": {"focus": null, "progressed": 0}}),
-            0,
-        );
-        advance_to(&mut state, 12, &[]);
-        let mut opponent = restaged(&scenario, &state, missions);
-        let (_, trace) = opponent.act_traced(&state, &mut OwnEvents::default());
-        let phase = attack(&trace.unwrap().missions).unwrap().phase;
-        assert_eq!(
-            phase == Phase::Withdraw,
-            withdraws,
-            "{difficulty:?}: {phase:?}"
-        );
-    }
 }
 
 /// Who flies an attack into the guns of [`guns_that_fire_only_at_aircraft_never_turn_a_ground_attack_back`].

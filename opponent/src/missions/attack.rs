@@ -513,11 +513,6 @@ impl Missions {
             .iter()
             .filter(|unit| unit.kind != UnitKind::Sapper && !breacher(unit.kind))
             .all(|unit| unit.idle);
-        let strength: u64 = members
-            .iter()
-            .filter(|unit| !unit.kind.stats().weapons.is_empty())
-            .map(|unit| value(unit))
-            .sum();
         let age = now - mission.since;
 
         let given_up = match phase {
@@ -589,14 +584,9 @@ impl Missions {
                 all_idle,
                 ledger,
             ),
-            AttackPhase::Engage { .. } => engage_on(
-                plan,
-                mission,
-                (target, rally),
-                &members,
-                (strength, all_idle),
-                ledger,
-            ),
+            AttackPhase::Engage { .. } => {
+                engage_on(plan, mission, (target, rally), &members, all_idle, ledger)
+            }
             AttackPhase::Withdraw => {
                 if all_idle || age >= WITHDRAW_TICKS {
                     mission.attack_phase(target, AttackPhase::Recover, now, None);
@@ -683,16 +673,15 @@ fn travel_on(
 /// Moves a fighting attack on: its idle Sappers and breachers cut the
 /// nearest defense; it withdraws from a losing fight, sends home only the
 /// aircraft that anti-air alone outweighs, starts the fight's time again
-/// while it makes progress, goes on while it is still winning one
-/// past its time where its seat presses, pushes on to the next target while
-/// strong enough, and otherwise turns home. Returns the target when it gave
+/// while it makes progress, pushes on to the next target while strong
+/// enough, and otherwise turns home. Returns the target when it gave
 /// up on it.
 fn engage_on(
     plan: &Plan<'_>,
     mission: &mut Mission,
     (target, rally): (Target, TilePos),
     members: &[&UnitObs],
-    (strength, all_idle): (u64, bool),
+    all_idle: bool,
     ledger: &mut Ledger,
 ) -> Option<Objective> {
     let observation = plan.observation;
@@ -793,13 +782,6 @@ fn engage_on(
         return None;
     }
     if !all_idle && going {
-        return None;
-    }
-    // A fight still being won goes on past its time; with no
-    // armed enemy left around the army, it is over.
-    if presses(plan.difficulty) && !all_idle && strength >= opposition && plan.armed(members).any()
-    {
-        fight.press(now);
         return None;
     }
     // An army that cleared everything in reach short of its target, such as
@@ -1869,13 +1851,6 @@ struct Armed {
     aircraft: u64,
 }
 
-impl Armed {
-    /// Whether any enemy the whole army answers is there.
-    fn any(&self) -> bool {
-        self.units > 0 || self.buildings > 0
-    }
-}
-
 /// Whom an armed enemy around an attack counts against.
 enum Against {
     /// The whole army: it can hit ground, and a member within its contact.
@@ -2196,22 +2171,11 @@ fn reinforces(difficulty: BotDifficulty) -> bool {
     matches!(difficulty, BotDifficulty::Veteran | BotDifficulty::Prime)
 }
 
-/// Whether a fight still being won goes on past its time: a difficulty
-/// limit.
-fn presses(difficulty: BotDifficulty) -> bool {
-    matches!(difficulty, BotDifficulty::Veteran | BotDifficulty::Prime)
-}
-
 /// Per mille of a mission's strength the enemies around it must reach before
-/// it withdraws. The upper rungs give a fight up once clearly lost and the
-/// lower ones at even odds, a difficulty limit; guile gives it up up to a
-/// tenth sooner and its lack up to a tenth later, a personality limit.
+/// it withdraws: even odds, given up to a tenth sooner with guile and up to a
+/// tenth later without it, a personality limit.
 pub(super) fn outweighed(profile: &ResolvedProfile) -> u64 {
-    let odds: u64 = match profile.difficulty {
-        BotDifficulty::Scrapheap | BotDifficulty::Standard => 1_000,
-        BotDifficulty::Veteran | BotDifficulty::Prime => 1_250,
-    };
-    odds * (1_100 - 2 * u64::from(profile.traits.guile.min(100))) / 1_000
+    1_100 - 2 * u64::from(profile.traits.guile.min(100))
 }
 
 /// Stream of the lowest rung's misjudgments of enemy strength.
@@ -2257,9 +2221,7 @@ fn relieved(margin: u64, waiting: Option<u64>, now: u64) -> u64 {
 pub(crate) fn margin(difficulty: BotDifficulty) -> u64 {
     match difficulty {
         BotDifficulty::Scrapheap => 2_500,
-        BotDifficulty::Standard => 2_000,
-        BotDifficulty::Veteran => 1_750,
-        BotDifficulty::Prime => 1_500,
+        BotDifficulty::Standard | BotDifficulty::Veteran | BotDifficulty::Prime => 2_000,
     }
 }
 

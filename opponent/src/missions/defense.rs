@@ -98,12 +98,7 @@ impl Missions {
         let mut groups = threats(observation, map, frame, (memory, searched));
         self.weigh((observation, map, memory, ledger), &lendable, &mut groups);
         groups.retain(|(_, siege, _)| siege.presses());
-        let returning = self.stand_down(
-            (observation, memory, difficulty),
-            (map, frame),
-            &groups,
-            ledger,
-        );
+        let returning = self.stand_down((observation, memory), (map, frame), &groups, ledger);
         self.list.retain(|mission| {
             !matches!(
                 mission.task,
@@ -229,24 +224,17 @@ impl Missions {
             // where they stand.
             let mission = index.map(|index| &self.list[index]);
             let met = pressing[0] * 2 / 3 + guns;
-            let go = sortie(*own, siege, met, difficulty);
-            // A defense already out at its fight is not given up short of the
-            // margin: turned out under fire, its members only die on the way
-            // home, and the next look sends them back. Where the rung falls
-            // back to the post, that rule takes it from there; a rung that
-            // never falls back still gives up below even odds.
-            let bar = match (
-                out_at(observation, mission, foundry, goal),
-                concentrates(difficulty),
-            ) {
-                (false, _) => Some(go),
-                (true, true) => None,
-                (true, false) => Some(met),
-            };
+            // A place held short of even odds is given up, but not by a
+            // defense already out at its fight where the rung falls back to
+            // the post: turned out under fire, its members only die on the
+            // way home, and the next look sends them back, so that rule takes
+            // it from there.
+            let yields = !out_at(observation, mission, foundry, goal) || !concentrates(difficulty);
             if *own
                 && gathering
                 && met > 0
-                && bar.is_some_and(|bar| siege.held < bar)
+                && yields
+                && siege.held < met
                 && !kept(observation, map, foundry, goal)
             {
                 self.give_up(index, observation, map, frame, goal, ledger);
@@ -264,7 +252,7 @@ impl Missions {
             let sent = members.iter().chain(&recruits);
             let (goal, pursuit, gun) = match grounded
                 .filter(|_| gathering && concentrates(difficulty))
-                .filter(|_| waits(mission, foundry, [gathered, front.1], [met, go]))
+                .filter(|_| waits(mission, foundry, [gathered, front.1], met))
                 .map(|threat| waiting_post(map, frame, foundry, threat))
                 .or_else(|| {
                     concentrates(difficulty)
@@ -333,7 +321,7 @@ impl Missions {
                 concentrates(difficulty)
                     && gathering
                     && goal != *post
-                    && gathered < go
+                    && gathered < met
                     && !mission.units.is_empty()
             });
             let onward =
@@ -347,7 +335,7 @@ impl Missions {
             );
             let members = &self.list[index].units;
             let away = recall(
-                (observation, memory, difficulty),
+                (observation, memory),
                 ledger,
                 (members, siege, post, pursuit),
             );
@@ -428,13 +416,12 @@ impl Missions {
     /// focus and start of its engagement.
     fn stand_down(
         &mut self,
-        (observation, memory, difficulty): (&ObservationData, &Memory, BotDifficulty),
+        (observation, memory): (&ObservationData, &Memory),
         (map, frame): (&MapModel, HomeFrame),
         groups: &[(&BuildingObs, Siege<'_>, bool)],
         ledger: &mut Ledger,
     ) -> Vec<(u64, TilePos, Option<UnitId>, u64)> {
         let now = observation.tick;
-        let margin = engage_margin(difficulty);
         let mut returning = Vec::new();
         for mission in &mut self.list {
             let Task::Defend { asset, phase } = &mut mission.task else {
@@ -449,7 +436,7 @@ impl Missions {
                 .filter_map(|id| mine(observation, *id))
                 .any(|unit| {
                     exposed(observation, unit)
-                        && !outweighed((observation, memory), &mission.units, unit, margin)
+                        && !outweighed((observation, memory), &mission.units, unit)
                 });
             if let DefendPhase::Engage { focus } = *phase
                 && !threatened
@@ -720,14 +707,13 @@ fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Purs
 /// Past is farther from every own building than the `siege`'s threats
 /// stand, with the member's own reach on top. Returns those sent running.
 fn recall(
-    (observation, memory, difficulty): (&ObservationData, &Memory, BotDifficulty),
+    (observation, memory): (&ObservationData, &Memory),
     ledger: &mut Ledger,
     (members, siege, post, pursuit): (&[UnitId], &Siege<'_>, Option<TilePos>, Pursuit),
 ) -> Vec<UnitId> {
     let (Some(post), Pursuit::Hunt | Pursuit::Quarry(_)) = (post, pursuit) else {
         return Vec::new();
     };
-    let margin = engage_margin(difficulty);
     let area = siege
         .units
         .iter()
@@ -745,7 +731,7 @@ fn recall(
             !defended(observation, unit.tile, area + own)
         })
         .filter(|unit| {
-            !exposed(observation, unit) || outweighed((observation, memory), members, unit, margin)
+            !exposed(observation, unit) || outweighed((observation, memory), members, unit)
         })
         .map(|unit| unit.id)
         .collect();
@@ -785,14 +771,13 @@ fn exposed(observation: &ObservationData, unit: &UnitObs) -> bool {
 
 /// Whether the known enemies that would join a fight where `unit` stands,
 /// and the enemy guns that reach it, outweigh the `members` of its defense
-/// beside it by the `margin` per mille a fight needs, the aircraft that can
-/// hit it against the members that hit aircraft and the rest against the
-/// members that hit the ground. A landed aircraft is hit as a ground body.
+/// beside it, the aircraft that can hit it against the members that hit
+/// aircraft and the rest against the members that hit the ground. A landed
+/// aircraft is hit as a ground body.
 fn outweighed(
     (observation, memory): (&ObservationData, &Memory),
     members: &[UnitId],
     unit: &UnitObs,
-    margin: u64,
 ) -> bool {
     let domain = unit.body_domain();
     let reach = |weapons: &[WeaponStats]| {
@@ -845,7 +830,7 @@ fn outweighed(
             .filter(|other| hits(other, against))
             .map(value)
             .sum();
-        met > 0 && could * 1_000 < met * margin
+        met > 0 && could < met
     };
     beats(standing, Domain::Ground) || beats(flying, Domain::Air)
 }
@@ -1022,24 +1007,24 @@ fn moved(
 
 /// Whether `mission`'s defenders wait beside `foundry` rather than meet a
 /// ground force worth `met`, with `have` all of them and their recruits
-/// against ground and `front` those out at it: short of `go`, the force the
-/// seat's rung goes out to it with, at the post; once out, when all of them
-/// are short of that and those out are short of two thirds of the force, so
-/// a front the reserve cannot bring level comes back to it.
+/// against ground and `front` those out at it: short of the force, at the
+/// post; once out, when all of them are short of it and those out are short
+/// of two thirds of it, so a front the reserve cannot bring level comes back
+/// to it.
 fn waits(
     mission: Option<&Mission>,
     foundry: &BuildingObs,
     [have, front]: [u64; 2],
-    [met, go]: [u64; 2],
+    met: u64,
 ) -> bool {
     let out = mission.is_some_and(|mission| {
         !mission.units.is_empty()
             && !ring(foundry.anchor, foundry.kind.size()).any(|tile| tile == mission.goal)
     });
     if out {
-        have < go && front * 3 < met * 2
+        have < met && front * 3 < met * 2
     } else {
-        have < go
+        have < met
     }
 }
 
@@ -1154,31 +1139,6 @@ fn waiting_post(
     ring(foundry.anchor, foundry.kind.size())
         .filter(|tile| map.component(*tile) == Some(component))
         .min_by_key(|tile| frame.rank(doubled(threat), doubled(*tile)))
-}
-
-/// What a defense against `siege`'s ground force worth `met` must hold to go
-/// out at it: the rung's edge at the seat's `own` Foundry when no gun,
-/// standing or walking, is among the attackers, even odds otherwise. Guns
-/// shell the post rather than come to it, so waiting there for the edge
-/// only gets the defenders shelled, and an ally's defense has no shortfall
-/// training behind a wait.
-fn sortie(own: bool, siege: &Siege<'_>, met: u64, difficulty: BotDifficulty) -> u64 {
-    if own && siege.batteries.is_empty() && !siege.units.iter().any(|threat| reached(threat.kind)) {
-        met * engage_margin(difficulty) / 1_000
-    } else {
-        met
-    }
-}
-
-/// Per mille of the attackers' worth a defense must hold to go out at them:
-/// the upper rungs go out only with the edge their attacks keep before
-/// withdrawing, the lower at even odds. A difficulty limit on how well a seat
-/// defends.
-pub(super) fn engage_margin(difficulty: BotDifficulty) -> u64 {
-    match difficulty {
-        BotDifficulty::Scrapheap | BotDifficulty::Standard => 1_000,
-        BotDifficulty::Veteran | BotDifficulty::Prime => 1_250,
-    }
 }
 
 /// How near the waiting post a defender stands to count as its reserve: a

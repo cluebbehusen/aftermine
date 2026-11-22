@@ -2,7 +2,7 @@
 //! as the known threats near it call for beyond the completed guns covering
 //! it. The start keeps its own reserve, which offense already respects.
 
-use super::defense::{at_home, engage_margin};
+use super::defense::at_home;
 use super::reserve::{self, LOCAL_REACH};
 use super::{
     DefendPhase, MISSION_CAP, Mission, Missions, Shortfall, Task, UNIT_CAP, fill, force, hits,
@@ -88,8 +88,8 @@ impl Missions {
     /// its current guards and free units nearest it first, never what home
     /// keeps in reserve, and disbands a guard nothing threatens. A base away
     /// from home whose known enemies nearby the units it could take would not
-    /// match, by the margin a defense of `difficulty` goes out with, is given
-    /// up: its guard falls back home rather than wait there to be overrun. A
+    /// match is given up: its guard falls back home rather than wait there to
+    /// be overrun. A
     /// guard is a defense mission in its Guard phase, so a defense that answers an
     /// attack on the building takes its guards along, and the guard takes
     /// over again only once that defense has finished recovering. Returns
@@ -215,11 +215,7 @@ impl Missions {
             let last = asset.kind == BuildingKind::Foundry
                 && asset.built
                 && crate::investments::built_foundries(&observation.my_buildings).count() == 1;
-            if !at_home(observation, map, goal)
-                && !last
-                && met > 0
-                && could * 1_000 < met * engage_margin(difficulty)
-            {
+            if !at_home(observation, map, goal) && !last && met > 0 && could < met {
                 self.give_up(index, observation, map, frame, goal, ledger);
                 continue;
             }

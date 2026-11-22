@@ -687,10 +687,7 @@ pub(crate) fn decide(
         (&scratch.ground, &unseen),
         &staffing,
         &patients,
-        (
-            profile.traits.support,
-            crate::guards_home_lines(profile.difficulty),
-        ),
+        profile.traits.support,
         &mut ledger,
     );
     // Settlements move before guards so an escort let go at its site joins

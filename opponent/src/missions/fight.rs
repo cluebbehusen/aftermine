@@ -54,11 +54,6 @@ impl Fight {
         }
         observation.tick - self.progressed < window
     }
-
-    /// Starts the fight's time again at `now`, for a fight still being won.
-    pub(super) fn press(&mut self, now: u64) {
-        self.progressed = now;
-    }
 }
 
 /// What a fight knows of the enemy it fights: the health of the target

@@ -23,26 +23,16 @@ fn defenders_around_several_tiles_count_once() {
 }
 
 #[test]
-fn guile_gives_a_fight_up_sooner_and_the_upper_rungs_hold_on_longer() {
+fn guile_gives_a_fight_up_sooner() {
     use aftermine_sim::scenario::{BotConfig, BotStance};
-    let threshold = |difficulty: BotDifficulty, guile: u8| {
+    let threshold = |guile: u8| {
         let mut profile =
-            ResolvedProfile::resolve(BotConfig::new(difficulty, BotStance::Balanced, 0));
+            ResolvedProfile::resolve(BotConfig::new(BotDifficulty::Prime, BotStance::Balanced, 0));
         profile.traits.guile = guile;
         outweighed(&profile)
     };
-    for difficulty in [
-        BotDifficulty::Scrapheap,
-        BotDifficulty::Standard,
-        BotDifficulty::Veteran,
-        BotDifficulty::Prime,
-    ] {
-        assert!(threshold(difficulty, 100) < threshold(difficulty, 50));
-        assert!(threshold(difficulty, 50) < threshold(difficulty, 0));
-    }
-    for guile in [0, 50, 100] {
-        assert!(threshold(BotDifficulty::Prime, guile) > threshold(BotDifficulty::Standard, guile));
-    }
+    assert!(threshold(100) < threshold(50));
+    assert!(threshold(50) < threshold(0));
 }
 
 /// A Standard seat's view of Skirmish with no enemy building known, its

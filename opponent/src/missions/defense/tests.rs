@@ -298,23 +298,22 @@ fn only_the_site_owner_s_builder_beside_it_comes_first() {
 
 #[test]
 fn an_aircraft_defender_is_judged_by_what_can_hit_its_attackers() {
-    // A West Talon faces an East Talon. Two Buzzards beside it cannot hit
-    // aircraft, so they do not make the fight even; a Flak Turret ten tiles
-    // off cannot reach it, so it does not weigh in either.
+    // A West Talon faces two East Talons. Two Buzzards beside it cannot hit
+    // aircraft, so they do not bring the fight level; a Flak Turret ten
+    // tiles off cannot reach it, so it does not weigh in either.
     let (observation, ids) = viewed(&[
         (0, UnitKind::Talon, 4, 4),
         (0, UnitKind::Buzzard, 4, 5),
         (0, UnitKind::Buzzard, 5, 4),
         (1, UnitKind::Talon, 6, 4),
+        (1, UnitKind::Talon, 6, 5),
     ]);
     let memory = Memory::default();
     let talon = mine(&observation, ids[0]).unwrap();
-    let margin = engage_margin(BotDifficulty::Prime);
     assert!(outweighed(
         (&observation, &memory),
         &[ids[0], ids[1], ids[2]],
-        talon,
-        margin
+        talon
     ));
     let (observation, ids) = viewed(&[(0, UnitKind::Talon, 3, 4)]);
     let mut observation = observation;
@@ -330,12 +329,7 @@ fn an_aircraft_defender_is_judged_by_what_can_hit_its_attackers() {
         tier: 0,
     });
     let talon = mine(&observation, ids[0]).unwrap();
-    assert!(!outweighed(
-        (&observation, &memory),
-        &[ids[0]],
-        talon,
-        margin
-    ));
+    assert!(!outweighed((&observation, &memory), &[ids[0]], talon));
 }
 
 #[test]
@@ -509,7 +503,6 @@ fn a_ground_defender_bombed_by_aircraft_it_cannot_hit_is_outweighed() {
     assert!(outweighed(
         (&observation, &memory),
         &[ids[0], ids[1]],
-        scuttler,
-        engage_margin(BotDifficulty::Prime)
+        scuttler
     ));
 }

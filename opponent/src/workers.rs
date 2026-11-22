@@ -340,10 +340,10 @@ pub(crate) fn run(
     (hazards, unseen): (&[Hazard], &[BuildingId]),
     staffing: &Staffing,
     patients: &[UnitId],
-    (support, home_lines): (u8, bool),
+    support: u8,
     ledger: &mut Ledger,
 ) {
-    flee(observation, map, frame, hazards, home_lines, ledger);
+    flee(observation, map, frame, hazards, ledger);
     // Nobody goes to a structure hit by fire the seat cannot see: it cannot
     // tell whether a worker there would pay its way.
     let open = |site: &BuildingObs, sent: &[&UnitObs]| {
@@ -387,47 +387,35 @@ fn excavate(observation: &ObservationData, open: usize, greed: u8, ledger: &Ledg
 }
 
 /// Sends each harvesting, idle or tending worker away from home that known
-/// enemy fire reaches back beside the nearest own Foundry on its ground. An
-/// explicit harvest order keeps a worker at its node under fire until it is
-/// told otherwise.
+/// enemy fire reaches back beside the nearest own Foundry on its ground,
+/// leaving those at home to the defense. An explicit harvest order keeps a
+/// worker at its node under fire until it is told otherwise.
 fn flee(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
     hazards: &[Hazard],
-    home_lines: bool,
     ledger: &mut Ledger,
 ) {
-    let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
-    let covered = |tile: TilePos| hazards.iter().any(|hazard| hazard.covers(doubled(tile)));
-    if home_lines {
-        rest_welders(observation, &foundries, &covered, ledger);
-    }
     if hazards.is_empty() {
         return;
     }
+    let foundries: Vec<&BuildingObs> = built_foundries(&observation.my_buildings).collect();
+    let covered = |tile: TilePos| hazards.iter().any(|hazard| hazard.covers(doubled(tile)));
     let mut fleeing: Vec<(TilePos, UnitId, TilePos)> = Vec::new();
-    let mut tending: Vec<UnitId> = Vec::new();
     for unit in &observation.my_units {
         let working =
             unit.idle || unit.repair == Some(RepairWork::Tending) || unit.harvesting.is_some();
         if !worker(unit.kind) || !working || ledger.employs(unit.id) {
             continue;
         }
-        if !covered(unit.tile) || (!home_lines && at_home(&foundries, unit.tile)) {
+        if !covered(unit.tile) || at_home(&foundries, unit.tile) {
             continue;
         }
-        // Beside home, a refuge in the same fire is no refuge, nor one on
-        // scrap the worker cannot stand on.
-        let safe =
-            |tile: TilePos| !home_lines || (!covered(tile) && !observation.known_scrap_at(tile));
-        let Some(refuge) = refuge(map, frame, &foundries, unit.tile, safe) else {
+        let Some(refuge) = refuge(map, frame, &foundries, unit.tile, |_| true) else {
             continue;
         };
         fleeing.push((refuge, unit.id, unit.tile));
-        if unit.repair == Some(RepairWork::Tending) {
-            tending.push(unit.id);
-        }
     }
     // One order each: a crowd sent to one tile spreads around it, some into
     // the fire or off their ground.
@@ -438,77 +426,11 @@ fn flee(
             *unit,
         )
     });
-    // A worker that walked out to weld into the fire would walk back once
-    // idle at its refuge: one sent out of it stops welding on its own until
-    // home is calm. That takes an order of its own, kept back from the runs
-    // for the first tending worker sent.
-    let mut ran: Vec<UnitId> = Vec::new();
-    let mut toggle = false;
-    for (refuge, unit, _) in &fleeing {
-        let tends = home_lines && tending.contains(unit);
-        if ledger.room() < 1 + u32::from(tends || toggle) {
-            continue;
-        }
+    for (refuge, unit, _) in fleeing {
         ledger.order(Command::Run {
-            units: vec![*unit],
-            goal: *refuge,
+            units: vec![unit],
+            goal: refuge,
             queue: false,
-        });
-        ran.push(*unit);
-        toggle |= tends;
-    }
-    tending.retain(|id| ran.contains(id));
-    if toggle {
-        ledger.order(Command::SetIdleWeld {
-            units: tending,
-            enabled: false,
-        });
-    }
-}
-
-/// Ticks between the orders that let idle workers weld on their own again
-/// once home is calm: a computation bound on how often a seat repeats a
-/// setting it cannot read back, not a count of anything.
-const WELD_RESTORE_TICKS: u64 = 600;
-
-/// Lets the workers at home around each Foundry no known fire reaches weld
-/// on their own again, every [`WELD_RESTORE_TICKS`]: a worker stopped from
-/// welding into a fight goes back to tending once it is over there, whatever
-/// another base faces. The setting cannot be read back, so it is repeated,
-/// one order.
-fn rest_welders(
-    observation: &ObservationData,
-    foundries: &[&BuildingObs],
-    covered: &dyn Fn(TilePos) -> bool,
-    ledger: &mut Ledger,
-) {
-    if !observation.tick.is_multiple_of(WELD_RESTORE_TICKS) {
-        return;
-    }
-    let (width, height) = BuildingKind::Foundry.size();
-    // Calm where no known fire reaches the home tiles around a Foundry, the
-    // ground its workers tend: calm at its ring alone would send a tender
-    // straight back out into the fire beyond it.
-    let calm = |foundry: &BuildingObs| {
-        let reach = HOME_TILES;
-        !(-reach..height + reach)
-            .any(|dy| (-reach..width + reach).any(|dx| covered(foundry.anchor.offset(dx, dy))))
-    };
-    let calm: Vec<&BuildingObs> = foundries
-        .iter()
-        .copied()
-        .filter(|foundry| calm(foundry))
-        .collect();
-    let workers: Vec<UnitId> = observation
-        .my_units
-        .iter()
-        .filter(|unit| worker(unit.kind) && at_home(&calm, unit.tile))
-        .map(|unit| unit.id)
-        .collect();
-    if !workers.is_empty() {
-        ledger.order(Command::SetIdleWeld {
-            units: workers,
-            enabled: true,
         });
     }
 }
