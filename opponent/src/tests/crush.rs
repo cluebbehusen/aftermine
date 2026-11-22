@@ -154,4 +154,82 @@ fn no_site_goes_up_in_a_maw_s_path() {
         stands(20, 7),
         "beside it, within its gun's reach of the crew"
     );
+    assert!(
+        !stands(16, 8),
+        "beside its path, but with the crew's side of the site in it"
+    );
+}
+
+/// `state` with each unit of `headings` facing its compass step.
+fn turned(state: &State, headings: &[(UnitId, u8)]) -> State {
+    let mut value = serde_json::to_value(state).unwrap();
+    for entry in value["units"].as_array_mut().unwrap() {
+        if let Some((_, heading)) = headings.iter().find(|(id, _)| entry["id"] == id.0) {
+            entry["heading"] = (*heading).into();
+        }
+    }
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn a_machine_between_two_maws_answers_the_same_one_from_either_seat() {
+    // A Sentinel stands between two Maws driving at it from either side, as
+    // near each. Mirrored seats pick the mirrored Maw, whatever order the
+    // Maws came in.
+    let target = |seat: u8| {
+        let mirror = |x: i32| if seat == 0 { x } else { 46 - x };
+        let enemy = 1 - seat;
+        let mut scenario = field();
+        // The Maw to the west comes first either way.
+        let mut maws = [mirror(7), mirror(13)];
+        maws.sort_unstable();
+        scenario.units.extend([
+            unit(enemy, UnitKind::Maw, maws[0], 11),
+            unit(enemy, UnitKind::Maw, maws[1], 11),
+            unit(seat, UnitKind::Sentinel, mirror(10), 11),
+        ]);
+        let built = scenario.build().unwrap();
+        let (west, east) = (at(&built, maws[0], 11), at(&built, maws[1], 11));
+        let state = turned(&built, &[(west, 0), (east, 128)]);
+        let sentinel = at(&state, mirror(10), 11);
+        let commands = seat_with(&scenario, seat, config()).act(&state, &mut OwnEvents::default());
+        let AttackTarget::Unit(maw) = queued_attacks(&commands)
+            .into_iter()
+            .find(|(units, _)| units == &[sentinel])
+            .unwrap_or_else(|| panic!("{commands:?}"))
+            .1
+        else {
+            panic!("{commands:?}")
+        };
+        mirror(state.unit(maw).unwrap().tile().x)
+    };
+    assert_eq!(target(0), target(1));
+}
+
+#[test]
+fn a_machine_stepping_out_of_a_maw_s_path_never_aims_at_a_building() {
+    // Where a Sentinel would step out of a Maw's path, a Barricade stands
+    // instead: it goes somewhere it can stand.
+    let goal = |blocked: Option<TilePos>| {
+        let mut scenario = field();
+        scenario.units.extend([
+            unit(1, UnitKind::Maw, 20, 11),
+            unit(0, UnitKind::Sentinel, 17, 11),
+        ]);
+        if let Some(tile) = blocked {
+            scenario
+                .buildings
+                .push(building(0, BuildingKind::Barricade, tile.x, tile.y));
+        }
+        let state = staged(&scenario, 128, &[]);
+        let sentinel = at(&state, 17, 11);
+        let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+        runs(&commands)
+            .into_iter()
+            .find(|(units, _)| units == &[sentinel])
+            .unwrap_or_else(|| panic!("{commands:?}"))
+            .1
+    };
+    let free = goal(None);
+    assert_ne!(goal(Some(free)), free);
 }

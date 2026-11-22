@@ -71,9 +71,9 @@ pub(crate) fn in_path(crusher: &UnitObs, kind: UnitKind, tile: TilePos, interval
     ahead <= length
 }
 
-/// Whether a crusher in sight would reach any tile of a footprint of `kind`
-/// at `anchor` within `ticks`, going over the crew raising it and cutting it.
-/// The crew is judged as Harvesters.
+/// Whether a crusher in sight would reach a footprint of `kind` at `anchor`,
+/// or the ring beside it where its crew stands, within `ticks`, going over
+/// the crew raising it and cutting it. The crew is judged as Harvesters.
 pub(crate) fn in_way(
     observation: &ObservationData,
     kind: aftermine_sim::BuildingKind,
@@ -83,8 +83,8 @@ pub(crate) fn in_way(
     let (width, height) = kind.size();
     let crushers = crushers(observation);
     !crushers.is_empty()
-        && (0..height)
-            .flat_map(|dy| (0..width).map(move |dx| anchor.offset(dx, dy)))
+        && (-1..=height)
+            .flat_map(|dy| (-1..=width).map(move |dx| anchor.offset(dx, dy)))
             .any(|tile| !clear_of(&crushers, UnitKind::Harvester, tile, ticks))
 }
 
@@ -101,13 +101,30 @@ pub(crate) fn clear_of(
         .all(|crusher| !in_path(crusher, kind, tile, interval))
 }
 
+/// Whether a machine can stand on `tile` as far as the seat knows: no rock,
+/// scrap node or building there. A run to anywhere else ends on a tile the
+/// seat never checked.
+fn open(observation: &ObservationData, tile: TilePos) -> bool {
+    !observation.known_rock_at(tile)
+        && !observation.known_scrap_at(tile)
+        && observation
+            .my_buildings
+            .iter()
+            .chain(&observation.ally_buildings)
+            .chain(&observation.enemy_buildings)
+            .all(|building| {
+                let (width, height) = building.kind.size();
+                let (x, y) = (tile.x - building.anchor.x, tile.y - building.anchor.y);
+                !(0..width).contains(&x) || !(0..height).contains(&y)
+            })
+}
+
 /// Where `unit`, in `crusher`'s path, goes to get out of it: the nearest tile
 /// on its ground clear of every crusher's path, an armed machine preferring
 /// one from which it still reaches `crusher`. The nearest clear tile lies on
 /// the side of the path it already stands on.
 fn refuge(
-    map: &MapModel,
-    frame: HomeFrame,
+    (observation, map, frame): (&ObservationData, &MapModel, HomeFrame),
     (crushers, crusher): (&[&UnitObs], &UnitObs),
     unit: &UnitObs,
     interval: u64,
@@ -115,16 +132,19 @@ fn refuge(
     let ground = map.component(unit.tile)?;
     let reach = crate::defenses::reach(unit.kind);
     let within = crusher.kind.stats().radius + reach - TILE_SLACK;
-    let fires = |tile: TilePos| {
-        let offset = centre(tile) - centre(crusher.tile);
-        reach > Fx::ZERO && offset.length_sq() <= within * within
-    };
+    let from_crusher = |tile: TilePos| (centre(tile) - centre(crusher.tile)).length_sq();
+    let fires = |tile: TilePos| reach > Fx::ZERO && from_crusher(tile) <= within * within;
+    // Not beside its hull either, where a turn would bring its front round.
+    let touch = half_width(crusher, unit.kind);
     let span = (half_width(crusher, unit.kind) * 2).ceil().to_num::<i32>() + SEARCH_SLACK;
     let from = doubled(unit.tile);
     (-span..=span)
         .flat_map(|dy| (-span..=span).map(move |dx| unit.tile.offset(dx, dy)))
         .filter(|tile| {
-            map.component(*tile) == Some(ground) && clear_of(crushers, unit.kind, *tile, interval)
+            map.component(*tile) == Some(ground)
+                && open(observation, *tile)
+                && from_crusher(*tile) > touch * touch
+                && clear_of(crushers, unit.kind, *tile, interval)
         })
         .min_by_key(|tile| {
             (
@@ -158,11 +178,22 @@ pub(crate) fn step_aside(
         let Some(crusher) = crushers
             .iter()
             .filter(|crusher| in_path(crusher, unit.kind, unit.tile, interval))
-            .min_by_key(|crusher| (crusher.tile.chebyshev(unit.tile), crusher.id))
+            .min_by_key(|crusher| {
+                (
+                    crusher.tile.chebyshev(unit.tile),
+                    frame.rank(doubled(unit.tile), doubled(crusher.tile)),
+                    crusher.id,
+                )
+            })
         else {
             continue;
         };
-        let Some(goal) = refuge(map, frame, (&crushers, crusher), unit, interval) else {
+        let Some(goal) = refuge(
+            (observation, map, frame),
+            (&crushers, crusher),
+            unit,
+            interval,
+        ) else {
             continue;
         };
         let id: UnitId = unit.id;
