@@ -2366,14 +2366,15 @@ fn simultaneous_interceptions_use_three_emitters_and_hold_while_paused() {
         .iter()
         .filter_map(|fx| match fx.kind {
             EffectKind::Intercept {
-                from,
+                emitter,
+                emitter_seen,
                 flight,
                 impact_witnessed,
                 ..
             } => {
                 assert!(flight.is_some());
                 assert!(impact_witnessed);
-                from
+                emitter_seen.then_some(emitter)
             }
             _ => None,
         })
@@ -2419,7 +2420,7 @@ fn simultaneous_interceptions_use_three_emitters_and_hold_while_paused() {
 }
 
 #[test]
-fn intercepted_own_shell_does_not_reveal_a_fogged_defender() {
+fn intercepted_own_shell_keeps_a_fogged_defender_unseen() {
     let mut game = mantle_interception_game();
     let at = chassis::grid::TilePos::new(30, 20).center();
     let event = Event::ShellIntercepted {
@@ -2437,7 +2438,7 @@ fn intercepted_own_shell_does_not_reveal_a_fogged_defender() {
     assert!(matches!(
         game.presentation.fx.last().unwrap().kind,
         EffectKind::Intercept {
-            from: None,
+            emitter_seen: false,
             impact_witnessed: true,
             ..
         }

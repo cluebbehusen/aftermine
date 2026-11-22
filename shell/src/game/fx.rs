@@ -629,7 +629,11 @@ const STRIKE_SHAKE_REACH: f32 = 36.0;
 pub enum EffectKind {
     /// A spent point-defense emitter and the interrupted projectile.
     Intercept {
-        from: Option<Vec2>,
+        /// The emitter that fired, world coords.
+        emitter: Vec2,
+        /// Whether the viewer sees the defender; an unseen one shows only
+        /// its beam over seen ground.
+        emitter_seen: bool,
         at: Vec2,
         flight: Option<InterceptFlight>,
         impact_witnessed: bool,
@@ -1739,18 +1743,21 @@ impl Presentation {
                         .and_then(|unit| unit.point_defense)
                         .map_or(0, |held| held.charges);
                     let slot = charges.saturating_add(*left).min(2);
-                    let from =
-                        (*defender_player == self.human || sees(self, *defender_pos)).then(|| {
-                            let rotation = match self
-                                .hit_surface(state, Some(aftermine_sim::Target::Unit(*defender)))
-                            {
-                                Some(HitSurface::Unit(hit)) => hit.body.rotation,
-                                _ => 0.0,
-                            };
-                            mantle_emitter(world_vec(*defender_pos), rotation, slot)
-                        });
+                    let emitter_seen = *defender_player == self.human || sees(self, *defender_pos);
+                    // An unseen defender is not drawn, so its beam starts at
+                    // its unturned emitter.
+                    let rotation = match emitter_seen
+                        .then(|| {
+                            self.hit_surface(state, Some(aftermine_sim::Target::Unit(*defender)))
+                        })
+                        .flatten()
+                    {
+                        Some(HitSurface::Unit(hit)) => hit.body.rotation,
+                        _ => 0.0,
+                    };
+                    let emitter = mantle_emitter(world_vec(*defender_pos), rotation, slot);
                     let impact_witnessed = !state.hostile(self.human, *player) || sees(self, *at);
-                    if from.is_none() && !impact_witnessed {
+                    if !emitter_seen && !impact_witnessed {
                         continue;
                     }
                     let flight = self
@@ -1803,12 +1810,13 @@ impl Presentation {
                     // Like gunfire, the zap is heard when either end is seen:
                     // at the emitter when it is, else where the shell
                     // dissolves. The shell makes no sound of its own.
-                    let anchor = if from.is_some() { defender_pos } else { at };
+                    let anchor = if emitter_seen { defender_pos } else { at };
                     self.sounds_pending
                         .push((SoundKind::InterceptZap, Some(world_vec(*anchor))));
                     self.fx.push(Effect {
                         kind: EffectKind::Intercept {
-                            from,
+                            emitter,
+                            emitter_seen,
                             at: world_vec(*at),
                             flight,
                             impact_witnessed,
