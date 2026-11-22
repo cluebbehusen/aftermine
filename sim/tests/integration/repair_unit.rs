@@ -865,3 +865,44 @@ fn weld_refuses_the_healthy_the_foreign_the_flying_and_the_selfish() {
         RejectReason::InvalidTarget,
     );
 }
+
+#[test]
+fn ordered_welders_arriving_from_one_side_share_a_patient_against_a_structure() {
+    let mut scenario = common::open_arena(
+        32,
+        18,
+        vec![
+            unit(0, UnitKind::Harvester, 12, 8), // patient
+            unit(0, UnitKind::Harvester, 14, 8),
+            unit(0, UnitKind::Harvester, 15, 7),
+            unit(0, UnitKind::Harvester, 14, 9),
+        ],
+    );
+    scenario
+        .buildings
+        .push(common::building(0, BuildingKind::Crucible, 10, 7));
+    scenario.players[0].scrap = 500;
+    let state = commanded_only(&scenario);
+    let ids: Vec<UnitId> = state.units().iter().map(|u| u.id).collect();
+    let (patient, welders) = (ids[0], ids[1..].to_vec());
+    let mut json = serde_json::to_value(state).unwrap();
+    json["units"][0]["hp"] = serde_json::json!(10);
+    let mut state: State = serde_json::from_value(json).unwrap();
+
+    state.tick(&[cmd(0, orders::repair_unit(welders.clone(), patient))]);
+    let events = run_until(&mut state, 200, |s, _| {
+        s.unit(patient).unwrap().hp == PATIENT_MAX
+    });
+    for welder in welders {
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                Event::UnitRepaired {
+                    source: UnitRepairSource::FieldWelder { unit },
+                    ..
+                } if *unit == welder
+            )),
+            "welder {welder:?} never welded"
+        );
+    }
+}

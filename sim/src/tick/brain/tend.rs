@@ -176,7 +176,7 @@ pub(super) fn tend(
                 });
                 return;
             }
-            if approach_patient(state, id, patient) {
+            if approach_patient(state, index, id, patient) {
                 return;
             }
             set_weld(state, id, None);
