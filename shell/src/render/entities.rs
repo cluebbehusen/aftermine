@@ -1430,8 +1430,7 @@ fn shot_impact_progress(style: crate::game::ShotStyle, age: f32) -> f32 {
 
 /// The contact mark a direct shot of `style` leaves at `at`, the same
 /// size whether or not its shooter is seen. `direction` runs along the
-/// shot, and is zero when the shooter is hidden so the mark never points
-/// at it.
+/// shot.
 fn direct_contact(
     style: crate::game::ShotStyle,
     surface: Option<crate::game::HitSurface>,
@@ -1446,6 +1445,8 @@ fn direct_contact(
     let radius = match style {
         ShotStyle::Rail => 0.75,
         ShotStyle::Mortar => splash.unwrap_or(0.9),
+        ShotStyle::Kinetic { heavy: true } => splash.unwrap_or(0.8),
+        ShotStyle::Kinetic { heavy: false } => splash.unwrap_or(0.5),
         _ => splash.unwrap_or(0.55),
     };
     Some(super::impacts::Contact {
@@ -1457,13 +1458,6 @@ fn direct_contact(
         age: age - style.travel_time(),
         seed,
     })
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ShotVisibility {
-    Hidden,
-    ImpactOnly,
-    Full,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1483,18 +1477,71 @@ fn sapper_effect_visibility(
     }
 }
 
-fn shot_visibility(
-    style: crate::game::ShotStyle,
-    source_visible: bool,
-    impact_visible: bool,
-) -> ShotVisibility {
-    if !impact_visible {
-        ShotVisibility::Hidden
-    } else if style == crate::game::ShotStyle::Contact || !source_visible {
-        ShotVisibility::ImpactOnly
-    } else {
-        ShotVisibility::Full
+/// The stretches of the line from `from` to `to`, as fractions of its
+/// length in order, that cross tiles `sees` admits. It walks every tile the
+/// line passes through, so a round is drawn exactly where its ground is in
+/// sight and nowhere else.
+fn visible_runs(
+    from: Vec2,
+    to: Vec2,
+    sees: impl Fn(chassis::grid::TilePos) -> bool,
+) -> Vec<(f32, f32)> {
+    let delta = to - from;
+    let mut tile = numeric::tile_at(from);
+    let last = numeric::tile_at(to);
+    let crossing = |start: f32, step: f32, cell: i32| {
+        if step > 0.0 {
+            ((cell + 1) as f32 - start) / step
+        } else if step < 0.0 {
+            (cell as f32 - start) / step
+        } else {
+            f32::INFINITY
+        }
+    };
+    let (mut next_x, mut next_y) = (
+        crossing(from.x, delta.x, tile.x),
+        crossing(from.y, delta.y, tile.y),
+    );
+    let (step_x, step_y) = (
+        (1.0 / delta.x).abs().min(f32::MAX),
+        (1.0 / delta.y).abs().min(f32::MAX),
+    );
+    let tiles = last.x.abs_diff(tile.x) + last.y.abs_diff(tile.y) + 1;
+    let mut runs: Vec<(f32, f32)> = Vec::new();
+    let mut entered = 0.0_f32;
+    for index in 0..tiles {
+        let left = if index + 1 == tiles {
+            1.0
+        } else {
+            next_x.min(next_y).min(1.0)
+        };
+        if sees(tile) {
+            match runs.last_mut() {
+                Some(run) if run.1 >= entered => run.1 = left,
+                _ => runs.push((entered, left)),
+            }
+        }
+        if index + 1 == tiles {
+            break;
+        }
+        if next_x < next_y {
+            tile.x += if delta.x > 0.0 { 1 } else { -1 };
+            entered = next_x;
+            next_x += step_x;
+        } else {
+            tile.y += if delta.y > 0.0 { 1 } else { -1 };
+            entered = next_y;
+            next_y += step_y;
+        }
     }
+    runs
+}
+
+/// The visible run of `runs` holding fraction `at` of a line, if any.
+fn run_at(runs: &[(f32, f32)], at: f32) -> Option<(f32, f32)> {
+    runs.iter()
+        .copied()
+        .find(|&(start, end)| (start..=end).contains(&at))
 }
 
 #[expect(clippy::too_many_lines, reason = "draws every shell and effect kind")]
@@ -1738,18 +1785,16 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
             } => Some(impact_contact(game, sprites, surface, from, at, payload)),
             _ => None,
         };
-        // A visible impact may always spark so incoming damage reads.
-        // Directional geometry still requires a visible source and must
-        // not pinpoint a fogged shooter.
+        // A visible impact may always spark so incoming damage reads. A
+        // point defender's beam still needs its emitter in sight.
         let in_sight = match fx.kind {
             EffectKind::Intercept {
                 from,
                 impact_witnessed,
                 ..
             } => from.is_some() || impact_witnessed,
-            EffectKind::DirectShot {
-                style, from, to, ..
-            } => shot_visibility(style, sees(from), sees(to)) != ShotVisibility::Hidden,
+            // Its round and its impact each follow sight, decided below.
+            EffectKind::DirectShot { .. } => true,
             EffectKind::SapperDetonation {
                 at,
                 blast_at,
@@ -1855,6 +1900,10 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 ..
             } => {
                 use crate::game::ShotStyle;
+                // The impact shows where the viewer sees it, and the round
+                // only over ground the viewer sees, so a shot out of the fog
+                // enters at its edge.
+                let impact_seen = sees(to);
                 let contact = match surface {
                     Some(crate::game::HitSurface::Unit(hit)) => {
                         unit_contact(sprites, hit, from, hit.center)
@@ -1863,143 +1912,128 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 }
                 .filter(|&contact| sees(contact))
                 .unwrap_or(to);
+                let runs = if game.presentation.all_seeing() {
+                    vec![(0.0, 1.0)]
+                } else {
+                    visible_runs(from, contact, |tile| game.sees_tile(tile))
+                };
+                if !impact_seen && runs.is_empty() {
+                    continue;
+                }
                 let a = game.presentation.camera.to_screen(from);
                 let b = game.presentation.camera.to_screen(contact);
+                let zoom = game.presentation.camera.zoom;
                 let age = fx.age_at(game.state.current_tick(), game.presentation.tick_fraction());
                 let progress = (age / style.life()).clamp(0.0, 1.0);
                 let fade = 1.0 - progress;
                 let impact = shot_impact_progress(style, age);
-                let visibility = shot_visibility(style, sees(from), sees(to));
-                let contact = |direction: Vec2| {
-                    direct_contact(
+                let mark = || {
+                    if !impact_seen {
+                        return;
+                    }
+                    if let Some(contact) = direct_contact(
                         style,
                         surface,
                         b,
-                        direction,
+                        b - a,
                         splash,
                         age,
                         super::impacts::seed(to, completed_tick),
-                    )
-                    .map(|contact| super::impacts::draw(contact, game.presentation.camera.zoom))
+                    ) {
+                        super::impacts::draw(contact, zoom);
+                    }
                 };
-                if visibility == ShotVisibility::ImpactOnly {
-                    if let Some(radius) = splash
-                        && impact > 0.0
-                    {
-                        super::destruction::draw_hit(
-                            sprites,
-                            b,
-                            game.presentation.camera.zoom,
-                            radius,
-                            impact,
+                if style == ShotStyle::Contact {
+                    if !impact_seen {
+                        continue;
+                    }
+                    let normal = vec2(0.8, -0.6);
+                    let tangent = vec2(-normal.y, normal.x);
+                    for side in [-1., 1.] {
+                        let origin = b + tangent * side * zoom * 0.045;
+                        let end = origin
+                            + (normal * side + tangent * 0.35) * zoom * (0.06 + impact * 0.12);
+                        line_between(
+                            origin,
+                            end,
+                            (zoom * 0.035).max(1.),
+                            Color::new(0.91, 0.69, 0.40, fade),
                         );
                     }
-                    if contact(Vec2::ZERO).is_some() {
-                        continue;
-                    }
-                    if style == ShotStyle::Contact {
-                        let normal = vec2(0.8, -0.6);
-                        let tangent = vec2(-normal.y, normal.x);
-                        let zoom = game.presentation.camera.zoom;
-                        for side in [-1., 1.] {
-                            let origin = b + tangent * side * zoom * 0.045;
-                            let end = origin
-                                + (normal * side + tangent * 0.35) * zoom * (0.06 + impact * 0.12);
-                            line_between(
-                                origin,
-                                end,
-                                (zoom * 0.035).max(1.),
-                                Color::new(0.91, 0.69, 0.40, fade),
-                            );
-                        }
-                        if impact < 0.4 {
-                            fill_circle(
-                                b,
-                                zoom * 0.045 * (1. - impact),
-                                Color::new(1., 0.88, 0.64, fade),
-                            );
-                        }
-                        continue;
-                    }
-                    let seed = (to.x * 31.7 + to.y * 17.3).abs();
-                    for i in 0..3 {
-                        let angle = seed + i as f32 * 2.1;
-                        let reach = game.presentation.camera.zoom * (0.08 + impact * 0.12);
-                        let tip = b + vec2(angle.cos(), angle.sin()) * reach;
-                        line_between(b, tip, 1.5, Color::new(0.95, 0.67, 0.34, 1.0 - impact));
+                    if impact < 0.4 {
+                        fill_circle(
+                            b,
+                            zoom * 0.045 * (1. - impact),
+                            Color::new(1., 0.88, 0.64, fade),
+                        );
                     }
                     continue;
                 }
-                if let Some(radius) = splash
+                if impact_seen
+                    && let Some(radius) = splash
                     && impact > 0.0
                 {
                     // The area bloom is part of the round-arrival phase,
                     // behind the projectiles, rather than an explosion the
                     // rounds visibly fly into.
-                    super::destruction::draw_hit(
-                        sprites,
-                        b,
-                        game.presentation.camera.zoom,
-                        radius,
-                        impact,
-                    );
+                    super::destruction::draw_hit(sprites, b, zoom, radius, impact);
                 }
+                let span = a.distance(b).max(f32::EPSILON);
                 match style {
                     ShotStyle::Contact => {}
                     ShotStyle::Kinetic { .. } | ShotStyle::Mortar => {
                         let heavy = !matches!(style, ShotStyle::Kinetic { heavy: false });
                         let travel = shot_travel_progress(style, age);
-                        let direction = (b - a).normalize_or_zero();
-                        let zoom = game.presentation.camera.zoom;
-                        let round = a.lerp(b, travel);
-                        let length = zoom * if heavy { 0.19 } else { 0.09 };
-                        let tail = round - direction * length.min(round.distance(a));
-                        let alpha = if style == ShotStyle::Mortar {
-                            (1. - (age - style.travel_time()).max(0.) / 0.05).clamp(0., 1.)
-                        } else {
-                            1. - impact
-                        };
-                        line_between(
-                            tail,
-                            round,
-                            (zoom * if heavy { 0.065 } else { 0.03 }).max(1.0),
-                            Color::new(0.91, 0.79, 0.57, alpha),
-                        );
-                        if contact(direction).is_none() && impact > 0.0 {
-                            let normal = vec2(-direction.y, direction.x);
-                            for side in [-1.0, 0.0, 1.0] {
-                                let spread = (-direction + normal * side * 1.4).normalize_or_zero();
-                                let reach =
-                                    zoom * (0.05 + impact * if heavy { 0.25 } else { 0.16 });
-                                let start = b + spread * reach * 0.55;
-                                let end = b + spread * reach;
-                                line_between(start, end, 1.0, Color::new(0.84, 0.66, 0.41, alpha));
-                            }
+                        if let Some((entered, _)) = run_at(&runs, travel) {
+                            let round = a.lerp(b, travel);
+                            let length = zoom * if heavy { 0.19 } else { 0.09 };
+                            let tail = a.lerp(b, (travel - length / span).max(entered));
+                            // The round is spent the moment it strikes; the
+                            // contact mark carries the hit from there.
+                            let alpha =
+                                (1. - (age - style.travel_time()).max(0.) / 0.05).clamp(0., 1.);
+                            line_between(
+                                tail,
+                                round,
+                                (zoom * if heavy { 0.065 } else { 0.03 }).max(1.0),
+                                Color::new(0.91, 0.79, 0.57, alpha),
+                            );
                         }
+                        mark();
                     }
                     ShotStyle::ForgeSpot => {
-                        let round = a.lerp(b, shot_travel_progress(style, age));
-                        let round_alpha =
-                            (1. - (age - style.travel_time()).max(0.) / 0.05).clamp(0., 1.);
-                        fill_circle(round, 3.8, Color::new(1.0, 0.38, 0.10, 0.20 * round_alpha));
-                        fill_circle(round, 2.3, Color::new(0.42, 0.19, 0.09, round_alpha));
-                        fill_circle(round, 1.35, Color::new(1.0, 0.85, 0.52, round_alpha));
-                        contact(b - a);
+                        let travel = shot_travel_progress(style, age);
+                        if run_at(&runs, travel).is_some() {
+                            let round = a.lerp(b, travel);
+                            let round_alpha =
+                                (1. - (age - style.travel_time()).max(0.) / 0.05).clamp(0., 1.);
+                            fill_circle(
+                                round,
+                                3.8,
+                                Color::new(1.0, 0.38, 0.10, 0.20 * round_alpha),
+                            );
+                            fill_circle(round, 2.3, Color::new(0.42, 0.19, 0.09, round_alpha));
+                            fill_circle(round, 1.35, Color::new(1.0, 0.85, 0.52, round_alpha));
+                        }
+                        mark();
                     }
                     ShotStyle::Rail => {
-                        contact(b - a);
-                        line_between(
-                            a,
-                            b,
-                            game.presentation.camera.zoom * 0.10 * fade.max(0.25),
-                            Color::new(0.70, 0.76, 0.80, 0.18 * fade * fade),
-                        );
-                        line_between(
-                            a,
-                            b,
-                            (game.presentation.camera.zoom * 0.038).max(0.8),
-                            Color::new(0.89, 0.89, 0.80, fade * fade),
-                        );
+                        mark();
+                        for &(entered, left) in &runs {
+                            let (start, end) = (a.lerp(b, entered), a.lerp(b, left));
+                            line_between(
+                                start,
+                                end,
+                                zoom * 0.10 * fade.max(0.25),
+                                Color::new(0.70, 0.76, 0.80, 0.18 * fade * fade),
+                            );
+                            line_between(
+                                start,
+                                end,
+                                (zoom * 0.038).max(0.8),
+                                Color::new(0.89, 0.89, 0.80, fade * fade),
+                            );
+                        }
                     }
                     ShotStyle::FlakBurst {
                         yoke_delay,
@@ -2011,23 +2045,28 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                             .into_iter()
                             .flatten()
                         {
-                            let offset = normal * barrel * game.presentation.camera.zoom;
+                            if run_at(&runs, round).is_none() {
+                                continue;
+                            }
+                            let offset = normal * barrel * zoom;
                             let end = b + offset;
                             let at = (a + offset).lerp(end, round);
                             fill_circle(at, 3.4, Color::new(0.98, 0.43, 0.12, 0.18));
                             fill_circle(at, 2.0, Color::new(0.33, 0.24, 0.13, 1.0));
                             fill_circle(at, 1.2, Color::new(1.0, 0.84, 0.48, 1.0));
                         }
-                        let seed = (to.x * 31.7 + to.y * 17.3).abs();
-                        for i in 0..3 {
-                            let angle = seed + i as f32 * 2.1;
-                            let reach = impact * game.presentation.camera.zoom * 0.28;
-                            let puff = b + vec2(angle.cos(), angle.sin()) * reach;
-                            fill_circle(
-                                puff,
-                                game.presentation.camera.zoom * 0.07 * (1.0 - progress * 0.45),
-                                Color::new(0.66, 0.65, 0.58, 0.42 * impact * fade),
-                            );
+                        if impact_seen {
+                            let seed = (to.x * 31.7 + to.y * 17.3).abs();
+                            for i in 0..3 {
+                                let angle = seed + i as f32 * 2.1;
+                                let reach = impact * zoom * 0.28;
+                                let puff = b + vec2(angle.cos(), angle.sin()) * reach;
+                                fill_circle(
+                                    puff,
+                                    zoom * 0.07 * (1.0 - progress * 0.45),
+                                    Color::new(0.66, 0.65, 0.58, 0.42 * impact * fade),
+                                );
+                            }
                         }
                     }
                 }

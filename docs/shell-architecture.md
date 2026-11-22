@@ -559,9 +559,11 @@ distant zoom from the same player knowledge as world rendering, and never
 changes positions, selection or the simulation.
 
 Own and allied missiles draw wherever they fly; a hostile missile draws only
-while the viewer sees the tile under it. What a seat knows of a hostile warhead
-from `State::known_warheads` draws above the fog regardless, and Lattice
-launches follow `State::interception_forecast`.
+while the viewer sees the tile under it. A direct shot's round or trace draws
+only over ground the viewer sees, so fire from the fog enters at its edge, and
+its impact draws wherever the viewer sees the contact. What a seat knows of a
+hostile warhead from `State::known_warheads` draws above the fog regardless, and
+Lattice launches follow `State::interception_forecast`.
 
 Simulation events enqueue audio cues. `mixer::spec` is the one table of what the
 shell decides per sound kind: clip, bus, mix weight, and whether it is a blast.
