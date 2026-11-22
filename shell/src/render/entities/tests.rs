@@ -872,6 +872,23 @@ fn columns(seen: &[i32]) -> impl Fn(chassis::grid::TilePos) -> bool + '_ {
 }
 
 #[test]
+fn a_hit_shows_where_its_contact_is_seen_though_the_centre_is_fogged() {
+    let (contact, centre) = (vec2(3.2, 4.5), vec2(4.5, 4.5));
+    let seen = |columns: &'static [i32]| move |at: Vec2| columns.contains(&numeric::tile_at(at).x);
+    assert_eq!(
+        seen_contact(Some(contact), centre, seen(&[3])),
+        Some(contact),
+        "a wide body's seen edge takes the hit"
+    );
+    assert_eq!(
+        seen_contact(Some(contact), centre, seen(&[4])),
+        Some(centre)
+    );
+    assert_eq!(seen_contact(None, centre, seen(&[4])), Some(centre));
+    assert_eq!(seen_contact(Some(contact), centre, seen(&[])), None);
+}
+
+#[test]
 fn a_shot_out_of_the_fog_shows_from_the_edge_of_sight() {
     // A gun at column 0 fires along row 0 at column 9; only columns 6 to 9
     // are seen. The round shows from where it enters column 6.

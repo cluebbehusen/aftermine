@@ -1537,6 +1537,16 @@ fn visible_runs(
     runs
 }
 
+/// Where a direct shot visibly strikes: the `contact` on its target's
+/// outline when that point is seen, else the target's centre `to` when that
+/// is. A wide body shows while any of its tiles does, so its seen edge can
+/// take the hit while its centre is still in fog.
+fn seen_contact(contact: Option<Vec2>, to: Vec2, sees: impl Fn(Vec2) -> bool) -> Option<Vec2> {
+    contact
+        .filter(|&contact| sees(contact))
+        .or_else(|| sees(to).then_some(to))
+}
+
 /// The visible run of `runs` holding fraction `at` of a line, if any.
 fn run_at(runs: &[(f32, f32)], at: f32) -> Option<(f32, f32)> {
     runs.iter()
@@ -1903,15 +1913,18 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                 // The impact shows where the viewer sees it, and the round
                 // only over ground the viewer sees, so a shot out of the fog
                 // enters at its edge.
-                let impact_seen = sees(to);
-                let contact = match surface {
-                    Some(crate::game::HitSurface::Unit(hit)) => {
-                        unit_contact(sprites, hit, from, hit.center)
-                    }
-                    _ => strike_contact(game, sprites, surface, from, to, style),
-                }
-                .filter(|&contact| sees(contact))
-                .unwrap_or(to);
+                let seen = seen_contact(
+                    match surface {
+                        Some(crate::game::HitSurface::Unit(hit)) => {
+                            unit_contact(sprites, hit, from, hit.center)
+                        }
+                        _ => strike_contact(game, sprites, surface, from, to, style),
+                    },
+                    to,
+                    sees,
+                );
+                let impact_seen = seen.is_some();
+                let contact = seen.unwrap_or(to);
                 let runs = if game.presentation.all_seeing() {
                     vec![(0.0, 1.0)]
                 } else {
