@@ -24,9 +24,11 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 ciborium = "0.2.2"
 clap = { version = "4", features = ["derive"] }
-# The audio feature is NOT in macroquad's defaults — without it every
-# sound call is a warning-printing stub.
-macroquad = { version = "0.4.16", features = ["audio"] }
+macroquad = "0.4.16"
+# Sound plays through kira on cpal. The shell decodes its own WAV clips; kira
+# decodes the Ogg Vorbis music through symphonia, so only those two formats
+# are on.
+kira = { version = "0.12.6", default-features = false, features = ["cpal", "ogg", "vorbis"] }
 # Screenshots are encoded by hand: macroquad's Image::export_png unwraps
 # on write errors, which would let one bad debug-socket path kill the
 # whole session.

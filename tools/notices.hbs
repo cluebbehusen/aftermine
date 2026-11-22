@@ -1,7 +1,9 @@
 Third-party software
 
 Aftermine includes the open source crates listed below. Each license names the
-crates it covers, followed by its full text.
+crates it covers, followed by its full text. For each crate under the Mozilla
+Public License 2.0, the source code of the version Aftermine uses is available
+at the address given beside it.
 {{#each licenses}}
 
 ================================================================================
@@ -10,6 +12,9 @@ crates it covers, followed by its full text.
 Used by:
 {{#each used_by}}
 - {{{crate.name}}} {{{crate.version}}}
+{{#if (eq ../id "MPL-2.0")}}
+  Source: https://crates.io/crates/{{{crate.name}}}/{{{crate.version}}}
+{{/if}}
 {{/each}}
 
 {{{text}}}

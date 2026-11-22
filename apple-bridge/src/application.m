@@ -1,12 +1,20 @@
-// UIApplication calls behind the crate's application API: the idle timer and
-// background tasks, which only iPad and Apple TV have.
+// UIApplication calls behind the crate's application API: the idle timer,
+// background tasks and the audio session, which only iPad and Apple TV have.
 
+#import <AVFAudio/AVFAudio.h>
 #import <UIKit/UIKit.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 void aftermine_apple_bridge_keep_screen_awake(bool awake) {
     UIApplication.sharedApplication.idleTimerDisabled = awake;
+}
+
+void aftermine_apple_bridge_mix_audio_with_other_apps(void) {
+    @autoreleasepool {
+        [AVAudioSession.sharedInstance setCategory:AVAudioSessionCategoryAmbient
+                                             error:nil];
+    }
 }
 
 // The tasks begun and not yet ended. Both the system, when a task's time

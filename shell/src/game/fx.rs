@@ -278,10 +278,6 @@ chassis::listed_enum! {
         Denied,
         /// High-priority warning that the local player is under attack.
         Alert,
-        /// The match ended in your favor.
-        Victory,
-        /// It did not.
-        Defeat,
         /// An artillery shell landing.
         Artillery,
         /// A hostile artillery launch heard from a visible impact warning.
@@ -357,8 +353,6 @@ chassis::listed_enum! {
         InterceptorMotor,
         /// A Maw's drum while it cuts.
         MawCut,
-        /// A Maw's kiln while its belt carries wreck.
-        MawKiln,
     }
 }
 
@@ -1153,6 +1147,30 @@ impl Presentation {
         }
     }
 
+    /// Late in a match, tells the music about this seat's unit hitting a
+    /// hostile structure it can see.
+    fn note_push(
+        &mut self,
+        state: &State,
+        attacker: aftermine_sim::UnitId,
+        target: Option<aftermine_sim::Target>,
+        target_owner: Option<aftermine_sim::PlayerId>,
+        target_seen: bool,
+    ) {
+        let (Some(aftermine_sim::Target::Building(_)), Some(owner)) = (target, target_owner) else {
+            return;
+        };
+        if target_seen
+            && state.current_tick() >= crate::soundtrack::FINAL_PUSH_AFTER
+            && state.hostile(self.human, owner)
+            && state
+                .unit(attacker)
+                .is_some_and(|unit| unit.player == self.human)
+        {
+            self.pressure.push_hit(self.fx_clock);
+        }
+    }
+
     /// Queues a blast, which is heard whether or not it was witnessed.
     fn queue_blast(&mut self, sound: SoundKind, at: Vec2, witnessed: bool) {
         if witnessed {
@@ -1180,6 +1198,15 @@ impl Presentation {
         for event in events {
             match event {
                 Event::DamageTaken { player, pos } if *player == self.human => {
+                    // Damage from any weapon counts toward a siege: a
+                    // structure reports its centre when it takes a hit.
+                    if state
+                        .buildings()
+                        .iter()
+                        .any(|building| building.player == *player && building.center() == *pos)
+                    {
+                        self.pressure.structure_hit(self.fx_clock);
+                    }
                     self.raise_alert(world_vec(*pos));
                 }
                 Event::AttackHit {
@@ -1208,6 +1235,13 @@ impl Presentation {
                     }
                     let target_owner =
                         target.and_then(|target| event_target_owner(state, events, target));
+                    self.note_push(
+                        state,
+                        *attacker,
+                        *target,
+                        target_owner,
+                        sees(self, *target_pos),
+                    );
                     // The kind comes from the event because the attacker
                     // may have died later this same tick. The weapon decides
                     // the report and whether the impact blooms.
@@ -1229,6 +1263,18 @@ impl Presentation {
                     let impact_witnessed = sees(self, *target_pos)
                         || target_owner.is_some_and(|player| !state.hostile(self.human, player));
                     let heard = source_witnessed || impact_witnessed;
+                    // A gun out of sight counts by what it hits, so the
+                    // fight's size never tells how many hidden guns fire.
+                    let gun = if source_witnessed {
+                        Some(aftermine_sim::Target::Unit(*attacker))
+                    } else if impact_witnessed {
+                        *target
+                    } else {
+                        None
+                    };
+                    if let Some(gun) = gun {
+                        self.pressure.gun_heard(gun, self.fx_clock);
+                    }
                     let sound = unit_fire_sound(*attacker_kind);
                     // The burst radius comes from the weapon slot the event
                     // names, so the drawn area matches the damage the sim
@@ -1327,12 +1373,12 @@ impl Presentation {
                     }
                 }
                 Event::TurretFired {
+                    turret,
                     kind,
                     tier,
                     turret_pos,
                     target_pos,
                     target,
-                    ..
                 } => {
                     // The kind comes from the event because the turret may
                     // have been destroyed the tick it fired; its shot still
@@ -1350,6 +1396,14 @@ impl Presentation {
                         .find_map(|w| w.splash)
                         .map(|s| s.to_num::<f32>());
                     if sees(self, *turret_pos) || sees(self, *target_pos) {
+                        let gun = if sees(self, *turret_pos) {
+                            Some(aftermine_sim::Target::Building(*turret))
+                        } else {
+                            *target
+                        };
+                        if let Some(gun) = gun {
+                            self.pressure.gun_heard(gun, self.fx_clock);
+                        }
                         let at = if sees(self, *turret_pos) {
                             *turret_pos
                         } else {
@@ -1374,18 +1428,24 @@ impl Presentation {
                     );
                 }
                 Event::BuildingCompleted {
-                    player, kind, tier, ..
+                    building,
+                    player,
+                    kind,
+                    tier,
                 } if self.plays_as(*player) => {
+                    let at = state
+                        .building(*building)
+                        .map(|building| world_vec(building.center()));
                     // A completion at a nonzero tier is an upgrade
                     // finishing: its own cue, its own name.
                     if *tier > 0 {
-                        self.sounds_pending.push((SoundKind::UpgradeDone, None));
+                        self.sounds_pending.push((SoundKind::UpgradeDone, at));
                         self.toast(format!(
                             "{} online",
                             crate::typography::entity_name(kind.tier_name(*tier))
                         ));
                     } else {
-                        self.sounds_pending.push((SoundKind::TrainDone, None));
+                        self.sounds_pending.push((SoundKind::TrainDone, at));
                     }
                 }
                 Event::UnitDied {
@@ -1520,7 +1580,8 @@ impl Presentation {
                 } if !self.all_seeing() => {
                     let name = crate::typography::entity_name(kind.name());
                     if *player == self.human {
-                        self.sounds_pending.push((SoundKind::TrainDone, None));
+                        self.sounds_pending
+                            .push((SoundKind::TrainDone, Some(world_vec(*pos))));
                         self.toast(format!("{name} assembled"));
                     } else if state.hostile(self.human, *player) {
                         self.raise_cradle_alert(world_vec(*pos), *kind);
@@ -1542,11 +1603,12 @@ impl Presentation {
                     }
                 }
                 Event::UnitTrained { unit, player, .. } if self.plays_as(*player) => {
-                    self.sounds_pending.push((SoundKind::TrainDone, None));
-                    if let Some(u) = state.unit(*unit) {
+                    let at = state.unit(*unit).map(|unit| world_vec(unit.pos));
+                    self.sounds_pending.push((SoundKind::TrainDone, at));
+                    if let Some(at) = at {
                         self.fx.push(Effect {
                             kind: EffectKind::Ping {
-                                at: world_vec(u.pos),
+                                at,
                                 kind: PingKind::Spawn,
                                 queued: false,
                             },
@@ -1554,8 +1616,15 @@ impl Presentation {
                         });
                     }
                 }
-                Event::ScrapDeposited { player, .. } if self.plays_as(*player) => {
-                    self.sounds_pending.push((SoundKind::Deposit, None));
+                Event::ScrapDeposited {
+                    player, foundry, ..
+                } if self.plays_as(*player) => {
+                    // Heard from the Foundry that took the cargo, so it
+                    // fades with distance like the battle does.
+                    let at = state
+                        .building(*foundry)
+                        .map(|foundry| world_vec(foundry.center()));
+                    self.sounds_pending.push((SoundKind::Deposit, at));
                 }
                 Event::CommandRejected { player, reason } if self.plays_as(*player) => {
                     let why: std::borrow::Cow<'static, str> = match reason {
@@ -1608,6 +1677,7 @@ impl Presentation {
                     from,
                     to,
                     unit_pose,
+                    target,
                     ..
                 } => {
                     // A firing machine faces its target. A defense's gun
@@ -1639,6 +1709,18 @@ impl Presentation {
                             ShellSoundAnchor::Impact => *to,
                         };
                         self.sounds_pending.push((sound, Some(world_vec(at))));
+                        let gun = match anchor {
+                            ShellSoundAnchor::Muzzle => Some(*shooter),
+                            ShellSoundAnchor::Impact => *target,
+                        };
+                        if let Some(gun) = gun {
+                            self.pressure.gun_heard(gun, self.fx_clock);
+                        }
+                    }
+                    if let aftermine_sim::Target::Unit(attacker) = shooter {
+                        let target_owner =
+                            target.and_then(|target| event_target_owner(state, events, target));
+                        self.note_push(state, *attacker, *target, target_owner, sees(self, *to));
                     }
                 }
                 Event::ShellIntercepted {
@@ -1988,19 +2070,6 @@ impl Presentation {
                         if near > 0.0 {
                             self.camera.kick(STRIKE_SHAKE * near * near);
                         }
-                    }
-                }
-                Event::GameOver { .. } => {
-                    let stinger = match super::Verdict::of(state, self.human) {
-                        Some(super::Verdict::Victory) => Some(SoundKind::Victory),
-                        Some(super::Verdict::Defeat | super::Verdict::Surrendered) => {
-                            Some(SoundKind::Defeat)
-                        }
-                        // The result score carries a draw on its own.
-                        Some(super::Verdict::Draw) | None => None,
-                    };
-                    if let Some(stinger) = stinger {
-                        self.sounds_pending.push((stinger, None));
                     }
                 }
                 _ => {}

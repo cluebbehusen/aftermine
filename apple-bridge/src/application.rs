@@ -1,6 +1,7 @@
 //! The app's hold on the device while it plays or saves: keeping the screen
-//! on, and asking for time to finish work if the player leaves the app. Only
-//! iPad and Apple TV have either; elsewhere both do nothing.
+//! on, asking for time to finish work if the player leaves the app, and
+//! sharing the speakers with other apps. Only iPad and Apple TV have these;
+//! elsewhere they do nothing.
 
 /// Keeps the screen on while `awake`, or leaves dimming and sleep to the
 /// system. A game read through controllers must do this itself, since the
@@ -14,6 +15,16 @@ pub fn keep_screen_awake(awake: bool) {
     {
         let _ = awake;
     }
+}
+
+/// Lets the game's sound mix with other apps' audio, such as music, instead
+/// of stopping it. The default category stops other apps' audio once output
+/// starts, and they do not come back if the category changes later, so call
+/// this before opening the audio device. If it fails, sound still plays
+/// under the default category.
+pub fn mix_audio_with_other_apps() {
+    #[cfg(any(target_os = "ios", target_os = "tvos"))]
+    bridge::mix_audio_with_other_apps();
 }
 
 /// Time asked of the system to finish work if the app leaves the foreground
@@ -54,6 +65,7 @@ impl Drop for BackgroundTask {
 mod bridge {
     unsafe extern "C" {
         fn aftermine_apple_bridge_keep_screen_awake(awake: bool);
+        fn aftermine_apple_bridge_mix_audio_with_other_apps();
         fn aftermine_apple_bridge_begin_background_task() -> usize;
         fn aftermine_apple_bridge_end_background_task(task: usize);
     }
@@ -61,6 +73,11 @@ mod bridge {
     pub(super) fn keep_screen_awake(awake: bool) {
         // SAFETY: takes a plain value and returns nothing.
         unsafe { aftermine_apple_bridge_keep_screen_awake(awake) }
+    }
+
+    pub(super) fn mix_audio_with_other_apps() {
+        // SAFETY: takes and returns nothing.
+        unsafe { aftermine_apple_bridge_mix_audio_with_other_apps() }
     }
 
     pub(super) fn begin_background_task() -> usize {

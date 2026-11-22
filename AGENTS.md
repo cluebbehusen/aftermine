@@ -9,17 +9,17 @@ window.
 
 Read the README for the crate you are changing:
 
-| Crate                                              | Responsibility                                                                                                                                                                           |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`chassis`](chassis/README.md)                     | Reusable deterministic primitives. No game rules or engine dependencies.                                                                                                                 |
-| [`aftermine-sim`](sim/README.md)                   | Game rules and player-knowledge projection.                                                                                                                                              |
-| [`aftermine-opponent`](opponent/README.md)         | Reactive, best-effort opponent controller.                                                                                                                                               |
-| [`aftermine-protocol`](protocol/README.md)         | Debug wire types, framing, input events, and state views.                                                                                                                                |
-| [`aftermine-kit`](kit/README.md)                   | Shared replay, statistics, fixture, and CPU-rendering services.                                                                                                                          |
-| [`aftermine-net`](net/README.md)                   | Lockstep multiplayer: wire messages, session core, start barrier, and TCP transport.                                                                                                     |
-| [`aftermine-apple-bridge`](apple-bridge/README.md) | Every Objective-C call into Apple's frameworks: iCloud Drive files, the key-value store, the CloudKit mirror, user defaults, the idle timer and background time; the only `unsafe` code. |
-| [`aftermine-shell`](shell/README.md)               | Macroquad input, UI, rendering, audio, persistence, and live session.                                                                                                                    |
-| [`aftermine-driver`](driver/README.md)             | Headless runner, inspectors, map audit, live client, profiling, and smoke QA.                                                                                                            |
+| Crate                                              | Responsibility                                                                                                                                                                                              |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`chassis`](chassis/README.md)                     | Reusable deterministic primitives. No game rules or engine dependencies.                                                                                                                                    |
+| [`aftermine-sim`](sim/README.md)                   | Game rules and player-knowledge projection.                                                                                                                                                                 |
+| [`aftermine-opponent`](opponent/README.md)         | Reactive, best-effort opponent controller.                                                                                                                                                                  |
+| [`aftermine-protocol`](protocol/README.md)         | Debug wire types, framing, input events, and state views.                                                                                                                                                   |
+| [`aftermine-kit`](kit/README.md)                   | Shared replay, statistics, fixture, and CPU-rendering services.                                                                                                                                             |
+| [`aftermine-net`](net/README.md)                   | Lockstep multiplayer: wire messages, session core, start barrier, and TCP transport.                                                                                                                        |
+| [`aftermine-apple-bridge`](apple-bridge/README.md) | Every Objective-C call into Apple's frameworks: iCloud Drive files, the key-value store, the CloudKit mirror, user defaults, the idle timer, background time and the audio session; the only `unsafe` code. |
+| [`aftermine-shell`](shell/README.md)               | Macroquad input, UI, rendering, audio, persistence, and live session.                                                                                                                                       |
+| [`aftermine-driver`](driver/README.md)             | Headless runner, inspectors, map audit, live client, profiling, and smoke QA.                                                                                                                               |
 
 Contracts live in `docs/simulation-architecture.md`,
 `docs/shell-architecture.md` and `docs/netplay-architecture.md`.
@@ -255,6 +255,10 @@ uv run --with 'pillow==12.3.0' -m unittest tools.test_gen_wordmark
 uv run tools/gen_sounds.py --check
 uv run --with 'numpy==2.5.1' --with 'scipy==1.18.0' \
   -m unittest tools.test_gen_sounds
+uv run tools/gen_music.py --check
+uv run --python 3.12 --with 'llvmlite==0.50.0' --with 'numba==0.68.1' \
+  --with 'numpy==2.5.4' --with 'pyloudnorm==0.2.0' --with 'scipy==1.18.1' \
+  --with 'soundfile==0.14.0' -m unittest tools.test_gen_music
 ```
 
 When `Cargo.lock` changes, regenerate the license notices every bundle ships
@@ -304,12 +308,12 @@ what it gates, and what changes at launch.
 
 ## Generated assets
 
-`tools/gen_sprites.py`, `tools/gen_wordmark.py` and `tools/gen_sounds.py` own
-production assets, and `aftermine-driver home-replays` owns the recordings in
-`assets/home`. Generate experiments into a review directory, preserve approved
-files byte-for-byte, and never hand-edit the generated atlas or checked-in
-sounds. Productionize only assets the user explicitly approves. The visual and
-sound skills define the detailed workflow.
+`tools/gen_sprites.py`, `tools/gen_wordmark.py`, `tools/gen_sounds.py` and
+`tools/gen_music.py` own production assets, and `aftermine-driver home-replays`
+owns the recordings in `assets/home`. Generate experiments into a review
+directory, preserve approved files byte-for-byte, and never hand-edit the
+generated atlas or checked-in sounds. Productionize only assets the user
+explicitly approves. The visual and sound skills define the detailed workflow.
 
 ## Cross-cutting pitfalls
 
@@ -321,6 +325,5 @@ sound skills define the detailed workflow.
   `TilePos::containing` for tile math.
 - Macroquad windows on macOS run on the main thread. Socket work crosses into
   the frame loop by channel.
-- Macroquad audio is feature-gated; removing the feature yields silent stubs.
 - A paused shell stages socket commands for the next tick. Advance one tick
   before asserting their effects.

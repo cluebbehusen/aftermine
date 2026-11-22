@@ -232,6 +232,10 @@ jobs:
         run: uv run tools/gen_sounds.py --check
       - name: Sound tests
         run: uv run --with 'numpy==2.5.1' --with 'scipy==1.18.0' -m unittest tools.test_gen_sounds
+      - name: Music generator check
+        run: uv run tools/gen_music.py --check
+      - name: Music generator tests
+        run: uv run --python 3.12 --with 'llvmlite==0.50.0' --with 'numba==0.68.1' --with 'numpy==2.5.4' --with 'pyloudnorm==0.2.0' --with 'scipy==1.18.1' --with 'soundfile==0.14.0' -m unittest tools.test_gen_music
       - name: Review tool tests
         run: uv run -m unittest tools.test_map_review tools.test_line_report
 

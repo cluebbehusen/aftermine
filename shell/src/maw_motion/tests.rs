@@ -144,18 +144,18 @@ fn the_drum_grinds_from_its_first_hit_and_falls_quiet_once_it_stops_cutting() {
 }
 
 #[test]
-fn the_belt_speed_eases_up_and_runs_on_until_its_last_load_is_in() {
+fn the_belt_eases_up_and_runs_on_until_its_last_load_is_in() {
+    let speed = |motion: &MawMotion| (motion.belt(1.0) - motion.belt(0.0)) / BELT_SPEED;
+    let near = |value: f32, expected: f32| (value - expected).abs() < 1e-4;
     let mut motion = MawMotion::new(0);
-    assert_eq!(motion.belt_speed(1.0), 0.0);
+    assert_eq!(speed(&motion), 0.0);
     let tick = run(&mut motion, 1, 1, false, true);
-    let starting = motion.belt_speed(1.0);
+    let starting = speed(&motion);
     assert!(starting > 0.0 && starting < 1.0, "it eases up: {starting}");
-    assert!(motion.belt_speed(0.5) < starting, "and between ticks");
     let tick = run(&mut motion, tick, 40, false, true);
-    assert_eq!(motion.belt_speed(1.0), 1.0);
+    assert!(near(speed(&motion), 1.0));
     let tick = run(&mut motion, tick, 20, false, false);
-    assert_eq!(motion.belt_speed(1.0), 1.0, "it runs on while it carries");
+    assert!(near(speed(&motion), 1.0), "it runs on while it carries");
     run(&mut motion, tick, 60, false, false);
-    assert_eq!(motion.belt_speed(1.0), 0.0);
-    assert_eq!(MawMotion::settled(0, false, true).belt_speed(0.0), 1.0);
+    assert!(near(speed(&motion), 0.0));
 }
