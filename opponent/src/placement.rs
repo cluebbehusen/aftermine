@@ -3,6 +3,7 @@
 //! can never change its verdict; the simulation re-checks on arrival and a
 //! refused order is re-planned.
 
+use crate::events::OwnEvent;
 use crate::frame::{gap, ring, tiles_of};
 use crate::map::{MapModel, Shot};
 use crate::memory::Memory;
@@ -815,4 +816,54 @@ pub(crate) fn keeps_paths(
         .filter(|anchor| ring(*anchor, foundry).any(on))
         .all(|anchor| beside(anchor, foundry));
     !sealing && sites && producers && nodes && starts
+}
+
+/// The seat's own structures hit since its last decision, by its `events`,
+/// that nothing it knows of accounts for: no enemy in sight reaches them, no
+/// known enemy gun hits them and no shell in flight lands on them. A Lancer
+/// outranges what an Extractor sees, so it shoots from the fog.
+pub(crate) fn unexplained<'a>(
+    observation: &'a ObservationData,
+    map: &MapModel,
+    events: &[OwnEvent],
+) -> Vec<&'a BuildingObs> {
+    let hits: Vec<Vec2Fx> = events
+        .iter()
+        .filter_map(|event| match event {
+            OwnEvent::Hit { pos } => Some(*pos),
+            _ => None,
+        })
+        .collect();
+    if hits.is_empty() {
+        return Vec::new();
+    }
+    observation
+        .my_buildings
+        .iter()
+        .filter(|building| !building.provisional)
+        .filter(|building| {
+            hits.contains(&aftermine_sim::geometry::footprint_center(
+                building.anchor,
+                building.kind.size(),
+            ))
+        })
+        .filter(|building| {
+            let size = building.kind.size();
+            let reached = observation.enemy_units.iter().any(|enemy| {
+                let reach = crate::defenses::reach(enemy.kind);
+                reach > Fx::ZERO
+                    && Fx::from_num(gap(building.anchor, size, enemy.tile, (1, 1)))
+                        <= reach + Fx::from_num(1)
+            });
+            let gunned = observation
+                .enemy_buildings
+                .iter()
+                .any(|enemy| gun_hits(map, enemy, building.kind, building.anchor));
+            let shelled = observation
+                .incoming_shells
+                .iter()
+                .any(|impact| gap(building.anchor, size, *impact, (1, 1)) <= 1);
+            !(reached || gunned || shelled)
+        })
+        .collect()
 }

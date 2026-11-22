@@ -88,22 +88,15 @@ impl Missions {
         observation: &ObservationData,
         map: &MapModel,
         frame: HomeFrame,
-        memory: &Memory,
+        (memory, searched): (&Memory, &[&BuildingObs]),
         difficulty: BotDifficulty,
         ledger: &mut Ledger,
     ) -> Vec<Shortfall> {
         let now = observation.tick;
         let lendable = self.available(observation, Some(difficulty));
-        let mut groups = threats(observation, map, frame, memory);
+        let mut groups = threats(observation, map, frame, (memory, searched));
         self.weigh((observation, map, memory, ledger), &lendable, &mut groups);
-        // Attackers remembered out of sight keep a defense from standing down.
-        groups.retain(|(_, siege, _)| {
-            !siege.units.is_empty()
-                || !siege.strays.is_empty()
-                || !siege.batteries.is_empty()
-                || siege.unseen.is_some()
-                || siege.remembered != [0, 0]
-        });
+        groups.retain(|(_, siege, _)| siege.presses());
         let returning = self.stand_down(
             (observation, memory, difficulty),
             (map, frame),
@@ -153,7 +146,7 @@ impl Missions {
             let grounded = quarry
                 .map(|(_, tile)| tile)
                 .or_else(|| siege.nearest_grounded(|tile| frame.rank(centre, doubled(tile))));
-            let Some(goal) = grounded.or(siege.unseen).or_else(|| {
+            let Some(goal) = grounded.or(siege.hidden()).or_else(|| {
                 let flyer = nearest(&mut siege.sighted())?;
                 own.then(|| guard(observation, map, frame, component, flyer))?
             }) else {
@@ -168,7 +161,12 @@ impl Missions {
                 .iter()
                 .filter(|threat| walking_gun(threat) && map.component(threat.tile) == component)
                 .min_by_key(|threat| (frame.rank(centre, doubled(threat.tile)), threat.id));
-            let pursuit = Pursuit::of(shelling.copied(), quarry, grounded, siege.unseen.is_some());
+            let pursuit = Pursuit::of(
+                shelling.copied(),
+                quarry,
+                grounded,
+                siege.hidden().is_some(),
+            );
             let gun = pursuit.held();
             let hunting = matches!(pursuit, Pursuit::Hunt);
             // A gun with others beside it that would join the fight there is
@@ -192,7 +190,8 @@ impl Missions {
             let besides: Vec<TilePos> = siege.batteries.iter().map(|(_, beside)| *beside).collect();
             // An escort beside a battery is pressing already: it counts once.
             let guns = defense_around(observation, memory, &besides, &siege.pressing())
-                + siege.unseen.map_or(0, |_| gun_value());
+                + siege.unseen.map_or(0, |_| gun_value())
+                + siege.search.map_or(0, |(_, need)| need);
             let unarmed = siege.unarmed();
             let need = [
                 pressing[0] + guns * 3 / 2 + unarmed[0],
@@ -1123,6 +1122,10 @@ struct Siege<'a> {
     batteries: Vec<(&'a BuildingObs, TilePos)>,
     /// Where a gun shelling the base from out of sight probably stands.
     unseen: Option<TilePos>,
+    /// Where defenders look for what hit a structure out of sight, beside
+    /// it, with what they bring: its price, or the enemies remembered near
+    /// it if worth more.
+    search: Option<(TilePos, u64)>,
     /// What armed enemies remembered out of sight near the buildings are
     /// worth, against ground and air, by how sure the seat is they are still
     /// there.
@@ -1157,6 +1160,7 @@ impl Siege<'_> {
     fn unarmed_only(&self) -> bool {
         self.units.is_empty()
             && self.unseen.is_none()
+            && self.search.is_none()
             && !self.armed
             && !self.batteries.iter().any(|(building, _)| armed(building))
     }
@@ -1239,6 +1243,23 @@ impl Siege<'_> {
             .map(|threat| threat.id)
             .chain(self.recalled.iter().copied())
             .collect()
+    }
+
+    /// Whether anything still presses: attackers remembered out of sight, or
+    /// fire nobody sees, keep a defense from standing down.
+    fn presses(&self) -> bool {
+        !self.units.is_empty()
+            || !self.strays.is_empty()
+            || !self.batteries.is_empty()
+            || self.unseen.is_some()
+            || self.search.is_some()
+            || self.remembered != [0, 0]
+    }
+
+    /// Where a threat out of sight is gone after: a gun shelling, or what
+    /// hit a structure.
+    fn hidden(&self) -> Option<TilePos> {
+        self.unseen.or(self.search.map(|(tile, _)| tile))
     }
 
     /// What defenders go after when nothing armed threatens, nearest by
@@ -1356,7 +1377,7 @@ fn threats<'a>(
     observation: &'a ObservationData,
     map: &MapModel,
     frame: HomeFrame,
-    memory: &Memory,
+    (memory, searched): (&Memory, &[&'a BuildingObs]),
 ) -> Vec<(&'a BuildingObs, Siege<'a>, bool)> {
     let mut groups: Vec<(&BuildingObs, Siege, bool)> = Vec::new();
     let mut claimed: Vec<UnitId> = Vec::new();
@@ -1403,9 +1424,88 @@ fn threats<'a>(
                     groups.push((foundry, siege, true));
                 }
             }
+            // A structure hit by fire nobody sees is looked over from beside
+            // it; once the shooter is seen it is a threat like any other.
+            for (foundry, search) in searches(observation, map, frame, memory, searched) {
+                if let Some((_, siege, _)) = groups
+                    .iter_mut()
+                    .find(|(other, _, _)| other.id == foundry.id)
+                {
+                    siege.search = siege.search.or(Some(search));
+                } else {
+                    let siege = Siege {
+                        search: Some(search),
+                        ..Siege::default()
+                    };
+                    groups.push((foundry, siege, true));
+                }
+            }
         }
     }
     groups
+}
+
+/// For each built Foundry, the structure among `searched`, hit by fire the
+/// seat cannot see, nearest it: the tile beside that structure toward the
+/// nearest hostile start, where defenders go to see the shooter, and what
+/// they bring, the structure's price or the armed enemies remembered within
+/// local reach of it if worth more.
+fn searches<'a>(
+    observation: &'a ObservationData,
+    map: &MapModel,
+    frame: HomeFrame,
+    memory: &Memory,
+    searched: &[&BuildingObs],
+) -> Vec<(&'a BuildingObs, (TilePos, u64))> {
+    let foundries = foundries_from_home(&observation.my_buildings, frame);
+    let me = observation.me;
+    let mut found: Vec<(&BuildingObs, (TilePos, u64))> = Vec::new();
+    for structure in searched {
+        let centre = footprint_centre(structure.kind, structure.anchor);
+        let Some(foundry) = foundries.iter().copied().min_by_key(|foundry| {
+            (
+                gap(
+                    foundry.anchor,
+                    foundry.kind.size(),
+                    structure.anchor,
+                    structure.kind.size(),
+                ),
+                frame.rank(centre, footprint_centre(foundry.kind, foundry.anchor)),
+            )
+        }) else {
+            continue;
+        };
+        if found.iter().any(|(other, _)| other.id == foundry.id) {
+            continue;
+        }
+        let ground = map.component(structure.anchor);
+        let Some(beside) = ring(structure.anchor, structure.kind.size())
+            .filter(|tile| map.component(*tile) == ground)
+            .min_by_key(|tile| {
+                (
+                    map.hostiles(me)
+                        .map(|hostile| map.distance(hostile, *tile))
+                        .min(),
+                    frame.rank(centre, doubled(*tile)),
+                )
+            })
+        else {
+            continue;
+        };
+        let now = observation.tick;
+        let near: u64 = memory
+            .units()
+            .iter()
+            .filter(|unit| unit.kind.stats().can_fight())
+            .filter(|unit| {
+                gap(structure.anchor, structure.kind.size(), unit.tile, (1, 1)) <= LOCAL_REACH
+            })
+            .map(|unit| unit.value(now))
+            .sum();
+        let price = u64::from(structure.kind.invested_cost(structure.tier));
+        found.push((foundry, (beside, price.max(near))));
+    }
+    found
 }
 
 /// Visible enemies not `claimed` that could hit one of `buildings`, and known

@@ -584,11 +584,12 @@ pub(crate) fn decide(
     persistent
         .missions
         .prune(observation, &mut persistent.memory);
+    let unseen = placement::unexplained(observation, map, events);
     let shortfalls = persistent.missions.defend(
         observation,
         map,
         frame,
-        &persistent.memory,
+        (&persistent.memory, &unseen),
         profile.difficulty,
         &mut ledger,
     );
@@ -654,12 +655,13 @@ pub(crate) fn decide(
         .repair(observation, map, &scratch, &mut ledger);
     Missions::feed(observation, &scratch, &meals, &mut ledger);
     let patients = persistent.missions.patients(observation, &ledger);
+    let unseen: Vec<BuildingId> = unseen.iter().map(|building| building.id).collect();
     workers::run(
         observation,
         map,
         frame,
         &persistent.memory,
-        &scratch.ground,
+        (&scratch.ground, &unseen),
         &staffing,
         &patients,
         (

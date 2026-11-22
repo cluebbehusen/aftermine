@@ -89,7 +89,9 @@ fn repeats_of_one_failure_keep_its_first_place() {
     assert_eq!(kept.len(), 4 + wide.len(), "{kept:?}");
     let stalled_unit = |event: &OwnEvent| match event {
         OwnEvent::OrderStalled { unit, .. } => Some(unit.0),
-        OwnEvent::CommandRejected { .. } | OwnEvent::MachineAssembled { .. } => None,
+        OwnEvent::CommandRejected { .. }
+        | OwnEvent::Hit { .. }
+        | OwnEvent::MachineAssembled { .. } => None,
     };
     assert_eq!(stalled_unit(&kept[0]), Some(7));
     assert_eq!(stalled_unit(&kept[1]), Some(8));
@@ -119,7 +121,9 @@ fn a_full_buffer_drops_its_oldest_events_and_refuses_to_load_over_its_cap() {
         .into_iter()
         .map(|event| match event {
             OwnEvent::OrderStalled { unit, .. } => unit.0,
-            OwnEvent::CommandRejected { .. } | OwnEvent::MachineAssembled { .. } => unreachable!(),
+            OwnEvent::CommandRejected { .. }
+            | OwnEvent::Hit { .. }
+            | OwnEvent::MachineAssembled { .. } => unreachable!(),
         })
         .collect();
     assert_eq!(
@@ -143,4 +147,40 @@ fn a_full_buffer_drops_its_oldest_events_and_refuses_to_load_over_its_cap() {
         .unwrap()
         .push(serde_json::json!({"event": "command_rejected", "reason": "bad_site"}));
     assert!(serde_json::from_value::<OwnEvents>(over).is_err());
+}
+
+#[test]
+fn the_seat_s_own_hits_are_kept_once_per_place_and_bounded() {
+    let hit = |player: u8, x: i32| Event::DamageTaken {
+        player: PlayerId(player),
+        pos: Vec2Fx::new(chassis::fx::Fx::from_num(x), chassis::fx::Fx::from_num(3)),
+    };
+    let mut events = OwnEvents::default();
+    // A structure hit by every volley is one place; another seat's hit is
+    // not the seat's to know.
+    events.record(PlayerId(0), &[hit(0, 7), hit(0, 7), hit(1, 9), hit(0, 8)]);
+    let held = events.clone().take();
+    assert_eq!(held.len(), 2, "{held:?}");
+    // Kept through a checkpoint.
+    let json = serde_json::to_value(&events).unwrap();
+    let restored: OwnEvents = serde_json::from_value(json).unwrap();
+    assert_eq!(restored, events);
+    // A battle among moving units fills only the hits' share: a stall still
+    // gets in.
+    let many: Vec<Event> = (100..100 + i32::try_from(HITS).unwrap() * 2)
+        .map(|x| hit(0, x))
+        .collect();
+    events.record(PlayerId(0), &many);
+    events.record(PlayerId(0), &[stalled(0, 5)]);
+    let kept = events.take();
+    let hits = kept
+        .iter()
+        .filter(|event| matches!(event, OwnEvent::Hit { .. }))
+        .count();
+    assert_eq!(hits, HITS);
+    assert!(
+        kept.iter()
+            .any(|event| matches!(event, OwnEvent::OrderStalled { .. })),
+        "{kept:?}"
+    );
 }
