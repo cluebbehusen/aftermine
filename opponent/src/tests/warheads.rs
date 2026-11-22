@@ -607,9 +607,11 @@ fn saving_for_a_spire(extractor: Bore) -> (Vec<PlayerCommand>, Trace) {
 fn a_seat_with_no_deep_bore_in_reach_spends_what_it_held_for_a_spire() {
     let spire = Some(Investment::Tech(BuildingKind::Spire));
     let (_, trace) = saving_for_a_spire(Bore::Refittable);
-    assert_eq!(trace.target.map(|target| target.investment), spire);
     assert!(
-        trace.target.and_then(|target| target.next).is_some() && trace.protected > 0,
+        matches!(
+            trace.target.and_then(|target| target.next),
+            Some(next) if matches!(next.step, Step::Upgrade(_))
+        ) && trace.protected > 0,
         "premise: the seat saves toward a Deep Bore: {trace:?}"
     );
     let (commands, trace) = saving_for_a_spire(Bore::Absent);

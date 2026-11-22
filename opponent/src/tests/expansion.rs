@@ -487,13 +487,13 @@ fn a_remote_extractor_is_never_deepened() {
 }
 
 #[test]
-fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands_at_every_rung() {
+fn a_supported_extractor_becomes_a_deep_bore_before_harvesting_saturates_at_every_rung() {
+    // Two Harvesters on untouched home nodes leave the crews far short, and
+    // nothing is mined until they deliver.
     let scenario = bore_arena(12);
     for difficulty in BotDifficulty::ALL {
         let mut state = scenario.build().unwrap();
         let extractor = own_extractor(&state);
-        // Deep Bores wait for harvesting to saturate and home scrap to run
-        // down.
         let config = rung(difficulty);
         let mut opponent = seat_with(&scenario, 0, config);
         let mut events = OwnEvents::default();
@@ -515,6 +515,18 @@ fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands_at_every_run
                 "{difficulty:?} tick {}",
                 report.tick
             );
+            assert!(
+                upgraded
+                    || !report.events.iter().any(|event| matches!(
+                        event,
+                        Event::ScrapDeposited {
+                            player: PlayerId(0),
+                            ..
+                        }
+                    )),
+                "{difficulty:?} deepens before its first delivery, tick {}",
+                report.tick
+            );
             events.record(PlayerId(0), &report.events);
         }
         assert!(upgraded, "{difficulty:?}");
@@ -523,7 +535,29 @@ fn a_supported_extractor_becomes_a_deep_bore_once_a_crucible_stands_at_every_run
 }
 
 #[test]
-fn a_deep_bore_wanted_before_a_crucible_stands_builds_the_crucible_first() {
+fn a_deep_bore_with_neither_tech_building_starts_at_the_fabricator() {
+    let mut scenario = bore_arena(12);
+    scenario
+        .buildings
+        .retain(|building| building.kind != BuildingKind::Crucible);
+    let state = scenario.build().unwrap();
+    let observation = ObservationData::fog_honest(&state, PlayerId(0));
+    let deep_bore = Investment::Upgrade {
+        building: own_extractor(&state),
+        tier: 1,
+    };
+    let frame = home_frame(&observation, &map(&scenario));
+    assert_eq!(
+        crate::investments::step(&observation, frame, deep_bore),
+        Some((
+            crate::Step::Build(BuildingKind::Fabricator),
+            expansion::construction_cost(BuildingKind::Fabricator)
+        ))
+    );
+}
+
+#[test]
+fn a_deep_bore_wanted_before_its_tech_stands_builds_that_tech_first() {
     let mut scenario = bore_arena(12);
     scenario
         .buildings
@@ -541,6 +575,17 @@ fn a_deep_bore_wanted_before_a_crucible_stands_builds_the_crucible_first() {
         let mut pulled = None;
         while state.current_tick() < 12_000 && pulled.is_none() {
             let (commands, trace) = opponent.act_traced(&state, &mut events);
+            let fabricator = state.buildings().iter().any(|building| {
+                building.player == PlayerId(0) && building.kind == BuildingKind::Fabricator
+            });
+            assert!(
+                fabricator
+                    || !trace.as_ref().is_some_and(|trace| trace.target.is_some_and(
+                        |target| target.investment == deep_bore && target.next.is_none()
+                    )),
+                "{difficulty:?} saves toward the Deep Bore with nothing to buy, tick {}",
+                state.current_tick()
+            );
             if let Some(trace) = trace
                 && trace.purchases.iter().any(|purchase| {
                     matches!(
