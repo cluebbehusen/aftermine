@@ -3220,3 +3220,81 @@ fn a_search_comes_before_an_unarmed_intruder() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn an_armed_aircraft_in_sight_comes_before_a_search() {
+    // A West Extractor is hit by a Lancer nobody sees while an East Buzzard
+    // flies over the West Foundry. The defense meets the Buzzard first rather
+    // than walk off to search beside the Extractor.
+    let mut scenario = field();
+    scenario.map[4].replace_range(12..13, "E");
+    scenario.players[0].scrap = 60;
+    scenario.units.extend(
+        GARRISON
+            .iter()
+            .map(|(x, y)| unit(0, UnitKind::Sentinel, *x, *y)),
+    );
+    scenario.units.push(unit(1, UnitKind::Lancer, 19, 5));
+    scenario
+        .buildings
+        .push(building(0, BuildingKind::Extractor, 12, 4));
+    let mut state = scenario.build().unwrap();
+    let extractor = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Extractor)
+        .unwrap()
+        .id;
+    let lancer = at(&state, 19, 5);
+    state.tick(&[PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Attack {
+            units: vec![lancer],
+            target: AttackTarget::Building(extractor),
+            queue: false,
+        },
+    }]);
+    let full = BuildingKind::Extractor.base_stats().max_hp;
+    while state.building(extractor).is_some_and(|b| b.hp == full)
+        || !state.current_tick().is_multiple_of(12)
+    {
+        assert!(state.current_tick() < 1_200, "premise: the Lancer hits it");
+        state.tick(&[]);
+    }
+    let searched = |state: &State| {
+        let commands = seat(&scenario, 0).act(state, &mut OwnEvents::default());
+        let beside: Vec<TilePos> =
+            crate::frame::ring(TilePos::new(12, 4), BuildingKind::Extractor.size()).collect();
+        advances(&commands)
+            .iter()
+            .any(|(_, goal)| beside.contains(goal))
+    };
+    assert!(
+        searched(&state),
+        "premise: with nothing in sight, it searches"
+    );
+    let mut raided = scenario.clone();
+    raided.units.push(unit(1, UnitKind::Buzzard, 4, 9));
+    let mut state = raided.build().unwrap();
+    state.tick(&[PlayerCommand {
+        player: PlayerId(1),
+        command: Command::Attack {
+            units: vec![lancer],
+            target: AttackTarget::Building(extractor),
+            queue: false,
+        },
+    }]);
+    while state.building(extractor).is_some_and(|b| b.hp == full)
+        || !state.current_tick().is_multiple_of(12)
+    {
+        state.tick(&[]);
+    }
+    assert!(
+        ObservationData::fog_honest(&state, PlayerId(0))
+            .enemy_units
+            .iter()
+            .any(|enemy| enemy.kind == UnitKind::Buzzard),
+        "premise: the Buzzard is in sight"
+    );
+    assert!(!searched(&state));
+}

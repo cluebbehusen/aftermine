@@ -1325,15 +1325,19 @@ impl Siege<'_> {
     }
 
     /// Whether it looks for what hit a structure out of sight with nothing
-    /// armed in sight: an unarmed intruder, such as a scout, waits.
+    /// armed in sight, on the ground or in the air: an unarmed intruder,
+    /// such as a scout, waits.
     fn searching(&self) -> bool {
-        self.search.is_some() && self.armed_grounded().next().is_none()
+        self.search.is_some() && self.units.is_empty() && self.armed_grounded().next().is_none()
     }
 
     /// Where a threat out of sight is gone after: a gun shelling, or what
-    /// hit a structure.
+    /// hit a structure while nothing armed is in sight.
     fn hidden(&self) -> Option<TilePos> {
-        self.unseen.or(self.search.map(|(tile, _)| tile))
+        self.unseen.or(self
+            .search
+            .filter(|_| self.searching())
+            .map(|(tile, _)| tile))
     }
 
     /// What defenders go after when nothing armed threatens, nearest by
