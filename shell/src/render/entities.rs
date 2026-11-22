@@ -1799,10 +1799,10 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         // point defender's beam still needs its emitter in sight.
         let in_sight = match fx.kind {
             EffectKind::Intercept {
-                from,
+                emitter_seen,
                 impact_witnessed,
                 ..
-            } => from.is_some() || impact_witnessed,
+            } => emitter_seen || impact_witnessed,
             // Its round and its impact each follow sight, decided below.
             EffectKind::DirectShot { .. } => true,
             EffectKind::SapperDetonation {
@@ -1840,7 +1840,8 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
         }
         match fx.kind {
             EffectKind::Intercept {
-                from,
+                emitter,
+                emitter_seen,
                 at,
                 flight,
                 impact_witnessed,
@@ -1860,22 +1861,32 @@ pub(crate) fn draw_fx(game: &crate::game::Scene<'_>, sprites: &Sprites) {
                         age / (10.0 * crate::game::TICK_DT),
                     );
                 }
-                if let Some(from) = from {
-                    let start = game.presentation.camera.to_screen(from);
-                    if impact_witnessed {
+                let start = game.presentation.camera.to_screen(emitter);
+                if impact_witnessed {
+                    // An unseen emitter's beam shows only over seen ground,
+                    // so it reaches in from the edge of sight.
+                    let runs = if emitter_seen || game.presentation.all_seeing() {
+                        vec![(0.0, 1.0)]
+                    } else {
+                        visible_runs(emitter, target, |tile| game.sees_tile(tile))
+                    };
+                    for (entered, left) in runs {
+                        let (near, far) = (start.lerp(end, entered), start.lerp(end, left));
                         line_between(
-                            start,
-                            end,
+                            near,
+                            far,
                             (zoom * 0.045).max(1.5),
                             Color::new(0.56, 0.55, 0.53, opacity),
                         );
                         line_between(
-                            start,
-                            end,
+                            near,
+                            far,
                             (zoom * 0.018).max(0.75),
                             Color::new(0.88, 0.80, 0.64, opacity),
                         );
                     }
+                }
+                if emitter_seen {
                     fill_circle(
                         start,
                         zoom * 0.035 * opacity,

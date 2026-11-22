@@ -3065,6 +3065,20 @@ impl State {
                 E::UnsortedShellImpacts(seat),
             ],
         )?;
+        self.validate_recent_tiles(
+            v.downed_shells(),
+            (
+                crate::stats::DOWNED_SHELL_CAP,
+                crate::stats::DOWNED_SHELL_MEMORY_TICKS,
+            ),
+            [
+                E::OverlongDownedShellMemory(seat),
+                E::DownedShellOutsideEnvelope(seat),
+                E::ExpiredDownedShell(seat),
+                E::DownedShellExpiryBeyondHorizon(seat),
+                E::UnsortedDownedShells(seat),
+            ],
+        )?;
         if !v.tracking_valid(self, seat) {
             return Err(E::InvalidContactTracking(seat));
         }
@@ -3325,6 +3339,27 @@ impl State {
             if self.hostile(PlayerId::from_index(index), owner) && self.vision[index].visible(tile)
             {
                 self.vision[index].remember_shell_impact(tile, from, expires_at);
+            }
+        }
+    }
+
+    /// Remembers where a shell of `owner`'s was shot down and the compass
+    /// point the shot came from, for every seat of `owner`'s team, never
+    /// where the defender stood.
+    pub(crate) fn record_downed_shell(
+        &mut self,
+        owner: PlayerId,
+        tile: TilePos,
+        from: chassis::compass::CompassPoint,
+    ) {
+        let team = self.player(owner).team;
+        let expires_at = self
+            .tick
+            .saturating_add(crate::stats::DOWNED_SHELL_MEMORY_TICKS)
+            .saturating_add(1);
+        for (player, vision) in self.players.iter().zip(&mut self.vision) {
+            if player.team == team {
+                vision.remember_downed_shell(tile, from, expires_at);
             }
         }
     }
@@ -4336,6 +4371,22 @@ pub enum StateIntegrityError {
     /// Remembered hostile shell impacts are not sorted and deduplicated.
     #[error("player {0} remembers shell impacts out of canonical order")]
     UnsortedShellImpacts(PlayerId),
+    /// A team remembers more downed shells than the bounded memory permits.
+    #[error("player {0} remembers more downed shells than the cap allows")]
+    OverlongDownedShellMemory(PlayerId),
+    /// A remembered downed shell sits outside the sanity envelope.
+    #[error("player {0} remembers a downed shell outside the envelope")]
+    DownedShellOutsideEnvelope(PlayerId),
+    /// An active match retained a downed shell past its expiry.
+    #[error("player {0} remembers an expired downed shell in an active match")]
+    ExpiredDownedShell(PlayerId),
+    /// A remembered downed shell expires further ahead than its memory lasts
+    /// from the state's current tick.
+    #[error("player {0} remembers a downed shell expiring beyond its memory horizon")]
+    DownedShellExpiryBeyondHorizon(PlayerId),
+    /// Remembered downed shells are not sorted and deduplicated.
+    #[error("player {0} remembers downed shells out of canonical order")]
+    UnsortedDownedShells(PlayerId),
     /// A magazine on a kind without one, missing from a kind with one,
     /// past its capacity, with a meter out of range, or stocked before the
     /// building stands.

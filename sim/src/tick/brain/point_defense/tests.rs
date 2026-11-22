@@ -249,3 +249,91 @@ fn forged_shell_ticks_never_break_the_pass() {
         vec![(state.units[0].id, at("11", "10"))]
     );
 }
+
+/// Seat 0's shell from (10, 10) toward (14, 10) is halfway there when seat
+/// 1's Mantle at (15, 10) stops it; a seat 0 Kestrel over the stop point sees
+/// it all, less the tiles listed as `hidden` from seat 0.
+fn downed_in_sight(hidden: &[chassis::grid::TilePos]) -> State {
+    let mut state = world();
+    mantle(&mut state, 1, at("15.5", "10.5"));
+    state.spawn_unit(PlayerId(0), UnitKind::Kestrel, at("12.5", "10.5"));
+    state.refresh_vision();
+    for &tile in hidden {
+        state.vision[0].conceal(tile);
+    }
+    state.shells = vec![shell(0, at("10.5", "10.5"), at("14.5", "10.5"))];
+    let mut events = Vec::new();
+    run(&mut state, &mut events);
+    assert_eq!(intercepted(&events).len(), 1, "premise: the Mantle fires");
+    state
+}
+
+#[test]
+fn a_shell_downed_by_a_defender_out_of_sight_is_remembered_with_its_bearing() {
+    use chassis::grid::TilePos;
+    let state = downed_in_sight(&[TilePos::new(15, 10)]);
+    let downed = state.vision(PlayerId(0)).downed_shells();
+    assert_eq!(downed.len(), 1, "{downed:?}");
+    assert_eq!(downed[0].tile, TilePos::new(12, 10));
+    assert_eq!(downed[0].from.index(), 0, "the shot came from the east");
+    assert!(
+        state.vision(PlayerId(1)).downed_shells().is_empty(),
+        "the defender's team learns nothing"
+    );
+}
+
+#[test]
+fn a_shell_downed_by_a_seen_defender_or_wholly_out_of_sight_leaves_no_memory() {
+    use chassis::grid::TilePos;
+    let seen = downed_in_sight(&[]);
+    assert!(seen.vision(PlayerId(0)).downed_shells().is_empty());
+    let shot: Vec<TilePos> = (12..=15).map(|x| TilePos::new(x, 10)).collect();
+    let unseen = downed_in_sight(&shot);
+    assert!(unseen.vision(PlayerId(0)).downed_shells().is_empty());
+}
+
+#[test]
+fn a_shot_seen_crossing_open_ground_is_remembered_though_its_shell_falls_in_fog() {
+    use chassis::grid::TilePos;
+    let state = downed_in_sight(&[
+        TilePos::new(15, 10),
+        TilePos::new(14, 10),
+        TilePos::new(12, 10),
+    ]);
+    let downed = state.vision(PlayerId(0)).downed_shells();
+    assert_eq!(downed.len(), 1, "{downed:?}");
+    assert_eq!(downed[0].tile, TilePos::new(12, 10));
+    assert_eq!(downed[0].from.index(), 0);
+}
+
+#[test]
+fn mirrored_shells_downed_out_of_sight_leave_mirrored_memories() {
+    use chassis::grid::TilePos;
+    let mut state = world();
+    let (width, height) = (state.map.width(), state.map.height());
+    let mirror = |p: Vec2Fx| Vec2Fx::new(Fx::from_num(width), Fx::from_num(height)) - p;
+    let turn = |tile: TilePos| TilePos::new(width - 1 - tile.x, height - 1 - tile.y);
+    let (defender, spotter) = (at("15.5", "11.5"), at("12.5", "10.5"));
+    let (launch, impact) = (at("10.5", "10.5"), at("14.5", "10.5"));
+    mantle(&mut state, 1, defender);
+    mantle(&mut state, 0, mirror(defender));
+    state.spawn_unit(PlayerId(0), UnitKind::Kestrel, spotter);
+    state.spawn_unit(PlayerId(1), UnitKind::Kestrel, mirror(spotter));
+    state.refresh_vision();
+    state.vision[0].conceal(TilePos::containing(defender));
+    state.vision[1].conceal(TilePos::containing(mirror(defender)));
+    state.shells = vec![
+        shell(0, launch, impact),
+        shell(1, mirror(launch), mirror(impact)),
+    ];
+    let mut events = Vec::new();
+    run(&mut state, &mut events);
+    assert_eq!(intercepted(&events).len(), 2, "premise: both Mantles fire");
+    let (west, east) = (
+        state.vision(PlayerId(0)).downed_shells(),
+        state.vision(PlayerId(1)).downed_shells(),
+    );
+    assert_eq!((west.len(), east.len()), (1, 1), "{west:?} {east:?}");
+    assert_eq!(turn(west[0].tile), east[0].tile);
+    assert_eq!(west[0].from.opposite(), east[0].from);
+}

@@ -476,8 +476,9 @@ ground.
 
 A team also remembers, for a few seconds, the tile where each hostile shell it
 saw land came down and the compass point it came in from, so a gun firing from
-out of sight stays known between its shells. The memory never names the gun or
-its range.
+out of sight stays known between its shells. Where it saw one of its own shells
+shot down by a point defender out of sight, it remembers the tile and the point
+the shot came from. Neither memory names the gun or the defender, or its range.
 
 All allegiance checks go through normalized team ids. Teammates share vision,
 cannot target one another, and win or lose together. A resigned seat can no

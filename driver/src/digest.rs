@@ -178,6 +178,7 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
     if !view.incoming_shells.is_empty()
         || !view.shell_impacts.is_empty()
         || !view.unseen_fire.is_empty()
+        || !view.downed_shells.is_empty()
     {
         out.push('\n');
     }
@@ -200,6 +201,13 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
             out,
             "FIRE FROM OUT OF SIGHT lately at {}",
             marks(&view.unseen_fire)
+        );
+    }
+    if !view.downed_shells.is_empty() {
+        let _ = writeln!(
+            out,
+            "SHELLS SHOT DOWN lately at {}",
+            marks(&view.downed_shells)
         );
     }
     section(&mut out, "MAGAZINES", view.magazines.iter(), |known| {

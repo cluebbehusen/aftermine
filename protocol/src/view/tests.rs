@@ -416,8 +416,8 @@ fn parity_world() -> aftermine_sim::State {
     }
     let state = scenario.build().unwrap();
     // Seat 0 also remembers East's Extractor as a Deep Bore, so a remembered
-    // tier is compared, a wreck on dark ground the map no longer holds, and
-    // fire from out of sight on its Extractor.
+    // tier is compared, a wreck on dark ground the map no longer holds, fire
+    // from out of sight on its Extractor, and one of its shells downed.
     let mut value = serde_json::to_value(&state).unwrap();
     assert_eq!(value["vision"][0]["ghosts"], serde_json::json!([]));
     value["vision"][0]["ghosts"] = serde_json::json!([{
@@ -436,6 +436,11 @@ fn parity_world() -> aftermine_sim::State {
         "tile": {"x": 8, "y": 4},
         "from": 5,
         "expires_at": aftermine_sim::stats::HARVEST_INCIDENT_MEMORY_TICKS,
+    }]);
+    value["vision"][0]["downed_shells"] = serde_json::json!([{
+        "tile": {"x": 9, "y": 6},
+        "from": 3,
+        "expires_at": aftermine_sim::stats::DOWNED_SHELL_MEMORY_TICKS,
     }]);
     let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
     // Only West raids, so East meets hostiles at home while West's cradle
@@ -554,6 +559,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     let mut compared_shells = false;
     let mut compared_impacts = false;
     let mut compared_unseen_fire = false;
+    let mut compared_downed = false;
     let mut compared_hostile_works = false;
     let mut compared_wreck = false;
     let mut cradle_ordered = false;
@@ -747,6 +753,11 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 );
                 compared_unseen_fire |= !obs.salvage_incidents.is_empty();
                 assert_eq!(
+                    fog.downed_shells, obs.downed_shells,
+                    "tick {tick} seat {seat:?} downed shells"
+                );
+                compared_downed |= !obs.downed_shells.is_empty();
+                assert_eq!(
                     fog.warheads, obs.warheads,
                     "tick {tick} seat {seat:?} warheads"
                 );
@@ -794,6 +805,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     assert!(compared_shells, "a hostile shell in flight was compared");
     assert!(compared_impacts, "a hostile shell's landing was compared");
     assert!(compared_unseen_fire, "fire from out of sight was compared");
+    assert!(compared_downed, "a shell downed out of sight was compared");
     assert!(
         compared_hostile_works,
         "a hostile producer at work was compared"

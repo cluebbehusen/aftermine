@@ -229,6 +229,11 @@ pub struct Vision {
     /// deduplicated by [`RecentTile::key`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     shell_impacts: Vec<RecentTile>,
+    /// Recent tiles where this team saw one of its own shells shot down by a
+    /// point defender it could not see. Sorted and deduplicated by
+    /// [`RecentTile::key`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    downed_shells: Vec<RecentTile>,
     /// Hostile warheads in flight this team has had in sight or radar,
     /// sorted by id.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -294,6 +299,7 @@ impl Vision {
             tracking: tracking::Tracking::default(),
             salvage_incidents: Vec::new(),
             shell_impacts: Vec::new(),
+            downed_shells: Vec::new(),
             warheads: Vec::new(),
         }
     }
@@ -414,10 +420,29 @@ impl Vision {
         remember_recent(&mut self.shell_impacts, cap, dims, tile, from, expires_at);
     }
 
+    /// Recent tiles where this team saw one of its shells shot down by a
+    /// point defender out of sight, sorted by (y, x, compass point). A record
+    /// still listed on its expiry tick no longer counts.
+    pub fn downed_shells(&self) -> &[RecentTile] {
+        &self.downed_shells
+    }
+
+    pub(crate) fn remember_downed_shell(
+        &mut self,
+        tile: TilePos,
+        from: CompassPoint,
+        expires_at: crate::Tick,
+    ) {
+        let dims = (self.visible.width(), self.visible.height());
+        let cap = crate::stats::DOWNED_SHELL_CAP;
+        remember_recent(&mut self.downed_shells, cap, dims, tile, from, expires_at);
+    }
+
     fn forget_expired(&mut self, tick: crate::Tick) {
         self.salvage_incidents
             .retain(|incident| incident.expires_at > tick);
         self.shell_impacts.retain(|impact| impact.expires_at > tick);
+        self.downed_shells.retain(|downed| downed.expires_at > tick);
     }
 
     /// Whether the player currently sees `pos`.
@@ -457,6 +482,7 @@ impl Vision {
             tracking,
             salvage_incidents,
             shell_impacts,
+            downed_shells,
             warheads,
         } = self;
         visible.copy_from(&src.visible);
@@ -468,6 +494,7 @@ impl Vision {
         tracking.clone_from(&src.tracking);
         salvage_incidents.clone_from(&src.salvage_incidents);
         shell_impacts.clone_from(&src.shell_impacts);
+        downed_shells.clone_from(&src.downed_shells);
         warheads.clone_from(&src.warheads);
     }
 
