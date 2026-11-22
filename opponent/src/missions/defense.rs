@@ -14,7 +14,7 @@ use super::attack::{building_value, concentrates, defense, defense_around};
 use super::reserve::LOCAL_REACH;
 use super::{
     AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
-    fill, hits, hunt, insert, meeting, mine, run, value, walking_gun, worth,
+    fill, hits, hunt, insert, meeting, mine, reached, run, value, worth,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
@@ -160,7 +160,7 @@ impl Missions {
             let shelling = siege
                 .units
                 .iter()
-                .filter(|threat| walking_gun(threat) && map.component(threat.tile) == component)
+                .filter(|threat| reached(threat.kind) && map.component(threat.tile) == component)
                 .min_by_key(|threat| (frame.rank(centre, doubled(threat.tile)), threat.id));
             let pursuit = Pursuit::of(
                 shelling.copied(),
@@ -696,7 +696,7 @@ fn lost(
                     .enemy_units
                     .iter()
                     .find(|enemy| enemy.id == id)
-                    .is_none_or(walking_gun)
+                    .is_none_or(|enemy| reached(enemy.kind))
             })
 }
 
@@ -1079,6 +1079,15 @@ fn close_up<'a>(
     if !matches!(pursuit, Pursuit::Gun(_) | Pursuit::Advance) {
         return None;
     }
+    // A crusher never turns on a machine, and the post stands in its way.
+    if let Pursuit::Gun(id) = pursuit
+        && observation
+            .enemy_units
+            .iter()
+            .any(|enemy| enemy.id == id && enemy.kind.crushes())
+    {
+        return None;
+    }
     let post = waiting_post(map, frame, foundry, fight)?;
     // Only before setting out: a group of fast and slow units strings out on
     // its way, and calling it back each time would never let it arrive.
@@ -1154,7 +1163,7 @@ fn waiting_post(
 /// only gets the defenders shelled, and an ally's defense has no shortfall
 /// training behind a wait.
 fn sortie(own: bool, siege: &Siege<'_>, met: u64, difficulty: BotDifficulty) -> u64 {
-    if own && siege.batteries.is_empty() && !siege.units.iter().any(|threat| walking_gun(threat)) {
+    if own && siege.batteries.is_empty() && !siege.units.iter().any(|threat| reached(threat.kind)) {
         met * engage_margin(difficulty) / 1_000
     } else {
         met

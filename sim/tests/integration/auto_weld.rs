@@ -9,7 +9,10 @@ use common::{assert_refused, cmd, open_arena, open_arena_with, orders, run, run_
 
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::scenario::UnitSpec;
-use aftermine_sim::{Command, Event, Order, State, Target, UnitId, UnitKind, UnitRepairSource};
+use aftermine_sim::{
+    BuildingKind, Command, Event, Order, State, Target, UnitId, UnitKind, UnitRepairSource,
+};
+use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use serde_json::json;
 
@@ -636,5 +639,72 @@ fn the_bot_view_reports_a_trip_as_busy_tending() {
     assert_eq!(
         view.repair_target(welder),
         Some(aftermine_sim::Target::Unit(patient))
+    );
+}
+
+/// A Harvester wounded to 10 hp at (12, 8) with `welders` idle Harvesters
+/// posted east of it. `against` puts an own Crucible beside its west face,
+/// closing that side.
+fn crowded_patient(welders: usize, against: bool) -> (State, UnitId, Vec<UnitId>) {
+    let posts = [(14, 8), (15, 7), (14, 9), (15, 9), (16, 8), (15, 10)];
+    let mut units = vec![unit(0, UnitKind::Harvester, 12, 8)];
+    units.extend(
+        posts[..welders]
+            .iter()
+            .map(|&(x, y)| unit(0, UnitKind::Harvester, x, y)),
+    );
+    let mut scenario = open_arena(32, 18, units);
+    if against {
+        scenario
+            .buildings
+            .push(common::building(0, BuildingKind::Crucible, 10, 7));
+    }
+    for player in &mut scenario.players {
+        player.scrap = 500;
+    }
+    let mut state = scenario.build().unwrap();
+    let all = ids(&state);
+    set_hp(&mut state, all[0], 10);
+    (state, all[0], all[1..].to_vec())
+}
+
+/// Welds `patient` to full within `bound` ticks and returns what each
+/// welder added.
+fn weld_to_full(state: &mut State, patient: UnitId, welders: &[UnitId], bound: u64) -> Vec<u32> {
+    let full = max_hp(state, patient);
+    let events = run_until(state, bound, |s, _| s.unit(patient).unwrap().hp == full);
+    welders.iter().map(|&w| welded_by(&events, w)).collect()
+}
+
+#[test]
+fn welders_arriving_from_one_side_share_a_patient_against_a_structure() {
+    let (mut state, patient, welders) = crowded_patient(3, true);
+    let welded = weld_to_full(&mut state, patient, &welders, 200);
+    assert!(
+        welded.iter().all(|&hp| hp > 0),
+        "every welder welds: {welded:?}"
+    );
+}
+
+#[test]
+fn welders_arriving_from_one_side_share_a_patient_in_open_ground() {
+    let (mut state, patient, welders) = crowded_patient(3, false);
+    let welded = weld_to_full(&mut state, patient, &welders, 200);
+    assert!(
+        welded.iter().all(|&hp| hp > 0),
+        "every welder welds: {welded:?}"
+    );
+}
+
+#[test]
+fn more_welders_than_room_still_weld_a_patient_flush_against_a_structure() {
+    let (mut state, patient, welders) = crowded_patient(6, true);
+    edit(&mut state, patient, |row| {
+        row["pos"] = json!(Vec2Fx::new(Fx::lit("12"), Fx::lit("8.57")));
+    });
+    let welded = weld_to_full(&mut state, patient, &welders, 200);
+    assert!(
+        welded.iter().filter(|&&hp| hp > 0).count() >= 3,
+        "the room round the patient is shared: {welded:?}"
     );
 }

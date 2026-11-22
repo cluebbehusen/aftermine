@@ -577,7 +577,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 let mut fog_rows: Vec<_> = fog
                     .units
                     .iter()
-                    .map(|u| (u.id, u.hp, u.landed, u.charges))
+                    .map(|u| (u.id, u.hp, u.landed, u.charges, u.heading))
                     .collect();
                 fog_rows.sort_unstable();
                 let mut obs_rows: Vec<_> = obs
@@ -585,7 +585,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .iter()
                     .chain(&obs.ally_units)
                     .chain(&obs.enemy_units)
-                    .map(|u| (u.id.0, u.hp, u.grounded, u.charges))
+                    .map(|u| (u.id.0, u.hp, u.grounded, u.charges, u.heading))
                     .collect();
                 obs_rows.sort_unstable();
                 assert_eq!(fog_rows, obs_rows, "tick {tick} seat {seat:?} unit rows");

@@ -316,7 +316,9 @@ pub(super) fn run(
             Order::Found { kind, anchor } => {
                 found(state, index, id, kind, anchor, events, &mut builds);
             }
-            Order::RepairUnit { unit } => repair_unit(state, id, unit, events, &mut field_welds),
+            Order::RepairUnit { unit } => {
+                repair_unit(state, index, id, unit, events, &mut field_welds);
+            }
             Order::Board { transport } => {
                 logistics::board(state, id, transport, &mut logistics_pending, events);
             }
@@ -377,7 +379,7 @@ pub(super) fn run(
         }
     }
     advance_upgrades(state, &mut builds);
-    commit_unit_welds(state, field_welds, events, &mut heals);
+    commit_unit_welds(state, index, field_welds, events, &mut heals);
     turret_fire(state, index, &motion, events, &mut hits, &mut launches);
     let mut warhead_launches = Vec::new();
     warheads::aim_and_launch(state, &mut warhead_launches, events);

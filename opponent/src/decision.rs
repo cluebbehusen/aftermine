@@ -64,6 +64,8 @@ pub(crate) struct Ledger {
     docked: Vec<UnitId>,
     /// Units a defense holds at its waiting post this decision, by id.
     reserved: Vec<UnitId>,
+    /// Own units stepping out of a crusher's way this decision, by id.
+    aside: Vec<UnitId>,
     decision: Decision,
 }
 
@@ -78,6 +80,7 @@ impl Ledger {
             held: Vec::new(),
             docked: Vec::new(),
             reserved: Vec::new(),
+            aside: Vec::new(),
             decision: Decision {
                 allowance,
                 ..Decision::default()
@@ -177,7 +180,7 @@ impl Ledger {
             return false;
         }
         if let Some(units) = units_of(&mut command) {
-            units.retain(|unit| !self.stuck(*unit));
+            units.retain(|unit| !self.stuck(*unit) && !self.aside(*unit));
             if units.is_empty() {
                 return true;
             }
@@ -209,6 +212,19 @@ impl Ledger {
     /// firing position.
     pub(crate) fn stuck(&self, unit: UnitId) -> bool {
         self.stuck.binary_search(&unit).is_ok()
+    }
+
+    /// Leaves `unit`, sent out of a crusher's way, out of every later order
+    /// this decision.
+    pub(crate) fn step_aside(&mut self, unit: UnitId) {
+        if let Err(index) = self.aside.binary_search(&unit) {
+            self.aside.insert(index, unit);
+        }
+    }
+
+    /// Whether `unit` steps out of a crusher's way this decision.
+    pub(crate) fn aside(&self, unit: UnitId) -> bool {
+        self.aside.binary_search(&unit).is_ok()
     }
 
     /// Whether `unit` was sent running this decision.
@@ -414,6 +430,13 @@ pub(crate) fn decide(
     for command in crate::defenses::autofill(observation) {
         ledger.push(command);
     }
+    crate::crush::step_aside(
+        observation,
+        map,
+        frame,
+        crate::decision_interval(profile.difficulty),
+        &mut ledger,
+    );
     let mut scratch = Scratch::new(
         observation,
         map,

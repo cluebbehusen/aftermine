@@ -3185,6 +3185,36 @@ pub fn hull_excess(radius: Fx) -> Fx {
     (radius - SMALL_BODY_RADIUS).max(Fx::ZERO)
 }
 
+/// A machine a crusher's front goes over: a ground body of a radius under
+/// this.
+pub const CRUSHED_RADIUS: Fx = Fx::lit("0.5");
+
+/// How far past touching a small machine still counts as under a crusher's
+/// front.
+pub const CRUSH_SLACK: Fx = Fx::lit("0.1");
+
+impl UnitKind {
+    /// Whether this kind cuts with a drum across the front of a hull
+    /// broader than a small body, as the Maw does. Such a crusher cuts a
+    /// building only with the drum pressed flat against one of its sides, and
+    /// crushes every small hostile ground machine touching the front half of
+    /// its hull.
+    pub fn crushes(self) -> bool {
+        self.stats().contact_reach.is_some() && hull_excess(self.stats().radius) > Fx::ZERO
+    }
+
+    /// Whether a crusher's front goes over this kind on the ground.
+    pub fn crushable(self) -> bool {
+        self.stats().radius < CRUSHED_RADIUS
+    }
+}
+
+/// How near the centre of a `victim` must come to a `crusher`'s centre,
+/// ahead of it, to be under its front.
+pub fn crush_touch(crusher: UnitKind, victim: UnitKind) -> Fx {
+    crusher.stats().radius + victim.stats().radius + CRUSH_SLACK
+}
+
 /// The widest collision radius any unit kind has.
 pub const MAX_UNIT_RADIUS: Fx = {
     let mut widest = 0;
