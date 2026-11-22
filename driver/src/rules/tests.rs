@@ -103,3 +103,36 @@ fn the_sheet_opens_with_the_rules_a_player_cannot_watch() {
     assert!(sheet.contains("within 8 tiles"), "{sheet}");
     assert!(sheet.contains("costs 85% of the price"), "{sheet}");
 }
+
+#[test]
+fn the_sheet_says_how_far_units_chase_and_why_workers_hold() {
+    let sheet = sheet();
+    let label = aftermine_kit::roster::tick_time_label;
+    assert!(
+        sheet.contains(&format!(
+            "stood still for {} holds that spot: from there it chases freely within {} tiles",
+            label(u32::from(stats::LEASH_STATION_TICKS)),
+            stats::LEASH_RADIUS.to_num::<i32>()
+        )),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains("the advance reports DangerHold once every"),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains(r#"{"type":"set_idle_weld","units":[3,4],"enabled":false}"#),
+        "{sheet}"
+    );
+    // A drone's leash runs from its host, so its page gives no aggro range.
+    let drone = sheet
+        .split("\n## ")
+        .find(|page| page.starts_with("Drone"))
+        .expect("the Drone has a page");
+    assert!(!drone.contains("Aggro range"), "{drone}");
+    let lancer = UnitKind::Lancer.stats().aggro_range;
+    assert!(
+        sheet.contains(&format!("Aggro range {lancer} tiles")),
+        "{sheet}"
+    );
+}

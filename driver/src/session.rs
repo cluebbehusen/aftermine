@@ -29,13 +29,14 @@ use aftermine_protocol::{
     AdvancedView, DebugSession, PlayedView, PresentedView, Reply, Request, ResponseEnvelope,
     SavedView, ScreenshotView, SeenEvent, StatusView, dispatch_shared, hash_hex,
 };
+use aftermine_sim::Target;
 use aftermine_sim::command::RejectReason;
 use aftermine_sim::{
     BuildingKind, Command, Event, GameResult, PlaceRefusal, PlayerCommand, PlayerId, SIM_VERSION,
     Scenario, State,
 };
 use anyhow::{Context, Result};
-use chassis::fx::Vec2Fx;
+use chassis::fx::{Fx, Vec2Fx};
 use chassis::grid::TilePos;
 use chassis::replay::Replay;
 use std::collections::{BTreeMap, BTreeSet};
@@ -479,7 +480,7 @@ impl Session {
                 .and_then(|value| value.as_str().map(|name| name.replace('_', " ")))
                 .unwrap_or_else(|| format!("{reason:?}"));
             return Err(format!(
-                "the game rejects this order ({name}){}; nothing was sent",
+                "the game rejects this order ({name}){}; this order was not sent",
                 self.why(&order, reason)
             ));
         }
@@ -576,8 +577,18 @@ impl Session {
                     self.state.place_refusal(seat, *kind, *anchor)
                 };
                 refusal.map_or_else(String::new, |refusal| {
-                    site_refusal(&self.state, seat, *kind, *anchor, refusal)
+                    site_refusal(&self.state, seat, (*kind, *anchor, *defer), refusal)
                 })
+            }
+            (RejectReason::InvalidTarget, Command::Attack { .. }) => {
+                ": the target is out of sight or gone; attack a structure remembered out of \
+                 sight by its anchor, with attack-building --at x,y"
+                    .to_string()
+            }
+            (RejectReason::InvalidTarget, Command::Repair { .. } | Command::RepairUnit { .. }) => {
+                ": only your own damaged structures, and your own wounded ground units, \
+                    can be welded"
+                    .to_string()
             }
             _ => String::new(),
         }
@@ -664,9 +675,12 @@ struct Seen {
     /// Other seats' structures in sight as the coming tick begins, by id,
     /// so a site that vanishes in it can be named.
     in_sight: BTreeMap<aftermine_sim::BuildingId, String>,
+    /// Other seats' structures in sight as the coming tick begins, by
+    /// owner, so one firing in it can be named.
+    standing: BTreeMap<aftermine_sim::BuildingId, PlayerId>,
     /// Other seats' units in sight as the coming tick begins: the seat sees
     /// one die there even when its last observer falls in the same tick.
-    units_in_sight: BTreeSet<aftermine_sim::UnitId>,
+    units_in_sight: BTreeMap<aftermine_sim::UnitId, PlayerId>,
     /// Where the seat's own units stood as the coming tick begins, so a
     /// unit hit before it moved on can be named.
     own_before: BTreeMap<aftermine_sim::UnitId, Vec2Fx>,
@@ -684,7 +698,8 @@ impl Seen {
             fire: BTreeSet::new(),
             stalls: BTreeSet::new(),
             in_sight: BTreeMap::new(),
-            units_in_sight: BTreeSet::new(),
+            standing: BTreeMap::new(),
+            units_in_sight: BTreeMap::new(),
             own_before: BTreeMap::new(),
         }
     }
@@ -702,9 +717,19 @@ impl Seen {
             .units()
             .iter()
             .filter(|unit| unit.player != self.seat && state.sees_unit(self.seat, unit))
-            .map(|unit| unit.id)
+            .map(|unit| (unit.id, unit.player))
             .collect();
         let vision = state.vision(self.seat);
+        let seen = |building: &aftermine_sim::Building| {
+            let (w, h) = building.kind.size();
+            (0..h).any(|dy| (0..w).any(|dx| vision.visible(building.anchor.offset(dx, dy))))
+        };
+        self.standing = state
+            .buildings()
+            .iter()
+            .filter(|building| building.player != self.seat && seen(building))
+            .map(|building| (building.id, building.player))
+            .collect();
         self.in_sight = state
             .buildings()
             .iter()
@@ -733,26 +758,145 @@ impl Seen {
     /// that tick. Most fire lands before units move in a tick and crashes
     /// and charges after, so a unit hit there stood at `pos` as the tick
     /// began or as it ended.
-    fn hit_at(&self, tick: u64, state: &State, pos: Vec2Fx) -> Option<String> {
+    fn hit_at(
+        &self,
+        tick: u64,
+        state: &State,
+        events: &[Event],
+        pos: Vec2Fx,
+    ) -> Option<(String, Target, (i32, i32))> {
         if let Some(unit) = state.units().iter().find(|unit| {
             unit.player == self.seat
                 && unit.damaged_at == Some(tick)
                 && (unit.pos == pos || self.own_before.get(&unit.id) == Some(&pos))
         }) {
-            return Some(format!("{} {}", unit.kind.name(), unit.id.0));
+            return Some((
+                format!("{} {}", unit.kind.name(), unit.id.0),
+                Target::Unit(unit.id),
+                (0, 0),
+            ));
         }
         let tile = TilePos::containing(pos);
-        state
+        if let Some(building) = state
             .buildings()
             .iter()
             .find(|building| building.player == self.seat && building.contains(tile))
-            .map(|building| {
+        {
+            return Some((
                 format!(
                     "{} {}",
                     building.kind.tier_name(building.tier),
                     building.id.0
-                )
+                ),
+                Target::Building(building.id),
+                building.kind.size(),
+            ));
+        }
+        // A hit that killed is gone from the world after the tick: its own
+        // death names it.
+        events.iter().find_map(|event| match event {
+            Event::UnitDied {
+                unit,
+                kind,
+                player,
+                pos: died,
+                ..
+            } if *player == self.seat
+                && (*died == pos || self.own_before.get(unit) == Some(&pos)) =>
+            {
+                Some((
+                    format!("{} {}", kind.name(), unit.0),
+                    Target::Unit(*unit),
+                    (0, 0),
+                ))
+            }
+            Event::BuildingDestroyed {
+                building,
+                kind,
+                player,
+                tier,
+                pos: fell,
+            } if *player == self.seat && *fell == pos => Some((
+                format!("{} {}", kind.tier_name(*tier), building.0),
+                Target::Building(*building),
+                kind.size(),
+            )),
+            _ => None,
+        })
+    }
+
+    /// The enemies in sight as the tick began that fired on `victim` in it,
+    /// among its `events`, as the seat names them: those aiming at it and
+    /// those whose splash landed on it, a footprint of `size` centred at
+    /// `pos`. None when the seat saw no one firing, such as a gun shelling
+    /// from out of sight.
+    fn shooters(
+        &self,
+        events: &[Event],
+        victim: Target,
+        (pos, size): (Vec2Fx, (i32, i32)),
+    ) -> Option<String> {
+        let splashed = |splash: Option<Fx>, impact: Vec2Fx| {
+            splash.is_some_and(|radius| {
+                let (w, h) = size;
+                let gap =
+                    |delta: Fx, size: i32| (delta.abs() - Fx::from_num(size) / 2).max(Fx::ZERO);
+                let (dx, dy) = (gap(impact.x - pos.x, w), gap(impact.y - pos.y, h));
+                dx * dx + dy * dy <= radius * radius
             })
+        };
+        let mut names: Vec<String> = Vec::new();
+        for event in events {
+            let name = match event {
+                Event::AttackHit {
+                    attacker,
+                    attacker_kind,
+                    weapon,
+                    target,
+                    target_pos,
+                    ..
+                } if *target == Some(victim)
+                    || splashed(
+                        attacker_kind
+                            .stats()
+                            .weapons
+                            .get(*weapon)
+                            .and_then(|weapon| weapon.splash),
+                        *target_pos,
+                    ) =>
+                {
+                    self.units_in_sight.get(attacker).map(|owner| {
+                        format!("seat {}'s {} {}", owner.0, attacker_kind.name(), attacker.0)
+                    })
+                }
+                Event::TurretFired {
+                    turret,
+                    kind,
+                    tier,
+                    target,
+                    target_pos,
+                    ..
+                } if *target == Some(victim)
+                    || splashed(
+                        kind.tier_stats(*tier)
+                            .weapons
+                            .iter()
+                            .filter_map(|weapon| weapon.splash)
+                            .max(),
+                        *target_pos,
+                    ) =>
+                {
+                    self.standing.get(turret).map(|owner| {
+                        format!("seat {}'s {} {}", owner.0, kind.tier_name(*tier), turret.0)
+                    })
+                }
+                _ => None,
+            };
+            if let Some(name) = name.filter(|name| !names.contains(name)) {
+                names.push(name);
+            }
+        }
+        (!names.is_empty()).then(|| names.join(", "))
     }
 
     /// Keeps what the seat saw of tick `tick`'s `events`, judged against
@@ -763,7 +907,7 @@ impl Seen {
         let seat = self.seat;
         let sees = |pos: Vec2Fx| state.vision(seat).visible(TilePos::containing(pos));
         for event in events {
-            let mut note = None;
+            let (mut note, mut by) = (None, None);
             let keep = match event {
                 Event::ScrapCredited { player, amount }
                 | Event::ScrapDeposited { player, amount, .. } => {
@@ -774,13 +918,24 @@ impl Seen {
                 }
                 Event::UnitDied {
                     unit, player, pos, ..
-                } => *player == seat || sees(*pos) || self.units_in_sight.contains(unit),
+                } => *player == seat || sees(*pos) || self.units_in_sight.contains_key(unit),
                 Event::BuildingDestroyed {
                     building,
+                    kind,
                     player,
                     pos,
                     ..
-                } => *player == seat || sees(*pos) || self.in_sight.contains_key(building),
+                } => {
+                    // Placed by its anchor, as the digest lists structures:
+                    // the event gives the footprint's centre.
+                    let (w, h) = kind.size();
+                    let anchor = TilePos::containing(Vec2Fx::new(
+                        pos.x - Fx::from_num(w) / 2,
+                        pos.y - Fx::from_num(h) / 2,
+                    ));
+                    note = Some(format!("({},{})", anchor.x, anchor.y));
+                    *player == seat || sees(*pos) || self.in_sight.contains_key(building)
+                }
                 Event::WarheadLanded { player, at, .. }
                 | Event::ChargeDetonated { player, at, .. } => *player == seat || sees(*at),
                 Event::BuildCancelled {
@@ -806,8 +961,11 @@ impl Seen {
                         && self
                             .fire
                             .insert((tile.x.div_euclid(FIRE_CELL), tile.y.div_euclid(FIRE_CELL)));
-                    if fresh {
-                        note = self.hit_at(tick, state, *pos);
+                    if fresh
+                        && let Some((name, victim, size)) = self.hit_at(tick, state, events, *pos)
+                    {
+                        note = Some(name);
+                        by = self.shooters(events, victim, (*pos, size));
                     }
                     fresh
                 }
@@ -819,6 +977,7 @@ impl Seen {
                     tick,
                     event: event.clone(),
                     note,
+                    by,
                 });
             }
         }
@@ -837,14 +996,18 @@ fn clock(ticks: u64) -> String {
 fn site_refusal(
     state: &State,
     seat: PlayerId,
-    kind: BuildingKind,
-    anchor: TilePos,
+    (kind, anchor, defer): (BuildingKind, TilePos, bool),
     refusal: PlaceRefusal,
 ) -> String {
     let (w, h) = kind.size();
     let footprint = || (0..h).flat_map(move |dy| (0..w).map(move |dx| anchor.offset(dx, dy)));
     let (map, vision) = (state.map(), state.vision(seat));
     match refusal {
+        PlaceRefusal::Fog if defer => {
+            ": part of the footprint has never been explored; --defer places a site only \
+             on ground seen before, so scout it first"
+                .to_string()
+        }
         PlaceRefusal::Fog => {
             ": part of the footprint is not in sight now; bring a unit to see it, \
              or add --defer to have the site placed once it is"
@@ -906,6 +1069,10 @@ impl DebugSession for Session {
             scenario: self.scenario.name.clone(),
             sim_version: SIM_VERSION,
             result: self.state.result(),
+            verdict: match (&self.playtest, self.caller, self.state.result()) {
+                (Some(_), Some(seat), Some(result)) => Some(self.outcome(seat, result)),
+                _ => None,
+            },
             // A playtest client learns nothing of the bots' commands.
             recorded_commands: match (&self.playtest, self.caller) {
                 (Some(_), Some(seat)) => self

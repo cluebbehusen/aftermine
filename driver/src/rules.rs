@@ -18,41 +18,42 @@ fn mechanics() -> String {
 ## Reach
 
 Weapon range runs from the centre of the shooter, or the centre of an armed \
-structure's footprint, to the centre of a target unit or to the nearest point \
-of a target structure's footprint, the tile squares it covers. A target exactly \
-at range is in reach, and minimum ranges count to the same point. The Maw and \
-the Roc are hit at their edge rather than their centre. Contact weapons such as \
+    structure's footprint, to the centre of a target unit or to the nearest point \
+    of a target structure's footprint, the tile squares it covers. A target exactly \
+    at range is in reach, and minimum ranges count to the same point. The Maw and \
+    the Roc are hit at their edge rather than their centre. Contact weapons such as \
 the Scuttler's reach only what their body touches.
 
 ## Foundry support
 
 A finished Foundry raises its owner's finished Extractors within \
-{support} tiles, counted edge to edge between the two footprints with diagonal \
-steps counting as one, so footprints that touch are 1 apart. A supported \
-Extractor pays {extractor_supported} scrap a minute instead of {extractor}, and \
-a supported Deep Bore {bore_supported} instead of {bore}. More Foundries do not \
-add up, and an ally's Foundry does not count. An Extractor pays nothing while it \
+    {support} tiles, counted edge to edge between the two footprints with diagonal \
+    steps counting as one, so footprints that touch are 1 apart. A supported \
+    Extractor pays {extractor_supported} scrap a minute instead of {extractor}, and \
+    a supported Deep Bore {bore_supported} instead of {bore}. More Foundries do not \
+    add up, and an ally's Foundry does not count. An Extractor pays nothing while it \
 upgrades, and starting the upgrade needs that support.
 
 ## Repair
 
 Welding costs {repair}% of the price per point of maximum health, for each \
-point restored. A unit's price is its cost; a structure's is its current tier's \
-build price, and the Foundry's a flat {foundry_price}. Each welder restores \
-four fifths of a structure's maximum health over its build time, the Foundry's \
-over {foundry_weld} s, and a unit's maximum health over its training time. \
-Welders add up, and an Excavator welds no faster than a Harvester. A Repair Bay \
-bills its healing at the same rate. An ordered weld with too little scrap in the \
+    point restored. A unit's price is its cost; a structure's is its current tier's \
+    build price, and the Foundry's a flat {foundry_price}. Each welder restores \
+    four fifths of a structure's maximum health over its build time, the Foundry's \
+    over {foundry_weld} s, and a unit's maximum health over its training time. \
+    Welders add up, and an Excavator welds no faster than a Harvester. A Repair Bay \
+    bills its healing at the same rate. An ordered weld with too little scrap in the \
 bank stalls.
 
 ## Automatic welding
 
 An idle Harvester or Excavator welds on its own: once it has stopped with \
-nothing queued, it goes to the nearest wounded own unit standing still, or \
-damaged own finished structure, within {tend} tiles of where it stopped, while \
-the bank can pay. A stop order leaves a worker idle, so it starts again. Any \
-new order interrupts it, and the set_idle_weld command (through send) turns it \
-off for chosen workers.
+    nothing queued, it goes to the nearest wounded own unit standing still, or \
+    damaged own finished structure, within {tend} tiles of where it stopped, while \
+    the bank can pay. A stop order leaves a worker idle, so it starts again. Any \
+    new order interrupts it, and the set_idle_weld command (through send) turns it \
+    off, or back on, for chosen workers: \
+{{\"type\":\"set_idle_weld\",\"units\":[3,4],\"enabled\":false}}.
 
 ## Armor
 
@@ -61,32 +62,53 @@ The Foundry takes half damage from warheads. Nothing else has armor.
 ## Public structures
 
 Every seat knows where each Deep Bore stands from the moment its upgrade \
-starts, and where each assembly cradle stands, and how far along it is, from \
+    starts, and where each assembly cradle stands, and how far along it is, from \
 its first work. The digest lists them under public structures.
 
 ## Orders
 
 - A unit ordered to attack a unit or a structure stays on that target while \
-  other enemies shoot it, until the target is gone. Only secondary weapons, \
-  such as the Sentinel's anti-air gun, fire at others meanwhile. A unit that \
+    other enemies shoot it, until the target is gone. Only secondary weapons, \
+    such as the Sentinel's anti-air gun, fire at others meanwhile. A unit that \
   picked its own fight, idle or hunting, looks again every half second.
 - A hunting unit fights enemy units in reach first. It stops for a structure \
-  only when no enemy unit in reach is a target, then attacks a visible enemy \
-  structure, armed ones first, and marches on afterwards. Units that fire only \
+    only when no enemy unit in reach is a target, then attacks a visible enemy \
+    structure, armed ones first, and marches on afterwards. Units that fire only \
   at aircraft never stop for structures, and the Maw takes only structures.
 - New armed units hunt to their producer's rally tile, fighting on the way. \
-  New Harvesters and Excavators go there too, and mine it when you know of \
+    New Harvesters and Excavators go there too, and mine it when you know of \
   scrap or a wreck on it. A rally on a unit makes new units escort it.
 - A Surveyor's radar comes up once it has stood still for 2 s, and its own \
   driving starts the count again. The Kestrel's radar needs no wait.
 
+## Chasing
+
+An idle armed unit fights the enemies its team sees that come within its aggro \
+    range, which its page gives. A unit on a hunt chases what it fights until that \
+    dies or leaves its team's sight, then goes on toward its goal; a run never stops \
+    to fight. A unit that has stood still for {station} holds that spot: from there \
+    it chases freely within {leash} tiles, and past that for {patience} more before it \
+    runs back, then waits {cooldown} before it picks another fight. Being hit while \
+it holds a spot starts a chase the same way. Any new order ends the hold.
+
+## Workers in danger
+
+A Harvester or Excavator carrying scrap whose every route to a Foundry crosses \
+    known danger stands where it is and keeps its load rather than walk into fire. \
+    Known danger is: enemy units in sight, within their reach and {mobile} tiles more; \
+    enemy defenses you know of, within their reach and {fixed} more; radar contacts, \
+    within {radar} tiles; and places a unit of your team was hit or lost in the last \
+    {incident}, within {near} tiles. It looks for a safe route every {retry} and goes on \
+    by itself once one opens. While it waits, the advance reports DangerHold once \
+every {report}.
+
 ## Construction
 
 A site's progress counts builder work: each Harvester at the site adds 1 a tick \
-and each Excavator 2, and the structure stands when progress reaches its build \
-time, which the digest shows as progress/total. A site's health starts at a \
-fifth of its maximum and climbs with progress. Assembly cradles work the same \
-way, with at most {crew} workers on their corner pads. An upgrade advances 1 a \
+    and each Excavator 2, and the structure stands when progress reaches its build \
+    time, which the digest shows as progress/total. A site's health starts at a \
+    fifth of its maximum and climbs with progress. Assembly cradles work the same \
+    way, with at most {crew} workers on their corner pads. An upgrade advances 1 a \
 tick on its own.
 
 ",
@@ -98,6 +120,21 @@ tick on its own.
         foundry_price = stats::FOUNDRY_REPAIR_PRICE,
         tend = stats::ESCORT_ENGAGE_RADIUS.to_num::<i32>(),
         crew = stats::ASSEMBLY_CREW_CAP,
+        station = tick_time_label(u32::from(stats::LEASH_STATION_TICKS)),
+        leash = stats::LEASH_RADIUS.to_num::<i32>(),
+        patience = tick_time_label(u32::from(stats::LEASH_PATIENCE)),
+        cooldown = tick_time_label(u32::from(stats::LEASH_REACQUIRE_COOLDOWN)),
+        mobile = stats::HARVEST_MOBILE_DANGER_MARGIN.to_num::<i32>(),
+        fixed = stats::HARVEST_STATIC_DANGER_MARGIN.to_num::<i32>(),
+        radar = stats::HARVEST_RADAR_DANGER_RADIUS,
+        incident = tick_time_label(
+            u32::try_from(stats::HARVEST_INCIDENT_MEMORY_TICKS).unwrap_or(u32::MAX)
+        ),
+        near = stats::HARVEST_INCIDENT_DANGER_RADIUS,
+        retry =
+            tick_time_label(u32::try_from(stats::HARVEST_DANGER_RETRY_TICKS).unwrap_or(u32::MAX)),
+        report =
+            tick_time_label(u32::try_from(stats::DANGER_HOLD_REPORT_PERIOD).unwrap_or(u32::MAX)),
     )
 }
 
@@ -121,6 +158,9 @@ pub fn sheet() -> String {
                 }
             }
             for line in fire_intervals(entry) {
+                let _ = writeln!(out, "{line}");
+            }
+            if let Some(line) = aggro(entry) {
                 let _ = writeln!(out, "{line}");
             }
             if let Some(line) = planting(entry) {
@@ -188,6 +228,27 @@ fn degrees(steps: u8) -> String {
     } else {
         format!("{}.{}°", tenths / 10, tenths % 10)
     }
+}
+
+/// How near an armed unit lets an enemy come before it fights on its own,
+/// which a player of the shell watches happen.
+fn aggro(entry: Entry) -> Option<String> {
+    let Entry::Unit(kind) = entry else {
+        return None;
+    };
+    let stats = kind.stats();
+    // A drone's range is its leash from the host, which its page explains.
+    if stats.weapons.is_empty() || stats.docks() {
+        return None;
+    }
+    Some(if stats.aggro_range > chassis::fx::Fx::ZERO {
+        format!(
+            "Aggro range {} tiles: idle, it fights an enemy that comes this near.",
+            stats.aggro_range
+        )
+    } else {
+        "Never picks a fight of its own: it fights only on orders.".to_string()
+    })
 }
 
 /// One line for `weapons`, in the order their weapon lines list them; guns

@@ -1021,6 +1021,7 @@ impl aftermine_protocol::DebugSession for PlaybackSession {
             scenario: self.engine.replay().setup.name.clone(),
             sim_version: SIM_VERSION,
             result: self.engine.state.result(),
+            verdict: None,
             recorded_commands: 0,
         }
     }

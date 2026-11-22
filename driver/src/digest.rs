@@ -126,7 +126,7 @@ pub fn render(view: &FogView, terrain: Option<&Map>) -> String {
     });
     section(
         &mut out,
-        "REMEMBERED STRUCTURES (last seen)",
+        "REMEMBERED STRUCTURES (last seen; attack one with attack-building --at x,y)",
         remembered,
         |ghost| {
             format!(
@@ -634,7 +634,7 @@ pub fn played(view: &PlayedView) -> String {
                 whose(*player),
                 kind.tier_name(*tier),
                 building.0,
-                at(*pos)
+                seen.note.clone().unwrap_or_else(|| at(*pos))
             ),
             Event::BuildingCompleted {
                 building,
@@ -669,10 +669,16 @@ pub fn played(view: &PlayedView) -> String {
             Event::OrderStalled {
                 unit, reason, pos, ..
             } => format!("your unit {} at {} stalled: {reason:?}", unit.0, at(*pos)),
-            Event::DamageTaken { pos, .. } => match &seen.note {
-                Some(hit) => format!("your {hit} took fire at {}", at(*pos)),
-                None => format!("your units or structures took fire near {}", at(*pos)),
-            },
+            Event::DamageTaken { pos, .. } => {
+                let from = seen
+                    .by
+                    .as_ref()
+                    .map_or_else(String::new, |by| format!(" from {by}"));
+                match &seen.note {
+                    Some(hit) => format!("your {hit} took fire at {}{from}", at(*pos)),
+                    None => format!("your units or structures took fire near {}", at(*pos)),
+                }
+            }
             Event::WarheadLanded {
                 player, at: impact, ..
             } => {
@@ -690,7 +696,10 @@ pub fn played(view: &PlayedView) -> String {
             Event::PlayerResigned { player } => format!("seat {} surrendered", player.0),
             Event::GameOver { result } => match result {
                 GameResult::Draw => "the match is over: a draw".to_string(),
-                GameResult::Victory { team } => format!("the match is over: team {team} won"),
+                GameResult::Victory { team } if *team == view.team => {
+                    "the match is over: you won".to_string()
+                }
+                GameResult::Victory { .. } => "the match is over: you lost".to_string(),
             },
             other => format!("{other:?}"),
         };

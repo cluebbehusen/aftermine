@@ -462,3 +462,61 @@ fn pad_commands_refuse_labels_and_overdriven_sticks_before_the_socket() {
         .is_err()
     );
 }
+
+#[test]
+fn attack_building_at_an_anchor_reaches_a_remembered_structure() {
+    let state = aftermine_sim::Scenario::skirmish().build().unwrap();
+    let mut view = aftermine_protocol::FogView::capture(&state, PlayerId(0));
+    view.ghosts.push(aftermine_protocol::GhostView {
+        kind: aftermine_sim::BuildingKind::Turret,
+        owner: 1,
+        anchor: [30, 10],
+        hp: 200,
+        built: true,
+        tier: 0,
+    });
+    let squad = || Squad {
+        player: 0,
+        units: vec![3],
+        queue: false,
+    };
+    let request = attack_at(squad(), "30,10", &view).unwrap();
+    assert_eq!(
+        request,
+        Request::SendCommand {
+            player: PlayerId(0),
+            command: Command::Attack {
+                units: vec![UnitId(3)],
+                target: AttackTarget::RememberedBuilding(RememberedBuilding {
+                    owner: PlayerId(1),
+                    building_kind: aftermine_sim::BuildingKind::Turret,
+                    anchor: TilePos::new(30, 10),
+                }),
+                queue: false,
+            },
+        }
+    );
+    assert!(attack_at(squad(), "31,10", &view).is_err());
+    // A public structure the seat never saw is reached by its anchor too.
+    view.public_buildings
+        .push(aftermine_protocol::view::PublicBuildingView {
+            kind: aftermine_sim::BuildingKind::MawCradle,
+            tier: 0,
+            owner: 1,
+            anchor: [40, 20],
+            progress: Some(10),
+        });
+    assert!(matches!(
+        attack_at(squad(), "40,20", &view).unwrap(),
+        Request::SendCommand {
+            command: Command::Attack {
+                target: AttackTarget::RememberedBuilding(RememberedBuilding {
+                    building_kind: aftermine_sim::BuildingKind::MawCradle,
+                    ..
+                }),
+                ..
+            },
+            ..
+        }
+    ));
+}

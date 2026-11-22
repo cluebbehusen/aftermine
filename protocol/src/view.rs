@@ -451,6 +451,9 @@ pub struct StatusView {
     pub sim_version: u32,
     /// Match outcome, if decided.
     pub result: Option<GameResult>,
+    /// That outcome as a playtest seat reads it, such as "you lost".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<String>,
     /// Commands recorded into the session replay so far.
     pub recorded_commands: usize,
 }

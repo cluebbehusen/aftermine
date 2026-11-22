@@ -1280,7 +1280,24 @@ fn main() -> Result<()> {
             }
             // Parse everything before touching the socket: a typo'd tile
             // should fail fast, not after connecting to a live game.
-            let requests = live_requests(cmd)?;
+            let requests = match cmd {
+                LiveCmd::AttackBuilding {
+                    squad,
+                    target: None,
+                    at: Some(at),
+                } => {
+                    let mut client = Client::connect(&addr)?;
+                    let Reply::Fog(view) =
+                        client.call(aftermine_protocol::Request::QueryFogView {
+                            player: squad.player(),
+                        })?
+                    else {
+                        bail!("the session answered a fog query with something else");
+                    };
+                    vec![live_cli::attack_at(squad, &at, &view)?]
+                }
+                cmd => live_requests(cmd)?,
+            };
             let mut client = Client::connect(&addr)?;
             let mut last: Option<Reply> = None;
             let total = requests.len();

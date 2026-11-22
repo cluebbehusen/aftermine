@@ -18,6 +18,7 @@ impl DebugSession for Bare {
             scenario: "bare".to_string(),
             sim_version: 1,
             result: self.state.result(),
+            verdict: None,
             recorded_commands: 0,
         }
     }
