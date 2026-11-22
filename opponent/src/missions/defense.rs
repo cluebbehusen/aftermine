@@ -788,7 +788,8 @@ fn exposed(observation: &ObservationData, unit: &UnitObs) -> bool {
 
 /// Whether the known enemies that would join a fight where `unit` stands,
 /// and the enemy guns that reach it, outweigh the `members` of its defense
-/// beside it that can fight them by the `margin` per mille a fight needs,
+/// beside it that can hit what `unit` is hit as, by the `margin` per mille a
+/// fight needs,
 /// all judged in the domain `unit` is hit in: an aircraft by what can hit
 /// aircraft there.
 fn outweighed(
@@ -818,8 +819,11 @@ fn outweighed(
                 .enemy_buildings
                 .iter()
                 .filter(|building| {
+                    // A gun joins no fight: it counts only within its reach.
                     let tier = building.kind.tiers()[usize::from(building.tier)];
-                    near(air_reach(tier.weapons), building.anchor)
+                    let reach = air_reach(tier.weapons);
+                    let gap = gap(building.anchor, building.kind.size(), unit.tile, (1, 1));
+                    reach > Fx::ZERO && Fx::from_num(gap) <= reach
                 })
                 .map(building_value)
                 .sum::<u64>()
@@ -828,8 +832,7 @@ fn outweighed(
         .iter()
         .filter_map(|id| mine(observation, *id))
         .filter(|other| other.tile.chebyshev(unit.tile) <= GATHER_TILES)
-        .filter(|other| !other.kind.stats().weapons.is_empty())
-        .filter(|other| domain == Domain::Air || hits(other, Domain::Ground))
+        .filter(|other| hits(other, domain))
         .map(value)
         .sum();
     met > 0 && could * 1_000 < met * margin
