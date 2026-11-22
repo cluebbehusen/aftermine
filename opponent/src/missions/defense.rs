@@ -318,7 +318,7 @@ impl Missions {
                 DefendPhase::Engage { focus } => focus,
                 DefendPhase::Recover | DefendPhase::Guard => None,
             };
-            let lost = lost(observation, gun, focus);
+            let lost = lost(observation, (gun, focus), (&mission.units, pursuit));
             // A defense after an intruder sends again when it chooses
             // another, a site after its builder included, and when something
             // armed comes: held on a builder, defenders would stand under an
@@ -685,16 +685,35 @@ fn take(free: &mut Vec<UnitId>, taken: &[UnitId]) {
 
 /// Whether a defense's `focus` no longer holds while it has no `gun` to go
 /// after: its target fell, left sight, or is a gun this Foundry no longer
-/// faces. Any other focus is focus fire's, kept while it lasts.
-fn lost(observation: &ObservationData, gun: Option<UnitId>, focus: Option<UnitId>) -> bool {
-    gun.is_none()
-        && focus.is_some_and(|id| {
-            observation
-                .enemy_units
-                .iter()
-                .find(|enemy| enemy.id == id)
-                .is_none_or(walking_gun)
-        })
+/// faces. Any other focus is focus fire's, kept while it lasts. Its attack
+/// on a site is over too once a member stands idle.
+fn lost(
+    observation: &ObservationData,
+    (gun, focus): (Option<UnitId>, Option<UnitId>),
+    (members, pursuit): (&[UnitId], Pursuit),
+) -> bool {
+    idle_at_site(observation, members, pursuit)
+        || gun.is_none()
+            && focus.is_some_and(|id| {
+                observation
+                    .enemy_units
+                    .iter()
+                    .find(|enemy| enemy.id == id)
+                    .is_none_or(walking_gun)
+            })
+}
+
+/// Whether a defense attacking an unarmed site has a member standing idle:
+/// its attack ended, the site it was on fallen, while another it chose
+/// stands too near the first to move the goal.
+fn idle_at_site(observation: &ObservationData, members: &[UnitId], pursuit: Pursuit) -> bool {
+    matches!(
+        pursuit,
+        Pursuit::Quarry(AttackTarget::Building(_) | AttackTarget::RememberedBuilding(_))
+    ) && members
+        .iter()
+        .filter_map(|id| mine(observation, *id))
+        .any(|unit| unit.idle)
 }
 
 /// Runs the armed members of a defense hunting or holding an intruder that
@@ -768,7 +787,8 @@ fn exposed(observation: &ObservationData, unit: &UnitObs) -> bool {
 
 /// Whether the known enemies that would join a fight where `unit` stands,
 /// and the enemy guns that reach it, outweigh the `members` of its defense
-/// beside it that can fight them by the `margin` per mille a fight needs,
+/// beside it that can hit what `unit` is hit as, by the `margin` per mille a
+/// fight needs,
 /// all judged in the domain `unit` is hit in: an aircraft by what can hit
 /// aircraft there.
 fn outweighed(
@@ -798,8 +818,11 @@ fn outweighed(
                 .enemy_buildings
                 .iter()
                 .filter(|building| {
+                    // A gun joins no fight: it counts only within its reach.
                     let tier = building.kind.tiers()[usize::from(building.tier)];
-                    near(air_reach(tier.weapons), building.anchor)
+                    let reach = air_reach(tier.weapons);
+                    let gap = gap(building.anchor, building.kind.size(), unit.tile, (1, 1));
+                    reach > Fx::ZERO && Fx::from_num(gap) <= reach
                 })
                 .map(building_value)
                 .sum::<u64>()
@@ -808,8 +831,7 @@ fn outweighed(
         .iter()
         .filter_map(|id| mine(observation, *id))
         .filter(|other| other.tile.chebyshev(unit.tile) <= GATHER_TILES)
-        .filter(|other| !other.kind.stats().weapons.is_empty())
-        .filter(|other| domain == Domain::Air || hits(other, Domain::Ground))
+        .filter(|other| hits(other, domain))
         .map(value)
         .sum();
     met > 0 && could * 1_000 < met * margin

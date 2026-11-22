@@ -310,7 +310,11 @@ impl Missions {
                 // home and idle, so nothing else takes it on the way.
                 let (home_again, strays): (Vec<&UnitObs>, Vec<&UnitObs>) = members
                     .iter()
-                    .filter(|unit| unit.tile.chebyshev(goal) > LOCAL_REACH)
+                    // Past the target, not still on its way in from home.
+                    .filter(|unit| {
+                        unit.tile.chebyshev(goal) > LOCAL_REACH
+                            && unit.tile.chebyshev(home) > goal.chebyshev(home)
+                    })
                     .partition(|unit| unit.idle && unit.tile.chebyshev(home) <= CONTACT_TILES);
                 let strays: Vec<UnitId> = strays.iter().map(|unit| unit.id).collect();
                 if spent || outweighed || done || strays.len() == units.len() {

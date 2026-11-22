@@ -3069,3 +3069,65 @@ fn an_aircraft_defender_chased_past_the_base_runs_back_too() {
         "{commands:?}"
     );
 }
+
+#[test]
+fn defenders_idle_after_a_site_go_at_the_next_one_beside_it() {
+    // A defense whose attack on an enemy site ended stands idle beside the
+    // next site, too near the first to move its goal: it attacks that one.
+    let mut scenario = raided(
+        &[(UnitKind::Sentinel, 5, 8), (UnitKind::Sentinel, 6, 8)],
+        &[],
+    );
+    scenario.buildings.push(BuildingSpec {
+        player: 1,
+        kind: BuildingKind::Fabricator,
+        x: 8,
+        y: 1,
+    });
+    let state = scenario.build().unwrap();
+    let home = state
+        .buildings()
+        .iter()
+        .find(|b| b.player == PlayerId(0) && b.kind == BuildingKind::Foundry)
+        .unwrap();
+    let site = state
+        .buildings()
+        .iter()
+        .find(|b| b.kind == BuildingKind::Fabricator)
+        .unwrap()
+        .id;
+    let mut members = vec![at(&state, 5, 8), at(&state, 6, 8)];
+    members.sort_unstable();
+    let fresh = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
+    let goal = hunts(&fresh)
+        .into_iter()
+        .chain(
+            attacks(&fresh)
+                .into_iter()
+                .map(|(units, _)| (units, TilePos::new(0, 0))),
+        )
+        .count();
+    assert!(goal > 0, "premise: the site draws a defense: {fresh:?}");
+    let beside = crate::frame::ring(TilePos::new(8, 1), BuildingKind::Fabricator.size())
+        .min_by_key(|tile| tile.chebyshev(TilePos::new(3, 5)))
+        .unwrap();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["missions"] = serde_json::json!({
+            "next": 1,
+            "list": [{
+                "id": 0,
+                "task": {"task": "defend", "asset": home.id.0, "phase": {"engage": {"focus": null}}},
+                "since": 0,
+                "units": members,
+                "goal": {"x": beside.x, "y": beside.y},
+            }],
+        });
+    });
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        attacks(&commands)
+            .iter()
+            .any(|(_, target)| *target == AttackTarget::Building(site)),
+        "{commands:?}"
+    );
+}

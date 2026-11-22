@@ -29,10 +29,22 @@ fn a_gun_the_foundry_no_longer_faces_is_lost_but_focus_fire_is_kept() {
     ]);
     let (gun, raider) = (ids[1], ids[2]);
     assert!(observation.enemy_units.len() == 2, "premise: both in sight");
-    assert!(lost(&observation, None, Some(gun)));
-    assert!(!lost(&observation, None, Some(raider)));
-    assert!(lost(&observation, None, Some(UnitId(999))));
-    assert!(!lost(&observation, Some(gun), Some(gun)));
+    assert!(lost(&observation, (None, Some(gun)), (&[], Pursuit::Hunt)));
+    assert!(!lost(
+        &observation,
+        (None, Some(raider)),
+        (&[], Pursuit::Hunt)
+    ));
+    assert!(lost(
+        &observation,
+        (None, Some(UnitId(999))),
+        (&[], Pursuit::Hunt)
+    ));
+    assert!(!lost(
+        &observation,
+        (Some(gun), Some(gun)),
+        (&[], Pursuit::Hunt)
+    ));
 }
 
 #[test]
@@ -282,6 +294,48 @@ fn only_the_site_owner_s_builder_beside_it_comes_first() {
     };
     assert_eq!(quarry(&builder), Some(AttackTarget::Unit(builder.id)));
     assert_eq!(quarry(&passer), Some(AttackTarget::Building(site.id)));
+}
+
+#[test]
+fn an_aircraft_defender_is_judged_by_what_can_hit_its_attackers() {
+    // A West Talon faces an East Talon. Two Buzzards beside it cannot hit
+    // aircraft, so they do not make the fight even; a Flak Turret ten tiles
+    // off cannot reach it, so it does not weigh in either.
+    let (observation, ids) = viewed(&[
+        (0, UnitKind::Talon, 4, 4),
+        (0, UnitKind::Buzzard, 4, 5),
+        (0, UnitKind::Buzzard, 5, 4),
+        (1, UnitKind::Talon, 6, 4),
+    ]);
+    let memory = Memory::default();
+    let talon = mine(&observation, ids[0]).unwrap();
+    let margin = engage_margin(BotDifficulty::Prime);
+    assert!(outweighed(
+        (&observation, &memory),
+        &[ids[0], ids[1], ids[2]],
+        talon,
+        margin
+    ));
+    let (observation, ids) = viewed(&[(0, UnitKind::Talon, 3, 4)]);
+    let mut observation = observation;
+    observation.enemy_buildings.push(BuildingObs {
+        provisional: false,
+        id: aftermine_sim::BuildingId(77),
+        player: PlayerId(1),
+        kind: BuildingKind::FlakTurret,
+        anchor: TilePos::new(14, 4),
+        hp: BuildingKind::FlakTurret.base_stats().max_hp,
+        built: true,
+        seen: true,
+        tier: 0,
+    });
+    let talon = mine(&observation, ids[0]).unwrap();
+    assert!(!outweighed(
+        (&observation, &memory),
+        &[ids[0]],
+        talon,
+        margin
+    ));
 }
 
 #[test]
