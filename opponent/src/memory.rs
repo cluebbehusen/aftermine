@@ -24,7 +24,7 @@ const FAILURE_TICKS: u64 = 3_600;
 const FAILURE_CAP: usize = 256;
 
 /// Ticks an enemy unit is remembered after it was last seen.
-const UNIT_TICKS: u64 = 600;
+pub(crate) const UNIT_TICKS: u64 = 600;
 
 /// Ticks an enemy ground unit seen on ground the seat's own does not reach is
 /// remembered: it cannot leave there without carriers, so it is likely still

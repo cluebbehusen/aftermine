@@ -123,6 +123,47 @@ fn a_seen_enemy_airworks_raises_anti_air_before_any_flyer() {
     );
 }
 
+#[test]
+fn a_seen_enemy_fabricator_raises_the_line_need_before_any_unit() {
+    // A Fabricator is how a seat fields a ground army: known, it counts as the
+    // threat it paid for, and the seat wants a line before the first enemy
+    // unit is seen, as a known Airworks raises anti-air.
+    let army = |fabricator: bool| {
+        let mut scenario = arena(200);
+        if fabricator {
+            scenario.buildings.push(BuildingSpec {
+                player: 1,
+                kind: BuildingKind::Fabricator,
+                x: 8,
+                y: 2,
+            });
+        }
+        let state = scenario.build().unwrap();
+        let army = seat(&scenario, 0)
+            .act_traced(&state, &mut OwnEvents::default())
+            .1
+            .unwrap()
+            .army;
+        let line = army
+            .roles
+            .iter()
+            .find(|need| need.role == composition::Role::Line)
+            .map_or(0, |need| need.need);
+        (army.enemy.ground, line)
+    };
+    assert_eq!(
+        army(false),
+        (0, 0),
+        "premise: nothing known, nothing wanted"
+    );
+    let (ground, line) = army(true);
+    assert_eq!(
+        ground,
+        u64::from(BuildingKind::Fabricator.base_stats().construction.cost)
+    );
+    assert!(line > 0, "{line}");
+}
+
 fn siege(kind: UnitKind) -> bool {
     kind == UnitKind::Sapper || composition::role(kind) == Some(composition::Role::Siege)
 }

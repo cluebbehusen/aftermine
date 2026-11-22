@@ -141,6 +141,19 @@ impl Missions {
             air: OnceCell::new(),
         };
         let hazards = &scratch.air;
+        // While the seat knows no armed enemy unit, a standing scout looks
+        // again at a place once what it saw there is forgotten: the army it
+        // has not seen may be forming there. Training another still waits
+        // the full time.
+        let stale = if memory
+            .units()
+            .iter()
+            .any(|unit| unit.kind.stats().can_fight())
+        {
+            STALE_TICKS
+        } else {
+            crate::memory::UNIT_TICKS
+        };
         let scouted = memory.scouted(points.len());
 
         let scouting: fn(&Task) -> bool = |task| matches!(task, Task::Scout { .. });
@@ -175,7 +188,7 @@ impl Missions {
             };
             let others = held(self, Some(id));
             if let Some((next, goal)) = best(
-                now,
+                (now, stale),
                 frame,
                 &points,
                 scouted,
@@ -238,8 +251,15 @@ impl Missions {
         while self.list.len() < MISSION_CAP {
             let taken = held(self, None);
             let chosen = scouts.iter().enumerate().find_map(|(index, scout)| {
-                best(now, frame, &points, scouted, &taken, goals.of(flies(scout)))
-                    .map(|best| (index, best))
+                best(
+                    (now, stale),
+                    frame,
+                    &points,
+                    scouted,
+                    &taken,
+                    goals.of(flies(scout)),
+                )
+                .map(|best| (index, best))
             });
             let Some((index, (point, goal))) = chosen else {
                 break;
@@ -408,7 +428,7 @@ impl Board<'_> {
             kind,
         } = tourer;
         while let Some((point, goal)) = best(
-            self.now,
+            (self.now, STALE_TICKS),
             self.frame,
             self.points,
             self.scouted,
@@ -518,10 +538,11 @@ fn age(now: u64, seen: u64) -> u64 {
     if seen == 0 { AGE_CAP } else { now - seen }
 }
 
-/// The stale point no other scout holds that a scout with `goals` should look
-/// at next and where to send it, with the point's index.
+/// The point unseen at least `stale` ticks at `now` that no other scout
+/// holds, which a scout with `goals` should look at next, and where to send
+/// it, with the point's index.
 fn best(
-    now: u64,
+    (now, stale): (u64, u64),
     frame: HomeFrame,
     points: &[Point],
     scouted: &[u64],
@@ -534,7 +555,7 @@ fn best(
         .zip(goals)
         .enumerate()
         .filter(|(_, ((point, _), _))| !point.search)
-        .filter(|(_, ((_, seen), _))| age(now, **seen) >= STALE_TICKS)
+        .filter(|(_, ((_, seen), _))| age(now, **seen) >= stale)
         .filter(|(index, _)| u16::try_from(*index).is_ok_and(|point| !held.contains(&point)))
         .filter_map(|(index, ((point, seen), goal))| {
             let score = age(now, *seen).min(AGE_CAP) * point.value;

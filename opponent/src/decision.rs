@@ -597,15 +597,19 @@ pub(crate) fn decide(
     workers::recover(observation, &foundries, &mut ledger);
     if short {
         // The best answer to a shortfall, when it is a unit, is kept from
-        // emergency structures so production can train it.
-        ledger.protected = awaited(
+        // emergency structures so production can train it. With no answer
+        // that pays back, the scrap kept for the saving target stays kept:
+        // spent on what the attackers outfight, it only feeds them.
+        if let Some(kept) = awaited(
             observation,
             map,
             &producers,
             &shortfalls,
             income,
             ledger.available(),
-        );
+        ) {
+            ledger.protected = kept;
+        }
         defenses::emergency(
             observation,
             map,
@@ -1565,7 +1569,8 @@ fn best_answer(
 /// What a short defense keeps from its emergency structures this decision:
 /// the price of the dearest best answer to its shortfalls that is a unit the
 /// bank reaches soon, so production can train it. A structure that answers
-/// best leaves the bank to the emergency.
+/// best leaves the bank to the emergency. None when any shortfall has no
+/// answer the bank reaches soon, so the saving target keeps its scrap.
 fn awaited(
     observation: &ObservationData,
     map: &MapModel,
@@ -1573,20 +1578,28 @@ fn awaited(
     shortfalls: &[Shortfall],
     income: u32,
     bank: u32,
-) -> u32 {
+) -> Option<u32> {
     let reach = u64::from(bank) + soon(income);
-    shortfalls
+    let answers: Vec<Fighter> = shortfalls
         .iter()
         .filter_map(|short| {
             best_answer(observation, map, producers, short, reach, &EMERGENCY_KINDS)
         })
-        .filter_map(|(fighter, _)| match fighter {
-            Fighter::Unit(kind) => Some(kind.stats().cost),
-            Fighter::Structure(_) => None,
-        })
-        .max()
-        .unwrap_or(0)
-        .min(bank)
+        .map(|(fighter, _)| fighter)
+        .collect();
+    // One Foundry's answer must not free the savings for another's
+    // emergency that pays back nothing: protection is one total.
+    (answers.len() == shortfalls.len()).then(|| {
+        answers
+            .into_iter()
+            .filter_map(|fighter| match fighter {
+                Fighter::Unit(kind) => Some(kind.stats().cost),
+                Fighter::Structure(_) => None,
+            })
+            .max()
+            .unwrap_or(0)
+            .min(bank)
+    })
 }
 
 /// At each producer free to train while one of the seat's Foundries is short,
@@ -1808,3 +1821,6 @@ pub(crate) fn allowance(difficulty: BotDifficulty) -> u32 {
         BotDifficulty::Prime => 10,
     }
 }
+
+#[cfg(test)]
+mod tests;
