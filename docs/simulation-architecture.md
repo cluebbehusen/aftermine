@@ -469,12 +469,15 @@ movement, and contact ids are never reused.
 
 A hit on a machine that can harvest or scout or on a structure other than a
 Foundry, or an allied loss, from an attacker the victim's team cannot see leaves
-an incident. It remembers only the victim's tile, for a bounded caution period,
-and never the attacker.
+an incident. It remembers the victim's tile and the compass point the fire came
+in from, for a bounded caution period, and never the attacker's identity, kind
+or position. The point is what a player reads from a round crossing visible
+ground.
 
 A team also remembers, for a few seconds, the tile where each hostile shell it
-saw land came down, so a gun firing from out of sight stays known between its
-shells. The memory names the impact tile only, never the gun.
+saw land came down and the compass point it came in from, so a gun firing from
+out of sight stays known between its shells. The memory never names the gun or
+its range.
 
 All allegiance checks go through normalized team ids. Teammates share vision,
 cannot target one another, and win or lose together. A resigned seat can no

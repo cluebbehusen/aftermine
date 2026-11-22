@@ -13,7 +13,7 @@ use crate::placement::Raising;
 use crate::profile::ResolvedProfile;
 use aftermine_sim::TICKS_PER_SECOND;
 use aftermine_sim::ids::Target;
-use aftermine_sim::observation::{BuildingObs, ObservationData, RepairWork, UnitObs};
+use aftermine_sim::observation::{BuildingObs, FireMark, ObservationData, RepairWork, UnitObs};
 use aftermine_sim::scenario::BotStance;
 use aftermine_sim::stats::{HARVEST_INCIDENT_DANGER_RADIUS, REPAIR_COST_PERMILLE};
 use aftermine_sim::{BuildingId, BuildingKind, Command, StallReason, UnitId, UnitKind};
@@ -148,7 +148,7 @@ pub(crate) fn staffing(
         observation
             .salvage_incidents
             .iter()
-            .any(|incident| incident.chebyshev(tile) <= HARVEST_INCIDENT_DANGER_RADIUS)
+            .any(|incident| incident.tile.chebyshev(tile) <= HARVEST_INCIDENT_DANGER_RADIUS)
     };
     let mut salvage_routes = routes.around_incidents(&observation.salvage_incidents);
     let wrecks: Vec<(TilePos, u32)> = observation
@@ -838,7 +838,7 @@ fn withdraw(
         observation
             .salvage_incidents
             .iter()
-            .any(|incident| incident.chebyshev(tile) <= HARVEST_INCIDENT_DANGER_RADIUS)
+            .any(|incident| incident.tile.chebyshev(tile) <= HARVEST_INCIDENT_DANGER_RADIUS)
     };
     for id in leaving {
         let Some(unit) = observation.my_units.iter().find(|unit| unit.id == id) else {
@@ -1162,7 +1162,7 @@ impl<'a> Routes<'a> {
 
     /// These routes with the ground around each recent allied loss in
     /// `incidents` counted as danger too.
-    pub(crate) fn around_incidents(mut self, incidents: &[TilePos]) -> Self {
+    pub(crate) fn around_incidents(mut self, incidents: &[FireMark]) -> Self {
         if incidents.is_empty() {
             return self;
         }
@@ -1170,7 +1170,7 @@ impl<'a> Routes<'a> {
         for incident in incidents {
             for dy in -radius..=radius {
                 for dx in -radius..=radius {
-                    if let Some(cell) = self.danger.get_mut(incident.offset(dx, dy)) {
+                    if let Some(cell) = self.danger.get_mut(incident.tile.offset(dx, dy)) {
                         *cell = true;
                     }
                 }

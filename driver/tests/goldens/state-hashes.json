@@ -1,7 +1,7 @@
 {
   "sim_version": 1,
   "hashes": {
-    "air#attack": "0x27b67694227335b3",
+    "air#attack": "0xbed4d04b1b4e10f3",
     "air#boarded": "0x6be452b043d292c3",
     "air#delivered": "0xcd4ca73c0c4fdcd0",
     "air#landed": "0x2120cc629ae9f828",
@@ -11,9 +11,9 @@
     "construction#upgraded": "0xc03f28bae5f14460",
     "economy#delivery": "0x0587eb4d007d12a9",
     "economy#refund": "0x59361e4ccab44bdf",
-    "fog#foreign-command-refused": "0xbfa089267d585a86",
-    "fog#radar-fire": "0x2e146e6845faad4e",
-    "fog#remembered": "0x784d908d6a3ffbb6",
+    "fog#foreign-command-refused": "0xb215627e41864baa",
+    "fog#radar-fire": "0xd4ad67e98a50ba6c",
+    "fog#remembered": "0x13159f8db524c9be",
     "ground#arrival": "0x4e271ac178324fbc",
     "ground#damage": "0x80c9b302bbd42de1",
     "ground#wreck": "0xa773c91cc1fd54e5",

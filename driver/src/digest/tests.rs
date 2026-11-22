@@ -92,19 +92,40 @@ fn the_map_draws_remembered_scrap_and_never_the_live_ground() {
 fn shells_read_as_coming_and_landed_lately() {
     let (_, mut view) = opening();
     assert!(!render(&view, None).contains("SHELLS"));
-    view.shell_impacts = vec![[8, 12], [9, 12]];
+    view.shell_impacts = vec![mark(8, 12, 8), mark(9, 12, 14)];
     let text = render(&view, None);
     assert!(
-        text.contains("\nSHELLS LANDED lately at (8,12) (9,12)\n"),
+        text.contains(
+            "\nSHELLS LANDED lately at (8,12) from the west, (9,12) from the north-east\n"
+        ),
         "{text}"
     );
     assert!(!text.contains("INCOMING"), "{text}");
     view.incoming_shells = vec![[8, 12]];
     let text = render(&view, None);
     assert!(
-        text.contains("\nINCOMING SHELLS land at (8,12)\nSHELLS LANDED lately at (8,12) (9,12)\n"),
+        text.contains("\nINCOMING SHELLS land at (8,12)\nSHELLS LANDED lately at (8,12) from"),
         "{text}"
     );
+}
+
+#[test]
+fn fire_from_out_of_sight_reads_with_the_point_it_came_from() {
+    let (_, mut view) = opening();
+    assert!(!render(&view, None).contains("OUT OF SIGHT"));
+    view.unseen_fire = vec![mark(5, 6, 4)];
+    let text = render(&view, None);
+    assert!(
+        text.contains("\nFIRE FROM OUT OF SIGHT lately at (5,6) from the south\n"),
+        "{text}"
+    );
+}
+
+fn mark(x: i32, y: i32, from: u8) -> aftermine_sim::observation::FireMark {
+    aftermine_sim::observation::FireMark {
+        tile: chassis::grid::TilePos::new(x, y),
+        from: chassis::compass::CompassPoint::try_from(from).expect("a compass point"),
+    }
 }
 
 #[test]

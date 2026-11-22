@@ -408,6 +408,7 @@ fn mirrored_lethal_hits_record_mirrored_footprint_incidents() {
     assert!(inside(left[0].tile, left_anchor));
     assert!(inside(right[0].tile, right_anchor));
     assert_eq!(mirror_tile(&state, left[0].tile), right[0].tile);
+    assert_eq!(left[0].from, right[0].from.opposite());
     assert_eq!(left[0].expires_at, right[0].expires_at);
 }
 
@@ -458,12 +459,20 @@ fn a_structure_hit_from_out_of_sight_leaves_an_incident_but_a_foundry_does_not()
             state.building(victim).unwrap().hp < full,
             "premise: the Lancer hits the {kind:?}"
         );
-        state.vision(PlayerId(0)).salvage_incidents().len()
+        state.vision(PlayerId(0)).salvage_incidents().to_vec()
     };
-    assert_eq!(incidents(BuildingKind::Fabricator), 1);
+    let incident = incidents(BuildingKind::Fabricator);
+    assert_eq!(incident.len(), 1);
     assert_eq!(
-        incidents(BuildingKind::Foundry),
-        0,
+        incident[0].from,
+        chassis::compass::CompassPoint::of(chassis::fx::Vec2Fx::new(
+            chassis::fx::Fx::lit("1"),
+            chassis::fx::Fx::ZERO
+        )),
+        "the record says the fire came from the east, where the Lancer stands"
+    );
+    assert!(
+        incidents(BuildingKind::Foundry).is_empty(),
         "danger on the drop-off would hold every loaded Harvester"
     );
 }

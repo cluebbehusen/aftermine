@@ -277,3 +277,46 @@ fn every_heading_turns_half_round_with_its_vector() {
     }
     check(seam_tie());
 }
+
+#[test]
+fn compass_points_centre_on_every_sixteenth_step() {
+    for index in 0..CompassPoint::COUNT {
+        let point = CompassPoint::try_from(index).expect("in range");
+        assert_eq!(CompassPoint::of(dir(point.heading())), point);
+        assert_eq!(point.heading(), index * 16);
+    }
+    assert_eq!(CompassPoint::of(dir(7)).index(), 0);
+    assert_eq!(
+        CompassPoint::of(dir(8)).index(),
+        1,
+        "a boundary turns toward +y"
+    );
+    assert_eq!(CompassPoint::of(dir(248)).index(), 0);
+    assert_eq!(CompassPoint::of(dir(247)).index(), 15);
+}
+
+#[test]
+fn every_compass_point_turns_half_round_with_its_vector() {
+    for x in -40..=40 {
+        for y in -40..=40 {
+            let v = Vec2Fx::new(Fx::from_num(x) / 7, Fx::from_num(y) / 5);
+            if v != Vec2Fx::ZERO {
+                assert_eq!(
+                    CompassPoint::of(-v),
+                    CompassPoint::of(v).opposite(),
+                    "{v:?}"
+                );
+            }
+        }
+    }
+    let v = seam_tie();
+    assert_eq!(CompassPoint::of(-v), CompassPoint::of(v).opposite());
+}
+
+#[test]
+fn a_compass_point_reads_only_its_sixteen_indices() {
+    let point: CompassPoint = serde_json::from_str("15").expect("the last point");
+    assert_eq!(point.index(), 15);
+    assert_eq!(serde_json::to_string(&point).expect("serializes"), "15");
+    assert!(serde_json::from_str::<CompassPoint>("16").is_err());
+}

@@ -21,8 +21,10 @@ struct PendingHit {
     /// The exact point damage was aimed at or landed. Transient geometry only:
     /// it never enters authoritative serialized state.
     impact: chassis::fx::Vec2Fx,
-    /// Incoming direction for resolving a tied warning tile on an even-sized
-    /// footprint. A same-center unit attack falls back to chassis facing.
+    /// Incoming direction, the line a round crossing visible ground shows:
+    /// it resolves a tied warning tile on an even-sized footprint and gives
+    /// an unseen-fire record its compass point. A same-center unit attack
+    /// falls back to chassis facing.
     approach: chassis::fx::Vec2Fx,
     /// Where the shot was fired from: the shooter's position, or a shell's
     /// launch point.
@@ -571,7 +573,11 @@ fn resolve_hits(
         }
         .unwrap_or(hit.origin);
         if !state.can_see(victim, chassis::grid::TilePos::containing(shooter)) {
-            state.record_salvage_incident(victim, tile);
+            state.record_salvage_incident(
+                victim,
+                tile,
+                chassis::compass::CompassPoint::of(-hit.approach),
+            );
         }
     }
     let starts: Vec<_> = builds

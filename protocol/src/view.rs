@@ -141,6 +141,10 @@ pub struct UnitView {
     /// and when intent is redacted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_weld: Option<bool>,
+    /// The compass step (of 256) the body faces. Anyone in sight sees which
+    /// way a machine points, so the fog view never redacts it.
+    #[serde(default)]
+    pub heading: u8,
 }
 
 /// A drone bay as the viewer sees it. Docked drones ride on the hull, so
@@ -271,10 +275,16 @@ pub struct FogView {
     /// the seat sees, sorted by (y, x).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incoming_shells: Vec<[i32; 2]>,
-    /// Tiles `[x, y]` where hostile shells the seat's team saw land came
-    /// down lately, sorted by (y, x).
+    /// Where hostile shells the seat's team saw land came down lately, and
+    /// the compass point each came from, sorted by (y, x, point).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub shell_impacts: Vec<[i32; 2]>,
+    pub shell_impacts: Vec<aftermine_sim::observation::FireMark>,
+    /// Where the seat's team lately took fire from out of sight on a
+    /// worker, a scout or a structure, or lost a ground unit to it, and the
+    /// compass point it came from, sorted by (y, x, point). Never who
+    /// fired, or from how far.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unseen_fire: Vec<aftermine_sim::observation::FireMark>,
 }
 
 /// A hostile building every seat knows of regardless of fog.
@@ -427,10 +437,8 @@ impl FogView {
                 .into_iter()
                 .map(|tile| [tile.x, tile.y])
                 .collect(),
-            shell_impacts: aftermine_sim::observation::shell_impacts(state, player)
-                .into_iter()
-                .map(|tile| [tile.x, tile.y])
-                .collect(),
+            shell_impacts: aftermine_sim::observation::shell_impacts(state, player),
+            unseen_fire: aftermine_sim::observation::unseen_fire(state, player),
         }
     }
 }
@@ -633,12 +641,13 @@ fn unit_view(u: &Unit) -> UnitView {
             autofill: Some(bay.autofill),
         }),
         idle_weld: u.worker.map(|_| u.idle_weld()),
+        heading: u.heading,
     }
 }
 
-/// A hostile unit as the viewer sees it: body, position, wounds, visible
-/// cargo, point-defense charges and docked drones, but never its orders,
-/// queue, patrol flag, drone orders or idle-weld switch.
+/// A hostile unit as the viewer sees it: body, position, facing, wounds,
+/// visible cargo, point-defense charges and docked drones, but never its
+/// orders, queue, patrol flag, drone orders or idle-weld switch.
 fn unit_view_redacted(u: &Unit) -> UnitView {
     UnitView {
         order: None,

@@ -35,6 +35,8 @@ ordinary `PlayerCommand`s. It uses no floating point.
   scouting, repair trips and focus fire.
 - `warheads` decides when a Spire strike is worth its rounds. `breach` and
   `gunship` decide when to assemble a Maw or a Roc.
+- `crush` moves the seat's small machines, and keeps its sites, out of a Maw's
+  path.
 - `profile` resolves difficulty, stance and the seeded personality.
 - `events` buffers the seat's own stalls and rejections between decisions.
 - `checkpoint` saves what carries between decisions, and `trace` reports a

@@ -3007,8 +3007,9 @@ pub const UNLOAD_TICKS: u8 = 10;
 pub const HARVEST_RADAR_DANGER_RADIUS: i32 = 4;
 
 /// How long a hit from an unseen attacker keeps the allied victim's tile
-/// unsafe for autonomous salvage work. The memory contains only that impact
-/// tile, never the hidden attacker's identity or position. It outlasts the
+/// unsafe for autonomous salvage work. The memory contains that impact tile
+/// and the compass point the fire came from, never the hidden attacker's
+/// identity or position. It outlasts the
 /// slowest artillery cooldown (Avalanche, 6 s), so sustained fire from out of
 /// sight keeps the memory alive while a stopped barrage releases workers soon
 /// after.
@@ -3019,7 +3020,8 @@ pub const HARVEST_INCIDENT_MEMORY_TICKS: crate::Tick = 8 * crate::TICKS_PER_SECO
 pub const HARVEST_INCIDENT_DANGER_RADIUS: i32 = 4;
 
 /// Maximum recent allied impact sites retained per team. Incidents at one
-/// tile coalesce, and the oldest expiry is evicted first at the ceiling.
+/// tile from one compass point coalesce, and the oldest expiry is evicted
+/// first at the ceiling.
 pub const HARVEST_INCIDENT_CAP: usize = 64;
 
 /// How long a team remembers where a hostile shell it saw land came down.
@@ -3029,8 +3031,8 @@ pub const HARVEST_INCIDENT_CAP: usize = 64;
 pub const SHELL_IMPACT_MEMORY_TICKS: crate::Tick = 8 * crate::TICKS_PER_SECOND as crate::Tick;
 
 /// Maximum recent hostile shell impacts retained per team, bounding the
-/// memory a barrage can grow. Impacts on one tile coalesce, and the oldest
-/// expiry is evicted first at the ceiling.
+/// memory a barrage can grow. Impacts on one tile from one compass point
+/// coalesce, and the oldest expiry is evicted first at the ceiling.
 pub const SHELL_IMPACT_CAP: usize = 64;
 
 /// Mobile ground threats are treated as dangerous this many tiles beyond
@@ -3181,6 +3183,36 @@ pub const SMALL_BODY_RADIUS: Fx = Fx::lit("0.55");
 /// bodies exactly as they were.
 pub fn hull_excess(radius: Fx) -> Fx {
     (radius - SMALL_BODY_RADIUS).max(Fx::ZERO)
+}
+
+/// A machine a crusher's front goes over: a ground body of a radius under
+/// this.
+pub const CRUSHED_RADIUS: Fx = Fx::lit("0.5");
+
+/// How far past touching a small machine still counts as under a crusher's
+/// front.
+pub const CRUSH_SLACK: Fx = Fx::lit("0.1");
+
+impl UnitKind {
+    /// Whether this kind cuts with a drum across the front of a hull
+    /// broader than a small body, as the Maw does. Such a crusher cuts a
+    /// building only with the drum pressed flat against one of its sides, and
+    /// crushes every small hostile ground machine touching the front half of
+    /// its hull.
+    pub fn crushes(self) -> bool {
+        self.stats().contact_reach.is_some() && hull_excess(self.stats().radius) > Fx::ZERO
+    }
+
+    /// Whether a crusher's front goes over this kind on the ground.
+    pub fn crushable(self) -> bool {
+        self.stats().radius < CRUSHED_RADIUS
+    }
+}
+
+/// How near the centre of a `victim` must come to a `crusher`'s centre,
+/// ahead of it, to be under its front.
+pub fn crush_touch(crusher: UnitKind, victim: UnitKind) -> Fx {
+    crusher.stats().radius + victim.stats().radius + CRUSH_SLACK
 }
 
 /// The widest collision radius any unit kind has.

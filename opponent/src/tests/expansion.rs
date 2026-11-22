@@ -862,6 +862,92 @@ fn a_frames_only_site_is_claimed_by_an_ally_or_once_own_foundries_cover_it() {
     );
 }
 
+/// The frontier with a frame six tiles from West's safe field, an ally of
+/// West's starting below West, and a West Kestrel overhead so West sees what
+/// stands beside the field.
+fn guarded_field() -> Scenario {
+    let mut scenario = frontier(1_000);
+    scenario.map[7].replace_range(20..21, "E");
+    scenario.map[8].replace_range(2..3, "3");
+    let ally = scenario.players[1].clone();
+    scenario.players.push(ally);
+    for (player, team) in scenario.players.iter_mut().zip([0, 1, 0]) {
+        player.team = Some(team);
+    }
+    scenario.units.push(unit(0, UnitKind::Kestrel, 16, 9));
+    scenario
+}
+
+/// Whether West's safe field reads as worked with `beside`, as owner, kind
+/// and anchor, standing near it.
+fn field_claimed_with(beside: Option<(u8, BuildingKind, i32, i32)>) -> bool {
+    let mut scenario = guarded_field();
+    if let Some((owner, kind, x, y)) = beside {
+        scenario.buildings.push(building(owner, kind, x, y));
+    }
+    let model = map(&scenario);
+    let (_, site) = site_with(&model, TilePos::new(12, 10));
+    let state = scenario.build().unwrap();
+    let observation = mapped(&state, PlayerId(0));
+    expansion::value(&observation, &model, &Memory::default(), site, 50).is_none()
+}
+
+#[test]
+fn a_field_is_claimed_by_a_foundry_or_an_ally_but_not_by_other_enemy_buildings() {
+    assert!(!field_claimed_with(None), "premise");
+    assert!(
+        !field_claimed_with(Some((1, BuildingKind::Extractor, 20, 7))),
+        "an enemy Extractor on another site's frame"
+    );
+    assert!(
+        !field_claimed_with(Some((1, BuildingKind::Turret, 15, 12))),
+        "an enemy Turret is danger, not a claim"
+    );
+    assert!(
+        field_claimed_with(Some((1, BuildingKind::Foundry, 9, 8))),
+        "an enemy Foundry works the field"
+    );
+    assert!(field_claimed_with(Some((0, BuildingKind::Foundry, 9, 8))));
+    assert!(
+        field_claimed_with(Some((2, BuildingKind::Turret, 15, 12))),
+        "teammates do not crowd one expansion"
+    );
+}
+
+#[test]
+fn an_enemy_extractor_beside_a_field_leaves_it_to_expand_into() {
+    let mut scenario = guarded_field();
+    scenario.buildings.extend([
+        building(1, BuildingKind::Extractor, 20, 7),
+        building(0, BuildingKind::Fabricator, 6, 8),
+    ]);
+    let model = map(&scenario);
+    let (index, site) = site_with(&model, TilePos::new(12, 10));
+    // The rich field above failed at every anchor, so the guarded one is the
+    // only expansion left.
+    let rich: Vec<serde_json::Value> = site_with(&model, TilePos::new(12, 2))
+        .1
+        .anchors
+        .iter()
+        .map(|anchor| serde_json::json!({"kind": "foundry", "anchor": anchor, "at": 0}))
+        .collect();
+    let state = scenario.build().unwrap();
+    let mut opponent = restored_with(&seat(&scenario, 0), &scenario, &state, |json| {
+        json["memory"]["failures"] = serde_json::Value::Array(rich);
+        json["saving"] = serde_json::json!({
+            "protected": 0,
+            "target": {"investment": {"expansion": index}, "attempt": null},
+        });
+    });
+    let commands = opponent.act(&state, &mut OwnEvents::default());
+    assert!(
+        builds(&commands)
+            .iter()
+            .any(|(kind, anchor)| *kind == BuildingKind::Foundry && site.anchors.contains(anchor)),
+        "{commands:?}"
+    );
+}
+
 #[test]
 fn only_guns_that_reach_a_frame_count_as_its_danger() {
     let score = |guns: &[(BuildingKind, i32, i32)]| {

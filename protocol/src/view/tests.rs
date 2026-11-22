@@ -416,7 +416,8 @@ fn parity_world() -> aftermine_sim::State {
     }
     let state = scenario.build().unwrap();
     // Seat 0 also remembers East's Extractor as a Deep Bore, so a remembered
-    // tier is compared, and a wreck on dark ground the map no longer holds.
+    // tier is compared, a wreck on dark ground the map no longer holds, and
+    // fire from out of sight on its Extractor.
     let mut value = serde_json::to_value(&state).unwrap();
     assert_eq!(value["vision"][0]["ghosts"], serde_json::json!([]));
     value["vision"][0]["ghosts"] = serde_json::json!([{
@@ -431,6 +432,11 @@ fn parity_world() -> aftermine_sim::State {
     let cell = as_index(wreck.y * state.map().width() + wreck.x);
     value["vision"][0]["explored"]["cells"][cell] = serde_json::json!(true);
     value["vision"][0]["remembered_wreck"]["cells"][cell] = serde_json::json!(7);
+    value["vision"][0]["salvage_incidents"] = serde_json::json!([{
+        "tile": {"x": 8, "y": 4},
+        "from": 5,
+        "expires_at": aftermine_sim::stats::HARVEST_INCIDENT_MEMORY_TICKS,
+    }]);
     let mut state: aftermine_sim::State = serde_json::from_value(value).unwrap();
     // Only West raids, so East meets hostiles at home while West's cradle
     // stays out of its sight.
@@ -534,6 +540,7 @@ fn cradle_order(state: &aftermine_sim::State) -> Option<aftermine_sim::PlayerCom
 /// which the screen shows only as one of five fill levels and the bots read
 /// as zero.
 #[test]
+#[expect(clippy::too_many_lines, reason = "one comparison per projected field")]
 fn the_fog_view_and_the_bot_observation_agree() {
     use aftermine_sim::observation::ObservationData;
     use std::collections::BTreeSet;
@@ -546,6 +553,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     let mut compared_hostile_assembly = false;
     let mut compared_shells = false;
     let mut compared_impacts = false;
+    let mut compared_unseen_fire = false;
     let mut compared_hostile_works = false;
     let mut compared_wreck = false;
     let mut cradle_ordered = false;
@@ -569,7 +577,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 let mut fog_rows: Vec<_> = fog
                     .units
                     .iter()
-                    .map(|u| (u.id, u.hp, u.landed, u.charges))
+                    .map(|u| (u.id, u.hp, u.landed, u.charges, u.heading))
                     .collect();
                 fog_rows.sort_unstable();
                 let mut obs_rows: Vec<_> = obs
@@ -577,7 +585,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
                     .iter()
                     .chain(&obs.ally_units)
                     .chain(&obs.enemy_units)
-                    .map(|u| (u.id.0, u.hp, u.grounded, u.charges))
+                    .map(|u| (u.id.0, u.hp, u.grounded, u.charges, u.heading))
                     .collect();
                 obs_rows.sort_unstable();
                 assert_eq!(fog_rows, obs_rows, "tick {tick} seat {seat:?} unit rows");
@@ -729,11 +737,15 @@ fn the_fog_view_and_the_bot_observation_agree() {
                 );
                 compared_shells |= !obs.incoming_shells.is_empty();
                 assert_eq!(
-                    tiles(&fog.shell_impacts),
-                    obs.shell_impacts,
+                    fog.shell_impacts, obs.shell_impacts,
                     "tick {tick} seat {seat:?} shell impacts"
                 );
                 compared_impacts |= !obs.shell_impacts.is_empty();
+                assert_eq!(
+                    fog.unseen_fire, obs.salvage_incidents,
+                    "tick {tick} seat {seat:?} unseen fire"
+                );
+                compared_unseen_fire |= !obs.salvage_incidents.is_empty();
                 assert_eq!(
                     fog.warheads, obs.warheads,
                     "tick {tick} seat {seat:?} warheads"
@@ -781,6 +793,7 @@ fn the_fog_view_and_the_bot_observation_agree() {
     );
     assert!(compared_shells, "a hostile shell in flight was compared");
     assert!(compared_impacts, "a hostile shell's landing was compared");
+    assert!(compared_unseen_fire, "fire from out of sight was compared");
     assert!(
         compared_hostile_works,
         "a hostile producer at work was compared"

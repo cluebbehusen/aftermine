@@ -15,6 +15,7 @@ pub mod digest;
 pub mod evaluation;
 pub mod fights;
 pub mod home_replays;
+pub mod ladder_diff;
 pub mod ledger;
 pub mod mac;
 pub mod pacing;

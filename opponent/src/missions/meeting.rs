@@ -5,7 +5,7 @@
 use super::attack::{building_value, guards};
 use super::defense::at_home;
 use super::reserve::LOCAL_REACH;
-use super::{against_machines, artillery, value};
+use super::{against_machines, reached, value};
 use crate::frame::{HomeFrame, doubled, gap};
 use crate::map::{MapModel, NEIGHBOURS, UNREACHABLE};
 use crate::memory::Memory;
@@ -88,7 +88,7 @@ pub(super) fn opposed(observation: &ObservationData, memory: &Memory, place: Til
 pub(super) fn escort(observation: &ObservationData, memory: &Memory, place: TilePos) -> u64 {
     let foes: Vec<Foe> = foes(observation, memory)
         .into_iter()
-        .filter(|foe| !(foe.tile == place && artillery(foe.kind)))
+        .filter(|foe| !(foe.tile == place && reached(foe.kind)))
         .collect();
     joining(&foes, place)
 }

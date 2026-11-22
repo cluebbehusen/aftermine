@@ -9,6 +9,10 @@ use macroquad::prelude::*;
 pub(super) enum Family {
     Rail,
     Orb,
+    /// A solid round striking metal or ground: heavy for a cannon slug.
+    Kinetic {
+        heavy: bool,
+    },
     Shell,
     Mortar,
     Rocket,
@@ -20,6 +24,7 @@ impl Family {
         match style {
             ShotStyle::Rail => Some(Self::Rail),
             ShotStyle::ForgeSpot => Some(Self::Orb),
+            ShotStyle::Kinetic { heavy } => Some(Self::Kinetic { heavy }),
             ShotStyle::Mortar => Some(Self::Mortar),
             _ => None,
         }
@@ -105,6 +110,8 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
     let heat_life = match family {
         Family::Rail => 0.13,
         Family::Orb => 0.10,
+        Family::Kinetic { heavy: true } => 0.16,
+        Family::Kinetic { heavy: false } => 0.10,
         Family::Shell | Family::Mortar => 0.16,
         Family::Rocket => 0.28,
         Family::Bomb => 0.20,
@@ -115,6 +122,7 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
             * match family {
                 Family::Rail => 0.17,
                 Family::Orb => 0.12,
+                Family::Kinetic { .. } => 0.20,
                 Family::Rocket => 0.30,
                 _ => 0.23,
             };
@@ -148,6 +156,25 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
             pixel,
             Color::new(1., 0.93, 0.73, heat),
         );
+        if let Family::Kinetic { heavy } = family {
+            // Sparks glance back off the struck face, spreading as they cool.
+            let t = 1. - heat;
+            for i in 0..if heavy { 5 } else { 3 } {
+                let spread = noise(seed, i + 70) * 2. - 1.;
+                let toward = (outward + tangent * spread * 1.3).normalize_or_zero();
+                let reach = scale * (0.55 + 0.45 * noise(seed, i + 75));
+                let near = at + toward * reach * (0.12 + 0.45 * t);
+                let far = at + toward * reach * (0.30 + 0.70 * t);
+                draw_line(
+                    near.x,
+                    near.y,
+                    far.x,
+                    far.y,
+                    pixel,
+                    Color::new(1., 0.84, 0.52, heat),
+                );
+            }
+        }
         if family == Family::Rocket {
             for i in 0..3 {
                 let offset = vec2(noise(seed, i) - 0.5, -noise(seed, i + 4) * 0.7);
@@ -192,7 +219,15 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
         }
     }
 
-    if !explosive || recipient == Recipient::Air {
+    // A cannon slug kicks up a little of what an explosion throws.
+    let dust = if explosive {
+        1.
+    } else if family == (Family::Kinetic { heavy: true }) {
+        0.5
+    } else {
+        0.
+    };
+    if dust == 0. || recipient == Recipient::Air {
         return;
     }
     let dust_age = age - 0.07;
@@ -207,7 +242,7 @@ pub(super) fn draw(contact: Contact, zoom: f32) {
                 at + offset,
                 vec2(size * 1.5, size * 0.65),
                 pixel,
-                Color::new(0.34, 0.30, 0.24, (1. - t) * 0.27),
+                Color::new(0.34, 0.30, 0.24, (1. - t) * 0.27 * dust),
             );
         }
     }

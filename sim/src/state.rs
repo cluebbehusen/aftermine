@@ -3121,10 +3121,7 @@ impl State {
         if tiles.iter().any(|recent| recent.expires_at > horizon) {
             return Err(beyond);
         }
-        if !tiles
-            .windows(2)
-            .all(|a| (a[0].tile.y, a[0].tile.x) < (a[1].tile.y, a[1].tile.x))
-        {
+        if !tiles.windows(2).all(|a| a[0].key() < a[1].key()) {
             return Err(unsorted);
         }
         Ok(())
@@ -3288,10 +3285,16 @@ impl State {
         }
     }
 
-    /// Remembers only where this team suffered combat damage, never where
-    /// the attacker stood. Every teammate receives the same deterministic
-    /// record so team-shared vision cannot depend on seat iteration order.
-    pub(crate) fn record_salvage_incident(&mut self, victim: PlayerId, tile: TilePos) {
+    /// Remembers where this team suffered combat damage and the compass
+    /// point the fire came from, never where the attacker stood. Every
+    /// teammate receives the same deterministic record so team-shared
+    /// vision cannot depend on seat iteration order.
+    pub(crate) fn record_salvage_incident(
+        &mut self,
+        victim: PlayerId,
+        tile: TilePos,
+        from: chassis::compass::CompassPoint,
+    ) {
         let team = self.player(victim).team;
         let expires_at = self
             .tick
@@ -3299,15 +3302,21 @@ impl State {
             .saturating_add(1);
         for (player, vision) in self.players.iter().zip(&mut self.vision) {
             if player.team == team {
-                vision.remember_salvage_incident(tile, expires_at);
+                vision.remember_salvage_incident(tile, from, expires_at);
             }
         }
     }
 
-    /// Remembers where a shell of `owner`'s landed for every seat hostile to
-    /// it that sees `tile`, never where it came from. Teammates share sight,
-    /// so each receives the same record whatever order seats are visited in.
-    pub(crate) fn record_shell_impact(&mut self, owner: PlayerId, tile: TilePos) {
+    /// Remembers where a shell of `owner`'s landed and the compass point it
+    /// came from for every seat hostile to it that sees `tile`, never where
+    /// it was fired from. Teammates share sight, so each receives the same
+    /// record whatever order seats are visited in.
+    pub(crate) fn record_shell_impact(
+        &mut self,
+        owner: PlayerId,
+        tile: TilePos,
+        from: chassis::compass::CompassPoint,
+    ) {
         let expires_at = self
             .tick
             .saturating_add(crate::stats::SHELL_IMPACT_MEMORY_TICKS)
@@ -3315,7 +3324,7 @@ impl State {
         for index in 0..self.players.len() {
             if self.hostile(PlayerId::from_index(index), owner) && self.vision[index].visible(tile)
             {
-                self.vision[index].remember_shell_impact(tile, expires_at);
+                self.vision[index].remember_shell_impact(tile, from, expires_at);
             }
         }
     }

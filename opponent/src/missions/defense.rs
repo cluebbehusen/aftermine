@@ -14,7 +14,7 @@ use super::attack::{building_value, concentrates, defense, defense_around};
 use super::reserve::LOCAL_REACH;
 use super::{
     AttackPhase, DefendPhase, MISSION_CAP, Mission, Missions, Task, UNIT_CAP, against_machines,
-    fill, hits, hunt, insert, meeting, mine, run, value, walking_gun, worth,
+    fill, hits, hunt, insert, meeting, mine, reached, run, value, worth,
 };
 use crate::decision::Ledger;
 use crate::frame::{HomeFrame, centre_distance, doubled, footprint_centre, gap, ring};
@@ -24,6 +24,7 @@ use aftermine_sim::observation::{BuildingObs, ObservationData, UnitObs};
 use aftermine_sim::scenario::BotDifficulty;
 use aftermine_sim::stats::{Domain, WeaponStats};
 use aftermine_sim::{AttackTarget, BuildingKind, Command, PlayerId, UnitId, UnitKind};
+use chassis::compass::CompassPoint;
 use chassis::fx::Fx;
 use chassis::grid::TilePos;
 
@@ -159,7 +160,7 @@ impl Missions {
             let shelling = siege
                 .units
                 .iter()
-                .filter(|threat| walking_gun(threat) && map.component(threat.tile) == component)
+                .filter(|threat| reached(threat.kind) && map.component(threat.tile) == component)
                 .min_by_key(|threat| (frame.rank(centre, doubled(threat.tile)), threat.id));
             let pursuit = Pursuit::of(
                 shelling.copied(),
@@ -695,7 +696,7 @@ fn lost(
                     .enemy_units
                     .iter()
                     .find(|enemy| enemy.id == id)
-                    .is_none_or(walking_gun)
+                    .is_none_or(|enemy| reached(enemy.kind))
             })
 }
 
@@ -1078,6 +1079,15 @@ fn close_up<'a>(
     if !matches!(pursuit, Pursuit::Gun(_) | Pursuit::Advance) {
         return None;
     }
+    // A crusher never turns on a machine, and the post stands in its way.
+    if let Pursuit::Gun(id) = pursuit
+        && observation
+            .enemy_units
+            .iter()
+            .any(|enemy| enemy.id == id && enemy.kind.crushes())
+    {
+        return None;
+    }
     let post = waiting_post(map, frame, foundry, fight)?;
     // Only before setting out: a group of fast and slow units strings out on
     // its way, and calling it back each time would never let it arrive.
@@ -1153,7 +1163,7 @@ fn waiting_post(
 /// only gets the defenders shelled, and an ally's defense has no shortfall
 /// training behind a wait.
 fn sortie(own: bool, siege: &Siege<'_>, met: u64, difficulty: BotDifficulty) -> u64 {
-    if own && siege.batteries.is_empty() && !siege.units.iter().any(|threat| walking_gun(threat)) {
+    if own && siege.batteries.is_empty() && !siege.units.iter().any(|threat| reached(threat.kind)) {
         met * engage_margin(difficulty) / 1_000
     } else {
         met
@@ -1606,8 +1616,8 @@ fn threats<'a>(
 
 /// For each built Foundry, the structure among `searched`, hit by fire the
 /// seat cannot see, nearest it among those nearest it of all Foundries on
-/// their ground: the tile beside that structure toward the nearest hostile
-/// start, where defenders go to see the shooter, and what they bring, the
+/// their ground: the tile beside that structure on the side the fire came
+/// from, where defenders go to see the shooter, and what they bring, the
 /// structure's price. Enemies remembered near it already press the defense.
 fn searches<'a>(
     observation: &'a ObservationData,
@@ -1615,7 +1625,6 @@ fn searches<'a>(
     frame: HomeFrame,
     searched: &[&BuildingObs],
 ) -> Vec<(&'a BuildingObs, (TilePos, u64))> {
-    let me = observation.me;
     let foundries = foundries_from_home(&observation.my_buildings, frame);
     let apart = |foundry: &BuildingObs, structure: &BuildingObs| {
         (
@@ -1648,16 +1657,26 @@ fn searches<'a>(
                 .filter(|structure| owner(structure) == Some(foundry.id))
                 .min_by_key(|structure| apart(foundry, structure))?;
             let centre = footprint_centre(structure.kind, structure.anchor);
-            let beside = ring(structure.anchor, structure.kind.size())
-                .filter(|tile| map.component(*tile) == ground)
-                .min_by_key(|tile| {
-                    (
-                        map.hostiles(me)
-                            .map(|hostile| map.distance(hostile, *tile))
-                            .min(),
-                        frame.rank(centre, doubled(*tile)),
-                    )
-                })?;
+            let size = structure.kind.size();
+            // The tile beside it furthest toward each point fire on it came
+            // from, nearest the structure of those.
+            let beside = observation
+                .salvage_incidents
+                .iter()
+                .filter(|mark| gap(structure.anchor, size, mark.tile, (1, 1)) < 0)
+                .filter_map(|mark| {
+                    let (dx, dy) = toward(mark.from);
+                    ring(structure.anchor, size)
+                        .filter(|tile| map.component(*tile) == ground)
+                        .min_by_key(|tile| {
+                            let at = doubled(*tile);
+                            (
+                                std::cmp::Reverse((at.0 - centre.0) * dx + (at.1 - centre.1) * dy),
+                                frame.rank(centre, at),
+                            )
+                        })
+                })
+                .min_by_key(|tile| frame.rank(centre, doubled(*tile)))?;
             let price = u64::from(structure.kind.invested_cost(structure.tier));
             Some((*foundry, (beside, price)))
         })
@@ -1838,17 +1857,43 @@ pub(super) fn lobs(enemy: &UnitObs, impact: TilePos) -> bool {
 /// Impacts of hostile shells near any of `buildings`, coming or landed lately:
 /// a gun firing every few seconds has nothing in flight between its shells.
 fn shelled(observation: &ObservationData, buildings: &[BuildingObs]) -> Vec<TilePos> {
+    shelled_from(observation, buildings)
+        .into_iter()
+        .map(|(impact, _)| impact)
+        .collect()
+}
+
+/// [`shelled`] with the compass point each landed shell came from; a shell
+/// still in flight has shown none yet.
+fn shelled_from(
+    observation: &ObservationData,
+    buildings: &[BuildingObs],
+) -> Vec<(TilePos, Option<CompassPoint>)> {
     observation
         .incoming_shells
         .iter()
-        .chain(&observation.shell_impacts)
-        .copied()
-        .filter(|impact| {
+        .map(|impact| (*impact, None))
+        .chain(
+            observation
+                .shell_impacts
+                .iter()
+                .map(|mark| (mark.tile, Some(mark.from))),
+        )
+        .filter(|(impact, _)| {
             buildings.iter().any(|building| {
                 gap(building.anchor, building.kind.size(), *impact, (1, 1)) < THREAT_GAP
             })
         })
         .collect()
+}
+
+/// Compass `point` as a direction in doubled coordinates about 1,024 long.
+/// Truncation keeps a half turn exact: the opposite point gives the negated
+/// direction.
+fn toward(point: CompassPoint) -> (i64, i64) {
+    const SCALE: i64 = 1 << 22;
+    let along = chassis::compass::dir(point.heading());
+    (along.x.to_bits() / SCALE, along.y.to_bits() / SCALE)
 }
 
 /// Whether the known enemy `building` could have sent a shell landing on
@@ -1897,10 +1942,11 @@ fn unseen<'a>(
                 .iter()
                 .any(|building| battery(building, impact))
     };
-    let impacts: Vec<TilePos> = shelled(observation, &observation.my_buildings)
-        .into_iter()
-        .filter(|impact| !fired(*impact))
-        .collect();
+    let impacts: Vec<(TilePos, Option<CompassPoint>)> =
+        shelled_from(observation, &observation.my_buildings)
+            .into_iter()
+            .filter(|(impact, _)| !fired(*impact))
+            .collect();
     if impacts.is_empty() {
         return Vec::new();
     }
@@ -1920,16 +1966,28 @@ fn unseen<'a>(
         .iter()
         .filter_map(|foundry| {
             let centre = footprint_centre(foundry.kind, foundry.anchor);
-            let impact = impacts
+            // A landed shell shows the line it came in on; among those on
+            // one tile, the order of the lines it points along breaks ties.
+            let (impact, from) = impacts
                 .iter()
                 .copied()
-                .filter(|impact| nearest(*impact).is_some_and(|other| other.id == foundry.id))
-                .min_by_key(|impact| frame.rank(centre, doubled(*impact)))?;
+                .filter(|(impact, _)| nearest(*impact).is_some_and(|other| other.id == foundry.id))
+                .min_by_key(|(impact, from)| {
+                    let at = doubled(*impact);
+                    (
+                        frame.rank(centre, at),
+                        from.is_none(),
+                        from.map(|from| {
+                            let (dx, dy) = toward(from);
+                            frame.rank(at, (at.0 + dx, at.1 + dy))
+                        }),
+                    )
+                })?;
             let gun = gun(
                 observation,
                 map,
                 frame,
-                impact,
+                (impact, from),
                 map.component(foundry.anchor),
             )?;
             Some((*foundry, gun))
@@ -1938,25 +1996,31 @@ fn unseen<'a>(
 }
 
 /// Where a gun that shelled `impact` from out of sight probably stands: the
-/// impact moved toward the nearest hostile start by the longest artillery
-/// reach, or less where that leaves `component`.
+/// impact moved back along the line the shell came in on, or toward the
+/// nearest hostile start while it is still in flight, by the longest
+/// artillery reach, or less where that leaves `component`.
 fn gun(
     observation: &ObservationData,
     map: &MapModel,
     frame: HomeFrame,
-    impact: TilePos,
+    (impact, came_from): (TilePos, Option<CompassPoint>),
     component: Option<u32>,
 ) -> Option<TilePos> {
     component?;
     let from = doubled(impact);
-    let to = map
-        .hostiles(observation.me)
-        .filter_map(|owner| map.start(owner))
-        .map(|start| footprint_centre(BuildingKind::Foundry, start))
-        .min_by_key(|centre| (centre_distance(from, *centre), frame.rank(from, *centre)))?;
-    let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+    let reach = 2 * artillery().map_or(0, |(reach, _)| reach);
+    let ((dx, dy), steps) = if let Some(point) = came_from {
+        (toward(point), reach)
+    } else {
+        let to = map
+            .hostiles(observation.me)
+            .filter_map(|owner| map.start(owner))
+            .map(|start| footprint_centre(BuildingKind::Foundry, start))
+            .min_by_key(|centre| (centre_distance(from, *centre), frame.rank(from, *centre)))?;
+        let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+        ((dx, dy), reach.min((dx * dx + dy * dy).isqrt()))
+    };
     let length = (dx * dx + dy * dy).isqrt();
-    let steps = (2 * artillery().map_or(0, |(reach, _)| reach)).min(length);
     // A doubled coordinate on a tile edge rounds toward the impact, so
     // mirrored impacts give mirrored tiles.
     let tile = |at: i64, toward: i64| -> i32 {

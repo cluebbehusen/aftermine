@@ -81,9 +81,9 @@ normative for this crate.
 ## Report at handoff
 
 When handing off a PR, tell Connor its net production and test line change,
-average and p99 time per decision with total CPU, the ladder smoke against the
-base, and the pressure scenarios that pass, including when they are unfavorable.
-Keep them out of the PR description.
+average and p99 time per decision with total CPU, the full ladder against the
+base, and each pressure scenario's passes over its variants, including when they
+are unfavorable. Keep them out of the PR description.
 
 - **Lines:** `uv run tools/line_report.py <base>` prints the net production and
   test line change per top-level directory from the merge base; `--help` defines
@@ -97,16 +97,23 @@ Keep them out of the PR description.
   `skyhook` at most 250 µs average and 1 ms p99 per decision; `duel` and
   `mature-armies` no worse than the base beyond noise.
 
-Run the ladder smoke locally on the branch and on its base before handoff; CI
-does not run it:
+Run the full ladder locally on the branch and on its base before handoff, then
+compare the two runs game by game; CI does not run it:
 
 ```sh
-cargo run --release -p aftermine-driver -- bot-ladder driver/evaluation/ladder/ladder-smoke.json --out <new directory>
+cargo run --release -p aftermine-driver -- bot-ladder driver/evaluation/ladder/ladder.json --jobs 8 --out <new directory>
+cargo run --release -p aftermine-driver -- bot-ladder-diff <base>/rows.jsonl <branch>/rows.jsonl
 ```
 
-It plays every comparison of the ladder on Skirmish, The Deep Cut, Open Pit and
-Severance, Balanced, two seed runs each. A PR that touches team or free-for-all
-play also plays every seat of those maps at one rung and reads the seats:
+`bot-ladder-diff` pairs every game with the same game in the other run and
+refuses runs that did not play the same games. Report how many games played
+identically, the games whose winner changed, the change in the higher rung's
+share of net worth, and the rung measures that moved. The worth change compares
+each game with itself, so it moves with far fewer games than two win shares do.
+`--json` gives the same comparison as data.
+
+A PR that touches team or free-for-all play also plays every seat of those maps
+at one rung and reads the seats:
 
 ```sh
 cargo run --release -p aftermine-driver -- bot-eval scenarios/broad-front.json scenarios/pentangle-claim.json scenarios/scramble-basin.json --runs 3 --candidate <name> --out <rows.jsonl>
@@ -177,11 +184,12 @@ with the rungs swapped between the seats, both seats sharing one personality
 seed. A comparison passes when the higher rung wins at least its gate of decided
 legs over at least the manifest's number of decided pairs; the manifest sets
 both. `ladder.json` covers nine duel maps across the open, constrained and
-severed families, every stance, over several runs; run it for a lever's final
-numbers. `ladder-smoke.json` is the quick check at handoff and while a
-difficulty lever is in progress. `bot-ladder-report <rows.jsonl>...` re-reads
-published rows, and `bot-ladder --replay-dir` saves a replay of every leg with
-their compact rows in `legs.jsonl`.
+severed families, every stance, over several runs; run it at handoff and for a
+lever's final numbers. `ladder-smoke.json` plays every comparison on Skirmish,
+The Deep Cut, Open Pit and Severance, Balanced, two seed runs each: the quick
+check while iterating. `bot-ladder-report <rows.jsonl>...` re-reads published
+rows, and `bot-ladder --replay-dir` saves a replay of every leg with their
+compact rows in `legs.jsonl`.
 
 ## Failure detectors
 
@@ -267,14 +275,20 @@ first held a Deep Bore, refitting or standing, and how many seat-legs ever did.
 
 ## Pressure scenarios
 
-`cargo run --release -p aftermine-driver -- bot-pressure` runs the staged
-scenarios in `driver/evaluation/pressure/`; `--replay-dir` saves each run for
-`replay-summary`. A scripted attacker seat issues tick-stamped commands for its
-preset units while the bot defends. Its Foundry stands in a walled corner: for
-early rush, air switch and siege the corner opens at its far end, so the
+`cargo run --release -p aftermine-driver -- bot-pressure --jobs 8` runs the
+staged scenarios in `driver/evaluation/pressure/`; `--replay-dir` saves each run
+for `replay-summary`. A scripted attacker seat issues tick-stamped commands for
+its preset units while the bot defends. Its Foundry stands in a walled corner:
+for early rush, air switch and siege the corner opens at its far end, so the
 defender's ground reaches it only by a long route and the defender is not cut
 off from its enemy; for lift drop it is an island no ground unit reaches, since
 the drop must come by air.
+
+Each scenario runs at every difficulty with personality seeds 0 to 2, as
+authored and reflected left to right; `--difficulties`, `--seeds` and
+`--no-mirror` narrow the grid. The report gives each scenario's passes over its
+runs with a 95% Wilson interval, by difficulty and by orientation, then every
+failing run; `--json` gives every run.
 
 - **Early rush:** Sentinels and Scuttlers attack the base; the Foundry must
   stand at the deadline.
@@ -293,8 +307,13 @@ the drop must come by air.
 - **Breach:** a Maw walks on the base from open ground; by the deadline it must
   be destroyed with the Foundry still standing.
 
+Every check but air switch's also needs a starting Foundry to stand: one the
+defender held built at tick zero. A Foundry placed later, finished or not, does
+not count.
+
 Scenario files are JSON: the staged scenario, the defender and attacker seats, a
-deadline, the script (unit ids follow scenario order) and the check.
+deadline, the script (unit ids follow scenario order) and the check. A script
+command whose tiles cannot be reflected is refused when mirroring.
 
 ## Review play
 

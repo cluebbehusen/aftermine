@@ -5,6 +5,7 @@
 mod breach;
 mod checkpoint;
 mod composition;
+mod crush;
 mod decision;
 mod defenses;
 mod events;

@@ -96,6 +96,20 @@ impl TieFrame {
         let (dx, dy) = (i64::from(tile.x - from.x), i64::from(tile.y - from.y));
         (std::cmp::Reverse(fx * dx + fy * dy), fx * dy - fy * dx)
     }
+
+    /// Ranks compass `point` the way [`Self::rank`] ranks an offset:
+    /// furthest along the frame first, then by the side of it. A half turn
+    /// negates the frame and turns every point to its opposite, which keeps
+    /// both terms.
+    pub(crate) fn rank_point(
+        self,
+        point: chassis::compass::CompassPoint,
+    ) -> (std::cmp::Reverse<i128>, i128) {
+        let (fx, fy) = (i128::from(self.0.0), i128::from(self.0.1));
+        let along = chassis::compass::dir(point.heading());
+        let (dx, dy) = (i128::from(along.x.to_bits()), i128::from(along.y.to_bits()));
+        (std::cmp::Reverse(fx * dx + fy * dy), fx * dy - fy * dx)
+    }
 }
 
 /// The fastest any body can move in one tick: the top unit speed plus the
