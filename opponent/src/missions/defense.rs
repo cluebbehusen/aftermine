@@ -861,10 +861,10 @@ fn waits(
 }
 
 /// The defenders among `members` out away from the waiting `post` or on
-/// their way, with what those near the post or at the `fight` are worth
-/// against ground; the rest stand idle at the post as its reserve. Without a
-/// post all are out. One far from both, such as a defender off chasing a
-/// fleeing enemy, is in neither fight.
+/// their way, with what those near the post, at the `fight` or on the way
+/// between are worth against ground; the rest stand idle at the post as its
+/// reserve. Without a post all are out. One farther from the fight than the
+/// post is, such as a defender off chasing a fleeing enemy, is in neither.
 fn front(
     observation: &ObservationData,
     members: &[UnitId],
@@ -878,10 +878,8 @@ fn front(
             post.is_none_or(|post| !unit.idle || unit.tile.chebyshev(post) > RESERVE_TILES)
         })
         .collect();
-    let near = |unit: &UnitObs| {
-        unit.tile.chebyshev(fight) <= GATHER_TILES
-            || post.is_some_and(|post| unit.tile.chebyshev(post) <= GATHER_TILES)
-    };
+    let way = post.map_or(0, |post| post.chebyshev(fight));
+    let near = |unit: &UnitObs| unit.tile.chebyshev(fight) <= way + GATHER_TILES;
     let value = out
         .iter()
         .filter(|unit| hits(unit, Domain::Ground) && near(unit))

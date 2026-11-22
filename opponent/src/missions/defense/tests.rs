@@ -234,7 +234,7 @@ fn a_defender_far_off_chasing_is_in_neither_fight() {
     // are out from the post, but only the one at the fight is worth anything
     // there, so the post's reserve does not wait on the chaser.
     let (observation, ids) = viewed(&[
-        (0, UnitKind::Sentinel, 9, 4),
+        (0, UnitKind::Sentinel, 8, 4),
         (0, UnitKind::Sentinel, 18, 8),
     ]);
     let (at_fight, chaser) = (ids[0], ids[1]);
@@ -242,7 +242,7 @@ fn a_defender_far_off_chasing_is_in_neither_fight() {
         &observation,
         &[at_fight, chaser],
         Some(TilePos::new(4, 1)),
-        TilePos::new(10, 4),
+        TilePos::new(6, 3),
     );
     assert!(out.contains(&at_fight) && out.contains(&chaser), "{out:?}");
     let alone = value(mine(&observation, at_fight).unwrap());
