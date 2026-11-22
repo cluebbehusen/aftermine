@@ -1569,8 +1569,8 @@ fn best_answer(
 /// What a short defense keeps from its emergency structures this decision:
 /// the price of the dearest best answer to its shortfalls that is a unit the
 /// bank reaches soon, so production can train it. A structure that answers
-/// best leaves the bank to the emergency. None when no shortfall has an
-/// answer the bank reaches soon.
+/// best leaves the bank to the emergency. None when any shortfall has no
+/// answer the bank reaches soon, so the saving target keeps its scrap.
 fn awaited(
     observation: &ObservationData,
     map: &MapModel,
@@ -1587,7 +1587,9 @@ fn awaited(
         })
         .map(|(fighter, _)| fighter)
         .collect();
-    (!answers.is_empty()).then(|| {
+    // One Foundry's answer must not free the savings for another's
+    // emergency that pays back nothing: protection is one total.
+    (answers.len() == shortfalls.len()).then(|| {
         answers
             .into_iter()
             .filter_map(|fighter| match fighter {
@@ -1819,3 +1821,6 @@ pub(crate) fn allowance(difficulty: BotDifficulty) -> u32 {
         BotDifficulty::Prime => 10,
     }
 }
+
+#[cfg(test)]
+mod tests;

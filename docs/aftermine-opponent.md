@@ -120,8 +120,9 @@ actions affect the running total and mission state.
   switch only when another scores clearly higher or the reason disappears;
   protected scrap carries over. Emergencies may spend protected scrap on an
   answer the bank reaches soon; at the rungs that read threats, only on one that
-  pays back. A rejected, cancelled or refunded purchase keeps the target and
-  recomputes the protected amount from the bank.
+  pays back, and only while every short defense has one. A rejected, cancelled
+  or refunded purchase keeps the target and recomputes the protected amount from
+  the bank.
 
 ## Missions and production
 
