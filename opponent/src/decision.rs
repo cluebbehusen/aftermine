@@ -180,7 +180,7 @@ impl Ledger {
             return false;
         }
         if let Some(units) = units_of(&mut command) {
-            units.retain(|unit| !self.stuck(*unit) && self.aside.binary_search(unit).is_err());
+            units.retain(|unit| !self.stuck(*unit) && !self.aside(*unit));
             if units.is_empty() {
                 return true;
             }
@@ -220,6 +220,11 @@ impl Ledger {
         if let Err(index) = self.aside.binary_search(&unit) {
             self.aside.insert(index, unit);
         }
+    }
+
+    /// Whether `unit` steps out of a crusher's way this decision.
+    pub(crate) fn aside(&self, unit: UnitId) -> bool {
+        self.aside.binary_search(&unit).is_ok()
     }
 
     /// Whether `unit` was sent running this decision.

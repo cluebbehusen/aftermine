@@ -552,14 +552,11 @@ fn refuge(
         .min_by_key(|beside| (frame.rank(from, doubled(*beside)), *beside))
 }
 
-/// Sends the nearest free workers to weld each damaged own building, the
-/// largest repair bill first: as many as it takes, with those already
-/// welding it, to mend it faster than the known fire that reaches it, in
-/// sight or remembered, damages it, while each pays its way under that fire
-/// and the seat has scrap to pay. Short of that many free workers, only the
-/// seat's last Foundry, which is never given up, gets those there are.
-/// Beside a crusher, a welder whose way in lies in its path first goes to a
-/// side of the building out of it.
+/// Sends the nearest free worker to weld each damaged own building nobody
+/// welds yet, the largest repair bill first, while that welder mends it
+/// faster than the known fire that reaches it, in sight or remembered,
+/// damages it and pays its way under that fire, and the seat has scrap to
+/// pay.
 fn weld(
     observation: &ObservationData,
     map: &MapModel,
@@ -567,12 +564,21 @@ fn weld(
     (memory, unseen): (&Memory, &[BuildingId]),
     ledger: &mut Ledger,
 ) {
-    let last = built_foundries(&observation.my_buildings).count() == 1;
+    // Buildings a worker already welds, on order or on its own.
+    let tended: Vec<aftermine_sim::BuildingId> = observation
+        .my_units
+        .iter()
+        .filter(|unit| worker(unit.kind) && unit.repair.is_some())
+        .filter_map(|unit| match observation.repair_target(unit.id)? {
+            Target::Building(building) => Some(building),
+            Target::Unit(_) => None,
+        })
+        .collect();
     let mut patients: Vec<(u64, u64, (i64, i64), &BuildingObs)> = observation
         .my_buildings
         .iter()
         .filter(|building| building.built && !building.provisional)
-        .filter(|building| !unseen.contains(&building.id))
+        .filter(|building| !tended.contains(&building.id) && !unseen.contains(&building.id))
         .filter_map(|building| {
             let stats = building.kind.tier_stats(building.tier);
             let (hp, max) = (u64::from(building.hp), u64::from(stats.max_hp.max(1)));
@@ -600,111 +606,25 @@ fn weld(
             building.id,
         )
     });
-    let crushers = crate::crush::crushers(observation);
     for (_, bill, centre, building) in patients {
         let bill = u32::try_from(bill).unwrap_or(u32::MAX).max(1);
         if ledger.spendable() < WELD_FLOOR.min(bill) {
             continue;
         }
-        let Some(ground) = map.component(building.anchor) else {
+        let Some(welder) = builder(observation, map, frame, building.anchor, centre, ledger) else {
             continue;
         };
-        let welding = observation
-            .my_units
-            .iter()
-            .filter(|unit| {
-                unit.repair.is_some()
-                    && observation.repair_target(unit.id) == Some(Target::Building(building.id))
-            })
-            .count();
-        let mut free: Vec<&UnitObs> = observation
-            .my_units
-            .iter()
-            .filter(|unit| free_on(unit, map, ground, ledger))
-            .filter(|unit| {
-                observation.repair_target(unit.id) != Some(Target::Building(building.id))
-            })
-            .collect();
-        free.sort_by_key(|unit| (frame.rank(centre, doubled(unit.tile)), unit.id));
-        let Some(first) = free.first() else {
-            continue;
-        };
-        let Some(welders) = crate::placement::welders(observation, map, memory, building, first)
-        else {
-            continue;
-        };
-        let wanted = usize::try_from(welders)
-            .unwrap_or(usize::MAX)
-            .saturating_sub(welding);
-        let last_foundry = last && building.kind == BuildingKind::Foundry;
-        if wanted == 0 || free.len() < wanted && !last_foundry {
+        if !crate::placement::mends(observation, map, memory, building, welder) {
             continue;
         }
-        // Those whose way in stays out of a crusher's path go first.
-        let mut chosen: Vec<(Option<TilePos>, &UnitObs)> = free
-            .into_iter()
-            .map(|welder| (around(map, frame, &crushers, building, welder), welder))
-            .collect();
-        chosen.sort_by_key(|(around, _)| around.is_some());
-        let chosen = chosen.into_iter();
-        for (around, welder) in chosen.take(wanted) {
-            let repair = |queue: bool| Command::Repair {
-                units: vec![welder.id],
-                building: building.id,
-                queue,
-            };
-            let sent = match around {
-                Some(side) => {
-                    ledger.order(Command::Run {
-                        units: vec![welder.id],
-                        goal: side,
-                        queue: false,
-                    }) && ledger.order(repair(true))
-                }
-                None => ledger.order(repair(false)),
-            };
-            if !sent {
-                return;
-            }
+        if !ledger.order(Command::Repair {
+            units: vec![welder.id],
+            building: building.id,
+            queue: false,
+        }) {
+            return;
         }
     }
-}
-
-/// Where `welder` should first go to weld `building` beside a crusher: when
-/// the side of the building it would come to lies in a crusher's path, the
-/// nearest tile beside it out of every crusher's path; none when its way in
-/// is clear or no side is.
-fn around(
-    map: &MapModel,
-    frame: HomeFrame,
-    crushers: &[&UnitObs],
-    building: &BuildingObs,
-    welder: &UnitObs,
-) -> Option<TilePos> {
-    if crushers.is_empty() {
-        return None;
-    }
-    // A welder stays where it stands: the crusher's way counts only as far
-    // as it comes before the welder could cross out of it.
-    let interval = 0;
-    let ground = map.component(building.anchor)?;
-    let from = doubled(welder.tile);
-    let beside: Vec<TilePos> = ring(building.anchor, building.kind.size())
-        .filter(|tile| map.component(*tile) == Some(ground))
-        .collect();
-    let comes_to = beside.iter().min_by_key(|tile| {
-        (
-            welder.tile.chebyshev(**tile),
-            frame.rank(from, doubled(**tile)),
-        )
-    })?;
-    if crate::crush::clear_of(crushers, welder.kind, *comes_to, interval) {
-        return None;
-    }
-    beside
-        .into_iter()
-        .filter(|tile| crate::crush::clear_of(crushers, welder.kind, *tile, interval))
-        .min_by_key(|tile| (frame.rank(from, doubled(*tile)), *tile))
 }
 
 /// Whether no armed enemy in sight stands within the weld clearance of the
@@ -905,7 +825,7 @@ fn withdraw(
             continue;
         };
         if unseen.contains(&id)
-            || crate::placement::welders(observation, map, memory, building, welder).is_none()
+            || !crate::placement::mends(observation, map, memory, building, welder)
         {
             leaving.push(welder.id);
         }

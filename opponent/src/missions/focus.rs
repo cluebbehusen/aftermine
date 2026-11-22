@@ -54,7 +54,7 @@ impl Missions {
                     .filter(|enemy| {
                         legal(enemy)
                             || (defending
-                                && (reached(enemy) || enemy.kind.stats().weapons.is_empty()))
+                                && (reached(enemy.kind) || enemy.kind.stats().weapons.is_empty()))
                     })
             });
             if kept.is_some() {

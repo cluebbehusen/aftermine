@@ -159,7 +159,7 @@ impl Missions {
             let shelling = siege
                 .units
                 .iter()
-                .filter(|threat| reached(threat) && map.component(threat.tile) == component)
+                .filter(|threat| reached(threat.kind) && map.component(threat.tile) == component)
                 .min_by_key(|threat| (frame.rank(centre, doubled(threat.tile)), threat.id));
             let pursuit = Pursuit::of(
                 shelling.copied(),
@@ -695,7 +695,7 @@ fn lost(
                     .enemy_units
                     .iter()
                     .find(|enemy| enemy.id == id)
-                    .is_none_or(reached)
+                    .is_none_or(|enemy| reached(enemy.kind))
             })
 }
 
@@ -1162,7 +1162,7 @@ fn waiting_post(
 /// only gets the defenders shelled, and an ally's defense has no shortfall
 /// training behind a wait.
 fn sortie(own: bool, siege: &Siege<'_>, met: u64, difficulty: BotDifficulty) -> u64 {
-    if own && siege.batteries.is_empty() && !siege.units.iter().any(|threat| reached(threat)) {
+    if own && siege.batteries.is_empty() && !siege.units.iter().any(|threat| reached(threat.kind)) {
         met * engage_margin(difficulty) / 1_000
     } else {
         met

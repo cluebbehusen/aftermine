@@ -641,9 +641,9 @@ fn unit_view(u: &Unit) -> UnitView {
     }
 }
 
-/// A hostile unit as the viewer sees it: body, position, facing, wounds, visible
-/// cargo, point-defense charges and docked drones, but never its orders,
-/// queue, patrol flag, drone orders or idle-weld switch.
+/// A hostile unit as the viewer sees it: body, position, facing, wounds,
+/// visible cargo, point-defense charges and docked drones, but never its
+/// orders, queue, patrol flag, drone orders or idle-weld switch.
 fn unit_view_redacted(u: &Unit) -> UnitView {
     UnitView {
         order: None,

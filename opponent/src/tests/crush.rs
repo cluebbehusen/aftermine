@@ -63,17 +63,23 @@ fn small_machines_ahead_of_a_maw_step_out_of_its_path_and_the_armed_fire_from_be
     );
     let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
     let ran = runs(&commands);
-    for (id, kind) in [(ahead, UnitKind::Sentinel), (worker, UnitKind::Harvester)] {
-        let goal = ran
-            .iter()
+    let goal = |id: UnitId| {
+        ran.iter()
             .find(|(units, _)| units == &[id])
             .unwrap_or_else(|| panic!("{id:?} steps aside: {commands:?}"))
-            .1;
+            .1
+    };
+    for (id, kind) in [(ahead, UnitKind::Sentinel), (worker, UnitKind::Harvester)] {
         assert!(
-            !crate::crush::in_path(&maw, kind, goal, 12),
-            "{id:?} goes to {goal:?}, still in the Maw's path"
+            !crate::crush::in_path(&maw, kind, goal(id), 12),
+            "{id:?} goes to {:?}, still in the Maw's path",
+            goal(id)
         );
     }
+    assert!(
+        goal(worker).y > 11,
+        "the Harvester south of the Maw's line stays south of it, not across its path"
+    );
     assert!(
         queued_attacks(&commands)
             .iter()
@@ -116,88 +122,6 @@ fn a_maw_at_the_base_is_attacked_not_hunted() {
 }
 
 #[test]
-fn a_foundry_a_maw_cuts_needs_five_welders_and_its_gun_spares_them() {
-    // A Maw pressed against the West Foundry cuts it at 300 hp a second; a
-    // welder mends 64. Five out-mend it, and the Maw never turns on a
-    // welder.
-    let mut scenario = field();
-    scenario
-        .units
-        .extend([unit(1, UnitKind::Maw, 6, 11), harvester(0, 2, 9)]);
-    let state = staged(&scenario, 128, &[(BuildingKind::Foundry, 1_200)]);
-    let observation = mapped(&state, PlayerId(0));
-    let map = map(&scenario);
-    let foundry = observation
-        .my_buildings
-        .iter()
-        .find(|building| building.kind == BuildingKind::Foundry)
-        .unwrap();
-    let welder = observation
-        .my_units
-        .iter()
-        .find(|unit| unit.kind == UnitKind::Harvester)
-        .unwrap();
-    assert_eq!(
-        crate::placement::welders(
-            &observation,
-            &map,
-            &crate::memory::Memory::default(),
-            foundry,
-            welder
-        ),
-        Some(5)
-    );
-}
-
-fn welded(extra_foundry: bool, kind: BuildingKind) -> Vec<UnitId> {
-    let mut scenario = field();
-    // Enough for the welds, not for an emergency Turret, which would take a
-    // worker first.
-    scenario.players[0].scrap = 90;
-    scenario.units.extend([
-        unit(1, UnitKind::Maw, 6, 11),
-        harvester(0, 1, 8),
-        harvester(0, 2, 8),
-        harvester(0, 1, 9),
-    ]);
-    if kind != BuildingKind::Foundry {
-        let maw = scenario.units.len() - 4;
-        scenario.units[maw].x = 13;
-        scenario.buildings.push(building(0, kind, 10, 11));
-    }
-    if extra_foundry {
-        scenario
-            .buildings
-            .push(building(0, BuildingKind::Foundry, 20, 18));
-    }
-    let state = staged(&scenario, 128, &[(kind, kind.base_stats().max_hp * 3 / 4)]);
-    let target = state
-        .buildings()
-        .iter()
-        .find(|building| building.player == PlayerId(0) && building.kind == kind)
-        .unwrap()
-        .id;
-    let commands = seat(&scenario, 0).act(&state, &mut OwnEvents::default());
-    commands_of(&commands, |command| match command {
-        Command::Repair {
-            units, building, ..
-        } if *building == target => Some(units.clone()),
-        _ => None,
-    })
-    .concat()
-}
-
-#[test]
-fn the_last_foundry_gets_every_free_welder_even_short_of_five() {
-    assert_eq!(welded(false, BuildingKind::Foundry).len(), 3);
-    assert!(
-        welded(true, BuildingKind::Foundry).is_empty(),
-        "with another Foundry, three welders that cannot hold it stay away"
-    );
-    assert!(welded(false, BuildingKind::Fabricator).is_empty());
-}
-
-#[test]
 fn no_site_goes_up_in_a_maw_s_path() {
     let mut scenario = field();
     scenario
@@ -224,4 +148,10 @@ fn no_site_goes_up_in_a_maw_s_path() {
     assert!(!stands(16, 11), "ahead of the Maw");
     assert!(stands(16, 4), "well beside its path");
     assert!(stands(26, 11), "behind it");
+    // Beside it, out of its path and its drum's reach, a crew stands where
+    // its gun would reach: it never turns that gun on a machine.
+    assert!(
+        stands(20, 7),
+        "beside it, within its gun's reach of the crew"
+    );
 }

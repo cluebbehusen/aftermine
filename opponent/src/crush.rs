@@ -14,9 +14,9 @@ use chassis::grid::TilePos;
 /// Half a tile: observations give tiles, not positions.
 const TILE_SLACK: Fx = Fx::lit("0.5");
 
-/// Tiles past the edge of a crusher's path a machine stepping aside aims
-/// beyond the first clear one, a computation bound on the search.
-const ASIDE_SEARCH: i32 = 3;
+/// Tiles past the width of a crusher's path that a machine stepping out of
+/// it looks for somewhere clear, a computation bound on the search.
+const SEARCH_SLACK: i32 = 3;
 
 /// The enemy crushers on the ground in sight.
 pub(crate) fn crushers(observation: &ObservationData) -> Vec<&UnitObs> {
@@ -34,8 +34,8 @@ fn centre(tile: TilePos) -> Vec2Fx {
     )
 }
 
-/// How far ahead of `crusher`, and how far to its left, the centre of
-/// `tile` lies, along the way it faces.
+/// How far ahead of `crusher`, and how far to one side of its line, the
+/// centre of `tile` lies, along the way it faces.
 fn bearing(crusher: &UnitObs, tile: TilePos) -> (Fx, Fx) {
     let forward = chassis::compass::dir(crusher.heading);
     let offset = centre(tile) - centre(crusher.tile);
@@ -73,6 +73,7 @@ pub(crate) fn in_path(crusher: &UnitObs, kind: UnitKind, tile: TilePos, interval
 
 /// Whether a crusher in sight would reach any tile of a footprint of `kind`
 /// at `anchor` within `ticks`, going over the crew raising it and cutting it.
+/// The crew is judged as Harvesters.
 pub(crate) fn in_way(
     observation: &ObservationData,
     kind: aftermine_sim::BuildingKind,
@@ -100,10 +101,11 @@ pub(crate) fn clear_of(
         .all(|crusher| !in_path(crusher, kind, tile, interval))
 }
 
-/// The nearest tile on `unit`'s ground just past the side of `crusher`'s path
-/// it stands on, clear of every crusher's path; either side when it stands
-/// on the line.
-fn aside(
+/// Where `unit`, in `crusher`'s path, goes to get out of it: the nearest tile
+/// on its ground clear of every crusher's path, an armed machine preferring
+/// one from which it still reaches `crusher`. The nearest clear tile lies on
+/// the side of the path it already stands on.
+fn refuge(
     map: &MapModel,
     frame: HomeFrame,
     (crushers, crusher): (&[&UnitObs], &UnitObs),
@@ -111,67 +113,24 @@ fn aside(
     interval: u64,
 ) -> Option<TilePos> {
     let ground = map.component(unit.tile)?;
-    let forward = chassis::compass::dir(crusher.heading);
-    let left = Vec2Fx::new(forward.y, -forward.x);
-    let (_, across) = bearing(crusher, unit.tile);
-    let past = half_width(crusher, unit.kind) - across.abs() + Fx::lit("1");
-    let sides: &[Fx] = match across.cmp(&Fx::ZERO) {
-        std::cmp::Ordering::Greater => &[Fx::lit("1")],
-        std::cmp::Ordering::Less => &[Fx::lit("-1")],
-        std::cmp::Ordering::Equal => &[Fx::lit("1"), Fx::lit("-1")],
-    };
-    let from = centre(unit.tile);
-    sides
-        .iter()
-        .filter_map(|side| {
-            (0..=ASIDE_SEARCH)
-                .map(|extra| {
-                    let step = (past + Fx::from_num(extra)) * *side;
-                    TilePos::containing(from + left * step)
-                })
-                .find(|tile| {
-                    map.component(*tile) == Some(ground)
-                        && clear_of(crushers, unit.kind, *tile, interval)
-                })
-        })
-        .min_by_key(|tile| {
-            (
-                unit.tile.chebyshev(*tile),
-                frame.rank(doubled(unit.tile), doubled(*tile)),
-            )
-        })
-}
-
-/// The nearest tile on `unit`'s ground clear of every crusher's path from
-/// which it reaches `crusher` with its weapons, beside or behind it; none for
-/// an unarmed machine or when no such tile is.
-fn firing_post(
-    map: &MapModel,
-    frame: HomeFrame,
-    (crushers, crusher): (&[&UnitObs], &UnitObs),
-    unit: &UnitObs,
-    interval: u64,
-) -> Option<TilePos> {
     let reach = crate::defenses::reach(unit.kind);
-    if reach <= Fx::ZERO {
-        return None;
-    }
-    let ground = map.component(unit.tile)?;
     let within = crusher.kind.stats().radius + reach - TILE_SLACK;
-    let span = within.ceil().to_num::<i32>();
-    let from = centre(crusher.tile);
+    let fires = |tile: TilePos| {
+        let offset = centre(tile) - centre(crusher.tile);
+        reach > Fx::ZERO && offset.length_sq() <= within * within
+    };
+    let span = (half_width(crusher, unit.kind) * 2).ceil().to_num::<i32>() + SEARCH_SLACK;
+    let from = doubled(unit.tile);
     (-span..=span)
-        .flat_map(|dy| (-span..=span).map(move |dx| crusher.tile.offset(dx, dy)))
+        .flat_map(|dy| (-span..=span).map(move |dx| unit.tile.offset(dx, dy)))
         .filter(|tile| {
-            let offset = centre(*tile) - from;
-            offset.length_sq() <= within * within
-                && map.component(*tile) == Some(ground)
-                && clear_of(crushers, unit.kind, *tile, interval)
+            map.component(*tile) == Some(ground) && clear_of(crushers, unit.kind, *tile, interval)
         })
         .min_by_key(|tile| {
             (
+                !fires(*tile),
                 unit.tile.chebyshev(*tile),
-                frame.rank(doubled(unit.tile), doubled(*tile)),
+                frame.rank(from, doubled(*tile)),
             )
         })
 }
@@ -203,9 +162,7 @@ pub(crate) fn step_aside(
         else {
             continue;
         };
-        let Some(goal) = firing_post(map, frame, (&crushers, crusher), unit, interval)
-            .or_else(|| aside(map, frame, (&crushers, crusher), unit, interval))
-        else {
+        let Some(goal) = refuge(map, frame, (&crushers, crusher), unit, interval) else {
             continue;
         };
         let id: UnitId = unit.id;

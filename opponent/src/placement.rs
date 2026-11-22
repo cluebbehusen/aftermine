@@ -333,18 +333,18 @@ fn walk_ticks(worker: &UnitObs, site: Raising) -> u32 {
     (Fx::from_num(tiles) / speed).ceil().to_num::<u32>()
 }
 
-/// How many welders like `welder`, welding the own `building` together, add
-/// health faster than the fire that reaches it takes it away, along the
-/// simulation's welding ramp (a Foundry's own, any other building's build
-/// time); none when they would not pay their way under that fire, the health
-/// each restores worth its share of what the building cost.
-pub(crate) fn welders(
+/// Whether `welder` welding the own `building` adds health faster than the
+/// fire that reaches it takes it away, along the simulation's welding ramp (a
+/// Foundry's own, any other building's build time), and pays its way under
+/// that fire: the health it restores is worth its share of what the building
+/// cost.
+pub(crate) fn mends(
     observation: &ObservationData,
     map: &MapModel,
     memory: &Memory,
     building: &BuildingObs,
     welder: &UnitObs,
-) -> Option<u64> {
+) -> bool {
     let (kind, tier) = (building.kind, building.tier);
     let stats = kind.tier_stats(tier);
     let ramp_ticks = if kind == BuildingKind::Foundry {
@@ -355,14 +355,9 @@ pub(crate) fn welders(
     let ramp = u64::from(stats.max_hp - stats.max_hp / 5) * 1_000 / u64::from(ramp_ticks.max(1));
     let missing = u64::from(stats.max_hp.saturating_sub(building.hp));
     let worth = u64::from(kind.invested_cost(tier)) * missing / u64::from(stats.max_hp.max(1));
+    let ticks = u32::try_from((missing * 1_000).div_ceil(ramp.max(1))).unwrap_or(u32::MAX);
     let fire = Fire::on(observation, map, memory, kind, building.anchor);
-    let ramp = ramp.max(1);
-    let welders = fire.building.rate / ramp + 1;
-    let gain = welders * ramp - fire.building.rate;
-    let ticks = u32::try_from((missing * 1_000).div_ceil(gain)).unwrap_or(u32::MAX);
-    fire.worker
-        .pays(welder, worth / welders, ticks)
-        .then_some(welders)
+    ramp > fire.building.rate && fire.worker.pays(welder, worth, ticks)
 }
 
 /// Checks `kind` at `anchor` against the seat's knowledge and the footprints
